@@ -23,4 +23,4 @@ See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 
 ## License
 
-This project is licensed under the terms of the [Apache-2.0](LICENSE) license.
+This project is licensed under the terms of the [MIT](LICENSE) license.

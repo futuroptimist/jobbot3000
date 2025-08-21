@@ -1,7 +1,7 @@
 # jobbot3000 — Self-Hosted Job Search Copilot
 **Status:** Draft v0.1 (2025-08-20)
-**Owner:** You
-**License:** Apache-2.0 (recommended)
+**Owner:** futuroptimist
+**License:** MIT
 
 ---
 
