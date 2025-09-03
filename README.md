@@ -1,8 +1,6 @@
 # 🎯 jobbot3000
 
-**jobbot3000** is a self-hosted, open-source job search copilot. It was bootstrapped from
-[futuroptimist/flywheel](https://github.com/futuroptimist/flywheel) and uses its practices for
-linting, testing, and documentation.
+**jobbot3000** is a self-hosted, open-source job search copilot. It was bootstrapped from [futuroptimist/flywheel](https://github.com/futuroptimist/flywheel) and uses its practices for linting, testing, and documentation.
 
 ## Getting Started
 
@@ -11,15 +9,20 @@ linting, testing, and documentation.
 git clone git@github.com:YOURNAME/jobbot3000.git
 cd jobbot3000
 
-# Install dependencies once package.json exists
+# Install dependencies
 npm ci
 
-# Run repo checks (none implemented yet)
+# Run repo checks
 npm run lint
 npm run test:ci
+
+# Summarize a job description
+echo "First sentence. Second sentence." | npm run summarize
 ```
 
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
+
+For security guidelines, read [SECURITY.md](SECURITY.md).
 
 ## License
 

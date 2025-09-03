@@ -155,6 +155,8 @@ Each ATS = a module returning a normalized `JobPosting`. Add basic backoff, ETag
 ## 9) Safety, privacy, and ethics
 
 - **Data never leaves** your machine unless you configure an external model/API.
+- **Offline inference**: local models via vLLM or Ollama; encrypted proxy for remote APIs.
+- **Secret storage**: credentials sourced from environment variables or OS keychains.
 - **No cheating**: guardrails to block credential inflation, fake employers, or impersonation.
 - **Compliance**: per-integration respect for robots.txt and ToS; vendor allowlists.
 - **Model sandboxing**: prompt-injection defenses on job text; tool-use allowlist; rate limiting.
@@ -184,14 +186,16 @@ services:
   db:
     image: postgres:16
     environment:
-      POSTGRES_PASSWORD: jobbot
+      POSTGRES_PASSWORD: changeme
     volumes: [db:/var/lib/postgresql/data]
   redis:
     image: redis:7
   minio:
     image: minio/minio
     command: server /data
-    environment: { MINIO_ROOT_USER: minio, MINIO_ROOT_PASSWORD: minio123 }
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: changeme
   api:
     build: ./services/api
     env_file: .env
@@ -243,6 +247,7 @@ jobbot track add <job_id> --status applied --note "emailed hiring manager"
 
 **Phase 0 — Bootstrap (2–3 days)**
 - Repo scaffold (monorepo or polyrepo).
+- Helper scripts for repetitive tasks (e.g., job-description summarizer).
 - Compose stack: Postgres+pgvector, Redis, FastAPI, Web.
 - JSON Resume schema ingestion/export.
 - Minimal UI (profile editor, file upload).
