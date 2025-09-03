@@ -1,0 +1,14 @@
+{
+  "name": "jobbot3000",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "lint": "eslint .",
+    "test:ci": "vitest run",
+    "summarize": "node scripts/summarize.js"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "vitest": "^1.5.0"
+  }
+}
