@@ -1,0 +1,7 @@
+# Node artifacts
+node_modules/
+.DS_Store
+.env
+coverage/
+dist/
+
