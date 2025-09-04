@@ -2,12 +2,21 @@
   "name": "jobbot3000",
   "version": "0.1.0",
   "type": "module",
+  "bin": {
+    "jobbot": "bin/jobbot.js"
+  },
   "scripts": {
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test": "vitest",
     "test:ci": "vitest run",
     "summarize": "node scripts/summarize.js"
+  },
+  "dependencies": {
+    "html-to-text": "9.0.5",
+    "node-fetch": "^3.3.2",
+    "pdf-parse": "^1.1.1",
+    "remove-markdown": "^0.5.0"
   },
   "devDependencies": {
     "eslint": "^8.57.0",

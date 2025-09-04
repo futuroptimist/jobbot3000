@@ -1,0 +1,54 @@
+const TITLE_PATTERNS = [
+  /\bTitle\s*:\s*(.+)/i,
+  /\bJob Title\s*:\s*(.+)/i,
+  /\bPosition\s*:\s*(.+)/i
+];
+
+const COMPANY_PATTERNS = [
+  /\bCompany\s*:\s*(.+)/i,
+  /\bEmployer\s*:\s*(.+)/i
+];
+
+const REQUIREMENTS_HEADERS = [
+  /\bRequirements\b/i,
+  /\bQualifications\b/i,
+  /\bWhat you(?:'|’)ll need\b/i
+];
+
+export function parseJobText(rawText) {
+  if (!rawText) {
+    return { title: '', company: '', requirements: [], body: '' };
+  }
+  const text = rawText.replace(/\r/g, '').trim();
+  const lines = text.split(/\n+/);
+
+  let title = '';
+  let company = '';
+  for (const line of lines) {
+    for (const pattern of TITLE_PATTERNS) {
+      const m = line.match(pattern);
+      if (m) { title = m[1].trim(); break; }
+    }
+    for (const pattern of COMPANY_PATTERNS) {
+      const m = line.match(pattern);
+      if (m) { company = m[1].trim(); break; }
+    }
+  }
+
+  // Extract requirements bullets after a known header
+  let requirements = [];
+  const idx = lines.findIndex(l => REQUIREMENTS_HEADERS.some(h => h.test(l)));
+  if (idx !== -1) {
+    for (let i = idx + 1; i < lines.length; i += 1) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      if (/^[A-Za-z].+:$/.test(line)) break; // next section header
+      const bullet = line.replace(/^[-*•\d.)(\s]+/, '').trim();
+      if (bullet) requirements.push(bullet);
+    }
+  }
+
+  return { title, company, requirements, body: text };
+}
+
+
