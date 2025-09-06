@@ -17,8 +17,10 @@ npm run lint
 npm run test:ci
 
 # Summarize a job description
-echo "First sentence. Second sentence." | npm run summarize
+echo "First sentence? Second sentence." | npm run summarize
 ```
+
+Summaries stop after `.`, `?`, or `!`.
 
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 
