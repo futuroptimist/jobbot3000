@@ -6,4 +6,11 @@ describe('summarize', () => {
     const text = 'First sentence. Second sentence.';
     expect(summarize(text)).toBe('First sentence.');
   });
+
+  it('handles exclamation and question marks', () => {
+    const exciting = 'Amazing role! Apply now.';
+    expect(summarize(exciting)).toBe('Amazing role!');
+    const curious = 'Ready? Go team!';
+    expect(summarize(curious)).toBe('Ready?');
+  });
 });
