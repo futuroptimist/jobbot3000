@@ -12,6 +12,9 @@
     "test:ci": "vitest run",
     "summarize": "node scripts/summarize.js"
   },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "html-to-text": "9.0.5",
     "node-fetch": "^3.3.2",
