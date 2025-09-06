@@ -118,7 +118,7 @@ Each ATS = a module returning a normalized `JobPosting`. Add basic backoff, ETag
 **Outputs**
 - Score (0–100), plus **explanation** array:
   - `must_haves_missed`: `["Kubernetes", "Terraform"]`
-  - `skills_hit`: `["SRE", "Postgres", "Oncall"]` with confidence bars
+   - `skills_hit`: `["SRE", "Postgres", "On-call"]` with confidence bars
   - `evidence`: snippets with sources (job text spans).
 
 ---

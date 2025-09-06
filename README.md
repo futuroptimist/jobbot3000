@@ -6,7 +6,7 @@
 
 ```bash
 # Clone your fork
-git clone git@github.com:YOURNAME/jobbot3000.git
+git clone git@github.com:<YOUR_NAME>/jobbot3000.git
 cd jobbot3000
 
 # Install dependencies
