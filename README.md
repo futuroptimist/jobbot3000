@@ -4,7 +4,7 @@
 
 ## Getting Started
 
-Requires Node.js 20 or later.
+Requires [Node.js](https://nodejs.org/) 20 or newer.
 
 ```bash
 # Clone your fork
@@ -31,6 +31,8 @@ The summarizer extracts the first sentence, handling `.`, `!`, and `?` punctuati
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 
 For security guidelines, read [SECURITY.md](SECURITY.md).
+
+Prompt templates are indexed in [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md).
 
 ## License
 
