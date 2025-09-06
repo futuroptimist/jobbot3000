@@ -4,6 +4,8 @@
 
 ## Getting Started
 
+Requires [Node.js](https://nodejs.org/) 18 or newer.
+
 ```bash
 # Clone your fork
 git clone git@github.com:YOURNAME/jobbot3000.git
@@ -23,6 +25,8 @@ echo "First sentence. Second sentence." | npm run summarize
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 
 For security guidelines, read [SECURITY.md](SECURITY.md).
+
+Prompt templates are indexed in [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md).
 
 ## License
 
