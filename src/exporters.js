@@ -2,10 +2,11 @@ export function toJson(data) {
   return JSON.stringify(data, null, 2);
 }
 
-export function toMarkdownSummary({ title, company, requirements, summary }) {
+export function toMarkdownSummary({ title, company, location, requirements, summary }) {
   const lines = [];
   if (title) lines.push(`# ${title}`);
   if (company) lines.push(`**Company**: ${company}`);
+  if (location) lines.push(`**Location**: ${location}`);
   if (summary) lines.push(`\n${summary}\n`);
   if (requirements && requirements.length) {
     lines.push('## Requirements');
@@ -14,10 +15,11 @@ export function toMarkdownSummary({ title, company, requirements, summary }) {
   return lines.join('\n');
 }
 
-export function toMarkdownMatch({ title, company, score, matched, missing }) {
+export function toMarkdownMatch({ title, company, location, score, matched, missing }) {
   const lines = [];
   if (title) lines.push(`# ${title}`);
   if (company) lines.push(`**Company**: ${company}`);
+  if (location) lines.push(`**Location**: ${location}`);
   if (typeof score === 'number') lines.push(`**Fit Score**: ${score}%`);
   if (matched && matched.length) {
     lines.push('\n## Matched');

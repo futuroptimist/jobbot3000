@@ -9,6 +9,11 @@ const COMPANY_PATTERNS = [
   /\bEmployer\s*:\s*(.+)/i
 ];
 
+const LOCATION_PATTERNS = [
+  /\bLocation\s*:\s*(.+)/i,
+  /\bJob Location\s*:\s*(.+)/i
+];
+
 const REQUIREMENTS_HEADERS = [
   /\bRequirements\b/i,
   /\bQualifications\b/i,
@@ -17,13 +22,14 @@ const REQUIREMENTS_HEADERS = [
 
 export function parseJobText(rawText) {
   if (!rawText) {
-    return { title: '', company: '', requirements: [], body: '' };
+    return { title: '', company: '', location: '', requirements: [], body: '' };
   }
   const text = rawText.replace(/\r/g, '').trim();
   const lines = text.split(/\n+/);
 
   let title = '';
   let company = '';
+  let location = '';
   for (const line of lines) {
     for (const pattern of TITLE_PATTERNS) {
       const m = line.match(pattern);
@@ -32,6 +38,10 @@ export function parseJobText(rawText) {
     for (const pattern of COMPANY_PATTERNS) {
       const m = line.match(pattern);
       if (m) { company = m[1].trim(); break; }
+    }
+    for (const pattern of LOCATION_PATTERNS) {
+      const m = line.match(pattern);
+      if (m) { location = m[1].trim(); break; }
     }
   }
 
@@ -48,7 +58,7 @@ export function parseJobText(rawText) {
     }
   }
 
-  return { title, company, requirements, body: text };
+  return { title, company, location, requirements, body: text };
 }
 
 

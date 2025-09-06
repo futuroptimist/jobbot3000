@@ -17,7 +17,8 @@ npm run lint
 npm run test:ci
 
 # Summarize a job description
-echo "First sentence. Second sentence." | npm run summarize
+echo -e "Title: Engineer\nCompany: ACME\nLocation: Remote\nFirst sentence. Second sentence." | \
+  npm run summarize
 ```
 
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
