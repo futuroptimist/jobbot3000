@@ -2,6 +2,8 @@
 
 **jobbot3000** is a self-hosted, open-source job search copilot. It was bootstrapped from [futuroptimist/flywheel](https://github.com/futuroptimist/flywheel) and uses its practices for linting, testing, and documentation.
 
+Requires [Node.js](https://nodejs.org) 20.
+
 ## Getting Started
 
 ```bash
@@ -20,9 +22,11 @@ npm run test:ci
 echo "First sentence. Second sentence." | npm run summarize
 ```
 
-See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
+## Docs
 
-For security guidelines, read [SECURITY.md](SECURITY.md).
+- [DESIGN.md](DESIGN.md) – architecture details and roadmap.
+- [SECURITY.md](SECURITY.md) – security guidelines.
+- [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) – prompt reference index.
 
 ## License
 
