@@ -50,5 +50,3 @@ export function parseJobText(rawText) {
 
   return { title, company, requirements, body: text };
 }
-
-
