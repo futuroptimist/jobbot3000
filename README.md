@@ -19,7 +19,8 @@ npm run lint
 npm run test:ci
 
 # Summarize a job description
-echo "First sentence. Second sentence." | npm run summarize
+# Works with sentences ending in ., ?, or !
+echo "First sentence? Second sentence." | npm run summarize
 
 # In code, pass the number of sentences to keep
 # summarize(text, 2) returns the first two sentences
