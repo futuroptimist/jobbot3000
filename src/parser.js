@@ -15,6 +15,16 @@ const REQUIREMENTS_HEADERS = [
   /\bWhat you(?:'|’)ll need\b/i
 ];
 
+function findFirstMatch(lines, patterns) {
+  for (const line of lines) {
+    for (const pattern of patterns) {
+      const match = line.match(pattern);
+      if (match) return match[1].trim();
+    }
+  }
+  return '';
+}
+
 export function parseJobText(rawText) {
   if (!rawText) {
     return { title: '', company: '', requirements: [], body: '' };
@@ -22,18 +32,8 @@ export function parseJobText(rawText) {
   const text = rawText.replace(/\r/g, '').trim();
   const lines = text.split(/\n+/);
 
-  let title = '';
-  let company = '';
-  for (const line of lines) {
-    for (const pattern of TITLE_PATTERNS) {
-      const m = line.match(pattern);
-      if (m) { title = m[1].trim(); break; }
-    }
-    for (const pattern of COMPANY_PATTERNS) {
-      const m = line.match(pattern);
-      if (m) { company = m[1].trim(); break; }
-    }
-  }
+  const title = findFirstMatch(lines, TITLE_PATTERNS);
+  const company = findFirstMatch(lines, COMPANY_PATTERNS);
 
   // Extract requirements bullets after a known header
   let requirements = [];
@@ -50,5 +50,3 @@ export function parseJobText(rawText) {
 
   return { title, company, requirements, body: text };
 }
-
-

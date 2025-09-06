@@ -4,7 +4,7 @@
 
 ## Getting Started
 
-Requires [Node.js](https://nodejs.org/) 18 or newer.
+Requires [Node.js](https://nodejs.org/) 20 or newer.
 
 ```bash
 # Clone your fork
@@ -20,7 +20,12 @@ npm run test:ci
 
 # Summarize a job description
 echo "First sentence. Second sentence." | npm run summarize
+
+# In code, pass the number of sentences to keep
+# summarize(text, 2) returns the first two sentences
 ```
+
+The summarizer extracts the first sentence, handling `.`, `!`, and `?` punctuation.
 
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 
