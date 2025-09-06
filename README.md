@@ -24,6 +24,8 @@ See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 
 For security guidelines, read [SECURITY.md](SECURITY.md).
 
+For prompt documentation, see [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md).
+
 ## License
 
-This project is licensed under the terms of the [MIT](LICENSE) license.
+This project is licensed under the terms of the [MIT license](LICENSE).
