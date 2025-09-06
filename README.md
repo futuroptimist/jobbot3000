@@ -20,6 +20,8 @@ npm run test:ci
 echo "First sentence. Second sentence." | npm run summarize
 ```
 
+The summarizer extracts the first sentence, handling `.`, `!`, and `?` punctuation.
+
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 
 For security guidelines, read [SECURITY.md](SECURITY.md).
