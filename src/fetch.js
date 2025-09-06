@@ -20,12 +20,8 @@ export async function fetchTextFromUrl(url, { timeoutMs = 10000 } = {}) {
     () => controller.abort(new Error(`Timeout after ${timeoutMs}ms`)),
     timeoutMs
   );
-  let response;
-  try {
-    response = await fetch(url, { redirect: 'follow', signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
+  const response = await fetch(url, { redirect: 'follow', signal: controller.signal })
+    .finally(() => clearTimeout(timer));
   if (!response.ok) {
     throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
   }
