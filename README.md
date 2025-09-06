@@ -4,6 +4,8 @@
 
 ## Getting Started
 
+Requires Node.js 20 or later.
+
 ```bash
 # Clone your fork
 git clone git@github.com:YOURNAME/jobbot3000.git
@@ -19,7 +21,12 @@ npm run test:ci
 # Summarize a job description
 # Works with sentences ending in ., ?, or !
 echo "First sentence? Second sentence." | npm run summarize
+
+# In code, pass the number of sentences to keep
+# summarize(text, 2) returns the first two sentences
 ```
+
+The summarizer extracts the first sentence, handling `.`, `!`, and `?` punctuation.
 
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 

@@ -11,4 +11,9 @@ describe('summarize', () => {
     expect(summarize('First sentence? Second sentence.')).toBe('First sentence?');
     expect(summarize('Wow! Another sentence.')).toBe('Wow!');
   });
+
+  it('returns the first N sentences when count provided', () => {
+    const text = 'First. Second. Third.';
+    expect(summarize(text, 2)).toBe('First. Second.');
+  });
 });
