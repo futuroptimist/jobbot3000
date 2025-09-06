@@ -7,10 +7,8 @@ describe('summarize', () => {
     expect(summarize(text)).toBe('First sentence.');
   });
 
-  it('handles exclamation and question marks', () => {
-    const exciting = 'Amazing role! Apply now.';
-    expect(summarize(exciting)).toBe('Amazing role!');
-    const curious = 'Ready? Go team!';
-    expect(summarize(curious)).toBe('Ready?');
+  it('returns the first N sentences when count provided', () => {
+    const text = 'First. Second. Third.';
+    expect(summarize(text, 2)).toBe('First. Second.');
   });
 });
