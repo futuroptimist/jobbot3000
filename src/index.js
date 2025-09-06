@@ -1,5 +1,5 @@
-export function summarize(text) {
+export function summarize(text, count = 1) {
   if (!text) return '';
-  const firstSentence = text.split(/(?<=[.!?])\s|\n/)[0];
-  return firstSentence.trim();
+  const sentences = text.split(/(?<=[.!?])\s|\n/).slice(0, count);
+  return sentences.join(' ').trim();
 }
