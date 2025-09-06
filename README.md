@@ -4,6 +4,8 @@
 
 ## Getting Started
 
+Requires Node.js 20 or later.
+
 ```bash
 # Clone your fork
 git clone git@github.com:YOURNAME/jobbot3000.git
