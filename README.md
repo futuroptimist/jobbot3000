@@ -2,6 +2,8 @@
 
 **jobbot3000** is a self-hosted, open-source job search copilot. It was bootstrapped from [futuroptimist/flywheel](https://github.com/futuroptimist/flywheel) and uses its practices for linting, testing, and documentation.
 
+Requires [Node.js](https://nodejs.org) 20.
+
 ## Getting Started
 
 Requires [Node.js](https://nodejs.org/) 20 or newer.
@@ -30,7 +32,9 @@ The summarizer extracts the first sentence, handling `.`, `!`, and `?` punctuati
 
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 
-For security guidelines, read [SECURITY.md](SECURITY.md).
+- [DESIGN.md](DESIGN.md) – architecture details and roadmap.
+- [SECURITY.md](SECURITY.md) – security guidelines.
+- [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) – prompt reference index.
 
 Prompt templates are indexed in [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md).
 
