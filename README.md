@@ -1,6 +1,9 @@
 # 🎯 jobbot3000
 
-**jobbot3000** is a self-hosted, open-source job search copilot. It was bootstrapped from [futuroptimist/flywheel](https://github.com/futuroptimist/flywheel) and uses its practices for linting, testing, and documentation.
+**jobbot3000** is a self-hosted, open-source job search copilot.
+It was bootstrapped from
+[futuroptimist/flywheel](https://github.com/futuroptimist/flywheel) and uses its
+practices for linting, testing, and documentation.
 
 Requires [Node.js](https://nodejs.org) 20.
 
@@ -13,7 +16,7 @@ Requires [Node.js](https://nodejs.org/) 20 or newer.
 git clone git@github.com:YOURNAME/jobbot3000.git
 cd jobbot3000
 
-# Install dependencies
+# Install dependencies (requires Node.js 20)
 npm ci
 
 # Run repo checks
@@ -31,6 +34,7 @@ echo "First sentence? Second sentence." | npm run summarize
 The summarizer extracts the first sentence, handling `.`, `!`, and `?` punctuation.
 
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
+See [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) for a list of prompt documents.
 
 - [DESIGN.md](DESIGN.md) – architecture details and roadmap.
 - [SECURITY.md](SECURITY.md) – security guidelines.
@@ -40,4 +44,4 @@ Prompt templates are indexed in [docs/prompt-docs-summary.md](docs/prompt-docs-s
 
 ## License
 
-This project is licensed under the terms of the [MIT](LICENSE) license.
+This project is licensed under the terms of the [MIT License](LICENSE).
