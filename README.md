@@ -5,8 +5,6 @@ It was bootstrapped from
 [futuroptimist/flywheel](https://github.com/futuroptimist/flywheel) and uses its
 practices for linting, testing, and documentation.
 
-Requires [Node.js](https://nodejs.org) 20.
-
 ## Getting Started
 
 Requires [Node.js](https://nodejs.org/) 20 or newer.
