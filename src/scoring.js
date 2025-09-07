@@ -9,31 +9,18 @@ function tokenize(text) {
 }
 
 export function computeFitScore(resumeText, requirements) {
-  const requirementBullets = Array.isArray(requirements) ? requirements : [];
-  if (requirementBullets.length === 0) {
-    return { score: 0, matched: [], missing: [] };
-  }
+  const bullets = Array.isArray(requirements) ? requirements : [];
+  if (!bullets.length) return { score: 0, matched: [], missing: [] };
 
   const resumeTokens = tokenize(resumeText);
-  const matchedBullets = [];
-  const missingBullets = [];
+  const matched = [];
+  const missing = [];
 
-  for (const bullet of requirementBullets) {
-    const tokens = tokenize(bullet);
-    let hasOverlap = false;
-    for (const t of tokens) {
-      if (resumeTokens.has(t)) {
-        hasOverlap = true;
-        break;
-      }
-    }
-    if (hasOverlap) {
-      matchedBullets.push(bullet);
-    } else {
-      missingBullets.push(bullet);
-    }
+  for (const bullet of bullets) {
+    const hasOverlap = Array.from(tokenize(bullet)).some(t => resumeTokens.has(t));
+    (hasOverlap ? matched : missing).push(bullet);
   }
 
-  const score = Math.round((matchedBullets.length / requirementBullets.length) * 100);
-  return { score, matched: matchedBullets, missing: missingBullets };
+  const score = Math.round((matched.length / bullets.length) * 100);
+  return { score, matched, missing };
 }
