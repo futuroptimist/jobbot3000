@@ -4,27 +4,28 @@ slug: 'codex-chore'
 ---
 
 # Codex Chore Prompt
-Use this prompt for dependency bumps or other routine upkeep in jobbot3000.
+Use this prompt to handle maintenance tasks in jobbot3000.
 
-```
+```text
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
 
 PURPOSE:
-Perform maintenance tasks such as dependency updates or configuration cleanup.
+Perform routine housekeeping such as dependency bumps or config tweaks.
 
 CONTEXT:
-- Follow repository conventions in README.md.
+- Follow [README.md](../../README.md); see the [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Run `npm run lint` and `npm run test:ci` before committing.
+- Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
 
 REQUEST:
-1. Make a minimal maintenance change.
-2. Update documentation if necessary.
-3. Run the commands above.
-4. Commit changes and open a pull request.
+1. Explain the maintenance change to perform.
+2. Apply the smallest viable update.
+3. Update documentation or scripts if required.
+4. Run the commands above and fix any failures.
 
 OUTPUT:
-A pull request URL describing the chore and confirming passing checks.
+A pull request URL summarizing the maintenance task.
 ```
 
-Copy this block whenever performing maintenance on jobbot3000.
+Copy this block whenever performing chores in jobbot3000.
