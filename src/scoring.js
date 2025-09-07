@@ -17,7 +17,8 @@ export function computeFitScore(resumeText, requirements) {
   const missing = [];
 
   for (const bullet of bullets) {
-    const hasOverlap = Array.from(tokenize(bullet)).some(t => resumeTokens.has(t));
+    const tokens = tokenize(bullet);
+    const hasOverlap = [...tokens].some(t => resumeTokens.has(t));
     (hasOverlap ? matched : missing).push(bullet);
   }
 
