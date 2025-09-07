@@ -16,4 +16,9 @@ describe('summarize', () => {
     const text = 'First. Second. Third.';
     expect(summarize(text, 2)).toBe('First. Second.');
   });
+
+  it('preserves newline separators between sentences', () => {
+    const text = 'First sentence.\nSecond sentence.';
+    expect(summarize(text, 2)).toBe('First sentence.\nSecond sentence.');
+  });
 });
