@@ -33,14 +33,11 @@ echo "First sentence? Second sentence." | npm run summarize
 
 The summarizer extracts the first sentence, handling `.`, `!`, and `?` punctuation.
 
-See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
-See [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) for a list of prompt documents.
+## Documentation
 
-- [DESIGN.md](DESIGN.md) – architecture details and roadmap.
-- [SECURITY.md](SECURITY.md) – security guidelines.
-- [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) – prompt reference index.
-
-Prompt templates are indexed in [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md).
+- [DESIGN.md](DESIGN.md) – architecture details and roadmap
+- [SECURITY.md](SECURITY.md) – security guidelines
+- [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) – prompt reference index
 
 ## License
 
