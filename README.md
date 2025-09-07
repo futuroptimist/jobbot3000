@@ -29,7 +29,8 @@ echo "First sentence? Second sentence." | npm run summarize
 # summarize(text, 2) returns the first two sentences
 ```
 
-The summarizer extracts the first sentence, handling `.`, `!`, and `?` punctuation.
+The summarizer extracts the first sentence, handling `.`, `!`, and `?` punctuation and ignores
+bare newlines.
 
 ## Documentation
 
