@@ -32,6 +32,7 @@ echo "First sentence? Second sentence." | npm run summarize
 ```
 
 The summarizer extracts the first sentence, handling `.`, `!`, and `?` punctuation.
+It preserves ellipses (`...`) within sentences.
 
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 See [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) for a list of prompt documents.

@@ -16,4 +16,9 @@ describe('summarize', () => {
     const text = 'First. Second. Third.';
     expect(summarize(text, 2)).toBe('First. Second.');
   });
+
+  it('does not split within ellipsis', () => {
+    const text = 'Wait... still thinking. Another.';
+    expect(summarize(text)).toBe('Wait... still thinking.');
+  });
 });
