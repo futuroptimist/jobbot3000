@@ -4,32 +4,27 @@ slug: 'codex-spellcheck'
 ---
 
 # Codex Spellcheck Prompt
-Type: evergreen
-
-Use this prompt to find and fix spelling mistakes in Markdown docs before opening a pull request.
+Use this prompt to fix spelling mistakes in jobbot3000.
 
 ```text
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
 
 PURPOSE:
-Keep Markdown documentation free of spelling errors.
+Correct typos and enforce consistent spelling.
 
 CONTEXT:
-- Run `npx cspell "$(git ls-files '*.md')"` to check spelling.
+- Follow [README.md](../../README.md); see the [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Run `npm run lint` and `npm run test:ci` before committing.
-- Follow repository conventions in `README.md`.
-- Run `git diff --cached | ./scripts/scan-secrets.py` before committing.
+- Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
 
 REQUEST:
-1. Spell-check Markdown files using the command above.
-2. Correct spelling errors or update dictionaries as needed.
+1. Locate spelling errors in code or docs.
+2. Fix the typos without altering meaning.
+3. Run the commands above and resolve any failures.
 
-ACCEPTANCE_CHECK:
-{"patch":"<unified diff>", "summary":"<80-char msg>", "tests_pass":true}
-
-OUTPUT_FORMAT:
-Output the JSON object first, then the diff in a fenced diff block.
+OUTPUT:
+A pull request URL summarizing the spelling corrections.
 ```
 
-Copy this prompt when instructing an automated coding agent to spell-check jobbot3000.
+Copy this block whenever correcting spelling in jobbot3000.

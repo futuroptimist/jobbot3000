@@ -4,28 +4,28 @@ slug: 'codex-docs'
 ---
 
 # Codex Docs Prompt
-Use this prompt to improve jobbot3000 documentation.
+Use this prompt when clarifying or extending documentation in jobbot3000.
 
-```
+```text
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
 
-GOAL:
-Enhance documentation accuracy, links, or readability.
+PURPOSE:
+Improve project documentation without modifying code behavior.
 
 CONTEXT:
-- Follow repository conventions in README.md.
+- Follow [README.md](../../README.md); see the [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Run `npm run lint` and `npm run test:ci` before committing.
+- Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
 
 REQUEST:
-1. Identify outdated, unclear, or missing docs.
-2. Apply minimal edits with correct style.
-3. Update cross references or links as needed.
-4. Run the commands above.
-5. Commit changes and open a pull request.
+1. Identify the doc section to update.
+2. Revise text or examples for clarity.
+3. Ensure any code samples compile with `node` or `ts-node`.
+4. Run the commands above and fix any failures.
 
 OUTPUT:
-A pull request URL summarizing documentation improvements.
+A pull request URL summarizing the documentation update.
 ```
 
-Copy this block whenever updating jobbot3000 docs.
+Copy this block whenever updating docs in jobbot3000.
