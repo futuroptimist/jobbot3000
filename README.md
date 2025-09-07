@@ -5,8 +5,6 @@ It was bootstrapped from
 [futuroptimist/flywheel](https://github.com/futuroptimist/flywheel) and uses its
 practices for linting, testing, and documentation.
 
-Requires [Node.js](https://nodejs.org) 20.
-
 ## Getting Started
 
 Requires [Node.js](https://nodejs.org/) 20 or newer.
@@ -31,17 +29,19 @@ echo "First sentence? Second sentence." | npm run summarize
 # summarize(text, 2) returns the first two sentences
 ```
 
-The summarizer extracts the first sentence, handling `.`, `!`, and `?` punctuation, and it
-supports both Unix and Windows line endings.
+The summarizer extracts the first sentence, handling `.`, `!`, and `?` punctuation.  
+It supports both Unix and Windows line endings, and ignores bare newlines.
 
-See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
+Job requirements may start with `-`, `*`, `•`, `–` (en dash), or `—` (em dash); these markers are stripped when parsing job text.
+
+See [DESIGN.md](DESIGN.md) for architecture details and roadmap.  
 See [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) for a list of prompt documents.
 
-- [DESIGN.md](DESIGN.md) – architecture details and roadmap.
-- [SECURITY.md](SECURITY.md) – security guidelines.
-- [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) – prompt reference index.
+## Documentation
 
-Prompt templates are indexed in [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md).
+- [DESIGN.md](DESIGN.md) – architecture details and roadmap  
+- [SECURITY.md](SECURITY.md) – security guidelines  
+- [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) – prompt reference index
 
 ## License
 

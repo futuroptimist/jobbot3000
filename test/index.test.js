@@ -21,4 +21,9 @@ describe('summarize', () => {
     const text = 'First sentence\r\nSecond sentence\r\nThird sentence';
     expect(summarize(text, 2)).toBe('First sentence Second sentence');
   });
+
+  it('ignores bare newlines without punctuation', () => {
+    const text = 'First line\nSecond line.';
+    expect(summarize(text)).toBe('First line Second line.');
+  });
 });
