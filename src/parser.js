@@ -43,7 +43,9 @@ export function parseJobText(rawText) {
       const line = lines[i].trim();
       if (!line) continue;
       if (/^[A-Za-z].+:$/.test(line)) break; // next section header
-      const bullet = line.replace(/^[-*•\d.)(\s]+/, '').trim();
+      // Remove common bullet prefixes: hyphen, en dash, em dash, asterisk,
+      // bullet, numbers, or parentheses.
+      const bullet = line.replace(/^[-–—*•\d.)(\s]+/, '').trim();
       if (bullet) requirements.push(bullet);
     }
   }
