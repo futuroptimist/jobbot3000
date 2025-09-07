@@ -2,9 +2,20 @@ import { describe, it, expect } from 'vitest';
 import { parseJobText } from '../src/parser.js';
 
 describe('parseJobText', () => {
-  it('strips en and em dash bullets', () => {
-    const raw = 'Title: Dev\nCompany: ACME\nRequirements\n– Node.js\n— React';
-    const { requirements } = parseJobText(raw);
-    expect(requirements).toEqual(['Node.js', 'React']);
+  it('strips dash, en dash, and em dash bullets', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Requirements:
+- Basic JavaScript
+– Experience with Node.js
+— Familiarity with testing
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual([
+      'Basic JavaScript',
+      'Experience with Node.js',
+      'Familiarity with testing'
+    ]);
   });
 });
