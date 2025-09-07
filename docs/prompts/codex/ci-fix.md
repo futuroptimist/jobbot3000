@@ -1,12 +1,12 @@
 ---
-title: 'Codex Docs Prompt'
-slug: 'codex-docs'
+title: 'Codex CI-Fix Prompt'
+slug: 'codex-ci-fix'
 ---
 
-# Codex Docs Prompt
+# Codex CI-Fix Prompt
 Type: evergreen
 
-Use this prompt to improve jobbot3000 documentation.
+Use this prompt to diagnose and resolve failing checks in jobbot3000.
 
 ```text
 SYSTEM:
@@ -15,19 +15,18 @@ ASSISTANT: (DEV) Implement code; stop after producing patch.
 ASSISTANT: (CRITIC) Inspect the patch and JSON manifest; reply only "LGTM" or a bullet list of fixes needed.
 
 PURPOSE:
-Enhance documentation accuracy, links, or readability.
+Diagnose and fix continuous integration failures so all checks pass.
 
 CONTEXT:
 - Follow repository conventions in README.md.
-- Run `npm run lint` and `npm run test:ci` before committing.
-- Run `npx cspell "$(git ls-files '*.md')"` to check spelling.
+- Run `npm run lint` and `npm run test:ci` to reproduce failures.
+- Install missing dependencies with `npm ci` if needed.
 - Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
 
 REQUEST:
-1. Identify outdated, unclear, or missing docs.
-2. Apply minimal edits with correct style.
-3. Update cross references or links as needed.
-4. Run the commands above.
+1. Re-run the failing checks locally.
+2. Apply minimal fixes.
+3. Re-run the commands above until they succeed.
 
 ACCEPTANCE_CHECK:
 {"patch":"<unified diff>", "summary":"<80-char msg>", "tests_pass":true}
@@ -54,5 +53,3 @@ USER:
 OUTPUT:
 A pull request with the improved prompt doc and passing checks.
 ```
-
-Copy this block whenever updating jobbot3000 docs.

@@ -4,28 +4,51 @@ slug: 'codex-refactor'
 ---
 
 # Codex Refactor Prompt
+Type: evergreen
+
 Use this prompt to restructure code in jobbot3000 without changing behavior.
 
-```
+```text
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
+ASSISTANT: (DEV) Implement code; stop after producing patch.
+ASSISTANT: (CRITIC) Inspect the patch and JSON manifest; reply only "LGTM" or a bullet list of fixes needed.
 
-GOAL:
+PURPOSE:
 Improve code clarity without altering behavior.
 
 CONTEXT:
 - Follow repository conventions in README.md.
 - Run `npm run lint` and `npm run test:ci` before committing.
+- Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
 
 REQUEST:
-1. Identify code that can be simplified.
-2. Refactor while preserving functionality.
-3. Adjust tests if refactor requires it.
-4. Run the commands above.
-5. Commit changes and open a pull request.
+1. Identify code that can be simplified or reorganized.
+2. Apply the refactor ensuring no behavior change.
+3. Run the commands above.
 
-OUTPUT:
-A pull request URL summarizing the refactor.
+ACCEPTANCE_CHECK:
+{"patch":"<unified diff>", "summary":"<80-char msg>", "tests_pass":true}
+
+OUTPUT_FORMAT:
+The DEV assistant must output the JSON object first, then the diff in a fenced diff block.
 ```
 
-Copy this block whenever refactoring jobbot3000.
+## Upgrade Prompt
+Type: evergreen
+
+Use this prompt to refine jobbot3000's prompt docs.
+
+```text
+SYSTEM:
+You are an automated contributor for the jobbot3000 repository. Run `npm run lint` and `npm run test:ci` before committing.
+
+USER:
+1. Pick one prompt doc under `docs/prompts/codex/`.
+2. Clarify context, refresh links, or add missing instructions.
+3. Update `docs/prompt-docs-summary.md`.
+4. Run the commands above.
+
+OUTPUT:
+A pull request with the improved prompt doc and passing checks.
+```
