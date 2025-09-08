@@ -24,9 +24,16 @@ npm run test:ci
 # Summarize a job description
 # Works with sentences ending in ., ?, or !
 echo "First sentence? Second sentence." | npm run summarize
+```
 
-# In code, pass the number of sentences to keep
-# summarize(text, 2) returns the first two sentences
+In code, import `summarize` and pass the number of sentences to keep:
+
+```js
+import { summarize } from './src/index.js';
+
+const text = 'First sentence? Second sentence. Third!';
+console.log(summarize(text, 2));
+// → First sentence? Second sentence.
 ```
 
 The summarizer extracts the first sentence, handling `.`, `!`, and `?` punctuation, including when
@@ -37,7 +44,7 @@ Example: `summarize('"Hi!" Bye.')` returns `"Hi!"`.
 Job requirements may start with `-`, `*`, `+`, `•`, `–` (en dash), or `—` (em dash); these markers are stripped when parsing job text.
 Tokenization in resume scoring uses a single regex pass for performance.
 
-See [DESIGN.md](DESIGN.md) for architecture details and roadmap.  
+See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 See [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) for a list of prompt documents.
 
 ## Documentation
