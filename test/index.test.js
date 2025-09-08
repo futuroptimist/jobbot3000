@@ -21,4 +21,11 @@ describe('summarize', () => {
     const text = 'First line\nSecond line.';
     expect(summarize(text)).toBe('First line Second line.');
   });
+
+  it('handles punctuation before closing quotes or parentheses', () => {
+    const text = 'He said "Hi!" Another.';
+    expect(summarize(text)).toBe('He said "Hi!"');
+    const text2 = 'Do it now.) Another.';
+    expect(summarize(text2)).toBe('Do it now.)');
+  });
 });
