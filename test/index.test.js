@@ -21,4 +21,9 @@ describe('summarize', () => {
     const text = 'First line\nSecond line.';
     expect(summarize(text)).toBe('First line Second line.');
   });
+
+  it('returns trimmed text when no punctuation exists', () => {
+    const text = 'Bullet one\nBullet two';
+    expect(summarize(text)).toBe('Bullet one Bullet two');
+  });
 });
