@@ -25,8 +25,16 @@ npm run test:ci
 # Works with sentences ending in ., ?, or !
 echo "First sentence? Second sentence." | npm run summarize
 
-# In code, pass the number of sentences to keep
-# summarize(text, 2) returns the first two sentences
+```
+
+Use the library directly in code:
+
+```js
+import { summarize } from './src/index.js';
+
+const text = 'First sentence. Second sentence? Third sentence!';
+console.log(summarize(text, 2));
+// → "First sentence. Second sentence?"
 ```
 
 The summarizer extracts the first sentence, handling `.`, `!`, and `?` punctuation, and ignores bare newlines.
