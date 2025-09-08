@@ -18,4 +18,16 @@ Requirements:
       'Familiarity with testing'
     ]);
   });
+
+  it('parses requirements after a Responsibilities header', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Responsibilities:
+- Build features
+- Fix bugs
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual(['Build features', 'Fix bugs']);
+  });
 });

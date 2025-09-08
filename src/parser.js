@@ -12,7 +12,8 @@ const COMPANY_PATTERNS = [
 const REQUIREMENTS_HEADERS = [
   /\bRequirements\b/i,
   /\bQualifications\b/i,
-  /\bWhat you(?:'|’)ll need\b/i
+  /\bWhat you(?:'|’)ll need\b/i,
+  /\bResponsibilities\b/i
 ];
 
 function findFirstMatch(lines, patterns) {
