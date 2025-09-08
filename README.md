@@ -26,14 +26,14 @@ npm run test:ci
 echo "First sentence? Second sentence." | npm run summarize
 ```
 
-In code, import `summarize` and pass the number of sentences to keep:
+In code, pass the number of sentences to keep:
 
 ```js
 import { summarize } from './src/index.js';
 
-const text = 'First sentence? Second sentence. Third!';
+const text = 'First sentence. Second sentence? Third!';
 console.log(summarize(text, 2));
-// → First sentence? Second sentence.
+// → "First sentence. Second sentence?"
 ```
 
 The summarizer extracts the first sentence, handling `.`, `!`, and `?` punctuation, including when
