@@ -39,6 +39,21 @@ describe('summarize', () => {
     expect(summarize(text, 2)).toBe('First. Second without end');
   });
 
+  it('preserves consecutive terminal punctuation', () => {
+    const text = 'What?! Another.';
+    expect(summarize(text)).toBe('What?!');
+  });
+
+  it('does not split on decimal numbers', () => {
+    const text = 'The price is $1.99 today but it may change.';
+    expect(summarize(text)).toBe(text);
+  });
+
+  it('returns the whole text when no terminator is present', () => {
+    const text = 'No punctuation here';
+    expect(summarize(text)).toBe(text);
+  });
+
   it('handles punctuation followed by closing quotes', () => {
     const text = '"Wow!" Another sentence.';
     expect(summarize(text)).toBe('"Wow!"');

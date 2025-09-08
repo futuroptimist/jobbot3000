@@ -5,7 +5,7 @@
  * Falls back to returning the trimmed input when no such punctuation exists.
  * If fewer complete sentences than requested exist, any remaining text is appended
  * so no content is lost. Parenthetical abbreviations like `(M.Sc.)` remain attached
- * to their surrounding sentence.
+ * to their surrounding sentence. Avoids splitting on decimal numbers.
  *
  * @param {string} text
  * @param {number} count
@@ -19,7 +19,8 @@ export function summarize(text, count = 1) {
    * Prevents regex-based DoS and stops once the requested number
    * of sentences is collected.
    * Handles consecutive punctuation (`?!`), skips trailing closing
-   * quotes/parentheses, and treats all Unicode whitespace as delimiters.
+   * quotes/parentheses, treats all Unicode whitespace as delimiters,
+   * and avoids splitting on decimal numbers.
    */
   const sentences = [];
   let start = 0;
@@ -47,6 +48,17 @@ export function summarize(text, count = 1) {
     }
 
     if (ch === '.' || ch === '!' || ch === '?') {
+      // Skip decimals like 3.14
+      if (
+        ch === '.' &&
+        i > 0 &&
+        /\d/.test(text[i - 1]) &&
+        i + 1 < len &&
+        /\d/.test(text[i + 1])
+      ) {
+        continue;
+      }
+
       let j = i + 1;
 
       // absorb consecutive punctuation like ?!
