@@ -23,7 +23,8 @@ npm run test:ci
 
 # Summarize a job description
 # Works with sentences ending in ., ?, or !
-echo "First sentence? Second sentence." | npm run summarize
+# Keep two sentences with --sentences
+echo "First. Second. Third." | jobbot summarize - --sentences 2
 ```
 
 In code, pass the number of sentences to keep:
@@ -35,6 +36,16 @@ const text = 'First sentence. Second sentence? Third!';
 console.log(summarize(text, 2));
 // → "First sentence. Second sentence?"
 ```
+
+Fetch remote job listings and normalize HTML to plain text:
+
+```js
+import { fetchTextFromUrl } from './src/fetch.js';
+
+const text = await fetchTextFromUrl('https://example.com/job');
+```
+`fetchTextFromUrl` strips scripts, styles, navigation, and footer content and collapses
+whitespace to single spaces.
 
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal
 punctuation like `?!`, including when followed by closing quotes or parentheses. Terminators apply
@@ -51,8 +62,9 @@ Example: `summarize('"Hi!" Bye.')` returns `"Hi!"`.
 
 Job requirements may appear under headers like `Requirements`, `Qualifications`,
 `What you'll need`, or `Responsibilities` (used if no other requirement headers are present).
-They may start with `-`, `+`, `*`, `•`, `–` (en dash), or `—` (em dash); these markers are stripped
-when parsing job text. Tokenization in resume scoring uses a single regex pass for performance.
+They may start with `-`, `+`, `*`, `•`, `–` (en dash), or `—` (em dash); these markers
+are stripped when parsing job text, even when the first requirement follows the header on
+the same line. Tokenization in resume scoring uses a single regex pass for performance.
 
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 See [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) for a list of prompt documents.
