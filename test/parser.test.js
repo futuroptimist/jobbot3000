@@ -18,4 +18,19 @@ Requirements:
       'Familiarity with testing'
     ]);
   });
+
+  it('strips plus sign bullets', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Requirements:
++ Keen eye for detail
++ Excellent communication
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual([
+      'Keen eye for detail',
+      'Excellent communication'
+    ]);
+  });
 });
