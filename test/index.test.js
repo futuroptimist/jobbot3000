@@ -29,8 +29,18 @@ describe('summarize', () => {
     expect(summarize(text)).toBe('First line Second line.');
   });
 
+  it('returns trimmed text when no punctuation exists', () => {
+    const text = 'Bullet one\nBullet two';
+    expect(summarize(text)).toBe('Bullet one Bullet two');
+  });
+
   it('handles punctuation followed by closing quotes', () => {
     const text = '"Wow!" Another sentence.';
     expect(summarize(text)).toBe('"Wow!"');
+  });
+
+  it('handles non-breaking spaces after punctuation', () => {
+    const text = `One.\u00a0Two.`;
+    expect(summarize(text)).toBe('One.');
   });
 });

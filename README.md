@@ -37,7 +37,10 @@ console.log(summarize(text, 2));
 ```
 
 The summarizer extracts the first sentence, handling `.`, `!`, and `?` punctuation, including when
-followed by closing quotes or parentheses, and ignores bare newlines.
+followed by closing quotes or parentheses, and ignores bare newlines.  
+It scans text character-by-character to avoid large intermediate arrays and regex performance
+pitfalls, skipping closing quotes or parentheses and recognizing all Unicode whitespace after
+punctuation. If no sentence punctuation exists, it falls back to returning the trimmed input.
 
 Example: `summarize('"Hi!" Bye.')` returns `"Hi!"`.
 
