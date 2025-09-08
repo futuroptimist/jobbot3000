@@ -12,6 +12,7 @@ export function summarize(text, count = 1) {
 
   /**
    * Scan character-by-character to avoid costly regular expressions.
+   * Handles `.`, `!`, `?`, including when followed by quotes or parentheses.
    * This prevents regex-based DoS and stops once the requested number
    * of sentences is collected.
    */
@@ -19,13 +20,22 @@ export function summarize(text, count = 1) {
   let start = 0;
   const len = text.length;
 
-  const isSpace = (c) => c === ' ' || c === '\n' || c === '\t' || c === '\r';
+  const isSpace = (c) =>
+    c === ' ' || c === '\n' || c === '\t' || c === '\r';
 
   for (let i = 0; i < len && sentences.length < count; i++) {
     const ch = text[i];
     if (ch === '.' || ch === '!' || ch === '?') {
       const next = text[i + 1];
-      if (i + 1 === len || isSpace(next)) {
+      // Allow end of text, whitespace, or common closing punctuation
+      if (
+        i + 1 === len ||
+        isSpace(next) ||
+        next === '"' ||
+        next === "'" ||
+        next === ')' ||
+        next === ']'
+      ) {
         sentences.push(text.slice(start, i + 1));
         i += 1;
         while (i < len && isSpace(text[i])) i += 1;
@@ -35,6 +45,8 @@ export function summarize(text, count = 1) {
     }
   }
 
-  const summary = sentences.length ? sentences.join(' ') : text;
+  const summary = sentences.length
+    ? sentences.join(' ')
+    : text;
   return summary.replace(/\s+/g, ' ').trim();
 }
