@@ -21,4 +21,9 @@ describe('summarize', () => {
     const text = 'First line\nSecond line.';
     expect(summarize(text)).toBe('First line Second line.');
   });
+
+  it('handles sentences ending with quotes', () => {
+    const text = '"First sentence." Second sentence.';
+    expect(summarize(text)).toBe('"First sentence."');
+  });
 });
