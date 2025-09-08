@@ -12,6 +12,24 @@ describe('computeFitScore', () => {
     expect(result.missing).toEqual(['Python']);
   });
 
+  it('does not conflate C with C++ or C#', () => {
+    const resume = 'Experience with C and Python.';
+    const requirements = ['C++', 'C#'];
+    const result = computeFitScore(resume, requirements);
+    expect(result.score).toBe(0);
+    expect(result.matched).toEqual([]);
+    expect(result.missing).toEqual(['C++', 'C#']);
+  });
+
+  it('matches C++ and C# tokens exactly', () => {
+    const resume = 'Worked with C++ and C#.';
+    const requirements = ['C++', 'C#'];
+    const result = computeFitScore(resume, requirements);
+    expect(result.score).toBe(100);
+    expect(result.matched).toEqual(['C++', 'C#']);
+    expect(result.missing).toEqual([]);
+  });
+
   it('processes large requirement lists within 1200ms', () => {
     const resume = 'skill '.repeat(1000);
     const requirements = Array(100).fill('skill');
