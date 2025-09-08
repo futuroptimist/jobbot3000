@@ -34,13 +34,23 @@ describe('summarize', () => {
     expect(summarize(text)).toBe('Bullet one Bullet two');
   });
 
+  it('preserves leftover text when a sentence lacks punctuation', () => {
+    const text = 'First. Second without end';
+    expect(summarize(text, 2)).toBe('First. Second without end');
+  });
+
   it('handles punctuation followed by closing quotes', () => {
     const text = '"Wow!" Another sentence.';
     expect(summarize(text)).toBe('"Wow!"');
   });
 
-  it('handles non-breaking spaces after punctuation', () => {
-    const text = `One.\u00a0Two.`;
-    expect(summarize(text)).toBe('One.');
+  it('treats non-breaking space as whitespace', () => {
+    const text = 'One sentence.\u00A0Another.';
+    expect(summarize(text)).toBe('One sentence.');
+  });
+
+  it('avoids splitting inside parenthetical abbreviations', () => {
+    const text = 'Candidates (M.Sc.) should apply.';
+    expect(summarize(text)).toBe('Candidates (M.Sc.) should apply.');
   });
 });
