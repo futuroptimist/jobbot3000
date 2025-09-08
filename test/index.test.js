@@ -21,4 +21,9 @@ describe('summarize', () => {
     const text = 'First line\nSecond line.';
     expect(summarize(text)).toBe('First line Second line.');
   });
+
+  it('handles punctuation before closing quotes', () => {
+    const text = 'He said, "Hello." Another sentence.';
+    expect(summarize(text)).toBe('He said, "Hello."');
+  });
 });
