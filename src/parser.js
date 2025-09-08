@@ -15,6 +15,8 @@ const REQUIREMENTS_HEADERS = [
   /\bWhat you(?:'|’)ll need\b/i
 ];
 
+const FALLBACK_REQUIREMENTS_HEADERS = [/\bResponsibilities\b/i];
+
 function findFirstMatch(lines, patterns) {
   for (const line of lines) {
     for (const pattern of patterns) {
@@ -35,9 +37,13 @@ export function parseJobText(rawText) {
   const title = findFirstMatch(lines, TITLE_PATTERNS);
   const company = findFirstMatch(lines, COMPANY_PATTERNS);
 
-  // Extract requirements bullets after a known header
+  // Extract requirements bullets after a known header. Prefer primary headers, but fall back to
+  // "Responsibilities" if none are present.
   let requirements = [];
-  const idx = lines.findIndex(l => REQUIREMENTS_HEADERS.some(h => h.test(l)));
+  let idx = lines.findIndex(l => REQUIREMENTS_HEADERS.some(h => h.test(l)));
+  if (idx === -1) {
+    idx = lines.findIndex(l => FALLBACK_REQUIREMENTS_HEADERS.some(h => h.test(l)));
+  }
   if (idx !== -1) {
     const headerLine = lines[idx];
     let rest = '';

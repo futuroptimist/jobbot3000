@@ -19,6 +19,31 @@ Requirements:
     ]);
   });
 
+  it('parses requirements after a Responsibilities header', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Responsibilities:
+- Build features
+- Fix bugs
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual(['Build features', 'Fix bugs']);
+  });
+
+  it('prefers Requirements section when Responsibilities appears first', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Responsibilities:
+- Build features
+Requirements:
+- Must do things
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual(['Must do things']);
+  });
+
   it('captures requirement text on header line and strips other bullet types', () => {
     const text = `
 Title: Developer
