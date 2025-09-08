@@ -16,6 +16,14 @@ describe('jobbot CLI', () => {
     expect(out).toMatch(/First sentence\./);
   });
 
+  it('summarizes multiple sentences when count provided', () => {
+    const out = runCli(
+      ['summarize', '-', '--sentences', '2'],
+      'First. Second. Third.'
+    );
+    expect(out.trim()).toBe('First. Second.');
+  });
+
   it('match from local files', () => {
     const job = 'Title: Engineer\nCompany: ACME\nRequirements\n- JavaScript\n- Node.js\n';
     const resume = 'I am an engineer with JavaScript experience.';
