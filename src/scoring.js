@@ -1,11 +1,6 @@
 function tokenize(text) {
-  return new Set(
-    (text || '')
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .split(/\s+/)
-      .filter(Boolean)
-  );
+  // Regex-based tokenization avoids extra replace/split passes and is faster for large inputs
+  return new Set(((text || '').toLowerCase().match(/[a-z0-9]+/g)) || []);
 }
 
 export function computeFitScore(resumeText, requirements) {
