@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# cspell:ignore AKIA
 import re
 import sys
 
@@ -6,7 +7,7 @@ PLACEHOLDER_VALUES = {
     'changeme',
     '<password>',
     'example',
-    'yourpass',
+    'your-password',
     'jobbot',
     'minio123',
 }
