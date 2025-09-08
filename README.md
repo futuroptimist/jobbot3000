@@ -62,8 +62,9 @@ Example: `summarize('"Hi!" Bye.')` returns `"Hi!"`.
 
 Job requirements may appear under headers like `Requirements`, `Qualifications`,
 `What you'll need`, or `Responsibilities` (used if no other requirement headers are present).
-They may start with `-`, `+`, `*`, `•`, `–` (en dash), or `—` (em dash); these markers are stripped
-when parsing job text. Tokenization in resume scoring uses a single regex pass for performance.
+They may start with `-`, `+`, `*`, `•`, `–` (en dash), or `—` (em dash); these markers
+are stripped when parsing job text, even when the first requirement follows the header on
+the same line. Tokenization in resume scoring uses a single regex pass for performance.
 
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 See [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) for a list of prompt documents.
