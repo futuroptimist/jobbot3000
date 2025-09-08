@@ -18,4 +18,18 @@ Requirements:
       'Familiarity with testing'
     ]);
   });
+
+  it('captures requirement text on header line', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Requirements: Proficient in JS
+- Experience with Node.js
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual([
+      'Proficient in JS',
+      'Experience with Node.js'
+    ]);
+  });
 });
