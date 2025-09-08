@@ -4,7 +4,7 @@ slug: 'codex-security'
 ---
 
 # Codex Security Prompt
-Use this prompt to fix security vulnerabilities in jobbot3000.
+Use this prompt to address security vulnerabilities in jobbot3000.
 
 ```text
 SYSTEM:
@@ -15,6 +15,7 @@ Address security issues and harden the project.
 
 CONTEXT:
 - Follow [README.md](../../README.md); see the [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
+- Consult [SECURITY.md](../../SECURITY.md) for reporting and disclosure guidance.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
 

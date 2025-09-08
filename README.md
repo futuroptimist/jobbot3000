@@ -36,11 +36,15 @@ console.log(summarize(text, 2));
 // → "First sentence. Second sentence?"
 ```
 
-The summarizer extracts the first sentence, handling `.`, `!`, and `?` punctuation, and ignores bare newlines.
+The summarizer extracts the first sentence, handling `.`, `!`, and `?` punctuation, including when
+followed by closing quotes or parentheses, and ignores bare newlines.
 
-Job requirements may start with `-`, `*`, `•`, `–` (en dash), or `—` (em dash); these markers are stripped when parsing job text.
+Example: `summarize('"Hi!" Bye.')` returns `"Hi!"`.
 
-See [DESIGN.md](DESIGN.md) for architecture details and roadmap.  
+Job requirements may start with `-`, `*`, `+`, `•`, `–` (en dash), or `—` (em dash); these markers are stripped when parsing job text.
+Tokenization in resume scoring uses a single regex pass for performance.
+
+See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 See [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) for a list of prompt documents.
 
 ## Documentation
