@@ -21,4 +21,26 @@ describe('summarize', () => {
     const text = 'First line\nSecond line.';
     expect(summarize(text)).toBe('First line Second line.');
   });
+
+  it('handles punctuation before closing quotes or parentheses', () => {
+    const text = 'He said "Hi!" Another.';
+    expect(summarize(text)).toBe('He said "Hi!"');
+    const text2 = 'Do it now.) Another.';
+    expect(summarize(text2)).toBe('Do it now.)');
+  });
+
+  it('preserves consecutive terminal punctuation', () => {
+    const text = 'What?! Another.';
+    expect(summarize(text)).toBe('What?!');
+  });
+
+  it('does not split on decimal points', () => {
+    const text = 'The price is $1.99 today but it may change.';
+    expect(summarize(text)).toBe(text);
+  });
+
+  it('returns the whole text when no terminator is present', () => {
+    const text = 'No punctuation here';
+    expect(summarize(text)).toBe(text);
+  });
 });

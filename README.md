@@ -29,7 +29,10 @@ echo "First sentence? Second sentence." | npm run summarize
 # summarize(text, 2) returns the first two sentences
 ```
 
-The summarizer extracts the first sentence, handling `.`, `!`, and `?` punctuation, and ignores bare newlines.
+The summarizer returns the first sentence, handling `.`, `!`, `?`, consecutive terminal punctuation
+like `?!`, and trailing closing quotes or parentheses. Terminators apply only when followed by
+whitespace or the end of text, so decimals like `1.99` remain intact. It ignores bare newlines and
+returns the whole text if no terminator is found.
 
 Job requirements may start with `-`, `*`, `•`, `–` (en dash), or `—` (em dash); these markers are stripped when parsing job text.
 
