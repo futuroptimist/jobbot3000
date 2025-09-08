@@ -8,6 +8,12 @@
  */
 export function summarize(text, count = 1) {
   if (!text) return '';
-  const sentences = text.split(/(?<=[.!?])\s+/).slice(0, count);
-  return sentences.join(' ').replace(/\s+/g, ' ').trim();
+  const result = [];
+  const re = /[^.!?]*[.!?](?:\s+|$)/g;
+  let match;
+  // Scan incrementally to avoid splitting the entire string into sentences
+  while (result.length < count && (match = re.exec(text)) !== null) {
+    result.push(match[0]);
+  }
+  return result.join(' ').replace(/\s+/g, ' ').trim();
 }

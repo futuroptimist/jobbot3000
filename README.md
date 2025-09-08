@@ -30,6 +30,7 @@ echo "First sentence? Second sentence." | npm run summarize
 ```
 
 The summarizer extracts the first sentence, handling `.`, `!`, and `?` punctuation, and ignores bare newlines.
+It scans incrementally to avoid splitting very large strings into arrays.
 
 Job requirements may start with `-`, `*`, `•`, `–` (en dash), or `—` (em dash); these markers are stripped when parsing job text.
 
