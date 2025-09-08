@@ -18,4 +18,21 @@ Requirements:
       'Familiarity with testing'
     ]);
   });
+
+  it('strips asterisk, bullet, and plus bullets', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Requirements:
+* Basic JavaScript
+• Experience with Node.js
++ Familiarity with testing
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual([
+      'Basic JavaScript',
+      'Experience with Node.js',
+      'Familiarity with testing'
+    ]);
+  });
 });
