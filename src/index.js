@@ -9,7 +9,7 @@
 export function summarize(text, count = 1) {
   if (!text) return '';
   const sentences = text
-    .split(/(?<=[.!?]["')\]]?)\s+/)
+    .split(/(?<=[.!?]["')\]])\s+|(?<=[.!?])\s+/)
     .slice(0, count);
   return sentences.join(' ').replace(/\s+/g, ' ').trim();
 }
