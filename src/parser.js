@@ -1,31 +1,11 @@
-const TITLE_PATTERNS = [
-  /\bTitle\s*:\s*(.+)/i,
-  /\bJob Title\s*:\s*(.+)/i,
-  /\bPosition\s*:\s*(.+)/i
-];
+// Parse job text extracting title, company, and requirements.
+// Scans lines once using precompiled regexes for performance.
 
-const COMPANY_PATTERNS = [
-  /\bCompany\s*:\s*(.+)/i,
-  /\bEmployer\s*:\s*(.+)/i
-];
-
-const REQUIREMENTS_HEADERS = [
-  /\bRequirements\b/i,
-  /\bQualifications\b/i,
-  /\bWhat you(?:'|’)ll need\b/i
-];
-
-const FALLBACK_REQUIREMENTS_HEADERS = [/\bResponsibilities\b/i];
-
-function findFirstMatch(lines, patterns) {
-  for (const line of lines) {
-    for (const pattern of patterns) {
-      const match = line.match(pattern);
-      if (match) return match[1].trim();
-    }
-  }
-  return '';
-}
+const TITLE_RE = /(?:\bTitle\s*:\s*(.+))|(?:\bJob Title\s*:\s*(.+))|(?:\bPosition\s*:\s*(.+))/i;
+const COMPANY_RE = /(?:\bCompany\s*:\s*(.+))|(?:\bEmployer\s*:\s*(.+))/i;
+const REQUIREMENTS_RE =
+  /(?:\bRequirements\b)|(?:\bQualifications\b)|(?:\bWhat you(?:'|’)ll need\b)/i;
+const FALLBACK_REQ_RE = /\bResponsibilities\b/i;
 
 export function parseJobText(rawText) {
   if (!rawText) {
@@ -34,37 +14,43 @@ export function parseJobText(rawText) {
   const text = rawText.replace(/\r/g, '').trim();
   const lines = text.split(/\n+/);
 
-  const title = findFirstMatch(lines, TITLE_PATTERNS);
-  const company = findFirstMatch(lines, COMPANY_PATTERNS);
+  let title = '';
+  let company = '';
+  let reqIdx = -1;
+  let fallbackIdx = -1;
 
-  // Extract requirements bullets after a known header. Prefer primary headers, but fall back to
-  // "Responsibilities" if none are present.
-  let requirements = [];
-  let idx = lines.findIndex(l => REQUIREMENTS_HEADERS.some(h => h.test(l)));
-  if (idx === -1) {
-    idx = lines.findIndex(l => FALLBACK_REQUIREMENTS_HEADERS.some(h => h.test(l)));
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    if (!title) {
+      const m = line.match(TITLE_RE);
+      if (m) title = (m[1] || m[2] || m[3] || '').trim();
+    }
+    if (!company) {
+      const m = line.match(COMPANY_RE);
+      if (m) company = (m[1] || m[2] || '').trim();
+    }
+    if (reqIdx === -1 && REQUIREMENTS_RE.test(line)) reqIdx = i;
+    else if (fallbackIdx === -1 && FALLBACK_REQ_RE.test(line)) fallbackIdx = i;
   }
+
+  const requirements = [];
+  const idx = reqIdx !== -1 ? reqIdx : fallbackIdx;
   if (idx !== -1) {
     const headerLine = lines[idx];
-    let rest = '';
-    for (const h of REQUIREMENTS_HEADERS) {
-      if (h.test(headerLine)) {
-        rest = headerLine.replace(h, '').trim();
-        break;
-      }
-    }
-    rest = rest.replace(/^[:\s]+/, '');
+    let rest = headerLine
+      .replace(REQUIREMENTS_RE, '')
+      .replace(FALLBACK_REQ_RE, '')
+      .replace(/^[:\s]+/, '');
     if (rest) {
       const first = rest.replace(/^[-*•\u2013\u2014\d.)(\s]+/, '').trim();
       if (first) requirements.push(first);
     }
-
     for (let i = idx + 1; i < lines.length; i += 1) {
       const line = lines[i].trim();
       if (!line) continue;
-      if (/^[A-Za-z].+:$/.test(line)) break; // next section header
-      // Strip common bullet characters including hyphen, plus, asterisk, bullet,
-      // en dash (\u2013), em dash (\u2014), digits, punctuation and whitespace
+      if (/^[A-Za-z].+:$/.test(line)) break;
       const bullet = line.replace(/^[-+*•\u2013\u2014\d.)(\s]+/, '').trim();
       if (bullet) requirements.push(bullet);
     }
