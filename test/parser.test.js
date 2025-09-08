@@ -19,17 +19,25 @@ Requirements:
     ]);
   });
 
-  it('captures requirement text on header line', () => {
+  it('captures requirement text on header line and strips other bullet types', () => {
     const text = `
 Title: Developer
 Company: Example Corp
 Requirements: Proficient in JS
-- Experience with Node.js
+* Basic JavaScript
+• Experience with Node.js
++ Familiarity with testing
++ Keen eye for detail
++ Excellent communication
 `;
     const parsed = parseJobText(text);
     expect(parsed.requirements).toEqual([
       'Proficient in JS',
-      'Experience with Node.js'
+      'Basic JavaScript',
+      'Experience with Node.js',
+      'Familiarity with testing',
+      'Keen eye for detail',
+      'Excellent communication'
     ]);
   });
 });
