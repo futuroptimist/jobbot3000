@@ -1,6 +1,6 @@
 /**
  * Return the first N sentences from the given text.
- * Sentences end with '.', '!' or '?' followed by whitespace or a newline.
+ * Sentences end with '.', '!' or '?' optionally followed by closing quotes or parentheses.
  * Falls back to returning the trimmed input when no such punctuation exists.
  *
  * @param {string} text
@@ -14,14 +14,15 @@ export function summarize(text, count = 1) {
    * Scan character-by-character to avoid costly regular expressions.
    * This prevents regex-based DoS and stops once the requested number
    * of sentences is collected.
+   * Handles trailing quotes/parentheses and treats all Unicode whitespace as a delimiter.
    */
   const sentences = [];
   let start = 0;
   const len = text.length;
 
-  // Treat any Unicode whitespace as a delimiter to match previous \s behaviour
   const isSpace = (c) => c.trim() === '';
-  const isClosing = (c) => c === '"' || c === '\'' || c === ')' || c === ']' || c === '}';
+  const isClosing = (c) =>
+    c === '"' || c === "'" || c === ')' || c === ']' || c === '}';
 
   for (let i = 0; i < len && sentences.length < count; i++) {
     const ch = text[i];
@@ -33,7 +34,7 @@ export function summarize(text, count = 1) {
         i = j;
         while (i < len && isSpace(text[i])) i++;
         start = i;
-        i--; // compensate for loop increment
+        i--; // adjust for loop increment
       }
     }
   }
