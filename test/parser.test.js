@@ -27,12 +27,16 @@ Requirements:
 * Basic JavaScript
 • Experience with Node.js
 + Familiarity with testing
++ Keen eye for detail
++ Excellent communication
 `;
     const parsed = parseJobText(text);
     expect(parsed.requirements).toEqual([
       'Basic JavaScript',
       'Experience with Node.js',
-      'Familiarity with testing'
+      'Familiarity with testing',
+      'Keen eye for detail',
+      'Excellent communication'
     ]);
   });
 });
