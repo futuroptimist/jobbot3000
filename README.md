@@ -23,7 +23,8 @@ npm run test:ci
 
 # Summarize a job description
 # Works with sentences ending in ., ?, or !
-echo "First sentence? Second sentence." | npm run summarize
+# Keep two sentences with --sentences
+echo "First. Second. Third." | jobbot summarize - --sentences 2
 ```
 
 In code, pass the number of sentences to keep:
