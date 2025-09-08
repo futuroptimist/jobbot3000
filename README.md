@@ -36,6 +36,16 @@ console.log(summarize(text, 2));
 // → "First sentence. Second sentence?"
 ```
 
+Fetch remote job listings and normalize HTML to plain text:
+
+```js
+import { fetchTextFromUrl } from './src/fetch.js';
+
+const text = await fetchTextFromUrl('https://example.com/job');
+```
+`fetchTextFromUrl` strips scripts, styles, navigation, and footer content and collapses
+whitespace to single spaces.
+
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal
 punctuation like `?!`, including when followed by closing quotes or parentheses. Terminators apply
 only when followed by whitespace or the end of text, so decimals like `1.99` remain intact.  
