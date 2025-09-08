@@ -31,11 +31,11 @@ Responsibilities:
     expect(parsed.requirements).toEqual(['Build features', 'Fix bugs']);
   });
 
-  it('strips asterisk, bullet, and plus bullets', () => {
+  it('captures requirement text on header line and strips other bullet types', () => {
     const text = `
 Title: Developer
 Company: Example Corp
-Requirements:
+Requirements: Proficient in JS
 * Basic JavaScript
 • Experience with Node.js
 + Familiarity with testing
@@ -44,6 +44,7 @@ Requirements:
 `;
     const parsed = parseJobText(text);
     expect(parsed.requirements).toEqual([
+      'Proficient in JS',
       'Basic JavaScript',
       'Experience with Node.js',
       'Familiarity with testing',

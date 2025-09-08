@@ -40,6 +40,20 @@ export function parseJobText(rawText) {
   let requirements = [];
   const idx = lines.findIndex(l => REQUIREMENTS_HEADERS.some(h => h.test(l)));
   if (idx !== -1) {
+    const headerLine = lines[idx];
+    let rest = '';
+    for (const h of REQUIREMENTS_HEADERS) {
+      if (h.test(headerLine)) {
+        rest = headerLine.replace(h, '').trim();
+        break;
+      }
+    }
+    rest = rest.replace(/^[:\s]+/, '');
+    if (rest) {
+      const first = rest.replace(/^[-*•\u2013\u2014\d.)(\s]+/, '').trim();
+      if (first) requirements.push(first);
+    }
+
     for (let i = idx + 1; i < lines.length; i += 1) {
       const line = lines[i].trim();
       if (!line) continue;
