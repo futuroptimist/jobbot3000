@@ -1,8 +1,8 @@
 let cachedResume = '';
 let cachedTokens = new Set();
 
-// Tokenize text into a Set of lowercase alphanumeric tokens using a manual scanner to
-// avoid regex allocations.
+// Tokenize text into a Set of lowercase alphanumeric tokens using a manual scanner
+// to avoid regex allocations.
 function tokenize(text) {
   const tokens = new Set();
   const str = (text || '').toLowerCase();
@@ -29,6 +29,7 @@ function resumeTokens(text) {
   return cachedTokens;
 }
 
+// Check if a line overlaps with tokens in the resume set, using the same manual scanner logic.
 function hasOverlap(line, resumeSet) {
   const str = (line || '').toLowerCase();
   let token = '';
