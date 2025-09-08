@@ -30,4 +30,25 @@ Responsibilities:
     const parsed = parseJobText(text);
     expect(parsed.requirements).toEqual(['Build features', 'Fix bugs']);
   });
+
+  it('strips asterisk, bullet, and plus bullets', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Requirements:
+* Basic JavaScript
+• Experience with Node.js
++ Familiarity with testing
++ Keen eye for detail
++ Excellent communication
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual([
+      'Basic JavaScript',
+      'Experience with Node.js',
+      'Familiarity with testing',
+      'Keen eye for detail',
+      'Excellent communication'
+    ]);
+  });
 });
