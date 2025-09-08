@@ -1,11 +1,6 @@
 function tokenize(text) {
-  return new Set(
-    (text || '')
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .split(/\s+/)
-      .filter(Boolean)
-  );
+  // Use regex matching to avoid replace/split allocations and speed up tokenization.
+  return new Set((text || '').toLowerCase().match(/[a-z0-9]+/g) || []);
 }
 
 export function computeFitScore(resumeText, requirements) {
@@ -18,7 +13,13 @@ export function computeFitScore(resumeText, requirements) {
 
   for (const bullet of bullets) {
     const tokens = tokenize(bullet);
-    const hasOverlap = [...tokens].some(t => resumeTokens.has(t));
+    let hasOverlap = false;
+    for (const t of tokens) {
+      if (resumeTokens.has(t)) {
+        hasOverlap = true;
+        break;
+      }
+    }
     (hasOverlap ? matched : missing).push(bullet);
   }
 
