@@ -66,7 +66,7 @@ _______________________________│ /Celery │
 └───────────────────┴───────────────────────────┴─────────────────────┘
 ```
 
-Integrations: Greenhouse/Lever/Ashby/Workable/SmartRecruiters job-board APIs, O*NET/ESCO skills taxonomies.
+Integrations: Greenhouse/Lever/Ashby/Workable/SmartRecruiters job board APIs, O*NET/ESCO skills taxonomies.
 
 **Deployment**
 - **Dev:** Docker Compose (Postgres, pgvector, Redis, FastAPI, Web).
