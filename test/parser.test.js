@@ -65,4 +65,21 @@ Requirements: Proficient in JS
       'Excellent communication'
     ]);
   });
+
+  it('strips numeric and parenthetical bullets', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Requirements:
+1. First skill
+2) Second skill
+(3) Third skill
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual([
+      'First skill',
+      'Second skill',
+      'Third skill'
+    ]);
+  });
 });
