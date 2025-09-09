@@ -55,7 +55,7 @@ export function parseJobText(rawText) {
     }
     rest = rest.replace(/^[:\s]+/, '');
     if (rest) {
-      const first = rest.replace(/^[-*•\u2013\u2014\d.)(\s]+/, '').trim();
+      const first = rest.replace(/^[-+*•\u2013\u2014\d.)(\s]+/, '').trim();
       if (first) requirements.push(first);
     }
 
