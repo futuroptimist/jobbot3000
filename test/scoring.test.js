@@ -12,6 +12,18 @@ describe('computeFitScore', () => {
     expect(result.missing).toEqual(['Python']);
   });
 
+  it('matches tokens case-insensitively', () => {
+    const resume = 'Expert in PYTHON and Go.';
+    const requirements = ['python'];
+    const result = computeFitScore(resume, requirements);
+    expect(result).toEqual({ score: 100, matched: ['python'], missing: [] });
+  });
+
+  it('returns zero score when no requirements given', () => {
+    const result = computeFitScore('anything', []);
+    expect(result).toEqual({ score: 0, matched: [], missing: [] });
+  });
+
   // Allow slower CI environments by using a relaxed threshold.
   it('processes large requirement lists within 2500ms', () => {
     const resume = 'skill '.repeat(1000);
