@@ -89,8 +89,8 @@ Integrations: Greenhouse/Lever/Ashby/Workable/SmartRecruiters job-board APIs, O*
 
 ## 5) Integrations (public & compliant)
 
-**Preferred (official/public endpoints)**  
-- **Greenhouse Job Board API** – list offices/departments/jobs, plus application submit.  
+**Preferred (official/public endpoints)**
+- **Greenhouse Job Board API** – lists offices, departments, and jobs, plus application submission.
 - **Lever Postings API** – `GET /postings/{org}?mode=json`.  
 - **Ashby Jobs API** – public job board JSON per tenant.  
 - **Workable API** – jobs list & details (requires tenant token).  
