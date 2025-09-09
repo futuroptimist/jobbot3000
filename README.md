@@ -14,7 +14,7 @@ Requires [Node.js](https://nodejs.org/) 20 or newer.
 git clone git@github.com:YOURNAME/jobbot3000.git
 cd jobbot3000
 
-# Install dependencies (requires Node.js 20)
+# Install dependencies (requires Node.js 20 or newer)
 npm ci
 
 # Run repo checks
