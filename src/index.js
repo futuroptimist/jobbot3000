@@ -1,6 +1,6 @@
 /**
  * Return the first N sentences from the given text.
- * Sentences end with '.', '!' or '?', including consecutive punctuation (e.g. `?!`),
+ * Sentences end with '.', '!', '?', or '…', including consecutive punctuation (e.g. `?!`),
  * optionally followed by closing quotes or parentheses.
  * Falls back to returning the trimmed input when no such punctuation exists.
  * If fewer complete sentences than requested exist, any remaining text is appended
@@ -47,7 +47,7 @@ export function summarize(text, count = 1) {
       else if (!quote) quote = ch;
     }
 
-    if (ch === '.' || ch === '!' || ch === '?') {
+    if (ch === '.' || ch === '!' || ch === '?' || ch === '…') {
       // Skip decimals like 3.14
       if (
         ch === '.' &&
@@ -62,7 +62,12 @@ export function summarize(text, count = 1) {
       let j = i + 1;
 
       // absorb consecutive punctuation like ?!
-      while (j < len && (text[j] === '.' || text[j] === '!' || text[j] === '?')) j++;
+      while (
+        j < len &&
+        (text[j] === '.' || text[j] === '!' || text[j] === '?' || text[j] === '…')
+      ) {
+        j++;
+      }
 
       // absorb trailing closers (quotes, parentheses)
       while (j < len && closers.has(text[j])) {
