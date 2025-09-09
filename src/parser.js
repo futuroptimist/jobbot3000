@@ -17,6 +17,22 @@ const REQUIREMENTS_HEADERS = [
 
 const FALLBACK_REQUIREMENTS_HEADERS = [/\bResponsibilities\b/i];
 
+// Strip common bullet characters including hyphen, plus, asterisk, bullet,
+// en dash (\u2013), em dash (\u2014), digits, punctuation and whitespace
+const BULLET_PREFIX_RE = /^[-*•\u2013\u2014\d.)(\s]+/;
+const BULLET_PREFIX_WITH_PLUS_RE = /^[-+*•\u2013\u2014\d.)(\s]+/;
+
+/**
+ * Remove bullet characters from the start of a line.
+ * @param {string} line - line to clean
+ * @param {boolean} [allowPlus=true] - whether to strip leading '+'
+ * @returns {string}
+ */
+function stripBullet(line, allowPlus = true) {
+  const re = allowPlus ? BULLET_PREFIX_WITH_PLUS_RE : BULLET_PREFIX_RE;
+  return line.replace(re, '').trim();
+}
+
 function findFirstMatch(lines, patterns) {
   for (const line of lines) {
     for (const pattern of patterns) {
@@ -55,7 +71,7 @@ export function parseJobText(rawText) {
     }
     rest = rest.replace(/^[:\s]+/, '');
     if (rest) {
-      const first = rest.replace(/^[-*•\u2013\u2014\d.)(\s]+/, '').trim();
+      const first = stripBullet(rest, false);
       if (first) requirements.push(first);
     }
 
@@ -65,7 +81,7 @@ export function parseJobText(rawText) {
       if (/^[A-Za-z].+:$/.test(line)) break; // next section header
       // Strip common bullet characters including hyphen, plus, asterisk, bullet,
       // en dash (\u2013), em dash (\u2014), digits, punctuation and whitespace
-      const bullet = line.replace(/^[-+*•\u2013\u2014\d.)(\s]+/, '').trim();
+      const bullet = stripBullet(line);
       if (bullet) requirements.push(bullet);
     }
   }
