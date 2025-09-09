@@ -55,6 +55,8 @@ export function parseJobText(rawText) {
     }
     rest = rest.replace(/^[:\s]+/, '');
     if (rest) {
+      // Strip bullet characters like hyphen, plus, asterisk, bullet, en dash, em dash,
+      // digits, punctuation, and whitespace when the first requirement follows the header.
       const first = rest.replace(/^[-+*•\u2013\u2014\d.)(\s]+/, '').trim();
       if (first) requirements.push(first);
     }
