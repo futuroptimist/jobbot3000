@@ -47,7 +47,9 @@ function extractRequirements(lines) {
   }
   rest = rest.replace(/^[:\s]+/, '');
   if (rest) {
-    const first = rest.replace(/^[-*•\u2013\u2014\d.)(\s]+/, '').trim();
+    // Strip bullet characters like hyphen, plus, asterisk, bullet, middle dot, en dash, em dash,
+    // digits, punctuation, and whitespace when the first requirement follows the header.
+    const first = rest.replace(/^[-+*•\u00B7\u2013\u2014\d.)(\s]+/, '').trim();
     if (first) requirements.push(first);
   }
 
@@ -56,8 +58,8 @@ function extractRequirements(lines) {
     if (!line) continue;
     if (/^[A-Za-z].+:$/.test(line)) break; // next section header
     // Strip common bullet characters including hyphen, plus, asterisk, bullet,
-    // en dash (\u2013), em dash (\u2014), digits, parentheses, punctuation and whitespace
-    const bullet = line.replace(/^[-+*•\u2013\u2014\d.)(\s]+/, '').trim();
+    // middle dot (\u00B7), en dash (\u2013), em dash (\u2014), digits, punctuation and whitespace
+    const bullet = line.replace(/^[-+*•\u00B7\u2013\u2014\d.)(\s]+/, '').trim();
     if (bullet) requirements.push(bullet);
   }
 

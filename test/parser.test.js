@@ -19,6 +19,16 @@ Requirements:
     ]);
   });
 
+  it('strips plus bullets when requirement follows header line', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Requirements: + Basic JavaScript
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual(['Basic JavaScript']);
+  });
+
   it('parses requirements after a Responsibilities header', () => {
     const text = `
 Title: Developer
@@ -54,6 +64,7 @@ Requirements: Proficient in JS
 + Familiarity with testing
 + Keen eye for detail
 + Excellent communication
+ · Works well in teams
 `;
     const parsed = parseJobText(text);
     expect(parsed.requirements).toEqual([
@@ -62,7 +73,8 @@ Requirements: Proficient in JS
       'Experience with Node.js',
       'Familiarity with testing',
       'Keen eye for detail',
-      'Excellent communication'
+      'Excellent communication',
+      'Works well in teams'
     ]);
   });
 
