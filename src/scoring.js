@@ -1,6 +1,8 @@
+const TOKEN_RE = /[a-z0-9]+/g;
+
 function tokenize(text) {
   // Use regex matching to avoid replace/split allocations and speed up tokenization.
-  return new Set((text || '').toLowerCase().match(/[a-z0-9]+/g) || []);
+  return new Set((text || '').toLowerCase().match(TOKEN_RE) || []);
 }
 
 export function computeFitScore(resumeText, requirements) {
