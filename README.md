@@ -22,7 +22,7 @@ npm run lint
 npm run test:ci
 
 # Summarize a job description
-# Works with sentences ending in ., ?, or !
+# Works with sentences ending in '.', '?', or '!'
 echo "First sentence? Second sentence." | npm run summarize
 ```
 
