@@ -17,6 +17,22 @@ const REQUIREMENTS_HEADERS = [
 
 const FALLBACK_REQUIREMENTS_HEADERS = [/\bResponsibilities\b/i];
 
+const BULLET_PREFIX_RE = /^[-+*•\u2013\u2014\d.)(\s]+/;
+
+/** Strip common bullet characters and surrounding whitespace from a line. */
+function stripBullet(line) {
+  return line.replace(BULLET_PREFIX_RE, '').trim();
+}
+
+/**
+ * Find the index of the first header in `primary` or fall back to headers in `fallback`.
+ * Returns -1 if no headers match.
+ */
+function findHeaderIndex(lines, primary, fallback) {
+  const idx = lines.findIndex(l => primary.some(h => h.test(l)));
+  return idx !== -1 ? idx : lines.findIndex(l => fallback.some(h => h.test(l)));
+}
+
 function findFirstMatch(lines, patterns) {
   for (const line of lines) {
     for (const pattern of patterns) {
@@ -27,6 +43,7 @@ function findFirstMatch(lines, patterns) {
   return '';
 }
 
+/** Parse raw job posting text into structured fields. */
 export function parseJobText(rawText) {
   if (!rawText) {
     return { title: '', company: '', requirements: [], body: '' };
@@ -39,23 +56,19 @@ export function parseJobText(rawText) {
 
   // Extract requirements bullets after a known header. Prefer primary headers, but fall back to
   // "Responsibilities" if none are present.
-  let requirements = [];
-  let idx = lines.findIndex(l => REQUIREMENTS_HEADERS.some(h => h.test(l)));
-  if (idx === -1) {
-    idx = lines.findIndex(l => FALLBACK_REQUIREMENTS_HEADERS.some(h => h.test(l)));
-  }
+  const requirements = [];
+  const idx = findHeaderIndex(
+    lines,
+    REQUIREMENTS_HEADERS,
+    FALLBACK_REQUIREMENTS_HEADERS
+  );
   if (idx !== -1) {
     const headerLine = lines[idx];
-    let rest = '';
-    for (const h of REQUIREMENTS_HEADERS) {
-      if (h.test(headerLine)) {
-        rest = headerLine.replace(h, '').trim();
-        break;
-      }
-    }
+    const headerPattern = REQUIREMENTS_HEADERS.find(h => h.test(headerLine));
+    let rest = headerPattern ? headerLine.replace(headerPattern, '').trim() : '';
     rest = rest.replace(/^[:\s]+/, '');
     if (rest) {
-      const first = rest.replace(/^[-*•\u2013\u2014\d.)(\s]+/, '').trim();
+      const first = stripBullet(rest);
       if (first) requirements.push(first);
     }
 
@@ -63,9 +76,7 @@ export function parseJobText(rawText) {
       const line = lines[i].trim();
       if (!line) continue;
       if (/^[A-Za-z].+:$/.test(line)) break; // next section header
-      // Strip common bullet characters including hyphen, plus, asterisk, bullet,
-      // en dash (\u2013), em dash (\u2014), digits, punctuation and whitespace
-      const bullet = line.replace(/^[-+*•\u2013\u2014\d.)(\s]+/, '').trim();
+      const bullet = stripBullet(line);
       if (bullet) requirements.push(bullet);
     }
   }

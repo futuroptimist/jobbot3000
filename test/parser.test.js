@@ -2,6 +2,15 @@ import { describe, it, expect } from 'vitest';
 import { parseJobText } from '../src/parser.js';
 
 describe('parseJobText', () => {
+  it('returns empty fields for missing input', () => {
+    expect(parseJobText(undefined)).toEqual({
+      title: '',
+      company: '',
+      requirements: [],
+      body: ''
+    });
+  });
+
   it('strips dash, en dash, and em dash bullets', () => {
     const text = `
 Title: Developer
