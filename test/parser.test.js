@@ -54,6 +54,7 @@ Requirements: Proficient in JS
 + Familiarity with testing
 + Keen eye for detail
 + Excellent communication
+ · Works well in teams
 `;
     const parsed = parseJobText(text);
     expect(parsed.requirements).toEqual([
@@ -62,7 +63,8 @@ Requirements: Proficient in JS
       'Experience with Node.js',
       'Familiarity with testing',
       'Keen eye for detail',
-      'Excellent communication'
+      'Excellent communication',
+      'Works well in teams'
     ]);
   });
 });
