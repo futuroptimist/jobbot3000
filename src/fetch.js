@@ -1,4 +1,3 @@
-import fetch from 'node-fetch';
 import { htmlToText } from 'html-to-text';
 
 export function extractTextFromHtml(html) {

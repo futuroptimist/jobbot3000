@@ -8,6 +8,9 @@
     "ecmaVersion": 12,
     "sourceType": "module"
   },
+  "globals": {
+    "fetch": "readonly"
+  },
   "rules": {
     "max-len": ["error", { "code": 100 }]
   }
