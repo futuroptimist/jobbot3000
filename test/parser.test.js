@@ -19,6 +19,16 @@ Requirements:
     ]);
   });
 
+  it('strips plus bullets when requirement follows header line', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Requirements: + Basic JavaScript
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual(['Basic JavaScript']);
+  });
+
   it('parses requirements after a Responsibilities header', () => {
     const text = `
 Title: Developer
