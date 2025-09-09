@@ -8,3 +8,7 @@ Secrets such as API keys or tokens should never be committed. Use environment va
 
 ## Data Privacy
 All job search data stays on your machine. Offline or encrypted LLM inference is encouraged for protecting personal information.
+
+## Network Access
+The CLI refuses to fetch URLs pointing to localhost or private network ranges to mitigate
+server-side request forgery.

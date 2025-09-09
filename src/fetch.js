@@ -15,6 +15,25 @@ export function extractTextFromHtml(html) {
 }
 
 export async function fetchTextFromUrl(url, { timeoutMs = 10000 } = {}) {
+  const parsed = new URL(url);
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error('Only http and https URLs are supported');
+  }
+  const host = parsed.hostname;
+  const isPrivate =
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '::1' ||
+    host.startsWith('10.') ||
+    host.startsWith('192.168.') ||
+    (host.startsWith('172.') && (() => {
+      const n = Number(host.split('.')[1]);
+      return n >= 16 && n <= 31;
+    })());
+  if (isPrivate) {
+    throw new Error(`Refusing to fetch private URL: ${url}`);
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(
     () => controller.abort(new Error(`Timeout after ${timeoutMs}ms`)),
