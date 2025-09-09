@@ -17,7 +17,8 @@ const REQUIREMENTS_HEADERS = [
 
 const FALLBACK_REQUIREMENTS_HEADERS = [/\bResponsibilities\b/i];
 
-const BULLET_PREFIX_RE = /^[-+*•\u2013\u2014\d.)(\s]+/;
+// Common bullet prefix regex
+const BULLET_PREFIX_RE = /^[-+*•\u00B7\u2013\u2014\d.)(\s]+/;
 
 /** Strip common bullet characters and surrounding whitespace from a line. */
 function stripBullet(line) {
@@ -57,17 +58,14 @@ export function parseJobText(rawText) {
   // Extract requirements bullets after a known header. Prefer primary headers, but fall back to
   // "Responsibilities" if none are present.
   const requirements = [];
-  const idx = findHeaderIndex(
-    lines,
-    REQUIREMENTS_HEADERS,
-    FALLBACK_REQUIREMENTS_HEADERS
-  );
+  const idx = findHeaderIndex(lines, REQUIREMENTS_HEADERS, FALLBACK_REQUIREMENTS_HEADERS);
   if (idx !== -1) {
     const headerLine = lines[idx];
     const headerPattern = REQUIREMENTS_HEADERS.find(h => h.test(headerLine));
     let rest = headerPattern ? headerLine.replace(headerPattern, '').trim() : '';
     rest = rest.replace(/^[:\s]+/, '');
     if (rest) {
+      // Strip bullet characters when the first requirement follows the header.
       const first = stripBullet(rest);
       if (first) requirements.push(first);
     }
