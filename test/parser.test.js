@@ -65,4 +65,19 @@ Requirements: Proficient in JS
       'Excellent communication'
     ]);
   });
+
+  it('strips middle dot bullets', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Requirements:
+· Strong typing
+· Familiar with linting
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual([
+      'Strong typing',
+      'Familiar with linting'
+    ]);
+  });
 });
