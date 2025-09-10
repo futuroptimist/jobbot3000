@@ -7,6 +7,7 @@
  * If fewer complete sentences than requested exist, any remaining text is appended
  * so no content is lost. Parenthetical abbreviations like `(M.Sc.)` remain attached
  * to their surrounding sentence. Avoids splitting on decimal numbers.
+ * Returns an empty string when `count` is 0 or less.
  *
  * @param {string} text
  * @param {number} count
