@@ -3,6 +3,8 @@
 
 This index lists prompt documents for the jobbot3000 repository, organized by task type.
 
+All links are verified to reference existing files.
+
 ## jobbot3000
 
 | Path | Prompt | Type | One-click? |
