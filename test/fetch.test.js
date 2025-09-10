@@ -14,6 +14,7 @@ describe('extractTextFromHtml', () => {
           <script>1</script>
         </head>
         <body>
+          <header>ignored</header>
           <nav>ignored</nav>
           <p>First   line</p>
           <p>Second line</p>
