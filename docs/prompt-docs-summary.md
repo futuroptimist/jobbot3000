@@ -3,6 +3,8 @@
 
 This index lists prompt documents for the jobbot3000 repository, organized by task type.
 
+Each prompt doc should reference the root [README.md](../README.md) using a valid relative path.
+
 ## jobbot3000
 
 | Path | Prompt | Type | One-click? |
@@ -25,8 +27,8 @@ This index lists prompt documents for the jobbot3000 repository, organized by ta
 | [docs/prompts/codex/security.md#upgrade-prompt][security-up] | Upgrade Prompt | evergreen | yes |
 | [docs/prompts/codex/spellcheck.md][spellcheck-doc] | Codex Spellcheck Prompt | evergreen | yes |
 | [docs/prompts/codex/spellcheck.md#upgrade-prompt][spellcheck-up] | Upgrade Prompt | evergreen | yes |
-| [docs/prompts/codex/test.md][test-doc] | Codex Test Prompt | evergreen | yes |
-| [docs/prompts/codex/test.md#upgrade-prompt][test-up] | Upgrade Prompt | evergreen | yes |
+| [docs/prompts/codex/test.md][test-doc] | Codex Test Prompt (Vitest) | evergreen | yes |
+| [docs/prompts/codex/test.md#upgrade-prompt][test-up] | Upgrade Prompt (docs) | evergreen | yes |
 | [docs/prompts/codex/upgrade.md][upgrade-doc] | Codex Upgrade Prompt | evergreen | yes |
 
 [automation-doc]: prompts/codex/automation.md
