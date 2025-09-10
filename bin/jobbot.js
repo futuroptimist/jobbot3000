@@ -32,7 +32,11 @@ function getFlag(args, name, fallback) {
 
 async function cmdSummarize(args) {
   const input = args[0] || '-';
-  const format = args.includes('--json') ? 'json' : 'md';
+  const format = args.includes('--json')
+    ? 'json'
+    : args.includes('--text')
+      ? 'text'
+      : 'md';
   const timeoutMs = Number(getFlag(args, '--timeout', 10000));
   const count = Number(getFlag(args, '--sentences', 1));
   const raw = isHttpUrl(input)
@@ -42,6 +46,7 @@ async function cmdSummarize(args) {
   const summary = summarizeFirstSentence(raw, count);
   const payload = { ...parsed, summary };
   if (format === 'json') console.log(toJson(payload));
+  else if (format === 'text') console.log(summary);
   else console.log(toMarkdownSummary(payload));
 }
 
