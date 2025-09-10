@@ -1,4 +1,5 @@
 const TOKEN_CACHE = new Map();
+const ARRAY_TOKEN_CACHE = new Map();
 
 // Tokenize text into a Set of lowercase alphanumeric tokens, with caching to avoid
 // repeated regex and Set allocations.
@@ -16,6 +17,17 @@ function tokenize(text) {
   return tokens;
 }
 
+// Tokenize into an array for lines where we only need iteration.
+function tokenizeArray(text) {
+  const key = text || '';
+  const cached = ARRAY_TOKEN_CACHE.get(key);
+  if (cached) return cached;
+  const tokens = key.toLowerCase().match(/[a-z0-9]+/g) || [];
+  if (ARRAY_TOKEN_CACHE.size > 1000) ARRAY_TOKEN_CACHE.clear();
+  ARRAY_TOKEN_CACHE.set(key, tokens);
+  return tokens;
+}
+
 // Cache tokens for the most recent resume to avoid repeated tokenization when the same resume
 // is scored against multiple job postings.
 let cachedResume = '';
@@ -29,10 +41,11 @@ function resumeTokens(text) {
 }
 
 // Check if a line overlaps with tokens in the resume set.
+// Inline tokenization avoids Set allocations for each bullet line.
 function hasOverlap(line, resumeSet) {
-  const tokens = tokenize(line);
-  for (const token of tokens) {
-    if (resumeSet.has(token)) return true;
+  const tokens = tokenizeArray(line);
+  for (let i = 0; i < tokens.length; i++) {
+    if (resumeSet.has(tokens[i])) return true;
   }
   return false;
 }
