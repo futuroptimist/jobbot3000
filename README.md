@@ -38,6 +38,8 @@ console.log(summary);
 // "First sentence. Second sentence?"
 ```
 
+Passing `0` as the sentence count returns an empty string.
+
 Fetch remote job listings and normalize HTML to plain text:
 
 ```js

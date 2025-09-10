@@ -8,7 +8,7 @@
  * to their surrounding sentence. Avoids splitting on decimal numbers.
  *
  * @param {string} text
- * @param {number} count
+ * @param {number} count Number of sentences to return; values <= 0 yield ''.
  * @returns {string}
  */
 const spaceRe = /\s/;
@@ -18,7 +18,7 @@ const openers = new Set(['(', '[', '{']);
 const isDigit = (c) => c >= '0' && c <= '9';
 
 export function summarize(text, count = 1) {
-  if (!text) return '';
+  if (!text || count <= 0) return '';
 
   /**
    * Scan character-by-character to avoid costly regular expressions.
