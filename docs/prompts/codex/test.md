@@ -14,10 +14,13 @@ PURPOSE:
 Improve or expand test coverage without altering runtime behavior.
 
 CONTEXT:
-- Follow [README.md](../../../README.md); see the [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
-- Existing tests live in [test/](../../../test).
+- Follow [README.md](../../../README.md); see the
+  [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
+- Existing tests live in [test/](../../../test) and use [Vitest](https://vitest.dev).
 - Run `npm run lint` and `npm run test:ci` before committing.
-- Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py` (see [`scripts/scan-secrets.py`](../../../scripts/scan-secrets.py)).
+- Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
+  See [`scripts/scan-secrets.py`](../../../scripts/scan-secrets.py).
+- Confirm referenced files exist to avoid broken links.
 - Update [prompt-docs-summary.md](../../prompt-docs-summary.md) when modifying prompt docs.
 
 REQUEST:
