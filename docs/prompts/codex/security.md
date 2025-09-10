@@ -14,8 +14,9 @@ PURPOSE:
 Address security issues and harden the project.
 
 CONTEXT:
-- Follow [README.md](../../README.md); see the [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
-- Consult [SECURITY.md](../../SECURITY.md) for reporting and disclosure guidance.
+- Follow [README.md](../../../README.md); see the [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
+- Consult [SECURITY.md](../../../SECURITY.md) for reporting and disclosure guidance.
+- Confirm referenced files exist to avoid broken links.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
 
@@ -27,7 +28,7 @@ REQUEST:
 5. Run the commands above and fix any failures.
 
 OUTPUT:
-A pull request URL summarizing the security fix.
+A pull request summarizing the security fix with passing checks.
 ```
 
 Copy this block whenever addressing security in jobbot3000.
