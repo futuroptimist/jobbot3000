@@ -31,9 +31,10 @@ A privacy-first, open-source, self-hosted assistant that helps an individual can
 
 1. **Profile Builder**  
    I can import my history (projects, roles, skills, metrics) and export to `resume.json` (JSON Resume).  
-2. **Job Ingestion**  
-   I can connect public ATS feeds (Greenhouse, Lever, Ashby, Workable, SmartRecruiters) and pull listings for target companies/keywords.  
-3. **Matching & Shortlisting**  
+2. **Job Ingestion**
+   I can connect public ATS feeds (Greenhouse, Lever, Ashby, Workable, SmartRecruiters) and
+   pull listings for target companies or keywords.
+3. **Matching & Shortlisting**
    The system computes a relevance score per job with an explanation (skills hit/miss, seniority, location, visa, salary if present).  
 4. **Resume/Cover Letter Tailoring**  
    For any job, it renders a one-page ATS-friendly resume PDF + an optional cover letter, both editable, using my profile as the single source of truth.  
