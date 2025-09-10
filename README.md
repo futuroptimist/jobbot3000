@@ -38,6 +38,8 @@ console.log(summary);
 // "First sentence. Second sentence?"
 ```
 
+Pass `0` to `summarize` to return an empty string.
+
 Fetch remote job listings and normalize HTML to plain text:
 
 ```js
