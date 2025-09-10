@@ -27,7 +27,7 @@ This index lists prompt documents for the jobbot3000 repository, organized by ta
 | [docs/prompts/codex/spellcheck.md#upgrade-prompt][spellcheck-up] | Upgrade Prompt | evergreen | yes |
 | [docs/prompts/codex/test.md][test-doc] | Codex Test Prompt | evergreen | yes |
 | [docs/prompts/codex/test.md#upgrade-prompt][test-up] | Upgrade Prompt | evergreen | yes |
-| [docs/prompts/codex/upgrade.md][upgrade-doc] | Codex Upgrade Prompt | evergreen | yes |
+| [docs/prompts/codex/upgrade.md][upgrade-doc] | Codex Upgrade Prompt (docs) | evergreen | yes |
 
 [automation-doc]: prompts/codex/automation.md
 [automation-up]: prompts/codex/automation.md#upgrade-prompt
