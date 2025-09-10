@@ -24,6 +24,7 @@ npm run test:ci
 # Summarize a job description
 # Works with sentences ending in ., ?, or !
 echo "First sentence? Second sentence." | npm run summarize
+# → First sentence?
 ```
 
 In code, pass the number of sentences to keep:
