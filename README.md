@@ -27,7 +27,7 @@ npm run test:ci
 echo "First. Second. Third." | jobbot summarize - --sentences 2
 ```
 
-In code, pass the number of sentences to keep:
+In code, `summarize(text, count = 1)` returns the first `count` sentences:
 
 ```js
 import { summarize } from './src/index.js';
