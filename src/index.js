@@ -10,7 +10,7 @@
  * Returns an empty string when `count` is 0 or less.
  *
  * @param {string} text
- * @param {number} count
+ * @param {number} count Number of sentences to return; values <= 0 yield ''.
  * @returns {string}
  */
 const spaceRe = /\s/;
