@@ -27,14 +27,15 @@ npm run test:ci
 echo "First. Second. Third." | jobbot summarize - --sentences 2
 ```
 
-In code, `summarize(text, count = 1)` returns the first `count` sentences:
+In code, import the `summarize` function and pass the number of sentences to keep:
 
 ```js
 import { summarize } from './src/index.js';
 
 const text = 'First sentence. Second sentence? Third!';
-console.log(summarize(text, 2));
-// → "First sentence. Second sentence?"
+const summary = summarize(text, 2);
+console.log(summary);
+// "First sentence. Second sentence?"
 ```
 
 Fetch remote job listings and normalize HTML to plain text:
