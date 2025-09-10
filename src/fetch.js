@@ -14,6 +14,7 @@ export function extractTextFromHtml(html) {
     selectors: [
       { selector: 'script', format: 'skip' },
       { selector: 'style', format: 'skip' },
+      { selector: 'header', format: 'skip' },
       { selector: 'nav', format: 'skip' },
       { selector: 'footer', format: 'skip' }
     ]

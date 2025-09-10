@@ -45,7 +45,7 @@ import { fetchTextFromUrl } from './src/fetch.js';
 
 const text = await fetchTextFromUrl('https://example.com/job');
 ```
-`fetchTextFromUrl` strips scripts, styles, navigation, and footer content and collapses
+`fetchTextFromUrl` strips scripts, styles, header, navigation, and footer content and collapses
 whitespace to single spaces.
 
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal
