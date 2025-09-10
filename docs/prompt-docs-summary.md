@@ -18,7 +18,7 @@ Each prompt doc should reference the root [README.md](../README.md) using a vali
 | [docs/prompts/codex/docs.md#upgrade-prompt][docs-up] | Upgrade Prompt | evergreen | yes |
 | [docs/prompts/codex/feature.md][feature-doc] | Codex Feature Prompt | evergreen | yes |
 | [docs/prompts/codex/feature.md#upgrade-prompt][feature-up] | Upgrade Prompt | evergreen | yes |
-| [docs/prompts/codex/fix.md][fix-doc] | Codex Fix Prompt | evergreen | yes |
+| [docs/prompts/codex/fix.md][fix-doc] | Codex Fix Prompt (bug fixes) | evergreen | yes |
 | [docs/prompts/codex/fix.md#upgrade-prompt][fix-up] | Upgrade Prompt | evergreen | yes |
 | [docs/prompts/codex/performance.md][performance-doc] | Codex Performance Prompt | evergreen | yes |
 | [docs/prompts/codex/performance.md#upgrade-prompt][performance-up] | Upgrade Prompt | evergreen | yes |
