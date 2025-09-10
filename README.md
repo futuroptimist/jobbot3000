@@ -22,7 +22,7 @@ npm run lint
 npm run test:ci
 
 # Summarize a job description
-# Works with sentences ending in ., ?, or !
+# Works with sentences ending in ., ?, !, or …
 echo "First sentence? Second sentence." | npm run summarize
 ```
 
@@ -36,7 +36,7 @@ console.log(summarize(text, 2));
 // → "First sentence. Second sentence?"
 ```
 
-The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal
+The summarizer extracts the first sentence, handling `.`, `!`, `?`, `…`, and consecutive terminal
 punctuation like `?!`, including when followed by closing quotes or parentheses. Terminators apply
 only when followed by whitespace or the end of text, so decimals like `1.99` remain intact.  
 It ignores bare newlines.  
@@ -52,7 +52,8 @@ Example: `summarize('"Hi!" Bye.')` returns `"Hi!"`.
 Job requirements may appear under headers like `Requirements`, `Qualifications`,
 `What you'll need`, or `Responsibilities` (used if no other requirement headers are present).
 They may start with `-`, `+`, `*`, `•`, `–` (en dash), or `—` (em dash); these markers are stripped
-when parsing job text. Tokenization in resume scoring uses a single regex pass for performance.
+when parsing job text. Tokenization in resume scoring uses a single regex pass
+and caches up to 100 results for performance.
 
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 See [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) for a list of prompt documents.
