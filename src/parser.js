@@ -17,12 +17,19 @@ const REQUIREMENTS_HEADERS = [
 
 const FALLBACK_REQUIREMENTS_HEADERS = [/\bResponsibilities\b/i];
 
-// Common bullet prefix regex, supports -, +, *, •, ·, en dash, em dash, digits, punctuation, etc.
-const BULLET_PREFIX_RE = /^[-+*•\u00B7\u2013\u2014\d.)(\s]+/;
+// Common bullet prefix regex. Strips '-', '+', '*', '•', '·', en/em dashes,
+// numeric markers like `1.` or `1)` and parenthetical numbers like `(1)`.
+// Preserves leading digits that are part of the requirement text itself.
+const BULLET_PREFIX_RE = /^(?:[-+*•\u00B7\u2013\u2014]\s*|\d+[.)]\s*|\(\d+\)\s*)/;
 
 /** Strip common bullet characters and surrounding whitespace from a line. */
 function stripBullet(line) {
   return line.replace(BULLET_PREFIX_RE, '').trim();
+}
+
+/** Check if a line matches any pattern in the provided array. */
+function matchAny(line, patterns) {
+  return patterns.some(pattern => pattern.test(line));
 }
 
 /**
@@ -30,8 +37,11 @@ function stripBullet(line) {
  * Returns -1 if no headers match.
  */
 function findHeaderIndex(lines, primary, fallback) {
-  const idx = lines.findIndex(l => primary.some(h => h.test(l)));
-  return idx !== -1 ? idx : lines.findIndex(l => fallback.some(h => h.test(l)));
+  for (const group of [primary, fallback]) {
+    const idx = lines.findIndex(line => matchAny(line, group));
+    if (idx !== -1) return idx;
+  }
+  return -1;
 }
 
 function findFirstMatch(lines, patterns) {
@@ -44,14 +54,19 @@ function findFirstMatch(lines, patterns) {
   return '';
 }
 
-/** Extract requirement bullets after a known header line. */
+/**
+ * Extract requirement bullets after a known header line.
+ * Supports requirement text on the same line for both primary and fallback headers.
+ */
 function extractRequirements(lines) {
   const idx = findHeaderIndex(lines, REQUIREMENTS_HEADERS, FALLBACK_REQUIREMENTS_HEADERS);
   if (idx === -1) return [];
 
   const requirements = [];
   const headerLine = lines[idx];
-  const headerPattern = REQUIREMENTS_HEADERS.find(h => h.test(headerLine));
+  const headerPattern =
+    REQUIREMENTS_HEADERS.find(h => h.test(headerLine)) ||
+    FALLBACK_REQUIREMENTS_HEADERS.find(h => h.test(headerLine));
   let rest = headerPattern ? headerLine.replace(headerPattern, '').trim() : '';
   rest = rest.replace(/^[:\s]+/, '');
 
