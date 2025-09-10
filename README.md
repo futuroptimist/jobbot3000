@@ -38,12 +38,13 @@ console.log(summary);
 // "First sentence. Second sentence?"
 ```
 
-Fetch remote job listings and normalize HTML to plain text:
+Fetch remote job listings, normalize HTML to plain text, and print the result:
 
 ```js
 import { fetchTextFromUrl } from './src/fetch.js';
 
 const text = await fetchTextFromUrl('https://example.com/job');
+console.log(text);
 ```
 `fetchTextFromUrl` strips scripts, styles, navigation, and footer content and collapses
 whitespace to single spaces.
