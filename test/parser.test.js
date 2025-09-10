@@ -103,4 +103,14 @@ Requirements:
       'Third skill'
     ]);
   });
+
+  it('returns no requirements when header is absent', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Just some description without requirement section.
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual([]);
+  });
 });

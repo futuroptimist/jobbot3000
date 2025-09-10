@@ -25,6 +25,11 @@ function stripBullet(line) {
   return line.replace(BULLET_PREFIX_RE, '').trim();
 }
 
+/** Check if a line matches any pattern in the provided array. */
+function matchAny(line, patterns) {
+  return patterns.some(pattern => pattern.test(line));
+}
+
 /**
  * Find the index of the first header in `primary` or fall back to headers in `fallback`.
  * This single-pass scan avoids repeatedly traversing `lines` which can be costly for
