@@ -52,14 +52,19 @@ function findFirstMatch(lines, patterns) {
   return '';
 }
 
-/** Extract requirement bullets after a known header line. */
+/**
+ * Extract requirement bullets after a known header line.
+ * Supports requirement text on the same line for both primary and fallback headers.
+ */
 function extractRequirements(lines) {
   const idx = findHeaderIndex(lines, REQUIREMENTS_HEADERS, FALLBACK_REQUIREMENTS_HEADERS);
   if (idx === -1) return [];
 
   const requirements = [];
   const headerLine = lines[idx];
-  const headerPattern = REQUIREMENTS_HEADERS.find(h => h.test(headerLine));
+  const headerPattern =
+    REQUIREMENTS_HEADERS.find(h => h.test(headerLine)) ||
+    FALLBACK_REQUIREMENTS_HEADERS.find(h => h.test(headerLine));
   let rest = headerPattern ? headerLine.replace(headerPattern, '').trim() : '';
   rest = rest.replace(/^[:\s]+/, '');
 
