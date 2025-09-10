@@ -43,9 +43,10 @@ Fetch remote job listings and normalize HTML to plain text:
 ```js
 import { fetchTextFromUrl } from './src/fetch.js';
 
-const text = await fetchTextFromUrl('https://example.com/job');
+const text = await fetchTextFromUrl('https://example.com/job', { maxBytes: 50_000 });
 ```
-`fetchTextFromUrl` strips scripts, styles, navigation, and footer content and collapses
+`fetchTextFromUrl` strips scripts, styles, navigation, and footer content, limits downloads to 1 MB
+by default (override with `maxBytes`), and collapses
 whitespace to single spaces.
 
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal

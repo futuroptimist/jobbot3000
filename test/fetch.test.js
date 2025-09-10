@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { extractTextFromHtml } from '../src/fetch.js';
+import http from 'http';
+import { extractTextFromHtml, fetchTextFromUrl } from '../src/fetch.js';
 
 describe('extractTextFromHtml', () => {
   it('collapses whitespace and skips non-content tags', () => {
@@ -18,5 +19,19 @@ describe('extractTextFromHtml', () => {
       </html>
     `;
     expect(extractTextFromHtml(html)).toBe('First line Second line');
+  });
+});
+
+describe('fetchTextFromUrl', () => {
+  it('enforces a maximum response size', async () => {
+    const server = http.createServer((req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('a'.repeat(20));
+    });
+    await new Promise(resolve => server.listen(0, resolve));
+    const { port } = server.address();
+    const url = `http://127.0.0.1:${port}`;
+    await expect(fetchTextFromUrl(url, { maxBytes: 10 })).rejects.toThrow();
+    server.close();
   });
 });

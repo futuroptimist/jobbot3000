@@ -21,17 +21,37 @@ export function extractTextFromHtml(html) {
     .replace(/\s+/g, ' ')
     .trim();
 }
-
-export async function fetchTextFromUrl(url, { timeoutMs = 10000 } = {}) {
+/**
+ * Fetch remote content with timeout and response size limit.
+ *
+ * @param {string} url
+ * @param {object} [opts]
+ * @param {number} [opts.timeoutMs=10000]
+ * @param {number} [opts.maxBytes=1024*1024] Maximum allowed bytes in the response
+ * @returns {Promise<string>}
+ */
+export async function fetchTextFromUrl(
+  url,
+  { timeoutMs = 10000, maxBytes = 1024 * 1024 } = {}
+) {
   const controller = new AbortController();
   const timer = setTimeout(
     () => controller.abort(new Error(`Timeout after ${timeoutMs}ms`)),
     timeoutMs
   );
-  const response = await fetch(url, { redirect: 'follow', signal: controller.signal })
-    .finally(() => clearTimeout(timer));
+  const response = await fetch(url, {
+    redirect: 'follow',
+    signal: controller.signal,
+    size: maxBytes
+  }).finally(() => clearTimeout(timer));
   if (!response.ok) {
     throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
+  }
+  const contentLength = Number(response.headers.get('content-length') || 0);
+  if (contentLength > maxBytes) {
+    throw new Error(
+      `Failed to fetch ${url}: content-length ${contentLength} exceeds limit ${maxBytes}`
+    );
   }
   const contentType = response.headers.get('content-type') || '';
   const body = await response.text();
