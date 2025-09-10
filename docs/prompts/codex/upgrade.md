@@ -4,7 +4,7 @@ slug: 'codex-upgrade'
 ---
 
 # Codex Upgrade Prompt
-Use this prompt to refine jobbot3000's prompt documentation.
+Use this prompt when updating or creating prompt docs in jobbot3000.
 
 ```text
 SYSTEM:
