@@ -23,8 +23,8 @@ npm run test:ci
 
 # Summarize a job description
 # Works with sentences ending in ., ?, or !
-# Keep two sentences with --sentences
-echo "First. Second. Third." | jobbot summarize - --sentences 2
+# Keep two sentences with --sentences, output plain text with --text
+echo "First. Second. Third." | jobbot summarize - --sentences 2 --text
 ```
 
 In code, import the `summarize` function and pass the number of sentences to keep:
@@ -38,6 +38,8 @@ console.log(summary);
 // "First sentence. Second sentence?"
 ```
 
+Pass `0` to `summarize` to return an empty string.
+
 Fetch remote job listings and normalize HTML to plain text:
 
 ```js
@@ -45,8 +47,8 @@ import { fetchTextFromUrl } from './src/fetch.js';
 
 const text = await fetchTextFromUrl('https://example.com/job', { timeoutMs: 5000 });
 ```
-`fetchTextFromUrl` strips scripts, styles, navigation, and footer content and collapses
-whitespace to single spaces. Pass `timeoutMs` (milliseconds) to override the 10s default.
+`fetchTextFromUrl` strips scripts, styles, navigation, footer, and aside content and
+collapses whitespace to single spaces. Pass `timeoutMs` (milliseconds) to override the 10s default.
 
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal
 punctuation like `?!`, including when followed by closing quotes or parentheses. Terminators apply
