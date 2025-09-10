@@ -24,7 +24,9 @@ function getFlag(args, name, fallback) {
   const idx = args.indexOf(name);
   if (idx === -1) return fallback;
   const val = args[idx + 1];
-  if (!val || val.startsWith('--')) return true; // boolean flag
+  if (!val || val.startsWith('--')) {
+    return typeof fallback === 'boolean' ? true : fallback;
+  }
   return val;
 }
 
@@ -32,11 +34,12 @@ async function cmdSummarize(args) {
   const input = args[0] || '-';
   const format = args.includes('--json') ? 'json' : 'md';
   const timeoutMs = Number(getFlag(args, '--timeout', 10000));
+  const count = Number(getFlag(args, '--sentences', 1));
   const raw = isHttpUrl(input)
     ? await fetchTextFromUrl(input, { timeoutMs })
     : await readSource(input);
   const parsed = parseJobText(raw);
-  const summary = summarizeFirstSentence(raw);
+  const summary = summarizeFirstSentence(raw, count);
   const payload = { ...parsed, summary };
   if (format === 'json') console.log(toJson(payload));
   else console.log(toMarkdownSummary(payload));
