@@ -17,8 +17,10 @@ const REQUIREMENTS_HEADERS = [
 
 const FALLBACK_REQUIREMENTS_HEADERS = [/\bResponsibilities\b/i];
 
-// Common bullet prefix regex, supports -, +, *, •, ·, en dash, em dash, digits, punctuation, etc.
-const BULLET_PREFIX_RE = /^[-+*•\u00B7\u2013\u2014\d.)(\s]+/;
+// Common bullet prefix regex. Strips '-', '+', '*', '•', '·', en/em dashes,
+// numeric markers like `1.` or `1)` and parenthetical numbers like `(1)`.
+// Preserves leading digits that are part of the requirement text itself.
+const BULLET_PREFIX_RE = /^(?:[-+*•\u00B7\u2013\u2014]\s*|\d+[.)]\s*|\(\d+\)\s*)/;
 
 /** Strip common bullet characters and surrounding whitespace from a line. */
 function stripBullet(line) {
