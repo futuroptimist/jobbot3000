@@ -28,6 +28,7 @@ This index lists prompt documents for the jobbot3000 repository, organized by ta
 | [docs/prompts/codex/test.md][test-doc] | Codex Test Prompt | evergreen | yes |
 | [docs/prompts/codex/test.md#upgrade-prompt][test-up] | Upgrade Prompt | evergreen | yes |
 | [docs/prompts/codex/upgrade.md][upgrade-doc] | Codex Upgrade Prompt | evergreen | yes |
+| [docs/prompts/codex/upgrade.md#upgrade-prompt][upgrade-up] | Upgrade Prompt | evergreen | yes |
 
 [automation-doc]: prompts/codex/automation.md
 [automation-up]: prompts/codex/automation.md#upgrade-prompt
@@ -50,3 +51,4 @@ This index lists prompt documents for the jobbot3000 repository, organized by ta
 [test-doc]: prompts/codex/test.md
 [test-up]: prompts/codex/test.md#upgrade-prompt
 [upgrade-doc]: prompts/codex/upgrade.md
+[upgrade-up]: prompts/codex/upgrade.md#upgrade-prompt

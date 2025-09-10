@@ -14,9 +14,12 @@ PURPOSE:
 Enhance performance without altering external behavior.
 
 CONTEXT:
-- Follow [README.md](../../README.md); see the [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
+- Follow [README.md](../../../README.md); see the
+  [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
+- Confirm referenced files exist to avoid broken links.
 - Run `npm run lint` and `npm run test:ci` before committing.
-- Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
+- Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`
+  (see [`scripts/scan-secrets.py`](../../../scripts/scan-secrets.py)).
 - Include benchmarks if changes might affect speed.
 
 REQUEST:
