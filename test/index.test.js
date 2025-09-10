@@ -69,8 +69,14 @@ describe('summarize', () => {
     expect(summarize(text)).toBe('One sentence.');
   });
 
-  it('avoids splitting inside parenthetical abbreviations', () => {
-    const text = 'Candidates (M.Sc.) should apply.';
-    expect(summarize(text)).toBe('Candidates (M.Sc.) should apply.');
+    it('avoids splitting inside parenthetical abbreviations', () => {
+      const text = 'Candidates (M.Sc.) should apply.';
+      expect(summarize(text)).toBe('Candidates (M.Sc.) should apply.');
+    });
+
+    it('returns empty string when count is non-positive', () => {
+      const text = 'First. Second.';
+      expect(summarize(text, 0)).toBe('');
+      expect(summarize(text, -1)).toBe('');
+    });
   });
-});
