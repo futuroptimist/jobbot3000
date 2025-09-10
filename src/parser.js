@@ -27,11 +27,20 @@ function stripBullet(line) {
 
 /**
  * Find the index of the first header in `primary` or fall back to headers in `fallback`.
+ * This single-pass scan avoids repeatedly traversing `lines` which can be costly for
+ * large job postings.
  * Returns -1 if no headers match.
  */
 function findHeaderIndex(lines, primary, fallback) {
-  const idx = lines.findIndex(l => primary.some(h => h.test(l)));
-  return idx !== -1 ? idx : lines.findIndex(l => fallback.some(h => h.test(l)));
+  let fallbackIndex = -1;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (primary.some(h => h.test(line))) return i;
+    if (fallbackIndex === -1 && fallback.some(h => h.test(line))) {
+      fallbackIndex = i;
+    }
+  }
+  return fallbackIndex;
 }
 
 function findFirstMatch(lines, patterns) {
