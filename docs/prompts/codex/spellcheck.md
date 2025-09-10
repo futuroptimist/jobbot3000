@@ -14,9 +14,12 @@ PURPOSE:
 Correct typos and enforce consistent spelling.
 
 CONTEXT:
-- Follow [README.md](../../README.md); see the [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
+- Follow [README.md](../../../README.md); see the [AGENTS spec](https://agentsmd.net/AGENTS.md) for
+  instruction semantics.
+- Refer to [cspell.json](../../../cspell.json) to update the spelling dictionary when needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
+- Update [prompt-docs-summary.md](../../prompt-docs-summary.md) when modifying prompt docs.
 
 REQUEST:
 1. Locate spelling errors in code or docs.
