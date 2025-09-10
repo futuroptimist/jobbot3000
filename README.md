@@ -48,9 +48,22 @@ const text = await fetchTextFromUrl('https://example.com/job');
 `fetchTextFromUrl` strips scripts, styles, navigation, and footer content and collapses
 whitespace to single spaces.
 
+Format parsed results as Markdown:
+
+```js
+import { toMarkdownSummary } from './src/exporters.js';
+
+const md = toMarkdownSummary({
+  title: 'Engineer',
+  company: 'ACME',
+  summary: 'Short blurb.',
+  requirements: ['3+ years JS'],
+});
+```
+
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal
 punctuation like `?!`, including when followed by closing quotes or parentheses. Terminators apply
-only when followed by whitespace or the end of text, so decimals like `1.99` remain intact.  
+only when followed by whitespace or the end of text, so decimals like `1.99` remain intact.
 It ignores bare newlines.  
 It scans text character-by-character to avoid large intermediate arrays and regex performance
 pitfalls, falling back to the trimmed input when no sentence punctuation is found.  
