@@ -10,16 +10,22 @@ Use this prompt to guide LLM-based contributors when working on jobbot3000.
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
 ASSISTANT: (DEV) Implement code; stop after producing patch.
-ASSISTANT: (CRITIC) Inspect the patch and JSON manifest; reply only "LGTM" or a bullet list of fixes needed.
+ASSISTANT: (CRITIC) Inspect the patch and JSON manifest.
+ASSISTANT: (CRITIC) Reply only "LGTM" or a bullet list of fixes needed.
 
 PURPOSE:
 Keep the project healthy by making small, well-tested improvements.
 
 CONTEXT:
-- Follow the [repository README](../../../README.md) and [AGENTS spec](https://agentsmd.net/AGENTS.md).
+- Follow the [repository README](../../../README.md) and the
+  [AGENTS spec](https://agentsmd.net/AGENTS.md).
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
 - Run `npm run lint` and `npm run test:ci` before committing.
-- Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
+- Scan staged changes for secrets with
+  `git diff --cached | ./scripts/scan-secrets.py`
+  (see [`scripts/scan-secrets.py`](../../../scripts/scan-secrets.py)).
+- Confirm referenced files exist; update
+  [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 
 REQUEST:
 1. Identify a straightforward improvement or bug fix.
@@ -28,8 +34,10 @@ REQUEST:
 4. Run the commands above and address any failures.
 
 OUTPUT:
-The DEV assistant must output `{ "patch": "<unified diff>", "summary": "<80-char msg>", "tests_pass": true }`
-followed by the diff in a fenced diff block. The CRITIC responds with "LGTM" or required fixes.
+The DEV assistant must output
+`{ "patch": "<unified diff>", "summary": "<80-char msg>", "tests_pass": true }`
+followed by the diff in a fenced diff block.
+The CRITIC responds with "LGTM" or required fixes.
 ```
 
 Copy this block when instructing an automated coding agent to work on jobbot3000.
