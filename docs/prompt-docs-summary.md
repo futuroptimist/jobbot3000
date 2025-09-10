@@ -6,6 +6,8 @@ Ensure each document's links reference existing files.
 
 Each prompt doc should reference the root [README.md](../README.md) using a valid relative path.
 
+All links are verified to reference existing files.
+
 ## jobbot3000
 
 | Path | Prompt | Type | One-click? |
