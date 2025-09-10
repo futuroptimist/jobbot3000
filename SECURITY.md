@@ -1,7 +1,8 @@
 # Security Policy
 
 ## Reporting a Vulnerability
-Please open an issue describing the problem without including sensitive details. We'll respond with a secure channel for disclosure.
+Please open an issue describing the problem without including sensitive details.
+We'll respond with a secure channel for disclosure.
 
 ## Secret Handling
 Secrets such as API keys or tokens should never be committed. Use environment variables or `.env` files which are excluded via `.gitignore`.
