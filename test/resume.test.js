@@ -37,4 +37,3 @@ describe('loadResume', () => {
     expect(result).toBe('PDF content');
   });
 });
-
