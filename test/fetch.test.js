@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractTextFromHtml } from '../src/fetch.js';
+import { extractTextFromHtml, fetchTextFromUrl } from '../src/fetch.js';
 
 describe('extractTextFromHtml', () => {
   it('collapses whitespace and skips non-content tags', () => {
@@ -18,5 +18,11 @@ describe('extractTextFromHtml', () => {
       </html>
     `;
     expect(extractTextFromHtml(html)).toBe('First line Second line');
+  });
+});
+
+describe('fetchTextFromUrl', () => {
+  it('rejects non-HTTPS URLs', async () => {
+    await expect(fetchTextFromUrl('http://example.invalid')).rejects.toThrow(/HTTPS/);
   });
 });

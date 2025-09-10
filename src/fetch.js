@@ -23,12 +23,17 @@ export function extractTextFromHtml(html) {
 }
 
 export async function fetchTextFromUrl(url, { timeoutMs = 10000 } = {}) {
+  const parsed = new URL(url);
+  if (parsed.protocol !== 'https:') {
+    throw new Error('Only HTTPS URLs are supported');
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(
     () => controller.abort(new Error(`Timeout after ${timeoutMs}ms`)),
     timeoutMs
   );
-  const response = await fetch(url, { redirect: 'follow', signal: controller.signal })
+  const response = await fetch(parsed, { redirect: 'follow', signal: controller.signal })
     .finally(() => clearTimeout(timer));
   if (!response.ok) {
     throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);

@@ -8,12 +8,12 @@ import { loadResume } from '../src/resume.js';
 import { computeFitScore } from '../src/scoring.js';
 import { toJson, toMarkdownSummary, toMarkdownMatch } from '../src/exporters.js';
 
-function isHttpUrl(s) {
-  return /^https?:\/\//i.test(s);
+function isHttpsUrl(s) {
+  return /^https:\/\//i.test(s);
 }
 
 async function readSource(input) {
-  if (isHttpUrl(input)) return fetchTextFromUrl(input);
+  if (isHttpsUrl(input)) return fetchTextFromUrl(input);
   if (input === '-' || input === '/dev/stdin') {
     return fs.readFileSync(0, 'utf-8');
   }
@@ -35,7 +35,7 @@ async function cmdSummarize(args) {
   const format = args.includes('--json') ? 'json' : 'md';
   const timeoutMs = Number(getFlag(args, '--timeout', 10000));
   const count = Number(getFlag(args, '--sentences', 1));
-  const raw = isHttpUrl(input)
+  const raw = isHttpsUrl(input)
     ? await fetchTextFromUrl(input, { timeoutMs })
     : await readSource(input);
   const parsed = parseJobText(raw);
@@ -61,7 +61,7 @@ async function cmdMatch(args) {
   const resumePath = args[resumeIdx + 1];
   const jobInput = args[jobIdx + 1];
   const resumeText = await loadResume(resumePath);
-  const jobRaw = isHttpUrl(jobInput)
+  const jobRaw = isHttpsUrl(jobInput)
     ? await fetchTextFromUrl(jobInput, { timeoutMs })
     : await readSource(jobInput);
   const parsed = parseJobText(jobRaw);
