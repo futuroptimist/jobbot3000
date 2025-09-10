@@ -15,7 +15,8 @@ export function extractTextFromHtml(html) {
       { selector: 'script', format: 'skip' },
       { selector: 'style', format: 'skip' },
       { selector: 'nav', format: 'skip' },
-      { selector: 'footer', format: 'skip' }
+      { selector: 'footer', format: 'skip' },
+      { selector: 'aside', format: 'skip' }
     ]
   })
     .replace(/\s+/g, ' ')

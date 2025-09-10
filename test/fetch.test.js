@@ -20,6 +20,18 @@ describe('extractTextFromHtml', () => {
     `;
     expect(extractTextFromHtml(html)).toBe('First line Second line');
   });
+
+  it('omits aside content', () => {
+    const html = `
+      <html>
+        <body>
+          <p>Main</p>
+          <aside>ignored</aside>
+        </body>
+      </html>
+    `;
+    expect(extractTextFromHtml(html)).toBe('Main');
+  });
 });
 
 describe('fetchTextFromUrl', () => {
