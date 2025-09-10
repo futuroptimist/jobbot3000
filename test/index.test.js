@@ -59,6 +59,11 @@ describe('summarize', () => {
     expect(summarize(text)).toBe('"Wow!"');
   });
 
+  it('does not split within quoted multi-sentence text', () => {
+    const text = '"First sentence. Second sentence." Third.';
+    expect(summarize(text)).toBe('"First sentence. Second sentence."');
+  });
+
   it('treats non-breaking space as whitespace', () => {
     const text = 'One sentence.\u00A0Another.';
     expect(summarize(text)).toBe('One sentence.');

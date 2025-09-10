@@ -18,10 +18,11 @@ export function summarize(text, count = 1) {
    * Scan character-by-character to avoid costly regular expressions.
    * Prevents regex-based DoS and stops once the requested number
    * of sentences is collected.
-   * Handles consecutive punctuation (`?!`), skips trailing closing
-   * quotes/parentheses, treats all Unicode whitespace as delimiters,
-   * and avoids splitting on decimal numbers.
-   */
+ * Handles consecutive punctuation (`?!`), skips trailing closing
+ * quotes/parentheses, treats all Unicode whitespace as delimiters,
+ * avoids splitting on decimal numbers, and keeps sentences inside
+ * quotes together until the closing quote.
+ */
   const sentences = [];
   let start = 0;
   const len = text.length;
@@ -36,15 +37,20 @@ export function summarize(text, count = 1) {
   for (let i = 0; i < len && sentences.length < count; i++) {
     const ch = text[i];
 
-    // Track nesting
+    // Track nesting and quotes. Handle quotes before generic closers to avoid
+    // misclassifying them and prematurely ending sentences when an opening
+    // quote spans multiple sentences.
+    if (ch === '"' || ch === "'") {
+      if (quote === ch) quote = null;
+      else if (!quote) quote = ch;
+      continue;
+    }
+
     if (openers.has(ch)) parenDepth++;
     else if (closers.has(ch)) {
       if (ch === ')' || ch === ']' || ch === '}') {
         if (parenDepth > 0) parenDepth--;
       }
-    } else if (ch === '"' || ch === "'") {
-      if (quote === ch) quote = null;
-      else if (!quote) quote = ch;
     }
 
     if (ch === '.' || ch === '!' || ch === '?') {
