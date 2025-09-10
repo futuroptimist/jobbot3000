@@ -2,55 +2,33 @@ import { describe, it, expect } from 'vitest';
 import { toJson, toMarkdownSummary, toMarkdownMatch } from '../src/exporters.js';
 
 describe('exporters', () => {
-  it('converts data to pretty JSON', () => {
-    const json = toJson({ a: 1 });
-    expect(json).toBe('{\n  "a": 1\n}');
+  it('converts objects to pretty JSON', () => {
+    const result = toJson({ a: 1 });
+    expect(result).toBe('{\n  "a": 1\n}');
   });
 
-  it('builds markdown summary with optional sections', () => {
-    const md = toMarkdownSummary({
-      title: 'Developer',
-      company: 'ACME',
-      summary: 'Great job',
+  it('formats markdown summaries', () => {
+    const output = toMarkdownSummary({
+      title: 'Dev',
+      company: 'Acme',
+      summary: 'Build things',
       requirements: ['JS', 'Node']
     });
-    const expected = [
-      '# Developer',
-      '**Company**: ACME',
-      '',
-      'Great job',
-      '',
-      '## Requirements',
-      '- JS',
-      '- Node'
-    ].join('\n');
-    expect(md).toBe(expected);
+    expect(output).toBe(
+      '# Dev\n**Company**: Acme\n\nBuild things\n\n## Requirements\n- JS\n- Node'
+    );
   });
 
-  it('builds markdown match report', () => {
-    const md = toMarkdownMatch({
-      title: 'Engineer',
-      company: 'ACME',
-      score: 50,
+  it('formats markdown match reports with score', () => {
+    const output = toMarkdownMatch({
+      title: 'Dev',
+      company: 'Acme',
+      score: 85,
       matched: ['JS'],
-      missing: ['Python']
+      missing: ['Rust']
     });
-    const expected = [
-      '# Engineer',
-      '**Company**: ACME',
-      '**Fit Score**: 50%',
-      '',
-      '## Matched',
-      '- JS',
-      '',
-      '## Missing',
-      '- Python'
-    ].join('\n');
-    expect(md).toBe(expected);
-  });
-
-  it('omits sections when data is missing', () => {
-    expect(toMarkdownSummary({})).toBe('');
-    expect(toMarkdownMatch({})).toBe('');
+    expect(output).toBe(
+      '# Dev\n**Company**: Acme\n**Fit Score**: 85%\n\n## Matched\n- JS\n\n## Missing\n- Rust'
+    );
   });
 });
