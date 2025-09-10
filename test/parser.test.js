@@ -50,6 +50,17 @@ Responsibilities:
     expect(parsed.requirements).toEqual(['Build features', 'Fix bugs']);
   });
 
+  it('captures inline requirement text after a Responsibilities header', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Responsibilities: Build features
+- Fix bugs
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual(['Build features', 'Fix bugs']);
+  });
+
   it('prefers Requirements section when Responsibilities appears first', () => {
     const text = `
 Title: Developer
@@ -102,5 +113,15 @@ Requirements:
       'Second skill',
       'Third skill'
     ]);
+  });
+
+  it('returns no requirements when header is absent', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Just some description without requirement section.
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual([]);
   });
 });

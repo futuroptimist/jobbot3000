@@ -2,6 +2,11 @@
 # Prompt Docs Summary
 
 This index lists prompt documents for the jobbot3000 repository, organized by task type.
+Ensure each document's links reference existing files.
+
+Each prompt doc should reference the root [README.md](../README.md) using a valid relative path.
+
+All links are verified to reference existing files.
 
 ## jobbot3000
 
@@ -15,7 +20,7 @@ This index lists prompt documents for the jobbot3000 repository, organized by ta
 | [docs/prompts/codex/docs.md#upgrade-prompt][docs-up] | Upgrade Prompt | evergreen | yes |
 | [docs/prompts/codex/feature.md][feature-doc] | Codex Feature Prompt | evergreen | yes |
 | [docs/prompts/codex/feature.md#upgrade-prompt][feature-up] | Upgrade Prompt | evergreen | yes |
-| [docs/prompts/codex/fix.md][fix-doc] | Codex Fix Prompt | evergreen | yes |
+| [docs/prompts/codex/fix.md][fix-doc] | Codex Fix Prompt (bug fixes) | evergreen | yes |
 | [docs/prompts/codex/fix.md#upgrade-prompt][fix-up] | Upgrade Prompt | evergreen | yes |
 | [docs/prompts/codex/performance.md][performance-doc] | Codex Performance Prompt | evergreen | yes |
 | [docs/prompts/codex/performance.md#upgrade-prompt][performance-up] | Upgrade Prompt | evergreen | yes |
@@ -25,9 +30,10 @@ This index lists prompt documents for the jobbot3000 repository, organized by ta
 | [docs/prompts/codex/security.md#upgrade-prompt][security-up] | Upgrade Prompt | evergreen | yes |
 | [docs/prompts/codex/spellcheck.md][spellcheck-doc] | Codex Spellcheck Prompt | evergreen | yes |
 | [docs/prompts/codex/spellcheck.md#upgrade-prompt][spellcheck-up] | Upgrade Prompt | evergreen | yes |
-| [docs/prompts/codex/test.md][test-doc] | Codex Test Prompt | evergreen | yes |
-| [docs/prompts/codex/test.md#upgrade-prompt][test-up] | Upgrade Prompt | evergreen | yes |
+| [docs/prompts/codex/test.md][test-doc] | Codex Test Prompt (Vitest) | evergreen | yes |
+| [docs/prompts/codex/test.md#upgrade-prompt][test-up] | Upgrade Prompt (docs) | evergreen | yes |
 | [docs/prompts/codex/upgrade.md][upgrade-doc] | Codex Upgrade Prompt | evergreen | yes |
+| [docs/prompts/codex/upgrade.md#upgrade-prompt][upgrade-up] | Upgrade Prompt | evergreen | yes |
 
 [automation-doc]: prompts/codex/automation.md
 [automation-up]: prompts/codex/automation.md#upgrade-prompt
@@ -50,3 +56,4 @@ This index lists prompt documents for the jobbot3000 repository, organized by ta
 [test-doc]: prompts/codex/test.md
 [test-up]: prompts/codex/test.md#upgrade-prompt
 [upgrade-doc]: prompts/codex/upgrade.md
+[upgrade-up]: prompts/codex/upgrade.md#upgrade-prompt
