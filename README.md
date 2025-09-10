@@ -55,7 +55,8 @@ It ignores bare newlines.
 It scans text character-by-character to avoid large intermediate arrays and regex performance
 pitfalls, falling back to the trimmed input when no sentence punctuation is found.  
 Trailing quotes or parentheses are included when they immediately follow punctuation, and all
-Unicode whitespace is treated as a sentence boundary.  
+Unicode whitespace is treated as a sentence boundary.
+Direct character comparisons avoid per-iteration Set lookups for tracking parentheses and quotes.
 If fewer complete sentences than requested exist, any remaining text is appended so no content
 is lost. Parenthetical abbreviations like `(M.Sc.)` remain attached to their surrounding sentence.
 

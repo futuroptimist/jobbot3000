@@ -11,10 +11,13 @@
  * @param {number} count
  * @returns {string}
  */
+// Whitespace regex is cached and tested per character.
 const spaceRe = /\s/;
 const isSpace = (c) => spaceRe.test(c);
-const closers = new Set(['"', "'", ')', ']', '}']);
-const openers = new Set(['(', '[', '{']);
+// Direct character comparisons avoid Set lookups on every iteration.
+const isOpener = (c) => c === '(' || c === '[' || c === '{';
+const isParenCloser = (c) => c === ')' || c === ']' || c === '}';
+const isQuote = (c) => c === '"' || c === "'";
 const isDigit = (c) => c >= '0' && c <= '9';
 
 export function summarize(text, count = 1) {
@@ -39,12 +42,10 @@ export function summarize(text, count = 1) {
     const ch = text[i];
 
     // Track nesting
-    if (openers.has(ch)) parenDepth++;
-    else if (closers.has(ch)) {
-      if (ch === ')' || ch === ']' || ch === '}') {
-        if (parenDepth > 0) parenDepth--;
-      }
-    } else if (ch === '"' || ch === "'") {
+    if (isOpener(ch)) parenDepth++;
+    else if (isParenCloser(ch)) {
+      if (parenDepth > 0) parenDepth--;
+    } else if (isQuote(ch)) {
       if (quote === ch) quote = null;
       else if (!quote) quote = ch;
     }
@@ -66,10 +67,11 @@ export function summarize(text, count = 1) {
       }
 
       // absorb trailing closers (quotes, parentheses)
-      while (j < len && closers.has(text[j])) {
-        if (text[j] === ')' || text[j] === ']' || text[j] === '}') {
+      while (j < len && (isParenCloser(text[j]) || isQuote(text[j]))) {
+        const cj = text[j];
+        if (isParenCloser(cj)) {
           if (parenDepth > 0) parenDepth--;
-        } else if (quote && text[j] === quote) {
+        } else if (quote && cj === quote) {
           quote = null;
         }
         j++;
