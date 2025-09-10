@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import { summarize } from '../src/index.js';
 
 function runCli(args, input) {
   const bin = path.resolve('bin', 'jobbot.js');
@@ -22,6 +23,13 @@ describe('jobbot CLI', () => {
       'First. Second. Third.'
     );
     expect(out.trim()).toBe('First. Second.');
+  });
+
+  it('outputs plain text summary with --text', () => {
+    const input = 'Title: Engineer\nCompany: ACME\nFirst. Second.';
+    const out = runCli(['summarize', '-', '--text'], input);
+    expect(out.trim()).toBe(summarize(input));
+    expect(out).not.toMatch(/#|\*\*/);
   });
 
   it('match from local files', () => {
