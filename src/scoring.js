@@ -1,27 +1,26 @@
-let cachedResume = '';
-let cachedTokens = new Set();
+const TOKEN_CACHE = new Map();
 
-// Tokenize text into a Set of lowercase alphanumeric tokens using a manual scanner
-// to avoid regex allocations.
+// Tokenize text into a Set of lowercase alphanumeric tokens, with caching to avoid
+// repeated regex and Set allocations.
 function tokenize(text) {
-  const tokens = new Set();
-  const str = (text || '').toLowerCase();
-  let token = '';
-  for (let i = 0; i < str.length; i += 1) {
-    const code = str.charCodeAt(i);
-    if ((code >= 97 && code <= 122) || (code >= 48 && code <= 57)) {
-      token += str[i];
-    } else if (token) {
-      tokens.add(token);
-      token = '';
-    }
-  }
-  if (token) tokens.add(token);
+  const key = text || '';
+  const cached = TOKEN_CACHE.get(key);
+  if (cached) return cached;
+
+  // Use regex matching to avoid replace/split allocations and speed up tokenization.
+  const tokens = new Set(key.toLowerCase().match(/[a-z0-9]+/g) || []);
+
+  // Simple cache eviction to bound memory.
+  if (TOKEN_CACHE.size > 1000) TOKEN_CACHE.clear();
+  TOKEN_CACHE.set(key, tokens);
   return tokens;
 }
 
 // Cache tokens for the most recent resume to avoid repeated tokenization when the same resume
 // is scored against multiple job postings.
+let cachedResume = '';
+let cachedTokens = new Set();
+
 function resumeTokens(text) {
   if (text === cachedResume) return cachedTokens;
   cachedTokens = tokenize(text);
@@ -29,20 +28,13 @@ function resumeTokens(text) {
   return cachedTokens;
 }
 
-// Check if a line overlaps with tokens in the resume set, using the same manual scanner logic.
+// Check if a line overlaps with tokens in the resume set.
 function hasOverlap(line, resumeSet) {
-  const str = (line || '').toLowerCase();
-  let token = '';
-  for (let i = 0; i < str.length; i += 1) {
-    const code = str.charCodeAt(i);
-    if ((code >= 97 && code <= 122) || (code >= 48 && code <= 57)) {
-      token += str[i];
-    } else if (token) {
-      if (resumeSet.has(token)) return true;
-      token = '';
-    }
+  const tokens = tokenize(line);
+  for (const token of tokens) {
+    if (resumeSet.has(token)) return true;
   }
-  return token ? resumeSet.has(token) : false;
+  return false;
 }
 
 export function computeFitScore(resumeText, requirements) {
