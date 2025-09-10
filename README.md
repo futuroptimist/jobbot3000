@@ -45,10 +45,10 @@ Fetch remote job listings and normalize HTML to plain text:
 ```js
 import { fetchTextFromUrl } from './src/fetch.js';
 
-const text = await fetchTextFromUrl('https://example.com/job');
+const text = await fetchTextFromUrl('https://example.com/job', { timeoutMs: 5000 });
 ```
 `fetchTextFromUrl` strips scripts, styles, navigation, footer, and aside content and
-collapses whitespace to single spaces.
+collapses whitespace to single spaces. Pass `timeoutMs` (milliseconds) to override the 10s default.
 
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal
 punctuation like `?!`, including when followed by closing quotes or parentheses. Terminators apply
