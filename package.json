@@ -24,6 +24,6 @@
   },
   "devDependencies": {
     "eslint": "^8.57.1",
-    "vitest": "^1.6.1"
+    "vitest": "^3.2.4"
   }
 }

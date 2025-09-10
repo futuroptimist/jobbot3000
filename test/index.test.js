@@ -59,6 +59,11 @@ describe('summarize', () => {
     expect(summarize(text)).toBe('"Wow!"');
   });
 
+  it('recognizes unicode ellipsis as terminator', () => {
+    const text = 'Wait… Next sentence.';
+    expect(summarize(text)).toBe('Wait…');
+  });
+
   it('treats non-breaking space as whitespace', () => {
     const text = 'One sentence.\u00A0Another.';
     expect(summarize(text)).toBe('One sentence.');
