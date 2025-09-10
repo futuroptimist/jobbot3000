@@ -1,6 +1,12 @@
 import fetch from 'node-fetch';
 import { htmlToText } from 'html-to-text';
 
+/**
+ * Convert HTML to plain text, skipping non-content tags and collapsing whitespace.
+ *
+ * @param {string} html
+ * @returns {string}
+ */
 export function extractTextFromHtml(html) {
   if (!html) return '';
   return htmlToText(html, {
@@ -11,7 +17,9 @@ export function extractTextFromHtml(html) {
       { selector: 'nav', format: 'skip' },
       { selector: 'footer', format: 'skip' }
     ]
-  }).trim();
+  })
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 export async function fetchTextFromUrl(url, { timeoutMs = 10000 } = {}) {
