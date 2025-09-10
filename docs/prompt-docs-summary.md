@@ -2,6 +2,7 @@
 # Prompt Docs Summary
 
 This index lists prompt documents for the jobbot3000 repository, organized by task type.
+Ensure each document's links reference existing files.
 
 ## jobbot3000
 
