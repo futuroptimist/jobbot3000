@@ -14,9 +14,11 @@ PURPOSE:
 Correct typos and enforce consistent spelling.
 
 CONTEXT:
-- Follow [README.md](../../README.md); see the [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
+- Follow [README.md](../../../README.md); see the
+  [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
+- Update [`cspell.json`](../../../cspell.json) if new domain-specific terms are required.
 
 REQUEST:
 1. Locate spelling errors in code or docs.
@@ -42,7 +44,7 @@ PURPOSE:
 Improve or expand the repository's prompt docs.
 
 CONTEXT:
-- Follow [README.md](../../README.md); see the
+- Follow [README.md](../../../README.md); see the
   [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with
