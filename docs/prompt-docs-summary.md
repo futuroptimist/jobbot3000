@@ -3,6 +3,8 @@
 
 This index lists prompt documents for the jobbot3000 repository, organized by task type.
 
+Each prompt doc should reference the root [README.md](../README.md) using a valid relative path.
+
 ## jobbot3000
 
 | Path | Prompt | Type | One-click? |
