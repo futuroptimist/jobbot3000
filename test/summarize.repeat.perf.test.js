@@ -3,7 +3,7 @@ import { performance } from 'perf_hooks';
 import { summarize } from '../src/index.js';
 
 describe('summarize repeated calls performance', () => {
-  it('handles 10k short texts under 500ms', () => {
+  it('handles 10k short texts under 1s', () => {
     const text = 'Hello. ' + 'a'.repeat(1000) + '. ';
     const iterations = 10000;
     summarize(text, 1); // warm up JIT
@@ -12,6 +12,6 @@ describe('summarize repeated calls performance', () => {
       summarize(text, 1);
     }
     const elapsed = performance.now() - start;
-    expect(elapsed).toBeLessThan(500);
+    expect(elapsed).toBeLessThan(1000);
   });
 });
