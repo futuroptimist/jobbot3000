@@ -25,13 +25,21 @@ function stripBullet(line) {
   return line.replace(BULLET_PREFIX_RE, '').trim();
 }
 
+/** Check if a line matches any pattern in the provided array. */
+function matchAny(line, patterns) {
+  return patterns.some(pattern => pattern.test(line));
+}
+
 /**
  * Find the index of the first header in `primary` or fall back to headers in `fallback`.
  * Returns -1 if no headers match.
  */
 function findHeaderIndex(lines, primary, fallback) {
-  const idx = lines.findIndex(l => primary.some(h => h.test(l)));
-  return idx !== -1 ? idx : lines.findIndex(l => fallback.some(h => h.test(l)));
+  for (const group of [primary, fallback]) {
+    const idx = lines.findIndex(line => matchAny(line, group));
+    if (idx !== -1) return idx;
+  }
+  return -1;
 }
 
 function findFirstMatch(lines, patterns) {
@@ -44,14 +52,19 @@ function findFirstMatch(lines, patterns) {
   return '';
 }
 
-/** Extract requirement bullets after a known header line. */
+/**
+ * Extract requirement bullets after a known header line.
+ * Supports requirement text on the same line for both primary and fallback headers.
+ */
 function extractRequirements(lines) {
   const idx = findHeaderIndex(lines, REQUIREMENTS_HEADERS, FALLBACK_REQUIREMENTS_HEADERS);
   if (idx === -1) return [];
 
   const requirements = [];
   const headerLine = lines[idx];
-  const headerPattern = REQUIREMENTS_HEADERS.find(h => h.test(headerLine));
+  const headerPattern =
+    REQUIREMENTS_HEADERS.find(h => h.test(headerLine)) ||
+    FALLBACK_REQUIREMENTS_HEADERS.find(h => h.test(headerLine));
   let rest = headerPattern ? headerLine.replace(headerPattern, '').trim() : '';
   rest = rest.replace(/^[:\s]+/, '');
 
