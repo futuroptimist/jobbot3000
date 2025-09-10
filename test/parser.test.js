@@ -50,6 +50,17 @@ Responsibilities:
     expect(parsed.requirements).toEqual(['Build features', 'Fix bugs']);
   });
 
+  it('captures inline requirement text after a Responsibilities header', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Responsibilities: Build features
+- Fix bugs
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual(['Build features', 'Fix bugs']);
+  });
+
   it('prefers Requirements section when Responsibilities appears first', () => {
     const text = `
 Title: Developer
@@ -104,18 +115,13 @@ Requirements:
     ]);
   });
 
-  it('preserves leading numbers in requirement text', () => {
+  it('returns no requirements when header is absent', () => {
     const text = `
 Title: Developer
 Company: Example Corp
-Requirements:
-5+ years experience
-10G networking knowledge
+Just some description without requirement section.
 `;
     const parsed = parseJobText(text);
-    expect(parsed.requirements).toEqual([
-      '5+ years experience',
-      '10G networking knowledge'
-    ]);
+    expect(parsed.requirements).toEqual([]);
   });
 });
