@@ -1,4 +1,4 @@
-# jobbot3000 — Self-Hosted Job Search Copilot
+# jobbot3000 — Self-hosted Job Search Copilot
 **Status:** Draft v0.1 (2025-08-20)
 **Owner:** futuroptimist
 **License:** MIT
@@ -31,9 +31,10 @@ A privacy-first, open-source, self-hosted assistant that helps an individual can
 
 1. **Profile Builder**  
    I can import my history (projects, roles, skills, metrics) and export to `resume.json` (JSON Resume).  
-2. **Job Ingestion**  
-   I can connect public ATS feeds (Greenhouse, Lever, Ashby, Workable, SmartRecruiters) and pull listings for target companies/keywords.  
-3. **Matching & Shortlisting**  
+2. **Job Ingestion**
+   I can connect public ATS feeds (Greenhouse, Lever, Ashby, Workable, SmartRecruiters) and
+   pull listings for target companies or keywords.
+3. **Matching & Shortlisting**
    The system computes a relevance score per job with an explanation (skills hit/miss, seniority, location, visa, salary if present).  
 4. **Resume/Cover Letter Tailoring**  
    For any job, it renders a one-page ATS-friendly resume PDF + an optional cover letter, both editable, using my profile as the single source of truth.  
@@ -134,7 +135,7 @@ Each ATS = a module returning a normalized `JobPosting`. Add basic backoff, ETag
 **Pipeline**
 1. Convert JSON Resume → template context.
 2. Apply job-specific tailoring: select strongest bullets, swap keywords (never fabricate), cap to 1 page.
-3. Compile → PDF; generate plain-text preview for ATS check.
+3. Compile → PDF; generate plain text preview for ATS check.
 4. Emit build log + a diff view vs. base resume.
 
 **ATS-friendly defaults**
@@ -269,7 +270,7 @@ jobbot track add <job_id> --status applied --note "emailed hiring manager"
 **Phase 3 — Tailoring & rendering (1 week)**
 - Templating (choose Typst or LaTeX first; Tectonic/Typst CLI).
 - One-page constraint, dynamic bullet swapping.
-- ATS plain-text preview + warnings (tables/images detection).
+- ATS plain text preview + warnings (tables/images detection).
 - Cover letter template + slot-fill with job-specific context.
 
 **Phase 4 — Interview rehearsal (1 week)**
