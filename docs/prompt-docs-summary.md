@@ -1,7 +1,7 @@
 <!-- spellchecker: disable -->
 # Prompt Docs Summary
 
-This index lists prompt documents for the jobbot3000 repository.
+This index lists prompt documents for the jobbot3000 repository, organized by task type.
 
 ## jobbot3000
 
@@ -16,6 +16,7 @@ This index lists prompt documents for the jobbot3000 repository.
 | [docs/prompts/codex/refactor.md][refactor-doc] | Codex Refactor Prompt | evergreen | yes |
 | [docs/prompts/codex/security.md][security-doc] | Codex Security Prompt | evergreen | yes |
 | [docs/prompts/codex/spellcheck.md][spellcheck-doc] | Codex Spellcheck Prompt | evergreen | yes |
+| [docs/prompts/codex/test.md][test-doc] | Codex Test Prompt | evergreen | yes |
 | [docs/prompts/codex/upgrade.md][upgrade-doc] | Codex Upgrade Prompt | evergreen | yes |
 
 [automation-doc]: prompts/codex/automation.md
@@ -27,4 +28,5 @@ This index lists prompt documents for the jobbot3000 repository.
 [refactor-doc]: prompts/codex/refactor.md
 [security-doc]: prompts/codex/security.md
 [spellcheck-doc]: prompts/codex/spellcheck.md
+[test-doc]: prompts/codex/test.md
 [upgrade-doc]: prompts/codex/upgrade.md
