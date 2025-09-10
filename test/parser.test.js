@@ -103,4 +103,19 @@ Requirements:
       'Third skill'
     ]);
   });
+
+  it('preserves leading numbers in requirement text', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Requirements:
+5+ years experience
+10G networking knowledge
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual([
+      '5+ years experience',
+      '10G networking knowledge'
+    ]);
+  });
 });
