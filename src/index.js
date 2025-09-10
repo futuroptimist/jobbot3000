@@ -1,11 +1,13 @@
 /**
  * Return the first N sentences from the given text.
+ * If `count` is zero or negative, returns an empty string.
  * Sentences end with '.', '!', '?', or '…', including consecutive punctuation (e.g. `?!`),
  * optionally followed by closing quotes or parentheses.
  * Falls back to returning the trimmed input when no such punctuation exists.
  * If fewer complete sentences than requested exist, any remaining text is appended
  * so no content is lost. Parenthetical abbreviations like `(M.Sc.)` remain attached
  * to their surrounding sentence. Avoids splitting on decimal numbers.
+ * Returns an empty string when `count` is 0 or less.
  *
  * @param {string} text
  * @param {number} count Number of sentences to return; values <= 0 yield ''.
