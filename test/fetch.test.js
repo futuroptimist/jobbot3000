@@ -19,4 +19,10 @@ describe('extractTextFromHtml', () => {
     `;
     expect(extractTextFromHtml(html)).toBe('First line Second line');
   });
+
+  it('returns an empty string for falsy input', () => {
+    expect(extractTextFromHtml('')).toBe('');
+    expect(extractTextFromHtml(null)).toBe('');
+    expect(extractTextFromHtml(undefined)).toBe('');
+  });
 });
