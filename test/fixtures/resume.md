@@ -1,4 +1,3 @@
-# John Doe
+# Summary
 
-**Skills**
-- JavaScript
+I am **strong** with JavaScript.
