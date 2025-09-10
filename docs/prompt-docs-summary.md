@@ -33,6 +33,7 @@ All links are verified to reference existing files.
 | [docs/prompts/codex/test.md][test-doc] | Codex Test Prompt (Vitest) | evergreen | yes |
 | [docs/prompts/codex/test.md#upgrade-prompt][test-up] | Upgrade Prompt (docs) | evergreen | yes |
 | [docs/prompts/codex/upgrade.md][upgrade-doc] | Codex Upgrade Prompt | evergreen | yes |
+| [docs/prompts/codex/upgrade.md#upgrade-prompt][upgrade-up] | Upgrade Prompt | evergreen | yes |
 
 [automation-doc]: prompts/codex/automation.md
 [automation-up]: prompts/codex/automation.md#upgrade-prompt
@@ -55,3 +56,4 @@ All links are verified to reference existing files.
 [test-doc]: prompts/codex/test.md
 [test-up]: prompts/codex/test.md#upgrade-prompt
 [upgrade-doc]: prompts/codex/upgrade.md
+[upgrade-up]: prompts/codex/upgrade.md#upgrade-prompt
