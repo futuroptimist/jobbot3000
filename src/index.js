@@ -1,5 +1,6 @@
 /**
  * Return the first N sentences from the given text.
+ * If `count` is zero or negative, returns an empty string.
  * Sentences end with '.', '!', '?', or '…', including consecutive punctuation (e.g. `?!`),
  * optionally followed by closing quotes or parentheses.
  * Falls back to returning the trimmed input when no such punctuation exists.
@@ -18,7 +19,7 @@ const openers = new Set(['(', '[', '{']);
 const isDigit = (c) => c >= '0' && c <= '9';
 
 export function summarize(text, count = 1) {
-  if (!text) return '';
+  if (!text || count <= 0) return '';
 
   /**
    * Scan character-by-character to avoid costly regular expressions.

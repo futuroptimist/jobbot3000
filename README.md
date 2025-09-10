@@ -24,6 +24,7 @@ npm run test:ci
 # Summarize a job description
 # Works with sentences ending in ., ?, or !
 # Keep two sentences with --sentences
+# Use 0 to return an empty string
 echo "First. Second. Third." | jobbot summarize - --sentences 2
 ```
 
@@ -37,6 +38,8 @@ const summary = summarize(text, 2);
 console.log(summary);
 // "First sentence. Second sentence?"
 ```
+
+Passing `0` for the sentence count returns an empty string.
 
 Fetch remote job listings and normalize HTML to plain text:
 
