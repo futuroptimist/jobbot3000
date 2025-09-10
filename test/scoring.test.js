@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { performance } from 'node:perf_hooks';
-import { computeFitScore } from '../src/scoring.js';
+import {
+  computeFitScore,
+  __getTokenCacheSize,
+  __clearTokenCache,
+  __TOKEN_CACHE_MAX,
+} from '../src/scoring.js';
 
 describe('computeFitScore', () => {
   it('scores matched and missing requirements', () => {
@@ -21,5 +26,14 @@ describe('computeFitScore', () => {
     }
     const elapsed = performance.now() - start;
     expect(elapsed).toBeLessThan(1200);
+  });
+
+  it('bounds token cache size', () => {
+    __clearTokenCache();
+    for (let i = 0; i < __TOKEN_CACHE_MAX + 10; i += 1) {
+      const text = `skill-${i}`;
+      computeFitScore(text, [text]);
+    }
+    expect(__getTokenCacheSize()).toBeLessThanOrEqual(__TOKEN_CACHE_MAX);
   });
 });
