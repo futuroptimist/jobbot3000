@@ -15,10 +15,14 @@ Improve or expand test coverage without altering runtime behavior.
 
 CONTEXT:
 - Follow [README.md](../../../README.md); see the [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
-- Existing tests live in [test/](../../../test).
+- Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
+- Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
-- Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py` (see [`scripts/scan-secrets.py`](../../../scripts/scan-secrets.py)).
-- Update [prompt-docs-summary.md](../../prompt-docs-summary.md) when modifying prompt docs.
+- Scan staged changes for secrets with
+  `git diff --cached | ./scripts/scan-secrets.py`
+  (see [scripts/scan-secrets.py](../../scripts/scan-secrets.py)).
+- Confirm referenced files exist; update
+  [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 
 REQUEST:
 1. Identify missing or weak tests.
@@ -45,7 +49,7 @@ PURPOSE:
 Improve or expand the repository's prompt docs.
 
 CONTEXT:
-- Follow [README.md](../../README.md); see the
+- Follow [README.md](../../../README.md); see the
   [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with
