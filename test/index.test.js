@@ -24,10 +24,10 @@ describe('summarize', () => {
     expect(summarize(text, 2)).toBe('First. Second.');
   });
 
-  it('returns empty string when count is 0', () => {
-    const text = 'First. Second.';
-    expect(summarize(text, 0)).toBe('');
-  });
+it('returns empty string when count is 0', () => {
+  const text = 'First. Second.';
+  expect(summarize(text, 0)).toBe('');
+});
 
   it('ignores bare newlines without punctuation', () => {
     const text = 'First line\nSecond line.';

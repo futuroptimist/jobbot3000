@@ -1,5 +1,6 @@
 /**
  * Return the first N sentences from the given text.
+ * If `count` is zero or negative, returns an empty string.
  * Sentences end with '.', '!', '?', or '…', including consecutive punctuation (e.g. `?!`),
  * optionally followed by closing quotes or parentheses.
  * Falls back to returning the trimmed input when no such punctuation exists.
