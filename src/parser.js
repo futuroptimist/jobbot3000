@@ -27,11 +27,25 @@ function stripBullet(line) {
 
 /**
  * Find the index of the first header in `primary` or fall back to headers in `fallback`.
+ * Uses simple nested loops instead of Array#findIndex/Array#some to avoid
+ * callback allocations and improve performance on large inputs. The regex
+ * tests are performed inline so no helper like `matchAny` is needed.
  * Returns -1 if no headers match.
  */
 function findHeaderIndex(lines, primary, fallback) {
-  const idx = lines.findIndex(l => primary.some(h => h.test(l)));
-  return idx !== -1 ? idx : lines.findIndex(l => fallback.some(h => h.test(l)));
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    for (const h of primary) {
+      if (h.test(line)) return i;
+    }
+  }
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    for (const h of fallback) {
+      if (h.test(line)) return i;
+    }
+  }
+  return -1;
 }
 
 function findFirstMatch(lines, patterns) {
