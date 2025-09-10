@@ -22,23 +22,33 @@ export function extractTextFromHtml(html) {
     .trim();
 }
 
+/**
+ * Fetch a URL and return its text content. HTML responses are converted to plain text.
+ *
+ * @param {string} url
+ * @param {{ timeoutMs?: number }} [opts]
+ * @returns {Promise<string>}
+ */
 export async function fetchTextFromUrl(url, { timeoutMs = 10000 } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(
     () => controller.abort(new Error(`Timeout after ${timeoutMs}ms`)),
     timeoutMs
   );
-  const response = await fetch(url, { redirect: 'follow', signal: controller.signal })
-    .finally(() => clearTimeout(timer));
-  if (!response.ok) {
-    throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
+
+  try {
+    const response = await fetch(url, { redirect: 'follow', signal: controller.signal });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
+    }
+    const contentType = response.headers.get('content-type') || '';
+    const body = await response.text();
+    return contentType.includes('text/html')
+      ? extractTextFromHtml(body)
+      : body.trim();
+  } finally {
+    clearTimeout(timer);
   }
-  const contentType = response.headers.get('content-type') || '';
-  const body = await response.text();
-  if (contentType.includes('text/html')) {
-    return extractTextFromHtml(body);
-  }
-  return body.trim();
 }
 
 
