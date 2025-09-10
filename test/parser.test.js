@@ -2,6 +2,15 @@ import { describe, it, expect } from 'vitest';
 import { parseJobText } from '../src/parser.js';
 
 describe('parseJobText', () => {
+  it('returns empty fields for missing input', () => {
+    expect(parseJobText(undefined)).toEqual({
+      title: '',
+      company: '',
+      requirements: [],
+      body: ''
+    });
+  });
+
   it('strips dash, en dash, and em dash bullets', () => {
     const text = `
 Title: Developer
@@ -17,6 +26,16 @@ Requirements:
       'Experience with Node.js',
       'Familiarity with testing'
     ]);
+  });
+
+  it('strips plus bullets when requirement follows header line', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Requirements: + Basic JavaScript
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual(['Basic JavaScript']);
   });
 
   it('parses requirements after a Responsibilities header', () => {
@@ -54,6 +73,7 @@ Requirements: Proficient in JS
 + Familiarity with testing
 + Keen eye for detail
 + Excellent communication
+ · Works well in teams
 `;
     const parsed = parseJobText(text);
     expect(parsed.requirements).toEqual([
@@ -62,7 +82,25 @@ Requirements: Proficient in JS
       'Experience with Node.js',
       'Familiarity with testing',
       'Keen eye for detail',
-      'Excellent communication'
+      'Excellent communication',
+      'Works well in teams'
+    ]);
+  });
+
+  it('strips numeric and parenthetical bullets', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Requirements:
+1. First skill
+2) Second skill
+(3) Third skill
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual([
+      'First skill',
+      'Second skill',
+      'Third skill'
     ]);
   });
 });

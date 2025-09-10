@@ -1,6 +1,6 @@
 /**
  * Return the first N sentences from the given text.
- * Sentences end with '.', '!' or '?', including consecutive punctuation (e.g. `?!`),
+ * Sentences end with '.', '!', '?', or '…', including consecutive punctuation (e.g. `?!`),
  * optionally followed by closing quotes or parentheses.
  * Falls back to returning the trimmed input when no such punctuation exists.
  * If fewer complete sentences than requested exist, any remaining text is appended
@@ -11,13 +11,20 @@
  * @param {number} count
  * @returns {string}
  */
+const spaceRe = /\s/;
+const isSpace = (c) => spaceRe.test(c);
+const closers = new Set(['"', "'", ')', ']', '}']);
+const openers = new Set(['(', '[', '{']);
+const isDigit = (c) => c >= '0' && c <= '9';
+
 export function summarize(text, count = 1) {
   if (!text) return '';
 
   /**
    * Scan character-by-character to avoid costly regular expressions.
    * Prevents regex-based DoS and stops once the requested number
-   * of sentences is collected.
+   * of sentences is collected. Hoisting whitespace/digit helpers
+   * and punctuation sets avoids per-call allocations.
    * Handles consecutive punctuation (`?!`), skips trailing closing
    * quotes/parentheses, treats all Unicode whitespace as delimiters,
    * and avoids splitting on decimal numbers.
@@ -25,11 +32,6 @@ export function summarize(text, count = 1) {
   const sentences = [];
   let start = 0;
   const len = text.length;
-
-  const spaceRe = /\s/;
-  const isSpace = (c) => spaceRe.test(c);
-  const closers = new Set(['"', "'", ')', ']', '}']);
-  const openers = new Set(['(', '[', '{']);
   let parenDepth = 0;
   let quote = null;
 
@@ -47,22 +49,21 @@ export function summarize(text, count = 1) {
       else if (!quote) quote = ch;
     }
 
-    if (ch === '.' || ch === '!' || ch === '?') {
+    if (ch === '.' || ch === '!' || ch === '?' || ch === '…') {
       // Skip decimals like 3.14
-      if (
-        ch === '.' &&
-        i > 0 &&
-        /\d/.test(text[i - 1]) &&
-        i + 1 < len &&
-        /\d/.test(text[i + 1])
-      ) {
+      if (ch === '.' && i > 0 && isDigit(text[i - 1]) && i + 1 < len && isDigit(text[i + 1])) {
         continue;
       }
 
       let j = i + 1;
 
       // absorb consecutive punctuation like ?!
-      while (j < len && (text[j] === '.' || text[j] === '!' || text[j] === '?')) j++;
+      while (
+        j < len &&
+        (text[j] === '.' || text[j] === '!' || text[j] === '?' || text[j] === '…')
+      ) {
+        j++;
+      }
 
       // absorb trailing closers (quotes, parentheses)
       while (j < len && closers.has(text[j])) {
