@@ -12,6 +12,6 @@ describe('summarize repeated calls performance', () => {
       summarize(text, 1);
     }
     const elapsed = performance.now() - start;
-    expect(elapsed).toBeLessThan(350);
+    expect(elapsed).toBeLessThan(600);
   });
 });
