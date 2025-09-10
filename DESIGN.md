@@ -1,4 +1,4 @@
-# jobbot3000 — Self-Hosted Job Search Copilot
+# jobbot3000 — Self-hosted Job Search Copilot
 **Status:** Draft v0.1 (2025-08-20)
 **Owner:** futuroptimist
 **License:** MIT
@@ -134,7 +134,7 @@ Each ATS = a module returning a normalized `JobPosting`. Add basic backoff, ETag
 **Pipeline**
 1. Convert JSON Resume → template context.
 2. Apply job-specific tailoring: select strongest bullets, swap keywords (never fabricate), cap to 1 page.
-3. Compile → PDF; generate plain-text preview for ATS check.
+3. Compile → PDF; generate plain text preview for ATS check.
 4. Emit build log + a diff view vs. base resume.
 
 **ATS-friendly defaults**
@@ -269,7 +269,7 @@ jobbot track add <job_id> --status applied --note "emailed hiring manager"
 **Phase 3 — Tailoring & rendering (1 week)**
 - Templating (choose Typst or LaTeX first; Tectonic/Typst CLI).
 - One-page constraint, dynamic bullet swapping.
-- ATS plain-text preview + warnings (tables/images detection).
+- ATS plain text preview + warnings (tables/images detection).
 - Cover letter template + slot-fill with job-specific context.
 
 **Phase 4 — Interview rehearsal (1 week)**
