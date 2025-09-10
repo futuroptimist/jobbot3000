@@ -61,7 +61,7 @@ is lost. Parenthetical abbreviations like `(M.Sc.)` remain attached to their sur
 
 Example: `summarize('"Hi!" Bye.')` returns `"Hi!"`.
 
-Job requirements may appear under headers like `Requirements`, `Qualifications`,
+Job requirements may appear under headers like `Requirements`, `Qualifications`, `Skills`,
 `What you'll need`, or `Responsibilities` (used if no other requirement headers are present).
 They may start with `-`, `+`, `*`, `•`, `–` (en dash), `—` (em dash), or numeric markers like `1.`
 or `(1)`; these markers are stripped when parsing job text, even when the first requirement follows
