@@ -1,6 +1,18 @@
+const TOKEN_CACHE = new Map();
+
 function tokenize(text) {
+  // Cache tokenization to avoid repeated regex and Set allocations.
+  const key = text || '';
+  const cached = TOKEN_CACHE.get(key);
+  if (cached) return cached;
+
   // Use regex matching to avoid replace/split allocations and speed up tokenization.
-  return new Set((text || '').toLowerCase().match(/[a-z0-9]+/g) || []);
+  const tokens = new Set(key.toLowerCase().match(/[a-z0-9]+/g) || []);
+
+  // Simple cache eviction to bound memory.
+  if (TOKEN_CACHE.size > 1000) TOKEN_CACHE.clear();
+  TOKEN_CACHE.set(key, tokens);
+  return tokens;
 }
 
 export function computeFitScore(resumeText, requirements) {
