@@ -1,6 +1,19 @@
+const MAX_CACHE_SIZE = 100;
+const tokenCache = new Map();
+
 function tokenize(text) {
-  // Use regex matching to avoid replace/split allocations and speed up tokenization.
-  return new Set((text || '').toLowerCase().match(/[a-z0-9]+/g) || []);
+  // Cache tokenization results with a simple LRU to avoid unbounded growth.
+  const key = text || '';
+  let tokens = tokenCache.get(key);
+  if (!tokens) {
+    tokens = new Set(key.toLowerCase().match(/[a-z0-9]+/g) || []);
+    tokenCache.set(key, tokens);
+    if (tokenCache.size > MAX_CACHE_SIZE) {
+      const firstKey = tokenCache.keys().next().value;
+      tokenCache.delete(firstKey);
+    }
+  }
+  return tokens;
 }
 
 export function computeFitScore(resumeText, requirements) {
