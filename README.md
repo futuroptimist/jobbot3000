@@ -45,10 +45,23 @@ Fetch remote job listings and normalize HTML to plain text:
 ```js
 import { fetchTextFromUrl } from './src/fetch.js';
 
-const text = await fetchTextFromUrl('https://example.com/job', { timeoutMs: 5000 });
+const text = await fetchTextFromUrl('https://example.com/job', {
+  timeoutMs: 5000,
+  headers: { 'User-Agent': 'jobbot' }
+});
 ```
 `fetchTextFromUrl` strips scripts, styles, navigation, footer, and aside content and
-collapses whitespace to single spaces. Pass `timeoutMs` (milliseconds) to override the 10s default.
+collapses whitespace to single spaces. Pass `timeoutMs` (milliseconds) to override the 10s default,
+and `headers` to send custom HTTP headers. Only `http` and `https` URLs are supported; other
+protocols throw an error.
+
+Normalize existing HTML without fetching:
+
+```js
+import { extractTextFromHtml } from './src/fetch.js';
+
+const text = extractTextFromHtml('<p>Hello</p>');
+```
 
 Format parsed results as Markdown:
 
@@ -58,10 +71,14 @@ import { toMarkdownSummary } from './src/exporters.js';
 const md = toMarkdownSummary({
   title: 'Engineer',
   company: 'ACME',
+  location: 'Remote',
+  url: 'https://example.com/job',
   summary: 'Short blurb.',
   requirements: ['3+ years JS'],
 });
 ```
+
+Pass `url` to include a source link in the rendered Markdown output.
 
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal
 punctuation like `?!`, including when followed by closing quotes or parentheses. Terminators apply
@@ -80,8 +97,10 @@ Job requirements may appear under headers like `Requirements`, `Qualifications`,
 `What you'll need`, or `Responsibilities` (used if no other requirement headers are present).
 They may start with `-`, `+`, `*`, `•`, `–` (en dash), `—` (em dash), or numeric markers like `1.`
 or `(1)`; these markers are stripped when parsing job text, even when the first requirement follows
-the header on the same line. Leading numbers without punctuation remain intact. Resume scoring
-tokenizes via a manual scanner and caches tokens to avoid repeated work.
+the header on the same line. Leading numbers without punctuation remain intact. Requirement headers
+are located in a single pass to avoid rescanning large job postings, and resume scoring tokenizes
+via a manual scanner and caches tokens (up to 60k lines) to avoid repeated work. Requirement bullets
+are scanned without regex or temporary arrays, improving large input performance.
 
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 See [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) for a list of prompt documents.
