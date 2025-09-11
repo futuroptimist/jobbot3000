@@ -1,6 +1,18 @@
 import fetch from 'node-fetch';
 import { htmlToText } from 'html-to-text';
 
+/** Options for html-to-text that skip non-content tags. */
+const HTML_TO_TEXT_OPTIONS = Object.freeze({
+  wordwrap: false,
+  selectors: [
+    { selector: 'script', format: 'skip' },
+    { selector: 'style', format: 'skip' },
+    { selector: 'nav', format: 'skip' },
+    { selector: 'footer', format: 'skip' },
+    { selector: 'aside', format: 'skip' }
+  ]
+});
+
 /**
  * Convert HTML to plain text, skipping non-content tags and collapsing whitespace.
  *
@@ -9,16 +21,7 @@ import { htmlToText } from 'html-to-text';
  */
 export function extractTextFromHtml(html) {
   if (!html) return '';
-  return htmlToText(html, {
-    wordwrap: false,
-    selectors: [
-      { selector: 'script', format: 'skip' },
-      { selector: 'style', format: 'skip' },
-      { selector: 'nav', format: 'skip' },
-      { selector: 'footer', format: 'skip' },
-      { selector: 'aside', format: 'skip' }
-    ]
-  })
+  return htmlToText(html, HTML_TO_TEXT_OPTIONS)
     .replace(/\s+/g, ' ')
     .trim();
 }
