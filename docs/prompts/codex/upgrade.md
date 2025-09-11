@@ -20,6 +20,7 @@ CONTEXT:
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
+- Link-check the updated doc, e.g., `npx markdown-link-check <file>`.
 - Confirm referenced files exist.
 - Update [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 
@@ -52,10 +53,11 @@ CONTEXT:
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
+- Link-check this doc with `npx markdown-link-check docs/prompts/codex/upgrade.md`.
 
 REQUEST:
 1. Keep this doc accurate and link-check.
-2. Ensure examples and references are up to date.
+2. Ensure examples and references are up to date; confirm referenced files exist.
 3. Run the commands above and fix any failures.
 
 OUTPUT:
