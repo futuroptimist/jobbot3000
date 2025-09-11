@@ -27,21 +27,20 @@ function stripBullet(line) {
   return line.replace(BULLET_PREFIX_RE, '').trim();
 }
 
-/** Check if a line matches any pattern in the provided array. */
-function matchAny(line, patterns) {
-  return patterns.some(pattern => pattern.test(line));
-}
-
 /**
- * Find the index of the first header in `primary` or fall back to headers in `fallback`.
- * Returns -1 if no headers match.
+ * Find the first header line matching any pattern in `primary` or `fallback`.
+ * Returns an object with the line index and the matched pattern. If no headers
+ * match, the index is -1 and the pattern is null.
  */
-function findHeaderIndex(lines, primary, fallback) {
-  for (const group of [primary, fallback]) {
-    const idx = lines.findIndex(line => matchAny(line, group));
-    if (idx !== -1) return idx;
+function findHeader(lines, primary, fallback) {
+  for (const patterns of [primary, fallback]) {
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i];
+      const match = patterns.find(p => p.test(line));
+      if (match) return { index: i, pattern: match };
+    }
   }
-  return -1;
+  return { index: -1, pattern: null };
 }
 
 function findFirstMatch(lines, patterns) {
@@ -59,15 +58,16 @@ function findFirstMatch(lines, patterns) {
  * Supports requirement text on the same line for both primary and fallback headers.
  */
 function extractRequirements(lines) {
-  const idx = findHeaderIndex(lines, REQUIREMENTS_HEADERS, FALLBACK_REQUIREMENTS_HEADERS);
+  const { index: idx, pattern: headerPattern } = findHeader(
+    lines,
+    REQUIREMENTS_HEADERS,
+    FALLBACK_REQUIREMENTS_HEADERS
+  );
   if (idx === -1) return [];
 
   const requirements = [];
   const headerLine = lines[idx];
-  const headerPattern =
-    REQUIREMENTS_HEADERS.find(h => h.test(headerLine)) ||
-    FALLBACK_REQUIREMENTS_HEADERS.find(h => h.test(headerLine));
-  let rest = headerPattern ? headerLine.replace(headerPattern, '').trim() : '';
+  let rest = headerLine.replace(headerPattern, '').trim();
   rest = rest.replace(/^[:\s]+/, '');
 
   if (rest) {

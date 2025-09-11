@@ -17,10 +17,21 @@ function appendListSection(lines, header, items, { leadingNewline = false } = {}
   for (const item of items) lines.push(`- ${item}`);
 }
 
-export function toMarkdownSummary({ title, company, requirements, summary }) {
+/**
+ * Format parsed job data as Markdown.
+ * @param {object} params
+ * @param {string} [params.title]
+ * @param {string} [params.company]
+ * @param {string} [params.url] Link to the job posting.
+ * @param {string[]} [params.requirements]
+ * @param {string} [params.summary]
+ * @returns {string}
+ */
+export function toMarkdownSummary({ title, company, url, requirements, summary }) {
   const lines = [];
   if (title) lines.push(`# ${title}`);
   if (company) lines.push(`**Company**: ${company}`);
+  if (url) lines.push(`**URL**: ${url}`);
   if (summary) lines.push(`\n${summary}\n`);
   appendListSection(lines, 'Requirements', requirements);
   return lines.join('\n');
