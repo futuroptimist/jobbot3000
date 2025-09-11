@@ -25,6 +25,7 @@ CONTEXT:
   (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
 - Confirm referenced files exist; update
   [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
+- Ensure any code samples compile with `node` or `ts-node`.
 
 REQUEST:
 1. Identify missing or weak tests.
