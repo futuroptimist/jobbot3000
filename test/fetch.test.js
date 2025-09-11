@@ -73,4 +73,10 @@ describe('fetchTextFromUrl', () => {
     await expect(fetchTextFromUrl('http://example.com'))
       .rejects.toThrow('Failed to fetch http://example.com: 500 Server Error');
   });
+
+  it('rejects localhost URLs', async () => {
+    fetch.mockReset();
+    await expect(fetchTextFromUrl('http://localhost')).rejects.toThrow(/disallowed/i);
+    expect(fetch).not.toHaveBeenCalled();
+  });
 });
