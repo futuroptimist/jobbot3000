@@ -6,9 +6,21 @@ describe('parseJobText', () => {
     expect(parseJobText(undefined)).toEqual({
       title: '',
       company: '',
+      location: '',
       requirements: [],
       body: ''
     });
+  });
+
+  it('extracts location when present', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Location: Remote, USA
+Requirements:
+- Node.js
+`;
+    expect(parseJobText(text)).toMatchObject({ location: 'Remote, USA' });
   });
 
   it('strips dash, en dash, and em dash bullets', () => {
@@ -48,6 +60,18 @@ Responsibilities:
 `;
     const parsed = parseJobText(text);
     expect(parsed.requirements).toEqual(['Build features', 'Fix bugs']);
+  });
+
+  it('parses requirements after a Qualifications header', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Qualifications:
+- Strong communication
+- Teamwork
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual(['Strong communication', 'Teamwork']);
   });
 
   it('captures inline requirement text after a Responsibilities header', () => {
