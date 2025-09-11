@@ -76,6 +76,15 @@ const md = toMarkdownSummary({
   summary: 'Short blurb.',
   requirements: ['3+ years JS'],
 });
+
+console.log(md);
+// # Engineer
+// **Company**: ACME
+//
+// Short blurb.
+//
+// ## Requirements
+// - 3+ years JS
 ```
 
 Pass `url` to include a source link in the rendered Markdown output.
