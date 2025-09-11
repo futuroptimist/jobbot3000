@@ -32,6 +32,12 @@ describe('loadResume', () => {
     expect(result).toBe('Title\n\nbold text');
   });
 
+  it('strips markdown formatting for .markdown extension', async () => {
+    const md = '# Title\n\n**bold** text\n';
+    const result = await withTempFile('.markdown', md, loadResume);
+    expect(result).toBe('Title\n\nbold text');
+  });
+
   it('uses pdf-parse for PDF files', async () => {
     const result = await withTempFile('.pdf', 'dummy', loadResume);
     expect(result).toBe('PDF content');
