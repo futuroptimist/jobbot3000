@@ -68,11 +68,12 @@ punctuation like `?!`, including when followed by closing quotes or parentheses.
 only when followed by whitespace or the end of text, so decimals like `1.99` remain intact.
 It ignores bare newlines.  
 It scans text character-by-character to avoid large intermediate arrays and regex performance
-pitfalls, falling back to the trimmed input when no sentence punctuation is found.  
+pitfalls, falling back to the trimmed input when no sentence punctuation is found.
 Trailing quotes or parentheses are included when they immediately follow punctuation, and all
-Unicode whitespace is treated as a sentence boundary.  
+Unicode whitespace is treated as a sentence boundary.
 If fewer complete sentences than requested exist, any remaining text is appended so no content
 is lost. Parenthetical abbreviations like `(M.Sc.)` remain attached to their surrounding sentence.
+Common honorifics such as `Mr.` and `Dr.` are recognized so summaries aren't cut mid-sentence.
 
 Example: `summarize('"Hi!" Bye.')` returns `"Hi!"`.
 
