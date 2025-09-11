@@ -55,7 +55,7 @@ PURPOSE:
 Improve or expand the repository's prompt docs.
 
 CONTEXT:
-- Follow [README.md](../../README.md); see the
+- Follow [README.md](../../../README.md); see the
   [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with
