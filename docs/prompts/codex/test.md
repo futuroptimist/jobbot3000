@@ -15,9 +15,10 @@ PURPOSE:
 Improve or expand test coverage without altering runtime behavior.
 
 CONTEXT:
-- Follow [README.md](../../../README.md); see the [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
+- Follow [README.md](../../../README.md); see the
+  [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
-- The project uses [Vitest](https://vitest.dev) for unit tests.
+- Tests live in [test/](../../../test) and run with [Vitest](https://vitest.dev/).
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with
