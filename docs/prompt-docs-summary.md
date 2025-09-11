@@ -13,6 +13,8 @@ Includes [`scripts/scan-secrets.py`](../scripts/scan-secrets.py).
 
 | Path | Prompt | Type | One-click? |
 |------|--------|------|------------|
+| [docs/prompts/codex/accessibility.md][accessibility-doc] | Codex Accessibility Prompt | evergreen | yes |
+| [docs/prompts/codex/accessibility.md#upgrade-prompt][accessibility-up] | Upgrade Prompt | evergreen | yes |
 | [docs/prompts/codex/automation.md][automation-doc] | Codex Automation Prompt | evergreen | yes |
 | [docs/prompts/codex/automation.md#upgrade-prompt][automation-up] | Upgrade Prompt | evergreen | yes |
 | [docs/prompts/codex/chore.md][chore-doc] | Codex Chore Prompt | evergreen | yes |
@@ -36,6 +38,8 @@ Includes [`scripts/scan-secrets.py`](../scripts/scan-secrets.py).
 | [docs/prompts/codex/upgrade.md][upgrade-doc] | Codex Upgrade Prompt | evergreen | yes |
 | [docs/prompts/codex/upgrade.md#upgrade-prompt][upgrade-up] | Upgrade Prompt | evergreen | yes |
 
+[accessibility-doc]: prompts/codex/accessibility.md
+[accessibility-up]: prompts/codex/accessibility.md#upgrade-prompt
 [automation-doc]: prompts/codex/automation.md
 [automation-up]: prompts/codex/automation.md#upgrade-prompt
 [chore-doc]: prompts/codex/chore.md
