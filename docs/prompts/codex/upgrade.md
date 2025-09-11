@@ -44,7 +44,7 @@ PURPOSE:
 Refine the `docs/prompts/codex/upgrade.md` document.
 
 CONTEXT:
-- Follow [README.md](../../README.md).
+- Follow [README.md](../../../README.md).
 - See the [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
