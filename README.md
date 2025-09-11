@@ -47,7 +47,7 @@ import { fetchTextFromUrl } from './src/fetch.js';
 
 const text = await fetchTextFromUrl('https://example.com/job', { timeoutMs: 5000 });
 ```
-`fetchTextFromUrl` strips scripts, styles, navigation, footer, and aside content and
+`fetchTextFromUrl` strips scripts, styles, navigation, header, footer, and aside content and
 collapses whitespace to single spaces. Pass `timeoutMs` (milliseconds) to override the 10s default.
 
 Format parsed results as Markdown:
