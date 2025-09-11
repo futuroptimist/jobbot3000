@@ -18,6 +18,9 @@ const isSpace = (c) => spaceRe.test(c);
 const closers = new Set(['"', "'", ')', ']', '}']);
 const openers = new Set(['(', '[', '{']);
 const isDigit = (c) => c >= '0' && c <= '9';
+const alphaRe = /[A-Za-z]/;
+const isAlpha = (c) => alphaRe.test(c);
+const honorifics = new Set(['mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr']);
 
 export function summarize(text, count = 1) {
   if (!text || count <= 0) return '';
@@ -83,6 +86,14 @@ export function summarize(text, count = 1) {
 
       const next = text[k];
       const isLower = next && next.toLowerCase() === next && next.toUpperCase() !== next;
+      const isUpper = next && next.toUpperCase() === next && next.toLowerCase() !== next;
+
+      if (ch === '.' && isUpper) {
+        let w = i - 1;
+        while (w >= 0 && isAlpha(text[w])) w--;
+        const word = text.slice(w + 1, i).toLowerCase();
+        if (honorifics.has(word)) continue;
+      }
 
       if (parenDepth === 0 && !quote && (k === len || !isLower)) {
         sentences.push(text.slice(start, j));

@@ -78,4 +78,9 @@ it('returns empty string when count is 0', () => {
     const text = 'Candidates (M.Sc.) should apply.';
     expect(summarize(text)).toBe('Candidates (M.Sc.) should apply.');
   });
+
+  it('does not split after common honorifics', () => {
+    const text = 'Dr. Smith went home. Another sentence.';
+    expect(summarize(text)).toBe('Dr. Smith went home.');
+  });
 });
