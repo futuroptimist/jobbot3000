@@ -69,6 +69,11 @@ it('returns empty string when count is 0', () => {
     expect(summarize(text)).toBe('Wait…');
   });
 
+  it('recognizes interrobang as terminator', () => {
+    const text = 'Really‽ Another sentence.';
+    expect(summarize(text)).toBe('Really‽');
+  });
+
   it('treats non-breaking space as whitespace', () => {
     const text = 'One sentence.\u00A0Another.';
     expect(summarize(text)).toBe('One sentence.');
