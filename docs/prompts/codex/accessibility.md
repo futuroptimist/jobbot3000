@@ -1,44 +1,40 @@
 ---
-title: 'Codex Test Prompt'
-slug: 'codex-test'
+title: 'Codex Accessibility Prompt'
+slug: 'codex-accessibility'
 ---
 
-# Codex Test Prompt
-Use this prompt when adding or improving tests in jobbot3000.
-Tests live under [test](../../../test).
+# Codex Accessibility Prompt
+Use this prompt to improve accessibility features in jobbot3000.
 
 ```text
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
 
 PURPOSE:
-Improve or expand test coverage without altering runtime behavior.
+Enhance accessibility, ensuring inclusive and usable interfaces.
 
 CONTEXT:
 - Follow [README.md](../../../README.md); see the
   [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
-- Tests live in [test/](../../../test) and run with [Vitest](https://vitest.dev/).
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
-- Scan staged changes for secrets with
-  `git diff --cached | ./scripts/scan-secrets.py`
+- Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`
   (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
 - Confirm referenced files exist; update
   [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
-- Ensure any code samples compile with `node` or `ts-node`.
 
 REQUEST:
-1. Identify missing or weak tests.
-2. Add or update tests to cover edge cases.
-3. Ensure tests are deterministic and isolated.
+1. Identify accessibility gaps such as missing alt text or ARIA labels.
+2. Apply minimal changes to meet accessibility standards.
+3. Add or update tests verifying accessible behavior.
 4. Run the commands above and fix any failures.
 
 OUTPUT:
-A pull request URL summarizing the test improvement.
+A pull request summarizing the accessibility improvements with passing checks.
 ```
 
-Copy this block whenever working on tests in jobbot3000.
+Copy this block whenever improving accessibility in jobbot3000.
 
 ## Upgrade Prompt
 Type: evergreen
@@ -55,10 +51,12 @@ Improve or expand the repository's prompt docs.
 CONTEXT:
 - Follow [README.md](../../../README.md); see the
   [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
+- Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
+- Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
-- Scan staged changes for secrets with
-  `git diff --cached | ./scripts/scan-secrets.py`
-  (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
+- Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
+- Confirm referenced files exist and update
+  [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 
 REQUEST:
 1. Select a file under `docs/prompts/` to update or create a new prompt type.
@@ -68,4 +66,3 @@ REQUEST:
 OUTPUT:
 A pull request that updates the selected prompt doc with passing checks.
 ```
-
