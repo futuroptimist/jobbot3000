@@ -9,6 +9,8 @@ const COMPANY_PATTERNS = [
   /\bEmployer\s*:\s*(.+)/i
 ];
 
+const LOCATION_PATTERNS = [/\bLocation\s*:\s*(.+)/i];
+
 const REQUIREMENTS_HEADERS = [
   /\bRequirements\b/i,
   /\bQualifications\b/i,
@@ -90,14 +92,15 @@ function extractRequirements(lines) {
 /** Parse raw job posting text into structured fields. */
 export function parseJobText(rawText) {
   if (!rawText) {
-    return { title: '', company: '', requirements: [], body: '' };
+    return { title: '', company: '', location: '', requirements: [], body: '' };
   }
   const text = rawText.replace(/\r/g, '').trim();
   const lines = text.split(/\n+/);
 
   const title = findFirstMatch(lines, TITLE_PATTERNS);
   const company = findFirstMatch(lines, COMPANY_PATTERNS);
+  const location = findFirstMatch(lines, LOCATION_PATTERNS);
   const requirements = extractRequirements(lines);
 
-  return { title, company, requirements, body: text };
+  return { title, company, location, requirements, body: text };
 }
