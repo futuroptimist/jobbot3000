@@ -122,6 +122,17 @@ Requirements: Proficient in JS
     ]);
   });
 
+  it('strips triangular bullets', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Requirements:
+‣ Innovative mindset
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual(['Innovative mindset']);
+  });
+
   it('strips numeric and parenthetical bullets', () => {
     const text = `
 Title: Developer
