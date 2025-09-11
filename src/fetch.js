@@ -4,16 +4,18 @@ import { htmlToText } from 'html-to-text';
 /**
  * Options for html-to-text that ignore non-content tags.
  */
-const HTML_TO_TEXT_OPTIONS = {
+export const HTML_TO_TEXT_OPTIONS = {
   wordwrap: false,
   selectors: [
     { selector: 'script', format: 'skip' },
     { selector: 'style', format: 'skip' },
     { selector: 'nav', format: 'skip' },
+    { selector: 'header', format: 'skip' },
     { selector: 'footer', format: 'skip' },
-    { selector: 'aside', format: 'skip' }
-  ]
+    { selector: 'aside', format: 'skip' },
+  ],
 };
+
 
 /**
  * Convert HTML to plain text, returning '' for falsy input.
@@ -52,7 +54,7 @@ export async function fetchTextFromUrl(url, { timeoutMs = 10000, headers } = {})
     const response = await fetch(url, {
       redirect: 'follow',
       signal: controller.signal,
-      headers,
+      headers: headers || {},
     });
     if (!response.ok) {
       throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);

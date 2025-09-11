@@ -36,8 +36,23 @@ describe('extractTextFromHtml', () => {
     expect(extractTextFromHtml(html)).toBe('Main');
   });
 
+  it('omits header content', () => {
+    const html = `
+      <html>
+        <body>
+          <header>ignored</header>
+          <p>Main</p>
+        </body>
+      </html>
+    `;
+    expect(extractTextFromHtml(html)).toBe('Main');
+  });
+
   it('returns empty string for falsy input', () => {
     expect(extractTextFromHtml('')).toBe('');
+    // @ts-expect-error testing null input
+    expect(extractTextFromHtml(null)).toBe('');
+    // @ts-expect-error testing undefined input
     expect(extractTextFromHtml()).toBe('');
   });
 });
