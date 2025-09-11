@@ -18,9 +18,16 @@ const isSpace = (c) => spaceRe.test(c);
 const closers = new Set(['"', "'", ')', ']', '}']);
 const openers = new Set(['(', '[', '{']);
 const isDigit = (c) => c >= '0' && c <= '9';
+
+// Unified alpha check using regex (concise and consistent)
 const alphaRe = /[A-Za-z]/;
 const isAlpha = (c) => alphaRe.test(c);
-const honorifics = new Set(['mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr']);
+
+// Combined set of abbreviations (includes honorifics + extras)
+const abbreviations = new Set([
+  'mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', // honorifics
+  'st', 'vs'                                   // additional common abbreviations
+]);
 
 export function summarize(text, count = 1) {
   if (!text || count <= 0) return '';
@@ -58,6 +65,15 @@ export function summarize(text, count = 1) {
       // Skip decimals like 3.14
       if (ch === '.' && i > 0 && isDigit(text[i - 1]) && i + 1 < len && isDigit(text[i + 1])) {
         continue;
+      }
+
+      if (ch === '.') {
+        let w = i - 1;
+        while (w >= 0 && isAlpha(text[w])) w--;
+        const word = text.slice(w + 1, i).toLowerCase();
+        if (abbreviations.has(word)) {
+          continue;
+        }
       }
 
       let j = i + 1;
