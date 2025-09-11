@@ -20,12 +20,12 @@ CONTEXT:
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with
   `git diff --cached | ./scripts/scan-secrets.py`
-  (see [scripts/scan-secrets.py](../../scripts/scan-secrets.py)).
+  (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
 - Confirm referenced files exist; update
   [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 
 REQUEST:
-1. Reproduce the bug with a failing test or script.
+1. Reproduce the bug with a failing test or script in [test/](../../../test).
 2. Apply the smallest fix that resolves the issue.
 3. Update docs or prompts if needed.
 4. Run the commands above and fix any failures.
