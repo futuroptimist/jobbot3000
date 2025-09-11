@@ -73,4 +73,18 @@ describe('fetchTextFromUrl', () => {
     await expect(fetchTextFromUrl('http://example.com'))
       .rejects.toThrow('Failed to fetch http://example.com: 500 Server Error');
   });
+
+  it('rejects non-http/https URLs', async () => {
+    fetch.mockClear();
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('secret')
+    });
+    await expect(fetchTextFromUrl('file:///etc/passwd'))
+      .rejects.toThrow('Unsupported protocol: file:');
+    expect(fetch).not.toHaveBeenCalled();
+  });
 });

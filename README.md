@@ -49,6 +49,7 @@ const text = await fetchTextFromUrl('https://example.com/job', { timeoutMs: 5000
 ```
 `fetchTextFromUrl` strips scripts, styles, navigation, footer, and aside content and
 collapses whitespace to single spaces. Pass `timeoutMs` (milliseconds) to override the 10s default.
+Only `http` and `https` URLs are supported; other protocols throw an error.
 
 Format parsed results as Markdown:
 

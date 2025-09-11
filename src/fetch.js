@@ -25,12 +25,18 @@ export function extractTextFromHtml(html) {
 
 /**
  * Fetch a URL and return its text content. HTML responses are converted to plain text.
+ * Supports only `http:` and `https:` protocols.
  *
  * @param {string} url
  * @param {{ timeoutMs?: number }} [opts]
  * @returns {Promise<string>}
  */
 export async function fetchTextFromUrl(url, { timeoutMs = 10000 } = {}) {
+  const { protocol } = new URL(url);
+  if (protocol !== 'http:' && protocol !== 'https:') {
+    throw new Error(`Unsupported protocol: ${protocol}`);
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(
     () => controller.abort(new Error(`Timeout after ${timeoutMs}ms`)),
