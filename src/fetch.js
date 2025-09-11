@@ -1,6 +1,14 @@
 import fetch from 'node-fetch';
 import { htmlToText } from 'html-to-text';
 
+const SKIP_SELECTORS = [
+  { selector: 'script', format: 'skip' },
+  { selector: 'style', format: 'skip' },
+  { selector: 'nav', format: 'skip' },
+  { selector: 'footer', format: 'skip' },
+  { selector: 'aside', format: 'skip' }
+];
+
 /**
  * Convert HTML to plain text, skipping non-content tags and collapsing whitespace.
  *
@@ -11,13 +19,7 @@ export function extractTextFromHtml(html) {
   if (!html) return '';
   return htmlToText(html, {
     wordwrap: false,
-    selectors: [
-      { selector: 'script', format: 'skip' },
-      { selector: 'style', format: 'skip' },
-      { selector: 'nav', format: 'skip' },
-      { selector: 'footer', format: 'skip' },
-      { selector: 'aside', format: 'skip' }
-    ]
+    selectors: SKIP_SELECTORS
   })
     .replace(/\s+/g, ' ')
     .trim();
