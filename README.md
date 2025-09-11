@@ -45,10 +45,23 @@ Fetch remote job listings and normalize HTML to plain text:
 ```js
 import { fetchTextFromUrl } from './src/fetch.js';
 
-const text = await fetchTextFromUrl('https://example.com/job', { timeoutMs: 5000 });
+const text = await fetchTextFromUrl('https://example.com/job', {
+  timeoutMs: 5000,
+  headers: { 'User-Agent': 'jobbot' }
+});
 ```
-`fetchTextFromUrl` strips scripts, styles, navigation, header, footer, and aside content and
-collapses whitespace to single spaces. Pass `timeoutMs` (milliseconds) to override the 10s default.
+`fetchTextFromUrl` strips scripts, styles, navigation, footer, and aside content and
+collapses whitespace to single spaces. Pass `timeoutMs` (milliseconds) to override the 10s default,
+and `headers` to send custom HTTP headers. Only `http` and `https` URLs are supported; other
+protocols throw an error.
+
+Normalize existing HTML without fetching:
+
+```js
+import { extractTextFromHtml } from './src/fetch.js';
+
+const text = extractTextFromHtml('<p>Hello</p>');
+```
 
 Format parsed results as Markdown:
 
@@ -58,10 +71,14 @@ import { toMarkdownSummary } from './src/exporters.js';
 const md = toMarkdownSummary({
   title: 'Engineer',
   company: 'ACME',
+  location: 'Remote',
+  url: 'https://example.com/job',
   summary: 'Short blurb.',
   requirements: ['3+ years JS'],
 });
 ```
+
+Pass `url` to include a source link in the rendered Markdown output.
 
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal
 punctuation like `?!`, including when followed by closing quotes or parentheses. Terminators apply
