@@ -1,5 +1,6 @@
 import fetch from 'node-fetch';
 import { htmlToText } from 'html-to-text';
+import { isIP } from 'node:net';
 
 /**
  * Convert HTML to plain text, skipping non-content tags and collapsing whitespace.
@@ -31,6 +32,26 @@ export function extractTextFromHtml(html) {
  * @returns {Promise<string>}
  */
 export async function fetchTextFromUrl(url, { timeoutMs = 10000 } = {}) {
+  const parsed = new URL(url);
+  if (!/^https?:$/.test(parsed.protocol)) {
+    throw new Error(`Unsupported protocol for ${url}`);
+  }
+  const host = parsed.hostname;
+  const parts = host.split('.');
+  const second = Number(parts[1]);
+  const isPrivate =
+    host === 'localhost' ||
+    host === '::1' ||
+    (isIP(host) &&
+      (host.startsWith('10.') ||
+        host.startsWith('127.') ||
+        host.startsWith('0.') ||
+        host.startsWith('169.254.') ||
+        host.startsWith('192.168.') ||
+        (host.startsWith('172.') && second >= 16 && second <= 31)));
+  if (isPrivate) {
+    throw new Error(`Disallowed private URL: ${url}`);
+  }
   const controller = new AbortController();
   const timer = setTimeout(
     () => controller.abort(new Error(`Timeout after ${timeoutMs}ms`)),
