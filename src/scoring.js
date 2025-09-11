@@ -1,5 +1,6 @@
 const TOKEN_CACHE = new Map();
 const ARRAY_TOKEN_CACHE = new Map();
+const TOKEN_RE = /[a-z0-9]+/g;
 
 // Tokenize text into a Set of lowercase alphanumeric tokens, with caching to avoid
 // repeated regex and Set allocations.
@@ -9,7 +10,8 @@ function tokenize(text) {
   if (cached) return cached;
 
   // Use regex matching to avoid replace/split allocations and speed up tokenization.
-  const tokens = new Set(key.toLowerCase().match(/[a-z0-9]+/g) || []);
+  TOKEN_RE.lastIndex = 0;
+  const tokens = new Set(key.toLowerCase().match(TOKEN_RE) || []);
 
   // Simple cache eviction to bound memory.
   if (TOKEN_CACHE.size > 1000) TOKEN_CACHE.clear();
@@ -22,7 +24,8 @@ function tokenizeArray(text) {
   const key = text || '';
   const cached = ARRAY_TOKEN_CACHE.get(key);
   if (cached) return cached;
-  const tokens = key.toLowerCase().match(/[a-z0-9]+/g) || [];
+  TOKEN_RE.lastIndex = 0;
+  const tokens = key.toLowerCase().match(TOKEN_RE) || [];
   if (ARRAY_TOKEN_CACHE.size > 1000) ARRAY_TOKEN_CACHE.clear();
   ARRAY_TOKEN_CACHE.set(key, tokens);
   return tokens;
