@@ -44,10 +44,12 @@ PURPOSE:
 Refine the `docs/prompts/codex/upgrade.md` document.
 
 CONTEXT:
-- Follow [README.md](../../README.md).
+- Follow [README.md](../../../README.md).
+- Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
 - See the [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
+- Verify links with `npx markdown-link-check docs/prompts/codex/upgrade.md`.
 
 REQUEST:
 1. Keep this doc accurate and link-check.
@@ -57,3 +59,4 @@ REQUEST:
 OUTPUT:
 A pull request that updates this doc with passing checks.
 ```
+
