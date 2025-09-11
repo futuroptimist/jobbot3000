@@ -63,6 +63,8 @@ const md = toMarkdownSummary({
 });
 ```
 
+All Markdown exporters escape special characters to prevent injection when rendering.
+
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal
 punctuation like `?!`, including when followed by closing quotes or parentheses. Terminators apply
 only when followed by whitespace or the end of text, so decimals like `1.99` remain intact.

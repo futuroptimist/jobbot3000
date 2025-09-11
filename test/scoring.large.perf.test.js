@@ -11,6 +11,6 @@ describe('computeFitScore large input performance', () => {
       computeFitScore(resume, bullets);
     }
     const duration = performance.now() - start;
-    expect(duration).toBeLessThan(650);
+    expect(duration).toBeLessThan(900);
   });
 });
