@@ -37,7 +37,7 @@ function hasOverlap(line, resumeSet) {
     const code = text.charCodeAt(i);
     const isAlnum =
       (code >= 48 && code <= 57) || // 0-9
-      (code >= 97 && code <= 122); // a-z
+      (code >= 97 && code <= 122);  // a-z
     if (isAlnum) {
       if (start === -1) start = i;
     } else if (start !== -1) {
