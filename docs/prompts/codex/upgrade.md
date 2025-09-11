@@ -53,7 +53,7 @@ CONTEXT:
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
-- Link-check this doc with `npx markdown-link-check docs/prompts/codex/upgrade.md`.
+- Verify links with `npx markdown-link-check docs/prompts/codex/upgrade.md`.
 
 REQUEST:
 1. Keep this doc accurate and link-check.
@@ -63,3 +63,4 @@ REQUEST:
 OUTPUT:
 A pull request that updates this doc with passing checks.
 ```
+
