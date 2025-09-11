@@ -45,10 +45,14 @@ Fetch remote job listings and normalize HTML to plain text:
 ```js
 import { fetchTextFromUrl } from './src/fetch.js';
 
-const text = await fetchTextFromUrl('https://example.com/job', { timeoutMs: 5000 });
+const text = await fetchTextFromUrl('https://example.com/job', {
+  timeoutMs: 5000,
+  headers: { 'User-Agent': 'jobbot' }
+});
 ```
 `fetchTextFromUrl` strips scripts, styles, navigation, footer, and aside content and
-collapses whitespace to single spaces. Pass `timeoutMs` (milliseconds) to override the 10s default.
+collapses whitespace to single spaces. Pass `timeoutMs` (milliseconds) to override the 10s default
+and `headers` to send custom HTTP headers.
 
 Format parsed results as Markdown:
 

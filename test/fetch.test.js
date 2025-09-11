@@ -73,4 +73,22 @@ describe('fetchTextFromUrl', () => {
     await expect(fetchTextFromUrl('http://example.com'))
       .rejects.toThrow('Failed to fetch http://example.com: 500 Server Error');
   });
+
+  it('forwards headers to fetch', async () => {
+    fetch.mockClear();
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('ok')
+    });
+    await fetchTextFromUrl('http://example.com', {
+      headers: { 'User-Agent': 'jobbot' }
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      'http://example.com',
+      expect.objectContaining({ headers: { 'User-Agent': 'jobbot' } })
+    );
+  });
 });
