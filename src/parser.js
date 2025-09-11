@@ -34,14 +34,16 @@ function matchAny(line, patterns) {
 
 /**
  * Find the index of the first header in `primary` or fall back to headers in `fallback`.
- * Returns -1 if no headers match.
+ * Scans the lines once and returns -1 if no headers match.
  */
 function findHeaderIndex(lines, primary, fallback) {
-  for (const group of [primary, fallback]) {
-    const idx = lines.findIndex(line => matchAny(line, group));
-    if (idx !== -1) return idx;
+  let fallbackIdx = -1;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (matchAny(line, primary)) return i;
+    if (fallbackIdx === -1 && matchAny(line, fallback)) fallbackIdx = i;
   }
-  return -1;
+  return fallbackIdx;
 }
 
 function findFirstMatch(lines, patterns) {
