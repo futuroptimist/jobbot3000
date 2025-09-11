@@ -38,6 +38,9 @@ describe('extractTextFromHtml', () => {
 
   it('returns empty string for falsy input', () => {
     expect(extractTextFromHtml('')).toBe('');
+    // @ts-expect-error testing undefined/null input
+    expect(extractTextFromHtml(null)).toBe('');
+    // @ts-expect-error testing undefined input
     expect(extractTextFromHtml()).toBe('');
   });
 });

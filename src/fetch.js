@@ -1,6 +1,18 @@
 import fetch from 'node-fetch';
 import { htmlToText } from 'html-to-text';
 
+/** Options for html-to-text that skip non-content tags. */
+const HTML_TO_TEXT_OPTIONS = Object.freeze({
+  wordwrap: false,
+  selectors: [
+    { selector: 'script', format: 'skip' },
+    { selector: 'style', format: 'skip' },
+    { selector: 'nav', format: 'skip' },
+    { selector: 'footer', format: 'skip' },
+    { selector: 'aside', format: 'skip' }
+  ]
+});
+
 /**
  * Options for html-to-text that ignore non-content tags.
  */
