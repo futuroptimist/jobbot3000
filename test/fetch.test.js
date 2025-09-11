@@ -35,6 +35,11 @@ describe('extractTextFromHtml', () => {
     `;
     expect(extractTextFromHtml(html)).toBe('Main');
   });
+
+  it('returns empty string for falsy input', () => {
+    expect(extractTextFromHtml('')).toBe('');
+    expect(extractTextFromHtml()).toBe('');
+  });
 });
 
 describe('fetchTextFromUrl', () => {

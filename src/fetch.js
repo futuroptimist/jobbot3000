@@ -2,23 +2,28 @@ import fetch from 'node-fetch';
 import { htmlToText } from 'html-to-text';
 
 /**
- * Convert HTML to plain text, skipping non-content tags and collapsing whitespace.
+ * Options for html-to-text that ignore non-content tags.
+ */
+const HTML_TO_TEXT_OPTIONS = {
+  wordwrap: false,
+  selectors: [
+    { selector: 'script', format: 'skip' },
+    { selector: 'style', format: 'skip' },
+    { selector: 'nav', format: 'skip' },
+    { selector: 'footer', format: 'skip' },
+    { selector: 'aside', format: 'skip' }
+  ]
+};
+
+/**
+ * Convert HTML to plain text, returning '' for falsy input.
  *
  * @param {string} html
  * @returns {string}
  */
 export function extractTextFromHtml(html) {
   if (!html) return '';
-  return htmlToText(html, {
-    wordwrap: false,
-    selectors: [
-      { selector: 'script', format: 'skip' },
-      { selector: 'style', format: 'skip' },
-      { selector: 'nav', format: 'skip' },
-      { selector: 'footer', format: 'skip' },
-      { selector: 'aside', format: 'skip' }
-    ]
-  })
+  return htmlToText(html, HTML_TO_TEXT_OPTIONS)
     .replace(/\s+/g, ' ')
     .trim();
 }
