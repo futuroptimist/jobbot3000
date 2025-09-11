@@ -30,19 +30,37 @@ function stripBullet(line) {
 }
 
 /**
- * Find the first header line matching any pattern in `primary` or `fallback`.
- * Returns an object with the line index and the matched pattern. If no headers
- * match, the index is -1 and the pattern is null.
+ * Find the index of the first header in `primary` or fall back to headers in `fallback`.
+ * Returns an object with the line index and the matched pattern.
+ * If no headers match, the index is -1 and the pattern is null.
+ *
+ * This implementation scans the lines once: if a primary header is found, it
+ * returns immediately; otherwise, it tracks the first fallback match and uses
+ * it if no primary headers matched.
  */
 function findHeader(lines, primary, fallback) {
-  for (const patterns of [primary, fallback]) {
-    for (let i = 0; i < lines.length; i += 1) {
-      const line = lines[i];
-      const match = patterns.find(p => p.test(line));
-      if (match) return { index: i, pattern: match };
+  let fallbackIdx = -1;
+  let fallbackPattern = null;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const primaryMatch = primary.find(p => p.test(line));
+    if (primaryMatch) {
+      return { index: i, pattern: primaryMatch };
+    }
+    if (fallbackIdx === -1) {
+      const fallbackMatch = fallback.find(p => p.test(line));
+      if (fallbackMatch) {
+        fallbackIdx = i;
+        fallbackPattern = fallbackMatch;
+      }
     }
   }
-  return { index: -1, pattern: null };
+
+  return {
+    index: fallbackIdx,
+    pattern: fallbackIdx !== -1 ? fallbackPattern : null,
+  };
 }
 
 function findFirstMatch(lines, patterns) {
