@@ -5,6 +5,7 @@ slug: 'codex-test'
 
 # Codex Test Prompt
 Use this prompt when adding or improving tests in jobbot3000.
+Tests live under [test](../../../test).
 
 ```text
 SYSTEM:
@@ -14,15 +15,18 @@ PURPOSE:
 Improve or expand test coverage without altering runtime behavior.
 
 CONTEXT:
-- Follow [README.md](../../../README.md); see the [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
+- Follow [README.md](../../../README.md); see the
+  [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
+- Tests live in [test/](../../../test) and run with [Vitest](https://vitest.dev/).
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with
   `git diff --cached | ./scripts/scan-secrets.py`
-  (see [scripts/scan-secrets.py](../../scripts/scan-secrets.py)).
+  (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
 - Confirm referenced files exist; update
   [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
+- Ensure any code samples compile with `node` or `ts-node`.
 
 REQUEST:
 1. Identify missing or weak tests.
@@ -53,7 +57,8 @@ CONTEXT:
   [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with
-  `git diff --cached | ./scripts/scan-secrets.py`.
+  `git diff --cached | ./scripts/scan-secrets.py`
+  (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
 
 REQUEST:
 1. Select a file under `docs/prompts/` to update or create a new prompt type.
