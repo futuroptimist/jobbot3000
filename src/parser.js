@@ -9,6 +9,8 @@ const COMPANY_PATTERNS = [
   /\bEmployer\s*:\s*(.+)/i
 ];
 
+const LOCATION_PATTERNS = [/\bLocation\s*:\s*(.+)/i];
+
 const REQUIREMENTS_HEADERS = [
   /\bRequirements\b/i,
   /\bQualifications\b/i,
@@ -27,23 +29,38 @@ function stripBullet(line) {
   return line.replace(BULLET_PREFIX_RE, '').trim();
 }
 
-/** Check if a line matches any pattern in the provided array. */
-function matchAny(line, patterns) {
-  return patterns.some(pattern => pattern.test(line));
-}
-
 /**
  * Find the index of the first header in `primary` or fall back to headers in `fallback`.
- * Scans the lines once and returns -1 if no headers match.
+ * Returns an object with the line index and the matched pattern.
+ * If no headers match, the index is -1 and the pattern is null.
+ *
+ * This implementation scans the lines once: if a primary header is found, it
+ * returns immediately; otherwise, it tracks the first fallback match and uses
+ * it if no primary headers matched.
  */
-function findHeaderIndex(lines, primary, fallback) {
+function findHeader(lines, primary, fallback) {
   let fallbackIdx = -1;
+  let fallbackPattern = null;
+
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
-    if (matchAny(line, primary)) return i;
-    if (fallbackIdx === -1 && matchAny(line, fallback)) fallbackIdx = i;
+    const primaryMatch = primary.find(p => p.test(line));
+    if (primaryMatch) {
+      return { index: i, pattern: primaryMatch };
+    }
+    if (fallbackIdx === -1) {
+      const fallbackMatch = fallback.find(p => p.test(line));
+      if (fallbackMatch) {
+        fallbackIdx = i;
+        fallbackPattern = fallbackMatch;
+      }
+    }
   }
-  return fallbackIdx;
+
+  return {
+    index: fallbackIdx,
+    pattern: fallbackIdx !== -1 ? fallbackPattern : null,
+  };
 }
 
 function findFirstMatch(lines, patterns) {
@@ -61,15 +78,16 @@ function findFirstMatch(lines, patterns) {
  * Supports requirement text on the same line for both primary and fallback headers.
  */
 function extractRequirements(lines) {
-  const idx = findHeaderIndex(lines, REQUIREMENTS_HEADERS, FALLBACK_REQUIREMENTS_HEADERS);
+  const { index: idx, pattern: headerPattern } = findHeader(
+    lines,
+    REQUIREMENTS_HEADERS,
+    FALLBACK_REQUIREMENTS_HEADERS
+  );
   if (idx === -1) return [];
 
   const requirements = [];
   const headerLine = lines[idx];
-  const headerPattern =
-    REQUIREMENTS_HEADERS.find(h => h.test(headerLine)) ||
-    FALLBACK_REQUIREMENTS_HEADERS.find(h => h.test(headerLine));
-  let rest = headerPattern ? headerLine.replace(headerPattern, '').trim() : '';
+  let rest = headerLine.replace(headerPattern, '').trim();
   rest = rest.replace(/^[:\s]+/, '');
 
   if (rest) {
@@ -92,14 +110,15 @@ function extractRequirements(lines) {
 /** Parse raw job posting text into structured fields. */
 export function parseJobText(rawText) {
   if (!rawText) {
-    return { title: '', company: '', requirements: [], body: '' };
+    return { title: '', company: '', location: '', requirements: [], body: '' };
   }
   const text = rawText.replace(/\r/g, '').trim();
   const lines = text.split(/\n+/);
 
   const title = findFirstMatch(lines, TITLE_PATTERNS);
   const company = findFirstMatch(lines, COMPANY_PATTERNS);
+  const location = findFirstMatch(lines, LOCATION_PATTERNS);
   const requirements = extractRequirements(lines);
 
-  return { title, company, requirements, body: text };
+  return { title, company, location, requirements, body: text };
 }
