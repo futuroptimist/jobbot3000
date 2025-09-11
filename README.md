@@ -50,6 +50,14 @@ const text = await fetchTextFromUrl('https://example.com/job', { timeoutMs: 5000
 `fetchTextFromUrl` strips scripts, styles, navigation, footer, and aside content and
 collapses whitespace to single spaces. Pass `timeoutMs` (milliseconds) to override the 10s default.
 
+Normalize existing HTML without fetching:
+
+```js
+import { extractTextFromHtml } from './src/fetch.js';
+
+const text = extractTextFromHtml('<p>Hello</p>');
+```
+
 Format parsed results as Markdown:
 
 ```js
