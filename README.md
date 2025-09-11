@@ -63,10 +63,13 @@ import { toMarkdownSummary } from './src/exporters.js';
 const md = toMarkdownSummary({
   title: 'Engineer',
   company: 'ACME',
+  url: 'https://example.com/job',
   summary: 'Short blurb.',
   requirements: ['3+ years JS'],
 });
 ```
+
+Pass `url` to include a source link in the rendered Markdown output.
 
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal
 punctuation like `?!`, including when followed by closing quotes or parentheses. Terminators apply
