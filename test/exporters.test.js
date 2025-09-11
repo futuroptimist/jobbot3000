@@ -29,6 +29,20 @@ describe('exporters', () => {
     expect(output).toBe(expected);
   });
 
+  it('includes url in markdown summaries', () => {
+    const output = toMarkdownSummary({
+      title: 'Dev',
+      company: 'Acme',
+      url: 'https://example.com/job',
+      summary: 'Build things',
+      requirements: ['JS']
+    });
+    expect(output).toBe(
+      '# Dev\n**Company**: Acme\n**URL**: https://example.com/job\n\nBuild things\n' +
+        '\n## Requirements\n- JS'
+    );
+  });
+
   it('formats markdown match reports with score', () => {
     const output = toMarkdownMatch({
       title: 'Dev',
