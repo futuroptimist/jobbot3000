@@ -35,6 +35,26 @@ describe('extractTextFromHtml', () => {
     `;
     expect(extractTextFromHtml(html)).toBe('Main');
   });
+
+  it('omits header content', () => {
+    const html = `
+      <html>
+        <body>
+          <header>ignored</header>
+          <p>Main</p>
+        </body>
+      </html>
+    `;
+    expect(extractTextFromHtml(html)).toBe('Main');
+  });
+
+  it('returns empty string for falsy input', () => {
+    expect(extractTextFromHtml('')).toBe('');
+    // @ts-expect-error testing null input
+    expect(extractTextFromHtml(null)).toBe('');
+    // @ts-expect-error testing undefined input
+    expect(extractTextFromHtml()).toBe('');
+  });
 });
 
 describe('fetchTextFromUrl', () => {
@@ -74,10 +94,11 @@ describe('fetchTextFromUrl', () => {
       .rejects.toThrow('Failed to fetch http://example.com: 500 Server Error');
   });
 
+describe('fetchTextFromUrl', () => {
   it('aborts when the fetch exceeds the timeout', async () => {
     vi.useFakeTimers();
     fetch.mockImplementation((url, { signal }) =>
-      new Promise((resolve, reject) => {
+      new Promise((_, reject) => {
         signal.addEventListener('abort', () => reject(signal.reason));
       })
     );
@@ -86,4 +107,37 @@ describe('fetchTextFromUrl', () => {
     await expect(promise).rejects.toThrow('Timeout after 50ms');
     vi.useRealTimers();
   });
+
+  it('forwards headers to fetch', async () => {
+    fetch.mockClear();
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('ok'),
+    });
+    await fetchTextFromUrl('http://example.com', {
+      headers: { 'User-Agent': 'jobbot' },
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      'http://example.com',
+      expect.objectContaining({ headers: { 'User-Agent': 'jobbot' } })
+    );
+  });
+
+  it('rejects non-http/https URLs', async () => {
+    fetch.mockClear();
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('secret'),
+    });
+    await expect(fetchTextFromUrl('file:///etc/passwd'))
+      .rejects.toThrow('Unsupported protocol: file:');
+    expect(fetch).not.toHaveBeenCalled();
+  });
 });
+
