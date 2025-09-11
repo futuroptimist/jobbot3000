@@ -11,24 +11,45 @@ describe('exporters', () => {
     const output = toMarkdownSummary({
       title: 'Dev',
       company: 'Acme',
+      location: 'Remote',
       summary: 'Build things',
       requirements: ['JS', 'Node']
     });
-    expect(output).toBe(
-      '# Dev\n**Company**: Acme\n\nBuild things\n\n## Requirements\n- JS\n- Node'
-    );
+    const expected = [
+      '# Dev',
+      '**Company**: Acme',
+      '**Location**: Remote',
+      '',
+      'Build things',
+      '',
+      '## Requirements',
+      '- JS',
+      '- Node'
+    ].join('\n');
+    expect(output).toBe(expected);
   });
 
   it('formats markdown match reports with score', () => {
     const output = toMarkdownMatch({
       title: 'Dev',
       company: 'Acme',
+      location: 'Remote',
       score: 85,
       matched: ['JS'],
       missing: ['Rust']
     });
-    expect(output).toBe(
-      '# Dev\n**Company**: Acme\n**Fit Score**: 85%\n\n## Matched\n- JS\n\n## Missing\n- Rust'
-    );
+    const expected = [
+      '# Dev',
+      '**Company**: Acme',
+      '**Location**: Remote',
+      '**Fit Score**: 85%',
+      '',
+      '## Matched',
+      '- JS',
+      '',
+      '## Missing',
+      '- Rust'
+    ].join('\n');
+    expect(output).toBe(expected);
   });
 });

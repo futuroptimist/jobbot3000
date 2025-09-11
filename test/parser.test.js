@@ -6,9 +6,21 @@ describe('parseJobText', () => {
     expect(parseJobText(undefined)).toEqual({
       title: '',
       company: '',
+      location: '',
       requirements: [],
       body: ''
     });
+  });
+
+  it('extracts location when present', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Location: Remote, USA
+Requirements:
+- Node.js
+`;
+    expect(parseJobText(text)).toMatchObject({ location: 'Remote, USA' });
   });
 
   it('strips dash, en dash, and em dash bullets', () => {

@@ -17,19 +17,21 @@ function appendListSection(lines, header, items, { leadingNewline = false } = {}
   for (const item of items) lines.push(`- ${item}`);
 }
 
-export function toMarkdownSummary({ title, company, requirements, summary }) {
+export function toMarkdownSummary({ title, company, location, requirements, summary }) {
   const lines = [];
   if (title) lines.push(`# ${title}`);
   if (company) lines.push(`**Company**: ${company}`);
+  if (location) lines.push(`**Location**: ${location}`);
   if (summary) lines.push(`\n${summary}\n`);
   appendListSection(lines, 'Requirements', requirements);
   return lines.join('\n');
 }
 
-export function toMarkdownMatch({ title, company, score, matched, missing }) {
+export function toMarkdownMatch({ title, company, location, score, matched, missing }) {
   const lines = [];
   if (title) lines.push(`# ${title}`);
   if (company) lines.push(`**Company**: ${company}`);
+  if (location) lines.push(`**Location**: ${location}`);
   if (typeof score === 'number') lines.push(`**Fit Score**: ${score}%`);
   appendListSection(lines, 'Matched', matched, { leadingNewline: true });
   appendListSection(lines, 'Missing', missing, { leadingNewline: true });

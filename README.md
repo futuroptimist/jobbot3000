@@ -58,6 +58,7 @@ import { toMarkdownSummary } from './src/exporters.js';
 const md = toMarkdownSummary({
   title: 'Engineer',
   company: 'ACME',
+  location: 'Remote',
   summary: 'Short blurb.',
   requirements: ['3+ years JS'],
 });
