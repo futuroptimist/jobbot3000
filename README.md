@@ -51,8 +51,9 @@ const text = await fetchTextFromUrl('https://example.com/job', {
 });
 ```
 `fetchTextFromUrl` strips scripts, styles, navigation, footer, and aside content and
-collapses whitespace to single spaces. Pass `timeoutMs` (milliseconds) to override the 10s default
-and `headers` to send custom HTTP headers.
+collapses whitespace to single spaces. Pass `timeoutMs` (milliseconds) to override the 10s default,
+and `headers` to send custom HTTP headers. Only `http` and `https` URLs are supported; other
+protocols throw an error.
 
 Format parsed results as Markdown:
 

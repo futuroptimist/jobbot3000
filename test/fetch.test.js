@@ -81,14 +81,28 @@ describe('fetchTextFromUrl', () => {
       status: 200,
       statusText: 'OK',
       headers: { get: () => 'text/plain' },
-      text: () => Promise.resolve('ok')
+      text: () => Promise.resolve('ok'),
     });
     await fetchTextFromUrl('http://example.com', {
-      headers: { 'User-Agent': 'jobbot' }
+      headers: { 'User-Agent': 'jobbot' },
     });
     expect(fetch).toHaveBeenCalledWith(
       'http://example.com',
       expect.objectContaining({ headers: { 'User-Agent': 'jobbot' } })
     );
+  });
+
+  it('rejects non-http/https URLs', async () => {
+    fetch.mockClear();
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('secret'),
+    });
+    await expect(fetchTextFromUrl('file:///etc/passwd'))
+      .rejects.toThrow('Unsupported protocol: file:');
+    expect(fetch).not.toHaveBeenCalled();
   });
 });
