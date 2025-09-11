@@ -77,6 +77,11 @@ describe('summarize', () => {
     expect(summarize(text)).toBe('Wait…');
   });
 
+  it('does not split after common abbreviations', () => {
+    const text = 'Mr. Smith went home. Another.';
+    expect(summarize(text)).toBe('Mr. Smith went home.');
+  });
+
   it('treats non-breaking space as whitespace', () => {
     const text = 'One sentence.\u00A0Another.';
     expect(summarize(text)).toBe('One sentence.');
