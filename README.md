@@ -61,6 +61,15 @@ const md = toMarkdownSummary({
   summary: 'Short blurb.',
   requirements: ['3+ years JS'],
 });
+
+console.log(md);
+// # Engineer
+// **Company**: ACME
+//
+// Short blurb.
+//
+// ## Requirements
+// - 3+ years JS
 ```
 
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal
