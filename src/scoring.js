@@ -1,5 +1,6 @@
 const TOKEN_CACHE = new Map();
 const ARRAY_TOKEN_CACHE = new Map();
+const ARRAY_TOKEN_CACHE_LIMIT = 60000;
 
 // Tokenize text into a Set of lowercase alphanumeric tokens, with caching to avoid
 // repeated regex and Set allocations.
@@ -23,7 +24,7 @@ function tokenizeArray(text) {
   const cached = ARRAY_TOKEN_CACHE.get(key);
   if (cached) return cached;
   const tokens = key.toLowerCase().match(/[a-z0-9]+/g) || [];
-  if (ARRAY_TOKEN_CACHE.size > 1000) ARRAY_TOKEN_CACHE.clear();
+  if (ARRAY_TOKEN_CACHE.size > ARRAY_TOKEN_CACHE_LIMIT) ARRAY_TOKEN_CACHE.clear();
   ARRAY_TOKEN_CACHE.set(key, tokens);
   return tokens;
 }
