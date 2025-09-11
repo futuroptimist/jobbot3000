@@ -35,6 +35,18 @@ describe('extractTextFromHtml', () => {
     `;
     expect(extractTextFromHtml(html)).toBe('Main');
   });
+
+  it('omits header content', () => {
+    const html = `
+      <html>
+        <body>
+          <header>ignored</header>
+          <p>Main</p>
+        </body>
+      </html>
+    `;
+    expect(extractTextFromHtml(html)).toBe('Main');
+  });
 });
 
 describe('fetchTextFromUrl', () => {
