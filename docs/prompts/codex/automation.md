@@ -20,6 +20,7 @@ CONTEXT:
 - Follow the [repository README](../../../README.md) and the
   [AGENTS spec](https://agentsmd.net/AGENTS.md).
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
+- Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with
   `git diff --cached | ./scripts/scan-secrets.py`
