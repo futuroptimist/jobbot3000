@@ -25,9 +25,11 @@ CONTEXT:
 
 REQUEST:
 1. Write a failing benchmark or test showing the slowdown.
-2. Optimize the code while keeping functionality the same.
-3. Update docs or comments explaining the improvement.
-4. Run the commands above and fix any failures.
+2. Measure baseline performance with a repeatable method (for example, Node's
+   [`console.time`](https://nodejs.org/api/console.html#consoletime)).
+3. Optimize the code while keeping functionality the same.
+4. Document before/after metrics in the PR or accompanying docs.
+5. Run the commands above and fix any failures.
 
 OUTPUT:
 A pull request URL summarizing the performance improvement.
