@@ -1,12 +1,18 @@
 import fetch from 'node-fetch';
 import { htmlToText } from 'html-to-text';
 
+function formatImageAlt(elem, walk, builder) {
+  const alt = elem.attribs?.alt;
+  if (alt) builder.addInline(alt, { noWordTransform: true });
+}
+
 /**
  * Options for html-to-text that ignore non-content tags.
  * Exported for reuse in other HTML parsing utilities.
  */
 export const HTML_TO_TEXT_OPTIONS = {
   wordwrap: false,
+  formatters: { imgAlt: formatImageAlt },
   selectors: [
     { selector: 'script', format: 'skip' },
     { selector: 'style', format: 'skip' },
@@ -14,6 +20,7 @@ export const HTML_TO_TEXT_OPTIONS = {
     { selector: 'header', format: 'skip' },
     { selector: 'footer', format: 'skip' },
     { selector: 'aside', format: 'skip' },
+    { selector: 'img', format: 'imgAlt' },
   ],
 };
 
