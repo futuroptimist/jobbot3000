@@ -81,6 +81,17 @@ describe('exporters', () => {
     expect(output).toBe(expected);
   });
 
+  it('includes url in markdown match reports', () => {
+    const output = toMarkdownMatch({
+      title: 'Dev',
+      url: 'https://example.com/job',
+      matched: ['JS']
+    });
+    expect(output).toBe(
+      '# Dev\n**URL**: https://example.com/job\n\n## Matched\n- JS'
+    );
+  });
+
   it('includes score 0 and skips empty sections', () => {
     const output = toMarkdownMatch({ title: 'Dev', score: 0 });
     expect(output).toBe('# Dev\n**Fit Score**: 0%');

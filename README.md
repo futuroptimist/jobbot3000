@@ -94,6 +94,31 @@ console.log(md);
 Pass `url` to include a source link in the rendered Markdown output.
 If `summary` is omitted, the requirements section is still separated by a blank line.
 
+Use `toMarkdownMatch` to format fit score results; it also accepts `url`:
+
+```js
+import { toMarkdownMatch } from './src/exporters.js';
+
+const md = toMarkdownMatch({
+  title: 'Engineer',
+  url: 'https://example.com/job',
+  score: 75,
+  matched: ['JS'],
+  missing: ['Rust'],
+});
+
+console.log(md);
+// # Engineer
+// **URL**: https://example.com/job
+// **Fit Score**: 75%
+//
+// ## Matched
+// - JS
+//
+// ## Missing
+// - Rust
+```
+
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal
 punctuation like `?!`, including when followed by closing quotes or parentheses. Terminators apply
 only when followed by whitespace or the end of text, so decimals like `1.99` remain intact.
