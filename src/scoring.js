@@ -1,5 +1,5 @@
 const TOKEN_CACHE = new Map();
-const ARRAY_TOKEN_CACHE = new Map();
+const TOKEN_RE = /[a-z0-9]+/g;
 
 // Tokenize text into a Set of lowercase alphanumeric tokens, with caching to avoid
 // repeated regex and Set allocations.
@@ -9,22 +9,12 @@ function tokenize(text) {
   if (cached) return cached;
 
   // Use regex matching to avoid replace/split allocations and speed up tokenization.
-  const tokens = new Set(key.toLowerCase().match(/[a-z0-9]+/g) || []);
+  TOKEN_RE.lastIndex = 0;
+  const tokens = new Set(key.toLowerCase().match(TOKEN_RE) || []);
 
   // Simple cache eviction to bound memory.
   if (TOKEN_CACHE.size > 1000) TOKEN_CACHE.clear();
   TOKEN_CACHE.set(key, tokens);
-  return tokens;
-}
-
-// Tokenize into an array for lines where we only need iteration.
-function tokenizeArray(text) {
-  const key = text || '';
-  const cached = ARRAY_TOKEN_CACHE.get(key);
-  if (cached) return cached;
-  const tokens = key.toLowerCase().match(/[a-z0-9]+/g) || [];
-  if (ARRAY_TOKEN_CACHE.size > 1000) ARRAY_TOKEN_CACHE.clear();
-  ARRAY_TOKEN_CACHE.set(key, tokens);
   return tokens;
 }
 
@@ -40,14 +30,24 @@ function resumeTokens(text) {
   return cachedTokens;
 }
 
-// Check if a line overlaps with tokens in the resume set.
-// Inline tokenization avoids Set allocations for each bullet line.
+// Check if a line overlaps with tokens in the resume set using a manual scanner.
+// This avoids regex and array allocations for each requirement line.
 function hasOverlap(line, resumeSet) {
-  const tokens = tokenizeArray(line);
-  for (let i = 0; i < tokens.length; i++) {
-    if (resumeSet.has(tokens[i])) return true;
+  const text = line.toLowerCase();
+  let start = -1;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    const isAlnum =
+      (code >= 48 && code <= 57) || // 0-9
+      (code >= 97 && code <= 122);  // a-z
+    if (isAlnum) {
+      if (start === -1) start = i;
+    } else if (start !== -1) {
+      if (resumeSet.has(text.slice(start, i))) return true;
+      start = -1;
+    }
   }
-  return false;
+  return start !== -1 && resumeSet.has(text.slice(start));
 }
 
 /**
