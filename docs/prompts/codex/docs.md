@@ -5,7 +5,7 @@ slug: 'codex-docs'
 
 # Codex Docs Prompt
 Use this prompt when clarifying or extending documentation in jobbot3000.
-Verify that referenced files exist and links stay current.
+Verify referenced files exist and keep links current with `npx markdown-link-check`.
 
 ```text
 SYSTEM:
