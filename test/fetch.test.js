@@ -48,6 +48,18 @@ describe('extractTextFromHtml', () => {
     expect(extractTextFromHtml(html)).toBe('Main');
   });
 
+  it('omits noscript content', () => {
+    const html = `
+      <html>
+        <body>
+          <noscript>ignored</noscript>
+          <p>Main</p>
+        </body>
+      </html>
+    `;
+    expect(extractTextFromHtml(html)).toBe('Main');
+  });
+
   it('includes img alt text without src', () => {
     const html = `
       <p>Start</p>
