@@ -28,6 +28,18 @@ describe('computeFitScore', () => {
     expect(result.missing).toEqual([null, 123, undefined]);
   });
 
+  it('treats non-string resume input as empty string', () => {
+    const result = computeFitScore({ exp: 'JS' }, ['JS']);
+    expect(result).toEqual({ score: 0, matched: [], missing: ['JS'] });
+  });
+
+  it('skips empty string requirement entries', () => {
+    const resume = 'Skilled in JavaScript';
+    const requirements = ['JavaScript', ''];
+    const result = computeFitScore(resume, requirements);
+    expect(result).toEqual({ score: 100, matched: ['JavaScript'], missing: [] });
+  });
+
   it('returns zero score when no requirements given', () => {
     const result = computeFitScore('anything', []);
     expect(result).toEqual({ score: 0, matched: [], missing: [] });

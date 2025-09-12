@@ -60,6 +60,24 @@ describe('extractTextFromHtml', () => {
     expect(extractTextFromHtml(html)).toBe('Main');
   });
 
+  it('includes img alt text without src', () => {
+    const html = `
+      <p>Start</p>
+      <img src="logo.png" alt="Logo" />
+      <p>End</p>
+    `;
+    expect(extractTextFromHtml(html)).toBe('Start Logo End');
+  });
+
+  it('omits img without alt text', () => {
+    const html = `
+      <p>Start</p>
+      <img src="logo.png" />
+      <p>End</p>
+    `;
+    expect(extractTextFromHtml(html)).toBe('Start End');
+  });
+
   it('returns empty string for falsy input', () => {
     expect(extractTextFromHtml('')).toBe('');
     // @ts-expect-error testing null input
@@ -97,6 +115,18 @@ describe('fetchTextFromUrl', () => {
     expect(text).toBe('hi');
   });
 
+  it('handles missing content-type header as plain text', async () => {
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => null },
+      text: () => Promise.resolve('  hi  ')
+    });
+    const text = await fetchTextFromUrl('http://example.com');
+    expect(text).toBe('hi');
+  });
+
   it('throws on HTTP errors', async () => {
     fetch.mockResolvedValue({
       ok: false,
@@ -107,6 +137,11 @@ describe('fetchTextFromUrl', () => {
     });
     await expect(fetchTextFromUrl('http://example.com'))
       .rejects.toThrow('Failed to fetch http://example.com: 500 Server Error');
+  });
+
+  it('propagates network errors', async () => {
+    fetch.mockRejectedValue(new Error('network down'));
+    await expect(fetchTextFromUrl('http://example.com')).rejects.toThrow('network down');
   });
 
   it('aborts when the fetch exceeds the timeout', async () => {
