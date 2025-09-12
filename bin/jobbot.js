@@ -66,12 +66,13 @@ async function cmdMatch(args) {
   const resumePath = args[resumeIdx + 1];
   const jobInput = args[jobIdx + 1];
   const resumeText = await loadResume(resumePath);
-  const jobRaw = isHttpUrl(jobInput)
-    ? await fetchTextFromUrl(jobInput, { timeoutMs })
+  const jobUrl = isHttpUrl(jobInput) ? jobInput : undefined;
+  const jobRaw = jobUrl
+    ? await fetchTextFromUrl(jobUrl, { timeoutMs })
     : await readSource(jobInput);
   const parsed = parseJobText(jobRaw);
   const { score, matched, missing } = computeFitScore(resumeText, parsed.requirements);
-  const payload = { ...parsed, score, matched, missing };
+  const payload = { ...parsed, url: jobUrl, score, matched, missing };
   if (format === 'json') console.log(toJson(payload));
   else console.log(toMarkdownMatch(payload));
 }
