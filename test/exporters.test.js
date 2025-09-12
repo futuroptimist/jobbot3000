@@ -72,6 +72,21 @@ describe('exporters', () => {
     expect(output).toBe(expected);
   });
 
+  it('includes url in markdown match reports', () => {
+    const output = toMarkdownMatch({
+      title: 'Dev',
+      company: 'Acme',
+      url: 'https://example.com/job',
+      matched: ['JS'],
+      missing: ['Rust'],
+      score: 80,
+    });
+    expect(output).toBe(
+      '# Dev\n**Company**: Acme\n**URL**: https://example.com/job\n**Fit Score**: 80%\n' +
+        '\n## Matched\n- JS\n\n## Missing\n- Rust'
+    );
+  });
+
   it('includes score 0 and skips empty sections', () => {
     const output = toMarkdownMatch({ title: 'Dev', score: 0 });
     expect(output).toBe('# Dev\n**Fit Score**: 0%');

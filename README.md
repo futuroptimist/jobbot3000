@@ -83,6 +83,8 @@ const md = toMarkdownSummary({
 console.log(md);
 // # Engineer
 // **Company**: ACME
+// **Location**: Remote
+// **URL**: https://example.com/job
 //
 // Short blurb.
 //
@@ -91,6 +93,7 @@ console.log(md);
 ```
 
 Pass `url` to include a source link in the rendered Markdown output.
+`toMarkdownMatch` accepts the same `url` field to link match reports back to the job posting.
 
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal
 punctuation like `?!`, including when followed by closing quotes or parentheses. Terminators apply
