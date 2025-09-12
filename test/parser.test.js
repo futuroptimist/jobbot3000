@@ -139,6 +139,17 @@ Requirements:
     ]);
   });
 
+  it('retains numbers that are part of the requirement text', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Requirements:
+- 3D modeling experience
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual(['3D modeling experience']);
+  });
+
   it('returns no requirements when header is absent', () => {
     const text = `
 Title: Developer

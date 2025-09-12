@@ -97,6 +97,11 @@ describe('fetchTextFromUrl', () => {
       .rejects.toThrow('Failed to fetch http://example.com: 500 Server Error');
   });
 
+  it('propagates network errors', async () => {
+    fetch.mockRejectedValue(new Error('network down'));
+    await expect(fetchTextFromUrl('http://example.com')).rejects.toThrow('network down');
+  });
+
   it('aborts when the fetch exceeds the timeout', async () => {
     vi.useFakeTimers();
     fetch.mockImplementation((url, { signal }) =>
