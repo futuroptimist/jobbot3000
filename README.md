@@ -157,6 +157,13 @@ requirement entries are skipped so empty bullets don't affect scoring.
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 See [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) for a list of prompt documents.
 
+## Raspberry Pi console fonts
+
+Pi images bake a default console font so `setfont -d` works out of the box.
+The `pi-image.yml` build config copies a fallback font into
+`/usr/share/consolefonts` when no default is present, letting you change the
+font size immediately after logging in.
+
 ## Tracking Application Lifecycle
 
 Application statuses such as `no_response`, `rejected`, and `next_round` are saved to
