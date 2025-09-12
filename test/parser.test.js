@@ -23,6 +23,17 @@ Requirements:
     expect(parseJobText(text)).toMatchObject({ location: 'Remote, USA' });
   });
 
+  it('extracts multiple header fields on one line', () => {
+    const text =
+      'Title: QA Engineer Company: FooCorp Location: Remote\nQualifications:\n- Details';
+    const parsed = parseJobText(text);
+    expect(parsed).toMatchObject({
+      title: 'QA Engineer',
+      company: 'FooCorp',
+      location: 'Remote'
+    });
+  });
+
   it('strips dash, en dash, and em dash bullets', () => {
     const text = `
 Title: Developer
