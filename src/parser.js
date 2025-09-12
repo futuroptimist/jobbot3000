@@ -58,13 +58,10 @@ function findHeader(lines, primary, fallback) {
 }
 
 function findFirstMatch(lines, patterns) {
-  for (const line of lines) {
-    for (const pattern of patterns) {
-      const match = line.match(pattern);
-      if (match) return match[1].trim();
-    }
-  }
-  return '';
+  const { index, pattern } = findFirstPatternIndex(lines, patterns);
+  if (index === -1 || !pattern) return '';
+  const match = lines[index].match(pattern);
+  return match ? match[1].trim() : '';
 }
 
 /**
