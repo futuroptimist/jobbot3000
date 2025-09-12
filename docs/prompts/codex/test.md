@@ -7,6 +7,20 @@ slug: 'codex-test'
 Use this prompt when adding or improving tests in jobbot3000.
 Tests live under [test](../../../test).
 
+## Example
+
+The snippet below shows a minimal [Vitest](https://vitest.dev/) test:
+
+```js
+import { test, expect } from 'vitest';
+
+test('math works', () => {
+  expect(1 + 1).toBe(2);
+});
+```
+
+Run it with `npx vitest run path/to/test-file`.
+
 ```text
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
