@@ -72,6 +72,11 @@ describe('summarize', () => {
     expect(summarize(text)).toBe('"Wow!"');
   });
 
+  it('does not split on punctuation inside unclosed quotes', () => {
+    const text = '"First. Second.';
+    expect(summarize(text)).toBe(text);
+  });
+
   it('recognizes unicode ellipsis as terminator', () => {
     const text = 'Wait… Next sentence.';
     expect(summarize(text)).toBe('Wait…');
