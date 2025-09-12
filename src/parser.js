@@ -30,37 +30,31 @@ function stripBullet(line) {
 }
 
 /**
- * Find the index of the first header in `primary` or fall back to headers in `fallback`.
- * Returns an object with the line index and the matched pattern.
- * If no headers match, the index is -1 and the pattern is null.
+ * Locate the first header line.
  *
- * This implementation scans the lines once: if a primary header is found, it
- * returns immediately; otherwise, it tracks the first fallback match and uses
- * it if no primary headers matched.
+ * Scans the lines once, returning the first match from `primary`. If no primary
+ * headers match, the first `fallback` match is used. When nothing matches, the
+ * index is -1 and the pattern is null.
+ *
+ * @param {string[]} lines
+ * @param {RegExp[]} primary
+ * @param {RegExp[]} fallback
+ * @returns {{ index: number, pattern: RegExp | null }}
  */
 function findHeader(lines, primary, fallback) {
-  let fallbackIdx = -1;
-  let fallbackPattern = null;
+  let fallbackResult = null;
 
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i];
-    const primaryMatch = primary.find(p => p.test(line));
-    if (primaryMatch) {
-      return { index: i, pattern: primaryMatch };
-    }
-    if (fallbackIdx === -1) {
-      const fallbackMatch = fallback.find(p => p.test(line));
-      if (fallbackMatch) {
-        fallbackIdx = i;
-        fallbackPattern = fallbackMatch;
-      }
+  for (const [index, line] of lines.entries()) {
+    const primaryPattern = primary.find(p => p.test(line));
+    if (primaryPattern) return { index, pattern: primaryPattern };
+
+    if (!fallbackResult) {
+      const fallbackPattern = fallback.find(p => p.test(line));
+      if (fallbackPattern) fallbackResult = { index, pattern: fallbackPattern };
     }
   }
 
-  return {
-    index: fallbackIdx,
-    pattern: fallbackIdx !== -1 ? fallbackPattern : null,
-  };
+  return fallbackResult || { index: -1, pattern: null };
 }
 
 function findFirstMatch(lines, patterns) {
