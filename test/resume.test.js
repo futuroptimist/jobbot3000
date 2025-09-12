@@ -32,6 +32,12 @@ describe('loadResume', () => {
     expect(result).toBe('Title\n\nbold text');
   });
 
+  it('strips markdown formatting for .markdown files', async () => {
+    const md = '# Heading\n\n*italic* text';
+    const result = await withTempFile('.markdown', md, loadResume);
+    expect(result).toBe('Heading\n\nitalic text');
+  });
+
   it('handles .markdown extension case-insensitively', async () => {
     const md = '# Title\n\n**bold** text\n';
     const result = await withTempFile('.MARKDOWN', md, loadResume);

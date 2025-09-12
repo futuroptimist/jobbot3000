@@ -144,11 +144,13 @@ Requirements:
 Title: Developer
 Company: Example Corp
 Requirements:
+- 3D modeling experience
 2024 vision for growth
 123abc starts with digits
 `;
     const parsed = parseJobText(text);
     expect(parsed.requirements).toEqual([
+      '3D modeling experience',
       '2024 vision for growth',
       '123abc starts with digits'
     ]);
