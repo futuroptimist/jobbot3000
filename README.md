@@ -111,7 +111,7 @@ Job requirements may appear under headers like `Requirements`, `Qualifications`,
 They may start with `-`, `+`, `*`, `•`, `–` (en dash), `—` (em dash), or numeric markers like `1.`
 or `(1)`; these markers are stripped when parsing job text, even when the first requirement follows
 the header on the same line. Leading numbers without punctuation remain intact. Requirement headers
-are located in a single pass to avoid rescanning large job postings, and resume scoring tokenizes
+are located in a single pass to avoid re-scanning large job postings, and resume scoring tokenizes
 via a manual scanner and caches tokens (up to 60k lines) to avoid repeated work. Requirement bullets
 are scanned without regex or temporary arrays, improving large input performance.
 
