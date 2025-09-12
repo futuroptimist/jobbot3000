@@ -28,6 +28,11 @@ describe('computeFitScore', () => {
     expect(result.missing).toEqual([null, 123, undefined]);
   });
 
+  it('treats non-string resume input as empty string', () => {
+    const result = computeFitScore({ exp: 'JS' }, ['JS']);
+    expect(result).toEqual({ score: 0, matched: [], missing: ['JS'] });
+  });
+
   it('returns zero score when no requirements given', () => {
     const result = computeFitScore('anything', []);
     expect(result).toEqual({ score: 0, matched: [], missing: [] });
