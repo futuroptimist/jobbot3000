@@ -19,14 +19,44 @@ const REQUIREMENTS_HEADERS = [
 
 const FALLBACK_REQUIREMENTS_HEADERS = [/\bResponsibilities\b/i];
 
-// Common bullet prefix regex. Strips '-', '+', '*', '•', '·', en/em dashes,
-// numeric markers like `1.` or `1)` and parenthetical numbers like `(1)`.
-// Preserves leading digits that are part of the requirement text itself.
-const BULLET_PREFIX_RE = /^(?:[-+*•\u00B7\u2013\u2014]\s*|\d+[.)]\s*|\(\d+\)\s*)/;
-
-/** Strip common bullet characters and surrounding whitespace from a line. */
+// Strip leading bullet markers without regex to reduce per-line allocations.
+// Supports '-', '+', '*', '•', '·', en/em dashes, numeric lists like `1.` or
+// `1)` and parenthetical numbers like `(1)`.
 function stripBullet(line) {
-  return line.replace(BULLET_PREFIX_RE, '').trim();
+  let i = 0;
+  const len = line.length;
+  if (!len) return '';
+
+  const ch = line[i];
+  // Simple bullets
+  if (
+    ch === '-' ||
+    ch === '+' ||
+    ch === '*' ||
+    ch === '•' ||
+    ch === '·' ||
+    ch === '–' ||
+    ch === '—'
+  ) {
+    i += 1;
+  } else if (ch === '(') {
+    // Parenthetical numbers like (1)
+    let j = i + 1;
+    while (j < len && line[j] >= '0' && line[j] <= '9') j += 1;
+    if (j > i + 1 && j < len && line[j] === ')') {
+      i = j + 1;
+    }
+  } else if (ch >= '0' && ch <= '9') {
+    // Numeric lists like 1. or 1)
+    let j = i;
+    while (j < len && line[j] >= '0' && line[j] <= '9') j += 1;
+    if (j < len && (line[j] === '.' || line[j] === ')')) {
+      i = j + 1;
+    }
+  }
+
+  while (i < len && line[i] === ' ') i += 1;
+  return line.slice(i).trim();
 }
 
 /**
@@ -44,15 +74,20 @@ function findHeader(lines, primary, fallback) {
 
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
-    const primaryMatch = primary.find(p => p.test(line));
-    if (primaryMatch) {
-      return { index: i, pattern: primaryMatch };
+
+    for (const pattern of primary) {
+      if (pattern.test(line)) {
+        return { index: i, pattern };
+      }
     }
+
     if (fallbackIdx === -1) {
-      const fallbackMatch = fallback.find(p => p.test(line));
-      if (fallbackMatch) {
-        fallbackIdx = i;
-        fallbackPattern = fallbackMatch;
+      for (const pattern of fallback) {
+        if (pattern.test(line)) {
+          fallbackIdx = i;
+          fallbackPattern = pattern;
+          break;
+        }
       }
     }
   }
@@ -113,7 +148,16 @@ export function parseJobText(rawText) {
     return { title: '', company: '', location: '', requirements: [], body: '' };
   }
   const text = rawText.replace(/\r/g, '').trim();
-  const lines = text.split(/\n+/);
+  // Manually split on newlines to avoid regex overhead.
+  const lines = [];
+  let start = 0;
+  const len = text.length;
+  for (let i = 0; i <= len; i += 1) {
+    if (i === len || text[i] === '\n') {
+      if (i > start) lines.push(text.slice(start, i));
+      start = i + 1;
+    }
+  }
 
   const title = findFirstMatch(lines, TITLE_PATTERNS);
   const company = findFirstMatch(lines, COMPANY_PATTERNS);
