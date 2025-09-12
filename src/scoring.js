@@ -1,5 +1,5 @@
 const TOKEN_CACHE = new Map();
-const ARRAY_TOKEN_CACHE = new Map();
+const WORD_RE = /[a-z0-9]+/g;
 
 // Tokenize text into a Set of lowercase alphanumeric tokens, with caching to avoid
 // repeated regex and Set allocations.
@@ -9,7 +9,8 @@ function tokenize(text) {
   if (cached) return cached;
 
   // Use regex matching to avoid replace/split allocations and speed up tokenization.
-  const tokens = new Set(key.toLowerCase().match(/[a-z0-9]+/g) || []);
+  WORD_RE.lastIndex = 0;
+  const tokens = new Set(key.toLowerCase().match(WORD_RE) || []);
 
   // Simple cache eviction to bound memory.
   if (TOKEN_CACHE.size > 1000) TOKEN_CACHE.clear();
@@ -17,15 +18,19 @@ function tokenize(text) {
   return tokens;
 }
 
-// Tokenize into an array for lines where we only need iteration.
-function tokenizeArray(text) {
-  const key = text || '';
-  const cached = ARRAY_TOKEN_CACHE.get(key);
-  if (cached) return cached;
-  const tokens = key.toLowerCase().match(/[a-z0-9]+/g) || [];
-  if (ARRAY_TOKEN_CACHE.size > 1000) ARRAY_TOKEN_CACHE.clear();
-  ARRAY_TOKEN_CACHE.set(key, tokens);
-  return tokens;
+// Iterate tokens in a line and check for overlap with resume tokens without allocating arrays.
+// Using a streaming regex avoids per-line array creation, improving performance for large,
+// unique requirement lists.
+// Skip non-string lines to tolerate malformed requirement entries from external sources.
+function hasOverlap(line, resumeSet) {
+  if (typeof line !== 'string') return false;
+  WORD_RE.lastIndex = 0;
+  const lower = line.toLowerCase();
+  let match;
+  while ((match = WORD_RE.exec(lower))) {
+    if (resumeSet.has(match[0])) return true;
+  }
+  return false;
 }
 
 // Cache tokens for the most recent resume to avoid repeated tokenization when the same resume
@@ -38,16 +43,6 @@ function resumeTokens(text) {
   cachedTokens = tokenize(text);
   cachedResume = text;
   return cachedTokens;
-}
-
-// Check if a line overlaps with tokens in the resume set.
-// Inline tokenization avoids Set allocations for each bullet line.
-function hasOverlap(line, resumeSet) {
-  const tokens = tokenizeArray(line);
-  for (let i = 0; i < tokens.length; i++) {
-    if (resumeSet.has(tokens[i])) return true;
-  }
-  return false;
 }
 
 export function computeFitScore(resumeText, requirements) {
