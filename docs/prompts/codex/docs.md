@@ -21,6 +21,7 @@ CONTEXT:
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
+- Check links with `npx markdown-link-check <file>`.
 - Confirm referenced files exist; update
   [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 
@@ -28,7 +29,8 @@ REQUEST:
 1. Identify the doc section to update.
 2. Revise text or examples for clarity.
 3. Ensure any code samples compile with `node` or `ts-node`.
-4. Run the commands above and fix any failures.
+4. Verify links with `npx markdown-link-check <file>`.
+5. Run the commands above and fix any failures.
 
 OUTPUT:
 A pull request URL summarizing the documentation update.
