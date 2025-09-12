@@ -90,8 +90,6 @@ console.log(md);
 // - 3+ years JS
 ```
 
-Pass `url` to include a source link in the rendered Markdown output.
-
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal
 punctuation like `?!`, including when followed by closing quotes or parentheses. Terminators apply
 only when followed by whitespace or the end of text, so decimals like `1.99` remain intact.
@@ -102,7 +100,8 @@ Trailing quotes or parentheses are included when they immediately follow punctua
 Unicode whitespace is treated as a sentence boundary.
 If fewer complete sentences than requested exist, any remaining text is appended so no content
 is lost. Parenthetical abbreviations like `(M.Sc.)` remain attached to their surrounding sentence.
-Common honorifics such as `Mr.` and `Dr.` are recognized so summaries aren't cut mid-sentence.
+Common honorifics such as `Mr.` and `Dr.` are recognized so summaries aren't cut mid-sentence,
+avoiding splits when followed by a name.
 
 Example: `summarize('"Hi!" Bye.')` returns `"Hi!"`.
 
