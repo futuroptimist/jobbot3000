@@ -94,6 +94,7 @@ console.log(md);
 
 Pass `url` to include a source link in the rendered Markdown output.
 `toMarkdownMatch` accepts the same `url` field to link match reports back to the job posting.
+If `summary` is omitted, the requirements section is still separated by a blank line.
 
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal
 punctuation like `?!`, including when followed by closing quotes or parentheses. Terminators apply

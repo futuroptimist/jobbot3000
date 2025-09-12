@@ -43,6 +43,15 @@ describe('exporters', () => {
     );
   });
 
+  it('adds blank line before requirements when summary missing', () => {
+    const output = toMarkdownSummary({
+      title: 'Dev',
+      company: 'Acme',
+      requirements: ['JS']
+    });
+    expect(output).toBe('# Dev\n**Company**: Acme\n\n## Requirements\n- JS');
+  });
+
   it('omits requirements section when list is empty', () => {
     const output = toMarkdownSummary({ title: 'Dev', company: 'Acme', summary: 'Build' });
     expect(output).toBe('# Dev\n**Company**: Acme\n\nBuild\n');
