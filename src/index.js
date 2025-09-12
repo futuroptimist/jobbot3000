@@ -95,7 +95,7 @@ export function summarize(text, count = 1) {
       const next = text[k];
       const isLower = next && next.toLowerCase() === next && next.toUpperCase() !== next;
 
-      if (parenDepth === 0 && !quote && (k === len || !isLower)) {
+      if (parenDepth === 0 && !quote && (k === len || ch !== '.' || !isLower)) {
         sentences.push(text.slice(start, j));
         i = k;
         start = k;
