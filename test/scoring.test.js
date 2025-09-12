@@ -24,6 +24,11 @@ describe('computeFitScore', () => {
     expect(result).toEqual({ score: 0, matched: [], missing: [] });
   });
 
+  it('handles undefined requirements', () => {
+    const result = computeFitScore('anything');
+    expect(result).toEqual({ score: 0, matched: [], missing: [] });
+  });
+
   // Allow slower CI environments by using a relaxed threshold.
   it('processes large requirement lists within 2500ms', () => {
     const resume = 'skill '.repeat(1000);
