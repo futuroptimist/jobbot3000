@@ -24,6 +24,8 @@ CONTEXT:
 - Scan staged changes for secrets with
   `git diff --cached | ./scripts/scan-secrets.py`
   (see [`scripts/scan-secrets.py`](../../../scripts/scan-secrets.py)).
+- Ensure any code samples compile with `node` or
+  [`ts-node`](https://typestrong.org/ts-node).
 - Confirm referenced files exist; update
   [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 
