@@ -22,12 +22,13 @@ CONTEXT:
 - Scan staged changes for secrets with
   `git diff --cached | ./scripts/scan-secrets.py`
   (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
-- Update [prompt-docs-summary.md](../../prompt-docs-summary.md) when modifying prompt docs.
+- Confirm referenced files exist; update
+  [prompt-docs-summary.md](../../prompt-docs-summary.md) when modifying prompt docs.
 
 REQUEST:
 1. Explain the maintenance change to perform.
 2. Apply the smallest viable update.
-3. Update documentation or scripts if required.
+3. Update documentation or scripts if required, ensuring referenced files exist.
 4. Run the commands above and fix any failures.
 
 OUTPUT:
