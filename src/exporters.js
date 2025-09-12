@@ -47,7 +47,7 @@ export function toMarkdownSummary({ title, company, location, url, requirements,
  * @param {string} [params.company]
  * @param {string} [params.location]
  * @param {string} [params.url] Link to the job posting.
- * @param {number} [params.score]
+ * @param {number} [params.score] Fit score percentage.
  * @param {string[]} [params.matched]
  * @param {string[]} [params.missing]
  * @returns {string}

@@ -53,8 +53,9 @@ console.log(text);
 // "<job description text>"
 ```
 
-`fetchTextFromUrl` strips scripts, styles, navigation, footer, and aside content and
-collapses whitespace to single spaces. Pass `timeoutMs` (milliseconds) to override the 10s default,
+`fetchTextFromUrl` strips scripts, styles, navigation, footer, and aside content, preserves image
+alt text, and collapses whitespace to single spaces. Pass `timeoutMs` (milliseconds) to override the
+10s default,
 and `headers` to send custom HTTP headers. Only `http` and `https` URLs are supported; other
 protocols throw an error.
 
@@ -95,6 +96,31 @@ console.log(md);
 Pass `url` to include a source link in the rendered Markdown output.
 `toMarkdownMatch` accepts the same `url` field to link match reports back to the job posting.
 If `summary` is omitted, the requirements section is still separated by a blank line.
+
+Use `toMarkdownMatch` to format fit score results; it also accepts `url`:
+
+```js
+import { toMarkdownMatch } from './src/exporters.js';
+
+const md = toMarkdownMatch({
+  title: 'Engineer',
+  url: 'https://example.com/job',
+  score: 75,
+  matched: ['JS'],
+  missing: ['Rust'],
+});
+
+console.log(md);
+// # Engineer
+// **URL**: https://example.com/job
+// **Fit Score**: 75%
+//
+// ## Matched
+// - JS
+//
+// ## Missing
+// - Rust
+```
 
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal
 punctuation like `?!`, including when followed by closing quotes or parentheses. Terminators apply
