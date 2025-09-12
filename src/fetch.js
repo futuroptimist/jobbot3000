@@ -1,5 +1,6 @@
 import fetch from 'node-fetch';
 import { htmlToText } from 'html-to-text';
+import net from 'node:net';
 
 /**
  * Options for html-to-text that ignore non-content tags.
@@ -16,6 +17,42 @@ export const HTML_TO_TEXT_OPTIONS = {
     { selector: 'aside', format: 'skip' },
   ],
 };
+
+/**
+ * Determine whether a hostname resolves to a private or loopback address.
+ * Rejects common IPv4 private ranges and localhost names to prevent SSRF.
+ *
+ * @param {string} hostname
+ * @returns {boolean}
+ */
+function isPrivateHost(hostname) {
+  if (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '0.0.0.0' ||
+    hostname === '::1'
+  ) {
+    return true;
+  }
+
+  if (net.isIP(hostname)) {
+    // IPv4 ranges
+    if (
+      hostname.startsWith('10.') ||
+      hostname.startsWith('192.168.') ||
+      hostname.startsWith('169.254.')
+    ) {
+      return true;
+    }
+    if (hostname.startsWith('172.')) {
+      const second = Number(hostname.split('.')[1]);
+      if (second >= 16 && second <= 31) return true;
+    }
+    if (hostname.startsWith('127.')) return true;
+  }
+
+  return false;
+}
 
 /**
  * Convert HTML to plain text, skipping non-content tags and collapsing whitespace.
@@ -40,9 +77,12 @@ export function extractTextFromHtml(html) {
  * @returns {Promise<string>}
  */
 export async function fetchTextFromUrl(url, { timeoutMs = 10000, headers } = {}) {
-  const { protocol } = new URL(url);
+  const { protocol, hostname } = new URL(url);
   if (protocol !== 'http:' && protocol !== 'https:') {
     throw new Error(`Unsupported protocol: ${protocol}`);
+  }
+  if (isPrivateHost(hostname)) {
+    throw new Error(`Refusing to fetch private address: ${hostname}`);
   }
 
   const controller = new AbortController();
