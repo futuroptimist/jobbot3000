@@ -40,12 +40,13 @@ console.log(summary);
 
 Pass `0` to `summarize` to return an empty string.
 
-Fetch remote job listings and normalize HTML to plain text:
+Fetch remote job listings, normalize HTML to plain text, and log the result:
 
 ```js
 import { fetchTextFromUrl } from './src/fetch.js';
 
 const text = await fetchTextFromUrl('https://example.com/job', { timeoutMs: 5000 });
+console.log(text);
 ```
 `fetchTextFromUrl` strips scripts, styles, navigation, footer, and aside content and
 collapses whitespace to single spaces. Pass `timeoutMs` (milliseconds) to override the 10s default.
