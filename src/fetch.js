@@ -1,6 +1,14 @@
 import fetch from 'node-fetch';
 import { htmlToText } from 'html-to-text';
 
+const SKIP_SELECTORS = [
+  { selector: 'script', format: 'skip' },
+  { selector: 'style', format: 'skip' },
+  { selector: 'nav', format: 'skip' },
+  { selector: 'footer', format: 'skip' },
+  { selector: 'aside', format: 'skip' }
+];
+
 /**
  * Options for html-to-text that ignore non-content tags.
  */

@@ -50,6 +50,13 @@ function hasOverlap(line, resumeSet) {
   return start !== -1 && resumeSet.has(text.slice(start));
 }
 
+/**
+ * Compute how well a resume matches a list of job requirements.
+ *
+ * @param {string} resumeText
+ * @param {string[] | undefined} requirements
+ * @returns {{ score: number, matched: string[], missing: string[] }}
+ */
 export function computeFitScore(resumeText, requirements) {
   const bullets = Array.isArray(requirements) ? requirements : [];
   if (!bullets.length) return { score: 0, matched: [], missing: [] };
