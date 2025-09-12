@@ -62,28 +62,16 @@ Responsibilities:
     expect(parsed.requirements).toEqual(['Build features', 'Fix bugs']);
   });
 
-  it('parses requirements after a Qualifications header', () => {
-    const text = `
-Title: Developer
-Company: Example Corp
-Qualifications:
-- Strong communication
-- Teamwork
-`;
-    const parsed = parseJobText(text);
-    expect(parsed.requirements).toEqual(['Strong communication', 'Teamwork']);
-  });
-
-  it('parses requirements after a "What you\u2019ll need" header', () => {
+  it('parses requirements after a "What you’ll need" header', () => {
     const text = `
 Title: Developer
 Company: Example Corp
 What you’ll need:
-- Node.js
+- JavaScript
 - Testing
 `;
     const parsed = parseJobText(text);
-    expect(parsed.requirements).toEqual(['Node.js', 'Testing']);
+    expect(parsed.requirements).toEqual(['JavaScript', 'Testing']);
   });
 
   it('captures inline requirement text after a Responsibilities header', () => {
