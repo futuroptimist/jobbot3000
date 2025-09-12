@@ -1,15 +1,19 @@
-const TITLE_PATTERNS = [
-  /\bTitle\s*:\s*(.+)/i,
-  /\bJob Title\s*:\s*(.+)/i,
-  /\bPosition\s*:\s*(.+)/i
+// Metadata field headers used by job postings.
+const FIELD_NAMES = [
+  'Title',
+  'Job Title',
+  'Position',
+  'Company',
+  'Employer',
+  'Location'
 ];
-
-const COMPANY_PATTERNS = [
-  /\bCompany\s*:\s*(.+)/i,
-  /\bEmployer\s*:\s*(.+)/i
-];
-
-const LOCATION_PATTERNS = [/\bLocation\s*:\s*(.+)/i];
+const FIELD_NAME_RE = FIELD_NAMES.join('|');
+const FIELD_PREFIX_RE = new RegExp(`\\b(?:${FIELD_NAME_RE})\\b`, 'i');
+// Global regex to capture each field value, even when multiple appear on one line.
+const FIELD_PATTERN = new RegExp(
+  `\\b(${FIELD_NAME_RE})\\s*:\\s*([^\\n]*?)(?=\\b(?:${FIELD_NAME_RE})\\s*:|$)`,
+  'gi'
+);
 
 const REQUIREMENTS_HEADERS = [
   /\bRequirements\b/i,
@@ -93,7 +97,11 @@ function extractRequirements(lines) {
   return requirements;
 }
 
-/** Parse raw job posting text into structured fields. */
+/**
+ * Parse raw job posting text into structured fields.
+ * Scans lines once to extract title, company, and location, handling multiple
+ * fields on a single line for efficiency.
+*/
 export function parseJobText(rawText) {
   if (!rawText) {
     return { title: '', company: '', location: '', requirements: [], body: '' };
@@ -101,9 +109,28 @@ export function parseJobText(rawText) {
   const text = rawText.replace(/\r/g, '').trim();
   const lines = text.split(/\n+/);
 
-  const title = findFirstMatch(lines, TITLE_PATTERNS);
-  const company = findFirstMatch(lines, COMPANY_PATTERNS);
-  const location = findFirstMatch(lines, LOCATION_PATTERNS);
+  let title = '';
+  let company = '';
+  let location = '';
+
+  for (const line of lines) {
+    if (title && company && location) break;
+    if (!FIELD_PREFIX_RE.test(line)) continue;
+    FIELD_PATTERN.lastIndex = 0;
+    for (const match of line.matchAll(FIELD_PATTERN)) {
+      const key = match[1].toLowerCase();
+      const value = match[2].trim();
+      if (!title && (key === 'title' || key === 'job title' || key === 'position')) {
+        title = value;
+      } else if (!company && (key === 'company' || key === 'employer')) {
+        company = value;
+      } else if (!location && key === 'location') {
+        location = value;
+      }
+      if (title && company && location) break;
+    }
+  }
+
   const requirements = extractRequirements(lines);
 
   return { title, company, location, requirements, body: text };
