@@ -58,12 +58,14 @@ collapses whitespace to single spaces. Pass `timeoutMs` (milliseconds) to overri
 and `headers` to send custom HTTP headers. Only `http` and `https` URLs are supported; other
 protocols throw an error.
 
-Normalize existing HTML without fetching:
+Normalize existing HTML without fetching and log the result:
 
 ```js
 import { extractTextFromHtml } from './src/fetch.js';
 
 const text = extractTextFromHtml('<p>Hello</p>');
+console.log(text);
+// "Hello"
 ```
 
 Format parsed results as Markdown:
