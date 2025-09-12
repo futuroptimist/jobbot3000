@@ -30,41 +30,33 @@ function stripBullet(line) {
 }
 
 /**
- * Locate the first header line.
- *
- * Scans the lines once, returning the first match from `primary`. If no primary
- * headers match, the first `fallback` match is used. When nothing matches, the
- * index is -1 and the pattern is null.
- *
- * @param {string[]} lines
- * @param {RegExp[]} primary
- * @param {RegExp[]} fallback
- * @returns {{ index: number, pattern: RegExp | null }}
+ * Locate the first line matching any regex in `patterns`.
+ * Returns the line index and the matching pattern, or -1/null when not found.
+ * Shared by header and field scanners to keep parsing logic consistent.
+ */
+function findFirstPatternIndex(lines, patterns) {
+  for (let i = 0; i < lines.length; i += 1) {
+    const pattern = patterns.find(p => p.test(lines[i]));
+    if (pattern) return { index: i, pattern };
+  }
+  return { index: -1, pattern: null };
+}
+
+/**
+ * Find the index of the first header in `primary` or fall back to headers in `fallback`.
+ * Prefers primary headers even if a fallback header appears earlier.
  */
 function findHeader(lines, primary, fallback) {
-  let fallbackResult = null;
-
-  for (const [index, line] of lines.entries()) {
-    const primaryPattern = primary.find(p => p.test(line));
-    if (primaryPattern) return { index, pattern: primaryPattern };
-
-    if (!fallbackResult) {
-      const fallbackPattern = fallback.find(p => p.test(line));
-      if (fallbackPattern) fallbackResult = { index, pattern: fallbackPattern };
-    }
-  }
-
-  return fallbackResult || { index: -1, pattern: null };
+  const primaryResult = findFirstPatternIndex(lines, primary);
+  if (primaryResult.index !== -1) return primaryResult;
+  return findFirstPatternIndex(lines, fallback);
 }
 
 function findFirstMatch(lines, patterns) {
-  for (const line of lines) {
-    for (const pattern of patterns) {
-      const match = line.match(pattern);
-      if (match) return match[1].trim();
-    }
-  }
-  return '';
+  const { index, pattern } = findFirstPatternIndex(lines, patterns);
+  if (index === -1 || !pattern) return '';
+  const match = lines[index].match(pattern);
+  return match ? match[1].trim() : '';
 }
 
 /**

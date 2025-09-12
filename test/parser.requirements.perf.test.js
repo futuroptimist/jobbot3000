@@ -13,7 +13,6 @@ describe('parseJobText requirements header performance', () => {
       parseJobText(text);
     }
     const duration = performance.now() - start;
-    // Allow slower environments while ensuring we stay within ~25ms per run.
-    expect(duration).toBeLessThan(2500);
+    expect(duration).toBeLessThan(2000); // should complete within 2s for 100 runs
   });
 });
