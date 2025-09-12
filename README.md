@@ -87,6 +87,8 @@ console.log(md);
 // **Location**: Remote
 // **URL**: https://example.com/job
 //
+// ## Summary
+//
 // Short blurb.
 //
 // ## Requirements

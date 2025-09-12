@@ -34,9 +34,15 @@ export function toMarkdownSummary({ title, company, location, url, requirements,
   if (company) lines.push(`**Company**: ${company}`);
   if (location) lines.push(`**Location**: ${location}`);
   if (url) lines.push(`**URL**: ${url}`);
-  if (summary) lines.push(`\n${summary}\n`);
+
+  if (summary) {
+    lines.push('', '## Summary', '', summary);
+    if (!requirements || !requirements.length) lines.push('');
+  }
+
   const needsNewline = lines.length > 0 && !lines[lines.length - 1].endsWith('\n');
   appendListSection(lines, 'Requirements', requirements, { leadingNewline: needsNewline });
+
   return lines.join('\n');
 }
 
