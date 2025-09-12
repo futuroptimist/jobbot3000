@@ -163,6 +163,19 @@ Requirements:
     ]);
   });
 
+  it('uses the first Responsibilities section when multiple appear', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Responsibilities:
+- First thing
+Responsibilities:
+- Second thing
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual(['First thing']);
+  });
+
   it('preserves leading numbers when not used as bullets', () => {
     const text = `
 Title: Developer
