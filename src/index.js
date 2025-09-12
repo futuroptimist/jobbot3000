@@ -43,14 +43,15 @@ export function summarize(text, count = 1) {
     const ch = text[i];
 
     // Track nesting
-    if (openers.has(ch)) parenDepth++;
-    else if (closers.has(ch)) {
+    if (ch === '"' || ch === "'") {
+      if (quote === ch) quote = null;
+      else if (!quote) quote = ch;
+    } else if (openers.has(ch)) {
+      parenDepth++;
+    } else if (closers.has(ch)) {
       if (ch === ')' || ch === ']' || ch === '}') {
         if (parenDepth > 0) parenDepth--;
       }
-    } else if (ch === '"' || ch === "'") {
-      if (quote === ch) quote = null;
-      else if (!quote) quote = ch;
     }
 
     if (ch === '.' || ch === '!' || ch === '?' || ch === '…') {
