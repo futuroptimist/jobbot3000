@@ -5,7 +5,8 @@ slug: 'codex-test'
 
 # Codex Test Prompt
 Use this prompt when adding or improving tests in jobbot3000.
-Tests live under [test](../../../test).
+Tests live under [test](../../../test), with sample data in
+[test/fixtures](../../../test/fixtures).
 
 ```text
 SYSTEM:
@@ -19,6 +20,8 @@ CONTEXT:
   [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
 - Tests live in [test/](../../../test) and run with [Vitest](https://vitest.dev/).
+- Sample data for tests resides in
+  [test/fixtures](../../../test/fixtures).
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with
