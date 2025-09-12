@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 
 vi.mock('node-fetch', () => ({ default: vi.fn() }));
 
@@ -38,6 +38,9 @@ describe('extractTextFromHtml', () => {
 });
 
 describe('fetchTextFromUrl', () => {
+  afterEach(() => {
+    fetch.mockReset();
+  });
   it('returns extracted text for HTML responses', async () => {
     fetch.mockResolvedValue({
       ok: true,
@@ -72,5 +75,18 @@ describe('fetchTextFromUrl', () => {
     });
     await expect(fetchTextFromUrl('http://example.com'))
       .rejects.toThrow('Failed to fetch http://example.com: 500 Server Error');
+  });
+
+  it('aborts when the fetch exceeds the timeout', async () => {
+    vi.useFakeTimers();
+    fetch.mockImplementation((url, { signal }) =>
+      new Promise((resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason));
+      })
+    );
+    const promise = fetchTextFromUrl('http://example.com', { timeoutMs: 50 });
+    vi.advanceTimersByTime(50);
+    await expect(promise).rejects.toThrow('Timeout after 50ms');
+    vi.useRealTimers();
   });
 });
