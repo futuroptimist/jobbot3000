@@ -27,6 +27,8 @@ Includes [`scripts/scan-secrets.py`](../scripts/scan-secrets.py).
 | [docs/prompts/codex/feature.md#upgrade-prompt][feature-up] | Upgrade Prompt | evergreen | yes |
 | [docs/prompts/codex/fix.md][fix-doc] | Codex Fix Prompt (bug fixes) | evergreen | yes |
 | [docs/prompts/codex/fix.md#upgrade-prompt][fix-up] | Upgrade Prompt | evergreen | yes |
+| [docs/prompts/codex/localization.md][localization-doc] | Codex Localization Prompt | evergreen | yes |
+| [docs/prompts/codex/localization.md#upgrade-prompt][localization-up] | Upgrade Prompt | evergreen | yes |
 | [docs/prompts/codex/performance.md][performance-doc] | Codex Performance Prompt | evergreen | yes |
 | [docs/prompts/codex/performance.md#upgrade-prompt][performance-up] | Upgrade Prompt | evergreen | yes |
 | [docs/prompts/codex/refactor.md][refactor-doc] | Codex Refactor Prompt | evergreen | yes |
@@ -54,6 +56,8 @@ Includes [`scripts/scan-secrets.py`](../scripts/scan-secrets.py).
 [feature-up]: prompts/codex/feature.md#upgrade-prompt
 [fix-doc]: prompts/codex/fix.md
 [fix-up]: prompts/codex/fix.md#upgrade-prompt
+[localization-doc]: prompts/codex/localization.md
+[localization-up]: prompts/codex/localization.md#upgrade-prompt
 [performance-doc]: prompts/codex/performance.md
 [performance-up]: prompts/codex/performance.md#upgrade-prompt
 [refactor-doc]: prompts/codex/refactor.md
