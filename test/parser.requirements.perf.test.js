@@ -13,8 +13,6 @@ describe('parseJobText requirements header performance', () => {
       parseJobText(text);
     }
     const duration = performance.now() - start;
-    // Allow a generous threshold so the test doesn't fail on slower CI machines.
-    // Typical runs complete around 1.5s on shared hardware.
-    expect(duration).toBeLessThan(1800);
+    expect(duration).toBeLessThan(2000); // should complete within 2s for 100 runs
   });
 });

@@ -1,17 +1,17 @@
 ---
-title: 'Codex Chore Prompt'
-slug: 'codex-chore'
+title: 'Codex CI Prompt'
+slug: 'codex-ci'
 ---
 
-# Codex Chore Prompt
-Use this prompt to handle maintenance tasks in jobbot3000.
+# Codex CI Prompt
+Use this prompt when modifying CI workflows in jobbot3000.
 
 ```text
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
 
 PURPOSE:
-Perform routine housekeeping such as dependency bumps or config tweaks.
+Adjust CI workflows to keep builds fast and reliable.
 
 CONTEXT:
 - Follow [README.md](../../../README.md); see the
@@ -22,20 +22,20 @@ CONTEXT:
 - Scan staged changes for secrets with
   `git diff --cached | ./scripts/scan-secrets.py`
   (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
-- Confirm referenced files exist; update
-  [prompt-docs-summary.md](../../prompt-docs-summary.md) when modifying prompt docs.
+- Update [prompt-docs-summary.md](../../prompt-docs-summary.md) when modifying prompt docs.
+- Ensure workflow syntax is valid; see [GitHub Actions](https://docs.github.com/actions).
 
 REQUEST:
-1. Explain the maintenance change to perform.
-2. Apply the smallest viable update.
-3. Update documentation or scripts if required.
+1. Explain the CI adjustment to make.
+2. Implement the change in `.github/workflows`.
+3. Update related documentation if necessary.
 4. Run the commands above and fix any failures.
 
 OUTPUT:
-A pull request URL summarizing the maintenance task.
+A pull request summarizing the CI update with passing checks.
 ```
 
-Copy this block whenever performing chores in jobbot3000.
+Copy this block whenever updating CI workflows in jobbot3000.
 
 ## Upgrade Prompt
 Type: evergreen
@@ -53,10 +53,14 @@ CONTEXT:
 - Follow [README.md](../../../README.md); see the
   [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
+- Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with
-  `git diff --cached | ./scripts/scan-secrets.py`.
-- Update [prompt-docs-summary.md](../../prompt-docs-summary.md) when modifying prompt docs.
+  `git diff --cached | ./scripts/scan-secrets.py`
+  (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
+- Confirm referenced files exist; update
+  [prompt-docs-summary.md](../../prompt-docs-summary.md)
+  when adding prompt docs.
 
 REQUEST:
 1. Select a file under `docs/prompts/` to update or create a new prompt type.
@@ -66,4 +70,3 @@ REQUEST:
 OUTPUT:
 A pull request that updates the selected prompt doc with passing checks.
 ```
-
