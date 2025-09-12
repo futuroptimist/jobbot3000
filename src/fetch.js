@@ -18,6 +18,22 @@ export const HTML_TO_TEXT_OPTIONS = {
 };
 
 /**
+ * Create an AbortSignal that triggers after `ms` milliseconds.
+ * Returns the signal along with a cleanup function to clear the timer.
+ *
+ * @param {number} ms
+ * @returns {{ signal: AbortSignal, clear: () => void }}
+ */
+function createTimeoutSignal(ms) {
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(new Error(`Timeout after ${ms}ms`)),
+    ms
+  );
+  return { signal: controller.signal, clear: () => clearTimeout(timer) };
+}
+
+/**
  * Convert HTML to plain text, skipping non-content tags and collapsing whitespace.
  * Returns '' for falsy input.
  *
@@ -45,16 +61,12 @@ export async function fetchTextFromUrl(url, { timeoutMs = 10000, headers } = {})
     throw new Error(`Unsupported protocol: ${protocol}`);
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(
-    () => controller.abort(new Error(`Timeout after ${timeoutMs}ms`)),
-    timeoutMs
-  );
+  const { signal, clear } = createTimeoutSignal(timeoutMs);
 
   try {
     const response = await fetch(url, {
       redirect: 'follow',
-      signal: controller.signal,
+      signal,
       headers: headers || {},
     });
     if (!response.ok) {
@@ -66,6 +78,6 @@ export async function fetchTextFromUrl(url, { timeoutMs = 10000, headers } = {})
       ? extractTextFromHtml(body)
       : body.trim();
   } finally {
-    clearTimeout(timer);
+    clear();
   }
 }
