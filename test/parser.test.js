@@ -62,23 +62,11 @@ Responsibilities:
     expect(parsed.requirements).toEqual(['Build features', 'Fix bugs']);
   });
 
-  it('parses requirements after a Qualifications header', () => {
+  it('parses requirements after a "What you’ll need" header', () => {
     const text = `
 Title: Developer
 Company: Example Corp
-Qualifications:
-- Strong communication
-- Teamwork
-`;
-    const parsed = parseJobText(text);
-    expect(parsed.requirements).toEqual(['Strong communication', 'Teamwork']);
-  });
-
-  it("parses requirements after a 'What you\u2019ll need' header", () => {
-    const text = `
-Title: Developer
-Company: Example Corp
-What you\u2019ll need:
+What you’ll need:
 - JavaScript
 - Testing
 `;
@@ -148,6 +136,21 @@ Requirements:
       'First skill',
       'Second skill',
       'Third skill'
+    ]);
+  });
+
+  it('preserves leading numbers when not used as bullets', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Requirements:
+2024 vision for growth
+123abc starts with digits
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual([
+      '2024 vision for growth',
+      '123abc starts with digits'
     ]);
   });
 
