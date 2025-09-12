@@ -63,6 +63,20 @@ const md = toMarkdownSummary({
 });
 ```
 
+Combine these helpers to fetch a posting, summarize it, and emit Markdown:
+
+```js
+import { fetchTextFromUrl } from './src/fetch.js';
+import { summarize } from './src/index.js';
+import { toMarkdownSummary } from './src/exporters.js';
+
+const text = await fetchTextFromUrl('data:text/html,First%20sentence.%20Second%20sentence?%20Third!');
+// Uses a data URL for demo; replace with a real job URL.
+const summary = summarize(text, 2);
+const md = toMarkdownSummary({ title: 'Engineer', company: 'ACME', summary });
+console.log(md);
+```
+
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal
 punctuation like `?!`, including when followed by closing quotes or parentheses. Terminators apply
 only when followed by whitespace or the end of text, so decimals like `1.99` remain intact.
