@@ -20,6 +20,8 @@ describe('exporters', () => {
       '**Company**: Acme',
       '**Location**: Remote',
       '',
+      '## Summary',
+      '',
       'Build things',
       '',
       '## Requirements',
@@ -38,14 +40,23 @@ describe('exporters', () => {
       requirements: ['JS']
     });
     expect(output).toBe(
-      '# Dev\n**Company**: Acme\n**URL**: https://example.com/job\n\nBuild things\n' +
+      '# Dev\n**Company**: Acme\n**URL**: https://example.com/job\n\n## Summary\n\nBuild things\n' +
         '\n## Requirements\n- JS'
     );
   });
 
+  it('adds blank line before requirements when summary missing', () => {
+    const output = toMarkdownSummary({
+      title: 'Dev',
+      company: 'Acme',
+      requirements: ['JS']
+    });
+    expect(output).toBe('# Dev\n**Company**: Acme\n\n## Requirements\n- JS');
+  });
+
   it('omits requirements section when list is empty', () => {
     const output = toMarkdownSummary({ title: 'Dev', company: 'Acme', summary: 'Build' });
-    expect(output).toBe('# Dev\n**Company**: Acme\n\nBuild\n');
+    expect(output).toBe('# Dev\n**Company**: Acme\n\n## Summary\n\nBuild\n');
   });
 
   it('formats markdown match reports with score', () => {
@@ -70,6 +81,21 @@ describe('exporters', () => {
       '- Rust'
     ].join('\n');
     expect(output).toBe(expected);
+  });
+
+  it('includes url in markdown match reports', () => {
+    const output = toMarkdownMatch({
+      title: 'Dev',
+      company: 'Acme',
+      url: 'https://example.com/job',
+      matched: ['JS'],
+      missing: ['Rust'],
+      score: 80,
+    });
+    expect(output).toBe(
+      '# Dev\n**Company**: Acme\n**URL**: https://example.com/job\n**Fit Score**: 80%\n' +
+        '\n## Matched\n- JS\n\n## Missing\n- Rust'
+    );
   });
 
   it('includes score 0 and skips empty sections', () => {
