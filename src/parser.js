@@ -1,15 +1,5 @@
-const TITLE_PATTERNS = [
-  /\bTitle\s*:\s*(.+)/i,
-  /\bJob Title\s*:\s*(.+)/i,
-  /\bPosition\s*:\s*(.+)/i
-];
-
-const COMPANY_PATTERNS = [
-  /\bCompany\s*:\s*(.+)/i,
-  /\bEmployer\s*:\s*(.+)/i
-];
-
-const LOCATION_PATTERNS = [/\bLocation\s*:\s*(.+)/i];
+// Single regex to match common field headers and capture the trailing value.
+const FIELD_PATTERN = /\b(Title|Job Title|Position|Company|Employer|Location)\s*:\s*(.+)/i;
 
 const REQUIREMENTS_HEADERS = [
   /\bRequirements\b/i,
@@ -29,15 +19,6 @@ function stripBullet(line) {
   return line.replace(BULLET_PREFIX_RE, '').trim();
 }
 
-/**
- * Find the index of the first header in `primary` or fall back to headers in `fallback`.
- * Returns an object with the line index and the matched pattern.
- * If no headers match, the index is -1 and the pattern is null.
- *
- * This implementation scans the lines once: if a primary header is found, it
- * returns immediately; otherwise, it tracks the first fallback match and uses
- * it if no primary headers matched.
- */
 function findHeader(lines, primary, fallback) {
   let fallbackIdx = -1;
   let fallbackPattern = null;
@@ -61,16 +42,6 @@ function findHeader(lines, primary, fallback) {
     index: fallbackIdx,
     pattern: fallbackIdx !== -1 ? fallbackPattern : null,
   };
-}
-
-function findFirstMatch(lines, patterns) {
-  for (const line of lines) {
-    for (const pattern of patterns) {
-      const match = line.match(pattern);
-      if (match) return match[1].trim();
-    }
-  }
-  return '';
 }
 
 /**
@@ -107,7 +78,10 @@ function extractRequirements(lines) {
   return requirements;
 }
 
-/** Parse raw job posting text into structured fields. */
+/**
+ * Parse raw job posting text into structured fields.
+ * Scans lines once to extract title, company, and location for efficiency.
+ */
 export function parseJobText(rawText) {
   if (!rawText) {
     return { title: '', company: '', location: '', requirements: [], body: '' };
@@ -115,9 +89,25 @@ export function parseJobText(rawText) {
   const text = rawText.replace(/\r/g, '').trim();
   const lines = text.split(/\n+/);
 
-  const title = findFirstMatch(lines, TITLE_PATTERNS);
-  const company = findFirstMatch(lines, COMPANY_PATTERNS);
-  const location = findFirstMatch(lines, LOCATION_PATTERNS);
+  let title = '';
+  let company = '';
+  let location = '';
+
+  for (const line of lines) {
+    if (title && company && location) break;
+    const match = line.match(FIELD_PATTERN);
+    if (!match) continue;
+    const key = match[1].toLowerCase();
+    const value = match[2].trim();
+    if (!title && (key === 'title' || key === 'job title' || key === 'position')) {
+      title = value;
+    } else if (!company && (key === 'company' || key === 'employer')) {
+      company = value;
+    } else if (!location && key === 'location') {
+      location = value;
+    }
+  }
+
   const requirements = extractRequirements(lines);
 
   return { title, company, location, requirements, body: text };
