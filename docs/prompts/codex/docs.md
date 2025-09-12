@@ -19,6 +19,8 @@ CONTEXT:
   [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
 - Install dependencies with `npm ci` if needed.
+- Use [Node.js](https://nodejs.org/en) or
+  [ts-node](https://typestrong.org/ts-node) to validate code samples.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
 - Confirm referenced files exist; update
@@ -27,7 +29,9 @@ CONTEXT:
 REQUEST:
 1. Identify the doc section to update.
 2. Revise text or examples for clarity.
-3. Ensure any code samples compile with `node` or `ts-node`.
+3. Ensure any code samples compile with `node` or `ts-node`
+   (see [Node.js](https://nodejs.org/en) and
+   [ts-node](https://typestrong.org/ts-node)).
 4. Run the commands above and fix any failures.
 
 OUTPUT:
@@ -53,6 +57,8 @@ CONTEXT:
   [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
 - Install dependencies with `npm ci` if needed.
+- Use [Node.js](https://nodejs.org/en) or
+  [ts-node](https://typestrong.org/ts-node) to validate code samples.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with
   `git diff --cached | ./scripts/scan-secrets.py`.
@@ -62,7 +68,9 @@ CONTEXT:
 REQUEST:
 1. Select a file under `docs/prompts/` to update or create a new prompt type.
 2. Clarify context, refresh links, and ensure referenced files exist.
-3. Ensure any code samples compile with `node` or `ts-node`.
+3. Ensure any code samples compile with `node` or `ts-node`
+   (see [Node.js](https://nodejs.org/en) and
+   [ts-node](https://typestrong.org/ts-node)).
 4. Run the commands above and fix any failures.
 
 OUTPUT:
