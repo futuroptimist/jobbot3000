@@ -40,30 +40,37 @@ console.log(summary);
 
 Pass `0` to `summarize` to return an empty string.
 
-Fetch remote job listings, normalize HTML to plain text, and log the result:
+Fetch remote job listings, normalize HTML to plain text, and log the result using an async helper:
 
 ```js
 import { fetchTextFromUrl } from './src/fetch.js';
 
-const text = await fetchTextFromUrl('https://example.com/job', {
-  timeoutMs: 5000,
-  headers: { 'User-Agent': 'jobbot' }
-});
-console.log(text);
-// "<job description text>"
+const run = async () => {
+  const text = await fetchTextFromUrl('https://example.com', {
+    timeoutMs: 5000,
+    headers: { 'User-Agent': 'jobbot' }
+  });
+  console.log(text);
+  // "<job description text>"
+};
+
+run();
 ```
 
-`fetchTextFromUrl` strips scripts, styles, navigation, footer, and aside content and
-collapses whitespace to single spaces. Pass `timeoutMs` (milliseconds) to override the 10s default,
-and `headers` to send custom HTTP headers. Only `http` and `https` URLs are supported; other
-protocols throw an error.
+`fetchTextFromUrl` strips scripts, styles, navigation, header, footer, aside,
+and noscript content, preserves image alt text, and collapses whitespace to
+single spaces. Pass `timeoutMs` (milliseconds) to override the 10s default,
+and `headers` to send custom HTTP headers. Only `http` and `https` URLs are
+supported; other protocols throw an error.
 
-Normalize existing HTML without fetching:
+Normalize existing HTML without fetching and log the result:
 
 ```js
 import { extractTextFromHtml } from './src/fetch.js';
 
 const text = extractTextFromHtml('<p>Hello</p>');
+console.log(text);
+// "Hello"
 ```
 
 Format parsed results as Markdown:
@@ -83,6 +90,10 @@ const md = toMarkdownSummary({
 console.log(md);
 // # Engineer
 // **Company**: ACME
+// **Location**: Remote
+// **URL**: https://example.com/job
+//
+// ## Summary
 //
 // Short blurb.
 //
@@ -91,6 +102,33 @@ console.log(md);
 ```
 
 Pass `url` to include a source link in the rendered Markdown output.
+`toMarkdownMatch` accepts the same `url` field to link match reports back to the job posting.
+If `summary` is omitted, the requirements section is still separated by a blank line.
+
+Use `toMarkdownMatch` to format fit score results; it also accepts `url`:
+
+```js
+import { toMarkdownMatch } from './src/exporters.js';
+
+const md = toMarkdownMatch({
+  title: 'Engineer',
+  url: 'https://example.com/job',
+  score: 75,
+  matched: ['JS'],
+  missing: ['Rust'],
+});
+
+console.log(md);
+// # Engineer
+// **URL**: https://example.com/job
+// **Fit Score**: 75%
+//
+// ## Matched
+// - JS
+//
+// ## Missing
+// - Rust
+```
 
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal
 punctuation like `?!`, including when followed by closing quotes or parentheses. Terminators apply
@@ -113,9 +151,9 @@ or `(1)`; these markers are stripped when parsing job text, even when the first 
 the header on the same line. Leading numbers without punctuation remain intact. Title, company, and
 location fields are extracted during the same scan—even when multiple fields appear on one
 line—and requirement headers are located in a single pass to avoid rescanning large job postings.
-Resume scoring tokenizes via a manual scanner and
-caches tokens (up to 60k lines) to avoid repeated work. Requirement bullets are scanned without
-regex or temporary arrays, improving large input performance.
+Resume scoring tokenizes via a manual scanner and caches tokens (up to 60k lines) to avoid repeated
+work. Requirement bullets are scanned without regex or temporary arrays, improving large input
+performance. Blank requirement entries are skipped so empty bullets don't affect scoring.
 
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 See [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) for a list of prompt documents.

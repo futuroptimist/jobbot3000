@@ -33,29 +33,34 @@ function stripBullet(line) {
   return line.replace(BULLET_PREFIX_RE, '').trim();
 }
 
-function findHeader(lines, primary, fallback) {
-  let fallbackIdx = -1;
-  let fallbackPattern = null;
-
+/**
+ * Locate the first line matching any regex in `patterns`.
+ * Returns the line index and the matching pattern, or -1/null when not found.
+ * Shared by header and field scanners to keep parsing logic consistent.
+ */
+function findFirstPatternIndex(lines, patterns) {
   for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i];
-    const primaryMatch = primary.find(p => p.test(line));
-    if (primaryMatch) {
-      return { index: i, pattern: primaryMatch };
-    }
-    if (fallbackIdx === -1) {
-      const fallbackMatch = fallback.find(p => p.test(line));
-      if (fallbackMatch) {
-        fallbackIdx = i;
-        fallbackPattern = fallbackMatch;
-      }
-    }
+    const pattern = patterns.find(p => p.test(lines[i]));
+    if (pattern) return { index: i, pattern };
   }
+  return { index: -1, pattern: null };
+}
 
-  return {
-    index: fallbackIdx,
-    pattern: fallbackIdx !== -1 ? fallbackPattern : null,
-  };
+/**
+ * Find the index of the first header in `primary` or fall back to headers in `fallback`.
+ * Prefers primary headers even if a fallback header appears earlier.
+ */
+function findHeader(lines, primary, fallback) {
+  const primaryResult = findFirstPatternIndex(lines, primary);
+  if (primaryResult.index !== -1) return primaryResult;
+  return findFirstPatternIndex(lines, fallback);
+}
+
+function findFirstMatch(lines, patterns) {
+  const { index, pattern } = findFirstPatternIndex(lines, patterns);
+  if (index === -1 || !pattern) return '';
+  const match = lines[index].match(pattern);
+  return match ? match[1].trim() : '';
 }
 
 /**

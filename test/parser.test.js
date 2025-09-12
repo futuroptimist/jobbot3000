@@ -34,6 +34,30 @@ Requirements:
     });
   });
 
+  it('prefers earlier lines over pattern order', () => {
+    const text = `
+Position: Junior Dev
+Job Title: Senior Dev
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.title).toBe('Junior Dev');
+  });
+
+  it('extracts title from alternate headers', () => {
+    [
+      ['Job Title', 'Engineer'],
+      ['Position', 'Developer']
+    ].forEach(([header, role]) => {
+      const text = `${header}: ${role}\nCompany: Example`;
+      expect(parseJobText(text)).toMatchObject({ title: role });
+    });
+  });
+
+  it('extracts company from Employer header', () => {
+    const text = `Title: Engineer\nEmployer: ACME Corp`;
+    expect(parseJobText(text)).toMatchObject({ company: 'ACME Corp' });
+  });
+
   it('strips dash, en dash, and em dash bullets', () => {
     const text = `
 Title: Developer
@@ -73,16 +97,16 @@ Responsibilities:
     expect(parsed.requirements).toEqual(['Build features', 'Fix bugs']);
   });
 
-  it('parses requirements after a Qualifications header', () => {
+  it('parses requirements after a "What you’ll need" header', () => {
     const text = `
 Title: Developer
 Company: Example Corp
-Qualifications:
-- Strong communication
-- Teamwork
+What you’ll need:
+- JavaScript
+- Testing
 `;
     const parsed = parseJobText(text);
-    expect(parsed.requirements).toEqual(['Strong communication', 'Teamwork']);
+    expect(parsed.requirements).toEqual(['JavaScript', 'Testing']);
   });
 
   it('captures inline requirement text after a Responsibilities header', () => {
@@ -147,6 +171,23 @@ Requirements:
       'First skill',
       'Second skill',
       'Third skill'
+    ]);
+  });
+
+  it('preserves leading numbers when not used as bullets', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Requirements:
+- 3D modeling experience
+2024 vision for growth
+123abc starts with digits
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual([
+      '3D modeling experience',
+      '2024 vision for growth',
+      '123abc starts with digits'
     ]);
   });
 
