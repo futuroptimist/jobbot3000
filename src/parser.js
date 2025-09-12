@@ -44,15 +44,24 @@ function findHeader(lines, primary, fallback) {
 
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
-    const primaryMatch = primary.find(p => p.test(line));
-    if (primaryMatch) {
-      return { index: i, pattern: primaryMatch };
+
+    // Check primary headers
+    for (let p = 0; p < primary.length; p += 1) {
+      const pattern = primary[p];
+      if (pattern.test(line)) {
+        return { index: i, pattern };
+      }
     }
+
+    // Track first fallback header
     if (fallbackIdx === -1) {
-      const fallbackMatch = fallback.find(p => p.test(line));
-      if (fallbackMatch) {
-        fallbackIdx = i;
-        fallbackPattern = fallbackMatch;
+      for (let f = 0; f < fallback.length; f += 1) {
+        const pattern = fallback[f];
+        if (pattern.test(line)) {
+          fallbackIdx = i;
+          fallbackPattern = pattern;
+          break;
+        }
       }
     }
   }
