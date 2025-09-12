@@ -57,7 +57,8 @@ console.log(text);
 alt text, and collapses whitespace to single spaces. Pass `timeoutMs` (milliseconds) to override the
 10s default,
 and `headers` to send custom HTTP headers. Only `http` and `https` URLs are supported; other
-protocols throw an error.
+protocols throw an error. Requests to localhost, private network addresses, or hostnames resolving to
+them (IPv4 or IPv6) are rejected to prevent SSRF.
 
 Normalize existing HTML without fetching:
 
