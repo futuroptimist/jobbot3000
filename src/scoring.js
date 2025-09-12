@@ -2,9 +2,9 @@ const TOKEN_CACHE = new Map();
 const TOKEN_RE = /[a-z0-9]+/g;
 
 // Tokenize text into a Set of lowercase alphanumeric tokens, with caching to avoid
-// repeated regex and Set allocations.
+// repeated regex and Set allocations. Non-string inputs are stringified to avoid type errors.
 function tokenize(text) {
-  const key = text || '';
+  const key = typeof text === 'string' ? text : String(text || '');
   const cached = TOKEN_CACHE.get(key);
   if (cached) return cached;
 
@@ -24,9 +24,10 @@ let cachedResume = '';
 let cachedTokens = new Set();
 
 function resumeTokens(text) {
-  if (text === cachedResume) return cachedTokens;
-  cachedTokens = tokenize(text);
-  cachedResume = text;
+  const normalized = typeof text === 'string' ? text : String(text || '');
+  if (normalized === cachedResume) return cachedTokens;
+  cachedTokens = tokenize(normalized);
+  cachedResume = normalized;
   return cachedTokens;
 }
 
@@ -39,10 +40,10 @@ function hasOverlap(line, resumeSet) {
   let start = -1;
   for (let i = 0; i < text.length; i++) {
     const code = text.charCodeAt(i);
-    const isAlnum =
+    const isAlphanumeric =
       (code >= 48 && code <= 57) || // 0-9
       (code >= 97 && code <= 122);  // a-z
-    if (isAlnum) {
+    if (isAlphanumeric) {
       if (start === -1) start = i;
     } else if (start !== -1) {
       if (resumeSet.has(text.slice(start, i))) return true;
@@ -55,12 +56,14 @@ function hasOverlap(line, resumeSet) {
 /**
  * Compute how well a resume matches a list of job requirements.
  *
- * @param {string} resumeText
+ * @param {any} resumeText Non-string values are stringified.
  * @param {string[] | undefined} requirements
  * @returns {{ score: number, matched: string[], missing: string[] }}
  */
 export function computeFitScore(resumeText, requirements) {
-  const bullets = Array.isArray(requirements) ? requirements : [];
+  const bullets = Array.isArray(requirements)
+    ? requirements.filter(r => typeof r !== 'string' || r.trim())
+    : [];
   if (!bullets.length) return { score: 0, matched: [], missing: [] };
 
   const resumeSet = resumeTokens(resumeText);
