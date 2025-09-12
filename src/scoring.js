@@ -32,7 +32,9 @@ function resumeTokens(text) {
 
 // Check if a line overlaps with tokens in the resume set using a manual scanner.
 // This avoids regex and array allocations for each requirement line.
+// Skip non-string lines to tolerate malformed requirement entries from external sources.
 function hasOverlap(line, resumeSet) {
+  if (typeof line !== 'string') return false;
   const text = line.toLowerCase();
   let start = -1;
   for (let i = 0; i < text.length; i++) {
