@@ -145,7 +145,8 @@ or `(1)`; these markers are stripped when parsing job text, even when the first 
 the header on the same line. Leading numbers without punctuation remain intact. Requirement headers
 are located in a single pass to avoid re-scanning large job postings, and resume scoring tokenizes
 via a manual scanner and caches tokens (up to 60k lines) to avoid repeated work. Requirement bullets
-are scanned without regex or temporary arrays, improving large input performance.
+are scanned without regex or temporary arrays, improving large input performance. Blank
+requirement entries are skipped so empty bullets don't affect scoring.
 
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 See [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) for a list of prompt documents.
