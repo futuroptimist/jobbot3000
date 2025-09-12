@@ -31,8 +31,8 @@ REQUEST:
 1. Reproduce the vulnerability or describe the weakness.
 2. Apply the minimal fix to mitigate the issue.
 3. Add or update tests covering the security case.
-4. Update docs or advisories if needed.
-5. Run `npm audit` to confirm no high-severity vulnerabilities remain.
+4. Review dependencies with `npm audit` and address issues.
+5. Update docs or advisories if needed.
 6. Run the commands above and fix any failures.
 
 OUTPUT:
@@ -40,6 +40,16 @@ A pull request summarizing the security fix with passing checks.
 ```
 
 Copy this block whenever addressing security in jobbot3000.
+
+### Example: Generating a secure token
+
+```js
+import { randomBytes } from 'crypto'
+
+export function generateToken () {
+  return randomBytes(32).toString('hex')
+}
+```
 
 ## Upgrade Prompt
 Type: evergreen
