@@ -30,56 +30,33 @@ function stripBullet(line) {
 }
 
 /**
+ * Locate the first line matching any regex in `patterns`.
+ * Returns the line index and the matching pattern, or -1/null when not found.
+ * Shared by header and field scanners to keep parsing logic consistent.
+ */
+function findFirstPatternIndex(lines, patterns) {
+  for (let i = 0; i < lines.length; i += 1) {
+    const pattern = patterns.find(p => p.test(lines[i]));
+    if (pattern) return { index: i, pattern };
+  }
+  return { index: -1, pattern: null };
+}
+
+/**
  * Find the index of the first header in `primary` or fall back to headers in `fallback`.
- * Returns an object with the line index and the matched pattern.
- * If no headers match, the index is -1 and the pattern is null.
- *
- * This implementation scans the lines once: if a primary header is found, it
- * returns immediately; otherwise, it tracks the first fallback match and uses
- * it if no primary headers matched.
+ * Prefers primary headers even if a fallback header appears earlier.
  */
 function findHeader(lines, primary, fallback) {
-  let fallbackIdx = -1;
-  let fallbackPattern = null;
-
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i];
-
-    // Check primary headers
-    for (let p = 0; p < primary.length; p += 1) {
-      const pattern = primary[p];
-      if (pattern.test(line)) {
-        return { index: i, pattern };
-      }
-    }
-
-    // Track first fallback header
-    if (fallbackIdx === -1) {
-      for (let f = 0; f < fallback.length; f += 1) {
-        const pattern = fallback[f];
-        if (pattern.test(line)) {
-          fallbackIdx = i;
-          fallbackPattern = pattern;
-          break;
-        }
-      }
-    }
-  }
-
-  return {
-    index: fallbackIdx,
-    pattern: fallbackIdx !== -1 ? fallbackPattern : null,
-  };
+  const primaryResult = findFirstPatternIndex(lines, primary);
+  if (primaryResult.index !== -1) return primaryResult;
+  return findFirstPatternIndex(lines, fallback);
 }
 
 function findFirstMatch(lines, patterns) {
-  for (const line of lines) {
-    for (const pattern of patterns) {
-      const match = line.match(pattern);
-      if (match) return match[1].trim();
-    }
-  }
-  return '';
+  const { index, pattern } = findFirstPatternIndex(lines, patterns);
+  if (index === -1 || !pattern) return '';
+  const match = lines[index].match(pattern);
+  return match ? match[1].trim() : '';
 }
 
 /**
