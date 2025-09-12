@@ -103,6 +103,18 @@ describe('fetchTextFromUrl', () => {
     expect(text).toBe('hi');
   });
 
+  it('handles missing content-type header as plain text', async () => {
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => null },
+      text: () => Promise.resolve('  hi  ')
+    });
+    const text = await fetchTextFromUrl('http://example.com');
+    expect(text).toBe('hi');
+  });
+
   it('throws on HTTP errors', async () => {
     fetch.mockResolvedValue({
       ok: false,

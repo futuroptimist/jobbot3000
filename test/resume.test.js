@@ -33,15 +33,15 @@ describe('loadResume', () => {
   });
 
   it('strips markdown formatting for .markdown files', async () => {
-    const md = '# Heading\n\n*italic* text';
+    const md = '# Title\n\n**bold** text\n';
     const result = await withTempFile('.markdown', md, loadResume);
-    expect(result).toBe('Heading\n\nitalic text');
+    expect(result).toBe('Title\n\nbold text');
   });
 
   it('handles .markdown extension case-insensitively', async () => {
-    const md = '# Title\n\n**bold** text\n';
+    const md = '# Heading\n\n*italic* text';
     const result = await withTempFile('.MARKDOWN', md, loadResume);
-    expect(result).toBe('Title\n\nbold text');
+    expect(result).toBe('Heading\n\nitalic text');
   });
 
   it('uses pdf-parse for PDF files', async () => {
@@ -52,11 +52,5 @@ describe('loadResume', () => {
   it('handles uppercase PDF extension', async () => {
     const result = await withTempFile('.PDF', 'dummy', loadResume);
     expect(result).toBe('PDF content');
-  });
-
-  it('strips markdown formatting for .MARKDOWN files', async () => {
-    const md = '# Title\n\n**bold** text\n';
-    const result = await withTempFile('.MARKDOWN', md, loadResume);
-    expect(result).toBe('Title\n\nbold text');
   });
 });
