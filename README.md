@@ -64,6 +64,8 @@ Normalize existing HTML without fetching:
 import { extractTextFromHtml } from './src/fetch.js';
 
 const text = extractTextFromHtml('<p>Hello</p>');
+console.log(text);
+// "Hello"
 ```
 
 Format parsed results as Markdown:
