@@ -151,6 +151,21 @@ Requirements:
     ]);
   });
 
+  it('preserves leading numbers when not used as bullets', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Requirements:
+2024 vision for growth
+123abc starts with digits
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual([
+      '2024 vision for growth',
+      '123abc starts with digits'
+    ]);
+  });
+
   it('returns no requirements when header is absent', () => {
     const text = `
 Title: Developer
