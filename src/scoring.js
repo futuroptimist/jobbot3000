@@ -1,5 +1,5 @@
 const TOKEN_CACHE = new Map();
-const WORD_RE = /[a-z0-9]+/g;
+const TOKEN_RE = /[a-z0-9]+/g;
 
 // Tokenize text into a Set of lowercase alphanumeric tokens, with caching to avoid
 // repeated regex and Set allocations.
@@ -9,28 +9,13 @@ function tokenize(text) {
   if (cached) return cached;
 
   // Use regex matching to avoid replace/split allocations and speed up tokenization.
-  WORD_RE.lastIndex = 0;
-  const tokens = new Set(key.toLowerCase().match(WORD_RE) || []);
+  TOKEN_RE.lastIndex = 0;
+  const tokens = new Set(key.toLowerCase().match(TOKEN_RE) || []);
 
   // Simple cache eviction to bound memory.
   if (TOKEN_CACHE.size > 1000) TOKEN_CACHE.clear();
   TOKEN_CACHE.set(key, tokens);
   return tokens;
-}
-
-// Iterate tokens in a line and check for overlap with resume tokens without allocating arrays.
-// Using a streaming regex avoids per-line array creation, improving performance for large,
-// unique requirement lists.
-// Skip non-string lines to tolerate malformed requirement entries from external sources.
-function hasOverlap(line, resumeSet) {
-  if (typeof line !== 'string') return false;
-  WORD_RE.lastIndex = 0;
-  const lower = line.toLowerCase();
-  let match;
-  while ((match = WORD_RE.exec(lower))) {
-    if (resumeSet.has(match[0])) return true;
-  }
-  return false;
 }
 
 // Cache tokens for the most recent resume to avoid repeated tokenization when the same resume
@@ -45,6 +30,35 @@ function resumeTokens(text) {
   return cachedTokens;
 }
 
+// Check if a line overlaps with tokens in the resume set using a manual scanner.
+// This avoids regex and array allocations for each requirement line.
+// Skip non-string lines to tolerate malformed requirement entries from external sources.
+function hasOverlap(line, resumeSet) {
+  if (typeof line !== 'string') return false;
+  const text = line.toLowerCase();
+  let start = -1;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    const isAlnum =
+      (code >= 48 && code <= 57) || // 0-9
+      (code >= 97 && code <= 122);  // a-z
+    if (isAlnum) {
+      if (start === -1) start = i;
+    } else if (start !== -1) {
+      if (resumeSet.has(text.slice(start, i))) return true;
+      start = -1;
+    }
+  }
+  return start !== -1 && resumeSet.has(text.slice(start));
+}
+
+/**
+ * Compute how well a resume matches a list of job requirements.
+ *
+ * @param {string} resumeText
+ * @param {string[] | undefined} requirements
+ * @returns {{ score: number, matched: string[], missing: string[] }}
+ */
 export function computeFitScore(resumeText, requirements) {
   const bullets = Array.isArray(requirements) ? requirements : [];
   if (!bullets.length) return { score: 0, matched: [], missing: [] };
