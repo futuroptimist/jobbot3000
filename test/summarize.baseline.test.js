@@ -55,8 +55,13 @@ describe('summarizeBaseline', () => {
     expect(summarizeBaseline(text, 2)).toBe('First. Second.');
   });
 
-  it('returns trimmed text when no terminator is present', () => {
+  it('returns first sentence and collapses whitespace', () => {
+    const text = 'First sentence.   \nSecond sentence.';
+    expect(summarizeBaseline(text)).toBe('First sentence.');
+  });
+
+  it('returns trimmed text when no sentence terminator exists', () => {
     const text = '  No punctuation here  ';
-    expect(summarizeBaseline(text)).toBe('No punctuation here');
+    expect(summarizeBaseline(text, 3)).toBe('No punctuation here');
   });
 });
