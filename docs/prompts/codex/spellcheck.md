@@ -30,8 +30,9 @@ CONTEXT:
 REQUEST:
 1. Locate spelling errors in code or docs.
 2. Fix the typos without altering meaning.
-3. Verify referenced files exist and correct any broken links.
-4. Run the commands above and resolve any failures.
+3. Add intentional new terms to [cspell.json](../../../cspell.json) if needed.
+4. Verify referenced files exist and correct any broken links.
+5. Run the commands above and resolve any failures.
 
 OUTPUT:
 A pull request URL summarizing the spelling corrections.
@@ -58,7 +59,8 @@ CONTEXT:
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with
-  `git diff --cached | ./scripts/scan-secrets.py`.
+  `git diff --cached | ./scripts/scan-secrets.py`
+  (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
 - Confirm referenced files exist and update
   [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 
