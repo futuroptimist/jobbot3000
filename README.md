@@ -40,17 +40,21 @@ console.log(summary);
 
 Pass `0` to `summarize` to return an empty string.
 
-Fetch remote job listings, normalize HTML to plain text, and log the result:
+Fetch remote job listings, normalize HTML to plain text, and log the result using an async helper:
 
 ```js
 import { fetchTextFromUrl } from './src/fetch.js';
 
-const text = await fetchTextFromUrl('https://example.com/job', {
-  timeoutMs: 5000,
-  headers: { 'User-Agent': 'jobbot' }
-});
-console.log(text);
-// "<job description text>"
+const run = async () => {
+  const text = await fetchTextFromUrl('https://example.com', {
+    timeoutMs: 5000,
+    headers: { 'User-Agent': 'jobbot' }
+  });
+  console.log(text);
+  // "<job description text>"
+};
+
+run();
 ```
 
 `fetchTextFromUrl` strips scripts, styles, navigation, footer, and aside content, preserves image
