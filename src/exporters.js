@@ -47,7 +47,7 @@ export function toMarkdownSummary({ title, company, location, url, requirements,
 }
 
 /**
- * Format match results as Markdown.
+ * Format resume match results as Markdown.
  * @param {object} params
  * @param {string} [params.title]
  * @param {string} [params.company]
@@ -65,7 +65,7 @@ export function toMarkdownMatch({
   url,
   score,
   matched,
-  missing
+  missing,
 }) {
   const lines = [];
   if (title) lines.push(`# ${title}`);

@@ -72,7 +72,9 @@ async function cmdMatch(args) {
     : await readSource(jobInput);
   const parsed = parseJobText(jobRaw);
   const { score, matched, missing } = computeFitScore(resumeText, parsed.requirements);
+
   const payload = { ...parsed, url: jobUrl, score, matched, missing };
+
   if (format === 'json') console.log(toJson(payload));
   else console.log(toMarkdownMatch(payload));
 }

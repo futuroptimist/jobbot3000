@@ -86,11 +86,15 @@ describe('exporters', () => {
   it('includes url in markdown match reports', () => {
     const output = toMarkdownMatch({
       title: 'Dev',
+      company: 'Acme',
       url: 'https://example.com/job',
-      matched: ['JS']
+      matched: ['JS'],
+      missing: ['Rust'],
+      score: 80,
     });
     expect(output).toBe(
-      '# Dev\n**URL**: https://example.com/job\n\n## Matched\n- JS'
+      '# Dev\n**Company**: Acme\n**URL**: https://example.com/job\n**Fit Score**: 80%\n' +
+        '\n## Matched\n- JS\n\n## Missing\n- Rust'
     );
   });
 

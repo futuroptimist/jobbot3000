@@ -96,6 +96,7 @@ console.log(md);
 ```
 
 Pass `url` to include a source link in the rendered Markdown output.
+`toMarkdownMatch` accepts the same `url` field to link match reports back to the job posting.
 If `summary` is omitted, the requirements section is still separated by a blank line.
 
 Use `toMarkdownMatch` to format fit score results; it also accepts `url`:
