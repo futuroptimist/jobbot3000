@@ -36,6 +36,37 @@ describe('extractTextFromHtml', () => {
     expect(extractTextFromHtml(html)).toBe('Main');
   });
 
+describe('extractTextFromHtml', () => {
+  it('collapses whitespace and skips non-content tags', () => {
+    const html = `
+      <html>
+        <head>
+          <style>.a {}</style>
+          <script>1</script>
+        </head>
+        <body>
+          <nav>ignored</nav>
+          <p>First   line</p>
+          <p>Second line</p>
+          <footer>ignored</footer>
+        </body>
+      </html>
+    `;
+    expect(extractTextFromHtml(html)).toBe('First line Second line');
+  });
+
+  it('omits aside content', () => {
+    const html = `
+      <html>
+        <body>
+          <p>Main</p>
+          <aside>ignored</aside>
+        </body>
+      </html>
+    `;
+    expect(extractTextFromHtml(html)).toBe('Main');
+  });
+
   it('omits header content', () => {
     const html = `
       <html>
