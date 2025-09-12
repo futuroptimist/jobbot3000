@@ -1,43 +1,41 @@
 ---
-title: 'Codex Spellcheck Prompt'
-slug: 'codex-spellcheck'
+title: 'Codex CI Prompt'
+slug: 'codex-ci'
 ---
 
-# Codex Spellcheck Prompt
-Use this prompt to fix spelling mistakes in jobbot3000. When editing the spelling
-dictionary, keep entries alphabetically sorted.
+# Codex CI Prompt
+Use this prompt when modifying CI workflows in jobbot3000.
 
 ```text
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
 
 PURPOSE:
-Correct typos and enforce consistent spelling.
+Adjust CI workflows to keep builds fast and reliable.
 
 CONTEXT:
 - Follow [README.md](../../../README.md); see the
   [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
-- Refer to [cspell.json](../../../cspell.json) to update the spelling dictionary when needed.
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with
   `git diff --cached | ./scripts/scan-secrets.py`
   (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
-- Confirm referenced files exist; update
-  [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
+- Update [prompt-docs-summary.md](../../prompt-docs-summary.md) when modifying prompt docs.
+- Ensure workflow syntax is valid; see [GitHub Actions](https://docs.github.com/actions).
 
 REQUEST:
-1. Locate spelling errors in code or docs.
-2. Fix the typos without altering meaning.
-3. Verify referenced files exist and correct any broken links.
-4. Run the commands above and resolve any failures.
+1. Explain the CI adjustment to make.
+2. Implement the change in `.github/workflows`.
+3. Update related documentation if necessary.
+4. Run the commands above and fix any failures.
 
 OUTPUT:
-A pull request URL summarizing the spelling corrections.
+A pull request URL summarizing the CI update.
 ```
 
-Copy this block whenever correcting spelling in jobbot3000.
+Copy this block whenever tweaking CI workflows in jobbot3000.
 
 ## Upgrade Prompt
 Type: evergreen
@@ -55,12 +53,8 @@ CONTEXT:
 - Follow [README.md](../../../README.md); see the
   [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
-- Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
-- Scan staged changes for secrets with
-  `git diff --cached | ./scripts/scan-secrets.py`.
-- Confirm referenced files exist and update
-  [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
+- Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
 
 REQUEST:
 1. Select a file under `docs/prompts/` to update or create a new prompt type.
@@ -70,4 +64,3 @@ REQUEST:
 OUTPUT:
 A pull request that updates the selected prompt doc with passing checks.
 ```
-
