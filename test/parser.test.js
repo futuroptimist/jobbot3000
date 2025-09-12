@@ -23,6 +23,21 @@ Requirements:
     expect(parseJobText(text)).toMatchObject({ location: 'Remote, USA' });
   });
 
+  it('extracts title from alternate headers', () => {
+    [
+      ['Job Title', 'Engineer'],
+      ['Position', 'Developer']
+    ].forEach(([header, role]) => {
+      const text = `${header}: ${role}\nCompany: Example`;
+      expect(parseJobText(text)).toMatchObject({ title: role });
+    });
+  });
+
+  it('extracts company from Employer header', () => {
+    const text = `Title: Engineer\nEmployer: ACME Corp`;
+    expect(parseJobText(text)).toMatchObject({ company: 'ACME Corp' });
+  });
+
   it('strips dash, en dash, and em dash bullets', () => {
     const text = `
 Title: Developer
