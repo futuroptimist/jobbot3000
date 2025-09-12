@@ -39,11 +39,32 @@ export function toMarkdownSummary({ title, company, location, url, requirements,
   return lines.join('\n');
 }
 
-export function toMarkdownMatch({ title, company, location, score, matched, missing }) {
+/**
+ * Format match results as Markdown.
+ * @param {object} params
+ * @param {string} [params.title]
+ * @param {string} [params.company]
+ * @param {string} [params.location]
+ * @param {string} [params.url] Link to the job posting.
+ * @param {number} [params.score] Fit score percentage.
+ * @param {string[]} [params.matched]
+ * @param {string[]} [params.missing]
+ * @returns {string}
+ */
+export function toMarkdownMatch({
+  title,
+  company,
+  location,
+  url,
+  score,
+  matched,
+  missing
+}) {
   const lines = [];
   if (title) lines.push(`# ${title}`);
   if (company) lines.push(`**Company**: ${company}`);
   if (location) lines.push(`**Location**: ${location}`);
+  if (url) lines.push(`**URL**: ${url}`);
   if (typeof score === 'number') lines.push(`**Fit Score**: ${score}%`);
   appendListSection(lines, 'Matched', matched, { leadingNewline: true });
   appendListSection(lines, 'Missing', missing, { leadingNewline: true });
