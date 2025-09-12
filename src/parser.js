@@ -64,15 +64,15 @@ function findFirstMatch(lines, patterns) {
  * Supports requirement text on the same line for both primary and fallback headers.
  */
 function extractRequirements(lines) {
-  const { index: idx, pattern: headerPattern } = findHeader(
+  const { index: headerIndex, pattern: headerPattern } = findHeader(
     lines,
     REQUIREMENTS_HEADERS,
     FALLBACK_REQUIREMENTS_HEADERS
   );
-  if (idx === -1) return [];
+  if (headerIndex === -1) return [];
 
   const requirements = [];
-  const headerLine = lines[idx];
+  const headerLine = lines[headerIndex];
   let rest = headerLine.replace(headerPattern, '').trim();
   rest = rest.replace(/^[:\s]+/, '');
 
@@ -82,7 +82,7 @@ function extractRequirements(lines) {
     if (first) requirements.push(first);
   }
 
-  for (let i = idx + 1; i < lines.length; i += 1) {
+  for (let i = headerIndex + 1; i < lines.length; i += 1) {
     const line = lines[i].trim();
     if (!line) continue;
     if (/^[A-Za-z].+:$/.test(line)) break; // next section header
