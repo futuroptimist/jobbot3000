@@ -1,5 +1,7 @@
 import fetch from 'node-fetch';
 import { htmlToText } from 'html-to-text';
+import dns from 'node:dns';
+import ipaddr from 'ipaddr.js';
 
 /**
  * Options for html-to-text that ignore non-content tags.
@@ -16,6 +18,35 @@ export const HTML_TO_TEXT_OPTIONS = {
     { selector: 'aside', format: 'skip' },
   ],
 };
+
+/**
+ * Determine whether an IP address falls outside public ranges.
+ * Treats non-unicast addresses (private, loopback, link-local, etc.) as private.
+ *
+ * @param {string} address
+ * @returns {boolean}
+ */
+function isPrivateIp(address) {
+  try {
+    return ipaddr.parse(address).range() !== 'unicast';
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Resolve a hostname and check whether any returned address is private.
+ * Hostnames that cannot be resolved are treated as errors by callers.
+ *
+ * @param {string} hostname
+ * @returns {Promise<boolean>}
+ */
+async function isPrivateHost(hostname) {
+  if (hostname === 'localhost') return true;
+  if (ipaddr.isValid(hostname)) return isPrivateIp(hostname);
+  const records = await dns.promises.lookup(hostname, { all: true });
+  return records.some((r) => isPrivateIp(r.address));
+}
 
 /**
  * Convert HTML to plain text, skipping non-content tags and collapsing whitespace.
@@ -40,9 +71,12 @@ export function extractTextFromHtml(html) {
  * @returns {Promise<string>}
  */
 export async function fetchTextFromUrl(url, { timeoutMs = 10000, headers } = {}) {
-  const { protocol } = new URL(url);
+  const { protocol, hostname } = new URL(url);
   if (protocol !== 'http:' && protocol !== 'https:') {
     throw new Error(`Unsupported protocol: ${protocol}`);
+  }
+  if (await isPrivateHost(hostname)) {
+    throw new Error(`Refusing to fetch private address: ${hostname}`);
   }
 
   const controller = new AbortController();

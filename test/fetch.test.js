@@ -1,8 +1,13 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 
 vi.mock('node-fetch', () => ({ default: vi.fn() }));
+vi.mock('node:dns', () => {
+  const promises = { lookup: vi.fn() };
+  return { promises, default: { promises } };
+});
 
 import fetch from 'node-fetch';
+import { promises as dns } from 'node:dns';
 import { extractTextFromHtml, fetchTextFromUrl } from '../src/fetch.js';
 
 describe('extractTextFromHtml', () => {
@@ -58,8 +63,12 @@ describe('extractTextFromHtml', () => {
 });
 
 describe('fetchTextFromUrl', () => {
+  beforeEach(() => {
+    dns.lookup.mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
+  });
   afterEach(() => {
     fetch.mockReset();
+    dns.lookup.mockReset();
   });
   it('returns extracted text for HTML responses', async () => {
     fetch.mockResolvedValue({
@@ -98,16 +107,13 @@ describe('fetchTextFromUrl', () => {
   });
 
   it('aborts when the fetch exceeds the timeout', async () => {
-    vi.useFakeTimers();
     fetch.mockImplementation((url, { signal }) =>
       new Promise((resolve, reject) => {
         signal.addEventListener('abort', () => reject(signal.reason));
       })
     );
-    const promise = fetchTextFromUrl('http://example.com', { timeoutMs: 50 });
-    vi.advanceTimersByTime(50);
-    await expect(promise).rejects.toThrow('Timeout after 50ms');
-    vi.useRealTimers();
+    await expect(fetchTextFromUrl('http://example.com', { timeoutMs: 1 }))
+      .rejects.toThrow('Timeout after 1ms');
   });
 
   it('forwards headers to fetch', async () => {
@@ -139,6 +145,33 @@ describe('fetchTextFromUrl', () => {
     });
     await expect(fetchTextFromUrl('file:///etc/passwd'))
       .rejects.toThrow('Unsupported protocol: file:');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects localhost URLs to prevent SSRF', async () => {
+    fetch.mockClear();
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('secret'),
+    });
+    await expect(fetchTextFromUrl('http://127.0.0.1')).rejects.toThrow('private address');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects URLs resolving to private IPs', async () => {
+    dns.lookup.mockResolvedValue([{ address: '10.0.0.2', family: 4 }]);
+    await expect(fetchTextFromUrl('http://internal.example'))
+      .rejects.toThrow('private address');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects URLs resolving to private IPv6 addresses', async () => {
+    dns.lookup.mockResolvedValue([{ address: 'fc00::1', family: 6 }]);
+    await expect(fetchTextFromUrl('http://internal-v6.example'))
+      .rejects.toThrow('private address');
     expect(fetch).not.toHaveBeenCalled();
   });
 });
