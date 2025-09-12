@@ -60,7 +60,9 @@ function hasOverlap(line, resumeSet) {
  * @returns {{ score: number, matched: string[], missing: string[] }}
  */
 export function computeFitScore(resumeText, requirements) {
-  const bullets = Array.isArray(requirements) ? requirements : [];
+  const bullets = Array.isArray(requirements)
+    ? requirements.filter(r => typeof r !== 'string' || r.trim())
+    : [];
   if (!bullets.length) return { score: 0, matched: [], missing: [] };
 
   const resumeSet = resumeTokens(resumeText);
