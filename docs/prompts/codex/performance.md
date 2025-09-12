@@ -39,6 +39,8 @@ CONTEXT:
   (see [`scripts/scan-secrets.py`](../../../scripts/scan-secrets.py)).
 - Link-check this doc with `npx markdown-link-check docs/prompts/codex/performance.md`.
 - Confirm referenced files exist; update [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
+- Link-check the updated doc with
+  `npx markdown-link-check docs/prompts/codex/performance.md`.
 
 REQUEST:
 1. Write a failing benchmark or test showing the slowdown.
@@ -73,7 +75,12 @@ CONTEXT:
 - Link-check this doc with `npx markdown-link-check docs/prompts/codex/performance.md`.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with
-  `git diff --cached | ./scripts/scan-secrets.py`.
+  `git diff --cached | ./scripts/scan-secrets.py`
+  (see [`scripts/scan-secrets.py`](../../../scripts/scan-secrets.py)).
+- Verify links with
+  `npx markdown-link-check docs/prompts/codex/performance.md`.
+- Confirm referenced files exist; update
+  [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 
 REQUEST:
 1. Select a file under `docs/prompts/` to update or create a new prompt type.
