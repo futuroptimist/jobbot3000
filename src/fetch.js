@@ -3,6 +3,7 @@ import { htmlToText } from 'html-to-text';
 
 /**
  * Options for html-to-text that ignore non-content tags.
+ * Exported for reuse in other HTML parsing utilities.
  */
 export const HTML_TO_TEXT_OPTIONS = {
   wordwrap: false,
@@ -16,9 +17,9 @@ export const HTML_TO_TEXT_OPTIONS = {
   ],
 };
 
-
 /**
- * Convert HTML to plain text, returning '' for falsy input.
+ * Convert HTML to plain text, skipping non-content tags and collapsing whitespace.
+ * Returns '' for falsy input.
  *
  * @param {string} html
  * @returns {string}
