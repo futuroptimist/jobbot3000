@@ -62,6 +62,8 @@ CONTEXT:
 - Scan staged changes for secrets with
   `git diff --cached | ./scripts/scan-secrets.py`
   (see [`scripts/scan-secrets.py`](../../../scripts/scan-secrets.py)).
+- Confirm referenced files exist; update
+  [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 
 REQUEST:
 1. Select a file under `docs/prompts/` to update or create a new prompt type.

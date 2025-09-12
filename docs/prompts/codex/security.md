@@ -15,10 +15,15 @@ Address security issues and harden the project.
 
 CONTEXT:
 - Follow [README.md](../../../README.md); see the [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
+- Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
 - Consult [SECURITY.md](../../../SECURITY.md) for reporting and disclosure guidance.
-- Confirm referenced files exist to avoid broken links.
+- Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
-- Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
+- Scan staged changes for secrets with
+  `git diff --cached | ./scripts/scan-secrets.py`
+  (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
+- Confirm referenced files exist; update [prompt-docs-summary.md](../../prompt-docs-summary.md)
+  when adding prompt docs.
 
 REQUEST:
 1. Reproduce the vulnerability or describe the weakness.
@@ -46,11 +51,17 @@ PURPOSE:
 Improve or expand the repository's prompt docs.
 
 CONTEXT:
-- Follow [README.md](../../README.md); see the
+- Follow [README.md](../../../README.md); see the
   [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
+- Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
+- Consult [SECURITY.md](../../../SECURITY.md) for reporting and disclosure guidance.
+- Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with
-  `git diff --cached | ./scripts/scan-secrets.py`.
+  `git diff --cached | ./scripts/scan-secrets.py`
+  (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
+- Confirm referenced files exist; update [prompt-docs-summary.md](../../prompt-docs-summary.md)
+  when adding prompt docs.
 
 REQUEST:
 1. Select a file under `docs/prompts/` to update or create a new prompt type.
