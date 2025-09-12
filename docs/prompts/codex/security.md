@@ -17,6 +17,7 @@ CONTEXT:
 - Follow [README.md](../../../README.md); see the
   [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
+- Review [DESIGN.md](../../../DESIGN.md) for architecture context affecting security.
 - Consult [SECURITY.md](../../../SECURITY.md) for reporting and disclosure guidance.
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
