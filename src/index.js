@@ -116,3 +116,5 @@ export function summarize(text, count = 1) {
 
   return summary.replace(/\s+/g, ' ').trim();
 }
+
+export { recordApplication, getLifecycleCounts, STATUSES } from './lifecycle.js';
