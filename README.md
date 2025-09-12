@@ -53,8 +53,9 @@ console.log(text);
 // "<job description text>"
 ```
 
-`fetchTextFromUrl` strips scripts, styles, navigation, footer, and aside content and
-collapses whitespace to single spaces. Pass `timeoutMs` (milliseconds) to override the 10s default,
+`fetchTextFromUrl` strips scripts, styles, navigation, footer, and aside content, preserves image
+alt text, and collapses whitespace to single spaces. Pass `timeoutMs` (milliseconds) to override the
+10s default,
 and `headers` to send custom HTTP headers. Only `http` and `https` URLs are supported; other
 protocols throw an error.
 
@@ -83,6 +84,10 @@ const md = toMarkdownSummary({
 console.log(md);
 // # Engineer
 // **Company**: ACME
+// **Location**: Remote
+// **URL**: https://example.com/job
+//
+// ## Summary
 //
 // Short blurb.
 //
@@ -91,6 +96,33 @@ console.log(md);
 ```
 
 Pass `url` to include a source link in the rendered Markdown output.
+`toMarkdownMatch` accepts the same `url` field to link match reports back to the job posting.
+If `summary` is omitted, the requirements section is still separated by a blank line.
+
+Use `toMarkdownMatch` to format fit score results; it also accepts `url`:
+
+```js
+import { toMarkdownMatch } from './src/exporters.js';
+
+const md = toMarkdownMatch({
+  title: 'Engineer',
+  url: 'https://example.com/job',
+  score: 75,
+  matched: ['JS'],
+  missing: ['Rust'],
+});
+
+console.log(md);
+// # Engineer
+// **URL**: https://example.com/job
+// **Fit Score**: 75%
+//
+// ## Matched
+// - JS
+//
+// ## Missing
+// - Rust
+```
 
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal
 punctuation like `?!`, including when followed by closing quotes or parentheses. Terminators apply
@@ -111,7 +143,7 @@ Job requirements may appear under headers like `Requirements`, `Qualifications`,
 They may start with `-`, `+`, `*`, `•`, `–` (en dash), `—` (em dash), or numeric markers like `1.`
 or `(1)`; these markers are stripped when parsing job text, even when the first requirement follows
 the header on the same line. Leading numbers without punctuation remain intact. Requirement headers
-are located in a single pass to avoid rescanning large job postings, and resume scoring tokenizes
+are located in a single pass to avoid re-scanning large job postings, and resume scoring tokenizes
 via a manual scanner and caches tokens (up to 60k lines) to avoid repeated work. Requirement bullets
 are scanned without regex or temporary arrays, improving large input performance.
 
