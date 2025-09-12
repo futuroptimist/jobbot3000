@@ -23,6 +23,15 @@ Requirements:
     expect(parseJobText(text)).toMatchObject({ location: 'Remote, USA' });
   });
 
+  it('prefers earlier lines over pattern order', () => {
+    const text = `
+Position: Junior Dev
+Job Title: Senior Dev
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.title).toBe('Junior Dev');
+  });
+
   it('extracts title from alternate headers', () => {
     [
       ['Job Title', 'Engineer'],
