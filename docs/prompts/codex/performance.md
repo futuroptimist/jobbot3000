@@ -76,7 +76,7 @@ CONTEXT:
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with
   `git diff --cached | ./scripts/scan-secrets.py`
-  (see [`scripts/scan-secrets.py`](../../../scripts/scan-secrets.py)).
+  (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
 - Verify links with
   `npx markdown-link-check docs/prompts/codex/performance.md`.
 - Confirm referenced files exist; update
