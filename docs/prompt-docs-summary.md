@@ -6,7 +6,7 @@ Ensure each document's links reference existing files.
 
 Each prompt doc should reference the root [README.md](../README.md) using a valid relative path.
 
-All links were verified on 2025-09-11 to reference existing files.
+All links were verified on 2025-09-12 to reference existing files.
 Includes [`scripts/scan-secrets.py`](../scripts/scan-secrets.py).
 
 ## jobbot3000
@@ -19,6 +19,8 @@ Includes [`scripts/scan-secrets.py`](../scripts/scan-secrets.py).
 | [docs/prompts/codex/automation.md#upgrade-prompt][automation-up] | Upgrade Prompt | evergreen | yes |
 | [docs/prompts/codex/chore.md][chore-doc] | Codex Chore Prompt | evergreen | yes |
 | [docs/prompts/codex/chore.md#upgrade-prompt][chore-up] | Upgrade Prompt | evergreen | yes |
+| [docs/prompts/codex/ci.md][ci-doc] | Codex CI Prompt | evergreen | yes |
+| [docs/prompts/codex/ci.md#upgrade-prompt][ci-up] | Upgrade Prompt | evergreen | yes |
 | [docs/prompts/codex/docs.md][docs-doc] | Codex Docs Prompt | evergreen | yes |
 | [docs/prompts/codex/docs.md#upgrade-prompt][docs-up] | Upgrade Prompt | evergreen | yes |
 | [docs/prompts/codex/feature.md][feature-doc] | Codex Feature Prompt | evergreen | yes |
@@ -44,6 +46,8 @@ Includes [`scripts/scan-secrets.py`](../scripts/scan-secrets.py).
 [automation-up]: prompts/codex/automation.md#upgrade-prompt
 [chore-doc]: prompts/codex/chore.md
 [chore-up]: prompts/codex/chore.md#upgrade-prompt
+[ci-doc]: prompts/codex/ci.md
+[ci-up]: prompts/codex/ci.md#upgrade-prompt
 [docs-doc]: prompts/codex/docs.md
 [docs-up]: prompts/codex/docs.md#upgrade-prompt
 [feature-doc]: prompts/codex/feature.md
