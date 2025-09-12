@@ -14,17 +14,18 @@ PURPOSE:
 Address security issues and harden the project.
 
 CONTEXT:
-- Follow [README.md](../../../README.md); see the [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
+- Follow [README.md](../../../README.md); see the
+  [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
 - Consult [SECURITY.md](../../../SECURITY.md) for reporting and disclosure guidance.
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
+- Run `npm audit` to identify known vulnerabilities.
 - Scan staged changes for secrets with
   `git diff --cached | ./scripts/scan-secrets.py`
   (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
-- Run `npm audit` to detect vulnerable dependencies.
-- Confirm referenced files exist; update [prompt-docs-summary.md](../../prompt-docs-summary.md)
-  when adding prompt docs.
+- Confirm referenced files exist; update
+  [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 
 REQUEST:
 1. Reproduce the vulnerability or describe the weakness.
