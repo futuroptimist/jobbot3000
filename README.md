@@ -150,6 +150,13 @@ are scanned without regex or temporary arrays, improving large input performance
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 See [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) for a list of prompt documents.
 
+## Tracking Application Lifecycle
+
+Application statuses such as `no_response`, `rejected`, and `next_round` are saved to
+`data/applications.json`, a gitignored file. Set `JOBBOT_DATA_DIR` to change the directory.
+These records power local Sankey diagrams so progress isn't lost between sessions.
+If the file is missing it will be created, but other file errors or malformed JSON will throw.
+
 ## Documentation
 
 - [DESIGN.md](DESIGN.md) – architecture details and roadmap
