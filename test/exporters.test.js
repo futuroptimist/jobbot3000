@@ -20,6 +20,8 @@ describe('exporters', () => {
       '**Company**: Acme',
       '**Location**: Remote',
       '',
+      '## Summary',
+      '',
       'Build things',
       '',
       '## Requirements',
@@ -38,7 +40,7 @@ describe('exporters', () => {
       requirements: ['JS']
     });
     expect(output).toBe(
-      '# Dev\n**Company**: Acme\n**URL**: https://example.com/job\n\nBuild things\n' +
+      '# Dev\n**Company**: Acme\n**URL**: https://example.com/job\n\n## Summary\n\nBuild things\n' +
         '\n## Requirements\n- JS'
     );
   });
@@ -54,7 +56,7 @@ describe('exporters', () => {
 
   it('omits requirements section when list is empty', () => {
     const output = toMarkdownSummary({ title: 'Dev', company: 'Acme', summary: 'Build' });
-    expect(output).toBe('# Dev\n**Company**: Acme\n\nBuild\n');
+    expect(output).toBe('# Dev\n**Company**: Acme\n\n## Summary\n\nBuild\n');
   });
 
   it('formats markdown match reports with score', () => {

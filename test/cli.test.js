@@ -22,7 +22,7 @@ describe('jobbot CLI', () => {
       ['summarize', '-', '--sentences', '2'],
       'First. Second. Third.'
     );
-    expect(out.trim()).toBe('First. Second.');
+    expect(out.trim()).toBe('## Summary\n\nFirst. Second.');
   });
 
   it('outputs plain text summary with --text', () => {

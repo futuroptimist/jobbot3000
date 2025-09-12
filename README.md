@@ -84,6 +84,10 @@ const md = toMarkdownSummary({
 console.log(md);
 // # Engineer
 // **Company**: ACME
+// **Location**: Remote
+// **URL**: https://example.com/job
+//
+// ## Summary
 //
 // Short blurb.
 //
