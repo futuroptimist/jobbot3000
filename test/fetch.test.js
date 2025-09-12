@@ -48,6 +48,18 @@ describe('extractTextFromHtml', () => {
     expect(extractTextFromHtml(html)).toBe('Main');
   });
 
+  it('includes image alt text and drops images without alt', () => {
+    const html = `
+      <html>
+        <body>
+          <img src="logo.png" alt="Logo">
+          <img src="banner.png">
+        </body>
+      </html>
+    `;
+    expect(extractTextFromHtml(html)).toBe('Logo');
+  });
+
   it('returns empty string for falsy input', () => {
     expect(extractTextFromHtml('')).toBe('');
     // @ts-expect-error testing null input

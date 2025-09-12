@@ -26,7 +26,10 @@ export const HTML_TO_TEXT_OPTIONS = {
  */
 export function extractTextFromHtml(html) {
   if (!html) return '';
-  return htmlToText(html, HTML_TO_TEXT_OPTIONS)
+  const withAlt = html
+    .replace(/<img\b[^>]*alt=["']([^"']*)["'][^>]*>/gi, '$1')
+    .replace(/<img\b[^>]*>/gi, '');
+  return htmlToText(withAlt, HTML_TO_TEXT_OPTIONS)
     .replace(/\s+/g, ' ')
     .trim();
 }
