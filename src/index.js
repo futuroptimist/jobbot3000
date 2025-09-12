@@ -2,7 +2,7 @@
  * Return the first N sentences from the given text.
  * If `count` is zero or negative, returns an empty string.
  * Sentences end with '.', '!', '?', or '…', including consecutive punctuation (e.g. `?!`),
- * optionally followed by closing quotes or parentheses.
+ * optionally followed by closing quotes (straight or curly) or parentheses.
  * Falls back to returning the trimmed input when no such punctuation exists.
  * If fewer complete sentences than requested exist, any remaining text is appended
  * so no content is lost. Parenthetical abbreviations like `(M.Sc.)` remain attached
@@ -15,8 +15,9 @@
  */
 const spaceRe = /\s/;
 const isSpace = (c) => spaceRe.test(c);
-const closers = new Set(['"', "'", ')', ']', '}']);
+const quotePairs = { '"': '"', "'": "'", '“': '”', '‘': '’' };
 const openers = new Set(['(', '[', '{']);
+const closers = new Set([')', ']', '}', ...Object.values(quotePairs)]);
 const isDigit = (c) => c >= '0' && c <= '9';
 const isAlpha = (c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 const abbreviations = new Set(['mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', 'st', 'vs']);
@@ -44,13 +45,14 @@ export function summarize(text, count = 1) {
 
     // Track nesting
     if (openers.has(ch)) parenDepth++;
-    else if (closers.has(ch)) {
+    else if (quote && ch === quote) {
+      quote = null;
+    } else if (!quote && quotePairs[ch]) {
+      quote = quotePairs[ch];
+    } else if (closers.has(ch)) {
       if (ch === ')' || ch === ']' || ch === '}') {
         if (parenDepth > 0) parenDepth--;
       }
-    } else if (ch === '"' || ch === "'") {
-      if (quote === ch) quote = null;
-      else if (!quote) quote = ch;
     }
 
     if (ch === '.' || ch === '!' || ch === '?' || ch === '…') {

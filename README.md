@@ -93,7 +93,7 @@ console.log(md);
 Pass `url` to include a source link in the rendered Markdown output.
 
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal
-punctuation like `?!`, including when followed by closing quotes or parentheses. Terminators apply
+punctuation like `?!`, including when followed by closing quotes (straight or curly) or parentheses. Terminators apply
 only when followed by whitespace or the end of text, so decimals like `1.99` remain intact.
 It ignores bare newlines.  
 It scans text character-by-character to avoid large intermediate arrays and regex performance

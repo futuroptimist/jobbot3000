@@ -72,6 +72,11 @@ describe('summarize', () => {
     expect(summarize(text)).toBe('"Wow!"');
   });
 
+  it('handles curly quotes', () => {
+    const text = 'He said “Hi!” Then left.';
+    expect(summarize(text)).toBe('He said “Hi!”');
+  });
+
   it('recognizes unicode ellipsis as terminator', () => {
     const text = 'Wait… Next sentence.';
     expect(summarize(text)).toBe('Wait…');
