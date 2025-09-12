@@ -38,8 +38,25 @@ describe('loadResume', () => {
     expect(result).toBe('Heading\n\nitalic text');
   });
 
+  it('handles .markdown extension case-insensitively', async () => {
+    const md = '# Title\n\n**bold** text\n';
+    const result = await withTempFile('.MARKDOWN', md, loadResume);
+    expect(result).toBe('Title\n\nbold text');
+  });
+
   it('uses pdf-parse for PDF files', async () => {
     const result = await withTempFile('.pdf', 'dummy', loadResume);
     expect(result).toBe('PDF content');
+  });
+
+  it('handles uppercase PDF extension', async () => {
+    const result = await withTempFile('.PDF', 'dummy', loadResume);
+    expect(result).toBe('PDF content');
+  });
+
+  it('strips markdown formatting for .MARKDOWN files', async () => {
+    const md = '# Title\n\n**bold** text\n';
+    const result = await withTempFile('.MARKDOWN', md, loadResume);
+    expect(result).toBe('Title\n\nbold text');
   });
 });
