@@ -48,6 +48,18 @@ describe('extractTextFromHtml', () => {
     expect(extractTextFromHtml(html)).toBe('Main');
   });
 
+  it('omits noscript content', () => {
+    const html = `
+      <html>
+        <body>
+          <noscript>ignored</noscript>
+          <p>Main</p>
+        </body>
+      </html>
+    `;
+    expect(extractTextFromHtml(html)).toBe('Main');
+  });
+
   it('returns empty string for falsy input', () => {
     expect(extractTextFromHtml('')).toBe('');
     // @ts-expect-error testing null input

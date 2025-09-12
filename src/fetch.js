@@ -14,6 +14,7 @@ export const HTML_TO_TEXT_OPTIONS = {
     { selector: 'header', format: 'skip' },
     { selector: 'footer', format: 'skip' },
     { selector: 'aside', format: 'skip' },
+    { selector: 'noscript', format: 'skip' },
   ],
 };
 
