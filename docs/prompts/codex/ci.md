@@ -4,14 +4,14 @@ slug: 'codex-ci'
 ---
 
 # Codex CI Prompt
-Use this prompt to adjust continuous integration workflows in jobbot3000.
+Use this prompt when modifying CI workflows in jobbot3000.
 
 ```text
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
 
 PURPOSE:
-Update or refine continuous integration configurations.
+Adjust CI workflows to keep builds fast and reliable.
 
 CONTEXT:
 - Follow [README.md](../../../README.md); see the
@@ -20,21 +20,22 @@ CONTEXT:
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with
-  `git diff --cached | ./scripts/scan-secrets.py`.
-- Confirm referenced files exist; update
-  [prompt-docs-summary.md](../../prompt-docs-summary.md)
-  when adding prompt docs.
+  `git diff --cached | ./scripts/scan-secrets.py`
+  (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
+- Update [prompt-docs-summary.md](../../prompt-docs-summary.md) when modifying prompt docs.
+- Ensure workflow syntax is valid; see [GitHub Actions](https://docs.github.com/actions).
 
 REQUEST:
-1. Explain the CI change to make.
-2. Modify the workflow or config.
-3. Run the commands above and fix any failures.
+1. Explain the CI adjustment to make.
+2. Implement the change in `.github/workflows`.
+3. Update related documentation if necessary.
+4. Run the commands above and fix any failures.
 
 OUTPUT:
 A pull request summarizing the CI update with passing checks.
 ```
 
-Copy this block whenever updating CI in jobbot3000.
+Copy this block whenever updating CI workflows in jobbot3000.
 
 ## Upgrade Prompt
 Type: evergreen
@@ -55,7 +56,8 @@ CONTEXT:
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with
-  `git diff --cached | ./scripts/scan-secrets.py`.
+  `git diff --cached | ./scripts/scan-secrets.py`
+  (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
 - Confirm referenced files exist; update
   [prompt-docs-summary.md](../../prompt-docs-summary.md)
   when adding prompt docs.

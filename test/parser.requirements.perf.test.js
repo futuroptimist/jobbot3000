@@ -13,7 +13,6 @@ describe('parseJobText requirements header performance', () => {
       parseJobText(text);
     }
     const duration = performance.now() - start;
-    // Allow generous threshold to reduce flakiness in CI environments
-    expect(duration).toBeLessThan(2000);
+    expect(duration).toBeLessThan(2000); // should complete within 2s for 100 runs
   });
 });

@@ -14,23 +14,26 @@ PURPOSE:
 Address security issues and harden the project.
 
 CONTEXT:
-- Follow [README.md](../../../README.md); see the [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
+- Follow [README.md](../../../README.md); see the
+  [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
 - Consult [SECURITY.md](../../../SECURITY.md) for reporting and disclosure guidance.
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
+- Run `npm audit` to identify known vulnerabilities.
 - Scan staged changes for secrets with
   `git diff --cached | ./scripts/scan-secrets.py`
   (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
-- Confirm referenced files exist; update [prompt-docs-summary.md](../../prompt-docs-summary.md)
-  when adding prompt docs.
+- Confirm referenced files exist; update
+  [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 
 REQUEST:
 1. Reproduce the vulnerability or describe the weakness.
 2. Apply the minimal fix to mitigate the issue.
 3. Add or update tests covering the security case.
 4. Update docs or advisories if needed.
-5. Run the commands above and fix any failures.
+5. Run `npm audit` to confirm no high-severity vulnerabilities remain.
+6. Run the commands above and fix any failures.
 
 OUTPUT:
 A pull request summarizing the security fix with passing checks.
