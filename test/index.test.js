@@ -82,6 +82,11 @@ describe('summarize', () => {
     expect(summarize(text)).toBe('Mr. Smith went home.');
   });
 
+  it('splits when next sentence starts with lowercase', () => {
+    const text = 'hi! bye.';
+    expect(summarize(text)).toBe('hi!');
+  });
+
   it('treats non-breaking space as whitespace', () => {
     const text = 'One sentence.\u00A0Another.';
     expect(summarize(text)).toBe('One sentence.');
