@@ -7,14 +7,14 @@ practices for linting, testing, and documentation.
 
 ## Getting Started
 
-Requires [Node.js](https://nodejs.org/) 20 or newer.
+Requires [Node.js](https://nodejs.org/) 20 or newer. An `.nvmrc` file pins Node 22 for nvm users.
 
 ```bash
 # Clone your fork
 git clone git@github.com:YOURNAME/jobbot3000.git
 cd jobbot3000
 
-# Install dependencies (requires Node.js 20 or newer)
+# Install dependencies (requires Node.js 20 or newer; run `nvm use` if using nvm)
 npm ci
 
 # Run repo checks
