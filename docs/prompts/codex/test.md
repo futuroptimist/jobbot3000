@@ -5,7 +5,9 @@ slug: 'codex-test'
 
 # Codex Test Prompt
 Use this prompt when adding or improving tests in jobbot3000.
-Tests live under [test/](../../../test) and use the `*.test.js` naming convention.
+
+Tests live under [test/](../../../test) and use the `*.test.js` naming convention.  
+Sample data for tests resides in [test/fixtures](../../../test/fixtures).
 
 ## Example
 
@@ -21,6 +23,7 @@ test('math works', () => {
 
 Run it with `npx vitest run path/to/test-file`.
 
+
 ```text
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
@@ -34,6 +37,8 @@ CONTEXT:
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
 - Tests live in [test/](../../../test) and use the `*.test.js` naming convention.
 - Run tests with [Vitest](https://vitest.dev/).
+- Sample data for tests resides in
+  [test/fixtures](../../../test/fixtures).
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with
