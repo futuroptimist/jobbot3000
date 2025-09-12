@@ -141,4 +141,17 @@ describe('fetchTextFromUrl', () => {
       .rejects.toThrow('Unsupported protocol: file:');
     expect(fetch).not.toHaveBeenCalled();
   });
+
+  it('rejects localhost URLs to prevent SSRF', async () => {
+    fetch.mockClear();
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('secret'),
+    });
+    await expect(fetchTextFromUrl('http://127.0.0.1')).rejects.toThrow('private address');
+    expect(fetch).not.toHaveBeenCalled();
+  });
 });
