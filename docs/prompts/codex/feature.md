@@ -16,13 +16,16 @@ Implement a minimal feature in jobbot3000.
 CONTEXT:
 - Follow [README.md](../../../README.md); see the [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
+- Consult [DESIGN.md](../../../DESIGN.md) for architectural guidelines.
+- Tests live in [test/](../../../test) and run with [Vitest](https://vitest.dev/).
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
 - Confirm referenced files exist; update [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
+- Ensure any code examples compile with `node` or `ts-node`.
 
 REQUEST:
-1. Write a failing test capturing the new behavior.
+1. Write a failing test in [test/](../../../test) capturing the new behavior.
 2. Implement the smallest change to make the test pass.
 3. Update relevant docs or prompts.
 4. Run the commands above and fix any failures.

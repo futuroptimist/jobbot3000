@@ -96,4 +96,14 @@ describe('summarize', () => {
     const text = 'Candidates (M.Sc.) should apply.';
     expect(summarize(text)).toBe('Candidates (M.Sc.) should apply.');
   });
+
+  it('does not split when terminator inside unclosed quotes', () => {
+    const text = 'He said "Wait.';
+    expect(summarize(text)).toBe(text);
+  });
+
+  it('does not split when terminator inside unclosed parentheses', () => {
+    const text = 'Alert (check logs.';
+    expect(summarize(text)).toBe(text);
+  });
 });

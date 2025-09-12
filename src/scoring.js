@@ -39,10 +39,10 @@ function hasOverlap(line, resumeSet) {
   let start = -1;
   for (let i = 0; i < text.length; i++) {
     const code = text.charCodeAt(i);
-    const isAlnum =
+    const isAlphanumeric =
       (code >= 48 && code <= 57) || // 0-9
       (code >= 97 && code <= 122);  // a-z
-    if (isAlnum) {
+    if (isAlphanumeric) {
       if (start === -1) start = i;
     } else if (start !== -1) {
       if (resumeSet.has(text.slice(start, i))) return true;
@@ -60,7 +60,9 @@ function hasOverlap(line, resumeSet) {
  * @returns {{ score: number, matched: string[], missing: string[] }}
  */
 export function computeFitScore(resumeText, requirements) {
-  const bullets = Array.isArray(requirements) ? requirements : [];
+  const bullets = Array.isArray(requirements)
+    ? requirements.filter(r => typeof r !== 'string' || r.trim())
+    : [];
   if (!bullets.length) return { score: 0, matched: [], missing: [] };
 
   const resumeSet = resumeTokens(resumeText);
