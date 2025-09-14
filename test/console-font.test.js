@@ -8,11 +8,11 @@ describe('ensureDefaultConsoleFont', () => {
   it('creates default font from fallback when missing', async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'font-'));
     const fallback = path.join(dir, 'Lat15-TerminusBold14.psf.gz');
-    await fs.writeFile(fallback, 'fontdata');
+    await fs.writeFile(fallback, 'font data');
     const defaultPath = await ensureDefaultConsoleFont(dir);
     const data = await fs.readFile(defaultPath, 'utf8');
     expect(defaultPath).toBe(path.join(dir, 'default.psf.gz'));
-    expect(data).toBe('fontdata');
+    expect(data).toBe('font data');
   });
 
   it('keeps existing default font', async () => {

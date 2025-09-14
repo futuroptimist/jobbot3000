@@ -160,7 +160,7 @@ See [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) for a list of pro
 ## Raspberry Pi console fonts
 
 Pi images bake a default console font so `setfont -d` works out of the box.
-The `pi-image.yml` build config copies a fallback font into
+The Pi image build config copies a fallback font into
 `/usr/share/consolefonts` when no default is present, letting you change the
 font size immediately after logging in.
 
