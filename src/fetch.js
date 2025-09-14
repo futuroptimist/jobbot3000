@@ -1,6 +1,12 @@
 import fetch from 'node-fetch';
 import { htmlToText } from 'html-to-text';
 
+/** Allowed URL protocols for fetchTextFromUrl. */
+const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
+
+/** Default timeout for fetchTextFromUrl in milliseconds. */
+export const DEFAULT_TIMEOUT_MS = 10000;
+
 function formatImageAlt(elem, walk, builder) {
   const alt = elem.attribs?.alt;
   if (alt) builder.addInline(alt, { noWordTransform: true });
@@ -52,7 +58,7 @@ export async function fetchTextFromUrl(
   { timeoutMs = 10000, headers, maxBytes = 1024 * 1024 } = {}
 ) {
   const { protocol } = new URL(url);
-  if (protocol !== 'http:' && protocol !== 'https:') {
+  if (!ALLOWED_PROTOCOLS.has(protocol)) {
     throw new Error(`Unsupported protocol: ${protocol}`);
   }
 

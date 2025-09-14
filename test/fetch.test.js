@@ -189,6 +189,18 @@ describe('fetchTextFromUrl', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it('allows uppercase HTTP protocol', async () => {
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('ok'),
+    });
+    const text = await fetchTextFromUrl('HTTP://example.com');
+    expect(text).toBe('ok');
+  });
+
   it('limits response size to 1MB by default', async () => {
     fetch.mockResolvedValue({
       ok: true,
@@ -213,3 +225,4 @@ describe('fetchTextFromUrl', () => {
     ).rejects.toThrow('Response exceeded 5 bytes');
   });
 });
+
