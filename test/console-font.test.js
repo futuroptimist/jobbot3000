@@ -73,3 +73,4 @@ describe('ensureDefaultConsoleFont', () => {
     ).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });
+
