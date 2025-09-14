@@ -9,17 +9,17 @@ function paths() {
 }
 
 /**
- * Read and parse JSON from `file`. Returns an empty object when the file doesn't exist.
+ * Read lifecycle JSON from disk, returning an empty object when the file is missing.
  *
  * @param {string} file
  * @returns {Promise<object>}
  */
-async function readJsonFile(file) {
+async function readLifecycleFile(file) {
   try {
     return JSON.parse(await fs.readFile(file, 'utf8'));
   } catch (err) {
-    if (err.code !== 'ENOENT') throw err;
-    return {};
+    if (err.code === 'ENOENT') return {};
+    throw err;
   }
 }
 
@@ -51,7 +51,7 @@ export function recordApplication(id, status) {
 
   const run = async () => {
     await fs.mkdir(dir, { recursive: true });
-    const data = await readJsonFile(file);
+    const data = await readLifecycleFile(file);
     data[id] = status;
     await writeJsonFile(file, data);
     return data[id];
@@ -67,11 +67,10 @@ export function recordApplication(id, status) {
  */
 export async function getLifecycleCounts() {
   const { file } = paths();
-  const data = await readJsonFile(file);
-  const counts = {};
-  for (const s of STATUSES) counts[s] = 0;
-  for (const s of Object.values(data)) {
-    if (counts[s] !== undefined) counts[s] += 1;
+  const data = await readLifecycleFile(file);
+  const counts = Object.fromEntries(STATUSES.map(s => [s, 0]));
+  for (const status of Object.values(data)) {
+    if (counts[status] !== undefined) counts[status] += 1;
   }
   return counts;
 }
