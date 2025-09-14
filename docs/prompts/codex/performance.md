@@ -18,8 +18,9 @@ for (let i = 0; i < 1e6; i++) {
 console.log(`elapsed: ${performance.now() - start}ms`);
 ```
 
-Run the snippet with `node --input-type=module` to verify it works.
-Use it as a quick baseline before adding formal benchmarks.
+Save the snippet as `perf-check.mjs` and run `node perf-check.mjs`, or execute it inline
+with `node --input-type=module` to verify it works. Use it as a quick baseline before
+adding formal benchmarks.
 
 ```text
 SYSTEM:
@@ -37,10 +38,9 @@ CONTEXT:
 - Scan staged changes for secrets with
   `git diff --cached | ./scripts/scan-secrets.py`
   (see [`scripts/scan-secrets.py`](../../../scripts/scan-secrets.py)).
-- Link-check this doc with `npx markdown-link-check docs/prompts/codex/performance.md`.
-- Confirm referenced files exist; update [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
-- Link-check the updated doc with
-  `npx markdown-link-check docs/prompts/codex/performance.md`.
+- Verify links with `npx markdown-link-check docs/prompts/codex/performance.md`.
+- Confirm referenced files exist; update [prompt-docs-summary.md](../../prompt-docs-summary.md)
+  when adding prompt docs.
 
 REQUEST:
 1. Write a failing benchmark or test showing the slowdown.
@@ -72,13 +72,11 @@ CONTEXT:
 - Follow [README.md](../../../README.md); see the
   [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
-- Link-check this doc with `npx markdown-link-check docs/prompts/codex/performance.md`.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with
   `git diff --cached | ./scripts/scan-secrets.py`
   (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
-- Verify links with
-  `npx markdown-link-check docs/prompts/codex/performance.md`.
+- Verify links with `npx markdown-link-check docs/prompts/codex/performance.md`.
 - Confirm referenced files exist; update
   [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 
