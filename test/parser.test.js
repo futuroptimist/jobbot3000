@@ -163,6 +163,23 @@ Requirements:
     ]);
   });
 
+  it('strips alphabetical bullets', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Requirements:
+a. First skill
+b) Second skill
+(c) Third skill
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual([
+      'First skill',
+      'Second skill',
+      'Third skill'
+    ]);
+  });
+
   it('uses the first Responsibilities section when multiple appear', () => {
     const text = `
 Title: Developer
