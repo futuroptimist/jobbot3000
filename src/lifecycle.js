@@ -8,6 +8,16 @@ function paths() {
   return { dir, file: path.join(dir, 'applications.json') };
 }
 
+// Read lifecycle JSON from disk, returning an empty object when the file is missing.
+async function readLifecycleFile(file) {
+  try {
+    return JSON.parse(await fs.readFile(file, 'utf8'));
+  } catch (err) {
+    if (err.code === 'ENOENT') return {};
+    throw err;
+  }
+}
+
 // Serialize writes to avoid clobbering entries when recordApplication is invoked concurrently.
 let writeLock = Promise.resolve();
 
@@ -23,12 +33,7 @@ export function recordApplication(id, status) {
 
   const run = async () => {
     await fs.mkdir(dir, { recursive: true });
-    let data = {};
-    try {
-      data = JSON.parse(await fs.readFile(file, 'utf8'));
-    } catch (err) {
-      if (err.code !== 'ENOENT') throw err;
-    }
+    const data = await readLifecycleFile(file);
     data[id] = status;
     const tmp = `${file}.tmp`;
     await fs.writeFile(tmp, JSON.stringify(data, null, 2));
@@ -46,16 +51,10 @@ export function recordApplication(id, status) {
  */
 export async function getLifecycleCounts() {
   const { file } = paths();
-  let data = {};
-  try {
-    data = JSON.parse(await fs.readFile(file, 'utf8'));
-  } catch (err) {
-    if (err.code !== 'ENOENT') throw err;
-  }
-  const counts = {};
-  for (const s of STATUSES) counts[s] = 0;
-  for (const s of Object.values(data)) {
-    if (counts[s] !== undefined) counts[s] += 1;
+  const data = await readLifecycleFile(file);
+  const counts = Object.fromEntries(STATUSES.map(s => [s, 0]));
+  for (const status of Object.values(data)) {
+    if (counts[status] !== undefined) counts[status] += 1;
   }
   return counts;
 }
