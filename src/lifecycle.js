@@ -8,7 +8,12 @@ function paths() {
   return { dir, file: path.join(dir, 'applications.json') };
 }
 
-// Read lifecycle JSON from disk, returning an empty object when the file is missing.
+/**
+ * Read lifecycle JSON from disk, returning an empty object when the file is missing.
+ *
+ * @param {string} file
+ * @returns {Promise<object>}
+ */
 async function readLifecycleFile(file) {
   try {
     return JSON.parse(await fs.readFile(file, 'utf8'));
@@ -16,6 +21,19 @@ async function readLifecycleFile(file) {
     if (err.code === 'ENOENT') return {};
     throw err;
   }
+}
+
+/**
+ * Atomically write `data` as pretty JSON to `file`.
+ *
+ * @param {string} file
+ * @param {object} data
+ * @returns {Promise<void>}
+ */
+async function writeJsonFile(file, data) {
+  const tmp = `${file}.tmp`;
+  await fs.writeFile(tmp, JSON.stringify(data, null, 2));
+  await fs.rename(tmp, file);
 }
 
 // Serialize writes to avoid clobbering entries when recordApplication is invoked concurrently.
@@ -35,9 +53,7 @@ export function recordApplication(id, status) {
     await fs.mkdir(dir, { recursive: true });
     const data = await readLifecycleFile(file);
     data[id] = status;
-    const tmp = `${file}.tmp`;
-    await fs.writeFile(tmp, JSON.stringify(data, null, 2));
-    await fs.rename(tmp, file);
+    await writeJsonFile(file, data);
     return data[id];
   };
 
