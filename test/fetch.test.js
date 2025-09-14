@@ -48,6 +48,18 @@ describe('extractTextFromHtml', () => {
     expect(extractTextFromHtml(html)).toBe('Main');
   });
 
+  it('omits footer content', () => {
+    const html = `
+      <html>
+        <body>
+          <p>Main</p>
+          <footer>ignored</footer>
+        </body>
+      </html>
+    `;
+    expect(extractTextFromHtml(html)).toBe('Main');
+  });
+
   it('omits noscript content', () => {
     const html = `
       <html>

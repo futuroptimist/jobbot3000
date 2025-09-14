@@ -6,6 +6,17 @@ function formatImageAlt(elem, walk, builder) {
   if (alt) builder.addInline(alt, { noWordTransform: true });
 }
 
+// HTML tags that do not contribute meaningful text content.
+const NON_CONTENT_TAGS = [
+  'script',
+  'style',
+  'nav',
+  'header',
+  'footer',
+  'aside',
+  'noscript',
+];
+
 /**
  * Options for html-to-text that ignore non-content tags.
  * Exported for reuse in other HTML parsing utilities.
@@ -14,13 +25,7 @@ export const HTML_TO_TEXT_OPTIONS = {
   wordwrap: false,
   formatters: { imgAlt: formatImageAlt },
   selectors: [
-    { selector: 'script', format: 'skip' },
-    { selector: 'style', format: 'skip' },
-    { selector: 'nav', format: 'skip' },
-    { selector: 'header', format: 'skip' },
-    { selector: 'footer', format: 'skip' },
-    { selector: 'aside', format: 'skip' },
-    { selector: 'noscript', format: 'skip' },
+    ...NON_CONTENT_TAGS.map((selector) => ({ selector, format: 'skip' })),
     { selector: 'img', format: 'imgAlt' },
   ],
 };
