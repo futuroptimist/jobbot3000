@@ -51,6 +51,7 @@ export function extractTextFromHtml(html) {
  *
  * @param {string} url
  * @param {{ timeoutMs?: number, headers?: Record<string, string>, maxBytes?: number }} [opts]
+ *   Invalid timeout values fall back to 10000ms.
  * @returns {Promise<string>}
  */
 export async function fetchTextFromUrl(
@@ -62,10 +63,13 @@ export async function fetchTextFromUrl(
     throw new Error(`Unsupported protocol: ${protocol}`);
   }
 
+  // Normalize timeout: fallback to 10000ms if invalid
+  const ms = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 10000;
+
   const controller = new AbortController();
   const timer = setTimeout(
-    () => controller.abort(new Error(`Timeout after ${timeoutMs}ms`)),
-    timeoutMs
+    () => controller.abort(new Error(`Timeout after ${ms}ms`)),
+    ms
   );
 
   try {
