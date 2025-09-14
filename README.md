@@ -109,6 +109,9 @@ Pass `url` to include a source link in the rendered Markdown output.
 `toMarkdownMatch` accepts the same `url` field to link match reports back to the job posting.
 If `summary` is omitted, the requirements section is still separated by a blank line.
 
+Both exporters accept an optional `locale` field to translate labels.
+The default locale is `'en'`; Spanish (`'es'`) is also supported.
+
 Use `toMarkdownMatch` to format fit score results; it also accepts `url`:
 
 ```js
