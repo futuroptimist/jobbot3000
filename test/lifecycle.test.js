@@ -47,3 +47,7 @@ test('handles concurrent status updates', async () => {
   const counts = await getLifecycleCounts();
   expect(counts).toEqual({ no_response: 1, rejected: 1, next_round: 1 });
 });
+
+test('rejects unknown statuses', async () => {
+  await expect(recordApplication('id', 'maybe')).rejects.toThrow('unknown status');
+});

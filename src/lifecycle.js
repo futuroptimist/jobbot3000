@@ -1,11 +1,27 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+/** Valid application status values. */
 export const STATUSES = ['no_response', 'rejected', 'next_round'];
 
-function paths() {
+function getPaths() {
   const dir = process.env.JOBBOT_DATA_DIR || path.resolve('data');
   return { dir, file: path.join(dir, 'applications.json') };
+}
+
+/**
+ * Read a JSON file. Returns an empty object when the file is missing and rethrows
+ * other errors.
+ * @param {string} file
+ * @returns {Promise<object>}
+ */
+async function readJsonFile(file) {
+  try {
+    return JSON.parse(await fs.readFile(file, 'utf8'));
+  } catch (err) {
+    if (err.code === 'ENOENT') return {};
+    throw err;
+  }
 }
 
 // Serialize writes to avoid clobbering entries when recordApplication is invoked concurrently.
@@ -19,16 +35,11 @@ export function recordApplication(id, status) {
   if (!STATUSES.includes(status)) {
     return Promise.reject(new Error(`unknown status: ${status}`));
   }
-  const { dir, file } = paths();
+  const { dir, file } = getPaths();
 
   const run = async () => {
     await fs.mkdir(dir, { recursive: true });
-    let data = {};
-    try {
-      data = JSON.parse(await fs.readFile(file, 'utf8'));
-    } catch (err) {
-      if (err.code !== 'ENOENT') throw err;
-    }
+    const data = await readJsonFile(file);
     data[id] = status;
     const tmp = `${file}.tmp`;
     await fs.writeFile(tmp, JSON.stringify(data, null, 2));
@@ -45,15 +56,9 @@ export function recordApplication(id, status) {
  * invalid JSON.
  */
 export async function getLifecycleCounts() {
-  const { file } = paths();
-  let data = {};
-  try {
-    data = JSON.parse(await fs.readFile(file, 'utf8'));
-  } catch (err) {
-    if (err.code !== 'ENOENT') throw err;
-  }
-  const counts = {};
-  for (const s of STATUSES) counts[s] = 0;
+  const { file } = getPaths();
+  const data = await readJsonFile(file);
+  const counts = Object.fromEntries(STATUSES.map(s => [s, 0]));
   for (const s of Object.values(data)) {
     if (counts[s] !== undefined) counts[s] += 1;
   }
