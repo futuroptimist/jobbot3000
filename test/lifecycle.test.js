@@ -23,6 +23,11 @@ test('records and summarizes application statuses', async () => {
   expect(JSON.parse(raw)).toEqual({ abc: 'rejected', def: 'no_response' });
 });
 
+test('returns zero counts when lifecycle file is missing', async () => {
+  const counts = await getLifecycleCounts();
+  expect(counts).toEqual({ no_response: 0, rejected: 0, next_round: 0 });
+});
+
 test('throws when lifecycle file has invalid JSON', async () => {
   await fs.mkdir(tmp, { recursive: true });
   await fs.writeFile(path.join(tmp, 'applications.json'), '{');
