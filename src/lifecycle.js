@@ -10,18 +10,31 @@ function getPaths() {
 }
 
 /**
- * Read a JSON file. Returns an empty object when the file is missing and rethrows
- * other errors.
+ * Read lifecycle JSON from disk, returning an empty object when the file is missing.
+ *
  * @param {string} file
  * @returns {Promise<object>}
  */
-async function readJsonFile(file) {
+async function readLifecycleFile(file) {
   try {
     return JSON.parse(await fs.readFile(file, 'utf8'));
   } catch (err) {
     if (err.code === 'ENOENT') return {};
     throw err;
   }
+}
+
+/**
+ * Atomically write `data` as pretty JSON to `file`.
+ *
+ * @param {string} file
+ * @param {object} data
+ * @returns {Promise<void>}
+ */
+async function writeJsonFile(file, data) {
+  const tmp = `${file}.tmp`;
+  await fs.writeFile(tmp, JSON.stringify(data, null, 2));
+  await fs.rename(tmp, file);
 }
 
 // Serialize writes to avoid clobbering entries when recordApplication is invoked concurrently.
@@ -39,11 +52,9 @@ export function recordApplication(id, status) {
 
   const run = async () => {
     await fs.mkdir(dir, { recursive: true });
-    const data = await readJsonFile(file);
+    const data = await readLifecycleFile(file);
     data[id] = status;
-    const tmp = `${file}.tmp`;
-    await fs.writeFile(tmp, JSON.stringify(data, null, 2));
-    await fs.rename(tmp, file);
+    await writeJsonFile(file, data);
     return data[id];
   };
 
@@ -57,10 +68,10 @@ export function recordApplication(id, status) {
  */
 export async function getLifecycleCounts() {
   const { file } = getPaths();
-  const data = await readJsonFile(file);
+  const data = await readLifecycleFile(file);
   const counts = Object.fromEntries(STATUSES.map(s => [s, 0]));
-  for (const s of Object.values(data)) {
-    if (counts[s] !== undefined) counts[s] += 1;
+  for (const status of Object.values(data)) {
+    if (counts[status] !== undefined) counts[status] += 1;
   }
   return counts;
 }

@@ -1,6 +1,12 @@
 import fetch from 'node-fetch';
 import { htmlToText } from 'html-to-text';
 
+/** Allowed URL protocols for fetchTextFromUrl. */
+const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
+
+/** Default timeout for fetchTextFromUrl in milliseconds. */
+export const DEFAULT_TIMEOUT_MS = 10000;
+
 function formatImageAlt(elem, walk, builder) {
   const alt = elem.attribs?.alt;
   if (alt) builder.addInline(alt, { noWordTransform: true });
@@ -44,12 +50,15 @@ export function extractTextFromHtml(html) {
  * Supports only `http:` and `https:` protocols.
  *
  * @param {string} url
- * @param {{ timeoutMs?: number, headers?: Record<string, string> }} [opts]
+ * @param {{ timeoutMs?: number, headers?: Record<string, string>, maxBytes?: number }} [opts]
  * @returns {Promise<string>}
  */
-export async function fetchTextFromUrl(url, { timeoutMs = 10000, headers } = {}) {
+export async function fetchTextFromUrl(
+  url,
+  { timeoutMs = 10000, headers, maxBytes = 1024 * 1024 } = {}
+) {
   const { protocol } = new URL(url);
-  if (protocol !== 'http:' && protocol !== 'https:') {
+  if (!ALLOWED_PROTOCOLS.has(protocol)) {
     throw new Error(`Unsupported protocol: ${protocol}`);
   }
 
@@ -64,6 +73,7 @@ export async function fetchTextFromUrl(url, { timeoutMs = 10000, headers } = {})
       redirect: 'follow',
       signal: controller.signal,
       headers: headers || {},
+      size: maxBytes,
     });
     if (!response.ok) {
       throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
@@ -73,6 +83,11 @@ export async function fetchTextFromUrl(url, { timeoutMs = 10000, headers } = {})
     return contentType.includes('text/html')
       ? extractTextFromHtml(body)
       : body.trim();
+  } catch (err) {
+    if (err?.type === 'max-size') {
+      throw new Error(`Response exceeded ${maxBytes} bytes for ${url}`);
+    }
+    throw err;
   } finally {
     clearTimeout(timer);
   }

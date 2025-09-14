@@ -23,6 +23,11 @@ test('records and summarizes application statuses', async () => {
   expect(JSON.parse(raw)).toEqual({ abc: 'rejected', def: 'no_response' });
 });
 
+test('returns zero counts when lifecycle file is missing', async () => {
+  const counts = await getLifecycleCounts();
+  expect(counts).toEqual({ no_response: 0, rejected: 0, next_round: 0 });
+});
+
 test('throws when lifecycle file has invalid JSON', async () => {
   await fs.mkdir(tmp, { recursive: true });
   await fs.writeFile(path.join(tmp, 'applications.json'), '{');
@@ -48,6 +53,16 @@ test('handles concurrent status updates', async () => {
   expect(counts).toEqual({ no_response: 1, rejected: 1, next_round: 1 });
 });
 
-test('rejects unknown statuses', async () => {
-  await expect(recordApplication('id', 'maybe')).rejects.toThrow('unknown status');
+test('returns zero counts when lifecycle file is missing', async () => {
+  const counts = await getLifecycleCounts();
+  expect(counts).toEqual({ no_response: 0, rejected: 0, next_round: 0 });
+});
+
+test('rejects unknown application status', async () => {
+  await expect(recordApplication('abc', 'maybe')).rejects.toThrow(
+    /unknown status: maybe/,
+  );
+  await expect(
+    fs.readFile(path.join(tmp, 'applications.json')),
+  ).rejects.toThrow();
 });
