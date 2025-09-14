@@ -54,4 +54,22 @@ describe('ensureDefaultConsoleFont', () => {
       await expect(ensureDefaultConsoleFont(dir)).rejects.toThrow(/ENOENT/);
     });
   });
+
+  it('uses provided fallback font name', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'font-'));
+    const fallbackName = 'custom.psf.gz';
+    const fallback = path.join(dir, fallbackName);
+    await fs.writeFile(fallback, 'custom');
+    const defaultPath = await ensureDefaultConsoleFont(dir, fallbackName);
+    const data = await fs.readFile(defaultPath, 'utf8');
+    expect(defaultPath).toBe(path.join(dir, 'default.psf.gz'));
+    expect(data).toBe('custom');
+  });
+
+  it('throws when fallback font is missing', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'font-'));
+    await expect(
+      ensureDefaultConsoleFont(dir, 'missing.psf.gz')
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
 });
