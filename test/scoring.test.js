@@ -23,9 +23,9 @@ describe('computeFitScore', () => {
     const resume = 'Strong in Go';
     const requirements = ['Go', null, 123, undefined];
     const result = computeFitScore(resume, requirements);
-    expect(result.score).toBe(25);
+    expect(result.score).toBe(100);
     expect(result.matched).toEqual(['Go']);
-    expect(result.missing).toEqual([null, 123, undefined]);
+    expect(result.missing).toEqual([]);
   });
 
   it('treats non-string resume input as empty string', () => {

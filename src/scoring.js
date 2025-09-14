@@ -61,8 +61,9 @@ function hasOverlap(line, resumeSet) {
  * @returns {{ score: number, matched: string[], missing: string[] }}
  */
 export function computeFitScore(resumeText, requirements) {
+  // Ignore non-string or empty requirement entries so malformed data doesn't skew scores.
   const bullets = Array.isArray(requirements)
-    ? requirements.filter(r => typeof r !== 'string' || r.trim())
+    ? requirements.filter(r => typeof r === 'string' && r.trim())
     : [];
   if (!bullets.length) return { score: 0, matched: [], missing: [] };
 
