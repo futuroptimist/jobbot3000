@@ -60,7 +60,8 @@ run();
 `fetchTextFromUrl` strips scripts, styles, navigation, header, footer, aside,
 and noscript content, preserves image alt text, and collapses whitespace to
 single spaces. Pass `timeoutMs` (milliseconds) to override the 10s default,
-and `headers` to send custom HTTP headers. Only `http` and `https` URLs are
+and `headers` to send custom HTTP headers. Responses over 1&nbsp;MB are
+rejected; override with `maxBytes` to adjust. Only `http` and `https` URLs are
 supported; other protocols throw an error.
 
 Normalize existing HTML without fetching and log the result:
