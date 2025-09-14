@@ -175,6 +175,16 @@ describe('fetchTextFromUrl', () => {
     );
   });
 
+  it.each([
+    'http://localhost',
+    'http://127.0.0.1',
+    'http://192.168.0.1',
+  ])('rejects private URLs: %s', async (url) => {
+    fetch.mockClear();
+    await expect(fetchTextFromUrl(url)).rejects.toThrow('Refusing to fetch');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('rejects non-http/https URLs', async () => {
     fetch.mockClear();
     fetch.mockResolvedValue({
