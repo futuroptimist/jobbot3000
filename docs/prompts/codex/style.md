@@ -1,62 +1,53 @@
 ---
-title: 'Codex Security Prompt'
-slug: 'codex-security'
+title: 'Codex Style Prompt'
+slug: 'codex-style'
 ---
 
-# Codex Security Prompt
-Use this prompt to address security vulnerabilities in jobbot3000.
+# Codex Style Prompt
+Use this prompt when adjusting code style or formatting in jobbot3000.
 
 ```text
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
 
 PURPOSE:
-Address security issues and harden the project.
+Align code with the project's style without changing behavior.
 
 CONTEXT:
 - Follow [README.md](../../../README.md); see the
   [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
-- GitHub's CodeQL analysis runs via [`codeql.yml`](../../../.github/workflows/codeql.yml).
-- Review [DESIGN.md](../../../DESIGN.md) for architecture context affecting security.
-- Consult [SECURITY.md](../../../SECURITY.md) for reporting and disclosure guidance.
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
-- Run `npm audit` to identify known vulnerabilities.
 - Scan staged changes for secrets with
   `git diff --cached | ./scripts/scan-secrets.py`
   (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
+- Ensure any code samples compile with `node` or `ts-node`.
 - Confirm referenced files exist; update
   [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 
 REQUEST:
-1. Reproduce the vulnerability or describe the weakness.
-2. Apply the minimal fix to mitigate the issue.
-3. Add or update tests covering the security case.
-4. Review dependencies with `npm audit` and address issues.
-5. Update docs or advisories if needed.
-6. Run the commands above and fix any failures.
+1. Spot style inconsistencies or linter errors.
+2. Apply the minimal fix using existing conventions.
+3. Avoid altering runtime behavior.
+4. Run the commands above and fix any failures.
 
 OUTPUT:
-A pull request summarizing the security fix with passing checks.
+A pull request URL summarizing the style improvements.
 ```
 
-Copy this block whenever addressing security in jobbot3000.
+Copy this block whenever refining style in jobbot3000.
 
-### Example: Generating a secure token
+## Example
+
+Remove unnecessary code while keeping output stable:
 
 ```js
-import { randomBytes } from 'node:crypto';
-
-export function generateToken() {
-  return randomBytes(32).toString('hex');
-}
-
-console.log(generateToken().length); // 64
+const greet = (name) => `Hi, ${name}!`;
+console.log(greet('Codex'));
 ```
 
-Run it with `node --input-type=module` to verify the output is 64.
-See [`randomBytes`](https://nodejs.org/api/crypto.html#cryptorandombytessize-callback) for details.
+Run it with `node -e "const greet = (name) => \`Hi, ${name}!\`; console.log(greet('Codex'))"`.
 
 ## Upgrade Prompt
 Type: evergreen
@@ -74,16 +65,13 @@ CONTEXT:
 - Follow [README.md](../../../README.md); see the
   [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
-- GitHub's CodeQL analysis runs via [`codeql.yml`](../../../.github/workflows/codeql.yml).
-- Consult [SECURITY.md](../../../SECURITY.md) for reporting and disclosure guidance.
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
-- Check dependencies for known vulnerabilities with `npm audit`.
 - Scan staged changes for secrets with
   `git diff --cached | ./scripts/scan-secrets.py`
   (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
-- Confirm referenced files exist; update [prompt-docs-summary.md](../../prompt-docs-summary.md)
-  when adding prompt docs.
+- Confirm referenced files exist; update
+  [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 
 REQUEST:
 1. Select a file under `docs/prompts/` to update or create a new prompt type.
@@ -93,4 +81,3 @@ REQUEST:
 OUTPUT:
 A pull request that updates the selected prompt doc with passing checks.
 ```
-

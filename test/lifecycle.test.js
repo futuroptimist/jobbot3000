@@ -47,3 +47,17 @@ test('handles concurrent status updates', async () => {
   const counts = await getLifecycleCounts();
   expect(counts).toEqual({ no_response: 1, rejected: 1, next_round: 1 });
 });
+
+test('returns zero counts when lifecycle file is missing', async () => {
+  const counts = await getLifecycleCounts();
+  expect(counts).toEqual({ no_response: 0, rejected: 0, next_round: 0 });
+});
+
+test('rejects unknown application status', async () => {
+  await expect(recordApplication('abc', 'maybe')).rejects.toThrow(
+    /unknown status: maybe/,
+  );
+  await expect(
+    fs.readFile(path.join(tmp, 'applications.json')),
+  ).rejects.toThrow();
+});
