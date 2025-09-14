@@ -188,4 +188,17 @@ describe('fetchTextFromUrl', () => {
       .rejects.toThrow('Unsupported protocol: file:');
     expect(fetch).not.toHaveBeenCalled();
   });
+
+  it('rejects redirects to disallowed protocols', async () => {
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('secret'),
+      url: 'file:///etc/passwd',
+    });
+    await expect(fetchTextFromUrl('http://example.com'))
+      .rejects.toThrow('Unsupported protocol: file:');
+  });
 });

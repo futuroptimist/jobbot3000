@@ -61,7 +61,7 @@ run();
 and noscript content, preserves image alt text, and collapses whitespace to
 single spaces. Pass `timeoutMs` (milliseconds) to override the 10s default,
 and `headers` to send custom HTTP headers. Only `http` and `https` URLs are
-supported; other protocols throw an error.
+supported; redirects to other protocols throw an error.
 
 Normalize existing HTML without fetching and log the result:
 

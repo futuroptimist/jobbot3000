@@ -41,7 +41,7 @@ export function extractTextFromHtml(html) {
 
 /**
  * Fetch a URL and return its text content. HTML responses are converted to plain text.
- * Supports only `http:` and `https:` protocols.
+ * Supports only `http:` and `https:` protocols, including after redirects.
  *
  * @param {string} url
  * @param {{ timeoutMs?: number, headers?: Record<string, string> }} [opts]
@@ -65,6 +65,10 @@ export async function fetchTextFromUrl(url, { timeoutMs = 10000, headers } = {})
       signal: controller.signal,
       headers: headers || {},
     });
+    const { protocol: finalProtocol } = new URL(response.url || url);
+    if (finalProtocol !== 'http:' && finalProtocol !== 'https:') {
+      throw new Error(`Unsupported protocol: ${finalProtocol}`);
+    }
     if (!response.ok) {
       throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
     }
