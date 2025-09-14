@@ -157,6 +157,19 @@ describe('fetchTextFromUrl', () => {
     vi.useRealTimers();
   });
 
+  it('falls back to default timeout when given NaN', async () => {
+    vi.useFakeTimers();
+    fetch.mockImplementation((url, { signal }) =>
+      new Promise((resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason));
+      })
+    );
+    const promise = fetchTextFromUrl('http://example.com', { timeoutMs: Number('foo') });
+    vi.advanceTimersByTime(10000);
+    await expect(promise).rejects.toThrow('Timeout after 10000ms');
+    vi.useRealTimers();
+  });
+
   it('forwards headers to fetch', async () => {
     fetch.mockClear();
     fetch.mockResolvedValue({
