@@ -1,9 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+/** Valid application status values. */
 export const STATUSES = ['no_response', 'rejected', 'next_round'];
 
-function paths() {
+function getPaths() {
   const dir = process.env.JOBBOT_DATA_DIR || path.resolve('data');
   return { dir, file: path.join(dir, 'applications.json') };
 }
@@ -47,7 +48,7 @@ export function recordApplication(id, status) {
   if (!STATUSES.includes(status)) {
     return Promise.reject(new Error(`unknown status: ${status}`));
   }
-  const { dir, file } = paths();
+  const { dir, file } = getPaths();
 
   const run = async () => {
     await fs.mkdir(dir, { recursive: true });
@@ -66,7 +67,7 @@ export function recordApplication(id, status) {
  * invalid JSON.
  */
 export async function getLifecycleCounts() {
-  const { file } = paths();
+  const { file } = getPaths();
   const data = await readLifecycleFile(file);
   const counts = Object.fromEntries(STATUSES.map(s => [s, 0]));
   for (const status of Object.values(data)) {
