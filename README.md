@@ -27,6 +27,10 @@ npm run test:ci
 echo "First. Second. Third." | jobbot summarize - --sentences 2 --text
 ```
 
+# Continuous integration
+GitHub Actions runs lint and test checks on each push and pull request. To keep builds fast,
+in-progress runs for the same branch are canceled when new commits arrive.
+
 In code, import the `summarize` function and pass the number of sentences to keep:
 
 ```js
