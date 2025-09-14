@@ -30,16 +30,19 @@ function stripBullet(line) {
 }
 
 /**
- * Locate the first line matching any regex in `patterns`.
- * Returns the line index and the matching pattern, or -1/null when not found.
- * Shared by header and field scanners to keep parsing logic consistent.
+ * Locate the first line matching any regex in `patterns` and return metadata
+ * about the match. The `pattern` is returned so callers can reuse the regex
+ * without re-scanning, and the `match` captures the resulting groups for
+ * convenience. When no match is found `index` is `-1` and `pattern`/`match`
+ * are `null`.
  */
-function findFirstPatternIndex(lines, patterns) {
+function findFirstPattern(lines, patterns) {
   for (let i = 0; i < lines.length; i += 1) {
-    const pattern = patterns.find(p => p.test(lines[i]));
-    if (pattern) return { index: i, pattern };
+    const line = lines[i];
+    const pattern = patterns.find(p => p.test(line));
+    if (pattern) return { index: i, pattern, match: line.match(pattern) };
   }
-  return { index: -1, pattern: null };
+  return { index: -1, pattern: null, match: null };
 }
 
 /**
@@ -47,15 +50,13 @@ function findFirstPatternIndex(lines, patterns) {
  * Prefers primary headers even if a fallback header appears earlier.
  */
 function findHeader(lines, primary, fallback) {
-  const primaryResult = findFirstPatternIndex(lines, primary);
+  const primaryResult = findFirstPattern(lines, primary);
   if (primaryResult.index !== -1) return primaryResult;
-  return findFirstPatternIndex(lines, fallback);
+  return findFirstPattern(lines, fallback);
 }
 
 function findFirstMatch(lines, patterns) {
-  const { index, pattern } = findFirstPatternIndex(lines, patterns);
-  if (index === -1 || !pattern) return '';
-  const match = lines[index].match(pattern);
+  const { match } = findFirstPattern(lines, patterns);
   return match ? match[1].trim() : '';
 }
 

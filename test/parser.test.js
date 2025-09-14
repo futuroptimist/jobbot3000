@@ -12,6 +12,11 @@ describe('parseJobText', () => {
     });
   });
 
+  it('returns trimmed original text in body', () => {
+    const text = '\nTitle: Dev\nCompany: ACME\n';
+    expect(parseJobText(text).body).toBe('Title: Dev\nCompany: ACME');
+  });
+
   it('extracts location when present', () => {
     const text = `
 Title: Developer
