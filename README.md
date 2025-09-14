@@ -27,6 +27,8 @@ npm run test:ci
 echo "First. Second. Third." | jobbot summarize - --sentences 2 --text
 ```
 
+CI auto-cancels superseded runs to keep builds fast and reliable.
+
 In code, import the `summarize` function and pass the number of sentences to keep:
 
 ```js
