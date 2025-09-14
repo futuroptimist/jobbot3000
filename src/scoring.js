@@ -57,12 +57,12 @@ function hasOverlap(line, resumeSet) {
  * Compute how well a resume matches a list of job requirements.
  *
  * @param {any} resumeText Non-string values are stringified.
- * @param {string[] | undefined} requirements
+ * @param {string[] | undefined} requirements Non-string entries are ignored.
  * @returns {{ score: number, matched: string[], missing: string[] }}
  */
 export function computeFitScore(resumeText, requirements) {
   const bullets = Array.isArray(requirements)
-    ? requirements.filter(r => typeof r !== 'string' || r.trim())
+    ? requirements.filter(r => typeof r === 'string' && r.trim())
     : [];
   if (!bullets.length) return { score: 0, matched: [], missing: [] };
 
