@@ -77,6 +77,11 @@ describe('summarize', () => {
     expect(summarize(text)).toBe('Wait…');
   });
 
+  it('handles ellipsis combined with other terminators', () => {
+    const text = 'Wait…? Another.';
+    expect(summarize(text)).toBe('Wait…?');
+  });
+
   it('does not split after common abbreviations', () => {
     const text = 'Mr. Smith went home. Another.';
     expect(summarize(text)).toBe('Mr. Smith went home.');

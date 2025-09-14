@@ -17,6 +17,8 @@ const spaceRe = /\s/;
 const isSpace = (c) => spaceRe.test(c);
 const closers = new Set(['"', "'", ')', ']', '}']);
 const openers = new Set(['(', '[', '{']);
+// Sentence-ending punctuation characters.
+const terminators = new Set(['.', '!', '?', '…']);
 const isDigit = (c) => c >= '0' && c <= '9';
 const isAlpha = (c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 const abbreviations = new Set(['mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', 'st', 'vs']);
@@ -53,7 +55,7 @@ export function summarize(text, count = 1) {
       else if (!quote) quote = ch;
     }
 
-    if (ch === '.' || ch === '!' || ch === '?' || ch === '…') {
+    if (terminators.has(ch)) {
       // Skip decimals like 3.14
       if (ch === '.' && i > 0 && isDigit(text[i - 1]) && i + 1 < len && isDigit(text[i + 1])) {
         continue;
@@ -71,10 +73,7 @@ export function summarize(text, count = 1) {
       let j = i + 1;
 
       // absorb consecutive punctuation like ?!
-      while (
-        j < len &&
-        (text[j] === '.' || text[j] === '!' || text[j] === '?' || text[j] === '…')
-      ) {
+      while (j < len && terminators.has(text[j])) {
         j++;
       }
 
