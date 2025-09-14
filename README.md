@@ -27,6 +27,10 @@ npm run test:ci
 echo "First. Second. Third." | jobbot summarize - --sentences 2 --text
 ```
 
+# Continuous integration
+GitHub Actions runs lint and test checks on each push and pull request. To keep builds fast and reliable,
+in-progress runs for the same branch are canceled when new commits arrive.
+
 In code, import the `summarize` function and pass the number of sentences to keep:
 
 ```js
@@ -60,7 +64,8 @@ run();
 `fetchTextFromUrl` strips scripts, styles, navigation, header, footer, aside,
 and noscript content, preserves image alt text, and collapses whitespace to
 single spaces. Pass `timeoutMs` (milliseconds) to override the 10s default,
-and `headers` to send custom HTTP headers. Only `http` and `https` URLs are
+and `headers` to send custom HTTP headers. Responses over 1&nbsp;MB are
+rejected; override with `maxBytes` to adjust. Only `http` and `https` URLs are
 supported; other protocols throw an error.
 
 Normalize existing HTML without fetching and log the result:
@@ -104,6 +109,9 @@ console.log(md);
 Pass `url` to include a source link in the rendered Markdown output.
 `toMarkdownMatch` accepts the same `url` field to link match reports back to the job posting.
 If `summary` is omitted, the requirements section is still separated by a blank line.
+
+Both exporters accept an optional `locale` field to translate labels.
+The default locale is `'en'`; Spanish (`'es'`) is also supported.
 
 Use `toMarkdownMatch` to format fit score results; it also accepts `url`:
 
@@ -160,14 +168,14 @@ See [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) for a list of pro
 ## Raspberry Pi console fonts
 
 Pi images bake a default console font so `setfont -d` works out of the box.
-The `pi-image.yml` build config copies a fallback font into
+The Pi image build config copies a fallback font into
 `/usr/share/consolefonts` when no default is present, letting you change the
 font size immediately after logging in.
 
 ## Tracking Application Lifecycle
 
 Application statuses such as `no_response`, `rejected`, and `next_round` are saved to
-`data/applications.json`, a gitignored file. Set `JOBBOT_DATA_DIR` to change the directory.
+`data/applications.json`, a git-ignored file. Set `JOBBOT_DATA_DIR` to change the directory.
 These records power local Sankey diagrams so progress isn't lost between sessions.
 Writes are serialized to avoid dropping entries when recording multiple applications at once.
 If the file is missing it will be created, but other file errors or malformed JSON will throw.
