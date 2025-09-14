@@ -1,8 +1,9 @@
 const TOKEN_CACHE = new Map();
 const TOKEN_RE = /[a-z0-9]+/g;
 
-// Tokenize text into a Set of lowercase alphanumeric tokens, with caching to avoid
-// repeated regex and Set allocations. Non-string inputs are stringified to avoid type errors.
+// Tokenize text into a Set of lowercase alphanumeric tokens.
+// Results are cached to avoid repeated regex and Set allocations.
+// Non-string inputs are stringified to avoid type errors.
 function tokenize(text) {
   const key = typeof text === 'string' ? text : String(text || '');
   const cached = TOKEN_CACHE.get(key);
@@ -16,19 +17,6 @@ function tokenize(text) {
   if (TOKEN_CACHE.size > 1000) TOKEN_CACHE.clear();
   TOKEN_CACHE.set(key, tokens);
   return tokens;
-}
-
-// Cache tokens for the most recent resume to avoid repeated tokenization when the same resume
-// is scored against multiple job postings.
-let cachedResume = '';
-let cachedTokens = new Set();
-
-function resumeTokens(text) {
-  const normalized = typeof text === 'string' ? text : String(text || '');
-  if (normalized === cachedResume) return cachedTokens;
-  cachedTokens = tokenize(normalized);
-  cachedResume = normalized;
-  return cachedTokens;
 }
 
 // Check if a line overlaps with tokens in the resume set using a manual scanner.
@@ -66,7 +54,8 @@ export function computeFitScore(resumeText, requirements) {
     : [];
   if (!bullets.length) return { score: 0, matched: [], missing: [] };
 
-  const resumeSet = resumeTokens(resumeText);
+  // Tokenize resume text once; internal caching avoids recomputation for repeated inputs.
+  const resumeSet = tokenize(resumeText);
   const matched = [];
   const missing = [];
 

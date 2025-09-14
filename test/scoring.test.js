@@ -50,6 +50,13 @@ describe('computeFitScore', () => {
     expect(result).toEqual({ score: 0, matched: [], missing: [] });
   });
 
+  it('handles different resumes sequentially', () => {
+    const first = computeFitScore('JavaScript', ['JavaScript']).score;
+    const second = computeFitScore('Python', ['JavaScript']).score;
+    expect(first).toBe(100);
+    expect(second).toBe(0);
+  });
+
   // Allow slower CI environments by using a relaxed threshold.
   it('processes large requirement lists within 2500ms', () => {
     const resume = 'skill '.repeat(1000);
