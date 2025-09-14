@@ -1,6 +1,12 @@
 import fetch from 'node-fetch';
 import { htmlToText } from 'html-to-text';
 
+/** Allowed URL protocols for fetchTextFromUrl. */
+const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
+
+/** Default timeout for fetchTextFromUrl in milliseconds. */
+export const DEFAULT_TIMEOUT_MS = 10000;
+
 function formatImageAlt(elem, walk, builder) {
   const alt = elem.attribs?.alt;
   if (alt) builder.addInline(alt, { noWordTransform: true });
@@ -47,9 +53,12 @@ export function extractTextFromHtml(html) {
  * @param {{ timeoutMs?: number, headers?: Record<string, string> }} [opts]
  * @returns {Promise<string>}
  */
-export async function fetchTextFromUrl(url, { timeoutMs = 10000, headers } = {}) {
+export async function fetchTextFromUrl(
+  url,
+  { timeoutMs = DEFAULT_TIMEOUT_MS, headers } = {}
+) {
   const { protocol } = new URL(url);
-  if (protocol !== 'http:' && protocol !== 'https:') {
+  if (!ALLOWED_PROTOCOLS.has(protocol)) {
     throw new Error(`Unsupported protocol: ${protocol}`);
   }
 

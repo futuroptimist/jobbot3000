@@ -188,4 +188,16 @@ describe('fetchTextFromUrl', () => {
       .rejects.toThrow('Unsupported protocol: file:');
     expect(fetch).not.toHaveBeenCalled();
   });
+
+  it('allows uppercase HTTP protocol', async () => {
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('ok'),
+    });
+    const text = await fetchTextFromUrl('HTTP://example.com');
+    expect(text).toBe('ok');
+  });
 });
