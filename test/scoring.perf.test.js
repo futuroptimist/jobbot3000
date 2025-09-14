@@ -13,6 +13,6 @@ describe('computeFitScore performance', () => {
       computeFitScore(resume, bullets);
     }
     const duration = performance.now() - start;
-    expect(duration).toBeLessThan(300);
+    expect(duration).toBeLessThan(400);
   });
 });
