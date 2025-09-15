@@ -1,3 +1,5 @@
+import { t, DEFAULT_LOCALE } from './i18n.js';
+
 export function toJson(data) {
   return JSON.stringify(data, null, 2);
 }
@@ -28,20 +30,30 @@ function appendListSection(lines, header, items, { leadingNewline = false } = {}
  * @param {string} [params.summary]
  * @returns {string}
  */
-export function toMarkdownSummary({ title, company, location, url, requirements, summary }) {
+export function toMarkdownSummary({
+  title,
+  company,
+  location,
+  url,
+  requirements,
+  summary,
+  locale = DEFAULT_LOCALE,
+}) {
   const lines = [];
   if (title) lines.push(`# ${title}`);
-  if (company) lines.push(`**Company**: ${company}`);
-  if (location) lines.push(`**Location**: ${location}`);
-  if (url) lines.push(`**URL**: ${url}`);
+  if (company) lines.push(`**${t('company', locale)}**: ${company}`);
+  if (location) lines.push(`**${t('location', locale)}**: ${location}`);
+  if (url) lines.push(`**${t('url', locale)}**: ${url}`);
 
   if (summary) {
-    lines.push('', '## Summary', '', summary);
+    lines.push('', `## ${t('summary', locale)}`, '', summary);
     if (!requirements || !requirements.length) lines.push('');
   }
 
   const needsNewline = lines.length > 0 && !lines[lines.length - 1].endsWith('\n');
-  appendListSection(lines, 'Requirements', requirements, { leadingNewline: needsNewline });
+  appendListSection(lines, t('requirements', locale), requirements, {
+    leadingNewline: needsNewline,
+  });
 
   return lines.join('\n');
 }
@@ -66,14 +78,16 @@ export function toMarkdownMatch({
   score,
   matched,
   missing,
+  locale = DEFAULT_LOCALE,
 }) {
   const lines = [];
   if (title) lines.push(`# ${title}`);
-  if (company) lines.push(`**Company**: ${company}`);
-  if (location) lines.push(`**Location**: ${location}`);
-  if (url) lines.push(`**URL**: ${url}`);
-  if (typeof score === 'number') lines.push(`**Fit Score**: ${score}%`);
-  appendListSection(lines, 'Matched', matched, { leadingNewline: true });
-  appendListSection(lines, 'Missing', missing, { leadingNewline: true });
+  if (company) lines.push(`**${t('company', locale)}**: ${company}`);
+  if (location) lines.push(`**${t('location', locale)}**: ${location}`);
+  if (url) lines.push(`**${t('url', locale)}**: ${url}`);
+  if (typeof score === 'number')
+    lines.push(`**${t('fitScore', locale)}**: ${score}%`);
+  appendListSection(lines, t('matched', locale), matched, { leadingNewline: true });
+  appendListSection(lines, t('missing', locale), missing, { leadingNewline: true });
   return lines.join('\n');
 }

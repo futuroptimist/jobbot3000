@@ -1,7 +1,8 @@
 const TITLE_PATTERNS = [
   /\bTitle\s*:\s*(.+)/i,
   /\bJob Title\s*:\s*(.+)/i,
-  /\bPosition\s*:\s*(.+)/i
+  /\bPosition\s*:\s*(.+)/i,
+  /\bRole\s*:\s*(.+)/i
 ];
 
 const COMPANY_PATTERNS = [
@@ -20,9 +21,11 @@ const REQUIREMENTS_HEADERS = [
 const FALLBACK_REQUIREMENTS_HEADERS = [/\bResponsibilities\b/i];
 
 // Common bullet prefix regex. Strips '-', '+', '*', '•', '·', en/em dashes,
-// numeric markers like `1.` or `1)` and parenthetical numbers like `(1)`.
+// numeric markers like `1.` or `1)`, alphabetical markers like `a.` or `a)`,
+// and parenthetical numbers or letters like `(1)` or `(a)`.
 // Preserves leading digits that are part of the requirement text itself.
-const BULLET_PREFIX_RE = /^(?:[-+*•\u00B7\u2013\u2014]\s*|\d+[.)]\s*|\(\d+\)\s*)/;
+const BULLET_PREFIX_RE =
+  /^(?:[-+*•\u00B7\u2013\u2014]\s*|(?:\d+|[A-Za-z])[.)]\s*|\((?:\d+|[A-Za-z])\)\s*)/;
 
 /** Strip common bullet characters and surrounding whitespace from a line. */
 function stripBullet(line) {

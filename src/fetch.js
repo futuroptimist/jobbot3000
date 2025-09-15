@@ -1,8 +1,14 @@
 import fetch from 'node-fetch';
 import { htmlToText } from 'html-to-text';
 
+/** Allowed URL protocols for fetchTextFromUrl. */
+const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
+
+/** Default timeout for fetchTextFromUrl in milliseconds. */
+export const DEFAULT_TIMEOUT_MS = 10000;
+
 function formatImageAlt(elem, walk, builder) {
-  const alt = elem.attribs?.alt;
+  const alt = elem.attribs?.alt || elem.attribs?.['aria-label'];
   if (alt) builder.addInline(alt, { noWordTransform: true });
 }
 
@@ -27,7 +33,7 @@ export const HTML_TO_TEXT_OPTIONS = {
 
 /**
  * Convert HTML to plain text, skipping non-content tags and collapsing whitespace.
- * Returns '' for falsy input.
+ * Preserves image alt text and aria-labels. Returns '' for falsy input.
  *
  * @param {string} html
  * @returns {string}
@@ -44,19 +50,26 @@ export function extractTextFromHtml(html) {
  * Supports only `http:` and `https:` protocols.
  *
  * @param {string} url
- * @param {{ timeoutMs?: number, headers?: Record<string, string> }} [opts]
+ * @param {{ timeoutMs?: number, headers?: Record<string, string>, maxBytes?: number }} [opts]
+ *   Invalid timeout values fall back to 10000ms.
  * @returns {Promise<string>}
  */
-export async function fetchTextFromUrl(url, { timeoutMs = 10000, headers } = {}) {
+export async function fetchTextFromUrl(
+  url,
+  { timeoutMs = 10000, headers, maxBytes = 1024 * 1024 } = {}
+) {
   const { protocol } = new URL(url);
-  if (protocol !== 'http:' && protocol !== 'https:') {
+  if (!ALLOWED_PROTOCOLS.has(protocol)) {
     throw new Error(`Unsupported protocol: ${protocol}`);
   }
 
+  // Normalize timeout: fallback to 10000ms if invalid
+  const ms = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 10000;
+
   const controller = new AbortController();
   const timer = setTimeout(
-    () => controller.abort(new Error(`Timeout after ${timeoutMs}ms`)),
-    timeoutMs
+    () => controller.abort(new Error(`Timeout after ${ms}ms`)),
+    ms
   );
 
   try {
@@ -64,6 +77,7 @@ export async function fetchTextFromUrl(url, { timeoutMs = 10000, headers } = {})
       redirect: 'follow',
       signal: controller.signal,
       headers: headers || {},
+      size: maxBytes,
     });
     if (!response.ok) {
       throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
@@ -73,6 +87,11 @@ export async function fetchTextFromUrl(url, { timeoutMs = 10000, headers } = {})
     return contentType.includes('text/html')
       ? extractTextFromHtml(body)
       : body.trim();
+  } catch (err) {
+    if (err?.type === 'max-size') {
+      throw new Error(`Response exceeded ${maxBytes} bytes for ${url}`);
+    }
+    throw err;
   } finally {
     clearTimeout(timer);
   }
