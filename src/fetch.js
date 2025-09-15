@@ -8,7 +8,7 @@ const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
 export const DEFAULT_TIMEOUT_MS = 10000;
 
 function formatImageAlt(elem, walk, builder) {
-  const alt = elem.attribs?.alt;
+  const alt = elem.attribs?.alt || elem.attribs?.['aria-label'];
   if (alt) builder.addInline(alt, { noWordTransform: true });
 }
 
