@@ -14,17 +14,19 @@ Requires [Node.js](https://nodejs.org/) 20 or newer.
 git clone git@github.com:YOURNAME/jobbot3000.git
 cd jobbot3000
 
-# Install dependencies (requires Node.js 20 or newer)
+# Verify Node.js version (requires 20 or newer)
+node --version
+
+# Install dependencies
 npm ci
 
 # Run repo checks
 npm run lint
 npm run test:ci
 
-# Summarize a job description
-# Works with sentences ending in ., ?, or !
-# Keep two sentences with --sentences, output plain text with --text
+# Summarize a job description; keep two sentences and output plain text
 echo "First. Second. Third." | jobbot summarize - --sentences 2 --text
+# => First. Second.
 ```
 
 In code, import the `summarize` function and pass the number of sentences to keep:
