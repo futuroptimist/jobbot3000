@@ -40,6 +40,16 @@ console.log(summary);
 
 Pass `0` to `summarize` to return an empty string.
 
+Requesting more sentences than exist returns the entire text.
+
+The example below demonstrates this behavior:
+
+```js
+const all = summarize('Only one sentence.', 5);
+console.log(all);
+// "Only one sentence."
+```
+
 Fetch remote job listings, normalize HTML to plain text, and log the result using an async helper:
 
 ```js
