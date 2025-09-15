@@ -89,6 +89,23 @@ console.log(text);
 // "Hello"
 ```
 
+Load resume files and return plain text:
+
+```js
+import { loadResume } from './src/resume.js';
+
+const run = async () => {
+  const text = await loadResume('resume.mdx');
+  console.log(text);
+  // "Plain text resume"
+};
+
+run();
+```
+
+`loadResume` supports `.pdf`, `.md`, `.markdown`, and `.mdx` files; other
+extensions are read as plain text.
+
 Format parsed results as Markdown:
 
 ```js
