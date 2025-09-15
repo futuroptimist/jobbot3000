@@ -102,6 +102,7 @@ describe('exporters', () => {
     const output = toMarkdownMatch({ title: 'Dev', score: 0 });
     expect(output).toBe('# Dev\n**Fit Score**: 0%');
   });
+
   it('does not prepend newline when only matched section exists', () => {
     const output = toMarkdownMatch({ matched: ['JS'] });
     expect(output).toBe('## Matched\n- JS');
@@ -110,5 +111,54 @@ describe('exporters', () => {
   it('does not prepend newline when only missing section exists', () => {
     const output = toMarkdownMatch({ missing: ['Rust'] });
     expect(output).toBe('## Missing\n- Rust');
+  });
+
+  it('supports spanish locale in markdown summaries', () => {
+    const output = toMarkdownSummary({
+      title: 'Dev',
+      company: 'Acme',
+      location: 'Remoto',
+      summary: 'Construir cosas',
+      requirements: ['JS'],
+      locale: 'es',
+    });
+    const expected = [
+      '# Dev',
+      '**Empresa**: Acme',
+      '**Ubicación**: Remoto',
+      '',
+      '## Resumen',
+      '',
+      'Construir cosas',
+      '',
+      '## Requisitos',
+      '- JS',
+    ].join('\n');
+    expect(output).toBe(expected);
+  });
+
+  it('supports spanish locale in markdown match reports', () => {
+    const output = toMarkdownMatch({
+      title: 'Dev',
+      company: 'Acme',
+      location: 'Remoto',
+      score: 85,
+      matched: ['JS'],
+      missing: ['Rust'],
+      locale: 'es',
+    });
+    const expected = [
+      '# Dev',
+      '**Empresa**: Acme',
+      '**Ubicación**: Remoto',
+      '**Puntaje de Ajuste**: 85%',
+      '',
+      '## Coincidencias',
+      '- JS',
+      '',
+      '## Faltantes',
+      '- Rust',
+    ].join('\n');
+    expect(output).toBe(expected);
   });
 });

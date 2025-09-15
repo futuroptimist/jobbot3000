@@ -6,7 +6,7 @@ Ensure each document's links reference existing files.
 
 Each prompt doc should reference the root [README.md](../README.md) using a valid relative path.
 
-All links were verified on 2025-09-12 to reference existing files.
+All links were verified on 2025-09-14 to reference existing files.
 Includes [`scripts/scan-secrets.py`](../scripts/scan-secrets.py).
 
 ## jobbot3000
@@ -37,6 +37,8 @@ Includes [`scripts/scan-secrets.py`](../scripts/scan-secrets.py).
 | [docs/prompts/codex/security.md#upgrade-prompt][security-up] | Upgrade Prompt | evergreen | yes |
 | [docs/prompts/codex/spellcheck.md][spellcheck-doc] | Codex Spellcheck Prompt | evergreen | yes |
 | [docs/prompts/codex/spellcheck.md#upgrade-prompt][spellcheck-up] | Upgrade Prompt | evergreen | yes |
+| [docs/prompts/codex/style.md][style-doc] | Codex Style Prompt | evergreen | yes |
+| [docs/prompts/codex/style.md#upgrade-prompt][style-up] | Upgrade Prompt | evergreen | yes |
 | [docs/prompts/codex/test.md][test-doc] | Codex Test Prompt (Vitest) | evergreen | yes |
 | [docs/prompts/codex/test.md#upgrade-prompt][test-up] | Upgrade Prompt (docs) | evergreen | yes |
 | [docs/prompts/codex/upgrade.md][upgrade-doc] | Codex Upgrade Prompt | evergreen | yes |
@@ -66,6 +68,8 @@ Includes [`scripts/scan-secrets.py`](../scripts/scan-secrets.py).
 [security-up]: prompts/codex/security.md#upgrade-prompt
 [spellcheck-doc]: prompts/codex/spellcheck.md
 [spellcheck-up]: prompts/codex/spellcheck.md#upgrade-prompt
+[style-doc]: prompts/codex/style.md
+[style-up]: prompts/codex/style.md#upgrade-prompt
 [test-doc]: prompts/codex/test.md
 [test-up]: prompts/codex/test.md#upgrade-prompt
 [upgrade-doc]: prompts/codex/upgrade.md
