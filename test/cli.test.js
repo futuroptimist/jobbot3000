@@ -25,6 +25,14 @@ describe('jobbot CLI', () => {
     expect(out.trim()).toBe('## Summary\n\nFirst. Second.');
   });
 
+  it('defaults to one sentence when --sentences is invalid', () => {
+    const out = runCli(
+      ['summarize', '-', '--sentences', 'foo'],
+      'First. Second.'
+    );
+    expect(out.trim()).toBe('## Summary\n\nFirst.');
+  });
+
   it('outputs plain text summary with --text', () => {
     const input = 'Title: Engineer\nCompany: ACME\nFirst. Second.';
     const out = runCli(['summarize', '-', '--text'], input);
