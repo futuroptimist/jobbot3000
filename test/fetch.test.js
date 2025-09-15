@@ -69,6 +69,15 @@ describe('extractTextFromHtml', () => {
     expect(extractTextFromHtml(html)).toBe('Start Logo End');
   });
 
+  it('includes img aria-label without alt', () => {
+    const html = `
+      <p>Start</p>
+      <img src="logo.png" aria-label="Logo" />
+      <p>End</p>
+    `;
+    expect(extractTextFromHtml(html)).toBe('Start Logo End');
+  });
+
   it('omits img without alt text', () => {
     const html = `
       <p>Start</p>
@@ -94,6 +103,15 @@ describe('extractTextFromHtml', () => {
       <p>End</p>
     `;
     expect(extractTextFromHtml(html)).toBe('Start End');
+  });
+
+  it('includes aria-label text when alt is missing', () => {
+    const html = `
+      <p>Start</p>
+      <img src="logo.png" aria-label="Logo" />
+      <p>End</p>
+    `;
+    expect(extractTextFromHtml(html)).toBe('Start Logo End');
   });
 
   it('returns empty string for falsy input', () => {
@@ -175,6 +193,19 @@ describe('fetchTextFromUrl', () => {
     vi.useRealTimers();
   });
 
+  it('falls back to default timeout when given NaN', async () => {
+    vi.useFakeTimers();
+    fetch.mockImplementation((url, { signal }) =>
+      new Promise((resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason));
+      })
+    );
+    const promise = fetchTextFromUrl('http://example.com', { timeoutMs: Number('foo') });
+    vi.advanceTimersByTime(10000);
+    await expect(promise).rejects.toThrow('Timeout after 10000ms');
+    vi.useRealTimers();
+  });
+
   it('forwards headers to fetch', async () => {
     fetch.mockClear();
     fetch.mockResolvedValue({
@@ -206,4 +237,41 @@ describe('fetchTextFromUrl', () => {
       .rejects.toThrow('Unsupported protocol: file:');
     expect(fetch).not.toHaveBeenCalled();
   });
+
+  it('allows uppercase HTTP protocol', async () => {
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('ok'),
+    });
+    const text = await fetchTextFromUrl('HTTP://example.com');
+    expect(text).toBe('ok');
+  });
+
+  it('limits response size to 1MB by default', async () => {
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('ok'),
+    });
+    await fetchTextFromUrl('http://example.com');
+    expect(fetch).toHaveBeenCalledWith(
+      'http://example.com',
+      expect.objectContaining({ size: 1024 * 1024 })
+    );
+  });
+
+  it('rejects when response exceeds maxBytes', async () => {
+    fetch.mockRejectedValue(
+      Object.assign(new Error('max size exceeded'), { type: 'max-size' })
+    );
+    await expect(
+      fetchTextFromUrl('http://example.com', { maxBytes: 5 })
+    ).rejects.toThrow('Response exceeded 5 bytes');
+  });
 });
+

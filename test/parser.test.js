@@ -35,7 +35,8 @@ Job Title: Senior Dev
   it('extracts title from alternate headers', () => {
     [
       ['Job Title', 'Engineer'],
-      ['Position', 'Developer']
+      ['Position', 'Developer'],
+      ['Role', 'Programmer']
     ].forEach(([header, role]) => {
       const text = `${header}: ${role}\nCompany: Example`;
       expect(parseJobText(text)).toMatchObject({ title: role });
@@ -154,6 +155,23 @@ Requirements:
 1. First skill
 2) Second skill
 (3) Third skill
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual([
+      'First skill',
+      'Second skill',
+      'Third skill'
+    ]);
+  });
+
+  it('strips alphabetical bullets', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Requirements:
+a. First skill
+b) Second skill
+(c) Third skill
 `;
     const parsed = parseJobText(text);
     expect(parsed.requirements).toEqual([
