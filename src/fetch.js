@@ -33,7 +33,7 @@ export const HTML_TO_TEXT_OPTIONS = {
 
 /**
  * Convert HTML to plain text, skipping non-content tags and collapsing whitespace.
- * Returns '' for falsy input.
+ * Preserves image alt text and aria-labels. Returns '' for falsy input.
  *
  * @param {string} html
  * @returns {string}
