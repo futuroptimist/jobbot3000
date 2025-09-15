@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-export const STATUSES = ['no_response', 'rejected', 'next_round'];
+export const STATUSES = ['no_response', 'rejected', 'next_round', 'offer'];
 
 function paths() {
   const dir = process.env.JOBBOT_DATA_DIR || path.resolve('data');

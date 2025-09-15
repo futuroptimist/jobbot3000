@@ -17,10 +17,11 @@ afterEach(async () => {
 test('records and summarizes application statuses', async () => {
   await recordApplication('abc', 'rejected');
   await recordApplication('def', 'no_response');
+  await recordApplication('ghi', 'offer');
   const counts = await getLifecycleCounts();
-  expect(counts).toEqual({ no_response: 1, rejected: 1, next_round: 0 });
+  expect(counts).toEqual({ no_response: 1, rejected: 1, next_round: 0, offer: 1 });
   const raw = await fs.readFile(path.join(tmp, 'applications.json'), 'utf8');
-  expect(JSON.parse(raw)).toEqual({ abc: 'rejected', def: 'no_response' });
+  expect(JSON.parse(raw)).toEqual({ abc: 'rejected', def: 'no_response', ghi: 'offer' });
 });
 
 test('throws when lifecycle file has invalid JSON', async () => {
@@ -35,6 +36,7 @@ test('handles concurrent status updates', async () => {
     recordApplication('a', 'rejected'),
     recordApplication('b', 'no_response'),
     recordApplication('c', 'next_round'),
+    recordApplication('d', 'offer'),
   ]);
   const raw = JSON.parse(
     await fs.readFile(path.join(tmp, 'applications.json'), 'utf8'),
@@ -43,7 +45,8 @@ test('handles concurrent status updates', async () => {
     a: 'rejected',
     b: 'no_response',
     c: 'next_round',
+    d: 'offer',
   });
   const counts = await getLifecycleCounts();
-  expect(counts).toEqual({ no_response: 1, rejected: 1, next_round: 1 });
+  expect(counts).toEqual({ no_response: 1, rejected: 1, next_round: 1, offer: 1 });
 });

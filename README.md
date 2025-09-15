@@ -166,7 +166,7 @@ font size immediately after logging in.
 
 ## Tracking Application Lifecycle
 
-Application statuses such as `no_response`, `rejected`, and `next_round` are saved to
+Application statuses such as `no_response`, `rejected`, `next_round`, and `offer` are saved to
 `data/applications.json`, a gitignored file. Set `JOBBOT_DATA_DIR` to change the directory.
 These records power local Sankey diagrams so progress isn't lost between sessions.
 Writes are serialized to avoid dropping entries when recording multiple applications at once.
