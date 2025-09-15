@@ -38,6 +38,12 @@ describe('loadResume', () => {
     expect(result).toBe('Title\n\nbold text');
   });
 
+  it('strips markdown formatting for .mdx files', async () => {
+    const md = '# Title\n\n**bold** text\n';
+    const result = await withTempFile('.mdx', md, loadResume);
+    expect(result).toBe('Title\n\nbold text');
+  });
+
   it('handles .markdown extension case-insensitively', async () => {
     const md = '# Heading\n\n*italic* text';
     const result = await withTempFile('.MARKDOWN', md, loadResume);
