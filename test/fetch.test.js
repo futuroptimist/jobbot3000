@@ -78,6 +78,24 @@ describe('extractTextFromHtml', () => {
     expect(extractTextFromHtml(html)).toBe('Start End');
   });
 
+  it('omits img alt text when aria-hidden is true', () => {
+    const html = `
+      <p>Start</p>
+      <img src="logo.png" alt="Logo" aria-hidden="true" />
+      <p>End</p>
+    `;
+    expect(extractTextFromHtml(html)).toBe('Start End');
+  });
+
+  it('omits img alt text when role is presentation', () => {
+    const html = `
+      <p>Start</p>
+      <img src="logo.png" alt="Logo" role="presentation" />
+      <p>End</p>
+    `;
+    expect(extractTextFromHtml(html)).toBe('Start End');
+  });
+
   it('returns empty string for falsy input', () => {
     expect(extractTextFromHtml('')).toBe('');
     // @ts-expect-error testing null input

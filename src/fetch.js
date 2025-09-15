@@ -3,7 +3,11 @@ import { htmlToText } from 'html-to-text';
 
 function formatImageAlt(elem, walk, builder) {
   const alt = elem.attribs?.alt;
-  if (alt) builder.addInline(alt, { noWordTransform: true });
+  const ariaHidden = elem.attribs?.['aria-hidden'] === 'true';
+  const role = elem.attribs?.role;
+  if (!ariaHidden && role !== 'presentation' && role !== 'none' && alt) {
+    builder.addInline(alt, { noWordTransform: true });
+  }
 }
 
 /**
