@@ -1,7 +1,8 @@
 const TITLE_PATTERNS = [
   /\bTitle\s*:\s*(.+)/i,
   /\bJob Title\s*:\s*(.+)/i,
-  /\bPosition\s*:\s*(.+)/i
+  /\bPosition\s*:\s*(.+)/i,
+  /\bRole\s*:\s*(.+)/i
 ];
 
 const COMPANY_PATTERNS = [

@@ -144,6 +144,8 @@ Common honorifics such as `Mr.` and `Dr.` are recognized so summaries aren't cut
 
 Example: `summarize('"Hi!" Bye.')` returns `"Hi!"`.
 
+Job titles can be parsed from lines starting with `Title`, `Job Title`, `Position`, or `Role`.
+
 Job requirements may appear under headers like `Requirements`, `Qualifications`,
 `What you'll need`, or `Responsibilities` (used if no other requirement headers are present).
 They may start with `-`, `+`, `*`, `•`, `–` (en dash), `—` (em dash), or numeric markers like `1.`
