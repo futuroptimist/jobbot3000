@@ -2,7 +2,7 @@ import fetch from 'node-fetch';
 import { htmlToText } from 'html-to-text';
 
 function formatImageAlt(elem, walk, builder) {
-  const alt = elem.attribs?.alt;
+  const alt = elem.attribs?.alt || elem.attribs?.['aria-label'];
   if (alt) builder.addInline(alt, { noWordTransform: true });
 }
 
