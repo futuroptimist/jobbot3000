@@ -33,7 +33,7 @@ export function toMarkdownSummary({ title, company, location, url, requirements,
   if (title) lines.push(`# ${title}`);
   if (company) lines.push(`**Company**: ${company}`);
   if (location) lines.push(`**Location**: ${location}`);
-  if (url) lines.push(`**URL**: ${url}`);
+  if (url) lines.push(`**URL**: [Job posting](${url})`);
 
   if (summary) {
     lines.push('', '## Summary', '', summary);
@@ -71,7 +71,7 @@ export function toMarkdownMatch({
   if (title) lines.push(`# ${title}`);
   if (company) lines.push(`**Company**: ${company}`);
   if (location) lines.push(`**Location**: ${location}`);
-  if (url) lines.push(`**URL**: ${url}`);
+  if (url) lines.push(`**URL**: [Job posting](${url})`);
   if (typeof score === 'number') lines.push(`**Fit Score**: ${score}%`);
   appendListSection(lines, 'Matched', matched, { leadingNewline: true });
   appendListSection(lines, 'Missing', missing, { leadingNewline: true });

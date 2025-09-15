@@ -31,7 +31,7 @@ describe('exporters', () => {
     expect(output).toBe(expected);
   });
 
-  it('includes url in markdown summaries', () => {
+  it('includes accessible url link in markdown summaries', () => {
     const output = toMarkdownSummary({
       title: 'Dev',
       company: 'Acme',
@@ -40,8 +40,8 @@ describe('exporters', () => {
       requirements: ['JS']
     });
     expect(output).toBe(
-      '# Dev\n**Company**: Acme\n**URL**: https://example.com/job\n\n## Summary\n\nBuild things\n' +
-        '\n## Requirements\n- JS'
+      '# Dev\n**Company**: Acme\n**URL**: [Job posting](https://example.com/job)' +
+        '\n\n## Summary\n\nBuild things\n\n## Requirements\n- JS'
     );
   });
 
@@ -83,7 +83,7 @@ describe('exporters', () => {
     expect(output).toBe(expected);
   });
 
-  it('includes url in markdown match reports', () => {
+  it('includes accessible url link in markdown match reports', () => {
     const output = toMarkdownMatch({
       title: 'Dev',
       company: 'Acme',
@@ -93,8 +93,8 @@ describe('exporters', () => {
       score: 80,
     });
     expect(output).toBe(
-      '# Dev\n**Company**: Acme\n**URL**: https://example.com/job\n**Fit Score**: 80%\n' +
-        '\n## Matched\n- JS\n\n## Missing\n- Rust'
+      '# Dev\n**Company**: Acme\n**URL**: [Job posting](https://example.com/job)' +
+        '\n**Fit Score**: 80%\n\n## Matched\n- JS\n\n## Missing\n- Rust'
     );
   });
 

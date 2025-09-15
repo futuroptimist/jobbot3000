@@ -91,7 +91,7 @@ console.log(md);
 // # Engineer
 // **Company**: ACME
 // **Location**: Remote
-// **URL**: https://example.com/job
+// **URL**: [Job posting](https://example.com/job)
 //
 // ## Summary
 //
@@ -101,7 +101,7 @@ console.log(md);
 // - 3+ years JS
 ```
 
-Pass `url` to include a source link in the rendered Markdown output.
+Pass `url` to include a source link with accessible text in the rendered Markdown output.
 `toMarkdownMatch` accepts the same `url` field to link match reports back to the job posting.
 If `summary` is omitted, the requirements section is still separated by a blank line.
 
@@ -120,7 +120,7 @@ const md = toMarkdownMatch({
 
 console.log(md);
 // # Engineer
-// **URL**: https://example.com/job
+// **URL**: [Job posting](https://example.com/job)
 // **Fit Score**: 75%
 //
 // ## Matched
