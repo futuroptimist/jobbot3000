@@ -73,7 +73,7 @@ export function toMarkdownMatch({
   if (location) lines.push(`**Location**: ${location}`);
   if (url) lines.push(`**URL**: ${url}`);
   if (typeof score === 'number') lines.push(`**Fit Score**: ${score}%`);
-  appendListSection(lines, 'Matched', matched, { leadingNewline: true });
-  appendListSection(lines, 'Missing', missing, { leadingNewline: true });
+  appendListSection(lines, 'Matched', matched, { leadingNewline: lines.length > 0 });
+  appendListSection(lines, 'Missing', missing, { leadingNewline: lines.length > 0 });
   return lines.join('\n');
 }

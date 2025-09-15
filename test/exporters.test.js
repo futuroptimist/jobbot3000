@@ -102,4 +102,13 @@ describe('exporters', () => {
     const output = toMarkdownMatch({ title: 'Dev', score: 0 });
     expect(output).toBe('# Dev\n**Fit Score**: 0%');
   });
+  it('does not prepend newline when only matched section exists', () => {
+    const output = toMarkdownMatch({ matched: ['JS'] });
+    expect(output).toBe('## Matched\n- JS');
+  });
+
+  it('does not prepend newline when only missing section exists', () => {
+    const output = toMarkdownMatch({ missing: ['Rust'] });
+    expect(output).toBe('## Missing\n- Rust');
+  });
 });
