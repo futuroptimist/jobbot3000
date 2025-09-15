@@ -24,8 +24,10 @@ npm ci
 npm run lint
 npm run test:ci
 
-# Summarize a job description; keep two sentences and output plain text
-echo "First. Second. Third." | jobbot summarize - --sentences 2 --text
+# Summarize a job description
+# Works with sentences ending in ., ?, or !
+# Keep two sentences with --sentences, output plain text with --text
+echo "First. Second. Third." | npx jobbot summarize - --sentences 2 --text
 # => First. Second.
 # Non-numeric --sentences values fall back to 1 sentence
 ```
