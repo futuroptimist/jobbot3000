@@ -73,6 +73,16 @@ console.log(text);
 // "Hello"
 ```
 
+Extend the default ignore list by passing html-to-text options:
+
+```js
+const stripped = extractTextFromHtml('<aside>skip</aside><p>Main</p>', {
+  selectors: [{ selector: 'p', format: 'skip' }],
+});
+console.log(stripped);
+// ""
+```
+
 Format parsed results as Markdown:
 
 ```js

@@ -30,11 +30,19 @@ export const HTML_TO_TEXT_OPTIONS = {
  * Returns '' for falsy input.
  *
  * @param {string} html
+ * @param {object} [options] Additional html-to-text options merged with defaults.
  * @returns {string}
  */
-export function extractTextFromHtml(html) {
+export function extractTextFromHtml(html, options = {}) {
   if (!html) return '';
-  return htmlToText(html, HTML_TO_TEXT_OPTIONS)
+  const merged = { ...HTML_TO_TEXT_OPTIONS, ...options };
+  if (options.selectors) {
+    merged.selectors = [
+      ...HTML_TO_TEXT_OPTIONS.selectors,
+      ...options.selectors,
+    ];
+  }
+  return htmlToText(html, merged)
     .replace(/\s+/g, ' ')
     .trim();
 }

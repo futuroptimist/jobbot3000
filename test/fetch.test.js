@@ -78,6 +78,14 @@ describe('extractTextFromHtml', () => {
     expect(extractTextFromHtml(html)).toBe('Start End');
   });
 
+  it('allows custom selectors to extend defaults', () => {
+    const html = '<aside>Ignored</aside><p>Main</p>';
+    const text = extractTextFromHtml(html, {
+      selectors: [{ selector: 'p', format: 'skip' }],
+    });
+    expect(text).toBe('');
+  });
+
   it('returns empty string for falsy input', () => {
     expect(extractTextFromHtml('')).toBe('');
     // @ts-expect-error testing null input
