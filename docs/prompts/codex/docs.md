@@ -5,7 +5,9 @@ slug: 'codex-docs'
 
 # Codex Docs Prompt
 Use this prompt when clarifying or extending documentation in jobbot3000.
-Verify referenced files exist and keep links current with `npx markdown-link-check`.
+Verify referenced files exist and keep links current with
+`npx markdown-link-check <file>`. For example:
+`npx markdown-link-check docs/prompts/codex/docs.md`.
 
 ```text
 SYSTEM:
@@ -21,7 +23,11 @@ CONTEXT:
 - Documentation lives in [docs/](../../); keep links relative and up to date.
 - Install dependencies with `npm ci` if needed.
 - Use [Node.js](https://nodejs.org/en) or
-  [ts-node](https://typestrong.org/ts-node) to validate code samples.
+  [ts-node](https://typestrong.org/ts-node) to validate code samples. For example:
+
+  ```bash
+  node -e "console.log('docs sample works')"
+  ```
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with
   `git diff --cached | ./scripts/scan-secrets.py`
@@ -63,7 +69,11 @@ CONTEXT:
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
 - Install dependencies with `npm ci` if needed.
 - Use [Node.js](https://nodejs.org/en) or
-  [ts-node](https://typestrong.org/ts-node) to validate code samples.
+  [ts-node](https://typestrong.org/ts-node) to validate code samples. For example:
+
+  ```bash
+  node -e "console.log('docs sample works')"
+  ```
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with
   `git diff --cached | ./scripts/scan-secrets.py`
