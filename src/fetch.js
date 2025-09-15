@@ -2,7 +2,7 @@ import fetch from 'node-fetch';
 import { htmlToText } from 'html-to-text';
 
 function formatImageAlt(elem, walk, builder) {
-  const alt = elem.attribs?.alt;
+  const alt = elem.attribs?.alt || elem.attribs?.['aria-label'];
   if (alt) builder.addInline(alt, { noWordTransform: true });
 }
 
@@ -27,7 +27,7 @@ export const HTML_TO_TEXT_OPTIONS = {
 
 /**
  * Convert HTML to plain text, skipping non-content tags and collapsing whitespace.
- * Returns '' for falsy input.
+ * Preserves image alt text and aria-labels. Returns '' for falsy input.
  *
  * @param {string} html
  * @returns {string}

@@ -78,6 +78,15 @@ describe('extractTextFromHtml', () => {
     expect(extractTextFromHtml(html)).toBe('Start End');
   });
 
+  it('includes aria-label text when alt is missing', () => {
+    const html = `
+      <p>Start</p>
+      <img src="logo.png" aria-label="Logo" />
+      <p>End</p>
+    `;
+    expect(extractTextFromHtml(html)).toBe('Start Logo End');
+  });
+
   it('returns empty string for falsy input', () => {
     expect(extractTextFromHtml('')).toBe('');
     // @ts-expect-error testing null input

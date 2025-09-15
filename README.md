@@ -58,8 +58,8 @@ run();
 ```
 
 `fetchTextFromUrl` strips scripts, styles, navigation, header, footer, aside,
-and noscript content, preserves image alt text, and collapses whitespace to
-single spaces. Pass `timeoutMs` (milliseconds) to override the 10s default,
+and noscript content, preserves image alt text and aria-labels, and collapses
+whitespace to single spaces. Pass `timeoutMs` (milliseconds) to override the 10s default,
 and `headers` to send custom HTTP headers. Only `http` and `https` URLs are
 supported; other protocols throw an error.
 
