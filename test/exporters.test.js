@@ -59,6 +59,11 @@ describe('exporters', () => {
     expect(output).toBe('# Dev\n**Company**: Acme\n\n## Summary\n\nBuild\n');
   });
 
+  it('does not prepend newline when only summary provided', () => {
+    const output = toMarkdownSummary({ summary: 'Solo' });
+    expect(output).toBe('## Summary\n\nSolo\n');
+  });
+
   it('formats markdown match reports with score', () => {
     const output = toMarkdownMatch({
       title: 'Dev',

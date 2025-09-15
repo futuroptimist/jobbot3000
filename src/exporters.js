@@ -27,6 +27,9 @@ function appendListSection(lines, header, items, { leadingNewline = false } = {}
  * @param {string[]} [params.requirements]
  * @param {string} [params.summary]
  * @returns {string}
+ *
+ * When called with only a summary, the output begins directly with the "## Summary" header
+ * without a leading blank line.
  */
 export function toMarkdownSummary({ title, company, location, url, requirements, summary }) {
   const lines = [];
@@ -36,7 +39,8 @@ export function toMarkdownSummary({ title, company, location, url, requirements,
   if (url) lines.push(`**URL**: ${url}`);
 
   if (summary) {
-    lines.push('', '## Summary', '', summary);
+    if (lines.length > 0) lines.push('', '## Summary', '', summary);
+    else lines.push('## Summary', '', summary);
     if (!requirements || !requirements.length) lines.push('');
   }
 
