@@ -35,7 +35,8 @@ Job Title: Senior Dev
   it('extracts title from alternate headers', () => {
     [
       ['Job Title', 'Engineer'],
-      ['Position', 'Developer']
+      ['Position', 'Developer'],
+      ['Role', 'Programmer']
     ].forEach(([header, role]) => {
       const text = `${header}: ${role}\nCompany: Example`;
       expect(parseJobText(text)).toMatchObject({ title: role });
