@@ -6,21 +6,6 @@ slug: 'codex-performance'
 # Codex Performance Prompt
 Use this prompt to improve runtime performance in jobbot3000.
 
-Measure improvements locally before submitting. Node's `perf_hooks` API can help:
-
-```js
-import { performance } from 'node:perf_hooks';
-
-const start = performance.now();
-for (let i = 0; i < 1e6; i++) {
-  // code under test
-}
-console.log(`elapsed: ${performance.now() - start}ms`);
-```
-
-Run the snippet with `node --input-type=module` to verify it works.
-Use it as a quick baseline before adding formal benchmarks.
-
 ```text
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
@@ -41,6 +26,15 @@ CONTEXT:
 - Confirm referenced files exist; update [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 - Link-check the updated doc with
   `npx markdown-link-check docs/prompts/codex/performance.md`.
+- Measure performance with Node's `perf_hooks` API:
+  import { performance } from 'node:perf_hooks';
+
+  const start = performance.now();
+  for (let i = 0; i < 1e6; i++) {
+    // code under test
+  }
+  console.log(`elapsed: ${performance.now() - start}ms`);
+  Run with `node --input-type=module` for a quick baseline before formal benchmarks.
 
 REQUEST:
 1. Write a failing benchmark or test showing the slowdown.
