@@ -2,8 +2,11 @@ import fetch from 'node-fetch';
 import { htmlToText } from 'html-to-text';
 
 function formatImageAlt(elem, walk, builder) {
-  const alt = elem.attribs?.alt;
-  if (alt) builder.addInline(alt, { noWordTransform: true });
+  const { alt, ['aria-label']: ariaLabel, ['aria-hidden']: ariaHidden } =
+    elem.attribs || {};
+  if (ariaHidden === 'true') return;
+  const label = alt || ariaLabel;
+  if (label) builder.addInline(label, { noWordTransform: true });
 }
 
 /**

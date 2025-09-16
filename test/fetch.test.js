@@ -69,6 +69,24 @@ describe('extractTextFromHtml', () => {
     expect(extractTextFromHtml(html)).toBe('Start Logo End');
   });
 
+  it('includes img aria-label when alt is missing', () => {
+    const html = `
+      <p>Start</p>
+      <img src="logo.png" aria-label="Logo" />
+      <p>End</p>
+    `;
+    expect(extractTextFromHtml(html)).toBe('Start Logo End');
+  });
+
+  it('omits img when aria-hidden is true', () => {
+    const html = `
+      <p>Start</p>
+      <img src="logo.png" alt="Logo" aria-hidden="true" />
+      <p>End</p>
+    `;
+    expect(extractTextFromHtml(html)).toBe('Start End');
+  });
+
   it('omits img without alt text', () => {
     const html = `
       <p>Start</p>
