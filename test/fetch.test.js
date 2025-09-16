@@ -69,7 +69,7 @@ describe('extractTextFromHtml', () => {
     expect(extractTextFromHtml(html)).toBe('Start Logo End');
   });
 
-  it('includes img aria-label without alt', () => {
+  it('includes img aria-label when alt missing', () => {
     const html = `
       <p>Start</p>
       <img src="logo.png" aria-label="Logo" />
