@@ -3,7 +3,11 @@ import { htmlToText } from 'html-to-text';
 
 function formatImageAlt(elem, walk, builder) {
   const alt = elem.attribs?.alt;
-  if (alt) builder.addInline(alt, { noWordTransform: true });
+  if (alt && alt.trim()) {
+    builder.addInline(alt, { noWordTransform: true });
+  } else {
+    builder.addInline('[image]', { noWordTransform: true });
+  }
 }
 
 /**

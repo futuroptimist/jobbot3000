@@ -69,13 +69,13 @@ describe('extractTextFromHtml', () => {
     expect(extractTextFromHtml(html)).toBe('Start Logo End');
   });
 
-  it('omits img without alt text', () => {
+  it('adds placeholder for img without alt text', () => {
     const html = `
       <p>Start</p>
       <img src="logo.png" />
       <p>End</p>
     `;
-    expect(extractTextFromHtml(html)).toBe('Start End');
+    expect(extractTextFromHtml(html)).toBe('Start [image] End');
   });
 
   it('returns empty string for falsy input', () => {
