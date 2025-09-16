@@ -30,6 +30,12 @@ function getFlag(args, name, fallback) {
   return val;
 }
 
+function getNumberFlag(args, name, fallback) {
+  const raw = getFlag(args, name);
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 async function cmdSummarize(args) {
   const input = args[0] || '-';
   const format = args.includes('--json')
@@ -37,8 +43,8 @@ async function cmdSummarize(args) {
     : args.includes('--text')
       ? 'text'
       : 'md';
-  const timeoutMs = Number(getFlag(args, '--timeout', 10000));
-  const count = Number(getFlag(args, '--sentences', 1));
+  const timeoutMs = getNumberFlag(args, '--timeout', 10000);
+  const count = getNumberFlag(args, '--sentences', 1);
   const raw = isHttpUrl(input)
     ? await fetchTextFromUrl(input, { timeoutMs })
     : await readSource(input);
@@ -62,7 +68,7 @@ async function cmdMatch(args) {
     process.exit(2);
   }
   const format = args.includes('--json') ? 'json' : 'md';
-  const timeoutMs = Number(getFlag(args, '--timeout', 10000));
+  const timeoutMs = getNumberFlag(args, '--timeout', 10000);
   const resumePath = args[resumeIdx + 1];
   const jobInput = args[jobIdx + 1];
   const resumeText = await loadResume(resumePath);

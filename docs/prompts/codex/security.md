@@ -46,12 +46,17 @@ Copy this block whenever addressing security in jobbot3000.
 ### Example: Generating a secure token
 
 ```js
-import { randomBytes } from 'crypto'
+import { randomBytes } from 'node:crypto';
 
-export function generateToken () {
-  return randomBytes(32).toString('hex')
+export function generateToken() {
+  return randomBytes(32).toString('hex');
 }
+
+console.log(generateToken().length); // 64
 ```
+
+Run it with `node --input-type=module` to verify the output is 64.
+See [`randomBytes`](https://nodejs.org/api/crypto.html#cryptorandombytessize-callback) for details.
 
 ## Upgrade Prompt
 Type: evergreen

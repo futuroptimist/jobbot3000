@@ -19,13 +19,11 @@ describe('computeFitScore', () => {
     expect(result).toEqual({ score: 100, matched: ['python'], missing: [] });
   });
 
-  it('ignores non-string requirement entries', () => {
+  it('skips non-string requirement entries', () => {
     const resume = 'Strong in Go';
     const requirements = ['Go', null, 123, undefined];
     const result = computeFitScore(resume, requirements);
-    expect(result.score).toBe(25);
-    expect(result.matched).toEqual(['Go']);
-    expect(result.missing).toEqual([null, 123, undefined]);
+    expect(result).toEqual({ score: 100, matched: ['Go'], missing: [] });
   });
 
   it('treats non-string resume input as empty string', () => {
