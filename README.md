@@ -77,11 +77,12 @@ run();
 ```
 
 `fetchTextFromUrl` strips scripts, styles, navigation, header, footer, aside,
-and noscript content, preserves image alt text and aria-labels, and collapses
-whitespace to single spaces. Pass `timeoutMs` (milliseconds) to override the 10s
-default, and `headers` to send custom HTTP headers. Responses over 1 MB are
-rejected; override with `maxBytes` to adjust. Only `http` and `https` URLs are
-supported; other protocols throw an error.
+and noscript content, preserves image alt text unless the image is hidden with
+`aria-hidden="true"` or a `presentation`/`none` role, and also preserves
+`aria-labels`. It collapses whitespace to single spaces. Pass `timeoutMs`
+(milliseconds) to override the 10s default, and `headers` to send custom HTTP
+headers. Responses over 1 MB are rejected; override with `maxBytes` to adjust.
+Only `http` and `https` URLs are supported; other protocols throw an error.
 
 Normalize existing HTML without fetching and log the result:
 
