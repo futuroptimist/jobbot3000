@@ -221,6 +221,7 @@ If the file is missing it will be created, but other file errors or malformed JS
 - [DESIGN.md](DESIGN.md) – architecture details and roadmap
 - [SECURITY.md](SECURITY.md) – security guidelines
 - [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) – prompt reference index
+- [docs/user-journeys.md](docs/user-journeys.md) – primary user journeys and flows
 
 ## License
 
