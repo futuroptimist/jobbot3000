@@ -3,7 +3,12 @@ import { htmlToText } from 'html-to-text';
 
 function formatImageAlt(elem, walk, builder) {
   const alt = elem.attribs?.alt;
-  if (alt) builder.addInline(alt, { noWordTransform: true });
+  if (alt) {
+    builder.addInline(alt, { noWordTransform: true });
+    return;
+  }
+  const ariaLabel = elem.attribs?.['aria-label'];
+  if (ariaLabel) builder.addInline(ariaLabel, { noWordTransform: true });
 }
 
 /**
