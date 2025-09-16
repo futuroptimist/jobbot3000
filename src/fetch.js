@@ -8,13 +8,12 @@ const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
 export const DEFAULT_TIMEOUT_MS = 10000;
 
 function formatImageAlt(elem, walk, builder) {
-  const alt = elem.attribs?.alt || elem.attribs?.['aria-label'];
-  const ariaHidden = elem.attribs?.['aria-hidden'] === 'true';
-  const role = elem.attribs?.role;
+  const { alt, ['aria-label']: ariaLabel, ['aria-hidden']: ariaHidden, role } =
+    elem.attribs || {};
+  if (ariaHidden === 'true' || role === 'presentation' || role === 'none') return;
 
-  if (!ariaHidden && role !== 'presentation' && role !== 'none' && alt) {
-    builder.addInline(alt, { noWordTransform: true });
-  }
+  const label = alt || ariaLabel;
+  if (label) builder.addInline(label, { noWordTransform: true });
 }
 
 /**
