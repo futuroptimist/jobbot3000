@@ -86,7 +86,7 @@ describe('extractTextFromHtml', () => {
     `;
     expect(extractTextFromHtml(html)).toBe('Start End');
   });
-  
+
   it('omits img without alt text', () => {
     const html = `
       <p>Start</p>
