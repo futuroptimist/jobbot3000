@@ -24,11 +24,15 @@ const LOADERS = {
     const raw = await fs.readFile(filePath, 'utf-8');
     return removeMarkdown(raw).trim();
   },
+  async '.mdx'(filePath) {
+    const raw = await fs.readFile(filePath, 'utf-8');
+    return removeMarkdown(raw).trim();
+  },
 };
 
 /**
  * Load a resume file and return its plain text content.
- * Supports `.pdf`, `.md`, and `.markdown` formats; other files are read as plain text.
+ * Supports `.pdf`, `.md`, `.markdown`, and `.mdx` formats; other files are read as plain text.
  *
  * @param {string} filePath
  * @returns {Promise<string>}
