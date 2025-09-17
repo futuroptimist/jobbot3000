@@ -6,12 +6,16 @@ slug: 'codex-chore'
 # Codex Chore Prompt
 Use this prompt when performing maintenance tasks in jobbot3000.
 
-```text
+```prompt
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
 
 PURPOSE:
 Perform routine housekeeping such as dependency bumps, CI tweaks, or other chores.
+
+USAGE NOTES:
+- Use this prompt to handle maintenance tasks in jobbot3000.
+- Copy this block whenever performing chores in jobbot3000.
 
 CONTEXT:
 - Follow [README.md](../../../README.md); review the
@@ -20,8 +24,8 @@ CONTEXT:
 - Install dependencies with `npm ci` if the workspace is not already prepared.
 - Before committing, run `npm run lint` and `npm run test:ci`.
 - Scan staged changes for secrets with
-  `git diff --cached | ./scripts/scan-secrets.py`
-  (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
+  `git diff --cached | ./scripts/scan-secrets.py`.
+  See [scripts/scan-secrets.py](../../../scripts/scan-secrets.py).
 - Update [prompt-docs-summary.md](../../prompt-docs-summary.md) when modifying prompt docs.
 - Confirm that every referenced file exists and that links stay up to date.
 
@@ -35,19 +39,17 @@ OUTPUT:
 Provide a pull request that summarizes the maintenance task and documents passing checks.
 ```
 
-Copy this block whenever performing chores in jobbot3000.
+## Upgrade Instructions
 
-## Upgrade Prompt
-Type: evergreen
-
-Use this prompt to refine `docs/prompts/codex/chore.md`.
-
-```text
+```upgrade
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
 
 PURPOSE:
 Improve or expand the `docs/prompts/codex/chore.md` prompt.
+
+USAGE NOTES:
+- Use this prompt to refine `docs/prompts/codex/chore.md`.
 
 CONTEXT:
 - Follow [README.md](../../../README.md); review the
@@ -56,8 +58,8 @@ CONTEXT:
 - Install dependencies with `npm ci` if the workspace is not already prepared.
 - Before committing, run `npm run lint` and `npm run test:ci`.
 - Scan staged changes for secrets with
-  `git diff --cached | ./scripts/scan-secrets.py`
-  (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
+  `git diff --cached | ./scripts/scan-secrets.py`.
+  See [scripts/scan-secrets.py](../../../scripts/scan-secrets.py).
 - Update [prompt-docs-summary.md](../../prompt-docs-summary.md) when modifying prompt docs.
 - Confirm that every referenced file exists and that links stay up to date.
 
