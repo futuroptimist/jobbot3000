@@ -35,6 +35,14 @@ function stripBullet(line) {
   return line.replace(BULLET_PREFIX_RE, '').trim();
 }
 
+function hasFieldSeparator(line) {
+  for (let i = 0; i < line.length; i += 1) {
+    const code = line.charCodeAt(i);
+    if (code === 58 || code === 45 || code === 8211 || code === 8212) return true;
+  }
+  return false;
+}
+
 /**
  * Locate the first line matching any regex in `patterns`.
  * Returns the line index and the matching pattern, or -1/null when not found.
@@ -42,8 +50,14 @@ function stripBullet(line) {
  */
 function findFirstPatternIndex(lines, patterns) {
   for (let i = 0; i < lines.length; i += 1) {
-    const pattern = patterns.find(p => p.test(lines[i]));
-    if (pattern) return { index: i, pattern };
+    const line = lines[i];
+    for (let j = 0; j < patterns.length; j += 1) {
+      const pattern = patterns[j];
+      if (pattern.test(line)) {
+        if (pattern.lastIndex !== 0) pattern.lastIndex = 0;
+        return { index: i, pattern };
+      }
+    }
   }
   return { index: -1, pattern: null };
 }
@@ -58,11 +72,35 @@ function findHeader(lines, primary, fallback) {
   return findFirstPatternIndex(lines, fallback);
 }
 
-function findFirstMatch(lines, patterns) {
-  const { index, pattern } = findFirstPatternIndex(lines, patterns);
-  if (index === -1 || !pattern) return '';
-  const match = lines[index].match(pattern);
-  return match ? match[1].trim() : '';
+function runFieldPatterns(line, patterns) {
+  for (let i = 0; i < patterns.length; i += 1) {
+    const pattern = patterns[i];
+    const match = pattern.exec(line);
+    if (match) {
+      if (pattern.lastIndex !== 0) pattern.lastIndex = 0;
+      return match[1].trim();
+    }
+  }
+  return '';
+}
+
+function findFieldValues(lines) {
+  let title = '';
+  let company = '';
+  let location = '';
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!hasFieldSeparator(line)) continue;
+
+    if (!title) title = runFieldPatterns(line, TITLE_PATTERNS);
+    if (!company) company = runFieldPatterns(line, COMPANY_PATTERNS);
+    if (!location) location = runFieldPatterns(line, LOCATION_PATTERNS);
+
+    if (title && company && location) break;
+  }
+
+  return { title, company, location };
 }
 
 // Map of structured field names to their accepted header patterns.
@@ -134,7 +172,7 @@ export function parseJobText(rawText) {
   const text = rawText.replace(/\r/g, '').trim();
   const lines = text.split(/\n+/);
 
-  const { title, company, location } = extractFields(lines);
+  const { title, company, location } = findFieldValues(lines);
   const requirements = extractRequirements(lines);
 
   return { title, company, location, requirements, body: text };
