@@ -65,6 +65,48 @@ function findFirstMatch(lines, patterns) {
   return match ? match[1].trim() : '';
 }
 
+// Map of structured field names to their accepted header patterns.
+const FIELD_PATTERNS = {
+  title: TITLE_PATTERNS,
+  company: COMPANY_PATTERNS,
+  location: LOCATION_PATTERNS
+};
+
+/** Extract the first match for each structured field. */
+function extractFields(lines) {
+  return Object.fromEntries(
+    Object.entries(FIELD_PATTERNS).map(([field, patterns]) => [
+      field,
+      findFirstMatch(lines, patterns)
+    ])
+  );
+}
+
+/** Pull requirement text that shares the same line as the matched header. */
+function extractInlineRequirement(headerLine, pattern) {
+  const rest = headerLine.replace(pattern, '').trim().replace(/^[:\s]+/, '');
+  if (!rest) return '';
+  return stripBullet(rest);
+}
+
+/** Determine whether a trimmed line looks like the start of a new section. */
+function isSectionHeader(line) {
+  return /^[A-Za-z].+:$/.test(line);
+}
+
+/** Collect requirement bullet lines until the next section header appears. */
+function collectRequirementLines(lines, startIndex) {
+  const collected = [];
+  for (let i = startIndex; i < lines.length; i += 1) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    if (isSectionHeader(line)) break;
+    const bullet = stripBullet(line);
+    if (bullet) collected.push(bullet);
+  }
+  return collected;
+}
+
 /**
  * Extract requirement bullets after a known header line.
  * Supports requirement text on the same line for both primary and fallback headers.
@@ -77,26 +119,11 @@ function extractRequirements(lines) {
   );
   if (headerIndex === -1) return [];
 
-  const requirements = [];
-  const headerLine = lines[headerIndex];
-  let rest = headerLine.replace(headerPattern, '').trim();
-  rest = rest.replace(/^[:\s]+/, '');
+  const inlineRequirement = extractInlineRequirement(lines[headerIndex], headerPattern);
+  const subsequentLines = collectRequirementLines(lines, headerIndex + 1);
 
-  if (rest) {
-    // Strip bullet characters when the first requirement follows the header.
-    const first = stripBullet(rest);
-    if (first) requirements.push(first);
-  }
-
-  for (let i = headerIndex + 1; i < lines.length; i += 1) {
-    const line = lines[i].trim();
-    if (!line) continue;
-    if (/^[A-Za-z].+:$/.test(line)) break; // next section header
-    const bullet = stripBullet(line);
-    if (bullet) requirements.push(bullet);
-  }
-
-  return requirements;
+  if (!inlineRequirement) return subsequentLines;
+  return [inlineRequirement, ...subsequentLines];
 }
 
 /** Parse raw job posting text into structured fields. */
@@ -107,9 +134,7 @@ export function parseJobText(rawText) {
   const text = rawText.replace(/\r/g, '').trim();
   const lines = text.split(/\n+/);
 
-  const title = findFirstMatch(lines, TITLE_PATTERNS);
-  const company = findFirstMatch(lines, COMPANY_PATTERNS);
-  const location = findFirstMatch(lines, LOCATION_PATTERNS);
+  const { title, company, location } = extractFields(lines);
   const requirements = extractRequirements(lines);
 
   return { title, company, location, requirements, body: text };
