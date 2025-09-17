@@ -1,8 +1,73 @@
 import fetch from 'node-fetch';
 import { htmlToText } from 'html-to-text';
+import { lookup as dnsLookup } from 'node:dns/promises';
+import ipaddr from 'ipaddr.js';
 
 /** Allowed URL protocols for fetchTextFromUrl. */
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
+
+/** Hostnames that should never be fetched. */
+const LOOPBACK_HOSTNAMES = new Set(['localhost']);
+
+function isLoopbackHostname(hostname) {
+  const normalized = hostname.toLowerCase();
+  if (LOOPBACK_HOSTNAMES.has(normalized)) return true;
+  return normalized.endsWith('.localhost');
+}
+
+function isRestrictedRange(addr) {
+  const range = addr.range();
+  if (
+    range === 'loopback' ||
+    range === 'linkLocal' ||
+    range === 'uniqueLocal' ||
+    range === 'private' ||
+    range === 'unspecified' ||
+    range === 'multicast' ||
+    range === 'carrierGradeNat' ||
+    range === 'broadcast' ||
+    range === 'reserved'
+  ) {
+    return true;
+  }
+  if (addr.kind() === 'ipv6' && addr.isIPv4MappedAddress()) {
+    return isRestrictedRange(addr.toIPv4Address());
+  }
+  return false;
+}
+
+async function resolveAddresses(hostname) {
+  if (ipaddr.isValid(hostname)) {
+    return [ipaddr.parse(hostname)];
+  }
+  try {
+    const records = await dnsLookup(hostname, { all: true });
+    return records
+      .map(record => {
+        const address = record?.address;
+        if (typeof address !== 'string') return null;
+        if (!ipaddr.isValid(address)) return null;
+        return ipaddr.parse(address);
+      })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+async function ensureSafeDestination(urlObj) {
+  const { hostname } = urlObj;
+  if (!hostname) return;
+  if (isLoopbackHostname(hostname)) {
+    throw new Error(`Refusing to fetch private network URL: ${urlObj.href}`);
+  }
+  const addresses = await resolveAddresses(hostname);
+  for (const addr of addresses) {
+    if (isRestrictedRange(addr)) {
+      throw new Error(`Refusing to fetch private network URL: ${urlObj.href}`);
+    }
+  }
+}
 
 /** Default timeout for fetchTextFromUrl in milliseconds. */
 export const DEFAULT_TIMEOUT_MS = 10000;
@@ -74,7 +139,8 @@ export async function fetchTextFromUrl(
   url,
   { timeoutMs = 10000, headers, maxBytes = 1024 * 1024 } = {}
 ) {
-  const { protocol } = new URL(url);
+  const urlObj = new URL(url);
+  const { protocol } = urlObj;
   if (!ALLOWED_PROTOCOLS.has(protocol)) {
     throw new Error(`Unsupported protocol: ${protocol}`);
   }
@@ -89,6 +155,7 @@ export async function fetchTextFromUrl(
   );
 
   try {
+    await ensureSafeDestination(urlObj);
     const response = await fetch(url, {
       redirect: 'follow',
       signal: controller.signal,

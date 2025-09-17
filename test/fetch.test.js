@@ -1,8 +1,10 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 
 vi.mock('node-fetch', () => ({ default: vi.fn() }));
+vi.mock('node:dns/promises', () => ({ lookup: vi.fn() }));
 
 import fetch from 'node-fetch';
+import { lookup } from 'node:dns/promises';
 import { extractTextFromHtml, fetchTextFromUrl } from '../src/fetch.js';
 
 describe('extractTextFromHtml', () => {
@@ -170,8 +172,12 @@ describe('extractTextFromHtml', () => {
 });
 
 describe('fetchTextFromUrl', () => {
+  beforeEach(() => {
+    lookup.mockResolvedValue([{ address: '93.184.216.34', family: 4 }]);
+  });
   afterEach(() => {
     fetch.mockReset();
+    lookup.mockReset();
   });
   it('returns extracted text for HTML responses', async () => {
     fetch.mockResolvedValue({
@@ -228,12 +234,16 @@ describe('fetchTextFromUrl', () => {
 
   it('aborts when the fetch exceeds the timeout', async () => {
     vi.useFakeTimers();
-    fetch.mockImplementation((url, { signal }) =>
-      new Promise((resolve, reject) => {
+    fetch.mockImplementation((url, { signal }) => {
+      if (signal.aborted) {
+        return Promise.reject(signal.reason);
+      }
+      return new Promise((resolve, reject) => {
         signal.addEventListener('abort', () => reject(signal.reason));
-      })
-    );
+      });
+    });
     const promise = fetchTextFromUrl('http://example.com', { timeoutMs: 50 });
+    await Promise.resolve();
     vi.advanceTimersByTime(50);
     await expect(promise).rejects.toThrow('Timeout after 50ms');
     vi.useRealTimers();
@@ -241,12 +251,16 @@ describe('fetchTextFromUrl', () => {
 
   it('falls back to default timeout when given NaN', async () => {
     vi.useFakeTimers();
-    fetch.mockImplementation((url, { signal }) =>
-      new Promise((resolve, reject) => {
+    fetch.mockImplementation((url, { signal }) => {
+      if (signal.aborted) {
+        return Promise.reject(signal.reason);
+      }
+      return new Promise((resolve, reject) => {
         signal.addEventListener('abort', () => reject(signal.reason));
-      })
-    );
+      });
+    });
     const promise = fetchTextFromUrl('http://example.com', { timeoutMs: Number('foo') });
+    await Promise.resolve();
     vi.advanceTimersByTime(10000);
     await expect(promise).rejects.toThrow('Timeout after 10000ms');
     vi.useRealTimers();
@@ -318,6 +332,28 @@ describe('fetchTextFromUrl', () => {
     await expect(
       fetchTextFromUrl('http://example.com', { maxBytes: 5 })
     ).rejects.toThrow('Response exceeded 5 bytes');
+  });
+
+  it('rejects localhost hostnames', async () => {
+    await expect(fetchTextFromUrl('http://localhost/test')).rejects.toThrow(
+      'Refusing to fetch private network URL: http://localhost/test'
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects URLs resolving to private addresses', async () => {
+    lookup.mockResolvedValue([{ address: '192.168.1.10', family: 4 }]);
+    await expect(fetchTextFromUrl('http://internal.example/job')).rejects.toThrow(
+      'Refusing to fetch private network URL: http://internal.example/job'
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects direct loopback IP addresses', async () => {
+    await expect(fetchTextFromUrl('http://127.0.0.1/secret')).rejects.toThrow(
+      'Refusing to fetch private network URL: http://127.0.0.1/secret'
+    );
+    expect(fetch).not.toHaveBeenCalled();
   });
 });
 

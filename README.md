@@ -82,7 +82,8 @@ ignoring `aria-hidden` images or those with `role="presentation"`/`"none"`), and
 collapses whitespace to single spaces. Pass `timeoutMs` (milliseconds) to
 override the 10s default, and `headers` to send custom HTTP headers. Responses
 over 1 MB are rejected; override with `maxBytes` to adjust. Only `http` and
-`https` URLs are supported; other protocols throw an error.
+`https` URLs are supported; other protocols throw an error. Requests resolving
+to loopback or private network addresses are blocked to prevent SSRF.
 
 Normalize existing HTML without fetching and log the result:
 
