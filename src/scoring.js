@@ -77,19 +77,25 @@ function hasOverlap(line, resumeSet) {
  * @returns {{ score: number, matched: string[], missing: string[] }}
  */
 export function computeFitScore(resumeText, requirements) {
-  const bullets = Array.isArray(requirements)
-    ? requirements.filter(r => typeof r === 'string' && r.trim())
-    : [];
-  if (!bullets.length) return { score: 0, matched: [], missing: [] };
+  if (!Array.isArray(requirements) || requirements.length === 0) {
+    return { score: 0, matched: [], missing: [] };
+  }
 
   const resumeSet = resumeTokens(resumeText);
   const matched = [];
   const missing = [];
+  let total = 0;
 
-  for (const bullet of bullets) {
-    (hasOverlap(bullet, resumeSet) ? matched : missing).push(bullet);
+  for (const entry of requirements) {
+    if (typeof entry !== 'string') continue;
+    const trimmed = entry.trim();
+    if (!trimmed) continue;
+    total += 1;
+    (hasOverlap(trimmed, resumeSet) ? matched : missing).push(trimmed);
   }
 
-  const score = Math.round((matched.length / bullets.length) * 100);
+  if (total === 0) return { score: 0, matched: [], missing: [] };
+
+  const score = Math.round((matched.length / total) * 100);
   return { score, matched, missing };
 }
