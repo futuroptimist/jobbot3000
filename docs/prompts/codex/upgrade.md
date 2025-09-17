@@ -10,8 +10,10 @@ Use this prompt whenever you revise, replace, or add prompt documentation inside
 ## Before you copy the prompt
 
 - Keep Markdown links relative to the repository and confirm each target file exists.
-- Double-check [`docs/prompt-docs-summary.md`](../../prompt-docs-summary.md)
-  for any new prompt entries.
+- Confirm the front matter `title` and `slug` match the doc's intent and that the slug is unique
+  within [`docs/prompts/`](../../).
+- Double-check [`docs/prompt-docs-summary.md`](../../prompt-docs-summary.md) for any new prompt
+  entries.
 - Run the repository checks listed below so CI matches your local results.
 - Prefer `npm exec <tool>` (or `npx`) to rely on the project's locked dependencies.
 
@@ -36,7 +38,7 @@ CONTEXT:
   `git diff --cached | ./scripts/scan-secrets.py`
   (see [`scripts/scan-secrets.py`](../../../scripts/scan-secrets.py)).
 - Confirm every referenced file exists and update
-  [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
+  [`prompt-docs-summary.md`](../../prompt-docs-summary.md) when adding prompt docs.
 
 REQUEST:
 1. Inventory the target doc: note required updates and confirm referenced files exist.
@@ -53,9 +55,8 @@ Copy this block whenever upgrading prompts in jobbot3000.
 ## Upgrade Prompt
 Type: evergreen
 
-Use this prompt to refine `docs/prompts/codex/upgrade.md` itself.
-
-Review the checklist above before running the prompt so this document stays authoritative.
+Use this prompt to refine `docs/prompts/codex/upgrade.md` itself and keep the guidance above
+accurate. Review the checklist before making edits so the document stays authoritative.
 
 ```text
 SYSTEM:
