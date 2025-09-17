@@ -43,6 +43,21 @@ Job Title: Senior Dev
     });
   });
 
+  it('extracts fields when headers use dash separators', () => {
+    const text = `
+Role - Staff Engineer
+Company — Example Inc
+Location – Remote
+Requirements:
+- Build things
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.title).toBe('Staff Engineer');
+    expect(parsed.company).toBe('Example Inc');
+    expect(parsed.location).toBe('Remote');
+    expect(parsed.requirements).toEqual(['Build things']);
+  });
+
   it('extracts company from Employer header', () => {
     const text = `Title: Engineer\nEmployer: ACME Corp`;
     expect(parseJobText(text)).toMatchObject({ company: 'ACME Corp' });
