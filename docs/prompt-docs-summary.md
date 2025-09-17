@@ -6,7 +6,7 @@ Ensure each document's links reference existing files.
 
 Each prompt doc should reference the root [README.md](../README.md) using a valid relative path.
 
-All links were verified on 2025-09-16 to reference existing files.
+All links were last verified on 2025-09-16; update this note after the next verification pass.
 Includes [`scripts/scan-secrets.py`](../scripts/scan-secrets.py).
 
 ## jobbot3000
@@ -17,7 +17,7 @@ Includes [`scripts/scan-secrets.py`](../scripts/scan-secrets.py).
 | [docs/prompts/codex/accessibility.md#upgrade-prompt][accessibility-up] | Upgrade Prompt | evergreen | yes |
 | [docs/prompts/codex/automation.md][automation-doc] | Codex Automation Prompt (DEV/CRITIC) | evergreen | yes |
 | [docs/prompts/codex/automation.md#upgrade-prompt][automation-up] | Upgrade Prompt | evergreen | yes |
-| [docs/prompts/codex/chore.md][chore-doc] | Codex Chore Prompt | evergreen | yes |
+| [docs/prompts/codex/chore.md][chore-doc] | Codex Chore Prompt (maintenance tasks) | evergreen | yes |
 | [docs/prompts/codex/chore.md#upgrade-prompt][chore-up] | Upgrade Prompt | evergreen | yes |
 | [docs/prompts/codex/ci.md][ci-doc] | Codex CI Prompt | evergreen | yes |
 | [docs/prompts/codex/ci.md#upgrade-prompt][ci-up] | Upgrade Prompt | evergreen | yes |
