@@ -95,7 +95,47 @@ export function summarize(text, count = 1) {
       const next = text[k];
       const isLower = next && next.toLowerCase() === next && next.toUpperCase() !== next;
 
-      if (parenDepth === 0 && !quote && (k === len || !isLower)) {
+      let hasDotBefore = false;
+      let hasDotAfter = false;
+      if (ch === '.') {
+        for (let m = i - 1; m >= start && !isSpace(text[m]); m--) {
+          if (
+            text[m] === '.' &&
+            ((m + 1 < len && isAlpha(text[m + 1])) || (m - 1 >= 0 && isAlpha(text[m - 1])))
+          ) {
+            hasDotBefore = true;
+            break;
+          }
+        }
+        for (let m = j; m < len && !isSpace(text[m]); m++) {
+          if (
+            text[m] === '.' &&
+            ((m + 1 < len && isAlpha(text[m + 1])) || (m - 1 >= 0 && isAlpha(text[m - 1])))
+          ) {
+            hasDotAfter = true;
+            break;
+          }
+        }
+      }
+
+      let shouldSplit = false;
+      if (parenDepth === 0 && !quote) {
+        if (k === len) {
+          shouldSplit = true;
+        } else if (ch === '.') {
+          if (hasDotAfter) {
+            shouldSplit = false;
+          } else if (isLower && (hasDotBefore || hasDotAfter)) {
+            shouldSplit = false;
+          } else {
+            shouldSplit = true;
+          }
+        } else {
+          shouldSplit = true;
+        }
+      }
+
+      if (shouldSplit) {
         sentences.push(text.slice(start, j));
         i = k;
         start = k;

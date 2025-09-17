@@ -57,6 +57,11 @@ describe('summarize', () => {
     expect(summarize(text)).toBe('What?!');
   });
 
+  it('splits sentences even when the next one starts lowercase', () => {
+    const text = 'First sentence. second sentence continues.';
+    expect(summarize(text)).toBe('First sentence.');
+  });
+
   it('does not split on decimal numbers', () => {
     const text = 'The price is $1.99 today but it may change.';
     expect(summarize(text)).toBe(text);
