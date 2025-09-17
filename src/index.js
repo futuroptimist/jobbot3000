@@ -19,6 +19,7 @@ const closers = new Set(['"', "'", ')', ']', '}']);
 const openers = new Set(['(', '[', '{']);
 const isDigit = (c) => c >= '0' && c <= '9';
 const isAlpha = (c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+const isLowerTokenChar = (c) => (c >= 'a' && c <= 'z') || isDigit(c) || c === '-';
 const abbreviations = new Set(['mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', 'st', 'vs']);
 
 export function summarize(text, count = 1) {
@@ -114,6 +115,35 @@ export function summarize(text, count = 1) {
           ) {
             hasDotAfter = true;
             break;
+          }
+        }
+      }
+
+      if (ch === '.') {
+        const prev = i > 0 ? text[i - 1] : null;
+        const immediateNext = i + 1 < len ? text[i + 1] : null;
+
+        if (
+          prev &&
+          immediateNext &&
+          !isSpace(immediateNext) &&
+          !isSpace(prev) &&
+          isLowerTokenChar(prev) &&
+          isLowerTokenChar(immediateNext) &&
+          !hasDotBefore &&
+          !hasDotAfter
+        ) {
+          let left = i - 1;
+          while (left >= 0 && isLowerTokenChar(text[left])) left--;
+
+          let right = i + 1;
+          while (right < len && isLowerTokenChar(text[right])) right++;
+
+          const leftLen = i - 1 - left;
+          const rightLen = right - (i + 1);
+
+          if (leftLen > 0 && rightLen > 0) {
+            continue;
           }
         }
       }
