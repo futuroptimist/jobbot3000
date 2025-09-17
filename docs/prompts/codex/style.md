@@ -4,14 +4,15 @@ slug: 'codex-style'
 ---
 
 # Codex Style Prompt
-Use this prompt when adjusting code style or formatting in jobbot3000.
+Use this prompt when tightening code style or formatting in jobbot3000 without altering
+runtime behavior.
 
 ```text
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
 
 PURPOSE:
-Align code with the project's style without changing behavior.
+Align code with the project's style guide while keeping existing behavior intact.
 
 CONTEXT:
 - Follow [README.md](../../../README.md); see the
@@ -27,27 +28,29 @@ CONTEXT:
   [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 
 REQUEST:
-1. Spot style inconsistencies or linter errors.
-2. Apply the minimal fix using existing conventions.
-3. Avoid altering runtime behavior.
-4. Run the commands above and fix any failures.
+1. Identify style inconsistencies, lint failures, or formatting drift.
+2. Apply the smallest change that restores consistency with existing conventions.
+3. Avoid modifying logic, data flow, or observable behavior.
+4. Run the commands above and resolve any failures before committing.
 
 OUTPUT:
-A pull request URL summarizing the style improvements.
+A pull request that documents the style adjustments and passes all required checks.
 ```
 
 Copy this block whenever refining style in jobbot3000.
 
 ## Example
 
-Remove unnecessary code while keeping output stable:
+Clean up spacing while preserving behavior:
 
-```js
-const greet = (name) => `Hi, ${name}!`;
-console.log(greet('Codex'));
+```ts
+const formatGreeting = (name: string) => `Hi, ${name}!`;
+
+console.log(formatGreeting('Codex'));
 ```
 
-Run it with `node -e "const greet = (name) => \`Hi, ${name}!\`; console.log(greet('Codex'))"`.
+Run it with
+`ts-node -e "const formatGreeting = (name: string) => \`Hi, ${name}!\`; console.log(formatGreeting('Codex'))"`.
 
 ## Upgrade Prompt
 Type: evergreen
