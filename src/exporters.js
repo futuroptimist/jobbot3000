@@ -14,7 +14,7 @@ export function toJson(data) {
  */
 function appendListSection(lines, header, items, { leadingNewline = false } = {}) {
   if (!items || !items.length) return;
-  const prefix = leadingNewline ? '\n' : '';
+  const prefix = leadingNewline && lines.length > 0 ? '\n' : '';
   lines.push(`${prefix}## ${header}`);
   for (const item of items) lines.push(`- ${item}`);
 }
