@@ -40,6 +40,7 @@ const isBracketCloser = (c) => c === ')' || c === ']' || c === '}';
 const isQuote = (c) => c === '"' || c === "'";
 const isDigit = (c) => c >= '0' && c <= '9';
 const isAlpha = (c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+const isWordChar = (c) => isAlpha(c) || isDigit(c);
 const abbreviations = new Set(['mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', 'st', 'vs']);
 const SIMPLE_BLOCK_RE = /["'()[\]{}]/;
 const WHITESPACE_FINDER = /\s*/y;
@@ -190,11 +191,34 @@ export function summarize(text, count = 1) {
       case 125: // }
         if (parenDepth > 0) parenDepth--;
         continue;
-      case 34: // "
+      case 34: { // "
+        if (quote === '"') quote = null;
+        else if (!quote) quote = '"';
+        continue;
+      }
       case 39: { // '
-        const quoteChar = text[i];
-        if (quote === quoteChar) quote = null;
-        else if (!quote) quote = quoteChar;
+        const prev = i > 0 ? text[i - 1] : '';
+        const next = i + 1 < len ? text[i + 1] : '';
+        const prevIsWord = prev && isWordChar(prev);
+        const nextIsWord = next && isWordChar(next);
+
+        if (quote === "'") {
+          if (!prevIsWord || !nextIsWord) quote = null;
+          continue;
+        }
+
+        if (prevIsWord && nextIsWord) {
+          continue; // contraction/measurement
+        }
+
+        if (!quote && !prevIsWord) {
+          let ahead = i + 1;
+          while (ahead < len && isWordChar(text[ahead])) ahead++;
+          if (ahead < len && text[ahead] === "'") {
+            quote = "'";
+          }
+        }
+
         continue;
       }
       case 46: // .

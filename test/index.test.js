@@ -101,4 +101,9 @@ describe('summarize', () => {
     const text = 'Alert (check logs.';
     expect(summarize(text)).toBe(text);
   });
+
+  it("ignores apostrophes when tracking quotes", () => {
+    const text = "Don't stop. Keep going.";
+    expect(summarize(text, 1)).toBe("Don't stop.");
+  });
 });
