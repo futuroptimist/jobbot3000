@@ -6,15 +6,21 @@ slug: 'codex-feature'
 # Codex Feature Prompt
 Use this prompt when shipping a small, well-tested feature for jobbot3000.
 
-```text
+Use this prompt when shipping a focused feature for jobbot3000.
+
+```prompt
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
 
 PURPOSE:
 Ship a minimal, well-tested feature for jobbot3000.
 
+USAGE NOTES:
+- Use this prompt when adding a small feature to jobbot3000.
+- Copy this block whenever implementing a feature in jobbot3000.
+
 CONTEXT:
-- Follow [README.md](../../../README.md); see the
+- Follow [README.md](../../../README.md) for project setup and conventions; see the
   [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
 - Consult [DESIGN.md](../../../DESIGN.md) for architectural guidelines.
@@ -28,34 +34,36 @@ CONTEXT:
 - Confirm referenced files exist; update
   [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 
-REQUEST:
+STANDARD OPERATING PROCEDURE:
 1. Add or update a failing test in [test/](../../../test) that captures the desired behavior.
 2. Implement the smallest production change needed to make the suite pass.
-3. Update relevant documentation (including prompts) to reflect the new capability.
-4. Run the commands above, address any failures, and keep diffs minimal.
+3. Update related documentation (including prompts) to reflect the new capability so the feature is discoverable.
+4. Keep the diff tight, address any failures, and leave neighboring code healthier than you found it.
 5. Stage only intentional changes and commit once checks pass locally.
 
+REQUEST:
+1. Implement the SOP above to deliver the feature.
+2. Run the commands listed in the context section and fix any failures.
+3. Prepare a concise commit and pull request following repository templates.
+
 OUTPUT:
-A pull request that introduces the feature with passing lint and test checks.
+A pull request that introduces the feature, documents it, and passes repository checks.
 ```
 
-Copy this block whenever implementing a feature in jobbot3000.
+## Upgrade Instructions
 
-## Upgrade Prompt
-Type: evergreen
-
-Use this prompt to refine `docs/prompts/codex/feature.md`.
-
-```text
+```upgrade
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
 
 PURPOSE:
 Improve or expand the `docs/prompts/codex/feature.md` prompt.
 
+USAGE NOTES:
+- Use this prompt to refine `docs/prompts/codex/feature.md`.
+
 CONTEXT:
-- Follow [README.md](../../../README.md); see the
-  [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
+- Follow [README.md](../../../README.md); see the [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
