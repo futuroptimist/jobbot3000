@@ -4,8 +4,16 @@ slug: 'codex-upgrade'
 ---
 
 # Codex Upgrade Prompt
-Use this prompt when updating or creating prompt docs in jobbot3000.
-Verify that referenced files exist and links stay current.
+
+Use this prompt whenever you revise, replace, or add prompt documentation inside `docs/prompts/`.
+
+## Before you copy the prompt
+
+- Keep Markdown links relative to the repository and confirm each target file exists.
+- Double-check [`docs/prompt-docs-summary.md`](../../prompt-docs-summary.md)
+  for any new prompt entries.
+- Run the repository checks listed below so CI matches your local results.
+- Prefer `npm exec <tool>` (or `npx`) to rely on the project's locked dependencies.
 
 ```text
 SYSTEM:
@@ -18,21 +26,23 @@ CONTEXT:
 - Follow [README.md](../../../README.md); see the
   [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
+- Prompt docs live in [`docs/prompts/`](../../); keep front matter titles/slugs unique.
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Ensure any code samples compile with `node` or `ts-node`.
+- Use project-local tooling via `npm exec`, e.g.
+  `npm exec markdown-link-check docs/prompts/codex/<file>.md`.
 - Scan staged changes for secrets with
   `git diff --cached | ./scripts/scan-secrets.py`
   (see [`scripts/scan-secrets.py`](../../../scripts/scan-secrets.py)).
-- Link-check the updated doc, e.g., `npx markdown-link-check docs/prompts/codex/<file>.md`.
-- Confirm referenced files exist.
-- Update [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
+- Confirm every referenced file exists and update
+  [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 
 REQUEST:
-1. Select a file under `docs/prompts/` to update or create a new prompt type.
-2. Clarify context, refresh links, and ensure referenced files exist.
+1. Inventory the target doc: note required updates and confirm referenced files exist.
+2. Update or create the prompt doc with clearer context and refreshed links.
 3. Ensure any code samples compile with `node` or `ts-node`.
-4. Run the commands above and fix any failures.
+4. Run `npm run lint`, `npm run test:ci`, and the link check command; fix any failures.
 
 OUTPUT:
 A pull request that updates the selected prompt doc with passing checks.
@@ -45,6 +55,8 @@ Type: evergreen
 
 Use this prompt to refine `docs/prompts/codex/upgrade.md` itself.
 
+Review the checklist above before running the prompt so this document stays authoritative.
+
 ```text
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
@@ -56,21 +68,21 @@ CONTEXT:
 - Follow [README.md](../../../README.md); see the
   [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
+- Keep this doc's front matter accurate and the slug unique within `docs/prompts/`.
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Ensure any code samples compile with `node` or `ts-node`.
-- Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
-  See [scripts/scan-secrets.py](../../../scripts/scan-secrets.py).
-- Verify links with `npx markdown-link-check docs/prompts/codex/upgrade.md`.
-- Confirm referenced files exist.
+- Use `npm exec markdown-link-check docs/prompts/codex/upgrade.md` to verify links.
+- Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`
+  (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
 
 REQUEST:
 1. Keep this doc accurate and link-check.
 2. Ensure examples and references are up to date; confirm referenced files exist.
 3. Ensure any code samples compile with `node` or `ts-node`.
-4. Run the commands above and fix any failures.
+4. Run `npm run lint`, `npm run test:ci`, and
+   `npm exec markdown-link-check docs/prompts/codex/upgrade.md`; fix any failures.
 
 OUTPUT:
 A pull request that updates this doc with passing checks.
 ```
-
