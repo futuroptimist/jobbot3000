@@ -6,7 +6,7 @@ Ensure each document's links reference existing files.
 
 Each prompt doc should reference the root [README.md](../README.md) using a valid relative path.
 
-All links were last verified on 2025-09-16; update this note after the next verification pass.
+All links were verified on 2025-09-23 to reference existing files.
 Includes [`scripts/scan-secrets.py`](../scripts/scan-secrets.py).
 
 ## jobbot3000
