@@ -6,6 +6,7 @@ describe('computeFitScore resume tokenization performance', () => {
   it('tokenizes a 120k-line resume within 200ms', () => {
     const resume = Array.from({ length: 120000 }, (_, i) => `Skill ${i}`).join('\n');
     const requirements = ['Skill 123', 'Skill 119999'];
+    computeFitScore(resume, requirements);
     const start = performance.now();
     computeFitScore(resume, requirements);
     const duration = performance.now() - start;

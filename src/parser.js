@@ -9,11 +9,34 @@ function createFieldPattern(label) {
   return new RegExp(`^\\s*${escaped}${FIELD_SEPARATOR}(.+)`, 'i');
 }
 
-const TITLE_PATTERNS = ['Title', 'Job Title', 'Position', 'Role'].map(createFieldPattern);
+function toLowerAscii(code) {
+  if (code >= 65 && code <= 90) return code + 32;
+  return code;
+}
 
-const COMPANY_PATTERNS = ['Company', 'Employer'].map(createFieldPattern);
+function createPatternGroups(labels) {
+  const groups = new Map();
+  for (let i = 0; i < labels.length; i += 1) {
+    const label = labels[i];
+    const pattern = createFieldPattern(label);
+    const trimmed = label.trim();
+    if (!trimmed) continue;
+    const key = toLowerAscii(trimmed.charCodeAt(0));
+    const bucket = groups.get(key);
+    if (bucket) {
+      bucket.push(pattern);
+    } else {
+      groups.set(key, [pattern]);
+    }
+  }
+  return groups;
+}
 
-const LOCATION_PATTERNS = ['Location'].map(createFieldPattern);
+const TITLE_PATTERNS = createPatternGroups(['Title', 'Job Title', 'Position', 'Role']);
+
+const COMPANY_PATTERNS = createPatternGroups(['Company', 'Employer']);
+
+const LOCATION_PATTERNS = createPatternGroups(['Location']);
 
 const REQUIREMENTS_HEADERS = [
   /\bRequirements\b/i,
@@ -35,6 +58,14 @@ function stripBullet(line) {
   return line.replace(BULLET_PREFIX_RE, '').trim();
 }
 
+function hasFieldSeparator(line) {
+  for (let i = 0; i < line.length; i += 1) {
+    const code = line.charCodeAt(i);
+    if (code === 58 || code === 45 || code === 8211 || code === 8212) return true;
+  }
+  return false;
+}
+
 /**
  * Locate the first line matching any regex in `patterns`.
  * Returns the line index and the matching pattern, or -1/null when not found.
@@ -42,8 +73,14 @@ function stripBullet(line) {
  */
 function findFirstPatternIndex(lines, patterns) {
   for (let i = 0; i < lines.length; i += 1) {
-    const pattern = patterns.find(p => p.test(lines[i]));
-    if (pattern) return { index: i, pattern };
+    const line = lines[i];
+    for (let j = 0; j < patterns.length; j += 1) {
+      const pattern = patterns[j];
+      if (pattern.test(line)) {
+        if (pattern.lastIndex !== 0) pattern.lastIndex = 0;
+        return { index: i, pattern };
+      }
+    }
   }
   return { index: -1, pattern: null };
 }
@@ -58,11 +95,27 @@ function findHeader(lines, primary, fallback) {
   return findFirstPatternIndex(lines, fallback);
 }
 
-function findFirstMatch(lines, patterns) {
-  const { index, pattern } = findFirstPatternIndex(lines, patterns);
-  if (index === -1 || !pattern) return '';
-  const match = lines[index].match(pattern);
-  return match ? match[1].trim() : '';
+function findFirstMatch(lines, patternGroups) {
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!hasFieldSeparator(line)) continue;
+    let start = 0;
+    while (start < line.length && line.charCodeAt(start) <= 32) {
+      start += 1;
+    }
+    if (start >= line.length) continue;
+    const bucket = patternGroups.get(toLowerAscii(line.charCodeAt(start)));
+    if (!bucket) continue;
+    for (let j = 0; j < bucket.length; j += 1) {
+      const pattern = bucket[j];
+      const match = pattern.exec(line);
+      if (match) {
+        if (pattern.lastIndex !== 0) pattern.lastIndex = 0;
+        return match[1].trim();
+      }
+    }
+  }
+  return '';
 }
 
 /**
