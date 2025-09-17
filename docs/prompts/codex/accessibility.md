@@ -39,14 +39,14 @@ Copy this block whenever improving accessibility in jobbot3000.
 ## Upgrade Prompt
 Type: evergreen
 
-Use this prompt to refine jobbot3000's prompt documentation.
+Use this prompt to refine `docs/prompts/codex/accessibility.md`.
 
 ```text
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
 
 PURPOSE:
-Improve or expand the repository's prompt docs.
+Improve or expand the `docs/prompts/codex/accessibility.md` prompt.
 
 CONTEXT:
 - Follow [README.md](../../../README.md); see the
@@ -59,10 +59,11 @@ CONTEXT:
   [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 
 REQUEST:
-1. Select a file under `docs/prompts/` to update or create a new prompt type.
-2. Clarify context, refresh links, and ensure referenced files exist.
+1. Revise `docs/prompts/codex/accessibility.md` so this prompt stays accurate and actionable.
+   Keep examples aligned with current project practices.
+2. Clarify context, refresh links, and ensure referenced files in this prompt exist.
 3. Run the commands above and fix any failures.
 
 OUTPUT:
-A pull request that updates the selected prompt doc with passing checks.
+A pull request that updates `docs/prompts/codex/accessibility.md` with passing checks.
 ```
