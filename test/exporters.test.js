@@ -103,6 +103,43 @@ describe('exporters', () => {
     expect(output).toBe('# Dev\n**Fit Score**: 0%');
   });
 
+  it('escapes markdown control characters to prevent injection in summaries', () => {
+    const output = toMarkdownSummary({
+      title: '[Lead](javascript:alert(1))',
+      company: 'ACME [Corp](javascript:alert(2))',
+      location: 'Remote > Anywhere',
+      summary: 'Build [danger](javascript:alert(3))\n# Bonus',
+      requirements: ['[Exploit](javascript:alert(4))', 'Hands-on with CI/CD'],
+    });
+    expect(output).toBe(
+      '# \\[Lead\\]\\(javascript:alert\\(1\\)\\)\n' +
+        '**Company**: ACME \\[Corp\\]\\(javascript:alert\\(2\\)\\)\n' +
+        '**Location**: Remote \\> Anywhere\n\n' +
+        '## Summary\n\n' +
+        'Build \\[danger\\]\\(javascript:alert\\(3\\)\\)\n\\# Bonus\n\n' +
+        '## Requirements\n' +
+        '- \\[Exploit\\]\\(javascript:alert\\(4\\)\\)\n' +
+        '- Hands\\-on with CI/CD'
+    );
+  });
+
+  it('escapes markdown control characters to prevent injection in match reports', () => {
+    const output = toMarkdownMatch({
+      title: 'Engineer [Sr](javascript:alert(1))',
+      url: '[https://evil](javascript:alert(2))',
+      matched: ['[JS](javascript:alert(3))'],
+      missing: ['#Urgent'],
+      score: 42,
+    });
+    expect(output).toBe(
+      '# Engineer \\[Sr\\]\\(javascript:alert\\(1\\)\\)\n' +
+        '**URL**: \\[https://evil\\]\\(javascript:alert\\(2\\)\\)\n' +
+        '**Fit Score**: 42%\n\n' +
+        '## Matched\n- \\[JS\\]\\(javascript:alert\\(3\\)\\)\n\n' +
+        '## Missing\n- \\#Urgent'
+    );
+  });
+
   it('supports spanish locale in markdown summaries', () => {
     const output = toMarkdownSummary({
       title: 'Dev',
