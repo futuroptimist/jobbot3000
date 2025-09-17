@@ -91,6 +91,21 @@ test('returns zero counts when lifecycle file is missing', async () => {
   expect(counts).toEqual(expectedCounts());
 });
 
+test('ignores unknown statuses when summarizing lifecycle data', async () => {
+  await fs.mkdir(tmp, { recursive: true });
+  const file = path.join(tmp, 'applications.json');
+  const payload = {
+    'job-known': 'no_response',
+    'job-unknown': 'coffee_chat',
+    'job-withdrawn': 'withdrawn',
+  };
+  await fs.writeFile(file, JSON.stringify(payload, null, 2));
+  const counts = await getLifecycleCounts();
+  expect(counts).toEqual(
+    expectedCounts({ no_response: 1, withdrawn: 1 })
+  );
+});
+
 test('rejects unknown application status', async () => {
   await expect(recordApplication('abc', 'maybe')).rejects.toThrow(
     /unknown status: maybe/,

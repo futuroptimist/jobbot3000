@@ -1,32 +1,49 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 
-const MODULE_PATH = '../src/i18n.js';
-const ES_LOCALE_PATH = '../src/locales/es.js';
+afterEach(() => {
+  vi.resetModules();
+  vi.clearAllMocks();
+  try {
+    vi.doUnmock('../src/locales/es.js');
+  } catch {
+    // ignore when module was not mocked
+  }
+});
 
-describe('i18n translator', () => {
-  beforeEach(() => {
+describe('t', () => {
+  it('returns default locale translations when locale omitted', async () => {
     vi.resetModules();
-    if (typeof vi.doUnmock === 'function') vi.doUnmock(ES_LOCALE_PATH);
+    const { t, DEFAULT_LOCALE } = await import('../src/i18n.js');
+    expect(DEFAULT_LOCALE).toBe('en');
+    expect(t('company')).toBe('Company');
   });
 
-  it('falls back to the default locale when locale is unknown', async () => {
-    const { t } = await import(MODULE_PATH);
+  it('returns translations for supported locales', async () => {
+    vi.resetModules();
+    const { t } = await import('../src/i18n.js');
+    expect(t('company', 'es')).toBe('Empresa');
+  });
+
+  it('falls back to default locale when locale missing', async () => {
+    vi.resetModules();
+    const { t } = await import('../src/i18n.js');
     expect(t('company', 'fr')).toBe('Company');
   });
 
-  it('falls back when requested locale lacks a translation', async () => {
-    vi.doMock(ES_LOCALE_PATH, () => ({
+  it('falls back to default translation when key missing in locale', async () => {
+    vi.resetModules();
+    vi.doMock('../src/locales/es.js', () => ({
       default: {
-        location: 'Ubicación',
+        summary: 'Resumen',
       },
     }));
-
-    const { t } = await import(MODULE_PATH);
+    const { t } = await import('../src/i18n.js');
     expect(t('company', 'es')).toBe('Company');
   });
 
-  it('returns the key when translation missing in all locales', async () => {
-    const { t } = await import(MODULE_PATH);
-    expect(t('nonexistent.key', 'fr')).toBe('nonexistent.key');
+  it('returns key when translation missing in all locales', async () => {
+    vi.resetModules();
+    const { t } = await import('../src/i18n.js');
+    expect(t('nonexistent_key')).toBe('nonexistent_key');
   });
 });
