@@ -105,6 +105,24 @@ describe('extractTextFromHtml', () => {
     expect(extractTextFromHtml(html)).toBe('Start End');
   });
 
+  it('omits img alt text when aria-hidden uses uppercase true', () => {
+    const html = `
+      <p>Start</p>
+      <img src="logo.png" alt="Logo" aria-hidden="TRUE" />
+      <p>End</p>
+    `;
+    expect(extractTextFromHtml(html)).toBe('Start End');
+  });
+
+  it('omits img alt text when aria-hidden uses numeric true', () => {
+    const html = `
+      <p>Start</p>
+      <img src="logo.png" alt="Logo" aria-hidden="1" />
+      <p>End</p>
+    `;
+    expect(extractTextFromHtml(html)).toBe('Start End');
+  });
+
   it('omits img alt text when role is presentation', () => {
     const html = `
       <p>Start</p>
@@ -112,6 +130,25 @@ describe('extractTextFromHtml', () => {
       <p>End</p>
     `;
     expect(extractTextFromHtml(html)).toBe('Start End');
+  });
+
+  it('omits img alt text when role casing varies', () => {
+    const html = `
+      <p>Start</p>
+      <img src="logo.png" alt="Decorative" role="Presentation" />
+      <img src="logo.png" alt="Another" role="None" />
+      <p>End</p>
+    `;
+    expect(extractTextFromHtml(html)).toBe('Start End');
+  });
+
+  it('includes img alt text when aria-hidden is false-like', () => {
+    const html = `
+      <p>Start</p>
+      <img src="logo.png" alt="Logo" aria-hidden="FALSE" />
+      <p>End</p>
+    `;
+    expect(extractTextFromHtml(html)).toBe('Start Logo End');
   });
 
   it('includes aria-label text when alt is missing', () => {

@@ -10,7 +10,19 @@ export const DEFAULT_TIMEOUT_MS = 10000;
 function formatImageAlt(elem, walk, builder) {
   const { alt, ['aria-label']: ariaLabel, ['aria-hidden']: ariaHidden, role } =
     elem.attribs || {};
-  if (ariaHidden === 'true' || role === 'presentation' || role === 'none') return;
+  const hidden =
+    typeof ariaHidden === 'string'
+      ? ariaHidden.trim().toLowerCase()
+      : '';
+  const decorativeRole =
+    typeof role === 'string'
+      ? role.trim().toLowerCase()
+      : '';
+  // Handle common aria-hidden values ("true", "1") and case-variant roles so
+  // decorative images never leak into summaries. Tests exercise uppercase and
+  // numeric variants to guard regressions.
+  if (hidden === 'true' || hidden === '1') return;
+  if (decorativeRole === 'presentation' || decorativeRole === 'none') return;
 
   const label = alt || ariaLabel;
   if (label) builder.addInline(label, { noWordTransform: true });
