@@ -1,16 +1,19 @@
-const TITLE_PATTERNS = [
-  /\bTitle\s*:\s*(.+)/i,
-  /\bJob Title\s*:\s*(.+)/i,
-  /\bPosition\s*:\s*(.+)/i,
-  /\bRole\s*:\s*(.+)/i
-];
+function escapeForRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
-const COMPANY_PATTERNS = [
-  /\bCompany\s*:\s*(.+)/i,
-  /\bEmployer\s*:\s*(.+)/i
-];
+const FIELD_SEPARATOR = '\\s*(?::|[-\\u2013\\u2014])\\s*';
 
-const LOCATION_PATTERNS = [/\bLocation\s*:\s*(.+)/i];
+function createFieldPattern(label) {
+  const escaped = escapeForRegex(label).replace(/\s+/g, '\\s+');
+  return new RegExp(`^\\s*${escaped}${FIELD_SEPARATOR}(.+)`, 'i');
+}
+
+const TITLE_PATTERNS = ['Title', 'Job Title', 'Position', 'Role'].map(createFieldPattern);
+
+const COMPANY_PATTERNS = ['Company', 'Employer'].map(createFieldPattern);
+
+const LOCATION_PATTERNS = ['Location'].map(createFieldPattern);
 
 const REQUIREMENTS_HEADERS = [
   /\bRequirements\b/i,
