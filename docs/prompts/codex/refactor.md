@@ -28,12 +28,13 @@ CONTEXT:
 - Confirm referenced files exist; update
   [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 - Include before/after benchmarks if performance might change.
+- The project uses [Vitest](https://vitest.dev) for unit tests in [test/](../../../test).
 
 REQUEST:
 1. Identify code that can be reorganized without altering its public behavior.
-2. Add or update tests so the refactor is covered by automated checks.
+2. Strengthen test coverage for the refactor (add or update tests as needed).
 3. Apply the minimal structural changes that deliver the refactor; avoid unrelated edits.
-4. Update related docs or comments to reflect the new structure.
+4. Update related docs or comments to reflect the new structure or describe the refactored area.
 5. Run the commands above and resolve any failures.
 
 OUTPUT:
@@ -62,6 +63,7 @@ CONTEXT:
   See [scripts/scan-secrets.py](../../../scripts/scan-secrets.py).
 - Confirm referenced files exist; update
   [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
+- The project uses [Vitest](https://vitest.dev) for unit tests in [test/](../../../test).
 
 REQUEST:
 1. Revise `docs/prompts/codex/refactor.md` so this prompt stays accurate and actionable. Keep examples aligned with current project practices.
