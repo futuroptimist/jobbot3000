@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 import { summarize as summarizeFirstSentence } from '../src/index.js';
 import { fetchTextFromUrl } from '../src/fetch.js';
 import { parseJobText } from '../src/parser.js';

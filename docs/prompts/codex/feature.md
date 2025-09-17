@@ -4,14 +4,19 @@ slug: 'codex-feature'
 ---
 
 # Codex Feature Prompt
+
 Use this prompt when shipping a focused feature for jobbot3000.
 
-```text
+```prompt
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
 
 PURPOSE:
 Implement a minimal feature in jobbot3000 while keeping trunk green.
+
+USAGE NOTES:
+- Use this prompt when adding a small feature to jobbot3000.
+- Copy this block whenever implementing a feature in jobbot3000.
 
 CONTEXT:
 - Follow [README.md](../../../README.md) for project setup and conventions; see the
@@ -43,23 +48,20 @@ OUTPUT:
 A pull request that introduces the feature, documents it, and passes repository checks.
 ```
 
-Copy this block whenever implementing a feature in jobbot3000.
+## Upgrade Instructions
 
-## Upgrade Prompt
-Type: evergreen
-
-Use this prompt to refine `docs/prompts/codex/feature.md`.
-
-```text
+```upgrade
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
 
 PURPOSE:
 Improve or expand the `docs/prompts/codex/feature.md` prompt.
 
+USAGE NOTES:
+- Use this prompt to refine `docs/prompts/codex/feature.md`.
+
 CONTEXT:
-- Follow [README.md](../../../README.md); see the
-  [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
+- Follow [README.md](../../../README.md); see the [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
@@ -69,8 +71,7 @@ CONTEXT:
   [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 
 REQUEST:
-1. Revise `docs/prompts/codex/feature.md` so this prompt stays accurate and actionable.
-   Keep examples aligned with current project practices.
+1. Revise `docs/prompts/codex/feature.md` so this prompt stays accurate and actionable. Keep examples aligned with current project practices.
 2. Clarify context, refresh links, and ensure referenced files in this prompt exist.
 3. Run the commands above and fix any failures.
 
