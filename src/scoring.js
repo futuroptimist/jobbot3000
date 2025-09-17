@@ -1,16 +1,32 @@
 const TOKEN_CACHE = new Map();
-const TOKEN_RE = /[a-z0-9]+/g;
 
-// Tokenize text into a Set of lowercase alphanumeric tokens, with caching to avoid
-// repeated regex and Set allocations. Non-string inputs are stringified to avoid type errors.
+// Tokenize text into a Set of lowercase alphanumeric tokens using a manual scanner.
+// Non-string inputs are stringified to avoid type errors. Avoids regex to stay consistent
+// with the documented implementation and to keep performance predictable for very large
+// inputs.
 function tokenize(text) {
   const key = typeof text === 'string' ? text : String(text || '');
   const cached = TOKEN_CACHE.get(key);
   if (cached) return cached;
 
-  // Use regex matching to avoid replace/split allocations and speed up tokenization.
-  TOKEN_RE.lastIndex = 0;
-  const tokens = new Set(key.toLowerCase().match(TOKEN_RE) || []);
+  const lower = key.toLowerCase();
+  const tokens = new Set();
+  let start = -1;
+
+  for (let i = 0; i < lower.length; i++) {
+    const code = lower.charCodeAt(i);
+    const isAlpha = code >= 97 && code <= 122;
+    const isDigit = code >= 48 && code <= 57;
+
+    if (isAlpha || isDigit) {
+      if (start === -1) start = i;
+    } else if (start !== -1) {
+      tokens.add(lower.slice(start, i));
+      start = -1;
+    }
+  }
+
+  if (start !== -1) tokens.add(lower.slice(start));
 
   // Simple cache eviction to bound memory.
   if (TOKEN_CACHE.size > 1000) TOKEN_CACHE.clear();
