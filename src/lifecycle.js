@@ -1,8 +1,19 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-/** Valid application status values. */
-export const STATUSES = ['no_response', 'rejected', 'next_round'];
+/**
+ * Valid application status values.
+ * `next_round` remains as a legacy alias for older logs.
+ */
+export const STATUSES = [
+  'no_response',
+  'screening',
+  'onsite',
+  'offer',
+  'rejected',
+  'withdrawn',
+  'next_round',
+];
 
 function getPaths() {
   const dir = process.env.JOBBOT_DATA_DIR || path.resolve('data');
