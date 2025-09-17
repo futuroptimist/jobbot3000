@@ -1,7 +1,7 @@
 import { t, DEFAULT_LOCALE } from './i18n.js';
 
 export function toJson(data) {
-  return JSON.stringify(data, null, 2);
+  return JSON.stringify(data ?? null, null, 2);
 }
 
 const MARKDOWN_ESCAPE_CHARS = [

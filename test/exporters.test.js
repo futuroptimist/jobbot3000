@@ -7,6 +7,11 @@ describe('exporters', () => {
     expect(result).toBe('{\n  "a": 1\n}');
   });
 
+  it('returns null string for undefined input', () => {
+    const result = toJson(undefined);
+    expect(result).toBe('null');
+  });
+
   it('formats markdown summaries', () => {
     const output = toMarkdownSummary({
       title: 'Dev',
