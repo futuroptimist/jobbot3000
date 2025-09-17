@@ -101,4 +101,14 @@ describe('summarize', () => {
     const text = 'Alert (check logs.';
     expect(summarize(text)).toBe(text);
   });
+
+  it('does not split within dotted abbreviations', () => {
+    const text = 'The U.S. economy is growing. Another sentence.';
+    expect(summarize(text)).toBe('The U.S. economy is growing.');
+  });
+
+  it('recognizes terminators after dotted abbreviations at sentence end', () => {
+    const text = 'He was in the U.S. He traveled home.';
+    expect(summarize(text)).toBe('He was in the U.S.');
+  });
 });
