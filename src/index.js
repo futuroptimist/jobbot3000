@@ -19,6 +19,7 @@ const closers = new Set(['"', "'", ')', ']', '}']);
 const openers = new Set(['(', '[', '{']);
 const isDigit = (c) => c >= '0' && c <= '9';
 const isAlpha = (c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+const isUpperAlpha = (c) => c >= 'A' && c <= 'Z';
 const abbreviations = new Set(['mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', 'st', 'vs']);
 
 export function summarize(text, count = 1) {
@@ -57,6 +58,16 @@ export function summarize(text, count = 1) {
       // Skip decimals like 3.14
       if (ch === '.' && i > 0 && isDigit(text[i - 1]) && i + 1 < len && isDigit(text[i + 1])) {
         continue;
+      }
+
+      if (ch === '.') {
+        const next = text[i + 1];
+        if (next && isUpperAlpha(next) && i + 2 < len && text[i + 2] === '.') {
+          continue;
+        }
+        if (i >= 2 && text[i - 2] === '.' && isUpperAlpha(text[i - 1])) {
+          continue;
+        }
       }
 
       if (ch === '.') {

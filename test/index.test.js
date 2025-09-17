@@ -101,4 +101,9 @@ describe('summarize', () => {
     const text = 'Alert (check logs.';
     expect(summarize(text)).toBe(text);
   });
+
+  it('does not split within dotted abbreviations', () => {
+    const text = 'The U.S. economy is growing. Another sentence.';
+    expect(summarize(text)).toBe('The U.S. economy is growing.');
+  });
 });
