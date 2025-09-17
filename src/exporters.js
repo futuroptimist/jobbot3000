@@ -4,6 +4,51 @@ export function toJson(data) {
   return JSON.stringify(data, null, 2);
 }
 
+const MARKDOWN_ESCAPE_CHARS = [
+  '\\',
+  '`',
+  '*',
+  '_',
+  '{',
+  '}',
+  '[',
+  ']',
+  '(',
+  ')',
+  '<',
+  '>',
+  '#',
+  '+',
+  '-',
+  '!',
+  '|',
+];
+
+const CHAR_CLASS_ESCAPE_RE = /[\\\-\]]/g;
+
+function escapeForCharClass(ch) {
+  if (ch === '[') return '\\[';
+  return ch.replace(CHAR_CLASS_ESCAPE_RE, '\\$&');
+}
+
+const MARKDOWN_ESCAPE_RE = new RegExp(
+  `[${MARKDOWN_ESCAPE_CHARS.map(escapeForCharClass).join('')}]`,
+  'g'
+);
+
+function escapeMarkdown(value) {
+  if (value === null || value === undefined) return '';
+  return String(value).replace(MARKDOWN_ESCAPE_RE, '\\$&');
+}
+
+function escapeMarkdownMultiline(value) {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .split('\n')
+    .map(escapeMarkdown)
+    .join('\n');
+}
+
 /**
  * Append a Markdown header and bullet list if `items` exist.
  * @param {string[]} lines Accumulator array of lines.
@@ -16,7 +61,10 @@ function appendListSection(lines, header, items, { leadingNewline = false } = {}
   if (!items || !items.length) return;
   const prefix = leadingNewline && lines.length > 0 ? '\n' : '';
   lines.push(`${prefix}## ${header}`);
-  for (const item of items) lines.push(`- ${item}`);
+  for (const item of items) {
+    const safeItem = escapeMarkdownMultiline(item);
+    if (safeItem) lines.push(`- ${safeItem}`);
+  }
 }
 
 /**
@@ -40,13 +88,19 @@ export function toMarkdownSummary({
   locale = DEFAULT_LOCALE,
 }) {
   const lines = [];
-  if (title) lines.push(`# ${title}`);
-  if (company) lines.push(`**${t('company', locale)}**: ${company}`);
-  if (location) lines.push(`**${t('location', locale)}**: ${location}`);
-  if (url) lines.push(`**${t('url', locale)}**: ${url}`);
+  const safeTitle = escapeMarkdown(title);
+  const safeCompany = escapeMarkdown(company);
+  const safeLocation = escapeMarkdown(location);
+  const safeUrl = escapeMarkdown(url);
 
-  if (summary) {
-    lines.push('', `## ${t('summary', locale)}`, '', summary);
+  if (safeTitle) lines.push(`# ${safeTitle}`);
+  if (safeCompany) lines.push(`**${t('company', locale)}**: ${safeCompany}`);
+  if (safeLocation) lines.push(`**${t('location', locale)}**: ${safeLocation}`);
+  if (safeUrl) lines.push(`**${t('url', locale)}**: ${safeUrl}`);
+
+  const safeSummary = escapeMarkdownMultiline(summary);
+  if (safeSummary) {
+    lines.push('', `## ${t('summary', locale)}`, '', safeSummary);
     if (!requirements || !requirements.length) lines.push('');
   }
 
@@ -81,10 +135,15 @@ export function toMarkdownMatch({
   locale = DEFAULT_LOCALE,
 }) {
   const lines = [];
-  if (title) lines.push(`# ${title}`);
-  if (company) lines.push(`**${t('company', locale)}**: ${company}`);
-  if (location) lines.push(`**${t('location', locale)}**: ${location}`);
-  if (url) lines.push(`**${t('url', locale)}**: ${url}`);
+  const safeTitle = escapeMarkdown(title);
+  const safeCompany = escapeMarkdown(company);
+  const safeLocation = escapeMarkdown(location);
+  const safeUrl = escapeMarkdown(url);
+
+  if (safeTitle) lines.push(`# ${safeTitle}`);
+  if (safeCompany) lines.push(`**${t('company', locale)}**: ${safeCompany}`);
+  if (safeLocation) lines.push(`**${t('location', locale)}**: ${safeLocation}`);
+  if (safeUrl) lines.push(`**${t('url', locale)}**: ${safeUrl}`);
   if (typeof score === 'number')
     lines.push(`**${t('fitScore', locale)}**: ${score}%`);
   appendListSection(lines, t('matched', locale), matched, { leadingNewline: true });
