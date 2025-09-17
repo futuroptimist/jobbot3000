@@ -103,6 +103,11 @@ describe('exporters', () => {
     expect(output).toBe('# Dev\n**Fit Score**: 0%');
   });
 
+  it('does not prepend blank lines when only match lists exist', () => {
+    const output = toMarkdownMatch({ matched: ['JS'], missing: ['Rust'] });
+    expect(output).toBe('## Matched\n- JS\n\n## Missing\n- Rust');
+  });
+
   it('escapes markdown control characters to prevent injection in summaries', () => {
     const output = toMarkdownSummary({
       title: '[Lead](javascript:alert(1))',
