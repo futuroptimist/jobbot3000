@@ -9,24 +9,36 @@ function tokenize(text) {
   const cached = TOKEN_CACHE.get(key);
   if (cached) return cached;
 
-  const lower = key.toLowerCase();
   const tokens = new Set();
   let start = -1;
+  let needsLower = false;
 
-  for (let i = 0; i < lower.length; i++) {
-    const code = lower.charCodeAt(i);
-    const isAlpha = code >= 97 && code <= 122;
+  for (let i = 0; i < key.length; i++) {
+    const code = key.charCodeAt(i);
+    const isLower = code >= 97 && code <= 122;
+    const isUpper = code >= 65 && code <= 90;
     const isDigit = code >= 48 && code <= 57;
 
-    if (isAlpha || isDigit) {
-      if (start === -1) start = i;
+    if (isLower || isUpper || isDigit) {
+      if (start === -1) {
+        start = i;
+        needsLower = false;
+      }
+      if (isUpper) needsLower = true;
     } else if (start !== -1) {
-      tokens.add(lower.slice(start, i));
+      let token = key.slice(start, i);
+      if (needsLower) token = token.toLowerCase();
+      tokens.add(token);
       start = -1;
+      needsLower = false;
     }
   }
 
-  if (start !== -1) tokens.add(lower.slice(start));
+  if (start !== -1) {
+    let token = key.slice(start);
+    if (needsLower) token = token.toLowerCase();
+    tokens.add(token);
+  }
 
   // Simple cache eviction to bound memory.
   if (TOKEN_CACHE.size > 1000) TOKEN_CACHE.clear();
