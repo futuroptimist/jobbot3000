@@ -7,7 +7,7 @@ const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
 /** Default timeout for fetchTextFromUrl in milliseconds. */
 export const DEFAULT_TIMEOUT_MS = 10000;
 
-function formatImageAlt(elem, walk, builder) {
+function formatImageAlt(elem, _walk, builder) {
   const { alt, ['aria-label']: ariaLabel, ['aria-hidden']: ariaHidden, role } =
     elem.attribs || {};
   const hidden =
