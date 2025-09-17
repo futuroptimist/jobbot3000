@@ -3,11 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 vi.mock('node-fetch', () => ({ default: vi.fn() }));
 
 import fetch from 'node-fetch';
-import {
-  DEFAULT_TIMEOUT_MS,
-  extractTextFromHtml,
-  fetchTextFromUrl,
-} from '../src/fetch.js';
+import { DEFAULT_TIMEOUT_MS, extractTextFromHtml, fetchTextFromUrl } from '../src/fetch.js';
 
 describe('extractTextFromHtml', () => {
   it('collapses whitespace and skips non-content tags', () => {
@@ -252,9 +248,7 @@ describe('fetchTextFromUrl', () => {
     );
     const promise = fetchTextFromUrl('http://example.com', { timeoutMs: Number('foo') });
     vi.advanceTimersByTime(DEFAULT_TIMEOUT_MS);
-    await expect(promise).rejects.toThrow(
-      `Timeout after ${DEFAULT_TIMEOUT_MS}ms`
-    );
+    await expect(promise).rejects.toThrow(`Timeout after ${DEFAULT_TIMEOUT_MS}ms`);
     vi.useRealTimers();
   });
 

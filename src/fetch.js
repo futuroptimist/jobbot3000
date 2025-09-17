@@ -7,7 +7,7 @@ const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
 /** Default timeout for fetchTextFromUrl in milliseconds. */
 export const DEFAULT_TIMEOUT_MS = 10000;
 
-function formatImageAlt(elem, walk, builder) {
+function formatImageAlt(elem, _walk, builder) {
   const { alt, ['aria-label']: ariaLabel, ['aria-hidden']: ariaHidden, role } =
     elem.attribs || {};
   const hidden =
@@ -67,7 +67,7 @@ export function extractTextFromHtml(html) {
  *
  * @param {string} url
  * @param {{ timeoutMs?: number, headers?: Record<string, string>, maxBytes?: number }} [opts]
- *   Invalid timeout values fall back to 10000ms.
+ *   Invalid timeout values fall back to DEFAULT_TIMEOUT_MS.
  * @returns {Promise<string>}
  */
 export async function fetchTextFromUrl(
@@ -79,7 +79,7 @@ export async function fetchTextFromUrl(
     throw new Error(`Unsupported protocol: ${protocol}`);
   }
 
-  // Normalize timeout: fallback to the default when invalid
+  // Normalize timeout: fallback to DEFAULT_TIMEOUT_MS if invalid
   const ms =
     Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : DEFAULT_TIMEOUT_MS;
 
