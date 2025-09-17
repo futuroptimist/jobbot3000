@@ -72,15 +72,16 @@ export function extractTextFromHtml(html) {
  */
 export async function fetchTextFromUrl(
   url,
-  { timeoutMs = 10000, headers, maxBytes = 1024 * 1024 } = {}
+  { timeoutMs = DEFAULT_TIMEOUT_MS, headers, maxBytes = 1024 * 1024 } = {}
 ) {
   const { protocol } = new URL(url);
   if (!ALLOWED_PROTOCOLS.has(protocol)) {
     throw new Error(`Unsupported protocol: ${protocol}`);
   }
 
-  // Normalize timeout: fallback to 10000ms if invalid
-  const ms = Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 10000;
+  // Normalize timeout: fallback to the default when invalid
+  const ms =
+    Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : DEFAULT_TIMEOUT_MS;
 
   const controller = new AbortController();
   const timer = setTimeout(
