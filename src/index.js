@@ -19,6 +19,7 @@ const closers = new Set(['"', "'", ')', ']', '}']);
 const openers = new Set(['(', '[', '{']);
 const isDigit = (c) => c >= '0' && c <= '9';
 const isAlpha = (c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+const isAlphaNumeric = (c) => isAlpha(c) || isDigit(c);
 const abbreviations = new Set(['mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', 'st', 'vs']);
 
 export function summarize(text, count = 1) {
@@ -116,6 +117,21 @@ export function summarize(text, count = 1) {
             break;
           }
         }
+      }
+
+      const prev = i > 0 ? text[i - 1] : null;
+      const immediateNext = i + 1 < len ? text[i + 1] : null;
+      if (
+        ch === '.' &&
+        immediateNext &&
+        !isSpace(immediateNext) &&
+        prev &&
+        isAlphaNumeric(prev) &&
+        isAlphaNumeric(immediateNext) &&
+        !hasDotBefore &&
+        !hasDotAfter
+      ) {
+        continue;
       }
 
       let shouldSplit = false;
