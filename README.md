@@ -171,6 +171,9 @@ console.log(md);
 // - Rust
 ```
 
+When only the matched or missing lists are present, the Markdown output starts with the
+corresponding section heading instead of an extra leading blank line.
+
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal
 punctuation like `?!`, including when followed by closing quotes or parentheses. Terminators apply
 only when followed by whitespace or the end of text, so decimals like `1.99` remain intact.

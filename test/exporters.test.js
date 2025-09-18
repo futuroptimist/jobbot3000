@@ -103,6 +103,11 @@ describe('exporters', () => {
     expect(output).toBe('# Dev\n**Fit Score**: 0%');
   });
 
+  it('does not prefix match-only output with a blank line', () => {
+    const output = toMarkdownMatch({ matched: ['JS'] });
+    expect(output).toBe('## Matched\n- JS');
+  });
+
   it('supports spanish locale in markdown summaries', () => {
     const output = toMarkdownSummary({
       title: 'Dev',
