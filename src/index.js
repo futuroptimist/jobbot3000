@@ -19,7 +19,22 @@ const closers = new Set(['"', "'", ')', ']', '}']);
 const openers = new Set(['(', '[', '{']);
 const isDigit = (c) => c >= '0' && c <= '9';
 const isAlpha = (c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+const isLowerTokenChar = (c) => (c >= 'a' && c <= 'z') || isDigit(c) || c === '-';
 const abbreviations = new Set(['mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', 'st', 'vs']);
+const isLowerDomainChar = (c) => c === '.' || isLowerTokenChar(c);
+
+const sliceDomainCandidate = (token) => {
+  let candidate = token;
+  if (candidate.includes('@')) {
+    candidate = candidate.slice(candidate.lastIndexOf('@') + 1);
+  }
+
+  let left = 0;
+  let right = candidate.length;
+  while (left < right && !isLowerDomainChar(candidate[left])) left++;
+  while (right > left && !isLowerDomainChar(candidate[right - 1])) right--;
+  return candidate.slice(left, right);
+};
 
 export function summarize(text, count = 1) {
   if (!text || count <= 0) return '';
@@ -59,6 +74,7 @@ export function summarize(text, count = 1) {
         continue;
       }
 
+      let prevTokenDomainLike = false;
       if (ch === '.') {
         let w = i - 1;
         while (w >= 0 && isAlpha(text[w])) w--;
@@ -118,6 +134,62 @@ export function summarize(text, count = 1) {
         }
       }
 
+      if (ch === '.') {
+        const prev = i > 0 ? text[i - 1] : null;
+        const immediateNext = i + 1 < len ? text[i + 1] : null;
+
+        if (
+          prev &&
+          immediateNext &&
+          !isSpace(prev) &&
+          !isSpace(immediateNext) &&
+          isLowerTokenChar(prev) &&
+          isLowerTokenChar(immediateNext)
+        ) {
+          let tokenStart = i - 1;
+          while (tokenStart >= start && isLowerDomainChar(text[tokenStart])) {
+            tokenStart--;
+          }
+          tokenStart++;
+
+          let tokenEnd = i + 1;
+          while (tokenEnd < len && isLowerDomainChar(text[tokenEnd])) {
+            tokenEnd++;
+          }
+
+          const token = text.slice(tokenStart, tokenEnd);
+          if (token.includes('.')) {
+            const parts = token.split('.');
+            const hasValidParts =
+              parts.length >= 2 &&
+              parts.every((part) => part.length > 0 && [...part].every(isLowerTokenChar));
+
+            if (hasValidParts) {
+              continue;
+            }
+          }
+        }
+        if (!prevTokenDomainLike && hasDotBefore) {
+          let tokenStart = i - 1;
+          while (tokenStart >= start && !isSpace(text[tokenStart])) tokenStart--;
+          tokenStart++;
+          const rawToken = text.slice(tokenStart, i);
+          const candidate = sliceDomainCandidate(rawToken);
+
+          if (candidate.includes('.')) {
+            const parts = candidate.split('.');
+            const last = parts[parts.length - 1];
+            const partsAreDomain =
+              last.length >= 2 &&
+              parts.every((part) => part.length > 0 && [...part].every(isLowerTokenChar));
+
+            if (partsAreDomain) {
+              prevTokenDomainLike = true;
+            }
+          }
+        }
+      }
+
       let shouldSplit = false;
       if (parenDepth === 0 && !quote) {
         if (k === len) {
@@ -126,7 +198,11 @@ export function summarize(text, count = 1) {
           if (hasDotAfter) {
             shouldSplit = false;
           } else if (isLower && (hasDotBefore || hasDotAfter)) {
-            shouldSplit = false;
+            if (prevTokenDomainLike) {
+              shouldSplit = true;
+            } else {
+              shouldSplit = false;
+            }
           } else {
             shouldSplit = true;
           }
