@@ -5,6 +5,14 @@ slug: 'codex-implement'
 
 # Codex Implement Prompt
 
+Use this prompt when transforming jobbot3000 future-work notes into shipped functionality.
+
+## When to use it
+- A TODO, FIXME, or "future work" item is already documented in the codebase or docs.
+- Shipping the improvement unblocks user value without requiring a multi-PR migration.
+- You can add (and keep) targeted automated tests to prove the change.
+
+## Prompt block
 ```prompt
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
