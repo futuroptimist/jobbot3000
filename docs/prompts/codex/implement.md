@@ -4,19 +4,29 @@ slug: 'codex-implement'
 ---
 
 # Codex Implement Prompt
-Prompt name: `prompt-implement`.
 
 Use this prompt when turning jobbot3000's future-work notes into shipped features.
 It assumes the codebase already contains a sketch, TODO, or backlog entry that
 describes the expected behavior; your job is to finish it without disrupting
 existing functionality.
 
-```text
+## When to use it
+- A TODO, FIXME, or "future work" item is already documented in the codebase or docs.
+- Shipping the improvement unblocks user value without requiring a multi-PR migration.
+- You can add (and keep) targeted automated tests to prove the change.
+
+## Prompt block
+```prompt
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
 
 PURPOSE:
 Close the loop on documented-but-unshipped functionality in jobbot3000.
+
+USAGE NOTES:
+- Prompt name: `prompt-implement`.
+- Use this prompt when turning jobbot3000's future-work notes into shipped features.
+- Copy this block whenever converting planned jobbot3000 work into reality.
 
 CONTEXT:
 - Follow [README.md](../../../README.md); see the
@@ -54,39 +64,30 @@ REQUEST:
    scan). Resolve any failures and record the outcomes in the PR description.
 
 OUTPUT:
-A pull request URL summarizing the implemented functionality, associated tests,
-updated documentation, and test results.
+A pull request URL summarizing the implemented functionality, associated tests, updated documentation, and test results.
 ```
 
-Copy this block whenever converting planned jobbot3000 work into reality.
+## Upgrade Instructions
 
-## Upgrade Prompt
-Type: evergreen
-
-Use this prompt to refine `docs/prompts/codex/implement.md`.
-
-```text
+```upgrade
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
 
 PURPOSE:
 Improve or expand the `docs/prompts/codex/implement.md` prompt.
 
+USAGE NOTES:
+- Use this prompt to refine `docs/prompts/codex/implement.md`.
+
 CONTEXT:
-- Follow [README.md](../../../README.md); see the
-  [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
-- Review [.github/workflows](../../../.github/workflows) to anticipate CI
-  checks.
+- Follow [README.md](../../../README.md); see the [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
+- Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
 - Run `npm run lint` and `npm run test:ci` before committing.
-- Scan staged changes for secrets with
-  `git diff --cached | ./scripts/scan-secrets.py`.
-- Confirm referenced files exist; update
-  [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt
-  docs.
+- Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
+- Confirm referenced files exist; update [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 
 REQUEST:
-1. Revise `docs/prompts/codex/implement.md` so this prompt stays accurate and actionable.
-   Keep examples aligned with current project practices.
+1. Revise `docs/prompts/codex/implement.md` so this prompt stays accurate and actionable. Keep examples aligned with current project practices.
 2. Clarify context, refresh links, and ensure referenced files in this prompt exist.
 3. Run the commands above and fix any failures.
 
