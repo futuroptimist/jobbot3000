@@ -22,6 +22,11 @@ const isAlpha = (c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 const abbreviations = new Set(['mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', 'st', 'vs']);
 
 export function summarize(text, count = 1) {
+  if (!Number.isFinite(count)) {
+    const parsed = Number(count);
+    count = Number.isFinite(parsed) ? parsed : 1;
+  }
+
   if (!text || count <= 0) return '';
 
   /**
