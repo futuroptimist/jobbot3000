@@ -62,6 +62,16 @@ describe('summarize', () => {
     expect(summarize(text)).toBe('First sentence.');
   });
 
+  it('does not split inside lowercase tokens that contain dots', () => {
+    const text = 'Contact foo.bar@example.co.uk for details.';
+    expect(summarize(text)).toBe(text);
+  });
+
+  it('still ends the sentence after dotted tokens followed by spaces', () => {
+    const text = 'Visit api.service.local. follow-up instructions here.';
+    expect(summarize(text)).toBe('Visit api.service.local.');
+  });
+
   it('does not split on decimal numbers', () => {
     const text = 'The price is $1.99 today but it may change.';
     expect(summarize(text)).toBe(text);

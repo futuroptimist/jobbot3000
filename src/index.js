@@ -19,6 +19,27 @@ const closers = new Set(['"', "'", ')', ']', '}']);
 const openers = new Set(['(', '[', '{']);
 const isDigit = (c) => c >= '0' && c <= '9';
 const isAlpha = (c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+const isLowerTokenChar = (c) =>
+  (c >= 'a' && c <= 'z') || isDigit(c) || c === '-' || c === '_';
+const dottedAbbreviationRe = /^[a-z](?:\.[a-z])+$/;
+
+const hasLowerTokenNeighbors = (text, index) => {
+  let left = index - 1;
+  let leftSpan = 0;
+  while (left >= 0 && isLowerTokenChar(text[left])) {
+    leftSpan++;
+    left--;
+  }
+
+  let right = index + 1;
+  let rightSpan = 0;
+  while (right < text.length && isLowerTokenChar(text[right])) {
+    rightSpan++;
+    right++;
+  }
+
+  return leftSpan > 0 && rightSpan > 0;
+};
 const abbreviations = new Set(['mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', 'st', 'vs']);
 
 export function summarize(text, count = 1) {
@@ -68,6 +89,7 @@ export function summarize(text, count = 1) {
         }
       }
 
+      const wasInsideParens = parenDepth > 0;
       let j = i + 1;
 
       // absorb consecutive punctuation like ?!
@@ -118,6 +140,10 @@ export function summarize(text, count = 1) {
         }
       }
 
+      if (ch === '.' && hasLowerTokenNeighbors(text, i)) {
+        continue;
+      }
+
       let shouldSplit = false;
       if (parenDepth === 0 && !quote) {
         if (k === len) {
@@ -125,8 +151,19 @@ export function summarize(text, count = 1) {
         } else if (ch === '.') {
           if (hasDotAfter) {
             shouldSplit = false;
-          } else if (isLower && (hasDotBefore || hasDotAfter)) {
-            shouldSplit = false;
+          } else if (isLower) {
+            if (hasDotBefore) {
+              let tokenStart = i - 1;
+              while (tokenStart >= 0 && !isSpace(text[tokenStart])) tokenStart--;
+              const token = text
+                .slice(tokenStart + 1, i)
+                .toLowerCase()
+                .replace(/[^a-z.]/g, '');
+              const isAbbreviation = dottedAbbreviationRe.test(token);
+              shouldSplit = !(isAbbreviation || wasInsideParens);
+            } else {
+              shouldSplit = true;
+            }
           } else {
             shouldSplit = true;
           }
