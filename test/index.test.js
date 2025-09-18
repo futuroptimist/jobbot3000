@@ -57,6 +57,16 @@ describe('summarize', () => {
     expect(summarize(text)).toBe('What?!');
   });
 
+  it('requires whitespace after terminators before splitting', () => {
+    const text = 'Hi!Next sentence.';
+    expect(summarize(text)).toBe('Hi!Next sentence.');
+  });
+
+  it('keeps trailing quotes attached when no whitespace follows', () => {
+    const text = 'He said "Go!"Next steps.';
+    expect(summarize(text)).toBe('He said "Go!"Next steps.');
+  });
+
   it('does not split on decimal numbers', () => {
     const text = 'The price is $1.99 today but it may change.';
     expect(summarize(text)).toBe(text);

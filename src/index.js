@@ -186,6 +186,8 @@ export function summarize(text, count = 1) {
       let k = j;
       while (k < len && isSpaceCode(text.charCodeAt(k))) k++;
 
+      const hasTrailingWhitespace = k > j;
+
       let isLower = false;
       if (k < len) {
         const nextCode = text.charCodeAt(k);
@@ -203,7 +205,12 @@ export function summarize(text, count = 1) {
         }
       }
 
-      if (parenDepth === 0 && quoteCode === 0 && (k === len || !isLower)) {
+      if (
+        parenDepth === 0 &&
+        quoteCode === 0 &&
+        (k === len || hasTrailingWhitespace) &&
+        (k === len || !isLower)
+      ) {
         sentences.push(text.slice(start, j));
         i = k;
         start = k;
