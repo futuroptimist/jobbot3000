@@ -14,18 +14,28 @@ PURPOSE:
 Implement localization or internationalization improvements.
 
 CONTEXT:
-- Follow [README.md](../../../README.md); see the [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
+- Follow [README.md](../../../README.md); see the
+  [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
-- Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
-- Confirm referenced files exist; update [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
+- Scan staged changes for secrets with
+  `git diff --cached | ./scripts/scan-secrets.py`
+  (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
+- jobbot3000 translations live in [src/i18n.js](../../../src/i18n.js) and
+  [src/locales/](../../../src/locales/).
+- Markdown exporters that surface translations are in
+  [src/exporters.js](../../../src/exporters.js) with coverage in
+  [test/exporters.test.js](../../../test/exporters.test.js).
+- Confirm referenced files exist; update
+  [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 
 REQUEST:
-1. Add or update locale files and translation helpers.
-2. Ensure default locale behavior remains unchanged.
-3. Add or update tests covering new localization logic.
-4. Run the commands above and fix any failures.
+1. Extend `src/locales/` dictionaries and helpers in `src/i18n.js` as needed.
+2. Preserve English (`DEFAULT_LOCALE`) fallbacks and ensure missing keys return English.
+3. Update exporters or other consumers so translated labels render correctly.
+4. Add or update tests (for example in `test/exporters.test.js`) that assert localized output.
+5. Run the commands above and fix any failures.
 
 OUTPUT:
 A pull request summarizing the localization changes with passing checks.
@@ -46,12 +56,21 @@ PURPOSE:
 Improve or expand the `docs/prompts/codex/localization.md` prompt.
 
 CONTEXT:
-- Follow [README.md](../../../README.md); see the [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
+- Follow [README.md](../../../README.md); see the
+  [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
-- Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
-- Confirm referenced files exist and update [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
+- Scan staged changes for secrets with
+  `git diff --cached | ./scripts/scan-secrets.py`
+  (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
+- jobbot3000 translations live in [src/i18n.js](../../../src/i18n.js) and
+  [src/locales/](../../../src/locales/).
+- Markdown exporters that surface translations are in
+  [src/exporters.js](../../../src/exporters.js) with coverage in
+  [test/exporters.test.js](../../../test/exporters.test.js).
+- Confirm referenced files exist and update
+  [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 
 REQUEST:
 1. Revise `docs/prompts/codex/localization.md` so this prompt stays accurate and actionable.
