@@ -6,8 +6,14 @@ slug: 'codex-implement'
 # Codex Implement Prompt
 Prompt name: `prompt-implement`.
 
-Use this prompt when turning jobbot3000's future-work notes into shipped features.
+Use this prompt when transforming jobbot3000 future-work notes into shipped functionality.
 
+## When to use it
+- A TODO, FIXME, or "future work" item is already documented in the codebase or docs.
+- Shipping the improvement unblocks user value without requiring a multi-PR migration.
+- You can add (and keep) targeted automated tests to prove the change.
+
+## Prompt block
 ```text
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
@@ -22,7 +28,7 @@ CONTEXT:
 - Consult [DESIGN.md](../../../DESIGN.md) for architectural guidelines.
 - Tests live in [test/](../../../test) and run with
   [Vitest](https://vitest.dev/).
-- Install dependencies with `npm ci` if needed.
+- Install dependencies with `npm ci` if they are missing.
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Use `rg` (ripgrep) to inventory TODO, FIXME, "future work", and similar
   markers across code, tests, and docs.
