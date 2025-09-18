@@ -160,6 +160,15 @@ describe('extractTextFromHtml', () => {
     expect(extractTextFromHtml(html)).toBe('Start Logo End');
   });
 
+  it('falls back to aria-label when alt text is whitespace', () => {
+    const html = `
+      <p>Start</p>
+      <img src="logo.png" alt="   " aria-label=" Logo " />
+      <p>End</p>
+    `;
+    expect(extractTextFromHtml(html)).toBe('Start Logo End');
+  });
+
   it('returns empty string for falsy input', () => {
     expect(extractTextFromHtml('')).toBe('');
     // @ts-expect-error testing null input
