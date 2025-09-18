@@ -62,6 +62,16 @@ describe('summarize', () => {
     expect(summarize(text)).toBe('First sentence.');
   });
 
+  it('does not split on multi-level lowercase domains', () => {
+    const text = 'Visit careers.acme.co/jobs now. More info tomorrow.';
+    expect(summarize(text, 2)).toBe('Visit careers.acme.co/jobs now. More info tomorrow.');
+  });
+
+  it('preserves emails with lowercase subdomains', () => {
+    const text = 'Contact dev@sub.example.co. Let\'s chat soon.';
+    expect(summarize(text)).toBe('Contact dev@sub.example.co.');
+  });
+
   it('does not split on decimal numbers', () => {
     const text = 'The price is $1.99 today but it may change.';
     expect(summarize(text)).toBe(text);
