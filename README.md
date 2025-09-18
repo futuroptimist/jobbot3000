@@ -189,8 +189,9 @@ Common honorifics such as `Mr.` and `Dr.` are recognized so summaries aren't cut
 Example: `summarize('"Hi!" Bye.')` returns `"Hi!"`.
 It waits for whitespace (or the end of the text) after terminal punctuation, so
 `summarize('Hi!Next steps.')` returns `"Hi!Next steps."`.
-Unit tests exercise whitespace gating alongside abbreviations, decimals, and
-nested punctuation to keep these edge cases locked in.
+Unit tests exercise punctuation with and without trailing whitespace so the
+summarizer keeps honoring these boundaries alongside abbreviations, decimals,
+and nested punctuation edge cases.
 
 Job titles can be parsed from lines starting with `Title`, `Job Title`, `Position`, or `Role`.
 Headers can use colons or dash separators (for example, `Role - Staff Engineer`), and the same
