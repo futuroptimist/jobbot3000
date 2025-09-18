@@ -23,6 +23,17 @@ Requirements:
     expect(parseJobText(text)).toMatchObject({ location: 'Remote, USA' });
   });
 
+  it('extracts location when header uses whitespace separator', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Location Remote, USA
+Requirements:
+- Node.js
+`;
+    expect(parseJobText(text)).toMatchObject({ location: 'Remote, USA' });
+  });
+
   it('prefers earlier lines over pattern order', () => {
     const text = `
 Position: Junior Dev

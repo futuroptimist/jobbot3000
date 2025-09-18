@@ -2,7 +2,7 @@ function escapeForRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-const FIELD_SEPARATOR = '\\s*(?::|[-\\u2013\\u2014])\\s*';
+const FIELD_SEPARATOR = '\\s*(?:(?::|[-\\u2013\\u2014])\\s*|\\s+)';
 
 function createFieldPattern(label) {
   const escaped = escapeForRegex(label).replace(/\s+/g, '\\s+');

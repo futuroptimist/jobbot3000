@@ -186,9 +186,9 @@ Common honorifics such as `Mr.` and `Dr.` are recognized so summaries aren't cut
 Example: `summarize('"Hi!" Bye.')` returns `"Hi!"`.
 
 Job titles can be parsed from lines starting with `Title`, `Job Title`, `Position`, or `Role`.
-Headers can use colons or dash separators (for example, `Role - Staff Engineer`), and the same
-separators work for `Company` and `Location`. Parser unit tests cover both colon and dash cases so
-this behavior stays locked in.
+Headers can use colons, dash separators, or just whitespace (for example, `Role - Staff Engineer`,
+`Company — Example Inc`, and `Location Remote`). Parser unit tests cover these cases so this
+behavior stays locked in.
 
 Job requirements may appear under headers like `Requirements`, `Qualifications`,
 `What you'll need`, or `Responsibilities` (used if no other requirement headers are present).
