@@ -19,6 +19,7 @@ const closers = new Set(['"', "'", ')', ']', '}']);
 const openers = new Set(['(', '[', '{']);
 const isDigit = (c) => c >= '0' && c <= '9';
 const isAlpha = (c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+const isLowerTokenChar = (c) => (c >= 'a' && c <= 'z') || isDigit(c) || c === '-';
 const abbreviations = new Set(['mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', 'st', 'vs']);
 
 export function summarize(text, count = 1) {
@@ -78,6 +79,8 @@ export function summarize(text, count = 1) {
         j++;
       }
 
+      const wasInsideParens = parenDepth > 0;
+
       // absorb trailing closers (quotes, parentheses)
       while (j < len && closers.has(text[j])) {
         if (text[j] === ')' || text[j] === ']' || text[j] === '}') {
@@ -92,11 +95,7 @@ export function summarize(text, count = 1) {
       let k = j;
       while (k < len && isSpace(text[k])) k++;
 
-      const next = text[k];
-      const isLower = next && next.toLowerCase() === next && next.toUpperCase() !== next;
-
       let hasDotBefore = false;
-      let hasDotAfter = false;
       if (ch === '.') {
         for (let m = i - 1; m >= start && !isSpace(text[m]); m--) {
           if (
@@ -107,33 +106,28 @@ export function summarize(text, count = 1) {
             break;
           }
         }
-        for (let m = j; m < len && !isSpace(text[m]); m++) {
-          if (
-            text[m] === '.' &&
-            ((m + 1 < len && isAlpha(text[m + 1])) || (m - 1 >= 0 && isAlpha(text[m - 1])))
-          ) {
-            hasDotAfter = true;
-            break;
+      }
+
+      if (ch === '.') {
+        const prev = i > 0 ? text[i - 1] : null;
+        const immediateNext = i + 1 < len ? text[i + 1] : null;
+
+        if (prev && immediateNext && !isSpace(prev) && !isSpace(immediateNext)) {
+          if (isLowerTokenChar(prev) && isLowerTokenChar(immediateNext)) {
+            let left = i - 1;
+            while (left >= start && isLowerTokenChar(text[left])) left--;
+
+            let right = i + 1;
+            while (right < len && isLowerTokenChar(text[right])) right++;
+
+            if (i - 1 - left > 0 && right - (i + 1) > 0) {
+              continue;
+            }
           }
         }
       }
 
-      let shouldSplit = false;
-      if (parenDepth === 0 && !quote) {
-        if (k === len) {
-          shouldSplit = true;
-        } else if (ch === '.') {
-          if (hasDotAfter) {
-            shouldSplit = false;
-          } else if (isLower && (hasDotBefore || hasDotAfter)) {
-            shouldSplit = false;
-          } else {
-            shouldSplit = true;
-          }
-        } else {
-          shouldSplit = true;
-        }
-      }
+      const shouldSplit = parenDepth === 0 && !quote && !wasInsideParens && !hasDotBefore;
 
       if (shouldSplit) {
         sentences.push(text.slice(start, j));
