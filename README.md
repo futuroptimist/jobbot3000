@@ -174,6 +174,8 @@ console.log(md);
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal
 punctuation like `?!`, including when followed by closing quotes or parentheses. Terminators apply
 only when followed by whitespace or the end of text, so decimals like `1.99` remain intact.
+Multi-level domains and email addresses stay intact even when they mix upper and lowercase
+segments or are followed by a path (for example, `Careers.Acme.Co/jobs`).
 It ignores bare newlines.  
 It scans text character-by-character to avoid large intermediate arrays and regex performance
 pitfalls, falling back to the trimmed input when no sentence punctuation is found.

@@ -19,7 +19,13 @@ const closers = new Set(['"', "'", ')', ']', '}']);
 const openers = new Set(['(', '[', '{']);
 const isDigit = (c) => c >= '0' && c <= '9';
 const isAlpha = (c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+const isDomainTokenChar = (c) =>
+  (c >= 'a' && c <= 'z') ||
+  (c >= 'A' && c <= 'Z') ||
+  isDigit(c) ||
+  c === '-';
 const abbreviations = new Set(['mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', 'st', 'vs']);
+const isDomainSpanChar = (c) => c === '.' || c === '@' || isDomainTokenChar(c);
 
 export function summarize(text, count = 1) {
   if (!text || count <= 0) return '';
@@ -114,6 +120,43 @@ export function summarize(text, count = 1) {
           ) {
             hasDotAfter = true;
             break;
+          }
+        }
+      }
+
+      if (ch === '.') {
+        const prev = i > 0 ? text[i - 1] : null;
+        const immediateNext = i + 1 < len ? text[i + 1] : null;
+
+        if (
+          prev &&
+          immediateNext &&
+          !isSpace(prev) &&
+          !isSpace(immediateNext) &&
+          isDomainTokenChar(prev) &&
+          isDomainTokenChar(immediateNext)
+        ) {
+          let tokenStart = i - 1;
+          while (tokenStart >= start && isDomainSpanChar(text[tokenStart])) {
+            tokenStart--;
+          }
+          tokenStart++;
+
+          let tokenEnd = i + 1;
+          while (tokenEnd < len && isDomainSpanChar(text[tokenEnd])) {
+            tokenEnd++;
+          }
+
+          const token = text.slice(tokenStart, tokenEnd);
+          if (token.includes('.')) {
+            const parts = token.split('.');
+            const hasValidParts =
+              parts.length >= 2 &&
+              parts.every((part) => part.length > 0 && [...part].every(isDomainTokenChar));
+
+            if (hasValidParts) {
+              continue;
+            }
           }
         }
       }
