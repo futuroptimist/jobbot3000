@@ -6,5 +6,6 @@ export default {
   requirements: 'Requirements',
   fitScore: 'Fit Score',
   matched: 'Matched',
-  missing: 'Missing'
+  missing: 'Missing',
+  greeting: 'Hello, {name}!'
 };
