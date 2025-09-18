@@ -184,6 +184,10 @@ is lost. Parenthetical abbreviations like `(M.Sc.)` remain attached to their sur
 Common honorifics such as `Mr.` and `Dr.` are recognized so summaries aren't cut mid-sentence.
 
 Example: `summarize('"Hi!" Bye.')` returns `"Hi!"`.
+It waits for whitespace (or the end of the text) after terminal punctuation, so
+`summarize('Hi!Next steps.')` returns `"Hi!Next steps."`.
+Unit tests exercise whitespace gating alongside abbreviations, decimals, and
+nested punctuation to keep these edge cases locked in.
 
 Job titles can be parsed from lines starting with `Title`, `Job Title`, `Position`, or `Role`.
 Headers can use colons or dash separators (for example, `Role - Staff Engineer`), and the same
