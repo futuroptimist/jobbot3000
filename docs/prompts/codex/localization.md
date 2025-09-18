@@ -25,16 +25,17 @@ CONTEXT:
 - Confirm referenced files exist; update [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 
 REQUEST:
-1. Add or update locale files and translation helpers.
-2. Ensure default locale behavior remains unchanged.
-3. Add or update tests covering new localization logic.
-4. Run the commands above and fix any failures.
+1. Work within [`src/i18n.js`](../../../src/i18n.js) and [`src/locales/`](../../../src/locales/) to add languages, extend dictionaries, or adjust helpers while keeping `DEFAULT_LOCALE` as the canonical fallback.
+2. Ensure existing behavior for English (`en`) remains the default and that missing keys gracefully fall back, matching the logic in [`src/i18n.js`](../../../src/i18n.js).
+3. Update or create tests (for example in [`test/exporters.test.js`](../../../test/exporters.test.js) or new coverage beside the affected module) so translations and locale selection are exercised.
+4. Run the commands listed above and resolve any failures.
 
 OUTPUT:
 A pull request summarizing the localization changes with passing checks.
 ```
 
-## Upgrade Instructions
+## Upgrade Prompt
+Type: evergreen
 
 ```upgrade
 SYSTEM:
