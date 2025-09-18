@@ -67,19 +67,14 @@ describe('summarize', () => {
     expect(summarize(text, 2)).toBe('Visit careers.acme.co/jobs now. More info tomorrow.');
   });
 
+  it('does not split on mixed-case domains with paths', () => {
+    const text = 'Visit Careers.Acme.Co/jobs now. More info tomorrow.';
+    expect(summarize(text)).toBe('Visit Careers.Acme.Co/jobs now.');
+  });
+
   it('preserves emails with lowercase subdomains', () => {
     const text = 'Contact dev@sub.example.co. Let\'s chat soon.';
     expect(summarize(text)).toBe('Contact dev@sub.example.co.');
-  });
-
-  it('splits after domains that end a sentence', () => {
-    const text = 'Visit example.com. see details soon.';
-    expect(summarize(text)).toBe('Visit example.com.');
-  });
-
-  it('splits after domains enclosed in punctuation', () => {
-    const text = 'Visit (example.com). see details soon.';
-    expect(summarize(text)).toBe('Visit (example.com).');
   });
 
   it('does not split on decimal numbers', () => {

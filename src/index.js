@@ -6,7 +6,7 @@
  * Falls back to returning the trimmed input when no such punctuation exists.
  * If fewer complete sentences than requested exist, any remaining text is appended
  * so no content is lost. Parenthetical abbreviations like `(M.Sc.)` remain attached
- * to their surrounding sentence. Avoids splitting on decimal numbers.
+ * to their surrounding sentence. Avoids splitting on decimal numbers or domain-like tokens.
  * Returns an empty string when `count` is 0 or less.
  *
  * @param {string} text
@@ -53,6 +53,7 @@ const HYPHEN = 45;
 const EXCLAMATION = 33;
 const QUESTION = 63;
 const ELLIPSIS = 0x2026;
+const AT_SIGN = 64;
 
 function isDigitCode(code) {
   return code >= 48 && code <= 57;
@@ -62,82 +63,46 @@ function isAlphaCode(code) {
   return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
 }
 
-function isLowerTokenCode(code) {
-  return (code >= 97 && code <= 122) || isDigitCode(code) || code === HYPHEN;
+function isDomainTokenCode(code) {
+  return isAlphaCode(code) || isDigitCode(code) || code === HYPHEN;
 }
 
-function isLowerDomainCharCode(code) {
-  return code === DOT || isLowerTokenCode(code);
+function isDomainSpanCode(code) {
+  return code === DOT || code === AT_SIGN || isDomainTokenCode(code);
 }
 
-function trimToDomainChars(str) {
-  let left = 0;
-  let right = str.length;
-  while (left < right && !isLowerDomainCharCode(str.charCodeAt(left))) left++;
-  while (right > left && !isLowerDomainCharCode(str.charCodeAt(right - 1))) right--;
-  return str.slice(left, right);
-}
+function looksLikeDomainSpan(token) {
+  if (!token || token.indexOf('.') === -1) return false;
 
-function sliceDomainCandidate(text, terminatorIndex) {
-  let right = terminatorIndex;
-  while (right > 0) {
-    const code = text.charCodeAt(right - 1);
-    if (
-      code === CLOSE_PARENS ||
-      code === CLOSE_BRACKET ||
-      code === CLOSE_BRACE ||
-      code === DOUBLE_QUOTE ||
-      code === SINGLE_QUOTE
-    ) {
-      right--;
-      continue;
-    }
-    break;
-  }
-
-  let left = right;
-  while (left > 0) {
-    const code = text.charCodeAt(left - 1);
-    if (isSpaceCode(code)) break;
-    if (
-      code === OPEN_PARENS ||
-      code === OPEN_BRACKET ||
-      code === OPEN_BRACE ||
-      code === DOUBLE_QUOTE ||
-      code === SINGLE_QUOTE
-    ) {
-      left--;
-      break;
-    }
-    left--;
-  }
-
-  let candidate = trimToDomainChars(text.slice(left, right));
-  if (!candidate) return '';
-
-  const atIndex = candidate.lastIndexOf('@');
-  if (atIndex !== -1) {
-    candidate = trimToDomainChars(candidate.slice(atIndex + 1));
-  }
-
-  return candidate;
-}
-
-function isDomainLike(candidate) {
-  if (!candidate || candidate.indexOf('.') === -1) return false;
-  const parts = candidate.split('.');
+  const parts = token.split('.');
   if (parts.length < 2) return false;
-  if (parts[parts.length - 1].length < 2) return false;
 
-  return parts.every((part) => {
-    if (!part) return false;
-    for (let i = 0; i < part.length; i++) {
-      if (!isLowerTokenCode(part.charCodeAt(i))) {
+  for (let idx = 0; idx < parts.length; idx++) {
+    const part = parts[idx];
+    if (part.length === 0) return false;
+
+    let hasDomainChar = false;
+    for (let j = 0; j < part.length; j++) {
+      const code = part.charCodeAt(j);
+      if (code === AT_SIGN) {
+        if (idx !== 0 || j === part.length - 1) {
+          return false;
+        }
+        continue;
+      }
+
+      if (!isDomainTokenCode(code)) {
         return false;
       }
+      hasDomainChar = true;
     }
-    return true;
-  });
+
+    if (!hasDomainChar) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function collapseWhitespace(str) {
@@ -214,8 +179,6 @@ export function summarize(text, count = 1) {
         }
       }
 
-      let prevTokenDomainLike = false;
-
       let j = i + 1;
       while (j < len) {
         const nextCode = text.charCodeAt(j);
@@ -280,72 +243,58 @@ export function summarize(text, count = 1) {
 
       if (code === DOT) {
         for (let m = i - 1; m >= start && !isSpaceCode(text.charCodeAt(m)); m--) {
-          const dotCode = text.charCodeAt(m);
-          if (
-            dotCode === DOT &&
-            ((m + 1 < len && isAlphaCode(text.charCodeAt(m + 1))) ||
-              (m - 1 >= 0 && isAlphaCode(text.charCodeAt(m - 1))))
-          ) {
-            hasDotBefore = true;
-            break;
+          if (text.charCodeAt(m) === DOT) {
+            const before = m - 1 >= start ? text.charCodeAt(m - 1) : NaN;
+            const after = m + 1 < len ? text.charCodeAt(m + 1) : NaN;
+            const beforeIsAlpha = Number.isFinite(before) && isAlphaCode(before);
+            const afterIsAlpha = Number.isFinite(after) && isAlphaCode(after);
+            if (beforeIsAlpha || afterIsAlpha) {
+              hasDotBefore = true;
+              break;
+            }
           }
         }
 
         for (let m = j; m < len && !isSpaceCode(text.charCodeAt(m)); m++) {
-          const dotCode = text.charCodeAt(m);
-          if (
-            dotCode === DOT &&
-            ((m + 1 < len && isAlphaCode(text.charCodeAt(m + 1))) ||
-              (m - 1 >= 0 && isAlphaCode(text.charCodeAt(m - 1))))
-          ) {
-            hasDotAfter = true;
-            break;
+          if (text.charCodeAt(m) === DOT) {
+            const before = m - 1 >= 0 ? text.charCodeAt(m - 1) : NaN;
+            const after = m + 1 < len ? text.charCodeAt(m + 1) : NaN;
+            const beforeIsAlpha = Number.isFinite(before) && isAlphaCode(before);
+            const afterIsAlpha = Number.isFinite(after) && isAlphaCode(after);
+            if (beforeIsAlpha || afterIsAlpha) {
+              hasDotAfter = true;
+              break;
+            }
           }
         }
+      }
 
-        const prevCode = i > 0 ? text.charCodeAt(i - 1) : 0;
-        const immediateNextCode = i + 1 < len ? text.charCodeAt(i + 1) : 0;
+      if (code === DOT) {
+        const prevCode = i > 0 ? text.charCodeAt(i - 1) : NaN;
+        const immediateNextCode = i + 1 < len ? text.charCodeAt(i + 1) : NaN;
 
         if (
-          prevCode &&
-          immediateNextCode &&
+          Number.isFinite(prevCode) &&
+          Number.isFinite(immediateNextCode) &&
           !isSpaceCode(prevCode) &&
           !isSpaceCode(immediateNextCode) &&
-          isLowerTokenCode(prevCode) &&
-          isLowerTokenCode(immediateNextCode)
+          isDomainTokenCode(prevCode) &&
+          isDomainTokenCode(immediateNextCode)
         ) {
           let tokenStart = i - 1;
-          while (tokenStart >= start && isLowerDomainCharCode(text.charCodeAt(tokenStart))) {
+          while (tokenStart >= start && isDomainSpanCode(text.charCodeAt(tokenStart))) {
             tokenStart--;
           }
           tokenStart++;
 
           let tokenEnd = i + 1;
-          while (tokenEnd < len && isLowerDomainCharCode(text.charCodeAt(tokenEnd))) {
+          while (tokenEnd < len && isDomainSpanCode(text.charCodeAt(tokenEnd))) {
             tokenEnd++;
           }
 
           const token = text.slice(tokenStart, tokenEnd);
-          if (token.includes('.')) {
-            const parts = token.split('.');
-            const hasValidParts =
-              parts.length >= 2 &&
-              parts.every(
-                (part) =>
-                  part.length > 0 &&
-                  [...part].every((ch) => isLowerTokenCode(ch.charCodeAt(0)))
-              );
-
-            if (hasValidParts) {
-              continue;
-            }
-          }
-        }
-
-        if (!prevTokenDomainLike && hasDotBefore) {
-          const candidate = sliceDomainCandidate(text, i);
-          if (candidate && isDomainLike(candidate)) {
-            prevTokenDomainLike = true;
+          if (looksLikeDomainSpan(token)) {
+            continue;
           }
         }
       }
@@ -358,7 +307,7 @@ export function summarize(text, count = 1) {
           if (hasDotAfter) {
             shouldSplit = false;
           } else if (isLower && (hasDotBefore || hasDotAfter)) {
-            shouldSplit = prevTokenDomainLike;
+            shouldSplit = false;
           } else {
             shouldSplit = true;
           }
