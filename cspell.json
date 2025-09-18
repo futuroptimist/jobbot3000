@@ -1,33 +1,17 @@
 {
   "version": "0.2",
   "language": "en",
-  "words": [
-    "jobbot",
-    "Jobbot",
-    "futuroptimist",
-    "Ashby",
-    "pgvector",
-    "Ingestors",
-    "Ollama",
-    "FAISS",
-    "ESCO",
-    "moderncv",
-    "Typst",
-    "Pandoc",
-    "Qwen",
-    "shadcn",
-    "Coqui",
-    "changeme",
-    "vllm",
-    "polyrepo",
-    "Pydantic",
-    "CAPD",
-    "SHRM",
-    "YOURNAME",
-    "sandboxing",
-    "Upgrader",
-    "alnum",
-    "consolefonts",
-    "Sankey"
-  ]
+  "dictionaryDefinitions": [
+    {
+      "name": "project-en",
+      "path": "./cspell/project-en.txt",
+      "description": "Project-specific English terminology"
+    },
+    {
+      "name": "project-es",
+      "path": "./cspell/project-es.txt",
+      "description": "Project-specific Spanish localization terms"
+    }
+  ],
+  "dictionaries": ["project-en", "project-es"]
 }

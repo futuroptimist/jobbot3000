@@ -111,7 +111,8 @@ run();
 `loadResume` supports `.pdf`, `.md`, `.markdown`, and `.mdx` files; other
 extensions are read as plain text.
 
-Format parsed results as Markdown:
+Format parsed results as Markdown. The exporters escape Markdown control characters so job
+content cannot inject arbitrary links or formatting when rendered downstream:
 
 ```js
 import { toMarkdownSummary } from './src/exporters.js';

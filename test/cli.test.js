@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { execFileSync } from 'child_process';
-import fs from 'fs';
-import path from 'path';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 import { summarize } from '../src/index.js';
 
 function runCli(args, input) {
