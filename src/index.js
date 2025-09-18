@@ -6,7 +6,7 @@
  * Falls back to returning the trimmed input when no such punctuation exists.
  * If fewer complete sentences than requested exist, any remaining text is appended
  * so no content is lost. Parenthetical abbreviations like `(M.Sc.)` remain attached
- * to their surrounding sentence. Avoids splitting on decimal numbers.
+ * to their surrounding sentence. Avoids splitting on decimal numbers or domain-like tokens.
  * Returns an empty string when `count` is 0 or less.
  *
  * @param {string} text
@@ -49,10 +49,10 @@ const CLOSE_PARENS = 41;
 const CLOSE_BRACKET = 93;
 const CLOSE_BRACE = 125;
 const DOT = 46;
+const HYPHEN = 45;
 const EXCLAMATION = 33;
 const QUESTION = 63;
 const ELLIPSIS = 0x2026;
-const HYPHEN = 45;
 const AT_SIGN = 64;
 
 function isDigitCode(code) {
@@ -240,6 +240,7 @@ export function summarize(text, count = 1) {
 
       let hasDotBefore = false;
       let hasDotAfter = false;
+
       if (code === DOT) {
         for (let m = i - 1; m >= start && !isSpaceCode(text.charCodeAt(m)); m--) {
           if (text.charCodeAt(m) === DOT) {
