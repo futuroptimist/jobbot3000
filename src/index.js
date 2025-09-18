@@ -13,58 +13,122 @@
  * @param {number} count Number of sentences to return; values <= 0 yield ''.
  * @returns {string}
  */
-const spaceRe = /\s/;
-const isSpace = (c) => spaceRe.test(c);
-const closers = new Set(['"', "'", ')', ']', '}']);
-const openers = new Set(['(', '[', '{']);
-const isDigit = (c) => c >= '0' && c <= '9';
-const isAlpha = (c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+// Fast ASCII whitespace lookup table for summarize(). Matches JS /\s/ for ASCII range.
+const ASCII_WHITESPACE = new Uint8Array(33);
+ASCII_WHITESPACE[9] = 1; // \t
+ASCII_WHITESPACE[10] = 1; // \n
+ASCII_WHITESPACE[11] = 1; // \v
+ASCII_WHITESPACE[12] = 1; // \f
+ASCII_WHITESPACE[13] = 1; // \r
+ASCII_WHITESPACE[32] = 1; // space
+
+function isSpaceCode(code) {
+  if (!Number.isFinite(code)) return false;
+  if (code <= 32) return ASCII_WHITESPACE[code] === 1;
+  if (code >= 0x2000 && code <= 0x200a) return true;
+  switch (code) {
+    case 0x00a0:
+    case 0x1680:
+    case 0x2028:
+    case 0x2029:
+    case 0x202f:
+    case 0x205f:
+    case 0x3000:
+    case 0xfeff:
+      return true;
+    default:
+      return false;
+  }
+}
+const DOUBLE_QUOTE = 34;
+const SINGLE_QUOTE = 39;
+const OPEN_PARENS = 40;
+const OPEN_BRACKET = 91;
+const OPEN_BRACE = 123;
+const CLOSE_PARENS = 41;
+const CLOSE_BRACKET = 93;
+const CLOSE_BRACE = 125;
+const DOT = 46;
+const EXCLAMATION = 33;
+const QUESTION = 63;
+const ELLIPSIS = 0x2026;
+
+function isDigitCode(code) {
+  return code >= 48 && code <= 57;
+}
+
+function isAlphaCode(code) {
+  return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+}
+
+function collapseWhitespace(str) {
+  if (!str) return '';
+  const trimmed = str.trim();
+  if (!trimmed) return '';
+
+  if (
+    trimmed.indexOf('  ') === -1 &&
+    trimmed.indexOf('\n') === -1 &&
+    trimmed.indexOf('\r') === -1 &&
+    trimmed.indexOf('\t') === -1 &&
+    trimmed.indexOf('\f') === -1 &&
+    trimmed.indexOf('\v') === -1 &&
+    trimmed.indexOf('\u00a0') === -1 &&
+    trimmed.indexOf('\u2028') === -1 &&
+    trimmed.indexOf('\u2029') === -1
+  ) {
+    return trimmed;
+  }
+
+  return trimmed.split(/\s+/).join(' ');
+}
+
 const abbreviations = new Set(['mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', 'st', 'vs']);
-const isLowerTokenChar = (c) => (c >= 'a' && c <= 'z') || isDigit(c) || c === '-';
-const isLowerDomainChar = (c) => c === '.' || isLowerTokenChar(c);
-const lowercaseDomainPattern = /^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/;
 
 export function summarize(text, count = 1) {
   if (!text || count <= 0) return '';
 
-  /**
-   * Scan character-by-character to avoid costly regular expressions.
-   * Prevents regex-based DoS and stops once the requested number
-   * of sentences is collected. Hoisting whitespace/digit helpers
-   * and punctuation sets avoids per-call allocations.
-   * Handles consecutive punctuation (`?!`), skips trailing closing
-   * quotes/parentheses, treats all Unicode whitespace as delimiters,
-   * and avoids splitting on decimal numbers.
-   */
+  if (
+    text.indexOf('.') === -1 &&
+    text.indexOf('!') === -1 &&
+    text.indexOf('?') === -1 &&
+    text.indexOf('…') === -1
+  ) {
+    return collapseWhitespace(text);
+  }
+
   const sentences = [];
   let start = 0;
   const len = text.length;
   let parenDepth = 0;
-  let quote = null;
+  let quoteCode = 0;
 
   for (let i = 0; i < len && sentences.length < count; i++) {
-    const ch = text[i];
+    const code = text.charCodeAt(i);
 
-    // Track nesting
-    if (openers.has(ch)) parenDepth++;
-    else if (closers.has(ch)) {
-      if (ch === ')' || ch === ']' || ch === '}') {
-        if (parenDepth > 0) parenDepth--;
-      }
-    } else if (ch === '"' || ch === "'") {
-      if (quote === ch) quote = null;
-      else if (!quote) quote = ch;
+    if (code === OPEN_PARENS || code === OPEN_BRACKET || code === OPEN_BRACE) {
+      parenDepth++;
+    } else if (code === CLOSE_PARENS || code === CLOSE_BRACKET || code === CLOSE_BRACE) {
+      if (parenDepth > 0) parenDepth--;
+    } else if (code === DOUBLE_QUOTE || code === SINGLE_QUOTE) {
+      if (quoteCode === code) quoteCode = 0;
+      else if (quoteCode === 0) quoteCode = code;
     }
 
-    if (ch === '.' || ch === '!' || ch === '?' || ch === '…') {
-      // Skip decimals like 3.14
-      if (ch === '.' && i > 0 && isDigit(text[i - 1]) && i + 1 < len && isDigit(text[i + 1])) {
+    if (code === DOT || code === EXCLAMATION || code === QUESTION || code === ELLIPSIS) {
+      if (
+        code === DOT &&
+        i > 0 &&
+        isDigitCode(text.charCodeAt(i - 1)) &&
+        i + 1 < len &&
+        isDigitCode(text.charCodeAt(i + 1))
+      ) {
         continue;
       }
 
-      if (ch === '.') {
+      if (code === DOT) {
         let w = i - 1;
-        while (w >= 0 && isAlpha(text[w])) w--;
+        while (w >= 0 && isAlphaCode(text.charCodeAt(w))) w--;
         const word = text.slice(w + 1, i).toLowerCase();
         if (abbreviations.has(word)) {
           continue;
@@ -72,107 +136,69 @@ export function summarize(text, count = 1) {
       }
 
       let j = i + 1;
-
-      // absorb consecutive punctuation like ?!
-      while (
-        j < len &&
-        (text[j] === '.' || text[j] === '!' || text[j] === '?' || text[j] === '…')
-      ) {
-        j++;
-      }
-
-      // absorb trailing closers (quotes, parentheses)
-      while (j < len && closers.has(text[j])) {
-        if (text[j] === ')' || text[j] === ']' || text[j] === '}') {
-          if (parenDepth > 0) parenDepth--;
-        } else if (quote && text[j] === quote) {
-          quote = null;
-        }
-        j++;
-      }
-
-      // move forward to next non-space
-      let k = j;
-      while (k < len && isSpace(text[k])) k++;
-
-      const next = text[k];
-      const isLower = next && next.toLowerCase() === next && next.toUpperCase() !== next;
-
-      let hasDotBefore = false;
-      let hasDotAfter = false;
-      if (ch === '.') {
-        for (let m = i - 1; m >= start && !isSpace(text[m]); m--) {
-          if (
-            text[m] === '.' &&
-            ((m + 1 < len && isAlpha(text[m + 1])) || (m - 1 >= 0 && isAlpha(text[m - 1])))
-          ) {
-            hasDotBefore = true;
-            break;
-          }
-        }
-        for (let m = j; m < len && !isSpace(text[m]); m++) {
-          if (
-            text[m] === '.' &&
-            ((m + 1 < len && isAlpha(text[m + 1])) || (m - 1 >= 0 && isAlpha(text[m - 1])))
-          ) {
-            hasDotAfter = true;
-            break;
-          }
-        }
-      }
-
-      if (ch === '.') {
-        const prev = i > 0 ? text[i - 1] : null;
-        const immediateNext = i + 1 < len ? text[i + 1] : null;
-
+      while (j < len) {
+        const nextCode = text.charCodeAt(j);
         if (
-          prev &&
-          immediateNext &&
-          !isSpace(prev) &&
-          !isSpace(immediateNext) &&
-          isLowerTokenChar(prev) &&
-          isLowerTokenChar(immediateNext)
+          nextCode === DOT ||
+          nextCode === EXCLAMATION ||
+          nextCode === QUESTION ||
+          nextCode === ELLIPSIS
         ) {
-          let tokenStart = i - 1;
-          while (tokenStart >= start && isLowerDomainChar(text[tokenStart])) {
-            tokenStart--;
-          }
-          tokenStart++;
-
-          let tokenEnd = i + 1;
-          while (tokenEnd < len && isLowerDomainChar(text[tokenEnd])) {
-            tokenEnd++;
-          }
-
-          const token = text.slice(tokenStart, tokenEnd);
-          if (lowercaseDomainPattern.test(token)) {
-            continue;
-          }
+          j++;
+          continue;
         }
+        break;
       }
 
-      let shouldSplit = false;
-      if (parenDepth === 0 && !quote) {
-        if (k === len) {
-          shouldSplit = true;
-        } else if (ch === '.') {
-          if (hasDotAfter) {
-            shouldSplit = false;
-          } else if (isLower && (hasDotBefore || hasDotAfter)) {
-            shouldSplit = false;
-          } else {
-            shouldSplit = true;
+      while (j < len) {
+        const closeCode = text.charCodeAt(j);
+        if (
+          closeCode === CLOSE_PARENS ||
+          closeCode === CLOSE_BRACKET ||
+          closeCode === CLOSE_BRACE ||
+          closeCode === DOUBLE_QUOTE ||
+          closeCode === SINGLE_QUOTE
+        ) {
+          if (
+            closeCode === CLOSE_PARENS ||
+            closeCode === CLOSE_BRACKET ||
+            closeCode === CLOSE_BRACE
+          ) {
+            if (parenDepth > 0) parenDepth--;
+          } else if (quoteCode && closeCode === quoteCode) {
+            quoteCode = 0;
           }
+          j++;
+          continue;
+        }
+        break;
+      }
+
+      let k = j;
+      while (k < len && isSpaceCode(text.charCodeAt(k))) k++;
+
+      let isLower = false;
+      if (k < len) {
+        const nextCode = text.charCodeAt(k);
+        if (nextCode >= 0x61 && nextCode <= 0x7a) {
+          isLower = true;
+        } else if (nextCode >= 0x41 && nextCode <= 0x5a) {
+          isLower = false;
+        } else if (nextCode <= 0x7f) {
+          isLower = false;
         } else {
-          shouldSplit = true;
+          const nextChar = text[k];
+          isLower =
+            nextChar.toLowerCase() === nextChar &&
+            nextChar.toUpperCase() !== nextChar;
         }
       }
 
-      if (shouldSplit) {
+      if (parenDepth === 0 && quoteCode === 0 && (k === len || !isLower)) {
         sentences.push(text.slice(start, j));
         i = k;
         start = k;
-        i--; // adjust for loop increment
+        i--;
       }
     }
   }
@@ -187,7 +213,7 @@ export function summarize(text, count = 1) {
     summary = sentences.join(' ');
   }
 
-  return summary.replace(/\s+/g, ' ').trim();
+  return collapseWhitespace(summary);
 }
 
 export { recordApplication, getLifecycleCounts, STATUSES } from './lifecycle.js';
