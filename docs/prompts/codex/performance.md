@@ -4,6 +4,8 @@ slug: 'codex-performance'
 ---
 
 # Codex Performance Prompt
+Use this prompt whenever you need to improve runtime performance in jobbot3000 without
+changing public behavior.
 
 ```prompt
 SYSTEM:
@@ -17,37 +19,48 @@ USAGE NOTES:
 - Copy this block whenever optimizing performance in jobbot3000.
 
 CONTEXT:
-- Follow [README.md](../../../README.md); see the [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
+- Follow [README.md](../../../README.md); see the
+  [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
-- Consult [DESIGN.md](../../../DESIGN.md) for architecture and performance guidelines.
+- Consult [DESIGN.md](../../../DESIGN.md) for architecture and performance guardrails.
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
-- Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py` (see [`scripts/scan-secrets.py`](../../../scripts/scan-secrets.py)).
-- Link-check this doc with `npx markdown-link-check docs/prompts/codex/performance.md`.
-- Confirm referenced files exist; update [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
-- Measure performance with Node's `perf_hooks` API:
+- Scan staged changes for secrets with
+  `git diff --cached | ./scripts/scan-secrets.py`
+  (see [`scripts/scan-secrets.py`](../../../scripts/scan-secrets.py)).
+- Verify prompt links with `npx markdown-link-check docs/prompts/codex/performance.md`.
+- Confirm referenced files exist; update [prompt-docs-summary.md](../../prompt-docs-summary.md)
+  when adding prompt docs.
+- Use repeatable measurements. Example TypeScript snippet (valid with `ts-node`):
 
   ```ts
   import { performance } from 'node:perf_hooks';
 
-  const start = performance.now();
-  for (let i = 0; i < 1e6; i++) {
-    // code under test
-  }
-  console.log(`elapsed: ${performance.now() - start}ms`);
+  const measure = <T>(label: string, fn: () => T) => {
+    const start = performance.now();
+    const result = fn();
+    console.log(`${label}: ${(performance.now() - start).toFixed(2)}ms`);
+    return result;
+  };
+
+  measure('baseline', () => {
+    for (let i = 0; i < 1_000_000; i += 1) {
+      // code under test
+    }
+  });
   ```
 
-  Run with `node --input-type=module` for a quick baseline before formal benchmarks.
-
 REQUEST:
-1. Write a failing benchmark or test showing the slowdown.
-2. Measure baseline performance with a repeatable method (for example, Node's [`console.time`](https://nodejs.org/api/console.html#consoletime)).
-3. Optimize the code while keeping functionality the same.
-4. Document before/after metrics in the PR or accompanying docs.
+1. Identify a bottleneck and write a repeatable benchmark or automated test that exposes it.
+2. Capture baseline metrics (for example, with Node's
+   [`console.time`](https://nodejs.org/api/console.html#consoletime) or
+   `performance.now`).
+3. Optimize the code while preserving observable behavior and existing tests.
+4. Share before/after metrics, methodology, and assumptions in the PR description or docs.
 5. Run the commands above and fix any failures.
 
 OUTPUT:
-A pull request URL summarizing the performance improvement.
+A pull request summarizing the performance improvement with verified metrics and passing CI.
 ```
 
 ## Upgrade Instructions
