@@ -85,6 +85,33 @@ function collapseWhitespace(str) {
 
 const abbreviations = new Set(['mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', 'st', 'vs']);
 
+function isLowercaseMultiDotToken(token) {
+  if (!token) return false;
+  let sawDot = false;
+  let segmentLength = 0;
+
+  for (let idx = 0; idx < token.length; idx++) {
+    const code = token.charCodeAt(idx);
+
+    if (code === DOT) {
+      if (segmentLength === 0) {
+        return false;
+      }
+      sawDot = true;
+      segmentLength = 0;
+      continue;
+    }
+
+    if (code < 0x61 || code > 0x7a) {
+      return false;
+    }
+
+    segmentLength++;
+  }
+
+  return sawDot && segmentLength > 0;
+}
+
 export function summarize(text, count = 1) {
   if (!text || count <= 0) return '';
 
@@ -128,9 +155,17 @@ export function summarize(text, count = 1) {
 
       if (code === DOT) {
         let w = i - 1;
-        while (w >= 0 && isAlphaCode(text.charCodeAt(w))) w--;
-        const word = text.slice(w + 1, i).toLowerCase();
-        if (abbreviations.has(word)) {
+        while (w >= 0) {
+          const prevCode = text.charCodeAt(w);
+          if (!isAlphaCode(prevCode) && prevCode !== DOT) break;
+          w--;
+        }
+        const token = text.slice(w + 1, i);
+        const normalized = token.replace(/\./g, '').toLowerCase();
+        if (normalized && abbreviations.has(normalized)) {
+          continue;
+        }
+        if (isLowercaseMultiDotToken(token)) {
           continue;
         }
       }

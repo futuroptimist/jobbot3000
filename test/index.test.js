@@ -67,6 +67,12 @@ describe('summarize', () => {
     expect(summarize(text, 2)).toBe('Visit careers.acme.co/jobs now. More info tomorrow.');
   });
 
+  it('treats lowercase multi-dot tokens as part of the sentence', () => {
+    const text = 'Use tools e.g. Another option. Next sentence.';
+    expect(summarize(text)).toBe('Use tools e.g. Another option.');
+    expect(summarize(text, 2)).toBe('Use tools e.g. Another option. Next sentence.');
+  });
+
   it('preserves emails with lowercase subdomains', () => {
     const text = 'Contact dev@sub.example.co. Let\'s chat soon.';
     expect(summarize(text)).toBe('Contact dev@sub.example.co.');
