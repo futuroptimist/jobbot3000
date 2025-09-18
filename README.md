@@ -51,6 +51,8 @@ Pass `0` to `summarize` to return an empty string.
 
 Requesting more sentences than exist returns the entire text.
 
+Invalid or non-numeric `count` values default to a single sentence.
+
 The example below demonstrates this behavior:
 
 ```js

@@ -33,6 +33,12 @@ describe('summarize', () => {
     expect(summarize('First.', -1)).toBe('');
   });
 
+  it('treats non-numeric count as one sentence', () => {
+    const text = 'First. Second.';
+    expect(summarize(text, 'nope')).toBe('First.');
+    expect(summarize(text, Number.NaN)).toBe('First.');
+  });
+
   it('returns empty string for empty input', () => {
     expect(summarize('', 2)).toBe('');
   });
