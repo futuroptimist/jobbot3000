@@ -24,7 +24,11 @@ function formatImageAlt(elem, walk, builder) {
   if (hidden === 'true' || hidden === '1') return;
   if (decorativeRole === 'presentation' || decorativeRole === 'none') return;
 
-  const label = alt || ariaLabel;
+  const normalizedAlt = typeof alt === 'string' ? alt.trim() : '';
+  const normalizedAriaLabel =
+    typeof ariaLabel === 'string' ? ariaLabel.trim() : '';
+
+  const label = normalizedAlt || normalizedAriaLabel;
   if (label) builder.addInline(label, { noWordTransform: true });
 }
 
