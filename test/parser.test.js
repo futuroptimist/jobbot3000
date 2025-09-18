@@ -102,6 +102,18 @@ Responsibilities:
     expect(parsed.requirements).toEqual(['Build features', 'Fix bugs']);
   });
 
+  it('parses requirements after a Skills header', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Skills:
+- JavaScript
+- Testing
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual(['JavaScript', 'Testing']);
+  });
+
   it('parses requirements after a "What you’ll need" header', () => {
     const text = `
 Title: Developer

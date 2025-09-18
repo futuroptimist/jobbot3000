@@ -191,7 +191,7 @@ separators work for `Company` and `Location`. Parser unit tests cover both colon
 this behavior stays locked in.
 
 Job requirements may appear under headers like `Requirements`, `Qualifications`,
-`What you'll need`, or `Responsibilities` (used if no other requirement headers are present).
+`Skills`, `What you'll need`, or `Responsibilities` (used if no other requirement headers are present).
 They may start with `-`, `+`, `*`, `•`, `–` (en dash), `—` (em dash), alphabetical markers like `a.`
 or `(a)`, or numeric markers like `1.` or `(1)`; these markers are stripped when parsing job text,
 even when the first requirement follows
