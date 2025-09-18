@@ -49,6 +49,7 @@ const CLOSE_PARENS = 41;
 const CLOSE_BRACKET = 93;
 const CLOSE_BRACE = 125;
 const DOT = 46;
+const HYPHEN = 45;
 const EXCLAMATION = 33;
 const QUESTION = 63;
 const ELLIPSIS = 0x2026;
@@ -59,6 +60,84 @@ function isDigitCode(code) {
 
 function isAlphaCode(code) {
   return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+}
+
+function isLowerTokenCode(code) {
+  return (code >= 97 && code <= 122) || isDigitCode(code) || code === HYPHEN;
+}
+
+function isLowerDomainCharCode(code) {
+  return code === DOT || isLowerTokenCode(code);
+}
+
+function trimToDomainChars(str) {
+  let left = 0;
+  let right = str.length;
+  while (left < right && !isLowerDomainCharCode(str.charCodeAt(left))) left++;
+  while (right > left && !isLowerDomainCharCode(str.charCodeAt(right - 1))) right--;
+  return str.slice(left, right);
+}
+
+function sliceDomainCandidate(text, terminatorIndex) {
+  let right = terminatorIndex;
+  while (right > 0) {
+    const code = text.charCodeAt(right - 1);
+    if (
+      code === CLOSE_PARENS ||
+      code === CLOSE_BRACKET ||
+      code === CLOSE_BRACE ||
+      code === DOUBLE_QUOTE ||
+      code === SINGLE_QUOTE
+    ) {
+      right--;
+      continue;
+    }
+    break;
+  }
+
+  let left = right;
+  while (left > 0) {
+    const code = text.charCodeAt(left - 1);
+    if (isSpaceCode(code)) break;
+    if (
+      code === OPEN_PARENS ||
+      code === OPEN_BRACKET ||
+      code === OPEN_BRACE ||
+      code === DOUBLE_QUOTE ||
+      code === SINGLE_QUOTE
+    ) {
+      left--;
+      break;
+    }
+    left--;
+  }
+
+  let candidate = trimToDomainChars(text.slice(left, right));
+  if (!candidate) return '';
+
+  const atIndex = candidate.lastIndexOf('@');
+  if (atIndex !== -1) {
+    candidate = trimToDomainChars(candidate.slice(atIndex + 1));
+  }
+
+  return candidate;
+}
+
+function isDomainLike(candidate) {
+  if (!candidate || candidate.indexOf('.') === -1) return false;
+  const parts = candidate.split('.');
+  if (parts.length < 2) return false;
+  if (parts[parts.length - 1].length < 2) return false;
+
+  return parts.every((part) => {
+    if (!part) return false;
+    for (let i = 0; i < part.length; i++) {
+      if (!isLowerTokenCode(part.charCodeAt(i))) {
+        return false;
+      }
+    }
+    return true;
+  });
 }
 
 function collapseWhitespace(str) {
@@ -135,6 +214,8 @@ export function summarize(text, count = 1) {
         }
       }
 
+      let prevTokenDomainLike = false;
+
       let j = i + 1;
       while (j < len) {
         const nextCode = text.charCodeAt(j);
@@ -194,7 +275,99 @@ export function summarize(text, count = 1) {
         }
       }
 
-      if (parenDepth === 0 && quoteCode === 0 && (k === len || !isLower)) {
+      let hasDotBefore = false;
+      let hasDotAfter = false;
+
+      if (code === DOT) {
+        for (let m = i - 1; m >= start && !isSpaceCode(text.charCodeAt(m)); m--) {
+          const dotCode = text.charCodeAt(m);
+          if (
+            dotCode === DOT &&
+            ((m + 1 < len && isAlphaCode(text.charCodeAt(m + 1))) ||
+              (m - 1 >= 0 && isAlphaCode(text.charCodeAt(m - 1))))
+          ) {
+            hasDotBefore = true;
+            break;
+          }
+        }
+
+        for (let m = j; m < len && !isSpaceCode(text.charCodeAt(m)); m++) {
+          const dotCode = text.charCodeAt(m);
+          if (
+            dotCode === DOT &&
+            ((m + 1 < len && isAlphaCode(text.charCodeAt(m + 1))) ||
+              (m - 1 >= 0 && isAlphaCode(text.charCodeAt(m - 1))))
+          ) {
+            hasDotAfter = true;
+            break;
+          }
+        }
+
+        const prevCode = i > 0 ? text.charCodeAt(i - 1) : 0;
+        const immediateNextCode = i + 1 < len ? text.charCodeAt(i + 1) : 0;
+
+        if (
+          prevCode &&
+          immediateNextCode &&
+          !isSpaceCode(prevCode) &&
+          !isSpaceCode(immediateNextCode) &&
+          isLowerTokenCode(prevCode) &&
+          isLowerTokenCode(immediateNextCode)
+        ) {
+          let tokenStart = i - 1;
+          while (tokenStart >= start && isLowerDomainCharCode(text.charCodeAt(tokenStart))) {
+            tokenStart--;
+          }
+          tokenStart++;
+
+          let tokenEnd = i + 1;
+          while (tokenEnd < len && isLowerDomainCharCode(text.charCodeAt(tokenEnd))) {
+            tokenEnd++;
+          }
+
+          const token = text.slice(tokenStart, tokenEnd);
+          if (token.includes('.')) {
+            const parts = token.split('.');
+            const hasValidParts =
+              parts.length >= 2 &&
+              parts.every(
+                (part) =>
+                  part.length > 0 &&
+                  [...part].every((ch) => isLowerTokenCode(ch.charCodeAt(0)))
+              );
+
+            if (hasValidParts) {
+              continue;
+            }
+          }
+        }
+
+        if (!prevTokenDomainLike && hasDotBefore) {
+          const candidate = sliceDomainCandidate(text, i);
+          if (candidate && isDomainLike(candidate)) {
+            prevTokenDomainLike = true;
+          }
+        }
+      }
+
+      let shouldSplit = false;
+      if (parenDepth === 0 && quoteCode === 0) {
+        if (k === len) {
+          shouldSplit = true;
+        } else if (code === DOT) {
+          if (hasDotAfter) {
+            shouldSplit = false;
+          } else if (isLower && (hasDotBefore || hasDotAfter)) {
+            shouldSplit = prevTokenDomainLike;
+          } else {
+            shouldSplit = true;
+          }
+        } else {
+          shouldSplit = true;
+        }
+      }
+
+      if (shouldSplit) {
         sentences.push(text.slice(start, j));
         i = k;
         start = k;
