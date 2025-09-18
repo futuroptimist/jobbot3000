@@ -284,6 +284,99 @@ describe('fetchTextFromUrl', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it('rejects localhost hostnames', async () => {
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('secret'),
+    });
+    await expect(fetchTextFromUrl('http://localhost/admin'))
+      .rejects.toThrow('Refusing to fetch private address: localhost');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects loopback IPv4 addresses', async () => {
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('secret'),
+    });
+    await expect(fetchTextFromUrl('http://127.0.0.1/hidden'))
+      .rejects.toThrow('Refusing to fetch private address: 127.0.0.1');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects canonical IPv6 loopback addresses', async () => {
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('secret'),
+    });
+    await expect(fetchTextFromUrl('http://[::1]/hidden'))
+      .rejects.toThrow('Refusing to fetch private address: ::1');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects alternate IPv6 loopback spellings', async () => {
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('secret'),
+    });
+    await expect(fetchTextFromUrl('http://[0:0:0:0:0:0:0:1]/hidden'))
+      .rejects.toThrow(/Refusing to fetch private address: ::1/);
+    await expect(fetchTextFromUrl('http://[::01]/hidden'))
+      .rejects.toThrow(/Refusing to fetch private address: ::1/);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects broader IPv6 link-local ranges', async () => {
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('secret'),
+    });
+    await expect(fetchTextFromUrl('http://[fe90::1]/hidden'))
+      .rejects.toThrow('Refusing to fetch private address: fe90::1');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects unique local IPv6 ranges', async () => {
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('secret'),
+    });
+    await expect(fetchTextFromUrl('http://[fd12:3456:789a::1]/hidden'))
+      .rejects.toThrow('Refusing to fetch private address: fd12:3456:789a::1');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects IPv4-mapped loopback addresses', async () => {
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('secret'),
+    });
+    await expect(fetchTextFromUrl('http://[::ffff:127.0.0.1]/hidden'))
+      .rejects.toThrow(/Refusing to fetch private address: ::ffff:(127\.0\.0\.1|7f00:1)/);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('allows uppercase HTTP protocol', async () => {
     fetch.mockResolvedValue({
       ok: true,
