@@ -6,5 +6,6 @@ export default {
   requirements: 'Requisitos',
   fitScore: 'Puntaje de Ajuste',
   matched: 'Coincidencias',
-  missing: 'Faltantes'
+  missing: 'Faltantes',
+  greeting: '¡Hola, {name}!'
 };

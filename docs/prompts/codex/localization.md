@@ -4,14 +4,17 @@ slug: 'codex-localization'
 ---
 
 # Codex Localization Prompt
-Use this prompt to add or improve localization support in jobbot3000.
 
-```text
+```prompt
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
 
 PURPOSE:
 Implement localization or internationalization improvements.
+
+USAGE NOTES:
+- Use this prompt to add or improve localization support in jobbot3000.
+- Copy this block whenever working on localization in jobbot3000.
 
 CONTEXT:
 - Follow [README.md](../../../README.md); see the
@@ -31,29 +34,28 @@ CONTEXT:
   [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 
 REQUEST:
-1. Extend `src/locales/` dictionaries and helpers in `src/i18n.js` as needed.
+1. Work within [`src/i18n.js`](../../../src/i18n.js) and [`src/locales/`](../../../src/locales/) to add languages, extend dictionaries, or adjust helpers while keeping `DEFAULT_LOCALE` as the canonical fallback.
 2. Preserve English (`DEFAULT_LOCALE`) fallbacks and ensure missing keys return English.
 3. Update exporters or other consumers so translated labels render correctly.
-4. Add or update tests (for example in `test/exporters.test.js`) that assert localized output.
-5. Run the commands above and fix any failures.
+4. Add or update tests (for example in [`test/exporters.test.js`](../../../test/exporters.test.js) or new coverage beside the affected module) that assert localized output.
+5. Run the commands above and resolve any failures.
 
 OUTPUT:
 A pull request summarizing the localization changes with passing checks.
 ```
 
-Copy this block whenever working on localization in jobbot3000.
-
 ## Upgrade Prompt
 Type: evergreen
 
-Use this prompt to refine `docs/prompts/codex/localization.md`.
-
-```text
+```upgrade
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
 
 PURPOSE:
 Improve or expand the `docs/prompts/codex/localization.md` prompt.
+
+USAGE NOTES:
+- Use this prompt to refine `docs/prompts/codex/localization.md`.
 
 CONTEXT:
 - Follow [README.md](../../../README.md); see the
@@ -73,8 +75,7 @@ CONTEXT:
   [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 
 REQUEST:
-1. Revise `docs/prompts/codex/localization.md` so this prompt stays accurate and actionable.
-   Keep examples aligned with current project practices.
+1. Revise `docs/prompts/codex/localization.md` so this prompt stays accurate and actionable. Keep examples aligned with current project practices.
 2. Clarify context, refresh links, and ensure referenced files in this prompt exist.
 3. Run the commands above and fix any failures.
 
