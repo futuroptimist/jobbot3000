@@ -52,6 +52,8 @@ const DOT = 46;
 const EXCLAMATION = 33;
 const QUESTION = 63;
 const ELLIPSIS = 0x2026;
+const HYPHEN = 45;
+const AT_SIGN = 64;
 
 function isDigitCode(code) {
   return code >= 48 && code <= 57;
@@ -59,6 +61,48 @@ function isDigitCode(code) {
 
 function isAlphaCode(code) {
   return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+}
+
+function isDomainTokenCode(code) {
+  return isAlphaCode(code) || isDigitCode(code) || code === HYPHEN;
+}
+
+function isDomainSpanCode(code) {
+  return code === DOT || code === AT_SIGN || isDomainTokenCode(code);
+}
+
+function looksLikeDomainSpan(token) {
+  if (!token || token.indexOf('.') === -1) return false;
+
+  const parts = token.split('.');
+  if (parts.length < 2) return false;
+
+  for (let idx = 0; idx < parts.length; idx++) {
+    const part = parts[idx];
+    if (part.length === 0) return false;
+
+    let hasDomainChar = false;
+    for (let j = 0; j < part.length; j++) {
+      const code = part.charCodeAt(j);
+      if (code === AT_SIGN) {
+        if (idx !== 0 || j === part.length - 1) {
+          return false;
+        }
+        continue;
+      }
+
+      if (!isDomainTokenCode(code)) {
+        return false;
+      }
+      hasDomainChar = true;
+    }
+
+    if (!hasDomainChar) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function collapseWhitespace(str) {
@@ -194,7 +238,84 @@ export function summarize(text, count = 1) {
         }
       }
 
-      if (parenDepth === 0 && quoteCode === 0 && (k === len || !isLower)) {
+      let hasDotBefore = false;
+      let hasDotAfter = false;
+      if (code === DOT) {
+        for (let m = i - 1; m >= start && !isSpaceCode(text.charCodeAt(m)); m--) {
+          if (text.charCodeAt(m) === DOT) {
+            const before = m - 1 >= start ? text.charCodeAt(m - 1) : NaN;
+            const after = m + 1 < len ? text.charCodeAt(m + 1) : NaN;
+            const beforeIsAlpha = Number.isFinite(before) && isAlphaCode(before);
+            const afterIsAlpha = Number.isFinite(after) && isAlphaCode(after);
+            if (beforeIsAlpha || afterIsAlpha) {
+              hasDotBefore = true;
+              break;
+            }
+          }
+        }
+
+        for (let m = j; m < len && !isSpaceCode(text.charCodeAt(m)); m++) {
+          if (text.charCodeAt(m) === DOT) {
+            const before = m - 1 >= 0 ? text.charCodeAt(m - 1) : NaN;
+            const after = m + 1 < len ? text.charCodeAt(m + 1) : NaN;
+            const beforeIsAlpha = Number.isFinite(before) && isAlphaCode(before);
+            const afterIsAlpha = Number.isFinite(after) && isAlphaCode(after);
+            if (beforeIsAlpha || afterIsAlpha) {
+              hasDotAfter = true;
+              break;
+            }
+          }
+        }
+      }
+
+      if (code === DOT) {
+        const prevCode = i > 0 ? text.charCodeAt(i - 1) : NaN;
+        const immediateNextCode = i + 1 < len ? text.charCodeAt(i + 1) : NaN;
+
+        if (
+          Number.isFinite(prevCode) &&
+          Number.isFinite(immediateNextCode) &&
+          !isSpaceCode(prevCode) &&
+          !isSpaceCode(immediateNextCode) &&
+          isDomainTokenCode(prevCode) &&
+          isDomainTokenCode(immediateNextCode)
+        ) {
+          let tokenStart = i - 1;
+          while (tokenStart >= start && isDomainSpanCode(text.charCodeAt(tokenStart))) {
+            tokenStart--;
+          }
+          tokenStart++;
+
+          let tokenEnd = i + 1;
+          while (tokenEnd < len && isDomainSpanCode(text.charCodeAt(tokenEnd))) {
+            tokenEnd++;
+          }
+
+          const token = text.slice(tokenStart, tokenEnd);
+          if (looksLikeDomainSpan(token)) {
+            continue;
+          }
+        }
+      }
+
+      let shouldSplit = false;
+      if (parenDepth === 0 && quoteCode === 0) {
+        if (k === len) {
+          shouldSplit = true;
+        } else if (code === DOT) {
+          if (hasDotAfter) {
+            shouldSplit = false;
+          } else if (isLower && (hasDotBefore || hasDotAfter)) {
+            shouldSplit = false;
+          } else {
+            shouldSplit = true;
+          }
+        } else {
+          shouldSplit = true;
+        }
+      }
+
+      if (shouldSplit) {
         sentences.push(text.slice(start, j));
         i = k;
         start = k;
