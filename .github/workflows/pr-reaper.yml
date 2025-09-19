@@ -9,7 +9,7 @@ jobs:
   close-stale:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: futuroptimist/pr-reaper@v1
         with:
           days-before-close: 30
