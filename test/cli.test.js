@@ -1,18 +1,36 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { summarize } from '../src/index.js';
+import { STATUSES } from '../src/lifecycle.js';
+
+const defaultDataDir = path.resolve('test', 'tmp-data');
+
+function resolveDataDir() {
+  return process.env.JOBBOT_DATA_DIR || defaultDataDir;
+}
 
 function runCli(args, input) {
   const bin = path.resolve('bin', 'jobbot.js');
-  const opts = { encoding: 'utf8' };
+  const opts = {
+    encoding: 'utf8',
+    env: { ...process.env, JOBBOT_DATA_DIR: resolveDataDir() },
+  };
   if (input !== undefined) opts.input = input;
   return execFileSync('node', [bin, ...args], opts);
 }
 
 describe('jobbot CLI', () => {
+  beforeEach(() => {
+    fs.rmSync(defaultDataDir, { recursive: true, force: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(defaultDataDir, { recursive: true, force: true });
+  });
+
   it('summarize from stdin', () => {
     const out = runCli(['summarize', '-'], 'First sentence. Second.');
     expect(out).toMatch(/First sentence\./);
@@ -59,10 +77,11 @@ describe('jobbot CLI', () => {
     const originalDataDir = process.env.JOBBOT_DATA_DIR;
     process.env.JOBBOT_DATA_DIR = dir;
     try {
-      const output = runCli(['track', 'add', 'job-123', '--status', 'screening']);
-      expect(output.trim()).toBe('Recorded job-123 as screening');
+      const status = STATUSES[0]; // use a valid status
+      const output = runCli(['track', 'add', 'job-123', '--status', status]);
+      expect(output.trim()).toBe(`Recorded job-123 as ${status}`);
       const raw = fs.readFileSync(path.join(dir, 'applications.json'), 'utf8');
-      expect(JSON.parse(raw)).toEqual({ 'job-123': 'screening' });
+      expect(JSON.parse(raw)).toEqual({ 'job-123': status });
     } finally {
       if (originalDataDir === undefined) delete process.env.JOBBOT_DATA_DIR;
       else process.env.JOBBOT_DATA_DIR = originalDataDir;
@@ -70,5 +89,3 @@ describe('jobbot CLI', () => {
     }
   });
 });
-
-
