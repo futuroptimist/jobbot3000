@@ -9,24 +9,36 @@ function tokenize(text) {
   const cached = TOKEN_CACHE.get(key);
   if (cached) return cached;
 
-  const lower = key.toLowerCase();
   const tokens = new Set();
   let start = -1;
+  let needsLower = false;
 
-  for (let i = 0; i < lower.length; i++) {
-    const code = lower.charCodeAt(i);
-    const isAlpha = code >= 97 && code <= 122;
+  for (let i = 0; i < key.length; i++) {
+    const code = key.charCodeAt(i);
+    const isLower = code >= 97 && code <= 122;
+    const isUpper = code >= 65 && code <= 90;
     const isDigit = code >= 48 && code <= 57;
 
-    if (isAlpha || isDigit) {
-      if (start === -1) start = i;
+    if (isLower || isUpper || isDigit) {
+      if (start === -1) {
+        start = i;
+        needsLower = false;
+      }
+      if (isUpper) needsLower = true;
     } else if (start !== -1) {
-      tokens.add(lower.slice(start, i));
+      let token = key.slice(start, i);
+      if (needsLower) token = token.toLowerCase();
+      tokens.add(token);
       start = -1;
+      needsLower = false;
     }
   }
 
-  if (start !== -1) tokens.add(lower.slice(start));
+  if (start !== -1) {
+    let token = key.slice(start);
+    if (needsLower) token = token.toLowerCase();
+    tokens.add(token);
+  }
 
   // Simple cache eviction to bound memory.
   if (TOKEN_CACHE.size > 1000) TOKEN_CACHE.clear();
@@ -77,19 +89,25 @@ function hasOverlap(line, resumeSet) {
  * @returns {{ score: number, matched: string[], missing: string[] }}
  */
 export function computeFitScore(resumeText, requirements) {
-  const bullets = Array.isArray(requirements)
-    ? requirements.filter(r => typeof r === 'string' && r.trim())
-    : [];
-  if (!bullets.length) return { score: 0, matched: [], missing: [] };
+  if (!Array.isArray(requirements) || requirements.length === 0) {
+    return { score: 0, matched: [], missing: [] };
+  }
 
   const resumeSet = resumeTokens(resumeText);
   const matched = [];
   const missing = [];
+  let total = 0;
 
-  for (const bullet of bullets) {
-    (hasOverlap(bullet, resumeSet) ? matched : missing).push(bullet);
+  for (const entry of requirements) {
+    if (typeof entry !== 'string') continue;
+    const trimmed = entry.trim();
+    if (!trimmed) continue;
+    total += 1;
+    (hasOverlap(trimmed, resumeSet) ? matched : missing).push(trimmed);
   }
 
-  const score = Math.round((matched.length / bullets.length) * 100);
+  if (total === 0) return { score: 0, matched: [], missing: [] };
+
+  const score = Math.round((matched.length / total) * 100);
   return { score, matched, missing };
 }

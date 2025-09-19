@@ -33,8 +33,9 @@ echo "First. Second. Third." | npx jobbot summarize - --sentences 2 --text
 ```
 
 # Continuous integration
-GitHub Actions runs lint and test checks on pushes to `main` and on every pull request. To keep builds fast and reliable,
-in-progress runs for the same branch are canceled when new commits arrive.
+GitHub Actions runs lint and test checks on each push and pull request that includes code changes.
+Markdown-only updates skip CI to keep the pipeline fast, and in-progress runs for the same branch are
+canceled when new commits arrive.
 
 In code, import the `summarize` function and pass the number of sentences to keep:
 
@@ -50,6 +51,8 @@ console.log(summary);
 Pass `0` to `summarize` to return an empty string.
 
 Requesting more sentences than exist returns the entire text.
+
+Invalid or non-numeric `count` values default to a single sentence.
 
 The example below demonstrates this behavior:
 
@@ -82,7 +85,9 @@ ignoring `aria-hidden` images or those with `role="presentation"`/`"none"`), and
 collapses whitespace to single spaces. Pass `timeoutMs` (milliseconds) to
 override the 10s default, and `headers` to send custom HTTP headers. Responses
 over 1 MB are rejected; override with `maxBytes` to adjust. Only `http` and
-`https` URLs are supported; other protocols throw an error.
+`https` URLs are supported; other protocols throw an error. Requests to
+loopback, link-local, carrier-grade NAT, or other private network addresses
+are blocked to prevent server-side request forgery (SSRF).
 
 Normalize existing HTML without fetching and log the result:
 
@@ -111,7 +116,8 @@ run();
 `loadResume` supports `.pdf`, `.md`, `.markdown`, and `.mdx` files; other
 extensions are read as plain text.
 
-Format parsed results as Markdown:
+Format parsed results as Markdown. The exporters escape Markdown control characters so job
+content cannot inject arbitrary links or formatting when rendered downstream:
 
 ```js
 import { toMarkdownSummary } from './src/exporters.js';
@@ -171,6 +177,9 @@ console.log(md);
 // - Rust
 ```
 
+When only the matched or missing lists are present, the Markdown output starts with the
+corresponding section heading instead of an extra leading blank line.
+
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal
 punctuation like `?!`, including when followed by closing quotes or parentheses. Terminators apply
 only when followed by whitespace or the end of text, so decimals like `1.99` remain intact.
@@ -184,6 +193,11 @@ is lost. Parenthetical abbreviations like `(M.Sc.)` remain attached to their sur
 Common honorifics such as `Mr.` and `Dr.` are recognized so summaries aren't cut mid-sentence.
 
 Example: `summarize('"Hi!" Bye.')` returns `"Hi!"`.
+It waits for whitespace (or the end of the text) after terminal punctuation, so
+`summarize('Hi!Next steps.')` returns `"Hi!Next steps."`.
+Unit tests exercise punctuation with and without trailing whitespace so the
+summarizer keeps honoring these boundaries alongside abbreviations, decimals,
+and nested punctuation edge cases.
 
 Job titles can be parsed from lines starting with `Title`, `Job Title`, `Position`, or `Role`.
 Headers can use colons or dash separators (for example, `Role - Staff Engineer`), and the same
