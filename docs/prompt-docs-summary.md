@@ -9,6 +9,8 @@ Each prompt doc should reference the root [README.md](../README.md) using a vali
 All links were verified on 2025-09-16 to reference existing files.
 Includes [`scripts/scan-secrets.py`](../scripts/scan-secrets.py).
 
+Codex CI prompt documents that CI skips Markdown- and MDX-only pull requests.
+
 ## jobbot3000
 
 | Path | Prompt | Type | One-click? |

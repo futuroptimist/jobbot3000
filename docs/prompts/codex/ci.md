@@ -22,6 +22,8 @@ CONTEXT:
 - Scan staged changes for secrets with
   `git diff --cached | ./scripts/scan-secrets.py`
   (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
+- CI skips when a pull request only touches Markdown or MDX files; include at least one
+  non-doc change when validating the workflow.
 - Update [prompt-docs-summary.md](../../prompt-docs-summary.md) when modifying prompt docs.
 - Ensure workflow syntax is valid; see [GitHub Actions](https://docs.github.com/actions).
 
