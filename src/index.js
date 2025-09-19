@@ -85,6 +85,32 @@ function collapseWhitespace(str) {
 
 const abbreviations = new Set(['mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', 'st', 'vs']);
 
+function normalizeAbbreviationToken(token) {
+  if (!token) return '';
+
+  let normalized = '';
+
+  for (let idx = 0; idx < token.length; idx++) {
+    const code = token.charCodeAt(idx);
+
+    if (code === DOT) {
+      continue;
+    }
+
+    if (!isAlphaCode(code)) {
+      return '';
+    }
+
+    if (code >= 65 && code <= 90) {
+      normalized += String.fromCharCode(code + 32);
+    } else {
+      normalized += token[idx];
+    }
+  }
+
+  return normalized;
+}
+
 function isLowercaseMultiDotToken(token) {
   if (!token) return false;
   let sawDot = false;
@@ -110,6 +136,19 @@ function isLowercaseMultiDotToken(token) {
   }
 
   return sawDot && segmentLength > 0;
+}
+
+function isSimpleLowercaseWord(token) {
+  if (!token) return false;
+
+  for (let idx = 0; idx < token.length; idx++) {
+    const code = token.charCodeAt(idx);
+    if (code < 0x61 || code > 0x7a) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 export function summarize(text, count = 1) {
@@ -153,6 +192,9 @@ export function summarize(text, count = 1) {
         continue;
       }
 
+      let allowLowercaseStart = code !== DOT;
+      let token = '';
+
       if (code === DOT) {
         let w = i - 1;
         while (w >= 0) {
@@ -160,14 +202,17 @@ export function summarize(text, count = 1) {
           if (!isAlphaCode(prevCode) && prevCode !== DOT) break;
           w--;
         }
-        const token = text.slice(w + 1, i);
-        const normalized = token.replace(/\./g, '').toLowerCase();
+        token = text.slice(w + 1, i);
+        const preTokenCode = w >= 0 ? text.charCodeAt(w) : 0;
+        const normalized = normalizeAbbreviationToken(token);
         if (normalized && abbreviations.has(normalized)) {
           continue;
         }
-        if (isLowercaseMultiDotToken(token)) {
+        if (preTokenCode !== 64 && isLowercaseMultiDotToken(token)) {
           continue;
         }
+
+        allowLowercaseStart = true;
       }
 
       let j = i + 1;
@@ -212,6 +257,18 @@ export function summarize(text, count = 1) {
       let k = j;
       while (k < len && isSpaceCode(text.charCodeAt(k))) k++;
 
+      const sawWhitespace = k > j;
+
+      if (allowLowercaseStart) {
+        if (code === DOT) {
+          if (!sawWhitespace || !isSimpleLowercaseWord(token)) {
+            allowLowercaseStart = false;
+          }
+        } else if (!sawWhitespace) {
+          allowLowercaseStart = false;
+        }
+      }
+
       let isLower = false;
       if (k < len) {
         const nextCode = text.charCodeAt(k);
@@ -229,7 +286,7 @@ export function summarize(text, count = 1) {
         }
       }
 
-      if (parenDepth === 0 && quoteCode === 0 && (k === len || !isLower)) {
+      if (parenDepth === 0 && quoteCode === 0 && (k === len || allowLowercaseStart || !isLower)) {
         sentences.push(text.slice(start, j));
         i = k;
         start = k;
