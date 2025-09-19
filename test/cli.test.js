@@ -6,17 +6,14 @@ import path from 'node:path';
 import { summarize } from '../src/index.js';
 import { STATUSES } from '../src/lifecycle.js';
 
-const defaultDataDir = path.resolve('test', 'tmp-data');
-
-function resolveDataDir() {
-  return process.env.JOBBOT_DATA_DIR || defaultDataDir;
-}
+let dataDir;
 
 function runCli(args, input) {
   const bin = path.resolve('bin', 'jobbot.js');
+  if (!dataDir) throw new Error('CLI data directory was not initialised');
   const opts = {
     encoding: 'utf8',
-    env: { ...process.env, JOBBOT_DATA_DIR: resolveDataDir() },
+    env: { ...process.env, JOBBOT_DATA_DIR: dataDir },
   };
   if (input !== undefined) opts.input = input;
   return execFileSync('node', [bin, ...args], opts);
@@ -24,11 +21,15 @@ function runCli(args, input) {
 
 describe('jobbot CLI', () => {
   beforeEach(() => {
-    fs.rmSync(defaultDataDir, { recursive: true, force: true });
+    // Allocate an isolated workspace for each test
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jobbot-cli-'));
   });
 
   afterEach(() => {
-    fs.rmSync(defaultDataDir, { recursive: true, force: true });
+    if (dataDir) {
+      fs.rmSync(dataDir, { recursive: true, force: true });
+      dataDir = undefined;
+    }
   });
 
   it('summarize from stdin', () => {
@@ -73,19 +74,10 @@ describe('jobbot CLI', () => {
   });
 
   it('records application status with track add', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jobbot-track-'));
-    const originalDataDir = process.env.JOBBOT_DATA_DIR;
-    process.env.JOBBOT_DATA_DIR = dir;
-    try {
-      const status = STATUSES[0]; // use a valid status
-      const output = runCli(['track', 'add', 'job-123', '--status', status]);
-      expect(output.trim()).toBe(`Recorded job-123 as ${status}`);
-      const raw = fs.readFileSync(path.join(dir, 'applications.json'), 'utf8');
-      expect(JSON.parse(raw)).toEqual({ 'job-123': status });
-    } finally {
-      if (originalDataDir === undefined) delete process.env.JOBBOT_DATA_DIR;
-      else process.env.JOBBOT_DATA_DIR = originalDataDir;
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    const status = STATUSES[0]; // pick a valid status
+    const output = runCli(['track', 'add', 'job-123', '--status', status]);
+    expect(output.trim()).toBe(`Recorded job-123 as ${status}`);
+    const raw = fs.readFileSync(path.join(dataDir, 'applications.json'), 'utf8');
+    expect(JSON.parse(raw)).toEqual({ 'job-123': status });
   });
 });
