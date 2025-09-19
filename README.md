@@ -30,6 +30,10 @@ npm run test:ci
 echo "First. Second. Third." | npx jobbot summarize - --sentences 2 --text
 # => First. Second.
 # Non-numeric --sentences values fall back to 1 sentence
+
+# Track an application's status
+npx jobbot track add job-123 --status screening
+# => Recorded job-123 as screening
 ```
 
 # Continuous integration
@@ -198,6 +202,18 @@ It waits for whitespace (or the end of the text) after terminal punctuation, so
 Unit tests exercise punctuation with and without trailing whitespace so the
 summarizer keeps honoring these boundaries alongside abbreviations, decimals,
 and nested punctuation edge cases.
+
+## Job snapshots
+
+Fetching remote listings or matching local job descriptions writes snapshots to
+`data/jobs/{job_id}.json`. Snapshots include the raw body, parsed fields, the
+source descriptor (URL or file path), request headers, and a capture timestamp
+so the shortlist can be rebuilt later. Job identifiers are short SHA-256 hashes
+derived from the source, giving deterministic filenames without leaking PII.
+
+The CLI respects `JOBBOT_DATA_DIR`, mirroring the application lifecycle store,
+so snapshots stay alongside other candidate data when the directory is moved.
+`test/jobs.test.js` covers this behaviour to keep the contract stable.
 
 Job titles can be parsed from lines starting with `Title`, `Job Title`, `Position`, or `Role`.
 Headers can use colons or dash separators (for example, `Role - Staff Engineer`), and the same

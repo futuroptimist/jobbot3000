@@ -1,17 +1,31 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { summarize } from '../src/index.js';
+import { STATUSES } from '../src/lifecycle.js';
+
+const dataDir = path.resolve('test', 'tmp-data');
 
 function runCli(args, input) {
   const bin = path.resolve('bin', 'jobbot.js');
-  const opts = { encoding: 'utf8' };
+  const opts = {
+    encoding: 'utf8',
+    env: { ...process.env, JOBBOT_DATA_DIR: dataDir },
+  };
   if (input !== undefined) opts.input = input;
   return execFileSync('node', [bin, ...args], opts);
 }
 
 describe('jobbot CLI', () => {
+  beforeEach(() => {
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
   it('summarize from stdin', () => {
     const out = runCli(['summarize', '-'], 'First sentence. Second.');
     expect(out).toMatch(/First sentence\./);
@@ -51,6 +65,14 @@ describe('jobbot CLI', () => {
     const out = runCli(['match', '--resume', resumePath, '--job', jobPath, '--json']);
     const data = JSON.parse(out);
     expect(data.score).toBeGreaterThanOrEqual(50);
+  });
+
+  it('records application status with track add', () => {
+    const status = STATUSES.find(s => s !== 'next_round');
+    const output = runCli(['track', 'add', 'job-123', '--status', status]);
+    expect(output.trim()).toBe(`Recorded job-123 as ${status}`);
+    const raw = fs.readFileSync(path.join(dataDir, 'applications.json'), 'utf8');
+    expect(JSON.parse(raw)).toEqual({ 'job-123': status });
   });
 });
 
