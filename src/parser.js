@@ -43,8 +43,13 @@ function stripBullet(line) {
  */
 function findFirstPatternIndex(lines, patterns) {
   for (let i = 0; i < lines.length; i += 1) {
-    const pattern = patterns.find(p => p.test(lines[i]));
-    if (pattern) return { index: i, pattern };
+    const line = lines[i];
+    for (let j = 0; j < patterns.length; j += 1) {
+      const pattern = patterns[j];
+      if (pattern.test(line)) {
+        return { index: i, pattern };
+      }
+    }
   }
   return { index: -1, pattern: null };
 }
