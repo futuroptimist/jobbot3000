@@ -129,32 +129,6 @@ function collapseWhitespace(str) {
 
 const abbreviations = new Set(['mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', 'st', 'vs']);
 
-function normalizeAbbreviationToken(token) {
-  if (!token) return '';
-
-  let normalized = '';
-
-  for (let idx = 0; idx < token.length; idx++) {
-    const code = token.charCodeAt(idx);
-
-    if (code === DOT) {
-      continue;
-    }
-
-    if (!isAlphaCode(code)) {
-      return '';
-    }
-
-    if (code >= 65 && code <= 90) {
-      normalized += String.fromCharCode(code + 32);
-    } else {
-      normalized += token[idx];
-    }
-  }
-
-  return normalized;
-}
-
 export function summarize(text, count = 1) {
   if (!text || count <= 0) return '';
 
