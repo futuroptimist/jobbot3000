@@ -1,14 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { summarize } from '../src/index.js';
 import { STATUSES } from '../src/lifecycle.js';
 
-const dataDir = path.resolve('test', 'tmp-cli-data');
+let dataDir;
 
 function runCli(args, input) {
   const bin = path.resolve('bin', 'jobbot.js');
+  if (!dataDir) throw new Error('CLI data directory was not initialised');
   const opts = {
     encoding: 'utf8',
     env: { ...process.env, JOBBOT_DATA_DIR: dataDir },
@@ -19,11 +21,15 @@ function runCli(args, input) {
 
 describe('jobbot CLI', () => {
   beforeEach(() => {
-    fs.rmSync(dataDir, { recursive: true, force: true });
+    // Allocate an isolated workspace for each test
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jobbot-cli-'));
   });
 
   afterEach(() => {
-    fs.rmSync(dataDir, { recursive: true, force: true });
+    if (dataDir) {
+      fs.rmSync(dataDir, { recursive: true, force: true });
+      dataDir = undefined;
+    }
   });
 
   it('summarize from stdin', () => {
@@ -68,7 +74,7 @@ describe('jobbot CLI', () => {
   });
 
   it('records application status with track add', () => {
-    const status = STATUSES.find(s => s !== 'next_round');
+    const status = STATUSES[0]; // pick a valid status
     const output = runCli(['track', 'add', 'job-123', '--status', status]);
     expect(output.trim()).toBe(`Recorded job-123 as ${status}`);
     const raw = fs.readFileSync(path.join(dataDir, 'applications.json'), 'utf8');
@@ -93,7 +99,7 @@ describe('jobbot CLI', () => {
     ]);
     expect(output.trim()).toBe('Logged job-xyz event applied');
     const raw = JSON.parse(
-      fs.readFileSync(path.join(dataDir, 'application_events.json'), 'utf8'),
+      fs.readFileSync(path.join(dataDir, 'application_events.json'), 'utf8')
     );
     expect(raw['job-xyz']).toEqual([
       {
@@ -106,5 +112,3 @@ describe('jobbot CLI', () => {
     ]);
   });
 });
-
-

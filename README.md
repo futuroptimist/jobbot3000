@@ -253,12 +253,28 @@ If the file is missing it will be created, but other file errors or malformed JS
 Unit tests cover each status, concurrent writes, missing files, invalid JSON, and rejection of
 unknown values.
 
-Use `jobbot track log <job_id> --channel <channel>` to capture the outreach trail for each
-application. The command accepts optional metadata such as `--date`, `--contact`,
-`--documents` (comma-separated), and `--note`. Events are appended to
-`data/application_events.json`, grouped by job identifier, with timestamps normalized to ISO 8601.
-Tests in `test/application-events.test.js` ensure new entries do not clobber history and reject
-invalid channels or dates.
+Record and track your applications directly from the CLI—never edit JSON by hand.
+
+To capture statuses:
+
+~~~bash
+JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot track add job-123 --status screening
+# Recorded job-123 as screening
+~~~
+
+This persists entries to `applications.json`. CLI tests assert that
+`jobbot track add` correctly appends and updates statuses.
+
+To capture outreach history:
+
+Use `jobbot track log <job_id> --channel <channel>` to record the outreach trail
+for each application. The command accepts optional metadata such as `--date`,
+`--contact`, `--documents` (comma-separated), and `--note`. Events are appended
+to `data/application_events.json`, grouped by job identifier, with timestamps
+normalized to ISO 8601.
+
+Tests in `test/application-events.test.js` ensure that new log entries do not
+clobber history and that invalid channels or dates are rejected.
 
 ## Documentation
 

@@ -9,7 +9,7 @@ import { computeFitScore } from '../src/scoring.js';
 import { toJson, toMarkdownSummary, toMarkdownMatch } from '../src/exporters.js';
 import { saveJobSnapshot, jobIdFromSource } from '../src/jobs.js';
 import { logApplicationEvent } from '../src/application-events.js';
-import { recordApplication } from '../src/lifecycle.js';
+import { recordApplication, STATUSES } from '../src/lifecycle.js';
 
 function isHttpUrl(s) {
   return /^https?:\/\//i.test(s);
@@ -124,11 +124,14 @@ async function cmdTrackAdd(args) {
   const jobId = args[0];
   const status = getFlag(args, '--status');
   if (!jobId || !status) {
-    console.error('Usage: jobbot track add <job_id> --status <status>');
+    console.error(
+      `Usage: jobbot track add <job_id> --status <status>\n` +
+        `Valid statuses: ${STATUSES.join(', ')}`
+    );
     process.exit(2);
   }
-  await recordApplication(jobId, status);
-  console.log(`Recorded ${jobId} as ${status}`);
+  const recorded = await recordApplication(jobId, status.trim());
+  console.log(`Recorded ${jobId} as ${recorded}`);
 }
 
 function parseDocumentsFlag(args) {
@@ -146,7 +149,7 @@ async function cmdTrackLog(args) {
   if (!jobId || !channel) {
     console.error(
       'Usage: jobbot track log <job_id> --channel <channel> [--date <date>] ' +
-        '[--contact <contact>] [--documents <file1,file2>] [--note <note>]',
+        '[--contact <contact>] [--documents <file1,file2>] [--note <note>]'
     );
     process.exit(2);
   }
@@ -179,5 +182,3 @@ main().catch(err => {
   console.error(err.message || String(err));
   process.exit(1);
 });
-
-

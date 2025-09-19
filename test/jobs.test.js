@@ -1,24 +1,34 @@
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 
-const dataDir = path.resolve('test', 'tmp-data');
-const jobsDir = path.join(dataDir, 'jobs');
+let dataDir;
+
+function jobsDir() {
+  if (!dataDir) throw new Error('jobs data directory was not initialised');
+  return path.join(dataDir, 'jobs');
+}
 
 async function readSnapshot(id) {
-  const file = path.join(jobsDir, `${id}.json`);
+  const file = path.join(jobsDir(), `${id}.json`);
   const contents = await fs.readFile(file, 'utf8');
   return JSON.parse(contents);
 }
 
 describe('job snapshots', () => {
   beforeEach(async () => {
+    // Each test gets its own snapshot workspace so concurrent workers don't interfere.
+    dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jobbot-jobs-'));
     process.env.JOBBOT_DATA_DIR = dataDir;
-    await fs.rm(dataDir, { recursive: true, force: true });
   });
 
   afterEach(async () => {
-    await fs.rm(dataDir, { recursive: true, force: true });
+    if (dataDir) {
+      await fs.rm(dataDir, { recursive: true, force: true });
+      dataDir = undefined;
+    }
+    delete process.env.JOBBOT_DATA_DIR;
     vi.useRealTimers();
   });
 
