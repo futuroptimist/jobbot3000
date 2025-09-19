@@ -47,6 +47,23 @@ Location: Remote
     expect(parseJobText(text)).toMatchObject({ location: 'Remote' });
   });
 
+  it('ignores location headings that describe preferences', () => {
+    const text = `
+Location Preference
+Location: Remote, USA
+`;
+    expect(parseJobText(text)).toMatchObject({ location: 'Remote, USA' });
+  });
+
+  it('parses single-word locations when they look like actual places', () => {
+    const text = `
+Title: Engineer
+Company: Example Corp
+Location Berlin
+`;
+    expect(parseJobText(text)).toMatchObject({ location: 'Berlin' });
+  });
+
   it('ignores location section headings that include a subtype label', () => {
     const text = `
 Location Type

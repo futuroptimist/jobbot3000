@@ -22,11 +22,21 @@ const LOCATION_WHITESPACE_BLOCK_LIST = [
   'culture',
   'description',
   'details',
+  'focus',
+  'goal',
+  'goals',
   'information',
   'intro',
   'introduction',
+  'mission',
+  'objective',
+  'objectives',
+  'opportunities',
+  'opportunity',
   'overview',
   'perks',
+  'preference',
+  'preferences',
   'profile',
   'responsibilities',
   'requirements',
@@ -57,11 +67,21 @@ const SECTION_HEADING_PREFIXES = [
   'culture',
   'description',
   'details',
+  'focus',
+  'goal',
+  'goals',
   'information',
   'intro',
   'introduction',
+  'mission',
+  'objective',
+  'objectives',
+  'opportunities',
+  'opportunity',
   'overview',
   'perks',
+  'preference',
+  'preferences',
   'profile',
   'responsibilities',
   'requirements',
@@ -71,6 +91,38 @@ const SECTION_HEADING_PREFIXES = [
   'type',
   'types'
 ];
+
+const LOCATION_VALUE_KEYWORDS = [
+  /remote/i,
+  /hybrid/i,
+  /on[-\s]?site/i,
+  /anywhere/i,
+  /worldwide/i,
+  /global/i,
+  /relocation/i,
+  /within\b/i
+];
+
+function isLikelyLocationValue(value) {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+
+  if (/[,:/()]/.test(trimmed)) return true;
+  if (/\d/.test(trimmed)) return true;
+  if (LOCATION_VALUE_KEYWORDS.some(pattern => pattern.test(trimmed))) return true;
+  if (/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b/.test(trimmed)) return true;
+  if (/\b[A-Z]{2}\b/.test(trimmed)) return true;
+
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 1) {
+    const normalized = parts[0].toLowerCase();
+    if (!SECTION_HEADING_PREFIXES.includes(normalized) && /^[A-Za-z]+$/.test(parts[0])) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 function isLikelySectionHeading(value) {
   const normalized = value.trim().toLowerCase();
@@ -162,7 +214,11 @@ function findFieldValues(lines) {
 
     if (!location) {
       const value = runFieldPatterns(line, LOCATION_PATTERNS);
-      if (value && (hasSeparator || !isLikelySectionHeading(value))) {
+      if (
+        value &&
+        (hasSeparator ||
+          (!isLikelySectionHeading(value) && isLikelyLocationValue(value)))
+      ) {
         location = value;
       }
     }
