@@ -117,11 +117,19 @@ function findFieldValues(lines) {
 
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
-    if (!hasFieldSeparator(line)) continue;
+    const hasSeparator = hasFieldSeparator(line);
 
-    if (!title) title = runFieldPatterns(line, TITLE_PATTERNS);
-    if (!company) company = runFieldPatterns(line, COMPANY_PATTERNS);
-    if (!location) location = runFieldPatterns(line, LOCATION_PATTERNS);
+    if (hasSeparator) {
+      if (!title) title = runFieldPatterns(line, TITLE_PATTERNS);
+      if (!company) company = runFieldPatterns(line, COMPANY_PATTERNS);
+    }
+
+    if (!location) {
+      const value = runFieldPatterns(line, LOCATION_PATTERNS);
+      if (value && (hasSeparator || !isLikelySectionHeading(value))) {
+        location = value;
+      }
+    }
 
     if (title && company && location) break;
   }
