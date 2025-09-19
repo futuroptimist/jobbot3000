@@ -34,6 +34,19 @@ Requirements:
     expect(parseJobText(text)).toMatchObject({ location: 'Remote, USA' });
   });
 
+  it('ignores section headings that resemble company fields', () => {
+    const text = `Company Overview\nCompany: Example Corp`;
+    expect(parseJobText(text)).toMatchObject({ company: 'Example Corp' });
+  });
+
+  it('skips location headings without values', () => {
+    const text = `
+Location Details
+Location: Remote
+`;
+    expect(parseJobText(text)).toMatchObject({ location: 'Remote' });
+  });
+
   it('prefers earlier lines over pattern order', () => {
     const text = `
 Position: Junior Dev

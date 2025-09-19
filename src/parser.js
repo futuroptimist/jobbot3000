@@ -2,18 +2,44 @@ function escapeForRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-const FIELD_SEPARATOR = '\\s*(?:(?::|[-\\u2013\\u2014])\\s*|\\s+)';
+const FIELD_SEPARATOR = '\\s*(?::|[-\\u2013\\u2014])\\s*';
+const FIELD_SEPARATOR_WITH_WHITESPACE = `\\s*(?:(?::|[-\\u2013\\u2014])\\s*|\\s+)`;
 
-function createFieldPattern(label) {
+function createFieldPattern(label, { allowWhitespaceSeparator = false } = {}) {
   const escaped = escapeForRegex(label).replace(/\s+/g, '\\s+');
-  return new RegExp(`^\\s*${escaped}${FIELD_SEPARATOR}(.+)`, 'i');
+  const separator = allowWhitespaceSeparator
+    ? FIELD_SEPARATOR_WITH_WHITESPACE
+    : FIELD_SEPARATOR;
+  return new RegExp(`^\\s*${escaped}${separator}(.+)`, 'i');
 }
 
-const TITLE_PATTERNS = ['Title', 'Job Title', 'Position', 'Role'].map(createFieldPattern);
+const TITLE_PATTERNS = ['Title', 'Job Title', 'Position', 'Role'].map(label =>
+  createFieldPattern(label)
+);
 
-const COMPANY_PATTERNS = ['Company', 'Employer'].map(createFieldPattern);
+const COMPANY_PATTERNS = ['Company', 'Employer'].map(label => createFieldPattern(label));
 
-const LOCATION_PATTERNS = ['Location'].map(createFieldPattern);
+const LOCATION_PATTERNS = ['Location'].map(label =>
+  createFieldPattern(label, { allowWhitespaceSeparator: true })
+);
+
+const SECTION_HEADING_PREFIXES = [
+  'about',
+  'background',
+  'description',
+  'details',
+  'information',
+  'intro',
+  'introduction',
+  'overview',
+  'profile',
+  'summary'
+];
+
+function isLikelySectionHeading(value) {
+  const normalized = value.trim().toLowerCase();
+  return SECTION_HEADING_PREFIXES.some(prefix => normalized.startsWith(prefix));
+}
 
 const REQUIREMENTS_HEADERS = [
   /\bRequirements\b/i,
@@ -58,11 +84,19 @@ function findHeader(lines, primary, fallback) {
   return findFirstPatternIndex(lines, fallback);
 }
 
-function findFirstMatch(lines, patterns) {
-  const { index, pattern } = findFirstPatternIndex(lines, patterns);
-  if (index === -1 || !pattern) return '';
-  const match = lines[index].match(pattern);
-  return match ? match[1].trim() : '';
+function findFirstMatch(lines, patterns, { isValid } = {}) {
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const pattern = patterns.find(p => p.test(line));
+    if (!pattern) continue;
+    const match = line.match(pattern);
+    if (!match) continue;
+    const value = match[1].trim();
+    if (!value) continue;
+    if (isValid && !isValid(value)) continue;
+    return value;
+  }
+  return '';
 }
 
 /**
@@ -109,7 +143,9 @@ export function parseJobText(rawText) {
 
   const title = findFirstMatch(lines, TITLE_PATTERNS);
   const company = findFirstMatch(lines, COMPANY_PATTERNS);
-  const location = findFirstMatch(lines, LOCATION_PATTERNS);
+  const location = findFirstMatch(lines, LOCATION_PATTERNS, {
+    isValid: value => !isLikelySectionHeading(value)
+  });
   const requirements = extractRequirements(lines);
 
   return { title, company, location, requirements, body: text };
