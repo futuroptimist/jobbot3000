@@ -80,4 +80,35 @@ describe('jobbot CLI', () => {
     const raw = fs.readFileSync(path.join(dataDir, 'applications.json'), 'utf8');
     expect(JSON.parse(raw)).toEqual({ 'job-123': status });
   });
+
+  it('logs application events with track log', () => {
+    const output = runCli([
+      'track',
+      'log',
+      'job-xyz',
+      '--channel',
+      'applied',
+      '--date',
+      '2025-03-04',
+      '--contact',
+      'Jordan Hiring Manager',
+      '--documents',
+      'resume.pdf,cover-letter.pdf',
+      '--note',
+      'Submitted via referral portal',
+    ]);
+    expect(output.trim()).toBe('Logged job-xyz event applied');
+    const raw = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'application_events.json'), 'utf8')
+    );
+    expect(raw['job-xyz']).toEqual([
+      {
+        channel: 'applied',
+        date: '2025-03-04T00:00:00.000Z',
+        contact: 'Jordan Hiring Manager',
+        documents: ['resume.pdf', 'cover-letter.pdf'],
+        note: 'Submitted via referral portal',
+      },
+    ]);
+  });
 });

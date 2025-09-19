@@ -8,6 +8,7 @@ import { loadResume } from '../src/resume.js';
 import { computeFitScore } from '../src/scoring.js';
 import { toJson, toMarkdownSummary, toMarkdownMatch } from '../src/exporters.js';
 import { saveJobSnapshot, jobIdFromSource } from '../src/jobs.js';
+import { logApplicationEvent } from '../src/application-events.js';
 import { recordApplication, STATUSES } from '../src/lifecycle.js';
 
 function isHttpUrl(s) {
@@ -119,22 +120,53 @@ async function cmdMatch(args) {
   else console.log(toMarkdownMatch(payload));
 }
 
-function trackUsage() {
-  console.error(
-    `Usage: jobbot track add <job_id> --status <status>\n` +
-      `Valid statuses: ${STATUSES.join(', ')}`
-  );
-  process.exit(2);
+async function cmdTrackAdd(args) {
+  const jobId = args[0];
+  const status = getFlag(args, '--status');
+  if (!jobId || !status) {
+    console.error(
+      `Usage: jobbot track add <job_id> --status <status>\n` +
+        `Valid statuses: ${STATUSES.join(', ')}`
+    );
+    process.exit(2);
+  }
+  const recorded = await recordApplication(jobId, status.trim());
+  console.log(`Recorded ${jobId} as ${recorded}`);
+}
+
+function parseDocumentsFlag(args) {
+  const raw = getFlag(args, '--documents');
+  if (!raw) return undefined;
+  return String(raw)
+    .split(',')
+    .map(entry => entry.trim())
+    .filter(Boolean);
+}
+
+async function cmdTrackLog(args) {
+  const jobId = args[0];
+  const channel = getFlag(args, '--channel');
+  if (!jobId || !channel) {
+    console.error(
+      'Usage: jobbot track log <job_id> --channel <channel> [--date <date>] ' +
+        '[--contact <contact>] [--documents <file1,file2>] [--note <note>]'
+    );
+    process.exit(2);
+  }
+  const date = getFlag(args, '--date');
+  const contact = getFlag(args, '--contact');
+  const note = getFlag(args, '--note');
+  const documents = parseDocumentsFlag(args);
+  await logApplicationEvent(jobId, { channel, date, contact, note, documents });
+  console.log(`Logged ${jobId} event ${channel}`);
 }
 
 async function cmdTrack(args) {
-  const [action, id] = args;
-  if (action !== 'add') trackUsage();
-  if (!id) trackUsage();
-  const status = getFlag(args, '--status');
-  if (!status || typeof status !== 'string' || !status.trim()) trackUsage();
-  const recorded = await recordApplication(id, status.trim());
-  console.log(`Recorded ${id} as ${recorded}`);
+  const sub = args[0];
+  if (sub === 'add') return cmdTrackAdd(args.slice(1));
+  if (sub === 'log') return cmdTrackLog(args.slice(1));
+  console.error('Usage: jobbot track <add|log> ...');
+  process.exit(2);
 }
 
 async function main() {

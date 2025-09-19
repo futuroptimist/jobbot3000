@@ -77,7 +77,8 @@ aggressively to respect rate limits.
 **Goal:** Keep a comprehensive record of every interaction with employers.
 
 1. When the user applies or sends outreach, they log the event (channel, date, documents shared,
-   contact person) in the tracker.
+   contact person) with `jobbot track log <job_id> --channel <channel> [...]`, which appends the
+   metadata to `data/application_events.json` so the full history stays local.
 2. Application status transitions (no response, screening, onsite, offer, rejected, withdrawn) are
    stored in `data/applications.json`, which is serialized safely to prevent data loss. The CLI
    exposes `jobbot track add <job_id> --status <status>` so users can log updates inline with other
