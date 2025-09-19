@@ -45,7 +45,8 @@ revisit them later without blocking the workflow.
    SmartRecruiters) or pastes individual URLs into the CLI/UI.
 2. The fetch pipeline de-duplicates listings, normalizes HTML to text, and stores raw + parsed
    copies under `data/jobs/{job_id}.json` alongside fetch metadata (timestamp, source, request
-   headers).
+   headers). Job identifiers are hashed from the source URL or file path so repeat fetches update
+   the same snapshot without leaking personally identifiable information.
 3. Users can tag or discard roles; discarded items stay archived with reasons to refine future
    recommendations.
 4. The shortlist view exposes filters (location, level, compensation) and sync metadata for future

@@ -7,6 +7,7 @@ import { parseJobText } from '../src/parser.js';
 import { loadResume } from '../src/resume.js';
 import { computeFitScore } from '../src/scoring.js';
 import { toJson, toMarkdownSummary, toMarkdownMatch } from '../src/exporters.js';
+import { saveJobSnapshot, jobIdFromSource } from '../src/jobs.js';
 
 function isHttpUrl(s) {
   return /^https?:\/\//i.test(s);
@@ -36,6 +37,25 @@ function getNumberFlag(args, name, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+async function persistJobSnapshot(raw, parsed, source, requestHeaders) {
+  if (!source || typeof source.value !== 'string') return;
+  try {
+    const key = source.type === 'url' ? source.value : `${source.type}:${source.value}`;
+    await saveJobSnapshot({
+      id: jobIdFromSource(key),
+      raw,
+      parsed,
+      source,
+      requestHeaders,
+    });
+  } catch (err) {
+    if (process.env.JOBBOT_DEBUG) {
+      const message = err && typeof err.message === 'string' ? err.message : String(err);
+      console.error(`jobbot: failed to persist job snapshot: ${message}`);
+    }
+  }
+}
+
 async function cmdSummarize(args) {
   const input = args[0] || '-';
   const format = args.includes('--json')
@@ -45,12 +65,16 @@ async function cmdSummarize(args) {
       : 'md';
   const timeoutMs = getNumberFlag(args, '--timeout', 10000);
   const count = getNumberFlag(args, '--sentences', 1);
-  const raw = isHttpUrl(input)
+  const fetchingRemote = isHttpUrl(input);
+  const raw = fetchingRemote
     ? await fetchTextFromUrl(input, { timeoutMs })
     : await readSource(input);
   const parsed = parseJobText(raw);
   const summary = summarizeFirstSentence(raw, count);
   const payload = { ...parsed, summary };
+  if (fetchingRemote) {
+    await persistJobSnapshot(raw, parsed, { type: 'url', value: input });
+  }
   if (format === 'json') console.log(toJson(payload));
   else if (format === 'text') console.log(summary);
   else console.log(toMarkdownSummary(payload));
@@ -80,6 +104,15 @@ async function cmdMatch(args) {
   const { score, matched, missing } = computeFitScore(resumeText, parsed.requirements);
 
   const payload = { ...parsed, url: jobUrl, score, matched, missing };
+
+  const jobSource = jobUrl
+    ? { type: 'url', value: jobUrl }
+    : jobInput === '-' || jobInput === '/dev/stdin'
+      ? null
+      : { type: 'file', value: path.resolve(process.cwd(), jobInput) };
+  if (jobSource) {
+    await persistJobSnapshot(jobRaw, parsed, jobSource);
+  }
 
   if (format === 'json') console.log(toJson(payload));
   else console.log(toMarkdownMatch(payload));
