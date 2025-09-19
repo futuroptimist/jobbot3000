@@ -1,19 +1,47 @@
-function escapeForRegex(str) {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const FIELD_LABELS = new Map([
+  ['title', 'title'],
+  ['job title', 'title'],
+  ['position', 'title'],
+  ['role', 'title'],
+  ['company', 'company'],
+  ['employer', 'company'],
+  ['location', 'location']
+]);
+
+function isSeparatorCode(code) {
+  return code === 58 || code === 45 || code === 8211 || code === 8212;
 }
 
-const FIELD_SEPARATOR = '\\s*(?::|[-\\u2013\\u2014])\\s*';
-
-function createFieldPattern(label) {
-  const escaped = escapeForRegex(label).replace(/\s+/g, '\\s+');
-  return new RegExp(`^\\s*${escaped}${FIELD_SEPARATOR}(.+)`, 'i');
+function findSeparatorIndex(line, startIndex) {
+  for (let i = startIndex; i < line.length; i += 1) {
+    const code = line.charCodeAt(i);
+    if (isSeparatorCode(code)) return i;
+  }
+  return -1;
 }
 
-const TITLE_PATTERNS = ['Title', 'Job Title', 'Position', 'Role'].map(createFieldPattern);
+function normalizeFieldLabel(segment) {
+  const trimmed = segment.trim();
+  if (!trimmed) return '';
+  return trimmed.replace(/\s+/g, ' ').toLowerCase();
+}
 
-const COMPANY_PATTERNS = ['Company', 'Employer'].map(createFieldPattern);
-
-const LOCATION_PATTERNS = ['Location'].map(createFieldPattern);
+function extractFieldValue(line, separatorIndex) {
+  let valueStart = separatorIndex + 1;
+  while (valueStart < line.length) {
+    const code = line.charCodeAt(valueStart);
+    if (code === 32 || code === 9) {
+      valueStart += 1;
+      continue;
+    }
+    if (isSeparatorCode(code)) {
+      valueStart += 1;
+      continue;
+    }
+    break;
+  }
+  return line.slice(valueStart).trim();
+}
 
 const REQUIREMENTS_HEADERS = [
   /\bRequirements\b/i,
@@ -34,14 +62,6 @@ const BULLET_PREFIX_RE =
 /** Strip common bullet characters and surrounding whitespace from a line. */
 function stripBullet(line) {
   return line.replace(BULLET_PREFIX_RE, '').trim();
-}
-
-function hasFieldSeparator(line) {
-  for (let i = 0; i < line.length; i += 1) {
-    const code = line.charCodeAt(i);
-    if (code === 58 || code === 45 || code === 8211 || code === 8212) return true;
-  }
-  return false;
 }
 
 /**
@@ -73,32 +93,45 @@ function findHeader(lines, primary, fallback) {
   return findFirstPatternIndex(lines, fallback);
 }
 
-function runFieldPatterns(line, patterns) {
-  for (let i = 0; i < patterns.length; i += 1) {
-    const pattern = patterns[i];
-    const match = pattern.exec(line);
-    if (match) {
-      if (pattern.lastIndex !== 0) pattern.lastIndex = 0;
-      return match[1].trim();
-    }
-  }
-  return '';
-}
-
 function findFieldValues(lines) {
   let title = '';
   let company = '';
   let location = '';
 
-  for (let i = 0; i < lines.length; i += 1) {
+  let fieldsRemaining = 3;
+
+  for (let i = 0; i < lines.length && fieldsRemaining > 0; i += 1) {
     const line = lines[i];
-    if (!hasFieldSeparator(line)) continue;
 
-    if (!title) title = runFieldPatterns(line, TITLE_PATTERNS);
-    if (!company) company = runFieldPatterns(line, COMPANY_PATTERNS);
-    if (!location) location = runFieldPatterns(line, LOCATION_PATTERNS);
+    let cursor = 0;
+    while (cursor < line.length) {
+      const code = line.charCodeAt(cursor);
+      if (code !== 32 && code !== 9) break;
+      cursor += 1;
+    }
+    if (cursor >= line.length) continue;
 
-    if (title && company && location) break;
+    const separatorIndex = findSeparatorIndex(line, cursor);
+    if (separatorIndex === -1) continue;
+
+    const label = normalizeFieldLabel(line.slice(cursor, separatorIndex));
+    if (!label) continue;
+
+    const field = FIELD_LABELS.get(label);
+    if (!field) continue;
+
+    if (field === 'title' && title) continue;
+    if (field === 'company' && company) continue;
+    if (field === 'location' && location) continue;
+
+    const value = extractFieldValue(line, separatorIndex);
+    if (!value) continue;
+
+    if (field === 'title') title = value;
+    else if (field === 'company') company = value;
+    else location = value;
+
+    fieldsRemaining -= 1;
   }
 
   return { title, company, location };
