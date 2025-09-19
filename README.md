@@ -237,6 +237,15 @@ If the file is missing it will be created, but other file errors or malformed JS
 Unit tests cover each status, concurrent writes, missing files, invalid JSON, and rejection of
 unknown values.
 
+Record statuses from the CLI so you never edit JSON by hand:
+
+```bash
+JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot track add job-123 --status screening
+# Recorded job-123 as screening
+```
+
+CLI tests assert that `jobbot track add` persists entries to `applications.json`.
+
 ## Documentation
 
 - [DESIGN.md](DESIGN.md) – architecture details and roadmap
