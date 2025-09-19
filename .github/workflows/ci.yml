@@ -32,8 +32,8 @@ jobs:
           fi
 
           if [[ -z "${BASE_SHA}" || "${BASE_SHA}" == "0000000000000000000000000000000000000000" ]]; then
-            echo "No base revision available; skipping diff-based secret scan."
-            exit 0
+            echo "No base revision available; running full repository secret scan."
+            git ls-files -z | xargs -0r cat | python scripts/scan-secrets.py
+          else
+            git diff --unified=0 "${BASE_SHA}" "${GITHUB_SHA}" | python scripts/scan-secrets.py
           fi
-
-          git diff --unified=0 "${BASE_SHA}" "${GITHUB_SHA}" | python scripts/scan-secrets.py
