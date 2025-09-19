@@ -74,20 +74,18 @@ describe('jobbot CLI', () => {
 
   it('records application status with track add', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jobbot-track-'));
-    const previousDataDir = process.env.JOBBOT_DATA_DIR;
+    const originalDataDir = process.env.JOBBOT_DATA_DIR;
     process.env.JOBBOT_DATA_DIR = dir;
     try {
-      const status = STATUSES.find(s => s !== 'next_round');
+      const status = STATUSES[0]; // use a valid status
       const output = runCli(['track', 'add', 'job-123', '--status', status]);
       expect(output.trim()).toBe(`Recorded job-123 as ${status}`);
       const raw = fs.readFileSync(path.join(dir, 'applications.json'), 'utf8');
       expect(JSON.parse(raw)).toEqual({ 'job-123': status });
     } finally {
-      if (previousDataDir === undefined) delete process.env.JOBBOT_DATA_DIR;
-      else process.env.JOBBOT_DATA_DIR = previousDataDir;
+      if (originalDataDir === undefined) delete process.env.JOBBOT_DATA_DIR;
+      else process.env.JOBBOT_DATA_DIR = originalDataDir;
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 });
-
-
