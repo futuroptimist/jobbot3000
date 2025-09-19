@@ -1,9 +1,10 @@
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, afterEach, test, expect } from 'vitest';
 import { recordApplication, getLifecycleCounts } from '../src/lifecycle.js';
 
-const tmp = path.resolve('test', 'tmp-data');
+let dataDir;
 
 const ALL_STATUSES = [
   'no_response',
@@ -21,12 +22,18 @@ const expectedCounts = (overrides = {}) => ({
 });
 
 beforeEach(async () => {
-  process.env.JOBBOT_DATA_DIR = tmp;
-  await fs.rm(tmp, { recursive: true, force: true });
+  // Allocate a throwaway lifecycle directory per test file so status mutations don't leak across
+  // parallel workers.
+  dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jobbot-lifecycle-'));
+  process.env.JOBBOT_DATA_DIR = dataDir;
 });
 
 afterEach(async () => {
-  await fs.rm(tmp, { recursive: true, force: true });
+  if (dataDir) {
+    await fs.rm(dataDir, { recursive: true, force: true });
+    dataDir = undefined;
+  }
+  delete process.env.JOBBOT_DATA_DIR;
 });
 
 test('records and summarizes application statuses', async () => {
@@ -37,7 +44,7 @@ test('records and summarizes application statuses', async () => {
   expect(counts).toEqual(
     expectedCounts({ rejected: 1, no_response: 1, screening: 1 })
   );
-  const raw = await fs.readFile(path.join(tmp, 'applications.json'), 'utf8');
+  const raw = await fs.readFile(path.join(dataDir, 'applications.json'), 'utf8');
   expect(JSON.parse(raw)).toEqual({
     abc: 'rejected',
     def: 'no_response',
@@ -62,8 +69,8 @@ test('tracks screening, onsite, offer, and withdrawn statuses', async () => {
 });
 
 test('throws when lifecycle file has invalid JSON', async () => {
-  await fs.mkdir(tmp, { recursive: true });
-  await fs.writeFile(path.join(tmp, 'applications.json'), '{');
+  await fs.mkdir(dataDir, { recursive: true });
+  await fs.writeFile(path.join(dataDir, 'applications.json'), '{');
   await expect(recordApplication('ghi', 'rejected')).rejects.toThrow();
   await expect(getLifecycleCounts()).rejects.toThrow();
 });
@@ -75,7 +82,7 @@ test('handles concurrent status updates across all lifecycle statuses', async ()
   ]);
   await Promise.all(entries.map(([id, status]) => recordApplication(id, status)));
   const raw = JSON.parse(
-    await fs.readFile(path.join(tmp, 'applications.json'), 'utf8'),
+    await fs.readFile(path.join(dataDir, 'applications.json'), 'utf8'),
   );
   expect(raw).toEqual(Object.fromEntries(entries));
   const expected = expectedCounts();
@@ -92,8 +99,8 @@ test('returns zero counts when lifecycle file is missing', async () => {
 });
 
 test('ignores unknown statuses when summarizing lifecycle data', async () => {
-  await fs.mkdir(tmp, { recursive: true });
-  const file = path.join(tmp, 'applications.json');
+  await fs.mkdir(dataDir, { recursive: true });
+  const file = path.join(dataDir, 'applications.json');
   const payload = {
     'job-known': 'no_response',
     'job-unknown': 'coffee_chat',
@@ -111,6 +118,6 @@ test('rejects unknown application status', async () => {
     /unknown status: maybe/,
   );
   await expect(
-    fs.readFile(path.join(tmp, 'applications.json')),
+    fs.readFile(path.join(dataDir, 'applications.json')),
   ).rejects.toThrow();
 });

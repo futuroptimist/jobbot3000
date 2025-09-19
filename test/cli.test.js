@@ -1,17 +1,38 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { summarize } from '../src/index.js';
+import { STATUSES } from '../src/lifecycle.js';
+
+let dataDir;
 
 function runCli(args, input) {
   const bin = path.resolve('bin', 'jobbot.js');
-  const opts = { encoding: 'utf8' };
+  if (!dataDir) throw new Error('CLI data directory was not initialised');
+  const opts = {
+    encoding: 'utf8',
+    env: { ...process.env, JOBBOT_DATA_DIR: dataDir },
+  };
   if (input !== undefined) opts.input = input;
   return execFileSync('node', [bin, ...args], opts);
 }
 
 describe('jobbot CLI', () => {
+  beforeEach(() => {
+    // Allocate an isolated workspace for each test to avoid cross-test interference when
+    // verifying that the CLI honours JOBBOT_DATA_DIR overrides.
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jobbot-cli-'));
+  });
+
+  afterEach(() => {
+    if (dataDir) {
+      fs.rmSync(dataDir, { recursive: true, force: true });
+      dataDir = undefined;
+    }
+  });
+
   it('summarize from stdin', () => {
     const out = runCli(['summarize', '-'], 'First sentence. Second.');
     expect(out).toMatch(/First sentence\./);
@@ -51,6 +72,14 @@ describe('jobbot CLI', () => {
     const out = runCli(['match', '--resume', resumePath, '--job', jobPath, '--json']);
     const data = JSON.parse(out);
     expect(data.score).toBeGreaterThanOrEqual(50);
+  });
+
+  it('records application status with track add', () => {
+    const status = STATUSES.find(s => s !== 'next_round');
+    const output = runCli(['track', 'add', 'job-123', '--status', status]);
+    expect(output.trim()).toBe(`Recorded job-123 as ${status}`);
+    const raw = fs.readFileSync(path.join(dataDir, 'applications.json'), 'utf8');
+    expect(JSON.parse(raw)).toEqual({ 'job-123': status });
   });
 });
 
