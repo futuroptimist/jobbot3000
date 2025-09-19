@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { summarize } from '../src/index.js';
 import { STATUSES } from '../src/lifecycle.js';
@@ -68,12 +69,19 @@ describe('jobbot CLI', () => {
   });
 
   it('records application status with track add', () => {
-    const status = STATUSES.find(s => s !== 'next_round');
-    const output = runCli(['track', 'add', 'job-123', '--status', status]);
-    expect(output.trim()).toBe(`Recorded job-123 as ${status}`);
-    const raw = fs.readFileSync(path.join(dataDir, 'applications.json'), 'utf8');
-    expect(JSON.parse(raw)).toEqual({ 'job-123': status });
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jobbot-track-'));
+    const originalDataDir = process.env.JOBBOT_DATA_DIR;
+    process.env.JOBBOT_DATA_DIR = dir;
+    try {
+      const status = STATUSES[0];
+      const output = runCli(['track', 'add', 'job-123', '--status', status]);
+      expect(output.trim()).toBe(`Recorded job-123 as ${status}`);
+      const raw = fs.readFileSync(path.join(dir, 'applications.json'), 'utf8');
+      expect(JSON.parse(raw)).toEqual({ 'job-123': status });
+    } finally {
+      if (originalDataDir === undefined) delete process.env.JOBBOT_DATA_DIR;
+      else process.env.JOBBOT_DATA_DIR = originalDataDir;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
-
-
