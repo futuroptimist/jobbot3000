@@ -161,6 +161,19 @@ Requirements:
     expect(parsed.requirements).toEqual(['Must do things']);
   });
 
+  it('stops capturing requirements at the next section header', () => {
+    const text = `
+Title: Developer
+Company: Example Corp
+Requirements:
+- Build features
+Benefits:
+- Health insurance
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual(['Build features']);
+  });
+
   it('captures requirement text on header line and strips other bullet types', () => {
     const text = `
 Title: Developer

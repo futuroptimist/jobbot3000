@@ -1,5 +1,5 @@
-import fs from 'fs/promises';
-import path from 'path';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import removeMarkdown from 'remove-markdown';
 
 /**
@@ -8,6 +8,13 @@ import removeMarkdown from 'remove-markdown';
  *
  * @type {Record<string, (filePath: string) => Promise<string>>}
  */
+async function loadMarkdown(filePath) {
+  const raw = await fs.readFile(filePath, 'utf-8');
+  return removeMarkdown(raw).trim();
+}
+
+const MARKDOWN_EXTENSIONS = ['.md', '.markdown', '.mdx'];
+
 const LOADERS = {
   async '.pdf'(filePath) {
     const buffer = await fs.readFile(filePath);
@@ -16,19 +23,9 @@ const LOADERS = {
     const data = await pdf(buffer);
     return (data.text || '').trim();
   },
-  async '.md'(filePath) {
-    const raw = await fs.readFile(filePath, 'utf-8');
-    return removeMarkdown(raw).trim();
-  },
-  async '.markdown'(filePath) {
-    const raw = await fs.readFile(filePath, 'utf-8');
-    return removeMarkdown(raw).trim();
-  },
-  async '.mdx'(filePath) {
-    const raw = await fs.readFile(filePath, 'utf-8');
-    return removeMarkdown(raw).trim();
-  },
 };
+
+for (const ext of MARKDOWN_EXTENSIONS) LOADERS[ext] = loadMarkdown;
 
 /**
  * Load a resume file and return its plain text content.
