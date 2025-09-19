@@ -23,8 +23,11 @@ const LOCATION_WHITESPACE_BLOCK_LIST = [
   'description',
   'details',
   'focus',
+  'growth',
   'goal',
   'goals',
+  'highlight',
+  'highlights',
   'information',
   'intro',
   'introduction',
@@ -35,17 +38,25 @@ const LOCATION_WHITESPACE_BLOCK_LIST = [
   'opportunities',
   'opportunity',
   'overview',
+  'perspective',
+  'perspectives',
   'perks',
   'preference',
   'preferences',
   'profile',
   'responsibilities',
   'requirements',
+  'snapshot',
+  'snapshots',
+  'strategy',
+  'strategies',
   'summary',
   'team',
   'teams',
   'type',
-  'types'
+  'types',
+  'vision',
+  'visions'
 ];
 
 const LOCATION_LABELS = ['Location'];
@@ -56,12 +67,14 @@ const LOCATION_WHITESPACE_PATTERNS = LOCATION_LABELS.map(label =>
   new RegExp(`^\\s*${escapeForRegex(label).replace(/\s+/g, '\\s+')}\\s+(.+)`, 'i')
 );
 
-function startsWithBlockedLocationWord(value) {
-  const trimmed = value.trim().toLowerCase();
-  if (!trimmed) return false;
-  const match = /^[a-z]+/.exec(trimmed);
-  if (!match) return false;
-  return LOCATION_WHITESPACE_BLOCK_LIST.includes(match[0]);
+function containsBlockedLocationWord(value) {
+  const normalizedWords = value
+    .toLowerCase()
+    .split(/\s+/)
+    .map(word => word.replace(/[^a-z]/g, ''))
+    .filter(Boolean);
+  if (!normalizedWords.length) return false;
+  return normalizedWords.some(word => LOCATION_WHITESPACE_BLOCK_LIST.includes(word));
 }
 
 function matchWhitespaceLocation(line) {
@@ -72,7 +85,7 @@ function matchWhitespaceLocation(line) {
       if (pattern.lastIndex !== 0) pattern.lastIndex = 0;
       const value = match[1].trim();
       if (!value) continue;
-      if (startsWithBlockedLocationWord(value)) continue;
+      if (containsBlockedLocationWord(value)) continue;
       if (!isLikelySectionHeading(value) && isLikelyLocationValue(value)) {
         return value;
       }
@@ -89,28 +102,40 @@ const SECTION_HEADING_PREFIXES = [
   'description',
   'details',
   'focus',
+  'growth',
   'goal',
   'goals',
+  'highlight',
+  'highlights',
   'information',
   'intro',
   'introduction',
   'mission',
+  'momentum',
   'objective',
   'objectives',
   'opportunities',
   'opportunity',
   'overview',
+  'perspective',
+  'perspectives',
   'perks',
   'preference',
   'preferences',
   'profile',
   'responsibilities',
   'requirements',
+  'snapshot',
+  'snapshots',
+  'strategy',
+  'strategies',
   'summary',
   'team',
   'teams',
   'type',
-  'types'
+  'types',
+  'vision',
+  'visions'
 ];
 
 const LOCATION_VALUE_KEYWORDS = [

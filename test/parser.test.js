@@ -80,6 +80,14 @@ Location Remote, USA
     expect(parseJobText(text)).toMatchObject({ location: 'Remote, USA' });
   });
 
+  it('ignores location highlight headings without punctuation', () => {
+    const text = `
+Location Highlights
+Location Remote, USA
+`;
+    expect(parseJobText(text)).toMatchObject({ location: 'Remote, USA' });
+  });
+
   it('prefers earlier lines over pattern order', () => {
     const text = `
 Position: Junior Dev
