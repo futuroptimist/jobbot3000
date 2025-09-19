@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { summarize } from '../src/index.js';
 
@@ -64,6 +65,22 @@ describe('jobbot CLI', () => {
     const out = runCli(['match', '--resume', resumePath, '--job', jobPath, '--json']);
     const data = JSON.parse(out);
     expect(data.score).toBeGreaterThanOrEqual(50);
+  });
+
+  it('records application status with track add', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jobbot-track-'));
+    const originalDataDir = process.env.JOBBOT_DATA_DIR;
+    process.env.JOBBOT_DATA_DIR = dir;
+    try {
+      const output = runCli(['track', 'add', 'job-123', '--status', 'screening']);
+      expect(output.trim()).toBe('Recorded job-123 as screening');
+      const raw = fs.readFileSync(path.join(dir, 'applications.json'), 'utf8');
+      expect(JSON.parse(raw)).toEqual({ 'job-123': 'screening' });
+    } finally {
+      if (originalDataDir === undefined) delete process.env.JOBBOT_DATA_DIR;
+      else process.env.JOBBOT_DATA_DIR = originalDataDir;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
