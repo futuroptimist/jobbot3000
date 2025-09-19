@@ -2,13 +2,7 @@ name: CI
 
 on:
   push:
-    paths-ignore:
-      - '**/*.md'
-      - '**/*.mdx'
   pull_request:
-    paths-ignore:
-      - '**/*.md'
-      - '**/*.mdx'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -19,11 +13,50 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Detect doc-only changes
+        id: doc_changes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          DOC_ONLY=true
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE_SHA="${{ github.event.before }}"
+            if [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+              BASE_SHA="$(git rev-list --max-parents=0 HEAD)"
+            fi
+          fi
+
+          if [ -n "$BASE_SHA" ]; then
+            git fetch --no-tags --depth=1 origin "$BASE_SHA"
+            mapfile -t FILES < <(git diff --name-only "$BASE_SHA" "$GITHUB_SHA")
+          else
+            FILES=()
+          fi
+
+          if [ "${#FILES[@]}" -eq 0 ]; then
+            DOC_ONLY=false
+          else
+            for file in "${FILES[@]}"; do
+              if [[ ! "$file" =~ \.md$ && ! "$file" =~ \.mdx$ ]]; then
+                DOC_ONLY=false
+                break
+              fi
+            done
+          fi
+
+          echo "doc_only=${DOC_ONLY:-false}" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v4
+        if: steps.doc_changes.outputs.doc_only != 'true'
         with:
           node-version: 20
           cache: npm
       - run: npm ci
+        if: steps.doc_changes.outputs.doc_only != 'true'
       - run: npm run lint
+        if: steps.doc_changes.outputs.doc_only != 'true'
       - run: npm run test:ci
+        if: steps.doc_changes.outputs.doc_only != 'true'
       - run: git ls-files -z | xargs -0 cat | python scripts/scan-secrets.py
