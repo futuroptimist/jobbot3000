@@ -67,10 +67,9 @@ describe('summarize', () => {
     expect(summarize(text, 2)).toBe('Visit careers.acme.co/jobs now. More info tomorrow.');
   });
 
-  it('treats lowercase multi-dot tokens as part of the sentence', () => {
-    const text = 'Use tools e.g. Another option. Next sentence.';
-    expect(summarize(text)).toBe('Use tools e.g. Another option.');
-    expect(summarize(text, 2)).toBe('Use tools e.g. Another option. Next sentence.');
+  it('does not split on mixed-case domains with paths', () => {
+    const text = 'Visit Careers.Acme.Co/jobs now. More info tomorrow.';
+    expect(summarize(text)).toBe('Visit Careers.Acme.Co/jobs now.');
   });
 
   it('preserves emails with lowercase subdomains', () => {

@@ -6,7 +6,7 @@
  * Falls back to returning the trimmed input when no such punctuation exists.
  * If fewer complete sentences than requested exist, any remaining text is appended
  * so no content is lost. Parenthetical abbreviations like `(M.Sc.)` remain attached
- * to their surrounding sentence. Avoids splitting on decimal numbers.
+ * to their surrounding sentence. Avoids splitting on decimal numbers or domain-like tokens.
  * Returns an empty string when `count` is 0 or less.
  *
  * @param {string} text
@@ -49,9 +49,11 @@ const CLOSE_PARENS = 41;
 const CLOSE_BRACKET = 93;
 const CLOSE_BRACE = 125;
 const DOT = 46;
+const HYPHEN = 45;
 const EXCLAMATION = 33;
 const QUESTION = 63;
 const ELLIPSIS = 0x2026;
+const AT_SIGN = 64;
 
 function isDigitCode(code) {
   return code >= 48 && code <= 57;
@@ -59,6 +61,48 @@ function isDigitCode(code) {
 
 function isAlphaCode(code) {
   return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+}
+
+function isDomainTokenCode(code) {
+  return isAlphaCode(code) || isDigitCode(code) || code === HYPHEN;
+}
+
+function isDomainSpanCode(code) {
+  return code === DOT || code === AT_SIGN || isDomainTokenCode(code);
+}
+
+function looksLikeDomainSpan(token) {
+  if (!token || token.indexOf('.') === -1) return false;
+
+  const parts = token.split('.');
+  if (parts.length < 2) return false;
+
+  for (let idx = 0; idx < parts.length; idx++) {
+    const part = parts[idx];
+    if (part.length === 0) return false;
+
+    let hasDomainChar = false;
+    for (let j = 0; j < part.length; j++) {
+      const code = part.charCodeAt(j);
+      if (code === AT_SIGN) {
+        if (idx !== 0 || j === part.length - 1) {
+          return false;
+        }
+        continue;
+      }
+
+      if (!isDomainTokenCode(code)) {
+        return false;
+      }
+      hasDomainChar = true;
+    }
+
+    if (!hasDomainChar) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function collapseWhitespace(str) {
@@ -111,46 +155,6 @@ function normalizeAbbreviationToken(token) {
   return normalized;
 }
 
-function isLowercaseMultiDotToken(token) {
-  if (!token) return false;
-  let sawDot = false;
-  let segmentLength = 0;
-
-  for (let idx = 0; idx < token.length; idx++) {
-    const code = token.charCodeAt(idx);
-
-    if (code === DOT) {
-      if (segmentLength === 0) {
-        return false;
-      }
-      sawDot = true;
-      segmentLength = 0;
-      continue;
-    }
-
-    if (code < 0x61 || code > 0x7a) {
-      return false;
-    }
-
-    segmentLength++;
-  }
-
-  return sawDot && segmentLength > 0;
-}
-
-function isSimpleLowercaseWord(token) {
-  if (!token) return false;
-
-  for (let idx = 0; idx < token.length; idx++) {
-    const code = token.charCodeAt(idx);
-    if (code < 0x61 || code > 0x7a) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
 export function summarize(text, count = 1) {
   if (!text || count <= 0) return '';
 
@@ -192,27 +196,13 @@ export function summarize(text, count = 1) {
         continue;
       }
 
-      let allowLowercaseStart = code !== DOT;
-      let token = '';
-
       if (code === DOT) {
         let w = i - 1;
-        while (w >= 0) {
-          const prevCode = text.charCodeAt(w);
-          if (!isAlphaCode(prevCode) && prevCode !== DOT) break;
-          w--;
-        }
-        token = text.slice(w + 1, i);
-        const preTokenCode = w >= 0 ? text.charCodeAt(w) : 0;
-        const normalized = normalizeAbbreviationToken(token);
-        if (normalized && abbreviations.has(normalized)) {
+        while (w >= 0 && isAlphaCode(text.charCodeAt(w))) w--;
+        const word = text.slice(w + 1, i).toLowerCase();
+        if (abbreviations.has(word)) {
           continue;
         }
-        if (preTokenCode !== 64 && isLowercaseMultiDotToken(token)) {
-          continue;
-        }
-
-        allowLowercaseStart = true;
       }
 
       let j = i + 1;
@@ -257,18 +247,6 @@ export function summarize(text, count = 1) {
       let k = j;
       while (k < len && isSpaceCode(text.charCodeAt(k))) k++;
 
-      const sawWhitespace = k > j;
-
-      if (allowLowercaseStart) {
-        if (code === DOT) {
-          if (!sawWhitespace || !isSimpleLowercaseWord(token)) {
-            allowLowercaseStart = false;
-          }
-        } else if (!sawWhitespace) {
-          allowLowercaseStart = false;
-        }
-      }
-
       let isLower = false;
       if (k < len) {
         const nextCode = text.charCodeAt(k);
@@ -286,7 +264,85 @@ export function summarize(text, count = 1) {
         }
       }
 
-      if (parenDepth === 0 && quoteCode === 0 && (k === len || allowLowercaseStart || !isLower)) {
+      let hasDotBefore = false;
+      let hasDotAfter = false;
+
+      if (code === DOT) {
+        for (let m = i - 1; m >= start && !isSpaceCode(text.charCodeAt(m)); m--) {
+          if (text.charCodeAt(m) === DOT) {
+            const before = m - 1 >= start ? text.charCodeAt(m - 1) : NaN;
+            const after = m + 1 < len ? text.charCodeAt(m + 1) : NaN;
+            const beforeIsAlpha = Number.isFinite(before) && isAlphaCode(before);
+            const afterIsAlpha = Number.isFinite(after) && isAlphaCode(after);
+            if (beforeIsAlpha || afterIsAlpha) {
+              hasDotBefore = true;
+              break;
+            }
+          }
+        }
+
+        for (let m = j; m < len && !isSpaceCode(text.charCodeAt(m)); m++) {
+          if (text.charCodeAt(m) === DOT) {
+            const before = m - 1 >= 0 ? text.charCodeAt(m - 1) : NaN;
+            const after = m + 1 < len ? text.charCodeAt(m + 1) : NaN;
+            const beforeIsAlpha = Number.isFinite(before) && isAlphaCode(before);
+            const afterIsAlpha = Number.isFinite(after) && isAlphaCode(after);
+            if (beforeIsAlpha || afterIsAlpha) {
+              hasDotAfter = true;
+              break;
+            }
+          }
+        }
+      }
+
+      if (code === DOT) {
+        const prevCode = i > 0 ? text.charCodeAt(i - 1) : NaN;
+        const immediateNextCode = i + 1 < len ? text.charCodeAt(i + 1) : NaN;
+
+        if (
+          Number.isFinite(prevCode) &&
+          Number.isFinite(immediateNextCode) &&
+          !isSpaceCode(prevCode) &&
+          !isSpaceCode(immediateNextCode) &&
+          isDomainTokenCode(prevCode) &&
+          isDomainTokenCode(immediateNextCode)
+        ) {
+          let tokenStart = i - 1;
+          while (tokenStart >= start && isDomainSpanCode(text.charCodeAt(tokenStart))) {
+            tokenStart--;
+          }
+          tokenStart++;
+
+          let tokenEnd = i + 1;
+          while (tokenEnd < len && isDomainSpanCode(text.charCodeAt(tokenEnd))) {
+            tokenEnd++;
+          }
+
+          const token = text.slice(tokenStart, tokenEnd);
+          if (looksLikeDomainSpan(token)) {
+            continue;
+          }
+        }
+      }
+
+      let shouldSplit = false;
+      if (parenDepth === 0 && quoteCode === 0) {
+        if (k === len) {
+          shouldSplit = true;
+        } else if (code === DOT) {
+          if (hasDotAfter) {
+            shouldSplit = false;
+          } else if (isLower && (hasDotBefore || hasDotAfter)) {
+            shouldSplit = false;
+          } else {
+            shouldSplit = true;
+          }
+        } else {
+          shouldSplit = true;
+        }
+      }
+
+      if (shouldSplit) {
         sentences.push(text.slice(start, j));
         i = k;
         start = k;
