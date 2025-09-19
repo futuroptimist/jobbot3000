@@ -18,7 +18,7 @@ const LOCATION_PATTERNS = ['Location'].map(createFieldPattern);
 const REQUIREMENTS_HEADERS = [
   /\bRequirements\b/i,
   /\bQualifications\b/i,
-  /\bSkills\b/i,
+  /^\s*Skills\b(?:\s*(?::|[-\u2013\u2014])\s*|$)/i,
   /\bWhat you(?:'|’)ll need\b/i
 ];
 
