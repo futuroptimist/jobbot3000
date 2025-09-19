@@ -38,11 +38,15 @@ test('records and summarizes application statuses', async () => {
     expectedCounts({ rejected: 1, no_response: 1, screening: 1 })
   );
   const raw = await fs.readFile(path.join(tmp, 'applications.json'), 'utf8');
-  expect(JSON.parse(raw)).toEqual({
-    abc: 'rejected',
-    def: 'no_response',
-    ghi: 'screening',
+  const payload = JSON.parse(raw);
+  expect(payload).toMatchObject({
+    abc: { status: 'rejected' },
+    def: { status: 'no_response' },
+    ghi: { status: 'screening' },
   });
+  for (const entry of Object.values(payload)) {
+    expect(typeof entry.updated_at).toBe('string');
+  }
 });
 
 test('tracks screening, onsite, offer, and withdrawn statuses', async () => {
@@ -77,7 +81,10 @@ test('handles concurrent status updates across all lifecycle statuses', async ()
   const raw = JSON.parse(
     await fs.readFile(path.join(tmp, 'applications.json'), 'utf8'),
   );
-  expect(raw).toEqual(Object.fromEntries(entries));
+  for (const [id, status] of entries) {
+    expect(raw[id]).toMatchObject({ status });
+    expect(typeof raw[id].updated_at).toBe('string');
+  }
   const expected = expectedCounts();
   for (const [, status] of entries) {
     expected[status] += 1;
@@ -95,8 +102,8 @@ test('ignores unknown statuses when summarizing lifecycle data', async () => {
   await fs.mkdir(tmp, { recursive: true });
   const file = path.join(tmp, 'applications.json');
   const payload = {
-    'job-known': 'no_response',
-    'job-unknown': 'coffee_chat',
+    'job-known': { status: 'no_response' },
+    'job-unknown': { status: 'coffee_chat' },
     'job-withdrawn': 'withdrawn',
   };
   await fs.writeFile(file, JSON.stringify(payload, null, 2));
@@ -113,4 +120,23 @@ test('rejects unknown application status', async () => {
   await expect(
     fs.readFile(path.join(tmp, 'applications.json')),
   ).rejects.toThrow();
+});
+
+test('persists tracker metadata alongside statuses', async () => {
+  const metadata = {
+    channel: 'referral',
+    date: '2025-09-18',
+    contact: 'Alex',
+    documents: ['resume.pdf', 'cover.pdf'],
+    notes: 'Sent follow-up',
+  };
+  await recordApplication('job-meta', 'screening', metadata);
+  const raw = JSON.parse(
+    await fs.readFile(path.join(tmp, 'applications.json'), 'utf8'),
+  );
+  expect(raw['job-meta']).toMatchObject({
+    status: 'screening',
+    ...metadata,
+  });
+  expect(typeof raw['job-meta'].updated_at).toBe('string');
 });

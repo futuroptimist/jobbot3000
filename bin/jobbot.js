@@ -7,6 +7,8 @@ import { parseJobText } from '../src/parser.js';
 import { loadResume } from '../src/resume.js';
 import { computeFitScore } from '../src/scoring.js';
 import { toJson, toMarkdownSummary, toMarkdownMatch } from '../src/exporters.js';
+import { saveJobSnapshot, jobIdFromSource } from '../src/jobs.js';
+import { recordApplication } from '../src/lifecycle.js';
 
 function isHttpUrl(s) {
   return /^https?:\/\//i.test(s);
@@ -36,6 +38,38 @@ function getNumberFlag(args, name, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function getMultiFlag(args, name) {
+  const values = [];
+  for (let i = 0; i < args.length; i += 1) {
+    if (args[i] !== name) continue;
+    const val = args[i + 1];
+    if (val && !val.startsWith('--')) {
+      values.push(val);
+      i += 1;
+    }
+  }
+  return values;
+}
+
+async function persistJobSnapshot(raw, parsed, source, requestHeaders) {
+  if (!source || typeof source.value !== 'string') return;
+  try {
+    const key = source.type === 'url' ? source.value : `${source.type}:${source.value}`;
+    await saveJobSnapshot({
+      id: jobIdFromSource(key),
+      raw,
+      parsed,
+      source,
+      requestHeaders,
+    });
+  } catch (err) {
+    if (process.env.JOBBOT_DEBUG) {
+      const message = err && typeof err.message === 'string' ? err.message : String(err);
+      console.error(`jobbot: failed to persist job snapshot: ${message}`);
+    }
+  }
+}
+
 async function cmdSummarize(args) {
   const input = args[0] || '-';
   const format = args.includes('--json')
@@ -45,12 +79,16 @@ async function cmdSummarize(args) {
       : 'md';
   const timeoutMs = getNumberFlag(args, '--timeout', 10000);
   const count = getNumberFlag(args, '--sentences', 1);
-  const raw = isHttpUrl(input)
+  const fetchingRemote = isHttpUrl(input);
+  const raw = fetchingRemote
     ? await fetchTextFromUrl(input, { timeoutMs })
     : await readSource(input);
   const parsed = parseJobText(raw);
   const summary = summarizeFirstSentence(raw, count);
   const payload = { ...parsed, summary };
+  if (fetchingRemote) {
+    await persistJobSnapshot(raw, parsed, { type: 'url', value: input });
+  }
   if (format === 'json') console.log(toJson(payload));
   else if (format === 'text') console.log(summary);
   else console.log(toMarkdownSummary(payload));
@@ -81,15 +119,51 @@ async function cmdMatch(args) {
 
   const payload = { ...parsed, url: jobUrl, score, matched, missing };
 
+  const jobSource = jobUrl
+    ? { type: 'url', value: jobUrl }
+    : jobInput === '-' || jobInput === '/dev/stdin'
+      ? null
+      : { type: 'file', value: path.resolve(process.cwd(), jobInput) };
+  if (jobSource) {
+    await persistJobSnapshot(jobRaw, parsed, jobSource);
+  }
+
   if (format === 'json') console.log(toJson(payload));
   else console.log(toMarkdownMatch(payload));
+}
+
+async function cmdTrackAdd(args) {
+  const jobId = args[0];
+  const status = getFlag(args, '--status');
+  if (!jobId || !status) {
+    console.error('Usage: jobbot track add <job_id> --status <status>');
+    process.exit(2);
+  }
+  const metadata = {
+    channel: getFlag(args, '--channel'),
+    date: getFlag(args, '--date'),
+    contact: getFlag(args, '--contact'),
+    notes: getFlag(args, '--notes'),
+  };
+  const documents = getMultiFlag(args, '--document');
+  if (documents.length) metadata.documents = documents;
+  await recordApplication(jobId, status, metadata);
+  console.log(`Recorded ${jobId} as ${status}`);
+}
+
+async function cmdTrack(args) {
+  const sub = args[0];
+  if (sub === 'add') return cmdTrackAdd(args.slice(1));
+  console.error('Usage: jobbot track add <job_id> --status <status>');
+  process.exit(2);
 }
 
 async function main() {
   const [, , cmd, ...args] = process.argv;
   if (cmd === 'summarize') return cmdSummarize(args);
   if (cmd === 'match') return cmdMatch(args);
-  console.error('Usage: jobbot <summarize|match> [options]');
+  if (cmd === 'track') return cmdTrack(args);
+  console.error('Usage: jobbot <summarize|match|track> [options]');
   process.exit(2);
 }
 
