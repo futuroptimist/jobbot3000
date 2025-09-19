@@ -97,9 +97,12 @@ export function recordApplication(id, status, metadata) {
   const run = async () => {
     await fs.mkdir(dir, { recursive: true });
     const existing = normalizeLifecycle(await readLifecycleFile(file));
+    const previous = existing[id] ? { ...existing[id] } : {};
     const payload = {
-      status,
+      ...previous,
+      ...sanitizeMetadata(previous),
       ...sanitizeMetadata(metadata),
+      status,
       updated_at: new Date().toISOString(),
     };
     existing[id] = payload;
