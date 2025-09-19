@@ -18,8 +18,7 @@ async function readSnapshot(id) {
 
 describe('job snapshots', () => {
   beforeEach(async () => {
-    // Each test gets its own snapshot workspace so that concurrent Vitest workers don't
-    // clobber shared fixtures while we assert on persisted job data.
+    // Each test gets its own snapshot workspace so concurrent workers don't interfere.
     dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jobbot-jobs-'));
     process.env.JOBBOT_DATA_DIR = dataDir;
   });

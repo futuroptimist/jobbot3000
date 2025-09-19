@@ -21,8 +21,7 @@ function runCli(args, input) {
 
 describe('jobbot CLI', () => {
   beforeEach(() => {
-    // Allocate an isolated workspace for each test to avoid cross-test interference when
-    // verifying that the CLI honours JOBBOT_DATA_DIR overrides.
+    // Allocate an isolated workspace for each test
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jobbot-cli-'));
   });
 
@@ -75,12 +74,10 @@ describe('jobbot CLI', () => {
   });
 
   it('records application status with track add', () => {
-    const status = STATUSES.find(s => s !== 'next_round');
+    const status = STATUSES[0]; // pick a valid status
     const output = runCli(['track', 'add', 'job-123', '--status', status]);
     expect(output.trim()).toBe(`Recorded job-123 as ${status}`);
     const raw = fs.readFileSync(path.join(dataDir, 'applications.json'), 'utf8');
     expect(JSON.parse(raw)).toEqual({ 'job-123': status });
   });
 });
-
-

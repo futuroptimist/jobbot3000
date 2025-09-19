@@ -8,7 +8,7 @@ import { loadResume } from '../src/resume.js';
 import { computeFitScore } from '../src/scoring.js';
 import { toJson, toMarkdownSummary, toMarkdownMatch } from '../src/exporters.js';
 import { saveJobSnapshot, jobIdFromSource } from '../src/jobs.js';
-import { recordApplication } from '../src/lifecycle.js';
+import { recordApplication, STATUSES } from '../src/lifecycle.js';
 
 function isHttpUrl(s) {
   return /^https?:\/\//i.test(s);
@@ -119,22 +119,22 @@ async function cmdMatch(args) {
   else console.log(toMarkdownMatch(payload));
 }
 
-async function cmdTrackAdd(args) {
-  const jobId = args[0];
-  const status = getFlag(args, '--status');
-  if (!jobId || !status) {
-    console.error('Usage: jobbot track add <job_id> --status <status>');
-    process.exit(2);
-  }
-  await recordApplication(jobId, status);
-  console.log(`Recorded ${jobId} as ${status}`);
+function trackUsage() {
+  console.error(
+    `Usage: jobbot track add <job_id> --status <status>\n` +
+      `Valid statuses: ${STATUSES.join(', ')}`
+  );
+  process.exit(2);
 }
 
 async function cmdTrack(args) {
-  const sub = args[0];
-  if (sub === 'add') return cmdTrackAdd(args.slice(1));
-  console.error('Usage: jobbot track add <job_id> --status <status>');
-  process.exit(2);
+  const [action, id] = args;
+  if (action !== 'add') trackUsage();
+  if (!id) trackUsage();
+  const status = getFlag(args, '--status');
+  if (!status || typeof status !== 'string' || !status.trim()) trackUsage();
+  const recorded = await recordApplication(id, status.trim());
+  console.log(`Recorded ${id} as ${recorded}`);
 }
 
 async function main() {
@@ -150,5 +150,3 @@ main().catch(err => {
   console.error(err.message || String(err));
   process.exit(1);
 });
-
-
