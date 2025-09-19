@@ -47,6 +47,14 @@ Location: Remote
     expect(parseJobText(text)).toMatchObject({ location: 'Remote' });
   });
 
+  it('ignores location section headings that include a subtype label', () => {
+    const text = `
+Location Type
+Location Remote, USA
+`;
+    expect(parseJobText(text)).toMatchObject({ location: 'Remote, USA' });
+  });
+
   it('prefers earlier lines over pattern order', () => {
     const text = `
 Position: Junior Dev

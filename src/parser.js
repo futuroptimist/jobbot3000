@@ -3,14 +3,10 @@ function escapeForRegex(str) {
 }
 
 const FIELD_SEPARATOR = '\\s*(?::|[-\\u2013\\u2014])\\s*';
-const FIELD_SEPARATOR_WITH_WHITESPACE = `\\s*(?:(?::|[-\\u2013\\u2014])\\s*|\\s+)`;
 
-function createFieldPattern(label, { allowWhitespaceSeparator = false } = {}) {
+function createFieldPattern(label) {
   const escaped = escapeForRegex(label).replace(/\s+/g, '\\s+');
-  const separator = allowWhitespaceSeparator
-    ? FIELD_SEPARATOR_WITH_WHITESPACE
-    : FIELD_SEPARATOR;
-  return new RegExp(`^\\s*${escaped}${separator}(.+)`, 'i');
+  return new RegExp(`^\\s*${escaped}${FIELD_SEPARATOR}(.+)`, 'i');
 }
 
 const TITLE_PATTERNS = ['Title', 'Job Title', 'Position', 'Role'].map(label =>
@@ -19,21 +15,61 @@ const TITLE_PATTERNS = ['Title', 'Job Title', 'Position', 'Role'].map(label =>
 
 const COMPANY_PATTERNS = ['Company', 'Employer'].map(label => createFieldPattern(label));
 
-const LOCATION_PATTERNS = ['Location'].map(label =>
-  createFieldPattern(label, { allowWhitespaceSeparator: true })
-);
-
-const SECTION_HEADING_PREFIXES = [
+const LOCATION_WHITESPACE_BLOCK_LIST = [
   'about',
   'background',
+  'benefits',
+  'culture',
   'description',
   'details',
   'information',
   'intro',
   'introduction',
   'overview',
+  'perks',
   'profile',
-  'summary'
+  'responsibilities',
+  'requirements',
+  'summary',
+  'team',
+  'teams',
+  'type',
+  'types'
+];
+
+function createLocationPatterns(label) {
+  const escaped = escapeForRegex(label).replace(/\s+/g, '\\s+');
+  const basePattern = new RegExp(`^\\s*${escaped}${FIELD_SEPARATOR}(.+)`, 'i');
+  const blockPattern = LOCATION_WHITESPACE_BLOCK_LIST.map(prefix => escapeForRegex(prefix)).join(
+    '|'
+  );
+  const lookahead = blockPattern ? `(?!(?:${blockPattern})\\b)` : '';
+  const whitespacePattern = new RegExp(`^\\s*${escaped}\\s+${lookahead}(.+)`, 'i');
+  return [basePattern, whitespacePattern];
+}
+
+const LOCATION_PATTERNS = ['Location'].flatMap(label => createLocationPatterns(label));
+
+const SECTION_HEADING_PREFIXES = [
+  'about',
+  'background',
+  'benefits',
+  'culture',
+  'description',
+  'details',
+  'information',
+  'intro',
+  'introduction',
+  'overview',
+  'perks',
+  'profile',
+  'responsibilities',
+  'requirements',
+  'summary',
+  'team',
+  'teams',
+  'type',
+  'types'
 ];
 
 function isLikelySectionHeading(value) {
