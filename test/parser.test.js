@@ -114,6 +114,17 @@ Skills:
     expect(parsed.requirements).toEqual(['JavaScript', 'Testing']);
   });
 
+  it('ignores sentences mentioning skills before the real requirements header', () => {
+    const text = `
+Title: Developer
+We value strong communication skills and teamwork.
+Responsibilities:
+- Build features
+`;
+    const parsed = parseJobText(text);
+    expect(parsed.requirements).toEqual(['Build features']);
+  });
+
   it('parses requirements after a "What you’ll need" header', () => {
     const text = `
 Title: Developer
