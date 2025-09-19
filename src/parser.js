@@ -29,6 +29,7 @@ const LOCATION_WHITESPACE_BLOCK_LIST = [
   'intro',
   'introduction',
   'mission',
+  'momentum',
   'objective',
   'objectives',
   'opportunities',
@@ -47,18 +48,38 @@ const LOCATION_WHITESPACE_BLOCK_LIST = [
   'types'
 ];
 
-function createLocationPatterns(label) {
-  const escaped = escapeForRegex(label).replace(/\s+/g, '\\s+');
-  const basePattern = new RegExp(`^\\s*${escaped}${FIELD_SEPARATOR}(.+)`, 'i');
-  const blockPattern = LOCATION_WHITESPACE_BLOCK_LIST.map(prefix => escapeForRegex(prefix)).join(
-    '|'
-  );
-  const lookahead = blockPattern ? `(?!(?:${blockPattern})\\b)` : '';
-  const whitespacePattern = new RegExp(`^\\s*${escaped}\\s+${lookahead}(.+)`, 'i');
-  return [basePattern, whitespacePattern];
+const LOCATION_LABELS = ['Location'];
+
+const LOCATION_PATTERNS = LOCATION_LABELS.map(label => createFieldPattern(label));
+
+const LOCATION_WHITESPACE_PATTERNS = LOCATION_LABELS.map(label =>
+  new RegExp(`^\\s*${escapeForRegex(label).replace(/\s+/g, '\\s+')}\\s+(.+)`, 'i')
+);
+
+function startsWithBlockedLocationWord(value) {
+  const trimmed = value.trim().toLowerCase();
+  if (!trimmed) return false;
+  const match = /^[a-z]+/.exec(trimmed);
+  if (!match) return false;
+  return LOCATION_WHITESPACE_BLOCK_LIST.includes(match[0]);
 }
 
-const LOCATION_PATTERNS = ['Location'].flatMap(label => createLocationPatterns(label));
+function matchWhitespaceLocation(line) {
+  for (let i = 0; i < LOCATION_WHITESPACE_PATTERNS.length; i += 1) {
+    const pattern = LOCATION_WHITESPACE_PATTERNS[i];
+    const match = pattern.exec(line);
+    if (match) {
+      if (pattern.lastIndex !== 0) pattern.lastIndex = 0;
+      const value = match[1].trim();
+      if (!value) continue;
+      if (startsWithBlockedLocationWord(value)) continue;
+      if (!isLikelySectionHeading(value) && isLikelyLocationValue(value)) {
+        return value;
+      }
+    }
+  }
+  return '';
+}
 
 const SECTION_HEADING_PREFIXES = [
   'about',
@@ -221,13 +242,12 @@ function findFieldValues(lines) {
     }
 
     if (!location) {
-      const value = runFieldPatterns(line, LOCATION_PATTERNS);
-      if (
-        value &&
-        (hasSeparator ||
-          (!isLikelySectionHeading(value) && isLikelyLocationValue(value)))
-      ) {
-        location = value;
+      if (hasSeparator) {
+        const value = runFieldPatterns(line, LOCATION_PATTERNS);
+        if (value) location = value;
+      } else {
+        const candidate = matchWhitespaceLocation(line);
+        if (candidate) location = candidate;
       }
     }
 
