@@ -35,6 +35,14 @@ function stripBullet(line) {
   return line.replace(BULLET_PREFIX_RE, '').trim();
 }
 
+function hasFieldSeparator(line) {
+  for (let i = 0; i < line.length; i += 1) {
+    const code = line.charCodeAt(i);
+    if (code === 58 || code === 45 || code === 8211 || code === 8212) return true;
+  }
+  return false;
+}
+
 /**
  * Locate the first line matching any regex in `patterns`.
  * Returns the line index and the matching pattern, or -1/null when not found.
@@ -42,8 +50,14 @@ function stripBullet(line) {
  */
 function findFirstPatternIndex(lines, patterns) {
   for (let i = 0; i < lines.length; i += 1) {
-    const pattern = patterns.find(p => p.test(lines[i]));
-    if (pattern) return { index: i, pattern };
+    const line = lines[i];
+    for (let j = 0; j < patterns.length; j += 1) {
+      const pattern = patterns[j];
+      if (pattern.test(line)) {
+        if (pattern.lastIndex !== 0) pattern.lastIndex = 0;
+        return { index: i, pattern };
+      }
+    }
   }
   return { index: -1, pattern: null };
 }
@@ -58,11 +72,60 @@ function findHeader(lines, primary, fallback) {
   return findFirstPatternIndex(lines, fallback);
 }
 
-function findFirstMatch(lines, patterns) {
-  const { index, pattern } = findFirstPatternIndex(lines, patterns);
-  if (index === -1 || !pattern) return '';
-  const match = lines[index].match(pattern);
-  return match ? match[1].trim() : '';
+function runFieldPatterns(line, patterns) {
+  for (let i = 0; i < patterns.length; i += 1) {
+    const pattern = patterns[i];
+    const match = pattern.exec(line);
+    if (match) {
+      if (pattern.lastIndex !== 0) pattern.lastIndex = 0;
+      return match[1].trim();
+    }
+  }
+  return '';
+}
+
+function findFieldValues(lines) {
+  let title = '';
+  let company = '';
+  let location = '';
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!hasFieldSeparator(line)) continue;
+
+    if (!title) title = runFieldPatterns(line, TITLE_PATTERNS);
+    if (!company) company = runFieldPatterns(line, COMPANY_PATTERNS);
+    if (!location) location = runFieldPatterns(line, LOCATION_PATTERNS);
+
+    if (title && company && location) break;
+  }
+
+  return { title, company, location };
+}
+
+/** Pull requirement text that shares the same line as the matched header. */
+function extractInlineRequirement(headerLine, pattern) {
+  const rest = headerLine.replace(pattern, '').trim().replace(/^[:\s]+/, '');
+  if (!rest) return '';
+  return stripBullet(rest);
+}
+
+/** Determine whether a trimmed line looks like the start of a new section. */
+function isSectionHeader(line) {
+  return /^[A-Za-z].+:$/.test(line);
+}
+
+/** Collect requirement bullet lines until the next section header appears. */
+function collectRequirementLines(lines, startIndex) {
+  const collected = [];
+  for (let i = startIndex; i < lines.length; i += 1) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    if (isSectionHeader(line)) break;
+    const bullet = stripBullet(line);
+    if (bullet) collected.push(bullet);
+  }
+  return collected;
 }
 
 /**
@@ -77,26 +140,11 @@ function extractRequirements(lines) {
   );
   if (headerIndex === -1) return [];
 
-  const requirements = [];
-  const headerLine = lines[headerIndex];
-  let rest = headerLine.replace(headerPattern, '').trim();
-  rest = rest.replace(/^[:\s]+/, '');
+  const inlineRequirement = extractInlineRequirement(lines[headerIndex], headerPattern);
+  const subsequentLines = collectRequirementLines(lines, headerIndex + 1);
 
-  if (rest) {
-    // Strip bullet characters when the first requirement follows the header.
-    const first = stripBullet(rest);
-    if (first) requirements.push(first);
-  }
-
-  for (let i = headerIndex + 1; i < lines.length; i += 1) {
-    const line = lines[i].trim();
-    if (!line) continue;
-    if (/^[A-Za-z].+:$/.test(line)) break; // next section header
-    const bullet = stripBullet(line);
-    if (bullet) requirements.push(bullet);
-  }
-
-  return requirements;
+  if (!inlineRequirement) return subsequentLines;
+  return [inlineRequirement, ...subsequentLines];
 }
 
 /** Parse raw job posting text into structured fields. */
@@ -107,9 +155,7 @@ export function parseJobText(rawText) {
   const text = rawText.replace(/\r/g, '').trim();
   const lines = text.split(/\n+/);
 
-  const title = findFirstMatch(lines, TITLE_PATTERNS);
-  const company = findFirstMatch(lines, COMPANY_PATTERNS);
-  const location = findFirstMatch(lines, LOCATION_PATTERNS);
+  const { title, company, location } = findFieldValues(lines);
   const requirements = extractRequirements(lines);
 
   return { title, company, location, requirements, body: text };

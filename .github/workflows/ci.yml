@@ -2,7 +2,15 @@ name: CI
 
 on:
   push:
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '**/*.mdx'
   pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+      - '**/*.mdx'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -13,6 +21,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Detect doc-only changes
         id: doc_changes
         shell: bash
@@ -48,15 +59,32 @@ jobs:
           fi
 
           echo "doc_only=${DOC_ONLY:-false}" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-node@v4
         if: steps.doc_changes.outputs.doc_only != 'true'
         with:
           node-version: 20
           cache: npm
+
       - run: npm ci
         if: steps.doc_changes.outputs.doc_only != 'true'
       - run: npm run lint
         if: steps.doc_changes.outputs.doc_only != 'true'
       - run: npm run test:ci
         if: steps.doc_changes.outputs.doc_only != 'true'
-      - run: git ls-files -z | xargs -0 cat | python scripts/scan-secrets.py
+
+      - name: Scan diff for secrets
+        run: |
+          set -eo pipefail
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE_SHA="${{ github.event.before }}"
+          fi
+
+          if [[ -z "${BASE_SHA}" || "${BASE_SHA}" == "0000000000000000000000000000000000000000" ]]; then
+            echo "No base revision available; running full repository secret scan."
+            git ls-files -z | xargs -0r cat | python scripts/scan-secrets.py
+          else
+            git diff --unified=0 "${BASE_SHA}" "${GITHUB_SHA}" | python scripts/scan-secrets.py
+          fi

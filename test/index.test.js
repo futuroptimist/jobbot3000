@@ -33,6 +33,12 @@ describe('summarize', () => {
     expect(summarize('First.', -1)).toBe('');
   });
 
+  it('treats non-numeric count as one sentence', () => {
+    const text = 'First. Second.';
+    expect(summarize(text, 'nope')).toBe('First.');
+    expect(summarize(text, Number.NaN)).toBe('First.');
+  });
+
   it('returns empty string for empty input', () => {
     expect(summarize('', 2)).toBe('');
   });
@@ -55,6 +61,16 @@ describe('summarize', () => {
   it('preserves consecutive terminal punctuation', () => {
     const text = 'What?! Another.';
     expect(summarize(text)).toBe('What?!');
+  });
+
+  it('requires whitespace after terminators before splitting', () => {
+    const text = 'Hi!Next sentence.';
+    expect(summarize(text)).toBe('Hi!Next sentence.');
+  });
+
+  it('keeps trailing quotes attached when no whitespace follows', () => {
+    const text = 'He said "Go!"Next steps.';
+    expect(summarize(text)).toBe('He said "Go!"Next steps.');
   });
 
   it('does not split on decimal numbers', () => {
