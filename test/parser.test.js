@@ -72,6 +72,14 @@ Location Remote, USA
     expect(parseJobText(text)).toMatchObject({ location: 'Remote, USA' });
   });
 
+  it('skips growth-focused location headings in favor of real values', () => {
+    const text = `
+Location Growth Opportunities
+Location Remote, USA
+`;
+    expect(parseJobText(text)).toMatchObject({ location: 'Remote, USA' });
+  });
+
   it('prefers earlier lines over pattern order', () => {
     const text = `
 Position: Junior Dev

@@ -110,6 +110,14 @@ function isLikelyLocationValue(value) {
   if (/[,:/()]/.test(trimmed)) return true;
   if (/\d/.test(trimmed)) return true;
   if (LOCATION_VALUE_KEYWORDS.some(pattern => pattern.test(trimmed))) return true;
+  const normalizedWords = trimmed
+    .toLowerCase()
+    .split(/\s+/)
+    .map(word => word.replace(/[^a-z]/g, ''))
+    .filter(Boolean);
+  if (normalizedWords.some(word => SECTION_HEADING_PREFIXES.includes(word))) {
+    return false;
+  }
   if (/\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b/.test(trimmed)) return true;
   if (/\b[A-Z]{2}\b/.test(trimmed)) return true;
 
