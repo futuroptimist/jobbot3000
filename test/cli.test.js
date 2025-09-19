@@ -1,17 +1,31 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { summarize } from '../src/index.js';
+import { STATUSES } from '../src/lifecycle.js';
+
+const dataDir = path.resolve('test', 'tmp-cli-data');
 
 function runCli(args, input) {
   const bin = path.resolve('bin', 'jobbot.js');
-  const opts = { encoding: 'utf8' };
+  const opts = {
+    encoding: 'utf8',
+    env: { ...process.env, JOBBOT_DATA_DIR: dataDir },
+  };
   if (input !== undefined) opts.input = input;
   return execFileSync('node', [bin, ...args], opts);
 }
 
 describe('jobbot CLI', () => {
+  beforeEach(() => {
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
   it('summarize from stdin', () => {
     const out = runCli(['summarize', '-'], 'First sentence. Second.');
     expect(out).toMatch(/First sentence\./);
@@ -51,6 +65,45 @@ describe('jobbot CLI', () => {
     const out = runCli(['match', '--resume', resumePath, '--job', jobPath, '--json']);
     const data = JSON.parse(out);
     expect(data.score).toBeGreaterThanOrEqual(50);
+  });
+
+  it('records application status with track add', () => {
+    const status = STATUSES.find(s => s !== 'next_round');
+    const output = runCli(['track', 'add', 'job-123', '--status', status]);
+    expect(output.trim()).toBe(`Recorded job-123 as ${status}`);
+    const raw = fs.readFileSync(path.join(dataDir, 'applications.json'), 'utf8');
+    expect(JSON.parse(raw)).toEqual({ 'job-123': status });
+  });
+
+  it('logs application events with track log', () => {
+    const output = runCli([
+      'track',
+      'log',
+      'job-xyz',
+      '--channel',
+      'applied',
+      '--date',
+      '2025-03-04',
+      '--contact',
+      'Jordan Hiring Manager',
+      '--documents',
+      'resume.pdf,cover-letter.pdf',
+      '--note',
+      'Submitted via referral portal',
+    ]);
+    expect(output.trim()).toBe('Logged job-xyz event applied');
+    const raw = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'application_events.json'), 'utf8'),
+    );
+    expect(raw['job-xyz']).toEqual([
+      {
+        channel: 'applied',
+        date: '2025-03-04T00:00:00.000Z',
+        contact: 'Jordan Hiring Manager',
+        documents: ['resume.pdf', 'cover-letter.pdf'],
+        note: 'Submitted via referral portal',
+      },
+    ]);
   });
 });
 
