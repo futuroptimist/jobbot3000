@@ -231,6 +231,18 @@ async function cmdIngest(args) {
   process.exit(2);
 }
 
+async function cmdIngestLever(args) {
+  const org = getFlag(args, '--org');
+  if (!org) {
+    console.error('Usage: jobbot ingest lever --org <slug>');
+    process.exit(2);
+  }
+
+  const { saved } = await ingestLeverBoard({ org });
+  const noun = saved === 1 ? 'job' : 'jobs';
+  console.log(`Imported ${saved} ${noun} from ${org}`);
+}
+
 async function cmdShortlistTag(args) {
   const [jobId, ...tagArgs] = args;
   if (!jobId || tagArgs.length === 0) {
