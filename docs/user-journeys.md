@@ -10,7 +10,8 @@ translate them into backlog items, prompts, and acceptance tests.
 jobbot3000.
 
 1. The user selects a local resume file (PDF, Markdown, MDX, or plain text) or points to an existing
-   `resume.json`.
+   `resume.json`. When they start from scratch, `jobbot init` scaffolds
+   `data/profile/resume.json` with empty JSON Resume sections ready for editing.
 2. The CLI or UI calls the resume loader to extract clean text and metadata.
 3. Parsed content is normalized into the JSON Resume schema and saved under `data/profile/`, a
    git-ignored directory so personal data never leaves the machine.
@@ -47,7 +48,8 @@ revisit them later without blocking the workflow.
    copies under `data/jobs/{job_id}.json` alongside fetch metadata (timestamp, source, request
    headers). Job identifiers are hashed from the source URL or file path so repeat fetches update
    the same snapshot without leaking personally identifiable information.
-3. Users can tag or discard roles; `jobbot track discard` archives reasons (and optional tags) in
+3. Users can tag or discard roles with `jobbot shortlist tag` / `jobbot shortlist discard`.
+   Discarded roles are also archived with reasons (and optional tags) in
    `data/discarded_jobs.json` so future recommendations can reference prior decisions.
 4. The shortlist view exposes filters (location, level, compensation) and sync metadata for future
    refreshes.
@@ -69,8 +71,9 @@ aggressively to respect rate limits.
 4. Generated files, diffs, and build logs live in `data/deliverables/{job_id}/` and are versioned by
    timestamp.
 
-**Unhappy paths:** low fit scores or missing must-haves trigger guidance (e.g., suggest skill prep or
-   highlight transferable experience) and let the user decline tailoring for that role.
+**Unhappy paths:** low fit scores or missing must-haves trigger guidance
+  (e.g., suggest skill prep or highlight transferable experience) and let the user decline
+  tailoring for that role.
 
 ## Journey 5: Apply and Track Outcomes
 

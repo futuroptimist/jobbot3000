@@ -120,6 +120,18 @@ run();
 `loadResume` supports `.pdf`, `.md`, `.markdown`, and `.mdx` files; other
 extensions are read as plain text.
 
+Initialize a JSON Resume skeleton when you do not have an existing file:
+
+```bash
+JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot init
+# Initialized profile at /tmp/jobbot-profile-XXXX/profile/resume.json
+```
+
+`jobbot init` writes `profile/resume.json` under the data directory with empty
+basics, work, education, skills, projects, certificates, and languages
+sections. The command is idempotent and preserves existing resumes; see
+`test/cli.test.js` and `test/profile.test.js` for coverage.
+
 Format parsed results as Markdown. The exporters escape Markdown control characters so job
 content cannot inject arbitrary links or formatting when rendered downstream:
 
@@ -231,6 +243,23 @@ via a manual scanner and caches tokens (up to 60k lines) to avoid repeated work.
 exercise this path with 120k-line resumes to ensure the tokenizer stays under 200ms. Requirement bullets
 are scanned without regex or temporary arrays, improving large input performance. Blank or
 non-string requirement entries are skipped so invalid bullets don't affect scoring.
+
+## Shortlist tags and discards
+
+Tag incoming roles with keywords or archive them with a rationale to guide future matches:
+
+~~~bash
+DATA_DIR=$(mktemp -d)
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist tag job-123 dream remote
+# Tagged job-123 with dream, remote
+
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist discard job-123 --reason "Not remote"
+# Discarded job-123: Not remote
+~~~
+
+The CLI stores shortlist labels and discard history in `data/shortlist.json`, keeping reasons and
+timestamps so recommendations can surface patterns later. CLI tests in
+[`test/cli.test.js`](test/cli.test.js) cover both commands to lock in the persisted format.
 
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 See [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) for a list of prompt documents.

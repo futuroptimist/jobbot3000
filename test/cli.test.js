@@ -32,6 +32,43 @@ describe('jobbot CLI', () => {
     }
   });
 
+  it('initializes a resume skeleton with init command', () => {
+    const output = runCli(['init']);
+    expect(output.trim()).toMatch(/Initialized profile at/);
+
+    const profileDir = path.join(dataDir, 'profile');
+    const resumePath = path.join(profileDir, 'resume.json');
+    const raw = fs.readFileSync(resumePath, 'utf8');
+    const resume = JSON.parse(raw);
+
+    expect(resume).toMatchObject({
+      $schema:
+        'https://raw.githubusercontent.com/jsonresume/resume-schema/v1.0.0/schema.json',
+      basics: {
+        name: '',
+        label: '',
+        email: '',
+        phone: '',
+        website: '',
+        summary: '',
+        location: {
+          city: '',
+          region: '',
+          country: '',
+        },
+      },
+      work: [],
+      education: [],
+      projects: [],
+      skills: [],
+      certificates: [],
+      languages: [],
+    });
+
+    expect(typeof resume.meta?.generatedAt).toBe('string');
+    expect(resume.meta?.generator).toBe('jobbot3000');
+  });
+
   it('summarize from stdin', () => {
     const out = runCli(['summarize', '-'], 'First sentence. Second.');
     expect(out).toMatch(/First sentence\./);
@@ -128,5 +165,33 @@ describe('jobbot CLI', () => {
     const entry = raw['job-789'][0];
     expect(entry.reason).toBe('Below compensation range');
     expect(entry.discarded_at).toEqual(new Date(entry.discarded_at).toISOString());
+  });
+
+  it('tags shortlist entries and persists labels', () => {
+    const output = runCli(['shortlist', 'tag', 'job-abc', 'dream', 'remote']);
+    expect(output.trim()).toBe('Tagged job-abc with dream, remote');
+    const raw = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'shortlist.json'), 'utf8')
+    );
+    expect(raw.jobs['job-abc'].tags).toEqual(['dream', 'remote']);
+  });
+
+  it('archives discard reasons for shortlist entries', () => {
+    runCli(['shortlist', 'tag', 'job-def', 'onsite']);
+    const output = runCli([
+      'shortlist',
+      'discard',
+      'job-def',
+      '--reason',
+      'Not remote friendly',
+    ]);
+    expect(output.trim()).toBe('Discarded job-def: Not remote friendly');
+    const raw = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'shortlist.json'), 'utf8')
+    );
+    expect(raw.jobs['job-def'].discarded).toHaveLength(1);
+    const [entry] = raw.jobs['job-def'].discarded;
+    expect(entry.reason).toBe('Not remote friendly');
+    expect(entry.discarded_at).toMatch(/T.*Z$/);
   });
 });
