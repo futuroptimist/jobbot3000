@@ -10,6 +10,7 @@ import { toJson, toMarkdownSummary, toMarkdownMatch } from '../src/exporters.js'
 import { saveJobSnapshot, jobIdFromSource } from '../src/jobs.js';
 import { logApplicationEvent } from '../src/application-events.js';
 import { recordApplication, STATUSES } from '../src/lifecycle.js';
+import { discardJob } from '../src/shortlist.js';
 
 function isHttpUrl(s) {
   return /^https?:\/\//i.test(s);
@@ -169,11 +170,32 @@ async function cmdTrack(args) {
   process.exit(2);
 }
 
+async function cmdShortlistDiscard(args) {
+  const jobId = args[0];
+  const reason = getFlag(args, '--reason');
+  if (!jobId || !reason) {
+    console.error(
+      'Usage: jobbot shortlist discard <job_id> --reason <reason>'
+    );
+    process.exit(2);
+  }
+  const entry = await discardJob(jobId, reason);
+  console.log(`Discarded ${jobId}: ${entry.reason}`);
+}
+
+async function cmdShortlist(args) {
+  const sub = args[0];
+  if (sub === 'discard') return cmdShortlistDiscard(args.slice(1));
+  console.error('Usage: jobbot shortlist discard <job_id> --reason <reason>');
+  process.exit(2);
+}
+
 async function main() {
   const [, , cmd, ...args] = process.argv;
   if (cmd === 'summarize') return cmdSummarize(args);
   if (cmd === 'match') return cmdMatch(args);
   if (cmd === 'track') return cmdTrack(args);
+  if (cmd === 'shortlist') return cmdShortlist(args);
   console.error('Usage: jobbot <summarize|match|track> [options]');
   process.exit(2);
 }

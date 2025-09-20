@@ -232,6 +232,20 @@ exercise this path with 120k-line resumes to ensure the tokenizer stays under 20
 are scanned without regex or temporary arrays, improving large input performance. Blank or
 non-string requirement entries are skipped so invalid bullets don't affect scoring.
 
+## Shortlist discards
+
+Archive roles that are no longer relevant without losing context. Run
+
+```bash
+JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot shortlist discard job-123 --reason "not remote"
+# Discarded job-123: not remote
+```
+
+This command appends entries to `data/shortlist.json`, keeping every discard reason along with
+the timestamp it was recorded so recommendations can learn from past decisions. Unit tests in
+`test/shortlist.test.js` cover the persistence model and CLI tests assert that
+`jobbot shortlist discard` records reasons and emits a helpful confirmation message.
+
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 See [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) for a list of prompt documents.
 

@@ -111,4 +111,25 @@ describe('jobbot CLI', () => {
       },
     ]);
   });
+
+  it('archives discard reasons with shortlist discard', () => {
+    const output = runCli([
+      'shortlist',
+      'discard',
+      'job-789',
+      '--reason',
+      'not remote',
+    ]);
+    expect(output.trim()).toBe('Discarded job-789: not remote');
+
+    const raw = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'shortlist.json'), 'utf8')
+    );
+    expect(raw.discards['job-789']).toHaveLength(1);
+    expect(raw.discards['job-789'][0]).toMatchObject({
+      jobId: 'job-789',
+      reason: 'not remote',
+    });
+    expect(raw.discards['job-789'][0].discardedAt).toMatch(/T/);
+  });
 });

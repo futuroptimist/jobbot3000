@@ -48,7 +48,8 @@ revisit them later without blocking the workflow.
    headers). Job identifiers are hashed from the source URL or file path so repeat fetches update
    the same snapshot without leaking personally identifiable information.
 3. Users can tag or discard roles; discarded items stay archived with reasons to refine future
-   recommendations.
+   recommendations. The CLI command `jobbot shortlist discard <job_id> --reason <reason>` records
+   each decision in `data/shortlist.json` with timestamps so the shortlist history remains auditable.
 4. The shortlist view exposes filters (location, level, compensation) and sync metadata for future
    refreshes.
 
