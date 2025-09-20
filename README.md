@@ -276,6 +276,18 @@ normalized to ISO 8601.
 Tests in `test/application-events.test.js` ensure that new log entries do not
 clobber history and that invalid channels or dates are rejected.
 
+To capture discard reasons for shortlist triage:
+
+~~~bash
+JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot track discard job-456 --reason "Salary too low"
+# Discarded job-456
+~~~
+
+Discarded roles are archived in `data/discarded_jobs.json` with their reasons,
+timestamps, and optional tags so future recommendations can reference prior
+decisions. Unit tests in `test/discards.test.js` and the CLI suite cover the
+JSON format and command invocation.
+
 ## Documentation
 
 - [DESIGN.md](DESIGN.md) – architecture details and roadmap

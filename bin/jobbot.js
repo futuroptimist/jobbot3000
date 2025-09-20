@@ -10,6 +10,7 @@ import { toJson, toMarkdownSummary, toMarkdownMatch } from '../src/exporters.js'
 import { saveJobSnapshot, jobIdFromSource } from '../src/jobs.js';
 import { logApplicationEvent } from '../src/application-events.js';
 import { recordApplication, STATUSES } from '../src/lifecycle.js';
+import { recordJobDiscard } from '../src/discards.js';
 
 function isHttpUrl(s) {
   return /^https?:\/\//i.test(s);
@@ -161,11 +162,36 @@ async function cmdTrackLog(args) {
   console.log(`Logged ${jobId} event ${channel}`);
 }
 
+function parseTagsFlag(args) {
+  const raw = getFlag(args, '--tags');
+  if (!raw) return undefined;
+  return String(raw)
+    .split(',')
+    .map(entry => entry.trim())
+    .filter(Boolean);
+}
+
+async function cmdTrackDiscard(args) {
+  const jobId = args[0];
+  const reason = getFlag(args, '--reason');
+  if (!jobId || !reason) {
+    console.error(
+      'Usage: jobbot track discard <job_id> --reason <reason> [--tags <tag1,tag2>] [--date <date>]'
+    );
+    process.exit(2);
+  }
+  const tags = parseTagsFlag(args);
+  const date = getFlag(args, '--date');
+  await recordJobDiscard(jobId, { reason, tags, date });
+  console.log(`Discarded ${jobId}`);
+}
+
 async function cmdTrack(args) {
   const sub = args[0];
   if (sub === 'add') return cmdTrackAdd(args.slice(1));
   if (sub === 'log') return cmdTrackLog(args.slice(1));
-  console.error('Usage: jobbot track <add|log> ...');
+  if (sub === 'discard') return cmdTrackDiscard(args.slice(1));
+  console.error('Usage: jobbot track <add|log|discard> ...');
   process.exit(2);
 }
 
