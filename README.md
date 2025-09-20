@@ -227,21 +227,28 @@ The CLI respects `JOBBOT_DATA_DIR`, mirroring the application lifecycle store,
 so snapshots stay alongside other candidate data when the directory is moved.
 `test/jobs.test.js` covers this behaviour to keep the contract stable.
 
-## Greenhouse job board ingestion
+## Job board ingestion
 
-Fetch public boards directly with:
+Fetch public Greenhouse boards directly with:
 
 ~~~bash
 JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot ingest greenhouse --company example
 # Imported 12 jobs from example
 ~~~
 
+Pull Lever postings with the same workflow:
+
+~~~bash
+JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot ingest lever --org example
+# Imported 12 jobs from example
+~~~
+
 Each listing in the response is normalised to plain text, parsed for title,
 location, and requirements, and written to `data/jobs/{job_id}.json` with a
-`source.type` of `greenhouse`. Updates reuse the same job identifier so
-downstream tooling can diff revisions over time. `test/greenhouse.test.js`
-verifies the ingest pipeline fetches board content and persists structured
-snapshots.
+`source.type` describing the ATS (`greenhouse` or `lever`). Updates reuse the
+same job identifier so downstream tooling can diff revisions over time.
+`test/greenhouse.test.js` and `test/lever.test.js` verify the ingest pipeline
+fetches board content and persists structured snapshots for both providers.
 
 Job titles can be parsed from lines starting with `Title`, `Job Title`, `Position`, or `Role`.
 Headers can use colons or dash separators (for example, `Role - Staff Engineer`), and the same

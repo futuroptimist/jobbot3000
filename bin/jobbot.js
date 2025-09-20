@@ -14,6 +14,7 @@ import { recordJobDiscard } from '../src/discards.js';
 import { addJobTags, discardJob, filterShortlist, syncShortlistJob } from '../src/shortlist.js';
 import { initProfile } from '../src/profile.js';
 import { ingestGreenhouseBoard } from '../src/greenhouse.js';
+import { ingestLeverBoard } from '../src/lever.js';
 
 function isHttpUrl(s) {
   return /^https?:\/\//i.test(s);
@@ -210,10 +211,23 @@ async function cmdIngestGreenhouse(args) {
   console.log(`Imported ${saved} ${noun} from ${company}`);
 }
 
+async function cmdIngestLever(args) {
+  const org = getFlag(args, '--org') ?? getFlag(args, '--company');
+  if (!org) {
+    console.error('Usage: jobbot ingest lever --org <slug>');
+    process.exit(2);
+  }
+
+  const { saved } = await ingestLeverBoard({ org });
+  const noun = saved === 1 ? 'job' : 'jobs';
+  console.log(`Imported ${saved} ${noun} from ${org}`);
+}
+
 async function cmdIngest(args) {
   const sub = args[0];
   if (sub === 'greenhouse') return cmdIngestGreenhouse(args.slice(1));
-  console.error('Usage: jobbot ingest greenhouse --company <slug>');
+  if (sub === 'lever') return cmdIngestLever(args.slice(1));
+  console.error('Usage: jobbot ingest <greenhouse|lever> [options]');
   process.exit(2);
 }
 
