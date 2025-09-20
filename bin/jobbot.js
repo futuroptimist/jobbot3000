@@ -10,6 +10,7 @@ import { toJson, toMarkdownSummary, toMarkdownMatch } from '../src/exporters.js'
 import { saveJobSnapshot, jobIdFromSource } from '../src/jobs.js';
 import { logApplicationEvent } from '../src/application-events.js';
 import { recordApplication, STATUSES } from '../src/lifecycle.js';
+import { addJobTags, discardJob } from '../src/shortlist.js';
 
 function isHttpUrl(s) {
   return /^https?:\/\//i.test(s);
@@ -169,11 +170,42 @@ async function cmdTrack(args) {
   process.exit(2);
 }
 
+async function cmdShortlistTag(args) {
+  const [jobId, ...tagArgs] = args;
+  if (!jobId || tagArgs.length === 0) {
+    console.error('Usage: jobbot shortlist tag <job_id> <tag> [tag ...]');
+    process.exit(2);
+  }
+  const tags = tagArgs.map(tag => String(tag));
+  const allTags = await addJobTags(jobId, tags);
+  console.log(`Tagged ${jobId} with ${allTags.join(', ')}`);
+}
+
+async function cmdShortlistDiscard(args) {
+  const jobId = args[0];
+  const reason = getFlag(args.slice(1), '--reason');
+  if (!jobId || !reason) {
+    console.error('Usage: jobbot shortlist discard <job_id> --reason <reason>');
+    process.exit(2);
+  }
+  const entry = await discardJob(jobId, reason);
+  console.log(`Discarded ${jobId}: ${entry.reason}`);
+}
+
+async function cmdShortlist(args) {
+  const sub = args[0];
+  if (sub === 'tag') return cmdShortlistTag(args.slice(1));
+  if (sub === 'discard') return cmdShortlistDiscard(args.slice(1));
+  console.error('Usage: jobbot shortlist <tag|discard> ...');
+  process.exit(2);
+}
+
 async function main() {
   const [, , cmd, ...args] = process.argv;
   if (cmd === 'summarize') return cmdSummarize(args);
   if (cmd === 'match') return cmdMatch(args);
   if (cmd === 'track') return cmdTrack(args);
+  if (cmd === 'shortlist') return cmdShortlist(args);
   console.error('Usage: jobbot <summarize|match|track> [options]');
   process.exit(2);
 }

@@ -47,8 +47,9 @@ revisit them later without blocking the workflow.
    copies under `data/jobs/{job_id}.json` alongside fetch metadata (timestamp, source, request
    headers). Job identifiers are hashed from the source URL or file path so repeat fetches update
    the same snapshot without leaking personally identifiable information.
-3. Users can tag or discard roles; discarded items stay archived with reasons to refine future
-   recommendations.
+3. Users can tag or discard roles with `jobbot shortlist tag` / `jobbot shortlist discard`.
+   Discarded items stay archived with reasons in `data/shortlist.json`
+   to refine future recommendations.
 4. The shortlist view exposes filters (location, level, compensation) and sync metadata for future
    refreshes.
 
@@ -69,8 +70,9 @@ aggressively to respect rate limits.
 4. Generated files, diffs, and build logs live in `data/deliverables/{job_id}/` and are versioned by
    timestamp.
 
-**Unhappy paths:** low fit scores or missing must-haves trigger guidance (e.g., suggest skill prep or
-   highlight transferable experience) and let the user decline tailoring for that role.
+**Unhappy paths:** low fit scores or missing must-haves trigger guidance
+  (e.g., suggest skill prep or highlight transferable experience) and let the user decline
+  tailoring for that role.
 
 ## Journey 5: Apply and Track Outcomes
 
