@@ -194,4 +194,35 @@ describe('jobbot CLI', () => {
     expect(entry.reason).toBe('Not remote friendly');
     expect(entry.discarded_at).toMatch(/T.*Z$/);
   });
+
+  it('syncs shortlist metadata and filters entries by location', () => {
+    const syncOutput = runCli([
+      'shortlist',
+      'sync',
+      'job-sync',
+      '--location',
+      'Remote',
+      '--level',
+      'Senior',
+      '--compensation',
+      '$200k',
+      '--synced-at',
+      '2025-04-05T06:07:08Z',
+    ]);
+    expect(syncOutput.trim()).toBe('Synced job-sync metadata');
+
+    const store = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'shortlist.json'), 'utf8')
+    );
+    expect(store.jobs['job-sync'].metadata).toMatchObject({
+      location: 'Remote',
+      level: 'Senior',
+      compensation: '$200k',
+      synced_at: '2025-04-05T06:07:08.000Z',
+    });
+
+    const listOutput = runCli(['shortlist', 'list', '--location', 'remote']);
+    expect(listOutput).toContain('job-sync');
+    expect(listOutput).toContain('Remote');
+  });
 });

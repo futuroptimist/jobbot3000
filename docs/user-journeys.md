@@ -51,8 +51,9 @@ revisit them later without blocking the workflow.
 3. Users can tag or discard roles with `jobbot shortlist tag` / `jobbot shortlist discard`.
    Discarded roles are also archived with reasons (and optional tags) in
    `data/discarded_jobs.json` so future recommendations can reference prior decisions.
-4. The shortlist view exposes filters (location, level, compensation) and sync metadata for future
-   refreshes.
+4. The shortlist view exposes filters (location, level, compensation) via
+   `jobbot shortlist list --location <value>` and records sync metadata with
+   `jobbot shortlist sync` so future refreshes know when entries were last updated.
 
 **Unhappy paths:** fetch failures or ToS blocks surface actionable error messages and never retry
 aggressively to respect rate limits.

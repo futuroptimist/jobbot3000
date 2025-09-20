@@ -11,7 +11,7 @@ import { saveJobSnapshot, jobIdFromSource } from '../src/jobs.js';
 import { logApplicationEvent } from '../src/application-events.js';
 import { recordApplication, STATUSES } from '../src/lifecycle.js';
 import { recordJobDiscard } from '../src/discards.js';
-import { addJobTags, discardJob } from '../src/shortlist.js';
+import { addJobTags, discardJob, filterShortlist, syncShortlistJob } from '../src/shortlist.js';
 import { initProfile } from '../src/profile.js';
 
 function isHttpUrl(s) {
@@ -219,11 +219,77 @@ async function cmdShortlistDiscard(args) {
   console.log(`Discarded ${jobId}: ${entry.reason}`);
 }
 
+function hasMetadata(metadata) {
+  return Object.values(metadata).some(value => value !== undefined);
+}
+
+async function cmdShortlistSync(args) {
+  const jobId = args[0];
+  const rest = args.slice(1);
+  const metadata = {};
+  const location = getFlag(rest, '--location');
+  if (location) metadata.location = location;
+  const level = getFlag(rest, '--level');
+  if (level) metadata.level = level;
+  const compensation = getFlag(rest, '--compensation');
+  if (compensation) metadata.compensation = compensation;
+  const syncedAt = getFlag(rest, '--synced-at');
+  if (syncedAt) metadata.syncedAt = syncedAt;
+
+  if (!jobId || !hasMetadata(metadata)) {
+    console.error(
+      'Usage: jobbot shortlist sync <job_id> [--location <value>] [--level <value>] ' +
+        '[--compensation <value>] [--synced-at <iso8601>]'
+    );
+    process.exit(2);
+  }
+
+  await syncShortlistJob(jobId, metadata);
+  console.log(`Synced ${jobId} metadata`);
+}
+
+function formatShortlistList(jobs) {
+  const entries = Object.entries(jobs);
+  if (entries.length === 0) return 'No shortlist entries found';
+  const lines = [];
+  for (const [jobId, record] of entries) {
+    lines.push(jobId);
+    const { metadata = {}, tags = [], discarded = [] } = record;
+    if (metadata.location) lines.push(`  Location: ${metadata.location}`);
+    if (metadata.level) lines.push(`  Level: ${metadata.level}`);
+    if (metadata.compensation) lines.push(`  Compensation: ${metadata.compensation}`);
+    if (metadata.synced_at) lines.push(`  Synced At: ${metadata.synced_at}`);
+    if (tags.length) lines.push(`  Tags: ${tags.join(', ')}`);
+    if (discarded.length) {
+      const latest = discarded[discarded.length - 1];
+      if (latest?.reason && latest?.discarded_at) {
+        lines.push(`  Last Discard: ${latest.reason} (${latest.discarded_at})`);
+      }
+    }
+    lines.push('');
+  }
+  if (lines[lines.length - 1] === '') lines.pop();
+  return lines.join('\n');
+}
+
+async function cmdShortlistList(args) {
+  const filters = {
+    location: getFlag(args, '--location'),
+    level: getFlag(args, '--level'),
+    compensation: getFlag(args, '--compensation'),
+  };
+
+  const store = await filterShortlist(filters);
+  console.log(formatShortlistList(store.jobs));
+}
+
 async function cmdShortlist(args) {
   const sub = args[0];
   if (sub === 'tag') return cmdShortlistTag(args.slice(1));
   if (sub === 'discard') return cmdShortlistDiscard(args.slice(1));
-  console.error('Usage: jobbot shortlist <tag|discard> ...');
+  if (sub === 'sync') return cmdShortlistSync(args.slice(1));
+  if (sub === 'list') return cmdShortlistList(args.slice(1));
+  console.error('Usage: jobbot shortlist <tag|discard|sync|list> ...');
   process.exit(2);
 }
 
