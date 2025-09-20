@@ -67,7 +67,8 @@ aggressively to respect rate limits.
 **Goal:** Produce truthful, role-specific collateral that maximizes the candidate's odds.
 
 1. For a selected job, the matcher scores fit using semantic + lexical signals and explains hits,
-   gaps, and blockers.
+   gaps, and blockers. CLI users can run `jobbot match --explain` to append the narrative summary to
+   the Markdown report or add an `explanation` string to JSON payloads.
 2. The resume renderer clones the base profile, selects the most relevant bullets, and prepares a
    tailored resume (PDF, text preview) plus optional cover letter. All outputs cite the source
    fields they originate from so the user can audit changes.

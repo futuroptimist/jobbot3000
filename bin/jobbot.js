@@ -6,7 +6,13 @@ import { fetchTextFromUrl } from '../src/fetch.js';
 import { parseJobText } from '../src/parser.js';
 import { loadResume } from '../src/resume.js';
 import { computeFitScore } from '../src/scoring.js';
-import { toJson, toMarkdownSummary, toMarkdownMatch } from '../src/exporters.js';
+import {
+  toJson,
+  toMarkdownSummary,
+  toMarkdownMatch,
+  formatMatchExplanation,
+  toMarkdownMatchExplanation,
+} from '../src/exporters.js';
 import { saveJobSnapshot, jobIdFromSource } from '../src/jobs.js';
 import { logApplicationEvent } from '../src/application-events.js';
 import { recordApplication, STATUSES } from '../src/lifecycle.js';
@@ -113,15 +119,16 @@ async function cmdSummarize(args) {
 async function cmdMatch(args) {
   const resumeIdx = args.indexOf('--resume');
   if (resumeIdx === -1 || !args[resumeIdx + 1]) {
-    console.error('Usage: jobbot match --resume <file> --job <file|url> [--json]');
+    console.error('Usage: jobbot match --resume <file> --job <file|url> [--json] [--explain]');
     process.exit(2);
   }
   const jobIdx = args.indexOf('--job');
   if (jobIdx === -1 || !args[jobIdx + 1]) {
-    console.error('Usage: jobbot match --resume <file> --job <file|url> [--json]');
+    console.error('Usage: jobbot match --resume <file> --job <file|url> [--json] [--explain]');
     process.exit(2);
   }
   const format = args.includes('--json') ? 'json' : 'md';
+  const explain = args.includes('--explain');
   const timeoutMs = getNumberFlag(args, '--timeout', 10000);
   const resumePath = args[resumeIdx + 1];
   const jobInput = args[jobIdx + 1];
@@ -144,8 +151,20 @@ async function cmdMatch(args) {
     await persistJobSnapshot(jobRaw, parsed, jobSource);
   }
 
-  if (format === 'json') console.log(toJson(payload));
-  else console.log(toMarkdownMatch(payload));
+  if (format === 'json') {
+    const jsonPayload = explain
+      ? { ...payload, explanation: formatMatchExplanation(payload) }
+      : payload;
+    console.log(toJson(jsonPayload));
+  } else {
+    const report = toMarkdownMatch(payload);
+    if (!explain) {
+      console.log(report);
+    } else {
+      const explanationMd = toMarkdownMatchExplanation(payload);
+      console.log(report ? `${report}\n\n${explanationMd}` : explanationMd);
+    }
+  }
 }
 
 async function cmdTrackAdd(args) {
