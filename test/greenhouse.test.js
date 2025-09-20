@@ -60,6 +60,9 @@ describe('Greenhouse ingest', () => {
 
     expect(fetch).toHaveBeenCalledWith(
       'https://boards.greenhouse.io/v1/boards/example/jobs?content=true',
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'User-Agent': 'jobbot3000' }),
+      }),
     );
 
     expect(result).toMatchObject({ board: 'example', saved: 1 });
@@ -74,6 +77,7 @@ describe('Greenhouse ingest', () => {
       type: 'greenhouse',
       value: 'https://boards.greenhouse.io/example/jobs/123',
     });
+    expect(saved.source.headers).toEqual({ 'User-Agent': 'jobbot3000' });
     expect(saved.parsed.title).toBe('Staff Engineer');
     expect(saved.parsed.location).toBe('Remote');
     const hasRequirement = saved.parsed.requirements.some((req) =>
