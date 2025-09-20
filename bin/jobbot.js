@@ -17,6 +17,7 @@ import { initProfile } from '../src/profile.js';
 import { ingestGreenhouseBoard } from '../src/greenhouse.js';
 import { ingestLeverBoard } from '../src/lever.js';
 import { ingestSmartRecruitersBoard } from '../src/smartrecruiters.js';
+import { ingestAshbyBoard } from '../src/ashby.js';
 
 function isHttpUrl(s) {
   return /^https?:\/\//i.test(s);
@@ -246,6 +247,18 @@ async function cmdIngestLever(args) {
   console.log(`Imported ${saved} ${noun} from ${company}`);
 }
 
+async function cmdIngestAshby(args) {
+  const company = getFlag(args, '--company') || getFlag(args, '--org');
+  if (!company) {
+    console.error('Usage: jobbot ingest ashby --company <slug>');
+    process.exit(2);
+  }
+
+  const { saved } = await ingestAshbyBoard({ org: company });
+  const noun = saved === 1 ? 'job' : 'jobs';
+  console.log(`Imported ${saved} ${noun} from ${company}`);
+}
+
 async function cmdIngestSmartRecruiters(args) {
   const company = getFlag(args, '--company');
   if (!company) {
@@ -262,8 +275,9 @@ async function cmdIngest(args) {
   const sub = args[0];
   if (sub === 'greenhouse') return cmdIngestGreenhouse(args.slice(1));
   if (sub === 'lever') return cmdIngestLever(args.slice(1));
+  if (sub === 'ashby') return cmdIngestAshby(args.slice(1));
   if (sub === 'smartrecruiters') return cmdIngestSmartRecruiters(args.slice(1));
-  console.error('Usage: jobbot ingest <greenhouse|lever|smartrecruiters> --company <slug>');
+  console.error('Usage: jobbot ingest <greenhouse|lever|ashby|smartrecruiters> --company <slug>');
   process.exit(2);
 }
 
