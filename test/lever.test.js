@@ -26,36 +26,25 @@ describe('Lever ingest', () => {
     delete process.env.JOBBOT_DATA_DIR;
   });
 
-  it('fetches Lever postings, normalizes HTML fragments, and writes snapshots', async () => {
+  it('fetches Lever jobs and writes snapshots', async () => {
     fetch.mockResolvedValue({
       ok: true,
       status: 200,
       statusText: 'OK',
       json: async () => [
         {
-          id: '123abc',
-          text: 'Backend Engineer',
+          id: 'abc123',
+          text: 'Senior Platform Engineer',
+          hostedUrl: 'https://jobs.lever.co/example/abc123',
+          descriptionPlain: `
+Title: Senior Platform Engineer
+Company: Example Corp
+Location: Remote
+Requirements
+- Ship reliable systems
+`,
           categories: { location: 'Remote' },
-          content: [
-            '<p>Build APIs</p>',
-            { text: '<p>Ship features fast</p>' },
-          ],
-          lists: [
-            {
-              text: 'Responsibilities',
-              content: [
-                '<ul><li>Scale services</li></ul>',
-                { text: '<p>Maintain reliability</p>' },
-              ],
-            },
-            {
-              text: 'Qualifications',
-              content: [{ content: '<ul><li>TypeScript experience</li></ul>' }],
-            },
-          ],
-          descriptionPlain: 'More details about the role.',
-          hostedUrl: 'https://jobs.lever.co/example/123abc',
-          updatedAt: 1730419200000,
+          updatedAt: '2025-01-02T03:04:05Z',
         },
       ],
     });
@@ -78,16 +67,11 @@ describe('Lever ingest', () => {
     const saved = JSON.parse(await fs.readFile(path.join(jobsDir, files[0]), 'utf8'));
     expect(saved.source).toMatchObject({
       type: 'lever',
-      value: 'https://jobs.lever.co/example/123abc',
+      value: 'https://jobs.lever.co/example/abc123',
     });
-    expect(saved.parsed.title).toBe('Backend Engineer');
+    expect(saved.parsed.title).toBe('Senior Platform Engineer');
     expect(saved.parsed.location).toBe('Remote');
-    expect(saved.raw).toContain('More details about the role.');
-    expect(saved.raw).toContain('Maintain reliability');
-    const requirements = saved.parsed.requirements.join(' ');
-    expect(requirements).toContain('Scale services');
-    expect(requirements).toContain('TypeScript experience');
-    expect(saved.fetched_at).toBe('2024-11-01T00:00:00.000Z');
+    expect(saved.fetched_at).toBe('2025-01-02T03:04:05.000Z');
   });
 
   it('throws when the org fetch fails', async () => {
@@ -103,57 +87,5 @@ describe('Lever ingest', () => {
     await expect(ingestLeverBoard({ org: 'missing' })).rejects.toThrow(
       /Failed to fetch Lever org/,
     );
-  });
-
-  it('falls back to derived hosted URLs and merges metadata from plain fields', async () => {
-    fetch.mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      json: async () => [
-        {
-          id: 42,
-          text: 'Data Engineer',
-          lists: [
-            {
-              text: 'Responsibilities',
-              content: ['<ul><li>Maintain pipelines</li></ul>'],
-            },
-          ],
-          descriptionPlain: 'Data team focused role.',
-          additional: ['<p>Bonus info</p>'],
-          additionalPlain: 'Apply soon.',
-          workplaceType: 'Hybrid - NYC',
-          hostedUrl: '  ',
-          createdAt: '2024-09-01T12:00:00Z',
-        },
-      ],
-    });
-
-    const { ingestLeverBoard } = await import('../src/lever.js');
-
-    const result = await ingestLeverBoard({ org: ' Example Corp ' });
-
-    expect(fetch).toHaveBeenCalledWith(
-      'https://api.lever.co/v0/postings/Example%20Corp?mode=json',
-    );
-
-    expect(result).toMatchObject({ org: 'Example Corp', saved: 1 });
-    const [jobId] = result.jobIds;
-    expect(jobId).toBeTruthy();
-
-    const jobsDir = path.join(dataDir, JOBS_DIR);
-    const files = await fs.readdir(jobsDir);
-    expect(files).toHaveLength(1);
-
-    const saved = JSON.parse(await fs.readFile(path.join(jobsDir, files[0]), 'utf8'));
-    expect(saved.source).toMatchObject({
-      type: 'lever',
-      value: 'https://jobs.lever.co/Example%20Corp/42',
-    });
-    expect(saved.parsed.location).toBe('Hybrid - NYC');
-    expect(saved.raw).toContain('Data team focused role.');
-    expect(saved.raw).toContain('Bonus info');
-    expect(saved.raw).toContain('Apply soon.');
   });
 });

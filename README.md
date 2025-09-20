@@ -91,7 +91,9 @@ override the 10s default, and `headers` to send custom HTTP headers. Responses
 over 1 MB are rejected; override with `maxBytes` to adjust. Only `http` and
 `https` URLs are supported; other protocols throw an error. Requests to
 loopback, link-local, carrier-grade NAT, or other private network addresses
-are blocked to prevent server-side request forgery (SSRF).
+are blocked to prevent server-side request forgery (SSRF). Hostnames that
+resolve to those private ranges (for example, `127.0.0.1.nip.io`) are rejected
+as well; see `test/fetch.test.js` for coverage of these guardrails.
 
 Normalize existing HTML without fetching and log the result:
 
@@ -227,21 +229,31 @@ The CLI respects `JOBBOT_DATA_DIR`, mirroring the application lifecycle store,
 so snapshots stay alongside other candidate data when the directory is moved.
 `test/jobs.test.js` covers this behaviour to keep the contract stable.
 
-## Greenhouse job board ingestion
+## Job board ingestion
 
-Fetch public boards directly with:
+Fetch public boards directly with Greenhouse, Lever, or SmartRecruiters pipelines:
 
 ~~~bash
 JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot ingest greenhouse --company example
 # Imported 12 jobs from example
+
+JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot ingest lever --company example
+# Imported 8 jobs from example
+
+JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot ingest smartrecruiters --company example
+# Imported 5 jobs from example
 ~~~
 
 Each listing in the response is normalised to plain text, parsed for title,
 location, and requirements, and written to `data/jobs/{job_id}.json` with a
-`source.type` of `greenhouse`. Updates reuse the same job identifier so
-downstream tooling can diff revisions over time. `test/greenhouse.test.js`
-verifies the ingest pipeline fetches board content and persists structured
-snapshots.
+`source.type` reflecting the provider (`greenhouse`, `lever`, or `smartrecruiters`). Updates reuse
+the same job identifier so downstream tooling can diff revisions over time.
+Tests in [`test/greenhouse.test.js`](test/greenhouse.test.js),
+[`test/lever.test.js`](test/lever.test.js), and
+[`test/smartrecruiters.test.js`](test/smartrecruiters.test.js) verify the ingest
+pipelines fetch board content, persist structured snapshots, surface fetch
+errors, and retain the `User-Agent: jobbot3000` request header alongside each
+capture so fetches are reproducible.
 
 ## Lever job board ingestion
 

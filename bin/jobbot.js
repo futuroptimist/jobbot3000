@@ -16,6 +16,7 @@ import { initProfile } from '../src/profile.js';
 import { ingestGreenhouseBoard } from '../src/greenhouse.js';
 import { ingestLeverBoard } from '../src/lever.js';
 import { ingestAshbyBoard } from '../src/ashby.js';
+import { ingestSmartRecruitersBoard } from '../src/smartrecruiters.js';
 
 function isHttpUrl(s) {
   return /^https?:\/\//i.test(s);
@@ -212,29 +213,20 @@ async function cmdIngestGreenhouse(args) {
   console.log(`Imported ${saved} ${noun} from ${company}`);
 }
 
-async function cmdIngest(args) {
-  const sub = args[0];
-  if (sub === 'greenhouse') return cmdIngestGreenhouse(args.slice(1));
-  if (sub === 'lever') return cmdIngestLever(args.slice(1));
-  if (sub === 'ashby') return cmdIngestAshby(args.slice(1));
-  console.error('Usage: jobbot ingest <greenhouse|lever|ashby> [options]');
-  process.exit(2);
-}
-
 async function cmdIngestLever(args) {
-  const org = getFlag(args, '--org');
-  if (!org) {
-    console.error('Usage: jobbot ingest lever --org <slug>');
+  const company = getFlag(args, '--company') || getFlag(args, '--org');
+  if (!company) {
+    console.error('Usage: jobbot ingest lever --company <slug>');
     process.exit(2);
   }
 
-  const { saved } = await ingestLeverBoard({ org });
+  const { saved } = await ingestLeverBoard({ org: company });
   const noun = saved === 1 ? 'job' : 'jobs';
-  console.log(`Imported ${saved} ${noun} from ${org}`);
+  console.log(`Imported ${saved} ${noun} from ${company}`);
 }
 
 async function cmdIngestAshby(args) {
-  const org = getFlag(args, '--org');
+  const org = getFlag(args, '--org') || getFlag(args, '--company');
   if (!org) {
     console.error('Usage: jobbot ingest ashby --org <slug>');
     process.exit(2);
@@ -243,6 +235,28 @@ async function cmdIngestAshby(args) {
   const { saved } = await ingestAshbyBoard({ org });
   const noun = saved === 1 ? 'job' : 'jobs';
   console.log(`Imported ${saved} ${noun} from ${org}`);
+}
+
+async function cmdIngestSmartRecruiters(args) {
+  const company = getFlag(args, '--company');
+  if (!company) {
+    console.error('Usage: jobbot ingest smartrecruiters --company <slug>');
+    process.exit(2);
+  }
+
+  const { saved } = await ingestSmartRecruitersBoard({ company });
+  const noun = saved === 1 ? 'job' : 'jobs';
+  console.log(`Imported ${saved} ${noun} from ${company}`);
+}
+
+async function cmdIngest(args) {
+  const sub = args[0];
+  if (sub === 'greenhouse') return cmdIngestGreenhouse(args.slice(1));
+  if (sub === 'lever') return cmdIngestLever(args.slice(1));
+  if (sub === 'ashby') return cmdIngestAshby(args.slice(1));
+  if (sub === 'smartrecruiters') return cmdIngestSmartRecruiters(args.slice(1));
+  console.error('Usage: jobbot ingest <greenhouse|lever|ashby|smartrecruiters> --company <slug>');
+  process.exit(2);
 }
 
 async function cmdShortlistTag(args) {
