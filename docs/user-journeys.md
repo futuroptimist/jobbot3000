@@ -43,7 +43,9 @@ revisit them later without blocking the workflow.
 **Goal:** Build a living shortlist of job opportunities pulled from the web or supplied manually.
 
 1. The user searches company boards via supported fetchers (Greenhouse, Lever, Ashby, Workable,
-   SmartRecruiters) or pastes individual URLs into the CLI/UI.
+   SmartRecruiters) or pastes individual URLs into the CLI/UI. For example,
+   `jobbot ingest greenhouse --company acme` pulls the latest public postings into the local
+   data directory.
 2. The fetch pipeline de-duplicates listings, normalizes HTML to text, and stores raw + parsed
    copies under `data/jobs/{job_id}.json` alongside fetch metadata (timestamp, source, request
    headers). Job identifiers are hashed from the source URL or file path so repeat fetches update
