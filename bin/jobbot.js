@@ -11,6 +11,7 @@ import { saveJobSnapshot, jobIdFromSource } from '../src/jobs.js';
 import { logApplicationEvent } from '../src/application-events.js';
 import { recordApplication, STATUSES } from '../src/lifecycle.js';
 import { addJobTags, discardJob } from '../src/shortlist.js';
+import { initProfile } from '../src/profile.js';
 
 function isHttpUrl(s) {
   return /^https?:\/\//i.test(s);
@@ -200,13 +201,21 @@ async function cmdShortlist(args) {
   process.exit(2);
 }
 
+async function cmdInit(args) {
+  const force = args.includes('--force');
+  const { created, path: resumePath } = await initProfile({ force });
+  if (created) console.log(`Initialized profile at ${resumePath}`);
+  else console.log(`Profile already exists at ${resumePath}`);
+}
+
 async function main() {
   const [, , cmd, ...args] = process.argv;
+  if (cmd === 'init') return cmdInit(args);
   if (cmd === 'summarize') return cmdSummarize(args);
   if (cmd === 'match') return cmdMatch(args);
   if (cmd === 'track') return cmdTrack(args);
   if (cmd === 'shortlist') return cmdShortlist(args);
-  console.error('Usage: jobbot <summarize|match|track> [options]');
+  console.error('Usage: jobbot <init|summarize|match|track|shortlist> [options]');
   process.exit(2);
 }
 

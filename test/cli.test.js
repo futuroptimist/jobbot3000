@@ -32,6 +32,43 @@ describe('jobbot CLI', () => {
     }
   });
 
+  it('initializes a resume skeleton with init command', () => {
+    const output = runCli(['init']);
+    expect(output.trim()).toMatch(/Initialized profile at/);
+
+    const profileDir = path.join(dataDir, 'profile');
+    const resumePath = path.join(profileDir, 'resume.json');
+    const raw = fs.readFileSync(resumePath, 'utf8');
+    const resume = JSON.parse(raw);
+
+    expect(resume).toMatchObject({
+      $schema:
+        'https://raw.githubusercontent.com/jsonresume/resume-schema/v1.0.0/schema.json',
+      basics: {
+        name: '',
+        label: '',
+        email: '',
+        phone: '',
+        website: '',
+        summary: '',
+        location: {
+          city: '',
+          region: '',
+          country: '',
+        },
+      },
+      work: [],
+      education: [],
+      projects: [],
+      skills: [],
+      certificates: [],
+      languages: [],
+    });
+
+    expect(typeof resume.meta?.generatedAt).toBe('string');
+    expect(resume.meta?.generator).toBe('jobbot3000');
+  });
+
   it('summarize from stdin', () => {
     const out = runCli(['summarize', '-'], 'First sentence. Second.');
     expect(out).toMatch(/First sentence\./);

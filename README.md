@@ -120,6 +120,18 @@ run();
 `loadResume` supports `.pdf`, `.md`, `.markdown`, and `.mdx` files; other
 extensions are read as plain text.
 
+Initialize a JSON Resume skeleton when you do not have an existing file:
+
+```bash
+JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot init
+# Initialized profile at /tmp/jobbot-profile-XXXX/profile/resume.json
+```
+
+`jobbot init` writes `profile/resume.json` under the data directory with empty
+basics, work, education, skills, projects, certificates, and languages
+sections. The command is idempotent and preserves existing resumes; see
+`test/cli.test.js` and `test/profile.test.js` for coverage.
+
 Format parsed results as Markdown. The exporters escape Markdown control characters so job
 content cannot inject arbitrary links or formatting when rendered downstream:
 
