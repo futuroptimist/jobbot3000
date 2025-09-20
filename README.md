@@ -91,7 +91,9 @@ override the 10s default, and `headers` to send custom HTTP headers. Responses
 over 1 MB are rejected; override with `maxBytes` to adjust. Only `http` and
 `https` URLs are supported; other protocols throw an error. Requests to
 loopback, link-local, carrier-grade NAT, or other private network addresses
-are blocked to prevent server-side request forgery (SSRF).
+are blocked to prevent server-side request forgery (SSRF). Hostnames that
+resolve to those private ranges (for example, `127.0.0.1.nip.io`) are rejected
+as well; see `test/fetch.test.js` for coverage of these guardrails.
 
 Normalize existing HTML without fetching and log the result:
 

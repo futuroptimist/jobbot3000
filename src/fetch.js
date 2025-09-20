@@ -1,3 +1,4 @@
+import dns from 'node:dns/promises';
 import { isIP } from 'node:net';
 import fetch from 'node-fetch';
 import { htmlToText } from 'html-to-text';
@@ -71,6 +72,42 @@ function isForbiddenHostname(hostname) {
   }
 
   return false;
+}
+
+const DNS_IGNORE_ERROR_CODES = new Set([
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'EAI_FAIL',
+  'EAI_NONAME',
+  'EAI_NODATA',
+  'ENODATA',
+]);
+
+async function ensureResolvedHostIsPublic(hostname) {
+  const bracketless = hostname.startsWith('[') && hostname.endsWith(']')
+    ? hostname.slice(1, -1)
+    : hostname;
+  if (isIP(bracketless)) return;
+
+  let records;
+  try {
+    records = await dns.lookup(hostname, { all: true });
+  } catch (err) {
+    if (err && DNS_IGNORE_ERROR_CODES.has(err.code)) return;
+    throw err;
+  }
+
+  if (!Array.isArray(records) || records.length === 0) return;
+
+  for (const record of records) {
+    const address = record && typeof record.address === 'string' ? record.address : '';
+    if (!address) continue;
+    if (isForbiddenHostname(address)) {
+      throw new Error(
+        `Refusing to fetch private address: ${address} (resolved from ${hostname})`
+      );
+    }
+  }
 }
 
 function parseIPv6(address) {
@@ -225,6 +262,13 @@ export async function fetchTextFromUrl(
   );
 
   try {
+    await ensureResolvedHostIsPublic(hostname);
+    if (controller.signal.aborted) {
+      const reason = controller.signal.reason;
+      throw reason instanceof Error
+        ? reason
+        : new Error(reason ? String(reason) : 'Request aborted');
+    }
     const response = await fetch(url, {
       redirect: 'follow',
       signal: controller.signal,
