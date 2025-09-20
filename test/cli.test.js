@@ -195,6 +195,29 @@ describe('jobbot CLI', () => {
     expect(entry.discarded_at).toMatch(/T.*Z$/);
   });
 
+  it('captures optional tags when discarding shortlist entries', () => {
+    runCli([
+      'shortlist',
+      'discard',
+      'job-tags',
+      '--reason',
+      'Location mismatch',
+      '--tags',
+      'Remote,onsite,remote',
+    ]);
+
+    const shortlist = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'shortlist.json'), 'utf8')
+    );
+    const [entry] = shortlist.jobs['job-tags'].discarded;
+    expect(entry.tags).toEqual(['Remote', 'onsite']);
+
+    const archive = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'discarded_jobs.json'), 'utf8')
+    );
+    expect(archive['job-tags'][0].tags).toEqual(['Remote', 'onsite']);
+  });
+
   it('syncs shortlist metadata and filters entries by location', () => {
     const syncOutput = runCli([
       'shortlist',

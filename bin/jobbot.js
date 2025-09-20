@@ -210,12 +210,18 @@ async function cmdShortlistTag(args) {
 
 async function cmdShortlistDiscard(args) {
   const jobId = args[0];
-  const reason = getFlag(args.slice(1), '--reason');
+  const rest = args.slice(1);
+  const reason = getFlag(rest, '--reason');
   if (!jobId || !reason) {
-    console.error('Usage: jobbot shortlist discard <job_id> --reason <reason>');
+    console.error(
+      'Usage: jobbot shortlist discard <job_id> --reason <reason> [--tags <tag1,tag2>] ' +
+        '[--date <date>]'
+    );
     process.exit(2);
   }
-  const entry = await discardJob(jobId, reason);
+  const tags = parseTagsFlag(rest);
+  const date = getFlag(rest, '--date');
+  const entry = await discardJob(jobId, reason, { tags, date });
   console.log(`Discarded ${jobId}: ${entry.reason}`);
 }
 

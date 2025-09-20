@@ -253,7 +253,7 @@ DATA_DIR=$(mktemp -d)
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist tag job-123 dream remote
 # Tagged job-123 with dream, remote
 
-JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist discard job-123 --reason "Not remote"
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist discard job-123 --reason "Not remote" --tags "Remote,onsite"
 # Discarded job-123: Not remote
 
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist sync job-123 --location Remote --level Senior --compensation "$185k"
@@ -267,10 +267,12 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --location remote
 ~~~
 
 The CLI stores shortlist labels, discard history, and sync metadata in `data/shortlist.json`, keeping
-reasons, timestamps, and location/level/compensation fields so recommendations can surface patterns
-later. Metadata syncs stamp a `synced_at` ISO 8601 timestamp for refresh schedulers. Unit tests in
-[`test/shortlist.test.js`](test/shortlist.test.js) and the CLI suite in
-[`test/cli.test.js`](test/cli.test.js) exercise metadata updates, filters, and the persisted format.
+reasons, timestamps, optional tags, and location/level/compensation fields so recommendations can
+surface patterns later. Discard actions also append to `data/discarded_jobs.json` so archive lookups
+and shortlist history stay in sync. Metadata syncs stamp a `synced_at` ISO 8601 timestamp for refresh
+schedulers. Unit tests in [`test/shortlist.test.js`](test/shortlist.test.js) and the CLI suite in
+[`test/cli.test.js`](test/cli.test.js) exercise metadata updates, filters, discard tags, and the
+persisted format.
 
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 See [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) for a list of prompt documents.
