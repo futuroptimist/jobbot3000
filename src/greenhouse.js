@@ -5,6 +5,8 @@ import { parseJobText } from './parser.js';
 
 const GREENHOUSE_BASE = 'https://boards.greenhouse.io/v1/boards';
 
+const GREENHOUSE_HEADERS = { 'User-Agent': 'jobbot3000' };
+
 function normalizeBoardSlug(board) {
   if (!board || typeof board !== 'string' || !board.trim()) {
     throw new Error('Greenhouse board slug is required');
@@ -39,7 +41,7 @@ function mergeParsedJob(parsed, job) {
 export async function fetchGreenhouseJobs(board, { fetchImpl = fetch } = {}) {
   const slug = normalizeBoardSlug(board);
   const url = buildBoardUrl(slug);
-  const response = await fetchImpl(url);
+  const response = await fetchImpl(url, { headers: GREENHOUSE_HEADERS });
   if (!response.ok) {
     throw new Error(
       `Failed to fetch Greenhouse board ${slug}: ${response.status} ${response.statusText}`,
@@ -65,6 +67,7 @@ export async function ingestGreenhouseBoard({ board, fetchImpl = fetch } = {}) {
       raw: text,
       parsed,
       source: { type: 'greenhouse', value: absoluteUrl },
+      requestHeaders: GREENHOUSE_HEADERS,
       fetchedAt: job.updated_at,
     });
     jobIds.push(id);

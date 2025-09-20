@@ -245,7 +245,9 @@ location, and requirements, and written to `data/jobs/{job_id}.json` with a
 the same job identifier so downstream tooling can diff revisions over time.
 Tests in [`test/greenhouse.test.js`](test/greenhouse.test.js) and
 [`test/lever.test.js`](test/lever.test.js) verify the ingest pipelines fetch
-board content, persist structured snapshots, and surface fetch errors.
+board content, persist structured snapshots, surface fetch errors, and retain
+the `User-Agent: jobbot3000` request header alongside each capture so fetches
+are reproducible.
 
 Job titles can be parsed from lines starting with `Title`, `Job Title`, `Position`, or `Role`.
 Headers can use colons or dash separators (for example, `Role - Staff Engineer`), and the same
