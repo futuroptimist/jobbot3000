@@ -254,9 +254,9 @@ jobbot track add <job_id> --status applied --note "emailed hiring manager"
 - Minimal UI (profile editor, file upload).
 
 **Phase 1 — Job ingestion (1 week)**
-- Greenhouse Job Board fetcher + normalizer.
-- Lever Postings fetcher + normalizer.
-- Ashby Jobs fetcher + normalizer.
+- Greenhouse Job Board fetcher + normalizer (shipped via `jobbot ingest greenhouse`).
+- Lever Postings fetcher + normalizer (shipped via `jobbot ingest lever`).
+- Ashby Jobs fetcher + normalizer (shipped via `jobbot ingest ashby`).
 - Caching, retries, per-domain politeness.
 - UI: source connections, search & filters.
 

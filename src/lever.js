@@ -16,12 +16,19 @@ function buildOrgUrl(slug) {
   return `${LEVER_BASE}/${encodeURIComponent(slug)}?mode=json`;
 }
 
-function resolveHostedUrl(job, slug) {
-  const fromJob = typeof job.hostedUrl === 'string' ? job.hostedUrl.trim() : '';
-  if (fromJob) return fromJob;
-  const jobId = typeof job.id === 'string' && job.id.trim() ? job.id.trim() : String(job.id ?? '');
-  if (jobId) return `https://jobs.lever.co/${slug}/${jobId}`;
-  return `https://jobs.lever.co/${slug}`;
+function resolveAbsoluteUrl(job, slug) {
+  const hosted = typeof job?.hostedUrl === 'string' ? job.hostedUrl.trim() : '';
+  if (hosted) return hosted;
+  const identifier =
+    typeof job?.id === 'string' && job.id.trim()
+      ? job.id.trim()
+      : typeof job?.id === 'number'
+        ? String(job.id)
+        : '';
+  const fallback = identifier || 'unknown';
+  const encodedSlug = encodeURIComponent(slug);
+  const encodedId = encodeURIComponent(fallback);
+  return `https://jobs.lever.co/${encodedSlug}/${encodedId}`;
 }
 
 function extractRawDescription(job) {
@@ -34,16 +41,27 @@ function extractRawDescription(job) {
 }
 
 function extractLocation(job) {
-  const loc = job?.categories?.location;
-  return typeof loc === 'string' ? loc.trim() : '';
+  const categories = job?.categories;
+  const byCategory =
+    categories && typeof categories.location === 'string' ? categories.location.trim() : '';
+  if (byCategory) return byCategory;
+  if (typeof job?.location === 'string' && job.location.trim()) return job.location.trim();
+  if (typeof job?.workplaceType === 'string' && job.workplaceType.trim()) {
+    return job.workplaceType.trim();
+  }
+  return '';
 }
 
 function mergeParsedJob(parsed, job) {
   const merged = { ...parsed };
-  const title = typeof job.text === 'string' ? job.text.trim() : '';
-  if (!merged.title && title) merged.title = title;
-  const location = extractLocation(job);
-  if (!merged.location && location) merged.location = location;
+  if (!merged.title) {
+    const title = typeof job?.text === 'string' ? job.text.trim() : '';
+    if (title) merged.title = title;
+  }
+  if (!merged.location) {
+    const location = extractLocation(job);
+    if (location) merged.location = location;
+  }
   return merged;
 }
 
@@ -54,8 +72,13 @@ export async function fetchLeverJobs(org, { fetchImpl = fetch } = {}) {
   if (!response.ok) {
     throw new Error(`Failed to fetch Lever org ${slug}: ${response.status} ${response.statusText}`);
   }
-  const jobs = await response.json();
-  return { slug, jobs: Array.isArray(jobs) ? jobs : [] };
+  const payload = await response.json();
+  const jobs = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.data)
+      ? payload.data
+      : [];
+  return { slug, jobs };
 }
 
 export async function ingestLeverBoard({ org, fetchImpl = fetch } = {}) {
@@ -63,16 +86,16 @@ export async function ingestLeverBoard({ org, fetchImpl = fetch } = {}) {
   const jobIds = [];
 
   for (const job of jobs) {
-    const hostedUrl = resolveHostedUrl(job, slug);
+    const absoluteUrl = resolveAbsoluteUrl(job, slug);
     const raw = extractRawDescription(job);
     const parsed = mergeParsedJob(parseJobText(raw), job);
-    const id = jobIdFromSource({ provider: 'lever', url: hostedUrl });
+    const id = jobIdFromSource({ provider: 'lever', url: absoluteUrl });
     await saveJobSnapshot({
       id,
       raw,
       parsed,
-      source: { type: 'lever', value: hostedUrl },
-      fetchedAt: job.updatedAt ?? job.createdAt,
+      source: { type: 'lever', value: absoluteUrl },
+      fetchedAt: job?.updatedAt ?? job?.createdAt,
     });
     jobIds.push(id);
   }
