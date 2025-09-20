@@ -1,8 +1,13 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
 vi.mock('node-fetch', () => ({ default: vi.fn() }));
+vi.mock('node:dns/promises', () => {
+  const lookup = vi.fn(async () => [{ address: '93.184.216.34', family: 4 }]);
+  return { default: { lookup }, lookup };
+});
 
 import fetch from 'node-fetch';
+import dns from 'node:dns/promises';
 import { DEFAULT_TIMEOUT_MS, extractTextFromHtml, fetchTextFromUrl } from '../src/fetch.js';
 
 describe('extractTextFromHtml', () => {
@@ -181,6 +186,7 @@ describe('extractTextFromHtml', () => {
 describe('fetchTextFromUrl', () => {
   afterEach(() => {
     fetch.mockReset();
+    dns.lookup.mockClear();
   });
   it('returns extracted text for HTML responses', async () => {
     fetch.mockResolvedValue({
@@ -383,6 +389,16 @@ describe('fetchTextFromUrl', () => {
     });
     await expect(fetchTextFromUrl('http://[::ffff:127.0.0.1]/hidden'))
       .rejects.toThrow(/Refusing to fetch private address: ::ffff:(127\.0\.0\.1|7f00:1)/);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects hostnames that resolve to private addresses', async () => {
+    dns.lookup.mockResolvedValueOnce([{ address: '127.0.0.1', family: 4 }]);
+
+    await expect(fetchTextFromUrl('http://internal.example'))
+      .rejects.toThrow(
+        'Refusing to fetch private address: 127.0.0.1 (resolved from internal.example)'
+      );
     expect(fetch).not.toHaveBeenCalled();
   });
 
