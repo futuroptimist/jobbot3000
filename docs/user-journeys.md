@@ -42,8 +42,8 @@ revisit them later without blocking the workflow.
 
 **Goal:** Build a living shortlist of job opportunities pulled from the web or supplied manually.
 
-1. The user searches company boards via supported fetchers (Greenhouse, Lever, Ashby, Workable,
-   SmartRecruiters) or pastes individual URLs into the CLI/UI. For example,
+1. The user searches company boards via supported fetchers (Greenhouse and Lever today; Ashby,
+   Workable, and SmartRecruiters are on the roadmap) or pastes individual URLs into the CLI/UI. For example,
    `jobbot ingest greenhouse --company acme` pulls the latest public postings into the local
    data directory.
 2. The fetch pipeline de-duplicates listings, normalizes HTML to text, and stores raw + parsed
