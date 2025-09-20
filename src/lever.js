@@ -31,6 +31,15 @@ function resolveAbsoluteUrl(job, slug) {
   return `https://jobs.lever.co/${encodedSlug}/${encodedId}`;
 }
 
+function extractRawDescription(job) {
+  const plain = typeof job.descriptionPlain === 'string' ? job.descriptionPlain.trim() : '';
+  if (plain) return plain;
+  const html = typeof job.description === 'string' ? job.description : '';
+  if (html && html.trim()) return extractTextFromHtml(html);
+  const fallback = typeof job.text === 'string' ? job.text.trim() : '';
+  return fallback;
+}
+
 function extractLocation(job) {
   const categories = job?.categories;
   const byCategory =
@@ -41,75 +50,6 @@ function extractLocation(job) {
     return job.workplaceType.trim();
   }
   return '';
-}
-
-function normalizeHtmlFragments(fragment) {
-  if (!fragment) return [];
-  if (typeof fragment === 'string') {
-    const trimmed = fragment.trim();
-    return trimmed ? [trimmed] : [];
-  }
-  if (Array.isArray(fragment)) {
-    const collected = [];
-    for (const entry of fragment) {
-      collected.push(...normalizeHtmlFragments(entry));
-    }
-    return collected;
-  }
-  if (typeof fragment === 'object') {
-    const collected = [];
-    if (typeof fragment.text === 'string') {
-      const text = fragment.text.trim();
-      if (text) collected.push(text);
-    }
-    if (fragment.content !== undefined) {
-      collected.push(...normalizeHtmlFragments(fragment.content));
-    }
-    return collected;
-  }
-  return [];
-}
-
-function normalizePlainText(value) {
-  if (typeof value !== 'string') return '';
-  const trimmed = value.trim();
-  return trimmed ? trimmed : '';
-}
-
-function buildJobHtml(job) {
-  const sections = [];
-  const title = typeof job?.text === 'string' ? job.text.trim() : '';
-  if (title) sections.push(`<h1>${title}</h1>`);
-
-  const mainContent = normalizeHtmlFragments(job?.content).join('\n');
-  if (mainContent) sections.push(mainContent);
-
-  if (Array.isArray(job?.lists)) {
-    for (const entry of job.lists) {
-      const heading = typeof entry?.text === 'string' ? entry.text.trim() : '';
-      const listHtml = normalizeHtmlFragments(entry?.content).join('\n');
-      if (heading || listHtml) {
-        const headingHtml = heading ? `<h2>${heading}</h2>` : '';
-        sections.push(`${headingHtml}${listHtml}`);
-      }
-    }
-  }
-
-  const descriptionHtml = normalizeHtmlFragments(job?.description).join('\n');
-  if (descriptionHtml) {
-    sections.push(descriptionHtml);
-  } else {
-    const descriptionPlain = normalizePlainText(job?.descriptionPlain);
-    if (descriptionPlain) sections.push(`<p>${descriptionPlain}</p>`);
-  }
-
-  const additionalHtml = normalizeHtmlFragments(job?.additional).join('\n');
-  if (additionalHtml) sections.push(additionalHtml);
-
-  const additionalPlain = normalizePlainText(job?.additionalPlain);
-  if (additionalPlain) sections.push(`<p>${additionalPlain}</p>`);
-
-  return sections.join('\n');
 }
 
 function mergeParsedJob(parsed, job) {
@@ -144,20 +84,21 @@ export async function fetchLeverJobs(org, { fetchImpl = fetch } = {}) {
 export async function ingestLeverBoard({ org, fetchImpl = fetch } = {}) {
   const { slug, jobs } = await fetchLeverJobs(org, { fetchImpl });
   const jobIds = [];
+
   for (const job of jobs) {
     const absoluteUrl = resolveAbsoluteUrl(job, slug);
-    const html = buildJobHtml(job);
-    const text = extractTextFromHtml(html);
-    const parsed = mergeParsedJob(parseJobText(text), job);
+    const raw = extractRawDescription(job);
+    const parsed = mergeParsedJob(parseJobText(raw), job);
     const id = jobIdFromSource({ provider: 'lever', url: absoluteUrl });
     await saveJobSnapshot({
       id,
-      raw: text,
+      raw,
       parsed,
       source: { type: 'lever', value: absoluteUrl },
       fetchedAt: job?.updatedAt ?? job?.createdAt,
     });
     jobIds.push(id);
   }
+
   return { org: slug, saved: jobIds.length, jobIds };
 }
