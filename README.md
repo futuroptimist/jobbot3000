@@ -302,6 +302,45 @@ schedulers. Unit tests in [`test/shortlist.test.js`](test/shortlist.test.js) and
 [`test/cli.test.js`](test/cli.test.js) exercise metadata updates, filters, discard tags, and the
 persisted format.
 
+## Interview session logs
+
+Capture rehearsal transcripts, reflections, and coach feedback per interview loop:
+
+~~~bash
+DATA_DIR=$(mktemp -d)
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot interviews record job-123 prep-2025-02-01 \
+  --stage Onsite \
+  --mode Voice \
+  --transcript "Practiced system design walkthrough" \
+  --reflections "Tighten capacity estimates" \
+  --feedback "Great storytelling" \
+  --notes "Follow up on salary research" \
+  --started-at 2025-02-01T09:00:00Z \
+  --ended-at 2025-02-01T10:15:00Z
+# Recorded session prep-2025-02-01 for job-123
+
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot interviews show job-123 prep-2025-02-01
+# {
+#   "job_id": "job-123",
+#   "session_id": "prep-2025-02-01",
+#   "recorded_at": "2025-02-01T09:00:00.000Z",
+#   "stage": "Onsite",
+#   "mode": "Voice",
+#   "transcript": "Practiced system design walkthrough",
+#   "reflections": ["Tighten capacity estimates"],
+#   "feedback": ["Great storytelling"],
+#   "notes": "Follow up on salary research",
+#   "started_at": "2025-02-01T09:00:00.000Z",
+#   "ended_at": "2025-02-01T10:15:00.000Z"
+# }
+~~~
+
+Sessions are stored under `data/interviews/{job_id}/{session_id}.json` with ISO 8601 timestamps so
+coaches and candidates can revisit transcripts later. The CLI accepts `--*-file` options for longer
+inputs (for example, `--transcript-file transcript.md`). Automated coverage in
+[`test/interviews.test.js`](test/interviews.test.js) and [`test/cli.test.js`](test/cli.test.js)
+verifies persistence and retrieval paths.
+
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 See [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) for a list of prompt documents.
 

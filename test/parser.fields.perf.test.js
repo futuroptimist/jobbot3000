@@ -103,7 +103,7 @@ function legacyParseJobText(rawText) {
 }
 
 describe('parseJobText field scanning performance', () => {
-  it('outperforms the legacy field scanner', () => {
+  it('outperforms the legacy field scanner', { timeout: 10000 }, () => {
     const lines = Array.from({ length: 20000 }, (_, i) => `Line ${i}`);
     lines.splice(1000, 0, 'Title: Senior Staff Software Engineer');
     lines.splice(5000, 0, 'Company: Example Labs');

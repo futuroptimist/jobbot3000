@@ -12,6 +12,7 @@ import { logApplicationEvent } from '../src/application-events.js';
 import { recordApplication, STATUSES } from '../src/lifecycle.js';
 import { recordJobDiscard } from '../src/discards.js';
 import { addJobTags, discardJob, filterShortlist, syncShortlistJob } from '../src/shortlist.js';
+import { recordInterviewSession, getInterviewSession } from '../src/interviews.js';
 import { initProfile } from '../src/profile.js';
 import { ingestGreenhouseBoard } from '../src/greenhouse.js';
 import { ingestLeverBoard } from '../src/lever.js';
@@ -43,6 +44,27 @@ function getNumberFlag(args, name, fallback) {
   const raw = getFlag(args, name);
   const n = Number(raw);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function parseMultilineList(value) {
+  if (value == null) return undefined;
+  const str = typeof value === 'string' ? value : String(value);
+  const lines = str
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return undefined;
+  return lines.length === 1 ? lines[0] : lines;
+}
+
+function readContentFromArgs(args, valueFlag, fileFlag) {
+  const filePath = getFlag(args, fileFlag);
+  if (filePath) {
+    const resolved = path.resolve(process.cwd(), filePath);
+    return fs.readFileSync(resolved, 'utf8');
+  }
+  const value = getFlag(args, valueFlag);
+  return value === undefined ? undefined : value;
 }
 
 async function persistJobSnapshot(raw, parsed, source, requestHeaders) {
@@ -347,6 +369,74 @@ async function cmdShortlist(args) {
   process.exit(2);
 }
 
+async function cmdInterviewsRecord(args) {
+  const jobId = args[0];
+  const sessionId = args[1];
+  const rest = args.slice(2);
+
+  const transcriptInput = readContentFromArgs(rest, '--transcript', '--transcript-file');
+  const reflectionsInput = readContentFromArgs(rest, '--reflections', '--reflections-file');
+  const feedbackInput = readContentFromArgs(rest, '--feedback', '--feedback-file');
+  const notesInput = readContentFromArgs(rest, '--notes', '--notes-file');
+
+  const stage = getFlag(rest, '--stage');
+  const mode = getFlag(rest, '--mode');
+  const startedAt = getFlag(rest, '--started-at');
+  const endedAt = getFlag(rest, '--ended-at');
+
+  if (!jobId || !sessionId) {
+    console.error(
+      'Usage: jobbot interviews record <job_id> <session_id> ' +
+        '[--stage <value>] [--mode <value>] ' +
+        '[--transcript <text>|--transcript-file <path>] ' +
+        '[--reflections <text>|--reflections-file <path>] ' +
+        '[--feedback <text>|--feedback-file <path>] ' +
+        '[--notes <text>|--notes-file <path>] ' +
+        '[--started-at <iso8601>] [--ended-at <iso8601>]'
+    );
+    process.exit(2);
+  }
+
+  const payload = {
+    transcript: transcriptInput,
+    reflections: parseMultilineList(reflectionsInput),
+    feedback: parseMultilineList(feedbackInput),
+    notes: notesInput,
+    stage,
+    mode,
+    startedAt,
+    endedAt,
+  };
+
+  const entry = await recordInterviewSession(jobId, sessionId, payload);
+  console.log(`Recorded session ${entry.session_id} for ${entry.job_id}`);
+}
+
+async function cmdInterviewsShow(args) {
+  const jobId = args[0];
+  const sessionId = args[1];
+  if (!jobId || !sessionId) {
+    console.error('Usage: jobbot interviews show <job_id> <session_id>');
+    process.exit(2);
+  }
+
+  const entry = await getInterviewSession(jobId, sessionId);
+  if (!entry) {
+    console.error(`No interview session ${sessionId} found for ${jobId}`);
+    process.exit(1);
+  }
+
+  console.log(JSON.stringify(entry, null, 2));
+}
+
+async function cmdInterviews(args) {
+  const sub = args[0];
+  if (sub === 'record') return cmdInterviewsRecord(args.slice(1));
+  if (sub === 'show') return cmdInterviewsShow(args.slice(1));
+  console.error('Usage: jobbot interviews <record|show> ...');
+  process.exit(2);
+}
+
 async function cmdInit(args) {
   const force = args.includes('--force');
   const { created, path: resumePath } = await initProfile({ force });
@@ -362,7 +452,8 @@ async function main() {
   if (cmd === 'track') return cmdTrack(args);
   if (cmd === 'shortlist') return cmdShortlist(args);
   if (cmd === 'ingest') return cmdIngest(args);
-  console.error('Usage: jobbot <init|summarize|match|track|shortlist|ingest> [options]');
+  if (cmd === 'interviews') return cmdInterviews(args);
+  console.error('Usage: jobbot <init|summarize|match|track|shortlist|interviews|ingest> [options]');
   process.exit(2);
 }
 
