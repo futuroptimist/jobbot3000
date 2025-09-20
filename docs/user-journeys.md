@@ -10,7 +10,8 @@ translate them into backlog items, prompts, and acceptance tests.
 jobbot3000.
 
 1. The user selects a local resume file (PDF, Markdown, MDX, or plain text) or points to an existing
-   `resume.json`.
+   `resume.json`. When they start from scratch, `jobbot init` scaffolds
+   `data/profile/resume.json` with empty JSON Resume sections ready for editing.
 2. The CLI or UI calls the resume loader to extract clean text and metadata.
 3. Parsed content is normalized into the JSON Resume schema and saved under `data/profile/`, a
    git-ignored directory so personal data never leaves the machine.
