@@ -248,4 +248,53 @@ describe('jobbot CLI', () => {
     expect(listOutput).toContain('job-sync');
     expect(listOutput).toContain('Remote');
   });
+
+  it('records interview sessions with transcripts and notes', () => {
+    const transcriptPath = path.join(dataDir, 'transcript.txt');
+    fs.writeFileSync(transcriptPath, 'Practiced STAR story\n');
+
+    const reflectionsPath = path.join(dataDir, 'reflections.txt');
+    fs.writeFileSync(reflectionsPath, 'Highlight quant impact\nTighter close');
+
+    const output = runCli([
+      'interviews',
+      'record',
+      'job-123',
+      'session-1',
+      '--transcript-file',
+      transcriptPath,
+      '--reflections-file',
+      reflectionsPath,
+      '--feedback',
+      'Coach praised clarity',
+      '--notes',
+      'Follow up with salary research',
+      '--stage',
+      'Onsite',
+      '--mode',
+      'Voice',
+      '--started-at',
+      '2025-02-01T09:00:00Z',
+      '--ended-at',
+      '2025-02-01T10:30:00Z',
+    ]);
+
+    expect(output.trim()).toBe('Recorded session session-1 for job-123');
+
+    const file = path.join(dataDir, 'interviews', 'job-123', 'session-1.json');
+    const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
+
+    expect(stored.transcript).toBe('Practiced STAR story');
+    expect(stored.reflections).toEqual(['Highlight quant impact', 'Tighter close']);
+    expect(stored.feedback).toEqual(['Coach praised clarity']);
+    expect(stored.notes).toBe('Follow up with salary research');
+    expect(stored.stage).toBe('Onsite');
+    expect(stored.mode).toBe('Voice');
+    expect(stored.started_at).toBe('2025-02-01T09:00:00.000Z');
+    expect(stored.ended_at).toBe('2025-02-01T10:30:00.000Z');
+
+    const shown = runCli(['interviews', 'show', 'job-123', 'session-1']);
+    const parsed = JSON.parse(shown);
+    expect(parsed).toEqual(stored);
+  });
 });
