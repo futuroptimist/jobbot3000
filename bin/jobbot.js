@@ -211,11 +211,23 @@ async function cmdIngestGreenhouse(args) {
   console.log(`Imported ${saved} ${noun} from ${company}`);
 }
 
+async function cmdIngestLever(args) {
+  const company = getFlag(args, '--company') || getFlag(args, '--org');
+  if (!company) {
+    console.error('Usage: jobbot ingest lever --company <slug>');
+    process.exit(2);
+  }
+
+  const { saved } = await ingestLeverBoard({ org: company });
+  const noun = saved === 1 ? 'job' : 'jobs';
+  console.log(`Imported ${saved} ${noun} from ${company}`);
+}
+
 async function cmdIngest(args) {
   const sub = args[0];
   if (sub === 'greenhouse') return cmdIngestGreenhouse(args.slice(1));
   if (sub === 'lever') return cmdIngestLever(args.slice(1));
-  console.error('Usage: jobbot ingest <greenhouse|lever> [options]');
+  console.error('Usage: jobbot ingest <greenhouse|lever> --company <slug>');
   process.exit(2);
 }
 

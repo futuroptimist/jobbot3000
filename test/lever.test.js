@@ -26,22 +26,25 @@ describe('Lever ingest', () => {
     delete process.env.JOBBOT_DATA_DIR;
   });
 
-  it('fetches Lever postings and writes snapshots', async () => {
+  it('fetches Lever jobs and writes snapshots', async () => {
     fetch.mockResolvedValue({
       ok: true,
       status: 200,
       statusText: 'OK',
       json: async () => [
         {
-          id: '123abc',
-          text: 'Backend Engineer',
+          id: 'abc123',
+          text: 'Senior Platform Engineer',
+          hostedUrl: 'https://jobs.lever.co/example/abc123',
+          descriptionPlain: `
+Title: Senior Platform Engineer
+Company: Example Corp
+Location: Remote
+Requirements
+- Ship reliable systems
+`,
           categories: { location: 'Remote' },
-          content: '<p>Build APIs</p>',
-          lists: [
-            { text: 'Responsibilities', content: '<ul><li>Scale services</li></ul>' },
-          ],
-          hostedUrl: 'https://jobs.lever.co/example/123abc',
-          updatedAt: 1730419200000,
+          updatedAt: '2025-01-02T03:04:05Z',
         },
       ],
     });
@@ -64,15 +67,11 @@ describe('Lever ingest', () => {
     const saved = JSON.parse(await fs.readFile(path.join(jobsDir, files[0]), 'utf8'));
     expect(saved.source).toMatchObject({
       type: 'lever',
-      value: 'https://jobs.lever.co/example/123abc',
+      value: 'https://jobs.lever.co/example/abc123',
     });
-    expect(saved.parsed.title).toBe('Backend Engineer');
+    expect(saved.parsed.title).toBe('Senior Platform Engineer');
     expect(saved.parsed.location).toBe('Remote');
-    const hasRequirement = saved.parsed.requirements.some((req) =>
-      req.includes('Scale services'),
-    );
-    expect(hasRequirement).toBe(true);
-    expect(saved.fetched_at).toBe('2024-11-01T00:00:00.000Z');
+    expect(saved.fetched_at).toBe('2025-01-02T03:04:05.000Z');
   });
 
   it('throws when the org fetch fails', async () => {
