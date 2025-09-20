@@ -15,6 +15,7 @@ import { addJobTags, discardJob, filterShortlist, syncShortlistJob } from '../sr
 import { initProfile } from '../src/profile.js';
 import { ingestGreenhouseBoard } from '../src/greenhouse.js';
 import { ingestLeverBoard } from '../src/lever.js';
+import { ingestSmartRecruitersBoard } from '../src/smartrecruiters.js';
 
 function isHttpUrl(s) {
   return /^https?:\/\//i.test(s);
@@ -223,11 +224,24 @@ async function cmdIngestLever(args) {
   console.log(`Imported ${saved} ${noun} from ${company}`);
 }
 
+async function cmdIngestSmartRecruiters(args) {
+  const company = getFlag(args, '--company');
+  if (!company) {
+    console.error('Usage: jobbot ingest smartrecruiters --company <slug>');
+    process.exit(2);
+  }
+
+  const { saved } = await ingestSmartRecruitersBoard({ company });
+  const noun = saved === 1 ? 'job' : 'jobs';
+  console.log(`Imported ${saved} ${noun} from ${company}`);
+}
+
 async function cmdIngest(args) {
   const sub = args[0];
   if (sub === 'greenhouse') return cmdIngestGreenhouse(args.slice(1));
   if (sub === 'lever') return cmdIngestLever(args.slice(1));
-  console.error('Usage: jobbot ingest <greenhouse|lever> --company <slug>');
+  if (sub === 'smartrecruiters') return cmdIngestSmartRecruiters(args.slice(1));
+  console.error('Usage: jobbot ingest <greenhouse|lever|smartrecruiters> --company <slug>');
   process.exit(2);
 }
 

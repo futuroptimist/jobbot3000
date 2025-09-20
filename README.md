@@ -229,7 +229,7 @@ so snapshots stay alongside other candidate data when the directory is moved.
 
 ## Job board ingestion
 
-Fetch public boards directly with Greenhouse or Lever pipelines:
+Fetch public boards directly with Greenhouse, Lever, or SmartRecruiters pipelines:
 
 ~~~bash
 JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot ingest greenhouse --company example
@@ -237,17 +237,21 @@ JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot ingest greenhouse --company example
 
 JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot ingest lever --company example
 # Imported 8 jobs from example
+
+JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot ingest smartrecruiters --company example
+# Imported 5 jobs from example
 ~~~
 
 Each listing in the response is normalised to plain text, parsed for title,
 location, and requirements, and written to `data/jobs/{job_id}.json` with a
-`source.type` reflecting the provider (`greenhouse` or `lever`). Updates reuse
+`source.type` reflecting the provider (`greenhouse`, `lever`, or `smartrecruiters`). Updates reuse
 the same job identifier so downstream tooling can diff revisions over time.
-Tests in [`test/greenhouse.test.js`](test/greenhouse.test.js) and
-[`test/lever.test.js`](test/lever.test.js) verify the ingest pipelines fetch
-board content, persist structured snapshots, surface fetch errors, and retain
-the `User-Agent: jobbot3000` request header alongside each capture so fetches
-are reproducible.
+Tests in [`test/greenhouse.test.js`](test/greenhouse.test.js),
+[`test/lever.test.js`](test/lever.test.js), and
+[`test/smartrecruiters.test.js`](test/smartrecruiters.test.js) verify the ingest
+pipelines fetch board content, persist structured snapshots, surface fetch
+errors, and retain the `User-Agent: jobbot3000` request header alongside each
+capture so fetches are reproducible.
 
 Job titles can be parsed from lines starting with `Title`, `Job Title`, `Position`, or `Role`.
 Headers can use colons or dash separators (for example, `Role - Staff Engineer`), and the same
