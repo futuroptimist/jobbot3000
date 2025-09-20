@@ -243,6 +243,22 @@ downstream tooling can diff revisions over time. `test/greenhouse.test.js`
 verifies the ingest pipeline fetches board content and persists structured
 snapshots.
 
+## Lever job board ingestion
+
+Ingest Lever-hosted postings with:
+
+~~~bash
+JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot ingest lever --org example
+# Imported 8 jobs from example
+~~~
+
+Lever responses expose HTML `content` blocks and optional section `lists`.
+Fragments can arrive as strings, arrays, or nested objects, and the ingest
+pipeline flattens them before normalising to text. Title and location metadata
+are merged back into the parsed snapshot, which is persisted to
+`data/jobs/{job_id}.json` with a `source.type` of `lever`. The contract and
+error handling are covered by `test/lever.test.js`.
+
 Job titles can be parsed from lines starting with `Title`, `Job Title`, `Position`, or `Role`.
 Headers can use colons or dash separators (for example, `Role - Staff Engineer`), and the same
 separators work for `Company` and `Location`. Parser unit tests cover both colon and dash cases so
