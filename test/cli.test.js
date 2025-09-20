@@ -148,4 +148,32 @@ describe('jobbot CLI', () => {
       },
     ]);
   });
+
+  it('tags shortlist entries and persists labels', () => {
+    const output = runCli(['shortlist', 'tag', 'job-abc', 'dream', 'remote']);
+    expect(output.trim()).toBe('Tagged job-abc with dream, remote');
+    const raw = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'shortlist.json'), 'utf8')
+    );
+    expect(raw.jobs['job-abc'].tags).toEqual(['dream', 'remote']);
+  });
+
+  it('archives discard reasons for shortlist entries', () => {
+    runCli(['shortlist', 'tag', 'job-def', 'onsite']);
+    const output = runCli([
+      'shortlist',
+      'discard',
+      'job-def',
+      '--reason',
+      'Not remote friendly',
+    ]);
+    expect(output.trim()).toBe('Discarded job-def: Not remote friendly');
+    const raw = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'shortlist.json'), 'utf8')
+    );
+    expect(raw.jobs['job-def'].discarded).toHaveLength(1);
+    const [entry] = raw.jobs['job-def'].discarded;
+    expect(entry.reason).toBe('Not remote friendly');
+    expect(entry.discarded_at).toMatch(/T.*Z$/);
+  });
 });
