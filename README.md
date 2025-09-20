@@ -243,6 +243,46 @@ downstream tooling can diff revisions over time. `test/greenhouse.test.js`
 verifies the ingest pipeline fetches board content and persists structured
 snapshots.
 
+## Lever job board ingestion
+
+Ingest Lever-hosted postings with:
+
+~~~bash
+JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot ingest lever --org example
+# Imported 8 jobs from example
+~~~
+
+Lever responses expose HTML `content` blocks and optional section `lists`.
+Fragments can arrive as strings, arrays, or nested objects, and the ingest
+pipeline flattens them before normalising to text. Title and location metadata
+are merged back into the parsed snapshot, which is persisted to
+`data/jobs/{job_id}.json` with a `source.type` of `lever`. The contract and
+error handling are covered by `test/lever.test.js`.
+
+> **Backlog audit:** [DESIGN.md](DESIGN.md) Phase 1 listed Ashby, Workable, and
+> SmartRecruiters fetchers as future work. Ashby exposes a public JSON job board
+> that matches the existing snapshot contract, so we can ship it without new
+> authentication flows. Workable and SmartRecruiters still require credentialed
+> clients, so they remain queued for a follow-up PR.
+
+## Ashby job board ingestion
+
+Ingest Ashby-hosted postings with:
+
+~~~bash
+JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot ingest ashby --org example
+# Imported 12 jobs from example
+~~~
+
+Ashby job boards organise listings under nested sections and mix HTML fragments
+with plain-text summaries. The ingest pipeline flattens section content,
+captures plain-text fallbacks, and merges location metadata before normalising
+to text. Snapshots are persisted under `data/jobs/{job_id}.json` with a
+`source.type` of `ashby`. Coverage in `test/ashby.test.js` exercises nested
+sections, fallback URLs, and timestamp persistence so regressions surface fast.
+
+## Job parsing details
+
 Job titles can be parsed from lines starting with `Title`, `Job Title`, `Position`, or `Role`.
 Headers can use colons or dash separators (for example, `Role - Staff Engineer`), and the same
 separators work for `Company` and `Location`. Parser unit tests cover both colon and dash cases so
