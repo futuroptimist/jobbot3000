@@ -13,6 +13,7 @@ import { recordApplication, STATUSES } from '../src/lifecycle.js';
 import { recordJobDiscard } from '../src/discards.js';
 import { addJobTags, discardJob, filterShortlist, syncShortlistJob } from '../src/shortlist.js';
 import { initProfile } from '../src/profile.js';
+import { ingestGreenhouseBoard } from '../src/greenhouse.js';
 
 function isHttpUrl(s) {
   return /^https?:\/\//i.test(s);
@@ -197,6 +198,25 @@ async function cmdTrack(args) {
   process.exit(2);
 }
 
+async function cmdIngestGreenhouse(args) {
+  const company = getFlag(args, '--company');
+  if (!company) {
+    console.error('Usage: jobbot ingest greenhouse --company <slug>');
+    process.exit(2);
+  }
+
+  const { saved } = await ingestGreenhouseBoard({ board: company });
+  const noun = saved === 1 ? 'job' : 'jobs';
+  console.log(`Imported ${saved} ${noun} from ${company}`);
+}
+
+async function cmdIngest(args) {
+  const sub = args[0];
+  if (sub === 'greenhouse') return cmdIngestGreenhouse(args.slice(1));
+  console.error('Usage: jobbot ingest greenhouse --company <slug>');
+  process.exit(2);
+}
+
 async function cmdShortlistTag(args) {
   const [jobId, ...tagArgs] = args;
   if (!jobId || tagArgs.length === 0) {
@@ -307,7 +327,8 @@ async function main() {
   if (cmd === 'match') return cmdMatch(args);
   if (cmd === 'track') return cmdTrack(args);
   if (cmd === 'shortlist') return cmdShortlist(args);
-  console.error('Usage: jobbot <init|summarize|match|track|shortlist> [options]');
+  if (cmd === 'ingest') return cmdIngest(args);
+  console.error('Usage: jobbot <init|summarize|match|track|shortlist|ingest> [options]');
   process.exit(2);
 }
 
