@@ -42,8 +42,8 @@ revisit them later without blocking the workflow.
 
 **Goal:** Build a living shortlist of job opportunities pulled from the web or supplied manually.
 
-1. The user searches company boards via supported fetchers (Greenhouse, Lever, Ashby, Workable,
-   SmartRecruiters) or pastes individual URLs into the CLI/UI. For example,
+1. The user searches company boards via supported fetchers (Greenhouse, Lever, SmartRecruiters,
+   with Ashby and Workable on the roadmap) or pastes individual URLs into the CLI/UI. For example,
    `jobbot ingest greenhouse --company acme` pulls the latest public postings into the local
    data directory, and `jobbot ingest lever --company acme` performs the same for Lever-hosted
    listings.
