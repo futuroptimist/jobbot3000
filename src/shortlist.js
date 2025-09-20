@@ -1,6 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import { recordJobDiscard } from './discards.js';
+
 let overrideDir;
 
 const METADATA_FIELDS = ['location', 'level', 'compensation'];
@@ -197,7 +199,7 @@ export function addJobTags(jobId, tags) {
   return writeLock;
 }
 
-export function discardJob(jobId, reason) {
+export function discardJob(jobId, reason, options = {}) {
   if (!jobId || typeof jobId !== 'string' || !jobId.trim()) {
     return Promise.reject(new Error('job id is required'));
   }
@@ -206,20 +208,24 @@ export function discardJob(jobId, reason) {
     return Promise.reject(new Error('reason is required'));
   }
 
+  const { tags, date } = options;
+
   const jobKey = jobId.trim();
   const { dir, file } = getPaths();
 
   const run = async () => {
+    const archiveEntry = await recordJobDiscard(jobKey, {
+      reason: normalizedReason,
+      tags,
+      date,
+    });
+
     await fs.mkdir(dir, { recursive: true });
     const store = await readShortlistFile(file);
     const record = ensureJobRecord(store, jobKey);
-    const entry = {
-      reason: normalizedReason,
-      discarded_at: new Date().toISOString(),
-    };
-    record.discarded.push(entry);
+    record.discarded.push({ ...archiveEntry });
     await writeJsonFile(file, store);
-    return entry;
+    return { ...archiveEntry };
   };
 
   writeLock = writeLock.then(run, run);

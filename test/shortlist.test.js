@@ -8,6 +8,7 @@ describe('shortlist metadata sync and filters', () => {
   beforeEach(async () => {
     const fs = await import('node:fs/promises');
     dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jobbot-shortlist-'));
+    process.env.JOBBOT_DATA_DIR = dataDir;
     const { setShortlistDataDir } = await import('../src/shortlist.js');
     setShortlistDataDir(dataDir);
   });
@@ -18,6 +19,7 @@ describe('shortlist metadata sync and filters', () => {
       await fs.rm(dataDir, { recursive: true, force: true });
       dataDir = undefined;
     }
+    delete process.env.JOBBOT_DATA_DIR;
     const { setShortlistDataDir } = await import('../src/shortlist.js');
     setShortlistDataDir(undefined);
   });
@@ -42,5 +44,39 @@ describe('shortlist metadata sync and filters', () => {
 
     const byFilters = await filterShortlist({ location: 'remote', level: 'senior' });
     expect(Object.keys(byFilters.jobs)).toEqual(['job-metadata']);
+  });
+
+  it('records discard tags in shortlist and archive files', async () => {
+    const { discardJob } = await import('../src/shortlist.js');
+
+    const entry = await discardJob('job-tags', 'Overlap with existing role', {
+      tags: ['Remote', 'remote', 'Dream'],
+      date: '2025-05-06T07:08:09Z',
+    });
+
+    expect(entry).toMatchObject({
+      reason: 'Overlap with existing role',
+      discarded_at: '2025-05-06T07:08:09.000Z',
+      tags: ['Remote', 'Dream'],
+    });
+
+    const fs = await import('node:fs/promises');
+    const shortlistRaw = JSON.parse(
+      await fs.readFile(path.join(dataDir, 'shortlist.json'), 'utf8')
+    );
+    expect(shortlistRaw.jobs['job-tags'].discarded[0]).toMatchObject({
+      reason: 'Overlap with existing role',
+      discarded_at: '2025-05-06T07:08:09.000Z',
+      tags: ['Remote', 'Dream'],
+    });
+
+    const archiveRaw = JSON.parse(
+      await fs.readFile(path.join(dataDir, 'discarded_jobs.json'), 'utf8')
+    );
+    expect(archiveRaw['job-tags'][0]).toMatchObject({
+      reason: 'Overlap with existing role',
+      discarded_at: '2025-05-06T07:08:09.000Z',
+      tags: ['Remote', 'Dream'],
+    });
   });
 });
