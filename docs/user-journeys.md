@@ -49,8 +49,8 @@ revisit them later without blocking the workflow.
    headers). Job identifiers are hashed from the source URL or file path so repeat fetches update
    the same snapshot without leaking personally identifiable information.
 3. Users can tag or discard roles with `jobbot shortlist tag` / `jobbot shortlist discard`.
-   Discarded items stay archived with reasons in `data/shortlist.json`
-   to refine future recommendations.
+   Discarded roles are also archived with reasons (and optional tags) in
+   `data/discarded_jobs.json` so future recommendations can reference prior decisions.
 4. The shortlist view exposes filters (location, level, compensation) and sync metadata for future
    refreshes.
 

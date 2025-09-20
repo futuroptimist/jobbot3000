@@ -149,6 +149,24 @@ describe('jobbot CLI', () => {
     ]);
   });
 
+  it('archives discarded jobs with reasons', () => {
+    const output = runCli([
+      'track',
+      'discard',
+      'job-789',
+      '--reason',
+      'Below compensation range',
+    ]);
+    expect(output.trim()).toBe('Discarded job-789');
+    const raw = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'discarded_jobs.json'), 'utf8')
+    );
+    expect(raw['job-789']).toHaveLength(1);
+    const entry = raw['job-789'][0];
+    expect(entry.reason).toBe('Below compensation range');
+    expect(entry.discarded_at).toEqual(new Date(entry.discarded_at).toISOString());
+  });
+
   it('tags shortlist entries and persists labels', () => {
     const output = runCli(['shortlist', 'tag', 'job-abc', 'dream', 'remote']);
     expect(output.trim()).toBe('Tagged job-abc with dream, remote');
