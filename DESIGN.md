@@ -265,7 +265,7 @@ jobbot track add <job_id> --status applied --note "emailed hiring manager"
 - Keyword/BM25 baseline + cosine combo scoring.
 - O*NET/ESCO synonym expansion.
 - Explanations UI (hits/gaps/evidence).
-- CLI: `jobbot match --explain`.
+- CLI: `jobbot match --explain` (shipped).
 
 **Phase 3 — Tailoring & rendering (1 week)**
 - Templating (choose Typst or LaTeX first; Tectonic/Typst CLI).

@@ -110,6 +110,39 @@ describe('jobbot CLI', () => {
     expect(data.score).toBeGreaterThanOrEqual(50);
   });
 
+  it('explains hits and gaps with match --explain', () => {
+    const job = [
+      'Title: Staff Engineer',
+      'Company: ExampleCorp',
+      'Requirements',
+      '- Distributed systems experience',
+      '- Certified Kubernetes administrator',
+      '- Mentors senior engineers',
+    ].join('\n');
+    const resume = [
+      'Led distributed systems design and migrations to cloud-native stacks.',
+      'Managed mentoring programs for staff engineers.',
+    ].join('\n');
+    const jobPath = path.resolve('test', 'fixtures', 'job-explain.txt');
+    const resumePath = path.resolve('test', 'fixtures', 'resume-explain.txt');
+    fs.mkdirSync(path.dirname(jobPath), { recursive: true });
+    fs.writeFileSync(jobPath, job);
+    fs.writeFileSync(resumePath, resume);
+
+    const out = runCli([
+      'match',
+      '--resume',
+      resumePath,
+      '--job',
+      jobPath,
+      '--explain',
+    ]);
+
+    expect(out).toContain('## Explanation');
+    expect(out).toMatch(/Matched 2 of 3 requirements/);
+    expect(out).toMatch(/Gaps: Certified Kubernetes administrator/);
+  });
+
   it('records application status with track add', () => {
     const status = STATUSES[0]; // pick a valid status
     const output = runCli(['track', 'add', 'job-123', '--status', status]);

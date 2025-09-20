@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { toJson, toMarkdownSummary, toMarkdownMatch } from '../src/exporters.js';
+import {
+  toJson,
+  toMarkdownSummary,
+  toMarkdownMatch,
+  formatMatchExplanation,
+  toMarkdownMatchExplanation,
+} from '../src/exporters.js';
 
 describe('exporters', () => {
   it('converts objects to pretty JSON', () => {
@@ -197,5 +203,35 @@ describe('exporters', () => {
       '- Rust',
     ].join('\n');
     expect(output).toBe(expected);
+  });
+
+  it('summarizes match explanations with top hits and gaps', () => {
+    const text = formatMatchExplanation({
+      matched: ['JavaScript expertise', 'Mentored seniors'],
+      missing: ['Public cloud expertise'],
+      score: 67,
+    });
+    expect(text).toContain('Matched 2 of 3 requirements (67%)');
+    expect(text).toContain('Hits: JavaScript expertise; Mentored seniors');
+    expect(text).toContain('Gaps: Public cloud expertise');
+  });
+
+  it('falls back when no hits or gaps are present', () => {
+    const text = formatMatchExplanation({ matched: [], missing: [] });
+    expect(text).toContain('Matched 0 of 0 requirements (0%)');
+    expect(text).toContain('No direct hits from the resume.');
+    expect(text).toContain('No missing requirements detected.');
+  });
+
+  it('renders markdown explanation with escaped content', () => {
+    const md = toMarkdownMatchExplanation({
+      matched: ['Node.js (services)'],
+      missing: ['Go & Rust'],
+      score: 50,
+    });
+    expect(md).toContain('## Explanation');
+    expect(md).toContain('Matched 1 of 2 requirements \\(50%\\)');
+    expect(md).toContain('Hits: Node.js \\(services\\)');
+    expect(md).toContain('Gaps: Go & Rust');
   });
 });

@@ -49,6 +49,17 @@ function escapeMarkdownMultiline(value) {
     .join('\n');
 }
 
+function normalizeRequirementList(list) {
+  if (!Array.isArray(list)) return [];
+  const normalized = [];
+  for (const entry of list) {
+    if (typeof entry !== 'string') continue;
+    const trimmed = entry.trim();
+    if (trimmed) normalized.push(trimmed);
+  }
+  return normalized;
+}
+
 /**
  * Append a Markdown header and bullet list if `items` exist.
  * @param {string[]} lines Accumulator array of lines.
@@ -149,4 +160,43 @@ export function toMarkdownMatch({
   appendListSection(lines, t('matched', locale), matched, { leadingNewline: true });
   appendListSection(lines, t('missing', locale), missing, { leadingNewline: true });
   return lines.join('\n');
+}
+
+const EXPLANATION_LIMIT = 5;
+
+export function formatMatchExplanation({
+  matched,
+  missing,
+  score,
+  locale = DEFAULT_LOCALE,
+  limit = EXPLANATION_LIMIT,
+} = {}) {
+  const hits = normalizeRequirementList(matched);
+  const gaps = normalizeRequirementList(missing);
+  const total = hits.length + gaps.length;
+  const safeScore =
+    typeof score === 'number' && Number.isFinite(score) ? Math.round(score) : 0;
+  const summary = t('coverageSummary', locale, {
+    matched: hits.length,
+    total,
+    score: safeScore,
+  });
+
+  const capped = Math.max(1, Number(limit) || EXPLANATION_LIMIT);
+  const hitsLine = hits.length
+    ? `${t('hits', locale)}: ${hits.slice(0, capped).join('; ')}`
+    : t('noHits', locale);
+  const gapsLine = gaps.length
+    ? `${t('gaps', locale)}: ${gaps.slice(0, capped).join('; ')}`
+    : t('noGaps', locale);
+
+  return [summary, hitsLine, gapsLine].join('\n');
+}
+
+export function toMarkdownMatchExplanation(options) {
+  const locale = options?.locale ?? DEFAULT_LOCALE;
+  const explanation = formatMatchExplanation({ ...options, locale });
+  const safeExplanation = escapeMarkdownMultiline(explanation);
+  const heading = `## ${t('explanation', locale)}`;
+  return safeExplanation ? `${heading}\n\n${safeExplanation}` : heading;
 }
