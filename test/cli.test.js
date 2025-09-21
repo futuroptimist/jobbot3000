@@ -185,6 +185,67 @@ describe('jobbot CLI', () => {
     ]);
   });
 
+  it('shows application history with track history', () => {
+    runCli([
+      'track',
+      'log',
+      'job-xyz',
+      '--channel',
+      'applied',
+      '--date',
+      '2025-03-04',
+      '--contact',
+      'Jordan Hiring Manager',
+      '--documents',
+      'resume.pdf,cover-letter.pdf',
+      '--note',
+      'Submitted via referral portal',
+      '--remind-at',
+      '2025-03-11T09:00:00Z',
+    ]);
+
+    runCli([
+      'track',
+      'log',
+      'job-xyz',
+      '--channel',
+      'follow_up',
+      '--date',
+      '2025-03-12T09:15:00Z',
+      '--note',
+      'Sent thank-you follow-up',
+    ]);
+
+    const textHistory = runCli(['track', 'history', 'job-xyz']);
+    expect(textHistory).toContain('job-xyz');
+    expect(textHistory).toContain('applied (2025-03-04T00:00:00.000Z)');
+    expect(textHistory).toContain('Contact: Jordan Hiring Manager');
+    expect(textHistory).toContain('Documents: resume.pdf, cover-letter.pdf');
+    expect(textHistory).toContain('Note: Submitted via referral portal');
+    expect(textHistory).toContain('Reminder: 2025-03-11T09:00:00.000Z');
+    expect(textHistory).toContain('follow_up (2025-03-12T09:15:00.000Z)');
+    expect(textHistory).toContain('Note: Sent thank-you follow-up');
+
+    const jsonHistory = runCli(['track', 'history', 'job-xyz', '--json']);
+    const parsed = JSON.parse(jsonHistory);
+    expect(parsed.job).toBe('job-xyz');
+    expect(parsed.events).toEqual([
+      {
+        channel: 'applied',
+        date: '2025-03-04T00:00:00.000Z',
+        contact: 'Jordan Hiring Manager',
+        documents: ['resume.pdf', 'cover-letter.pdf'],
+        note: 'Submitted via referral portal',
+        remind_at: '2025-03-11T09:00:00.000Z',
+      },
+      {
+        channel: 'follow_up',
+        date: '2025-03-12T09:15:00.000Z',
+        note: 'Sent thank-you follow-up',
+      },
+    ]);
+  });
+
   it('archives discarded jobs with reasons', () => {
     const output = runCli([
       'track',

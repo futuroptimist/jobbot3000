@@ -401,6 +401,14 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track log job-3 --channel offer_accepted --
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track log job-4 --channel email --date 2025-01-05
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track add job-4 --status rejected
 
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track history job-3
+# job-3
+# - email (2025-01-04T00:00:00.000Z)
+#   Documents: resume.pdf
+#   Note: Submitted via referral portal
+# - offer_accepted (2025-02-01T00:00:00.000Z)
+#   Reminder: 2025-02-10T09:00:00.000Z
+
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot analytics funnel
 # Outreach: 4
 # Screening: 1 (25% conversion, 3 drop-off)
@@ -516,8 +524,14 @@ for each application. The command accepts optional metadata such as `--date`,
 Events are appended to `data/application_events.json`, grouped by job
 identifier, with timestamps normalized to ISO 8601.
 
+Review the timeline with `jobbot track history <job_id>`, which renders each
+event alongside contacts, documents, notes, and reminders. Pass `--json`
+to export the structured payload for automation.
+
 Tests in `test/application-events.test.js` ensure that new log entries do not
 clobber history and that invalid channels or dates are rejected.
+`test/cli.test.js` adds coverage for the history subcommand's text and JSON
+outputs so the note-taking surface stays reliable.
 
 To capture discard reasons for shortlist triage:
 

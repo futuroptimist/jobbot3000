@@ -14,7 +14,7 @@ import {
   toMarkdownMatchExplanation,
 } from '../src/exporters.js';
 import { saveJobSnapshot, jobIdFromSource } from '../src/jobs.js';
-import { logApplicationEvent } from '../src/application-events.js';
+import { logApplicationEvent, getApplicationEvents } from '../src/application-events.js';
 import { recordApplication, STATUSES } from '../src/lifecycle.js';
 import { recordJobDiscard } from '../src/discards.js';
 import { addJobTags, discardJob, filterShortlist, syncShortlistJob } from '../src/shortlist.js';
@@ -216,6 +216,43 @@ async function cmdTrackLog(args) {
   console.log(`Logged ${jobId} event ${channel}`);
 }
 
+function formatApplicationHistory(jobId, events) {
+  if (!Array.isArray(events) || events.length === 0) {
+    return `No application events recorded for ${jobId}`;
+  }
+
+  const lines = [jobId];
+  for (const event of events) {
+    const when = typeof event.date === 'string' && event.date ? ` (${event.date})` : '';
+    lines.push(`- ${event.channel}${when}`);
+    if (event.contact) lines.push(`  Contact: ${event.contact}`);
+    if (Array.isArray(event.documents) && event.documents.length) {
+      lines.push(`  Documents: ${event.documents.join(', ')}`);
+    }
+    if (event.note) lines.push(`  Note: ${event.note}`);
+    if (event.remind_at) lines.push(`  Reminder: ${event.remind_at}`);
+    lines.push('');
+  }
+
+  if (lines[lines.length - 1] === '') lines.pop();
+  return lines.join('\n');
+}
+
+async function cmdTrackHistory(args) {
+  const jobId = args[0];
+  if (!jobId) {
+    console.error('Usage: jobbot track history <job_id> [--json]');
+    process.exit(2);
+  }
+  const asJson = args.includes('--json');
+  const events = await getApplicationEvents(jobId);
+  if (asJson) {
+    console.log(JSON.stringify({ job: jobId, events }, null, 2));
+    return;
+  }
+  console.log(formatApplicationHistory(jobId, events));
+}
+
 function parseTagsFlag(args) {
   const raw = getFlag(args, '--tags');
   if (!raw) return undefined;
@@ -310,8 +347,9 @@ async function cmdTrack(args) {
   const sub = args[0];
   if (sub === 'add') return cmdTrackAdd(args.slice(1));
   if (sub === 'log') return cmdTrackLog(args.slice(1));
+  if (sub === 'history') return cmdTrackHistory(args.slice(1));
   if (sub === 'discard') return cmdTrackDiscard(args.slice(1));
-  console.error('Usage: jobbot track <add|log|discard> ...');
+  console.error('Usage: jobbot track <add|log|history|discard> ...');
   process.exit(2);
 }
 
