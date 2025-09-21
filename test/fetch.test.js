@@ -1,6 +1,74 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
-vi.mock('node-fetch', () => ({ default: vi.fn() }));
+vi.mock('node-fetch', () => {
+  const mockFetch = vi.fn();
+
+  class MockHeaders {
+    constructor(init) {
+      this._entries = new Map();
+      if (!init) return;
+
+      if (Array.isArray(init)) {
+        for (const entry of init) {
+          if (!entry) continue;
+          this.set(entry[0], entry[1]);
+        }
+        return;
+      }
+
+      if (typeof init.forEach === 'function') {
+        init.forEach((value, key) => {
+          this.set(key, value);
+        });
+        return;
+      }
+
+      if (typeof init[Symbol.iterator] === 'function' && typeof init !== 'string') {
+        for (const entry of init) {
+          if (!entry) continue;
+          if (Array.isArray(entry)) {
+            this.set(entry[0], entry[1]);
+          } else if (typeof entry === 'object') {
+            this.set(entry[0], entry[1]);
+          }
+        }
+        return;
+      }
+
+      if (typeof init === 'object') {
+        for (const [key, value] of Object.entries(init)) {
+          this.set(key, value);
+        }
+      }
+    }
+
+    set(name, value) {
+      if (name === undefined || name === null) return;
+      if (value === undefined || value === null) return;
+      const lower = String(name).toLowerCase();
+      this._entries.set(lower, { key: String(name), value: String(value) });
+    }
+
+    get(name) {
+      const entry = this._entries.get(String(name).toLowerCase());
+      return entry ? entry.value : undefined;
+    }
+
+    has(name) {
+      return this._entries.has(String(name).toLowerCase());
+    }
+
+    forEach(callback) {
+      for (const { key, value } of this._entries.values()) {
+        callback(value, key);
+      }
+    }
+  }
+
+  mockFetch.Headers = MockHeaders;
+
+  return { default: mockFetch };
+});
 vi.mock('node:dns/promises', () => {
   const lookup = vi.fn(async () => [{ address: '93.184.216.34', family: 4 }]);
   return { default: { lookup }, lookup };
@@ -283,6 +351,83 @@ describe('fetchTextFromUrl', () => {
       'http://example.com',
       expect.objectContaining({ headers: { 'User-Agent': 'jobbot' } })
     );
+  });
+
+  it('sends a default User-Agent header when none provided', async () => {
+    fetch.mockClear();
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('ok'),
+    });
+
+    await fetchTextFromUrl('http://example.com');
+
+    expect(fetch).toHaveBeenCalledWith(
+      'http://example.com',
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'User-Agent': 'jobbot3000' }),
+      })
+    );
+  });
+
+  it('retains Headers entries when defaulting the User-Agent', async () => {
+    fetch.mockClear();
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('ok'),
+    });
+
+    const headers = new fetch.Headers();
+    headers.set('Authorization', 'Bearer token');
+
+    await fetchTextFromUrl('http://example.com', { headers });
+
+    expect(fetch).toHaveBeenCalledWith(
+      'http://example.com',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer token',
+          'User-Agent': 'jobbot3000',
+        }),
+      })
+    );
+  });
+
+  it('preserves custom User-Agent from iterable headers', async () => {
+    fetch.mockClear();
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('ok'),
+    });
+
+    const headers = new fetch.Headers([
+      ['user-agent', 'custom-agent'],
+      ['x-extra', '1'],
+    ]);
+
+    await fetchTextFromUrl('http://example.com', { headers });
+
+    expect(fetch).toHaveBeenCalledWith(
+      'http://example.com',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'user-agent': 'custom-agent',
+          'x-extra': '1',
+        }),
+      })
+    );
+
+    const [, options] = fetch.mock.calls[0];
+    expect(options.headers).not.toHaveProperty('User-Agent');
   });
 
   it('rejects non-http/https URLs', async () => {

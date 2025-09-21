@@ -8,6 +8,12 @@ const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
 
 const LOOPBACK_HOSTNAMES = new Set(['localhost', 'localhost.']);
 
+const DEFAULT_USER_AGENT = 'jobbot3000';
+
+export const DEFAULT_FETCH_HEADERS = Object.freeze({
+  'User-Agent': DEFAULT_USER_AGENT,
+});
+
 function isPrivateIPv4(octets) {
   const [a, b] = octets;
   if (a === 10) return true;
@@ -72,6 +78,58 @@ function isForbiddenHostname(hostname) {
   }
 
   return false;
+}
+
+function buildRequestHeaders(headers) {
+  const normalized = new fetch.Headers();
+  let hasUserAgent = false;
+
+  const appendHeader = (key, value) => {
+    if (value === undefined || value === null) return;
+    if (key === undefined || key === null) return;
+    const headerName = typeof key === 'string' ? key : String(key);
+    if (!headerName) return;
+    const headerValue = String(value);
+    normalized.set(headerName, headerValue);
+    if (headerName.toLowerCase() === 'user-agent') {
+      hasUserAgent = true;
+    }
+  };
+
+  if (headers && typeof headers === 'object') {
+    if (typeof headers.forEach === 'function') {
+      headers.forEach((value, key) => {
+        if (Array.isArray(value) && key === undefined) {
+          appendHeader(value[0], value[1]);
+        } else {
+          appendHeader(key, value);
+        }
+      });
+    } else if (typeof headers[Symbol.iterator] === 'function' && typeof headers !== 'string') {
+      for (const entry of headers) {
+        if (!entry) continue;
+        if (Array.isArray(entry)) {
+          appendHeader(entry[0], entry[1]);
+        } else if (typeof entry === 'object') {
+          appendHeader(entry[0], entry[1]);
+        }
+      }
+    } else {
+      for (const [key, value] of Object.entries(headers)) {
+        appendHeader(key, value);
+      }
+    }
+  }
+
+  if (!hasUserAgent) {
+    normalized.set('User-Agent', DEFAULT_USER_AGENT);
+  }
+
+  const merged = {};
+  normalized.forEach((value, key) => {
+    merged[key] = value;
+  });
+  return merged;
 }
 
 const DNS_IGNORE_ERROR_CODES = new Set([
@@ -272,7 +330,7 @@ export async function fetchTextFromUrl(
     const response = await fetch(url, {
       redirect: 'follow',
       signal: controller.signal,
-      headers: headers || {},
+      headers: buildRequestHeaders(headers),
       size: maxBytes,
     });
     if (!response.ok) {
