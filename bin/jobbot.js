@@ -33,6 +33,7 @@ import { ingestSmartRecruitersBoard } from '../src/smartrecruiters.js';
 import { ingestAshbyBoard } from '../src/ashby.js';
 import { computeFunnel, exportAnalyticsSnapshot, formatFunnelReport } from '../src/analytics.js';
 import { ingestWorkableBoard } from '../src/workable.js';
+import { bundleDeliverables } from '../src/deliverables.js';
 
 function isHttpUrl(s) {
   return /^https?:\/\//i.test(s);
@@ -786,6 +787,40 @@ async function cmdAnalytics(args) {
   process.exit(2);
 }
 
+async function cmdDeliverablesBundle(args) {
+  const jobId = args[0];
+  const rest = args.slice(1);
+  const outPath = getFlag(rest, '--out');
+  const timestamp = getFlag(rest, '--timestamp');
+  if (!jobId || !outPath) {
+    console.error(
+      'Usage: jobbot deliverables bundle <job_id> --out <path> ' +
+        '[--timestamp <iso8601>]'
+    );
+    process.exit(2);
+  }
+
+  let archive;
+  try {
+    archive = await bundleDeliverables(jobId, { timestamp });
+  } catch (err) {
+    console.error(err.message || String(err));
+    process.exit(1);
+  }
+
+  const resolved = path.resolve(process.cwd(), outPath);
+  await fs.promises.mkdir(path.dirname(resolved), { recursive: true });
+  await fs.promises.writeFile(resolved, archive);
+  console.log(`Bundled ${jobId} deliverables to ${resolved}`);
+}
+
+async function cmdDeliverables(args) {
+  const sub = args[0];
+  if (sub === 'bundle') return cmdDeliverablesBundle(args.slice(1));
+  console.error('Usage: jobbot deliverables <bundle> [options]');
+  process.exit(2);
+}
+
 async function cmdInterviewsRecord(args) {
   const jobId = args[0];
   const sessionId = args[1];
@@ -869,12 +904,13 @@ async function main() {
   if (cmd === 'track') return cmdTrack(args);
   if (cmd === 'shortlist') return cmdShortlist(args);
   if (cmd === 'analytics') return cmdAnalytics(args);
+  if (cmd === 'deliverables') return cmdDeliverables(args);
   if (cmd === 'intake') return cmdIntake(args);
   if (cmd === 'ingest') return cmdIngest(args);
   if (cmd === 'interviews') return cmdInterviews(args);
   console.error(
-    'Usage: jobbot <init|summarize|match|track|shortlist|analytics|interviews|intake|ingest> ' +
-      '[options]'
+    'Usage: jobbot <init|summarize|match|track|shortlist|analytics|' +
+      'deliverables|interviews|intake|ingest> [options]'
   );
   process.exit(2);
 }

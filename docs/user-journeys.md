@@ -82,7 +82,8 @@ aggressively to respect rate limits.
 3. Users can tweak sections manually; the assistant suggests language improvements but refuses to
    fabricate experience.
 4. Generated files, diffs, and build logs live in `data/deliverables/{job_id}/` and are versioned by
-   timestamp.
+   timestamp. Export the latest bundle (or a specific run with `--timestamp`) via
+   `jobbot deliverables bundle <job_id> --out <zip_path>` when sharing prep artifacts with mentors.
 
 **Unhappy paths:** low fit scores or missing must-haves trigger guidance
   (e.g., suggest skill prep or highlight transferable experience) and let the user decline
