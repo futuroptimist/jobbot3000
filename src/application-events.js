@@ -121,3 +121,62 @@ export async function getApplicationEvents(jobId) {
   const history = data[jobId];
   return Array.isArray(history) ? history : [];
 }
+
+function normalizeReferenceDate(now) {
+  if (now === undefined) return new Date();
+  if (now instanceof Date) {
+    if (Number.isNaN(now.getTime())) throw new Error(`invalid reference timestamp: ${now}`);
+    return now;
+  }
+  const parsed = new Date(now);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`invalid reference timestamp: ${now}`);
+  }
+  return parsed;
+}
+
+function appendReminder(reminders, jobId, entry, now, includePastDue) {
+  if (!entry || typeof entry !== 'object') return;
+  if (typeof entry.remind_at !== 'string') return;
+  const remindDate = new Date(entry.remind_at);
+  if (Number.isNaN(remindDate.getTime())) return;
+  const pastDue = remindDate.getTime() < now.getTime();
+  if (!includePastDue && pastDue) return;
+
+  const reminder = {
+    job_id: jobId,
+    remind_at: remindDate.toISOString(),
+    past_due: pastDue,
+  };
+
+  const channel = sanitizeString(entry.channel);
+  if (channel) reminder.channel = channel;
+  const note = sanitizeString(entry.note);
+  if (note) reminder.note = note;
+  const contact = sanitizeString(entry.contact);
+  if (contact) reminder.contact = contact;
+
+  reminders.push(reminder);
+}
+
+export async function getApplicationReminders({ now, includePastDue = true } = {}) {
+  const reference = normalizeReferenceDate(now);
+  const { file } = getPaths();
+  const data = await readEventsFile(file);
+  const reminders = [];
+
+  for (const [jobId, history] of Object.entries(data)) {
+    if (!Array.isArray(history)) continue;
+    for (const entry of history) {
+      appendReminder(reminders, jobId, entry, reference, includePastDue);
+    }
+  }
+
+  reminders.sort((a, b) => {
+    if (a.remind_at < b.remind_at) return -1;
+    if (a.remind_at > b.remind_at) return 1;
+    return a.job_id.localeCompare(b.job_id);
+  });
+
+  return reminders;
+}

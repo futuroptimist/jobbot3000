@@ -95,7 +95,10 @@ aggressively to respect rate limits.
    workflows.
 3. Follow-up reminders and note-taking surfaces help the user prepare for upcoming steps while
    consolidating feedback for future tailoring. Use `jobbot track log --remind-at <iso8601>` to
-   capture the next follow-up timestamp with each note.
+   capture the next follow-up timestamp with each note, review upcoming outreach with
+   `jobbot track reminders` (add `--upcoming-only` to hide past-due entries and `--json` when piping
+   into other tools), and audit the full event history per opportunity via
+   `jobbot track history <job_id>`.
 
 **Unhappy paths:** conflicting updates (e.g., two devices editing simultaneously) trigger a merge
 flow that preserves both sets of notes.
