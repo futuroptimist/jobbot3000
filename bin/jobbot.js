@@ -267,19 +267,22 @@ async function cmdTrackHistory(args) {
 
   const lines = [jobId];
   for (const event of events) {
-    const when = typeof event.date === 'string' && event.date ? ` (${event.date})` : '';
-    const channel = typeof event.channel === 'string' ? event.channel : 'unknown';
-    lines.push(`- ${channel}${when}`);
+    const timestamp =
+      typeof event.date === 'string' && event.date ? event.date : undefined;
+    const channel =
+      typeof event.channel === 'string' && event.channel
+        ? event.channel
+        : 'unknown';
+    const header = timestamp ? `${timestamp} — ${channel}` : channel;
+    lines.push(header);
     if (event.contact) lines.push(`  Contact: ${event.contact}`);
     if (Array.isArray(event.documents) && event.documents.length > 0) {
       lines.push(`  Documents: ${event.documents.join(', ')}`);
     }
     if (event.note) lines.push(`  Note: ${event.note}`);
     if (event.remind_at) lines.push(`  Remind At: ${event.remind_at}`);
-    lines.push('');
   }
 
-  if (lines[lines.length - 1] === '') lines.pop();
   console.log(lines.join('\n'));
 }
 
