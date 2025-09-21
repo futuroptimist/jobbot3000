@@ -286,7 +286,6 @@ jobbot track add <job_id> --status applied --note "emailed hiring manager"
 - Docs, quickstart, sample data.
 
 **Stretch / nice-to-have**
-- Workable module.
 - Pandoc .docx export.
 - System-design rehearsal outlines.
 - Scheduler for periodic ingestion/matching.
