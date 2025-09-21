@@ -564,18 +564,18 @@ Review the full history for a job with `jobbot track history <job_id>`. Pass
 ```bash
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track history job-1
 # job-1
-# 2025-03-01T08:00:00.000Z — follow_up
+# - follow_up (2025-03-01T08:00:00.000Z)
 #   Note: Send status update
-# 2025-03-05T09:00:00.000Z — call
+# - call (2025-03-05T09:00:00.000Z)
 #   Contact: Avery Hiring Manager
-#   Remind At: 2025-03-07T12:00:00.000Z
+#   Reminder: 2025-03-07T12:00:00.000Z
 ```
 
 Tests in `test/application-events.test.js` ensure that new log entries do not
 clobber history and that invalid channels or dates are rejected.
 `test/cli.test.js` adds coverage for the history subcommand's text and JSON
-outputs, including timestamp-first formatting, so the note-taking surface stays
-reliable.
+outputs, including channel-first bullet formatting and reminder labels, so the
+note-taking surface stays reliable.
 
 Surface follow-up work with `jobbot track reminders`. Pass `--now` to view from a
 given timestamp (defaults to the current time), `--upcoming-only` to suppress past-due
