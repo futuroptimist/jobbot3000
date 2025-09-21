@@ -14,7 +14,7 @@ import {
   toMarkdownMatchExplanation,
 } from '../src/exporters.js';
 import { saveJobSnapshot, jobIdFromSource } from '../src/jobs.js';
-import { logApplicationEvent } from '../src/application-events.js';
+import { getReminders, logApplicationEvent } from '../src/application-events.js';
 import { recordApplication, STATUSES } from '../src/lifecycle.js';
 import { recordJobDiscard } from '../src/discards.js';
 import { addJobTags, discardJob, filterShortlist, syncShortlistJob } from '../src/shortlist.js';
@@ -216,6 +216,35 @@ async function cmdTrackLog(args) {
   console.log(`Logged ${jobId} event ${channel}`);
 }
 
+function formatReminderList(reminders) {
+  if (!Array.isArray(reminders) || reminders.length === 0) {
+    return 'No reminders scheduled';
+  }
+  const lines = [];
+  for (const entry of reminders) {
+    lines.push(entry.job_id);
+    lines.push(`  Remind At: ${entry.remind_at}`);
+    if (entry.channel) lines.push(`  Channel: ${entry.channel}`);
+    if (entry.date) lines.push(`  Logged At: ${entry.date}`);
+    if (entry.contact) lines.push(`  Contact: ${entry.contact}`);
+    if (entry.note) lines.push(`  Note: ${entry.note}`);
+    if (entry.overdue) lines.push('  Status: OVERDUE');
+    lines.push('');
+  }
+  if (lines[lines.length - 1] === '') lines.pop();
+  return lines.join('\n');
+}
+
+async function cmdTrackReminders(args) {
+  const asJson = args.includes('--json');
+  const reminders = await getReminders();
+  if (asJson) {
+    console.log(JSON.stringify({ reminders }, null, 2));
+    return;
+  }
+  console.log(formatReminderList(reminders));
+}
+
 function parseTagsFlag(args) {
   const raw = getFlag(args, '--tags');
   if (!raw) return undefined;
@@ -311,7 +340,8 @@ async function cmdTrack(args) {
   if (sub === 'add') return cmdTrackAdd(args.slice(1));
   if (sub === 'log') return cmdTrackLog(args.slice(1));
   if (sub === 'discard') return cmdTrackDiscard(args.slice(1));
-  console.error('Usage: jobbot track <add|log|discard> ...');
+  if (sub === 'reminders') return cmdTrackReminders(args.slice(1));
+  console.error('Usage: jobbot track <add|log|discard|reminders> ...');
   process.exit(2);
 }
 

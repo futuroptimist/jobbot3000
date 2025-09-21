@@ -4,6 +4,7 @@ import { beforeEach, afterEach, describe, expect, it } from 'vitest';
 import {
   logApplicationEvent,
   getApplicationEvents,
+  getReminders,
   setApplicationEventsDataDir,
 } from '../src/application-events.js';
 
@@ -98,5 +99,44 @@ describe('application events', () => {
     await expect(
       logApplicationEvent('job-123', { channel: 'applied', date: 'not-a-date' }),
     ).rejects.toThrow(/invalid date/);
+  });
+
+  it('collects reminders across jobs and marks overdue entries', async () => {
+    await logApplicationEvent('job-future', {
+      channel: 'follow_up',
+      date: '2025-02-01T10:00:00Z',
+      note: 'Ping recruiter',
+      remindAt: '2025-02-15T09:00:00Z',
+    });
+    await logApplicationEvent('job-past', {
+      channel: 'thank_you',
+      date: '2025-02-01T18:00:00Z',
+      note: 'Send follow-up note',
+      contact: 'Jordan Hiring Manager',
+      remindAt: '2025-02-05T12:00:00Z',
+    });
+
+    const reminders = await getReminders({ now: new Date('2025-02-10T00:00:00Z') });
+
+    expect(reminders).toEqual([
+      {
+        job_id: 'job-past',
+        channel: 'thank_you',
+        date: '2025-02-01T18:00:00.000Z',
+        contact: 'Jordan Hiring Manager',
+        note: 'Send follow-up note',
+        remind_at: '2025-02-05T12:00:00.000Z',
+        overdue: true,
+      },
+      {
+        job_id: 'job-future',
+        channel: 'follow_up',
+        date: '2025-02-01T10:00:00.000Z',
+        contact: undefined,
+        note: 'Ping recruiter',
+        remind_at: '2025-02-15T09:00:00.000Z',
+        overdue: false,
+      },
+    ]);
   });
 });

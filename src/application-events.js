@@ -62,6 +62,13 @@ function sanitizeString(value) {
   return trimmed ? trimmed : undefined;
 }
 
+function parseIsoTimestamp(value) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
+
 let writeLock = Promise.resolve();
 
 export function logApplicationEvent(jobId, event) {
@@ -120,4 +127,45 @@ export async function getApplicationEvents(jobId) {
   if (jobId === undefined) return data;
   const history = data[jobId];
   return Array.isArray(history) ? history : [];
+}
+
+export async function getReminders({ now = new Date() } = {}) {
+  const { file } = getPaths();
+  const data = await readEventsFile(file);
+  const reminders = [];
+  const current = parseIsoTimestamp(now) ?? new Date();
+
+  for (const [jobId, history] of Object.entries(data)) {
+    if (!Array.isArray(history)) continue;
+    for (const entry of history) {
+      const remindAt = parseIsoTimestamp(entry?.remind_at);
+      if (!remindAt) continue;
+
+      const normalizedDate = parseIsoTimestamp(entry?.date);
+      const channel = sanitizeString(entry?.channel);
+      const contact = sanitizeString(entry?.contact);
+      const note = sanitizeString(entry?.note);
+
+      reminders.push({
+        job_id: jobId,
+        channel: channel || undefined,
+        date: normalizedDate ? normalizedDate.toISOString() : undefined,
+        contact: contact || undefined,
+        note: note || undefined,
+        remind_at: remindAt.toISOString(),
+        overdue: remindAt.getTime() < current.getTime(),
+      });
+    }
+  }
+
+  reminders.sort((a, b) => {
+    const aTime = parseIsoTimestamp(a.remind_at)?.getTime() ?? 0;
+    const bTime = parseIsoTimestamp(b.remind_at)?.getTime() ?? 0;
+    if (aTime !== bTime) return aTime - bTime;
+    if (a.job_id < b.job_id) return -1;
+    if (a.job_id > b.job_id) return 1;
+    return 0;
+  });
+
+  return reminders;
 }

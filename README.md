@@ -519,6 +519,25 @@ identifier, with timestamps normalized to ISO 8601.
 Tests in `test/application-events.test.js` ensure that new log entries do not
 clobber history and that invalid channels or dates are rejected.
 
+Surface upcoming follow-ups with `jobbot track reminders`:
+
+~~~bash
+DATA_DIR=$(mktemp -d)
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track log job-789 --channel follow_up \
+  --date 2025-03-10 --note "Prep onsite agenda" --remind-at 2025-03-17T09:00:00Z
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track reminders
+# job-789
+#   Remind At: 2025-03-17T09:00:00.000Z
+#   Channel: follow_up
+#   Note: Prep onsite agenda
+~~~
+
+The reminders view scans `application_events.json`, sorts entries by
+`remind_at`, highlights overdue timestamps, and supports `--json` for downstream
+automation. Each reminder carries the logged channel, note, contact (if
+provided), and original log timestamp so preparation details stay attached to
+the schedule.
+
 To capture discard reasons for shortlist triage:
 
 ~~~bash

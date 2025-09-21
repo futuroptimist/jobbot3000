@@ -185,6 +185,47 @@ describe('jobbot CLI', () => {
     ]);
   });
 
+  it('lists reminders with track reminders', () => {
+    const now = new Date();
+    const upcoming = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
+    const overdue = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+
+    runCli([
+      'track',
+      'log',
+      'job-upcoming',
+      '--channel',
+      'follow_up',
+      '--date',
+      now.toISOString(),
+      '--note',
+      'Prep for onsite',
+      '--remind-at',
+      upcoming,
+    ]);
+
+    runCli([
+      'track',
+      'log',
+      'job-overdue',
+      '--channel',
+      'thank_you',
+      '--date',
+      now.toISOString(),
+      '--note',
+      'Send thank-you email',
+      '--remind-at',
+      overdue,
+    ]);
+
+    const output = runCli(['track', 'reminders']);
+
+    expect(output).toContain('job-overdue');
+    expect(output).toContain('OVERDUE');
+    expect(output).toContain('job-upcoming');
+    expect(output.indexOf('job-overdue')).toBeLessThan(output.indexOf('job-upcoming'));
+  });
+
   it('archives discarded jobs with reasons', () => {
     const output = runCli([
       'track',
