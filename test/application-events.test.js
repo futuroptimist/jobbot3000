@@ -32,6 +32,7 @@ describe('application events', () => {
       contact: 'Taylor Recruiter',
       documents: ['resume.pdf', 'cover-letter.pdf'],
       note: 'Referred by Alex',
+      remindAt: '2025-02-10T17:30:00Z',
     });
 
     const events = await getApplicationEvents('job-123');
@@ -42,6 +43,7 @@ describe('application events', () => {
       contact: 'Taylor Recruiter',
       documents: ['resume.pdf', 'cover-letter.pdf'],
       note: 'Referred by Alex',
+      remind_at: '2025-02-10T17:30:00.000Z',
     });
 
     const raw = await readEventsFile();
@@ -53,6 +55,7 @@ describe('application events', () => {
           contact: 'Taylor Recruiter',
           documents: ['resume.pdf', 'cover-letter.pdf'],
           note: 'Referred by Alex',
+          remind_at: '2025-02-10T17:30:00.000Z',
         },
       ],
     });

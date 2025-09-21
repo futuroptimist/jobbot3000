@@ -93,7 +93,8 @@ aggressively to respect rate limits.
    exposes `jobbot track add <job_id> --status <status>` so users can log updates inline with other
    workflows.
 3. Follow-up reminders and note-taking surfaces help the user prepare for upcoming steps while
-   consolidating feedback for future tailoring.
+   consolidating feedback for future tailoring. Use `jobbot track log --remind-at <iso8601>` to
+   capture the next follow-up timestamp with each note.
 
 **Unhappy paths:** conflicting updates (e.g., two devices editing simultaneously) trigger a merge
 flow that preserves both sets of notes.

@@ -166,6 +166,8 @@ describe('jobbot CLI', () => {
       'resume.pdf,cover-letter.pdf',
       '--note',
       'Submitted via referral portal',
+      '--remind-at',
+      '2025-03-11T09:00:00Z',
     ]);
     expect(output.trim()).toBe('Logged job-xyz event applied');
     const raw = JSON.parse(
@@ -178,6 +180,7 @@ describe('jobbot CLI', () => {
         contact: 'Jordan Hiring Manager',
         documents: ['resume.pdf', 'cover-letter.pdf'],
         note: 'Submitted via referral portal',
+        remind_at: '2025-03-11T09:00:00.000Z',
       },
     ]);
   });
