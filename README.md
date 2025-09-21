@@ -401,6 +401,14 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track log job-3 --channel offer_accepted --
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track log job-4 --channel email --date 2025-01-05
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track add job-4 --status rejected
 
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track history job-3
+# job-3
+# - email (2025-01-04T00:00:00.000Z)
+#   Documents: resume.pdf
+#   Note: Submitted via referral portal
+# - offer_accepted (2025-02-01T00:00:00.000Z)
+#   Reminder: 2025-02-10T09:00:00.000Z
+
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot analytics funnel
 # Outreach: 4
 # Screening: 1 (25% conversion, 3 drop-off)
@@ -501,12 +509,27 @@ Record and track your applications directly from the CLI—never edit JSON by ha
 To capture statuses:
 
 ~~~bash
-JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot track add job-123 --status screening
+JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot track add job-123 --status screening \
+  --note "Emailed hiring manager"
 # Recorded job-123 as screening
 ~~~
 
-This persists entries to `applications.json`. CLI tests assert that
-`jobbot track add` correctly appends and updates statuses.
+This persists entries to `applications.json` as objects that record the status,
+an `updated_at` ISO 8601 timestamp, and optional notes:
+
+```json
+{
+  "job-123": {
+    "status": "screening",
+    "note": "Emailed hiring manager",
+    "updated_at": "2025-02-01T10:00:00.000Z"
+  }
+}
+```
+
+Unit coverage in [`test/lifecycle.test.js`](test/lifecycle.test.js) and CLI
+automation in [`test/cli.test.js`](test/cli.test.js) verify note persistence and
+timestamp normalization alongside the existing status checks.
 
 To capture outreach history:
 
@@ -516,8 +539,14 @@ for each application. The command accepts optional metadata such as `--date`,
 Events are appended to `data/application_events.json`, grouped by job
 identifier, with timestamps normalized to ISO 8601.
 
+Review the timeline with `jobbot track history <job_id>`, which renders each
+event alongside contacts, documents, notes, and reminders. Pass `--json`
+to export the structured payload for automation.
+
 Tests in `test/application-events.test.js` ensure that new log entries do not
 clobber history and that invalid channels or dates are rejected.
+`test/cli.test.js` adds coverage for the history subcommand's text and JSON
+outputs so the note-taking surface stays reliable.
 
 Surface follow-up work with `jobbot track reminders`. Pass `--now` to view from a
 given timestamp (defaults to the current time) and `--json` for structured output:

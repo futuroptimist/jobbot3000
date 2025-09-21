@@ -91,12 +91,13 @@ aggressively to respect rate limits.
    metadata to `data/application_events.json` so the full history stays local.
 2. Application status transitions (no response, screening, onsite, offer, rejected, withdrawn) are
    stored in `data/applications.json`, which is serialized safely to prevent data loss. The CLI
-   exposes `jobbot track add <job_id> --status <status>` so users can log updates inline with other
-   workflows.
+   exposes `jobbot track add <job_id> --status <status> [--note <note>]` so users can log updates and
+   quick notes inline with other workflows.
 3. Follow-up reminders and note-taking surfaces help the user prepare for upcoming steps while
    consolidating feedback for future tailoring. Use `jobbot track log --remind-at <iso8601>` to
-   capture the next follow-up timestamp with each note, and review upcoming outreach with
-   `jobbot track reminders` (add `--json` when piping into other tools).
+   capture the next follow-up timestamp with each note. Review upcoming outreach with
+   `jobbot track reminders` (add `--json` when piping into other tools), or review the full timeline
+   with `jobbot track history <job_id>` (pass `--json` for automation) when planning next actions.
 
 **Unhappy paths:** conflicting updates (e.g., two devices editing simultaneously) trigger a merge
 flow that preserves both sets of notes.

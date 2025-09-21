@@ -148,7 +148,35 @@ describe('jobbot CLI', () => {
     const output = runCli(['track', 'add', 'job-123', '--status', status]);
     expect(output.trim()).toBe(`Recorded job-123 as ${status}`);
     const raw = fs.readFileSync(path.join(dataDir, 'applications.json'), 'utf8');
-    expect(JSON.parse(raw)).toEqual({ 'job-123': status });
+    const parsed = JSON.parse(raw);
+    expect(parsed['job-123'].status).toBe(status);
+    expect(parsed['job-123'].note).toBeUndefined();
+    expect(parsed['job-123'].updated_at).toEqual(
+      new Date(parsed['job-123'].updated_at).toISOString()
+    );
+  });
+
+  it('records application status notes with track add --note', () => {
+    const output = runCli([
+      'track',
+      'add',
+      'job-456',
+      '--status',
+      'screening',
+      '--note',
+      'Emailed hiring manager',
+    ]);
+    expect(output.trim()).toBe('Recorded job-456 as screening');
+    const raw = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'applications.json'), 'utf8')
+    );
+    expect(raw['job-456']).toMatchObject({
+      status: 'screening',
+      note: 'Emailed hiring manager',
+    });
+    expect(raw['job-456'].updated_at).toEqual(
+      new Date(raw['job-456'].updated_at).toISOString()
+    );
   });
 
   it('logs application events with track log', () => {
@@ -240,6 +268,67 @@ describe('jobbot CLI', () => {
         },
       ],
     });
+  });
+
+  it('shows application history with track history', () => {
+    runCli([
+      'track',
+      'log',
+      'job-xyz',
+      '--channel',
+      'applied',
+      '--date',
+      '2025-03-04',
+      '--contact',
+      'Jordan Hiring Manager',
+      '--documents',
+      'resume.pdf,cover-letter.pdf',
+      '--note',
+      'Submitted via referral portal',
+      '--remind-at',
+      '2025-03-11T09:00:00Z',
+    ]);
+
+    runCli([
+      'track',
+      'log',
+      'job-xyz',
+      '--channel',
+      'follow_up',
+      '--date',
+      '2025-03-12T09:15:00Z',
+      '--note',
+      'Sent thank-you follow-up',
+    ]);
+
+    const textHistory = runCli(['track', 'history', 'job-xyz']);
+    expect(textHistory).toContain('job-xyz');
+    expect(textHistory).toContain('applied (2025-03-04T00:00:00.000Z)');
+    expect(textHistory).toContain('Contact: Jordan Hiring Manager');
+    expect(textHistory).toContain('Documents: resume.pdf, cover-letter.pdf');
+    expect(textHistory).toContain('Note: Submitted via referral portal');
+    expect(textHistory).toContain('Reminder: 2025-03-11T09:00:00.000Z');
+    expect(textHistory).toContain('follow_up (2025-03-12T09:15:00.000Z)');
+    expect(textHistory).toContain('Note: Sent thank-you follow-up');
+
+    const jsonHistory = runCli(['track', 'history', 'job-xyz', '--json']);
+    const parsed = JSON.parse(jsonHistory);
+    expect(parsed.job).toBe('job-xyz');
+    expect(parsed.events).toEqual([
+      {
+        channel: 'applied',
+        date: '2025-03-04T00:00:00.000Z',
+        contact: 'Jordan Hiring Manager',
+        documents: ['resume.pdf', 'cover-letter.pdf'],
+        note: 'Submitted via referral portal',
+        remind_at: '2025-03-11T09:00:00.000Z',
+      },
+      {
+        channel: 'follow_up',
+        date: '2025-03-12T09:15:00.000Z',
+        note: 'Sent thank-you follow-up',
+      },
+    ]);
   });
 
   it('archives discarded jobs with reasons', () => {
