@@ -31,6 +31,10 @@ echo "First. Second. Third." | npx jobbot summarize - --sentences 2 --text
 # => First. Second.
 # Non-numeric --sentences values fall back to 1 sentence
 
+# Write a DOCX summary alongside the console output
+npx jobbot summarize job.txt --docx output/summary.docx
+# => Markdown summary prints to stdout; DOCX saved to output/summary.docx
+
 # Track an application's status
 npx jobbot track add job-123 --status screening
 # => Recorded job-123 as screening
@@ -99,7 +103,7 @@ over 1 MB are rejected; override with `maxBytes` to adjust. Only `http` and
 loopback, link-local, carrier-grade NAT, or other private network addresses
 are blocked to prevent server-side request forgery (SSRF). Hostnames that
 resolve to those private ranges (for example, `127.0.0.1.nip.io`) are rejected
-as well; see `test/fetch.test.js` for coverage of these guardrails.
+as well; `test/fetch.test.js` now asserts both generic and nip.io guardrails.
 
 Normalize existing HTML without fetching and log the result:
 
@@ -173,6 +177,11 @@ Pass `url` to include a source link in the rendered Markdown output.
 `toMarkdownMatch` accepts the same `url` field to link match reports back to the job posting.
 If `summary` is omitted, the requirements section is still separated by a blank line.
 
+`toDocxSummary` and `toDocxMatch` provide `.docx` exports with the same localized labels and bullet
+structure. Automated coverage in [`test/exporters.test.js`](test/exporters.test.js) inspects the
+generated `word/document.xml`, and [`test/cli.test.js`](test/cli.test.js) verifies the CLI's
+`--docx` flag writes those documents without altering stdout output.
+
 Both exporters accept an optional `locale` field to translate labels.
 The default locale is `'en'`; Spanish (`'es'`) is also supported.
 
@@ -235,6 +244,10 @@ JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot match --resume resume.txt --job job.txt 
 # Matched 2 of 3 requirements (67%).
 # Hits: Distributed systems experience; Mentors senior engineers
 # Gaps: Certified Kubernetes administrator
+
+# Persist a DOCX match report while keeping machine-readable output
+JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot match --resume resume.txt --job job.txt --json --docx match.docx
+# => JSON match report prints to stdout; match.docx contains the formatted document
 ```
 
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal

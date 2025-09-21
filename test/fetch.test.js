@@ -446,6 +446,26 @@ describe('fetchTextFromUrl', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it('rejects nip.io hostnames that point to private IPv4 addresses', async () => {
+    await expect(fetchTextFromUrl('http://127.0.0.1.nip.io/hidden'))
+      .rejects.toThrow('Refusing to fetch private address: 127.0.0.1.nip.io');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('allows nip.io hostnames that point to public IPv4 addresses', async () => {
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('public'),
+    });
+    dns.lookup.mockResolvedValueOnce([{ address: '8.8.8.8', family: 4 }]);
+
+    const text = await fetchTextFromUrl('http://8.8.8.8.nip.io/status');
+    expect(text).toBe('public');
+  });
+
   it('allows uppercase HTTP protocol', async () => {
     fetch.mockResolvedValue({
       ok: true,

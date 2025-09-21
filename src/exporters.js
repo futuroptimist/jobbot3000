@@ -1,3 +1,5 @@
+import { Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx';
+
 import { t, DEFAULT_LOCALE } from './i18n.js';
 
 export function toJson(data) {
@@ -58,6 +60,64 @@ function normalizeRequirementList(list) {
     if (trimmed) normalized.push(trimmed);
   }
   return normalized;
+}
+
+function ensureParagraphs(paragraphs) {
+  if (paragraphs.length > 0) return paragraphs;
+  return [new Paragraph('')];
+}
+
+function headingParagraph(text, level = HeadingLevel.HEADING_1) {
+  if (!text) return null;
+  const value = String(text).trim();
+  if (!value) return null;
+  return new Paragraph({ text: value, heading: level });
+}
+
+function labelParagraph(label, value) {
+  if (!label || value == null) return null;
+  const text = String(value).trim();
+  if (!text) return null;
+  return new Paragraph({
+    children: [
+      new TextRun({ text: `${label}: `, bold: true }),
+      new TextRun({ text }),
+    ],
+  });
+}
+
+function appendMultilineText(paragraphs, value) {
+  if (value == null) return;
+  const lines = String(value)
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean);
+  for (const line of lines) {
+    paragraphs.push(new Paragraph({ text: line }));
+  }
+}
+
+function appendBulletList(paragraphs, items) {
+  for (const item of items) {
+    paragraphs.push(
+      new Paragraph({
+        text: item,
+        bullet: { level: 0 },
+      })
+    );
+  }
+}
+
+async function packDocument(paragraphs) {
+  const doc = new Document({
+    sections: [
+      {
+        properties: {},
+        children: ensureParagraphs(paragraphs),
+      },
+    ],
+  });
+  return Packer.toBuffer(doc);
 }
 
 /**
@@ -199,4 +259,86 @@ export function toMarkdownMatchExplanation(options) {
   const safeExplanation = escapeMarkdownMultiline(explanation);
   const heading = `## ${t('explanation', locale)}`;
   return safeExplanation ? `${heading}\n\n${safeExplanation}` : heading;
+}
+
+export async function toDocxSummary({
+  title,
+  company,
+  location,
+  url,
+  summary,
+  requirements,
+  locale = DEFAULT_LOCALE,
+}) {
+  const paragraphs = [];
+  const heading = headingParagraph(title, HeadingLevel.HEADING_1);
+  if (heading) paragraphs.push(heading);
+
+  const companyLine = labelParagraph(t('company', locale), company);
+  if (companyLine) paragraphs.push(companyLine);
+  const locationLine = labelParagraph(t('location', locale), location);
+  if (locationLine) paragraphs.push(locationLine);
+  const urlLine = labelParagraph(t('url', locale), url);
+  if (urlLine) paragraphs.push(urlLine);
+
+  const normalizedSummary = summary == null ? '' : String(summary).trim();
+  if (normalizedSummary) {
+    const summaryHeading = headingParagraph(t('summary', locale), HeadingLevel.HEADING_2);
+    if (summaryHeading) paragraphs.push(summaryHeading);
+    appendMultilineText(paragraphs, summary);
+  }
+
+  const normalizedRequirements = normalizeRequirementList(requirements);
+  if (normalizedRequirements.length > 0) {
+    const requirementsHeading = headingParagraph(
+      t('requirements', locale),
+      HeadingLevel.HEADING_2
+    );
+    if (requirementsHeading) paragraphs.push(requirementsHeading);
+    appendBulletList(paragraphs, normalizedRequirements);
+  }
+
+  return packDocument(paragraphs);
+}
+
+export async function toDocxMatch({
+  title,
+  company,
+  location,
+  url,
+  score,
+  matched,
+  missing,
+  locale = DEFAULT_LOCALE,
+}) {
+  const paragraphs = [];
+  const heading = headingParagraph(title, HeadingLevel.HEADING_1);
+  if (heading) paragraphs.push(heading);
+
+  const companyLine = labelParagraph(t('company', locale), company);
+  if (companyLine) paragraphs.push(companyLine);
+  const locationLine = labelParagraph(t('location', locale), location);
+  if (locationLine) paragraphs.push(locationLine);
+  const urlLine = labelParagraph(t('url', locale), url);
+  if (urlLine) paragraphs.push(urlLine);
+  if (typeof score === 'number' && Number.isFinite(score)) {
+    const scoreLine = labelParagraph(t('fitScore', locale), `${score}%`);
+    if (scoreLine) paragraphs.push(scoreLine);
+  }
+
+  const hits = normalizeRequirementList(matched);
+  if (hits.length > 0) {
+    const hitsHeading = headingParagraph(t('matched', locale), HeadingLevel.HEADING_2);
+    if (hitsHeading) paragraphs.push(hitsHeading);
+    appendBulletList(paragraphs, hits);
+  }
+
+  const gaps = normalizeRequirementList(missing);
+  if (gaps.length > 0) {
+    const gapsHeading = headingParagraph(t('missing', locale), HeadingLevel.HEADING_2);
+    if (gapsHeading) paragraphs.push(gapsHeading);
+    appendBulletList(paragraphs, gaps);
+  }
+
+  return packDocument(paragraphs);
 }
