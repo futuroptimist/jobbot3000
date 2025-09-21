@@ -20,6 +20,7 @@ import { recordJobDiscard } from '../src/discards.js';
 import { addJobTags, discardJob, filterShortlist, syncShortlistJob } from '../src/shortlist.js';
 import { recordInterviewSession, getInterviewSession } from '../src/interviews.js';
 import { initProfile } from '../src/profile.js';
+import { recordIntakeResponse, getIntakeResponses } from '../src/intake.js';
 import { ingestGreenhouseBoard } from '../src/greenhouse.js';
 import { ingestLeverBoard } from '../src/lever.js';
 import { ingestSmartRecruitersBoard } from '../src/smartrecruiters.js';
@@ -218,6 +219,72 @@ function parseTagsFlag(args) {
     .split(',')
     .map(entry => entry.trim())
     .filter(Boolean);
+}
+
+function formatIntakeList(entries) {
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return 'No intake responses found';
+  }
+  const lines = [];
+  for (const entry of entries) {
+    lines.push(entry.question);
+    lines.push(`  Answer: ${entry.answer}`);
+    if (entry.tags && entry.tags.length > 0) {
+      lines.push(`  Tags: ${entry.tags.join(', ')}`);
+    }
+    if (entry.notes) {
+      lines.push(`  Notes: ${entry.notes}`);
+    }
+    if (entry.asked_at) {
+      lines.push(`  Asked At: ${entry.asked_at}`);
+    }
+    if (entry.recorded_at) {
+      lines.push(`  Recorded At: ${entry.recorded_at}`);
+    }
+    if (entry.id) {
+      lines.push(`  ID: ${entry.id}`);
+    }
+    lines.push('');
+  }
+  if (lines[lines.length - 1] === '') {
+    lines.pop();
+  }
+  return lines.join('\n');
+}
+
+async function cmdIntakeRecord(args) {
+  const question = readContentFromArgs(args, '--question', '--question-file');
+  const answer = readContentFromArgs(args, '--answer', '--answer-file');
+  if (!question || !answer) {
+    console.error(
+      'Usage: jobbot intake record --question <text> --answer <text> ' +
+        '[--tags <tag1,tag2>] [--notes <text>|--notes-file <path>] [--asked-at <iso8601>]'
+    );
+    process.exit(2);
+  }
+  const tags = parseTagsFlag(args);
+  const notes = readContentFromArgs(args, '--notes', '--notes-file');
+  const askedAt = getFlag(args, '--asked-at');
+  const entry = await recordIntakeResponse({ question, answer, tags, notes, askedAt });
+  console.log(`Recorded intake response ${entry.id}`);
+}
+
+async function cmdIntakeList(args) {
+  const asJson = args.includes('--json');
+  const entries = await getIntakeResponses();
+  if (asJson) {
+    console.log(JSON.stringify({ responses: entries }, null, 2));
+    return;
+  }
+  console.log(formatIntakeList(entries));
+}
+
+async function cmdIntake(args) {
+  const sub = args[0];
+  if (sub === 'record') return cmdIntakeRecord(args.slice(1));
+  if (sub === 'list') return cmdIntakeList(args.slice(1));
+  console.error('Usage: jobbot intake <record|list> ...');
+  process.exit(2);
 }
 
 async function cmdTrackDiscard(args) {
@@ -519,10 +586,12 @@ async function main() {
   if (cmd === 'track') return cmdTrack(args);
   if (cmd === 'shortlist') return cmdShortlist(args);
   if (cmd === 'analytics') return cmdAnalytics(args);
+  if (cmd === 'intake') return cmdIntake(args);
   if (cmd === 'ingest') return cmdIngest(args);
   if (cmd === 'interviews') return cmdInterviews(args);
   console.error(
-    'Usage: jobbot <init|summarize|match|track|shortlist|analytics|interviews|ingest> [options]'
+    'Usage: jobbot <init|summarize|match|track|shortlist|analytics|interviews|intake|ingest> ' +
+      '[options]'
   );
   process.exit(2);
 }

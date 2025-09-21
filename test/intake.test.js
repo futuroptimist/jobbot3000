@@ -1,0 +1,92 @@
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+let dataDir;
+
+async function resetDataDir() {
+  if (dataDir) {
+    const fs = await import('node:fs/promises');
+    await fs.rm(dataDir, { recursive: true, force: true });
+    dataDir = undefined;
+  }
+}
+
+describe('intake responses', () => {
+  beforeEach(async () => {
+    const fs = await import('node:fs/promises');
+    dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jobbot-intake-'));
+    const { setIntakeDataDir } = await import('../src/intake.js');
+    setIntakeDataDir(dataDir);
+    process.env.JOBBOT_DATA_DIR = dataDir;
+  });
+
+  afterEach(async () => {
+    await resetDataDir();
+    delete process.env.JOBBOT_DATA_DIR;
+    const { setIntakeDataDir } = await import('../src/intake.js');
+    setIntakeDataDir(undefined);
+  });
+
+  it('records structured responses with normalized metadata', async () => {
+    const fs = await import('node:fs/promises');
+    const { recordIntakeResponse } = await import('../src/intake.js');
+
+    const entry = await recordIntakeResponse({
+      question: '  Career goals?  ',
+      answer: '\nBuild accessible tools\n',
+      askedAt: '2025-02-01T12:00:00Z',
+      tags: ['Growth', 'career', 'growth'],
+      notes: ' Prefers mission-driven teams ',
+    });
+
+    expect(entry).toMatchObject({
+      question: 'Career goals?',
+      answer: 'Build accessible tools',
+      asked_at: '2025-02-01T12:00:00.000Z',
+      tags: ['Growth', 'career'],
+      notes: 'Prefers mission-driven teams',
+    });
+    expect(entry.recorded_at).toEqual(new Date(entry.recorded_at).toISOString());
+    expect(typeof entry.id).toBe('string');
+
+    const raw = JSON.parse(
+      await fs.readFile(path.join(dataDir, 'profile', 'intake.json'), 'utf8')
+    );
+    expect(raw.responses).toHaveLength(1);
+    expect(raw.responses[0]).toMatchObject({
+      id: entry.id,
+      question: 'Career goals?',
+      answer: 'Build accessible tools',
+      asked_at: '2025-02-01T12:00:00.000Z',
+      tags: ['Growth', 'career'],
+      notes: 'Prefers mission-driven teams',
+    });
+  });
+
+  it('requires both question and answer', async () => {
+    const { recordIntakeResponse } = await import('../src/intake.js');
+
+    await expect(
+      recordIntakeResponse({ answer: 'Detailed accomplishments' })
+    ).rejects.toThrow(/question is required/);
+
+    await expect(
+      recordIntakeResponse({ question: 'Tell me about yourself' })
+    ).rejects.toThrow(/answer is required/);
+  });
+
+  it('returns intake history in insertion order', async () => {
+    const { recordIntakeResponse, getIntakeResponses } = await import('../src/intake.js');
+
+    await recordIntakeResponse({ question: 'First', answer: 'One' });
+    await recordIntakeResponse({ question: 'Second', answer: 'Two' });
+
+    const entries = await getIntakeResponses();
+    expect(entries.map(entry => entry.question)).toEqual(['First', 'Second']);
+
+    entries[0].question = 'mutated';
+    const reread = await getIntakeResponses();
+    expect(reread[0].question).toBe('First');
+  });
+});

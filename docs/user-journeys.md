@@ -31,8 +31,9 @@ with retry options and explain how to manually fix the source file.
    visa status, measurable outcomes, tools).
 2. The user answers via chat or a structured form. The assistant keeps asking follow-ups until it
    reaches a configured confidence threshold.
-3. Responses are appended to the profile as structured notes (`data/profile/intake.json`) and the
-   model synthesizes updated bullet point options tagged by skill or competency.
+3. Responses are appended to the profile as structured notes (`data/profile/intake.json`) via
+   `jobbot intake record`, and the model synthesizes updated bullet point options tagged by skill or
+   competency.
 4. All interactions are stored locally with timestamps and provenance metadata for later review.
 
 **Unhappy paths:** the user can skip or postpone questions. Skips are marked so the assistant can
