@@ -261,6 +261,43 @@ describe('jobbot CLI', () => {
     ]);
   });
 
+  it('keeps shortlist discard history in sync when using track discard', () => {
+    const output = runCli([
+      'track',
+      'discard',
+      'job-track',
+      '--reason',
+      'Not a fit right now',
+      '--tags',
+      'Remote,onsite',
+      '--date',
+      '2025-04-05T12:00:00Z',
+    ]);
+
+    expect(output.trim()).toBe('Discarded job-track: Not a fit right now');
+
+    const shortlistPath = path.join(dataDir, 'shortlist.json');
+    const shortlist = JSON.parse(fs.readFileSync(shortlistPath, 'utf8'));
+    expect(shortlist.jobs['job-track']).toBeDefined();
+    expect(shortlist.jobs['job-track'].discarded).toEqual([
+      {
+        reason: 'Not a fit right now',
+        discarded_at: '2025-04-05T12:00:00.000Z',
+        tags: ['Remote', 'onsite'],
+      },
+    ]);
+
+    const archivePath = path.join(dataDir, 'discarded_jobs.json');
+    const archive = JSON.parse(fs.readFileSync(archivePath, 'utf8'));
+    expect(archive['job-track']).toEqual([
+      {
+        reason: 'Not a fit right now',
+        discarded_at: '2025-04-05T12:00:00.000Z',
+        tags: ['Remote', 'onsite'],
+      },
+    ]);
+  });
+
   it('shows application history with track history --json', () => {
     runCli([
       'track',
@@ -450,7 +487,7 @@ describe('jobbot CLI', () => {
       '--reason',
       'Below compensation range',
     ]);
-    expect(output.trim()).toBe('Discarded job-789');
+    expect(output.trim()).toBe('Discarded job-789: Below compensation range');
     const raw = JSON.parse(
       fs.readFileSync(path.join(dataDir, 'discarded_jobs.json'), 'utf8')
     );
