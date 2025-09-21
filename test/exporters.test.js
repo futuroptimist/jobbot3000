@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'vitest';
+import JSZip from 'jszip';
 import {
   toJson,
   toMarkdownSummary,
   toMarkdownMatch,
   formatMatchExplanation,
   toMarkdownMatchExplanation,
+  toDocxSummary,
+  toDocxMatch,
 } from '../src/exporters.js';
 
 describe('exporters', () => {
@@ -233,5 +236,40 @@ describe('exporters', () => {
     expect(md).toContain('Matched 1 of 2 requirements \\(50%\\)');
     expect(md).toContain('Hits: Node.js \\(services\\)');
     expect(md).toContain('Gaps: Go & Rust');
+  });
+
+  it('generates DOCX summaries with localized labels', async () => {
+    const buffer = await toDocxSummary({
+      title: 'Dev',
+      company: 'Acme',
+      location: 'Remoto',
+      summary: 'Construir cosas',
+      requirements: ['JS'],
+      locale: 'es',
+    });
+    expect(buffer instanceof Uint8Array || Buffer.isBuffer(buffer)).toBe(true);
+    const zip = await JSZip.loadAsync(buffer);
+    const xml = await zip.file('word/document.xml').async('string');
+    expect(xml).toContain('Dev');
+    expect(xml).toContain('Empresa');
+    expect(xml).toContain('Requisitos');
+  });
+
+  it('generates DOCX match reports with scores and bullets', async () => {
+    const buffer = await toDocxMatch({
+      title: 'Dev',
+      company: 'Acme',
+      score: 82,
+      matched: ['JS'],
+      missing: ['Rust'],
+      locale: 'fr',
+    });
+    expect(buffer instanceof Uint8Array || Buffer.isBuffer(buffer)).toBe(true);
+    const zip = await JSZip.loadAsync(buffer);
+    const xml = await zip.file('word/document.xml').async('string');
+    expect(xml).toContain('Dev');
+    expect(xml).toContain('Score d&apos;adéquation');
+    expect(xml).toContain('Correspondances');
+    expect(xml).toContain('Manquants');
   });
 });

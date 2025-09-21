@@ -28,6 +28,24 @@ function isPrivateIPv4(octets) {
   return false;
 }
 
+function parseNipIoPrivateOctets(hostname) {
+  const suffix = '.nip.io';
+  if (!hostname.endsWith(suffix)) return null;
+  const withoutSuffix = hostname.slice(0, -suffix.length);
+  if (!withoutSuffix) return null;
+  const segments = withoutSuffix.split('.');
+  if (segments.length < 4) return null;
+  const octets = segments.slice(-4);
+  const values = [];
+  for (const part of octets) {
+    if (!/^\d{1,3}$/.test(part)) return null;
+    const value = Number(part);
+    if (!Number.isInteger(value) || value < 0 || value > 255) return null;
+    values.push(value);
+  }
+  return values;
+}
+
 function isForbiddenHostname(hostname) {
   if (!hostname) return true;
   const lower = hostname.toLowerCase();
@@ -39,6 +57,9 @@ function isForbiddenHostname(hostname) {
     : lower;
   if (LOOPBACK_HOSTNAMES.has(lower)) return true;
   if (lower.endsWith('.localhost')) return true;
+
+  const nipOctets = parseNipIoPrivateOctets(normalizedLower);
+  if (nipOctets && isPrivateIPv4(nipOctets)) return true;
 
   const type = isIP(bracketless);
   if (type === 4) {

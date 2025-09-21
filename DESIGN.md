@@ -140,7 +140,7 @@ Each ATS = a module returning a normalized `JobPosting`. Add basic backoff, ETag
 
 **ATS-friendly defaults**
 - Single column, standard fonts, no text in images, consistent dates, simple bullets.
-- Optionally export `.docx` via Pandoc later (stretch).
+- Export `.docx` via the built-in generator (Pandoc remains optional for alternate templates).
 
 ---
 
@@ -286,7 +286,7 @@ jobbot track add <job_id> --status applied --note "emailed hiring manager"
 - Docs, quickstart, sample data.
 
 **Stretch / nice-to-have**
-- Pandoc .docx export.
+- `.docx` export (shipped via CLI using the docx library; Pandoc remains optional for other flows).
 - System-design rehearsal outlines.
 - Scheduler for periodic ingestion/matching.
 - Basic analytics, all local.
@@ -296,7 +296,8 @@ jobbot track add <job_id> --status applied --note "emailed hiring manager"
 ## 15) Open questions & risks
 
 - Model choice tradeoff: speed vs. quality for tailoring and feedback on consumer GPUs/CPU.
-- ATS variability: PDFs are often accepted, but .docx may parse more consistently in some stacks—provide both where possible.
+- ATS variability: PDFs are often accepted, but .docx may parse more consistently in some stacks—CLI
+  docx export now covers both; keep monitoring ATS feedback.
 - Legality/ToS: keep a hard line against gray-area scraping; prefer official/public endpoints.
 - Prompt-injection: job posts can contain adversarial fluff—sanitize and constrain tool use.
 

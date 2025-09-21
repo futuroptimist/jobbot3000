@@ -12,6 +12,8 @@ import {
   toMarkdownMatch,
   formatMatchExplanation,
   toMarkdownMatchExplanation,
+  toDocxSummary,
+  toDocxMatch,
 } from '../src/exporters.js';
 import { saveJobSnapshot, jobIdFromSource } from '../src/jobs.js';
 import {
@@ -100,6 +102,13 @@ async function persistJobSnapshot(raw, parsed, source, requestHeaders) {
   }
 }
 
+async function writeDocxFile(targetPath, buffer) {
+  if (!targetPath) return;
+  const resolved = path.resolve(process.cwd(), targetPath);
+  await fs.promises.mkdir(path.dirname(resolved), { recursive: true });
+  await fs.promises.writeFile(resolved, buffer);
+}
+
 async function cmdSummarize(args) {
   const input = args[0] || '-';
   const format = args.includes('--json')
@@ -107,6 +116,14 @@ async function cmdSummarize(args) {
     : args.includes('--text')
       ? 'text'
       : 'md';
+  const docxSpecified = args.includes('--docx');
+  const docxPath = getFlag(args, '--docx');
+  if (docxSpecified && !docxPath) {
+    console.error(
+      'Usage: jobbot summarize <file|url|-> [--json] [--text] [--sentences <count>] [--docx <path>]'
+    );
+    process.exit(2);
+  }
   const timeoutMs = getNumberFlag(args, '--timeout', 10000);
   const count = getNumberFlag(args, '--sentences', 1);
   const fetchingRemote = isHttpUrl(input);
@@ -120,6 +137,10 @@ async function cmdSummarize(args) {
   if (fetchingRemote) {
     await persistJobSnapshot(raw, parsed, { type: 'url', value: input }, requestHeaders);
   }
+  if (docxPath) {
+    const buffer = await toDocxSummary(payload);
+    await writeDocxFile(docxPath, buffer);
+  }
   if (format === 'json') console.log(toJson(payload));
   else if (format === 'text') console.log(summary);
   else console.log(toMarkdownSummary(payload));
@@ -127,17 +148,25 @@ async function cmdSummarize(args) {
 
 async function cmdMatch(args) {
   const resumeIdx = args.indexOf('--resume');
+  const usage =
+    'Usage: jobbot match --resume <file> --job <file|url> [--json] [--explain] [--docx <path>]';
   if (resumeIdx === -1 || !args[resumeIdx + 1]) {
-    console.error('Usage: jobbot match --resume <file> --job <file|url> [--json] [--explain]');
+    console.error(usage);
     process.exit(2);
   }
   const jobIdx = args.indexOf('--job');
   if (jobIdx === -1 || !args[jobIdx + 1]) {
-    console.error('Usage: jobbot match --resume <file> --job <file|url> [--json] [--explain]');
+    console.error(usage);
     process.exit(2);
   }
   const format = args.includes('--json') ? 'json' : 'md';
   const explain = args.includes('--explain');
+  const docxSpecified = args.includes('--docx');
+  const docxPath = getFlag(args, '--docx');
+  if (docxSpecified && !docxPath) {
+    console.error(usage);
+    process.exit(2);
+  }
   const timeoutMs = getNumberFlag(args, '--timeout', 10000);
   const resumePath = args[resumeIdx + 1];
   const jobInput = args[jobIdx + 1];
@@ -159,6 +188,11 @@ async function cmdMatch(args) {
       : { type: 'file', value: path.resolve(process.cwd(), jobInput) };
   if (jobSource) {
     await persistJobSnapshot(jobRaw, parsed, jobSource, requestHeaders);
+  }
+
+  if (docxPath) {
+    const buffer = await toDocxMatch(payload);
+    await writeDocxFile(docxPath, buffer);
   }
 
   if (format === 'json') {

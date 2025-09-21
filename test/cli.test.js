@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { summarize } from '../src/index.js';
+import JSZip from 'jszip';
 import { STATUSES } from '../src/lifecycle.js';
 
 let dataDir;
@@ -82,6 +83,24 @@ describe('jobbot CLI', () => {
     expect(out.trim()).toBe('## Summary\n\nFirst. Second.');
   });
 
+  it('writes DOCX summaries when --docx is provided', async () => {
+    const target = path.join(dataDir, 'summary.docx');
+    const input = [
+      'Title: Engineer',
+      'Company: ACME',
+      'Location: Remote',
+      'First sentence. Second.',
+    ].join('\n');
+    const out = runCli(['summarize', '-', '--docx', target], input);
+    expect(out).toContain('## Summary');
+    const buffer = fs.readFileSync(target);
+    const zip = await JSZip.loadAsync(buffer);
+    const xml = await zip.file('word/document.xml').async('string');
+    expect(xml).toContain('Engineer');
+    expect(xml).toContain('Company');
+    expect(xml).toContain('Summary');
+  });
+
   it('defaults to one sentence when --sentences is invalid', () => {
     const out = runCli(
       ['summarize', '-', '--sentences', 'foo'],
@@ -108,6 +127,35 @@ describe('jobbot CLI', () => {
     const out = runCli(['match', '--resume', resumePath, '--job', jobPath, '--json']);
     const data = JSON.parse(out);
     expect(data.score).toBeGreaterThanOrEqual(50);
+  });
+
+  it('writes DOCX match reports without breaking JSON output', async () => {
+    const job = 'Title: Engineer\nCompany: ACME\nRequirements\n- JavaScript\n- Node.js\n';
+    const resume = 'I am an engineer with JavaScript experience.';
+    const jobPath = path.resolve('test', 'fixtures', 'job-docx.txt');
+    const resumePath = path.resolve('test', 'fixtures', 'resume-docx.txt');
+    fs.mkdirSync(path.dirname(jobPath), { recursive: true });
+    fs.writeFileSync(jobPath, job);
+    fs.writeFileSync(resumePath, resume);
+    const target = path.join(dataDir, 'match.docx');
+    const out = runCli([
+      'match',
+      '--resume',
+      resumePath,
+      '--job',
+      jobPath,
+      '--json',
+      '--docx',
+      target,
+    ]);
+    const payload = JSON.parse(out);
+    expect(payload.score).toBeGreaterThanOrEqual(50);
+    const buffer = fs.readFileSync(target);
+    const zip = await JSZip.loadAsync(buffer);
+    const xml = await zip.file('word/document.xml').async('string');
+    expect(xml).toContain('Engineer');
+    expect(xml).toContain('Fit Score');
+    expect(xml).toContain('Matched');
   });
 
   it('explains hits and gaps with match --explain', () => {
