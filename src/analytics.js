@@ -45,11 +45,18 @@ function countJobsWithEvents(events) {
   return count;
 }
 
+function extractStatusValue(value) {
+  if (typeof value === 'string') return value.trim();
+  if (value && typeof value === 'object' && typeof value.status === 'string') {
+    return value.status.trim();
+  }
+  return '';
+}
+
 function getStatusCounts(statuses) {
   const counts = new Map();
   for (const value of Object.values(statuses)) {
-    if (typeof value !== 'string') continue;
-    const key = value.trim();
+    const key = extractStatusValue(value);
     if (!key) continue;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
@@ -70,8 +77,9 @@ const ACCEPTANCE_CHANNELS = new Set([
 function collectAcceptanceJobs(statuses, events) {
   const accepted = new Set();
   for (const [jobId, rawStatus] of Object.entries(statuses)) {
-    if (typeof rawStatus !== 'string') continue;
-    const status = rawStatus.trim().toLowerCase();
+    const extracted = extractStatusValue(rawStatus);
+    if (!extracted) continue;
+    const status = extracted.toLowerCase();
     if (!status) continue;
     if (ACCEPTANCE_STATUS.has(status)) {
       accepted.add(jobId);

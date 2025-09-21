@@ -37,7 +37,7 @@ afterEach(async () => {
 });
 
 test('records and summarizes application statuses', async () => {
-  await recordApplication('abc', 'rejected');
+  await recordApplication('abc', 'rejected', { date: '2025-02-01T10:00:00Z' });
   await recordApplication('def', 'no_response');
   await recordApplication('ghi', 'screening');
   const counts = await getLifecycleCounts();
@@ -45,10 +45,28 @@ test('records and summarizes application statuses', async () => {
     expectedCounts({ rejected: 1, no_response: 1, screening: 1 })
   );
   const raw = await fs.readFile(path.join(dataDir, 'applications.json'), 'utf8');
-  expect(JSON.parse(raw)).toEqual({
-    abc: 'rejected',
-    def: 'no_response',
-    ghi: 'screening',
+  const parsed = JSON.parse(raw);
+  expect(parsed.abc).toMatchObject({
+    status: 'rejected',
+    updated_at: '2025-02-01T10:00:00.000Z',
+  });
+  expect(parsed.def.status).toBe('no_response');
+  expect(parsed.def.updated_at).toEqual(new Date(parsed.def.updated_at).toISOString());
+  expect(parsed.ghi.status).toBe('screening');
+});
+
+test('stores optional notes alongside application statuses', async () => {
+  await recordApplication('job-note', 'screening', {
+    note: 'Emailed hiring manager',
+    date: '2025-02-02T11:22:33Z',
+  });
+
+  const raw = await fs.readFile(path.join(dataDir, 'applications.json'), 'utf8');
+  const parsed = JSON.parse(raw);
+  expect(parsed['job-note']).toEqual({
+    status: 'screening',
+    note: 'Emailed hiring manager',
+    updated_at: '2025-02-02T11:22:33.000Z',
   });
 });
 
@@ -84,7 +102,10 @@ test('handles concurrent status updates across all lifecycle statuses', async ()
   const raw = JSON.parse(
     await fs.readFile(path.join(dataDir, 'applications.json'), 'utf8'),
   );
-  expect(raw).toEqual(Object.fromEntries(entries));
+  for (const [id, status] of entries) {
+    expect(raw[id].status).toBe(status);
+    expect(raw[id].updated_at).toEqual(new Date(raw[id].updated_at).toISOString());
+  }
   const expected = expectedCounts();
   for (const [, status] of entries) {
     expected[status] += 1;
