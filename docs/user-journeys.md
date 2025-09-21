@@ -119,9 +119,9 @@ suggestions to prevent burnout.
 
 **Goal:** Maintain visibility into success rates and continuously improve recommendations.
 
-1. The analytics process reads application and interaction logs to update a local Sankey diagram
-   showing conversions (outreach ➜ screening ➜ onsite ➜ offer ➜ acceptance) and major drop-off
-   points.
+1. The analytics process reads application and interaction logs via `jobbot analytics funnel`
+   to update a local Sankey-style view showing conversions (outreach ➜ screening ➜ onsite ➜ offer
+   ➜ acceptance) and highlight the largest drop-off.
 2. Metadata from tailoring and rehearsal sessions feeds back into the recommender so it can surface
    what worked (e.g., bullet variants correlated with interviews) while staying privacy-first.
 3. Users can export anonymized aggregates for personal record keeping without exposing raw PII.
