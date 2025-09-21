@@ -148,7 +148,35 @@ describe('jobbot CLI', () => {
     const output = runCli(['track', 'add', 'job-123', '--status', status]);
     expect(output.trim()).toBe(`Recorded job-123 as ${status}`);
     const raw = fs.readFileSync(path.join(dataDir, 'applications.json'), 'utf8');
-    expect(JSON.parse(raw)).toEqual({ 'job-123': status });
+    const parsed = JSON.parse(raw);
+    expect(parsed['job-123'].status).toBe(status);
+    expect(parsed['job-123'].note).toBeUndefined();
+    expect(parsed['job-123'].updated_at).toEqual(
+      new Date(parsed['job-123'].updated_at).toISOString()
+    );
+  });
+
+  it('records application status notes with track add --note', () => {
+    const output = runCli([
+      'track',
+      'add',
+      'job-456',
+      '--status',
+      'screening',
+      '--note',
+      'Emailed hiring manager',
+    ]);
+    expect(output.trim()).toBe('Recorded job-456 as screening');
+    const raw = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'applications.json'), 'utf8')
+    );
+    expect(raw['job-456']).toMatchObject({
+      status: 'screening',
+      note: 'Emailed hiring manager',
+    });
+    expect(raw['job-456'].updated_at).toEqual(
+      new Date(raw['job-456'].updated_at).toISOString()
+    );
   });
 
   it('logs application events with track log', () => {

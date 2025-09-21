@@ -176,15 +176,35 @@ async function cmdMatch(args) {
 async function cmdTrackAdd(args) {
   const jobId = args[0];
   const status = getFlag(args, '--status');
+  const usage =
+    `Usage: jobbot track add <job_id> --status <status>\n` +
+    `Valid statuses: ${STATUSES.join(', ')}\n` +
+    'Optional: --note <note>';
   if (!jobId || !status) {
-    console.error(
-      `Usage: jobbot track add <job_id> --status <status>\n` +
-        `Valid statuses: ${STATUSES.join(', ')}`
-    );
+    console.error(usage);
     process.exit(2);
   }
-  const recorded = await recordApplication(jobId, status.trim());
-  console.log(`Recorded ${jobId} as ${recorded}`);
+
+  const noteFlagIndex = args.indexOf('--note');
+  if (noteFlagIndex !== -1) {
+    const next = args[noteFlagIndex + 1];
+    if (!next || next.startsWith('--')) {
+      console.error(usage);
+      process.exit(2);
+    }
+  }
+
+  const note = getFlag(args, '--note');
+  try {
+    const recorded = await recordApplication(jobId, status.trim(), { note });
+    console.log(`Recorded ${jobId} as ${recorded}`);
+  } catch (err) {
+    if (err && /note cannot be empty/i.test(String(err.message))) {
+      console.error('Note cannot be empty');
+      process.exit(2);
+    }
+    throw err;
+  }
 }
 
 function parseDocumentsFlag(args) {
