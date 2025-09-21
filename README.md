@@ -132,6 +132,25 @@ run();
 `loadResume` supports `.pdf`, `.md`, `.markdown`, and `.mdx` files; other
 extensions are read as plain text.
 
+Pass `{ withMetadata: true }` to capture basic file statistics alongside the
+cleaned text:
+
+```js
+const { text, metadata } = await loadResume('resume.md', { withMetadata: true });
+console.log(metadata);
+// {
+//   extension: '.md',
+//   format: 'markdown',
+//   bytes: 2312,
+//   characters: 1980,
+//   lineCount: 62,
+//   wordCount: 340
+// }
+```
+
+`test/resume.test.js` exercises the metadata branch so downstream callers can
+depend on the shape.
+
 Initialize a JSON Resume skeleton when you do not have an existing file:
 
 ```bash
