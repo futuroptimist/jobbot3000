@@ -185,6 +185,187 @@ describe('jobbot CLI', () => {
     ]);
   });
 
+  it('lists reminders with track reminders --json', () => {
+    runCli([
+      'track',
+      'log',
+      'job-1',
+      '--channel',
+      'follow_up',
+      '--date',
+      '2025-03-01T08:00:00Z',
+      '--note',
+      'Send status update',
+      '--remind-at',
+      '2025-03-05T09:00:00Z',
+    ]);
+    runCli([
+      'track',
+      'log',
+      'job-2',
+      '--channel',
+      'call',
+      '--date',
+      '2025-03-02T10:00:00Z',
+      '--contact',
+      'Avery Hiring Manager',
+      '--remind-at',
+      '2025-03-07T15:00:00Z',
+    ]);
+
+    const output = runCli([
+      'track',
+      'reminders',
+      '--json',
+      '--now',
+      '2025-03-06T00:00:00Z',
+    ]);
+
+    const payload = JSON.parse(output);
+    expect(payload).toEqual({
+      reminders: [
+        {
+          job_id: 'job-1',
+          remind_at: '2025-03-05T09:00:00.000Z',
+          channel: 'follow_up',
+          note: 'Send status update',
+          past_due: true,
+        },
+        {
+          job_id: 'job-2',
+          remind_at: '2025-03-07T15:00:00.000Z',
+          channel: 'call',
+          contact: 'Avery Hiring Manager',
+          past_due: false,
+        },
+      ],
+    });
+  });
+
+  it('formats reminder summaries and respects --upcoming-only', () => {
+    runCli([
+      'track',
+      'log',
+      'job-1',
+      '--channel',
+      'follow_up',
+      '--date',
+      '2025-03-01T08:00:00Z',
+      '--note',
+      'Send status update',
+      '--remind-at',
+      '2025-03-05T09:00:00Z',
+    ]);
+    runCli([
+      'track',
+      'log',
+      'job-2',
+      '--channel',
+      'call',
+      '--date',
+      '2025-03-02T10:00:00Z',
+      '--contact',
+      'Avery Hiring Manager',
+      '--remind-at',
+      '2025-03-07T15:00:00Z',
+    ]);
+
+    const fullOutput = runCli([
+      'track',
+      'reminders',
+      '--now',
+      '2025-03-06T00:00:00Z',
+    ]);
+
+    expect(fullOutput).toContain(
+      'job-1 — 2025-03-05T09:00:00.000Z (follow_up, past due)'
+    );
+    expect(fullOutput).toContain('  Note: Send status update');
+    expect(fullOutput).toContain(
+      'job-2 — 2025-03-07T15:00:00.000Z (call, upcoming)'
+    );
+    expect(fullOutput).toContain('  Contact: Avery Hiring Manager');
+
+    const upcomingOnly = runCli([
+      'track',
+      'reminders',
+      '--now',
+      '2025-03-06T00:00:00Z',
+      '--upcoming-only',
+    ]);
+
+    expect(upcomingOnly).not.toContain('job-1');
+    expect(upcomingOnly).toContain(
+      'job-2 — 2025-03-07T15:00:00.000Z (call, upcoming)'
+    );
+  });
+
+  it('prints tracked history and supports --json', () => {
+    runCli([
+      'track',
+      'log',
+      'job-1',
+      '--channel',
+      'applied',
+      '--date',
+      '2025-03-01T08:00:00Z',
+      '--contact',
+      'Jordan Hiring Manager',
+      '--documents',
+      'resume.pdf,cover-letter.pdf',
+      '--note',
+      'Submitted via referral portal',
+      '--remind-at',
+      '2025-03-11T09:00:00Z',
+    ]);
+
+    runCli([
+      'track',
+      'log',
+      'job-1',
+      '--channel',
+      'follow_up',
+      '--date',
+      '2025-03-08T09:30:00Z',
+      '--note',
+      'Sent thank-you email',
+    ]);
+
+    const history = runCli(['track', 'history', 'job-1']);
+    expect(history).toContain('job-1');
+    expect(history).toContain(
+      '2025-03-01T08:00:00.000Z — applied'
+    );
+    expect(history).toContain('  Contact: Jordan Hiring Manager');
+    expect(history).toContain('  Documents: resume.pdf, cover-letter.pdf');
+    expect(history).toContain('  Note: Submitted via referral portal');
+    expect(history).toContain('  Remind At: 2025-03-11T09:00:00.000Z');
+    expect(history).toContain(
+      '2025-03-08T09:30:00.000Z — follow_up'
+    );
+    expect(history).toContain('  Note: Sent thank-you email');
+
+    const json = runCli(['track', 'history', 'job-1', '--json']);
+    expect(JSON.parse(json)).toEqual({
+      job_id: 'job-1',
+      events: [
+        {
+          channel: 'applied',
+          date: '2025-03-01T08:00:00.000Z',
+          contact: 'Jordan Hiring Manager',
+          documents: ['resume.pdf', 'cover-letter.pdf'],
+          note: 'Submitted via referral portal',
+          remind_at: '2025-03-11T09:00:00.000Z',
+        },
+        {
+          channel: 'follow_up',
+          date: '2025-03-08T09:30:00.000Z',
+          note: 'Sent thank-you email',
+        },
+      ],
+    });
+  });
+
   it('archives discarded jobs with reasons', () => {
     const output = runCli([
       'track',

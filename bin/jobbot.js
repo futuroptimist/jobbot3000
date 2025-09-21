@@ -14,7 +14,11 @@ import {
   toMarkdownMatchExplanation,
 } from '../src/exporters.js';
 import { saveJobSnapshot, jobIdFromSource } from '../src/jobs.js';
-import { logApplicationEvent } from '../src/application-events.js';
+import {
+  logApplicationEvent,
+  getApplicationEvents,
+  getApplicationReminders,
+} from '../src/application-events.js';
 import { recordApplication, STATUSES } from '../src/lifecycle.js';
 import { recordJobDiscard } from '../src/discards.js';
 import { addJobTags, discardJob, filterShortlist, syncShortlistJob } from '../src/shortlist.js';
@@ -216,6 +220,92 @@ async function cmdTrackLog(args) {
   console.log(`Logged ${jobId} event ${channel}`);
 }
 
+async function cmdTrackReminders(args) {
+  const asJson = args.includes('--json');
+  const nowValue = getFlag(args, '--now');
+  const upcomingOnly = args.includes('--upcoming-only');
+
+  let reminders;
+  try {
+    reminders = await getApplicationReminders({
+      now: nowValue,
+      includePastDue: !upcomingOnly,
+    });
+  } catch (err) {
+    console.error(err.message || String(err));
+    process.exit(1);
+  }
+
+  if (asJson) {
+    console.log(JSON.stringify({ reminders }, null, 2));
+    return;
+  }
+
+  if (reminders.length === 0) {
+    console.log('No reminders scheduled');
+    return;
+  }
+
+  const lines = [];
+  for (const reminder of reminders) {
+    const descriptors = [];
+    if (reminder.channel) descriptors.push(reminder.channel);
+    descriptors.push(reminder.past_due ? 'past due' : 'upcoming');
+    lines.push(`${reminder.job_id} — ${reminder.remind_at} (${descriptors.join(', ')})`);
+    if (reminder.note) lines.push(`  Note: ${reminder.note}`);
+    if (reminder.contact) lines.push(`  Contact: ${reminder.contact}`);
+  }
+
+  console.log(lines.join('\n'));
+}
+
+function formatDocuments(documents) {
+  if (!Array.isArray(documents) || documents.length === 0) return undefined;
+  return documents.join(', ');
+}
+
+async function cmdTrackHistory(args) {
+  const jobId = args[0];
+  const asJson = args.includes('--json');
+
+  if (!jobId) {
+    console.error('Usage: jobbot track history <job_id> [--json]');
+    process.exit(2);
+  }
+
+  let events;
+  try {
+    events = await getApplicationEvents(jobId);
+  } catch (err) {
+    console.error(err.message || String(err));
+    process.exit(1);
+  }
+
+  if (asJson) {
+    console.log(JSON.stringify({ job_id: jobId, events }, null, 2));
+    return;
+  }
+
+  if (!Array.isArray(events) || events.length === 0) {
+    console.log(`No events recorded for ${jobId}`);
+    return;
+  }
+
+  const lines = [jobId];
+  for (const entry of events) {
+    const date = typeof entry.date === 'string' ? entry.date : 'unknown date';
+    const channel = typeof entry.channel === 'string' ? entry.channel : 'unknown channel';
+    lines.push(`${date} — ${channel}`);
+    if (entry.note) lines.push(`  Note: ${entry.note}`);
+    if (entry.contact) lines.push(`  Contact: ${entry.contact}`);
+    const docs = formatDocuments(entry.documents);
+    if (docs) lines.push(`  Documents: ${docs}`);
+    if (entry.remind_at) lines.push(`  Remind At: ${entry.remind_at}`);
+  }
+
+  console.log(lines.join('\n'));
+}
+
 function parseTagsFlag(args) {
   const raw = getFlag(args, '--tags');
   if (!raw) return undefined;
@@ -310,8 +400,10 @@ async function cmdTrack(args) {
   const sub = args[0];
   if (sub === 'add') return cmdTrackAdd(args.slice(1));
   if (sub === 'log') return cmdTrackLog(args.slice(1));
+  if (sub === 'history') return cmdTrackHistory(args.slice(1));
   if (sub === 'discard') return cmdTrackDiscard(args.slice(1));
-  console.error('Usage: jobbot track <add|log|discard> ...');
+  if (sub === 'reminders') return cmdTrackReminders(args.slice(1));
+  console.error('Usage: jobbot track <add|log|history|discard|reminders> ...');
   process.exit(2);
 }
 
