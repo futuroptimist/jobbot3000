@@ -545,6 +545,22 @@ inputs (for example, `--transcript-file transcript.md`). Automated coverage in
 [`test/interviews.test.js`](test/interviews.test.js) and [`test/cli.test.js`](test/cli.test.js)
 verifies persistence and retrieval paths.
 
+## Deliverable bundles
+
+Export the most recent deliverables run for a job—resume, cover letter, prep notes—into a single
+archive:
+
+```bash
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot deliverables bundle job-123 --out job-123-bundle.zip
+# Bundled job-123 deliverables to /tmp/jobbot-cli-XXXX/job-123-bundle.zip
+```
+
+The bundler targets the newest timestamped directory under `data/deliverables/{job_id}/` by
+default. Pass `--timestamp <iso8601>` to capture an earlier run. Bundles retain nested folder
+structure (for example, `notes/interview.txt`). Automated coverage in
+[`test/deliverables.test.js`](test/deliverables.test.js) exercises latest-run selection and explicit
+timestamps, and the CLI suite verifies `jobbot deliverables bundle` writes archives to disk.
+
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 See [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) for a list of prompt documents.
 

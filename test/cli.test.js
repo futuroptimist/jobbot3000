@@ -812,6 +812,33 @@ describe('jobbot CLI', () => {
     expect(JSON.stringify(payload)).not.toContain('job-2');
   });
 
+  it('bundles the latest deliverables run into a zip archive', async () => {
+    const previous = path.join(
+      dataDir,
+      'deliverables',
+      'job-321',
+      '2025-03-01T09-00-00Z'
+    );
+    const latest = path.join(dataDir, 'deliverables', 'job-321', '2025-03-05T10-30-00Z');
+
+    fs.mkdirSync(previous, { recursive: true });
+    fs.mkdirSync(latest, { recursive: true });
+
+    fs.writeFileSync(path.join(previous, 'resume.pdf'), 'outdated resume');
+    fs.writeFileSync(path.join(latest, 'resume.pdf'), 'fresh resume');
+    fs.writeFileSync(path.join(latest, 'cover_letter.md'), 'Updated letter');
+
+    const bundlePath = path.join(dataDir, 'job-321-bundle.zip');
+    const output = runCli(['deliverables', 'bundle', 'job-321', '--out', bundlePath]);
+    expect(output.trim()).toBe(`Bundled job-321 deliverables to ${bundlePath}`);
+
+    const buffer = fs.readFileSync(bundlePath);
+    const zip = await JSZip.loadAsync(buffer);
+    const entries = Object.keys(zip.files).sort();
+    expect(entries).toEqual(['cover_letter.md', 'resume.pdf']);
+    await expect(zip.file('resume.pdf').async('string')).resolves.toBe('fresh resume');
+  });
+
   it('records interview sessions with transcripts and notes', () => {
     const transcriptPath = path.join(dataDir, 'transcript.txt');
     fs.writeFileSync(transcriptPath, 'Practiced STAR story\n');
