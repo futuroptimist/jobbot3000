@@ -1,12 +1,15 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
-vi.mock('node-fetch', () => ({ default: vi.fn() }));
+vi.mock('node-fetch', async () => {
+  const actual = await vi.importActual('node-fetch');
+  return { ...actual, default: vi.fn() };
+});
 vi.mock('node:dns/promises', () => {
   const lookup = vi.fn(async () => [{ address: '93.184.216.34', family: 4 }]);
   return { default: { lookup }, lookup };
 });
 
-import fetch from 'node-fetch';
+import fetch, { Headers } from 'node-fetch';
 import dns from 'node:dns/promises';
 import { DEFAULT_TIMEOUT_MS, extractTextFromHtml, fetchTextFromUrl } from '../src/fetch.js';
 
@@ -283,6 +286,47 @@ describe('fetchTextFromUrl', () => {
       'http://example.com',
       expect.objectContaining({ headers: { 'User-Agent': 'jobbot' } })
     );
+  });
+
+  it('sends a default User-Agent header when none provided', async () => {
+    fetch.mockClear();
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('ok'),
+    });
+
+    await fetchTextFromUrl('http://example.com');
+
+    expect(fetch).toHaveBeenCalledWith(
+      'http://example.com',
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'User-Agent': 'jobbot3000' }),
+      })
+    );
+  });
+
+  it('preserves iterable headers when adding the default User-Agent', async () => {
+    fetch.mockClear();
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('ok'),
+    });
+
+    const original = new Headers();
+    original.set('Authorization', 'Bearer token');
+
+    await fetchTextFromUrl('http://example.com', { headers: original });
+
+    const [, { headers }] = fetch.mock.calls.at(-1);
+    expect(headers).toBeInstanceOf(Headers);
+    expect(headers.get('Authorization')).toBe('Bearer token');
+    expect(headers.get('User-Agent')).toBe('jobbot3000');
   });
 
   it('rejects non-http/https URLs', async () => {

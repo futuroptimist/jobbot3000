@@ -1,12 +1,18 @@
 import dns from 'node:dns/promises';
 import { isIP } from 'node:net';
-import fetch from 'node-fetch';
+import fetch, { Headers } from 'node-fetch';
 import { htmlToText } from 'html-to-text';
 
 /** Allowed URL protocols for fetchTextFromUrl. */
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
 
 const LOOPBACK_HOSTNAMES = new Set(['localhost', 'localhost.']);
+
+const DEFAULT_USER_AGENT = 'jobbot3000';
+
+export const DEFAULT_FETCH_HEADERS = Object.freeze({
+  'User-Agent': DEFAULT_USER_AGENT,
+});
 
 function isPrivateIPv4(octets) {
   const [a, b] = octets;
@@ -72,6 +78,70 @@ function isForbiddenHostname(hostname) {
   }
 
   return false;
+}
+
+function isPlainObject(value) {
+  if (value === null || typeof value !== 'object') return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
+function buildRequestHeaders(headers) {
+  const collected = [];
+  let hasUserAgent = false;
+
+  const appendHeader = (key, value) => {
+    if (key == null) return;
+    if (value === undefined || value === null) return;
+    const name = String(key);
+    if (name.toLowerCase() === 'user-agent') {
+      hasUserAgent = true;
+    }
+    collected.push([name, String(value)]);
+  };
+
+  const source = headers;
+  if (source != null) {
+    if (typeof source.forEach === 'function') {
+      source.forEach((value, key) => appendHeader(key, value));
+    } else if (typeof source[Symbol.iterator] === 'function') {
+      for (const entry of source) {
+        if (!entry) continue;
+        if (Array.isArray(entry)) {
+          appendHeader(entry[0], entry[1]);
+        } else if (typeof entry[Symbol.iterator] === 'function') {
+          const iterator = entry[Symbol.iterator]();
+          const first = iterator.next();
+          const second = iterator.next();
+          if (!first.done) {
+            appendHeader(first.value, second.done ? undefined : second.value);
+          }
+        }
+      }
+    } else if (typeof source === 'object') {
+      for (const [key, value] of Object.entries(source)) {
+        appendHeader(key, value);
+      }
+    }
+  }
+
+  if (!hasUserAgent) {
+    collected.push(['User-Agent', DEFAULT_USER_AGENT]);
+  }
+
+  if (source === undefined || source === null || isPlainObject(source)) {
+    const merged = {};
+    for (const [key, value] of collected) {
+      merged[key] = value;
+    }
+    return merged;
+  }
+
+  const normalized = new Headers();
+  for (const [key, value] of collected) {
+    normalized.append(key, value);
+  }
+  return normalized;
 }
 
 const DNS_IGNORE_ERROR_CODES = new Set([
@@ -272,7 +342,7 @@ export async function fetchTextFromUrl(
     const response = await fetch(url, {
       redirect: 'follow',
       signal: controller.signal,
-      headers: headers || {},
+      headers: buildRequestHeaders(headers),
       size: maxBytes,
     });
     if (!response.ok) {

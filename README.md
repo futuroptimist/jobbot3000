@@ -91,7 +91,9 @@ run();
 and noscript content, preserves image alt text or `aria-label` values (while
 ignoring `aria-hidden` images or those with `role="presentation"`/`"none"`), and
 collapses whitespace to single spaces. Pass `timeoutMs` (milliseconds) to
-override the 10s default, and `headers` to send custom HTTP headers. Responses
+override the 10s default, and `headers` to send custom HTTP headers. Requests
+default to sending `User-Agent: jobbot3000`; provide a `User-Agent` header to
+override it. Responses
 over 1 MB are rejected; override with `maxBytes` to adjust. Only `http` and
 `https` URLs are supported; other protocols throw an error. Requests to
 loopback, link-local, carrier-grade NAT, or other private network addresses
