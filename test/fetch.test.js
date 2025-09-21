@@ -285,6 +285,26 @@ describe('fetchTextFromUrl', () => {
     );
   });
 
+  it('sends a default User-Agent header when none provided', async () => {
+    fetch.mockClear();
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('ok'),
+    });
+
+    await fetchTextFromUrl('http://example.com');
+
+    expect(fetch).toHaveBeenCalledWith(
+      'http://example.com',
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'User-Agent': 'jobbot3000' }),
+      })
+    );
+  });
+
   it('rejects non-http/https URLs', async () => {
     fetch.mockClear();
     fetch.mockResolvedValue({
