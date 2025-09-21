@@ -1,12 +1,15 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
-vi.mock('node-fetch', () => ({ default: vi.fn() }));
+vi.mock('node-fetch', async () => {
+  const actual = await vi.importActual('node-fetch');
+  return { ...actual, default: vi.fn() };
+});
 vi.mock('node:dns/promises', () => {
   const lookup = vi.fn(async () => [{ address: '93.184.216.34', family: 4 }]);
   return { default: { lookup }, lookup };
 });
 
-import fetch from 'node-fetch';
+import fetch, { Headers as FetchHeaders } from 'node-fetch';
 import dns from 'node:dns/promises';
 import { DEFAULT_TIMEOUT_MS, extractTextFromHtml, fetchTextFromUrl } from '../src/fetch.js';
 
@@ -279,10 +282,47 @@ describe('fetchTextFromUrl', () => {
     await fetchTextFromUrl('http://example.com', {
       headers: { 'User-Agent': 'jobbot' },
     });
-    expect(fetch).toHaveBeenCalledWith(
-      'http://example.com',
-      expect.objectContaining({ headers: { 'User-Agent': 'jobbot' } })
-    );
+    const [, options] = fetch.mock.calls.at(-1);
+    expect(options.headers).toBeInstanceOf(FetchHeaders);
+    expect(options.headers.get('user-agent')).toBe('jobbot');
+  });
+
+  it('sends a default User-Agent header when none provided', async () => {
+    fetch.mockClear();
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('ok'),
+    });
+
+    await fetchTextFromUrl('http://example.com');
+
+    const [, options] = fetch.mock.calls.at(-1);
+    expect(options.headers).toBeInstanceOf(FetchHeaders);
+    expect(options.headers.get('user-agent')).toBe('jobbot3000');
+  });
+
+  it('preserves Headers instances when adding the default header', async () => {
+    fetch.mockClear();
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('ok'),
+    });
+
+    const custom = new FetchHeaders([['Authorization', 'Bearer abc']]);
+
+    await fetchTextFromUrl('http://example.com', { headers: custom });
+
+    const [, options] = fetch.mock.calls.at(-1);
+    expect(options.headers).toBeInstanceOf(FetchHeaders);
+    expect(options.headers.get('authorization')).toBe('Bearer abc');
+    expect(options.headers.get('user-agent')).toBe('jobbot3000');
+    expect(custom.has('user-agent')).toBe(false);
   });
 
   it('rejects non-http/https URLs', async () => {

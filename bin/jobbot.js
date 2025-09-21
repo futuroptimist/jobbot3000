@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { summarize as summarizeFirstSentence } from '../src/index.js';
-import { fetchTextFromUrl } from '../src/fetch.js';
+import { fetchTextFromUrl, DEFAULT_FETCH_HEADERS } from '../src/fetch.js';
 import { parseJobText } from '../src/parser.js';
 import { loadResume } from '../src/resume.js';
 import { computeFitScore } from '../src/scoring.js';
@@ -33,7 +33,7 @@ function isHttpUrl(s) {
 }
 
 async function readSource(input) {
-  if (isHttpUrl(input)) return fetchTextFromUrl(input);
+  if (isHttpUrl(input)) return fetchTextFromUrl(input, { headers: DEFAULT_FETCH_HEADERS });
   if (input === '-' || input === '/dev/stdin') {
     return fs.readFileSync(0, 'utf-8');
   }
@@ -106,14 +106,15 @@ async function cmdSummarize(args) {
   const timeoutMs = getNumberFlag(args, '--timeout', 10000);
   const count = getNumberFlag(args, '--sentences', 1);
   const fetchingRemote = isHttpUrl(input);
+  const requestHeaders = fetchingRemote ? { ...DEFAULT_FETCH_HEADERS } : undefined;
   const raw = fetchingRemote
-    ? await fetchTextFromUrl(input, { timeoutMs })
+    ? await fetchTextFromUrl(input, { timeoutMs, headers: requestHeaders })
     : await readSource(input);
   const parsed = parseJobText(raw);
   const summary = summarizeFirstSentence(raw, count);
   const payload = { ...parsed, summary };
   if (fetchingRemote) {
-    await persistJobSnapshot(raw, parsed, { type: 'url', value: input });
+    await persistJobSnapshot(raw, parsed, { type: 'url', value: input }, requestHeaders);
   }
   if (format === 'json') console.log(toJson(payload));
   else if (format === 'text') console.log(summary);
@@ -138,8 +139,9 @@ async function cmdMatch(args) {
   const jobInput = args[jobIdx + 1];
   const resumeText = await loadResume(resumePath);
   const jobUrl = isHttpUrl(jobInput) ? jobInput : undefined;
+  const requestHeaders = jobUrl ? { ...DEFAULT_FETCH_HEADERS } : undefined;
   const jobRaw = jobUrl
-    ? await fetchTextFromUrl(jobUrl, { timeoutMs })
+    ? await fetchTextFromUrl(jobUrl, { timeoutMs, headers: requestHeaders })
     : await readSource(jobInput);
   const parsed = parseJobText(jobRaw);
   const { score, matched, missing } = computeFitScore(resumeText, parsed.requirements);
@@ -152,7 +154,7 @@ async function cmdMatch(args) {
       ? null
       : { type: 'file', value: path.resolve(process.cwd(), jobInput) };
   if (jobSource) {
-    await persistJobSnapshot(jobRaw, parsed, jobSource);
+    await persistJobSnapshot(jobRaw, parsed, jobSource, requestHeaders);
   }
 
   if (format === 'json') {

@@ -1,12 +1,18 @@
 import dns from 'node:dns/promises';
 import { isIP } from 'node:net';
-import fetch from 'node-fetch';
+import fetch, { Headers } from 'node-fetch';
 import { htmlToText } from 'html-to-text';
 
 /** Allowed URL protocols for fetchTextFromUrl. */
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
 
 const LOOPBACK_HOSTNAMES = new Set(['localhost', 'localhost.']);
+
+const DEFAULT_USER_AGENT = 'jobbot3000';
+
+export const DEFAULT_FETCH_HEADERS = Object.freeze({
+  'User-Agent': DEFAULT_USER_AGENT,
+});
 
 function isPrivateIPv4(octets) {
   const [a, b] = octets;
@@ -72,6 +78,47 @@ function isForbiddenHostname(hostname) {
   }
 
   return false;
+}
+
+function buildRequestHeaders(headers) {
+  const normalized = new Headers();
+
+  const appendHeader = (key, value) => {
+    if (key == null || value === undefined || value === null) return;
+    const keyStr = typeof key === 'string' ? key : String(key);
+    normalized.append(keyStr, String(value));
+  };
+
+  if (headers instanceof Headers) {
+    headers.forEach((value, key) => {
+      appendHeader(key, value);
+    });
+  } else if (headers && typeof headers === 'object') {
+    const iterable = headers[Symbol.iterator];
+    if (typeof iterable === 'function') {
+      for (const entry of headers) {
+        if (!entry) continue;
+        const parts = Array.isArray(entry)
+          ? entry
+          : typeof entry?.[Symbol.iterator] === 'function'
+            ? Array.from(entry)
+            : null;
+        if (!parts || parts.length < 2) continue;
+        const [key, value] = parts;
+        appendHeader(key, value);
+      }
+    } else {
+      for (const [key, value] of Object.entries(headers)) {
+        appendHeader(key, value);
+      }
+    }
+  }
+
+  if (!normalized.has('user-agent')) {
+    normalized.set('User-Agent', DEFAULT_USER_AGENT);
+  }
+
+  return normalized;
 }
 
 const DNS_IGNORE_ERROR_CODES = new Set([
@@ -272,7 +319,7 @@ export async function fetchTextFromUrl(
     const response = await fetch(url, {
       redirect: 'follow',
       signal: controller.signal,
-      headers: headers || {},
+      headers: buildRequestHeaders(headers),
       size: maxBytes,
     });
     if (!response.ok) {
