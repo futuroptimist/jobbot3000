@@ -516,8 +516,42 @@ for each application. The command accepts optional metadata such as `--date`,
 Events are appended to `data/application_events.json`, grouped by job
 identifier, with timestamps normalized to ISO 8601.
 
+Review timelines with `jobbot track history <job_id>` (add `--json` to pipe a
+structured payload). Each event includes the recorded channel, ISO8601
+timestamp, and any attached metadata:
+
+~~~bash
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track history job-123
+# job-123
+#   2025-03-04T00:00:00.000Z — applied
+#     Contact: Taylor Recruiter
+#     Documents: resume.pdf, cover-letter.pdf
+#     Note: Referred by Alex
+#     Reminder: 2025-03-11T09:00:00.000Z
+#   2025-03-15T16:00:00.000Z — interview
+#     Note: Panel with hiring team
+~~~
+
 Tests in `test/application-events.test.js` ensure that new log entries do not
 clobber history and that invalid channels or dates are rejected.
+CLI tests in `test/cli.test.js` exercise both the human-readable and JSON
+variants of `jobbot track history`.
+
+Surface follow-up work with `jobbot track reminders`. Pass `--now` to view from a
+given timestamp (defaults to the current time), `--upcoming-only` to suppress past-due
+entries, and `--json` for structured output:
+
+~~~bash
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track reminders --now 2025-03-06T00:00:00Z
+# job-1 — 2025-03-05T09:00:00.000Z (follow_up, past due)
+#   Note: Send status update
+# job-2 — 2025-03-07T15:00:00.000Z (call, upcoming)
+#   Contact: Avery Hiring Manager
+~~~
+
+Unit tests in [`test/application-events.test.js`](test/application-events.test.js)
+cover reminder extraction, including past-due filtering. The CLI suite in
+[`test/cli.test.js`](test/cli.test.js) verifies the `--json` output.
 
 To capture discard reasons for shortlist triage:
 

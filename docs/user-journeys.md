@@ -88,14 +88,17 @@ aggressively to respect rate limits.
 
 1. When the user applies or sends outreach, they log the event (channel, date, documents shared,
    contact person) with `jobbot track log <job_id> --channel <channel> [...]`, which appends the
-   metadata to `data/application_events.json` so the full history stays local.
+   metadata to `data/application_events.json` so the full history stays local. They can replay the
+   thread with `jobbot track history <job_id>` (or `--json` when scripting follow-ups).
 2. Application status transitions (no response, screening, onsite, offer, rejected, withdrawn) are
    stored in `data/applications.json`, which is serialized safely to prevent data loss. The CLI
    exposes `jobbot track add <job_id> --status <status>` so users can log updates inline with other
    workflows.
 3. Follow-up reminders and note-taking surfaces help the user prepare for upcoming steps while
    consolidating feedback for future tailoring. Use `jobbot track log --remind-at <iso8601>` to
-   capture the next follow-up timestamp with each note.
+   capture the next follow-up timestamp with each note, and review upcoming outreach with
+   `jobbot track reminders` (add `--upcoming-only` to hide past-due entries and `--json` when piping
+   into other tools).
 
 **Unhappy paths:** conflicting updates (e.g., two devices editing simultaneously) trigger a merge
 flow that preserves both sets of notes.
