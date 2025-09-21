@@ -14,6 +14,9 @@ const ALL_STATUSES = [
   'rejected',
   'withdrawn',
   'next_round',
+  'accepted',
+  'acceptance',
+  'hired',
 ];
 
 const expectedCounts = (overrides = {}) => ({
@@ -70,19 +73,30 @@ test('stores optional notes alongside application statuses', async () => {
   });
 });
 
-test('tracks screening, onsite, offer, and withdrawn statuses', async () => {
+test('tracks core lifecycle and acceptance statuses', async () => {
   const entries = [
     ['job-screening', 'screening'],
     ['job-onsite', 'onsite'],
     ['job-offer', 'offer'],
     ['job-withdrawn', 'withdrawn'],
+    ['job-accepted', 'accepted'],
+    ['job-acceptance', 'acceptance'],
+    ['job-hired', 'hired'],
   ];
   for (const [id, status] of entries) {
     await recordApplication(id, status);
   }
   const counts = await getLifecycleCounts();
   expect(counts).toEqual(
-    expectedCounts({ screening: 1, onsite: 1, offer: 1, withdrawn: 1 })
+    expectedCounts({
+      screening: 1,
+      onsite: 1,
+      offer: 1,
+      withdrawn: 1,
+      accepted: 1,
+      acceptance: 1,
+      hired: 1,
+    })
   );
 });
 
