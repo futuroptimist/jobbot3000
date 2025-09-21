@@ -652,6 +652,58 @@ describe('jobbot CLI', () => {
     expect(listOutput).toContain('Remote');
   });
 
+  it('lists shortlist entries as JSON with --json', () => {
+    runCli([
+      'shortlist',
+      'sync',
+      'job-json',
+      '--location',
+      'Remote',
+      '--level',
+      'Senior',
+      '--compensation',
+      '$200k',
+      '--synced-at',
+      '2025-06-01T10:00:00Z',
+    ]);
+    runCli(['shortlist', 'tag', 'job-json', 'Remote']);
+    runCli([
+      'shortlist',
+      'discard',
+      'job-json',
+      '--reason',
+      'Paused search',
+      '--tags',
+      'Paused,paused',
+      '--date',
+      '2025-06-02T09:30:00Z',
+    ]);
+
+    const output = runCli(['shortlist', 'list', '--json']);
+    const payload = JSON.parse(output);
+
+    expect(payload).toEqual({
+      jobs: {
+        'job-json': {
+          tags: ['Remote'],
+          metadata: {
+            location: 'Remote',
+            level: 'Senior',
+            compensation: '$200k',
+            synced_at: '2025-06-01T10:00:00.000Z',
+          },
+          discarded: [
+            {
+              reason: 'Paused search',
+              discarded_at: '2025-06-02T09:30:00.000Z',
+              tags: ['Paused'],
+            },
+          ],
+        },
+      },
+    });
+  });
+
   it('summarizes conversion funnel analytics', () => {
     runCli(['track', 'log', 'job-1', '--channel', 'email', '--date', '2025-01-02']);
     runCli(['track', 'add', 'job-1', '--status', 'screening']);
