@@ -22,7 +22,7 @@ import {
   getApplicationReminders,
 } from '../src/application-events.js';
 import { recordApplication, STATUSES } from '../src/lifecycle.js';
-import { recordJobDiscard, getDiscardedJobs } from '../src/discards.js';
+import { getDiscardedJobs } from '../src/discards.js';
 import { addJobTags, discardJob, filterShortlist, syncShortlistJob } from '../src/shortlist.js';
 import { recordInterviewSession, getInterviewSession } from '../src/interviews.js';
 import { initProfile } from '../src/profile.js';
@@ -445,8 +445,8 @@ async function cmdTrackDiscard(args) {
   }
   const tags = parseTagsFlag(args);
   const date = getFlag(args, '--date');
-  await recordJobDiscard(jobId, { reason, tags, date });
-  console.log(`Discarded ${jobId}`);
+  const entry = await discardJob(jobId, reason, { tags, date });
+  console.log(`Discarded ${jobId}: ${entry.reason}`);
 }
 
 async function cmdTrack(args) {
