@@ -124,7 +124,8 @@ suggestions to prevent burnout.
    ➜ acceptance) and highlight the largest drop-off.
 2. Metadata from tailoring and rehearsal sessions feeds back into the recommender so it can surface
    what worked (e.g., bullet variants correlated with interviews) while staying privacy-first.
-3. Users can export anonymized aggregates for personal record keeping without exposing raw PII.
+3. Users can export anonymized aggregates with `jobbot analytics export --out <file>` for personal
+   record keeping without exposing raw PII.
 
 **Unhappy paths:** missing data (e.g., unlogged rejections) is highlighted so the user can backfill
    later.

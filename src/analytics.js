@@ -1,6 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import { STATUSES } from './lifecycle.js';
+
 let overrideDir;
 
 function resolveDataDir() {
@@ -108,13 +110,16 @@ function roundPercent(value) {
   return Math.round(value * 100);
 }
 
-export async function computeFunnel() {
+async function readAnalyticsSources() {
   const { applications, events } = getPaths();
   const [statuses, interactions] = await Promise.all([
     readJsonFile(applications),
     readJsonFile(events),
   ]);
+  return { statuses, interactions };
+}
 
+function buildFunnel(statuses, interactions) {
   const statusCounts = getStatusCounts(statuses);
   const withEvents = countJobsWithEvents(interactions);
   const acceptedJobs = collectAcceptanceJobs(statuses, interactions);
@@ -181,6 +186,46 @@ function formatStageLine(stage, index) {
   const percentLabel = percent === undefined ? 'n/a' : `${percent}%`;
   const dropSuffix = stage.dropOff > 0 ? `, ${stage.dropOff} drop-off` : '';
   return `${base} (${percentLabel} conversion${dropSuffix})`;
+}
+
+export async function computeFunnel() {
+  const { statuses, interactions } = await readAnalyticsSources();
+  return buildFunnel(statuses, interactions);
+}
+
+function countEventChannels(events) {
+  const counts = new Map();
+  for (const history of Object.values(events)) {
+    if (!Array.isArray(history)) continue;
+    for (const entry of history) {
+      const raw = typeof entry?.channel === 'string' ? entry.channel.trim() : '';
+      if (!raw) continue;
+      const key = raw.toLowerCase();
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+  return Object.fromEntries([...counts.entries()].sort(([a], [b]) => a.localeCompare(b)));
+}
+
+export async function exportAnalyticsSnapshot() {
+  const { statuses, interactions } = await readAnalyticsSources();
+  const funnel = buildFunnel(statuses, interactions);
+  const statusCounts = getStatusCounts(statuses);
+  const statusTotals = {};
+  for (const status of STATUSES) {
+    statusTotals[status] = statusCounts.get(status) ?? 0;
+  }
+
+  return {
+    generated_at: new Date().toISOString(),
+    totals: funnel.totals,
+    statuses: statusTotals,
+    channels: countEventChannels(interactions),
+    funnel: {
+      stages: funnel.stages,
+      largestDropOff: funnel.largestDropOff,
+    },
+  };
 }
 
 export function formatFunnelReport(funnel) {
