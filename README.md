@@ -356,6 +356,27 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --location remote
 #   Level: Senior
 #   Compensation: $185k
 
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --json
+# {
+#   "jobs": {
+#     "job-123": {
+#       "metadata": {
+#         "location": "Remote",
+#         "level": "Senior",
+#         "compensation": "$185k"
+#       },
+#       "tags": ["dream", "remote"],
+#       "discarded": [
+#         {
+#           "reason": "Not remote",
+#           "discarded_at": "2025-03-05T12:00:00.000Z",
+#           "tags": ["Remote", "onsite"]
+#         }
+#       ]
+#     }
+#   }
+# }
+
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist archive job-123
 # job-123
 # - 2025-03-05T12:00:00.000Z — Not remote
@@ -366,8 +387,9 @@ The CLI stores shortlist labels, discard history, and sync metadata in `data/sho
 reasons, timestamps, optional tags, and location/level/compensation fields so recommendations can
 surface patterns later. Review past decisions with `jobbot shortlist archive [job_id]` (add `--json`
 to inspect all records at once), which reads from `data/discarded_jobs.json` so archive lookups and
-shortlist history stay in sync. Metadata syncs stamp a `synced_at` ISO 8601 timestamp for refresh
-schedulers. Unit tests in [`test/shortlist.test.js`](test/shortlist.test.js) and the CLI suite in
+shortlist history stay in sync. Add `--json` to the shortlist list command when piping entries
+into other tools. Metadata syncs stamp a `synced_at` ISO 8601 timestamp for refresh schedulers.
+Unit tests in [`test/shortlist.test.js`](test/shortlist.test.js) and the CLI suite in
 [`test/cli.test.js`](test/cli.test.js) exercise metadata updates, filters, discard tags, archive
 exports, and the persisted format.
 

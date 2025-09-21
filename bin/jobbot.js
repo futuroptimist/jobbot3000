@@ -697,13 +697,19 @@ function formatDiscardArchive(archive) {
 }
 
 async function cmdShortlistList(args) {
+  const asJson = args.includes('--json');
+  const filteredArgs = asJson ? args.filter(arg => arg !== '--json') : args;
   const filters = {
-    location: getFlag(args, '--location'),
-    level: getFlag(args, '--level'),
-    compensation: getFlag(args, '--compensation'),
+    location: getFlag(filteredArgs, '--location'),
+    level: getFlag(filteredArgs, '--level'),
+    compensation: getFlag(filteredArgs, '--compensation'),
   };
 
   const store = await filterShortlist(filters);
+  if (asJson) {
+    console.log(JSON.stringify({ jobs: store.jobs }, null, 2));
+    return;
+  }
   console.log(formatShortlistList(store.jobs));
 }
 
