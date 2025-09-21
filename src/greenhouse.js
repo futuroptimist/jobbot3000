@@ -1,5 +1,5 @@
 import fetch from 'node-fetch';
-import { extractTextFromHtml } from './fetch.js';
+import { extractTextFromHtml, fetchWithRetry } from './fetch.js';
 import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
 import { parseJobText } from './parser.js';
 
@@ -38,10 +38,14 @@ function mergeParsedJob(parsed, job) {
   return merged;
 }
 
-export async function fetchGreenhouseJobs(board, { fetchImpl = fetch } = {}) {
+export async function fetchGreenhouseJobs(board, { fetchImpl = fetch, retry } = {}) {
   const slug = normalizeBoardSlug(board);
   const url = buildBoardUrl(slug);
-  const response = await fetchImpl(url, { headers: GREENHOUSE_HEADERS });
+  const response = await fetchWithRetry(url, {
+    fetchImpl,
+    headers: GREENHOUSE_HEADERS,
+    retry,
+  });
   if (!response.ok) {
     throw new Error(
       `Failed to fetch Greenhouse board ${slug}: ${response.status} ${response.statusText}`,
@@ -52,8 +56,8 @@ export async function fetchGreenhouseJobs(board, { fetchImpl = fetch } = {}) {
   return { slug, jobs };
 }
 
-export async function ingestGreenhouseBoard({ board, fetchImpl = fetch } = {}) {
-  const { slug, jobs } = await fetchGreenhouseJobs(board, { fetchImpl });
+export async function ingestGreenhouseBoard({ board, fetchImpl = fetch, retry } = {}) {
+  const { slug, jobs } = await fetchGreenhouseJobs(board, { fetchImpl, retry });
   const jobIds = [];
 
   for (const job of jobs) {

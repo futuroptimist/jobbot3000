@@ -101,4 +101,47 @@ describe('Greenhouse ingest', () => {
       /Failed to fetch Greenhouse board/,
     );
   });
+
+  it('retries transient failures before succeeding', async () => {
+    const transientError = {
+      ok: false,
+      status: 502,
+      statusText: 'Bad Gateway',
+      json: async () => ({}),
+    };
+    const html = `
+      <h1>Senior Engineer</h1>
+      <p>Location: Remote</p>
+      <h3>Requirements</h3>
+      <ul><li>Reliability experience</li></ul>
+    `;
+    const recovery = {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({
+        jobs: [
+          {
+            id: 42,
+            title: 'Senior Engineer',
+            location: { name: 'Remote' },
+            absolute_url: 'https://boards.greenhouse.io/example/jobs/42',
+            content: html,
+            updated_at: '2025-06-07T08:09:10Z',
+          },
+        ],
+      }),
+    };
+    fetch.mockResolvedValueOnce(transientError).mockResolvedValueOnce(recovery);
+
+    const { ingestGreenhouseBoard } = await import('../src/greenhouse.js');
+
+    const result = await ingestGreenhouseBoard({
+      board: 'example',
+      retry: { retries: 1, delayMs: 0 },
+    });
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(result.saved).toBe(1);
+  });
 });

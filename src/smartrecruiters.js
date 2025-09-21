@@ -1,5 +1,5 @@
 import fetch from 'node-fetch';
-import { extractTextFromHtml } from './fetch.js';
+import { extractTextFromHtml, fetchWithRetry } from './fetch.js';
 import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
 import { parseJobText } from './parser.js';
 
@@ -67,14 +67,18 @@ function mergeParsedJob(parsed, posting, detail) {
   return merged;
 }
 
-export async function fetchSmartRecruitersPostings(company, { fetchImpl = fetch } = {}) {
+export async function fetchSmartRecruitersPostings(company, { fetchImpl = fetch, retry } = {}) {
   const slug = normalizeCompanySlug(company);
   const postings = [];
   let offset = 0;
 
   while (true) {
     const url = buildListUrl(slug, offset);
-    const response = await fetchImpl(url, { headers: SMARTRECRUITERS_HEADERS });
+    const response = await fetchWithRetry(url, {
+      fetchImpl,
+      headers: SMARTRECRUITERS_HEADERS,
+      retry,
+    });
     if (!response.ok) {
       const statusLabel = `${response.status} ${response.statusText}`;
       throw new Error(`Failed to fetch SmartRecruiters company ${slug}: ${statusLabel}`);
@@ -94,13 +98,17 @@ export async function fetchSmartRecruitersPostings(company, { fetchImpl = fetch 
   return { slug, postings };
 }
 
-export async function ingestSmartRecruitersBoard({ company, fetchImpl = fetch } = {}) {
-  const { slug, postings } = await fetchSmartRecruitersPostings(company, { fetchImpl });
+export async function ingestSmartRecruitersBoard({ company, fetchImpl = fetch, retry } = {}) {
+  const { slug, postings } = await fetchSmartRecruitersPostings(company, { fetchImpl, retry });
   const jobIds = [];
 
   for (const posting of postings) {
     const detailUrl = resolveDetailUrl(slug, posting);
-    const detailResponse = await fetchImpl(detailUrl, { headers: SMARTRECRUITERS_HEADERS });
+    const detailResponse = await fetchWithRetry(detailUrl, {
+      fetchImpl,
+      headers: SMARTRECRUITERS_HEADERS,
+      retry,
+    });
     if (!detailResponse.ok) {
       const statusLabel = `${detailResponse.status} ${detailResponse.statusText}`;
       const postingId = posting?.id ?? '';

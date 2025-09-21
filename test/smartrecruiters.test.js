@@ -118,7 +118,7 @@ describe('SmartRecruiters ingest', () => {
   });
 
   it('throws when the postings fetch fails', async () => {
-    fetch.mockResolvedValueOnce({
+    fetch.mockResolvedValue({
       ok: false,
       status: 500,
       statusText: 'Internal Server Error',
@@ -127,7 +127,9 @@ describe('SmartRecruiters ingest', () => {
 
     const { ingestSmartRecruitersBoard } = await import('../src/smartrecruiters.js');
 
-    await expect(ingestSmartRecruitersBoard({ company: 'example' })).rejects.toThrow(
+    await expect(
+      ingestSmartRecruitersBoard({ company: 'example', retry: { delayMs: 0 } })
+    ).rejects.toThrow(
       /Failed to fetch SmartRecruiters company example/,
     );
   });

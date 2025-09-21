@@ -11,7 +11,12 @@ vi.mock('node:dns/promises', () => {
 
 import fetch, { Headers } from 'node-fetch';
 import dns from 'node:dns/promises';
-import { DEFAULT_TIMEOUT_MS, extractTextFromHtml, fetchTextFromUrl } from '../src/fetch.js';
+import {
+  DEFAULT_TIMEOUT_MS,
+  extractTextFromHtml,
+  fetchTextFromUrl,
+  fetchWithRetry,
+} from '../src/fetch.js';
 
 describe('extractTextFromHtml', () => {
   it('collapses whitespace and skips non-content tags', () => {
@@ -500,6 +505,52 @@ describe('fetchTextFromUrl', () => {
     await expect(
       fetchTextFromUrl('http://example.com', { maxBytes: 5 })
     ).rejects.toThrow('Response exceeded 5 bytes');
+  });
+});
+
+describe('fetchWithRetry', () => {
+  afterEach(() => {
+    fetch.mockReset();
+  });
+
+  it('retries failed responses that qualify as transient', async () => {
+    fetch
+      .mockResolvedValueOnce({ ok: false, status: 502, statusText: 'Bad Gateway' })
+      .mockResolvedValueOnce({ ok: true, status: 200, statusText: 'OK' });
+
+    const response = await fetchWithRetry('https://example.com', {
+      fetchImpl: fetch,
+      retry: { retries: 1, delayMs: 0 },
+    });
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(response.ok).toBe(true);
+  });
+
+  it('retries when fetch throws before succeeding', async () => {
+    fetch
+      .mockRejectedValueOnce(new Error('network reset'))
+      .mockResolvedValueOnce({ ok: true, status: 200, statusText: 'OK' });
+
+    const response = await fetchWithRetry('https://example.com/retry', {
+      fetchImpl: fetch,
+      retry: { retries: 2, delayMs: 0 },
+    });
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(response.ok).toBe(true);
+  });
+
+  it('stops retrying on non-retriable responses', async () => {
+    fetch.mockResolvedValue({ ok: false, status: 404, statusText: 'Not Found' });
+
+    const response = await fetchWithRetry('https://example.com/not-found', {
+      fetchImpl: fetch,
+      retry: { retries: 3, delayMs: 0 },
+    });
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(response.status).toBe(404);
   });
 });
 
