@@ -1,5 +1,5 @@
 import fetch from 'node-fetch';
-import { extractTextFromHtml } from './fetch.js';
+import { extractTextFromHtml, fetchWithRetry } from './fetch.js';
 import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
 import { parseJobText } from './parser.js';
 
@@ -68,10 +68,14 @@ function mergeParsedJob(parsed, job) {
   return merged;
 }
 
-export async function fetchAshbyJobs(org, { fetchImpl = fetch } = {}) {
+export async function fetchAshbyJobs(org, { fetchImpl = fetch, retry } = {}) {
   const slug = normalizeOrgSlug(org);
   const url = buildOrgUrl(slug);
-  const response = await fetchImpl(url, { headers: ASHBY_HEADERS });
+  const response = await fetchWithRetry(url, {
+    fetchImpl,
+    headers: ASHBY_HEADERS,
+    retry,
+  });
   if (!response.ok) {
     throw new Error(
       `Failed to fetch Ashby org ${slug}: ${response.status} ${response.statusText}`,
@@ -82,8 +86,8 @@ export async function fetchAshbyJobs(org, { fetchImpl = fetch } = {}) {
   return { slug, jobPostings };
 }
 
-export async function ingestAshbyBoard({ org, fetchImpl = fetch } = {}) {
-  const { slug, jobPostings } = await fetchAshbyJobs(org, { fetchImpl });
+export async function ingestAshbyBoard({ org, fetchImpl = fetch, retry } = {}) {
+  const { slug, jobPostings } = await fetchAshbyJobs(org, { fetchImpl, retry });
   const jobIds = [];
 
   for (const job of jobPostings) {

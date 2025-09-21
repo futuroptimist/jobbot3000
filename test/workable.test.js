@@ -143,23 +143,24 @@ describe('Workable ingest', () => {
       ],
     };
 
-    fetch
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        json: async () => listPayload,
-      })
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-        statusText: 'Internal Server Error',
-        json: async () => ({}),
-      });
+    fetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: 'Internal Server Error',
+      json: async () => ({}),
+    });
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => listPayload,
+    });
 
     const { ingestWorkableBoard } = await import('../src/workable.js');
 
-    await expect(ingestWorkableBoard({ account: 'example' })).rejects.toThrow(
+    await expect(
+      ingestWorkableBoard({ account: 'example', retry: { delayMs: 0 } })
+    ).rejects.toThrow(
       /Failed to fetch Workable job/,
     );
   });

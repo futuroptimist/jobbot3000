@@ -1,5 +1,5 @@
 import fetch from 'node-fetch';
-import { extractTextFromHtml } from './fetch.js';
+import { extractTextFromHtml, fetchWithRetry } from './fetch.js';
 import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
 import { parseJobText } from './parser.js';
 
@@ -48,10 +48,14 @@ function mergeParsedJob(parsed, job) {
   return merged;
 }
 
-export async function fetchLeverJobs(org, { fetchImpl = fetch } = {}) {
+export async function fetchLeverJobs(org, { fetchImpl = fetch, retry } = {}) {
   const slug = normalizeOrgSlug(org);
   const url = buildOrgUrl(slug);
-  const response = await fetchImpl(url, { headers: LEVER_HEADERS });
+  const response = await fetchWithRetry(url, {
+    fetchImpl,
+    headers: LEVER_HEADERS,
+    retry,
+  });
   if (!response.ok) {
     throw new Error(`Failed to fetch Lever org ${slug}: ${response.status} ${response.statusText}`);
   }
@@ -59,8 +63,8 @@ export async function fetchLeverJobs(org, { fetchImpl = fetch } = {}) {
   return { slug, jobs: Array.isArray(jobs) ? jobs : [] };
 }
 
-export async function ingestLeverBoard({ org, fetchImpl = fetch } = {}) {
-  const { slug, jobs } = await fetchLeverJobs(org, { fetchImpl });
+export async function ingestLeverBoard({ org, fetchImpl = fetch, retry } = {}) {
+  const { slug, jobs } = await fetchLeverJobs(org, { fetchImpl, retry });
   const jobIds = [];
 
   for (const job of jobs) {

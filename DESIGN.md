@@ -257,7 +257,7 @@ jobbot track add <job_id> --status applied --note "emailed hiring manager"
 - Greenhouse Job Board fetcher + normalizer. (shipped)
 - Lever Postings fetcher + normalizer. (shipped)
 - Ashby Jobs fetcher + normalizer. (shipped)
-- Caching, retries, per-domain politeness.
+- Caching, retries (shipped), per-domain politeness.
 - UI: source connections, search & filters.
 
 **Phase 2 — Matching (1 week)**
