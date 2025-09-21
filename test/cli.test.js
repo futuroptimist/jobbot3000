@@ -200,6 +200,41 @@ describe('jobbot CLI', () => {
     expect(entry.discarded_at).toEqual(new Date(entry.discarded_at).toISOString());
   });
 
+  it('records intake responses and lists them', () => {
+    const output = runCli([
+      'intake',
+      'record',
+      '--question',
+      'What motivates you?',
+      '--answer',
+      'Building accessible tools',
+      '--tags',
+      'growth,mission',
+      '--notes',
+      'Prefers collaborative teams',
+      '--asked-at',
+      '2025-02-01T12:34:56Z',
+    ]);
+    expect(output.trim()).toMatch(/^Recorded intake response /);
+
+    const list = runCli(['intake', 'list']);
+    expect(list).toContain('What motivates you?');
+    expect(list).toContain('Answer: Building accessible tools');
+    expect(list).toContain('Tags: growth, mission');
+
+    const raw = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'profile', 'intake.json'), 'utf8')
+    );
+    expect(raw.responses).toHaveLength(1);
+    expect(raw.responses[0]).toMatchObject({
+      question: 'What motivates you?',
+      answer: 'Building accessible tools',
+      tags: ['growth', 'mission'],
+      notes: 'Prefers collaborative teams',
+      asked_at: '2025-02-01T12:34:56.000Z',
+    });
+  });
+
   it('tags shortlist entries and persists labels', () => {
     const output = runCli(['shortlist', 'tag', 'job-abc', 'dream', 'remote']);
     expect(output.trim()).toBe('Tagged job-abc with dream, remote');

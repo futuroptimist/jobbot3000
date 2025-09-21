@@ -343,6 +343,36 @@ schedulers. Unit tests in [`test/shortlist.test.js`](test/shortlist.test.js) and
 [`test/cli.test.js`](test/cli.test.js) exercise metadata updates, filters, discard tags, and the
 persisted format.
 
+## Intake responses
+
+Capture intake conversations and keep the answers alongside your profile:
+
+~~~bash
+DATA_DIR=$(mktemp -d)
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot intake record \
+  --question "What motivates you?" \
+  --answer "Building accessible tools" \
+  --tags "growth,mission" \
+  --notes "Prefers collaborative teams" \
+  --asked-at 2025-02-01T12:34:56Z
+# Recorded intake response 123e4567-e89b-12d3-a456-426614174000
+
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot intake list
+# What motivates you?
+#   Answer: Building accessible tools
+#   Tags: growth, mission
+#   Notes: Prefers collaborative teams
+#   Asked At: 2025-02-01T12:34:56.000Z
+#   Recorded At: 2025-02-01T12:40:00.000Z
+#   ID: 123e4567-e89b-12d3-a456-426614174000
+~~~
+
+Entries are appended to `data/profile/intake.json` with normalized timestamps, optional tags, and
+notes so follow-up planning can reference prior answers. Recorded timestamps reflect when the
+command runs. Automated coverage in
+[`test/intake.test.js`](test/intake.test.js) and [`test/cli.test.js`](test/cli.test.js) verifies the
+stored shape and CLI workflows.
+
 ## Conversion funnel analytics
 
 Build a quick snapshot of outreach ➜ screening ➜ onsite ➜ offer ➜ acceptance conversions:
