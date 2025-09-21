@@ -143,12 +143,30 @@ function cloneRecord(record) {
   };
 }
 
+function normalizeFilterTags(tags) {
+  if (!tags) return undefined;
+  const list = Array.isArray(tags) ? tags : [tags];
+  const normalized = [];
+  const seen = new Set();
+  for (const tag of list) {
+    const value = sanitizeString(tag);
+    if (!value) continue;
+    const key = value.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(key);
+  }
+  return normalized.length > 0 ? normalized : undefined;
+}
+
 function normalizeFilters(filters = {}) {
   const normalized = {};
   for (const field of METADATA_FIELDS) {
     const value = sanitizeString(filters[field]);
     if (value) normalized[field] = value.toLowerCase();
   }
+  const tags = normalizeFilterTags(filters.tags);
+  if (tags) normalized.tags = tags;
   return normalized;
 }
 
@@ -156,11 +174,27 @@ function matchesFilters(record, filters) {
   if (!filters || Object.keys(filters).length === 0) return true;
   const metadata = record.metadata || {};
   for (const [field, filterValue] of Object.entries(filters)) {
+    if (field === 'tags') continue;
     const candidate = sanitizeString(metadata[field]);
     if (!candidate || candidate.toLowerCase() !== filterValue) {
       return false;
     }
   }
+
+  if (filters.tags && filters.tags.length > 0) {
+    const recordTags = Array.isArray(record.tags) ? record.tags : [];
+    if (recordTags.length === 0) return false;
+    const tagSet = new Set();
+    for (const tag of recordTags) {
+      const value = sanitizeString(tag);
+      if (value) tagSet.add(value.toLowerCase());
+    }
+    if (tagSet.size === 0) return false;
+    for (const required of filters.tags) {
+      if (!tagSet.has(required)) return false;
+    }
+  }
+
   return true;
 }
 
