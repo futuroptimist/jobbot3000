@@ -55,6 +55,7 @@ Requirements
 
     expect(fetch).toHaveBeenCalledWith(
       'https://api.lever.co/v0/postings/example?mode=json',
+      { headers: { 'User-Agent': 'jobbot3000' } },
     );
 
     expect(result).toMatchObject({ org: 'example', saved: 1 });
@@ -68,6 +69,7 @@ Requirements
     expect(saved.source).toMatchObject({
       type: 'lever',
       value: 'https://jobs.lever.co/example/abc123',
+      headers: { 'User-Agent': 'jobbot3000' },
     });
     expect(saved.parsed.title).toBe('Senior Platform Engineer');
     expect(saved.parsed.location).toBe('Remote');
