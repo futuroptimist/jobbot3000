@@ -460,6 +460,81 @@ describe('jobbot CLI', () => {
     expect(entry.discarded_at).toEqual(new Date(entry.discarded_at).toISOString());
   });
 
+  it('surfaces discard archive snapshots with shortlist archive', () => {
+    runCli([
+      'shortlist',
+      'discard',
+      'job-1',
+      '--reason',
+      'Not remote',
+      '--tags',
+      'remote,onsite',
+      '--date',
+      '2025-03-05T12:00:00Z',
+    ]);
+    runCli([
+      'shortlist',
+      'discard',
+      'job-1',
+      '--reason',
+      'Changed priorities',
+      '--date',
+      '2025-03-08T09:30:00Z',
+    ]);
+    runCli([
+      'shortlist',
+      'discard',
+      'job-2',
+      '--reason',
+      'Compensation mismatch',
+      '--tags',
+      'compensation',
+      '--date',
+      '2025-04-01T14:45:00Z',
+    ]);
+
+    const archiveText = runCli(['shortlist', 'archive']);
+    expect(archiveText).toContain('job-1');
+    expect(archiveText).toContain('2025-03-05T12:00:00.000Z — Not remote');
+    expect(archiveText).toContain('Tags: remote, onsite');
+    expect(archiveText).toContain('job-2');
+    expect(archiveText).toContain('2025-04-01T14:45:00.000Z — Compensation mismatch');
+
+    const singleJob = runCli(['shortlist', 'archive', 'job-1']);
+    expect(singleJob).toContain('job-1');
+    expect(singleJob).toContain('2025-03-08T09:30:00.000Z — Changed priorities');
+    expect(singleJob).not.toContain('job-2');
+
+    const asJson = JSON.parse(runCli(['shortlist', 'archive', '--json']));
+    expect(Object.keys(asJson.discarded)).toContain('job-1');
+    expect(asJson.discarded['job-1']).toHaveLength(2);
+    expect(asJson.discarded['job-2'][0]).toMatchObject({
+      reason: 'Compensation mismatch',
+      discarded_at: '2025-04-01T14:45:00.000Z',
+      tags: ['compensation'],
+    });
+
+    const jobJson = JSON.parse(runCli(['shortlist', 'archive', 'job-2', '--json']));
+    expect(jobJson).toEqual({
+      job_id: 'job-2',
+      history: [
+        {
+          reason: 'Compensation mismatch',
+          discarded_at: '2025-04-01T14:45:00.000Z',
+          tags: ['compensation'],
+        },
+      ],
+    });
+  });
+
+  it('reports when discard archive is empty', () => {
+    const emptyAll = runCli(['shortlist', 'archive']);
+    expect(emptyAll.trim()).toBe('No discarded jobs found');
+
+    const emptyJob = runCli(['shortlist', 'archive', 'job-missing']);
+    expect(emptyJob.trim()).toBe('No discard history for job-missing');
+  });
+
   it('records intake responses and lists them', () => {
     const output = runCli([
       'intake',

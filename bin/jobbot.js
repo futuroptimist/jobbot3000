@@ -22,7 +22,7 @@ import {
   getApplicationReminders,
 } from '../src/application-events.js';
 import { recordApplication, STATUSES } from '../src/lifecycle.js';
-import { recordJobDiscard } from '../src/discards.js';
+import { recordJobDiscard, getDiscardedJobs } from '../src/discards.js';
 import { addJobTags, discardJob, filterShortlist, syncShortlistJob } from '../src/shortlist.js';
 import { recordInterviewSession, getInterviewSession } from '../src/interviews.js';
 import { initProfile } from '../src/profile.js';
@@ -614,6 +614,88 @@ function formatShortlistList(jobs) {
   return lines.join('\n');
 }
 
+function normalizeDiscardEntries(entries) {
+  if (!Array.isArray(entries)) return [];
+  const normalized = entries
+    .filter(entry => entry && typeof entry === 'object')
+    .map(entry => {
+      const source = entry.discarded_at ?? entry.discardedAt;
+      let timestamp = 'unknown time';
+      if (source) {
+        const date = new Date(source);
+        timestamp = Number.isNaN(date.getTime()) ? String(source) : date.toISOString();
+      }
+      const reasonValue = entry.reason;
+      const reason =
+        typeof reasonValue === 'string' && reasonValue.trim()
+          ? reasonValue.trim()
+          : 'Unknown reason';
+      const tags = Array.isArray(entry.tags)
+        ? entry.tags.map(tag => String(tag).trim()).filter(Boolean)
+        : [];
+      const payload = { discarded_at: timestamp, reason };
+      if (tags.length > 0) payload.tags = tags;
+      return payload;
+    });
+  normalized.sort((a, b) => {
+    const aTime = Date.parse(a.discarded_at);
+    const bTime = Date.parse(b.discarded_at);
+    if (Number.isNaN(aTime) && Number.isNaN(bTime)) return 0;
+    if (Number.isNaN(aTime)) return 1;
+    if (Number.isNaN(bTime)) return -1;
+    if (aTime === bTime) return 0;
+    return aTime < bTime ? -1 : 1;
+  });
+  return normalized;
+}
+
+function normalizeDiscardArchive(archive) {
+  if (!archive || typeof archive !== 'object') return {};
+  const jobIds = Object.keys(archive).sort((a, b) => a.localeCompare(b));
+  const normalized = {};
+  for (const jobId of jobIds) {
+    normalized[jobId] = normalizeDiscardEntries(archive[jobId]);
+  }
+  return normalized;
+}
+
+function formatDiscardHistory(jobId, entries) {
+  const normalized = normalizeDiscardEntries(entries);
+  if (normalized.length === 0) {
+    return `No discard history for ${jobId}`;
+  }
+  const lines = [jobId];
+  for (const entry of normalized) {
+    lines.push(`- ${entry.discarded_at} — ${entry.reason}`);
+    if (entry.tags && entry.tags.length > 0) {
+      lines.push(`  Tags: ${entry.tags.join(', ')}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+function formatDiscardArchive(archive) {
+  const normalized = normalizeDiscardArchive(archive);
+  const jobIds = Object.keys(normalized);
+  if (jobIds.length === 0) return 'No discarded jobs found';
+  const lines = [];
+  for (const jobId of jobIds) {
+    const entries = normalized[jobId];
+    if (!entries || entries.length === 0) continue;
+    lines.push(jobId);
+    for (const entry of entries) {
+      lines.push(`- ${entry.discarded_at} — ${entry.reason}`);
+      if (entry.tags && entry.tags.length > 0) {
+        lines.push(`  Tags: ${entry.tags.join(', ')}`);
+      }
+    }
+    lines.push('');
+  }
+  if (lines.length === 0) return 'No discarded jobs found';
+  if (lines[lines.length - 1] === '') lines.pop();
+  return lines.join('\n');
+}
+
 async function cmdShortlistList(args) {
   const filters = {
     location: getFlag(args, '--location'),
@@ -625,13 +707,44 @@ async function cmdShortlistList(args) {
   console.log(formatShortlistList(store.jobs));
 }
 
+async function cmdShortlistArchive(args) {
+  const asJson = args.includes('--json');
+  const filtered = args.filter(arg => arg !== '--json');
+  const jobId = filtered[0];
+
+  try {
+    if (jobId) {
+      const history = await getDiscardedJobs(jobId);
+      if (asJson) {
+        const normalized = normalizeDiscardEntries(history);
+        console.log(JSON.stringify({ job_id: jobId, history: normalized }, null, 2));
+      } else {
+        console.log(formatDiscardHistory(jobId, history));
+      }
+      return;
+    }
+
+    const archive = await getDiscardedJobs();
+    if (asJson) {
+      const normalized = normalizeDiscardArchive(archive);
+      console.log(JSON.stringify({ discarded: normalized }, null, 2));
+    } else {
+      console.log(formatDiscardArchive(archive));
+    }
+  } catch (err) {
+    console.error(err.message || String(err));
+    process.exit(1);
+  }
+}
+
 async function cmdShortlist(args) {
   const sub = args[0];
   if (sub === 'tag') return cmdShortlistTag(args.slice(1));
   if (sub === 'discard') return cmdShortlistDiscard(args.slice(1));
   if (sub === 'sync') return cmdShortlistSync(args.slice(1));
   if (sub === 'list') return cmdShortlistList(args.slice(1));
-  console.error('Usage: jobbot shortlist <tag|discard|sync|list> ...');
+  if (sub === 'archive') return cmdShortlistArchive(args.slice(1));
+  console.error('Usage: jobbot shortlist <tag|discard|sync|list|archive> ...');
   process.exit(2);
 }
 
