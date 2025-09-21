@@ -312,6 +312,24 @@ describe('jobbot CLI', () => {
     expect(stagesByKey.acceptance.count).toBe(1);
   }, 15000);
 
+  it('exports anonymized analytics snapshots to disk', () => {
+    runCli(['track', 'log', 'job-1', '--channel', 'email', '--date', '2025-03-01']);
+    runCli(['track', 'add', 'job-1', '--status', 'screening']);
+    runCli(['track', 'log', 'job-2', '--channel', 'referral', '--date', '2025-03-02']);
+    runCli(['track', 'add', 'job-2', '--status', 'offer']);
+    runCli(['track', 'log', 'job-2', '--channel', 'offer_accepted', '--date', '2025-03-15']);
+
+    const outPath = path.join(dataDir, 'analytics-snapshot.json');
+    const result = runCli(['analytics', 'export', '--out', outPath]);
+    expect(result.trim()).toBe(`Saved analytics snapshot to ${outPath}`);
+
+    const payload = JSON.parse(fs.readFileSync(outPath, 'utf8'));
+    expect(payload.statuses).toMatchObject({ offer: 1, screening: 1 });
+    expect(payload.channels).toEqual({ email: 1, offer_accepted: 1, referral: 1 });
+    expect(JSON.stringify(payload)).not.toContain('job-1');
+    expect(JSON.stringify(payload)).not.toContain('job-2');
+  });
+
   it('records interview sessions with transcripts and notes', () => {
     const transcriptPath = path.join(dataDir, 'transcript.txt');
     fs.writeFileSync(transcriptPath, 'Practiced STAR story\n');

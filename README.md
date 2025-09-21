@@ -379,12 +379,23 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot analytics funnel --json | jq '.stages[0]'
 #   "dropOff": 0,
 #   "conversionRate": 1
 # }
+
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot analytics export --out analytics.json
+# Saved analytics snapshot to /tmp/jobbot-cli-XXXX/analytics.json
+# jq '.channels' analytics.json
+# {
+#   "email": 1,
+#   "offer_accepted": 1,
+#   "referral": 1
+# }
 ~~~
 
 The analytics command reads `applications.json` and `application_events.json`, summarising stage
 counts, drop-offs, and conversion percentages. A dedicated unit test in
 [`test/analytics.test.js`](test/analytics.test.js) and a CLI flow in [`test/cli.test.js`](test/cli.test.js)
-cover outreach counts, acceptance detection, JSON formatting, and the largest drop-off highlight.
+cover outreach counts, acceptance detection, JSON formatting, the largest drop-off highlight, and the
+anonymized snapshot export. The `analytics export` subcommand captures aggregate status counts and
+event channels without embedding raw job identifiers so personal records stay scrubbed.
 
 ## Interview session logs
 

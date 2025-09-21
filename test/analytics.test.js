@@ -131,4 +131,53 @@ describe('analytics conversion funnel', () => {
     expect(report).toContain('Screening: 2 (n/a conversion)');
     expect(report).toContain('Onsite: 0 (0% conversion, 2 drop-off)');
   });
+
+  it('exports anonymized analytics snapshots without leaking job identifiers', async () => {
+    const fs = await import('node:fs/promises');
+    await fs.writeFile(
+      path.join(dataDir, 'applications.json'),
+      JSON.stringify(
+        {
+          'job-accepted': 'offer',
+          'job-screening': 'screening',
+          'job-withdrawn': 'withdrawn',
+        },
+        null,
+        2,
+      ),
+    );
+    await fs.writeFile(
+      path.join(dataDir, 'application_events.json'),
+      JSON.stringify(
+        {
+          'job-accepted': [
+            { channel: 'Email', date: '2025-01-01T10:00:00Z' },
+            { channel: 'offer_accepted', date: '2025-02-01T12:00:00Z' },
+          ],
+          'job-screening': [{ channel: 'referral', date: '2025-01-03T09:00:00Z' }],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const { exportAnalyticsSnapshot, setAnalyticsDataDir } = await import('../src/analytics.js');
+    setAnalyticsDataDir(dataDir);
+    restoreAnalyticsDir = async () => setAnalyticsDataDir(undefined);
+
+    const snapshot = await exportAnalyticsSnapshot();
+    expect(typeof snapshot.generated_at).toBe('string');
+    expect(Number.isNaN(new Date(snapshot.generated_at).getTime())).toBe(false);
+    expect(snapshot.statuses).toMatchObject({
+      offer: 1,
+      screening: 1,
+      withdrawn: 1,
+    });
+    expect(snapshot.statuses.next_round).toBe(0);
+    expect(snapshot.channels).toEqual({ email: 1, offer_accepted: 1, referral: 1 });
+    expect(snapshot.funnel.stages[0].key).toBe('outreach');
+    const serialized = JSON.stringify(snapshot);
+    expect(serialized).not.toContain('job-accepted');
+    expect(serialized).not.toContain('job-screening');
+  });
 });

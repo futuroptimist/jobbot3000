@@ -24,7 +24,7 @@ import { ingestGreenhouseBoard } from '../src/greenhouse.js';
 import { ingestLeverBoard } from '../src/lever.js';
 import { ingestSmartRecruitersBoard } from '../src/smartrecruiters.js';
 import { ingestAshbyBoard } from '../src/ashby.js';
-import { computeFunnel, formatFunnelReport } from '../src/analytics.js';
+import { computeFunnel, exportAnalyticsSnapshot, formatFunnelReport } from '../src/analytics.js';
 import { ingestWorkableBoard } from '../src/workable.js';
 
 function isHttpUrl(s) {
@@ -429,10 +429,25 @@ async function cmdAnalyticsFunnel(args) {
   console.log(formatFunnelReport(funnel));
 }
 
+async function cmdAnalyticsExport(args) {
+  const output = getFlag(args, '--out');
+  const snapshot = await exportAnalyticsSnapshot();
+  const payload = `${JSON.stringify(snapshot, null, 2)}\n`;
+  if (output) {
+    const resolved = path.resolve(process.cwd(), output);
+    await fs.promises.mkdir(path.dirname(resolved), { recursive: true });
+    await fs.promises.writeFile(resolved, payload, 'utf8');
+    console.log(`Saved analytics snapshot to ${resolved}`);
+    return;
+  }
+  console.log(payload.trimEnd());
+}
+
 async function cmdAnalytics(args) {
   const sub = args[0];
   if (sub === 'funnel') return cmdAnalyticsFunnel(args.slice(1));
-  console.error('Usage: jobbot analytics funnel [--json]');
+  if (sub === 'export') return cmdAnalyticsExport(args.slice(1));
+  console.error('Usage: jobbot analytics <funnel|export> [options]');
   process.exit(2);
 }
 
