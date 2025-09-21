@@ -62,6 +62,23 @@ function getNumberFlag(args, name, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+const CURRENCY_SYMBOL_RE = /^\p{Sc}/u;
+const DEFAULT_SHORTLIST_CURRENCY = process.env.JOBBOT_SHORTLIST_CURRENCY
+  ? process.env.JOBBOT_SHORTLIST_CURRENCY.trim()
+  : '$';
+
+function normalizeCompensation(value) {
+  if (value == null) return undefined;
+  const trimmed = String(value).trim();
+  if (!trimmed) return undefined;
+  if (CURRENCY_SYMBOL_RE.test(trimmed)) return trimmed;
+  if (!/^\d/.test(trimmed)) return trimmed;
+  const simpleNumeric = /^\d[\d.,]*(?:\s?(?:k|m|b))?$/i;
+  if (!simpleNumeric.test(trimmed)) return trimmed;
+  const symbol = DEFAULT_SHORTLIST_CURRENCY || '$';
+  return `${symbol}${trimmed}`;
+}
+
 function parseMultilineList(value) {
   if (value == null) return undefined;
   const str = typeof value === 'string' ? value : String(value);
@@ -573,7 +590,7 @@ async function cmdShortlistSync(args) {
   if (location) metadata.location = location;
   const level = getFlag(rest, '--level');
   if (level) metadata.level = level;
-  const compensation = getFlag(rest, '--compensation');
+  const compensation = normalizeCompensation(getFlag(rest, '--compensation'));
   if (compensation) metadata.compensation = compensation;
   const syncedAt = getFlag(rest, '--synced-at');
   if (syncedAt) metadata.syncedAt = syncedAt;
