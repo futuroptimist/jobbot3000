@@ -4,6 +4,7 @@ import path from 'node:path';
 /**
  * Valid application status values.
  * `next_round` remains as a legacy alias for older logs.
+ * Acceptance synonyms (`accepted`, `acceptance`, `hired`) feed analytics rollups.
  */
 export const STATUSES = [
   'no_response',
@@ -13,6 +14,9 @@ export const STATUSES = [
   'rejected',
   'withdrawn',
   'next_round',
+  'accepted',
+  'acceptance',
+  'hired',
 ];
 
 function getPaths() {

@@ -92,8 +92,9 @@ aggressively to respect rate limits.
 1. When the user applies or sends outreach, they log the event (channel, date, documents shared,
    contact person) with `jobbot track log <job_id> --channel <channel> [...]`, which appends the
    metadata to `data/application_events.json` so the full history stays local.
-2. Application status transitions (no response, screening, onsite, offer, rejected, withdrawn) are
-   stored in `data/applications.json`, which is serialized safely to prevent data loss. The CLI
+2. Application status transitions covering no response, screening, onsite, offer, rejected,
+   withdrawn, and acceptance outcomes (accepted/acceptance/hired) are stored in
+   `data/applications.json`, which is serialized safely to prevent data loss. The CLI
    exposes `jobbot track add <job_id> --status <status> [--note <note>]` so users can log updates and
    quick notes inline with other workflows.
 3. Follow-up reminders and note-taking surfaces help the user prepare for upcoming steps while
