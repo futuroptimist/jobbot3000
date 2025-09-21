@@ -24,6 +24,7 @@ import { ingestGreenhouseBoard } from '../src/greenhouse.js';
 import { ingestLeverBoard } from '../src/lever.js';
 import { ingestSmartRecruitersBoard } from '../src/smartrecruiters.js';
 import { ingestAshbyBoard } from '../src/ashby.js';
+import { computeFunnel, formatFunnelReport } from '../src/analytics.js';
 
 function isHttpUrl(s) {
   return /^https?:\/\//i.test(s);
@@ -402,6 +403,23 @@ async function cmdShortlist(args) {
   process.exit(2);
 }
 
+async function cmdAnalyticsFunnel(args) {
+  const format = args.includes('--json') ? 'json' : 'text';
+  const funnel = await computeFunnel();
+  if (format === 'json') {
+    console.log(JSON.stringify(funnel, null, 2));
+    return;
+  }
+  console.log(formatFunnelReport(funnel));
+}
+
+async function cmdAnalytics(args) {
+  const sub = args[0];
+  if (sub === 'funnel') return cmdAnalyticsFunnel(args.slice(1));
+  console.error('Usage: jobbot analytics funnel [--json]');
+  process.exit(2);
+}
+
 async function cmdInterviewsRecord(args) {
   const jobId = args[0];
   const sessionId = args[1];
@@ -484,9 +502,12 @@ async function main() {
   if (cmd === 'match') return cmdMatch(args);
   if (cmd === 'track') return cmdTrack(args);
   if (cmd === 'shortlist') return cmdShortlist(args);
+  if (cmd === 'analytics') return cmdAnalytics(args);
   if (cmd === 'ingest') return cmdIngest(args);
   if (cmd === 'interviews') return cmdInterviews(args);
-  console.error('Usage: jobbot <init|summarize|match|track|shortlist|interviews|ingest> [options]');
+  console.error(
+    'Usage: jobbot <init|summarize|match|track|shortlist|analytics|interviews|ingest> [options]'
+  );
   process.exit(2);
 }
 
