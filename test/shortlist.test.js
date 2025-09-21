@@ -46,6 +46,22 @@ describe('shortlist metadata sync and filters', () => {
     expect(Object.keys(byFilters.jobs)).toEqual(['job-metadata']);
   });
 
+  it('filters shortlist entries by tag', async () => {
+    const { addJobTags, filterShortlist } = await import('../src/shortlist.js');
+
+    await addJobTags('job-tags', ['Remote', 'Dream']);
+    await addJobTags('job-other', ['Hold']);
+
+    const remote = await filterShortlist({ tags: ['remote'] });
+    expect(Object.keys(remote.jobs)).toEqual(['job-tags']);
+
+    const multi = await filterShortlist({ tags: ['remote', 'dream'] });
+    expect(Object.keys(multi.jobs)).toEqual(['job-tags']);
+
+    const none = await filterShortlist({ tags: ['onsite'] });
+    expect(Object.keys(none.jobs)).toEqual([]);
+  });
+
   it('records discard tags in shortlist and archive files', async () => {
     const { discardJob } = await import('../src/shortlist.js');
 

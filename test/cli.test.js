@@ -712,6 +712,20 @@ describe('jobbot CLI', () => {
     expect(listOutput).toContain('Remote');
   });
 
+  it('filters shortlist entries by tag', () => {
+    runCli(['shortlist', 'tag', 'job-remote', 'Remote', 'Dream']);
+    runCli(['shortlist', 'tag', 'job-onsite', 'Onsite']);
+
+    const textOutput = runCli(['shortlist', 'list', '--tag', 'remote']);
+    expect(textOutput).toContain('job-remote');
+    expect(textOutput).not.toContain('job-onsite');
+
+    const jsonOutput = runCli(['shortlist', 'list', '--tag', 'remote', '--tag', 'dream', '--json']);
+    const payload = JSON.parse(jsonOutput);
+    expect(Object.keys(payload.jobs)).toEqual(['job-remote']);
+    expect(payload.jobs['job-remote'].tags).toEqual(['Remote', 'Dream']);
+  });
+
   it('lists shortlist entries as JSON with --json', () => {
     runCli([
       'shortlist',

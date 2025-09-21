@@ -368,7 +368,7 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist tag job-123 dream remote
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist discard job-123 --reason "Not remote" --tags "Remote,onsite"
 # Discarded job-123: Not remote
 
-JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist sync job-123 --location Remote --level Senior --compensation "$185k"
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist sync job-123 --location Remote --level Senior --compensation "$185k" --synced-at 2025-03-06T08:00:00Z
 # Synced job-123 metadata
 
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --location remote
@@ -376,6 +376,18 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --location remote
 #   Location: Remote
 #   Level: Senior
 #   Compensation: $185k
+#   Synced At: 2025-03-06T08:00:00.000Z
+#   Tags: dream, remote
+#   Last Discard: Not remote (2025-03-05T12:00:00.000Z)
+
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --tag dream --tag remote
+# job-123
+#   Location: Remote
+#   Level: Senior
+#   Compensation: $185k
+#   Synced At: 2025-03-06T08:00:00.000Z
+#   Tags: dream, remote
+#   Last Discard: Not remote (2025-03-05T12:00:00.000Z)
 
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --json
 # {
@@ -384,7 +396,8 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --json
 #       "metadata": {
 #         "location": "Remote",
 #         "level": "Senior",
-#         "compensation": "$185k"
+#         "compensation": "$185k",
+#         "synced_at": "2025-03-06T08:00:00.000Z"
 #       },
 #       "tags": ["dream", "remote"],
 #       "discarded": [
@@ -408,10 +421,11 @@ The CLI stores shortlist labels, discard history, and sync metadata in `data/sho
 reasons, timestamps, optional tags, and location/level/compensation fields so recommendations can
 surface patterns later. Review past decisions with `jobbot shortlist archive [job_id]` (add `--json`
 to inspect all records at once), which reads from `data/discarded_jobs.json` so archive lookups and
-shortlist history stay in sync. Add `--json` to the shortlist list command when piping entries
-into other tools. Metadata syncs stamp a `synced_at` ISO 8601 timestamp for refresh schedulers.
-Unit tests in [`test/shortlist.test.js`](test/shortlist.test.js) and the CLI suite in
-[`test/cli.test.js`](test/cli.test.js) exercise metadata updates, filters, discard tags, archive
+shortlist history stay in sync. Add `--json` to the shortlist list command when piping entries into
+other tools, and filter by metadata or tags (`--location`, `--level`, `--compensation`, or repeated
+`--tag` flags) when triaging opportunities. Metadata syncs stamp a `synced_at` ISO 8601 timestamp for
+refresh schedulers. Unit tests in [`test/shortlist.test.js`](test/shortlist.test.js) and the CLI suite in
+[`test/cli.test.js`](test/cli.test.js) exercise metadata updates, tag filters, discard tags, archive
 exports, and the persisted format.
 
 ## Intake responses

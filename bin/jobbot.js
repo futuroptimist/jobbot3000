@@ -369,6 +369,27 @@ function parseTagsFlag(args) {
     .filter(Boolean);
 }
 
+function collectTagFilters(args) {
+  const tags = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] !== '--tag') continue;
+    const value = args[i + 1];
+    if (!value || value.startsWith('--')) {
+      console.error(
+        'Usage: jobbot shortlist list [--location <value>] [--level <value>] ' +
+          '[--compensation <value>] [--tag <value>] [--json]'
+      );
+      process.exit(2);
+    }
+    for (const entry of String(value).split(',')) {
+      const trimmed = entry.trim();
+      if (trimmed) tags.push(trimmed);
+    }
+    i++;
+  }
+  return tags.length > 0 ? tags : undefined;
+}
+
 function formatIntakeList(entries) {
   if (!Array.isArray(entries) || entries.length === 0) {
     return 'No intake responses found';
@@ -705,6 +726,8 @@ async function cmdShortlistList(args) {
     level: getFlag(filteredArgs, '--level'),
     compensation: getFlag(filteredArgs, '--compensation'),
   };
+  const tagFilters = collectTagFilters(filteredArgs);
+  if (tagFilters) filters.tags = tagFilters;
 
   const store = await filterShortlist(filters);
   if (asJson) {
