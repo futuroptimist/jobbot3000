@@ -497,6 +497,29 @@ describe('jobbot CLI', () => {
     expect(entry.discarded_at).toEqual(new Date(entry.discarded_at).toISOString());
   });
 
+  it('updates shortlist history when discarding via track command', () => {
+    runCli([
+      'track',
+      'discard',
+      'job-shortlist-sync',
+      '--reason',
+      'Not aligned with goals',
+      '--tags',
+      'remote,onsite',
+    ]);
+
+    const shortlistPath = path.join(dataDir, 'shortlist.json');
+    expect(fs.existsSync(shortlistPath)).toBe(true);
+    const shortlist = JSON.parse(fs.readFileSync(shortlistPath, 'utf8'));
+    expect(shortlist.jobs['job-shortlist-sync']).toBeDefined();
+    const [entry] = shortlist.jobs['job-shortlist-sync'].discarded;
+    expect(entry).toMatchObject({
+      reason: 'Not aligned with goals',
+      tags: ['remote', 'onsite'],
+    });
+    expect(typeof entry.discarded_at).toBe('string');
+  });
+
   it('surfaces discard archive snapshots with shortlist archive', () => {
     runCli([
       'shortlist',

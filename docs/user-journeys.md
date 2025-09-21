@@ -13,6 +13,9 @@ jobbot3000.
    `resume.json`. When they start from scratch, `jobbot init` scaffolds
    `data/profile/resume.json` with empty JSON Resume sections ready for editing.
 2. The CLI or UI calls the resume loader to extract clean text and metadata.
+   Callers can request word/line counts, byte size, and the detected format via
+   `loadResume(<path>, { withMetadata: true })` so downstream steps can surface
+   parsing confidence or highlight missing sections.
 3. Parsed content is normalized into the JSON Resume schema and saved under `data/profile/`, a
    git-ignored directory so personal data never leaves the machine.
 4. The system surfaces parsing confidence scores, highlights ambiguities (dates, titles, metrics),
@@ -92,8 +95,9 @@ aggressively to respect rate limits.
 1. When the user applies or sends outreach, they log the event (channel, date, documents shared,
    contact person) with `jobbot track log <job_id> --channel <channel> [...]`, which appends the
    metadata to `data/application_events.json` so the full history stays local.
-2. Application status transitions (no response, screening, onsite, offer, rejected, withdrawn) are
-   stored in `data/applications.json`, which is serialized safely to prevent data loss. The CLI
+2. Application status transitions covering no response, screening, onsite, offer, rejected,
+   withdrawn, and acceptance outcomes (accepted/acceptance/hired) are stored in
+   `data/applications.json`, which is serialized safely to prevent data loss. The CLI
    exposes `jobbot track add <job_id> --status <status> [--note <note>]` so users can log updates and
    quick notes inline with other workflows.
 3. Follow-up reminders and note-taking surfaces help the user prepare for upcoming steps while

@@ -59,4 +59,23 @@ describe('loadResume', () => {
     const result = await withTempFile('.PDF', 'dummy', loadResume);
     expect(result).toBe('PDF content');
   });
+
+  it('returns text and metadata when requested', async () => {
+    const content = '# Title\n\n**bold** text\n';
+    const result = await withTempFile('.md', content, file =>
+      loadResume(file, { withMetadata: true })
+    );
+
+    expect(result).toEqual({
+      text: 'Title\n\nbold text',
+      metadata: expect.objectContaining({
+        extension: '.md',
+        format: 'markdown',
+        bytes: Buffer.byteLength(content),
+        characters: 16,
+        lineCount: 3,
+        wordCount: 3,
+      }),
+    });
+  });
 });

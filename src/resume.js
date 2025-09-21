@@ -32,14 +32,58 @@ for (const ext of MARKDOWN_EXTENSIONS) LOADERS[ext] = loadMarkdown;
  * Supports `.pdf`, `.md`, `.markdown`, and `.mdx` formats; other files are read as plain text.
  *
  * @param {string} filePath
- * @returns {Promise<string>}
+ * @param {{ withMetadata?: boolean }} [options]
+ * @returns {Promise<string | { text: string, metadata: {
+ *   extension: string,
+ *   format: 'pdf' | 'markdown' | 'text',
+ *   bytes: number,
+ *   characters: number,
+ *   lineCount: number,
+ *   wordCount: number,
+ * } }>}
  */
-export async function loadResume(filePath) {
-  const ext = path.extname(filePath).toLowerCase();
-  const loader = LOADERS[ext];
-  if (loader) return loader(filePath);
-  const raw = await fs.readFile(filePath, 'utf-8');
-  return raw.trim();
+function detectFormat(extension) {
+  if (MARKDOWN_EXTENSIONS.includes(extension)) return 'markdown';
+  if (extension === '.pdf') return 'pdf';
+  return 'text';
+}
+
+function countWords(text) {
+  if (!text) return 0;
+  const matches = text.trim().match(/\S+/g);
+  return matches ? matches.length : 0;
+}
+
+function countLines(text) {
+  if (!text) return 0;
+  return text.split(/\r?\n/).length;
+}
+
+export async function loadResume(filePath, options = {}) {
+  const extension = path.extname(filePath).toLowerCase();
+  const loader = LOADERS[extension];
+  let text;
+  if (loader) text = await loader(filePath);
+  else {
+    const raw = await fs.readFile(filePath, 'utf-8');
+    text = raw.trim();
+  }
+
+  if (!options.withMetadata) {
+    return text;
+  }
+
+  const stats = await fs.stat(filePath);
+  const metadata = {
+    extension: extension || '',
+    format: detectFormat(extension),
+    bytes: stats.size,
+    characters: text.length,
+    lineCount: countLines(text),
+    wordCount: countWords(text),
+  };
+
+  return { text, metadata };
 }
 
 

@@ -132,6 +132,25 @@ run();
 `loadResume` supports `.pdf`, `.md`, `.markdown`, and `.mdx` files; other
 extensions are read as plain text.
 
+Pass `{ withMetadata: true }` to capture basic file statistics alongside the
+cleaned text:
+
+```js
+const { text, metadata } = await loadResume('resume.md', { withMetadata: true });
+console.log(metadata);
+// {
+//   extension: '.md',
+//   format: 'markdown',
+//   bytes: 2312,
+//   characters: 1980,
+//   lineCount: 62,
+//   wordCount: 340
+// }
+```
+
+`test/resume.test.js` exercises the metadata branch so downstream callers can
+depend on the shape.
+
 Initialize a JSON Resume skeleton when you do not have an existing file:
 
 ```bash
@@ -536,10 +555,11 @@ font size immediately after logging in.
 
 ## Tracking Application Lifecycle
 
-Application statuses such as `no_response`, `screening`, `onsite`, `offer`, `rejected`, and
-`withdrawn` are saved to `data/applications.json`, a git-ignored file. Legacy entries using
-`next_round` still load for backward compatibility. Set `JOBBOT_DATA_DIR` to change the directory.
-These records power local Sankey diagrams so progress isn't lost between sessions.
+Application statuses such as `no_response`, `screening`, `onsite`, `offer`, `rejected`,
+`withdrawn`, and acceptance outcomes (`accepted`, `acceptance`, `hired`) are saved to
+`data/applications.json`, a git-ignored file. Legacy entries using `next_round` still load for
+backward compatibility. Set `JOBBOT_DATA_DIR` to change the directory. These records power local
+Sankey diagrams so progress isn't lost between sessions.
 Writes are serialized to avoid dropping entries when recording multiple applications at once.
 If the file is missing it will be created, but other file errors or malformed JSON will throw.
 Unit tests cover each status, concurrent writes, missing files, invalid JSON, and rejection of
@@ -624,10 +644,10 @@ JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot track discard job-456 --reason "Salary t
 
 Discarded roles are archived in `data/discarded_jobs.json` with their reasons,
 timestamps, and optional tags so future recommendations can reference prior
-decisions. The same entry is recorded in `data/shortlist.json`, keeping the
-shortlist view's discard history aligned with the archive. Unit tests in
-`test/discards.test.js` and the CLI suite cover the JSON format and command
-invocation.
+decisions. The `track discard` command shares the shortlist writer so history in
+`data/shortlist.json` stays aligned even when discards originate from the track
+workflow. Unit tests in `test/discards.test.js` and the CLI suite cover the JSON
+format and command invocation.
 
 ## Documentation
 
