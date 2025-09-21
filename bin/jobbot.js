@@ -445,8 +445,8 @@ async function cmdTrackDiscard(args) {
   }
   const tags = parseTagsFlag(args);
   const date = getFlag(args, '--date');
-  await discardJob(jobId, reason, { tags, date });
-  console.log(`Discarded ${jobId}`);
+  const entry = await discardJob(jobId, reason, { tags, date });
+  console.log(`Discarded ${jobId}: ${entry.reason}`);
 }
 
 async function cmdTrack(args) {

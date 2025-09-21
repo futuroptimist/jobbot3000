@@ -619,15 +619,15 @@ To capture discard reasons for shortlist triage:
 
 ```bash
 JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot track discard job-456 --reason "Salary too low"
-# Discarded job-456
+# Discarded job-456: Salary too low
 ```
 
 Discarded roles are archived in `data/discarded_jobs.json` with their reasons,
 timestamps, and optional tags so future recommendations can reference prior
-decisions. The same entry is recorded in `data/shortlist.json`, keeping the
-shortlist view's discard history aligned with the archive. Unit tests in
-`test/discards.test.js` and the CLI suite cover the JSON format and command
-invocation.
+decisions. The `track discard` command shares the shortlist writer so history in
+`data/shortlist.json` stays aligned even when discards originate from the track
+workflow. Unit tests in `test/discards.test.js` and the CLI suite cover the JSON
+format and command invocation.
 
 ## Documentation
 
