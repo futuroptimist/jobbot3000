@@ -51,22 +51,68 @@ async function writeJsonFile(file, data) {
 // Serialize writes to avoid clobbering entries when recordApplication is invoked concurrently.
 let writeLock = Promise.resolve();
 
+function normalizeNote(note) {
+  if (note === undefined) return undefined;
+  const value = typeof note === 'string' ? note : String(note);
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error('note cannot be empty');
+  }
+  return trimmed;
+}
+
+function normalizeTimestamp(input) {
+  const source = input ?? undefined;
+  const date = source instanceof Date ? source : source ? new Date(source) : new Date();
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`invalid status timestamp: ${input}`);
+  }
+  return date.toISOString();
+}
+
+function extractStatus(entry) {
+  if (typeof entry === 'string') return entry;
+  if (entry && typeof entry === 'object') {
+    const value = entry.status;
+    return typeof value === 'string' ? value : undefined;
+  }
+  return undefined;
+}
+
 /**
  * Record an application's status. Throws if the lifecycle file cannot be read or contains
  * invalid JSON.
  */
-export function recordApplication(id, status) {
+export function recordApplication(id, status, options = {}) {
   if (!STATUSES.includes(status)) {
     return Promise.reject(new Error(`unknown status: ${status}`));
   }
+
+  let note;
+  try {
+    note = normalizeNote(options.note ?? options.notes);
+  } catch (err) {
+    return Promise.reject(err);
+  }
+
+  let updatedAt;
+  try {
+    updatedAt = normalizeTimestamp(options.date ?? options.updatedAt ?? options.updated_at);
+  } catch (err) {
+    return Promise.reject(err);
+  }
+
+  const entry = { status, updated_at: updatedAt };
+  if (note) entry.note = note;
+
   const { dir, file } = getPaths();
 
   const run = async () => {
     await fs.mkdir(dir, { recursive: true });
     const data = await readLifecycleFile(file);
-    data[id] = status;
+    data[id] = entry;
     await writeJsonFile(file, data);
-    return data[id];
+    return status;
   };
 
   writeLock = writeLock.then(run, run);
@@ -81,8 +127,11 @@ export async function getLifecycleCounts() {
   const { file } = getPaths();
   const data = await readLifecycleFile(file);
   const counts = Object.fromEntries(STATUSES.map(s => [s, 0]));
-  for (const status of Object.values(data)) {
-    if (counts[status] !== undefined) counts[status] += 1;
+  for (const value of Object.values(data)) {
+    const status = extractStatus(value);
+    if (status && counts[status] !== undefined) {
+      counts[status] += 1;
+    }
   }
   return counts;
 }

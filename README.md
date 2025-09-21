@@ -509,12 +509,27 @@ Record and track your applications directly from the CLI—never edit JSON by ha
 To capture statuses:
 
 ~~~bash
-JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot track add job-123 --status screening
+JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot track add job-123 --status screening \
+  --note "Emailed hiring manager"
 # Recorded job-123 as screening
 ~~~
 
-This persists entries to `applications.json`. CLI tests assert that
-`jobbot track add` correctly appends and updates statuses.
+This persists entries to `applications.json` as objects that record the status,
+an `updated_at` ISO 8601 timestamp, and optional notes:
+
+```json
+{
+  "job-123": {
+    "status": "screening",
+    "note": "Emailed hiring manager",
+    "updated_at": "2025-02-01T10:00:00.000Z"
+  }
+}
+```
+
+Unit coverage in [`test/lifecycle.test.js`](test/lifecycle.test.js) and CLI
+automation in [`test/cli.test.js`](test/cli.test.js) verify note persistence and
+timestamp normalization alongside the existing status checks.
 
 To capture outreach history:
 
