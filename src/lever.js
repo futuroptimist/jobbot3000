@@ -4,6 +4,7 @@ import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
 import { parseJobText } from './parser.js';
 
 const LEVER_BASE = 'https://api.lever.co/v0/postings';
+const LEVER_HEADERS = { 'User-Agent': 'jobbot3000' };
 
 function normalizeOrgSlug(org) {
   if (!org || typeof org !== 'string' || !org.trim()) {
@@ -50,7 +51,7 @@ function mergeParsedJob(parsed, job) {
 export async function fetchLeverJobs(org, { fetchImpl = fetch } = {}) {
   const slug = normalizeOrgSlug(org);
   const url = buildOrgUrl(slug);
-  const response = await fetchImpl(url);
+  const response = await fetchImpl(url, { headers: LEVER_HEADERS });
   if (!response.ok) {
     throw new Error(`Failed to fetch Lever org ${slug}: ${response.status} ${response.statusText}`);
   }
@@ -72,6 +73,7 @@ export async function ingestLeverBoard({ org, fetchImpl = fetch } = {}) {
       raw,
       parsed,
       source: { type: 'lever', value: hostedUrl },
+      requestHeaders: LEVER_HEADERS,
       fetchedAt: job.updatedAt ?? job.createdAt,
     });
     jobIds.push(id);
