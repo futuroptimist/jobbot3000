@@ -185,6 +185,111 @@ describe('jobbot CLI', () => {
     ]);
   });
 
+  it('lists reminders with track reminders --json', () => {
+    runCli([
+      'track',
+      'log',
+      'job-1',
+      '--channel',
+      'follow_up',
+      '--date',
+      '2025-03-01T08:00:00Z',
+      '--note',
+      'Send status update',
+      '--remind-at',
+      '2025-03-05T09:00:00Z',
+    ]);
+    runCli([
+      'track',
+      'log',
+      'job-2',
+      '--channel',
+      'call',
+      '--date',
+      '2025-03-02T10:00:00Z',
+      '--contact',
+      'Avery Hiring Manager',
+      '--remind-at',
+      '2025-03-07T15:00:00Z',
+    ]);
+
+    const output = runCli([
+      'track',
+      'reminders',
+      '--json',
+      '--now',
+      '2025-03-06T00:00:00Z',
+    ]);
+
+    const payload = JSON.parse(output);
+    expect(payload).toEqual({
+      reminders: [
+        {
+          job_id: 'job-1',
+          remind_at: '2025-03-05T09:00:00.000Z',
+          channel: 'follow_up',
+          note: 'Send status update',
+          past_due: true,
+        },
+        {
+          job_id: 'job-2',
+          remind_at: '2025-03-07T15:00:00.000Z',
+          channel: 'call',
+          contact: 'Avery Hiring Manager',
+          past_due: false,
+        },
+      ],
+    });
+  });
+
+  it('hides past due reminders when --upcoming-only is provided', () => {
+    runCli([
+      'track',
+      'log',
+      'job-1',
+      '--channel',
+      'follow_up',
+      '--date',
+      '2025-03-01T08:00:00Z',
+      '--remind-at',
+      '2025-03-04T09:00:00Z',
+    ]);
+    runCli([
+      'track',
+      'log',
+      'job-2',
+      '--channel',
+      'call',
+      '--date',
+      '2025-03-02T10:00:00Z',
+      '--remind-at',
+      '2025-03-07T15:00:00Z',
+    ]);
+
+    const upcoming = runCli([
+      'track',
+      'reminders',
+      '--upcoming-only',
+      '--now',
+      '2025-03-05T00:00:00Z',
+    ]);
+
+    expect(upcoming).toMatch(
+      /job-2 — 2025-03-07T15:00:00.000Z \(call, upcoming\)/,
+    );
+    expect(upcoming).not.toMatch(/job-1/);
+
+    const noneUpcoming = runCli([
+      'track',
+      'reminders',
+      '--upcoming-only',
+      '--now',
+      '2025-03-08T00:00:00Z',
+    ]);
+
+    expect(noneUpcoming.trim()).toBe('No upcoming reminders scheduled');
+  });
+
   it('archives discarded jobs with reasons', () => {
     const output = runCli([
       'track',

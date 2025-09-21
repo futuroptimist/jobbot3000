@@ -4,6 +4,7 @@ import { beforeEach, afterEach, describe, expect, it } from 'vitest';
 import {
   logApplicationEvent,
   getApplicationEvents,
+  getApplicationReminders,
   setApplicationEventsDataDir,
 } from '../src/application-events.js';
 
@@ -98,5 +99,68 @@ describe('application events', () => {
     await expect(
       logApplicationEvent('job-123', { channel: 'applied', date: 'not-a-date' }),
     ).rejects.toThrow(/invalid date/);
+  });
+
+  it('returns reminders sorted and flags past due entries', async () => {
+    await logApplicationEvent('job-1', {
+      channel: 'follow_up',
+      date: '2025-02-01T10:00:00Z',
+      remindAt: '2025-02-10T12:00:00Z',
+      note: 'Send thank-you email',
+    });
+    await logApplicationEvent('job-2', {
+      channel: 'call',
+      date: '2025-02-02T09:00:00Z',
+      remindAt: '2025-02-05T09:00:00Z',
+      contact: 'Alex Recruiter',
+    });
+    await logApplicationEvent('job-3', {
+      channel: 'applied',
+      date: '2025-02-03T09:00:00Z',
+    });
+
+    const reminders = await getApplicationReminders({ now: '2025-02-08T00:00:00Z' });
+    expect(reminders).toEqual([
+      {
+        job_id: 'job-2',
+        remind_at: '2025-02-05T09:00:00.000Z',
+        channel: 'call',
+        contact: 'Alex Recruiter',
+        past_due: true,
+      },
+      {
+        job_id: 'job-1',
+        remind_at: '2025-02-10T12:00:00.000Z',
+        channel: 'follow_up',
+        note: 'Send thank-you email',
+        past_due: false,
+      },
+    ]);
+  });
+
+  it('omits past due reminders when includePastDue is false', async () => {
+    await logApplicationEvent('job-1', {
+      channel: 'follow_up',
+      date: '2025-02-01T10:00:00Z',
+      remindAt: '2025-02-03T12:00:00Z',
+    });
+    await logApplicationEvent('job-2', {
+      channel: 'call',
+      date: '2025-02-02T09:00:00Z',
+      remindAt: '2025-02-05T09:00:00Z',
+    });
+
+    const reminders = await getApplicationReminders({
+      now: '2025-02-04T00:00:00Z',
+      includePastDue: false,
+    });
+    expect(reminders).toEqual([
+      {
+        job_id: 'job-2',
+        remind_at: '2025-02-05T09:00:00.000Z',
+        channel: 'call',
+        past_due: false,
+      },
+    ]);
   });
 });

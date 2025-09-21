@@ -519,6 +519,24 @@ identifier, with timestamps normalized to ISO 8601.
 Tests in `test/application-events.test.js` ensure that new log entries do not
 clobber history and that invalid channels or dates are rejected.
 
+Surface follow-up work with `jobbot track reminders`. Pass `--now` to view from a
+given timestamp (defaults to the current time), `--upcoming-only` to hide past-due
+work, and `--json` for structured output:
+
+~~~bash
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track reminders --now 2025-03-06T00:00:00Z
+# job-1 — 2025-03-05T09:00:00.000Z (follow_up, past due)
+#   Note: Send status update
+# job-2 — 2025-03-07T15:00:00.000Z (call, upcoming)
+#   Contact: Avery Hiring Manager
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track reminders --upcoming-only --now 2025-03-08T00:00:00Z
+# No upcoming reminders scheduled
+~~~
+
+Unit tests in [`test/application-events.test.js`](test/application-events.test.js)
+cover reminder extraction, including past-due filtering. The CLI suite in
+[`test/cli.test.js`](test/cli.test.js) verifies the `--json` output.
+
 To capture discard reasons for shortlist triage:
 
 ~~~bash
