@@ -200,15 +200,17 @@ async function cmdTrackLog(args) {
   if (!jobId || !channel) {
     console.error(
       'Usage: jobbot track log <job_id> --channel <channel> [--date <date>] ' +
-        '[--contact <contact>] [--documents <file1,file2>] [--note <note>]'
+        '[--contact <contact>] [--documents <file1,file2>] [--note <note>] ' +
+        '[--remind-at <iso8601>]'
     );
     process.exit(2);
   }
   const date = getFlag(args, '--date');
   const contact = getFlag(args, '--contact');
   const note = getFlag(args, '--note');
+  const remindAt = getFlag(args, '--remind-at');
   const documents = parseDocumentsFlag(args);
-  await logApplicationEvent(jobId, { channel, date, contact, note, documents });
+  await logApplicationEvent(jobId, { channel, date, contact, note, documents, remindAt });
   console.log(`Logged ${jobId} event ${channel}`);
 }
 

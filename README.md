@@ -34,6 +34,10 @@ echo "First. Second. Third." | npx jobbot summarize - --sentences 2 --text
 # Track an application's status
 npx jobbot track add job-123 --status screening
 # => Recorded job-123 as screening
+
+# Schedule a follow-up reminder when logging outreach
+npx jobbot track log job-123 --channel follow_up --remind-at 2025-03-11T09:00:00Z --note "Check in"
+# => Logged job-123 event follow_up
 ```
 
 # Continuous integration
@@ -503,9 +507,9 @@ To capture outreach history:
 
 Use `jobbot track log <job_id> --channel <channel>` to record the outreach trail
 for each application. The command accepts optional metadata such as `--date`,
-`--contact`, `--documents` (comma-separated), and `--note`. Events are appended
-to `data/application_events.json`, grouped by job identifier, with timestamps
-normalized to ISO 8601.
+`--contact`, `--documents` (comma-separated), `--note`, and `--remind-at`.
+Events are appended to `data/application_events.json`, grouped by job
+identifier, with timestamps normalized to ISO 8601.
 
 Tests in `test/application-events.test.js` ensure that new log entries do not
 clobber history and that invalid channels or dates are rejected.

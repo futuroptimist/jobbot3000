@@ -82,11 +82,21 @@ export function logApplicationEvent(jobId, event) {
   const contact = sanitizeString(event.contact);
   const note = sanitizeString(event.note);
   const documents = normalizeDocuments(event.documents);
+  const remindInput = event.remindAt ?? event.remind_at;
+  let remindAt;
+  if (remindInput !== undefined) {
+    try {
+      remindAt = normalizeDate(remindInput);
+    } catch (err) {
+      return Promise.reject(err);
+    }
+  }
 
   const entry = { channel, date };
   if (contact) entry.contact = contact;
   if (note) entry.note = note;
   if (documents) entry.documents = documents;
+  if (remindAt) entry.remind_at = remindAt;
 
   const { dir, file } = getPaths();
 
