@@ -294,12 +294,12 @@ describe('jobbot CLI', () => {
 
     const textHistory = runCli(['track', 'history', 'job-xyz']);
     expect(textHistory).toContain('job-xyz');
-    expect(textHistory).toContain('2025-03-04T00:00:00.000Z — applied');
+    expect(textHistory).toContain('- applied (2025-03-04T00:00:00.000Z)');
     expect(textHistory).toContain('Contact: Jordan Hiring Manager');
     expect(textHistory).toContain('Documents: resume.pdf, cover-letter.pdf');
     expect(textHistory).toContain('Note: Submitted via referral portal');
-    expect(textHistory).toContain('Remind At: 2025-03-11T09:00:00.000Z');
-    expect(textHistory).toContain('2025-03-12T09:15:00.000Z — follow_up');
+    expect(textHistory).toContain('Reminder: 2025-03-11T09:00:00.000Z');
+    expect(textHistory).toContain('- follow_up (2025-03-12T09:15:00.000Z)');
     expect(textHistory).toContain('Note: Sent thank-you follow-up');
 
     const jsonHistory = runCli(['track', 'history', 'job-xyz', '--json']);

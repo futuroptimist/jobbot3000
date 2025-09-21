@@ -304,17 +304,17 @@ async function cmdTrackHistory(args) {
     const timestamp =
       typeof event.date === 'string' && event.date ? event.date : undefined;
     const channel =
-      typeof event.channel === 'string' && event.channel
-        ? event.channel
+      typeof event.channel === 'string' && event.channel && event.channel.trim()
+        ? event.channel.trim()
         : 'unknown';
-    const header = timestamp ? `${timestamp} — ${channel}` : channel;
-    lines.push(header);
+    const header = timestamp ? `${channel} (${timestamp})` : channel;
+    lines.push(`- ${header}`);
     if (event.contact) lines.push(`  Contact: ${event.contact}`);
     if (Array.isArray(event.documents) && event.documents.length > 0) {
       lines.push(`  Documents: ${event.documents.join(', ')}`);
     }
     if (event.note) lines.push(`  Note: ${event.note}`);
-    if (event.remind_at) lines.push(`  Remind At: ${event.remind_at}`);
+    if (event.remind_at) lines.push(`  Reminder: ${event.remind_at}`);
   }
 
   console.log(lines.join('\n'));
