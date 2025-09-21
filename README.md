@@ -272,7 +272,7 @@ so snapshots stay alongside other candidate data when the directory is moved.
 
 Fetch public boards directly with Greenhouse, Lever, Ashby, SmartRecruiters, or Workable pipelines:
 
-~~~bash
+```bash
 JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot ingest greenhouse --company example
 # Imported 12 jobs from example
 
@@ -287,7 +287,7 @@ JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot ingest smartrecruiters --company example
 
 JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot ingest workable --company example
 # Imported 4 jobs from example
-~~~
+```
 
 Each listing in the response is normalised to plain text, parsed for title,
 location, and requirements, and written to `data/jobs/{job_id}.json` with a
@@ -326,7 +326,7 @@ non-string requirement entries are skipped so invalid bullets don't affect scori
 
 Tag incoming roles with keywords or archive them with a rationale to guide future matches:
 
-~~~bash
+```bash
 DATA_DIR=$(mktemp -d)
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist tag job-123 dream remote
 # Tagged job-123 with dream, remote
@@ -342,7 +342,7 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --location remote
 #   Location: Remote
 #   Level: Senior
 #   Compensation: $185k
-~~~
+```
 
 The CLI stores shortlist labels, discard history, and sync metadata in `data/shortlist.json`, keeping
 reasons, timestamps, optional tags, and location/level/compensation fields so recommendations can
@@ -356,7 +356,7 @@ persisted format.
 
 Capture intake conversations and keep the answers alongside your profile:
 
-~~~bash
+```bash
 DATA_DIR=$(mktemp -d)
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot intake record \
   --question "What motivates you?" \
@@ -374,7 +374,7 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot intake list
 #   Asked At: 2025-02-01T12:34:56.000Z
 #   Recorded At: 2025-02-01T12:40:00.000Z
 #   ID: 123e4567-e89b-12d3-a456-426614174000
-~~~
+```
 
 Entries are appended to `data/profile/intake.json` with normalized timestamps, optional tags, and
 notes so follow-up planning can reference prior answers. Recorded timestamps reflect when the
@@ -386,7 +386,7 @@ stored shape and CLI workflows.
 
 Build a quick snapshot of outreach ➜ screening ➜ onsite ➜ offer ➜ acceptance conversions:
 
-~~~bash
+```bash
 DATA_DIR=$(mktemp -d)
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track log job-1 --channel email --date 2025-01-02
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track add job-1 --status screening
@@ -400,6 +400,14 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track log job-3 --channel offer_accepted --
 
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track log job-4 --channel email --date 2025-01-05
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track add job-4 --status rejected
+
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track history job-3
+# job-3
+# - email (2025-01-04T00:00:00.000Z)
+#   Documents: resume.pdf
+#   Note: Submitted via referral portal
+# - offer_accepted (2025-02-01T00:00:00.000Z)
+#   Reminder: 2025-02-10T09:00:00.000Z
 
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot analytics funnel
 # Outreach: 4
@@ -427,7 +435,7 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot analytics export --out analytics.json
 #   "offer_accepted": 1,
 #   "referral": 1
 # }
-~~~
+```
 
 The analytics command reads `applications.json` and `application_events.json`, summarising stage
 counts, drop-offs, and conversion percentages. A dedicated unit test in
@@ -440,7 +448,7 @@ event channels without embedding raw job identifiers so personal records stay sc
 
 Capture rehearsal transcripts, reflections, and coach feedback per interview loop:
 
-~~~bash
+```bash
 DATA_DIR=$(mktemp -d)
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot interviews record job-123 prep-2025-02-01 \
   --stage Onsite \
@@ -467,7 +475,7 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot interviews show job-123 prep-2025-02-01
 #   "started_at": "2025-02-01T09:00:00.000Z",
 #   "ended_at": "2025-02-01T10:15:00.000Z"
 # }
-~~~
+```
 
 Sessions are stored under `data/interviews/{job_id}/{session_id}.json` with ISO 8601 timestamps so
 coaches and candidates can revisit transcripts later. The CLI accepts `--*-file` options for longer
@@ -500,13 +508,28 @@ Record and track your applications directly from the CLI—never edit JSON by ha
 
 To capture statuses:
 
-~~~bash
-JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot track add job-123 --status screening
+```bash
+JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot track add job-123 --status screening \
+  --note "Emailed hiring manager"
 # Recorded job-123 as screening
-~~~
+```
 
-This persists entries to `applications.json`. CLI tests assert that
-`jobbot track add` correctly appends and updates statuses.
+This persists entries to `applications.json` as objects that record the status,
+an `updated_at` ISO 8601 timestamp, and optional notes:
+
+```json
+{
+  "job-123": {
+    "status": "screening",
+    "note": "Emailed hiring manager",
+    "updated_at": "2025-02-01T10:00:00.000Z"
+  }
+}
+```
+
+Unit coverage in [`test/lifecycle.test.js`](test/lifecycle.test.js) and CLI
+automation in [`test/cli.test.js`](test/cli.test.js) verify note persistence and
+timestamp normalization alongside the existing status checks.
 
 To capture outreach history:
 
@@ -519,30 +542,31 @@ identifier, with timestamps normalized to ISO 8601.
 Review the full history for a job with `jobbot track history <job_id>`. Pass
 `--json` to integrate with other tooling:
 
-~~~bash
+```bash
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track history job-1
 # 2025-03-01T08:00:00.000Z — follow_up
 #   Note: Send status update
 # 2025-03-05T09:00:00.000Z — call
 #   Contact: Avery Hiring Manager
 #   Remind At: 2025-03-07T12:00:00.000Z
-~~~
+```
 
 Tests in `test/application-events.test.js` ensure that new log entries do not
-clobber history and that invalid channels or dates are rejected. The CLI suite
-in `test/cli.test.js` verifies the JSON output for history and reminders.
+clobber history and that invalid channels or dates are rejected.
+`test/cli.test.js` adds coverage for the history subcommand's text and JSON
+outputs so the note-taking surface stays reliable.
 
 Surface follow-up work with `jobbot track reminders`. Pass `--now` to view from a
 given timestamp (defaults to the current time), `--upcoming-only` to suppress past-due
 entries, and `--json` for structured output:
 
-~~~bash
+```bash
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track reminders --now 2025-03-06T00:00:00Z
 # job-1 — 2025-03-05T09:00:00.000Z (follow_up, past due)
 #   Note: Send status update
 # job-2 — 2025-03-07T15:00:00.000Z (call, upcoming)
 #   Contact: Avery Hiring Manager
-~~~
+```
 
 Unit tests in [`test/application-events.test.js`](test/application-events.test.js)
 cover reminder extraction, including past-due filtering. The CLI suite in
@@ -550,10 +574,10 @@ cover reminder extraction, including past-due filtering. The CLI suite in
 
 To capture discard reasons for shortlist triage:
 
-~~~bash
+```bash
 JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot track discard job-456 --reason "Salary too low"
 # Discarded job-456
-~~~
+```
 
 Discarded roles are archived in `data/discarded_jobs.json` with their reasons,
 timestamps, and optional tags so future recommendations can reference prior
