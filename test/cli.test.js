@@ -282,6 +282,36 @@ describe('jobbot CLI', () => {
     expect(listOutput).toContain('Remote');
   });
 
+  it('summarizes conversion funnel analytics', () => {
+    runCli(['track', 'log', 'job-1', '--channel', 'email', '--date', '2025-01-02']);
+    runCli(['track', 'add', 'job-1', '--status', 'screening']);
+
+    runCli(['track', 'log', 'job-2', '--channel', 'referral', '--date', '2025-01-03']);
+    runCli(['track', 'add', 'job-2', '--status', 'onsite']);
+
+    runCli(['track', 'log', 'job-3', '--channel', 'email', '--date', '2025-01-04']);
+    runCli(['track', 'add', 'job-3', '--status', 'offer']);
+    runCli(['track', 'log', 'job-3', '--channel', 'offer_accepted', '--date', '2025-02-01']);
+
+    runCli(['track', 'log', 'job-4', '--channel', 'email', '--date', '2025-01-05']);
+    runCli(['track', 'add', 'job-4', '--status', 'rejected']);
+
+    runCli(['track', 'add', 'job-5', '--status', 'withdrawn']);
+
+    const textReport = runCli(['analytics', 'funnel']);
+    expect(textReport).toContain('Outreach: 4');
+    expect(textReport).toContain('Screening: 1 (25% conversion, 3 drop-off)');
+    expect(textReport).toContain('Largest drop-off: Outreach → Screening (3 lost)');
+
+    const jsonReport = runCli(['analytics', 'funnel', '--json']);
+    const parsed = JSON.parse(jsonReport);
+    expect(parsed.totals).toEqual({ trackedJobs: 5, withEvents: 4 });
+    const stagesByKey = Object.fromEntries(parsed.stages.map(stage => [stage.key, stage]));
+    expect(stagesByKey.outreach.count).toBe(4);
+    expect(stagesByKey.screening.count).toBe(1);
+    expect(stagesByKey.acceptance.count).toBe(1);
+  }, 15000);
+
   it('records interview sessions with transcripts and notes', () => {
     const transcriptPath = path.join(dataDir, 'transcript.txt');
     fs.writeFileSync(transcriptPath, 'Practiced STAR story\n');

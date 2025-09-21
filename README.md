@@ -338,6 +338,51 @@ schedulers. Unit tests in [`test/shortlist.test.js`](test/shortlist.test.js) and
 [`test/cli.test.js`](test/cli.test.js) exercise metadata updates, filters, discard tags, and the
 persisted format.
 
+## Conversion funnel analytics
+
+Build a quick snapshot of outreach ➜ screening ➜ onsite ➜ offer ➜ acceptance conversions:
+
+~~~bash
+DATA_DIR=$(mktemp -d)
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track log job-1 --channel email --date 2025-01-02
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track add job-1 --status screening
+
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track log job-2 --channel referral --date 2025-01-03
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track add job-2 --status onsite
+
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track log job-3 --channel email --date 2025-01-04
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track add job-3 --status offer
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track log job-3 --channel offer_accepted --date 2025-02-01
+
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track log job-4 --channel email --date 2025-01-05
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track add job-4 --status rejected
+
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot analytics funnel
+# Outreach: 4
+# Screening: 1 (25% conversion, 3 drop-off)
+# Onsite: 1 (100% conversion)
+# Offer: 1 (100% conversion)
+# Acceptance: 1 (100% conversion)
+# Largest drop-off: Outreach → Screening (3 lost)
+# Tracked jobs: 5 total; 4 with outreach events
+
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot analytics funnel --json | jq '.stages[0]'
+# {
+#   "key": "outreach",
+#   "label": "Outreach",
+#   "count": 4,
+#   "dropOff": 0,
+#   "conversionRate": 1
+# }
+~~~
+
+The analytics command reads `applications.json` and `application_events.json`, summarising stage
+counts, drop-offs, and conversion percentages. When no jobs reach a baseline stage, downstream
+conversion percentages are reported as `n/a` to highlight the missing pipeline data instead of a
+misleading 100% conversion. A dedicated unit test in [`test/analytics.test.js`](test/analytics.test.js)
+and a CLI flow in [`test/cli.test.js`](test/cli.test.js) cover outreach counts, acceptance detection,
+JSON formatting, and the largest drop-off highlight.
+
 ## Interview session logs
 
 Capture rehearsal transcripts, reflections, and coach feedback per interview loop:
