@@ -264,7 +264,7 @@ so snapshots stay alongside other candidate data when the directory is moved.
 
 ## Job board ingestion
 
-Fetch public boards directly with Greenhouse, Lever, Ashby, or SmartRecruiters pipelines:
+Fetch public boards directly with Greenhouse, Lever, Ashby, SmartRecruiters, or Workable pipelines:
 
 ~~~bash
 JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot ingest greenhouse --company example
@@ -278,15 +278,20 @@ JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot ingest ashby --company example
 
 JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot ingest smartrecruiters --company example
 # Imported 5 jobs from example
+
+JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot ingest workable --company example
+# Imported 4 jobs from example
 ~~~
 
 Each listing in the response is normalised to plain text, parsed for title,
 location, and requirements, and written to `data/jobs/{job_id}.json` with a
-`source.type` reflecting the provider (`greenhouse`, `lever`, `ashby`, or `smartrecruiters`). Updates reuse
-the same job identifier so downstream tooling can diff revisions over time.
-Tests in [`test/greenhouse.test.js`](test/greenhouse.test.js),
-[`test/lever.test.js`](test/lever.test.js), [`test/ashby.test.js`](test/ashby.test.js), and
-[`test/smartrecruiters.test.js`](test/smartrecruiters.test.js) verify the ingest
+`source.type` reflecting the provider (`greenhouse`, `lever`, `ashby`,
+`smartrecruiters`, or `workable`). Updates reuse the same job identifier so
+downstream tooling can diff revisions over time. Tests in
+[`test/greenhouse.test.js`](test/greenhouse.test.js),
+[`test/lever.test.js`](test/lever.test.js), [`test/ashby.test.js`](test/ashby.test.js),
+[`test/smartrecruiters.test.js`](test/smartrecruiters.test.js), and
+[`test/workable.test.js`](test/workable.test.js) verify the ingest
 pipelines fetch board content, persist structured snapshots, surface fetch
 errors, and retain the `User-Agent: jobbot3000` request header alongside each
 capture so fetches are reproducible.
