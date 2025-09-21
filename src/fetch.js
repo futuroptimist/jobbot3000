@@ -8,6 +8,12 @@ const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
 
 const LOOPBACK_HOSTNAMES = new Set(['localhost', 'localhost.']);
 
+const DEFAULT_USER_AGENT = 'jobbot3000';
+
+export const DEFAULT_FETCH_HEADERS = Object.freeze({
+  'User-Agent': DEFAULT_USER_AGENT,
+});
+
 function isPrivateIPv4(octets) {
   const [a, b] = octets;
   if (a === 10) return true;
@@ -72,6 +78,43 @@ function isForbiddenHostname(hostname) {
   }
 
   return false;
+}
+
+function buildRequestHeaders(headers) {
+  const merged = {};
+  let hasUserAgent = false;
+
+  const appendHeader = (key, value) => {
+    if (value === undefined || value === null) return;
+    const headerName = typeof key === 'string' ? key : String(key);
+    merged[headerName] = String(value);
+    if (headerName.toLowerCase() === 'user-agent') {
+      hasUserAgent = true;
+    }
+  };
+
+  if (headers) {
+    const iterable = typeof headers.entries === 'function' ? headers.entries() : null;
+    if (iterable) {
+      for (const [key, value] of iterable) {
+        appendHeader(key, value);
+      }
+    } else if (typeof headers[Symbol.iterator] === 'function') {
+      for (const [key, value] of headers) {
+        appendHeader(key, value);
+      }
+    } else if (typeof headers === 'object') {
+      for (const [key, value] of Object.entries(headers)) {
+        appendHeader(key, value);
+      }
+    }
+  }
+
+  if (!hasUserAgent) {
+    appendHeader('User-Agent', DEFAULT_USER_AGENT);
+  }
+
+  return merged;
 }
 
 const DNS_IGNORE_ERROR_CODES = new Set([
@@ -272,7 +315,7 @@ export async function fetchTextFromUrl(
     const response = await fetch(url, {
       redirect: 'follow',
       signal: controller.signal,
-      headers: headers || {},
+      headers: buildRequestHeaders(headers),
       size: maxBytes,
     });
     if (!response.ok) {
