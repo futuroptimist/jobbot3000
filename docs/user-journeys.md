@@ -13,6 +13,9 @@ jobbot3000.
    `resume.json`. When they start from scratch, `jobbot init` scaffolds
    `data/profile/resume.json` with empty JSON Resume sections ready for editing.
 2. The CLI or UI calls the resume loader to extract clean text and metadata.
+   Callers can request word/line counts, byte size, and the detected format via
+   `loadResume(<path>, { withMetadata: true })` so downstream steps can surface
+   parsing confidence or highlight missing sections.
 3. Parsed content is normalized into the JSON Resume schema and saved under `data/profile/`, a
    git-ignored directory so personal data never leaves the machine.
 4. The system surfaces parsing confidence scores, highlights ambiguities (dates, titles, metrics),
