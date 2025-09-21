@@ -1,5 +1,5 @@
 import fetch from 'node-fetch';
-import { extractTextFromHtml } from './fetch.js';
+import { extractTextFromHtml, fetchWithRetry } from './fetch.js';
 import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
 import { parseJobText } from './parser.js';
 
@@ -155,10 +155,14 @@ function selectFetchedAt(detail, job) {
   return undefined;
 }
 
-export async function fetchWorkableJobs(account, { fetchImpl = fetch } = {}) {
+export async function fetchWorkableJobs(account, { fetchImpl = fetch, retry } = {}) {
   const slug = normalizeAccountSlug(account);
   const url = buildJobsUrl(slug);
-  const response = await fetchImpl(url, { headers: WORKABLE_HEADERS });
+  const response = await fetchWithRetry(url, {
+    fetchImpl,
+    headers: WORKABLE_HEADERS,
+    retry,
+  });
   if (!response.ok) {
     const statusLabel = `${response.status} ${response.statusText}`;
     throw new Error(`Failed to fetch Workable account ${slug}: ${statusLabel}`);
@@ -174,14 +178,18 @@ export async function fetchWorkableJobs(account, { fetchImpl = fetch } = {}) {
   return { account: slug, jobs: jobsArray };
 }
 
-export async function ingestWorkableBoard({ account, fetchImpl = fetch } = {}) {
-  const { account: slug, jobs } = await fetchWorkableJobs(account, { fetchImpl });
+export async function ingestWorkableBoard({ account, fetchImpl = fetch, retry } = {}) {
+  const { account: slug, jobs } = await fetchWorkableJobs(account, { fetchImpl, retry });
   const jobIds = [];
 
   for (const job of jobs) {
     const shortcode = resolveShortcode(job);
     const detailUrl = buildJobDetailUrl(slug, shortcode);
-    const detailResponse = await fetchImpl(detailUrl, { headers: WORKABLE_HEADERS });
+    const detailResponse = await fetchWithRetry(detailUrl, {
+      fetchImpl,
+      headers: WORKABLE_HEADERS,
+      retry,
+    });
     if (!detailResponse.ok) {
       const statusLabel = `${detailResponse.status} ${detailResponse.statusText}`;
       throw new Error(`Failed to fetch Workable job ${shortcode}: ${statusLabel}`);

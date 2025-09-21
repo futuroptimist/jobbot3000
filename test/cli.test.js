@@ -730,6 +730,20 @@ describe('jobbot CLI', () => {
     expect(output).toContain('Compensation: $185k');
   });
 
+  it('filters shortlist entries by tag', () => {
+    runCli(['shortlist', 'tag', 'job-remote', 'Remote', 'Dream']);
+    runCli(['shortlist', 'tag', 'job-onsite', 'Onsite']);
+
+    const textOutput = runCli(['shortlist', 'list', '--tag', 'remote']);
+    expect(textOutput).toContain('job-remote');
+    expect(textOutput).not.toContain('job-onsite');
+
+    const jsonOutput = runCli(['shortlist', 'list', '--tag', 'remote', '--tag', 'dream', '--json']);
+    const payload = JSON.parse(jsonOutput);
+    expect(Object.keys(payload.jobs)).toEqual(['job-remote']);
+    expect(payload.jobs['job-remote'].tags).toEqual(['Remote', 'Dream']);
+  });
+
   it('lists shortlist entries as JSON with --json', () => {
     runCli([
       'shortlist',
@@ -874,6 +888,33 @@ describe('jobbot CLI', () => {
     expect(payload.channels).toEqual({ email: 1, offer_accepted: 1, referral: 1 });
     expect(JSON.stringify(payload)).not.toContain('job-1');
     expect(JSON.stringify(payload)).not.toContain('job-2');
+  });
+
+  it('bundles the latest deliverables run into a zip archive', async () => {
+    const previous = path.join(
+      dataDir,
+      'deliverables',
+      'job-321',
+      '2025-03-01T09-00-00Z'
+    );
+    const latest = path.join(dataDir, 'deliverables', 'job-321', '2025-03-05T10-30-00Z');
+
+    fs.mkdirSync(previous, { recursive: true });
+    fs.mkdirSync(latest, { recursive: true });
+
+    fs.writeFileSync(path.join(previous, 'resume.pdf'), 'outdated resume');
+    fs.writeFileSync(path.join(latest, 'resume.pdf'), 'fresh resume');
+    fs.writeFileSync(path.join(latest, 'cover_letter.md'), 'Updated letter');
+
+    const bundlePath = path.join(dataDir, 'job-321-bundle.zip');
+    const output = runCli(['deliverables', 'bundle', 'job-321', '--out', bundlePath]);
+    expect(output.trim()).toBe(`Bundled job-321 deliverables to ${bundlePath}`);
+
+    const buffer = fs.readFileSync(bundlePath);
+    const zip = await JSZip.loadAsync(buffer);
+    const entries = Object.keys(zip.files).sort();
+    expect(entries).toEqual(['cover_letter.md', 'resume.pdf']);
+    await expect(zip.file('resume.pdf').async('string')).resolves.toBe('fresh resume');
   });
 
   it('records interview sessions with transcripts and notes', () => {

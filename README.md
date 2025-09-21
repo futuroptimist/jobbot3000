@@ -335,7 +335,9 @@ errors, and retain the `User-Agent: jobbot3000` request header alongside each
 capture so fetches are reproducible.
 [`test/lever.test.js`](test/lever.test.js) now explicitly asserts the Lever
 client forwards that header to the API and persists it in saved snapshots so
-metadata stays consistent across providers.
+metadata stays consistent across providers. Automated coverage in
+[`test/greenhouse.test.js`](test/greenhouse.test.js) also exercises the retry
+logic so transient 5xx responses are retried before surfacing to callers.
 
 Job titles can be parsed from lines starting with `Title`, `Job Title`, `Position`, or `Role`.
 Headers can use colons or dash separators (for example, `Role - Staff Engineer`), and the same
@@ -366,7 +368,7 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist tag job-123 dream remote
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist discard job-123 --reason "Not remote" --tags "Remote,onsite"
 # Discarded job-123: Not remote
 
-JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist sync job-123 --location Remote --level Senior --compensation "$185k"
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist sync job-123 --location Remote --level Senior --compensation "$185k" --synced-at 2025-03-06T08:00:00Z
 # Synced job-123 metadata
 
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --location remote
@@ -374,6 +376,18 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --location remote
 #   Location: Remote
 #   Level: Senior
 #   Compensation: $185k
+#   Synced At: 2025-03-06T08:00:00.000Z
+#   Tags: dream, remote
+#   Last Discard: Not remote (2025-03-05T12:00:00.000Z)
+
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --tag dream --tag remote
+# job-123
+#   Location: Remote
+#   Level: Senior
+#   Compensation: $185k
+#   Synced At: 2025-03-06T08:00:00.000Z
+#   Tags: dream, remote
+#   Last Discard: Not remote (2025-03-05T12:00:00.000Z)
 
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --json
 # {
@@ -382,7 +396,8 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --json
 #       "metadata": {
 #         "location": "Remote",
 #         "level": "Senior",
-#         "compensation": "$185k"
+#         "compensation": "$185k",
+#         "synced_at": "2025-03-06T08:00:00.000Z"
 #       },
 #       "tags": ["dream", "remote"],
 #       "discarded": [
@@ -406,14 +421,15 @@ The CLI stores shortlist labels, discard history, and sync metadata in `data/sho
 reasons, timestamps, optional tags, and location/level/compensation fields so recommendations can
 surface patterns later. Review past decisions with `jobbot shortlist archive [job_id]` (add `--json`
 to inspect all records at once), which reads from `data/discarded_jobs.json` so archive lookups and
-shortlist history stay in sync. Add `--json` to the shortlist list command when piping entries
-into other tools. Metadata syncs stamp a `synced_at` ISO 8601 timestamp for refresh schedulers.
-Shells treat `$` as a variable prefix, so `--compensation "$185k"` expands to `85k`. The CLI
-re-attaches a default currency symbol so the stored value becomes `$85k`; escape the dollar sign
-(`--compensation "\$185k"`) when you need the digits preserved. Override the auto-attached symbol by
-setting `JOBBOT_SHORTLIST_CURRENCY` (for example, `JOBBOT_SHORTLIST_CURRENCY='€'`).
+shortlist history stay in sync. Add `--json` to the shortlist list command when piping entries into
+other tools, and filter by metadata or tags (`--location`, `--level`, `--compensation`, or repeated
+`--tag` flags) when triaging opportunities. Metadata syncs stamp a `synced_at` ISO 8601 timestamp for
+refresh schedulers. Shells treat `$` as a variable prefix, so `--compensation "$185k"` expands to
+`85k`. The CLI re-attaches a default currency symbol so the stored value becomes `$85k`; escape the
+dollar sign (`--compensation "\$185k"`) when you need the digits preserved. Override the auto-attached
+symbol by setting `JOBBOT_SHORTLIST_CURRENCY` (for example, `JOBBOT_SHORTLIST_CURRENCY='€'`).
 Unit tests in [`test/shortlist.test.js`](test/shortlist.test.js) and the CLI suite in
-[`test/cli.test.js`](test/cli.test.js) exercise metadata updates, filters, discard tags, archive
+[`test/cli.test.js`](test/cli.test.js) exercise metadata updates, tag filters, discard tags, archive
 exports, and the persisted format.
 
 ## Intake responses
@@ -546,6 +562,22 @@ coaches and candidates can revisit transcripts later. The CLI accepts `--*-file`
 inputs (for example, `--transcript-file transcript.md`). Automated coverage in
 [`test/interviews.test.js`](test/interviews.test.js) and [`test/cli.test.js`](test/cli.test.js)
 verifies persistence and retrieval paths.
+
+## Deliverable bundles
+
+Export the most recent deliverables run for a job—resume, cover letter, prep notes—into a single
+archive:
+
+```bash
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot deliverables bundle job-123 --out job-123-bundle.zip
+# Bundled job-123 deliverables to /tmp/jobbot-cli-XXXX/job-123-bundle.zip
+```
+
+The bundler targets the newest timestamped directory under `data/deliverables/{job_id}/` by
+default. Pass `--timestamp <iso8601>` to capture an earlier run. Bundles retain nested folder
+structure (for example, `notes/interview.txt`). Automated coverage in
+[`test/deliverables.test.js`](test/deliverables.test.js) exercises latest-run selection and explicit
+timestamps, and the CLI suite verifies `jobbot deliverables bundle` writes archives to disk.
 
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 See [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) for a list of prompt documents.

@@ -14,6 +14,82 @@ export const DEFAULT_FETCH_HEADERS = Object.freeze({
   'User-Agent': DEFAULT_USER_AGENT,
 });
 
+function sleep(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) {
+    return Promise.resolve();
+  }
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function defaultShouldRetry(response) {
+  if (!response) return false;
+  if (response.status === 429) return true;
+  if (response.status >= 500) return true;
+  return false;
+}
+
+function computeDelay(attempt, { delayMs = 250, factor = 2, maxDelayMs } = {}) {
+  const base = Number.isFinite(delayMs) ? Math.max(delayMs, 0) : 0;
+  if (base === 0) return 0;
+  const exponential = base * Math.pow(Number.isFinite(factor) ? Math.max(factor, 1) : 1, attempt);
+  if (Number.isFinite(maxDelayMs) && maxDelayMs >= 0) {
+    return Math.min(exponential, maxDelayMs);
+  }
+  return exponential;
+}
+
+/**
+ * Wrapper around fetch that retries transient failures (HTTP 5xx/429 and network errors).
+ * Retries use exponential backoff with configurable attempts and delay.
+ *
+ * @param {string} url
+ * @param {{
+ *   fetchImpl?: typeof fetch,
+ *   retry?: {
+ *     retries?: number,
+ *     delayMs?: number,
+ *     factor?: number,
+ *     maxDelayMs?: number,
+ *     shouldRetry?: (response: Response) => boolean,
+ *   },
+ * }} [options]
+ * @param {RequestInit} [init]
+ * @returns {Promise<Response>}
+ */
+export async function fetchWithRetry(url, options = {}, init = {}) {
+  const { fetchImpl = fetch, retry, ...rest } = options;
+  const mergedInit = { ...rest, ...init };
+  const {
+    retries = 2,
+    delayMs = 250,
+    factor = 2,
+    maxDelayMs,
+    shouldRetry = defaultShouldRetry,
+  } = retry || {};
+
+  let attempt = 0;
+  while (attempt <= retries) {
+    try {
+      const response = await fetchImpl(url, mergedInit);
+      const wantsRetry = shouldRetry(response);
+      if (!wantsRetry || attempt === retries) {
+        return response;
+      }
+    } catch (err) {
+      if (attempt === retries) {
+        throw err;
+      }
+    }
+
+    const waitMs = computeDelay(attempt, { delayMs, factor, maxDelayMs });
+    await sleep(waitMs);
+    attempt += 1;
+  }
+
+  // Unreachable: loop returns or throws on final attempt.
+  throw new Error('fetchWithRetry exhausted retries without returning');
+}
+
 function isPrivateIPv4(octets) {
   const [a, b] = octets;
   if (a === 10) return true;

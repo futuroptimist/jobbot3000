@@ -33,6 +33,7 @@ import { ingestSmartRecruitersBoard } from '../src/smartrecruiters.js';
 import { ingestAshbyBoard } from '../src/ashby.js';
 import { computeFunnel, exportAnalyticsSnapshot, formatFunnelReport } from '../src/analytics.js';
 import { ingestWorkableBoard } from '../src/workable.js';
+import { bundleDeliverables } from '../src/deliverables.js';
 
 function isHttpUrl(s) {
   return /^https?:\/\//i.test(s);
@@ -385,6 +386,27 @@ function parseTagsFlag(args) {
     .filter(Boolean);
 }
 
+function collectTagFilters(args) {
+  const tags = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] !== '--tag') continue;
+    const value = args[i + 1];
+    if (!value || value.startsWith('--')) {
+      console.error(
+        'Usage: jobbot shortlist list [--location <value>] [--level <value>] ' +
+          '[--compensation <value>] [--tag <value>] [--json]'
+      );
+      process.exit(2);
+    }
+    for (const entry of String(value).split(',')) {
+      const trimmed = entry.trim();
+      if (trimmed) tags.push(trimmed);
+    }
+    i++;
+  }
+  return tags.length > 0 ? tags : undefined;
+}
+
 function formatIntakeList(entries) {
   if (!Array.isArray(entries) || entries.length === 0) {
     return 'No intake responses found';
@@ -721,6 +743,8 @@ async function cmdShortlistList(args) {
     level: getFlag(filteredArgs, '--level'),
     compensation: normalizeCompensation(getFlag(filteredArgs, '--compensation')),
   };
+  const tagFilters = collectTagFilters(filteredArgs);
+  if (tagFilters) filters.tags = tagFilters;
 
   const store = await filterShortlist(filters);
   if (asJson) {
@@ -800,6 +824,40 @@ async function cmdAnalytics(args) {
   if (sub === 'funnel') return cmdAnalyticsFunnel(args.slice(1));
   if (sub === 'export') return cmdAnalyticsExport(args.slice(1));
   console.error('Usage: jobbot analytics <funnel|export> [options]');
+  process.exit(2);
+}
+
+async function cmdDeliverablesBundle(args) {
+  const jobId = args[0];
+  const rest = args.slice(1);
+  const outPath = getFlag(rest, '--out');
+  const timestamp = getFlag(rest, '--timestamp');
+  if (!jobId || !outPath) {
+    console.error(
+      'Usage: jobbot deliverables bundle <job_id> --out <path> ' +
+        '[--timestamp <iso8601>]'
+    );
+    process.exit(2);
+  }
+
+  let archive;
+  try {
+    archive = await bundleDeliverables(jobId, { timestamp });
+  } catch (err) {
+    console.error(err.message || String(err));
+    process.exit(1);
+  }
+
+  const resolved = path.resolve(process.cwd(), outPath);
+  await fs.promises.mkdir(path.dirname(resolved), { recursive: true });
+  await fs.promises.writeFile(resolved, archive);
+  console.log(`Bundled ${jobId} deliverables to ${resolved}`);
+}
+
+async function cmdDeliverables(args) {
+  const sub = args[0];
+  if (sub === 'bundle') return cmdDeliverablesBundle(args.slice(1));
+  console.error('Usage: jobbot deliverables <bundle> [options]');
   process.exit(2);
 }
 
@@ -886,12 +944,13 @@ async function main() {
   if (cmd === 'track') return cmdTrack(args);
   if (cmd === 'shortlist') return cmdShortlist(args);
   if (cmd === 'analytics') return cmdAnalytics(args);
+  if (cmd === 'deliverables') return cmdDeliverables(args);
   if (cmd === 'intake') return cmdIntake(args);
   if (cmd === 'ingest') return cmdIngest(args);
   if (cmd === 'interviews') return cmdInterviews(args);
   console.error(
-    'Usage: jobbot <init|summarize|match|track|shortlist|analytics|interviews|intake|ingest> ' +
-      '[options]'
+    'Usage: jobbot <init|summarize|match|track|shortlist|analytics|' +
+      'deliverables|interviews|intake|ingest> [options]'
   );
   process.exit(2);
 }

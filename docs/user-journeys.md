@@ -61,10 +61,11 @@ revisit them later without blocking the workflow.
    `data/discarded_jobs.json` so future recommendations can reference prior decisions. Review those
    decisions with `jobbot shortlist archive <job_id>` (or `--json` to inspect the full archive) before
    revisiting a role.
-4. The shortlist view exposes filters (location, level, compensation) via
-   `jobbot shortlist list --location <value>` and records sync metadata with
-   `jobbot shortlist sync` so future refreshes know when entries were last updated.
-   Add `--json` when exporting the filtered shortlist to other tools.
+4. The shortlist view exposes filters (location, level, compensation, tags) via
+   `jobbot shortlist list --location <value>` (and repeated `--tag <value>` flags)
+   and records sync metadata with `jobbot shortlist sync` so future refreshes know
+   when entries were last updated. Add `--json` when exporting the filtered shortlist
+   to other tools.
 
 **Unhappy paths:** fetch failures or ToS blocks surface actionable error messages and never retry
 aggressively to respect rate limits.
@@ -82,7 +83,8 @@ aggressively to respect rate limits.
 3. Users can tweak sections manually; the assistant suggests language improvements but refuses to
    fabricate experience.
 4. Generated files, diffs, and build logs live in `data/deliverables/{job_id}/` and are versioned by
-   timestamp.
+   timestamp. Export the latest bundle (or a specific run with `--timestamp`) via
+   `jobbot deliverables bundle <job_id> --out <zip_path>` when sharing prep artifacts with mentors.
 
 **Unhappy paths:** low fit scores or missing must-haves trigger guidance
   (e.g., suggest skill prep or highlight transferable experience) and let the user decline
