@@ -764,6 +764,70 @@ describe('jobbot CLI', () => {
     });
   });
 
+  it('restores currency symbols when sync invoked via shell quoting', () => {
+    const bin = path.resolve('bin', 'jobbot.js');
+    const command = [
+      `${process.execPath} ${bin} shortlist sync job-shell`,
+      '--location Remote',
+      '--level Senior',
+      '--compensation "$185k"',
+    ].join(' ');
+    execFileSync('bash', ['-lc', command], {
+      encoding: 'utf8',
+      env: { ...process.env, JOBBOT_DATA_DIR: dataDir },
+    });
+
+    const shortlist = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'shortlist.json'), 'utf8')
+    );
+    expect(shortlist.jobs['job-shell'].metadata.compensation).toBe('$85k');
+  });
+
+  it('filters shortlist entries using normalized compensation flags', () => {
+    const bin = path.resolve('bin', 'jobbot.js');
+    const command = [
+      `${process.execPath} ${bin} shortlist sync job-filter`,
+      '--location Remote',
+      '--level Senior',
+      '--compensation "95k"',
+    ].join(' ');
+    execFileSync('bash', ['-lc', command], {
+      encoding: 'utf8',
+      env: { ...process.env, JOBBOT_DATA_DIR: dataDir },
+    });
+
+    const output = runCli(['shortlist', 'list', '--compensation', '95k']);
+    expect(output).toContain('job-filter');
+    expect(output).toContain('Compensation: $95k');
+  });
+
+  it('uses JOBBOT_SHORTLIST_CURRENCY when restoring compensation', () => {
+    const bin = path.resolve('bin', 'jobbot.js');
+    const command = [
+      `${process.execPath} ${bin} shortlist sync job-euro`,
+      '--location Remote',
+      '--level Mid',
+      '--compensation "120k"',
+    ].join(' ');
+    execFileSync('bash', ['-lc', command], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        JOBBOT_DATA_DIR: dataDir,
+        JOBBOT_SHORTLIST_CURRENCY: '€',
+      },
+    });
+
+    const shortlist = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'shortlist.json'), 'utf8')
+    );
+    expect(shortlist.jobs['job-euro'].metadata).toMatchObject({
+      compensation: '€120k',
+      level: 'Mid',
+      location: 'Remote',
+    });
+  });
+
   it('summarizes conversion funnel analytics', () => {
     runCli(['track', 'log', 'job-1', '--channel', 'email', '--date', '2025-01-02']);
     runCli(['track', 'add', 'job-1', '--status', 'screening']);
