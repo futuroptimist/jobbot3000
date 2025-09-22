@@ -48,6 +48,19 @@ describe('computeFitScore', () => {
     expect(result).toEqual({ score: 0, matched: [], missing: [] });
   });
 
+  it('matches documented semantic aliases between resumes and requirements', () => {
+    const resume =
+      'Hands-on AWS migrations, ML experimentation, AI assistants, and Postgres tuning.';
+    const requirements = [
+      'Design Amazon Web Services infrastructure',
+      'Own machine learning pipelines',
+      'Advance artificial intelligence research',
+      'Administer PostgreSQL clusters',
+    ];
+    const result = computeFitScore(resume, requirements);
+    expect(result).toEqual({ score: 100, matched: requirements, missing: [] });
+  });
+
   // Allow slower CI environments by using a relaxed threshold.
   it('processes large requirement lists within 2500ms', () => {
     const resume = 'skill '.repeat(1000);
