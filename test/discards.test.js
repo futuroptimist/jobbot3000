@@ -58,4 +58,64 @@ describe('discarded job archive', () => {
     const entries = await getDiscardedJobs('job-tags');
     expect(entries[0].tags).toEqual(['Remote']);
   });
+
+  it('normalizes messy discard archive entries when reading history', async () => {
+    const { getDiscardedJobs } = await import('../src/discards.js');
+
+    const archivePath = path.join(dataDir, discardFileName);
+    const messyArchive = {
+      'job-1': [
+        {
+          reason: '  First impression ',
+          discarded_at: '2025-04-02T10:00:00Z',
+          tags: [' Remote ', '', 'onsite'],
+        },
+        {
+          reason: '',
+          discardedAt: 'not a date',
+          tags: 'manual entry',
+        },
+        {
+          reason: 'Legacy without time',
+          tags: ['  '],
+        },
+        null,
+        'junk',
+      ],
+      'job-2': [
+        {
+          reason: 'Earlier entry',
+          discarded_at: '2025-04-01T09:15:00Z',
+        },
+      ],
+    };
+
+    await fs.writeFile(archivePath, `${JSON.stringify(messyArchive, null, 2)}\n`);
+
+    const jobHistory = await getDiscardedJobs('job-1');
+    expect(jobHistory).toEqual([
+      {
+        reason: 'First impression',
+        discarded_at: '2025-04-02T10:00:00.000Z',
+        tags: ['Remote', 'onsite'],
+      },
+      {
+        reason: 'Unknown reason',
+        discarded_at: 'not a date',
+      },
+      {
+        reason: 'Legacy without time',
+        discarded_at: 'unknown time',
+      },
+    ]);
+
+    const archive = await getDiscardedJobs();
+    expect(Object.keys(archive)).toEqual(['job-1', 'job-2']);
+    expect(archive['job-2']).toEqual([
+      {
+        reason: 'Earlier entry',
+        discarded_at: '2025-04-01T09:15:00.000Z',
+      },
+    ]);
+  });
 });

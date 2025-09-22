@@ -526,20 +526,20 @@ describe('jobbot CLI', () => {
       'discard',
       'job-1',
       '--reason',
-      'Not remote',
-      '--tags',
-      'remote,onsite',
+      'Changed priorities',
       '--date',
-      '2025-03-05T12:00:00Z',
+      '2025-03-08T09:30:00Z',
     ]);
     runCli([
       'shortlist',
       'discard',
       'job-1',
       '--reason',
-      'Changed priorities',
+      'Not remote',
+      '--tags',
+      'remote,onsite',
       '--date',
-      '2025-03-08T09:30:00Z',
+      '2025-03-05T12:00:00Z',
     ]);
     runCli([
       'shortlist',
@@ -559,15 +559,27 @@ describe('jobbot CLI', () => {
     expect(archiveText).toContain('Tags: remote, onsite');
     expect(archiveText).toContain('job-2');
     expect(archiveText).toContain('2025-04-01T14:45:00.000Z — Compensation mismatch');
+    expect(
+      archiveText.indexOf('2025-03-05T12:00:00.000Z — Not remote') <
+        archiveText.indexOf('2025-03-08T09:30:00.000Z — Changed priorities')
+    ).toBe(true);
 
     const singleJob = runCli(['shortlist', 'archive', 'job-1']);
     expect(singleJob).toContain('job-1');
     expect(singleJob).toContain('2025-03-08T09:30:00.000Z — Changed priorities');
     expect(singleJob).not.toContain('job-2');
+    expect(
+      singleJob.indexOf('2025-03-05T12:00:00.000Z — Not remote') <
+        singleJob.indexOf('2025-03-08T09:30:00.000Z — Changed priorities')
+    ).toBe(true);
 
     const asJson = JSON.parse(runCli(['shortlist', 'archive', '--json']));
     expect(Object.keys(asJson.discarded)).toContain('job-1');
     expect(asJson.discarded['job-1']).toHaveLength(2);
+    expect(asJson.discarded['job-1'][0]).toMatchObject({
+      reason: 'Not remote',
+      discarded_at: '2025-03-05T12:00:00.000Z',
+    });
     expect(asJson.discarded['job-2'][0]).toMatchObject({
       reason: 'Compensation mismatch',
       discarded_at: '2025-04-01T14:45:00.000Z',
@@ -584,6 +596,12 @@ describe('jobbot CLI', () => {
           tags: ['compensation'],
         },
       ],
+    });
+
+    const job1Json = JSON.parse(runCli(['shortlist', 'archive', 'job-1', '--json']));
+    expect(job1Json.history[0]).toMatchObject({
+      reason: 'Not remote',
+      discarded_at: '2025-03-05T12:00:00.000Z',
     });
   });
 
@@ -784,6 +802,52 @@ describe('jobbot CLI', () => {
       reason: 'Scheduling call',
       discarded_at: '2025-03-07T09:30:00.000Z',
       tags: ['follow_up', 'calendared'],
+    });
+  });
+
+  it('writes shortlist JSON snapshots to disk with --out', () => {
+    runCli([
+      'shortlist',
+      'sync',
+      'job-export',
+      '--location',
+      'Remote',
+      '--level',
+      'Staff',
+    ]);
+
+    runCli([
+      'shortlist',
+      'discard',
+      'job-export',
+      '--reason',
+      'Deprioritized',
+      '--date',
+      '2025-03-05T12:00:00Z',
+    ]);
+
+    const outPath = path.join(dataDir, 'exports', 'shortlist.json');
+    const output = runCli([
+      'shortlist',
+      'list',
+      '--json',
+      '--out',
+      outPath,
+    ]);
+
+    expect(output.trim()).toBe(`Saved shortlist snapshot to ${outPath}`);
+
+    const snapshot = JSON.parse(fs.readFileSync(outPath, 'utf8'));
+    expect(snapshot.jobs).toHaveProperty('job-export');
+    expect(snapshot.jobs['job-export']).toMatchObject({
+      metadata: {
+        location: 'Remote',
+        level: 'Staff',
+      },
+      last_discard: {
+        reason: 'Deprioritized',
+        discarded_at: '2025-03-05T12:00:00.000Z',
+      },
     });
   });
 

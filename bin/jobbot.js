@@ -22,7 +22,11 @@ import {
   getApplicationReminders,
 } from '../src/application-events.js';
 import { recordApplication, STATUSES } from '../src/lifecycle.js';
-import { getDiscardedJobs } from '../src/discards.js';
+import {
+  getDiscardedJobs,
+  normalizeDiscardEntries,
+  normalizeDiscardArchive,
+} from '../src/discards.js';
 import { addJobTags, discardJob, filterShortlist, syncShortlistJob } from '../src/shortlist.js';
 import { recordInterviewSession, getInterviewSession } from '../src/interviews.js';
 import { initProfile } from '../src/profile.js';
@@ -394,7 +398,7 @@ function collectTagFilters(args) {
     if (!value || value.startsWith('--')) {
       console.error(
         'Usage: jobbot shortlist list [--location <value>] [--level <value>] ' +
-          '[--compensation <value>] [--tag <value>] [--json]'
+          '[--compensation <value>] [--tag <value>] [--json] [--out <path>]'
       );
       process.exit(2);
     }
@@ -670,51 +674,6 @@ function formatShortlistList(jobs) {
   return lines.join('\n');
 }
 
-function normalizeDiscardEntries(entries) {
-  if (!Array.isArray(entries)) return [];
-  const normalized = entries
-    .filter(entry => entry && typeof entry === 'object')
-    .map(entry => {
-      const source = entry.discarded_at ?? entry.discardedAt;
-      let timestamp = 'unknown time';
-      if (source) {
-        const date = new Date(source);
-        timestamp = Number.isNaN(date.getTime()) ? String(source) : date.toISOString();
-      }
-      const reasonValue = entry.reason;
-      const reason =
-        typeof reasonValue === 'string' && reasonValue.trim()
-          ? reasonValue.trim()
-          : 'Unknown reason';
-      const tags = Array.isArray(entry.tags)
-        ? entry.tags.map(tag => String(tag).trim()).filter(Boolean)
-        : [];
-      const payload = { discarded_at: timestamp, reason };
-      if (tags.length > 0) payload.tags = tags;
-      return payload;
-    });
-  normalized.sort((a, b) => {
-    const aTime = Date.parse(a.discarded_at);
-    const bTime = Date.parse(b.discarded_at);
-    if (Number.isNaN(aTime) && Number.isNaN(bTime)) return 0;
-    if (Number.isNaN(aTime)) return 1;
-    if (Number.isNaN(bTime)) return -1;
-    if (aTime === bTime) return 0;
-    return aTime < bTime ? -1 : 1;
-  });
-  return normalized;
-}
-
-function normalizeDiscardArchive(archive) {
-  if (!archive || typeof archive !== 'object') return {};
-  const jobIds = Object.keys(archive).sort((a, b) => a.localeCompare(b));
-  const normalized = {};
-  for (const jobId of jobIds) {
-    normalized[jobId] = normalizeDiscardEntries(archive[jobId]);
-  }
-  return normalized;
-}
-
 function formatDiscardHistory(jobId, entries) {
   const normalized = normalizeDiscardEntries(entries);
   if (normalized.length === 0) {
@@ -754,7 +713,23 @@ function formatDiscardArchive(archive) {
 
 async function cmdShortlistList(args) {
   const asJson = args.includes('--json');
-  const filteredArgs = asJson ? args.filter(arg => arg !== '--json') : args;
+  const outPath = getFlag(args, '--out');
+  const filteredArgs = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--json') continue;
+    if (arg === '--out') {
+      i += 1;
+      continue;
+    }
+    filteredArgs.push(arg);
+  }
+
+  if (outPath && !asJson) {
+    console.error('--out is only supported with --json');
+    process.exit(2);
+  }
+
   const filters = {
     location: getFlag(filteredArgs, '--location'),
     level: getFlag(filteredArgs, '--level'),
@@ -765,7 +740,15 @@ async function cmdShortlistList(args) {
 
   const store = await filterShortlist(filters);
   if (asJson) {
-    console.log(JSON.stringify({ jobs: store.jobs }, null, 2));
+    const payload = { jobs: store.jobs };
+    if (outPath) {
+      const resolved = path.resolve(process.cwd(), outPath);
+      await fs.promises.mkdir(path.dirname(resolved), { recursive: true });
+      await fs.promises.writeFile(resolved, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+      console.log(`Saved shortlist snapshot to ${resolved}`);
+    } else {
+      console.log(JSON.stringify(payload, null, 2));
+    }
     return;
   }
   console.log(formatShortlistList(store.jobs));
@@ -780,8 +763,7 @@ async function cmdShortlistArchive(args) {
     if (jobId) {
       const history = await getDiscardedJobs(jobId);
       if (asJson) {
-        const normalized = normalizeDiscardEntries(history);
-        console.log(JSON.stringify({ job_id: jobId, history: normalized }, null, 2));
+        console.log(JSON.stringify({ job_id: jobId, history }, null, 2));
       } else {
         console.log(formatDiscardHistory(jobId, history));
       }
@@ -790,8 +772,7 @@ async function cmdShortlistArchive(args) {
 
     const archive = await getDiscardedJobs();
     if (asJson) {
-      const normalized = normalizeDiscardArchive(archive);
-      console.log(JSON.stringify({ discarded: normalized }, null, 2));
+      console.log(JSON.stringify({ discarded: archive }, null, 2));
     } else {
       console.log(formatDiscardArchive(archive));
     }
