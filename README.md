@@ -460,6 +460,10 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --json
 #   }
 # }
 
+# Persist the filtered shortlist to disk for sharing
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --json --out shortlist.json
+# Saved shortlist snapshot to /tmp/jobbot-cli-XXXX/shortlist.json
+
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist archive job-123
 # job-123
 # - 2025-03-05T12:00:00.000Z — Not remote
@@ -472,9 +476,9 @@ surface patterns later. Review past decisions with `jobbot shortlist archive [jo
 to inspect all records at once), which reads from `data/discarded_jobs.json` so archive lookups and
 shortlist history stay in sync. JSON exports now include a `last_discard` summary so downstream tools
 can surface the most recent rationale without traversing the full history. Add `--json` to the
-shortlist list command when piping entries into other tools, and filter by metadata or tags
-(`--location`, `--level`, `--compensation`, or repeated `--tag` flags) when triaging opportunities.
-Text output also surfaces `Last Discard Tags` when tag
+shortlist list command when piping entries into other tools; include `--out <path>` to persist the
+snapshot on disk. Filter by metadata or tags (`--location`, `--level`, `--compensation`, or repeated
+`--tag` flags) when triaging opportunities. Text output also surfaces `Last Discard Tags` when tag
 history exists so the rationale stays visible without opening the archive. When older history entries
 lack timestamps, the CLI labels them as `(unknown time)` so legacy discards still surface their
 rationale. Metadata syncs stamp a `synced_at` ISO 8601 timestamp for
