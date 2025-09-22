@@ -107,4 +107,81 @@ describe('loadResume', () => {
       ])
     );
   });
+
+  it('annotates parsing confidence and highlights ambiguous placeholders', async () => {
+    const content = [
+      '## Experience',
+      'Senior Developer at Acme Corp',
+      '- Increased revenue by XX% year over year while leading a distributed team ' +
+        'of seven engineers.',
+      '- Shipped analytics dashboards adopted by 12 partner teams across the organization.',
+      '',
+      '## Education',
+      'Your Title Here',
+      'Bachelor of Science — Jan 20XX - Present',
+    ].join('\n');
+
+    const result = await withTempFile('.md', content, file =>
+      loadResume(file, { withMetadata: true })
+    );
+
+    expect(result.metadata.confidence).toMatchObject({
+      score: expect.any(Number),
+      signals: expect.arrayContaining([
+        expect.stringContaining('resume heading'),
+        expect.stringContaining('bullet'),
+      ]),
+    });
+    expect(result.metadata.confidence.score).toBeGreaterThanOrEqual(0.5);
+    expect(result.metadata.confidence.score).toBeLessThanOrEqual(1);
+
+    expect(result.metadata.ambiguities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'metric',
+          value: 'XX%',
+          location: expect.objectContaining({
+            line: expect.any(Number),
+            column: expect.any(Number),
+          }),
+        }),
+        expect.objectContaining({
+          type: 'date',
+          value: '20XX',
+          location: expect.objectContaining({
+            line: expect.any(Number),
+            column: expect.any(Number),
+          }),
+        }),
+        expect.objectContaining({
+          type: 'title',
+          value: 'Your Title Here',
+          location: expect.objectContaining({
+            line: expect.any(Number),
+            column: expect.any(Number),
+          }),
+        }),
+      ])
+    );
+  });
+
+  it('reports each placeholder occurrence separately', async () => {
+    const content = [
+      '## Experience',
+      'Senior Developer',
+      '- Increased revenue by XX% year over year.',
+      '- Held quarterly training to lift win rate by XX% across the team.',
+    ].join('\n');
+
+    const result = await withTempFile('.md', content, file =>
+      loadResume(file, { withMetadata: true })
+    );
+
+    const metricPlaceholders = result.metadata.ambiguities.filter(
+      entry => entry.type === 'metric' && entry.value === 'XX%'
+    );
+
+    expect(metricPlaceholders).toHaveLength(2);
+    expect(metricPlaceholders[0].location).not.toEqual(metricPlaceholders[1].location);
+  });
 });
