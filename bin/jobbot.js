@@ -95,6 +95,37 @@ function parseMultilineList(value) {
   return lines.length === 1 ? lines[0] : lines;
 }
 
+function generateRehearsalSessionId() {
+  const iso = new Date().toISOString().replace(/\.(\d{3})Z$/, 'Z');
+  const sanitized = iso.replace(/:/g, '-');
+  return `prep-${sanitized}`;
+}
+
+function hasFlag(args, name) {
+  return args.includes(name);
+}
+
+function resolveRehearsalStage(args) {
+  const explicit = getFlag(args, '--stage');
+  if (explicit) return explicit;
+  if (hasFlag(args, '--behavioral')) return 'Behavioral';
+  if (hasFlag(args, '--technical')) return 'Technical';
+  if (hasFlag(args, '--system-design')) return 'System Design';
+  if (hasFlag(args, '--onsite')) return 'Onsite';
+  if (hasFlag(args, '--screen')) return 'Screen';
+  return undefined;
+}
+
+function resolveRehearsalMode(args) {
+  const explicit = getFlag(args, '--mode');
+  if (explicit) return explicit;
+  if (hasFlag(args, '--voice')) return 'Voice';
+  if (hasFlag(args, '--text')) return 'Text';
+  if (hasFlag(args, '--in-person')) return 'In-Person';
+  if (hasFlag(args, '--virtual')) return 'Virtual';
+  return undefined;
+}
+
 function readContentFromArgs(args, valueFlag, fileFlag) {
   const filePath = getFlag(args, fileFlag);
   if (filePath) {
@@ -933,6 +964,49 @@ async function cmdInterviews(args) {
   process.exit(2);
 }
 
+async function cmdRehearse(args) {
+  const jobId = args[0];
+  const rest = args.slice(1);
+  const sessionId = getFlag(rest, '--session') || generateRehearsalSessionId();
+
+  if (!jobId) {
+    console.error(
+      'Usage: jobbot rehearse <job_id> [--session <id>] [--stage <value>] [--mode <value>] ' +
+        '[--behavioral] [--technical] [--onsite] [--voice] [--text] ' +
+        '[--transcript <text>|--transcript-file <path>] ' +
+        '[--reflections <text>|--reflections-file <path>] ' +
+        '[--feedback <text>|--feedback-file <path>] ' +
+        '[--notes <text>|--notes-file <path>] ' +
+        '[--started-at <iso8601>] [--ended-at <iso8601>]'
+    );
+    process.exit(2);
+  }
+
+  const transcriptInput = readContentFromArgs(rest, '--transcript', '--transcript-file');
+  const reflectionsInput = readContentFromArgs(rest, '--reflections', '--reflections-file');
+  const feedbackInput = readContentFromArgs(rest, '--feedback', '--feedback-file');
+  const notesInput = readContentFromArgs(rest, '--notes', '--notes-file');
+
+  const stage = resolveRehearsalStage(rest);
+  const mode = resolveRehearsalMode(rest);
+  const startedAt = getFlag(rest, '--started-at');
+  const endedAt = getFlag(rest, '--ended-at');
+
+  const payload = {
+    transcript: transcriptInput,
+    reflections: parseMultilineList(reflectionsInput),
+    feedback: parseMultilineList(feedbackInput),
+    notes: notesInput,
+    stage,
+    mode,
+    startedAt,
+    endedAt,
+  };
+
+  const entry = await recordInterviewSession(jobId, sessionId, payload);
+  console.log(`Recorded rehearsal ${entry.session_id} for ${entry.job_id}`);
+}
+
 async function cmdImportLinkedIn(args) {
   const source = args[0];
   if (!source) {
@@ -977,6 +1051,7 @@ async function main() {
   if (cmd === 'track') return cmdTrack(args);
   if (cmd === 'shortlist') return cmdShortlist(args);
   if (cmd === 'analytics') return cmdAnalytics(args);
+  if (cmd === 'rehearse') return cmdRehearse(args);
   if (cmd === 'deliverables') return cmdDeliverables(args);
   if (cmd === 'import') return cmdImport(args);
   if (cmd === 'intake') return cmdIntake(args);
@@ -984,7 +1059,7 @@ async function main() {
   if (cmd === 'interviews') return cmdInterviews(args);
   console.error(
     'Usage: jobbot <init|import|summarize|match|track|shortlist|analytics|' +
-      'deliverables|interviews|intake|ingest> [options]'
+      'rehearse|deliverables|interviews|intake|ingest> [options]'
   );
   process.exit(2);
 }
