@@ -337,7 +337,13 @@ capture so fetches are reproducible.
 client forwards that header to the API and persists it in saved snapshots so
 metadata stays consistent across providers. Automated coverage in
 [`test/greenhouse.test.js`](test/greenhouse.test.js) also exercises the retry
-logic so transient 5xx responses are retried before surfacing to callers.
+logic so transient 5xx responses are retried before surfacing to callers. The
+Greenhouse ingest client now caches `ETag`/`Last-Modified` validators and
+replays them on the next fetch, skipping snapshot work when the board returns a
+`304 Not Modified`. The command exits with `Greenhouse board <slug> unchanged`
+so repeated syncs are noiseless, and the Greenhouse test suite verifies the
+cache is written and that conditional requests short-circuit without touching
+the filesystem when nothing has changed.
 
 Job titles can be parsed from lines starting with `Title`, `Job Title`, `Position`, or `Role`.
 Headers can use colons or dash separators (for example, `Role - Staff Engineer`), and the same
