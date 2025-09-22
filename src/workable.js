@@ -9,10 +9,10 @@ import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
 import { parseJobText } from './parser.js';
 
 const WORKABLE_BASE = 'https://www.workable.com/api/accounts';
-const WORKABLE_HEADERS = {
+const WORKABLE_BASE_HEADERS = Object.freeze({
   'User-Agent': 'jobbot3000',
   Accept: 'application/json',
-};
+});
 const WORKABLE_RATE_LIMIT_MS = normalizeRateLimitInterval(
   process.env.JOBBOT_WORKABLE_RATE_LIMIT_MS,
   500,
@@ -22,6 +22,32 @@ function sanitizeString(value) {
   if (value == null) return '';
   const trimmed = String(value).trim();
   return trimmed;
+}
+
+function normalizeToken(value) {
+  if (value === undefined) return undefined;
+  const trimmed = sanitizeString(value);
+  return trimmed ? trimmed : undefined;
+}
+
+function getWorkableToken(explicitToken) {
+  if (explicitToken !== undefined) return normalizeToken(explicitToken);
+  return normalizeToken(process.env.JOBBOT_WORKABLE_TOKEN);
+}
+
+function buildWorkableHeaders(explicitToken) {
+  const token = getWorkableToken(explicitToken);
+  if (!token) return { ...WORKABLE_BASE_HEADERS };
+  return { ...WORKABLE_BASE_HEADERS, Authorization: `Bearer ${token}` };
+}
+
+function sanitizeHeadersForSnapshot(headers) {
+  const sanitized = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === 'authorization') continue;
+    sanitized[key] = value;
+  }
+  return sanitized;
 }
 
 function normalizeAccountSlug(account) {
@@ -164,7 +190,10 @@ function selectFetchedAt(detail, job) {
   return undefined;
 }
 
-export async function fetchWorkableJobs(account, { fetchImpl = fetch, retry } = {}) {
+export async function fetchWorkableJobs(
+  account,
+  { fetchImpl = fetch, retry, headers, token } = {},
+) {
   const slug = normalizeAccountSlug(account);
   const url = buildJobsUrl(slug);
   const rateLimitKey = `workable:${slug}`;
@@ -173,9 +202,10 @@ export async function fetchWorkableJobs(account, { fetchImpl = fetch, retry } = 
   } else {
     setFetchRateLimit(rateLimitKey, 0);
   }
+  const requestHeaders = headers || buildWorkableHeaders(token);
   const response = await fetchWithRetry(url, {
     fetchImpl,
-    headers: WORKABLE_HEADERS,
+    headers: requestHeaders,
     retry,
     rateLimitKey,
   });
@@ -195,7 +225,12 @@ export async function fetchWorkableJobs(account, { fetchImpl = fetch, retry } = 
 }
 
 export async function ingestWorkableBoard({ account, fetchImpl = fetch, retry } = {}) {
-  const { account: slug, jobs } = await fetchWorkableJobs(account, { fetchImpl, retry });
+  const headers = buildWorkableHeaders();
+  const { account: slug, jobs } = await fetchWorkableJobs(account, {
+    fetchImpl,
+    retry,
+    headers,
+  });
   const jobIds = [];
   const rateLimitKey = `workable:${slug}`;
   if (WORKABLE_RATE_LIMIT_MS > 0) {
@@ -209,7 +244,7 @@ export async function ingestWorkableBoard({ account, fetchImpl = fetch, retry } 
     const detailUrl = buildJobDetailUrl(slug, shortcode);
     const detailResponse = await fetchWithRetry(detailUrl, {
       fetchImpl,
-      headers: WORKABLE_HEADERS,
+      headers,
       retry,
       rateLimitKey,
     });
@@ -222,12 +257,17 @@ export async function ingestWorkableBoard({ account, fetchImpl = fetch, retry } 
     const parsed = mergeParsedJob(parseJobText(raw), job, detail);
     const canonicalUrl = resolveCanonicalUrl({ job, detail, account: slug, shortcode });
     const id = jobIdFromSource({ provider: 'workable', url: canonicalUrl });
+    const snapshotHeaders = sanitizeHeadersForSnapshot(headers);
     await saveJobSnapshot({
       id,
       raw,
       parsed,
-      source: { type: 'workable', value: canonicalUrl },
-      requestHeaders: WORKABLE_HEADERS,
+      source: {
+        type: 'workable',
+        value: canonicalUrl,
+        headers: snapshotHeaders,
+      },
+      requestHeaders: snapshotHeaders,
       fetchedAt: selectFetchedAt(detail, job),
     });
     jobIds.push(id);
