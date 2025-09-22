@@ -156,6 +156,20 @@ console.log(metadata);
 //       type: 'tables',
 //       message: 'Detected table formatting; ATS parsers often ignore table content.'
 //     }
+//   ],
+//   confidence: {
+//     score: 0.82,
+//     signals: [
+//       'Detected common resume headings: experience, education',
+//       'Detected bullet formatting in experience sections'
+//     ]
+//   },
+//   ambiguities: [
+//     {
+//       type: 'date',
+//       value: '20XX',
+//       message: 'Potential placeholder date detected'
+//     }
 //   ]
 // }
 ```
@@ -164,6 +178,14 @@ console.log(metadata);
 depend on the shape. When tables or images appear in the source material, the
 metadata includes `warnings` entries that flag ATS-hostile patterns; new tests
 assert tables and images trigger the warnings so resume imports surface risks.
+Confidence heuristics and placeholder detection keep resume imports trustworthy.
+The suite also asserts the presence of parsing confidence signals and ambiguity
+highlights (for example, placeholder dates like `20XX` or metrics such as `XX%`)
+alongside ATS warnings so regressions surface quickly.
+Blank uploads earn a confidence score of `0` with a `No resume content detected`
+signal, and the optional `ambiguities` array appears only when placeholders such
+as `XX%`, `?? million`, or `Your Title Here` are present so consumers can rely on
+the schema.
 
 Initialize a JSON Resume skeleton when you do not have an existing file:
 
