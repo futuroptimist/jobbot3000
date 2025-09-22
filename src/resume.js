@@ -444,25 +444,75 @@ export async function loadResume(filePath, options = {}) {
   };
 
   const warnings = detectAtsWarnings(raw, format);
-  const ambiguities = detectAmbiguities(raw);
-  const confidence = computeConfidenceScore(warnings, ambiguities);
+  const resumeAmbiguities = detectResumeAmbiguities(text);
+  const legacyAmbiguities =
+    format === 'markdown' ? detectAmbiguities(raw) : [];
+
+  if (format === 'markdown' && resumeAmbiguities.length > 0) {
+    const firstByType = new Map();
+    for (const entry of resumeAmbiguities) {
+      if (!firstByType.has(entry.type) && entry.location) {
+        firstByType.set(entry.type, entry.location);
+      }
+    }
+
+    const ensureLegacyHint = (aggregateType, placeholderType, message) => {
+      if (!firstByType.has(placeholderType)) return;
+      const existing = legacyAmbiguities.find(item => item.type === aggregateType);
+      if (existing) {
+        if (!existing.location) {
+          existing.location = firstByType.get(placeholderType);
+        }
+        return;
+      }
+      legacyAmbiguities.push({
+        type: aggregateType,
+        message,
+        location: firstByType.get(placeholderType),
+      });
+    };
+
+    ensureLegacyHint(
+      'dates',
+      'date',
+      'Detected month references without four-digit years; confirm date ranges are clear.',
+    );
+    ensureLegacyHint(
+      'metrics',
+      'metric',
+      'No numeric metrics detected; consider adding quantified achievements.',
+    );
+    ensureLegacyHint(
+      'titles',
+      'title',
+      'No common role titles detected; ensure positions are clearly labeled.',
+    );
+  }
 
   if (warnings.length > 0) {
     metadata.warnings = warnings;
   }
-  if (ambiguities.length > 0) {
-    metadata.ambiguities = ambiguities;
-  }
-  metadata.confidence = confidence;
-
-  const confidence = estimateParsingConfidence(text, warnings);
-  if (confidence) {
-    metadata.confidence = confidence;
+  if (legacyAmbiguities.length > 0) {
+    metadata.ambiguities = legacyAmbiguities;
   }
 
-  const ambiguities = detectResumeAmbiguities(text);
-  if (ambiguities.length > 0) {
-    metadata.ambiguities = ambiguities;
+  const baseConfidenceScore = computeConfidenceScore(warnings, legacyAmbiguities);
+  const parsingConfidence = estimateParsingConfidence(text, warnings);
+
+  const combinedConfidence = parsingConfidence
+    ? {
+        ...parsingConfidence,
+        score: Math.max(baseConfidenceScore, parsingConfidence.score ?? 0),
+      }
+    : { score: baseConfidenceScore, signals: [] };
+
+  metadata.confidence = combinedConfidence;
+
+  if (resumeAmbiguities.length > 0) {
+    metadata.ambiguities = [
+      ...(metadata.ambiguities ?? []),
+      ...resumeAmbiguities,
+    ];
   }
 
   return { text, metadata };
