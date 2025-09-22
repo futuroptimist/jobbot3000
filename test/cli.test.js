@@ -712,6 +712,24 @@ describe('jobbot CLI', () => {
     expect(listOutput).toContain('Remote');
   });
 
+  it('filters shortlist entries by compensation using normalized currency symbols', () => {
+    runCli([
+      'shortlist',
+      'sync',
+      'job-comp-filter',
+      '--location',
+      'Remote',
+      '--level',
+      'Staff',
+      '--compensation',
+      '185k',
+    ]);
+
+    const output = runCli(['shortlist', 'list', '--compensation', '185k']);
+    expect(output).toContain('job-comp-filter');
+    expect(output).toContain('Compensation: $185k');
+  });
+
   it('filters shortlist entries by tag', () => {
     runCli(['shortlist', 'tag', 'job-remote', 'Remote', 'Dream']);
     runCli(['shortlist', 'tag', 'job-onsite', 'Onsite']);
@@ -775,6 +793,52 @@ describe('jobbot CLI', () => {
           ],
         },
       },
+    });
+  });
+
+  it('restores currency symbols when sync invoked via shell quoting', () => {
+    const bin = path.resolve('bin', 'jobbot.js');
+    const command = [
+      `${process.execPath} ${bin} shortlist sync job-shell`,
+      '--location Remote',
+      '--level Senior',
+      '--compensation "$185k"',
+    ].join(' ');
+    execFileSync('bash', ['-lc', command], {
+      encoding: 'utf8',
+      env: { ...process.env, JOBBOT_DATA_DIR: dataDir },
+    });
+
+    const shortlist = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'shortlist.json'), 'utf8')
+    );
+    expect(shortlist.jobs['job-shell'].metadata.compensation).toBe('$85k');
+  });
+
+  it('uses JOBBOT_SHORTLIST_CURRENCY when restoring compensation', () => {
+    const bin = path.resolve('bin', 'jobbot.js');
+    const command = [
+      `${process.execPath} ${bin} shortlist sync job-euro`,
+      '--location Remote',
+      '--level Mid',
+      '--compensation "120k"',
+    ].join(' ');
+    execFileSync('bash', ['-lc', command], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        JOBBOT_DATA_DIR: dataDir,
+        JOBBOT_SHORTLIST_CURRENCY: '€',
+      },
+    });
+
+    const shortlist = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'shortlist.json'), 'utf8')
+    );
+    expect(shortlist.jobs['job-euro'].metadata).toMatchObject({
+      compensation: '€120k',
+      level: 'Mid',
+      location: 'Remote',
     });
   });
 

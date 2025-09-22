@@ -424,7 +424,11 @@ to inspect all records at once), which reads from `data/discarded_jobs.json` so 
 shortlist history stay in sync. Add `--json` to the shortlist list command when piping entries into
 other tools, and filter by metadata or tags (`--location`, `--level`, `--compensation`, or repeated
 `--tag` flags) when triaging opportunities. Metadata syncs stamp a `synced_at` ISO 8601 timestamp for
-refresh schedulers. Unit tests in [`test/shortlist.test.js`](test/shortlist.test.js) and the CLI suite in
+refresh schedulers. Shells treat `$` as a variable prefix, so `--compensation "$185k"` expands to
+`85k`. The CLI re-attaches a default currency symbol so the stored value becomes `$85k`; escape the
+dollar sign (`--compensation "\$185k"`) when you need the digits preserved. Override the auto-attached
+symbol by setting `JOBBOT_SHORTLIST_CURRENCY` (for example, `JOBBOT_SHORTLIST_CURRENCY='€'`).
+Unit tests in [`test/shortlist.test.js`](test/shortlist.test.js) and the CLI suite in
 [`test/cli.test.js`](test/cli.test.js) exercise metadata updates, tag filters, discard tags, archive
 exports, and the persisted format.
 
