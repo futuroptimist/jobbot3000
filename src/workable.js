@@ -1,5 +1,10 @@
 import fetch from 'node-fetch';
-import { extractTextFromHtml, fetchWithRetry } from './fetch.js';
+import {
+  extractTextFromHtml,
+  fetchWithRetry,
+  setFetchRateLimit,
+  normalizeRateLimitInterval,
+} from './fetch.js';
 import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
 import { parseJobText } from './parser.js';
 
@@ -8,6 +13,10 @@ const WORKABLE_HEADERS = {
   'User-Agent': 'jobbot3000',
   Accept: 'application/json',
 };
+const WORKABLE_RATE_LIMIT_MS = normalizeRateLimitInterval(
+  process.env.JOBBOT_WORKABLE_RATE_LIMIT_MS,
+  500,
+);
 
 function sanitizeString(value) {
   if (value == null) return '';
@@ -158,10 +167,17 @@ function selectFetchedAt(detail, job) {
 export async function fetchWorkableJobs(account, { fetchImpl = fetch, retry } = {}) {
   const slug = normalizeAccountSlug(account);
   const url = buildJobsUrl(slug);
+  const rateLimitKey = `workable:${slug}`;
+  if (WORKABLE_RATE_LIMIT_MS > 0) {
+    setFetchRateLimit(rateLimitKey, WORKABLE_RATE_LIMIT_MS);
+  } else {
+    setFetchRateLimit(rateLimitKey, 0);
+  }
   const response = await fetchWithRetry(url, {
     fetchImpl,
     headers: WORKABLE_HEADERS,
     retry,
+    rateLimitKey,
   });
   if (!response.ok) {
     const statusLabel = `${response.status} ${response.statusText}`;
@@ -181,6 +197,12 @@ export async function fetchWorkableJobs(account, { fetchImpl = fetch, retry } = 
 export async function ingestWorkableBoard({ account, fetchImpl = fetch, retry } = {}) {
   const { account: slug, jobs } = await fetchWorkableJobs(account, { fetchImpl, retry });
   const jobIds = [];
+  const rateLimitKey = `workable:${slug}`;
+  if (WORKABLE_RATE_LIMIT_MS > 0) {
+    setFetchRateLimit(rateLimitKey, WORKABLE_RATE_LIMIT_MS);
+  } else {
+    setFetchRateLimit(rateLimitKey, 0);
+  }
 
   for (const job of jobs) {
     const shortcode = resolveShortcode(job);
@@ -189,6 +211,7 @@ export async function ingestWorkableBoard({ account, fetchImpl = fetch, retry } 
       fetchImpl,
       headers: WORKABLE_HEADERS,
       retry,
+      rateLimitKey,
     });
     if (!detailResponse.ok) {
       const statusLabel = `${detailResponse.status} ${detailResponse.statusText}`;

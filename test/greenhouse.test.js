@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('node-fetch', () => ({ default: vi.fn() }));
 
 import fetch from 'node-fetch';
+import { clearFetchRateLimits } from '../src/fetch.js';
 
 const JOBS_DIR = 'jobs';
 
@@ -24,6 +25,8 @@ describe('Greenhouse ingest', () => {
       dataDir = undefined;
     }
     delete process.env.JOBBOT_DATA_DIR;
+    clearFetchRateLimits();
+    vi.useRealTimers();
   });
 
   it('fetches Greenhouse jobs and writes snapshots', async () => {
@@ -146,6 +149,8 @@ describe('Greenhouse ingest', () => {
   });
 
   it('persists caching headers for subsequent Greenhouse requests', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2025-01-01T00:00:00Z'));
     const headers = {
       get: (name) => {
         const lower = name.toLowerCase();
@@ -172,10 +177,13 @@ describe('Greenhouse ingest', () => {
     expect(cached).toEqual({
       etag: '"etag-123"',
       lastModified: 'Wed, 01 Jan 2025 00:00:00 GMT',
+      fetchedAt: '2025-01-01T00:00:00.000Z',
     });
   });
 
   it('sends conditional headers and skips work when the board is unchanged', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2025-02-02T00:00:00Z'));
     const cacheDir = path.join(dataDir, 'cache', 'greenhouse');
     await fs.mkdir(cacheDir, { recursive: true });
     const cachePath = path.join(cacheDir, 'example.json');
@@ -216,6 +224,41 @@ describe('Greenhouse ingest', () => {
     expect(cached).toEqual({
       etag: '"etag-123"',
       lastModified: 'Wed, 01 Jan 2025 00:00:00 GMT',
+      fetchedAt: '2025-02-02T00:00:00.000Z',
     });
+  });
+
+  it('waits between successive fetches when a rate limit is configured', async () => {
+    vi.resetModules();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2025-03-01T00:00:00Z'));
+    process.env.JOBBOT_GREENHOUSE_RATE_LIMIT_MS = '1000';
+
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => null },
+      json: async () => ({ jobs: [] }),
+    });
+
+    const { ingestGreenhouseBoard } = await import('../src/greenhouse.js');
+
+    await ingestGreenhouseBoard({ board: 'example' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    const second = ingestGreenhouseBoard({ board: 'example' });
+    await Promise.resolve();
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(999);
+    await Promise.resolve();
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(1);
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    await second;
+
+    delete process.env.JOBBOT_GREENHOUSE_RATE_LIMIT_MS;
   });
 });

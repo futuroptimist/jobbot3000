@@ -1,5 +1,10 @@
 import fetch from 'node-fetch';
-import { extractTextFromHtml, fetchWithRetry } from './fetch.js';
+import {
+  extractTextFromHtml,
+  fetchWithRetry,
+  setFetchRateLimit,
+  normalizeRateLimitInterval,
+} from './fetch.js';
 import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
 import { parseJobText } from './parser.js';
 
@@ -9,6 +14,10 @@ const ASHBY_HEADERS = {
   'User-Agent': 'jobbot3000',
   Accept: 'application/json',
 };
+const ASHBY_RATE_LIMIT_MS = normalizeRateLimitInterval(
+  process.env.JOBBOT_ASHBY_RATE_LIMIT_MS,
+  500,
+);
 
 function normalizeOrgSlug(org) {
   if (!org || typeof org !== 'string' || !org.trim()) {
@@ -71,10 +80,17 @@ function mergeParsedJob(parsed, job) {
 export async function fetchAshbyJobs(org, { fetchImpl = fetch, retry } = {}) {
   const slug = normalizeOrgSlug(org);
   const url = buildOrgUrl(slug);
+  const rateLimitKey = `ashby:${slug}`;
+  if (ASHBY_RATE_LIMIT_MS > 0) {
+    setFetchRateLimit(rateLimitKey, ASHBY_RATE_LIMIT_MS);
+  } else {
+    setFetchRateLimit(rateLimitKey, 0);
+  }
   const response = await fetchWithRetry(url, {
     fetchImpl,
     headers: ASHBY_HEADERS,
     retry,
+    rateLimitKey,
   });
   if (!response.ok) {
     throw new Error(

@@ -16,6 +16,8 @@ import {
   extractTextFromHtml,
   fetchTextFromUrl,
   fetchWithRetry,
+  setFetchRateLimit,
+  clearFetchRateLimits,
 } from '../src/fetch.js';
 
 describe('extractTextFromHtml', () => {
@@ -136,6 +138,15 @@ describe('extractTextFromHtml', () => {
     expect(extractTextFromHtml(html)).toBe('Start End');
   });
 
+  it('omits img alt text when aria-hidden is present without a value', () => {
+    const html = `
+      <p>Start</p>
+      <img src="logo.png" alt="Logo" aria-hidden />
+      <p>End</p>
+    `;
+    expect(extractTextFromHtml(html)).toBe('Start End');
+  });
+
   it('omits img alt text when role is presentation', () => {
     const html = `
       <p>Start</p>
@@ -195,6 +206,7 @@ describe('fetchTextFromUrl', () => {
   afterEach(() => {
     fetch.mockReset();
     dns.lookup.mockClear();
+    clearFetchRateLimits();
   });
   it('returns extracted text for HTML responses', async () => {
     fetch.mockResolvedValue({
@@ -612,6 +624,52 @@ describe('fetchTextFromUrl', () => {
     });
 
     await expect(second).resolves.toBe('done');
+  });
+
+  it('delays queued requests until the rate limit interval elapses', async () => {
+    vi.useFakeTimers();
+    setFetchRateLimit('http://example.com', 200);
+
+    const resolvers = [];
+    fetch.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolvers.push(resolve);
+        })
+    );
+
+    const first = fetchTextFromUrl('http://example.com/one');
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    resolvers.shift()({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('first'),
+    });
+    await expect(first).resolves.toBe('first');
+
+    const second = fetchTextFromUrl('http://example.com/two');
+    await Promise.resolve();
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(199);
+    await Promise.resolve();
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(1);
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+
+    resolvers.shift()({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('second'),
+    });
+
+    await expect(second).resolves.toBe('second');
+    vi.useRealTimers();
   });
 });
 

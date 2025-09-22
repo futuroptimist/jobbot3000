@@ -1,11 +1,20 @@
 import fetch from 'node-fetch';
-import { extractTextFromHtml, fetchWithRetry } from './fetch.js';
+import {
+  extractTextFromHtml,
+  fetchWithRetry,
+  setFetchRateLimit,
+  normalizeRateLimitInterval,
+} from './fetch.js';
 import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
 import { parseJobText } from './parser.js';
 
 const SMARTRECRUITERS_BASE = 'https://api.smartrecruiters.com/v1/companies';
 const SMARTRECRUITERS_HEADERS = { 'User-Agent': 'jobbot3000' };
 const DEFAULT_LIMIT = 100;
+const SMARTRECRUITERS_RATE_LIMIT_MS = normalizeRateLimitInterval(
+  process.env.JOBBOT_SMARTRECRUITERS_RATE_LIMIT_MS,
+  500,
+);
 
 function normalizeCompanySlug(company) {
   if (!company || typeof company !== 'string' || !company.trim()) {
@@ -71,6 +80,12 @@ export async function fetchSmartRecruitersPostings(company, { fetchImpl = fetch,
   const slug = normalizeCompanySlug(company);
   const postings = [];
   let offset = 0;
+  const rateLimitKey = `smartrecruiters:${slug}`;
+  if (SMARTRECRUITERS_RATE_LIMIT_MS > 0) {
+    setFetchRateLimit(rateLimitKey, SMARTRECRUITERS_RATE_LIMIT_MS);
+  } else {
+    setFetchRateLimit(rateLimitKey, 0);
+  }
 
   while (true) {
     const url = buildListUrl(slug, offset);
@@ -78,6 +93,7 @@ export async function fetchSmartRecruitersPostings(company, { fetchImpl = fetch,
       fetchImpl,
       headers: SMARTRECRUITERS_HEADERS,
       retry,
+      rateLimitKey,
     });
     if (!response.ok) {
       const statusLabel = `${response.status} ${response.statusText}`;
@@ -101,6 +117,12 @@ export async function fetchSmartRecruitersPostings(company, { fetchImpl = fetch,
 export async function ingestSmartRecruitersBoard({ company, fetchImpl = fetch, retry } = {}) {
   const { slug, postings } = await fetchSmartRecruitersPostings(company, { fetchImpl, retry });
   const jobIds = [];
+  const rateLimitKey = `smartrecruiters:${slug}`;
+  if (SMARTRECRUITERS_RATE_LIMIT_MS > 0) {
+    setFetchRateLimit(rateLimitKey, SMARTRECRUITERS_RATE_LIMIT_MS);
+  } else {
+    setFetchRateLimit(rateLimitKey, 0);
+  }
 
   for (const posting of postings) {
     const detailUrl = resolveDetailUrl(slug, posting);
@@ -108,6 +130,7 @@ export async function ingestSmartRecruitersBoard({ company, fetchImpl = fetch, r
       fetchImpl,
       headers: SMARTRECRUITERS_HEADERS,
       retry,
+      rateLimitKey,
     });
     if (!detailResponse.ok) {
       const statusLabel = `${detailResponse.status} ${detailResponse.statusText}`;

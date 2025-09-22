@@ -22,6 +22,8 @@ function sleep(ms) {
 }
 
 const HOST_QUEUE = new Map();
+const HOST_RATE_LIMITS = new Map();
+const HOST_LAST_INVOCATION = new Map();
 
 /**
  * Serializes asynchronous work per key while allowing other keys to proceed.
@@ -51,7 +53,25 @@ async function withHostQueue(key, fn) {
     if (previous) {
       await previous.catch(() => {});
     }
-    return await fn();
+    const limit = HOST_RATE_LIMITS.get(key);
+    if (Number.isFinite(limit) && limit > 0) {
+      const last = HOST_LAST_INVOCATION.get(key);
+      if (Number.isFinite(last)) {
+        const elapsed = Date.now() - last;
+        const waitMs = limit - elapsed;
+        if (waitMs > 0) {
+          await sleep(waitMs);
+        }
+      }
+    }
+
+    try {
+      return await fn();
+    } finally {
+      if (Number.isFinite(limit) && limit > 0) {
+        HOST_LAST_INVOCATION.set(key, Date.now());
+      }
+    }
   } finally {
     if (typeof release === 'function') {
       release();
@@ -98,7 +118,12 @@ function computeDelay(attempt, { delayMs = 250, factor = 2, maxDelayMs } = {}) {
  * @returns {Promise<Response>}
  */
 export async function fetchWithRetry(url, options = {}, init = {}) {
-  const { fetchImpl = fetch, retry, ...rest } = options;
+  const targetUrl = new URL(url);
+  const hostKey = `${targetUrl.protocol}//${targetUrl.host}`;
+  const { fetchImpl = fetch, retry, rateLimitKey, ...rest } = options;
+  const queueKey = typeof rateLimitKey === 'string' && rateLimitKey.trim()
+    ? rateLimitKey
+    : hostKey;
   const mergedInit = { ...rest, ...init };
   const {
     retries = 2,
@@ -108,27 +133,28 @@ export async function fetchWithRetry(url, options = {}, init = {}) {
     shouldRetry = defaultShouldRetry,
   } = retry || {};
 
-  let attempt = 0;
-  while (attempt <= retries) {
-    try {
-      const response = await fetchImpl(url, mergedInit);
-      const wantsRetry = shouldRetry(response);
-      if (!wantsRetry || attempt === retries) {
-        return response;
+  return withHostQueue(queueKey, async () => {
+    let attempt = 0;
+    while (attempt <= retries) {
+      try {
+        const response = await fetchImpl(url, mergedInit);
+        const wantsRetry = shouldRetry(response);
+        if (!wantsRetry || attempt === retries) {
+          return response;
+        }
+      } catch (err) {
+        if (attempt === retries) {
+          throw err;
+        }
       }
-    } catch (err) {
-      if (attempt === retries) {
-        throw err;
-      }
+
+      const waitMs = computeDelay(attempt, { delayMs, factor, maxDelayMs });
+      await sleep(waitMs);
+      attempt += 1;
     }
 
-    const waitMs = computeDelay(attempt, { delayMs, factor, maxDelayMs });
-    await sleep(waitMs);
-    attempt += 1;
-  }
-
-  // Unreachable: loop returns or throws on final attempt.
-  throw new Error('fetchWithRetry exhausted retries without returning');
+    throw new Error('fetchWithRetry exhausted retries without returning');
+  });
 }
 
 function isPrivateIPv4(octets) {
@@ -377,20 +403,26 @@ function parseIPv6(address) {
 export const DEFAULT_TIMEOUT_MS = 10000;
 
 function formatImageAlt(elem, _walk, builder) {
-  const { alt, ['aria-label']: ariaLabel, ['aria-hidden']: ariaHidden, role } =
-    elem.attribs || {};
-  const hidden =
+  const attribs = elem.attribs || {};
+  const { alt, ['aria-label']: ariaLabel, ['aria-hidden']: ariaHidden, role } = attribs;
+  const hasAriaHidden = Object.prototype.hasOwnProperty.call(attribs, 'aria-hidden');
+  const normalizedHidden =
     typeof ariaHidden === 'string'
       ? ariaHidden.trim().toLowerCase()
       : '';
+  const isHidden =
+    (hasAriaHidden && normalizedHidden === '') ||
+    normalizedHidden === 'true' ||
+    normalizedHidden === '1';
   const decorativeRole =
     typeof role === 'string'
       ? role.trim().toLowerCase()
       : '';
-  // Handle common aria-hidden values ("true", "1") and case-variant roles so
-  // decorative images never leak into summaries. Tests exercise uppercase and
-  // numeric variants to guard regressions.
-  if (hidden === 'true' || hidden === '1') return;
+  // Handle common aria-hidden values ("true", "1") plus bare attributes with no
+  // value, and normalize case-variant roles so decorative images never leak
+  // into summaries. Tests exercise uppercase, numeric, and valueless variants to
+  // guard regressions.
+  if (isHidden) return;
   if (decorativeRole === 'presentation' || decorativeRole === 'none') return;
 
   const normalizedAlt = typeof alt === 'string' ? alt.trim() : '';
@@ -502,4 +534,69 @@ export async function fetchTextFromUrl(
       clearTimeout(timer);
     }
   });
+}
+
+export function normalizeRateLimitInterval(value, fallback = 0) {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value >= 0 ? value : fallback;
+  }
+  if (value instanceof Date) {
+    return fallback;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return fallback;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function toTimestamp(value) {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : undefined;
+  }
+  if (value instanceof Date) {
+    const time = value.getTime();
+    return Number.isNaN(time) ? undefined : time;
+  }
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? undefined : parsed;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+export function setFetchRateLimit(key, minIntervalMs, options = {}) {
+  if (!key || typeof key !== 'string' || !key.trim()) {
+    throw new Error('rate limit key is required');
+  }
+  const normalizedKey = key.trim();
+  const interval = normalizeRateLimitInterval(minIntervalMs, 0);
+  if (!Number.isFinite(interval) || interval <= 0) {
+    HOST_RATE_LIMITS.delete(normalizedKey);
+    HOST_LAST_INVOCATION.delete(normalizedKey);
+    return;
+  }
+
+  HOST_RATE_LIMITS.set(normalizedKey, interval);
+
+  if (options && options.lastInvokedAt !== undefined && options.lastInvokedAt !== null) {
+    const timestamp = toTimestamp(options.lastInvokedAt);
+    if (Number.isFinite(timestamp)) {
+      const existing = HOST_LAST_INVOCATION.get(normalizedKey);
+      if (!Number.isFinite(existing) || timestamp > existing) {
+        HOST_LAST_INVOCATION.set(normalizedKey, timestamp);
+      }
+    }
+  }
+}
+
+export function clearFetchRateLimits() {
+  HOST_RATE_LIMITS.clear();
+  HOST_LAST_INVOCATION.clear();
 }
