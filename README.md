@@ -413,7 +413,10 @@ capture so fetches are reproducible.
 Per-tenant rate limits prevent hammering board APIs: set
 `JOBBOT_GREENHOUSE_RATE_LIMIT_MS`, `JOBBOT_LEVER_RATE_LIMIT_MS`,
 `JOBBOT_ASHBY_RATE_LIMIT_MS`, `JOBBOT_SMARTRECRUITERS_RATE_LIMIT_MS`, or
-`JOBBOT_WORKABLE_RATE_LIMIT_MS` to throttle repeat requests. Greenhouse caches
+`JOBBOT_WORKABLE_RATE_LIMIT_MS` to throttle repeat requests. Provide
+`JOBBOT_WORKABLE_TOKEN` when your Workable tenant requires authenticated API
+access; the CLI adds an `Authorization: Bearer …` header during ingest while
+redacting the token from saved job snapshots. Greenhouse caches
 the last fetch timestamp per board and seeds the limiter across CLI runs so
 back-to-back syncs stay compliant. New coverage in
 [`test/fetch.test.js`](test/fetch.test.js) exercises the limiter queue, and

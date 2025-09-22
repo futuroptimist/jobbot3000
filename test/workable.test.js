@@ -117,6 +117,86 @@ describe('Workable ingest', () => {
     expect(saved.fetched_at).toBe('2025-01-02T03:04:05.000Z');
   });
 
+  it('sends authorization header when JOBBOT_WORKABLE_TOKEN is set', async () => {
+    process.env.JOBBOT_WORKABLE_TOKEN = 'secret-token';
+
+    const listPayload = {
+      jobs: [
+        {
+          shortcode: 'def456',
+          title: 'Staff SRE',
+          location: { location_str: 'Hybrid' },
+          url: 'https://apply.workable.com/example/j/def456/',
+        },
+      ],
+    };
+
+    const detailPayload = {
+      shortcode: 'def456',
+      title: 'Staff SRE',
+      location: { location_str: 'Hybrid' },
+      description: '<p>Keep systems reliable.</p>',
+      updated_at: '2025-02-03T04:05:06Z',
+    };
+
+    fetch
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => listPayload,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => detailPayload,
+      });
+
+    try {
+      const { ingestWorkableBoard } = await import('../src/workable.js');
+
+      const result = await ingestWorkableBoard({ account: 'example' });
+      expect(result).toMatchObject({ account: 'example', saved: 1 });
+
+      expect(fetch).toHaveBeenNthCalledWith(
+        1,
+        'https://www.workable.com/api/accounts/example/jobs',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: 'Bearer secret-token',
+            'User-Agent': 'jobbot3000',
+            Accept: 'application/json',
+          }),
+        }),
+      );
+
+      expect(fetch).toHaveBeenNthCalledWith(
+        2,
+        'https://www.workable.com/api/accounts/example/jobs/def456',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: 'Bearer secret-token',
+            'User-Agent': 'jobbot3000',
+            Accept: 'application/json',
+          }),
+        }),
+      );
+
+      const jobsDir = path.join(dataDir, JOBS_DIR);
+      const files = await fs.readdir(jobsDir);
+      expect(files).toHaveLength(1);
+      const saved = JSON.parse(await fs.readFile(path.join(jobsDir, files[0]), 'utf8'));
+      expect(saved.source.headers).toEqual({
+        Accept: 'application/json',
+        'User-Agent': 'jobbot3000',
+      });
+      expect(saved.fetched_at).toBe('2025-02-03T04:05:06.000Z');
+    } finally {
+      delete process.env.JOBBOT_WORKABLE_TOKEN;
+    }
+  });
+
   it('throws when the account fetch fails', async () => {
     fetch.mockResolvedValue({
       ok: false,
