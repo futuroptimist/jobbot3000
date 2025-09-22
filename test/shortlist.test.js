@@ -95,4 +95,64 @@ describe('shortlist metadata sync and filters', () => {
       tags: ['Remote', 'Dream'],
     });
   });
+
+  it('restores currency symbols for legacy shortlist compensation entries', async () => {
+    const fs = await import('node:fs/promises');
+    await fs.writeFile(
+      path.join(dataDir, 'shortlist.json'),
+      JSON.stringify(
+        {
+          jobs: {
+            'job-legacy': {
+              tags: [],
+              discarded: [],
+              metadata: { location: 'Remote', level: 'Senior', compensation: '120k' },
+            },
+          },
+        },
+        null,
+        2
+      )
+    );
+
+    const { getShortlist, filterShortlist } = await import('../src/shortlist.js');
+    const record = await getShortlist('job-legacy');
+    expect(record.metadata).toMatchObject({
+      location: 'Remote',
+      level: 'Senior',
+      compensation: '$120k',
+    });
+
+    const filtered = await filterShortlist({ compensation: '$120k' });
+    expect(Object.keys(filtered.jobs)).toEqual(['job-legacy']);
+  });
+
+  it('applies JOBBOT_SHORTLIST_CURRENCY to legacy compensation values', async () => {
+    const fs = await import('node:fs/promises');
+    await fs.writeFile(
+      path.join(dataDir, 'shortlist.json'),
+      JSON.stringify(
+        {
+          jobs: {
+            'job-euro': {
+              tags: [],
+              discarded: [],
+              metadata: { compensation: '95k' },
+            },
+          },
+        },
+        null,
+        2
+      )
+    );
+
+    process.env.JOBBOT_SHORTLIST_CURRENCY = '€';
+    try {
+      const { getShortlist } = await import('../src/shortlist.js');
+      const record = await getShortlist('job-euro');
+      expect(record.metadata.compensation).toBe('€95k');
+    } finally {
+      delete process.env.JOBBOT_SHORTLIST_CURRENCY;
+    }
+  });
 });

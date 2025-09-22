@@ -453,6 +453,8 @@ refresh schedulers. Shells treat `$` as a variable prefix, so `--compensation "$
 `85k`. The CLI re-attaches a default currency symbol so the stored value becomes `$85k`; escape the
 dollar sign (`--compensation "\$185k"`) when you need the digits preserved. Override the auto-attached
 symbol by setting `JOBBOT_SHORTLIST_CURRENCY` (for example, `JOBBOT_SHORTLIST_CURRENCY='€'`).
+Existing shortlist files missing a currency symbol are normalized on read using the same default so
+filters and reports stay consistent.
 Unit tests in [`test/shortlist.test.js`](test/shortlist.test.js) and the CLI suite in
 [`test/cli.test.js`](test/cli.test.js) exercise metadata updates, tag filters, discard tags, archive
 exports, and the persisted format.
