@@ -21,6 +21,47 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+const HOST_QUEUE = new Map();
+
+/**
+ * Serializes asynchronous work per key while allowing other keys to proceed.
+ *
+ * Each invocation waits for the prior job to settle (successfully or not) before executing
+ * `fn`. The queue is cleared once the current job finishes so subsequent callers can run.
+ *
+ * Coverage:
+ * - `fetchTextFromUrl serializes requests per host so fetches run sequentially`
+ * - `fetchTextFromUrl allows concurrent requests across different hosts`
+ * - `fetchTextFromUrl resumes queued work after a timeout abort`
+ *
+ * @param {string} key
+ * @param {() => Promise<T>} fn
+ * @returns {Promise<T>}
+ * @template T
+ */
+async function withHostQueue(key, fn) {
+  const previous = HOST_QUEUE.get(key);
+  let release;
+  const current = new Promise(resolve => {
+    release = resolve;
+  });
+  HOST_QUEUE.set(key, current);
+
+  try {
+    if (previous) {
+      await previous.catch(() => {});
+    }
+    return await fn();
+  } finally {
+    if (typeof release === 'function') {
+      release();
+    }
+    if (HOST_QUEUE.get(key) === current) {
+      HOST_QUEUE.delete(key);
+    }
+  }
+}
+
 function defaultShouldRetry(response) {
   if (!response) return false;
   if (response.status === 429) return true;
@@ -418,44 +459,47 @@ export async function fetchTextFromUrl(
     throw new Error(`Refusing to fetch private address: ${displayHostname}`);
   }
 
+  const hostKey = `${targetUrl.protocol}//${targetUrl.host}`;
+
   // Normalize timeout: fallback to DEFAULT_TIMEOUT_MS if invalid
   const ms =
     Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : DEFAULT_TIMEOUT_MS;
 
-  const controller = new AbortController();
-  const timer = setTimeout(
-    () => controller.abort(new Error(`Timeout after ${ms}ms`)),
-    ms
-  );
+  return withHostQueue(hostKey, async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      controller.abort(new Error(`Timeout after ${ms}ms`));
+    }, ms);
 
-  try {
-    await ensureResolvedHostIsPublic(hostname);
-    if (controller.signal.aborted) {
-      const reason = controller.signal.reason;
-      throw reason instanceof Error
-        ? reason
-        : new Error(reason ? String(reason) : 'Request aborted');
+    try {
+      await ensureResolvedHostIsPublic(hostname);
+      if (controller.signal.aborted) {
+        const reason = controller.signal.reason;
+        throw reason instanceof Error
+          ? reason
+          : new Error(reason ? String(reason) : 'Request aborted');
+      }
+      const response = await fetch(url, {
+        redirect: 'follow',
+        signal: controller.signal,
+        headers: buildRequestHeaders(headers),
+        size: maxBytes,
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
+      }
+      const contentType = response.headers.get('content-type') || '';
+      const body = await response.text();
+      return contentType.includes('text/html')
+        ? extractTextFromHtml(body)
+        : body.trim();
+    } catch (err) {
+      if (err?.type === 'max-size') {
+        throw new Error(`Response exceeded ${maxBytes} bytes for ${url}`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
     }
-    const response = await fetch(url, {
-      redirect: 'follow',
-      signal: controller.signal,
-      headers: buildRequestHeaders(headers),
-      size: maxBytes,
-    });
-    if (!response.ok) {
-      throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
-    }
-    const contentType = response.headers.get('content-type') || '';
-    const body = await response.text();
-    return contentType.includes('text/html')
-      ? extractTextFromHtml(body)
-      : body.trim();
-  } catch (err) {
-    if (err?.type === 'max-size') {
-      throw new Error(`Response exceeded ${maxBytes} bytes for ${url}`);
-    }
-    throw err;
-  } finally {
-    clearTimeout(timer);
-  }
+  });
 }
