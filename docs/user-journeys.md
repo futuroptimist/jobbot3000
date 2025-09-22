@@ -128,8 +128,9 @@ flow that preserves both sets of notes.
 3. Optional voice mode uses local STT/TTS so the user can practice speaking answers aloud.
 4. Sessions capture transcripts, user reflections, and coach feedback in
    `data/interviews/{job_id}/{session_id}.json` for future review via
-   `jobbot interviews record` and can be replayed with
-   `jobbot interviews show`.
+   `jobbot interviews record`. Quick run-throughs can use
+   `jobbot rehearse <job_id>` to auto-generate session identifiers and stage/mode defaults before
+   replaying them with `jobbot interviews show`.
 
 **Unhappy paths:** if the user misses sessions, the assistant nudges them with lighter-weight prep
 suggestions to prevent burnout.

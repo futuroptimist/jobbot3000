@@ -692,13 +692,24 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot interviews show job-123 prep-2025-02-01
 #   "started_at": "2025-02-01T09:00:00.000Z",
 #   "ended_at": "2025-02-01T10:15:00.000Z"
 # }
+
+# Capture a quick behavioral rehearsal with generated session IDs and stage/mode shortcuts
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot rehearse job-123 \
+  --behavioral \
+  --voice \
+  --transcript "Walked through leadership story" \
+  --reflections "Add quantified wins" \
+  --feedback "Great pacing" \
+  --notes "Send thank-you email"
+# Recorded rehearsal prep-2025-02-01T09-00-00Z for job-123
 ```
 
 Sessions are stored under `data/interviews/{job_id}/{session_id}.json` with ISO 8601 timestamps so
 coaches and candidates can revisit transcripts later. The CLI accepts `--*-file` options for longer
 inputs (for example, `--transcript-file transcript.md`). Automated coverage in
 [`test/interviews.test.js`](test/interviews.test.js) and [`test/cli.test.js`](test/cli.test.js)
-verifies persistence and retrieval paths.
+verifies persistence, retrieval paths, and the `jobbot rehearse` shorthand for behavioral/voice
+sessions.
 
 ## Deliverable bundles
 

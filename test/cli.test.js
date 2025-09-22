@@ -1193,4 +1193,45 @@ describe('jobbot CLI', () => {
     const parsed = JSON.parse(shown);
     expect(parsed).toEqual(stored);
   });
+
+  it('records rehearsal sessions with stage and mode shortcuts', () => {
+    const output = runCli([
+      'rehearse',
+      'job-789',
+      '--session',
+      'prep-2025-02-01',
+      '--behavioral',
+      '--voice',
+      '--transcript',
+      'Walked through leadership story',
+      '--reflections',
+      'Add more quantified wins',
+      '--feedback',
+      'Strong presence',
+      '--notes',
+      'Send thank-you email',
+      '--started-at',
+      '2025-02-01T09:00:00Z',
+      '--ended-at',
+      '2025-02-01T09:45:00Z',
+    ]);
+
+    expect(output.trim()).toBe('Recorded rehearsal prep-2025-02-01 for job-789');
+
+    const file = path.join(dataDir, 'interviews', 'job-789', 'prep-2025-02-01.json');
+    const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
+
+    expect(stored).toMatchObject({
+      job_id: 'job-789',
+      session_id: 'prep-2025-02-01',
+      stage: 'Behavioral',
+      mode: 'Voice',
+      transcript: 'Walked through leadership story',
+      reflections: ['Add more quantified wins'],
+      feedback: ['Strong presence'],
+      notes: 'Send thank-you email',
+      started_at: '2025-02-01T09:00:00.000Z',
+      ended_at: '2025-02-01T09:45:00.000Z',
+    });
+  });
 });
