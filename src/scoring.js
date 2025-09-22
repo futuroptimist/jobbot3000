@@ -56,6 +56,12 @@ const SYNONYM_GROUPS = [
   ['ml', 'machine learning'],
   ['ai', 'artificial intelligence'],
   ['postgres', 'postgresql'],
+  ['saas', 'software as a service'],
+  ['k8s', 'kubernetes'],
+  ['ci cd', 'continuous integration'],
+  ['ci cd', 'continuous delivery'],
+  ['js', 'javascript'],
+  ['ts', 'typescript'],
 ];
 
 function resumeTokens(text) {

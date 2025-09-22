@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { performance } from 'node:perf_hooks';
+import { readFileSync } from 'node:fs';
 import { computeFitScore } from '../src/scoring.js';
 
 describe('computeFitScore', () => {
@@ -59,6 +60,26 @@ describe('computeFitScore', () => {
     ];
     const result = computeFitScore(resume, requirements);
     expect(result).toEqual({ score: 100, matched: requirements, missing: [] });
+  });
+
+  it('matches expanded O*NET/ESCO-inspired synonym groups', () => {
+    const resume =
+      'Scaled a SaaS analytics platform on K8s, owning CI/CD automation with JS and TS services.';
+    const requirements = [
+      'Own software as a service uptime targets',
+      'Harden Kubernetes clusters',
+      'Improve continuous integration workflows',
+      'Automate continuous delivery deployments',
+      'Build JavaScript frontends',
+      'Maintain TypeScript monorepos',
+    ];
+    const result = computeFitScore(resume, requirements);
+    expect(result).toEqual({ score: 100, matched: requirements, missing: [] });
+  });
+
+  it('documents CI/CD abbreviations without conflating integration and delivery', () => {
+    const source = readFileSync(new URL('../src/scoring.js', import.meta.url), 'utf8');
+    expect(source).not.toContain("['ci cd', 'continuous integration', 'continuous delivery']");
   });
 
   // Allow slower CI environments by using a relaxed threshold.
