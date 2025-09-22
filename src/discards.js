@@ -10,45 +10,32 @@ function getDiscardFilePath() {
   return { dir, file: path.join(dir, 'discarded_jobs.json') };
 }
 
-async function readDiscardFile(file) {
-  try {
-    const contents = await fs.readFile(file, 'utf8');
-    const data = JSON.parse(contents);
-    if (data && typeof data === 'object') {
-      return data;
-    }
-    return {};
-  } catch (err) {
-    if (err && err.code === 'ENOENT') return {};
-    throw err;
-  }
-}
-
-async function writeJsonFile(file, data) {
-  const tmp = `${file}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(data, null, 2));
-  await fs.rename(tmp, file);
+function sanitizeString(value) {
+  if (value == null) return '';
+  const str = typeof value === 'string' ? value : String(value);
+  return str.trim();
 }
 
 function normalizeJobId(jobId) {
-  if (!jobId || typeof jobId !== 'string' || !jobId.trim()) {
+  const value = sanitizeString(jobId);
+  if (!value) {
     throw new Error('job id is required');
   }
-  return jobId.trim();
+  return value;
 }
 
 function normalizeReason(reason) {
-  const value = typeof reason === 'string' ? reason.trim() : '';
+  const value = sanitizeString(reason);
   if (!value) throw new Error('reason is required');
   return value;
 }
 
 function normalizeTimestamp(input) {
-  const value = input ? new Date(input) : new Date();
-  if (Number.isNaN(value.getTime())) {
+  const candidate = input ? new Date(input) : new Date();
+  if (Number.isNaN(candidate.getTime())) {
     throw new Error(`invalid date: ${input}`);
   }
-  return value.toISOString();
+  return candidate.toISOString();
 }
 
 function normalizeTags(tags) {
@@ -68,6 +55,82 @@ function normalizeTags(tags) {
     normalized.push(item);
   }
   return normalized.length > 0 ? normalized : undefined;
+}
+
+function toIsoTimestamp(value) {
+  if (value == null) return 'unknown time';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    const fallback = sanitizeString(value);
+    return fallback || 'unknown time';
+  }
+  return date.toISOString();
+}
+
+function normalizeTagList(tags) {
+  if (!Array.isArray(tags)) return undefined;
+  const normalized = [];
+  for (const tag of tags) {
+    const value = sanitizeString(tag);
+    if (value) normalized.push(value);
+  }
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeDiscardEntries(entries) {
+  if (!Array.isArray(entries)) return [];
+  const normalized = [];
+  for (const entry of entries) {
+    if (!entry || typeof entry !== 'object') continue;
+    const rawReason = sanitizeString(entry.reason);
+    const reason = rawReason || 'Unknown reason';
+    const sourceTimestamp = entry.discarded_at ?? entry.discardedAt;
+    const discardedAt = toIsoTimestamp(sourceTimestamp);
+    const tags = normalizeTagList(entry.tags);
+    const payload = { reason, discarded_at: discardedAt };
+    if (tags) payload.tags = tags.slice();
+    normalized.push(payload);
+  }
+  normalized.sort((a, b) => {
+    const aTime = Date.parse(a.discarded_at);
+    const bTime = Date.parse(b.discarded_at);
+    if (Number.isNaN(aTime) && Number.isNaN(bTime)) return 0;
+    if (Number.isNaN(aTime)) return 1;
+    if (Number.isNaN(bTime)) return -1;
+    if (aTime === bTime) return 0;
+    return aTime < bTime ? -1 : 1;
+  });
+  return normalized;
+}
+
+function normalizeDiscardArchive(data) {
+  if (!data || typeof data !== 'object') return {};
+  const normalized = {};
+  const jobIds = Object.keys(data).sort((a, b) => a.localeCompare(b));
+  for (const jobId of jobIds) {
+    normalized[jobId] = normalizeDiscardEntries(data[jobId]);
+  }
+  return normalized;
+}
+
+async function readDiscardFile(file) {
+  try {
+    const contents = await fs.readFile(file, 'utf8');
+    const data = JSON.parse(contents);
+    if (data && typeof data === 'object') {
+      return data;
+    }
+    return {};
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return {};
+    throw err;
+  }
+}
+
+async function writeJsonFile(file, data) {
+  const tmp = `${file}.tmp`;
+  await fs.writeFile(tmp, JSON.stringify(data, null, 2));
+  await fs.rename(tmp, file);
 }
 
 let writeLock = Promise.resolve();
@@ -111,7 +174,11 @@ export function recordJobDiscard(jobId, { reason, date, tags } = {}) {
 export async function getDiscardedJobs(jobId) {
   const { file } = getDiscardFilePath();
   const data = await readDiscardFile(file);
-  if (jobId === undefined) return data;
-  const history = data[jobId];
-  return Array.isArray(history) ? history : [];
+  if (jobId === undefined) {
+    return normalizeDiscardArchive(data);
+  }
+  const history = Array.isArray(data[jobId]) ? data[jobId] : [];
+  return normalizeDiscardEntries(history);
 }
+
+export { normalizeDiscardEntries, normalizeDiscardArchive };
