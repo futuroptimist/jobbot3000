@@ -627,6 +627,40 @@ describe('jobbot CLI', () => {
       tags: ['growth', 'mission'],
       notes: 'Prefers collaborative teams',
       asked_at: '2025-02-01T12:34:56.000Z',
+      status: 'answered',
+    });
+  });
+
+  it('records skipped intake prompts for later follow-up', () => {
+    const output = runCli([
+      'intake',
+      'record',
+      '--question',
+      'Which benefits matter most?',
+      '--skip',
+      '--tags',
+      'benefits',
+      '--notes',
+      'Circle back after research',
+      '--asked-at',
+      '2025-02-02T08:00:00Z',
+    ]);
+    expect(output.trim()).toMatch(/^Recorded intake response /);
+
+    const list = runCli(['intake', 'list']);
+    expect(list).toContain('Which benefits matter most?');
+    expect(list).toContain('Status: Skipped');
+    expect(list).toContain('Answer: (skipped)');
+    expect(list).toContain('Tags: benefits');
+
+    const asJson = JSON.parse(runCli(['intake', 'list', '--json']));
+    expect(asJson.responses).toHaveLength(1);
+    expect(asJson.responses[0]).toMatchObject({
+      question: 'Which benefits matter most?',
+      status: 'skipped',
+      answer: '',
+      notes: 'Circle back after research',
+      tags: ['benefits'],
     });
   });
 

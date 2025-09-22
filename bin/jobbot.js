@@ -414,7 +414,13 @@ function formatIntakeList(entries) {
   const lines = [];
   for (const entry of entries) {
     lines.push(entry.question);
-    lines.push(`  Answer: ${entry.answer}`);
+    const status = typeof entry.status === 'string' ? entry.status : 'answered';
+    if (status === 'skipped') {
+      lines.push('  Status: Skipped');
+      lines.push('  Answer: (skipped)');
+    } else {
+      lines.push(`  Answer: ${entry.answer}`);
+    }
     if (entry.tags && entry.tags.length > 0) {
       lines.push(`  Tags: ${entry.tags.join(', ')}`);
     }
@@ -439,19 +445,22 @@ function formatIntakeList(entries) {
 }
 
 async function cmdIntakeRecord(args) {
+  const skip = args.includes('--skip');
   const question = readContentFromArgs(args, '--question', '--question-file');
   const answer = readContentFromArgs(args, '--answer', '--answer-file');
-  if (!question || !answer) {
+  if (!question || (!skip && !answer)) {
     console.error(
-      'Usage: jobbot intake record --question <text> --answer <text> ' +
-        '[--tags <tag1,tag2>] [--notes <text>|--notes-file <path>] [--asked-at <iso8601>]'
+      'Usage: jobbot intake record --question <text> [--answer <text>|--answer-file <path>] ' +
+        '[--skip] [--tags <tag1,tag2>] [--notes <text>|--notes-file <path>] [--asked-at <iso8601>]'
     );
     process.exit(2);
   }
   const tags = parseTagsFlag(args);
   const notes = readContentFromArgs(args, '--notes', '--notes-file');
   const askedAt = getFlag(args, '--asked-at');
-  const entry = await recordIntakeResponse({ question, answer, tags, notes, askedAt });
+  const payload = { question, tags, notes, askedAt, skipped: skip };
+  if (!skip) payload.answer = answer;
+  const entry = await recordIntakeResponse(payload);
   console.log(`Recorded intake response ${entry.id}`);
 }
 

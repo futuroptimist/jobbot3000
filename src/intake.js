@@ -70,18 +70,25 @@ async function readIntakeFile(file) {
       const responses = Array.isArray(parsed.responses) ? parsed.responses : [];
       return responses
         .filter(entry => entry && typeof entry === 'object')
-        .map(entry => ({
-          id: typeof entry.id === 'string' ? entry.id : randomUUID(),
-          question: typeof entry.question === 'string' ? entry.question : '',
-          answer: typeof entry.answer === 'string' ? entry.answer : '',
-          asked_at: typeof entry.asked_at === 'string' ? entry.asked_at : undefined,
-          recorded_at: typeof entry.recorded_at === 'string' ? entry.recorded_at : undefined,
-          tags: Array.isArray(entry.tags)
-            ? entry.tags.filter(tag => typeof tag === 'string')
-            : undefined,
-          notes: typeof entry.notes === 'string' ? entry.notes : undefined,
-        }))
-        .filter(entry => entry.question && entry.answer);
+        .map(entry => {
+          const statusRaw =
+            typeof entry.status === 'string' ? entry.status.trim().toLowerCase() : '';
+          const status = statusRaw === 'skipped' ? 'skipped' : 'answered';
+          const base = {
+            id: typeof entry.id === 'string' ? entry.id : randomUUID(),
+            question: typeof entry.question === 'string' ? entry.question : '',
+            answer: typeof entry.answer === 'string' ? entry.answer : '',
+            asked_at: typeof entry.asked_at === 'string' ? entry.asked_at : undefined,
+            recorded_at: typeof entry.recorded_at === 'string' ? entry.recorded_at : undefined,
+            tags: Array.isArray(entry.tags)
+              ? entry.tags.filter(tag => typeof tag === 'string')
+              : undefined,
+            notes: typeof entry.notes === 'string' ? entry.notes : undefined,
+            status,
+          };
+          return base;
+        })
+        .filter(entry => entry.question && (entry.status === 'skipped' || entry.answer));
     }
     return [];
   } catch (err) {
@@ -106,12 +113,21 @@ let writeLock = Promise.resolve();
 
 export function recordIntakeResponse(data = {}) {
   let question;
-  let answer;
   try {
     question = requireString(data.question, 'question');
-    answer = requireString(data.answer, 'answer');
   } catch (err) {
     return Promise.reject(err);
+  }
+
+  const skipped = Boolean(data.skipped);
+
+  let answer = '';
+  if (!skipped) {
+    try {
+      answer = requireString(data.answer, 'answer');
+    } catch (err) {
+      return Promise.reject(err);
+    }
   }
 
   let askedAt;
@@ -131,6 +147,7 @@ export function recordIntakeResponse(data = {}) {
     answer,
     asked_at: effectiveAskedAt,
     recorded_at: recordedAt,
+    status: skipped ? 'skipped' : 'answered',
   };
   if (tags) entry.tags = tags;
   if (notes) entry.notes = notes;

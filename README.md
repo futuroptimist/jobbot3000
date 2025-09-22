@@ -510,11 +510,28 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot intake list
 #   Asked At: 2025-02-01T12:34:56.000Z
 #   Recorded At: 2025-02-01T12:40:00.000Z
 #   ID: 123e4567-e89b-12d3-a456-426614174000
+
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot intake record \
+  --question "Which benefits matter most?" \
+  --skip \
+  --notes "Circle back after research"
+# Recorded intake response 987e6543-e21b-45d3-a456-426614174001
+
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot intake list --json | jq '.responses[1]'
+# {
+#   "question": "Which benefits matter most?",
+#   "answer": "",
+#   "status": "skipped",
+#   "notes": "Circle back after research",
+#   "asked_at": "2025-02-01T12:40:00.000Z",
+#   "recorded_at": "2025-02-01T12:40:00.000Z",
+#   "id": "987e6543-e21b-45d3-a456-426614174001"
+# }
 ```
 
-Entries are appended to `data/profile/intake.json` with normalized timestamps, optional tags, and
-notes so follow-up planning can reference prior answers. Recorded timestamps reflect when the
-command runs. Automated coverage in
+Entries are appended to `data/profile/intake.json` with normalized timestamps, optional tags, notes,
+and a `status` field so follow-up planning can reference prior answers and revisit skipped prompts.
+Recorded timestamps reflect when the command runs. Automated coverage in
 [`test/intake.test.js`](test/intake.test.js) and [`test/cli.test.js`](test/cli.test.js) verifies the
 stored shape and CLI workflows.
 

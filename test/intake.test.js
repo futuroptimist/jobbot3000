@@ -46,6 +46,7 @@ describe('intake responses', () => {
       asked_at: '2025-02-01T12:00:00.000Z',
       tags: ['Growth', 'career'],
       notes: 'Prefers mission-driven teams',
+      status: 'answered',
     });
     expect(entry.recorded_at).toEqual(new Date(entry.recorded_at).toISOString());
     expect(typeof entry.id).toBe('string');
@@ -61,6 +62,7 @@ describe('intake responses', () => {
       asked_at: '2025-02-01T12:00:00.000Z',
       tags: ['Growth', 'career'],
       notes: 'Prefers mission-driven teams',
+      status: 'answered',
     });
   });
 
@@ -88,5 +90,33 @@ describe('intake responses', () => {
     entries[0].question = 'mutated';
     const reread = await getIntakeResponses();
     expect(reread[0].question).toBe('First');
+  });
+
+  it('records skipped prompts for future follow-up', async () => {
+    const { recordIntakeResponse, getIntakeResponses } = await import('../src/intake.js');
+
+    const entry = await recordIntakeResponse({
+      question: 'Which benefits matter most to you?',
+      skipped: true,
+      notes: 'Revisit after comparing offers',
+      tags: ['benefits'],
+      askedAt: '2025-02-02T08:00:00Z',
+    });
+
+    expect(entry.question).toBe('Which benefits matter most to you?');
+    expect(entry.status).toBe('skipped');
+    expect(entry.answer).toBe('');
+    expect(entry.notes).toBe('Revisit after comparing offers');
+    expect(entry.tags).toEqual(['benefits']);
+
+    const responses = await getIntakeResponses();
+    expect(responses).toHaveLength(1);
+    expect(responses[0]).toMatchObject({
+      question: 'Which benefits matter most to you?',
+      status: 'skipped',
+      answer: '',
+      notes: 'Revisit after comparing offers',
+      asked_at: '2025-02-02T08:00:00.000Z',
+    });
   });
 });
