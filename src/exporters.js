@@ -236,6 +236,21 @@ const BLOCKER_PATTERNS = [
   /\bauthorization\b/i,
   /\bcitizen(?:ship)?\b/i,
   /\bwork permit\b/i,
+  /\bonsite\b/i,
+  /\bon-site\b/i,
+  /\bin[-\s]?office\b/i,
+  /\bhybrid\b/i,
+  /\brelocat(?:e|ion)\b/i,
+  /\bcommute\b/i,
+  /\btravel\b/i,
+  /\bsalary\b/i,
+  /\bcompensation\b/i,
+  /\bpay range\b/i,
+  /\bbase (?:salary|pay)\b/i,
+  /\btotal compensation\b/i,
+  /\b(?:\d+\+?\s*(?:years?|yrs?)\s+of\s+experience)\b/i,
+  /\b(?:entry|mid|senior|staff|principal|lead)(?: |-)?level\b/i,
+  /\bleadership\b/i,
 ];
 
 function collectBlockers(requirements) {

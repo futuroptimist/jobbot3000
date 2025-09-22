@@ -245,6 +245,30 @@ describe('exporters', () => {
     expect(text).toContain(gapsLine);
   });
 
+  it('treats location, salary, and seniority requirements as blockers', () => {
+    const text = formatMatchExplanation({
+      matched: [],
+      missing: [
+        'Position is onsite in Austin, TX (no remote option)',
+        'Base salary range: $150k - $180k plus bonus',
+        'Senior-level engineering leadership required',
+      ],
+    });
+
+    const blockersLine = text
+      .split('\n')
+      .find(line => line.startsWith('Blockers:'));
+    expect(blockersLine).toBeDefined();
+    expect(blockersLine).toContain('Position is onsite in Austin, TX (no remote option)');
+    expect(blockersLine).toContain('Base salary range: $150k - $180k plus bonus');
+    expect(blockersLine).toContain('Senior-level engineering leadership required');
+
+    const gapsLine = text.split('\n').find(line => line.startsWith('Gaps:'));
+    expect(gapsLine).toContain('Position is onsite in Austin, TX (no remote option)');
+    expect(gapsLine).toContain('Base salary range: $150k - $180k plus bonus');
+    expect(gapsLine).toContain('Senior-level engineering leadership required');
+  });
+
   it('renders markdown explanation with escaped content', () => {
     const md = toMarkdownMatchExplanation({
       matched: ['Node.js (services)'],

@@ -341,10 +341,12 @@ aliases.
 
 The explanation helper also highlights blockers when missing requirements look like must-haves.
 Entries containing phrases such as “must”, “required”, “security clearance”, “visa”, “sponsorship”,
-“certification”, “license”, “authorization”, or “citizenship” are surfaced in a dedicated line so
-reviewers can distinguish urgent gaps from nice-to-have skills. Tests in
-[`test/exporters.test.js`](test/exporters.test.js) cover blocker detection and the fallback message
-when no mandatory requirements are found.
+“certification”, “license”, “authorization”, or “citizenship” now share the same spotlight as
+location constraints (“onsite”, “in-office”, “relocation”, “travel”), compensation language
+(“salary”, “compensation”, “base pay”), and seniority signals (“senior-level”, “years of experience”,
+“leadership”). They are surfaced in a dedicated line so reviewers can distinguish urgent gaps from
+nice-to-have skills. Tests in [`test/exporters.test.js`](test/exporters.test.js) cover the expanded
+blocker detection and the fallback message when no mandatory requirements are found.
 
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal
 punctuation like `?!`, including when followed by closing quotes or parentheses. Terminators apply
