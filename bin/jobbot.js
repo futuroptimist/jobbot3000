@@ -470,9 +470,15 @@ async function cmdIntakeRecord(args) {
 
 async function cmdIntakeList(args) {
   const asJson = args.includes('--json');
-  const entries = await getIntakeResponses();
+  const skippedOnly = args.includes('--skipped-only');
+  const filters = skippedOnly ? { status: 'skipped' } : undefined;
+  const entries = await getIntakeResponses(filters);
   if (asJson) {
     console.log(JSON.stringify({ responses: entries }, null, 2));
+    return;
+  }
+  if (!entries.length) {
+    console.log(skippedOnly ? 'No skipped intake responses found' : 'No intake responses found');
     return;
   }
   console.log(formatIntakeList(entries));
