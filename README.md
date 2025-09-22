@@ -151,6 +151,13 @@ console.log(metadata);
 //   characters: 1980,
 //   lineCount: 62,
 //   wordCount: 340,
+//   confidence: 0.9,
+//   ambiguities: [
+//     {
+//       type: 'metrics',
+//       message: 'No numeric metrics detected; consider adding quantified achievements.'
+//     }
+//   ],
 //   warnings: [
 //     {
 //       type: 'tables',
@@ -164,6 +171,9 @@ console.log(metadata);
 depend on the shape. When tables or images appear in the source material, the
 metadata includes `warnings` entries that flag ATS-hostile patterns; new tests
 assert tables and images trigger the warnings so resume imports surface risks.
+Ambiguity heuristics now emit `ambiguities` entries when month ranges omit years,
+job titles are missing, or quantified metrics are absent, and the `confidence`
+score reflects those signals so review tools can triage follow-up work.
 
 Initialize a JSON Resume skeleton when you do not have an existing file:
 

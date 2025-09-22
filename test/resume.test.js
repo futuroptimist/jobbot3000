@@ -107,4 +107,41 @@ describe('loadResume', () => {
       ])
     );
   });
+
+  it('annotates metadata with ambiguities and confidence heuristics', async () => {
+    const content = [
+      '# Summary',
+      '',
+      'Jan - Present',
+      'Leading strategic initiatives across teams.',
+      '',
+      '| Skill | Level |',
+      '| ----- | ----- |',
+      '| Collaboration | High |',
+      '',
+      '![Workflow](workflow.png)',
+    ].join('\n');
+
+    const result = await withTempFile('.md', content, file =>
+      loadResume(file, { withMetadata: true })
+    );
+
+    expect(result.metadata.ambiguities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'dates',
+          message: expect.stringContaining('date'),
+        }),
+        expect.objectContaining({
+          type: 'metrics',
+          message: expect.stringContaining('numeric'),
+        }),
+        expect.objectContaining({
+          type: 'titles',
+          message: expect.stringContaining('titles'),
+        }),
+      ])
+    );
+    expect(result.metadata.confidence).toBeCloseTo(0.4, 5);
+  });
 });
