@@ -208,15 +208,16 @@ describe('exporters', () => {
     expect(output).toBe(expected);
   });
 
-  it('summarizes match explanations with top hits and gaps', () => {
+  it('summarizes match explanations with top hits, gaps, and blockers', () => {
     const text = formatMatchExplanation({
       matched: ['JavaScript expertise', 'Mentored seniors'],
-      missing: ['Public cloud expertise'],
+      missing: ['Must have public cloud expertise'],
       score: 67,
     });
     expect(text).toContain('Matched 2 of 3 requirements (67%)');
     expect(text).toContain('Hits: JavaScript expertise; Mentored seniors');
-    expect(text).toContain('Gaps: Public cloud expertise');
+    expect(text).toContain('Gaps: Must have public cloud expertise');
+    expect(text).toContain('Blockers: Must have public cloud expertise');
   });
 
   it('falls back when no hits or gaps are present', () => {
@@ -224,6 +225,24 @@ describe('exporters', () => {
     expect(text).toContain('Matched 0 of 0 requirements (0%)');
     expect(text).toContain('No direct hits from the resume.');
     expect(text).toContain('No missing requirements detected.');
+    expect(text).toContain('No blockers flagged.');
+  });
+
+  it('surfaces blockers based on must-have keywords', () => {
+    const text = formatMatchExplanation({
+      matched: [],
+      missing: [
+        'Security clearance required',
+        'AWS certification preferred',
+        'Strong communication skills',
+      ],
+    });
+    const blockersLine =
+      'Blockers: Security clearance required; AWS certification preferred';
+    const gapsLine =
+      'Gaps: Security clearance required; AWS certification preferred; Strong communication skills';
+    expect(text).toContain(blockersLine);
+    expect(text).toContain(gapsLine);
   });
 
   it('renders markdown explanation with escaped content', () => {
@@ -236,6 +255,7 @@ describe('exporters', () => {
     expect(md).toContain('Matched 1 of 2 requirements \\(50%\\)');
     expect(md).toContain('Hits: Node.js \\(services\\)');
     expect(md).toContain('Gaps: Go & Rust');
+    expect(md).toContain('No blockers flagged.');
   });
 
   it('generates DOCX summaries with localized labels', async () => {

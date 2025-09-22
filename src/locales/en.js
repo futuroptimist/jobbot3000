@@ -12,6 +12,8 @@ export default {
   gaps: 'Gaps',
   noHits: 'No direct hits from the resume.',
   noGaps: 'No missing requirements detected.',
+  blockers: 'Blockers',
+  noBlockers: 'No blockers flagged.',
   coverageSummary: 'Matched {matched} of {total} requirements ({score}%).',
   greeting: 'Hello, {name}!'
 };

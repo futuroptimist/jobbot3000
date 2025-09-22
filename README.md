@@ -263,16 +263,29 @@ JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot match --resume resume.txt --job job.txt 
 # Matched 2 of 3 requirements (67%).
 # Hits: Distributed systems experience; Mentors senior engineers
 # Gaps: Certified Kubernetes administrator
+# Blockers: Certified Kubernetes administrator
 
 # Persist a DOCX match report while keeping machine-readable output
 JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot match --resume resume.txt --job job.txt --json --docx match.docx
 # => JSON match report prints to stdout; match.docx contains the formatted document
 ```
 
+Fit scoring recognizes common abbreviations so lexical-only resumes still match spelled-out
+requirements. `AWS` on a resume matches `Amazon Web Services`, `ML` pairs with `Machine learning`,
+`AI` aligns with `Artificial intelligence`, and `Postgres` maps to `PostgreSQL`. Automated coverage
+in [`test/scoring.test.js`](test/scoring.test.js) exercises these semantic aliases.
+
+The explanation helper also highlights blockers when missing requirements look like must-haves.
+Entries containing phrases such as “must”, “required”, “security clearance”, “visa”, “sponsorship”,
+“certification”, “license”, “authorization”, or “citizenship” are surfaced in a dedicated line so
+reviewers can distinguish urgent gaps from nice-to-have skills. Tests in
+[`test/exporters.test.js`](test/exporters.test.js) cover blocker detection and the fallback message
+when no mandatory requirements are found.
+
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal
 punctuation like `?!`, including when followed by closing quotes or parentheses. Terminators apply
 only when followed by whitespace or the end of text, so decimals like `1.99` remain intact.
-It ignores bare newlines.  
+It ignores bare newlines.
 It scans text character-by-character to avoid large intermediate arrays and regex performance
 pitfalls, falling back to the trimmed input when no sentence punctuation is found.
 Trailing quotes or parentheses are included when they immediately follow punctuation, and all

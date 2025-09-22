@@ -12,6 +12,8 @@ export default {
   gaps: 'Vacíos',
   noHits: 'Sin coincidencias directas desde el currículum.',
   noGaps: 'No se detectaron requisitos faltantes.',
+  blockers: 'Obstáculos',
+  noBlockers: 'No se identificaron obstáculos.',
   coverageSummary: 'Coincidió con {matched} de {total} requisitos ({score}%).',
   greeting: '¡Hola, {name}!'
 };
