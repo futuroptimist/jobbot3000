@@ -22,7 +22,11 @@ import {
   getApplicationReminders,
 } from '../src/application-events.js';
 import { recordApplication, STATUSES } from '../src/lifecycle.js';
-import { getDiscardedJobs } from '../src/discards.js';
+import {
+  getDiscardedJobs,
+  normalizeDiscardEntries,
+  normalizeDiscardArchive,
+} from '../src/discards.js';
 import { addJobTags, discardJob, filterShortlist, syncShortlistJob } from '../src/shortlist.js';
 import { recordInterviewSession, getInterviewSession } from '../src/interviews.js';
 import { initProfile } from '../src/profile.js';
@@ -670,51 +674,6 @@ function formatShortlistList(jobs) {
   return lines.join('\n');
 }
 
-function normalizeDiscardEntries(entries) {
-  if (!Array.isArray(entries)) return [];
-  const normalized = entries
-    .filter(entry => entry && typeof entry === 'object')
-    .map(entry => {
-      const source = entry.discarded_at ?? entry.discardedAt;
-      let timestamp = 'unknown time';
-      if (source) {
-        const date = new Date(source);
-        timestamp = Number.isNaN(date.getTime()) ? String(source) : date.toISOString();
-      }
-      const reasonValue = entry.reason;
-      const reason =
-        typeof reasonValue === 'string' && reasonValue.trim()
-          ? reasonValue.trim()
-          : 'Unknown reason';
-      const tags = Array.isArray(entry.tags)
-        ? entry.tags.map(tag => String(tag).trim()).filter(Boolean)
-        : [];
-      const payload = { discarded_at: timestamp, reason };
-      if (tags.length > 0) payload.tags = tags;
-      return payload;
-    });
-  normalized.sort((a, b) => {
-    const aTime = Date.parse(a.discarded_at);
-    const bTime = Date.parse(b.discarded_at);
-    if (Number.isNaN(aTime) && Number.isNaN(bTime)) return 0;
-    if (Number.isNaN(aTime)) return 1;
-    if (Number.isNaN(bTime)) return -1;
-    if (aTime === bTime) return 0;
-    return aTime < bTime ? -1 : 1;
-  });
-  return normalized;
-}
-
-function normalizeDiscardArchive(archive) {
-  if (!archive || typeof archive !== 'object') return {};
-  const jobIds = Object.keys(archive).sort((a, b) => a.localeCompare(b));
-  const normalized = {};
-  for (const jobId of jobIds) {
-    normalized[jobId] = normalizeDiscardEntries(archive[jobId]);
-  }
-  return normalized;
-}
-
 function formatDiscardHistory(jobId, entries) {
   const normalized = normalizeDiscardEntries(entries);
   if (normalized.length === 0) {
@@ -780,8 +739,7 @@ async function cmdShortlistArchive(args) {
     if (jobId) {
       const history = await getDiscardedJobs(jobId);
       if (asJson) {
-        const normalized = normalizeDiscardEntries(history);
-        console.log(JSON.stringify({ job_id: jobId, history: normalized }, null, 2));
+        console.log(JSON.stringify({ job_id: jobId, history }, null, 2));
       } else {
         console.log(formatDiscardHistory(jobId, history));
       }
@@ -790,8 +748,7 @@ async function cmdShortlistArchive(args) {
 
     const archive = await getDiscardedJobs();
     if (asJson) {
-      const normalized = normalizeDiscardArchive(archive);
-      console.log(JSON.stringify({ discarded: normalized }, null, 2));
+      console.log(JSON.stringify({ discarded: archive }, null, 2));
     } else {
       console.log(formatDiscardArchive(archive));
     }

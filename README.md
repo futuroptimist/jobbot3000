@@ -475,9 +475,9 @@ can surface the most recent rationale without traversing the full history. Add `
 shortlist list command when piping entries into other tools, and filter by metadata or tags
 (`--location`, `--level`, `--compensation`, or repeated `--tag` flags) when triaging opportunities.
 Text output also surfaces `Last Discard Tags` when tag
-history exists so the rationale stays visible without opening the archive. When older history entries
-lack timestamps, the CLI labels them as `(unknown time)` so legacy discards still surface their
-rationale. Metadata syncs stamp a `synced_at` ISO 8601 timestamp for
+history exists so the rationale stays visible without opening the archive. The archive reader trims
+messy history entries, sorts them chronologically, and fills missing timestamps with `unknown time`
+so legacy discards still surface their rationale. Metadata syncs stamp a `synced_at` ISO 8601 timestamp for
 refresh schedulers. Shells treat `$` as a variable prefix, so `--compensation "$185k"` expands to
 `85k`. The CLI re-attaches a default currency symbol so the stored value becomes `$85k`; escape the
 dollar sign (`--compensation "\$185k"`) when you need the digits preserved. Override the auto-attached
