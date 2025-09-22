@@ -266,7 +266,7 @@ jobbot track add <job_id> --status applied --note "emailed hiring manager"
 **Phase 2 — Matching (1 week)**
 - Embeddings service (local HF) + pgvector store.
 - Keyword/BM25 baseline + cosine combo scoring.
-- O*NET/ESCO synonym expansion.
+- O*NET/ESCO synonym expansion. (shipped)
 - Explanations UI (hits/gaps/evidence).
 - CLI: `jobbot match --explain` (shipped).
 

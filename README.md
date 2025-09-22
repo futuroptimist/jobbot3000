@@ -332,8 +332,12 @@ JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot match --resume resume.txt --job job.txt 
 
 Fit scoring recognizes common abbreviations so lexical-only resumes still match spelled-out
 requirements. `AWS` on a resume matches `Amazon Web Services`, `ML` pairs with `Machine learning`,
-`AI` aligns with `Artificial intelligence`, and `Postgres` maps to `PostgreSQL`. Automated coverage
-in [`test/scoring.test.js`](test/scoring.test.js) exercises these semantic aliases.
+`AI` aligns with `Artificial intelligence`, and `Postgres` maps to `PostgreSQL`. The matcher also
+bridges `SaaS` with `Software as a Service`, `K8s` with `Kubernetes`, maps `CI/CD` to both `Continuous
+integration` and `Continuous delivery` without conflating the two, and short forms like `JS`/`TS` with
+`JavaScript`/`TypeScript`.
+Automated coverage in [`test/scoring.test.js`](test/scoring.test.js) exercises these semantic
+aliases.
 
 The explanation helper also highlights blockers when missing requirements look like must-haves.
 Entries containing phrases such as “must”, “required”, “security clearance”, “visa”, “sponsorship”,
