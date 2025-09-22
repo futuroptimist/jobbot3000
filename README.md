@@ -93,8 +93,11 @@ run();
 
 `fetchTextFromUrl` strips scripts, styles, navigation, header, footer, aside,
 and noscript content, preserves image alt text or `aria-label` values (while
-ignoring `aria-hidden` images or those with `role="presentation"`/`"none"`), and
-collapses whitespace to single spaces. Pass `timeoutMs` (milliseconds) to
+ignoring `aria-hidden` images—including boolean attributes without a value—or
+those with `role="presentation"`/`"none"`), and collapses whitespace to single
+spaces. Tests in [`test/fetch.test.js`](test/fetch.test.js) cover uppercase,
+numeric, and valueless `aria-hidden` attributes alongside role variants so
+regressions are caught early. Pass `timeoutMs` (milliseconds) to
 override the 10s default, and `headers` to send custom HTTP headers. Requests
 default to sending `User-Agent: jobbot3000`; provide a `User-Agent` header to
 override it. Responses
@@ -349,6 +352,15 @@ downstream tooling can diff revisions over time. Tests in
 pipelines fetch board content, persist structured snapshots, surface fetch
 errors, and retain the `User-Agent: jobbot3000` request header alongside each
 capture so fetches are reproducible.
+Per-tenant rate limits prevent hammering board APIs: set
+`JOBBOT_GREENHOUSE_RATE_LIMIT_MS`, `JOBBOT_LEVER_RATE_LIMIT_MS`,
+`JOBBOT_ASHBY_RATE_LIMIT_MS`, `JOBBOT_SMARTRECRUITERS_RATE_LIMIT_MS`, or
+`JOBBOT_WORKABLE_RATE_LIMIT_MS` to throttle repeat requests. Greenhouse caches
+the last fetch timestamp per board and seeds the limiter across CLI runs so
+back-to-back syncs stay compliant. New coverage in
+[`test/fetch.test.js`](test/fetch.test.js) exercises the limiter queue, and
+[`test/greenhouse.test.js`](test/greenhouse.test.js) verifies consecutive syncs
+defer the second fetch until the configured window elapses.
 [`test/lever.test.js`](test/lever.test.js) now explicitly asserts the Lever
 client forwards that header to the API and persists it in saved snapshots so
 metadata stays consistent across providers. Automated coverage in

@@ -1,13 +1,22 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import fetch from 'node-fetch';
-import { extractTextFromHtml, fetchWithRetry } from './fetch.js';
+import {
+  extractTextFromHtml,
+  fetchWithRetry,
+  setFetchRateLimit,
+  normalizeRateLimitInterval,
+} from './fetch.js';
 import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
 import { parseJobText } from './parser.js';
 
 const GREENHOUSE_BASE = 'https://boards.greenhouse.io/v1/boards';
 
 const GREENHOUSE_HEADERS = { 'User-Agent': 'jobbot3000' };
+const GREENHOUSE_RATE_LIMIT_MS = normalizeRateLimitInterval(
+  process.env.JOBBOT_GREENHOUSE_RATE_LIMIT_MS,
+  500,
+);
 
 function resolveDataDir() {
   return process.env.JOBBOT_DATA_DIR || path.resolve('data');
@@ -31,6 +40,9 @@ async function readCacheMetadata(slug) {
       if (typeof parsed.lastModified === 'string' && parsed.lastModified.trim()) {
         metadata.lastModified = parsed.lastModified.trim();
       }
+      if (typeof parsed.fetchedAt === 'string' && parsed.fetchedAt.trim()) {
+        metadata.fetchedAt = parsed.fetchedAt.trim();
+      }
       return metadata;
     }
   } catch (err) {
@@ -43,6 +55,7 @@ async function writeCacheMetadata(slug, metadata) {
   const entries = {};
   if (metadata.etag) entries.etag = metadata.etag;
   if (metadata.lastModified) entries.lastModified = metadata.lastModified;
+  if (metadata.fetchedAt) entries.fetchedAt = metadata.fetchedAt;
 
   const { dir, file } = getCachePaths(slug);
   if (Object.keys(entries).length === 0) {
@@ -106,6 +119,14 @@ export async function fetchGreenhouseJobs(board, { fetchImpl = fetch, retry } = 
   const slug = normalizeBoardSlug(board);
   const url = buildBoardUrl(slug);
   const cacheMetadata = await readCacheMetadata(slug);
+  const rateLimitKey = `greenhouse:${slug}`;
+  if (GREENHOUSE_RATE_LIMIT_MS > 0) {
+    setFetchRateLimit(rateLimitKey, GREENHOUSE_RATE_LIMIT_MS, {
+      lastInvokedAt: cacheMetadata.fetchedAt,
+    });
+  } else {
+    setFetchRateLimit(rateLimitKey, 0);
+  }
   const headers = { ...GREENHOUSE_HEADERS };
   if (cacheMetadata.etag) headers['If-None-Match'] = cacheMetadata.etag;
   if (cacheMetadata.lastModified) headers['If-Modified-Since'] = cacheMetadata.lastModified;
@@ -114,12 +135,13 @@ export async function fetchGreenhouseJobs(board, { fetchImpl = fetch, retry } = 
     fetchImpl,
     headers,
     retry,
+    rateLimitKey,
   });
 
   const notModified = response.status === 304;
   const etag = getResponseHeader(response, 'etag');
   const lastModified = getResponseHeader(response, 'last-modified');
-  const metadataToPersist = {};
+  const metadataToPersist = { fetchedAt: new Date().toISOString() };
   if (etag) metadataToPersist.etag = etag;
   else if (notModified && cacheMetadata.etag) {
     metadataToPersist.etag = cacheMetadata.etag;
