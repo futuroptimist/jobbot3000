@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { performance } from 'node:perf_hooks';
-import { computeFitScore } from '../src/scoring.js';
+import { computeFitScore, __testHasSynonymMatch } from '../src/scoring.js';
 
 describe('computeFitScore', () => {
   it('scores matched and missing requirements', () => {
@@ -59,6 +59,36 @@ describe('computeFitScore', () => {
     ];
     const result = computeFitScore(resume, requirements);
     expect(result).toEqual({ score: 100, matched: requirements, missing: [] });
+  });
+
+  it('matches expanded O*NET/ESCO-inspired synonym groups', () => {
+    const resume =
+      'Scaled a SaaS analytics platform on K8s, owning CI/CD automation with JS and TS services.';
+    const requirements = [
+      'Own software as a service uptime targets',
+      'Harden Kubernetes clusters',
+      'Improve continuous integration workflows',
+      'Automate continuous delivery deployments',
+      'Build JavaScript frontends',
+      'Maintain TypeScript monorepos',
+    ];
+    const result = computeFitScore(resume, requirements);
+    expect(result).toEqual({ score: 100, matched: requirements, missing: [] });
+  });
+
+  it('only bridges the CI/CD abbreviation to each spelled-out term', () => {
+    expect(
+      __testHasSynonymMatch(
+        'Improve continuous integration workflows',
+        'Continuous delivery expertise',
+      ),
+    ).toBe(false);
+    expect(
+      __testHasSynonymMatch('Automate continuous delivery deployments', 'CI/CD automation'),
+    ).toBe(true);
+    expect(
+      __testHasSynonymMatch('Improve continuous integration workflows', 'CI/CD automation'),
+    ).toBe(true);
   });
 
   // Allow slower CI environments by using a relaxed threshold.

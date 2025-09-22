@@ -56,6 +56,12 @@ const SYNONYM_GROUPS = [
   ['ml', 'machine learning'],
   ['ai', 'artificial intelligence'],
   ['postgres', 'postgresql'],
+  ['saas', 'software as a service'],
+  ['k8s', 'kubernetes'],
+  ['ci cd', 'continuous integration'],
+  ['ci cd', 'continuous delivery'],
+  ['js', 'javascript'],
+  ['ts', 'typescript'],
 ];
 
 function resumeTokens(text) {
@@ -167,4 +173,9 @@ export function computeFitScore(resumeText, requirements) {
 
   const score = Math.round((matched.length / total) * 100);
   return { score, matched, missing };
+}
+
+export function __testHasSynonymMatch(requirementLine, resumeText) {
+  const normalizedLine = normalizeForSynonyms(requirementLine);
+  return hasSynonymMatch(normalizedLine, () => normalizeForSynonyms(resumeText));
 }
