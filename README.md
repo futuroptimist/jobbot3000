@@ -396,12 +396,15 @@ JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot ingest smartrecruiters --company example
 
 JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot ingest workable --company example
 # Imported 4 jobs from example
+
+JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot ingest url https://example.com/jobs/staff-engineer
+# Imported job 5d41402abc4b2a76 from https://example.com/jobs/staff-engineer
 ```
 
 Each listing in the response is normalised to plain text, parsed for title,
 location, and requirements, and written to `data/jobs/{job_id}.json` with a
 `source.type` reflecting the provider (`greenhouse`, `lever`, `ashby`,
-`smartrecruiters`, or `workable`). Updates reuse the same job identifier so
+`smartrecruiters`, `workable`, or `url`). Updates reuse the same job identifier so
 downstream tooling can diff revisions over time. Tests in
 [`test/greenhouse.test.js`](test/greenhouse.test.js),
 [`test/lever.test.js`](test/lever.test.js), [`test/ashby.test.js`](test/ashby.test.js),
@@ -409,7 +412,9 @@ downstream tooling can diff revisions over time. Tests in
 [`test/workable.test.js`](test/workable.test.js) verify the ingest
 pipelines fetch board content, persist structured snapshots, surface fetch
 errors, and retain the `User-Agent: jobbot3000` request header alongside each
-capture so fetches are reproducible.
+capture so fetches are reproducible. [`test/jobs.test.js`](test/jobs.test.js)
+adds coverage for direct URL ingestion, ensuring snapshots store normalized
+request headers and reject unsupported protocols.
 Per-tenant rate limits prevent hammering board APIs: set
 `JOBBOT_GREENHOUSE_RATE_LIMIT_MS`, `JOBBOT_LEVER_RATE_LIMIT_MS`,
 `JOBBOT_ASHBY_RATE_LIMIT_MS`, `JOBBOT_SMARTRECRUITERS_RATE_LIMIT_MS`, or
