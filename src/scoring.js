@@ -51,6 +51,13 @@ function tokenize(text) {
 let cachedResume = '';
 let cachedTokens = new Set();
 
+const SYNONYM_GROUPS = [
+  ['aws', 'amazon web services'],
+  ['ml', 'machine learning'],
+  ['ai', 'artificial intelligence'],
+  ['postgres', 'postgresql'],
+];
+
 function resumeTokens(text) {
   const normalized = typeof text === 'string' ? text : String(text || '');
   if (normalized === cachedResume) return cachedTokens;
@@ -59,10 +66,49 @@ function resumeTokens(text) {
   return cachedTokens;
 }
 
+function normalizeForSynonyms(value) {
+  if (value == null) return '';
+  const text = typeof value === 'string' ? value : String(value);
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+function containsPhrase(haystack, phrase) {
+  if (!haystack || !phrase) return false;
+  const paddedHaystack = ` ${haystack} `;
+  const paddedPhrase = ` ${phrase} `;
+  return paddedHaystack.includes(paddedPhrase);
+}
+
+function hasSynonymMatch(normalizedLine, getNormalizedResume) {
+  if (!normalizedLine) return false;
+  for (const group of SYNONYM_GROUPS) {
+    let lineHasGroup = false;
+    for (const phrase of group) {
+      if (containsPhrase(normalizedLine, phrase)) {
+        lineHasGroup = true;
+        break;
+      }
+    }
+    if (!lineHasGroup) continue;
+    const normalizedResume = getNormalizedResume();
+    if (!normalizedResume) continue;
+    for (const phrase of group) {
+      if (containsPhrase(normalizedResume, phrase)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 // Check if a line overlaps with tokens in the resume set using a manual scanner.
 // This avoids regex and array allocations for each requirement line.
 // Skip non-string lines to tolerate malformed requirement entries from external sources.
-function hasOverlap(line, resumeSet) {
+function hasOverlap(line, resumeSet, getNormalizedResume) {
   if (typeof line !== 'string') return false;
   const text = line.toLowerCase();
   let start = -1;
@@ -70,7 +116,7 @@ function hasOverlap(line, resumeSet) {
     const code = text.charCodeAt(i);
     const isAlphanumeric =
       (code >= 48 && code <= 57) || // 0-9
-      (code >= 97 && code <= 122);  // a-z
+      (code >= 97 && code <= 122); // a-z
     if (isAlphanumeric) {
       if (start === -1) start = i;
     } else if (start !== -1) {
@@ -78,7 +124,12 @@ function hasOverlap(line, resumeSet) {
       start = -1;
     }
   }
-  return start !== -1 && resumeSet.has(text.slice(start));
+  if (start !== -1 && resumeSet.has(text.slice(start))) return true;
+
+  const normalizedLine = normalizeForSynonyms(line);
+  if (hasSynonymMatch(normalizedLine, getNormalizedResume)) return true;
+
+  return false;
 }
 
 /**
@@ -94,6 +145,12 @@ export function computeFitScore(resumeText, requirements) {
   }
 
   const resumeSet = resumeTokens(resumeText);
+  let normalizedResume;
+  const getNormalizedResume = () => {
+    if (normalizedResume !== undefined) return normalizedResume;
+    normalizedResume = normalizeForSynonyms(resumeText);
+    return normalizedResume;
+  };
   const matched = [];
   const missing = [];
   let total = 0;
@@ -103,7 +160,7 @@ export function computeFitScore(resumeText, requirements) {
     const trimmed = entry.trim();
     if (!trimmed) continue;
     total += 1;
-    (hasOverlap(trimmed, resumeSet) ? matched : missing).push(trimmed);
+    (hasOverlap(trimmed, resumeSet, getNormalizedResume) ? matched : missing).push(trimmed);
   }
 
   if (total === 0) return { score: 0, matched: [], missing: [] };
