@@ -699,6 +699,60 @@ describe('jobbot CLI', () => {
     expect(output).toContain('Last Discard Tags: Remote, onsite');
   });
 
+  it('shows last discard details for legacy entries without timestamps', () => {
+    const shortlistPath = path.join(dataDir, 'shortlist.json');
+    const legacyPayload = {
+      jobs: {
+        'job-legacy': {
+          tags: [],
+          discarded: [
+            {
+              reason: 'No longer relevant',
+              tags: ['legacy', 'manual'],
+            },
+          ],
+          metadata: {},
+        },
+      },
+    };
+    fs.writeFileSync(shortlistPath, `${JSON.stringify(legacyPayload, null, 2)}\n`);
+
+    const output = runCli(['shortlist', 'list']);
+    expect(output).toContain('Last Discard: No longer relevant (unknown time)');
+    expect(output).toContain('Last Discard Tags: legacy, manual');
+  });
+
+  it('includes last_discard metadata in shortlist list --json exports', () => {
+    runCli([
+      'shortlist',
+      'discard',
+      'job-json',
+      '--reason',
+      'Initial screen passed',
+      '--date',
+      '2025-03-05T12:00:00Z',
+    ]);
+
+    runCli([
+      'shortlist',
+      'discard',
+      'job-json',
+      '--reason',
+      'Scheduling call',
+      '--tags',
+      'follow_up,calendared',
+      '--date',
+      '2025-03-07T09:30:00Z',
+    ]);
+
+    const json = JSON.parse(runCli(['shortlist', 'list', '--json']));
+    expect(json.jobs['job-json'].last_discard).toEqual({
+      reason: 'Scheduling call',
+      discarded_at: '2025-03-07T09:30:00.000Z',
+      tags: ['follow_up', 'calendared'],
+    });
+  });
+
   it('syncs shortlist metadata and filters entries by location', () => {
     const syncOutput = runCli([
       'shortlist',
@@ -796,6 +850,11 @@ describe('jobbot CLI', () => {
       jobs: {
         'job-json': {
           tags: ['Remote'],
+          last_discard: {
+            reason: 'Paused search',
+            discarded_at: '2025-06-02T09:30:00.000Z',
+            tags: ['Paused'],
+          },
           metadata: {
             location: 'Remote',
             level: 'Senior',

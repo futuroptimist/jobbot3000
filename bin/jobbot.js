@@ -645,16 +645,14 @@ function formatShortlistList(jobs) {
     if (metadata.compensation) lines.push(`  Compensation: ${metadata.compensation}`);
     if (metadata.synced_at) lines.push(`  Synced At: ${metadata.synced_at}`);
     if (tags.length) lines.push(`  Tags: ${tags.join(', ')}`);
-    if (discarded.length) {
-      const latest = discarded[discarded.length - 1];
-      if (latest?.reason && latest?.discarded_at) {
-        lines.push(`  Last Discard: ${latest.reason} (${latest.discarded_at})`);
-        const lastTags = Array.isArray(latest.tags)
-          ? latest.tags.map(tag => String(tag).trim()).filter(Boolean)
-          : [];
-        if (lastTags.length > 0) {
-          lines.push(`  Last Discard Tags: ${lastTags.join(', ')}`);
-        }
+    const normalizedDiscard = normalizeDiscardEntries(discarded);
+    if (normalizedDiscard.length > 0) {
+      const latest = normalizedDiscard[normalizedDiscard.length - 1];
+      const reason = latest.reason || 'Unknown reason';
+      const timestamp = latest.discarded_at || 'unknown time';
+      lines.push(`  Last Discard: ${reason} (${timestamp})`);
+      if (latest.tags && latest.tags.length > 0) {
+        lines.push(`  Last Discard Tags: ${latest.tags.join(', ')}`);
       }
     }
     lines.push('');

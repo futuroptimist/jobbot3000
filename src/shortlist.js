@@ -47,6 +47,76 @@ function sanitizeString(value) {
   return trimmed ? trimmed : undefined;
 }
 
+function normalizeDiscardTags(input) {
+  if (!input) return undefined;
+  const list = Array.isArray(input) ? input : [input];
+  const normalized = [];
+  const seen = new Set();
+  for (const candidate of list) {
+    const value = sanitizeString(candidate);
+    if (!value) continue;
+    const key = value.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(value);
+  }
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeDiscardTimestamp(input) {
+  if (input instanceof Date) return input.toISOString();
+  const value = sanitizeString(input);
+  if (!value) return undefined;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toISOString();
+}
+
+function normalizeDiscardEntry(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  const reason = sanitizeString(entry.reason);
+  const rawTimestamp = entry.discarded_at ?? entry.discardedAt ?? entry.date;
+  const discardedAt = normalizeDiscardTimestamp(rawTimestamp);
+  const tags = normalizeDiscardTags(entry.tags);
+  const normalized = {};
+  if (reason) normalized.reason = reason;
+  if (discardedAt) normalized.discarded_at = discardedAt;
+  if (tags) normalized.tags = tags;
+  if (Object.keys(normalized).length === 0) return null;
+  return normalized;
+}
+
+function normalizeDiscardList(list) {
+  if (!Array.isArray(list)) return [];
+  const normalized = [];
+  for (const entry of list) {
+    const value = normalizeDiscardEntry(entry);
+    if (value) normalized.push(value);
+  }
+  return normalized;
+}
+
+function cloneDiscardList(list) {
+  if (!Array.isArray(list)) return [];
+  return list.map(entry => {
+    const clone = { ...entry };
+    if (Array.isArray(clone.tags)) clone.tags = clone.tags.slice();
+    return clone;
+  });
+}
+
+function getLastDiscardSummary(discarded) {
+  if (!Array.isArray(discarded) || discarded.length === 0) return undefined;
+  const latest = discarded[discarded.length - 1];
+  const summary = {};
+  if (latest.reason) summary.reason = latest.reason;
+  if (latest.discarded_at) summary.discarded_at = latest.discarded_at;
+  if (Array.isArray(latest.tags) && latest.tags.length > 0) {
+    summary.tags = latest.tags.slice();
+  }
+  return Object.keys(summary).length === 0 ? undefined : summary;
+}
+
 function normalizeSyncedAt(input) {
   if (input instanceof Date) return input.toISOString();
   if (input == null) return undefined;
@@ -99,9 +169,7 @@ async function readShortlistFile(file) {
         }
         store.jobs[jobId] = {
           tags: Array.isArray(rawRecord.tags) ? rawRecord.tags.slice() : [],
-          discarded: Array.isArray(rawRecord.discarded)
-            ? rawRecord.discarded.map(entry => ({ ...entry }))
-            : [],
+          discarded: normalizeDiscardList(rawRecord.discarded),
           metadata: normalizeExistingMetadata(rawRecord.metadata),
         };
       }
@@ -131,6 +199,7 @@ function ensureJobRecord(store, jobId) {
     const record = existing;
     if (!Array.isArray(record.tags)) record.tags = [];
     if (!Array.isArray(record.discarded)) record.discarded = [];
+    else record.discarded = normalizeDiscardList(record.discarded);
     record.metadata = normalizeExistingMetadata(record.metadata);
   }
   return store.jobs[jobId];
@@ -163,13 +232,14 @@ function sanitizeMetadataInput(metadata) {
 }
 
 function cloneRecord(record) {
-  return {
+  const cloned = {
     tags: Array.isArray(record.tags) ? record.tags.slice() : [],
-    discarded: Array.isArray(record.discarded)
-      ? record.discarded.map(entry => ({ ...entry }))
-      : [],
+    discarded: cloneDiscardList(record.discarded),
     metadata: record.metadata ? { ...record.metadata } : {},
   };
+  const summary = getLastDiscardSummary(cloned.discarded);
+  if (summary) cloned.last_discard = summary;
+  return cloned;
 }
 
 function normalizeFilterTags(tags) {

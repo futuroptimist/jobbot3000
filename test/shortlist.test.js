@@ -155,4 +155,32 @@ describe('shortlist metadata sync and filters', () => {
       delete process.env.JOBBOT_SHORTLIST_CURRENCY;
     }
   });
+
+  it('exposes the latest discard summary alongside shortlist entries', async () => {
+    const { discardJob, getShortlist, filterShortlist } = await import('../src/shortlist.js');
+
+    await discardJob('job-history', 'Not remote', {
+      tags: ['Remote', 'onsite'],
+      date: '2025-03-05T12:00:00Z',
+    });
+
+    await discardJob('job-history', 'Focus changed', {
+      tags: ['Focus', 'focus', ' remote '],
+      date: '2025-03-07T09:30:00Z',
+    });
+
+    const snapshot = await getShortlist('job-history');
+    expect(snapshot.last_discard).toEqual({
+      reason: 'Focus changed',
+      discarded_at: '2025-03-07T09:30:00.000Z',
+      tags: ['Focus', 'remote'],
+    });
+
+    const filtered = await filterShortlist();
+    expect(filtered.jobs['job-history'].last_discard).toEqual({
+      reason: 'Focus changed',
+      discarded_at: '2025-03-07T09:30:00.000Z',
+      tags: ['Focus', 'remote'],
+    });
+  });
 });
