@@ -208,6 +208,21 @@ basics, work, education, skills, projects, certificates, and languages
 sections. The command is idempotent and preserves existing resumes; see
 `test/cli.test.js` and `test/profile.test.js` for coverage.
 
+Import a LinkedIn profile export to seed the resume with verified contact,
+work history, education, and skills:
+
+```bash
+JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot import linkedin linkedin-profile.json
+# Imported LinkedIn profile to /tmp/jobbot-profile-XXXX/profile/resume.json (basics +5, work +1, education +1, skills +3)
+```
+
+The importer accepts LinkedIn JSON exports (downloadable from
+`https://www.linkedin.com/psettings/member-data`) and merges them into the
+existing resume without overwriting confirmed fields. Work history, education,
+and skill entries are deduplicated so repeated imports keep the profile tidy.
+See `test/profile-import.test.js` for normalization edge cases and
+`test/cli.test.js` for CLI wiring.
+
 Format parsed results as Markdown. The exporters escape Markdown control characters so job
 content cannot inject arbitrary links or formatting when rendered downstream:
 

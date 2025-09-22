@@ -116,6 +116,24 @@ describe('jobbot CLI', () => {
     expect(out).not.toMatch(/#|\*\*/);
   });
 
+  it('imports LinkedIn profile exports with import linkedin', () => {
+    const fixture = path.resolve('test', 'fixtures', 'linkedin-profile.json');
+    const out = runCli(['import', 'linkedin', fixture]);
+    expect(out).toMatch(/Imported LinkedIn profile to/);
+    expect(out).toMatch(/work \+1/);
+
+    const resumePath = path.join(dataDir, 'profile', 'resume.json');
+    const resume = JSON.parse(fs.readFileSync(resumePath, 'utf8'));
+
+    expect(resume.basics.name).toBe('Casey Taylor');
+    expect(resume.work).toHaveLength(1);
+    expect(resume.skills.map(skill => skill.name)).toEqual([
+      'Kubernetes',
+      'AWS',
+      'Incident Response',
+    ]);
+  });
+
   it('match from local files', () => {
     const job = 'Title: Engineer\nCompany: ACME\nRequirements\n- JavaScript\n- Node.js\n';
     const resume = 'I am an engineer with JavaScript experience.';

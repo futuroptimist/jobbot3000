@@ -1,0 +1,47 @@
+{
+  "firstName": "Casey",
+  "lastName": "Taylor",
+  "headline": "Senior Site Reliability Engineer",
+  "summary": "Site reliability leader focused on resilient, measurable systems.",
+  "geoLocationName": "San Francisco Bay Area",
+  "contactInfo": {
+    "emailAddress": "casey@example.com",
+    "websites": [
+      { "url": "https://caseytaylor.dev" }
+    ],
+    "phoneNumbers": [
+      { "number": "+1 555-0100" }
+    ]
+  },
+  "positions": [
+    {
+      "companyName": "ExampleCorp",
+      "title": "Staff SRE",
+      "description": "Maintained infrastructure for multi-region services.",
+      "locationName": "Remote",
+      "timePeriod": {
+        "startDate": { "year": 2021, "month": 5 },
+        "endDate": { "year": 2024, "month": 1 }
+      },
+      "company": {
+        "companyPageUrl": "https://example.com"
+      }
+    }
+  ],
+  "educations": [
+    {
+      "schoolName": "State University",
+      "degreeName": "BSc",
+      "fieldOfStudy": "Computer Science",
+      "timePeriod": {
+        "startDate": { "year": 2012 },
+        "endDate": { "year": 2016 }
+      }
+    }
+  ],
+  "skills": [
+    { "name": "Kubernetes" },
+    { "name": "AWS" },
+    { "name": "Incident Response" }
+  ]
+}

@@ -1,0 +1,2 @@
+Led distributed systems design and migrations to cloud-native stacks.
+Managed mentoring programs for staff engineers.

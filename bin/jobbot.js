@@ -29,7 +29,7 @@ import {
 } from '../src/discards.js';
 import { addJobTags, discardJob, filterShortlist, syncShortlistJob } from '../src/shortlist.js';
 import { recordInterviewSession, getInterviewSession } from '../src/interviews.js';
-import { initProfile } from '../src/profile.js';
+import { initProfile, importLinkedInProfile } from '../src/profile.js';
 import { recordIntakeResponse, getIntakeResponses } from '../src/intake.js';
 import { ingestGreenhouseBoard } from '../src/greenhouse.js';
 import { ingestLeverBoard } from '../src/lever.js';
@@ -927,6 +927,35 @@ async function cmdInterviews(args) {
   process.exit(2);
 }
 
+async function cmdImportLinkedIn(args) {
+  const source = args[0];
+  if (!source) {
+    console.error('Usage: jobbot import linkedin <file>');
+    process.exit(2);
+  }
+
+  try {
+    const result = await importLinkedInProfile(source);
+    const summaryParts = [];
+    if (result.basicsUpdated) summaryParts.push(`basics +${result.basicsUpdated}`);
+    if (result.workAdded) summaryParts.push(`work +${result.workAdded}`);
+    if (result.educationAdded) summaryParts.push(`education +${result.educationAdded}`);
+    if (result.skillsAdded) summaryParts.push(`skills +${result.skillsAdded}`);
+    const summary = summaryParts.length ? ` (${summaryParts.join(', ')})` : '';
+    console.log(`Imported LinkedIn profile to ${result.path}${summary}`);
+  } catch (err) {
+    console.error(err.message || String(err));
+    process.exit(1);
+  }
+}
+
+async function cmdImport(args) {
+  const sub = args[0];
+  if (sub === 'linkedin') return cmdImportLinkedIn(args.slice(1));
+  console.error('Usage: jobbot import <linkedin> [options]');
+  process.exit(2);
+}
+
 async function cmdInit(args) {
   const force = args.includes('--force');
   const { created, path: resumePath } = await initProfile({ force });
@@ -943,11 +972,12 @@ async function main() {
   if (cmd === 'shortlist') return cmdShortlist(args);
   if (cmd === 'analytics') return cmdAnalytics(args);
   if (cmd === 'deliverables') return cmdDeliverables(args);
+  if (cmd === 'import') return cmdImport(args);
   if (cmd === 'intake') return cmdIntake(args);
   if (cmd === 'ingest') return cmdIngest(args);
   if (cmd === 'interviews') return cmdInterviews(args);
   console.error(
-    'Usage: jobbot <init|summarize|match|track|shortlist|analytics|' +
+    'Usage: jobbot <init|import|summarize|match|track|shortlist|analytics|' +
       'deliverables|interviews|intake|ingest> [options]'
   );
   process.exit(2);
