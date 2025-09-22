@@ -101,7 +101,10 @@ Integrations: Greenhouse/Lever/Ashby/Workable/SmartRecruiters job board APIs, O*
 - Do **not** automate LinkedIn profile scraping or login-gated sites. Respect robots.txt and site ToS.
 
 **Pluggable fetchers**  
-Each ATS = a module returning a normalized `JobPosting`. Add basic backoff, ETag/If-Modified-Since caching, and per-tenant rate limits.
+Each ATS = a module returning a normalized `JobPosting`. Backoff flows through `fetchWithRetry`, and
+the Greenhouse fetcher now persists `ETag`/`If-Modified-Since` validators so repeat syncs issue
+conditional requests instead of re-downloading unchanged boards. Per-tenant rate limits remain on
+the backlog.
 
 ---
 
