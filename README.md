@@ -577,13 +577,23 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot intake list --json | jq '.responses[1]'
 #   "recorded_at": "2025-02-01T12:40:00.000Z",
 #   "id": "987e6543-e21b-45d3-a456-426614174001"
 # }
+
+# Surface pending follow-ups:
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot intake list --skipped-only
+# Which benefits matter most?
+#   Status: Skipped
+#   Answer: (skipped)
+#   Notes: Circle back after research
+#   Asked At: 2025-02-01T12:40:00.000Z
+#   Recorded At: 2025-02-01T12:40:00.000Z
+#   ID: 987e6543-e21b-45d3-a456-426614174001
 ```
 
 Entries are appended to `data/profile/intake.json` with normalized timestamps, optional tags, notes,
 and a `status` field so follow-up planning can reference prior answers and revisit skipped prompts.
 Recorded timestamps reflect when the command runs. Automated coverage in
 [`test/intake.test.js`](test/intake.test.js) and [`test/cli.test.js`](test/cli.test.js) verifies the
-stored shape and CLI workflows.
+stored shape, CLI workflows, and the skipped-only view for follow-up planning.
 
 ## Conversion funnel analytics
 

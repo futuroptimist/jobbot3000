@@ -170,12 +170,29 @@ export function recordIntakeResponse(data = {}) {
   return writeLock;
 }
 
-export async function getIntakeResponses() {
+function normalizeStatusFilter(status) {
+  if (!status) return undefined;
+  const list = Array.isArray(status) ? status : [status];
+  const allowed = new Set();
+  for (const value of list) {
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim().toLowerCase();
+    if (trimmed) allowed.add(trimmed);
+  }
+  return allowed.size > 0 ? allowed : undefined;
+}
+
+export async function getIntakeResponses(options = {}) {
   const { file } = getPaths();
   const responses = await readIntakeFile(file);
-  return responses.map(entry => ({
+  const normalized = responses.map(entry => ({
     ...entry,
     tags: entry.tags ? entry.tags.slice() : undefined,
     notes: entry.notes,
   }));
+
+  const statusFilter = normalizeStatusFilter(options.status);
+  if (!statusFilter) return normalized;
+
+  return normalized.filter(entry => statusFilter.has(entry.status));
 }

@@ -700,6 +700,41 @@ describe('jobbot CLI', () => {
     });
   });
 
+  it('filters intake list to skipped prompts with --skipped-only', () => {
+    runCli([
+      'intake',
+      'record',
+      '--question',
+      'What motivates you?',
+      '--answer',
+      'Building accessible tools',
+    ]);
+
+    runCli([
+      'intake',
+      'record',
+      '--question',
+      'Which benefits matter most?',
+      '--skip',
+      '--notes',
+      'Circle back after research',
+    ]);
+
+    const skipped = runCli(['intake', 'list', '--skipped-only']);
+    expect(skipped).toContain('Which benefits matter most?');
+    expect(skipped).toContain('Status: Skipped');
+    expect(skipped).not.toContain('What motivates you?');
+
+    const skippedJson = JSON.parse(
+      runCli(['intake', 'list', '--json', '--skipped-only'])
+    );
+    expect(skippedJson.responses).toHaveLength(1);
+    expect(skippedJson.responses[0]).toMatchObject({
+      question: 'Which benefits matter most?',
+      status: 'skipped',
+    });
+  });
+
   it('tags shortlist entries and persists labels', () => {
     const output = runCli(['shortlist', 'tag', 'job-abc', 'dream', 'remote']);
     expect(output.trim()).toBe('Tagged job-abc with dream, remote');
