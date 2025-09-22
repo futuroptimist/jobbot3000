@@ -61,6 +61,21 @@ describe('computeFitScore', () => {
     expect(result).toEqual({ score: 100, matched: requirements, missing: [] });
   });
 
+  it('matches expanded O*NET/ESCO-inspired synonym groups', () => {
+    const resume =
+      'Scaled a SaaS analytics platform on K8s, owning CI/CD automation with JS and TS services.';
+    const requirements = [
+      'Own software as a service uptime targets',
+      'Harden Kubernetes clusters',
+      'Improve continuous integration workflows',
+      'Automate continuous delivery deployments',
+      'Build JavaScript frontends',
+      'Maintain TypeScript monorepos',
+    ];
+    const result = computeFitScore(resume, requirements);
+    expect(result).toEqual({ score: 100, matched: requirements, missing: [] });
+  });
+
   // Allow slower CI environments by using a relaxed threshold.
   it('processes large requirement lists within 2500ms', () => {
     const resume = 'skill '.repeat(1000);
