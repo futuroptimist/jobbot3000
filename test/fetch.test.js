@@ -506,6 +506,113 @@ describe('fetchTextFromUrl', () => {
       fetchTextFromUrl('http://example.com', { maxBytes: 5 })
     ).rejects.toThrow('Response exceeded 5 bytes');
   });
+
+  it('serializes requests per host so fetches run sequentially', async () => {
+    const resolvers = [];
+    fetch.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolvers.push(resolve);
+        })
+    );
+
+    const first = fetchTextFromUrl('http://example.com/one');
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+
+    const second = fetchTextFromUrl('http://example.com/two');
+    await Promise.resolve();
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    resolvers.shift()({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('first'),
+    });
+
+    await expect(first).resolves.toBe('first');
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+
+    resolvers.shift()({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('second'),
+    });
+
+    await expect(second).resolves.toBe('second');
+  });
+
+  it('allows concurrent requests across different hosts', async () => {
+    const resolvers = [];
+    fetch.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolvers.push(resolve);
+        })
+    );
+
+    const first = fetchTextFromUrl('http://one.example.com/path');
+    const second = fetchTextFromUrl('http://two.example.com/path');
+
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+
+    resolvers.shift()({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('one'),
+    });
+    resolvers.shift()({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('two'),
+    });
+
+    await expect(first).resolves.toBe('one');
+    await expect(second).resolves.toBe('two');
+  });
+
+  it('resumes queued work after an aborted fetch timeout', async () => {
+    const pending = [];
+    fetch.mockImplementation((url, { signal }) =>
+      new Promise((resolve, reject) => {
+        pending.push({ resolve, reject });
+        signal.addEventListener('abort', () => reject(signal.reason));
+      })
+    );
+
+    const first = fetchTextFromUrl('http://example.com/slow', { timeoutMs: 10 });
+    const firstErrorPromise = first.catch(err => err);
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    expect(pending).toHaveLength(1);
+
+    const second = fetchTextFromUrl('http://example.com/fast', { timeoutMs: 10 });
+    await Promise.resolve();
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    const firstError = await firstErrorPromise;
+    expect(firstError).toBeInstanceOf(Error);
+    expect(firstError.message).toBe('Timeout after 10ms');
+
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    expect(pending).toHaveLength(2);
+
+    pending[1].resolve({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('done'),
+    });
+
+    await expect(second).resolves.toBe('done');
+  });
 });
 
 describe('fetchWithRetry', () => {

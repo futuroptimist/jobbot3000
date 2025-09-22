@@ -104,6 +104,9 @@ loopback, link-local, carrier-grade NAT, or other private network addresses
 are blocked to prevent server-side request forgery (SSRF). Hostnames that
 resolve to those private ranges (for example, `127.0.0.1.nip.io`) are rejected
 as well; `test/fetch.test.js` now asserts both generic and nip.io guardrails.
+Calls targeting the same protocol/host pair are serialized so a host only sees
+one in-flight request at a time while different hosts still run concurrently;
+new queue tests cover the sequential, cross-host, and timeout-recovery cases.
 
 Normalize existing HTML without fetching and log the result:
 
