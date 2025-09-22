@@ -645,6 +645,12 @@ function formatShortlistList(jobs) {
       const latest = discarded[discarded.length - 1];
       if (latest?.reason && latest?.discarded_at) {
         lines.push(`  Last Discard: ${latest.reason} (${latest.discarded_at})`);
+        const lastTags = Array.isArray(latest.tags)
+          ? latest.tags.map(tag => String(tag).trim()).filter(Boolean)
+          : [];
+        if (lastTags.length > 0) {
+          lines.push(`  Last Discard Tags: ${lastTags.join(', ')}`);
+        }
       }
     }
     lines.push('');
