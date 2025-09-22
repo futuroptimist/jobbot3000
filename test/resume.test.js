@@ -108,10 +108,19 @@ describe('loadResume', () => {
     );
   });
 
-  it('annotates metadata with ambiguities and confidence heuristics', async () => {
+  it('annotates metadata with ambiguities, placeholders, and confidence heuristics', async () => {
     const content = [
-      '# Summary',
+      '## Experience',
+      'Senior Developer at Acme Corp',
+      '- Increased revenue by XX% year over year while leading a distributed team ' +
+        'of seven engineers.',
+      '- Shipped analytics dashboards adopted by 12 partner teams across the organization.',
       '',
+      '## Education',
+      'Your Title Here',
+      'Bachelor of Science — Jan 20XX - Present',
+      '',
+      '# Summary',
       'Jan - Present',
       'Leading strategic initiatives across teams.',
       '',
@@ -126,22 +135,73 @@ describe('loadResume', () => {
       loadResume(file, { withMetadata: true })
     );
 
+    expect(result.metadata.confidence).toMatchObject({
+      score: expect.any(Number),
+      signals: expect.arrayContaining([
+        expect.stringContaining('resume heading'),
+        expect.stringContaining('bullet'),
+      ]),
+    });
+    expect(result.metadata.confidence.score).toBeGreaterThanOrEqual(0.4);
+    expect(result.metadata.confidence.score).toBeLessThanOrEqual(1);
+
     expect(result.metadata.ambiguities).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          type: 'dates',
-          message: expect.stringContaining('date'),
+          type: 'metric',
+          value: 'XX%',
+          location: expect.objectContaining({
+            line: expect.any(Number),
+            column: expect.any(Number),
+          }),
         }),
         expect.objectContaining({
-          type: 'metrics',
-          message: expect.stringContaining('numeric'),
+          type: 'date',
+          value: '20XX',
+          location: expect.objectContaining({
+            line: expect.any(Number),
+            column: expect.any(Number),
+          }),
         }),
         expect.objectContaining({
-          type: 'titles',
-          message: expect.stringContaining('titles'),
+          type: 'title',
+          value: 'Your Title Here',
+          location: expect.objectContaining({
+            line: expect.any(Number),
+            column: expect.any(Number),
+          }),
         }),
+        expect.objectContaining({ type: 'dates' }),
+        expect.objectContaining({ type: 'metrics' }),
+        expect.objectContaining({ type: 'titles' }),
       ])
     );
-    expect(result.metadata.confidence).toBeCloseTo(0.4, 5);
+  });
+
+  it('retains duplicate placeholder values and preserves document order', async () => {
+    const content = [
+      'Experience',
+      'Started Jan 20XX on project Phoenix',
+      'Wrapped Feb 20XX after migration',
+      'Your Title Here placeholder',
+      'Another Your Title Here entry',
+    ].join('\n');
+
+    const result = await withTempFile('.txt', content, file =>
+      loadResume(file, { withMetadata: true })
+    );
+
+    const reported = result.metadata.ambiguities.map(item => ({
+      type: item.type,
+      value: item.value,
+      line: item.location.line,
+    }));
+
+    expect(reported).toEqual([
+      { type: 'date', value: '20XX', line: 2 },
+      { type: 'date', value: '20XX', line: 3 },
+      { type: 'title', value: 'Your Title Here', line: 4 },
+      { type: 'title', value: 'Your Title Here', line: 5 },
+    ]);
   });
 });

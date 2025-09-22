@@ -163,6 +163,21 @@ console.log(metadata);
 //       type: 'tables',
 //       message: 'Detected table formatting; ATS parsers often ignore table content.'
 //     }
+//   ],
+//   confidence: {
+//     score: 0.82,
+//     signals: [
+//       'Detected common resume headings: experience, education',
+//       'Detected bullet formatting in experience sections'
+//     ]
+//   },
+//   ambiguities: [
+//     {
+//       type: 'date',
+//       value: '20XX',
+//       message: 'Potential placeholder date detected',
+//       location: { line: 42, column: 18 }
+//     }
 //   ]
 // }
 ```
@@ -171,9 +186,15 @@ console.log(metadata);
 depend on the shape. When tables or images appear in the source material, the
 metadata includes `warnings` entries that flag ATS-hostile patterns; new tests
 assert tables and images trigger the warnings so resume imports surface risks.
-Ambiguity heuristics now emit `ambiguities` entries when month ranges omit years,
-job titles are missing, or quantified metrics are absent, and the `confidence`
-score reflects those signals so review tools can triage follow-up work.
+Confidence heuristics and placeholder detection keep resume imports trustworthy.
+The suite also asserts the presence of parsing confidence signals and ambiguity
+highlights (for example, placeholder dates like `20XX` or metrics such as `XX%`)
+alongside ATS warnings so regressions surface quickly. Ambiguity heuristics now
+emit `ambiguities` entries when month ranges omit years, job titles are missing,
+or quantified metrics are absent, and the `confidence` score reflects those
+signals so review tools can triage follow-up work. Ambiguity entries now include
+the `{ line, column }` location of each occurrence and are emitted in document
+order so callers can highlight every placeholder directly in downstream editors.
 
 Initialize a JSON Resume skeleton when you do not have an existing file:
 
