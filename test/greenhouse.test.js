@@ -144,4 +144,105 @@ describe('Greenhouse ingest', () => {
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(result.saved).toBe(1);
   });
+
+  it('persists caching headers for subsequent Greenhouse requests', async () => {
+    const headers = {
+      get: (name) => {
+        const lower = name.toLowerCase();
+        if (lower === 'etag') return '"etag-123"';
+        if (lower === 'last-modified') return 'Wed, 01 Jan 2025 00:00:00 GMT';
+        return null;
+      },
+    };
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers,
+      json: async () => ({ jobs: [] }),
+    });
+
+    const { ingestGreenhouseBoard } = await import('../src/greenhouse.js');
+
+    await ingestGreenhouseBoard({ board: 'example' });
+
+    const cachePath = path.join(dataDir, 'cache', 'greenhouse', 'example.json');
+    const cached = JSON.parse(await fs.readFile(cachePath, 'utf8'));
+    expect(cached).toEqual({
+      etag: '"etag-123"',
+      lastModified: 'Wed, 01 Jan 2025 00:00:00 GMT',
+    });
+  });
+
+  it('sends conditional headers and skips work when the board is unchanged', async () => {
+    const cacheDir = path.join(dataDir, 'cache', 'greenhouse');
+    await fs.mkdir(cacheDir, { recursive: true });
+    const cachePath = path.join(cacheDir, 'example.json');
+    await fs.writeFile(
+      cachePath,
+      JSON.stringify({
+        etag: '"etag-123"',
+        lastModified: 'Wed, 01 Jan 2025 00:00:00 GMT',
+      }),
+    );
+
+    fetch.mockImplementation(async (url, init) => {
+      expect(init.headers).toMatchObject({
+        'User-Agent': 'jobbot3000',
+        'If-None-Match': '"etag-123"',
+        'If-Modified-Since': 'Wed, 01 Jan 2025 00:00:00 GMT',
+      });
+      return {
+        ok: false,
+        status: 304,
+        statusText: 'Not Modified',
+        headers: { get: () => null },
+        json: async () => {
+          throw new Error('body should not be read for 304 responses');
+        },
+      };
+    });
+
+    const { ingestGreenhouseBoard } = await import('../src/greenhouse.js');
+
+    const result = await ingestGreenhouseBoard({ board: 'example' });
+
+    expect(result).toMatchObject({ board: 'example', saved: 0, jobIds: [] });
+    const jobsDir = path.join(dataDir, JOBS_DIR);
+    await expect(fs.readdir(jobsDir)).rejects.toMatchObject({ code: 'ENOENT' });
+
+    const cached = JSON.parse(await fs.readFile(cachePath, 'utf8'));
+    expect(cached).toEqual({
+      etag: '"etag-123"',
+      lastModified: 'Wed, 01 Jan 2025 00:00:00 GMT',
+    });
+  });
+
+  it('preserves cached validators when the board fetch fails', async () => {
+    const cacheDir = path.join(dataDir, 'cache', 'greenhouse');
+    await fs.mkdir(cacheDir, { recursive: true });
+    const cachePath = path.join(cacheDir, 'example.json');
+    const cachedValidators = {
+      etag: '"etag-123"',
+      lastModified: 'Wed, 01 Jan 2025 00:00:00 GMT',
+    };
+    await fs.writeFile(cachePath, JSON.stringify(cachedValidators));
+
+    fetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: 'Internal Server Error',
+      headers: { get: () => null },
+      json: async () => ({}),
+    });
+
+    const { ingestGreenhouseBoard } = await import('../src/greenhouse.js');
+
+    await expect(ingestGreenhouseBoard({ board: 'example' })).rejects.toThrow(
+      /Failed to fetch Greenhouse board/,
+    );
+
+    const cached = JSON.parse(await fs.readFile(cachePath, 'utf8'));
+    expect(cached).toEqual(cachedValidators);
+  });
 });
