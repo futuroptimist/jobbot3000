@@ -506,7 +506,11 @@ async function cmdIngestGreenhouse(args) {
     process.exit(2);
   }
 
-  const { saved } = await ingestGreenhouseBoard({ board: company });
+  const { saved, notModified } = await ingestGreenhouseBoard({ board: company });
+  if (notModified) {
+    console.log(`No changes for ${company}; Greenhouse board already up to date`);
+    return;
+  }
   const noun = saved === 1 ? 'job' : 'jobs';
   console.log(`Imported ${saved} ${noun} from ${company}`);
 }
