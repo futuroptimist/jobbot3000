@@ -4,6 +4,10 @@ import removeMarkdown from 'remove-markdown';
 
 const MARKDOWN_EXTENSIONS = ['.md', '.markdown', '.mdx'];
 const COMMON_HEADING_TERMS = ['experience', 'education', 'skills', 'projects', 'summary'];
+const COMMON_HEADING_PATTERNS = COMMON_HEADING_TERMS.map(
+  term => new RegExp(`\\b${term}\\b`, 'i'),
+);
+const HEADING_CONNECTOR_WORDS = new Set(['and', 'for', 'in', 'of', 'the', 'to', 'with', '&']);
 const TITLE_PLACEHOLDERS = [
   'Your Title Here',
   'Insert Title',
@@ -67,16 +71,94 @@ function findLocation(lineStarts, index) {
   };
 }
 
+function normalizeHeadingCandidate(line) {
+  if (typeof line !== 'string') return '';
+
+  const trimmed = line.trim();
+  if (!trimmed) return '';
+
+  if (/^[-*•·–—]\s+/.test(trimmed)) {
+    return '';
+  }
+
+  let candidate = trimmed.replace(/[\s:–—-]+$/, '').trim();
+  if (!candidate) return '';
+
+  candidate = candidate.replace(/^(?:\d+[.)]\s+|\(?\d{4}\)?\s*[-–—]\s*)/, '').trim();
+  if (!candidate) return '';
+
+  return candidate;
+}
+
+function looksLikeHeadingCandidate(candidate) {
+  if (!candidate) return false;
+  if (/[.!?]/.test(candidate)) return false;
+
+  const lower = candidate.toLowerCase();
+  if (COMMON_HEADING_TERMS.includes(lower)) {
+    return true;
+  }
+
+  if (candidate.length > 60) {
+    return false;
+  }
+
+  if (/^[A-Z0-9\s/&-]+$/.test(candidate) && /[A-Z]/.test(candidate)) {
+    return true;
+  }
+
+  const words = candidate.split(/\s+/);
+  if (words.length > 6) {
+    return false;
+  }
+
+  if (['i', 'my', 'we', 'our'].includes(words[0].toLowerCase())) {
+    return false;
+  }
+
+  return words.every(word => {
+    if (!/^[A-Za-z0-9/&-]+$/.test(word)) {
+      return false;
+    }
+
+    const lowerWord = word.toLowerCase();
+    if (HEADING_CONNECTOR_WORDS.has(lowerWord)) {
+      return true;
+    }
+
+    if (!/^[A-Z0-9]/.test(word)) {
+      return false;
+    }
+
+    const rest = word.slice(1);
+    return !rest || rest === rest.toLowerCase();
+  });
+}
+
 function detectResumeHeadings(text) {
   if (!text) return [];
-  const found = new Set();
-  for (const term of COMMON_HEADING_TERMS) {
-    const pattern = new RegExp(`\\b${term}\\b`, 'i');
-    if (pattern.test(text)) {
-      found.add(term);
+
+  const seen = new Set();
+  const found = [];
+  for (const line of text.split(/\r?\n/)) {
+    const candidate = normalizeHeadingCandidate(line);
+    if (!looksLikeHeadingCandidate(candidate)) {
+      continue;
+    }
+
+    for (let index = 0; index < COMMON_HEADING_PATTERNS.length; index += 1) {
+      if (
+        COMMON_HEADING_PATTERNS[index].test(candidate) &&
+        !seen.has(COMMON_HEADING_TERMS[index])
+      ) {
+        const term = COMMON_HEADING_TERMS[index];
+        seen.add(term);
+        found.push(term);
+      }
     }
   }
-  return Array.from(found);
+
+  return found;
 }
 
 function hasBulletFormatting(text) {

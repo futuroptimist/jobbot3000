@@ -215,4 +215,49 @@ describe('loadResume', () => {
       'summary',
     ]);
   });
+
+  it('ignores resume keywords embedded in paragraphs when no headings exist', async () => {
+    const content = [
+      'I have experience mentoring teams and value education for every member.',
+      'These projects built new skills across the organization.',
+    ].join(' ');
+
+    const result = await withTempFile('.txt', content, file =>
+      loadResume(file, { withMetadata: true })
+    );
+
+    expect(result.metadata.presentSections).toBeUndefined();
+    expect(result.metadata.missingSections).toEqual([
+      'experience',
+      'education',
+      'skills',
+      'projects',
+      'summary',
+    ]);
+  });
+
+  it('detects headings that resemble resume sections', async () => {
+    const content = [
+      'WORK EXPERIENCE',
+      'Led six product launches across three regions.',
+      '',
+      'Skills & Tools:',
+      '- JavaScript',
+      '- Node.js',
+    ].join('\n');
+
+    const result = await withTempFile('.txt', content, file =>
+      loadResume(file, { withMetadata: true })
+    );
+
+    expect(result.metadata.presentSections).toEqual([
+      'experience',
+      'skills',
+    ]);
+    expect(result.metadata.missingSections).toEqual([
+      'education',
+      'projects',
+      'summary',
+    ]);
+  });
 });
