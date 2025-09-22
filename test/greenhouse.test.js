@@ -56,7 +56,7 @@ describe('Greenhouse ingest', () => {
 
     const { ingestGreenhouseBoard } = await import('../src/greenhouse.js');
 
-    const result = await ingestGreenhouseBoard({ board: 'example' });
+    const result = await ingestGreenhouseBoard({ board: 'example', rateLimitIntervalMs: 0 });
 
     expect(fetch).toHaveBeenCalledWith(
       'https://boards.greenhouse.io/v1/boards/example/jobs?content=true',
@@ -97,7 +97,9 @@ describe('Greenhouse ingest', () => {
 
     const { ingestGreenhouseBoard } = await import('../src/greenhouse.js');
 
-    await expect(ingestGreenhouseBoard({ board: 'missing' })).rejects.toThrow(
+    await expect(
+      ingestGreenhouseBoard({ board: 'missing', rateLimitIntervalMs: 0 })
+    ).rejects.toThrow(
       /Failed to fetch Greenhouse board/,
     );
   });
@@ -139,6 +141,7 @@ describe('Greenhouse ingest', () => {
     const result = await ingestGreenhouseBoard({
       board: 'example',
       retry: { retries: 1, delayMs: 0 },
+      rateLimitIntervalMs: 0,
     });
 
     expect(fetch).toHaveBeenCalledTimes(2);
@@ -164,7 +167,10 @@ describe('Greenhouse ingest', () => {
 
     const { ingestGreenhouseBoard } = await import('../src/greenhouse.js');
 
-    const cachedResult = await ingestGreenhouseBoard({ board: 'example' });
+    const cachedResult = await ingestGreenhouseBoard({
+      board: 'example',
+      rateLimitIntervalMs: 0,
+    });
     expect(cachedResult.notModified).toBe(false);
 
     const cachePath = path.join(dataDir, 'cache', 'greenhouse', 'example.json');
@@ -206,7 +212,10 @@ describe('Greenhouse ingest', () => {
 
     const { ingestGreenhouseBoard } = await import('../src/greenhouse.js');
 
-    const result = await ingestGreenhouseBoard({ board: 'example' });
+    const result = await ingestGreenhouseBoard({
+      board: 'example',
+      rateLimitIntervalMs: 0,
+    });
 
     expect(result).toMatchObject({ board: 'example', saved: 0, jobIds: [], notModified: true });
     const jobsDir = path.join(dataDir, JOBS_DIR);

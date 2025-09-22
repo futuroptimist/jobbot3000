@@ -70,7 +70,7 @@ describe('Workable ingest', () => {
 
     const { ingestWorkableBoard } = await import('../src/workable.js');
 
-    const result = await ingestWorkableBoard({ account: 'example' });
+    const result = await ingestWorkableBoard({ account: 'example', rateLimitIntervalMs: 0 });
 
     expect(fetch).toHaveBeenNthCalledWith(
       1,
@@ -127,7 +127,9 @@ describe('Workable ingest', () => {
 
     const { ingestWorkableBoard } = await import('../src/workable.js');
 
-    await expect(ingestWorkableBoard({ account: 'missing' })).rejects.toThrow(
+    await expect(
+      ingestWorkableBoard({ account: 'missing', rateLimitIntervalMs: 0 })
+    ).rejects.toThrow(
       /Failed to fetch Workable account/,
     );
   });
@@ -159,7 +161,11 @@ describe('Workable ingest', () => {
     const { ingestWorkableBoard } = await import('../src/workable.js');
 
     await expect(
-      ingestWorkableBoard({ account: 'example', retry: { delayMs: 0 } })
+      ingestWorkableBoard({
+        account: 'example',
+        retry: { delayMs: 0 },
+        rateLimitIntervalMs: 0,
+      })
     ).rejects.toThrow(
       /Failed to fetch Workable job/,
     );

@@ -8,6 +8,7 @@ import { parseJobText } from './parser.js';
 const GREENHOUSE_BASE = 'https://boards.greenhouse.io/v1/boards';
 
 const GREENHOUSE_HEADERS = { 'User-Agent': 'jobbot3000' };
+const GREENHOUSE_RATE_LIMIT_MS = 250;
 
 function resolveDataDir() {
   return process.env.JOBBOT_DATA_DIR || path.resolve('data');
@@ -102,7 +103,10 @@ function mergeParsedJob(parsed, job) {
   return merged;
 }
 
-export async function fetchGreenhouseJobs(board, { fetchImpl = fetch, retry } = {}) {
+export async function fetchGreenhouseJobs(
+  board,
+  { fetchImpl = fetch, retry, rateLimitIntervalMs = GREENHOUSE_RATE_LIMIT_MS } = {}
+) {
   const slug = normalizeBoardSlug(board);
   const url = buildBoardUrl(slug);
   const cacheMetadata = await readCacheMetadata(slug);
@@ -114,6 +118,8 @@ export async function fetchGreenhouseJobs(board, { fetchImpl = fetch, retry } = 
     fetchImpl,
     headers,
     retry,
+    rateLimitKey: `greenhouse:${slug}`,
+    rateLimitIntervalMs,
   });
 
   const notModified = response.status === 304;
@@ -144,8 +150,17 @@ export async function fetchGreenhouseJobs(board, { fetchImpl = fetch, retry } = 
   return { slug, jobs, notModified: false };
 }
 
-export async function ingestGreenhouseBoard({ board, fetchImpl = fetch, retry } = {}) {
-  const { slug, jobs, notModified } = await fetchGreenhouseJobs(board, { fetchImpl, retry });
+export async function ingestGreenhouseBoard({
+  board,
+  fetchImpl = fetch,
+  retry,
+  rateLimitIntervalMs,
+} = {}) {
+  const { slug, jobs, notModified } = await fetchGreenhouseJobs(board, {
+    fetchImpl,
+    retry,
+    rateLimitIntervalMs,
+  });
   const jobIds = [];
 
   for (const job of jobs) {

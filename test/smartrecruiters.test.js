@@ -77,7 +77,10 @@ describe('SmartRecruiters ingest', () => {
 
     const { ingestSmartRecruitersBoard } = await import('../src/smartrecruiters.js');
 
-    const result = await ingestSmartRecruitersBoard({ company: 'example' });
+    const result = await ingestSmartRecruitersBoard({
+      company: 'example',
+      rateLimitIntervalMs: 0,
+    });
 
     expect(fetch).toHaveBeenNthCalledWith(
       1,
@@ -128,7 +131,11 @@ describe('SmartRecruiters ingest', () => {
     const { ingestSmartRecruitersBoard } = await import('../src/smartrecruiters.js');
 
     await expect(
-      ingestSmartRecruitersBoard({ company: 'example', retry: { delayMs: 0 } })
+      ingestSmartRecruitersBoard({
+        company: 'example',
+        retry: { delayMs: 0 },
+        rateLimitIntervalMs: 0,
+      })
     ).rejects.toThrow(
       /Failed to fetch SmartRecruiters company example/,
     );

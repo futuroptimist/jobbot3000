@@ -103,8 +103,9 @@ Integrations: Greenhouse/Lever/Ashby/Workable/SmartRecruiters job board APIs, O*
 **Pluggable fetchers**  
 Each ATS = a module returning a normalized `JobPosting`. Backoff flows through `fetchWithRetry`, and
 the Greenhouse fetcher now persists `ETag`/`If-Modified-Since` validators so repeat syncs issue
-conditional requests instead of re-downloading unchanged boards. Per-tenant rate limits remain on
-the backlog.
+conditional requests instead of re-downloading unchanged boards. Per-tenant throttles cap each
+board/org/account at roughly four requests per second by default so tenants stay within vendor rate
+limits.
 
 ---
 

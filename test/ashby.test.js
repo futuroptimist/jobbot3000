@@ -57,7 +57,7 @@ describe('Ashby ingest', () => {
 
     const { ingestAshbyBoard } = await import('../src/ashby.js');
 
-    const result = await ingestAshbyBoard({ org: 'example' });
+    const result = await ingestAshbyBoard({ org: 'example', rateLimitIntervalMs: 0 });
 
     const expectedUrl =
       'https://jobs.ashbyhq.com/api/postings?organizationSlug=example' +
@@ -106,6 +106,8 @@ describe('Ashby ingest', () => {
 
     const { ingestAshbyBoard } = await import('../src/ashby.js');
 
-    await expect(ingestAshbyBoard({ org: 'missing' })).rejects.toThrow(/Failed to fetch Ashby org/);
+    await expect(
+      ingestAshbyBoard({ org: 'missing', rateLimitIntervalMs: 0 })
+    ).rejects.toThrow(/Failed to fetch Ashby org/);
   });
 });

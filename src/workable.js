@@ -8,6 +8,7 @@ const WORKABLE_HEADERS = {
   'User-Agent': 'jobbot3000',
   Accept: 'application/json',
 };
+const WORKABLE_RATE_LIMIT_MS = 250;
 
 function sanitizeString(value) {
   if (value == null) return '';
@@ -155,13 +156,18 @@ function selectFetchedAt(detail, job) {
   return undefined;
 }
 
-export async function fetchWorkableJobs(account, { fetchImpl = fetch, retry } = {}) {
+export async function fetchWorkableJobs(
+  account,
+  { fetchImpl = fetch, retry, rateLimitIntervalMs = WORKABLE_RATE_LIMIT_MS } = {}
+) {
   const slug = normalizeAccountSlug(account);
   const url = buildJobsUrl(slug);
   const response = await fetchWithRetry(url, {
     fetchImpl,
     headers: WORKABLE_HEADERS,
     retry,
+    rateLimitKey: `workable:${slug}`,
+    rateLimitIntervalMs,
   });
   if (!response.ok) {
     const statusLabel = `${response.status} ${response.statusText}`;
@@ -178,8 +184,17 @@ export async function fetchWorkableJobs(account, { fetchImpl = fetch, retry } = 
   return { account: slug, jobs: jobsArray };
 }
 
-export async function ingestWorkableBoard({ account, fetchImpl = fetch, retry } = {}) {
-  const { account: slug, jobs } = await fetchWorkableJobs(account, { fetchImpl, retry });
+export async function ingestWorkableBoard({
+  account,
+  fetchImpl = fetch,
+  retry,
+  rateLimitIntervalMs,
+} = {}) {
+  const { account: slug, jobs } = await fetchWorkableJobs(account, {
+    fetchImpl,
+    retry,
+    rateLimitIntervalMs,
+  });
   const jobIds = [];
 
   for (const job of jobs) {
@@ -189,6 +204,8 @@ export async function ingestWorkableBoard({ account, fetchImpl = fetch, retry } 
       fetchImpl,
       headers: WORKABLE_HEADERS,
       retry,
+      rateLimitKey: `workable:${slug}`,
+      rateLimitIntervalMs,
     });
     if (!detailResponse.ok) {
       const statusLabel = `${detailResponse.status} ${detailResponse.statusText}`;

@@ -9,6 +9,7 @@ const ASHBY_HEADERS = {
   'User-Agent': 'jobbot3000',
   Accept: 'application/json',
 };
+const ASHBY_RATE_LIMIT_MS = 250;
 
 function normalizeOrgSlug(org) {
   if (!org || typeof org !== 'string' || !org.trim()) {
@@ -68,13 +69,18 @@ function mergeParsedJob(parsed, job) {
   return merged;
 }
 
-export async function fetchAshbyJobs(org, { fetchImpl = fetch, retry } = {}) {
+export async function fetchAshbyJobs(
+  org,
+  { fetchImpl = fetch, retry, rateLimitIntervalMs = ASHBY_RATE_LIMIT_MS } = {}
+) {
   const slug = normalizeOrgSlug(org);
   const url = buildOrgUrl(slug);
   const response = await fetchWithRetry(url, {
     fetchImpl,
     headers: ASHBY_HEADERS,
     retry,
+    rateLimitKey: `ashby:${slug}`,
+    rateLimitIntervalMs,
   });
   if (!response.ok) {
     throw new Error(
@@ -86,8 +92,17 @@ export async function fetchAshbyJobs(org, { fetchImpl = fetch, retry } = {}) {
   return { slug, jobPostings };
 }
 
-export async function ingestAshbyBoard({ org, fetchImpl = fetch, retry } = {}) {
-  const { slug, jobPostings } = await fetchAshbyJobs(org, { fetchImpl, retry });
+export async function ingestAshbyBoard({
+  org,
+  fetchImpl = fetch,
+  retry,
+  rateLimitIntervalMs,
+} = {}) {
+  const { slug, jobPostings } = await fetchAshbyJobs(org, {
+    fetchImpl,
+    retry,
+    rateLimitIntervalMs,
+  });
   const jobIds = [];
 
   for (const job of jobPostings) {

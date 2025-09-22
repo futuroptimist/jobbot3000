@@ -22,6 +22,7 @@ function sleep(ms) {
 }
 
 const HOST_QUEUE = new Map();
+const RATE_LIMITERS = new Map();
 
 /**
  * Serializes asynchronous work per key while allowing other keys to proceed.
@@ -62,6 +63,33 @@ async function withHostQueue(key, fn) {
   }
 }
 
+async function withRateLimiter(key, intervalMs, fn) {
+  if (!intervalMs || !Number.isFinite(intervalMs) || intervalMs <= 0) {
+    return fn();
+  }
+
+  const normalizedKey = String(key);
+  let state = RATE_LIMITERS.get(normalizedKey);
+  if (!state) {
+    state = { queue: Promise.resolve(), availableAt: 0 };
+    RATE_LIMITERS.set(normalizedKey, state);
+  }
+
+  const run = state.queue.then(async () => {
+    const now = Date.now();
+    const waitMs = Math.max(0, state.availableAt - now);
+    if (waitMs > 0) {
+      await sleep(waitMs);
+    }
+    const start = Date.now();
+    state.availableAt = start + intervalMs;
+    return fn();
+  });
+
+  state.queue = run.catch(() => {});
+  return run;
+}
+
 function defaultShouldRetry(response) {
   if (!response) return false;
   if (response.status === 429) return true;
@@ -98,7 +126,7 @@ function computeDelay(attempt, { delayMs = 250, factor = 2, maxDelayMs } = {}) {
  * @returns {Promise<Response>}
  */
 export async function fetchWithRetry(url, options = {}, init = {}) {
-  const { fetchImpl = fetch, retry, ...rest } = options;
+  const { fetchImpl = fetch, retry, rateLimitKey, rateLimitIntervalMs, ...rest } = options;
   const mergedInit = { ...rest, ...init };
   const {
     retries = 2,
@@ -108,10 +136,16 @@ export async function fetchWithRetry(url, options = {}, init = {}) {
     shouldRetry = defaultShouldRetry,
   } = retry || {};
 
+  const normalizedInterval = Number.isFinite(rateLimitIntervalMs)
+    ? Math.max(0, Number(rateLimitIntervalMs))
+    : 0;
+
   let attempt = 0;
   while (attempt <= retries) {
     try {
-      const response = await fetchImpl(url, mergedInit);
+      const response = await withRateLimiter(rateLimitKey, normalizedInterval, () =>
+        fetchImpl(url, mergedInit)
+      );
       const wantsRetry = shouldRetry(response);
       if (!wantsRetry || attempt === retries) {
         return response;
@@ -129,6 +163,10 @@ export async function fetchWithRetry(url, options = {}, init = {}) {
 
   // Unreachable: loop returns or throws on final attempt.
   throw new Error('fetchWithRetry exhausted retries without returning');
+}
+
+export function __resetRateLimitersForTests() {
+  RATE_LIMITERS.clear();
 }
 
 function isPrivateIPv4(octets) {

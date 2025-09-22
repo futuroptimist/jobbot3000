@@ -348,7 +348,10 @@ downstream tooling can diff revisions over time. Tests in
 [`test/workable.test.js`](test/workable.test.js) verify the ingest
 pipelines fetch board content, persist structured snapshots, surface fetch
 errors, and retain the `User-Agent: jobbot3000` request header alongside each
-capture so fetches are reproducible.
+capture so fetches are reproducible. A shared rate limiter throttles each board/org/account to
+roughly four requests per second, spacing list/detail fetches to respect vendor budgets;
+[`test/fetch.test.js`](test/fetch.test.js) verifies sequential calls wait for the throttle window
+before dispatching.
 [`test/lever.test.js`](test/lever.test.js) now explicitly asserts the Lever
 client forwards that header to the API and persists it in saved snapshots so
 metadata stays consistent across providers. Automated coverage in

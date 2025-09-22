@@ -51,7 +51,7 @@ Requirements
 
     const { ingestLeverBoard } = await import('../src/lever.js');
 
-    const result = await ingestLeverBoard({ org: 'example' });
+    const result = await ingestLeverBoard({ org: 'example', rateLimitIntervalMs: 0 });
 
     expect(fetch).toHaveBeenCalledWith(
       'https://api.lever.co/v0/postings/example?mode=json',
@@ -86,7 +86,9 @@ Requirements
 
     const { ingestLeverBoard } = await import('../src/lever.js');
 
-    await expect(ingestLeverBoard({ org: 'missing' })).rejects.toThrow(
+    await expect(
+      ingestLeverBoard({ org: 'missing', rateLimitIntervalMs: 0 })
+    ).rejects.toThrow(
       /Failed to fetch Lever org/,
     );
   });

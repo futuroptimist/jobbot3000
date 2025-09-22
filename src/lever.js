@@ -5,6 +5,7 @@ import { parseJobText } from './parser.js';
 
 const LEVER_BASE = 'https://api.lever.co/v0/postings';
 const LEVER_HEADERS = { 'User-Agent': 'jobbot3000' };
+const LEVER_RATE_LIMIT_MS = 250;
 
 function normalizeOrgSlug(org) {
   if (!org || typeof org !== 'string' || !org.trim()) {
@@ -48,13 +49,18 @@ function mergeParsedJob(parsed, job) {
   return merged;
 }
 
-export async function fetchLeverJobs(org, { fetchImpl = fetch, retry } = {}) {
+export async function fetchLeverJobs(
+  org,
+  { fetchImpl = fetch, retry, rateLimitIntervalMs = LEVER_RATE_LIMIT_MS } = {}
+) {
   const slug = normalizeOrgSlug(org);
   const url = buildOrgUrl(slug);
   const response = await fetchWithRetry(url, {
     fetchImpl,
     headers: LEVER_HEADERS,
     retry,
+    rateLimitKey: `lever:${slug}`,
+    rateLimitIntervalMs,
   });
   if (!response.ok) {
     throw new Error(`Failed to fetch Lever org ${slug}: ${response.status} ${response.statusText}`);
@@ -63,8 +69,13 @@ export async function fetchLeverJobs(org, { fetchImpl = fetch, retry } = {}) {
   return { slug, jobs: Array.isArray(jobs) ? jobs : [] };
 }
 
-export async function ingestLeverBoard({ org, fetchImpl = fetch, retry } = {}) {
-  const { slug, jobs } = await fetchLeverJobs(org, { fetchImpl, retry });
+export async function ingestLeverBoard({
+  org,
+  fetchImpl = fetch,
+  retry,
+  rateLimitIntervalMs,
+} = {}) {
+  const { slug, jobs } = await fetchLeverJobs(org, { fetchImpl, retry, rateLimitIntervalMs });
   const jobIds = [];
 
   for (const job of jobs) {

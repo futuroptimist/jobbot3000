@@ -16,7 +16,12 @@ import {
   extractTextFromHtml,
   fetchTextFromUrl,
   fetchWithRetry,
+  __resetRateLimitersForTests,
 } from '../src/fetch.js';
+
+afterEach(() => {
+  __resetRateLimitersForTests();
+});
 
 describe('extractTextFromHtml', () => {
   it('collapses whitespace and skips non-content tags', () => {
@@ -658,6 +663,39 @@ describe('fetchWithRetry', () => {
 
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(response.status).toBe(404);
+  });
+
+  it('throttles requests that share a rate limit key', async () => {
+    vi.useFakeTimers();
+    try {
+      fetch.mockImplementation(() =>
+        Promise.resolve({ ok: true, status: 200, statusText: 'OK' })
+      );
+
+      const first = fetchWithRetry('https://example.com/one', {
+        fetchImpl: fetch,
+        rateLimitKey: 'tenant:example',
+        rateLimitIntervalMs: 1000,
+      });
+
+      await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+
+      const second = fetchWithRetry('https://example.com/two', {
+        fetchImpl: fetch,
+        rateLimitKey: 'tenant:example',
+        rateLimitIntervalMs: 1000,
+      });
+
+      expect(fetch).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1000);
+      await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+
+      await first;
+      await second;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
