@@ -108,7 +108,7 @@ describe('loadResume', () => {
     );
   });
 
-  it('annotates parsing confidence and highlights ambiguous placeholders', async () => {
+  it('annotates metadata with ambiguities, placeholders, section coverage, and confidence heuristics', async () => {
     const content = [
       '## Experience',
       'Senior Developer at Acme Corp',
@@ -119,6 +119,16 @@ describe('loadResume', () => {
       '## Education',
       'Your Title Here',
       'Bachelor of Science — Jan 20XX - Present',
+      '',
+      '# Summary',
+      'Jan - Present',
+      'Leading strategic initiatives across teams.',
+      '',
+      '| Skill | Level |',
+      '| ----- | ----- |',
+      '| Collaboration | High |',
+      '',
+      '![Workflow](workflow.png)',
     ].join('\n');
 
     const result = await withTempFile('.md', content, file =>
@@ -132,7 +142,7 @@ describe('loadResume', () => {
         expect.stringContaining('bullet'),
       ]),
     });
-    expect(result.metadata.confidence.score).toBeGreaterThanOrEqual(0.5);
+    expect(result.metadata.confidence.score).toBeGreaterThanOrEqual(0.4);
     expect(result.metadata.confidence.score).toBeLessThanOrEqual(1);
 
     expect(result.metadata.ambiguities).toEqual(
@@ -161,7 +171,17 @@ describe('loadResume', () => {
             column: expect.any(Number),
           }),
         }),
+        expect.objectContaining({ type: 'dates' }),
+        expect.objectContaining({ type: 'metrics' }),
+        expect.objectContaining({ type: 'titles' }),
       ])
+    );
+
+    expect(result.metadata.presentSections).toEqual(
+      expect.arrayContaining(['experience', 'education', 'summary'])
+    );
+    expect(result.metadata.missingSections).toEqual(
+      expect.arrayContaining(['skills', 'projects'])
     );
   });
 
