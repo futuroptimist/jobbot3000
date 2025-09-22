@@ -681,6 +681,24 @@ describe('jobbot CLI', () => {
     expect(archive['job-tags'][0].tags).toEqual(['Remote', 'onsite']);
   });
 
+  it('surfaces discard tags in shortlist list output', () => {
+    runCli([
+      'shortlist',
+      'discard',
+      'job-with-discard-tags',
+      '--reason',
+      'Changed focus',
+      '--tags',
+      'Remote,onsite',
+      '--date',
+      '2025-03-05T12:00:00Z',
+    ]);
+
+    const output = runCli(['shortlist', 'list']);
+    expect(output).toContain('job-with-discard-tags');
+    expect(output).toContain('Last Discard Tags: Remote, onsite');
+  });
+
   it('syncs shortlist metadata and filters entries by location', () => {
     const syncOutput = runCli([
       'shortlist',

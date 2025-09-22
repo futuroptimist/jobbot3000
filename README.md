@@ -379,6 +379,7 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --location remote
 #   Synced At: 2025-03-06T08:00:00.000Z
 #   Tags: dream, remote
 #   Last Discard: Not remote (2025-03-05T12:00:00.000Z)
+#   Last Discard Tags: Remote, onsite
 
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --tag dream --tag remote
 # job-123
@@ -388,6 +389,7 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --tag dream --tag remote
 #   Synced At: 2025-03-06T08:00:00.000Z
 #   Tags: dream, remote
 #   Last Discard: Not remote (2025-03-05T12:00:00.000Z)
+#   Last Discard Tags: Remote, onsite
 
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --json
 # {
@@ -423,7 +425,8 @@ surface patterns later. Review past decisions with `jobbot shortlist archive [jo
 to inspect all records at once), which reads from `data/discarded_jobs.json` so archive lookups and
 shortlist history stay in sync. Add `--json` to the shortlist list command when piping entries into
 other tools, and filter by metadata or tags (`--location`, `--level`, `--compensation`, or repeated
-`--tag` flags) when triaging opportunities. Metadata syncs stamp a `synced_at` ISO 8601 timestamp for
+`--tag` flags) when triaging opportunities. Text output also surfaces `Last Discard Tags` when tag
+history exists so the rationale stays visible without opening the archive. Metadata syncs stamp a `synced_at` ISO 8601 timestamp for
 refresh schedulers. Shells treat `$` as a variable prefix, so `--compensation "$185k"` expands to
 `85k`. The CLI re-attaches a default currency symbol so the stored value becomes `$85k`; escape the
 dollar sign (`--compensation "\$185k"`) when you need the digits preserved. Override the auto-attached
