@@ -20,7 +20,9 @@ jobbot3000.
    git-ignored directory so personal data never leaves the machine.
 4. The system surfaces parsing confidence scores, highlights ambiguities (dates, titles, metrics),
    flags ATS warnings for tables or embedded images, and prompts the user to confirm or edit the
-   imported fields before they become the source of truth.
+   imported fields before they become the source of truth. Ambiguity heuristics catch month ranges
+   without four-digit years, resumes lacking recognizable titles, and profiles with no numeric
+   metrics so candidates can fill the gaps.
 
 **Unhappy paths:** unsupported format, unreadable PDF, or missing sections trigger inline guidance
 with retry options and explain how to manually fix the source file.
