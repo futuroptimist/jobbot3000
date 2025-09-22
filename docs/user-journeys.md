@@ -67,8 +67,8 @@ revisit them later without blocking the workflow.
 4. The shortlist view exposes filters (location, level, compensation, tags) via
    `jobbot shortlist list --location <value>` (and repeated `--tag <value>` flags)
    and records sync metadata with `jobbot shortlist sync` so future refreshes know
-   when entries were last updated. Add `--json` when exporting the filtered shortlist
-   to other tools.
+   when entries were last updated. Add `--json` (and optionally
+   `--out <path>`) when exporting the filtered shortlist to other tools.
 
 **Unhappy paths:** fetch failures or ToS blocks surface actionable error messages and never retry
 aggressively to respect rate limits.

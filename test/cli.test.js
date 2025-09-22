@@ -787,6 +787,52 @@ describe('jobbot CLI', () => {
     });
   });
 
+  it('writes shortlist JSON snapshots to disk with --out', () => {
+    runCli([
+      'shortlist',
+      'sync',
+      'job-export',
+      '--location',
+      'Remote',
+      '--level',
+      'Staff',
+    ]);
+
+    runCli([
+      'shortlist',
+      'discard',
+      'job-export',
+      '--reason',
+      'Deprioritized',
+      '--date',
+      '2025-03-05T12:00:00Z',
+    ]);
+
+    const outPath = path.join(dataDir, 'exports', 'shortlist.json');
+    const output = runCli([
+      'shortlist',
+      'list',
+      '--json',
+      '--out',
+      outPath,
+    ]);
+
+    expect(output.trim()).toBe(`Saved shortlist snapshot to ${outPath}`);
+
+    const snapshot = JSON.parse(fs.readFileSync(outPath, 'utf8'));
+    expect(snapshot.jobs).toHaveProperty('job-export');
+    expect(snapshot.jobs['job-export']).toMatchObject({
+      metadata: {
+        location: 'Remote',
+        level: 'Staff',
+      },
+      last_discard: {
+        reason: 'Deprioritized',
+        discarded_at: '2025-03-05T12:00:00.000Z',
+      },
+    });
+  });
+
   it('syncs shortlist metadata and filters entries by location', () => {
     const syncOutput = runCli([
       'shortlist',
