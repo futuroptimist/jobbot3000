@@ -273,7 +273,7 @@ jobbot track add <job_id> --status applied --note "emailed hiring manager"
 **Phase 3 — Tailoring & rendering (1 week)**
 - Templating (choose Typst or LaTeX first; Tectonic/Typst CLI).
 - One-page constraint, dynamic bullet swapping.
-- ATS plain text preview + warnings (tables/images detection).
+- ATS plain text preview + warnings (tables/images detection). (shipped)
 - Cover letter template + slot-fill with job-specific context.
 
 **Phase 4 — Interview rehearsal (1 week)**

@@ -78,4 +78,33 @@ describe('loadResume', () => {
       }),
     });
   });
+
+  it('flags ATS warning signals when tables or images are present', async () => {
+    const content = [
+      '# Title',
+      '',
+      '| Skill | Years |',
+      '| ----- | ----- |',
+      '| JS    | 10    |',
+      '',
+      '![Diagram](diagram.png)',
+    ].join('\n');
+
+    const result = await withTempFile('.md', content, file =>
+      loadResume(file, { withMetadata: true })
+    );
+
+    expect(result.metadata.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'tables',
+          message: expect.stringContaining('table'),
+        }),
+        expect.objectContaining({
+          type: 'images',
+          message: expect.stringContaining('image'),
+        }),
+      ])
+    );
+  });
 });

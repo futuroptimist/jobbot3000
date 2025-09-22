@@ -19,8 +19,8 @@ jobbot3000.
 3. Parsed content is normalized into the JSON Resume schema and saved under `data/profile/`, a
    git-ignored directory so personal data never leaves the machine.
 4. The system surfaces parsing confidence scores, highlights ambiguities (dates, titles, metrics),
-   and prompts the user to confirm or edit the imported fields before they become the source of
-   truth.
+   flags ATS warnings for tables or embedded images, and prompts the user to confirm or edit the
+   imported fields before they become the source of truth.
 
 **Unhappy paths:** unsupported format, unreadable PDF, or missing sections trigger inline guidance
 with retry options and explain how to manually fix the source file.

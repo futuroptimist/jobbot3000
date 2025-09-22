@@ -150,12 +150,20 @@ console.log(metadata);
 //   bytes: 2312,
 //   characters: 1980,
 //   lineCount: 62,
-//   wordCount: 340
+//   wordCount: 340,
+//   warnings: [
+//     {
+//       type: 'tables',
+//       message: 'Detected table formatting; ATS parsers often ignore table content.'
+//     }
+//   ]
 // }
 ```
 
 `test/resume.test.js` exercises the metadata branch so downstream callers can
-depend on the shape.
+depend on the shape. When tables or images appear in the source material, the
+metadata includes `warnings` entries that flag ATS-hostile patterns; new tests
+assert tables and images trigger the warnings so resume imports surface risks.
 
 Initialize a JSON Resume skeleton when you do not have an existing file:
 
