@@ -224,6 +224,31 @@ export function toMarkdownMatch({
 
 const EXPLANATION_LIMIT = 5;
 
+const BLOCKER_PATTERNS = [
+  /\bmust\b/i,
+  /\brequir(?:e|es|ed|ement)s?\b/i,
+  /\bmandatory\b/i,
+  /\bclearance\b/i,
+  /\bvisa\b/i,
+  /\bsponsorship\b/i,
+  /\bcertif(?:ied|ication)s?\b/i,
+  /\blicen[cs]e\b/i,
+  /\bauthorization\b/i,
+  /\bcitizen(?:ship)?\b/i,
+  /\bwork permit\b/i,
+];
+
+function collectBlockers(requirements) {
+  const blockers = [];
+  for (const requirement of requirements) {
+    const normalized = requirement.toLowerCase();
+    if (BLOCKER_PATTERNS.some(pattern => pattern.test(normalized))) {
+      blockers.push(requirement);
+    }
+  }
+  return blockers;
+}
+
 export function formatMatchExplanation({
   matched,
   missing,
@@ -250,7 +275,12 @@ export function formatMatchExplanation({
     ? `${t('gaps', locale)}: ${gaps.slice(0, capped).join('; ')}`
     : t('noGaps', locale);
 
-  return [summary, hitsLine, gapsLine].join('\n');
+  const blockers = collectBlockers(gaps);
+  const blockersLine = blockers.length
+    ? `${t('blockers', locale)}: ${blockers.slice(0, capped).join('; ')}`
+    : t('noBlockers', locale);
+
+  return [summary, hitsLine, gapsLine, blockersLine].join('\n');
 }
 
 export function toMarkdownMatchExplanation(options) {
