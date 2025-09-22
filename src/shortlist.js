@@ -7,6 +7,27 @@ let overrideDir;
 
 const METADATA_FIELDS = ['location', 'level', 'compensation'];
 
+const CURRENCY_SYMBOL_RE = /^\p{Sc}/u;
+const SIMPLE_NUMERIC_RE = /^\d[\d.,]*(?:\s?(?:k|m|b))?$/i;
+
+function getDefaultCurrencySymbol() {
+  const raw = process.env.JOBBOT_SHORTLIST_CURRENCY;
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (trimmed) return trimmed;
+  }
+  return '$';
+}
+
+function normalizeCompensationValue(value) {
+  const sanitized = sanitizeString(value);
+  if (!sanitized) return undefined;
+  if (CURRENCY_SYMBOL_RE.test(sanitized)) return sanitized;
+  if (!/^\d/.test(sanitized)) return sanitized;
+  if (!SIMPLE_NUMERIC_RE.test(sanitized)) return sanitized;
+  return `${getDefaultCurrencySymbol()}${sanitized}`;
+}
+
 function resolveDataDir() {
   return overrideDir || process.env.JOBBOT_DATA_DIR || path.resolve('data');
 }
@@ -42,7 +63,11 @@ function normalizeExistingMetadata(metadata) {
   }
   const normalized = {};
   for (const field of METADATA_FIELDS) {
-    const value = sanitizeString(metadata[field]);
+    const rawValue = metadata[field];
+    const value =
+      field === 'compensation'
+        ? normalizeCompensationValue(rawValue)
+        : sanitizeString(rawValue);
     if (value) normalized[field] = value;
   }
   const syncedInput = metadata.synced_at ?? metadata.syncedAt;
@@ -117,7 +142,11 @@ function sanitizeMetadataInput(metadata) {
   }
   const normalized = {};
   for (const field of METADATA_FIELDS) {
-    const value = sanitizeString(metadata[field]);
+    const rawValue = metadata[field];
+    const value =
+      field === 'compensation'
+        ? normalizeCompensationValue(rawValue)
+        : sanitizeString(rawValue);
     if (value) normalized[field] = value;
   }
   const explicitSynced = metadata.syncedAt ?? metadata.synced_at;
