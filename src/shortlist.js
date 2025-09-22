@@ -163,13 +163,82 @@ function sanitizeMetadataInput(metadata) {
 }
 
 function cloneRecord(record) {
-  return {
-    tags: Array.isArray(record.tags) ? record.tags.slice() : [],
-    discarded: Array.isArray(record.discarded)
-      ? record.discarded.map(entry => ({ ...entry }))
-      : [],
+  const tags = Array.isArray(record.tags) ? record.tags.slice() : [];
+  const discarded = Array.isArray(record.discarded)
+    ? record.discarded.map(entry => ({ ...entry }))
+    : [];
+  const clone = {
+    tags,
+    discarded,
     metadata: record.metadata ? { ...record.metadata } : {},
   };
+  const latest = selectLatestDiscard(discarded);
+  if (latest) clone.last_discard = latest;
+  return clone;
+}
+
+function normalizeDiscardTags(tags) {
+  if (!Array.isArray(tags) || tags.length === 0) return undefined;
+  const normalized = [];
+  const seen = new Set();
+  for (const tag of tags) {
+    const value = sanitizeString(tag);
+    if (!value) continue;
+    const key = value.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(value);
+  }
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function sanitizeDiscardTimestamp(input) {
+  const value = sanitizeString(input);
+  if (!value) return undefined;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toISOString();
+}
+
+function summarizeDiscardEntry(entry) {
+  if (!entry || typeof entry !== 'object') return undefined;
+  const reason = sanitizeString(entry.reason);
+  const timestamp = sanitizeDiscardTimestamp(entry.discarded_at ?? entry.discardedAt);
+  if (!reason && !timestamp) return undefined;
+  const summary = {};
+  if (reason) summary.reason = reason;
+  if (timestamp) summary.discarded_at = timestamp;
+  const tags = normalizeDiscardTags(entry.tags);
+  if (tags) summary.tags = tags;
+  return summary;
+}
+
+function selectLatestDiscard(discarded) {
+  if (!Array.isArray(discarded) || discarded.length === 0) return undefined;
+  let latestSummary;
+  let latestTimestamp = Number.NEGATIVE_INFINITY;
+  for (const entry of discarded) {
+    const summary = summarizeDiscardEntry(entry);
+    if (!summary) continue;
+    const rawTimestamp = summary.discarded_at;
+    const parsed = rawTimestamp ? Date.parse(rawTimestamp) : Number.NaN;
+    if (!Number.isNaN(parsed)) {
+      if (parsed > latestTimestamp) {
+        latestTimestamp = parsed;
+        latestSummary = summary;
+      }
+      continue;
+    }
+    if (latestSummary === undefined) {
+      latestSummary = summary;
+      latestTimestamp = Number.NEGATIVE_INFINITY;
+    }
+  }
+  return latestSummary;
+}
+
+export function getLatestDiscardSummary(discarded) {
+  return selectLatestDiscard(discarded);
 }
 
 function normalizeFilterTags(tags) {

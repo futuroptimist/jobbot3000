@@ -60,7 +60,10 @@ revisit them later without blocking the workflow.
    Discarded roles are also archived with reasons (and optional tags) in
    `data/discarded_jobs.json` so future recommendations can reference prior decisions. Review those
    decisions with `jobbot shortlist archive <job_id>` (or `--json` to inspect the full archive) before
-   revisiting a role.
+    revisiting a role. `jobbot shortlist list --json` surfaces a `last_discard` summary (reason,
+    timestamp, tags) alongside the full history so downstream recommenders can spot the latest
+    rationale without scanning every entry. The text listing reuses that summary so even
+    unsorted histories surface the newest rationale without auditing every record manually.
 4. The shortlist view exposes filters (location, level, compensation, tags) via
    `jobbot shortlist list --location <value>` (and repeated `--tag <value>` flags)
    and records sync metadata with `jobbot shortlist sync` so future refreshes know

@@ -23,7 +23,13 @@ import {
 } from '../src/application-events.js';
 import { recordApplication, STATUSES } from '../src/lifecycle.js';
 import { getDiscardedJobs } from '../src/discards.js';
-import { addJobTags, discardJob, filterShortlist, syncShortlistJob } from '../src/shortlist.js';
+import {
+  addJobTags,
+  discardJob,
+  filterShortlist,
+  syncShortlistJob,
+  getLatestDiscardSummary,
+} from '../src/shortlist.js';
 import { recordInterviewSession, getInterviewSession } from '../src/interviews.js';
 import { initProfile } from '../src/profile.js';
 import { recordIntakeResponse, getIntakeResponses } from '../src/intake.js';
@@ -407,6 +413,41 @@ function collectTagFilters(args) {
   return tags.length > 0 ? tags : undefined;
 }
 
+function selectDiscardSummary(record) {
+  if (!record || typeof record !== 'object') return undefined;
+  const candidate =
+    record.last_discard && typeof record.last_discard === 'object'
+      ? record.last_discard
+      : getLatestDiscardSummary(record.discarded);
+  if (!candidate || typeof candidate !== 'object') return undefined;
+
+  const summary = {};
+  if (typeof candidate.reason === 'string') {
+    const reason = candidate.reason.trim();
+    if (reason) summary.reason = reason;
+  }
+  const rawTimestamp =
+    candidate.discarded_at ?? candidate.discardedAt ?? candidate.timestamp;
+  if (rawTimestamp != null) {
+    const value =
+      typeof rawTimestamp === 'string'
+        ? rawTimestamp.trim()
+        : String(rawTimestamp).trim();
+    if (value) summary.discarded_at = value;
+  }
+  if (Array.isArray(candidate.tags)) {
+    const normalizedTags = candidate.tags
+      .map(tag => {
+        if (typeof tag === 'string') return tag.trim();
+        return tag == null ? '' : String(tag).trim();
+      })
+      .filter(Boolean);
+    if (normalizedTags.length > 0) summary.tags = normalizedTags;
+  }
+
+  return Object.keys(summary).length > 0 ? summary : undefined;
+}
+
 function formatIntakeList(entries) {
   if (!Array.isArray(entries) || entries.length === 0) {
     return 'No intake responses found';
@@ -639,23 +680,21 @@ function formatShortlistList(jobs) {
   const lines = [];
   for (const [jobId, record] of entries) {
     lines.push(jobId);
-    const { metadata = {}, tags = [], discarded = [] } = record;
+    const { metadata = {}, tags = [] } = record;
     if (metadata.location) lines.push(`  Location: ${metadata.location}`);
     if (metadata.level) lines.push(`  Level: ${metadata.level}`);
     if (metadata.compensation) lines.push(`  Compensation: ${metadata.compensation}`);
     if (metadata.synced_at) lines.push(`  Synced At: ${metadata.synced_at}`);
     if (tags.length) lines.push(`  Tags: ${tags.join(', ')}`);
-    if (discarded.length) {
-      const latest = discarded[discarded.length - 1];
-      if (latest?.reason && latest?.discarded_at) {
-        lines.push(`  Last Discard: ${latest.reason} (${latest.discarded_at})`);
-        const lastTags = Array.isArray(latest.tags)
-          ? latest.tags.map(tag => String(tag).trim()).filter(Boolean)
-          : [];
-        if (lastTags.length > 0) {
-          lines.push(`  Last Discard Tags: ${lastTags.join(', ')}`);
-        }
-      }
+    const summary = selectDiscardSummary(record);
+    if (summary?.reason && summary?.discarded_at) {
+      lines.push(`  Last Discard: ${summary.reason} (${summary.discarded_at})`);
+    }
+    const summaryTags = Array.isArray(summary?.tags)
+      ? summary.tags.map(tag => String(tag).trim()).filter(Boolean)
+      : [];
+    if (summaryTags.length > 0) {
+      lines.push(`  Last Discard Tags: ${summaryTags.join(', ')}`);
     }
     lines.push('');
   }

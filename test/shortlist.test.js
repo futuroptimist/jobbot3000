@@ -96,6 +96,27 @@ describe('shortlist metadata sync and filters', () => {
     });
   });
 
+  it('summarizes the most recent discard for shortlist records', async () => {
+    const { discardJob, getShortlist } = await import('../src/shortlist.js');
+
+    await discardJob('job-latest', 'First pass', {
+      date: '2025-03-09T10:11:12Z',
+      tags: ['remote', 'focus'],
+    });
+
+    await discardJob('job-latest', 'Second pass (older)', {
+      date: '2025-03-01T09:08:07Z',
+      tags: ['remote'],
+    });
+
+    const record = await getShortlist('job-latest');
+    expect(record.last_discard).toMatchObject({
+      reason: 'First pass',
+      discarded_at: '2025-03-09T10:11:12.000Z',
+      tags: ['remote', 'focus'],
+    });
+  });
+
   it('restores currency symbols for legacy shortlist compensation entries', async () => {
     const fs = await import('node:fs/promises');
     await fs.writeFile(

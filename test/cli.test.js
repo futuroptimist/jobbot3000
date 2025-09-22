@@ -699,6 +699,58 @@ describe('jobbot CLI', () => {
     expect(output).toContain('Last Discard Tags: Remote, onsite');
   });
 
+  it('includes last discard summaries in shortlist json output', () => {
+    runCli([
+      'shortlist',
+      'discard',
+      'job-json-summary',
+      '--reason',
+      'Role moved to onsite',
+      '--tags',
+      'remote,onsite',
+      '--date',
+      '2025-03-06T10:00:00Z',
+    ]);
+
+    const listing = JSON.parse(runCli(['shortlist', 'list', '--json']));
+    expect(listing.jobs['job-json-summary'].last_discard).toMatchObject({
+      reason: 'Role moved to onsite',
+      discarded_at: '2025-03-06T10:00:00.000Z',
+      tags: ['remote', 'onsite'],
+    });
+  });
+
+  it('prints the newest discard in shortlist list output even when history is unsorted', () => {
+    const shortlistPath = path.join(dataDir, 'shortlist.json');
+    const payload = {
+      jobs: {
+        'job-out-of-order': {
+          tags: ['remote'],
+          discarded: [
+            {
+              reason: 'Most recent rationale',
+              discarded_at: '2025-05-01T10:00:00Z',
+              tags: ['Remote', 'focus', 'remote'],
+            },
+            {
+              reason: 'Older rationale',
+              discarded_at: '2025-04-01T09:00:00Z',
+              tags: ['legacy'],
+            },
+          ],
+          metadata: {},
+        },
+      },
+    };
+    fs.writeFileSync(shortlistPath, JSON.stringify(payload, null, 2));
+
+    const output = runCli(['shortlist', 'list']);
+    expect(output).toContain('job-out-of-order');
+    expect(output).toContain('Last Discard: Most recent rationale (2025-05-01T10:00:00.000Z)');
+    expect(output).toContain('Last Discard Tags: Remote, focus');
+    expect(output).not.toContain('Older rationale (2025-04-01T09:00:00.000Z)');
+  });
+
   it('syncs shortlist metadata and filters entries by location', () => {
     const syncOutput = runCli([
       'shortlist',
@@ -796,6 +848,11 @@ describe('jobbot CLI', () => {
       jobs: {
         'job-json': {
           tags: ['Remote'],
+          last_discard: {
+            reason: 'Paused search',
+            discarded_at: '2025-06-02T09:30:00.000Z',
+            tags: ['Paused'],
+          },
           metadata: {
             location: 'Remote',
             level: 'Senior',
