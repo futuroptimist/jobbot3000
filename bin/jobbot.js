@@ -37,6 +37,7 @@ import { ingestSmartRecruitersBoard } from '../src/smartrecruiters.js';
 import { ingestAshbyBoard } from '../src/ashby.js';
 import { computeFunnel, exportAnalyticsSnapshot, formatFunnelReport } from '../src/analytics.js';
 import { ingestWorkableBoard } from '../src/workable.js';
+import { ingestJobUrl } from '../src/url-ingest.js';
 import { bundleDeliverables } from '../src/deliverables.js';
 
 function isHttpUrl(s) {
@@ -613,6 +614,25 @@ async function cmdIngestWorkable(args) {
   console.log(`Imported ${saved} ${noun} from ${account}`);
 }
 
+async function cmdIngestUrl(args) {
+  const targetUrl = args[0];
+  const rest = args.slice(1);
+  if (!targetUrl) {
+    console.error('Usage: jobbot ingest url <url> [--timeout <ms>]');
+    process.exit(2);
+  }
+
+  const timeoutMs = getNumberFlag(rest, '--timeout', 10000);
+
+  try {
+    const { id } = await ingestJobUrl({ url: targetUrl, timeoutMs });
+    console.log(`Imported job ${id} from ${targetUrl}`);
+  } catch (err) {
+    console.error(err.message || String(err));
+    process.exit(1);
+  }
+}
+
 async function cmdIngest(args) {
   const sub = args[0];
   if (sub === 'greenhouse') return cmdIngestGreenhouse(args.slice(1));
@@ -620,9 +640,11 @@ async function cmdIngest(args) {
   if (sub === 'ashby') return cmdIngestAshby(args.slice(1));
   if (sub === 'smartrecruiters') return cmdIngestSmartRecruiters(args.slice(1));
   if (sub === 'workable') return cmdIngestWorkable(args.slice(1));
+  if (sub === 'url') return cmdIngestUrl(args.slice(1));
   console.error(
     'Usage: jobbot ingest <greenhouse|lever|ashby|smartrecruiters|workable> --company <slug>',
   );
+  console.error('   or: jobbot ingest url <url> [--timeout <ms>]');
   process.exit(2);
 }
 

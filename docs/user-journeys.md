@@ -55,8 +55,9 @@ revisit them later without blocking the workflow.
 1. The user searches company boards via supported fetchers (Greenhouse, Lever, SmartRecruiters,
    Ashby, Workable) or pastes individual URLs into the CLI/UI. For example,
    `jobbot ingest greenhouse --company acme` pulls the latest public postings into the local
-   data directory, and `jobbot ingest lever --company acme` performs the same for Lever-hosted
-   listings.
+   data directory, `jobbot ingest lever --company acme` performs the same for Lever-hosted
+   listings, and `jobbot ingest url https://example.com/jobs/staff-engineer` snapshots a
+   single posting on demand.
 2. The fetch pipeline de-duplicates listings, normalizes HTML to text, and stores raw + parsed
    copies under `data/jobs/{job_id}.json` alongside fetch metadata (timestamp, source, request
    headers). Job identifiers are hashed from the source URL or file path so repeat fetches update
