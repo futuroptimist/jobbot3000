@@ -62,8 +62,10 @@ describe('loadResume', () => {
 
   it('returns text and metadata when requested', async () => {
     const content = '# Title\n\n**bold** text\n';
-    const result = await withTempFile('.md', content, file =>
-      loadResume(file, { withMetadata: true })
+    const result = await withTempFile(
+      '.md',
+      content,
+      file => loadResume(file, { withMetadata: true }),
     );
 
     expect(result).toEqual({
@@ -90,9 +92,11 @@ describe('loadResume', () => {
       '![Diagram](diagram.png)',
     ].join('\n');
 
-    const result = await withTempFile('.md', content, file =>
-      loadResume(file, { withMetadata: true })
-    );
+      const result = await withTempFile(
+        '.md',
+        content,
+        file => loadResume(file, { withMetadata: true }),
+      );
 
     expect(result.metadata.warnings).toEqual(
       expect.arrayContaining([
@@ -108,82 +112,94 @@ describe('loadResume', () => {
     );
   });
 
-  it('annotates metadata with ambiguities, placeholders, section coverage, and confidence heuristics', async () => {
-    const content = [
-      '## Experience',
-      'Senior Developer at Acme Corp',
-      '- Increased revenue by XX% year over year while leading a distributed team ' +
-        'of seven engineers.',
-      '- Shipped analytics dashboards adopted by 12 partner teams across the organization.',
-      '',
-      '## Education',
-      'Your Title Here',
-      'Bachelor of Science — Jan 20XX - Present',
-      '',
-      '# Summary',
-      'Jan - Present',
-      'Leading strategic initiatives across teams.',
-      '',
-      '| Skill | Level |',
-      '| ----- | ----- |',
-      '| Collaboration | High |',
-      '',
-      '![Workflow](workflow.png)',
-    ].join('\n');
+  it(
+    'annotates metadata with ambiguities, placeholders, section coverage, ' +
+      'and confidence heuristics',
+    async () => {
+      const content = [
+        '## Experience',
+        'Senior Developer at Acme Corp',
+        '- Increased revenue by XX% year over year while leading a distributed team ' +
+          'of seven engineers.',
+        '- Shipped analytics dashboards adopted by 12 partner teams across the organization.',
+        '',
+        '## Education',
+        'Your Title Here',
+        'Bachelor of Science — Jan 20XX - Present',
+        '',
+        '# Summary',
+        'Jan - Present',
+        'Leading strategic initiatives across teams.',
+        '',
+        '| Skill | Level |',
+        '| ----- | ----- |',
+        '| Collaboration | High |',
+        '',
+        '![Workflow](workflow.png)',
+      ].join('\n');
 
-    const result = await withTempFile('.md', content, file =>
-      loadResume(file, { withMetadata: true })
-    );
+      const result = await withTempFile(
+        '.md',
+        content,
+        file => loadResume(file, { withMetadata: true }),
+      );
 
-    expect(result.metadata.confidence).toMatchObject({
-      score: expect.any(Number),
-      signals: expect.arrayContaining([
-        expect.stringContaining('resume heading'),
-        expect.stringContaining('bullet'),
-      ]),
-    });
-    expect(result.metadata.confidence.score).toBeGreaterThanOrEqual(0.4);
-    expect(result.metadata.confidence.score).toBeLessThanOrEqual(1);
+      expect(result.metadata.confidence).toMatchObject({
+        score: expect.any(Number),
+        signals: expect.arrayContaining([
+          expect.stringContaining('resume heading'),
+          expect.stringContaining('bullet'),
+        ]),
+      });
+      expect(result.metadata.confidence.score).toBeGreaterThanOrEqual(0.4);
+      expect(result.metadata.confidence.score).toBeLessThanOrEqual(1);
 
-    expect(result.metadata.ambiguities).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: 'metric',
-          value: 'XX%',
-          location: expect.objectContaining({
-            line: expect.any(Number),
-            column: expect.any(Number),
+      expect(result.metadata.ambiguities).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'metric',
+            value: 'XX%',
+            location: expect.objectContaining({
+              line: expect.any(Number),
+              column: expect.any(Number),
+            }),
           }),
-        }),
-        expect.objectContaining({
-          type: 'date',
-          value: '20XX',
-          location: expect.objectContaining({
-            line: expect.any(Number),
-            column: expect.any(Number),
+          expect.objectContaining({
+            type: 'date',
+            value: '20XX',
+            location: expect.objectContaining({
+              line: expect.any(Number),
+              column: expect.any(Number),
+            }),
           }),
-        }),
-        expect.objectContaining({
-          type: 'title',
-          value: 'Your Title Here',
-          location: expect.objectContaining({
-            line: expect.any(Number),
-            column: expect.any(Number),
+          expect.objectContaining({
+            type: 'title',
+            value: 'Your Title Here',
+            location: expect.objectContaining({
+              line: expect.any(Number),
+              column: expect.any(Number),
+            }),
           }),
-        }),
-        expect.objectContaining({ type: 'dates' }),
-        expect.objectContaining({ type: 'metrics' }),
-        expect.objectContaining({ type: 'titles' }),
-      ])
-    );
+        ])
+      );
 
-    expect(result.metadata.presentSections).toEqual(
-      expect.arrayContaining(['experience', 'education', 'summary'])
-    );
-    expect(result.metadata.missingSections).toEqual(
-      expect.arrayContaining(['skills', 'projects'])
-    );
-  });
+      expect(result.metadata.ambiguities).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: 'dates',
+            message: expect.stringContaining('month references'),
+          }),
+        ])
+      );
+
+      expect(result.metadata.presentSections).toEqual(
+        expect.arrayContaining(['experience', 'education', 'summary'])
+      );
+      expect(result.metadata.missingSections).toEqual(
+        expect.arrayContaining(['skills', 'projects'])
+      );
+    },
+  );
 
   it('retains duplicate placeholder values and preserves document order', async () => {
     const content = [
@@ -198,11 +214,13 @@ describe('loadResume', () => {
       loadResume(file, { withMetadata: true })
     );
 
-    const reported = result.metadata.ambiguities.map(item => ({
-      type: item.type,
-      value: item.value,
-      line: item.location.line,
-    }));
+    const reported = result.metadata.ambiguities
+      .filter(item => item.location)
+      .map(item => ({
+        type: item.type,
+        value: item.value,
+        line: item.location.line,
+      }));
 
     expect(reported).toEqual([
       { type: 'date', value: '20XX', line: 2 },
@@ -210,6 +228,30 @@ describe('loadResume', () => {
       { type: 'title', value: 'Your Title Here', line: 4 },
       { type: 'title', value: 'Your Title Here', line: 5 },
     ]);
+  });
+
+  it('reports heuristic ambiguities when titles and metrics are missing', async () => {
+    const content = [
+      'Experience',
+      'Led cross-functional initiatives and partnerships across regions.',
+      '',
+      'Education',
+      'B.A. History',
+      '',
+      'Summary',
+      'Collaborative professional focused on mentorship and learning.',
+    ].join('\n');
+
+    const result = await withTempFile('.txt', content, file =>
+      loadResume(file, { withMetadata: true })
+    );
+
+    expect(result.metadata.ambiguities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'metrics' }),
+        expect.objectContaining({ type: 'titles' }),
+      ])
+    );
   });
 
   it('surfaces missing resume sections in metadata for downstream prompts', async () => {
@@ -221,8 +263,10 @@ describe('loadResume', () => {
       'B.S. Computer Science, University of Somewhere',
     ].join('\n');
 
-    const result = await withTempFile('.md', content, file =>
-      loadResume(file, { withMetadata: true })
+    const result = await withTempFile(
+      '.md',
+      content,
+      file => loadResume(file, { withMetadata: true }),
     );
 
     expect(result.metadata.presentSections).toEqual([

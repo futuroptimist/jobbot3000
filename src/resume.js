@@ -246,7 +246,7 @@ function collectMatches(patterns, text, type, message) {
   return matches;
 }
 
-function detectAmbiguities(text) {
+function detectPlaceholderAmbiguities(text) {
   if (!text) return [];
 
   const lineStarts = createLineStartIndex(text);
@@ -393,7 +393,7 @@ const TITLE_KEYWORDS = [
   'lead',
 ];
 
-function detectAmbiguities(raw) {
+function detectContentAmbiguities(raw) {
   if (typeof raw !== 'string' || !raw.trim()) return [];
 
   const ambiguities = [];
@@ -431,14 +431,6 @@ function detectAmbiguities(raw) {
   }
 
   return ambiguities;
-}
-
-function computeConfidenceScore(warnings, ambiguities) {
-  const warningCount = Array.isArray(warnings) ? warnings.length : 0;
-  const ambiguityCount = Array.isArray(ambiguities) ? ambiguities.length : 0;
-  const penalty = warningCount * 0.15 + ambiguityCount * 0.1;
-  const score = Math.max(0.3, Math.min(1, 1 - penalty));
-  return Math.round(score * 100) / 100;
 }
 
 function detectAtsWarnings(raw, format) {
@@ -527,23 +519,19 @@ export async function loadResume(filePath, options = {}) {
   };
 
   const warnings = detectAtsWarnings(raw, format);
-  const ambiguities = detectAmbiguities(raw);
-  const confidence = computeConfidenceScore(warnings, ambiguities);
-
   if (warnings.length > 0) {
     metadata.warnings = warnings;
   }
-  if (ambiguities.length > 0) {
-    metadata.ambiguities = ambiguities;
-  }
-  metadata.confidence = confidence;
 
   const confidence = estimateParsingConfidence(text, warnings, headings);
   if (confidence) {
     metadata.confidence = confidence;
   }
 
-  const ambiguities = detectAmbiguities(text);
+  const ambiguities = [
+    ...detectPlaceholderAmbiguities(text),
+    ...detectContentAmbiguities(text),
+  ];
   if (ambiguities.length > 0) {
     metadata.ambiguities = ambiguities;
   }
