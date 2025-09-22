@@ -56,6 +56,12 @@ const SYNONYM_GROUPS = [
   ['ml', 'machine learning'],
   ['ai', 'artificial intelligence'],
   ['postgres', 'postgresql'],
+  ['saas', 'software as a service'],
+  ['k8s', 'kubernetes'],
+  ['ci cd', 'continuous integration'],
+  ['ci cd', 'continuous delivery'],
+  ['js', 'javascript'],
+  ['ts', 'typescript'],
 ];
 
 function resumeTokens(text) {
@@ -112,6 +118,7 @@ function hasOverlap(line, resumeSet, getNormalizedResume) {
   if (typeof line !== 'string') return false;
   const text = line.toLowerCase();
   let start = -1;
+  let tokenMatch = false;
   for (let i = 0; i < text.length; i++) {
     const code = text.charCodeAt(i);
     const isAlphanumeric =
@@ -120,16 +127,47 @@ function hasOverlap(line, resumeSet, getNormalizedResume) {
     if (isAlphanumeric) {
       if (start === -1) start = i;
     } else if (start !== -1) {
-      if (resumeSet.has(text.slice(start, i))) return true;
+      if (!tokenMatch && resumeSet.has(text.slice(start, i))) {
+        tokenMatch = true;
+        start = -1;
+        break;
+      }
       start = -1;
     }
   }
-  if (start !== -1 && resumeSet.has(text.slice(start))) return true;
+  if (!tokenMatch && start !== -1 && resumeSet.has(text.slice(start))) {
+    tokenMatch = true;
+  }
+
+  if (!tokenMatch) {
+    const normalizedLine = normalizeForSynonyms(line);
+    if (hasSynonymMatch(normalizedLine, getNormalizedResume)) return true;
+    return false;
+  }
+
+  if (!text.includes('continuous')) return true;
 
   const normalizedLine = normalizeForSynonyms(line);
-  if (hasSynonymMatch(normalizedLine, getNormalizedResume)) return true;
+  const needsContinuousIntegration = containsPhrase(normalizedLine, 'continuous integration');
+  const needsContinuousDelivery = containsPhrase(normalizedLine, 'continuous delivery');
+  if (!needsContinuousIntegration && !needsContinuousDelivery) return true;
 
-  return false;
+  const normalizedResume = getNormalizedResume();
+  const resumeHasCiCd = Boolean(normalizedResume) && containsPhrase(normalizedResume, 'ci cd');
+  const resumeHasIntegration =
+    Boolean(normalizedResume) && containsPhrase(normalizedResume, 'continuous integration');
+  const resumeHasDelivery =
+    Boolean(normalizedResume) && containsPhrase(normalizedResume, 'continuous delivery');
+
+  if (needsContinuousIntegration && !(resumeHasCiCd || resumeHasIntegration)) {
+    return false;
+  }
+
+  if (needsContinuousDelivery && !(resumeHasCiCd || resumeHasDelivery)) {
+    return false;
+  }
+
+  return true;
 }
 
 /**
