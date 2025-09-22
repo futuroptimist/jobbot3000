@@ -151,6 +151,13 @@ console.log(metadata);
 //   characters: 1980,
 //   lineCount: 62,
 //   wordCount: 340,
+//   confidence: 0.9,
+//   ambiguities: [
+//     {
+//       type: 'metrics',
+//       message: 'No numeric metrics detected; consider adding quantified achievements.'
+//     }
+//   ],
 //   warnings: [
 //     {
 //       type: 'tables',
@@ -164,6 +171,9 @@ console.log(metadata);
 depend on the shape. When tables or images appear in the source material, the
 metadata includes `warnings` entries that flag ATS-hostile patterns; new tests
 assert tables and images trigger the warnings so resume imports surface risks.
+Ambiguity heuristics now emit `ambiguities` entries when month ranges omit years,
+job titles are missing, or quantified metrics are absent, and the `confidence`
+score reflects those signals so review tools can triage follow-up work.
 
 Initialize a JSON Resume skeleton when you do not have an existing file:
 
@@ -460,6 +470,10 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --json
 #   }
 # }
 
+# Persist the filtered shortlist to disk for sharing
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --json --out shortlist.json
+# Saved shortlist snapshot to /tmp/jobbot-cli-XXXX/shortlist.json
+
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist archive job-123
 # job-123
 # - 2025-03-05T12:00:00.000Z — Not remote
@@ -472,11 +486,11 @@ surface patterns later. Review past decisions with `jobbot shortlist archive [jo
 to inspect all records at once), which reads from `data/discarded_jobs.json` so archive lookups and
 shortlist history stay in sync. JSON exports now include a `last_discard` summary so downstream tools
 can surface the most recent rationale without traversing the full history. Add `--json` to the
-shortlist list command when piping entries into other tools, and filter by metadata or tags
-(`--location`, `--level`, `--compensation`, or repeated `--tag` flags) when triaging opportunities.
-Text output also surfaces `Last Discard Tags` when tag
+shortlist list command when piping entries into other tools; include `--out <path>` to persist the
+snapshot on disk. Filter by metadata or tags (`--location`, `--level`, `--compensation`, or repeated
+`--tag` flags) when triaging opportunities. Text output also surfaces `Last Discard Tags` when tag
 history exists so the rationale stays visible without opening the archive. The archive reader trims
-messy history entries, sorts them chronologically, and fills missing timestamps with `unknown time`
+messy history entries, sorts them chronologically, and fills missing timestamps with `(unknown time)`
 so legacy discards still surface their rationale. Metadata syncs stamp a `synced_at` ISO 8601 timestamp for
 refresh schedulers. Shells treat `$` as a variable prefix, so `--compensation "$185k"` expands to
 `85k`. The CLI re-attaches a default currency symbol so the stored value becomes `$85k`; escape the

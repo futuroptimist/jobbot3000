@@ -20,7 +20,9 @@ jobbot3000.
    git-ignored directory so personal data never leaves the machine.
 4. The system surfaces parsing confidence scores, highlights ambiguities (dates, titles, metrics),
    flags ATS warnings for tables or embedded images, and prompts the user to confirm or edit the
-   imported fields before they become the source of truth.
+   imported fields before they become the source of truth. Ambiguity heuristics catch month ranges
+   without four-digit years, resumes lacking recognizable titles, and profiles with no numeric
+   metrics so candidates can fill the gaps.
 
 **Unhappy paths:** unsupported format, unreadable PDF, or missing sections trigger inline guidance
 with retry options and explain how to manually fix the source file.
@@ -65,8 +67,8 @@ revisit them later without blocking the workflow.
 4. The shortlist view exposes filters (location, level, compensation, tags) via
    `jobbot shortlist list --location <value>` (and repeated `--tag <value>` flags)
    and records sync metadata with `jobbot shortlist sync` so future refreshes know
-   when entries were last updated. Add `--json` when exporting the filtered shortlist
-   to other tools.
+   when entries were last updated. Add `--json` (and optionally
+   `--out <path>`) when exporting the filtered shortlist to other tools.
 
 **Unhappy paths:** fetch failures or ToS blocks surface actionable error messages and never retry
 aggressively to respect rate limits.

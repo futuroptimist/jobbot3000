@@ -398,7 +398,7 @@ function collectTagFilters(args) {
     if (!value || value.startsWith('--')) {
       console.error(
         'Usage: jobbot shortlist list [--location <value>] [--level <value>] ' +
-          '[--compensation <value>] [--tag <value>] [--json]'
+          '[--compensation <value>] [--tag <value>] [--json] [--out <path>]'
       );
       process.exit(2);
     }
@@ -713,7 +713,23 @@ function formatDiscardArchive(archive) {
 
 async function cmdShortlistList(args) {
   const asJson = args.includes('--json');
-  const filteredArgs = asJson ? args.filter(arg => arg !== '--json') : args;
+  const outPath = getFlag(args, '--out');
+  const filteredArgs = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--json') continue;
+    if (arg === '--out') {
+      i += 1;
+      continue;
+    }
+    filteredArgs.push(arg);
+  }
+
+  if (outPath && !asJson) {
+    console.error('--out is only supported with --json');
+    process.exit(2);
+  }
+
   const filters = {
     location: getFlag(filteredArgs, '--location'),
     level: getFlag(filteredArgs, '--level'),
@@ -724,7 +740,15 @@ async function cmdShortlistList(args) {
 
   const store = await filterShortlist(filters);
   if (asJson) {
-    console.log(JSON.stringify({ jobs: store.jobs }, null, 2));
+    const payload = { jobs: store.jobs };
+    if (outPath) {
+      const resolved = path.resolve(process.cwd(), outPath);
+      await fs.promises.mkdir(path.dirname(resolved), { recursive: true });
+      await fs.promises.writeFile(resolved, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+      console.log(`Saved shortlist snapshot to ${resolved}`);
+    } else {
+      console.log(JSON.stringify(payload, null, 2));
+    }
     return;
   }
   console.log(formatShortlistList(store.jobs));
