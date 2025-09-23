@@ -1009,8 +1009,8 @@ async function cmdRehearse(args) {
   const feedbackInput = readContentFromArgs(rest, '--feedback', '--feedback-file');
   const notesInput = readContentFromArgs(rest, '--notes', '--notes-file');
 
-  const stage = resolveRehearsalStage(rest);
-  const mode = resolveRehearsalMode(rest);
+  const stage = resolveRehearsalStage(rest) || 'Behavioral';
+  const mode = resolveRehearsalMode(rest) || 'Voice';
   const startedAt = getFlag(rest, '--started-at');
   const endedAt = getFlag(rest, '--ended-at');
 

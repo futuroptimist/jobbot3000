@@ -1234,4 +1234,34 @@ describe('jobbot CLI', () => {
       ended_at: '2025-02-01T09:45:00.000Z',
     });
   });
+
+  it('defaults rehearse stage and mode when not provided', () => {
+    const output = runCli([
+      'rehearse',
+      'job-quick',
+      '--transcript',
+      'Speed run behavioral prompts',
+      '--reflections',
+      'Anchor story with metrics',
+    ]);
+
+    const trimmed = output.trim();
+    expect(trimmed.startsWith('Recorded rehearsal ')).toBe(true);
+    const match = trimmed.match(/^Recorded rehearsal (.+) for job-quick$/);
+    expect(match).not.toBeNull();
+    const [, sessionId] = match;
+
+    const file = path.join(dataDir, 'interviews', 'job-quick', `${sessionId}.json`);
+    const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
+
+    expect(stored).toMatchObject({
+      job_id: 'job-quick',
+      session_id: sessionId,
+      stage: 'Behavioral',
+      mode: 'Voice',
+      transcript: 'Speed run behavioral prompts',
+      reflections: ['Anchor story with metrics'],
+    });
+    expect(stored).toHaveProperty('recorded_at');
+  });
 });
