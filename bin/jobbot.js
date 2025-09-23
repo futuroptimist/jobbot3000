@@ -733,6 +733,10 @@ function formatShortlistList(jobs) {
   return lines.join('\n');
 }
 
+function formatDiscardTimestamp(timestamp) {
+  return timestamp === 'unknown time' ? '(unknown time)' : timestamp;
+}
+
 function formatDiscardHistory(jobId, entries) {
   const normalized = normalizeDiscardEntries(entries);
   if (normalized.length === 0) {
@@ -740,7 +744,8 @@ function formatDiscardHistory(jobId, entries) {
   }
   const lines = [jobId];
   for (const entry of normalized) {
-    lines.push(`- ${entry.discarded_at} — ${entry.reason}`);
+    const timestamp = formatDiscardTimestamp(entry.discarded_at);
+    lines.push(`- ${timestamp} — ${entry.reason}`);
     if (entry.tags && entry.tags.length > 0) {
       lines.push(`  Tags: ${entry.tags.join(', ')}`);
     }
@@ -758,7 +763,8 @@ function formatDiscardArchive(archive) {
     if (!entries || entries.length === 0) continue;
     lines.push(jobId);
     for (const entry of entries) {
-      lines.push(`- ${entry.discarded_at} — ${entry.reason}`);
+      const timestamp = formatDiscardTimestamp(entry.discarded_at);
+      lines.push(`- ${timestamp} — ${entry.reason}`);
       if (entry.tags && entry.tags.length > 0) {
         lines.push(`  Tags: ${entry.tags.join(', ')}`);
       }
