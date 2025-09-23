@@ -750,6 +750,56 @@ describe('jobbot CLI', () => {
     });
   });
 
+  it('surfaces intake bullet suggestions and supports tag filters', () => {
+    const leadershipOutput = runCli([
+      'intake',
+      'record',
+      '--question',
+      'Tell me about a leadership win',
+      '--answer',
+      'Led SRE incident response overhaul',
+      '--tags',
+      'Leadership,SRE',
+      '--notes',
+      'Focus on coordination',
+    ]);
+    expect(leadershipOutput.trim()).toMatch(/^Recorded intake response/);
+
+    const metricsOutput = runCli([
+      'intake',
+      'record',
+      '--question',
+      'Share a metric-driven accomplishment',
+      '--answer',
+      'Increased activation by 25%\nReduced churn by 10%',
+      '--tags',
+      'Metrics',
+    ]);
+    expect(metricsOutput.trim()).toMatch(/^Recorded intake response/);
+
+    const payload = JSON.parse(runCli(['intake', 'bullets', '--json']));
+    expect(payload.bullets).toHaveLength(3);
+    expect(payload.bullets[0]).toMatchObject({
+      text: 'Led SRE incident response overhaul',
+      tags: ['Leadership', 'SRE'],
+      source: {
+        question: 'Tell me about a leadership win',
+        type: 'intake',
+      },
+    });
+
+    const filtered = JSON.parse(runCli(['intake', 'bullets', '--json', '--tag', 'metrics']));
+    expect(filtered.bullets).toHaveLength(2);
+    expect(filtered.bullets.map(entry => entry.text)).toEqual([
+      'Increased activation by 25%',
+      'Reduced churn by 10%',
+    ]);
+
+    const textOutput = runCli(['intake', 'bullets']);
+    expect(textOutput).toContain('Led SRE incident response overhaul');
+    expect(textOutput).toContain('Question: Share a metric-driven accomplishment');
+  });
+
   it('tags shortlist entries and persists labels', () => {
     const output = runCli(['shortlist', 'tag', 'job-abc', 'dream', 'remote']);
     expect(output.trim()).toBe('Tagged job-abc with dream, remote');

@@ -196,3 +196,86 @@ export async function getIntakeResponses(options = {}) {
 
   return normalized.filter(entry => statusFilter.has(entry.status));
 }
+
+function splitAnswerIntoFragments(answer) {
+  if (typeof answer !== 'string') return [];
+  const trimmed = answer.trim();
+  if (!trimmed) return [];
+  const segments = trimmed.split(/\r?\n/).map(part => part.trim()).filter(Boolean);
+  if (segments.length <= 1) return [trimmed];
+  const deduped = [];
+  const seen = new Set();
+  for (const segment of segments) {
+    const key = segment.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(segment);
+  }
+  return deduped;
+}
+
+function normalizeTagFilters(tags) {
+  if (!tags) return undefined;
+  const values = Array.isArray(tags) ? tags : [tags];
+  const normalized = [];
+  const seen = new Set();
+  for (const value of values) {
+    const clean = sanitizeString(value);
+    if (!clean) continue;
+    const key = clean.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(key);
+  }
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+export async function getIntakeBulletOptions(options = {}) {
+  const responses = await getIntakeResponses();
+  const tagFilters = normalizeTagFilters(options.tags);
+  const bullets = [];
+
+  for (const response of responses) {
+    if (response.status !== 'answered') continue;
+    const fragments = splitAnswerIntoFragments(response.answer);
+    if (fragments.length === 0) continue;
+
+    const sourceTags = Array.isArray(response.tags) ? response.tags.slice() : undefined;
+    if (tagFilters) {
+      if (!sourceTags || sourceTags.length === 0) continue;
+      const tagSet = new Set(
+        sourceTags
+          .map(tag => sanitizeString(tag))
+          .filter(Boolean)
+          .map(tag => tag.toLowerCase()),
+      );
+      let matches = true;
+      for (const required of tagFilters) {
+        if (!tagSet.has(required)) {
+          matches = false;
+          break;
+        }
+      }
+      if (!matches) continue;
+    }
+
+    fragments.forEach((text, index) => {
+      const entry = {
+        id: `${response.id}:${index}`,
+        text,
+        source: {
+          type: 'intake',
+          question: response.question,
+          response_id: response.id,
+        },
+      };
+      if (sourceTags && sourceTags.length > 0) entry.tags = sourceTags.slice();
+      if (response.notes) entry.notes = response.notes;
+      if (response.asked_at) entry.source.asked_at = response.asked_at;
+      if (response.recorded_at) entry.source.recorded_at = response.recorded_at;
+      bullets.push(entry);
+    });
+  }
+
+  return bullets;
+}

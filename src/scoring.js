@@ -12,6 +12,7 @@ function tokenize(text) {
   const tokens = new Set();
   let start = -1;
   let needsLower = false;
+  let lowerKey;
 
   for (let i = 0; i < key.length; i++) {
     const code = key.charCodeAt(i);
@@ -26,18 +27,25 @@ function tokenize(text) {
       }
       if (isUpper) needsLower = true;
     } else if (start !== -1) {
-      let token = key.slice(start, i);
-      if (needsLower) token = token.toLowerCase();
-      tokens.add(token);
+      const end = i;
+      if (needsLower) {
+        if (!lowerKey) lowerKey = key.toLowerCase();
+        tokens.add(lowerKey.slice(start, end));
+      } else {
+        tokens.add(key.slice(start, end));
+      }
       start = -1;
       needsLower = false;
     }
   }
 
   if (start !== -1) {
-    let token = key.slice(start);
-    if (needsLower) token = token.toLowerCase();
-    tokens.add(token);
+    if (needsLower) {
+      if (!lowerKey) lowerKey = key.toLowerCase();
+      tokens.add(lowerKey.slice(start));
+    } else {
+      tokens.add(key.slice(start));
+    }
   }
 
   // Simple cache eviction to bound memory.
@@ -173,4 +181,10 @@ export function computeFitScore(resumeText, requirements) {
 
   const score = Math.round((matched.length / total) * 100);
   return { score, matched, missing };
+}
+
+export function __resetScoringCachesForTest() {
+  TOKEN_CACHE.clear();
+  cachedResume = '';
+  cachedTokens = new Set();
 }

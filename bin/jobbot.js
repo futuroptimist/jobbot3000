@@ -30,7 +30,11 @@ import {
 import { addJobTags, discardJob, filterShortlist, syncShortlistJob } from '../src/shortlist.js';
 import { recordInterviewSession, getInterviewSession } from '../src/interviews.js';
 import { initProfile, importLinkedInProfile } from '../src/profile.js';
-import { recordIntakeResponse, getIntakeResponses } from '../src/intake.js';
+import {
+  recordIntakeResponse,
+  getIntakeResponses,
+  getIntakeBulletOptions,
+} from '../src/intake.js';
 import { ingestGreenhouseBoard } from '../src/greenhouse.js';
 import { ingestLeverBoard } from '../src/lever.js';
 import { ingestSmartRecruitersBoard } from '../src/smartrecruiters.js';
@@ -480,6 +484,52 @@ function formatIntakeList(entries) {
   return lines.join('\n');
 }
 
+function collectRepeatableFlag(args, flag, { usage }) {
+  const values = [];
+  for (let i = 0; i < args.length; i += 1) {
+    if (args[i] !== flag) continue;
+    const value = args[i + 1];
+    if (!value || value.startsWith('--')) {
+      if (usage) {
+        console.error(usage);
+        process.exit(2);
+      }
+      continue;
+    }
+    for (const entry of String(value).split(',')) {
+      const trimmed = entry.trim();
+      if (trimmed) values.push(trimmed);
+    }
+    i += 1;
+  }
+  return values;
+}
+
+function formatIntakeBullets(bullets) {
+  if (!Array.isArray(bullets) || bullets.length === 0) {
+    return 'No bullet suggestions found';
+  }
+  const lines = [];
+  for (const bullet of bullets) {
+    lines.push(bullet.text);
+    if (Array.isArray(bullet.tags) && bullet.tags.length > 0) {
+      lines.push(`  Tags: ${bullet.tags.join(', ')}`);
+    }
+    if (bullet.notes) {
+      lines.push(`  Notes: ${bullet.notes}`);
+    }
+    if (bullet.source?.question) {
+      lines.push(`  Question: ${bullet.source.question}`);
+    }
+    if (bullet.source?.response_id) {
+      lines.push(`  Response ID: ${bullet.source.response_id}`);
+    }
+    lines.push('');
+  }
+  if (lines[lines.length - 1] === '') lines.pop();
+  return lines.join('\n');
+}
+
 async function cmdIntakeRecord(args) {
   const skip = args.includes('--skip');
   const question = readContentFromArgs(args, '--question', '--question-file');
@@ -516,10 +566,33 @@ async function cmdIntakeList(args) {
   console.log(formatIntakeList(entries));
 }
 
+async function cmdIntakeBullets(args) {
+  const asJson = args.includes('--json');
+  const tags = collectRepeatableFlag(args, '--tag', {
+    usage: 'Usage: jobbot intake bullets [--tag <value>] [--json]',
+  });
+
+  let bullets;
+  try {
+    bullets = await getIntakeBulletOptions({ tags: tags.length ? tags : undefined });
+  } catch (err) {
+    console.error(err.message || String(err));
+    process.exit(1);
+  }
+
+  if (asJson) {
+    console.log(JSON.stringify({ bullets }, null, 2));
+    return;
+  }
+
+  console.log(formatIntakeBullets(bullets));
+}
+
 async function cmdIntake(args) {
   const sub = args[0];
   if (sub === 'record') return cmdIntakeRecord(args.slice(1));
   if (sub === 'list') return cmdIntakeList(args.slice(1));
+  if (sub === 'bullets') return cmdIntakeBullets(args.slice(1));
   console.error('Usage: jobbot intake <record|list> ...');
   process.exit(2);
 }
