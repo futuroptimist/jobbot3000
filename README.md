@@ -669,7 +669,14 @@ counts, drop-offs, and conversion percentages. A dedicated unit test in
 [`test/analytics.test.js`](test/analytics.test.js) and a CLI flow in [`test/cli.test.js`](test/cli.test.js)
 cover outreach counts, acceptance detection, JSON formatting, the largest drop-off highlight, and the
 anonymized snapshot export. The `analytics export` subcommand captures aggregate status counts and
-event channels without embedding raw job identifiers so personal records stay scrubbed.
+event channels without embedding raw job identifiers so personal records stay scrubbed. JSON exports
+now include a `funnel.sankey` payload describing nodes and links for outreach ➜ acceptance flows,
+making it trivial to render Sankey diagrams without recomputing the stage math.
+
+When outreach events exist without a matching lifecycle status, the report now prints a
+`Missing data: …` line listing the affected job IDs so you can backfill outcomes quickly.
+Exported snapshots expose only a count in `funnel.missing.statuslessJobs` so shared analytics stay
+anonymized.
 
 ## Interview session logs
 
