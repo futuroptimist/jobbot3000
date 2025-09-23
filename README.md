@@ -454,7 +454,8 @@ even when the first requirement follows
 the header on the same line. Leading numbers without punctuation remain intact. Requirement headers
 are located in a single pass to avoid re-scanning large job postings, and resume scoring tokenizes
 via a manual scanner and caches tokens (up to 60k lines) to avoid repeated work. Automated tests
-exercise this path with 120k-line resumes to ensure the tokenizer stays under 200ms. Requirement bullets
+exercise this path with 120k-line resumes to ensure the tokenizer stays under 190ms on a cold run.
+Requirement bullets
 are scanned without regex or temporary arrays, improving large input performance. Blank or
 non-string requirement entries are skipped so invalid bullets don't affect scoring.
 
@@ -601,6 +602,23 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot intake list --skipped-only
 #   Asked At: 2025-02-01T12:40:00.000Z
 #   Recorded At: 2025-02-01T12:40:00.000Z
 #   ID: 987e6543-e21b-45d3-a456-426614174001
+
+# Turn answered prompts into bullet suggestions tagged by competency
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot intake bullets --json
+# {
+#   "bullets": [
+#     {
+#       "text": "Led SRE incident response overhaul",
+#       "tags": ["Leadership", "SRE"],
+#       "source": {
+#         "question": "Tell me about a leadership win",
+#         "response_id": "123e4567-e89b-12d3-a456-426614174000"
+#       }
+#     }
+#   ]
+# }
+# Filter suggestions to specific skills
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot intake bullets --tag metrics
 ```
 
 Entries are appended to `data/profile/intake.json` with normalized timestamps, optional tags, notes,

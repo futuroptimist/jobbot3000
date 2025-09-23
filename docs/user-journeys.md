@@ -43,6 +43,8 @@ with retry options and explain how to manually fix the source file.
    `jobbot intake record`. When a candidate postpones a prompt, `jobbot intake record --skip` marks
    it for follow-up while preserving tags/notes so the model can circle back. The assistant
    synthesizes updated bullet point options tagged by skill or competency.
+   Run `jobbot intake bullets [--tag <value>] [--json]` to export those suggestions for tailoring
+   sessions.
 4. All interactions are stored locally with timestamps and provenance metadata for later review.
 
 **Unhappy paths:** the user can skip or postpone questions. Skips are marked so the assistant can

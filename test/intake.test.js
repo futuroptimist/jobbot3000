@@ -119,4 +119,73 @@ describe('intake responses', () => {
       asked_at: '2025-02-02T08:00:00.000Z',
     });
   });
+
+  it('synthesizes bullet options from answered responses', async () => {
+    const { recordIntakeResponse, getIntakeBulletOptions } = await import('../src/intake.js');
+
+    const leadership = await recordIntakeResponse({
+      question: 'Tell me about a leadership win',
+      answer: 'Led SRE incident response overhaul',
+      tags: ['Leadership', 'SRE'],
+      notes: 'Focus on cross-team coordination',
+    });
+
+    const metrics = await recordIntakeResponse({
+      question: 'Share a metric-driven accomplishment',
+      answer: 'Increased activation by 25%\nReduced churn by 10%',
+      tags: ['Metrics'],
+    });
+
+    await recordIntakeResponse({
+      question: 'Which benefits matter most to you?',
+      skipped: true,
+    });
+
+    const bullets = await getIntakeBulletOptions();
+    expect(bullets).toEqual([
+      {
+        id: `${leadership.id}:0`,
+        text: 'Led SRE incident response overhaul',
+        tags: ['Leadership', 'SRE'],
+        notes: 'Focus on cross-team coordination',
+        source: {
+          type: 'intake',
+          question: 'Tell me about a leadership win',
+          response_id: leadership.id,
+          asked_at: leadership.asked_at,
+          recorded_at: leadership.recorded_at,
+        },
+      },
+      {
+        id: `${metrics.id}:0`,
+        text: 'Increased activation by 25%',
+        tags: ['Metrics'],
+        source: {
+          type: 'intake',
+          question: 'Share a metric-driven accomplishment',
+          response_id: metrics.id,
+          asked_at: metrics.asked_at,
+          recorded_at: metrics.recorded_at,
+        },
+      },
+      {
+        id: `${metrics.id}:1`,
+        text: 'Reduced churn by 10%',
+        tags: ['Metrics'],
+        source: {
+          type: 'intake',
+          question: 'Share a metric-driven accomplishment',
+          response_id: metrics.id,
+          asked_at: metrics.asked_at,
+          recorded_at: metrics.recorded_at,
+        },
+      },
+    ]);
+
+    const metricsOnly = await getIntakeBulletOptions({ tags: ['metrics'] });
+    expect(metricsOnly.map(entry => entry.text)).toEqual([
+      'Increased activation by 25%',
+      'Reduced churn by 10%',
+    ]);
+  });
 });
