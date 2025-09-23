@@ -873,6 +873,32 @@ describe('jobbot CLI', () => {
     expect(output).toContain('Last Discard Tags: Remote, onsite');
   });
 
+  it('reports the newest discard in shortlist list summaries', () => {
+    runCli([
+      'shortlist',
+      'discard',
+      'job-newest-first',
+      '--reason',
+      'Old news',
+      '--date',
+      '2024-12-25T09:00:00Z',
+    ]);
+
+    runCli([
+      'shortlist',
+      'discard',
+      'job-newest-first',
+      '--reason',
+      'Stay in touch',
+      '--date',
+      '2025-03-10T12:00:00Z',
+    ]);
+
+    const output = runCli(['shortlist', 'list']);
+    expect(output).toContain('Last Discard: Stay in touch (2025-03-10T12:00:00.000Z)');
+    expect(output).not.toContain('Last Discard: Old news (2024-12-25T09:00:00.000Z)');
+  });
+
   it('shows last discard details for legacy entries without timestamps', () => {
     const shortlistPath = path.join(dataDir, 'shortlist.json');
     const legacyPayload = {
