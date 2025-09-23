@@ -796,7 +796,7 @@ function formatShortlistList(jobs) {
     if (tags.length) lines.push(`  Tags: ${tags.join(', ')}`);
     const normalizedDiscard = normalizeDiscardEntries(discarded);
     if (normalizedDiscard.length > 0) {
-      const latest = normalizedDiscard[normalizedDiscard.length - 1];
+      const latest = normalizedDiscard[0];
       const reason = latest.reason || 'Unknown reason';
       const timestamp = latest.discarded_at || 'unknown time';
       lines.push(`  Last Discard: ${reason} (${timestamp})`);
@@ -819,9 +819,8 @@ function formatDiscardHistory(jobId, entries) {
   if (normalized.length === 0) {
     return `No discard history for ${jobId}`;
   }
-  const ordered = normalized.slice().reverse();
   const lines = [jobId];
-  for (const entry of ordered) {
+  for (const entry of normalized) {
     const timestamp = formatDiscardTimestamp(entry.discarded_at);
     lines.push(`- ${timestamp} — ${entry.reason}`);
     if (entry.tags && entry.tags.length > 0) {
@@ -840,7 +839,7 @@ function formatDiscardArchive(archive) {
     const entries = normalized[jobId];
     if (!entries || entries.length === 0) continue;
     lines.push(jobId);
-    for (const entry of entries.slice().reverse()) {
+    for (const entry of entries) {
       const timestamp = formatDiscardTimestamp(entry.discarded_at);
       lines.push(`- ${timestamp} — ${entry.reason}`);
       if (entry.tags && entry.tags.length > 0) {
@@ -905,9 +904,8 @@ async function cmdShortlistArchive(args) {
   try {
     if (jobId) {
       const history = await getDiscardedJobs(jobId);
-      const orderedHistory = history.slice().reverse();
       if (asJson) {
-        console.log(JSON.stringify({ job_id: jobId, history: orderedHistory }, null, 2));
+        console.log(JSON.stringify({ job_id: jobId, history }, null, 2));
       } else {
         console.log(formatDiscardHistory(jobId, history));
       }
@@ -915,12 +913,8 @@ async function cmdShortlistArchive(args) {
     }
 
     const archive = await getDiscardedJobs();
-    const orderedArchive = {};
-    for (const job of Object.keys(archive)) {
-      orderedArchive[job] = archive[job].slice().reverse();
-    }
     if (asJson) {
-      console.log(JSON.stringify({ discarded: orderedArchive }, null, 2));
+      console.log(JSON.stringify({ discarded: archive }, null, 2));
     } else {
       console.log(formatDiscardArchive(archive));
     }
