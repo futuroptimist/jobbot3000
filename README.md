@@ -262,7 +262,7 @@ generated `word/document.xml`, and [`test/cli.test.js`](test/cli.test.js) verifi
 `--docx` flag writes those documents without altering stdout output.
 
 Both exporters accept an optional `locale` field to translate labels.
-The default locale is `'en'`; Spanish (`'es'`) is also supported.
+The default locale is `'en'`; Spanish (`'es'`) and French (`'fr'`) are also supported.
 
 Use `toMarkdownMatch` to format fit score results; it also accepts `url`:
 
@@ -346,7 +346,8 @@ location constraints (“onsite”, “in-office”, “relocation”, “travel
 (“salary”, “compensation”, “base pay”), and seniority signals (“senior-level”, “years of experience”,
 “leadership”). They are surfaced in a dedicated line so reviewers can distinguish urgent gaps from
 nice-to-have skills. Tests in [`test/exporters.test.js`](test/exporters.test.js) cover the expanded
-blocker detection and the fallback message when no mandatory requirements are found.
+blocker detection, localized blocker labels (including the French strings), and the fallback
+message when no mandatory requirements are found.
 
 The summarizer extracts the first sentence, handling `.`, `!`, `?`, and consecutive terminal
 punctuation like `?!`, including when followed by closing quotes or parentheses. Terminators apply
