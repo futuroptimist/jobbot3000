@@ -178,6 +178,28 @@ describe('loadResume', () => {
     );
   });
 
+  it('includes aggregate ambiguity hints for plain text resumes', async () => {
+    const content = [
+      'Summary',
+      'Collaborative product builder focused on impact.',
+      '',
+      'Experience',
+      'January - Present: Leading cross-team initiatives.',
+    ].join('\n');
+
+    const result = await withTempFile('.txt', content, file =>
+      loadResume(file, { withMetadata: true })
+    );
+
+    expect(result.metadata.ambiguities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'dates' }),
+        expect.objectContaining({ type: 'metrics' }),
+        expect.objectContaining({ type: 'titles' }),
+      ]),
+    );
+  });
+
   it('retains duplicate placeholder values and preserves document order', async () => {
     const content = [
       'Experience',
@@ -191,11 +213,13 @@ describe('loadResume', () => {
       loadResume(file, { withMetadata: true })
     );
 
-    const reported = result.metadata.ambiguities.map(item => ({
-      type: item.type,
-      value: item.value,
-      line: item.location.line,
-    }));
+    const reported = result.metadata.ambiguities
+      .filter(item => item.value)
+      .map(item => ({
+        type: item.type,
+        value: item.value,
+        line: item.location.line,
+      }));
 
     expect(reported).toEqual([
       { type: 'date', value: '20XX', line: 2 },

@@ -195,6 +195,9 @@ or quantified metrics are absent, and the `confidence` score reflects those
 signals so review tools can triage follow-up work. Ambiguity entries now include
 the `{ line, column }` location of each occurrence and are emitted in document
 order so callers can highlight every placeholder directly in downstream editors.
+Plain text and PDF resumes receive the same aggregate `dates`, `metrics`, and
+`titles` hints, with additional coverage in `test/resume.test.js` confirming the
+non-Markdown path.
 
 Initialize a JSON Resume skeleton when you do not have an existing file:
 
