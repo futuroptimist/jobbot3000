@@ -631,6 +631,21 @@ describe('jobbot CLI', () => {
     expect(emptyJob.trim()).toBe('No discard history for job-missing');
   });
 
+  it('renders legacy discard timestamps as (unknown time)', () => {
+    const archivePath = path.join(dataDir, 'discarded_jobs.json');
+    const legacyArchive = {
+      'job-legacy': [
+        { reason: 'Legacy entry without timestamp' },
+        { reason: 'Legacy blank timestamp', discarded_at: '   ' },
+      ],
+    };
+    fs.writeFileSync(archivePath, `${JSON.stringify(legacyArchive, null, 2)}\n`, 'utf8');
+
+    const output = runCli(['shortlist', 'archive', 'job-legacy']);
+    expect(output).toContain('- (unknown time) — Legacy entry without timestamp');
+    expect(output).toContain('- (unknown time) — Legacy blank timestamp');
+  });
+
   it('records intake responses and lists them', () => {
     const output = runCli([
       'intake',

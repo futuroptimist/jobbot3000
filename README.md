@@ -550,7 +550,8 @@ Existing shortlist files missing a currency symbol are normalized on read using 
 filters and reports stay consistent.
 Unit tests in [`test/shortlist.test.js`](test/shortlist.test.js) and the CLI suite in
 [`test/cli.test.js`](test/cli.test.js) exercise metadata updates, tag filters, discard tags, archive
-exports, and the persisted format.
+exports, and the persisted format. Additional CLI coverage locks in the `(unknown time)` placeholder
+for legacy discard entries so missing timestamps remain readable in archive output.
 
 ## Intake responses
 
