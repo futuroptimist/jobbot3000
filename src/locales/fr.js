@@ -10,6 +10,8 @@ export default {
   explanation: 'Explication',
   hits: 'Points forts',
   gaps: 'Lacunes',
+  blockers: 'Blocages',
+  noBlockers: 'Aucun blocage signalé.',
   noHits: 'Aucune correspondance directe depuis le CV.',
   noGaps: 'Aucune exigence manquante détectée.',
   coverageSummary: 'Correspond {matched} sur {total} exigences ({score} %).',

@@ -228,6 +228,18 @@ describe('exporters', () => {
     expect(text).toContain('No blockers flagged.');
   });
 
+  it('localizes blocker labels in French explanations', () => {
+    const blockers = formatMatchExplanation({
+      matched: [],
+      missing: ['Security clearance required'],
+      locale: 'fr',
+    });
+    expect(blockers).toContain('Blocages: Security clearance required');
+
+    const fallback = formatMatchExplanation({ matched: [], missing: [], locale: 'fr' });
+    expect(fallback).toContain('Aucun blocage signalé.');
+  });
+
   it('surfaces blockers based on must-have keywords', () => {
     const text = formatMatchExplanation({
       matched: [],
