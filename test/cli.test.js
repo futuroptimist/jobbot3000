@@ -1266,6 +1266,27 @@ describe('jobbot CLI', () => {
     expect(parsed).toEqual(stored);
   });
 
+  it('defaults interviews record stage and mode when omitted', () => {
+    const output = runCli([
+      'interviews',
+      'record',
+      'job-456',
+      'session-default',
+      '--transcript',
+      'Practiced elevator pitch',
+      '--reflections',
+      'Tighten closing ask',
+    ]);
+
+    expect(output.trim()).toBe('Recorded session session-default for job-456');
+
+    const file = path.join(dataDir, 'interviews', 'job-456', 'session-default.json');
+    const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
+
+    expect(stored.stage).toBe('Behavioral');
+    expect(stored.mode).toBe('Voice');
+  });
+
   it('records rehearsal sessions with stage and mode shortcuts', () => {
     const output = runCli([
       'rehearse',

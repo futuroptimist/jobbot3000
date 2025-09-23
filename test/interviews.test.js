@@ -100,6 +100,27 @@ describe('interview session archive', () => {
     const result = await getInterviewSession('job-404', 'missing');
     expect(result).toBeNull();
   });
+
+  it('defaults stage and mode when omitted', async () => {
+    const { setInterviewDataDir, recordInterviewSession } = await import('../src/interviews.js');
+
+    setInterviewDataDir(dataDir);
+
+    const recorded = await recordInterviewSession('job-default', 'session-default', {
+      transcript: 'Practiced elevator pitch.',
+    });
+
+    expect(recorded).toMatchObject({
+      stage: 'Behavioral',
+      mode: 'Voice',
+    });
+
+    const disk = await readSession('job-default', 'session-default');
+    expect(disk).toMatchObject({
+      stage: 'Behavioral',
+      mode: 'Voice',
+    });
+  });
 });
 
 describe('generateRehearsalPlan', () => {
