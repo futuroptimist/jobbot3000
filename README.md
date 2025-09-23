@@ -35,6 +35,10 @@ echo "First. Second. Third." | npx jobbot summarize - --sentences 2 --text
 npx jobbot summarize job.txt --docx output/summary.docx
 # => Markdown summary prints to stdout; DOCX saved to output/summary.docx
 
+# Localize summary headings in Spanish
+npx jobbot summarize job.txt --docx output/summary-es.docx --locale es
+# => Markdown and DOCX outputs use translated labels
+
 # Track an application's status
 npx jobbot track add job-123 --status screening
 # => Recorded job-123 as screening
@@ -342,6 +346,10 @@ JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot match --resume resume.txt --job job.txt 
 # Persist a DOCX match report while keeping machine-readable output
 JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot match --resume resume.txt --job job.txt --json --docx match.docx
 # => JSON match report prints to stdout; match.docx contains the formatted document
+
+# Localize match reports and explanations
+JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot match --resume resume.txt --job job.txt --locale fr --docx match-fr.docx
+# => Markdown and DOCX outputs render translated labels
 ```
 
 Fit scoring recognizes common abbreviations so lexical-only resumes still match spelled-out
@@ -765,6 +773,14 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot interviews plan --stage system-design --rol
 #
 # Draft scalable architectures that balance user impact, cost, and reliability.
 #
+# Flashcards
+# - Capacity planning → Quantify QPS, latency budgets, and storage needs upfront.
+# - Resilience checklist → Map failure domains, redundancy, and rollback strategies.
+#
+# Question bank
+# 1. Design a multi-region feature flag service. (Reliability)
+# 2. Scale a read-heavy API to millions of users. (Scalability)
+#
 # Requirements
 # - Clarify functional and non-functional requirements along with success metrics.
 # - List constraints around traffic, latency budgets, data retention, and compliance.
@@ -801,7 +817,9 @@ longer inputs (for example, `--transcript-file transcript.md`). Automated covera
 [`test/interviews.test.js`](test/interviews.test.js) and [`test/cli.test.js`](test/cli.test.js)
 verifies persistence, retrieval paths, stage/mode shortcuts, the defaulted rehearse metadata,
 manual recordings inheriting the same Behavioral/Voice defaults, and the stage-specific rehearsal
-plans emitted by `jobbot interviews plan`.
+plans emitted by `jobbot interviews plan`. Plans now include a `Flashcards` checklist and a
+numbered `Question bank` so candidates can drill concepts by focus area; the updated tests assert
+that both sections appear in JSON and CLI output.
 
 ## Deliverable bundles
 

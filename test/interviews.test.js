@@ -155,6 +155,34 @@ describe('generateRehearsalPlan', () => {
     expect(plan.resources).toContain('Algorithm drill set');
   });
 
+  it('packages flashcards and a question bank for study packets', async () => {
+    const { generateRehearsalPlan } = await import('../src/interviews.js');
+
+    const plan = generateRehearsalPlan({ stage: 'technical' });
+
+    expect(Array.isArray(plan.flashcards)).toBe(true);
+    expect(plan.flashcards.length).toBeGreaterThan(0);
+    expect(plan.flashcards).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          front: 'Debugging loop',
+          back: expect.stringContaining('Reproduce'),
+        }),
+      ]),
+    );
+
+    expect(Array.isArray(plan.question_bank)).toBe(true);
+    expect(plan.question_bank.length).toBeGreaterThan(0);
+    expect(plan.question_bank).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          prompt: expect.stringContaining('memory leak'),
+          tags: expect.arrayContaining(['Debugging']),
+        }),
+      ]),
+    );
+  });
+
   it('honors duration overrides for system design plans', async () => {
     const { generateRehearsalPlan } = await import('../src/interviews.js');
 

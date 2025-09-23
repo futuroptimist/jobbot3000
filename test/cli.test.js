@@ -101,6 +101,29 @@ describe('jobbot CLI', () => {
     expect(xml).toContain('Summary');
   });
 
+  it('localizes summaries when --locale is provided', async () => {
+    const target = path.join(dataDir, 'resumen.docx');
+    const input = [
+      'Title: Ingeniero',
+      'Company: Ejemplo SA',
+      'Location: Remoto',
+      'Summary',
+      'Construir herramientas colaborativas.',
+      'Requirements',
+      '- Node.js',
+    ].join('\n');
+
+    const out = runCli(['summarize', '-', '--locale', 'es', '--docx', target], input);
+    expect(out).toContain('**Empresa**: Ejemplo SA');
+    expect(out).toContain('## Resumen');
+    const buffer = fs.readFileSync(target);
+    const zip = await JSZip.loadAsync(buffer);
+    const xml = await zip.file('word/document.xml').async('string');
+    expect(xml).toContain('Empresa');
+    expect(xml).toContain('Resumen');
+    expect(xml).toContain('Requisitos');
+  });
+
   it('defaults to one sentence when --sentences is invalid', () => {
     const out = runCli(
       ['summarize', '-', '--sentences', 'foo'],
@@ -218,6 +241,37 @@ describe('jobbot CLI', () => {
     expect(xml).toContain('Engineer');
     expect(xml).toContain('Fit Score');
     expect(xml).toContain('Matched');
+  });
+
+  it('localizes match output when --locale is provided', () => {
+    const job = [
+      'Title: Desarrollador',
+      'Company: Ejemplo SA',
+      'Requirements',
+      '- Node.js',
+      '- Trabajo en equipo',
+    ].join('\n');
+    const resume = 'Experiencia con Node.js y trabajo colaborativo.';
+    const jobPath = path.join(dataDir, 'job-locale.txt');
+    const resumePath = path.join(dataDir, 'resume-locale.txt');
+    fs.writeFileSync(jobPath, job);
+    fs.writeFileSync(resumePath, resume);
+
+    const out = runCli([
+      'match',
+      '--resume',
+      resumePath,
+      '--job',
+      jobPath,
+      '--explain',
+      '--locale',
+      'es',
+    ]);
+
+    expect(out).toContain('**Empresa**: Ejemplo SA');
+    expect(out).toContain('## Coincidencias');
+    expect(out).toContain('## Explicación');
+    expect(out).toMatch(/Puntaje de Ajuste/);
   });
 
   it('surfaces must-have blockers in match --json output', () => {
@@ -1477,6 +1531,8 @@ describe('jobbot CLI', () => {
     expect(output).toContain('Role focus: Staff Engineer');
     expect(output).toContain('Architecture');
     expect(output).toContain('Resources');
+    expect(output).toContain('Flashcards');
+    expect(output).toContain('Question bank');
     expect(output).toMatch(/- Outline/);
   });
 });
