@@ -80,12 +80,77 @@ describe('analytics conversion funnel', () => {
         { key: 'acceptance', count: 1, conversionRate: 1, dropOff: 0 },
       ],
     });
+    expect(funnel.sankey).toEqual({
+      nodes: [
+        { key: 'outreach', label: 'Outreach' },
+        { key: 'screening', label: 'Screening' },
+        { key: 'outreach_drop', label: 'Drop-off after Outreach' },
+        { key: 'onsite', label: 'Onsite' },
+        { key: 'offer', label: 'Offer' },
+        { key: 'acceptance', label: 'Acceptance' },
+      ],
+      links: [
+        { source: 'outreach', target: 'screening', value: 1 },
+        { source: 'outreach', target: 'outreach_drop', value: 3, drop: true },
+        { source: 'screening', target: 'onsite', value: 1 },
+        { source: 'onsite', target: 'offer', value: 1 },
+        { source: 'offer', target: 'acceptance', value: 1 },
+      ],
+    });
 
     const report = formatFunnelReport(funnel);
     expect(report).toContain('Outreach: 4');
     expect(report).toContain('Screening: 1 (25% conversion, 3 drop-off)');
     expect(report).toContain('Largest drop-off: Outreach → Screening (3 lost)');
     expect(report).toContain('Tracked jobs: 5 total; 4 with outreach events');
+  });
+
+  it('flags jobs with outreach but no recorded status', async () => {
+    const fs = await import('node:fs/promises');
+    await fs.writeFile(
+      path.join(dataDir, 'applications.json'),
+      JSON.stringify(
+        {
+          'job-recorded': 'onsite',
+        },
+        null,
+        2,
+      ),
+    );
+    await fs.writeFile(
+      path.join(dataDir, 'application_events.json'),
+      JSON.stringify(
+        {
+          'job-recorded': [{ channel: 'email', date: '2025-01-02T10:00:00.000Z' }],
+          'job-missing': [{ channel: 'referral', date: '2025-01-03T12:00:00.000Z' }],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const {
+      computeFunnel,
+      exportAnalyticsSnapshot,
+      formatFunnelReport,
+      setAnalyticsDataDir,
+    } = await import('../src/analytics.js');
+    setAnalyticsDataDir(dataDir);
+    restoreAnalyticsDir = async () => setAnalyticsDataDir(undefined);
+
+    const funnel = await computeFunnel();
+    expect(funnel.missing?.statuslessJobs).toEqual({
+      count: 1,
+      ids: ['job-missing'],
+    });
+
+    const report = formatFunnelReport(funnel);
+    expect(report).toContain('Missing data: 1 job with outreach but no status recorded');
+    expect(report).toContain('(job-missing)');
+
+    const snapshot = await exportAnalyticsSnapshot();
+    expect(snapshot.funnel.missing?.statuslessJobs).toEqual({ count: 1 });
+    expect(JSON.stringify(snapshot)).not.toContain('job-missing');
   });
 
   it('marks conversion as n/a when a prior stage has zero volume', async () => {
@@ -176,6 +241,24 @@ describe('analytics conversion funnel', () => {
     expect(snapshot.statuses.next_round).toBe(0);
     expect(snapshot.channels).toEqual({ email: 1, offer_accepted: 1, referral: 1 });
     expect(snapshot.funnel.stages[0].key).toBe('outreach');
+    expect(snapshot.funnel.sankey).toEqual({
+      nodes: [
+        { key: 'outreach', label: 'Outreach' },
+        { key: 'screening', label: 'Screening' },
+        { key: 'outreach_drop', label: 'Drop-off after Outreach' },
+        { key: 'onsite', label: 'Onsite' },
+        { key: 'screening_drop', label: 'Drop-off after Screening' },
+        { key: 'offer', label: 'Offer' },
+        { key: 'acceptance', label: 'Acceptance' },
+      ],
+      links: [
+        { source: 'outreach', target: 'screening', value: 1 },
+        { source: 'outreach', target: 'outreach_drop', value: 1, drop: true },
+        { source: 'screening', target: 'screening_drop', value: 1, drop: true },
+        { source: 'onsite', target: 'offer', value: 1 },
+        { source: 'offer', target: 'acceptance', value: 1 },
+      ],
+    });
     const serialized = JSON.stringify(snapshot);
     expect(serialized).not.toContain('job-accepted');
     expect(serialized).not.toContain('job-screening');

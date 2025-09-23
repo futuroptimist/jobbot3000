@@ -142,14 +142,16 @@ suggestions to prevent burnout.
 
 1. The analytics process reads application and interaction logs via `jobbot analytics funnel`
    to update a local Sankey-style view showing conversions (outreach ➜ screening ➜ onsite ➜ offer
-   ➜ acceptance) and highlight the largest drop-off.
+   ➜ acceptance) and highlight the largest drop-off. JSON exports expose a `funnel.sankey`
+   structure so visualization layers can consume nodes and links directly.
 2. Metadata from tailoring and rehearsal sessions feeds back into the recommender so it can surface
    what worked (e.g., bullet variants correlated with interviews) while staying privacy-first.
 3. Users can export anonymized aggregates with `jobbot analytics export --out <file>` for personal
    record keeping without exposing raw PII.
 
 **Unhappy paths:** missing data (e.g., unlogged rejections) is highlighted so the user can backfill
-   later.
+   later; the CLI prints a `Missing data: …` line listing jobs without statuses, while exports surface
+   counts only.
 
 ---
 
