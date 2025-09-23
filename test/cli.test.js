@@ -921,6 +921,7 @@ describe('jobbot CLI', () => {
       discarded_at: '2025-03-07T09:30:00.000Z',
       tags: ['follow_up', 'calendared'],
     });
+    expect(json.jobs['job-json'].discard_count).toBe(2);
   });
 
   it('writes shortlist JSON snapshots to disk with --out', () => {
@@ -966,6 +967,7 @@ describe('jobbot CLI', () => {
         reason: 'Deprioritized',
         discarded_at: '2025-03-05T12:00:00.000Z',
       },
+      discard_count: 1,
     });
   });
 
@@ -1065,6 +1067,7 @@ describe('jobbot CLI', () => {
     expect(payload).toEqual({
       jobs: {
         'job-json': {
+          discard_count: 1,
           tags: ['Remote'],
           last_discard: {
             reason: 'Paused search',

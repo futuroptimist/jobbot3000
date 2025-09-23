@@ -516,7 +516,8 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --json
 #         "reason": "Not remote",
 #         "discarded_at": "2025-03-05T12:00:00.000Z",
 #         "tags": ["Remote", "onsite"]
-#       }
+#       },
+#       "discard_count": 1
 #     }
 #   }
 # }
@@ -535,8 +536,9 @@ The CLI stores shortlist labels, discard history, and sync metadata in `data/sho
 reasons, timestamps, optional tags, and location/level/compensation fields so recommendations can
 surface patterns later. Review past decisions with `jobbot shortlist archive [job_id]` (add `--json`
 to inspect all records at once), which reads from `data/discarded_jobs.json` so archive lookups and
-shortlist history stay in sync. JSON exports now include a `last_discard` summary so downstream tools
-can surface the most recent rationale without traversing the full history. Add `--json` to the
+shortlist history stay in sync. JSON exports now include a `last_discard` summary and `discard_count`
+so downstream tools can surface the most recent rationale and how often a role has been reconsidered
+without traversing the full history. Add `--json` to the
 shortlist list command when piping entries into other tools; include `--out <path>` to persist the
 snapshot on disk. Filter by metadata or tags (`--location`, `--level`, `--compensation`, or repeated
 `--tag` flags) when triaging opportunities. Text output also surfaces `Last Discard Tags` when tag
