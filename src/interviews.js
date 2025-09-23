@@ -340,8 +340,8 @@ export async function recordInterviewSession(jobId, sessionId, data = {}) {
     throw new Error('at least one session field is required');
   }
 
-  const stage = sanitizeString(data.stage);
-  const mode = sanitizeString(data.mode);
+  const stage = sanitizeString(data.stage) || 'Behavioral';
+  const mode = sanitizeString(data.mode) || 'Voice';
   const startedAt = normalizeTimestamp(data.startedAt ?? data.started_at, 'start');
   const endedAt = normalizeTimestamp(data.endedAt ?? data.ended_at, 'end');
 

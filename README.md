@@ -782,8 +782,9 @@ coaches and candidates can revisit transcripts later. Stage and mode default to 
 `Voice` when omitted, mirroring the quick-runthrough workflow. The CLI accepts `--*-file` options for
 longer inputs (for example, `--transcript-file transcript.md`). Automated coverage in
 [`test/interviews.test.js`](test/interviews.test.js) and [`test/cli.test.js`](test/cli.test.js)
-verifies persistence, retrieval paths, stage/mode shortcuts, the defaulted rehearse metadata, and the
-stage-specific rehearsal plans emitted by `jobbot interviews plan`.
+verifies persistence, retrieval paths, stage/mode shortcuts, the defaulted rehearse metadata,
+manual recordings inheriting the same Behavioral/Voice defaults, and the stage-specific rehearsal
+plans emitted by `jobbot interviews plan`.
 
 ## Deliverable bundles
 
