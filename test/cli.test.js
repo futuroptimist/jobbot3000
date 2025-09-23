@@ -220,6 +220,41 @@ describe('jobbot CLI', () => {
     expect(xml).toContain('Matched');
   });
 
+  it('surfaces must-have blockers in match --json output', () => {
+    const job = [
+      'Title: Staff Engineer',
+      'Company: ExampleCorp',
+      'Requirements',
+      '- Must have Kubernetes expertise',
+      '- Security clearance required',
+      '- Developer experience focus',
+      '- Strong communication skills',
+    ].join('\n');
+    const resume = [
+      'Seasoned backend engineer focused on mentoring and developer experience.',
+    ].join('\n');
+    const jobPath = path.join(dataDir, 'job-blockers.txt');
+    const resumePath = path.join(dataDir, 'resume-blockers.txt');
+    fs.writeFileSync(jobPath, job);
+    fs.writeFileSync(resumePath, resume);
+
+    const out = runCli([
+      'match',
+      '--resume',
+      resumePath,
+      '--job',
+      jobPath,
+      '--json',
+    ]);
+
+    const payload = JSON.parse(out);
+    expect(payload.must_haves_missed).toEqual([
+      'Must have Kubernetes expertise',
+      'Security clearance required',
+    ]);
+    expect(payload.keyword_overlap).toEqual(['developer', 'experience']);
+  });
+
   it('explains hits and gaps with match --explain', () => {
     const job = [
       'Title: Staff Engineer',

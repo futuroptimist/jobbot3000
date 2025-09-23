@@ -1,3 +1,5 @@
+import { identifyBlockers } from './blockers.js';
+
 const TOKEN_CACHE = new Map();
 
 // Tokenize text into a Set of lowercase alphanumeric tokens using a manual scanner.
@@ -72,6 +74,12 @@ const SYNONYM_GROUPS = [
   ['ts', 'typescript'],
 ];
 
+const KEYWORD_OVERLAP_REQUIREMENT_LIMIT = 6;
+const KEYWORD_OVERLAP_TOTAL_LIMIT = 12;
+const KEYWORD_OVERLAP_TOKEN_THRESHOLD = 5000;
+// Cache keyword overlap collections for repeated resume-to-job comparisons; bounded to 32 entries.
+const KEYWORD_OVERLAP_CACHE = new Map();
+
 function resumeTokens(text) {
   const normalized = typeof text === 'string' ? text : String(text || '');
   if (normalized === cachedResume) return cachedTokens;
@@ -97,26 +105,33 @@ function containsPhrase(haystack, phrase) {
   return paddedHaystack.includes(paddedPhrase);
 }
 
-function hasSynonymMatch(normalizedLine, getNormalizedResume) {
-  if (!normalizedLine) return false;
+function findSynonymMatches(normalizedLine, getNormalizedResume) {
+  if (!normalizedLine) return [];
+  const matches = [];
+  let normalizedResume;
   for (const group of SYNONYM_GROUPS) {
-    let lineHasGroup = false;
+    let jobPhrase;
     for (const phrase of group) {
       if (containsPhrase(normalizedLine, phrase)) {
-        lineHasGroup = true;
+        jobPhrase = phrase;
         break;
       }
     }
-    if (!lineHasGroup) continue;
-    const normalizedResume = getNormalizedResume();
+    if (!jobPhrase) continue;
+    if (normalizedResume === undefined) normalizedResume = getNormalizedResume();
     if (!normalizedResume) continue;
     for (const phrase of group) {
       if (containsPhrase(normalizedResume, phrase)) {
-        return true;
+        matches.push(jobPhrase);
+        break;
       }
     }
   }
-  return false;
+  return matches;
+}
+
+function hasSynonymMatch(normalizedLine, getNormalizedResume) {
+  return findSynonymMatches(normalizedLine, getNormalizedResume).length > 0;
 }
 
 // Check if a line overlaps with tokens in the resume set using a manual scanner.
@@ -146,16 +161,60 @@ function hasOverlap(line, resumeSet, getNormalizedResume) {
   return false;
 }
 
+function collectKeywordOverlap(line, resumeSet, getNormalizedResume) {
+  if (typeof line !== 'string') return [];
+  const text = line.toLowerCase();
+  const overlaps = new Set();
+  let start = -1;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    const isAlphanumeric =
+      (code >= 48 && code <= 57) ||
+      (code >= 97 && code <= 122);
+    if (isAlphanumeric) {
+      if (start === -1) start = i;
+    } else if (start !== -1) {
+      const token = text.slice(start, i);
+      if (token.length > 1 && resumeSet.has(token)) overlaps.add(token);
+      start = -1;
+    }
+  }
+  if (start !== -1) {
+    const token = text.slice(start);
+    if (token.length > 1 && resumeSet.has(token)) overlaps.add(token);
+  }
+
+  const synonymMatches = findSynonymMatches(normalizeForSynonyms(line), getNormalizedResume);
+  if (synonymMatches.length > 0) {
+    const lexicalTokensToRemove = new Set();
+    for (const phrase of synonymMatches) {
+      overlaps.add(phrase);
+      for (const part of phrase.split(' ')) {
+        if (part.length > 1 && part !== phrase) lexicalTokensToRemove.add(part);
+      }
+    }
+    for (const token of lexicalTokensToRemove) overlaps.delete(token);
+  }
+
+  return Array.from(overlaps);
+}
+
 /**
  * Compute how well a resume matches a list of job requirements.
  *
  * @param {any} resumeText Non-string values are stringified.
  * @param {string[] | undefined} requirements Non-string entries are ignored.
- * @returns {{ score: number, matched: string[], missing: string[] }}
+ * @returns {{
+ *   score: number,
+ *   matched: string[],
+ *   missing: string[],
+ *   must_haves_missed: string[],
+ *   keyword_overlap: string[],
+ * }}
  */
 export function computeFitScore(resumeText, requirements) {
   if (!Array.isArray(requirements) || requirements.length === 0) {
-    return { score: 0, matched: [], missing: [] };
+    return { score: 0, matched: [], missing: [], must_haves_missed: [], keyword_overlap: [] };
   }
 
   const resumeSet = resumeTokens(resumeText);
@@ -177,14 +236,54 @@ export function computeFitScore(resumeText, requirements) {
     (hasOverlap(trimmed, resumeSet, getNormalizedResume) ? matched : missing).push(trimmed);
   }
 
-  if (total === 0) return { score: 0, matched: [], missing: [] };
+  if (total === 0)
+    return { score: 0, matched: [], missing: [], must_haves_missed: [], keyword_overlap: [] };
 
   const score = Math.round((matched.length / total) * 100);
-  return { score, matched, missing };
+  const mustHavesMissed = identifyBlockers(missing);
+  const allowKeywordOverlap = resumeSet.size <= KEYWORD_OVERLAP_TOKEN_THRESHOLD;
+  const requirementsForOverlap = allowKeywordOverlap
+    ? matched.slice(0, KEYWORD_OVERLAP_REQUIREMENT_LIMIT)
+    : [];
+  let keywordOverlapArray = [];
+  if (allowKeywordOverlap && requirementsForOverlap.length > 0) {
+    const normalizedResumeForCache = getNormalizedResume();
+    const cacheKey = `${normalizedResumeForCache}|||${requirementsForOverlap.join('||')}`;
+    const cached = KEYWORD_OVERLAP_CACHE.get(cacheKey);
+    if (cached) {
+      keywordOverlapArray = cached;
+    } else {
+      const keywordOverlap = new Set();
+      for (let i = 0; i < requirementsForOverlap.length; i++) {
+        if (keywordOverlap.size >= KEYWORD_OVERLAP_TOTAL_LIMIT) break;
+        const overlaps = collectKeywordOverlap(
+          requirementsForOverlap[i],
+          resumeSet,
+          getNormalizedResume,
+        );
+        for (const token of overlaps) {
+          keywordOverlap.add(token);
+          if (keywordOverlap.size >= KEYWORD_OVERLAP_TOTAL_LIMIT) break;
+        }
+      }
+      keywordOverlapArray = Array.from(keywordOverlap);
+      if (KEYWORD_OVERLAP_CACHE.size > 32) KEYWORD_OVERLAP_CACHE.clear();
+      KEYWORD_OVERLAP_CACHE.set(cacheKey, keywordOverlapArray);
+    }
+  }
+
+  return {
+    score,
+    matched,
+    missing,
+    must_haves_missed: mustHavesMissed,
+    keyword_overlap: keywordOverlapArray,
+  };
 }
 
 export function __resetScoringCachesForTest() {
   TOKEN_CACHE.clear();
   cachedResume = '';
   cachedTokens = new Set();
+  KEYWORD_OVERLAP_CACHE.clear();
 }
