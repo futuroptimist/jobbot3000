@@ -41,9 +41,11 @@ describe('shortlist metadata sync and filters', () => {
       compensation: '$180k',
       synced_at: '2025-02-03T04:05:06.000Z',
     });
+    expect(store.jobs['job-metadata'].discard_count).toBe(0);
 
     const byFilters = await filterShortlist({ location: 'remote', level: 'senior' });
     expect(Object.keys(byFilters.jobs)).toEqual(['job-metadata']);
+    expect(byFilters.jobs['job-metadata'].discard_count).toBe(0);
   });
 
   it('filters shortlist entries by tag', async () => {
@@ -122,9 +124,11 @@ describe('shortlist metadata sync and filters', () => {
       level: 'Senior',
       compensation: '$120k',
     });
+    expect(record.discard_count).toBe(0);
 
     const filtered = await filterShortlist({ compensation: '$120k' });
     expect(Object.keys(filtered.jobs)).toEqual(['job-legacy']);
+    expect(filtered.jobs['job-legacy'].discard_count).toBe(0);
   });
 
   it('applies JOBBOT_SHORTLIST_CURRENCY to legacy compensation values', async () => {
@@ -151,6 +155,7 @@ describe('shortlist metadata sync and filters', () => {
       const { getShortlist } = await import('../src/shortlist.js');
       const record = await getShortlist('job-euro');
       expect(record.metadata.compensation).toBe('€95k');
+      expect(record.discard_count).toBe(0);
     } finally {
       delete process.env.JOBBOT_SHORTLIST_CURRENCY;
     }
@@ -175,6 +180,7 @@ describe('shortlist metadata sync and filters', () => {
       discarded_at: '2025-03-07T09:30:00.000Z',
       tags: ['Focus', 'remote'],
     });
+    expect(snapshot.discard_count).toBe(2);
 
     const filtered = await filterShortlist();
     expect(filtered.jobs['job-history'].last_discard).toEqual({
@@ -182,5 +188,6 @@ describe('shortlist metadata sync and filters', () => {
       discarded_at: '2025-03-07T09:30:00.000Z',
       tags: ['Focus', 'remote'],
     });
+    expect(filtered.jobs['job-history'].discard_count).toBe(2);
   });
 });
