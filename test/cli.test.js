@@ -896,6 +896,33 @@ describe('jobbot CLI', () => {
     expect(output).toContain('Last Discard Tags: legacy, manual');
   });
 
+  it('shows the newest discard summary when multiple discards exist', () => {
+    runCli([
+      'shortlist',
+      'discard',
+      'job-newest',
+      '--reason',
+      'Earlier summary',
+      '--date',
+      '2025-04-01T08:00:00Z',
+    ]);
+
+    runCli([
+      'shortlist',
+      'discard',
+      'job-newest',
+      '--reason',
+      'Latest context',
+      '--date',
+      '2025-04-03T10:00:00Z',
+    ]);
+
+    const output = runCli(['shortlist', 'list']);
+    expect(output).toContain('job-newest');
+    expect(output).toContain('Last Discard: Latest context (2025-04-03T10:00:00.000Z)');
+    expect(output).not.toContain('Last Discard: Earlier summary (2025-04-01T08:00:00.000Z)');
+  });
+
   it('includes last_discard metadata in shortlist list --json exports', () => {
     runCli([
       'shortlist',
