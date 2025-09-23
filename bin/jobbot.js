@@ -172,6 +172,9 @@ async function writeDocxFile(targetPath, buffer) {
 }
 
 async function cmdSummarize(args) {
+  const usage =
+    'Usage: jobbot summarize <file|url|-> [--json] [--text] [--sentences <count>] ' +
+    '[--docx <path>] [--locale <value>]';
   const input = args[0] || '-';
   const format = args.includes('--json')
     ? 'json'
@@ -181,9 +184,13 @@ async function cmdSummarize(args) {
   const docxSpecified = args.includes('--docx');
   const docxPath = getFlag(args, '--docx');
   if (docxSpecified && !docxPath) {
-    console.error(
-      'Usage: jobbot summarize <file|url|-> [--json] [--text] [--sentences <count>] [--docx <path>]'
-    );
+    console.error(usage);
+    process.exit(2);
+  }
+  const rawLocale = getFlag(args, '--locale');
+  const locale = typeof rawLocale === 'string' ? rawLocale.trim() : undefined;
+  if (args.includes('--locale') && !locale) {
+    console.error(usage);
     process.exit(2);
   }
   const timeoutMs = getNumberFlag(args, '--timeout', 10000);
@@ -199,19 +206,21 @@ async function cmdSummarize(args) {
   if (fetchingRemote) {
     await persistJobSnapshot(raw, parsed, { type: 'url', value: input }, requestHeaders);
   }
+  const localizedPayload = locale ? { ...payload, locale } : payload;
   if (docxPath) {
-    const buffer = await toDocxSummary(payload);
+    const buffer = await toDocxSummary(localizedPayload);
     await writeDocxFile(docxPath, buffer);
   }
   if (format === 'json') console.log(toJson(payload));
   else if (format === 'text') console.log(summary);
-  else console.log(toMarkdownSummary(payload));
+  else console.log(toMarkdownSummary(localizedPayload));
 }
 
 async function cmdMatch(args) {
   const resumeIdx = args.indexOf('--resume');
   const usage =
-    'Usage: jobbot match --resume <file> --job <file|url> [--json] [--explain] [--docx <path>]';
+    'Usage: jobbot match --resume <file> --job <file|url> [--json] [--explain] ' +
+    '[--docx <path>] [--locale <value>]';
   if (resumeIdx === -1 || !args[resumeIdx + 1]) {
     console.error(usage);
     process.exit(2);
@@ -226,6 +235,12 @@ async function cmdMatch(args) {
   const docxSpecified = args.includes('--docx');
   const docxPath = getFlag(args, '--docx');
   if (docxSpecified && !docxPath) {
+    console.error(usage);
+    process.exit(2);
+  }
+  const rawLocale = getFlag(args, '--locale');
+  const locale = typeof rawLocale === 'string' ? rawLocale.trim() : undefined;
+  if (args.includes('--locale') && !locale) {
     console.error(usage);
     process.exit(2);
   }
@@ -252,22 +267,24 @@ async function cmdMatch(args) {
     await persistJobSnapshot(jobRaw, parsed, jobSource, requestHeaders);
   }
 
+  const localizedPayload = locale ? { ...payload, locale } : payload;
+
   if (docxPath) {
-    const buffer = await toDocxMatch(payload);
+    const buffer = await toDocxMatch(localizedPayload);
     await writeDocxFile(docxPath, buffer);
   }
 
   if (format === 'json') {
     const jsonPayload = explain
-      ? { ...payload, explanation: formatMatchExplanation(payload) }
+      ? { ...payload, explanation: formatMatchExplanation(localizedPayload) }
       : payload;
     console.log(toJson(jsonPayload));
   } else {
-    const report = toMarkdownMatch(payload);
+    const report = toMarkdownMatch(localizedPayload);
     if (!explain) {
       console.log(report);
     } else {
-      const explanationMd = toMarkdownMatchExplanation(payload);
+      const explanationMd = toMarkdownMatchExplanation(localizedPayload);
       console.log(report ? `${report}\n\n${explanationMd}` : explanationMd);
     }
   }
@@ -1097,6 +1114,44 @@ function formatRehearsalPlan(plan) {
     lines.push('Resources');
     for (const resource of plan.resources) {
       lines.push(`- ${resource}`);
+    }
+  }
+
+  if (Array.isArray(plan.flashcards) && plan.flashcards.length > 0) {
+    const entries = plan.flashcards
+      .map(card => {
+        const front = typeof card?.front === 'string' ? card.front.trim() : '';
+        const back = typeof card?.back === 'string' ? card.back.trim() : '';
+        if (!front && !back) return null;
+        const detail = back ? `${front} → ${back}` : front || back;
+        return detail;
+      })
+      .filter(Boolean);
+    if (entries.length > 0) {
+      lines.push('');
+      lines.push('Flashcards');
+      for (const entry of entries) {
+        lines.push(`- ${entry}`);
+      }
+    }
+  }
+
+  if (Array.isArray(plan.question_bank) && plan.question_bank.length > 0) {
+    const entries = plan.question_bank
+      .map((question, index) => {
+        const prompt = typeof question?.prompt === 'string' ? question.prompt.trim() : '';
+        if (!prompt) return null;
+        const tags = Array.isArray(question.tags) ? question.tags.filter(Boolean) : [];
+        const suffix = tags.length ? ` (${tags.join(', ')})` : '';
+        return `${index + 1}. ${prompt}${suffix}`;
+      })
+      .filter(Boolean);
+    if (entries.length > 0) {
+      lines.push('');
+      lines.push('Question bank');
+      for (const entry of entries) {
+        lines.push(entry);
+      }
     }
   }
 

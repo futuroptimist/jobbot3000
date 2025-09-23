@@ -107,6 +107,26 @@ const PLAN_LIBRARY = {
       ];
     },
     resources: ['STAR template cheat sheet', 'Behavioral question bank'],
+    flashcards: [
+      {
+        front: 'STAR checkpoint',
+        back: 'Anchor stories around Situation, Task, Action, Result.',
+      },
+      {
+        front: 'Leadership reflection',
+        back: 'Highlight quantified impact and stakeholder outcomes.',
+      },
+    ],
+    questionBank: [
+      {
+        prompt: 'Tell me about a time you resolved a conflict with a teammate.',
+        tags: ['Leadership', 'Conflict'],
+      },
+      {
+        prompt: 'Describe a situation where you influenced without authority.',
+        tags: ['Influence'],
+      },
+    ],
   },
   Technical: {
     duration: 60,
@@ -149,6 +169,26 @@ const PLAN_LIBRARY = {
       ];
     },
     resources: ['Algorithm drill set', 'Language cheat sheet'],
+    flashcards: [
+      {
+        front: 'Debugging loop',
+        back: 'Reproduce → Inspect logs → Narrow scope → Verify fix.',
+      },
+      {
+        front: 'Complexity radar',
+        back: 'Check data structure trade-offs before coding.',
+      },
+    ],
+    questionBank: [
+      {
+        prompt: 'Walk through how you would debug a memory leak in production.',
+        tags: ['Debugging'],
+      },
+      {
+        prompt: 'Implement an LRU cache and explain your trade-offs.',
+        tags: ['Data Structures'],
+      },
+    ],
   },
   'System Design': {
     duration: 75,
@@ -196,6 +236,26 @@ const PLAN_LIBRARY = {
       ];
     },
     resources: ['System design checklist', 'Capacity planning worksheet'],
+    flashcards: [
+      {
+        front: 'Capacity planning',
+        back: 'Quantify QPS, latency budgets, and storage needs upfront.',
+      },
+      {
+        front: 'Resilience checklist',
+        back: 'Map failure domains, redundancy, and rollback strategies.',
+      },
+    ],
+    questionBank: [
+      {
+        prompt: 'Design a multi-region feature flag service.',
+        tags: ['Reliability'],
+      },
+      {
+        prompt: 'Scale a read-heavy API to millions of users.',
+        tags: ['Scalability'],
+      },
+    ],
   },
   'Take-Home': {
     duration: 90,
@@ -234,6 +294,26 @@ const PLAN_LIBRARY = {
       ];
     },
     resources: ['Take-home checklist', 'Take-home submission rubric'],
+    flashcards: [
+      {
+        front: 'Submission polish',
+        back: 'Budget time for README, tests, and sanity checks.',
+      },
+      {
+        front: 'Commit hygiene',
+        back: 'Write focused commits with notes on trade-offs and TODOs.',
+      },
+    ],
+    questionBank: [
+      {
+        prompt: 'Outline how you would plan a 48-hour take-home assignment.',
+        tags: ['Planning'],
+      },
+      {
+        prompt: 'Describe how you communicate scope adjustments to reviewers.',
+        tags: ['Communication'],
+      },
+    ],
   },
 };
 
@@ -246,6 +326,39 @@ export function generateRehearsalPlan(options = {}) {
     title: section.title,
     items: section.items.slice(),
   }));
+  const flashcards = Array.isArray(template.flashcards)
+    ? template.flashcards
+        .map(card => {
+          const front = sanitizeString(card.front);
+          const back = sanitizeString(card.back);
+          if (!front || !back) return null;
+          return { front, back };
+        })
+        .filter(Boolean)
+    : [];
+  const questionBank = Array.isArray(template.questionBank)
+    ? template.questionBank
+        .map(entry => {
+          const prompt = sanitizeString(entry.prompt);
+          if (!prompt) return null;
+          let tags;
+          if (Array.isArray(entry.tags) && entry.tags.length) {
+            const normalized = [];
+            const seen = new Set();
+            for (const tag of entry.tags) {
+              const value = sanitizeString(tag);
+              if (!value) continue;
+              const key = value.toLowerCase();
+              if (seen.has(key)) continue;
+              seen.add(key);
+              normalized.push(value);
+            }
+            if (normalized.length) tags = normalized;
+          }
+          return tags ? { prompt, tags } : { prompt };
+        })
+        .filter(Boolean)
+    : [];
 
   return {
     stage: normalizedStage,
@@ -254,6 +367,8 @@ export function generateRehearsalPlan(options = {}) {
     summary: template.summary(role),
     sections,
     resources: template.resources.slice(),
+    flashcards,
+    question_bank: questionBank,
   };
 }
 
