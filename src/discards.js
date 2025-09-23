@@ -98,7 +98,7 @@ function normalizeDiscardEntries(entries) {
     if (Number.isNaN(aTime)) return 1;
     if (Number.isNaN(bTime)) return -1;
     if (aTime === bTime) return 0;
-    return aTime < bTime ? -1 : 1;
+    return aTime > bTime ? -1 : 1;
   });
   return normalized;
 }
