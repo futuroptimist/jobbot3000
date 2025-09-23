@@ -139,6 +139,22 @@ describe('jobbot CLI', () => {
     expect(out).not.toMatch(/#|\*\*/);
   });
 
+  it('localizes summaries when --locale is provided', () => {
+    const input = [
+      'Title: Ingeniero',
+      'Company: ACME',
+      'Location: Remoto',
+      'Summary',
+      'Breve descripción.',
+      'Requirements',
+      '- Diseñar sistemas',
+    ].join('\n');
+    const out = runCli(['summarize', '-', '--locale', 'es'], input);
+    expect(out).toContain('**Empresa**: ACME');
+    expect(out).toContain('## Resumen');
+    expect(out).toContain('## Requisitos');
+  });
+
   it('imports LinkedIn profile exports with import linkedin', () => {
     const fixture = path.resolve('test', 'fixtures', 'linkedin-profile.json');
     const out = runCli(['import', 'linkedin', fixture]);
@@ -168,6 +184,34 @@ describe('jobbot CLI', () => {
     const out = runCli(['match', '--resume', resumePath, '--job', jobPath, '--json']);
     const data = JSON.parse(out);
     expect(data.score).toBeGreaterThanOrEqual(50);
+  });
+
+  it('localizes match reports when --locale is provided', () => {
+    const job = [
+      'Title: Staff Engineer',
+      'Company: Globex',
+      'Requirements',
+      '- JavaScript',
+      '- Go',
+    ].join('\n');
+    const resume = 'Experienced Staff Engineer with deep JavaScript expertise.';
+    const jobPath = path.join(dataDir, 'job-locale.txt');
+    const resumePath = path.join(dataDir, 'resume-locale.txt');
+    fs.writeFileSync(jobPath, job);
+    fs.writeFileSync(resumePath, resume);
+    const out = runCli([
+      'match',
+      '--resume',
+      resumePath,
+      '--job',
+      jobPath,
+      '--locale',
+      'fr',
+      '--explain',
+    ]);
+    expect(out).toContain('**Entreprise**: Globex');
+    expect(out).toContain('## Correspondances');
+    expect(out).toContain('## Explication');
   });
 
   it('writes DOCX match reports without breaking JSON output', async () => {
@@ -228,6 +272,41 @@ describe('jobbot CLI', () => {
     expect(out).toContain('## Coincidencias');
     expect(out).toContain('## Explicación');
     expect(out).toMatch(/Puntaje de Ajuste/);
+  });
+
+  it('surfaces must-have blockers in match --json output', () => {
+    const job = [
+      'Title: Staff Engineer',
+      'Company: ExampleCorp',
+      'Requirements',
+      '- Must have Kubernetes expertise',
+      '- Security clearance required',
+      '- Developer experience focus',
+      '- Strong communication skills',
+    ].join('\n');
+    const resume = [
+      'Seasoned backend engineer focused on mentoring and developer experience.',
+    ].join('\n');
+    const jobPath = path.join(dataDir, 'job-blockers.txt');
+    const resumePath = path.join(dataDir, 'resume-blockers.txt');
+    fs.writeFileSync(jobPath, job);
+    fs.writeFileSync(resumePath, resume);
+
+    const out = runCli([
+      'match',
+      '--resume',
+      resumePath,
+      '--job',
+      jobPath,
+      '--json',
+    ]);
+
+    const payload = JSON.parse(out);
+    expect(payload.must_haves_missed).toEqual([
+      'Must have Kubernetes expertise',
+      'Security clearance required',
+    ]);
+    expect(payload.keyword_overlap).toEqual(['developer', 'experience']);
   });
 
   it('explains hits and gaps with match --explain', () => {

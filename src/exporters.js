@@ -1,6 +1,7 @@
 import { Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx';
 
 import { t, DEFAULT_LOCALE } from './i18n.js';
+import { identifyBlockers } from './blockers.js';
 
 export function toJson(data) {
   return JSON.stringify(data ?? null, null, 2);
@@ -224,46 +225,6 @@ export function toMarkdownMatch({
 
 const EXPLANATION_LIMIT = 5;
 
-const BLOCKER_PATTERNS = [
-  /\bmust\b/i,
-  /\brequir(?:e|es|ed|ement)s?\b/i,
-  /\bmandatory\b/i,
-  /\bclearance\b/i,
-  /\bvisa\b/i,
-  /\bsponsorship\b/i,
-  /\bcertif(?:ied|ication)s?\b/i,
-  /\blicen[cs]e\b/i,
-  /\bauthorization\b/i,
-  /\bcitizen(?:ship)?\b/i,
-  /\bwork permit\b/i,
-  /\bonsite\b/i,
-  /\bon-site\b/i,
-  /\bin[-\s]?office\b/i,
-  /\bhybrid\b/i,
-  /\brelocat(?:e|ion)\b/i,
-  /\bcommute\b/i,
-  /\btravel\b/i,
-  /\bsalary\b/i,
-  /\bcompensation\b/i,
-  /\bpay range\b/i,
-  /\bbase (?:salary|pay)\b/i,
-  /\btotal compensation\b/i,
-  /\b(?:\d+\+?\s*(?:years?|yrs?)\s+of\s+experience)\b/i,
-  /\b(?:entry|mid|senior|staff|principal|lead)(?: |-)?level\b/i,
-  /\bleadership\b/i,
-];
-
-function collectBlockers(requirements) {
-  const blockers = [];
-  for (const requirement of requirements) {
-    const normalized = requirement.toLowerCase();
-    if (BLOCKER_PATTERNS.some(pattern => pattern.test(normalized))) {
-      blockers.push(requirement);
-    }
-  }
-  return blockers;
-}
-
 export function formatMatchExplanation({
   matched,
   missing,
@@ -290,7 +251,7 @@ export function formatMatchExplanation({
     ? `${t('gaps', locale)}: ${gaps.slice(0, capped).join('; ')}`
     : t('noGaps', locale);
 
-  const blockers = collectBlockers(gaps);
+  const blockers = identifyBlockers(gaps);
   const blockersLine = blockers.length
     ? `${t('blockers', locale)}: ${blockers.slice(0, capped).join('; ')}`
     : t('noBlockers', locale);

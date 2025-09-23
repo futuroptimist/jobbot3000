@@ -445,10 +445,9 @@ export async function loadResume(filePath, options = {}) {
 
   const warnings = detectAtsWarnings(raw, format);
   const resumeAmbiguities = detectResumeAmbiguities(text);
-  const legacyAmbiguities =
-    format === 'markdown' ? detectAmbiguities(raw) : [];
+  const aggregateAmbiguities = detectAmbiguities(text);
 
-  if (format === 'markdown' && resumeAmbiguities.length > 0) {
+  if (resumeAmbiguities.length > 0) {
     const firstByType = new Map();
     for (const entry of resumeAmbiguities) {
       if (!firstByType.has(entry.type) && entry.location) {
@@ -456,33 +455,33 @@ export async function loadResume(filePath, options = {}) {
       }
     }
 
-    const ensureLegacyHint = (aggregateType, placeholderType, message) => {
+    const ensureAggregateHint = (aggregateType, placeholderType, message) => {
       if (!firstByType.has(placeholderType)) return;
-      const existing = legacyAmbiguities.find(item => item.type === aggregateType);
+      const existing = aggregateAmbiguities.find(item => item.type === aggregateType);
       if (existing) {
         if (!existing.location) {
           existing.location = firstByType.get(placeholderType);
         }
         return;
       }
-      legacyAmbiguities.push({
+      aggregateAmbiguities.push({
         type: aggregateType,
         message,
         location: firstByType.get(placeholderType),
       });
     };
 
-    ensureLegacyHint(
+    ensureAggregateHint(
       'dates',
       'date',
       'Detected month references without four-digit years; confirm date ranges are clear.',
     );
-    ensureLegacyHint(
+    ensureAggregateHint(
       'metrics',
       'metric',
       'No numeric metrics detected; consider adding quantified achievements.',
     );
-    ensureLegacyHint(
+    ensureAggregateHint(
       'titles',
       'title',
       'No common role titles detected; ensure positions are clearly labeled.',
@@ -492,11 +491,11 @@ export async function loadResume(filePath, options = {}) {
   if (warnings.length > 0) {
     metadata.warnings = warnings;
   }
-  if (legacyAmbiguities.length > 0) {
-    metadata.ambiguities = legacyAmbiguities;
+  if (aggregateAmbiguities.length > 0) {
+    metadata.ambiguities = aggregateAmbiguities;
   }
 
-  const baseConfidenceScore = computeConfidenceScore(warnings, legacyAmbiguities);
+  const baseConfidenceScore = computeConfidenceScore(warnings, aggregateAmbiguities);
   const parsingConfidence = estimateParsingConfidence(text, warnings);
 
   const combinedConfidence = parsingConfidence

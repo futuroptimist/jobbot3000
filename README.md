@@ -199,6 +199,9 @@ or quantified metrics are absent, and the `confidence` score reflects those
 signals so review tools can triage follow-up work. Ambiguity entries now include
 the `{ line, column }` location of each occurrence and are emitted in document
 order so callers can highlight every placeholder directly in downstream editors.
+Plain text and PDF resumes receive the same aggregate `dates`, `metrics`, and
+`titles` hints, with additional coverage in `test/resume.test.js` confirming the
+non-Markdown path.
 
 Initialize a JSON Resume skeleton when you do not have an existing file:
 
@@ -267,8 +270,10 @@ generated `word/document.xml`, and [`test/cli.test.js`](test/cli.test.js) verifi
 
 Both exporters accept an optional `locale` field to translate labels.
 The default locale is `'en'`; Spanish (`'es'`) and French (`'fr'`) are also supported.
-Pass `--locale <code>` to `jobbot summarize` or `jobbot match` to apply those translations to
-CLI Markdown and DOCX output.
+The CLI surfaces the same translations with `--locale <code>` on `jobbot summarize` and
+`jobbot match` (including their `--docx` variants). Automated coverage in
+[`test/cli.test.js`](test/cli.test.js) now verifies Spanish and French Markdown outputs so localized
+paths stay working end to end.
 
 Use `toMarkdownMatch` to format fit score results; it also accepts `url`:
 
@@ -300,7 +305,14 @@ corresponding section heading instead of an extra leading blank line.
 
 The CLI surfaces the same explanation with `jobbot match --explain`, appending a narrative summary
 of hits and gaps after the standard Markdown report. JSON output gains an `explanation` field when
-the flag is supplied.
+the flag is supplied. JSON payloads also include a `must_haves_missed` array listing missing
+requirements flagged as blockers (for example, entries containing 'must have', 'required', or
+specific clearance language) so downstream tooling can highlight hard-stops without re-parsing the
+text. A `keyword_overlap` array surfaces the lower-cased tokens and synonym phrases that triggered a
+match so follow-up tooling can see which concrete words or abbreviations aligned without
+recomputing overlaps. The list is capped at 12 entries and cached per resume/requirement pairing to
+keep repeated evaluations (like multi-job comparisons) fast. Extremely large resumes (more than
+5,000 unique tokens) skip overlap extraction to preserve cold-start latency targets.
 
 ```bash
 cat <<'EOF' > resume.txt
@@ -347,7 +359,8 @@ bridges `SaaS` with `Software as a Service`, `K8s` with `Kubernetes`, maps `CI/C
 integration` and `Continuous delivery` without conflating the two, and short forms like `JS`/`TS` with
 `JavaScript`/`TypeScript`.
 Automated coverage in [`test/scoring.test.js`](test/scoring.test.js) exercises these semantic
-aliases.
+aliases and now verifies the exposed keyword overlap tokens for both lexical and synonym-driven
+matches.
 
 The explanation helper also highlights blockers when missing requirements look like must-haves.
 Entries containing phrases such as “must”, “required”, “security clearance”, “visa”, “sponsorship”,
