@@ -239,9 +239,20 @@ async function cmdMatch(args) {
     ? await fetchTextFromUrl(jobUrl, { timeoutMs, headers: requestHeaders })
     : await readSource(jobInput);
   const parsed = parseJobText(jobRaw);
-  const { score, matched, missing } = computeFitScore(resumeText, parsed.requirements);
+  const { score, matched, missing, must_haves_missed, keyword_overlap } = computeFitScore(
+    resumeText,
+    parsed.requirements,
+  );
 
-  const payload = { ...parsed, url: jobUrl, score, matched, missing };
+  const payload = {
+    ...parsed,
+    url: jobUrl,
+    score,
+    matched,
+    missing,
+    must_haves_missed,
+    keyword_overlap,
+  };
 
   const jobSource = jobUrl
     ? { type: 'url', value: jobUrl }

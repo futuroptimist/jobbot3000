@@ -10,42 +10,80 @@ describe('computeFitScore', () => {
     expect(result.score).toBe(50);
     expect(result.matched).toEqual(['JavaScript']);
     expect(result.missing).toEqual(['Python']);
+    expect(result.must_haves_missed).toEqual([]);
+    expect(result.keyword_overlap).toEqual(['javascript']);
   });
 
   it('matches tokens case-insensitively', () => {
     const resume = 'Expert in PYTHON and Go.';
     const requirements = ['python'];
     const result = computeFitScore(resume, requirements);
-    expect(result).toEqual({ score: 100, matched: ['python'], missing: [] });
+    expect(result).toEqual({
+      score: 100,
+      matched: ['python'],
+      missing: [],
+      must_haves_missed: [],
+      keyword_overlap: ['python'],
+    });
   });
 
   it('skips non-string requirement entries', () => {
     const resume = 'Strong in Go';
     const requirements = ['Go', null, 123, undefined];
     const result = computeFitScore(resume, requirements);
-    expect(result).toEqual({ score: 100, matched: ['Go'], missing: [] });
+    expect(result).toEqual({
+      score: 100,
+      matched: ['Go'],
+      missing: [],
+      must_haves_missed: [],
+      keyword_overlap: ['go'],
+    });
   });
 
   it('treats non-string resume input as empty string', () => {
     const result = computeFitScore({ exp: 'JS' }, ['JS']);
-    expect(result).toEqual({ score: 0, matched: [], missing: ['JS'] });
+    expect(result).toEqual({
+      score: 0,
+      matched: [],
+      missing: ['JS'],
+      must_haves_missed: [],
+      keyword_overlap: [],
+    });
   });
 
   it('skips empty string requirement entries', () => {
     const resume = 'Skilled in JavaScript';
     const requirements = ['JavaScript', ''];
     const result = computeFitScore(resume, requirements);
-    expect(result).toEqual({ score: 100, matched: ['JavaScript'], missing: [] });
+    expect(result).toEqual({
+      score: 100,
+      matched: ['JavaScript'],
+      missing: [],
+      must_haves_missed: [],
+      keyword_overlap: ['javascript'],
+    });
   });
 
   it('returns zero score when no requirements given', () => {
     const result = computeFitScore('anything', []);
-    expect(result).toEqual({ score: 0, matched: [], missing: [] });
+    expect(result).toEqual({
+      score: 0,
+      matched: [],
+      missing: [],
+      must_haves_missed: [],
+      keyword_overlap: [],
+    });
   });
 
   it('handles undefined requirements', () => {
     const result = computeFitScore('anything');
-    expect(result).toEqual({ score: 0, matched: [], missing: [] });
+    expect(result).toEqual({
+      score: 0,
+      matched: [],
+      missing: [],
+      must_haves_missed: [],
+      keyword_overlap: [],
+    });
   });
 
   it('matches documented semantic aliases between resumes and requirements', () => {
@@ -58,7 +96,18 @@ describe('computeFitScore', () => {
       'Administer PostgreSQL clusters',
     ];
     const result = computeFitScore(resume, requirements);
-    expect(result).toEqual({ score: 100, matched: requirements, missing: [] });
+    expect(result).toEqual({
+      score: 100,
+      matched: requirements,
+      missing: [],
+      must_haves_missed: [],
+      keyword_overlap: [
+        'amazon web services',
+        'machine learning',
+        'artificial intelligence',
+        'postgresql',
+      ],
+    });
   });
 
   it('matches expanded O*NET/ESCO-inspired synonym groups', () => {
@@ -73,7 +122,81 @@ describe('computeFitScore', () => {
       'Maintain TypeScript monorepos',
     ];
     const result = computeFitScore(resume, requirements);
-    expect(result).toEqual({ score: 100, matched: requirements, missing: [] });
+    expect(result).toEqual({
+      score: 100,
+      matched: requirements,
+      missing: [],
+      must_haves_missed: [],
+      keyword_overlap: [
+        'software as a service',
+        'kubernetes',
+        'continuous integration',
+        'continuous delivery',
+        'javascript',
+        'typescript',
+      ],
+    });
+  });
+
+  it('identifies missed must-have requirements', () => {
+    const resume = 'Seasoned backend engineer focused on mentoring and developer experience.';
+    const requirements = [
+      'Must have Kubernetes expertise',
+      'Security clearance required',
+      'Strong communication skills',
+    ];
+    const result = computeFitScore(resume, requirements);
+    expect(result.must_haves_missed).toEqual([
+      'Must have Kubernetes expertise',
+      'Security clearance required',
+    ]);
+    expect(result.keyword_overlap).toEqual([]);
+  });
+
+  it('reports keyword overlap for matched requirements', () => {
+    const resume =
+      'Experience with distributed systems and Amazon Web Services (AWS) migrations.';
+    const requirements = [
+      'Distributed systems experience',
+      'Amazon Web Services architecture expertise',
+      'Kubernetes certification',
+    ];
+    const result = computeFitScore(resume, requirements);
+    expect(result.keyword_overlap).toEqual([
+      'distributed',
+      'systems',
+      'experience',
+      'amazon web services',
+    ]);
+  });
+
+  it('reuses cached keyword overlap results across repeated evaluations', () => {
+    const resume = 'Delivered SaaS products on AWS with machine learning personalization.';
+    const requirements = [
+      'Amazon Web Services infrastructure ownership',
+      'Machine learning experimentation',
+      'SaaS product delivery',
+      'Continuous integration pipelines',
+      'Continuous delivery automation',
+      'TypeScript platform stewardship',
+      'Kubernetes fleet scaling',
+    ];
+
+    const first = computeFitScore(resume, requirements);
+    const second = computeFitScore(resume, requirements);
+
+    expect(first.keyword_overlap.length).toBeLessThanOrEqual(12);
+    expect(second.keyword_overlap).toEqual(first.keyword_overlap);
+  });
+
+  it('skips keyword overlap extraction when the resume has more than 5k unique tokens', () => {
+    const resume = Array.from({ length: 6000 }, (_, i) => `Skill${i}`).join(' ');
+    const requirements = ['Skill1', 'Skill5999'];
+
+    const result = computeFitScore(resume, requirements);
+
+    expect(result.matched).toEqual(requirements);
+    expect(result.keyword_overlap).toEqual([]);
   });
 
 
