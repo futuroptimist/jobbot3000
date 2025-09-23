@@ -43,6 +43,21 @@ describe('discarded job archive', () => {
     expect(byId).toEqual(archive['job-123']);
   });
 
+  it('returns the newest discard entry first', async () => {
+    const { recordJobDiscard, getDiscardedJobs } = await import('../src/discards.js');
+    await recordJobDiscard('job-ordered', {
+      reason: 'Earlier concern',
+      date: '2025-03-01T10:00:00Z',
+    });
+    await recordJobDiscard('job-ordered', {
+      reason: 'Latest update',
+      date: '2025-04-05T09:30:00Z',
+    });
+
+    const history = await getDiscardedJobs('job-ordered');
+    expect(history.map(entry => entry.reason)).toEqual(['Latest update', 'Earlier concern']);
+  });
+
   it('rejects missing job ids or reasons', async () => {
     const { recordJobDiscard } = await import('../src/discards.js');
     await expect(recordJobDiscard('', { reason: 'Missing' })).rejects.toThrow('job id is required');
