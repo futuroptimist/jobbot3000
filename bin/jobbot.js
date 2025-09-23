@@ -173,6 +173,9 @@ async function writeDocxFile(targetPath, buffer) {
 
 async function cmdSummarize(args) {
   const input = args[0] || '-';
+  const usage =
+    'Usage: jobbot summarize <file|url|-> [--json] [--text] [--sentences <count>] ' +
+    '[--docx <path>] [--locale <code>]';
   const format = args.includes('--json')
     ? 'json'
     : args.includes('--text')
@@ -181,9 +184,14 @@ async function cmdSummarize(args) {
   const docxSpecified = args.includes('--docx');
   const docxPath = getFlag(args, '--docx');
   if (docxSpecified && !docxPath) {
-    console.error(
-      'Usage: jobbot summarize <file|url|-> [--json] [--text] [--sentences <count>] [--docx <path>]'
-    );
+    console.error(usage);
+    process.exit(2);
+  }
+  const localeSpecified = args.includes('--locale');
+  const localeFlag = getFlag(args, '--locale');
+  const locale = typeof localeFlag === 'string' ? localeFlag.trim() : localeFlag;
+  if (localeSpecified && !locale) {
+    console.error(usage);
     process.exit(2);
   }
   const timeoutMs = getNumberFlag(args, '--timeout', 10000);
@@ -196,6 +204,7 @@ async function cmdSummarize(args) {
   const parsed = parseJobText(raw);
   const summary = summarizeFirstSentence(raw, count);
   const payload = { ...parsed, summary };
+  if (locale) payload.locale = locale;
   if (fetchingRemote) {
     await persistJobSnapshot(raw, parsed, { type: 'url', value: input }, requestHeaders);
   }
@@ -211,7 +220,8 @@ async function cmdSummarize(args) {
 async function cmdMatch(args) {
   const resumeIdx = args.indexOf('--resume');
   const usage =
-    'Usage: jobbot match --resume <file> --job <file|url> [--json] [--explain] [--docx <path>]';
+    'Usage: jobbot match --resume <file> --job <file|url> [--json] [--explain] ' +
+    '[--docx <path>] [--locale <code>]';
   if (resumeIdx === -1 || !args[resumeIdx + 1]) {
     console.error(usage);
     process.exit(2);
@@ -229,6 +239,13 @@ async function cmdMatch(args) {
     console.error(usage);
     process.exit(2);
   }
+  const localeSpecified = args.includes('--locale');
+  const localeFlag = getFlag(args, '--locale');
+  const locale = typeof localeFlag === 'string' ? localeFlag.trim() : localeFlag;
+  if (localeSpecified && !locale) {
+    console.error(usage);
+    process.exit(2);
+  }
   const timeoutMs = getNumberFlag(args, '--timeout', 10000);
   const resumePath = args[resumeIdx + 1];
   const jobInput = args[jobIdx + 1];
@@ -242,6 +259,7 @@ async function cmdMatch(args) {
   const { score, matched, missing } = computeFitScore(resumeText, parsed.requirements);
 
   const payload = { ...parsed, url: jobUrl, score, matched, missing };
+  if (locale) payload.locale = locale;
 
   const jobSource = jobUrl
     ? { type: 'url', value: jobUrl }
