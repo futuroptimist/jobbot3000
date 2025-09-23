@@ -573,13 +573,13 @@ describe('jobbot CLI', () => {
 
     const archiveText = runCli(['shortlist', 'archive']);
     expect(archiveText).toContain('job-1');
+    expect(archiveText).toContain('2025-04-01T14:45:00.000Z — Compensation mismatch');
     expect(archiveText).toContain('2025-03-05T12:00:00.000Z — Not remote');
     expect(archiveText).toContain('Tags: remote, onsite');
     expect(archiveText).toContain('job-2');
-    expect(archiveText).toContain('2025-04-01T14:45:00.000Z — Compensation mismatch');
     expect(
-      archiveText.indexOf('2025-03-05T12:00:00.000Z — Not remote') <
-        archiveText.indexOf('2025-03-08T09:30:00.000Z — Changed priorities')
+      archiveText.indexOf('2025-03-08T09:30:00.000Z — Changed priorities') <
+        archiveText.indexOf('2025-03-05T12:00:00.000Z — Not remote')
     ).toBe(true);
 
     const singleJob = runCli(['shortlist', 'archive', 'job-1']);
@@ -587,14 +587,18 @@ describe('jobbot CLI', () => {
     expect(singleJob).toContain('2025-03-08T09:30:00.000Z — Changed priorities');
     expect(singleJob).not.toContain('job-2');
     expect(
-      singleJob.indexOf('2025-03-05T12:00:00.000Z — Not remote') <
-        singleJob.indexOf('2025-03-08T09:30:00.000Z — Changed priorities')
+      singleJob.indexOf('2025-03-08T09:30:00.000Z — Changed priorities') <
+        singleJob.indexOf('2025-03-05T12:00:00.000Z — Not remote')
     ).toBe(true);
 
     const asJson = JSON.parse(runCli(['shortlist', 'archive', '--json']));
     expect(Object.keys(asJson.discarded)).toContain('job-1');
     expect(asJson.discarded['job-1']).toHaveLength(2);
     expect(asJson.discarded['job-1'][0]).toMatchObject({
+      reason: 'Changed priorities',
+      discarded_at: '2025-03-08T09:30:00.000Z',
+    });
+    expect(asJson.discarded['job-1'][1]).toMatchObject({
       reason: 'Not remote',
       discarded_at: '2025-03-05T12:00:00.000Z',
     });
@@ -618,8 +622,8 @@ describe('jobbot CLI', () => {
 
     const job1Json = JSON.parse(runCli(['shortlist', 'archive', 'job-1', '--json']));
     expect(job1Json.history[0]).toMatchObject({
-      reason: 'Not remote',
-      discarded_at: '2025-03-05T12:00:00.000Z',
+      reason: 'Changed priorities',
+      discarded_at: '2025-03-08T09:30:00.000Z',
     });
   });
 
