@@ -263,6 +263,10 @@ generated `word/document.xml`, and [`test/cli.test.js`](test/cli.test.js) verifi
 
 Both exporters accept an optional `locale` field to translate labels.
 The default locale is `'en'`; Spanish (`'es'`) and French (`'fr'`) are also supported.
+The CLI surfaces the same translations with `--locale <code>` on `jobbot summarize` and
+`jobbot match` (including their `--docx` variants). Automated coverage in
+[`test/cli.test.js`](test/cli.test.js) now verifies Spanish and French Markdown outputs so localized
+paths stay working end to end.
 
 Use `toMarkdownMatch` to format fit score results; it also accepts `url`:
 
