@@ -237,6 +237,7 @@ function cloneRecord(record) {
     discarded: cloneDiscardList(record.discarded),
     metadata: record.metadata ? { ...record.metadata } : {},
   };
+  cloned.discard_count = cloned.discarded.length;
   const summary = getLastDiscardSummary(cloned.discarded);
   if (summary) cloned.last_discard = summary;
   return cloned;
