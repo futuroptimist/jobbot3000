@@ -101,3 +101,61 @@ describe('interview session archive', () => {
     expect(result).toBeNull();
   });
 });
+
+describe('generateRehearsalPlan', () => {
+  it('creates a behavioral rehearsal plan with role-specific guidance', async () => {
+    const { generateRehearsalPlan } = await import('../src/interviews.js');
+
+    const plan = generateRehearsalPlan({ stage: 'behavioral', role: 'Staff Engineer' });
+
+    expect(plan.stage).toBe('Behavioral');
+    expect(plan.role).toBe('Staff Engineer');
+    expect(plan.duration_minutes).toBeGreaterThan(0);
+    expect(plan.summary).toMatch(/Staff Engineer/);
+    expect(plan.summary).toMatch(/STAR/);
+    expect(Array.isArray(plan.sections)).toBe(true);
+    expect(plan.sections[0]).toMatchObject({ title: 'Warm-up' });
+    const warmupItems = plan.sections[0].items.join(' ');
+    expect(warmupItems).toMatch(/STAR stories/i);
+    expect(plan.resources).toContain('Behavioral question bank');
+  });
+
+  it('returns technical plans when stage is specified', async () => {
+    const { generateRehearsalPlan } = await import('../src/interviews.js');
+
+    const plan = generateRehearsalPlan({ stage: 'technical' });
+
+    expect(plan.stage).toBe('Technical');
+    expect(plan.duration_minutes).toBeGreaterThanOrEqual(45);
+    const sectionTitles = plan.sections.map(section => section.title);
+    expect(sectionTitles).toContain('Core practice');
+    const practiceItems = plan.sections.find(section => section.title === 'Core practice').items;
+    expect(practiceItems.join(' ')).toMatch(/pair programming/i);
+    expect(plan.resources).toContain('Algorithm drill set');
+  });
+
+  it('honors duration overrides for system design plans', async () => {
+    const { generateRehearsalPlan } = await import('../src/interviews.js');
+
+    const plan = generateRehearsalPlan({ stage: 'system-design', durationMinutes: 50 });
+
+    expect(plan.stage).toBe('System Design');
+    expect(plan.duration_minutes).toBe(50);
+    const architectureSection = plan.sections.find(section => section.title === 'Architecture');
+    expect(architectureSection).toBeDefined();
+    expect(architectureSection.items.join(' ')).toMatch(/data flow/i);
+    expect(plan.resources).toContain('System design checklist');
+  });
+
+  it('provides take-home rehearsal plans with delivery checklist', async () => {
+    const { generateRehearsalPlan } = await import('../src/interviews.js');
+
+    const plan = generateRehearsalPlan({ stage: 'take-home' });
+
+    expect(plan.stage).toBe('Take-Home');
+    expect(plan.sections.map(section => section.title)).toContain('Review & delivery');
+    const deliverySection = plan.sections.find(section => section.title === 'Review & delivery');
+    expect(deliverySection.items.join(' ')).toMatch(/lint/i);
+    expect(plan.resources).toContain('Take-home submission rubric');
+  });
+});

@@ -731,6 +731,34 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot interviews show job-123 prep-2025-02-01
 #   "ended_at": "2025-02-01T10:15:00.000Z"
 # }
 
+# Generate a system design rehearsal plan tailored to the role
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot interviews plan --stage system-design --role "Staff Engineer"
+# System Design rehearsal plan
+# Role focus: Staff Engineer
+# Suggested duration: 75 minutes
+#
+# Draft scalable architectures that balance user impact, cost, and reliability.
+#
+# Requirements
+# - Clarify functional and non-functional requirements along with success metrics.
+# - List constraints around traffic, latency budgets, data retention, and compliance.
+#
+# Architecture
+# - Sketch the high-level architecture with labeled components, data flow, and ownership for Staff Engineer use cases.
+# - Call out storage choices, consistency trade-offs, and critical dependencies.
+#
+# Scaling & reliability
+# - Estimate capacity, identify bottlenecks, and outline mitigation strategies.
+# - Define observability signals, failure modes, and a rollout or migration plan.
+#
+# Reflection
+# - Document follow-up topics or gaps to research before the next session.
+# - Summarize trade-offs to communicate during the interview debrief.
+#
+# Resources
+# - System design checklist
+# - Capacity planning worksheet
+
 # Capture a quick behavioral rehearsal with generated session IDs (defaults to Behavioral/Voice)
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot rehearse job-123 \
   --transcript "Walked through leadership story" \
@@ -745,8 +773,8 @@ coaches and candidates can revisit transcripts later. Stage and mode default to 
 `Voice` when omitted, mirroring the quick-runthrough workflow. The CLI accepts `--*-file` options for
 longer inputs (for example, `--transcript-file transcript.md`). Automated coverage in
 [`test/interviews.test.js`](test/interviews.test.js) and [`test/cli.test.js`](test/cli.test.js)
-verifies persistence, retrieval paths, and both the stage/mode shortcuts and defaulted rehearse
-metadata.
+verifies persistence, retrieval paths, stage/mode shortcuts, the defaulted rehearse metadata, and the
+stage-specific rehearsal plans emitted by `jobbot interviews plan`.
 
 ## Deliverable bundles
 
