@@ -28,7 +28,11 @@ import {
   normalizeDiscardArchive,
 } from '../src/discards.js';
 import { addJobTags, discardJob, filterShortlist, syncShortlistJob } from '../src/shortlist.js';
-import { recordInterviewSession, getInterviewSession } from '../src/interviews.js';
+import {
+  recordInterviewSession,
+  getInterviewSession,
+  generateRehearsalPlan,
+} from '../src/interviews.js';
 import { initProfile, importLinkedInProfile } from '../src/profile.js';
 import {
   recordIntakeResponse,
@@ -1057,11 +1061,74 @@ async function cmdInterviewsShow(args) {
   console.log(JSON.stringify(entry, null, 2));
 }
 
+function resolvePlanStage(args) {
+  if (args.includes('--behavioral')) return 'behavioral';
+  if (args.includes('--technical')) return 'technical';
+  if (args.includes('--system-design') || args.includes('--system_design')) return 'system design';
+  if (args.includes('--take-home') || args.includes('--takehome')) return 'take-home';
+  const explicit = getFlag(args, '--stage');
+  return explicit;
+}
+
+function formatRehearsalPlan(plan) {
+  const lines = [];
+  lines.push(`${plan.stage} rehearsal plan`);
+  if (plan.role) lines.push(`Role focus: ${plan.role}`);
+  if (plan.duration_minutes) {
+    lines.push(`Suggested duration: ${plan.duration_minutes} minutes`);
+  }
+  if (plan.summary) {
+    lines.push('');
+    lines.push(plan.summary);
+  }
+
+  if (Array.isArray(plan.sections) && plan.sections.length > 0) {
+    for (const section of plan.sections) {
+      lines.push('');
+      lines.push(section.title);
+      for (const item of section.items || []) {
+        lines.push(`- ${item}`);
+      }
+    }
+  }
+
+  if (Array.isArray(plan.resources) && plan.resources.length > 0) {
+    lines.push('');
+    lines.push('Resources');
+    for (const resource of plan.resources) {
+      lines.push(`- ${resource}`);
+    }
+  }
+
+  while (lines.length > 0 && lines[lines.length - 1] === '') {
+    lines.pop();
+  }
+  return lines.join('\n');
+}
+
+async function cmdInterviewsPlan(args) {
+  const asJson = args.includes('--json');
+  const filtered = args.filter(arg => arg !== '--json');
+  const stageInput = resolvePlanStage(filtered);
+  const role = getFlag(filtered, '--role');
+  const durationMinutes = getNumberFlag(filtered, '--duration');
+
+  const plan = generateRehearsalPlan({ stage: stageInput, role, durationMinutes });
+
+  if (asJson) {
+    console.log(JSON.stringify({ plan }, null, 2));
+    return;
+  }
+
+  console.log(formatRehearsalPlan(plan));
+}
+
 async function cmdInterviews(args) {
   const sub = args[0];
   if (sub === 'record') return cmdInterviewsRecord(args.slice(1));
   if (sub === 'show') return cmdInterviewsShow(args.slice(1));
-  console.error('Usage: jobbot interviews <record|show> ...');
+  if (sub === 'plan') return cmdInterviewsPlan(args.slice(1));
+  console.error('Usage: jobbot interviews <record|show|plan> ...');
   process.exit(2);
 }
 

@@ -1329,4 +1329,21 @@ describe('jobbot CLI', () => {
     });
     expect(stored).toHaveProperty('recorded_at');
   });
+
+  it('generates rehearsal plans for interviews', () => {
+    const output = runCli([
+      'interviews',
+      'plan',
+      '--stage',
+      'system-design',
+      '--role',
+      'Staff Engineer',
+    ]);
+
+    expect(output).toContain('System Design rehearsal plan');
+    expect(output).toContain('Role focus: Staff Engineer');
+    expect(output).toContain('Architecture');
+    expect(output).toContain('Resources');
+    expect(output).toMatch(/- Outline/);
+  });
 });

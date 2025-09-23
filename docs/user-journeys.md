@@ -124,8 +124,9 @@ flow that preserves both sets of notes.
 
 **Goal:** Simulate the target interview loop and address skill gaps ahead of time.
 
-1. Once an interview is scheduled, the assistant generates rehearsal plans by role and stage
-   (behavioral, technical, system design, take-home).
+1. Once an interview is scheduled, `jobbot interviews plan --stage <stage> [--role <title>]`
+   generates rehearsal plans tuned to behavioral, technical, system design, or take-home stages so
+   candidates can focus prep on the right prompts.
 2. Study packets include curated reading, flashcards, and question banks; dialog trees enable deep
    rehearsal with branching follow-ups inspired by "The Rehearsal".
 3. Optional voice mode uses local STT/TTS so the user can practice speaking answers aloud.
