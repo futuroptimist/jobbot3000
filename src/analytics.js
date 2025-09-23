@@ -143,6 +143,80 @@ async function readAnalyticsSources() {
   return { statuses, interactions };
 }
 
+async function safeReadDir(dir) {
+  try {
+    return await fs.readdir(dir, { withFileTypes: true });
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return [];
+    throw err;
+  }
+}
+
+function isVisibleDirectory(entry) {
+  return entry.isDirectory() && !entry.name.startsWith('.');
+}
+
+function isVisibleFile(entry) {
+  return entry.isFile() && !entry.name.startsWith('.');
+}
+
+async function summarizeDeliverableActivity(baseDir) {
+  const entries = await safeReadDir(baseDir);
+  let jobs = 0;
+  let runs = 0;
+  for (const entry of entries) {
+    if (!isVisibleDirectory(entry)) continue;
+    const jobDir = path.join(baseDir, entry.name);
+    const runEntries = await safeReadDir(jobDir);
+    let jobRuns = 0;
+    let hasVisibleFiles = false;
+    for (const runEntry of runEntries) {
+      if (isVisibleDirectory(runEntry)) {
+        jobRuns += 1;
+      } else if (isVisibleFile(runEntry)) {
+        hasVisibleFiles = true;
+      }
+    }
+    if (jobRuns === 0 && hasVisibleFiles) {
+      jobRuns = 1;
+    }
+    if (jobRuns > 0) {
+      jobs += 1;
+      runs += jobRuns;
+    }
+  }
+  return { jobs, runs };
+}
+
+async function summarizeInterviewActivity(baseDir) {
+  const entries = await safeReadDir(baseDir);
+  let jobs = 0;
+  let sessions = 0;
+  for (const entry of entries) {
+    if (!isVisibleDirectory(entry)) continue;
+    const jobDir = path.join(baseDir, entry.name);
+    const sessionEntries = await safeReadDir(jobDir);
+    let jobSessions = 0;
+    for (const sessionEntry of sessionEntries) {
+      if (isVisibleFile(sessionEntry)) jobSessions += 1;
+    }
+    if (jobSessions > 0) {
+      jobs += 1;
+      sessions += jobSessions;
+    }
+  }
+  return { jobs, sessions };
+}
+
+async function summarizeActivity() {
+  const dataDir = resolveDataDir();
+  const [deliverables, interviews] = await Promise.all([
+    summarizeDeliverableActivity(path.join(dataDir, 'deliverables')),
+    summarizeInterviewActivity(path.join(dataDir, 'interviews')),
+  ]);
+  return { deliverables, interviews };
+}
+
 function buildFunnel(statuses, interactions) {
   const statusCounts = getStatusCounts(statuses);
   const jobsWithEvents = listJobsWithEvents(interactions);
@@ -296,6 +370,7 @@ function countEventChannels(events) {
 
 export async function exportAnalyticsSnapshot() {
   const { statuses, interactions } = await readAnalyticsSources();
+  const activity = await summarizeActivity();
   const funnel = buildFunnel(statuses, interactions);
   const statusCounts = getStatusCounts(statuses);
   const statusTotals = {};
@@ -318,6 +393,7 @@ export async function exportAnalyticsSnapshot() {
         },
       },
     },
+    activity,
   };
 }
 
