@@ -690,7 +690,12 @@ cover outreach counts, acceptance detection, JSON formatting, the largest drop-o
 anonymized snapshot export. The `analytics export` subcommand captures aggregate status counts and
 event channels without embedding raw job identifiers so personal records stay scrubbed. JSON exports
 now include a `funnel.sankey` payload describing nodes and links for outreach ➜ acceptance flows,
-making it trivial to render Sankey diagrams without recomputing the stage math.
+making it trivial to render Sankey diagrams without recomputing the stage math. They also surface
+an `activity` summary that counts how many deliverable runs and interview sessions exist across the
+data directory without revealing the associated job IDs, giving the recommender a privacy-preserving
+signal about tailoring and rehearsal momentum. Legacy deliverable folders that store files directly
+under a job directory are counted as a single run so older tailoring archives stay visible in the
+activity totals.
 
 When outreach events exist without a matching lifecycle status, the report now prints a
 `Missing data: …` line listing the affected job IDs so you can backfill outcomes quickly.

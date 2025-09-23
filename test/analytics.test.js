@@ -263,4 +263,55 @@ describe('analytics conversion funnel', () => {
     expect(serialized).not.toContain('job-accepted');
     expect(serialized).not.toContain('job-screening');
   });
+
+  it('summarizes deliverable runs and interview sessions without exposing job ids', async () => {
+    const fs = await import('node:fs/promises');
+    const deliverablesRoot = path.join(dataDir, 'deliverables');
+    const job1Run1Dir = path.join(deliverablesRoot, 'job-1', '2025-02-01T10-00-00Z');
+    const job1Run2Dir = path.join(deliverablesRoot, 'job-1', '2025-02-05T09-00-00Z');
+    const job2RunDir = path.join(deliverablesRoot, 'job-2', '2025-03-01T08-00-00Z');
+    const job3Dir = path.join(deliverablesRoot, 'job-3');
+    await fs.mkdir(job1Run1Dir, { recursive: true });
+    await fs.writeFile(path.join(job1Run1Dir, 'resume.pdf'), 'binary');
+    await fs.mkdir(job1Run2Dir, { recursive: true });
+    await fs.writeFile(path.join(job1Run2Dir, 'cover-letter.docx'), 'binary');
+    await fs.mkdir(job2RunDir, { recursive: true });
+    await fs.writeFile(path.join(job2RunDir, 'notes.txt'), 'binary');
+    await fs.mkdir(job3Dir, { recursive: true });
+    await fs.writeFile(path.join(job3Dir, 'portfolio.pdf'), 'binary');
+
+    const interviewsRoot = path.join(dataDir, 'interviews');
+    const jobAlphaDir = path.join(interviewsRoot, 'job-alpha');
+    const jobBetaDir = path.join(interviewsRoot, 'job-beta');
+    await fs.mkdir(jobAlphaDir, { recursive: true });
+    await fs.writeFile(
+      path.join(jobAlphaDir, 'session-1.json'),
+      JSON.stringify({ transcript: 'Great session' }, null, 2)
+    );
+    await fs.writeFile(
+      path.join(jobAlphaDir, 'session-2.json'),
+      JSON.stringify({ transcript: 'Follow-up session' }, null, 2)
+    );
+    await fs.mkdir(jobBetaDir, { recursive: true });
+    await fs.writeFile(
+      path.join(jobBetaDir, 'session-a.json'),
+      JSON.stringify({ transcript: 'Phone screen' }, null, 2)
+    );
+
+    const { exportAnalyticsSnapshot, setAnalyticsDataDir } = await import('../src/analytics.js');
+    setAnalyticsDataDir(dataDir);
+    restoreAnalyticsDir = async () => setAnalyticsDataDir(undefined);
+
+    const snapshot = await exportAnalyticsSnapshot();
+    expect(snapshot.activity).toEqual({
+      deliverables: { jobs: 3, runs: 4 },
+      interviews: { jobs: 2, sessions: 3 },
+    });
+
+    const serialized = JSON.stringify(snapshot);
+    expect(serialized).not.toContain('job-1');
+    expect(serialized).not.toContain('job-2');
+    expect(serialized).not.toContain('job-alpha');
+    expect(serialized).not.toContain('job-beta');
+  });
 });

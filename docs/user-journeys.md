@@ -147,7 +147,11 @@ suggestions to prevent burnout.
    ➜ acceptance) and highlight the largest drop-off. JSON exports expose a `funnel.sankey`
    structure so visualization layers can consume nodes and links directly.
 2. Metadata from tailoring and rehearsal sessions feeds back into the recommender so it can surface
-   what worked (e.g., bullet variants correlated with interviews) while staying privacy-first.
+   what worked (e.g., bullet variants correlated with interviews) while staying privacy-first. The
+   analytics export reports aggregate deliverable runs and interview session counts in an
+   `activity` block so planners can gauge momentum without exposing specific job identifiers. Legacy
+   deliverable directories that store files directly under a job folder count as a single run so
+   older tailoring work remains part of the signal.
 3. Users can export anonymized aggregates with `jobbot analytics export --out <file>` for personal
    record keeping without exposing raw PII.
 
