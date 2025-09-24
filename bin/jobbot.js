@@ -268,6 +268,8 @@ async function cmdMatch(args) {
     score,
     matched,
     missing,
+    skills_hit: matched,
+    skills_gap: missing,
     must_haves_missed,
     keyword_overlap,
   };
