@@ -589,6 +589,165 @@ function normalizeTranscript(input) {
   return value;
 }
 
+const WORD_PATTERN = /[\p{L}\p{N}']+/gu;
+
+function countWords(text) {
+  if (!text) return 0;
+  const matches = text.match(WORD_PATTERN);
+  return matches ? matches.length : 0;
+}
+
+function splitSentences(text) {
+  if (!text) return [];
+  return text
+    .split(/[.!?]+/)
+    .map(sentence => sentence.trim())
+    .filter(Boolean);
+}
+
+function roundToSingleDecimal(value) {
+  if (!Number.isFinite(value)) return undefined;
+  const rounded = Math.round(value * 10) / 10;
+  return Number.isInteger(rounded) ? Math.trunc(rounded) : rounded;
+}
+
+const FILLER_PATTERNS = [
+  { key: 'um', pattern: /\bum+\b/gi },
+  { key: 'uh', pattern: /\buh+\b/gi },
+  { key: 'like', pattern: /\blike\b/gi },
+  { key: 'you know', pattern: /\byou\s+know\b/gi },
+  { key: 'kind of', pattern: /\bkind\s+of\b/gi },
+  { key: 'sort of', pattern: /\bsort\s+of\b/gi },
+  { key: 'actually', pattern: /\bactually\b/gi },
+  { key: 'basically', pattern: /\bbasically\b/gi },
+];
+
+function collectFillerWords(text) {
+  if (!text) {
+    return { total: 0, counts: {} };
+  }
+  const lower = text.toLowerCase();
+  const counts = {};
+  let total = 0;
+  for (const { key, pattern } of FILLER_PATTERNS) {
+    const matches = lower.match(pattern);
+    if (!matches) continue;
+    counts[key] = matches.length;
+    total += matches.length;
+  }
+  return { total, counts };
+}
+
+const STAR_COMPONENTS = ['situation', 'task', 'action', 'result'];
+
+function detectStarComponents(text) {
+  const mentioned = [];
+  const missing = [];
+  if (!text) {
+    return { mentioned, missing: STAR_COMPONENTS.slice() };
+  }
+  for (const component of STAR_COMPONENTS) {
+    const pattern = new RegExp(`\\b${component}\\b`, 'i');
+    if (pattern.test(text)) mentioned.push(component);
+    else missing.push(component);
+  }
+  return { mentioned, missing };
+}
+
+function computeWordsPerMinute(wordCount, startedAt, endedAt) {
+  if (!startedAt || !endedAt) return undefined;
+  const start = new Date(startedAt);
+  const end = new Date(endedAt);
+  const durationMinutes = (end.getTime() - start.getTime()) / 60000;
+  if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return undefined;
+  return roundToSingleDecimal(wordCount / durationMinutes);
+}
+
+function buildTightenThisCritique({
+  wordCount,
+  averageSentenceWords,
+  filler,
+  star,
+}) {
+  const suggestions = [];
+
+  if (
+    Number.isFinite(averageSentenceWords) &&
+    averageSentenceWords !== undefined &&
+    averageSentenceWords > 28
+  ) {
+    suggestions.push(
+      `Tighten this: shorten sentences—average ${averageSentenceWords} words per sentence.`,
+    );
+  }
+
+  if (wordCount > 220) {
+    suggestions.push(
+      `Tighten this: trim the response—${wordCount} words run long` +
+        ' for this format.',
+    );
+  }
+
+  if (filler && typeof filler.total === 'number' && filler.total > 0 && wordCount > 0) {
+    const ratio = filler.total / wordCount;
+    const percent = Math.round(ratio * 100);
+    if (filler.total >= 3 || ratio >= 0.05) {
+      suggestions.push(
+        `Tighten this: reduce filler words—${filler.total} across ${wordCount} words` +
+          ` (~${percent}%).`,
+      );
+    }
+  }
+
+  const missingStar = Array.isArray(star?.missing) ? star.missing.filter(Boolean) : [];
+  if (missingStar.length > 0) {
+    suggestions.push(
+      `Tighten this: add STAR coverage for ${missingStar.join(', ')}.`,
+    );
+  }
+
+  return suggestions;
+}
+
+function buildTranscriptHeuristics({ transcript, startedAt, endedAt }) {
+  if (!transcript) return undefined;
+  const wordCount = countWords(transcript);
+  const sentences = splitSentences(transcript);
+  const filler = collectFillerWords(transcript);
+  const star = detectStarComponents(transcript);
+
+  const heuristics = {
+    brevity: {
+      word_count: wordCount,
+      sentence_count: sentences.length,
+      average_sentence_words: roundToSingleDecimal(
+        sentences.length === 0 ? wordCount : wordCount / sentences.length,
+      ),
+    },
+    filler_words: {
+      total: filler.total,
+      counts: filler.counts,
+    },
+    structure: {
+      star,
+    },
+  };
+
+  const tightenThis = buildTightenThisCritique({
+    wordCount,
+    averageSentenceWords: heuristics.brevity.average_sentence_words,
+    filler,
+    star,
+  });
+
+  heuristics.critique = { tighten_this: tightenThis };
+
+  const wpm = computeWordsPerMinute(wordCount, startedAt, endedAt);
+  if (wpm !== undefined) heuristics.brevity.estimated_wpm = wpm;
+
+  return heuristics;
+}
+
 function normalizeNoteList(input, label) {
   if (input == null) return undefined;
   const items = Array.isArray(input) ? input : [input];
@@ -673,6 +832,15 @@ export async function recordInterviewSession(jobId, sessionId, data = {}) {
   if (audioSource) entry.audio_source = audioSource;
   if (startedAt) entry.started_at = startedAt;
   if (endedAt) entry.ended_at = endedAt;
+
+  if (transcript) {
+    const heuristics = buildTranscriptHeuristics({
+      transcript,
+      startedAt,
+      endedAt,
+    });
+    if (heuristics) entry.heuristics = heuristics;
+  }
 
   await fs.writeFile(file, `${JSON.stringify(entry, null, 2)}\n`, 'utf8');
 

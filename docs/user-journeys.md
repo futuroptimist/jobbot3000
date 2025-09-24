@@ -147,6 +147,11 @@ flow that preserves both sets of notes.
    `jobbot interviews record`. Quick run-throughs can use
    `jobbot rehearse <job_id>` to auto-generate session identifiers and default the stage/mode to
    Behavioral/Voice before replaying them with `jobbot interviews show`.
+5. Recorded sessions attach heuristics that summarize brevity (word counts, sentence averages,
+   words per minute when timestamps exist), filler words, and STAR coverage so coaches can steer
+   follow-up drills toward habits that need the most attention. A `critique.tighten_this` list calls
+   out filler spikes, missing STAR components, or overlong answers so the next rehearsal targets the
+   highest-leverage edits.
 
 **Unhappy paths:** if the user misses sessions, the assistant nudges them with lighter-weight prep
 suggestions to prevent burnout.

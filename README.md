@@ -804,7 +804,7 @@ DATA_DIR=$(mktemp -d)
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot interviews record job-123 prep-2025-02-01 \
   --stage Onsite \
   --mode Voice \
-  --transcript "Practiced system design walkthrough" \
+  --transcript "Practiced STAR story covering situation, task, action, and result." \
   --reflections "Tighten capacity estimates" \
   --feedback "Great storytelling" \
   --notes "Follow up on salary research" \
@@ -819,12 +819,30 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot interviews show job-123 prep-2025-02-01
 #   "recorded_at": "2025-02-01T09:00:00.000Z",
 #   "stage": "Onsite",
 #   "mode": "Voice",
-#   "transcript": "Practiced system design walkthrough",
+#   "transcript": "Practiced STAR story covering situation, task, action, and result.",
 #   "reflections": ["Tighten capacity estimates"],
 #   "feedback": ["Great storytelling"],
 #   "notes": "Follow up on salary research",
 #   "started_at": "2025-02-01T09:00:00.000Z",
-#   "ended_at": "2025-02-01T10:15:00.000Z"
+#   "ended_at": "2025-02-01T10:15:00.000Z",
+#   "heuristics": {
+#     "brevity": {
+#       "word_count": 9,
+#       "sentence_count": 1,
+#       "average_sentence_words": 9,
+#       "estimated_wpm": 0.1
+#     },
+#     "filler_words": {
+#       "total": 0,
+#       "counts": {}
+#     },
+#     "structure": {
+#       "star": {
+#         "mentioned": ["situation", "task", "action", "result"],
+#         "missing": []
+#       }
+#     }
+#   }
 # }
 
 # Generate a system design rehearsal plan tailored to the role
@@ -953,6 +971,15 @@ appear in JSON and CLI output. New coverage in [`test/interviews.test.js`](test/
 locks in the Onsite logistics plan’s dialog prompts, agenda review, energy resets, and thank-you
 follow-ups, while [`test/cli.test.js`](test/cli.test.js) confirms the CLI surfaces those transitions
 and audio metadata consistently across releases.
+
+Recorded sessions now attach a `heuristics` block that summarizes brevity (word count, sentence
+count, average sentence length, and estimated words per minute when timestamps are present), filler
+phrases, and STAR coverage so coaches can spot habits that need refinement. A new
+`critique.tighten_this` array highlights the biggest opportunities to tighten delivery—flagging
+missing STAR components, filler-word spikes, or overlong answers. Updated coverage in
+[`test/interviews.test.js`](test/interviews.test.js) exercises filler detection, STAR summaries, and
+the tighten-this critique, and the CLI suite in [`test/cli.test.js`](test/cli.test.js) asserts those
+heuristics persist in the archived JSON payloads.
 
 ## Deliverable bundles
 
