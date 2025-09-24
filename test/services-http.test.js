@@ -126,6 +126,10 @@ describe('httpRequest service', () => {
       retry: { retries: 0 },
       timeoutMs: 1234,
       rateLimit: { key: 'service:hooks', intervalMs: 250 },
+      headers: {
+        Authorization: 'Bearer super-secret',
+        'X-Api-Key': 'top-secret',
+      },
       hooks,
     });
 
@@ -141,7 +145,21 @@ describe('httpRequest service', () => {
       rateLimitKey: 'service:hooks',
       rateLimitIntervalMs: 250,
     });
-    expect(startContext.headers).toMatchObject({ 'User-Agent': 'jobbot3000' });
+    expect(startContext.headers).toMatchObject({
+      'User-Agent': 'jobbot3000',
+      Authorization: '[REDACTED]',
+      'X-Api-Key': '[REDACTED]',
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://example.com/hooks',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer super-secret',
+          'X-Api-Key': 'top-secret',
+        }),
+      }),
+    );
 
     const successArgs = hooks.onSuccess.mock.calls[0];
     expect(successArgs[0]).toBe(startContext);

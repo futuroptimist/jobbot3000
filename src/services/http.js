@@ -13,6 +13,33 @@ export { normalizeRateLimitInterval };
 
 const TIMEOUT_REASON = Symbol('http-request-timeout');
 
+const SENSITIVE_HEADER_SUBSTRINGS = [
+  'authorization',
+  'proxy-authorization',
+  'cookie',
+  'token',
+  'secret',
+  'api-key',
+  'apikey',
+  'session',
+  'credential',
+  'password',
+];
+
+const REDACTED_HEADER_VALUE = '[REDACTED]';
+
+function sanitizeHeadersForHooks(headers) {
+  const sanitized = {};
+  for (const [name, value] of Object.entries(headers)) {
+    const lowerName = name.toLowerCase();
+    const isSensitive = SENSITIVE_HEADER_SUBSTRINGS.some(substring =>
+      lowerName.includes(substring),
+    );
+    sanitized[name] = isSensitive ? REDACTED_HEADER_VALUE : value;
+  }
+  return sanitized;
+}
+
 function invokeHook(hook, ...args) {
   if (typeof hook !== 'function') {
     return;
@@ -95,6 +122,8 @@ export async function httpRequest(url, options = {}) {
     ? { ...DEFAULT_FETCH_HEADERS, ...headers }
     : { ...DEFAULT_FETCH_HEADERS };
 
+  const hookHeaders = sanitizeHeadersForHooks(mergedHeaders);
+
   const effectiveTimeout =
     Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : DEFAULT_HTTP_TIMEOUT_MS;
   const { signal: timeoutSignal, cancel } = createTimeoutController(effectiveTimeout, signal);
@@ -102,7 +131,7 @@ export async function httpRequest(url, options = {}) {
   const hookContext = {
     url,
     method: rest.method || 'GET',
-    headers: mergedHeaders,
+    headers: hookHeaders,
     timeoutMs: effectiveTimeout,
     rateLimitKey: key,
     rateLimitIntervalMs: intervalMs,
