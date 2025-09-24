@@ -31,7 +31,8 @@ describe('interview session archive', () => {
     setInterviewDataDir(dataDir);
 
     const recorded = await recordInterviewSession('job-123', 'session-abc', {
-      transcript: '  Practiced system design prompt.  ',
+      transcript:
+        '  Practiced STAR story covering situation, task, action, and result.  ',
       reflections: ['Focus on capacity planning', ''],
       feedback: ['Dive deeper on trade-offs', 'dive deeper on trade-offs'],
       stage: 'Onsite',
@@ -48,11 +49,32 @@ describe('interview session archive', () => {
       recorded_at: recorded.recorded_at,
       stage: 'Onsite',
       mode: 'Voice',
-      transcript: 'Practiced system design prompt.',
+      transcript: 'Practiced STAR story covering situation, task, action, and result.',
       reflections: ['Focus on capacity planning'],
       feedback: ['Dive deeper on trade-offs'],
       started_at: '2025-02-01T10:00:00.000Z',
       ended_at: '2025-02-01T11:15:00.000Z',
+      heuristics: {
+        brevity: {
+          word_count: 9,
+          sentence_count: 1,
+          average_sentence_words: 9,
+          estimated_wpm: 0.1,
+        },
+        filler_words: {
+          total: 0,
+          counts: {},
+        },
+        structure: {
+          star: {
+            mentioned: ['situation', 'task', 'action', 'result'],
+            missing: [],
+          },
+        },
+        critique: {
+          tighten_this: [],
+        },
+      },
     });
 
     const fetched = await getInterviewSession('job-123', 'session-abc');
@@ -119,6 +141,52 @@ describe('interview session archive', () => {
     expect(disk).toMatchObject({
       stage: 'Behavioral',
       mode: 'Voice',
+    });
+  });
+
+  it('summarizes filler words and STAR coverage in heuristics', async () => {
+    const { setInterviewDataDir, recordInterviewSession } = await import(
+      '../src/interviews.js'
+    );
+
+    setInterviewDataDir(dataDir);
+
+    const entry = await recordInterviewSession('job-heuristics', 'session-2', {
+      transcript:
+        'Um I was like thinking, you know, about the task result and I uh kind of stalled.',
+      startedAt: '2025-02-02T12:00:00Z',
+      endedAt: '2025-02-02T12:05:00Z',
+    });
+
+    expect(entry.heuristics).toEqual({
+      brevity: {
+        word_count: 17,
+        sentence_count: 1,
+        average_sentence_words: 17,
+        estimated_wpm: 3.4,
+      },
+      filler_words: {
+        total: 5,
+        counts: {
+          um: 1,
+          like: 1,
+          'you know': 1,
+          uh: 1,
+          'kind of': 1,
+        },
+      },
+      structure: {
+        star: {
+          mentioned: ['task', 'result'],
+          missing: ['situation', 'action'],
+        },
+      },
+      critique: {
+        tighten_this: [
+          'Tighten this: reduce filler words—5 across 17 words (~29%).',
+          'Tighten this: add STAR coverage for situation, action.',
+        ],
+      },
     });
   });
 

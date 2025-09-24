@@ -1566,7 +1566,10 @@ describe('jobbot CLI', () => {
 
   it('records interview sessions with transcripts and notes', () => {
     const transcriptPath = path.join(dataDir, 'transcript.txt');
-    fs.writeFileSync(transcriptPath, 'Practiced STAR story\n');
+    fs.writeFileSync(
+      transcriptPath,
+      'Practiced STAR story covering situation, task, action, and result.\n',
+    );
 
     const reflectionsPath = path.join(dataDir, 'reflections.txt');
     fs.writeFileSync(reflectionsPath, 'Highlight quant impact\nTighter close');
@@ -1599,7 +1602,9 @@ describe('jobbot CLI', () => {
     const file = path.join(dataDir, 'interviews', 'job-123', 'session-1.json');
     const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
 
-    expect(stored.transcript).toBe('Practiced STAR story');
+    expect(stored.transcript).toBe(
+      'Practiced STAR story covering situation, task, action, and result.'
+    );
     expect(stored.reflections).toEqual(['Highlight quant impact', 'Tighter close']);
     expect(stored.feedback).toEqual(['Coach praised clarity']);
     expect(stored.notes).toBe('Follow up with salary research');
@@ -1607,6 +1612,27 @@ describe('jobbot CLI', () => {
     expect(stored.mode).toBe('Voice');
     expect(stored.started_at).toBe('2025-02-01T09:00:00.000Z');
     expect(stored.ended_at).toBe('2025-02-01T10:30:00.000Z');
+    expect(stored.heuristics).toEqual({
+      brevity: {
+        word_count: 9,
+        sentence_count: 1,
+        average_sentence_words: 9,
+        estimated_wpm: 0.1,
+      },
+      filler_words: {
+        total: 0,
+        counts: {},
+      },
+      structure: {
+        star: {
+          mentioned: ['situation', 'task', 'action', 'result'],
+          missing: [],
+        },
+      },
+      critique: {
+        tighten_this: [],
+      },
+    });
 
     const shown = runCli(['interviews', 'show', 'job-123', 'session-1']);
     const parsed = JSON.parse(shown);
@@ -1673,6 +1699,7 @@ describe('jobbot CLI', () => {
       started_at: '2025-02-01T09:00:00.000Z',
       ended_at: '2025-02-01T09:45:00.000Z',
     });
+    expect(stored).toHaveProperty('heuristics');
   });
 
   it('defaults rehearse stage and mode when not provided', () => {
