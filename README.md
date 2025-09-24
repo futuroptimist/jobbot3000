@@ -781,6 +781,17 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot interviews plan --stage system-design --rol
 # 1. Design a multi-region feature flag service. (Reliability)
 # 2. Scale a read-heavy API to millions of users. (Scalability)
 #
+# Dialog tree
+# - opener — Walk me through a recent project you led end-to-end.
+#   Follow-ups:
+#   * What made it high impact for the business?
+#   * Which metrics or signals proved it worked?
+#   * How did you bring partners along the way?
+# - resilience — Share a time you navigated conflict with a stakeholder.
+#   Follow-ups:
+#   * How did you surface the disagreement early?
+#   * What trade-offs or data helped resolve it?
+#
 # Requirements
 # - Clarify functional and non-functional requirements along with success metrics.
 # - List constraints around traffic, latency budgets, data retention, and compliance.
@@ -817,9 +828,9 @@ longer inputs (for example, `--transcript-file transcript.md`). Automated covera
 [`test/interviews.test.js`](test/interviews.test.js) and [`test/cli.test.js`](test/cli.test.js)
 verifies persistence, retrieval paths, stage/mode shortcuts, the defaulted rehearse metadata,
 manual recordings inheriting the same Behavioral/Voice defaults, and the stage-specific rehearsal
-plans emitted by `jobbot interviews plan`. Plans now include a `Flashcards` checklist and a
-numbered `Question bank` so candidates can drill concepts by focus area; the updated tests assert
-that both sections appear in JSON and CLI output.
+plans emitted by `jobbot interviews plan`. Plans now include a `Flashcards` checklist, a numbered
+`Question bank`, and a branching `Dialog tree` so candidates can drill concepts by focus area and
+practice follow-ups; the updated tests assert that all sections appear in JSON and CLI output.
 
 ## Deliverable bundles
 

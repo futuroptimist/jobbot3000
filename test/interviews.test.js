@@ -183,6 +183,22 @@ describe('generateRehearsalPlan', () => {
     );
   });
 
+  it('supplies dialog trees with branching follow-ups', async () => {
+    const { generateRehearsalPlan } = await import('../src/interviews.js');
+
+    const plan = generateRehearsalPlan({ stage: 'behavioral' });
+
+    expect(Array.isArray(plan.dialog_tree)).toBe(true);
+    expect(plan.dialog_tree.length).toBeGreaterThan(0);
+    expect(plan.dialog_tree[0]).toMatchObject({
+      id: 'opener',
+      prompt: expect.stringContaining('recent project'),
+    });
+    expect(plan.dialog_tree[0].follow_ups).toEqual(
+      expect.arrayContaining([expect.stringMatching(/metrics/i)]),
+    );
+  });
+
   it('honors duration overrides for system design plans', async () => {
     const { generateRehearsalPlan } = await import('../src/interviews.js');
 
