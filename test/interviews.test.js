@@ -269,5 +269,13 @@ describe('generateRehearsalPlan', () => {
         }),
       ]),
     );
+    expect(Array.isArray(plan.dialog_tree)).toBe(true);
+    expect(plan.dialog_tree.length).toBeGreaterThan(0);
+    expect(plan.dialog_tree[0]).toMatchObject({
+      prompt: expect.stringMatching(/onsite/i),
+    });
+    expect(plan.dialog_tree[0].follow_ups).toEqual(
+      expect.arrayContaining([expect.stringMatching(/thank-you/i)]),
+    );
   });
 });

@@ -310,6 +310,12 @@ describe('jobbot CLI', () => {
       'Must have Kubernetes expertise',
       'Security clearance required',
     ]);
+    expect(payload.skills_hit).toEqual(['Developer experience focus']);
+    expect(payload.skills_gap).toEqual([
+      'Must have Kubernetes expertise',
+      'Security clearance required',
+      'Strong communication skills',
+    ]);
     expect(payload.keyword_overlap).toEqual(['developer', 'experience']);
   });
 
@@ -1657,6 +1663,19 @@ describe('jobbot CLI', () => {
     expect(output).toContain('Dialog tree');
     expect(output).toMatch(/Follow-ups:/);
     expect(output).toMatch(/- Outline/);
+  });
+
+  it('prints onsite rehearsal plans with dialog tree follow-ups', () => {
+    const output = runCli(['interviews', 'plan', '--onsite']);
+
+    expect(output).toContain('Onsite rehearsal plan');
+    expect(output).toContain('Dialog tree');
+    expect(output).toContain(
+      'transitions — Walk me through how you reset between onsite sessions and stay present.',
+    );
+    expect(output).toContain(
+      'How do you capture notes for thank-you follow-ups before the next room?',
+    );
   });
 
   it('speaks dialog prompts with a configured speech synthesizer', () => {

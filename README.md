@@ -305,14 +305,16 @@ corresponding section heading instead of an extra leading blank line.
 
 The CLI surfaces the same explanation with `jobbot match --explain`, appending a narrative summary
 of hits and gaps after the standard Markdown report. JSON output gains an `explanation` field when
-the flag is supplied. JSON payloads also include a `must_haves_missed` array listing missing
-requirements flagged as blockers (for example, entries containing 'must have', 'required', or
-specific clearance language) so downstream tooling can highlight hard-stops without re-parsing the
-text. A `keyword_overlap` array surfaces the lower-cased tokens and synonym phrases that triggered a
-match so follow-up tooling can see which concrete words or abbreviations aligned without
-recomputing overlaps. The list is capped at 12 entries and cached per resume/requirement pairing to
-keep repeated evaluations (like multi-job comparisons) fast. Extremely large resumes (more than
-5,000 unique tokens) skip overlap extraction to preserve cold-start latency targets.
+the flag is supplied. JSON payloads also include `skills_hit` and `skills_gap` arrays that mirror the
+matched/missing sections so downstream tools can treat them as normalized competency buckets without
+having to re-scan Markdown output. A `must_haves_missed` array lists missing requirements flagged as
+blockers (for example, entries containing 'must have', 'required', or specific clearance language)
+so downstream tooling can highlight hard-stops without re-parsing the text. A `keyword_overlap` array
+surfaces the lower-cased tokens and synonym phrases that triggered a match so follow-up tooling can
+see which concrete words or abbreviations aligned without recomputing overlaps. The list is capped
+at 12 entries and cached per resume/requirement pairing to keep repeated evaluations (like multi-job
+comparisons) fast. Extremely large resumes (more than 5,000 unique tokens) skip overlap extraction to
+preserve cold-start latency targets.
 
 ```bash
 cat <<'EOF' > resume.txt
@@ -824,11 +826,46 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot interviews plan --stage system-design --rol
 # - System design checklist
 # - Capacity planning worksheet
 
-# Prep the onsite loop with logistics and follow-up checklists
+# Prep the onsite loop with logistics, dialog drills, and follow-up checklists
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot interviews plan --onsite
 # Onsite rehearsal plan
 # Suggested duration: 150 minutes
-# Sections cover agenda review, energy & logistics, story rotation, and follow-up tasks.
+#
+# Coordinate the onsite loop with smooth transitions, steady energy, and clear follow-ups.
+#
+# Flashcards
+# - Panel transitions → Reset, summarize, and confirm expectations between interviews.
+# - Energy reset → Plan hydration, nutrition, and breaks to stay sharp all day.
+#
+# Question bank
+# 1. How will you tailor your opener for each onsite session? (Communication)
+# 2. What signals do you want every interviewer to carry into the debrief? (Strategy)
+#
+# Dialog tree
+# - transitions — Walk me through how you reset between onsite sessions and stay present.
+#   Follow-ups:
+#   * What cues help you tailor intros for each interviewer?
+#   * How do you capture notes for thank-you follow-ups before the next room?
+# - debrief — Outline your plan for the onsite debrief once the loop wraps up.
+#   Follow-ups:
+#   * Which signals confirm the loop went well or needs triage?
+#   * How do you close the loop on commitments after the thank-you emails?
+#
+# Agenda review
+# - Confirm interview schedule, formats, and expectations with your recruiter.
+# - Note interviewer backgrounds and tailor intros for each panel.
+#
+# Energy & logistics
+# - Plan meals, breaks, wardrobe, workspace, and travel buffers for the onsite day.
+# - Stage materials (resume variants, notebook, metrics) and reminders for check-ins.
+#
+# Story rotation
+# - Map STAR stories to each session and vary examples across interviews.
+# - List clarifying questions to open and close each room confidently.
+#
+# Follow-up
+# - Draft thank-you note bullet points per interviewer while details are fresh.
+# - Capture risks, commitments, and next steps immediately after the loop.
 
 # Capture a quick behavioral rehearsal with generated session IDs (defaults to Behavioral/Voice)
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot rehearse job-123 \
@@ -865,8 +902,9 @@ rehearsal plans emitted by `jobbot interviews plan`. Plans now include a
 `Flashcards` checklist, a numbered `Question bank`, and a branching `Dialog tree` so candidates can
 drill concepts by focus area and practice follow-ups; the updated tests assert that all sections
 appear in JSON and CLI output. New coverage in [`test/interviews.test.js`](test/interviews.test.js)
-also locks in the Onsite logistics plan so its agenda review, energy resets, thank-you follow-ups,
-and stored audio metadata stay consistent across releases.
+locks in the Onsite logistics plan’s dialog prompts, agenda review, energy resets, and thank-you
+follow-ups, while [`test/cli.test.js`](test/cli.test.js) confirms the CLI surfaces those transitions
+and audio metadata consistently across releases.
 
 ## Deliverable bundles
 
