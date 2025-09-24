@@ -382,6 +382,24 @@ const PLAN_LIBRARY = {
         tags: ['Strategy'],
       },
     ],
+    dialogTree: [
+      {
+        id: 'transitions',
+        prompt: 'Walk me through how you reset between onsite sessions and stay present.',
+        followUps: [
+          'What cues help you tailor intros for each interviewer?',
+          'How do you capture notes for thank-you follow-ups before the next room?',
+        ],
+      },
+      {
+        id: 'debrief',
+        prompt: 'Outline your plan for the onsite debrief once the loop wraps up.',
+        followUps: [
+          'Which signals confirm the loop went well or needs triage?',
+          'How do you close the loop on commitments after the thank-you emails?',
+        ],
+      },
+    ],
   },
   'Take-Home': {
     duration: 90,
