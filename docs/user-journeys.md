@@ -123,6 +123,8 @@ aggressively to respect rate limits.
    capture the next follow-up timestamp with each note, review recorded outreach with
    `jobbot track history <job_id>`, and surface upcoming commitments with `jobbot track reminders`
    (add `--upcoming-only` to hide past-due entries and `--json` when piping into other tools).
+   The digest prints `Past Due` and `Upcoming` sections so urgent follow-ups remain visible even
+   when one bucket is empty.
 
 **Unhappy paths:** conflicting updates (e.g., two devices editing simultaneously) trigger a merge
 flow that preserves both sets of notes.

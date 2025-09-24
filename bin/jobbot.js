@@ -444,15 +444,27 @@ async function cmdTrackReminders(args) {
     return;
   }
 
+  const groups = [
+    { heading: 'Past Due', items: reminders.filter(reminder => reminder.past_due) },
+    { heading: 'Upcoming', items: reminders.filter(reminder => !reminder.past_due) },
+  ];
+
   const lines = [];
-  for (const reminder of reminders) {
-    const descriptors = [];
-    if (reminder.channel) descriptors.push(reminder.channel);
-    descriptors.push(reminder.past_due ? 'past due' : 'upcoming');
-    lines.push(`${reminder.job_id} — ${reminder.remind_at} (${descriptors.join(', ')})`);
-    if (reminder.note) lines.push(`  Note: ${reminder.note}`);
-    if (reminder.contact) lines.push(`  Contact: ${reminder.contact}`);
+  for (const group of groups) {
+    if (!group.items.length) continue;
+    lines.push(group.heading);
+    for (const reminder of group.items) {
+      const descriptors = [];
+      if (reminder.channel) descriptors.push(reminder.channel);
+      const suffix = descriptors.length ? ` (${descriptors.join(', ')})` : '';
+      lines.push(`${reminder.job_id} — ${reminder.remind_at}${suffix}`);
+      if (reminder.note) lines.push(`  Note: ${reminder.note}`);
+      if (reminder.contact) lines.push(`  Contact: ${reminder.contact}`);
+    }
+    lines.push('');
   }
+
+  if (lines[lines.length - 1] === '') lines.pop();
 
   console.log(lines.join('\n'));
 }

@@ -617,14 +617,21 @@ describe('jobbot CLI', () => {
       '2025-03-06T00:00:00Z',
     ]);
 
-    expect(fullOutput).toContain(
-      'job-1 — 2025-03-05T09:00:00.000Z (follow_up, past due)'
+    const lines = fullOutput.trim().split('\n');
+    const pastDueIndex = lines.indexOf('Past Due');
+    const upcomingIndex = lines.indexOf('Upcoming');
+
+    expect(pastDueIndex).toBeGreaterThan(-1);
+    expect(lines[pastDueIndex + 1]).toBe(
+      'job-1 — 2025-03-05T09:00:00.000Z (follow_up)'
     );
-    expect(fullOutput).toContain('  Note: Send status update');
-    expect(fullOutput).toContain(
-      'job-2 — 2025-03-07T15:00:00.000Z (call, upcoming)'
+    expect(lines[pastDueIndex + 2]).toBe('  Note: Send status update');
+
+    expect(upcomingIndex).toBeGreaterThan(-1);
+    expect(lines[upcomingIndex + 1]).toBe(
+      'job-2 — 2025-03-07T15:00:00.000Z (call)'
     );
-    expect(fullOutput).toContain('  Contact: Avery Hiring Manager');
+    expect(lines[upcomingIndex + 2]).toBe('  Contact: Avery Hiring Manager');
 
     const upcomingOnly = runCli([
       'track',
@@ -634,9 +641,10 @@ describe('jobbot CLI', () => {
       '--upcoming-only',
     ]);
 
-    expect(upcomingOnly).not.toContain('job-1');
+    expect(upcomingOnly).not.toContain('Past Due');
+    expect(upcomingOnly).toContain('Upcoming');
     expect(upcomingOnly).toContain(
-      'job-2 — 2025-03-07T15:00:00.000Z (call, upcoming)'
+      'job-2 — 2025-03-07T15:00:00.000Z (call)'
     );
   });
 
