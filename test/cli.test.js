@@ -648,6 +648,41 @@ describe('jobbot CLI', () => {
     );
   });
 
+  it('keeps reminder section headings when a bucket is empty', () => {
+    runCli([
+      'track',
+      'log',
+      'job-3',
+      '--channel',
+      'call',
+      '--date',
+      '2025-03-02T10:00:00Z',
+      '--contact',
+      'Avery Hiring Manager',
+      '--remind-at',
+      '2025-03-07T15:00:00Z',
+    ]);
+
+    const output = runCli([
+      'track',
+      'reminders',
+      '--now',
+      '2025-03-03T00:00:00Z',
+    ]);
+
+    const lines = output.trim().split('\n');
+    const pastDueIndex = lines.indexOf('Past Due');
+    const upcomingIndex = lines.indexOf('Upcoming');
+
+    expect(pastDueIndex).toBeGreaterThan(-1);
+    expect(lines[pastDueIndex + 1]).toBe('  (none)');
+
+    expect(upcomingIndex).toBeGreaterThan(-1);
+    expect(lines[upcomingIndex + 1]).toBe(
+      'job-3 — 2025-03-07T15:00:00.000Z (call)'
+    );
+  });
+
   it('summarizes lifecycle statuses with track board', () => {
     runCli(['track', 'add', 'job-1', '--status', 'screening', '--note', 'Awaiting recruiter']);
     runCli(['track', 'add', 'job-2', '--status', 'onsite']);
