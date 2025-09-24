@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -1441,6 +1441,100 @@ describe('jobbot CLI', () => {
     expect(payload.channels).toEqual({ email: 1, offer_accepted: 1, referral: 1 });
     expect(JSON.stringify(payload)).not.toContain('job-1');
     expect(JSON.stringify(payload)).not.toContain('job-2');
+  });
+
+  it('runs scheduled matching tasks from configuration', () => {
+    const resumePath = path.join(dataDir, 'resume.txt');
+    fs.writeFileSync(
+      resumePath,
+      [
+        'Summary',
+        'Engineer who leads cross-functional teams and improves reliability.',
+        '',
+        'Experience',
+        '2020-2024: Lead engineer driving reliability across services.',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const jobPath = path.join(dataDir, 'job.json');
+    fs.writeFileSync(
+      jobPath,
+      JSON.stringify(
+        {
+          parsed: {
+            requirements: ['Lead reliability programs', 'Collaborate across teams'],
+          },
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    );
+
+    const configPath = path.join(dataDir, 'schedule.json');
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify(
+        {
+          tasks: [
+            {
+              id: 'match-sample',
+              type: 'match',
+              resume: resumePath,
+              jobFile: jobPath,
+              intervalSeconds: 1,
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    );
+
+    const output = runCli(['schedule', 'run', '--config', configPath, '--cycles', '1']);
+    expect(output).toContain('match-sample');
+    expect(output).toMatch(/score/i);
+  });
+
+  it('prints a helpful error when a scheduled match job snapshot is missing', () => {
+    const resumePath = path.join(dataDir, 'resume.txt');
+    fs.writeFileSync(resumePath, 'Summary\nLead engineer.\n');
+
+    const configPath = path.join(dataDir, 'schedule.json');
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify(
+        {
+          tasks: [
+            {
+              id: 'match-missing',
+              type: 'match',
+              resume: resumePath,
+              jobId: 'job-999',
+              intervalSeconds: 1,
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    );
+
+    const bin = path.resolve('bin', 'jobbot.js');
+    const result = spawnSync(
+      'node',
+      [bin, 'schedule', 'run', '--config', configPath, '--cycles', '1'],
+      {
+        encoding: 'utf8',
+        env: { ...process.env, JOBBOT_DATA_DIR: dataDir },
+      },
+    );
+
+    expect(result.stderr).toMatch(/match task match-missing could not find job snapshot job-999/i);
+    expect(result.stderr).toMatch(/jobbot ingest/i);
   });
 
   it('bundles the latest deliverables run into a zip archive', async () => {

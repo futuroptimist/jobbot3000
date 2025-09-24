@@ -467,6 +467,54 @@ so repeated syncs are noiseless, and the Greenhouse test suite verifies the
 cache is written and that conditional requests short-circuit without touching
 the filesystem when nothing has changed.
 
+## Schedule recurring ingestion and matching
+
+Automate board refreshes and fit-score runs with `jobbot schedule run`. Provide
+tasks in a JSON file and let the CLI execute them on an interval:
+
+```jsonc
+{
+  "tasks": [
+    {
+      "id": "greenhouse-hourly",
+      "type": "ingest",
+      "provider": "greenhouse",
+      "company": "acme",
+      "intervalMinutes": 60
+    },
+    {
+      "id": "match-sample",
+      "type": "match",
+      "resume": "data/profile/resume.json",
+      "jobId": "5d41402abc4b2a76",
+      "intervalMinutes": 120,
+      "output": "data/matches/job-5d4140.json"
+    }
+  ]
+}
+```
+
+Run the scheduler and optionally limit each task to a fixed number of cycles
+(useful for CI or scripted runs):
+
+```bash
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot schedule run --config schedule.json --cycles 1
+```
+
+Omit `--cycles` to keep the process running until you interrupt it. Each
+completion is logged with a timestamp and task identifier, and matching tasks
+can persist their latest score summaries to disk when `output` is provided.
+Configuration parsing, task orchestration, and the CLI surface are covered in
+[`test/schedule-config.test.js`](test/schedule-config.test.js),
+[`test/scheduler.test.js`](test/scheduler.test.js), and the scheduler scenario
+in [`test/cli.test.js`](test/cli.test.js).
+
+If a match task points to a `jobId` without a saved snapshot in
+`$JOBBOT_DATA_DIR/jobs`, the scheduler now surfaces
+`match task <id> could not find job snapshot <jobId>` and suggests running
+`jobbot ingest` before re-queuing the task. Regression coverage lives alongside
+the other scheduler tests listed above.
+
 Job titles can be parsed from lines starting with `Title`, `Job Title`, `Position`, or `Role`.
 Headers can use colons or dash separators (for example, `Role - Staff Engineer`), and the same
 separators work for `Company` and `Location`. Parser unit tests cover both colon and dash cases so
