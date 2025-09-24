@@ -6,6 +6,7 @@ import {
   normalizeRateLimitInterval,
 } from './fetch.js';
 import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
+import { JOB_SOURCE_ADAPTER_VERSION } from './adapters/job-source.js';
 import { parseJobText } from './parser.js';
 
 const SMARTRECRUITERS_BASE = 'https://api.smartrecruiters.com/v1/companies';
@@ -114,51 +115,80 @@ export async function fetchSmartRecruitersPostings(company, { fetchImpl = fetch,
   return { slug, postings };
 }
 
-export async function ingestSmartRecruitersBoard({ company, fetchImpl = fetch, retry } = {}) {
-  const { slug, postings } = await fetchSmartRecruitersPostings(company, { fetchImpl, retry });
-  const jobIds = [];
-  const rateLimitKey = `smartrecruiters:${slug}`;
-  if (SMARTRECRUITERS_RATE_LIMIT_MS > 0) {
-    setFetchRateLimit(rateLimitKey, SMARTRECRUITERS_RATE_LIMIT_MS);
-  } else {
-    setFetchRateLimit(rateLimitKey, 0);
+async function toSmartRecruitersSnapshot(posting, context) {
+  const { slug, fetchImpl = fetch, retry, rateLimitKey } = context || {};
+  if (!slug) {
+    throw new Error('SmartRecruiters company slug is required for snapshot normalization');
   }
+  const detailUrl = resolveDetailUrl(slug, posting);
+  const detailResponse = await fetchWithRetry(detailUrl, {
+    fetchImpl,
+    headers: SMARTRECRUITERS_HEADERS,
+    retry,
+    rateLimitKey,
+  });
+  if (!detailResponse.ok) {
+    const statusLabel = `${detailResponse.status} ${detailResponse.statusText}`;
+    const postingId = posting?.id ?? '';
+    throw new Error(`Failed to fetch SmartRecruiters posting ${postingId}: ${statusLabel}`);
+  }
+  const detail = await detailResponse.json();
+  const sectionsText = extractSectionsText(detail);
+  const raw = sectionsText || toPlainText(detail?.jobAd?.text) || '';
+  const parsed = mergeParsedJob(parseJobText(raw), posting, detail);
+  const postingUrl =
+    (typeof detail?.postingUrl === 'string' && detail.postingUrl.trim()) ||
+    (typeof posting?.postingUrl === 'string' && posting.postingUrl.trim()) ||
+    (typeof posting?.applyUrl === 'string' && posting.applyUrl.trim()) ||
+    detailUrl;
+  const id = jobIdFromSource({ provider: 'smartrecruiters', url: postingUrl });
+  return {
+    id,
+    raw,
+    parsed,
+    source: { type: 'smartrecruiters', value: postingUrl },
+    requestHeaders: SMARTRECRUITERS_HEADERS,
+    fetchedAt: detail?.releasedDate ?? posting?.releasedDate,
+  };
+}
 
-  for (const posting of postings) {
-    const detailUrl = resolveDetailUrl(slug, posting);
-    const detailResponse = await fetchWithRetry(detailUrl, {
-      fetchImpl,
-      headers: SMARTRECRUITERS_HEADERS,
-      retry,
-      rateLimitKey,
-    });
-    if (!detailResponse.ok) {
-      const statusLabel = `${detailResponse.status} ${detailResponse.statusText}`;
-      const postingId = posting?.id ?? '';
-      throw new Error(
-        `Failed to fetch SmartRecruiters posting ${postingId}: ${statusLabel}`,
-      );
+export const smartRecruitersAdapter = {
+  provider: 'smartrecruiters',
+  version: JOB_SOURCE_ADAPTER_VERSION,
+  async listOpenings({ company, fetchImpl = fetch, retry } = {}) {
+    const result = await fetchSmartRecruitersPostings(company, { fetchImpl, retry });
+    const rateLimitKey = `smartrecruiters:${result.slug}`;
+    if (SMARTRECRUITERS_RATE_LIMIT_MS > 0) {
+      setFetchRateLimit(rateLimitKey, SMARTRECRUITERS_RATE_LIMIT_MS);
+    } else {
+      setFetchRateLimit(rateLimitKey, 0);
     }
-    const detail = await detailResponse.json();
-    const sectionsText = extractSectionsText(detail);
-    const raw = sectionsText || toPlainText(detail?.jobAd?.text) || '';
-    const parsed = mergeParsedJob(parseJobText(raw), posting, detail);
-    const postingUrl =
-      (typeof detail?.postingUrl === 'string' && detail.postingUrl.trim()) ||
-      (typeof posting?.postingUrl === 'string' && posting.postingUrl.trim()) ||
-      (typeof posting?.applyUrl === 'string' && posting.applyUrl.trim()) ||
-      detailUrl;
-    const id = jobIdFromSource({ provider: 'smartrecruiters', url: postingUrl });
-    await saveJobSnapshot({
-      id,
-      raw,
-      parsed,
-      source: { type: 'smartrecruiters', value: postingUrl },
-      requestHeaders: SMARTRECRUITERS_HEADERS,
-      fetchedAt: detail?.releasedDate ?? posting?.releasedDate,
-    });
-    jobIds.push(id);
+    return {
+      jobs: result.postings,
+      context: { slug: result.slug, fetchImpl, retry, rateLimitKey },
+    };
+  },
+  async normalizeJob(posting, context = {}) {
+    return toSmartRecruitersSnapshot(posting, context);
+  },
+  toApplicationEvent() {
+    return null;
+  },
+};
+
+export async function ingestSmartRecruitersBoard({ company, fetchImpl = fetch, retry } = {}) {
+  const { jobs, context } = await smartRecruitersAdapter.listOpenings({
+    company,
+    fetchImpl,
+    retry,
+  });
+  const jobIds = [];
+
+  for (const posting of jobs) {
+    const snapshot = await smartRecruitersAdapter.normalizeJob(posting, context);
+    await saveJobSnapshot(snapshot);
+    jobIds.push(snapshot.id);
   }
 
-  return { company: slug, saved: jobIds.length, jobIds };
+  return { company: context.slug, saved: jobIds.length, jobIds };
 }

@@ -6,6 +6,7 @@ import {
   normalizeRateLimitInterval,
 } from './fetch.js';
 import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
+import { JOB_SOURCE_ADAPTER_VERSION } from './adapters/job-source.js';
 import { parseJobText } from './parser.js';
 
 const LEVER_BASE = 'https://api.lever.co/v0/postings';
@@ -79,25 +80,52 @@ export async function fetchLeverJobs(org, { fetchImpl = fetch, retry } = {}) {
   return { slug, jobs: Array.isArray(jobs) ? jobs : [] };
 }
 
+function toLeverSnapshot(job, slug) {
+  if (!slug) {
+    throw new Error('Lever org slug is required for snapshot normalization');
+  }
+  const hostedUrl = resolveHostedUrl(job, slug);
+  const raw = extractRawDescription(job);
+  const parsed = mergeParsedJob(parseJobText(raw), job);
+  const id = jobIdFromSource({ provider: 'lever', url: hostedUrl });
+  return {
+    id,
+    raw,
+    parsed,
+    source: { type: 'lever', value: hostedUrl },
+    requestHeaders: LEVER_HEADERS,
+    fetchedAt: job.updatedAt ?? job.createdAt,
+  };
+}
+
+export const leverAdapter = {
+  provider: 'lever',
+  version: JOB_SOURCE_ADAPTER_VERSION,
+  async listOpenings({ org, fetchImpl = fetch, retry } = {}) {
+    const result = await fetchLeverJobs(org, { fetchImpl, retry });
+    return {
+      jobs: result.jobs,
+      context: { slug: result.slug },
+    };
+  },
+  normalizeJob(job, context = {}) {
+    const slug = context.slug || context.org;
+    return toLeverSnapshot(job, slug);
+  },
+  toApplicationEvent() {
+    return null;
+  },
+};
+
 export async function ingestLeverBoard({ org, fetchImpl = fetch, retry } = {}) {
-  const { slug, jobs } = await fetchLeverJobs(org, { fetchImpl, retry });
+  const { jobs, context } = await leverAdapter.listOpenings({ org, fetchImpl, retry });
   const jobIds = [];
 
   for (const job of jobs) {
-    const hostedUrl = resolveHostedUrl(job, slug);
-    const raw = extractRawDescription(job);
-    const parsed = mergeParsedJob(parseJobText(raw), job);
-    const id = jobIdFromSource({ provider: 'lever', url: hostedUrl });
-    await saveJobSnapshot({
-      id,
-      raw,
-      parsed,
-      source: { type: 'lever', value: hostedUrl },
-      requestHeaders: LEVER_HEADERS,
-      fetchedAt: job.updatedAt ?? job.createdAt,
-    });
-    jobIds.push(id);
+    const snapshot = leverAdapter.normalizeJob(job, context);
+    await saveJobSnapshot(snapshot);
+    jobIds.push(snapshot.id);
   }
 
-  return { org: slug, saved: jobIds.length, jobIds };
+  return { org: context.slug, saved: jobIds.length, jobIds };
 }

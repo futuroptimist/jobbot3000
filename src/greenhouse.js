@@ -8,6 +8,7 @@ import {
   normalizeRateLimitInterval,
 } from './fetch.js';
 import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
+import { JOB_SOURCE_ADAPTER_VERSION } from './adapters/job-source.js';
 import { parseJobText } from './parser.js';
 
 const GREENHOUSE_BASE = 'https://boards.greenhouse.io/v1/boards';
@@ -166,26 +167,60 @@ export async function fetchGreenhouseJobs(board, { fetchImpl = fetch, retry } = 
   return { slug, jobs, notModified: false };
 }
 
-export async function ingestGreenhouseBoard({ board, fetchImpl = fetch, retry } = {}) {
-  const { slug, jobs, notModified } = await fetchGreenhouseJobs(board, { fetchImpl, retry });
-  const jobIds = [];
+function toGreenhouseSnapshot(job, slug) {
+  if (!slug) {
+    throw new Error('Greenhouse board slug is required for snapshot normalization');
+  }
+  const absoluteUrl = resolveAbsoluteUrl(job, slug);
+  const html = typeof job.content === 'string' ? job.content : '';
+  const raw = html ? extractTextFromHtml(html) : '';
+  const parsed = mergeParsedJob(parseJobText(raw), job);
+  const id = jobIdFromSource({ provider: 'greenhouse', url: absoluteUrl });
+  return {
+    id,
+    raw,
+    parsed,
+    source: { type: 'greenhouse', value: absoluteUrl },
+    requestHeaders: GREENHOUSE_HEADERS,
+    fetchedAt: job.updated_at,
+  };
+}
 
+export const greenhouseAdapter = {
+  provider: 'greenhouse',
+  version: JOB_SOURCE_ADAPTER_VERSION,
+  async listOpenings({ board, fetchImpl = fetch, retry } = {}) {
+    const result = await fetchGreenhouseJobs(board, { fetchImpl, retry });
+    return {
+      jobs: result.jobs,
+      context: {
+        slug: result.slug,
+        notModified: Boolean(result.notModified),
+      },
+    };
+  },
+  normalizeJob(job, context = {}) {
+    const slug = context.slug || context.board;
+    return toGreenhouseSnapshot(job, slug);
+  },
+  toApplicationEvent() {
+    return null;
+  },
+};
+
+export async function ingestGreenhouseBoard({ board, fetchImpl = fetch, retry } = {}) {
+  const { jobs, context } = await greenhouseAdapter.listOpenings({ board, fetchImpl, retry });
+  const jobIds = [];
   for (const job of jobs) {
-    const absoluteUrl = resolveAbsoluteUrl(job, slug);
-    const html = typeof job.content === 'string' ? job.content : '';
-    const text = html ? extractTextFromHtml(html) : '';
-    const parsed = mergeParsedJob(parseJobText(text), job);
-    const id = jobIdFromSource({ provider: 'greenhouse', url: absoluteUrl });
-    await saveJobSnapshot({
-      id,
-      raw: text,
-      parsed,
-      source: { type: 'greenhouse', value: absoluteUrl },
-      requestHeaders: GREENHOUSE_HEADERS,
-      fetchedAt: job.updated_at,
-    });
-    jobIds.push(id);
+    const snapshot = greenhouseAdapter.normalizeJob(job, context);
+    await saveJobSnapshot(snapshot);
+    jobIds.push(snapshot.id);
   }
 
-  return { board: slug, saved: jobIds.length, jobIds, notModified: Boolean(notModified) };
+  return {
+    board: context.slug,
+    saved: jobIds.length,
+    jobIds,
+    notModified: Boolean(context.notModified),
+  };
 }

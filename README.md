@@ -51,6 +51,13 @@ npx jobbot track log job-123 --channel follow_up --remind-at 2025-03-11T09:00:00
 # => Logged job-123 event follow_up
 ```
 
+## Architecture map
+
+New contributors can orient with the [jobbot3000 architecture map](docs/architecture.md), which
+summarizes how CLI commands (`src/index.js`) fan out to ingestion, scoring, deliverables, and
+analytics modules. The guide also links to the git-ignored `data/` directories so you know where
+local artifacts land during dry runs.
+
 # Continuous integration
 GitHub Actions runs lint and test checks on each push and pull request that includes code changes.
 Markdown-only updates skip CI to keep the pipeline fast, and in-progress runs for the same branch are
@@ -437,6 +444,15 @@ JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot ingest url https://example.com/jobs/staf
 # Raise the ingest snapshot limit to 5 MB for unusually long postings
 JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot ingest url https://example.com/big-role --max-bytes 5242880
 ```
+
+Each connector now exports a `JobSourceAdapter` (see
+[`src/adapters/job-source.js`](src/adapters/job-source.js)) with standardized
+`listOpenings`, `normalizeJob`, and `toApplicationEvent` helpers. The shared
+contract keeps fetch logic consistent across providers and makes it easier to
+add new adapters without rewriting snapshot plumbing. Automated coverage in
+[`test/job-source-adapters.test.js`](test/job-source-adapters.test.js) exercises
+the adapters directly so snapshot shapes, sanitized headers, and provider
+metadata remain aligned with the CLI ingest flows.
 
 Each listing in the response is normalised to plain text, parsed for title,
 location, and requirements, and written to `data/jobs/{job_id}.json` with a
