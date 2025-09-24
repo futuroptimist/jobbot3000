@@ -633,7 +633,7 @@ async function cmdIntake(args) {
   if (sub === 'record') return cmdIntakeRecord(args.slice(1));
   if (sub === 'list') return cmdIntakeList(args.slice(1));
   if (sub === 'bullets') return cmdIntakeBullets(args.slice(1));
-  console.error('Usage: jobbot intake <record|list> ...');
+  console.error('Usage: jobbot intake <record|list|bullets> ...');
   process.exit(2);
 }
 

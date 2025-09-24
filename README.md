@@ -726,6 +726,8 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot intake bullets --tag metrics
 
 Entries are appended to `data/profile/intake.json` with normalized timestamps, optional tags, notes,
 and a `status` field so follow-up planning can reference prior answers and revisit skipped prompts.
+Run `jobbot intake` without a subcommand to see the available modes (`record`, `list`, and `bullets`);
+the CLI suite in [`test/cli.test.js`](test/cli.test.js) keeps this usage output aligned.
 Recorded timestamps reflect when the command runs. Automated coverage in
 [`test/intake.test.js`](test/intake.test.js) and [`test/cli.test.js`](test/cli.test.js) verifies the
 stored shape, CLI workflows, and the skipped-only view for follow-up planning.
