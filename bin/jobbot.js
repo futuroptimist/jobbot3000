@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { summarize as summarizeFirstSentence } from '../src/index.js';
 import { fetchTextFromUrl, DEFAULT_FETCH_HEADERS } from '../src/fetch.js';
 import { parseJobText } from '../src/parser.js';
@@ -1503,15 +1503,27 @@ async function main() {
   process.exit(2);
 }
 
-const entryUrl = (() => {
+const entryPath = (() => {
   try {
-    return pathToFileURL(process.argv[1] || '').href;
+    const entryCandidate = process.argv[1];
+    if (!entryCandidate) {
+      return undefined;
+    }
+    return fs.realpathSync(entryCandidate);
   } catch {
     return undefined;
   }
 })();
 
-if (entryUrl && import.meta.url === entryUrl) {
+const modulePath = (() => {
+  try {
+    return fs.realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return undefined;
+  }
+})();
+
+if (entryPath && modulePath && modulePath === entryPath) {
   main().catch(err => {
     console.error(err.message || String(err));
     process.exit(1);
