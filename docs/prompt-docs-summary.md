@@ -39,6 +39,8 @@ Codex CI prompt documents that CI skips Markdown- and MDX-only pull requests.
 | [docs/prompts/codex/refactor.md#upgrade-prompt][refactor-up] | Upgrade Prompt | evergreen | yes |
 | [docs/prompts/codex/security.md][security-doc] | Codex Security Prompt | evergreen | yes |
 | [docs/prompts/codex/security.md#upgrade-prompt][security-up] | Upgrade Prompt | evergreen | yes |
+| [docs/prompts/codex/simplification.md][simplification-doc] | Codex Simplification Prompt | evergreen | yes |
+| [docs/prompts/codex/simplification.md#upgrade-prompt][simplification-up] | Upgrade Prompt | evergreen | yes |
 | [docs/prompts/codex/spellcheck.md][spellcheck-doc] | Codex Spellcheck Prompt | evergreen | yes |
 | [docs/prompts/codex/spellcheck.md#upgrade-prompt][spellcheck-up] | Upgrade Prompt | evergreen | yes |
 | [docs/prompts/codex/style.md][style-doc] | Codex Style Prompt | evergreen | yes |
@@ -72,6 +74,8 @@ Codex CI prompt documents that CI skips Markdown- and MDX-only pull requests.
 [refactor-up]: prompts/codex/refactor.md#upgrade-prompt
 [security-doc]: prompts/codex/security.md
 [security-up]: prompts/codex/security.md#upgrade-prompt
+[simplification-doc]: prompts/codex/simplification.md
+[simplification-up]: prompts/codex/simplification.md#upgrade-prompt
 [spellcheck-doc]: prompts/codex/spellcheck.md
 [spellcheck-up]: prompts/codex/spellcheck.md#upgrade-prompt
 [style-doc]: prompts/codex/style.md
