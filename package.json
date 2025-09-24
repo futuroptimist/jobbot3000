@@ -12,6 +12,7 @@
     "test": "vitest",
     "test:ci": "vitest run",
     "summarize": "node scripts/summarize.js",
+    "chore:prompts": "node scripts/chore-prompts.js",
     "postinstall": "node scripts/install-console-font.js"
   },
   "engines": {
@@ -20,13 +21,14 @@
   "dependencies": {
     "docx": "^9.5.1",
     "html-to-text": "9.0.5",
+    "jszip": "^3.10.1",
     "node-fetch": "^3.3.2",
     "pdf-parse": "^1.1.1",
-    "remove-markdown": "^0.6.2",
-    "jszip": "^3.10.1"
+    "remove-markdown": "^0.6.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.35.0",
+    "cspell": "^8.15.4",
     "eslint": "^9.36.0",
     "globals": "^16.4.0",
     "vitest": "^3.2.4"
