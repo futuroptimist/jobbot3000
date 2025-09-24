@@ -946,6 +946,21 @@ describe('jobbot CLI', () => {
     expect(raw.jobs['job-abc'].tags).toEqual(['dream', 'remote']);
   });
 
+  it('deduplicates shortlist tags when casing differs', () => {
+    runCli(['shortlist', 'tag', 'job-case', 'Remote']);
+    const output = runCli(['shortlist', 'tag', 'job-case', 'remote', 'Hybrid']);
+    expect(output.trim()).toBe('Tagged job-case with Remote, Hybrid');
+
+    const raw = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'shortlist.json'), 'utf8')
+    );
+    expect(raw.jobs['job-case'].tags).toEqual(['Remote', 'Hybrid']);
+
+    const listing = runCli(['shortlist', 'list', '--tag', 'remote']);
+    expect(listing).toContain('job-case');
+    expect(listing).toContain('Tags: Remote, Hybrid');
+  });
+
   it('archives discard reasons for shortlist entries', () => {
     runCli(['shortlist', 'tag', 'job-def', 'onsite']);
     const output = runCli([
@@ -1004,6 +1019,32 @@ describe('jobbot CLI', () => {
     const output = runCli(['shortlist', 'list']);
     expect(output).toContain('job-with-discard-tags');
     expect(output).toContain('Last Discard Tags: Remote, onsite');
+  });
+
+  it('deduplicates discard tags in shortlist archive output', () => {
+    const archivePath = path.join(dataDir, 'discarded_jobs.json');
+    fs.writeFileSync(
+      archivePath,
+      `${JSON.stringify(
+        {
+          'job-archive-dup': [
+            {
+              reason: 'Legacy entry',
+              discarded_at: '2025-03-08T15:00:00Z',
+              tags: [' Remote ', 'remote', 'ONSITE', 'onsite'],
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+
+    const output = runCli(['shortlist', 'archive', 'job-archive-dup']);
+    expect(output).toContain('Tags: Remote, ONSITE');
+
+    const json = JSON.parse(runCli(['shortlist', 'archive', 'job-archive-dup', '--json']));
+    expect(json.history[0].tags).toEqual(['Remote', 'ONSITE']);
   });
 
   it('reports the newest discard in shortlist list summaries', () => {

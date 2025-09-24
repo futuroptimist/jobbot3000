@@ -64,6 +64,16 @@ describe('shortlist metadata sync and filters', () => {
     expect(Object.keys(none.jobs)).toEqual([]);
   });
 
+  it('deduplicates shortlist tags ignoring case', async () => {
+    const { addJobTags, getShortlist } = await import('../src/shortlist.js');
+
+    await addJobTags('job-dedupe', ['Remote']);
+    await addJobTags('job-dedupe', ['remote', 'REMOTE', 'Hybrid']);
+
+    const record = await getShortlist('job-dedupe');
+    expect(record.tags).toEqual(['Remote', 'Hybrid']);
+  });
+
   it('records discard tags in shortlist and archive files', async () => {
     const { discardJob } = await import('../src/shortlist.js');
 
