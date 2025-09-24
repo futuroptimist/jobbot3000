@@ -48,6 +48,23 @@ describe('shortlist metadata sync and filters', () => {
     expect(byFilters.jobs['job-metadata'].discard_count).toBe(0);
   });
 
+  it('updates the synced timestamp when only syncedAt metadata is provided', async () => {
+    const { syncShortlistJob, getShortlist } = await import('../src/shortlist.js');
+
+    await syncShortlistJob('job-timestamp', {
+      location: 'Remote',
+      syncedAt: '2025-05-01T09:00:00Z',
+    });
+
+    await syncShortlistJob('job-timestamp', { syncedAt: '2025-05-02T11:30:00Z' });
+
+    const record = await getShortlist('job-timestamp');
+    expect(record.metadata).toMatchObject({
+      location: 'Remote',
+      synced_at: '2025-05-02T11:30:00.000Z',
+    });
+  });
+
   it('filters shortlist entries by tag', async () => {
     const { addJobTags, filterShortlist } = await import('../src/shortlist.js');
 

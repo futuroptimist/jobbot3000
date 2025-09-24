@@ -1296,6 +1296,49 @@ describe('jobbot CLI', () => {
     });
   });
 
+  it('creates shortlist sync metadata when invoked without flags for new jobs', () => {
+    const shortlistPath = path.join(dataDir, 'shortlist.json');
+
+    const before = Date.now();
+    const output = runCli(['shortlist', 'sync', 'job-touch-create']);
+    const after = Date.now();
+
+    expect(output.trim()).toBe('Synced job-touch-create metadata');
+
+    expect(fs.existsSync(shortlistPath)).toBe(true);
+    const shortlist = JSON.parse(fs.readFileSync(shortlistPath, 'utf8'));
+    expect(shortlist.jobs['job-touch-create']).toBeDefined();
+    const metadata = shortlist.jobs['job-touch-create'].metadata;
+    expect(typeof metadata.synced_at).toBe('string');
+    const timestamp = new Date(metadata.synced_at).getTime();
+    expect(Number.isNaN(timestamp)).toBe(false);
+    expect(timestamp).toBeGreaterThanOrEqual(before - 10);
+    expect(timestamp).toBeLessThanOrEqual(after + 2000);
+  });
+
+  it('refreshes shortlist sync timestamps when called without metadata flags', async () => {
+    const shortlistPath = path.join(dataDir, 'shortlist.json');
+
+    runCli(['shortlist', 'sync', 'job-touch', '--location', 'Remote']);
+
+    const initial = JSON.parse(fs.readFileSync(shortlistPath, 'utf8'));
+    const initialMetadata = initial.jobs['job-touch'].metadata;
+    expect(initialMetadata).toMatchObject({ location: 'Remote' });
+    const initialTimestamp = new Date(initialMetadata.synced_at);
+    expect(Number.isNaN(initialTimestamp.getTime())).toBe(false);
+
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    const output = runCli(['shortlist', 'sync', 'job-touch']);
+    expect(output.trim()).toBe('Synced job-touch metadata');
+
+    const updated = JSON.parse(fs.readFileSync(shortlistPath, 'utf8'));
+    const updatedMetadata = updated.jobs['job-touch'].metadata;
+    const updatedTimestamp = new Date(updatedMetadata.synced_at);
+    expect(Number.isNaN(updatedTimestamp.getTime())).toBe(false);
+    expect(updatedTimestamp.getTime()).toBeGreaterThan(initialTimestamp.getTime());
+  });
+
   it('restores currency symbols when sync invoked via shell quoting', () => {
     const bin = path.resolve('bin', 'jobbot.js');
     const command = [
