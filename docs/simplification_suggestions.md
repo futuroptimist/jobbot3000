@@ -10,6 +10,10 @@ New contributors must infer relationships by reading files such as
 [`src/analytics.js`](../src/analytics.js). Creating a lightweight architecture map would shorten
 onboarding and highlight reuse opportunities.
 
+_Update (2025-10-08):_ [`docs/architecture.md`](architecture.md) now documents the high-level
+module graph, data directories, and onboarding checklist linked from the README so new contributors
+can ramp without spelunking through individual files first.
+
 **Suggested Steps**
 - Draft a high-level diagram (module graph or swim lanes) that shows how summarization, ingestion,
   tracking, and exporter flows interact.
@@ -25,6 +29,11 @@ Multiple files implement vendor-specific logic (`src/ashby.js`, `src/greenhouse.
 `src/lever.js`, `src/smartrecruiters.js`, `src/workable.js`). Each file defines similar helpers for
 normalizing jobs, yet the calling conventions vary. A shared interface would remove repetitive
 boilerplate and clarify extension points.
+
+_Update (2025-10-06):_ `src/adapters/job-source.js` now defines the shared
+`JobSourceAdapter` contract. Each connector exports a provider-specific adapter that implements
+`listOpenings`, `normalizeJob`, and `toApplicationEvent`, and the ingestion flows have been wired to
+use those adapters directly.
 
 **Suggested Steps**
 - Define a `JobSourceAdapter` TypeScript definition (or JSDoc typedef) capturing the expected

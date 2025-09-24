@@ -6,6 +6,7 @@ import {
   normalizeRateLimitInterval,
 } from './fetch.js';
 import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
+import { JOB_SOURCE_ADAPTER_VERSION } from './adapters/job-source.js';
 import { parseJobText } from './parser.js';
 
 const ASHBY_BASE = 'https://jobs.ashbyhq.com/api/postings';
@@ -102,25 +103,52 @@ export async function fetchAshbyJobs(org, { fetchImpl = fetch, retry } = {}) {
   return { slug, jobPostings };
 }
 
+function toAshbySnapshot(job, slug) {
+  if (!slug) {
+    throw new Error('Ashby org slug is required for snapshot normalization');
+  }
+  const jobUrl = deriveJobUrl(job, slug);
+  const raw = selectRawDescription(job);
+  const parsed = mergeParsedJob(parseJobText(raw), job);
+  const id = jobIdFromSource({ provider: 'ashby', url: jobUrl });
+  return {
+    id,
+    raw,
+    parsed,
+    source: { type: 'ashby', value: jobUrl },
+    requestHeaders: ASHBY_HEADERS,
+    fetchedAt: job.updatedAt ?? job.publishedDate,
+  };
+}
+
+export const ashbyAdapter = {
+  provider: 'ashby',
+  version: JOB_SOURCE_ADAPTER_VERSION,
+  async listOpenings({ org, fetchImpl = fetch, retry } = {}) {
+    const result = await fetchAshbyJobs(org, { fetchImpl, retry });
+    return {
+      jobs: result.jobPostings,
+      context: { slug: result.slug },
+    };
+  },
+  normalizeJob(job, context = {}) {
+    const slug = context.slug || context.org;
+    return toAshbySnapshot(job, slug);
+  },
+  toApplicationEvent() {
+    return null;
+  },
+};
+
 export async function ingestAshbyBoard({ org, fetchImpl = fetch, retry } = {}) {
-  const { slug, jobPostings } = await fetchAshbyJobs(org, { fetchImpl, retry });
+  const { jobs, context } = await ashbyAdapter.listOpenings({ org, fetchImpl, retry });
   const jobIds = [];
 
-  for (const job of jobPostings) {
-    const jobUrl = deriveJobUrl(job, slug);
-    const raw = selectRawDescription(job);
-    const parsed = mergeParsedJob(parseJobText(raw), job);
-    const id = jobIdFromSource({ provider: 'ashby', url: jobUrl });
-    await saveJobSnapshot({
-      id,
-      raw,
-      parsed,
-      source: { type: 'ashby', value: jobUrl },
-      requestHeaders: ASHBY_HEADERS,
-      fetchedAt: job.updatedAt ?? job.publishedDate,
-    });
-    jobIds.push(id);
+  for (const job of jobs) {
+    const snapshot = ashbyAdapter.normalizeJob(job, context);
+    await saveJobSnapshot(snapshot);
+    jobIds.push(snapshot.id);
   }
 
-  return { org: slug, saved: jobIds.length, jobIds };
+  return { org: context.slug, saved: jobIds.length, jobIds };
 }

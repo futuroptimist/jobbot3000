@@ -6,6 +6,7 @@ import {
   normalizeRateLimitInterval,
 } from './fetch.js';
 import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
+import { JOB_SOURCE_ADAPTER_VERSION } from './adapters/job-source.js';
 import { parseJobText } from './parser.js';
 
 const WORKABLE_BASE = 'https://www.workable.com/api/accounts';
@@ -224,54 +225,91 @@ export async function fetchWorkableJobs(
   return { account: slug, jobs: jobsArray };
 }
 
-export async function ingestWorkableBoard({ account, fetchImpl = fetch, retry } = {}) {
-  const headers = buildWorkableHeaders();
-  const { account: slug, jobs } = await fetchWorkableJobs(account, {
-    fetchImpl,
-    retry,
-    headers,
-  });
-  const jobIds = [];
-  const rateLimitKey = `workable:${slug}`;
-  if (WORKABLE_RATE_LIMIT_MS > 0) {
-    setFetchRateLimit(rateLimitKey, WORKABLE_RATE_LIMIT_MS);
-  } else {
-    setFetchRateLimit(rateLimitKey, 0);
+async function toWorkableSnapshot(job, context) {
+  const { slug, fetchImpl = fetch, retry, headers, rateLimitKey, snapshotHeaders } =
+    context || {};
+  if (!slug) {
+    throw new Error('Workable account slug is required for snapshot normalization');
   }
+  const shortcode = resolveShortcode(job);
+  const detailUrl = buildJobDetailUrl(slug, shortcode);
+  const detailResponse = await fetchWithRetry(detailUrl, {
+    fetchImpl,
+    headers,
+    retry,
+    rateLimitKey,
+  });
+  if (!detailResponse.ok) {
+    const statusLabel = `${detailResponse.status} ${detailResponse.statusText}`;
+    throw new Error(`Failed to fetch Workable job ${shortcode}: ${statusLabel}`);
+  }
+  const detail = await detailResponse.json();
+  const raw = gatherDetailText(detail, job);
+  const parsed = mergeParsedJob(parseJobText(raw), job, detail);
+  const canonicalUrl = resolveCanonicalUrl({ job, detail, account: slug, shortcode });
+  const sanitizedHeaders = snapshotHeaders || sanitizeHeadersForSnapshot(headers || {});
+  return {
+    id: jobIdFromSource({ provider: 'workable', url: canonicalUrl }),
+    raw,
+    parsed,
+    source: {
+      type: 'workable',
+      value: canonicalUrl,
+    },
+    requestHeaders: sanitizedHeaders,
+    fetchedAt: selectFetchedAt(detail, job),
+  };
+}
+
+export const workableAdapter = {
+  provider: 'workable',
+  version: JOB_SOURCE_ADAPTER_VERSION,
+  async listOpenings({ account, fetchImpl = fetch, retry, token } = {}) {
+    const headers = buildWorkableHeaders(token);
+    const result = await fetchWorkableJobs(account, { fetchImpl, retry, headers, token });
+    const rateLimitKey = `workable:${result.account}`;
+    if (WORKABLE_RATE_LIMIT_MS > 0) {
+      setFetchRateLimit(rateLimitKey, WORKABLE_RATE_LIMIT_MS);
+    } else {
+      setFetchRateLimit(rateLimitKey, 0);
+    }
+    const snapshotHeaders = sanitizeHeadersForSnapshot(headers);
+    return {
+      jobs: result.jobs,
+      context: {
+        slug: result.account,
+        fetchImpl,
+        retry,
+        headers,
+        rateLimitKey,
+        snapshotHeaders,
+      },
+    };
+  },
+  async normalizeJob(job, context = {}) {
+    return toWorkableSnapshot(job, context);
+  },
+  toApplicationEvent() {
+    return null;
+  },
+};
+
+export async function ingestWorkableBoard({ account, fetchImpl = fetch, retry } = {}) {
+  const { jobs, context } = await workableAdapter.listOpenings({ account, fetchImpl, retry });
+  const jobIds = [];
 
   for (const job of jobs) {
-    const shortcode = resolveShortcode(job);
-    const detailUrl = buildJobDetailUrl(slug, shortcode);
-    const detailResponse = await fetchWithRetry(detailUrl, {
-      fetchImpl,
-      headers,
-      retry,
-      rateLimitKey,
-    });
-    if (!detailResponse.ok) {
-      const statusLabel = `${detailResponse.status} ${detailResponse.statusText}`;
-      throw new Error(`Failed to fetch Workable job ${shortcode}: ${statusLabel}`);
-    }
-    const detail = await detailResponse.json();
-    const raw = gatherDetailText(detail, job);
-    const parsed = mergeParsedJob(parseJobText(raw), job, detail);
-    const canonicalUrl = resolveCanonicalUrl({ job, detail, account: slug, shortcode });
-    const id = jobIdFromSource({ provider: 'workable', url: canonicalUrl });
-    const snapshotHeaders = sanitizeHeadersForSnapshot(headers);
+    const snapshot = await workableAdapter.normalizeJob(job, context);
     await saveJobSnapshot({
-      id,
-      raw,
-      parsed,
+      ...snapshot,
       source: {
         type: 'workable',
-        value: canonicalUrl,
-        headers: snapshotHeaders,
+        value: snapshot.source.value,
+        headers: snapshot.requestHeaders,
       },
-      requestHeaders: snapshotHeaders,
-      fetchedAt: selectFetchedAt(detail, job),
     });
-    jobIds.push(id);
+    jobIds.push(snapshot.id);
   }
 
-  return { account: slug, saved: jobIds.length, jobIds };
+  return { account: context.slug, saved: jobIds.length, jobIds };
 }
