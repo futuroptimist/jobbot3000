@@ -128,8 +128,8 @@ flow that preserves both sets of notes.
 1. Once an interview is scheduled, `jobbot interviews plan --stage <stage> [--role <title>]`
    generates rehearsal plans tuned to behavioral, technical, system design, or take-home stages so
    candidates can focus prep on the right prompts.
-2. Study packets include curated reading, flashcards, and question banks; dialog trees enable deep
-   rehearsal with branching follow-ups inspired by "The Rehearsal".
+2. Study packets include curated reading, flashcards, and question banks; the CLI prints a `Dialog
+   tree` section with branching follow-ups inspired by "The Rehearsal".
 3. Optional voice mode uses local STT/TTS so the user can practice speaking answers aloud.
 4. Sessions capture transcripts, user reflections, and coach feedback in
    `data/interviews/{job_id}/{session_id}.json` for future review via

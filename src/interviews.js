@@ -130,6 +130,25 @@ const PLAN_LIBRARY = {
         tags: ['Influence'],
       },
     ],
+    dialogTree: [
+      {
+        id: 'opener',
+        prompt: 'Walk me through a recent project you led end-to-end.',
+        followUps: [
+          'What made it high impact for the business?',
+          'Which metrics or signals proved it worked?',
+          'How did you bring partners along the way?',
+        ],
+      },
+      {
+        id: 'resilience',
+        prompt: 'Share a time you navigated conflict with a stakeholder.',
+        followUps: [
+          'How did you surface the disagreement early?',
+          'What trade-offs or data helped resolve it?',
+        ],
+      },
+    ],
   },
   Technical: {
     duration: 60,
@@ -190,6 +209,24 @@ const PLAN_LIBRARY = {
       {
         prompt: 'Implement an LRU cache and explain your trade-offs.',
         tags: ['Data Structures'],
+      },
+    ],
+    dialogTree: [
+      {
+        id: 'debugging',
+        prompt: 'Talk me through how you debug a failing integration test.',
+        followUps: [
+          'Which signals tell you the regression lives in your code?',
+          'How do you keep collaborators unblocked while you investigate?',
+        ],
+      },
+      {
+        id: 'extension',
+        prompt: 'Imagine the interviewer asks you to extend the solution mid-session.',
+        followUps: [
+          'What parts of your design change first?',
+          'How do you verify performance after the change?',
+        ],
       },
     ],
   },
@@ -257,6 +294,24 @@ const PLAN_LIBRARY = {
       {
         prompt: 'Scale a read-heavy API to millions of users.',
         tags: ['Scalability'],
+      },
+    ],
+    dialogTree: [
+      {
+        id: 'scope',
+        prompt: 'Clarify requirements for a global notifications platform.',
+        followUps: [
+          'What volume and latency targets anchor your design?',
+          'Which compliance or privacy constraints shape the architecture?',
+        ],
+      },
+      {
+        id: 'deep-dive',
+        prompt: 'Pick one bottleneck you expect and walk through mitigation steps.',
+        followUps: [
+          'What telemetry proves the mitigation is working?',
+          'How would you stage the rollout to limit risk?',
+        ],
       },
     ],
   },
@@ -385,6 +440,24 @@ const PLAN_LIBRARY = {
         tags: ['Communication'],
       },
     ],
+    dialogTree: [
+      {
+        id: 'planning',
+        prompt: 'Describe how you plan the first hour of a take-home assignment.',
+        followUps: [
+          'What questions do you send the reviewer before starting?',
+          'How do you budget time for tests and polish?',
+        ],
+      },
+      {
+        id: 'handoff',
+        prompt: 'Explain how you package the final deliverable for review.',
+        followUps: [
+          'What context goes into the README or summary email?',
+          'How do you highlight trade-offs for future iterations?',
+        ],
+      },
+    ],
   },
 };
 
@@ -430,6 +503,24 @@ export function generateRehearsalPlan(options = {}) {
         })
         .filter(Boolean)
     : [];
+  const dialogTree = Array.isArray(template.dialogTree)
+    ? template.dialogTree
+        .map(node => {
+          const prompt = sanitizeString(node.prompt);
+          if (!prompt) return null;
+          const id = sanitizeString(node.id);
+          const followUps = Array.isArray(node.followUps)
+            ? node.followUps
+                .map(entry => sanitizeString(entry))
+                .filter(Boolean)
+            : [];
+          const payload = { prompt };
+          if (id) payload.id = id;
+          if (followUps.length > 0) payload.follow_ups = followUps;
+          return payload;
+        })
+        .filter(Boolean)
+    : [];
 
   return {
     stage: normalizedStage,
@@ -440,6 +531,7 @@ export function generateRehearsalPlan(options = {}) {
     resources: template.resources.slice(),
     flashcards,
     question_bank: questionBank,
+    dialog_tree: dialogTree,
   };
 }
 

@@ -1171,6 +1171,33 @@ function formatRehearsalPlan(plan) {
     }
   }
 
+  if (Array.isArray(plan.dialog_tree) && plan.dialog_tree.length > 0) {
+    let headerPrinted = false;
+    for (const node of plan.dialog_tree) {
+      const prompt = typeof node?.prompt === 'string' ? node.prompt.trim() : '';
+      if (!prompt) continue;
+      if (!headerPrinted) {
+        lines.push('');
+        lines.push('Dialog tree');
+        headerPrinted = true;
+      }
+      const id = typeof node?.id === 'string' ? node.id.trim() : '';
+      const label = id ? `${id} — ${prompt}` : prompt;
+      lines.push(`- ${label}`);
+      const followUps = Array.isArray(node?.follow_ups)
+        ? node.follow_ups
+            .map(entry => (typeof entry === 'string' ? entry.trim() : ''))
+            .filter(Boolean)
+        : [];
+      if (followUps.length > 0) {
+        lines.push('  Follow-ups:');
+        for (const followUp of followUps) {
+          lines.push(`  * ${followUp}`);
+        }
+      }
+    }
+  }
+
   while (lines.length > 0 && lines[lines.length - 1] === '') {
     lines.pop();
   }
