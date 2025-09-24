@@ -57,8 +57,9 @@ and documentation, often requiring institutional knowledge. Consolidating them i
 would cut coordination overhead.
 
 **Suggested Steps**
-- Create `docs/chore-catalog.md` summarizing each routine chore, its owner, frequency, and required
-  commands (e.g., `npm run lint`, `npm run test:ci`, secret scans).
+- Keep [`docs/chore-catalog.md`](chore-catalog.md) updated with each routine chore's owner,
+  frequency, and required commands (for example, `npm run lint`, `npm run test:ci`, and the secret
+  scan pipeline).
 - Add npm scripts or `bin/` commands that encapsulate multi-step chores (for example, a single
   `npm run chore:prompts` task that runs spellcheck, formatting, and link validation for prompt docs).
 - Configure CI to surface chore reminders (perhaps via scheduled GitHub Actions) pointing back to the

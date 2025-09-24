@@ -1036,6 +1036,8 @@ timestamps, and the CLI suite verifies `jobbot deliverables bundle` writes archi
 
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 See [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) for a list of prompt documents.
+See [docs/chore-catalog.md](docs/chore-catalog.md) for the recurring chores and required commands
+that keep those workflows green.
 
 ## Raspberry Pi console fonts
 
