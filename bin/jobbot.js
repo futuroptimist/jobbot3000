@@ -47,6 +47,7 @@ import { computeFunnel, exportAnalyticsSnapshot, formatFunnelReport } from '../s
 import { ingestWorkableBoard } from '../src/workable.js';
 import { ingestJobUrl } from '../src/url-ingest.js';
 import { bundleDeliverables } from '../src/deliverables.js';
+import { transcribeAudio, synthesizeSpeech } from '../src/speech.js';
 
 function isHttpUrl(s) {
   return /^https?:\/\//i.test(s);
@@ -1208,14 +1209,75 @@ function formatRehearsalPlan(plan) {
   return lines.join('\n');
 }
 
+function collectPlanVoicePrompts(plan) {
+  if (!plan || typeof plan !== 'object' || Array.isArray(plan)) {
+    return [];
+  }
+
+  const prompts = [];
+
+  if (Array.isArray(plan.dialog_tree)) {
+    for (const node of plan.dialog_tree) {
+      const prompt = typeof node?.prompt === 'string' ? node.prompt.trim() : '';
+      if (prompt) prompts.push(prompt);
+      const followUps = Array.isArray(node?.follow_ups) ? node.follow_ups : [];
+      for (const followUp of followUps) {
+        const value = typeof followUp === 'string' ? followUp.trim() : '';
+        if (value) prompts.push(value);
+      }
+    }
+  }
+
+  if (Array.isArray(plan.question_bank)) {
+    for (const question of plan.question_bank) {
+      const prompt = typeof question?.prompt === 'string' ? question.prompt.trim() : '';
+      if (prompt) prompts.push(prompt);
+    }
+  }
+
+  const seen = new Set();
+  const ordered = [];
+  for (const item of prompts) {
+    const key = item.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    ordered.push(item);
+  }
+  return ordered;
+}
+
+async function speakPlanPrompts(plan, options) {
+  const prompts = collectPlanVoicePrompts(plan);
+  for (const prompt of prompts) {
+    await synthesizeSpeech(prompt, options);
+  }
+}
+
 async function cmdInterviewsPlan(args) {
   const asJson = args.includes('--json');
-  const filtered = args.filter(arg => arg !== '--json');
+  const speak = args.includes('--speak');
+  const filtered = args.filter((arg, index) => {
+    if (arg === '--json' || arg === '--speak') return false;
+    if (arg === '--speaker') return false;
+    if (index > 0 && args[index - 1] === '--speaker') return false;
+    return true;
+  });
   const stageInput = resolvePlanStage(filtered);
   const role = getFlag(filtered, '--role');
   const durationMinutes = getNumberFlag(filtered, '--duration');
+  const speakerCommand = getFlag(args, '--speaker');
 
   const plan = generateRehearsalPlan({ stage: stageInput, role, durationMinutes });
+
+  if (speak) {
+    try {
+      await speakPlanPrompts(plan, { command: speakerCommand });
+    } catch (err) {
+      const message = err && typeof err.message === 'string' ? err.message : String(err);
+      console.error(message);
+      process.exit(1);
+    }
+  }
 
   if (asJson) {
     console.log(JSON.stringify({ plan }, null, 2));
@@ -1243,7 +1305,8 @@ async function cmdRehearse(args) {
     console.error(
       'Usage: jobbot rehearse <job_id> [--session <id>] [--stage <value>] [--mode <value>] ' +
         '[--behavioral] [--technical] [--onsite] [--voice] [--text] ' +
-        '[--transcript <text>|--transcript-file <path>] ' +
+        '[--transcript <text>|--transcript-file <path>] [--audio <path>] ' +
+        '[--transcriber <command>] ' +
         '[--reflections <text>|--reflections-file <path>] ' +
         '[--feedback <text>|--feedback-file <path>] ' +
         '[--notes <text>|--notes-file <path>] ' +
@@ -1252,15 +1315,34 @@ async function cmdRehearse(args) {
     process.exit(2);
   }
 
-  const transcriptInput = readContentFromArgs(rest, '--transcript', '--transcript-file');
+  let transcriptInput = readContentFromArgs(rest, '--transcript', '--transcript-file');
   const reflectionsInput = readContentFromArgs(rest, '--reflections', '--reflections-file');
   const feedbackInput = readContentFromArgs(rest, '--feedback', '--feedback-file');
   const notesInput = readContentFromArgs(rest, '--notes', '--notes-file');
+  const audioInput = getFlag(rest, '--audio');
+  const transcriberCommand = getFlag(rest, '--transcriber');
 
   const stage = resolveRehearsalStage(rest) || 'Behavioral';
   const mode = resolveRehearsalMode(rest) || 'Voice';
   const startedAt = getFlag(rest, '--started-at');
   const endedAt = getFlag(rest, '--ended-at');
+
+  if (audioInput && transcriptInput) {
+    console.error('Cannot combine --audio with --transcript/--transcript-file');
+    process.exit(2);
+  }
+
+  let audioSource;
+  if (audioInput) {
+    const resolvedAudio = path.resolve(process.cwd(), audioInput);
+    try {
+      transcriptInput = await transcribeAudio(resolvedAudio, { command: transcriberCommand });
+    } catch (err) {
+      console.error(err?.message || String(err));
+      process.exit(1);
+    }
+    audioSource = { type: 'file', name: path.basename(resolvedAudio) };
+  }
 
   const payload = {
     transcript: transcriptInput,
@@ -1272,6 +1354,10 @@ async function cmdRehearse(args) {
     startedAt,
     endedAt,
   };
+
+  if (audioSource) {
+    payload.audioSource = audioSource;
+  }
 
   const entry = await recordInterviewSession(jobId, sessionId, payload);
   console.log(`Recorded rehearsal ${entry.session_id} for ${entry.job_id}`);

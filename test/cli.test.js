@@ -3,9 +3,13 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { summarize } from '../src/index.js';
 import JSZip from 'jszip';
 import { STATUSES } from '../src/lifecycle.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 let dataDir;
 
@@ -1601,6 +1605,39 @@ describe('jobbot CLI', () => {
     expect(stored).toHaveProperty('recorded_at');
   });
 
+  it('transcribes audio rehearsals when a local speech transcriber is configured', () => {
+    const audioPath = path.join(dataDir, 'voice-note.txt');
+    fs.writeFileSync(audioPath, 'Discussed roadmap alignment');
+
+    const transcriberScript = path.resolve(__dirname, 'fixtures', 'transcriber.js');
+    const previous = process.env.JOBBOT_SPEECH_TRANSCRIBER;
+    process.env.JOBBOT_SPEECH_TRANSCRIBER = `node ${transcriberScript} --file {{input}}`;
+
+    try {
+      const output = runCli(['rehearse', 'job-voice', '--audio', audioPath]);
+      const trimmed = output.trim();
+      expect(trimmed.startsWith('Recorded rehearsal ')).toBe(true);
+      const match = trimmed.match(/^Recorded rehearsal (.+) for job-voice$/);
+      expect(match).not.toBeNull();
+      const [, sessionId] = match;
+
+      const file = path.join(dataDir, 'interviews', 'job-voice', `${sessionId}.json`);
+      const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
+
+      expect(stored).toMatchObject({
+        job_id: 'job-voice',
+        session_id: sessionId,
+        stage: 'Behavioral',
+        mode: 'Voice',
+        transcript: 'Transcribed: Discussed roadmap alignment',
+        audio_source: { type: 'file', name: 'voice-note.txt' },
+      });
+    } finally {
+      if (previous === undefined) delete process.env.JOBBOT_SPEECH_TRANSCRIBER;
+      else process.env.JOBBOT_SPEECH_TRANSCRIBER = previous;
+    }
+  });
+
   it('generates rehearsal plans for interviews', () => {
     const output = runCli([
       'interviews',
@@ -1620,5 +1657,33 @@ describe('jobbot CLI', () => {
     expect(output).toContain('Dialog tree');
     expect(output).toMatch(/Follow-ups:/);
     expect(output).toMatch(/- Outline/);
+  });
+
+  it('speaks dialog prompts with a configured speech synthesizer', () => {
+    const spokenLog = path.join(dataDir, 'spoken.txt');
+    const synthesizer = [
+      'node',
+      path.resolve(__dirname, 'fixtures', 'synthesizer.js'),
+      '--out',
+      spokenLog,
+      '--text',
+      '{{input}}',
+    ].join(' ');
+
+    runCli([
+      'interviews',
+      'plan',
+      '--stage',
+      'behavioral',
+      '--speak',
+      '--speaker',
+      synthesizer,
+    ]);
+
+    const spoken = fs.readFileSync(spokenLog, 'utf8').trim().split('\n');
+    expect(spoken).toContain('Walk me through a recent project you led end-to-end.');
+    expect(spoken).toContain('How did you bring partners along the way?');
+    expect(spoken).toContain('Share a time you navigated conflict with a stakeholder.');
+    expect(spoken).toContain('What trade-offs or data helped resolve it?');
   });
 });
