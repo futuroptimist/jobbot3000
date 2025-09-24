@@ -1165,7 +1165,8 @@ JSON payloads expose the same `reminder` object for downstream tooling.
 Surface follow-up work with `jobbot track reminders`. Pass `--now` to view from a
 given timestamp (defaults to the current time), `--upcoming-only` to suppress past-due
 entries, and `--json` for structured output. The digest groups results by urgency so
-past-due work stays visible without scanning the whole list:
+past-due work stays visible without scanning the whole list. Empty sections print `(none)` so
+you can confirm there isn't hidden work before moving on:
 
 ```bash
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track reminders --now 2025-03-06T00:00:00Z
@@ -1180,7 +1181,8 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track reminders --now 2025-03-06T00:00:00Z
 
 Unit tests in [`test/application-events.test.js`](test/application-events.test.js)
 cover reminder extraction, including past-due filtering. The CLI suite in
-[`test/cli.test.js`](test/cli.test.js) verifies the `--json` output.
+[`test/cli.test.js`](test/cli.test.js) verifies the `--json` output and ensures the
+`Past Due`/`Upcoming` headings stick around with `(none)` placeholders when a bucket is empty.
 
 To capture discard reasons for shortlist triage:
 

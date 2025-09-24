@@ -462,22 +462,32 @@ async function cmdTrackReminders(args) {
     return;
   }
 
-  const groups = [
-    { heading: 'Past Due', items: reminders.filter(reminder => reminder.past_due) },
-    { heading: 'Upcoming', items: reminders.filter(reminder => !reminder.past_due) },
-  ];
+  const includePastDue = !upcomingOnly;
+  const pastDue = includePastDue
+    ? reminders.filter(reminder => reminder.past_due)
+    : [];
+  const upcoming = reminders.filter(reminder => !reminder.past_due);
+
+  const groups = [];
+  if (includePastDue) {
+    groups.push({ heading: 'Past Due', items: pastDue });
+  }
+  groups.push({ heading: 'Upcoming', items: upcoming });
 
   const lines = [];
   for (const group of groups) {
-    if (!group.items.length) continue;
     lines.push(group.heading);
-    for (const reminder of group.items) {
-      const descriptors = [];
-      if (reminder.channel) descriptors.push(reminder.channel);
-      const suffix = descriptors.length ? ` (${descriptors.join(', ')})` : '';
-      lines.push(`${reminder.job_id} — ${reminder.remind_at}${suffix}`);
-      if (reminder.note) lines.push(`  Note: ${reminder.note}`);
-      if (reminder.contact) lines.push(`  Contact: ${reminder.contact}`);
+    if (group.items.length === 0) {
+      lines.push('  (none)');
+    } else {
+      for (const reminder of group.items) {
+        const descriptors = [];
+        if (reminder.channel) descriptors.push(reminder.channel);
+        const suffix = descriptors.length ? ` (${descriptors.join(', ')})` : '';
+        lines.push(`${reminder.job_id} — ${reminder.remind_at}${suffix}`);
+        if (reminder.note) lines.push(`  Note: ${reminder.note}`);
+        if (reminder.contact) lines.push(`  Contact: ${reminder.contact}`);
+      }
     }
     lines.push('');
   }
