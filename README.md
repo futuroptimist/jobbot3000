@@ -497,8 +497,12 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist tag job-123 dream remote
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist discard job-123 --reason "Not remote" --tags "Remote,onsite"
 # Discarded job-123: Not remote
 
-JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist sync job-123 --location Remote --level Senior --compensation "$185k" --synced-at 2025-03-06T08:00:00Z
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist sync job-123
 # Synced job-123 metadata
+# (synced_at defaults to the current timestamp when no metadata flags are provided)
+
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist sync job-123 --location Remote --level Senior --compensation "$185k" --synced-at 2025-03-06T08:00:00Z
+# Synced job-123 metadata with refreshed fields
 
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --location remote
 # job-123
@@ -559,6 +563,10 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist archive job-123
 # - 2025-03-05T12:00:00.000Z — Not remote
 #   Tags: Remote, onsite
 ```
+
+Automated CLI tests cover both the new-entry and refresh flows so `jobbot shortlist sync <job_id>`
+continues to stamp `synced_at` when metadata flags are omitted and when existing records are
+refreshed. These cases live alongside the broader shortlist suite in `test/cli.test.js`.
 
 Shortlist tags deduplicate case-insensitively so reapplying a label with different casing keeps
 filters tidy. Legacy discard tag history is normalized the same way so `Last Discard Tags` and
@@ -866,21 +874,37 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot rehearse job-123 \
   --feedback "Great pacing" \
   --notes "Send thank-you email"
 # Recorded rehearsal prep-2025-02-01T09-00-00Z for job-123
+
+# Transcribe a quick voice rehearsal with a local STT command
+JOBBOT_SPEECH_TRANSCRIBER="node local/transcribe.js --file {{input}}" \
+  JOBBOT_DATA_DIR=$DATA_DIR npx jobbot rehearse job-123 --audio recordings/answer.wav
+# Recorded rehearsal prep-2025-02-01T09-00-00Z for job-123
+
+# Read behavioral dialog prompts aloud with a local TTS command
+JOBBOT_SPEECH_SYNTHESIZER="node local/say.js --text {{input}}" \
+  JOBBOT_DATA_DIR=$DATA_DIR npx jobbot interviews plan --stage behavioral --speak
 ```
 
 Sessions are stored under `data/interviews/{job_id}/{session_id}.json` with ISO 8601 timestamps so
 coaches and candidates can revisit transcripts later. Stage and mode default to `Behavioral` and
-`Voice` when omitted, mirroring the quick-runthrough workflow. The CLI accepts `--*-file` options for
-longer inputs (for example, `--transcript-file transcript.md`). Automated coverage in
-[`test/interviews.test.js`](test/interviews.test.js) and [`test/cli.test.js`](test/cli.test.js)
-verifies persistence, retrieval paths, stage/mode shortcuts, the defaulted rehearse metadata,
-manual recordings inheriting the same Behavioral/Voice defaults, and the stage-specific rehearsal
-plans emitted by `jobbot interviews plan`. Plans now include a `Flashcards` checklist, a numbered
-`Question bank`, and a branching `Dialog tree` so candidates can drill concepts by focus area and
-practice follow-ups; the updated tests assert that all sections appear in JSON and CLI output. Fresh
-coverage in [`test/interviews.test.js`](test/interviews.test.js) locks in the Onsite logistics plan's
-dialog prompts, while [`test/cli.test.js`](test/cli.test.js) now confirms the CLI surfaces the
-transitions and thank-you follow-ups inside the Onsite dialog tree every run.
+`Voice` when omitted, mirroring the quick-runthrough workflow. Configure
+`JOBBOT_SPEECH_TRANSCRIBER` with a local command that accepts the audio path via `{{input}}`
+(or pass `--transcriber <command>` at runtime) to automatically transcribe recordings;
+the CLI records the derived transcript alongside an `audio_source` marker. Set
+`JOBBOT_SPEECH_SYNTHESIZER` (or pass `--speaker <command>`) to read dialog prompts aloud when
+`jobbot interviews plan --speak` is used so candidates can rehearse responses hands-free. The CLI
+accepts `--*-file` options for longer inputs (for example, `--transcript-file transcript.md`).
+Automated coverage in [`test/interviews.test.js`](test/interviews.test.js) and
+[`test/cli.test.js`](test/cli.test.js) verifies persistence, retrieval paths, stage/mode shortcuts,
+the defaulted rehearse metadata, audio transcription integration, synthesizer execution for dialog
+prompts, manual recordings inheriting the same Behavioral/Voice defaults, and the stage-specific
+rehearsal plans emitted by `jobbot interviews plan`. Plans now include a
+`Flashcards` checklist, a numbered `Question bank`, and a branching `Dialog tree` so candidates can
+drill concepts by focus area and practice follow-ups; the updated tests assert that all sections
+appear in JSON and CLI output. New coverage in [`test/interviews.test.js`](test/interviews.test.js)
+locks in the Onsite logistics plan’s dialog prompts, agenda review, energy resets, and thank-you
+follow-ups, while [`test/cli.test.js`](test/cli.test.js) confirms the CLI surfaces those transitions
+and audio metadata consistently across releases.
 
 ## Deliverable bundles
 

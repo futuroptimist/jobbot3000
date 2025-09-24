@@ -617,6 +617,19 @@ function normalizeNotes(input) {
   return value;
 }
 
+function normalizeAudioSource(input) {
+  if (!input || typeof input !== 'object') return undefined;
+  const type = sanitizeString(input.type) || 'file';
+  if (type.toLowerCase() !== 'file') return undefined;
+  const name =
+    sanitizeString(input.name) ||
+    sanitizeString(input.filename) ||
+    sanitizeString(input.file) ||
+    sanitizeString(input.path);
+  if (!name) return undefined;
+  return { type: 'file', name };
+}
+
 function resolveSessionPath(jobId, sessionId) {
   const baseDir = resolveDataDir();
   const jobDir = path.join(baseDir, 'interviews', jobId);
@@ -631,6 +644,7 @@ export async function recordInterviewSession(jobId, sessionId, data = {}) {
   const reflections = normalizeNoteList(data.reflections, 'reflections');
   const feedback = normalizeNoteList(data.feedback, 'feedback');
   const notes = normalizeNotes(data.notes);
+  const audioSource = normalizeAudioSource(data.audioSource ?? data.audio_source);
 
   if (!transcript && !reflections && !feedback && !notes) {
     throw new Error('at least one session field is required');
@@ -656,6 +670,7 @@ export async function recordInterviewSession(jobId, sessionId, data = {}) {
   if (reflections) entry.reflections = reflections;
   if (feedback) entry.feedback = feedback;
   if (notes) entry.notes = notes;
+  if (audioSource) entry.audio_source = audioSource;
   if (startedAt) entry.started_at = startedAt;
   if (endedAt) entry.ended_at = endedAt;
 

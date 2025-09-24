@@ -3,9 +3,13 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { summarize } from '../src/index.js';
 import JSZip from 'jszip';
 import { STATUSES } from '../src/lifecycle.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 let dataDir;
 
@@ -1302,6 +1306,49 @@ describe('jobbot CLI', () => {
     });
   });
 
+  it('creates shortlist sync metadata when invoked without flags for new jobs', () => {
+    const shortlistPath = path.join(dataDir, 'shortlist.json');
+
+    const before = Date.now();
+    const output = runCli(['shortlist', 'sync', 'job-touch-create']);
+    const after = Date.now();
+
+    expect(output.trim()).toBe('Synced job-touch-create metadata');
+
+    expect(fs.existsSync(shortlistPath)).toBe(true);
+    const shortlist = JSON.parse(fs.readFileSync(shortlistPath, 'utf8'));
+    expect(shortlist.jobs['job-touch-create']).toBeDefined();
+    const metadata = shortlist.jobs['job-touch-create'].metadata;
+    expect(typeof metadata.synced_at).toBe('string');
+    const timestamp = new Date(metadata.synced_at).getTime();
+    expect(Number.isNaN(timestamp)).toBe(false);
+    expect(timestamp).toBeGreaterThanOrEqual(before - 10);
+    expect(timestamp).toBeLessThanOrEqual(after + 2000);
+  });
+
+  it('refreshes shortlist sync timestamps when called without metadata flags', async () => {
+    const shortlistPath = path.join(dataDir, 'shortlist.json');
+
+    runCli(['shortlist', 'sync', 'job-touch', '--location', 'Remote']);
+
+    const initial = JSON.parse(fs.readFileSync(shortlistPath, 'utf8'));
+    const initialMetadata = initial.jobs['job-touch'].metadata;
+    expect(initialMetadata).toMatchObject({ location: 'Remote' });
+    const initialTimestamp = new Date(initialMetadata.synced_at);
+    expect(Number.isNaN(initialTimestamp.getTime())).toBe(false);
+
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    const output = runCli(['shortlist', 'sync', 'job-touch']);
+    expect(output.trim()).toBe('Synced job-touch metadata');
+
+    const updated = JSON.parse(fs.readFileSync(shortlistPath, 'utf8'));
+    const updatedMetadata = updated.jobs['job-touch'].metadata;
+    const updatedTimestamp = new Date(updatedMetadata.synced_at);
+    expect(Number.isNaN(updatedTimestamp.getTime())).toBe(false);
+    expect(updatedTimestamp.getTime()).toBeGreaterThan(initialTimestamp.getTime());
+  });
+
   it('restores currency symbols when sync invoked via shell quoting', () => {
     const bin = path.resolve('bin', 'jobbot.js');
     const command = [
@@ -1564,6 +1611,39 @@ describe('jobbot CLI', () => {
     expect(stored).toHaveProperty('recorded_at');
   });
 
+  it('transcribes audio rehearsals when a local speech transcriber is configured', () => {
+    const audioPath = path.join(dataDir, 'voice-note.txt');
+    fs.writeFileSync(audioPath, 'Discussed roadmap alignment');
+
+    const transcriberScript = path.resolve(__dirname, 'fixtures', 'transcriber.js');
+    const previous = process.env.JOBBOT_SPEECH_TRANSCRIBER;
+    process.env.JOBBOT_SPEECH_TRANSCRIBER = `node ${transcriberScript} --file {{input}}`;
+
+    try {
+      const output = runCli(['rehearse', 'job-voice', '--audio', audioPath]);
+      const trimmed = output.trim();
+      expect(trimmed.startsWith('Recorded rehearsal ')).toBe(true);
+      const match = trimmed.match(/^Recorded rehearsal (.+) for job-voice$/);
+      expect(match).not.toBeNull();
+      const [, sessionId] = match;
+
+      const file = path.join(dataDir, 'interviews', 'job-voice', `${sessionId}.json`);
+      const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
+
+      expect(stored).toMatchObject({
+        job_id: 'job-voice',
+        session_id: sessionId,
+        stage: 'Behavioral',
+        mode: 'Voice',
+        transcript: 'Transcribed: Discussed roadmap alignment',
+        audio_source: { type: 'file', name: 'voice-note.txt' },
+      });
+    } finally {
+      if (previous === undefined) delete process.env.JOBBOT_SPEECH_TRANSCRIBER;
+      else process.env.JOBBOT_SPEECH_TRANSCRIBER = previous;
+    }
+  });
+
   it('generates rehearsal plans for interviews', () => {
     const output = runCli([
       'interviews',
@@ -1596,5 +1676,33 @@ describe('jobbot CLI', () => {
     expect(output).toContain(
       'How do you capture notes for thank-you follow-ups before the next room?',
     );
+  });
+
+  it('speaks dialog prompts with a configured speech synthesizer', () => {
+    const spokenLog = path.join(dataDir, 'spoken.txt');
+    const synthesizer = [
+      'node',
+      path.resolve(__dirname, 'fixtures', 'synthesizer.js'),
+      '--out',
+      spokenLog,
+      '--text',
+      '{{input}}',
+    ].join(' ');
+
+    runCli([
+      'interviews',
+      'plan',
+      '--stage',
+      'behavioral',
+      '--speak',
+      '--speaker',
+      synthesizer,
+    ]);
+
+    const spoken = fs.readFileSync(spokenLog, 'utf8').trim().split('\n');
+    expect(spoken).toContain('Walk me through a recent project you led end-to-end.');
+    expect(spoken).toContain('How did you bring partners along the way?');
+    expect(spoken).toContain('Share a time you navigated conflict with a stakeholder.');
+    expect(spoken).toContain('What trade-offs or data helped resolve it?');
   });
 });

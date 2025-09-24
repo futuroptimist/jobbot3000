@@ -121,6 +121,22 @@ describe('interview session archive', () => {
       mode: 'Voice',
     });
   });
+
+  it('stores audio source metadata when provided', async () => {
+    const { setInterviewDataDir, recordInterviewSession } = await import('../src/interviews.js');
+
+    setInterviewDataDir(dataDir);
+
+    const recorded = await recordInterviewSession('job-audio', 'session-audio', {
+      transcript: 'Voice rehearsal summary',
+      audioSource: { type: 'file', name: 'answer.wav' },
+    });
+
+    expect(recorded.audio_source).toEqual({ type: 'file', name: 'answer.wav' });
+
+    const disk = await readSession('job-audio', 'session-audio');
+    expect(disk.audio_source).toEqual({ type: 'file', name: 'answer.wav' });
+  });
 });
 
 describe('generateRehearsalPlan', () => {
