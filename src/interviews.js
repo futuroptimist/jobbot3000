@@ -32,6 +32,9 @@ const STAGE_ALIASES = new Map(
     ['take home', 'Take-Home'],
     ['take-home', 'Take-Home'],
     ['takehome', 'Take-Home'],
+    ['onsite', 'Onsite'],
+    ['on site', 'Onsite'],
+    ['on-site', 'Onsite'],
   ].map(([key, value]) => [key, value]),
 );
 
@@ -309,6 +312,74 @@ const PLAN_LIBRARY = {
           'What telemetry proves the mitigation is working?',
           'How would you stage the rollout to limit risk?',
         ],
+      },
+    ],
+  },
+  Onsite: {
+    duration: 150,
+    summary(role) {
+      if (role) {
+        return (
+          `Coordinate the ${role} onsite loop with smooth transitions, steady energy, ` +
+          'and clear follow-ups.'
+        );
+      }
+      return (
+        'Coordinate the onsite loop with smooth transitions, steady energy, and clear follow-ups.'
+      );
+    },
+    sections(role) {
+      const panelLabel = role ? `${role} panel` : 'panel';
+      return [
+        {
+          title: 'Agenda review',
+          items: [
+            'Confirm interview schedule, formats, and expectations with your recruiter.',
+            `Note interviewer backgrounds and tailor intros for each ${panelLabel}.`,
+          ],
+        },
+        {
+          title: 'Energy & logistics',
+          items: [
+            'Plan meals, breaks, wardrobe, workspace, and travel buffers for the onsite day.',
+            'Stage materials (resume variants, notebook, metrics) and reminders for check-ins.',
+          ],
+        },
+        {
+          title: 'Story rotation',
+          items: [
+            'Map STAR stories to each session and vary examples across interviews.',
+            'List clarifying questions to open and close each room confidently.',
+          ],
+        },
+        {
+          title: 'Follow-up',
+          items: [
+            'Draft thank-you note bullet points per interviewer while details are fresh.',
+            'Capture risks, commitments, and next steps immediately after the loop.',
+          ],
+        },
+      ];
+    },
+    resources: ['Onsite checklist', 'Thank-you note templates'],
+    flashcards: [
+      {
+        front: 'Panel transitions',
+        back: 'Reset, summarize, and confirm expectations between interviews.',
+      },
+      {
+        front: 'Energy reset',
+        back: 'Plan hydration, nutrition, and breaks to stay sharp all day.',
+      },
+    ],
+    questionBank: [
+      {
+        prompt: 'How will you tailor your opener for each onsite session?',
+        tags: ['Communication'],
+      },
+      {
+        prompt: 'What signals do you want every interviewer to carry into the debrief?',
+        tags: ['Strategy'],
       },
     ],
   },

@@ -812,6 +812,12 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot interviews plan --stage system-design --rol
 # - System design checklist
 # - Capacity planning worksheet
 
+# Prep the onsite loop with logistics and follow-up checklists
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot interviews plan --onsite
+# Onsite rehearsal plan
+# Suggested duration: 150 minutes
+# Sections cover agenda review, energy & logistics, story rotation, and follow-up tasks.
+
 # Capture a quick behavioral rehearsal with generated session IDs (defaults to Behavioral/Voice)
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot rehearse job-123 \
   --transcript "Walked through leadership story" \
@@ -830,7 +836,9 @@ verifies persistence, retrieval paths, stage/mode shortcuts, the defaulted rehea
 manual recordings inheriting the same Behavioral/Voice defaults, and the stage-specific rehearsal
 plans emitted by `jobbot interviews plan`. Plans now include a `Flashcards` checklist, a numbered
 `Question bank`, and a branching `Dialog tree` so candidates can drill concepts by focus area and
-practice follow-ups; the updated tests assert that all sections appear in JSON and CLI output.
+practice follow-ups; the updated tests assert that all sections appear in JSON and CLI output. New
+coverage in [`test/interviews.test.js`](test/interviews.test.js) also locks in the Onsite logistics
+plan so its agenda review, energy resets, and thank-you follow-ups stay consistent across releases.
 
 ## Deliverable bundles
 

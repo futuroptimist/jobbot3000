@@ -223,4 +223,35 @@ describe('generateRehearsalPlan', () => {
     expect(deliverySection.items.join(' ')).toMatch(/lint/i);
     expect(plan.resources).toContain('Take-home submission rubric');
   });
+
+  it('supports onsite rehearsal plans focused on logistics and follow-up', async () => {
+    const { generateRehearsalPlan } = await import('../src/interviews.js');
+
+    const plan = generateRehearsalPlan({ stage: 'onsite', role: 'Engineering Manager' });
+
+    expect(plan.stage).toBe('Onsite');
+    expect(plan.duration_minutes).toBeGreaterThanOrEqual(120);
+    expect(plan.summary).toMatch(/onsite/i);
+    const sectionTitles = plan.sections.map(section => section.title);
+    expect(sectionTitles).toEqual(expect.arrayContaining(['Agenda review', 'Follow-up']));
+    const followUpSection = plan.sections.find(section => section.title === 'Follow-up');
+    expect(followUpSection.items.join(' ')).toMatch(/thank-you/i);
+    expect(plan.resources).toContain('Onsite checklist');
+    expect(plan.flashcards).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          front: 'Panel transitions',
+          back: expect.stringMatching(/expectations/i),
+        }),
+      ]),
+    );
+    expect(plan.question_bank).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          prompt: expect.stringMatching(/debrief/i),
+          tags: expect.arrayContaining(['Strategy']),
+        }),
+      ]),
+    );
+  });
 });

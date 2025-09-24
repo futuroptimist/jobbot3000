@@ -1098,6 +1098,7 @@ function resolvePlanStage(args) {
   if (args.includes('--technical')) return 'technical';
   if (args.includes('--system-design') || args.includes('--system_design')) return 'system design';
   if (args.includes('--take-home') || args.includes('--takehome')) return 'take-home';
+  if (args.includes('--onsite')) return 'onsite';
   const explicit = getFlag(args, '--stage');
   return explicit;
 }
