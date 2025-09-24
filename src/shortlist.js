@@ -98,16 +98,35 @@ function normalizeDiscardList(list) {
 
 function cloneDiscardList(list) {
   if (!Array.isArray(list)) return [];
-  return list.map(entry => {
+  const clones = list.map(entry => {
     const clone = { ...entry };
     if (Array.isArray(clone.tags)) clone.tags = clone.tags.slice();
     return clone;
   });
+  clones.sort(compareDiscardEntries);
+  return clones;
+}
+
+function compareDiscardEntries(a, b) {
+  if (!a && !b) return 0;
+  if (!a) return 1;
+  if (!b) return -1;
+  const aTime = Date.parse(a.discarded_at);
+  const bTime = Date.parse(b.discarded_at);
+  const aValid = !Number.isNaN(aTime);
+  const bValid = !Number.isNaN(bTime);
+  if (aValid && bValid) {
+    if (aTime === bTime) return 0;
+    return aTime > bTime ? -1 : 1;
+  }
+  if (aValid) return -1;
+  if (bValid) return 1;
+  return 0;
 }
 
 function getLastDiscardSummary(discarded) {
   if (!Array.isArray(discarded) || discarded.length === 0) return undefined;
-  const latest = discarded[discarded.length - 1];
+  const latest = discarded[0];
   const summary = {};
   if (latest.reason) summary.reason = latest.reason;
   if (latest.discarded_at) summary.discarded_at = latest.discarded_at;
@@ -247,13 +266,14 @@ function sanitizeMetadataInput(metadata) {
 }
 
 function cloneRecord(record) {
+  const clonedDiscards = cloneDiscardList(record.discarded);
+  const summary = getLastDiscardSummary(clonedDiscards);
   const cloned = {
     tags: Array.isArray(record.tags) ? record.tags.slice() : [],
-    discarded: cloneDiscardList(record.discarded),
+    discarded: clonedDiscards,
     metadata: record.metadata ? { ...record.metadata } : {},
   };
   cloned.discard_count = cloned.discarded.length;
-  const summary = getLastDiscardSummary(cloned.discarded);
   if (summary) cloned.last_discard = summary;
   return cloned;
 }

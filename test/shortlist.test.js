@@ -217,4 +217,78 @@ describe('shortlist metadata sync and filters', () => {
     });
     expect(filtered.jobs['job-history'].discard_count).toBe(2);
   });
+
+  it('orders shortlist discard history newest first in exports', async () => {
+    const { discardJob, getShortlist, filterShortlist } = await import('../src/shortlist.js');
+
+    await discardJob('job-ordering', 'Initial pass', {
+      date: '2025-01-05T09:00:00Z',
+    });
+    await discardJob('job-ordering', 'Second review', {
+      date: '2025-02-15T10:00:00Z',
+    });
+    await discardJob('job-ordering', 'Latest revisit', {
+      date: '2025-03-20T11:00:00Z',
+    });
+
+    const snapshot = await getShortlist('job-ordering');
+    expect(snapshot.discarded.map(entry => entry.reason)).toEqual([
+      'Latest revisit',
+      'Second review',
+      'Initial pass',
+    ]);
+
+    const filtered = await filterShortlist();
+    expect(filtered.jobs['job-ordering'].discarded.map(entry => entry.reason)).toEqual([
+      'Latest revisit',
+      'Second review',
+      'Initial pass',
+    ]);
+  });
+
+  it('derives last_discard from the newest history entry even for newest-first files', async () => {
+    const fs = await import('node:fs/promises');
+    const snapshot = {
+      jobs: {
+        'job-legacy-order': {
+          tags: ['Remote'],
+          discarded: [
+            {
+              reason: 'Latest revisit',
+              discarded_at: '2025-03-20T11:00:00.000Z',
+              tags: ['Focus'],
+            },
+            {
+              reason: 'Initial pass',
+              discarded_at: '2025-01-05T09:00:00.000Z',
+              tags: ['Screening'],
+            },
+          ],
+          metadata: { location: 'Remote' },
+        },
+      },
+    };
+
+    await fs.writeFile(
+      path.join(dataDir, 'shortlist.json'),
+      `${JSON.stringify(snapshot, null, 2)}\n`,
+      'utf8'
+    );
+
+    const { getShortlist, filterShortlist } = await import('../src/shortlist.js');
+
+    const record = await getShortlist('job-legacy-order');
+    expect(record.last_discard).toEqual({
+      reason: 'Latest revisit',
+      discarded_at: '2025-03-20T11:00:00.000Z',
+      tags: ['Focus'],
+    });
+
+    const filtered = await filterShortlist();
+    expect(filtered.jobs['job-legacy-order'].last_discard).toEqual({
+      reason: 'Latest revisit',
+      discarded_at: '2025-03-20T11:00:00.000Z',
+      tags: ['Focus'],
+    });
+  });
 });

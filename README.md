@@ -625,7 +625,8 @@ reasons, timestamps, optional tags, and location/level/compensation fields so re
 surface patterns later. Review past decisions with `jobbot shortlist archive [job_id]` (add `--json`
 to inspect all records at once), which reads from `data/discarded_jobs.json` so archive lookups and
 shortlist history stay in sync. Archive views list the newest discard first so the latest rationale is
-visible immediately, while JSON exports include a `last_discard` summary and `discard_count`
+visible immediately, while JSON exports include a newest-first `discarded` array,
+`last_discard` summary, and `discard_count`
 so downstream tools can surface the most recent rationale and how often a role has been reconsidered
 without traversing the full history. Add `--json` to the
 shortlist list command when piping entries into other tools; include `--out <path>` to persist the
@@ -640,6 +641,10 @@ dollar sign (`--compensation "\$185k"`) when you need the digits preserved. Over
 symbol by setting `JOBBOT_SHORTLIST_CURRENCY` (for example, `JOBBOT_SHORTLIST_CURRENCY='€'`).
 Existing shortlist files missing a currency symbol are normalized on read using the same default so
 filters and reports stay consistent.
+Newest-first shortlist snapshots saved by earlier releases now derive `last_discard` from the
+leading entry, keeping the summary aligned with the exported history. Unit coverage in
+[`test/shortlist.test.js`](test/shortlist.test.js) locks in this legacy scenario alongside the discard
+ordering assertions so downstream tooling always sees the latest rationale in both fields.
 Unit tests in [`test/shortlist.test.js`](test/shortlist.test.js) and the CLI suite in
 [`test/cli.test.js`](test/cli.test.js) exercise metadata updates, tag filters, discard tags, archive
 exports, and the persisted format. Additional CLI coverage locks in the `(unknown time)` placeholder
