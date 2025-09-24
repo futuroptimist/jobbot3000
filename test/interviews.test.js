@@ -183,6 +183,26 @@ describe('generateRehearsalPlan', () => {
     );
   });
 
+  it('includes dialog trees with follow-up prompts for deeper rehearsal', async () => {
+    const { generateRehearsalPlan } = await import('../src/interviews.js');
+
+    const plan = generateRehearsalPlan({ stage: 'behavioral' });
+
+    expect(Array.isArray(plan.dialog_trees)).toBe(true);
+    expect(plan.dialog_trees.length).toBeGreaterThan(0);
+    expect(plan.dialog_trees).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          title: expect.stringContaining('Behavioral'),
+          prompt: expect.stringContaining('Interviewer'),
+          follow_ups: expect.arrayContaining([
+            expect.stringContaining('trade-off'),
+          ]),
+        }),
+      ]),
+    );
+  });
+
   it('honors duration overrides for system design plans', async () => {
     const { generateRehearsalPlan } = await import('../src/interviews.js');
 

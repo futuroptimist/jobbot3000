@@ -1532,6 +1532,7 @@ describe('jobbot CLI', () => {
     expect(output).toContain('Architecture');
     expect(output).toContain('Resources');
     expect(output).toContain('Flashcards');
+    expect(output).toContain('Dialog tree');
     expect(output).toContain('Question bank');
     expect(output).toMatch(/- Outline/);
   });

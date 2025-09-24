@@ -127,6 +127,16 @@ const PLAN_LIBRARY = {
         tags: ['Influence'],
       },
     ],
+    dialogTrees: [
+      {
+        title: 'Behavioral ambiguity',
+        prompt: 'Interviewer: Tell me about a time you led through ambiguity.',
+        followUps: [
+          'How did you surface the main trade-offs?',
+          'What outcome mattered most to stakeholders?',
+        ],
+      },
+    ],
   },
   Technical: {
     duration: 60,
@@ -187,6 +197,16 @@ const PLAN_LIBRARY = {
       {
         prompt: 'Implement an LRU cache and explain your trade-offs.',
         tags: ['Data Structures'],
+      },
+    ],
+    dialogTrees: [
+      {
+        title: 'Debugging deep dive',
+        prompt: 'Interviewer: A deploy introduced a latency spike. Where do you start?',
+        followUps: [
+          'Which signals confirm if the spike is systemic?',
+          'When do you roll back versus mitigate in place?',
+        ],
       },
     ],
   },
@@ -256,6 +276,16 @@ const PLAN_LIBRARY = {
         tags: ['Scalability'],
       },
     ],
+    dialogTrees: [
+      {
+        title: 'Capacity challenge',
+        prompt: 'Interviewer: Traffic doubled overnight. How do you steady the system?',
+        followUps: [
+          'Which metrics guide your first moves?',
+          'How do you communicate the trade-offs to partners?',
+        ],
+      },
+    ],
   },
   'Take-Home': {
     duration: 90,
@@ -314,6 +344,16 @@ const PLAN_LIBRARY = {
         tags: ['Communication'],
       },
     ],
+    dialogTrees: [
+      {
+        title: 'Reviewer sync',
+        prompt: 'Interviewer: Walk me through the scoping decisions in your submission.',
+        followUps: [
+          'What corners did you intentionally cut?',
+          'How would you extend the solution with another day?',
+        ],
+      },
+    ],
   },
 };
 
@@ -333,6 +373,34 @@ export function generateRehearsalPlan(options = {}) {
           const back = sanitizeString(card.back);
           if (!front || !back) return null;
           return { front, back };
+        })
+        .filter(Boolean)
+    : [];
+  const dialogTrees = Array.isArray(template.dialogTrees)
+    ? template.dialogTrees
+        .map(tree => {
+          const title = sanitizeString(tree.title);
+          const prompt = sanitizeString(tree.prompt);
+          let followUps;
+          if (Array.isArray(tree.followUps) && tree.followUps.length > 0) {
+            const normalized = [];
+            const seen = new Set();
+            for (const entry of tree.followUps) {
+              const value = sanitizeString(entry);
+              if (!value) continue;
+              const key = value.toLowerCase();
+              if (seen.has(key)) continue;
+              seen.add(key);
+              normalized.push(value);
+            }
+            if (normalized.length > 0) followUps = normalized;
+          }
+          if (!prompt && (!followUps || followUps.length === 0)) return null;
+          const payload = {};
+          if (title) payload.title = title;
+          if (prompt) payload.prompt = prompt;
+          if (followUps) payload.follow_ups = followUps;
+          return Object.keys(payload).length > 0 ? payload : null;
         })
         .filter(Boolean)
     : [];
@@ -368,6 +436,7 @@ export function generateRehearsalPlan(options = {}) {
     sections,
     resources: template.resources.slice(),
     flashcards,
+    dialog_trees: dialogTrees,
     question_bank: questionBank,
   };
 }

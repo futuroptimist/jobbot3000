@@ -777,6 +777,12 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot interviews plan --stage system-design --rol
 # - Capacity planning → Quantify QPS, latency budgets, and storage needs upfront.
 # - Resilience checklist → Map failure domains, redundancy, and rollback strategies.
 #
+# Dialog tree: Capacity challenge
+# - Interviewer: Traffic doubled overnight. How do you steady the system?
+#   Follow-ups:
+#     - Which metrics guide your first moves?
+#     - How do you communicate the trade-offs to partners?
+#
 # Question bank
 # 1. Design a multi-region feature flag service. (Reliability)
 # 2. Scale a read-heavy API to millions of users. (Scalability)
@@ -817,9 +823,10 @@ longer inputs (for example, `--transcript-file transcript.md`). Automated covera
 [`test/interviews.test.js`](test/interviews.test.js) and [`test/cli.test.js`](test/cli.test.js)
 verifies persistence, retrieval paths, stage/mode shortcuts, the defaulted rehearse metadata,
 manual recordings inheriting the same Behavioral/Voice defaults, and the stage-specific rehearsal
-plans emitted by `jobbot interviews plan`. Plans now include a `Flashcards` checklist and a
-numbered `Question bank` so candidates can drill concepts by focus area; the updated tests assert
-that both sections appear in JSON and CLI output.
+plans emitted by `jobbot interviews plan`. Plans now include a `Flashcards` checklist, a branching
+`Dialog tree`, and a numbered `Question bank` so candidates can drill concepts by focus area; the
+updated tests assert that all sections appear in JSON and CLI output, including the new
+`dialog_trees` payload for automation.
 
 ## Deliverable bundles
 
