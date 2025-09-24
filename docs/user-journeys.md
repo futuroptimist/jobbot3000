@@ -76,6 +76,10 @@ revisit them later without blocking the workflow.
    and records sync metadata with `jobbot shortlist sync` so future refreshes know
    when entries were last updated. Add `--json` (and optionally
    `--out <path>`) when exporting the filtered shortlist to other tools.
+5. Teams can automate recurring ingestion and matching runs with
+   `jobbot schedule run --config <file> [--cycles <count>]`. Configured tasks pull
+   boards on a cadence and compute fit scores against the latest resume so the
+   shortlist stays fresh without manual commands.
 
 **Unhappy paths:** fetch failures or ToS blocks surface actionable error messages and never retry
 aggressively to respect rate limits.

@@ -47,6 +47,7 @@ import { computeFunnel, exportAnalyticsSnapshot, formatFunnelReport } from '../s
 import { ingestWorkableBoard } from '../src/workable.js';
 import { ingestJobUrl } from '../src/url-ingest.js';
 import { bundleDeliverables } from '../src/deliverables.js';
+import { createTaskScheduler, loadScheduleConfig, buildScheduledTasks } from '../src/schedule.js';
 
 function isHttpUrl(s) {
   return /^https?:\/\//i.test(s);
@@ -1033,6 +1034,68 @@ async function cmdDeliverables(args) {
   process.exit(2);
 }
 
+async function cmdScheduleRun(args) {
+  const configPath = getFlag(args, '--config');
+  const cycles = getNumberFlag(args, '--cycles');
+  if (!configPath) {
+    console.error('Usage: jobbot schedule run --config <file> [--cycles <count>]');
+    process.exit(2);
+  }
+  if (cycles !== undefined && (!Number.isFinite(cycles) || cycles <= 0)) {
+    console.error('--cycles must be a positive number');
+    process.exit(2);
+  }
+
+  let definitions;
+  try {
+    definitions = await loadScheduleConfig(configPath);
+  } catch (err) {
+    console.error(err.message || String(err));
+    process.exit(1);
+  }
+
+  if (definitions.length === 0) {
+    console.error('No scheduled tasks found in the configuration file');
+    process.exit(1);
+  }
+
+  const logger = {
+    info: message => console.log(message),
+    error: message => console.error(message),
+  };
+
+  const tasks = buildScheduledTasks(definitions, {
+    logger,
+    cycles,
+    now: () => new Date(),
+  });
+
+  const scheduler = createTaskScheduler(tasks);
+
+  const handleSignal = () => {
+    scheduler.stop();
+  };
+
+  process.once('SIGINT', handleSignal);
+  process.once('SIGTERM', handleSignal);
+
+  scheduler.start();
+
+  try {
+    await scheduler.whenIdle();
+  } finally {
+    process.off('SIGINT', handleSignal);
+    process.off('SIGTERM', handleSignal);
+  }
+}
+
+async function cmdSchedule(args) {
+  const sub = args[0];
+  if (sub === 'run') return cmdScheduleRun(args.slice(1));
+  console.error('Usage: jobbot schedule <run> [options]');
+  process.exit(2);
+}
+
 async function cmdInterviewsRecord(args) {
   const jobId = args[0];
   const sessionId = args[1];
@@ -1323,9 +1386,10 @@ async function main() {
   if (cmd === 'intake') return cmdIntake(args);
   if (cmd === 'ingest') return cmdIngest(args);
   if (cmd === 'interviews') return cmdInterviews(args);
+  if (cmd === 'schedule') return cmdSchedule(args);
   console.error(
     'Usage: jobbot <init|import|summarize|match|track|shortlist|analytics|' +
-      'rehearse|deliverables|interviews|intake|ingest> [options]'
+      'rehearse|deliverables|interviews|intake|ingest|schedule> [options]'
   );
   process.exit(2);
 }
