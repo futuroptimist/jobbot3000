@@ -874,6 +874,22 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot interviews plan --stage system-design --rol
 # - System design checklist
 # - Capacity planning worksheet
 
+# Keep recruiter phone screens tight by centering the pitch, motivators, and logistics
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot interviews plan --stage screen --role "Engineering Manager"
+# Screen rehearsal plan
+# Role focus: Engineering Manager
+# Suggested duration: 30 minutes
+#
+# Lead the recruiter screen with a crisp narrative, clear motivators, and shared expectations.
+#
+# Pitch warm-up
+# - Draft a 60-second story tying recent wins to the Engineering Manager opportunity.
+# - Line up 2-3 follow-up examples with metrics and outcomes ready to share.
+#
+# Logistics & next steps
+# - Confirm timeline, interview loop, and decision process before hanging up.
+# - Prepare salary, location, and availability guardrails with data points.
+
 # Prep the onsite loop with logistics, dialog drills, and follow-up checklists
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot interviews plan --onsite
 # Onsite rehearsal plan
@@ -950,9 +966,10 @@ rehearsal plans emitted by `jobbot interviews plan`. Plans now include a
 `Flashcards` checklist, a numbered `Question bank`, and a branching `Dialog tree` so candidates can
 drill concepts by focus area and practice follow-ups; the updated tests assert that all sections
 appear in JSON and CLI output. New coverage in [`test/interviews.test.js`](test/interviews.test.js)
-locks in the Onsite logistics plan’s dialog prompts, agenda review, energy resets, and thank-you
-follow-ups, while [`test/cli.test.js`](test/cli.test.js) confirms the CLI surfaces those transitions
-and audio metadata consistently across releases.
+locks in the Onsite logistics plan’s dialog prompts alongside the recruiter screen pitch and
+timeline checkpoints, while [`test/cli.test.js`](test/cli.test.js) confirms the CLI surfaces the
+screen plan’s timeline reminders, stage transitions, and audio metadata consistently across
+releases.
 
 ## Deliverable bundles
 
