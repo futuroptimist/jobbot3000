@@ -1101,6 +1101,58 @@ clobber history and that invalid channels or dates are rejected.
 outputs, including channel-first bullet formatting and reminder labels, so the
 note-taking surface stays reliable.
 
+Summarize the lifecycle board with `jobbot track board` to see which stage each
+application currently occupies. The board prints lifecycle columns in the
+defined order (including `next_round` and the acceptance synonyms) and orders
+entries newest-first within each column:
+
+```bash
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track board
+# No Response
+# - job-4 (2025-03-02T17:30:00.000Z)
+#
+# Screening
+# - job-1 (2025-03-05T12:00:00.000Z)
+#   Note: Awaiting recruiter reply
+#   Reminder: 2025-03-07T09:00:00.000Z (follow_up, upcoming)
+#   Reminder Note: Send prep agenda
+#   Reminder Contact: Avery Hiring Manager
+#
+# Onsite
+# - job-2 (2025-03-06T15:45:00.000Z)
+#
+# Offer
+# - job-3 (2025-03-07T10:15:00.000Z)
+#   Note: Prep for negotiation call
+#   Reminder: 2025-03-08T16:00:00.000Z (call, upcoming)
+
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track board --json | jq '.columns[1]'
+# {
+#   "status": "screening",
+#   "jobs": [
+#     {
+#       "job_id": "job-1",
+#       "status": "screening",
+#       "updated_at": "2025-03-05T12:00:00.000Z",
+#       "note": "Awaiting recruiter reply",
+#       "reminder": {
+#         "job_id": "job-1",
+#         "remind_at": "2025-03-07T09:00:00.000Z",
+#         "past_due": false,
+#         "channel": "follow_up",
+#         "note": "Send prep agenda",
+#         "contact": "Avery Hiring Manager"
+#       }
+#     }
+#   ]
+# }
+```
+
+Notes stay attached to each entry so checklists remain visible alongside due
+reminders and outreach history when triaging the pipeline. Each job now shows
+the next reminder (with channel, note, and contact) directly on the board, and
+JSON payloads expose the same `reminder` object for downstream tooling.
+
 Surface follow-up work with `jobbot track reminders`. Pass `--now` to view from a
 given timestamp (defaults to the current time), `--upcoming-only` to suppress past-due
 entries, and `--json` for structured output. The digest groups results by urgency so

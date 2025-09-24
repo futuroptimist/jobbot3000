@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, afterEach, test, expect } from 'vitest';
-import { recordApplication, getLifecycleCounts } from '../src/lifecycle.js';
+import { recordApplication, getLifecycleCounts, getLifecycleBoard } from '../src/lifecycle.js';
 
 let dataDir;
 
@@ -131,6 +131,58 @@ test('handles concurrent status updates across all lifecycle statuses', async ()
 test('returns zero counts when lifecycle file is missing', async () => {
   const counts = await getLifecycleCounts();
   expect(counts).toEqual(expectedCounts());
+});
+
+test('organizes lifecycle entries into ordered board columns', async () => {
+  await recordApplication('job-screening-old', 'screening', {
+    note: 'Waiting for recruiter reply',
+    date: '2025-02-01T10:00:00Z',
+  });
+  await recordApplication('job-screening-new', 'screening', {
+    date: '2025-02-03T09:00:00Z',
+  });
+  await recordApplication('job-offer', 'offer', {
+    note: 'Review offer details',
+    date: '2025-02-04T08:30:00Z',
+  });
+
+  // Legacy data: raw string values should still surface in the board without timestamps.
+  const legacyPath = path.join(dataDir, 'applications.json');
+  const raw = JSON.parse(await fs.readFile(legacyPath, 'utf8'));
+  raw['job-legacy'] = 'next_round';
+  await fs.writeFile(legacyPath, JSON.stringify(raw, null, 2));
+
+  const board = await getLifecycleBoard();
+  expect(board[0]).toMatchObject({ status: 'no_response', jobs: [] });
+  const screeningColumn = board.find(column => column.status === 'screening');
+  expect(screeningColumn?.jobs.map(job => job.job_id)).toEqual([
+    'job-screening-new',
+    'job-screening-old',
+  ]);
+  expect(screeningColumn?.jobs[0]).toMatchObject({
+    job_id: 'job-screening-new',
+    status: 'screening',
+    updated_at: '2025-02-03T09:00:00.000Z',
+    note: undefined,
+  });
+  expect(screeningColumn?.jobs[1]).toMatchObject({
+    job_id: 'job-screening-old',
+    note: 'Waiting for recruiter reply',
+  });
+
+  const offerColumn = board.find(column => column.status === 'offer');
+  expect(offerColumn?.jobs).toEqual([
+    expect.objectContaining({
+      job_id: 'job-offer',
+      note: 'Review offer details',
+      updated_at: '2025-02-04T08:30:00.000Z',
+    }),
+  ]);
+
+  const nextRoundColumn = board.find(column => column.status === 'next_round');
+  expect(nextRoundColumn?.jobs).toEqual([
+    expect.objectContaining({ job_id: 'job-legacy', updated_at: undefined }),
+  ]);
 });
 
 test('ignores unknown statuses when summarizing lifecycle data', async () => {

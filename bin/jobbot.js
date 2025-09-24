@@ -21,7 +21,7 @@ import {
   getApplicationEvents,
   getApplicationReminders,
 } from '../src/application-events.js';
-import { recordApplication, STATUSES } from '../src/lifecycle.js';
+import { recordApplication, getLifecycleBoard, STATUSES } from '../src/lifecycle.js';
 import {
   getDiscardedJobs,
   normalizeDiscardEntries,
@@ -352,6 +352,13 @@ function parseDocumentsFlag(args) {
     .filter(Boolean);
 }
 
+function formatStatusLabel(status) {
+  return status
+    .split('_')
+    .map(part => (part ? part[0].toUpperCase() + part.slice(1) : part))
+    .join(' ');
+}
+
 async function cmdTrackLog(args) {
   const jobId = args[0];
   const channel = getFlag(args, '--channel');
@@ -465,6 +472,77 @@ async function cmdTrackReminders(args) {
   }
 
   if (lines[lines.length - 1] === '') lines.pop();
+
+  console.log(lines.join('\n'));
+}
+
+async function cmdTrackBoard(args) {
+  const asJson = args.includes('--json');
+
+  let columns;
+  let reminders = [];
+  try {
+    columns = await getLifecycleBoard();
+    reminders = await getApplicationReminders({ includePastDue: true });
+  } catch (err) {
+    console.error(err.message || String(err));
+    process.exit(1);
+  }
+
+  const reminderByJob = new Map();
+  for (const reminder of reminders) {
+    if (!reminder || typeof reminder.job_id !== 'string') continue;
+    if (reminderByJob.has(reminder.job_id)) continue;
+    reminderByJob.set(reminder.job_id, reminder);
+  }
+
+  for (const column of columns) {
+    for (const job of column.jobs) {
+      const reminder = reminderByJob.get(job.job_id);
+      if (reminder) {
+        job.reminder = reminder;
+      }
+    }
+  }
+
+  if (asJson) {
+    console.log(JSON.stringify({ columns }, null, 2));
+    return;
+  }
+
+  const total = columns.reduce((sum, column) => sum + column.jobs.length, 0);
+  if (total === 0) {
+    console.log('No applications tracked');
+    return;
+  }
+
+  const lines = [];
+  for (const column of columns) {
+    if (column.jobs.length === 0) continue;
+    lines.push(formatStatusLabel(column.status));
+    for (const job of column.jobs) {
+      const timestamp = job.updated_at ? job.updated_at : 'no timestamp';
+      lines.push(`- ${job.job_id} (${timestamp})`);
+      if (job.note) lines.push(`  Note: ${job.note}`);
+      if (job.reminder) {
+        const descriptors = [];
+        if (job.reminder.channel) descriptors.push(job.reminder.channel);
+        descriptors.push(job.reminder.past_due ? 'past due' : 'upcoming');
+        lines.push(`  Reminder: ${job.reminder.remind_at} (${descriptors.join(', ')})`);
+        if (job.reminder.note) {
+          lines.push(`  Reminder Note: ${job.reminder.note}`);
+        }
+        if (job.reminder.contact) {
+          lines.push(`  Reminder Contact: ${job.reminder.contact}`);
+        }
+      }
+    }
+    lines.push('');
+  }
+
+  while (lines.length > 0 && lines[lines.length - 1] === '') {
+    lines.pop();
+  }
 
   console.log(lines.join('\n'));
 }
@@ -671,7 +749,8 @@ async function cmdTrack(args) {
   if (sub === 'history') return cmdTrackHistory(args.slice(1));
   if (sub === 'discard') return cmdTrackDiscard(args.slice(1));
   if (sub === 'reminders') return cmdTrackReminders(args.slice(1));
-  console.error('Usage: jobbot track <add|log|history|discard|reminders> ...');
+  if (sub === 'board') return cmdTrackBoard(args.slice(1));
+  console.error('Usage: jobbot track <add|log|history|discard|reminders|board> ...');
   process.exit(2);
 }
 
