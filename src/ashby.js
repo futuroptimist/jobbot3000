@@ -1,19 +1,13 @@
 import fetch from 'node-fetch';
-import {
-  extractTextFromHtml,
-  fetchWithRetry,
-  setFetchRateLimit,
-  normalizeRateLimitInterval,
-} from './fetch.js';
+import { extractTextFromHtml } from './fetch.js';
+import { httpRequest, DEFAULT_HTTP_HEADERS, normalizeRateLimitInterval } from './services/http.js';
 import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
 import { parseJobText } from './parser.js';
 
 const ASHBY_BASE = 'https://jobs.ashbyhq.com/api/postings';
 
-const ASHBY_HEADERS = {
-  'User-Agent': 'jobbot3000',
-  Accept: 'application/json',
-};
+const ASHBY_HEADERS = { Accept: 'application/json' };
+const ASHBY_REQUEST_HEADERS = { ...DEFAULT_HTTP_HEADERS, ...ASHBY_HEADERS };
 const ASHBY_RATE_LIMIT_MS = normalizeRateLimitInterval(
   process.env.JOBBOT_ASHBY_RATE_LIMIT_MS,
   500,
@@ -81,16 +75,11 @@ export async function fetchAshbyJobs(org, { fetchImpl = fetch, retry } = {}) {
   const slug = normalizeOrgSlug(org);
   const url = buildOrgUrl(slug);
   const rateLimitKey = `ashby:${slug}`;
-  if (ASHBY_RATE_LIMIT_MS > 0) {
-    setFetchRateLimit(rateLimitKey, ASHBY_RATE_LIMIT_MS);
-  } else {
-    setFetchRateLimit(rateLimitKey, 0);
-  }
-  const response = await fetchWithRetry(url, {
+  const response = await httpRequest(url, {
     fetchImpl,
-    headers: ASHBY_HEADERS,
     retry,
-    rateLimitKey,
+    headers: ASHBY_HEADERS,
+    rateLimit: { key: rateLimitKey, intervalMs: ASHBY_RATE_LIMIT_MS },
   });
   if (!response.ok) {
     throw new Error(
@@ -116,7 +105,7 @@ export async function ingestAshbyBoard({ org, fetchImpl = fetch, retry } = {}) {
       raw,
       parsed,
       source: { type: 'ashby', value: jobUrl },
-      requestHeaders: ASHBY_HEADERS,
+      requestHeaders: ASHBY_REQUEST_HEADERS,
       fetchedAt: job.updatedAt ?? job.publishedDate,
     });
     jobIds.push(id);
@@ -124,3 +113,4 @@ export async function ingestAshbyBoard({ org, fetchImpl = fetch, retry } = {}) {
 
   return { org: slug, saved: jobIds.length, jobIds };
 }
+

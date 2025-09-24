@@ -1,15 +1,11 @@
 import fetch from 'node-fetch';
-import {
-  extractTextFromHtml,
-  fetchWithRetry,
-  setFetchRateLimit,
-  normalizeRateLimitInterval,
-} from './fetch.js';
+import { extractTextFromHtml } from './fetch.js';
+import { httpRequest, DEFAULT_HTTP_HEADERS, normalizeRateLimitInterval } from './services/http.js';
 import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
 import { parseJobText } from './parser.js';
 
 const LEVER_BASE = 'https://api.lever.co/v0/postings';
-const LEVER_HEADERS = { 'User-Agent': 'jobbot3000' };
+const LEVER_REQUEST_HEADERS = { ...DEFAULT_HTTP_HEADERS };
 const LEVER_RATE_LIMIT_MS = normalizeRateLimitInterval(
   process.env.JOBBOT_LEVER_RATE_LIMIT_MS,
   500,
@@ -61,16 +57,10 @@ export async function fetchLeverJobs(org, { fetchImpl = fetch, retry } = {}) {
   const slug = normalizeOrgSlug(org);
   const url = buildOrgUrl(slug);
   const rateLimitKey = `lever:${slug}`;
-  if (LEVER_RATE_LIMIT_MS > 0) {
-    setFetchRateLimit(rateLimitKey, LEVER_RATE_LIMIT_MS);
-  } else {
-    setFetchRateLimit(rateLimitKey, 0);
-  }
-  const response = await fetchWithRetry(url, {
+  const response = await httpRequest(url, {
     fetchImpl,
-    headers: LEVER_HEADERS,
     retry,
-    rateLimitKey,
+    rateLimit: { key: rateLimitKey, intervalMs: LEVER_RATE_LIMIT_MS },
   });
   if (!response.ok) {
     throw new Error(`Failed to fetch Lever org ${slug}: ${response.status} ${response.statusText}`);
@@ -93,7 +83,7 @@ export async function ingestLeverBoard({ org, fetchImpl = fetch, retry } = {}) {
       raw,
       parsed,
       source: { type: 'lever', value: hostedUrl },
-      requestHeaders: LEVER_HEADERS,
+      requestHeaders: LEVER_REQUEST_HEADERS,
       fetchedAt: job.updatedAt ?? job.createdAt,
     });
     jobIds.push(id);

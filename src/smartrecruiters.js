@@ -1,15 +1,11 @@
 import fetch from 'node-fetch';
-import {
-  extractTextFromHtml,
-  fetchWithRetry,
-  setFetchRateLimit,
-  normalizeRateLimitInterval,
-} from './fetch.js';
+import { extractTextFromHtml } from './fetch.js';
+import { httpRequest, DEFAULT_HTTP_HEADERS, normalizeRateLimitInterval } from './services/http.js';
 import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
 import { parseJobText } from './parser.js';
 
 const SMARTRECRUITERS_BASE = 'https://api.smartrecruiters.com/v1/companies';
-const SMARTRECRUITERS_HEADERS = { 'User-Agent': 'jobbot3000' };
+const SMARTRECRUITERS_REQUEST_HEADERS = { ...DEFAULT_HTTP_HEADERS };
 const DEFAULT_LIMIT = 100;
 const SMARTRECRUITERS_RATE_LIMIT_MS = normalizeRateLimitInterval(
   process.env.JOBBOT_SMARTRECRUITERS_RATE_LIMIT_MS,
@@ -81,19 +77,12 @@ export async function fetchSmartRecruitersPostings(company, { fetchImpl = fetch,
   const postings = [];
   let offset = 0;
   const rateLimitKey = `smartrecruiters:${slug}`;
-  if (SMARTRECRUITERS_RATE_LIMIT_MS > 0) {
-    setFetchRateLimit(rateLimitKey, SMARTRECRUITERS_RATE_LIMIT_MS);
-  } else {
-    setFetchRateLimit(rateLimitKey, 0);
-  }
-
   while (true) {
     const url = buildListUrl(slug, offset);
-    const response = await fetchWithRetry(url, {
+    const response = await httpRequest(url, {
       fetchImpl,
-      headers: SMARTRECRUITERS_HEADERS,
       retry,
-      rateLimitKey,
+      rateLimit: { key: rateLimitKey, intervalMs: SMARTRECRUITERS_RATE_LIMIT_MS },
     });
     if (!response.ok) {
       const statusLabel = `${response.status} ${response.statusText}`;
@@ -118,19 +107,13 @@ export async function ingestSmartRecruitersBoard({ company, fetchImpl = fetch, r
   const { slug, postings } = await fetchSmartRecruitersPostings(company, { fetchImpl, retry });
   const jobIds = [];
   const rateLimitKey = `smartrecruiters:${slug}`;
-  if (SMARTRECRUITERS_RATE_LIMIT_MS > 0) {
-    setFetchRateLimit(rateLimitKey, SMARTRECRUITERS_RATE_LIMIT_MS);
-  } else {
-    setFetchRateLimit(rateLimitKey, 0);
-  }
 
   for (const posting of postings) {
     const detailUrl = resolveDetailUrl(slug, posting);
-    const detailResponse = await fetchWithRetry(detailUrl, {
+    const detailResponse = await httpRequest(detailUrl, {
       fetchImpl,
-      headers: SMARTRECRUITERS_HEADERS,
       retry,
-      rateLimitKey,
+      rateLimit: { key: rateLimitKey, intervalMs: SMARTRECRUITERS_RATE_LIMIT_MS },
     });
     if (!detailResponse.ok) {
       const statusLabel = `${detailResponse.status} ${detailResponse.statusText}`;
@@ -154,7 +137,7 @@ export async function ingestSmartRecruitersBoard({ company, fetchImpl = fetch, r
       raw,
       parsed,
       source: { type: 'smartrecruiters', value: postingUrl },
-      requestHeaders: SMARTRECRUITERS_HEADERS,
+      requestHeaders: SMARTRECRUITERS_REQUEST_HEADERS,
       fetchedAt: detail?.releasedDate ?? posting?.releasedDate,
     });
     jobIds.push(id);
@@ -162,3 +145,4 @@ export async function ingestSmartRecruitersBoard({ company, fetchImpl = fetch, r
 
   return { company: slug, saved: jobIds.length, jobIds };
 }
+

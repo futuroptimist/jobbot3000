@@ -72,8 +72,10 @@ intricate details. Introducing thin wrappers would preserve flexibility while pr
 entry points.
 
 **Suggested Steps**
-- Publish a `src/services/http.js` wrapper that configures sensible defaults (timeouts, rate limits,
-  user-agent) so feature modules call a single helper instead of wiring `fetchWithRetry` manually.
+- `src/services/http.js` now centralizes sensible defaults (timeouts, rate limits, user-agent) for
+  HTTP work and ships lifecycle hooks (`onStart`, `onSuccess`, `onError`) so future connectors inherit
+  observability without duplicating boilerplate. See `test/services-http.test.js` for examples that
+  exercise default headers, rate limits, and the hook callbacks.
 - Extract the sentence segmentation logic into a dedicated `SentenceExtractor` class with clearly
   named methods (`next()`, `reset()`), making it easier to reuse outside `summarize`.
 - Write usage examples in JSDoc for the new wrappers and mirror them in the README to accelerate

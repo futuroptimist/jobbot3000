@@ -1,18 +1,14 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import fetch from 'node-fetch';
-import {
-  extractTextFromHtml,
-  fetchWithRetry,
-  setFetchRateLimit,
-  normalizeRateLimitInterval,
-} from './fetch.js';
+import { extractTextFromHtml } from './fetch.js';
+import { httpRequest, DEFAULT_HTTP_HEADERS, normalizeRateLimitInterval } from './services/http.js';
 import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
 import { parseJobText } from './parser.js';
 
 const GREENHOUSE_BASE = 'https://boards.greenhouse.io/v1/boards';
 
-const GREENHOUSE_HEADERS = { 'User-Agent': 'jobbot3000' };
+const GREENHOUSE_REQUEST_HEADERS = { ...DEFAULT_HTTP_HEADERS };
 const GREENHOUSE_RATE_LIMIT_MS = normalizeRateLimitInterval(
   process.env.JOBBOT_GREENHOUSE_RATE_LIMIT_MS,
   500,
@@ -120,22 +116,21 @@ export async function fetchGreenhouseJobs(board, { fetchImpl = fetch, retry } = 
   const url = buildBoardUrl(slug);
   const cacheMetadata = await readCacheMetadata(slug);
   const rateLimitKey = `greenhouse:${slug}`;
-  if (GREENHOUSE_RATE_LIMIT_MS > 0) {
-    setFetchRateLimit(rateLimitKey, GREENHOUSE_RATE_LIMIT_MS, {
-      lastInvokedAt: cacheMetadata.fetchedAt,
-    });
-  } else {
-    setFetchRateLimit(rateLimitKey, 0);
+  const conditionalHeaders = {};
+  if (cacheMetadata.etag) conditionalHeaders['If-None-Match'] = cacheMetadata.etag;
+  if (cacheMetadata.lastModified) {
+    conditionalHeaders['If-Modified-Since'] = cacheMetadata.lastModified;
   }
-  const headers = { ...GREENHOUSE_HEADERS };
-  if (cacheMetadata.etag) headers['If-None-Match'] = cacheMetadata.etag;
-  if (cacheMetadata.lastModified) headers['If-Modified-Since'] = cacheMetadata.lastModified;
 
-  const response = await fetchWithRetry(url, {
+  const response = await httpRequest(url, {
     fetchImpl,
-    headers,
     retry,
-    rateLimitKey,
+    headers: conditionalHeaders,
+    rateLimit: {
+      key: rateLimitKey,
+      intervalMs: GREENHOUSE_RATE_LIMIT_MS,
+      lastInvokedAt: cacheMetadata.fetchedAt,
+    },
   });
 
   const notModified = response.status === 304;
@@ -181,7 +176,7 @@ export async function ingestGreenhouseBoard({ board, fetchImpl = fetch, retry } 
       raw: text,
       parsed,
       source: { type: 'greenhouse', value: absoluteUrl },
-      requestHeaders: GREENHOUSE_HEADERS,
+      requestHeaders: GREENHOUSE_REQUEST_HEADERS,
       fetchedAt: job.updated_at,
     });
     jobIds.push(id);
