@@ -35,6 +35,9 @@ echo "First. Second. Third." | npx jobbot summarize - --sentences 2 --text
 npx jobbot summarize job.txt --docx output/summary.docx
 # => Markdown summary prints to stdout; DOCX saved to output/summary.docx
 
+# Bump the remote fetch limit to 5 MB when summarizing large postings
+npx jobbot summarize https://example.com/job --max-bytes 5242880
+
 # Localize summary headings in Spanish
 npx jobbot summarize job.txt --docx output/summary-es.docx --locale es
 # => Markdown and DOCX outputs use translated labels
@@ -108,7 +111,10 @@ override it. Responses
 over 1 MB are rejected; override with `maxBytes` to adjust. Only `http` and
 `https` URLs are supported; other protocols throw an error. Requests to
 loopback, link-local, carrier-grade NAT, or other private network addresses
-are blocked to prevent server-side request forgery (SSRF). Hostnames that
+are blocked to prevent server-side request forgery (SSRF). The CLI equivalents
+(`jobbot summarize`, `jobbot match`, and `jobbot ingest url`) accept `--max-bytes`
+to raise the limit for unusually large postings while retaining the default 1 MB
+guardrail for typical runs. Hostnames that
 resolve to those private ranges (for example, `127.0.0.1.nip.io`) are rejected
 as well; `test/fetch.test.js` now asserts both generic and nip.io guardrails.
 Calls targeting the same protocol/host pair are serialized so a host only sees
@@ -427,6 +433,9 @@ JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot ingest workable --company example
 
 JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot ingest url https://example.com/jobs/staff-engineer
 # Imported job 5d41402abc4b2a76 from https://example.com/jobs/staff-engineer
+
+# Raise the ingest snapshot limit to 5 MB for unusually long postings
+JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot ingest url https://example.com/big-role --max-bytes 5242880
 ```
 
 Each listing in the response is normalised to plain text, parsed for title,

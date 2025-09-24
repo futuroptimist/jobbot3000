@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { summarize as summarizeFirstSentence } from '../src/index.js';
 import { fetchTextFromUrl, DEFAULT_FETCH_HEADERS } from '../src/fetch.js';
 import { parseJobText } from '../src/parser.js';
@@ -173,10 +174,10 @@ async function writeDocxFile(targetPath, buffer) {
   await fs.promises.writeFile(resolved, buffer);
 }
 
-async function cmdSummarize(args) {
+export async function cmdSummarize(args) {
   const usage =
     'Usage: jobbot summarize <file|url|-> [--json] [--text] [--sentences <count>] ' +
-    '[--docx <path>] [--locale <code>]';
+    '[--docx <path>] [--locale <code>] [--max-bytes <bytes>]';
   const input = args[0] || '-';
   const format = args.includes('--json')
     ? 'json'
@@ -197,11 +198,16 @@ async function cmdSummarize(args) {
     process.exit(2);
   }
   const timeoutMs = getNumberFlag(args, '--timeout', 10000);
+  const maxBytes = getNumberFlag(args, '--max-bytes');
   const count = getNumberFlag(args, '--sentences', 1);
   const fetchingRemote = isHttpUrl(input);
   const requestHeaders = fetchingRemote ? { ...DEFAULT_FETCH_HEADERS } : undefined;
+  const fetchOptions = { timeoutMs, headers: requestHeaders };
+  if (Number.isFinite(maxBytes) && maxBytes > 0) {
+    fetchOptions.maxBytes = maxBytes;
+  }
   const raw = fetchingRemote
-    ? await fetchTextFromUrl(input, { timeoutMs, headers: requestHeaders })
+    ? await fetchTextFromUrl(input, fetchOptions)
     : await readSource(input);
   const parsed = parseJobText(raw);
   const summary = summarizeFirstSentence(raw, count);
@@ -220,11 +226,11 @@ async function cmdSummarize(args) {
   else console.log(toMarkdownSummary(localizedPayload));
 }
 
-async function cmdMatch(args) {
+export async function cmdMatch(args) {
   const resumeIdx = args.indexOf('--resume');
   const usage =
     'Usage: jobbot match --resume <file> --job <file|url> [--json] [--explain] ' +
-    '[--docx <path>] [--locale <code>]';
+    '[--docx <path>] [--locale <code>] [--max-bytes <bytes>]';
   if (resumeIdx === -1 || !args[resumeIdx + 1]) {
     console.error(usage);
     process.exit(2);
@@ -250,13 +256,18 @@ async function cmdMatch(args) {
     process.exit(2);
   }
   const timeoutMs = getNumberFlag(args, '--timeout', 10000);
+  const maxBytes = getNumberFlag(args, '--max-bytes');
   const resumePath = args[resumeIdx + 1];
   const jobInput = args[jobIdx + 1];
   const resumeText = await loadResume(resumePath);
   const jobUrl = isHttpUrl(jobInput) ? jobInput : undefined;
   const requestHeaders = jobUrl ? { ...DEFAULT_FETCH_HEADERS } : undefined;
+  const fetchOptions = { timeoutMs, headers: requestHeaders };
+  if (Number.isFinite(maxBytes) && maxBytes > 0) {
+    fetchOptions.maxBytes = maxBytes;
+  }
   const jobRaw = jobUrl
-    ? await fetchTextFromUrl(jobUrl, { timeoutMs, headers: requestHeaders })
+    ? await fetchTextFromUrl(jobUrl, fetchOptions)
     : await readSource(jobInput);
   const parsed = parseJobText(jobRaw);
   const { score, matched, missing, must_haves_missed, keyword_overlap } = computeFitScore(
@@ -818,18 +829,23 @@ async function cmdIngestWorkable(args) {
   console.log(`Imported ${saved} ${noun} from ${account}`);
 }
 
-async function cmdIngestUrl(args) {
+export async function cmdIngestUrl(args) {
   const targetUrl = args[0];
   const rest = args.slice(1);
   if (!targetUrl) {
-    console.error('Usage: jobbot ingest url <url> [--timeout <ms>]');
+    console.error('Usage: jobbot ingest url <url> [--timeout <ms>] [--max-bytes <bytes>]');
     process.exit(2);
   }
 
   const timeoutMs = getNumberFlag(rest, '--timeout', 10000);
+  const maxBytes = getNumberFlag(rest, '--max-bytes');
 
   try {
-    const { id } = await ingestJobUrl({ url: targetUrl, timeoutMs });
+    const options = { url: targetUrl, timeoutMs };
+    if (Number.isFinite(maxBytes) && maxBytes > 0) {
+      options.maxBytes = maxBytes;
+    }
+    const { id } = await ingestJobUrl(options);
     console.log(`Imported job ${id} from ${targetUrl}`);
   } catch (err) {
     console.error(err.message || String(err));
@@ -848,7 +864,7 @@ async function cmdIngest(args) {
   console.error(
     'Usage: jobbot ingest <greenhouse|lever|ashby|smartrecruiters|workable> --company <slug>',
   );
-  console.error('   or: jobbot ingest url <url> [--timeout <ms>]');
+  console.error('   or: jobbot ingest url <url> [--timeout <ms>] [--max-bytes <bytes>]');
   process.exit(2);
 }
 
@@ -1578,7 +1594,29 @@ async function main() {
   process.exit(2);
 }
 
-main().catch(err => {
-  console.error(err.message || String(err));
-  process.exit(1);
-});
+const entryPath = (() => {
+  try {
+    const entryCandidate = process.argv[1];
+    if (!entryCandidate) {
+      return undefined;
+    }
+    return fs.realpathSync(entryCandidate);
+  } catch {
+    return undefined;
+  }
+})();
+
+const modulePath = (() => {
+  try {
+    return fs.realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return undefined;
+  }
+})();
+
+if (entryPath && modulePath && modulePath === entryPath) {
+  main().catch(err => {
+    console.error(err.message || String(err));
+    process.exit(1);
+  });
+}
