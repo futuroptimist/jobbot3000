@@ -1471,10 +1471,14 @@ describe('jobbot CLI', () => {
     );
 
     const bin = path.resolve('bin', 'jobbot.js');
-    const result = spawnSync('node', [bin, 'schedule', 'run', '--config', configPath, '--cycles', '1'], {
-      encoding: 'utf8',
-      env: { ...process.env, JOBBOT_DATA_DIR: dataDir },
-    });
+    const result = spawnSync(
+      'node',
+      [bin, 'schedule', 'run', '--config', configPath, '--cycles', '1'],
+      {
+        encoding: 'utf8',
+        env: { ...process.env, JOBBOT_DATA_DIR: dataDir },
+      },
+    );
 
     expect(result.stderr).toMatch(/match task match-missing could not find job snapshot job-999/i);
     expect(result.stderr).toMatch(/jobbot ingest/i);
