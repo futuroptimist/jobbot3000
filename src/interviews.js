@@ -29,6 +29,10 @@ const STAGE_ALIASES = new Map(
     ['system-design', 'System Design'],
     ['system_design', 'System Design'],
     ['design', 'System Design'],
+    ['screen', 'Screen'],
+    ['phone screen', 'Screen'],
+    ['phone-screen', 'Screen'],
+    ['phone_screen', 'Screen'],
     ['take home', 'Take-Home'],
     ['take-home', 'Take-Home'],
     ['takehome', 'Take-Home'],
@@ -146,6 +150,82 @@ const PLAN_LIBRARY = {
         followUps: [
           'How did you surface the disagreement early?',
           'What trade-offs or data helped resolve it?',
+        ],
+      },
+    ],
+  },
+  Screen: {
+    duration: 30,
+    summary(role) {
+      if (role) {
+        return (
+          `Guide the ${role} recruiter screen with a crisp narrative and clear logistics.`
+        );
+      }
+      return 'Guide the recruiter screen with a crisp narrative and clear logistics.';
+    },
+    sections(role) {
+      const roleContext = role ? `${role} opportunity` : 'opportunity';
+      return [
+        {
+          title: 'Pitch warm-up',
+          items: [
+            `Draft a 60-second story tying recent wins to the ${roleContext}.`,
+            'Line up 2-3 follow-up examples with metrics and outcomes ready to share.',
+          ],
+        },
+        {
+          title: 'Signals to surface',
+          items: [
+            'Highlight motivators, team fit, and collaboration stories recruiters expect.',
+            'List clarifying questions about team structure, expectations, and support.',
+          ],
+        },
+        {
+          title: 'Logistics & next steps',
+          items: [
+            'Confirm timeline, interview loop, and decision process before hanging up.',
+            'Prepare salary, location, and availability guardrails with data points.',
+          ],
+        },
+      ];
+    },
+    resources: ['Recruiter alignment checklist', 'Compensation research worksheet'],
+    flashcards: [
+      {
+        front: 'Recruiter pitch',
+        back: 'Lead with mission, role fit, and a metric-rich win in 60 seconds.',
+      },
+      {
+        front: 'Close strong',
+        back: 'Confirm next steps, logistics, and send a same-day thank-you.',
+      },
+    ],
+    questionBank: [
+      {
+        prompt: 'What drew you to this opportunity?',
+        tags: ['Motivation'],
+      },
+      {
+        prompt: 'What are your compensation expectations?',
+        tags: ['Compensation'],
+      },
+    ],
+    dialogTree: [
+      {
+        id: 'opener',
+        prompt: 'Walk me through your background for a recruiter screen.',
+        followUps: [
+          'Which highlights resonate most with this role?',
+          'How do you connect recent wins to the team’s goals?',
+        ],
+      },
+      {
+        id: 'logistics',
+        prompt: 'What logistics or constraints should we be aware of?',
+        followUps: [
+          'What timeline are you targeting for next steps?',
+          'Are there location or scheduling constraints to share?',
         ],
       },
     ],

@@ -278,4 +278,44 @@ describe('generateRehearsalPlan', () => {
       expect.arrayContaining([expect.stringMatching(/thank-you/i)]),
     );
   });
+
+  it('provides recruiter screen plans that center narrative and logistics', async () => {
+    const { generateRehearsalPlan } = await import('../src/interviews.js');
+
+    const plan = generateRehearsalPlan({ stage: 'screen', role: 'Product Manager' });
+
+    expect(plan.stage).toBe('Screen');
+    expect(plan.summary).toMatch(/recruiter screen/i);
+    expect(plan.sections.map(section => section.title)).toEqual(
+      expect.arrayContaining(['Pitch warm-up', 'Logistics & next steps']),
+    );
+    const logistics = plan.sections.find(section => section.title === 'Logistics & next steps');
+    expect(logistics.items.join(' ')).toMatch(/timeline/i);
+    expect(plan.resources).toEqual(
+      expect.arrayContaining([
+        'Recruiter alignment checklist',
+        'Compensation research worksheet',
+      ]),
+    );
+    expect(plan.flashcards).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ front: 'Recruiter pitch' }),
+      ]),
+    );
+    expect(plan.question_bank).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ tags: expect.arrayContaining(['Motivation']) }),
+      ]),
+    );
+    expect(plan.dialog_tree).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'opener',
+          follow_ups: expect.arrayContaining([
+            expect.stringMatching(/highlights/i),
+          ]),
+        }),
+      ]),
+    );
+  });
 });

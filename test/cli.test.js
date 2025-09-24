@@ -1772,6 +1772,17 @@ describe('jobbot CLI', () => {
     );
   });
 
+  it('surfaces recruiter screen rehearsal plans with timeline reminders', () => {
+    const output = runCli(['interviews', 'plan', '--screen', '--role', 'Engineering Manager']);
+
+    expect(output).toContain('Screen rehearsal plan');
+    expect(output).toContain('Role focus: Engineering Manager');
+    expect(output).toContain('Pitch warm-up');
+    expect(output).toContain('Logistics & next steps');
+    expect(output).toContain('Recruiter alignment checklist');
+    expect(output).toMatch(/Confirm timeline/);
+  });
+
   it('speaks dialog prompts with a configured speech synthesizer', () => {
     const spokenLog = path.join(dataDir, 'spoken.txt');
     const synthesizer = [

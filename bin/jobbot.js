@@ -1169,6 +1169,7 @@ function resolvePlanStage(args) {
   if (args.includes('--system-design') || args.includes('--system_design')) return 'system design';
   if (args.includes('--take-home') || args.includes('--takehome')) return 'take-home';
   if (args.includes('--onsite')) return 'onsite';
+  if (args.includes('--screen')) return 'screen';
   const explicit = getFlag(args, '--stage');
   return explicit;
 }
@@ -1369,7 +1370,7 @@ async function cmdRehearse(args) {
   if (!jobId) {
     console.error(
       'Usage: jobbot rehearse <job_id> [--session <id>] [--stage <value>] [--mode <value>] ' +
-        '[--behavioral] [--technical] [--onsite] [--voice] [--text] ' +
+        '[--behavioral] [--technical] [--onsite] [--screen] [--voice] [--text] ' +
         '[--transcript <text>|--transcript-file <path>] [--audio <path>] ' +
         '[--transcriber <command>] ' +
         '[--reflections <text>|--reflections-file <path>] ' +
