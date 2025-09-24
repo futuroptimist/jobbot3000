@@ -121,6 +121,22 @@ describe('interview session archive', () => {
       mode: 'Voice',
     });
   });
+
+  it('stores audio source metadata when provided', async () => {
+    const { setInterviewDataDir, recordInterviewSession } = await import('../src/interviews.js');
+
+    setInterviewDataDir(dataDir);
+
+    const recorded = await recordInterviewSession('job-audio', 'session-audio', {
+      transcript: 'Voice rehearsal summary',
+      audioSource: { type: 'file', name: 'answer.wav' },
+    });
+
+    expect(recorded.audio_source).toEqual({ type: 'file', name: 'answer.wav' });
+
+    const disk = await readSession('job-audio', 'session-audio');
+    expect(disk.audio_source).toEqual({ type: 'file', name: 'answer.wav' });
+  });
 });
 
 describe('generateRehearsalPlan', () => {
@@ -252,6 +268,14 @@ describe('generateRehearsalPlan', () => {
           tags: expect.arrayContaining(['Strategy']),
         }),
       ]),
+    );
+    expect(Array.isArray(plan.dialog_tree)).toBe(true);
+    expect(plan.dialog_tree.length).toBeGreaterThan(0);
+    expect(plan.dialog_tree[0]).toMatchObject({
+      prompt: expect.stringMatching(/onsite/i),
+    });
+    expect(plan.dialog_tree[0].follow_ups).toEqual(
+      expect.arrayContaining([expect.stringMatching(/thank-you/i)]),
     );
   });
 });

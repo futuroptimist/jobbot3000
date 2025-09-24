@@ -70,7 +70,9 @@ revisit them later without blocking the workflow.
    `data/discarded_jobs.json` so future recommendations can reference prior decisions. Review those
    decisions with `jobbot shortlist archive <job_id>` (or `--json` to inspect the full archive) before
    revisiting a role. Archive listings surface the most recent discard first so candidates see the
-   latest rationale without scanning the full history.
+   latest rationale without scanning the full history. Running `jobbot shortlist sync <job_id>` by
+   itself now "touches" the entry, stamping `synced_at` with the current time before layering in any
+   optional `--location`, `--level`, `--compensation`, or explicit `--synced-at` overrides.
 4. The shortlist view exposes filters (location, level, compensation, tags) via
    `jobbot shortlist list --location <value>` (and repeated `--tag <value>` flags)
    and records sync metadata with `jobbot shortlist sync` so future refreshes know
@@ -134,7 +136,12 @@ flow that preserves both sets of notes.
    candidates can focus prep on the right prompts.
 2. Study packets include curated reading, flashcards, and question banks; the CLI prints a `Dialog
    tree` section with branching follow-ups inspired by "The Rehearsal".
-3. Optional voice mode uses local STT/TTS so the user can practice speaking answers aloud.
+3. Optional voice mode uses local STT/TTS so the user can practice speaking answers aloud. Configure
+   `JOBBOT_SPEECH_TRANSCRIBER` (or pass `--transcriber <command>`) and run
+   `jobbot rehearse <job_id> --audio <file>` to convert recorded answers into transcripts that are
+   stored alongside the session metadata. Set `JOBBOT_SPEECH_SYNTHESIZER` (or pass
+   `--speaker <command>`) and call `jobbot interviews plan --stage <stage> --speak` to play the dialog
+   prompts aloud before answering.
 4. Sessions capture transcripts, user reflections, and coach feedback in
    `data/interviews/{job_id}/{session_id}.json` for future review via
    `jobbot interviews record`. Quick run-throughs can use
