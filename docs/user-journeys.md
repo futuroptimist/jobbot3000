@@ -130,7 +130,12 @@ flow that preserves both sets of notes.
    candidates can focus prep on the right prompts.
 2. Study packets include curated reading, flashcards, and question banks; the CLI prints a `Dialog
    tree` section with branching follow-ups inspired by "The Rehearsal".
-3. Optional voice mode uses local STT/TTS so the user can practice speaking answers aloud.
+3. Optional voice mode uses local STT/TTS so the user can practice speaking answers aloud. Configure
+   `JOBBOT_SPEECH_TRANSCRIBER` (or pass `--transcriber <command>`) and run
+   `jobbot rehearse <job_id> --audio <file>` to convert recorded answers into transcripts that are
+   stored alongside the session metadata. Set `JOBBOT_SPEECH_SYNTHESIZER` (or pass
+   `--speaker <command>`) and call `jobbot interviews plan --stage <stage> --speak` to play the dialog
+   prompts aloud before answering.
 4. Sessions capture transcripts, user reflections, and coach feedback in
    `data/interviews/{job_id}/{session_id}.json` for future review via
    `jobbot interviews record`. Quick run-throughs can use
