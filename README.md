@@ -1103,13 +1103,17 @@ note-taking surface stays reliable.
 
 Surface follow-up work with `jobbot track reminders`. Pass `--now` to view from a
 given timestamp (defaults to the current time), `--upcoming-only` to suppress past-due
-entries, and `--json` for structured output:
+entries, and `--json` for structured output. The digest groups results by urgency so
+past-due work stays visible without scanning the whole list:
 
 ```bash
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track reminders --now 2025-03-06T00:00:00Z
-# job-1 — 2025-03-05T09:00:00.000Z (follow_up, past due)
+# Past Due
+# job-1 — 2025-03-05T09:00:00.000Z (follow_up)
 #   Note: Send status update
-# job-2 — 2025-03-07T15:00:00.000Z (call, upcoming)
+#
+# Upcoming
+# job-2 — 2025-03-07T15:00:00.000Z (call)
 #   Contact: Avery Hiring Manager
 ```
 
