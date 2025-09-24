@@ -61,6 +61,10 @@ would cut coordination overhead.
   commands (e.g., `npm run lint`, `npm run test:ci`, secret scans).
 - Add npm scripts or `bin/` commands that encapsulate multi-step chores (for example, a single
   `npm run chore:prompts` task that runs spellcheck, formatting, and link validation for prompt docs).
+- The repository now ships `npm run chore:prompts`, which runs cspell over prompt docs and verifies
+  that `docs/prompt-docs-summary.md` only references existing files. The chore coverage lives in
+  `test/chore-prompts.test.js`, which gives the spellcheck up to 20 seconds on CI to absorb
+  occasional npm start-up slowness.
 - Configure CI to surface chore reminders (perhaps via scheduled GitHub Actions) pointing back to the
   catalog.
 - Encourage contributors to append playbook entries whenever they discover a new repetitive task.

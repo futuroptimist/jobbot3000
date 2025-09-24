@@ -537,7 +537,7 @@ even when the first requirement follows
 the header on the same line. Leading numbers without punctuation remain intact. Requirement headers
 are located in a single pass to avoid re-scanning large job postings, and resume scoring tokenizes
 via a manual scanner and caches tokens (up to 60k lines) to avoid repeated work. Automated tests
-exercise this path with 120k-line resumes to ensure the tokenizer stays under 190ms on a cold run.
+exercise this path with 120k-line resumes to ensure the tokenizer stays under 200ms on a cold run.
 Requirement bullets
 are scanned without regex or temporary arrays, improving large input performance. Blank or
 non-string requirement entries are skipped so invalid bullets don't affect scoring.

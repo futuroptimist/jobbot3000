@@ -28,3 +28,4 @@ sandboxing
 shadcn
 unlogged
 vllm
+affordances
