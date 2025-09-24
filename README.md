@@ -558,6 +558,10 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist archive job-123
 #   Tags: Remote, onsite
 ```
 
+Shortlist tags deduplicate case-insensitively so reapplying a label with different casing keeps
+filters tidy. Legacy discard tag history is normalized the same way so `Last Discard Tags` and
+archive views never repeat labels when older records mix casing.
+
 The CLI stores shortlist labels, discard history, and sync metadata in `data/shortlist.json`, keeping
 reasons, timestamps, optional tags, and location/level/compensation fields so recommendations can
 surface patterns later. Review past decisions with `jobbot shortlist archive [job_id]` (add `--json`

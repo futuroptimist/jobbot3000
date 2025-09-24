@@ -70,9 +70,14 @@ function toIsoTimestamp(value) {
 function normalizeTagList(tags) {
   if (!Array.isArray(tags)) return undefined;
   const normalized = [];
+  const seen = new Set();
   for (const tag of tags) {
     const value = sanitizeString(tag);
-    if (value) normalized.push(value);
+    if (!value) continue;
+    const key = value.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(value);
   }
   return normalized.length > 0 ? normalized : undefined;
 }

@@ -74,6 +74,31 @@ describe('discarded job archive', () => {
     expect(entries[0].tags).toEqual(['Remote']);
   });
 
+  it('deduplicates legacy tag history ignoring case', async () => {
+    const archivePath = path.join(dataDir, discardFileName);
+    const legacyArchive = {
+      'job-legacy-tags': [
+        {
+          reason: 'Revisit later',
+          discarded_at: '2025-04-10T09:00:00Z',
+          tags: [' Remote ', 'remote', 'ONSITE', 'onsite'],
+        },
+      ],
+    };
+
+    await fs.writeFile(archivePath, `${JSON.stringify(legacyArchive, null, 2)}\n`);
+
+    const { getDiscardedJobs } = await import('../src/discards.js');
+    const history = await getDiscardedJobs('job-legacy-tags');
+    expect(history).toEqual([
+      {
+        reason: 'Revisit later',
+        discarded_at: '2025-04-10T09:00:00.000Z',
+        tags: ['Remote', 'ONSITE'],
+      },
+    ]);
+  });
+
   it('normalizes messy discard archive entries when reading history', async () => {
     const { getDiscardedJobs } = await import('../src/discards.js');
 

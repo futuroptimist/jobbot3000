@@ -191,13 +191,28 @@ function normalizeTag(tag) {
   return sanitizeString(tag);
 }
 
+function normalizeTagList(list) {
+  if (!Array.isArray(list)) return [];
+  const normalized = [];
+  const seen = new Set();
+  for (const entry of list) {
+    const value = normalizeTag(entry);
+    if (!value) continue;
+    const key = value.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(value);
+  }
+  return normalized;
+}
+
 function ensureJobRecord(store, jobId) {
   const existing = store.jobs[jobId];
   if (!existing || typeof existing !== 'object' || Array.isArray(existing)) {
     store.jobs[jobId] = { tags: [], discarded: [], metadata: {} };
   } else {
     const record = existing;
-    if (!Array.isArray(record.tags)) record.tags = [];
+    record.tags = normalizeTagList(record.tags);
     if (!Array.isArray(record.discarded)) record.discarded = [];
     else record.discarded = normalizeDiscardList(record.discarded);
     record.metadata = normalizeExistingMetadata(record.metadata);
@@ -305,9 +320,14 @@ export function addJobTags(jobId, tags) {
     return Promise.reject(new Error('job id is required'));
   }
   const normalizedTags = [];
+  const newKeys = new Set();
   for (const tag of tags) {
     const clean = normalizeTag(tag);
-    if (clean) normalizedTags.push(clean);
+    if (!clean) continue;
+    const key = clean.toLowerCase();
+    if (newKeys.has(key)) continue;
+    newKeys.add(key);
+    normalizedTags.push({ value: clean, key });
   }
   if (normalizedTags.length === 0) {
     return Promise.reject(new Error('at least one tag is required'));
@@ -320,10 +340,15 @@ export function addJobTags(jobId, tags) {
     await fs.mkdir(dir, { recursive: true });
     const store = await readShortlistFile(file);
     const record = ensureJobRecord(store, jobKey);
-    for (const tag of normalizedTags) {
-      if (!record.tags.includes(tag)) {
-        record.tags.push(tag);
-      }
+    const existing = new Set(
+      record.tags
+        .map(tag => (typeof tag === 'string' ? tag.toLowerCase() : ''))
+        .filter(Boolean),
+    );
+    for (const { value, key } of normalizedTags) {
+      if (existing.has(key)) continue;
+      existing.add(key);
+      record.tags.push(value);
     }
     await writeJsonFile(file, store);
     return record.tags.slice();
