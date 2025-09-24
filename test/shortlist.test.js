@@ -65,6 +65,33 @@ describe('shortlist metadata sync and filters', () => {
     });
   });
 
+  it('touches shortlist metadata when metadata is omitted', async () => {
+    const { syncShortlistJob, getShortlist } = await import('../src/shortlist.js');
+
+    const before = Date.now();
+    await syncShortlistJob('job-touch-api');
+    const created = await getShortlist('job-touch-api');
+    expect(typeof created.metadata.synced_at).toBe('string');
+    const createdTimestamp = new Date(created.metadata.synced_at).getTime();
+    expect(Number.isNaN(createdTimestamp)).toBe(false);
+    expect(createdTimestamp).toBeGreaterThanOrEqual(before - 10);
+
+    await syncShortlistJob('job-touch-api', { location: 'Remote' });
+    const withMetadata = await getShortlist('job-touch-api');
+    expect(withMetadata.metadata).toMatchObject({ location: 'Remote' });
+    const firstTimestamp = new Date(withMetadata.metadata.synced_at).getTime();
+    expect(Number.isNaN(firstTimestamp)).toBe(false);
+
+    await new Promise(resolve => setTimeout(resolve, 5));
+
+    await syncShortlistJob('job-touch-api');
+    const touched = await getShortlist('job-touch-api');
+    expect(touched.metadata).toMatchObject({ location: 'Remote' });
+    const touchedTimestamp = new Date(touched.metadata.synced_at).getTime();
+    expect(Number.isNaN(touchedTimestamp)).toBe(false);
+    expect(touchedTimestamp).toBeGreaterThan(firstTimestamp);
+  });
+
   it('filters shortlist entries by tag', async () => {
     const { addJobTags, filterShortlist } = await import('../src/shortlist.js');
 

@@ -221,24 +221,22 @@ function ensureJobRecord(store, jobId) {
 }
 
 function sanitizeMetadataInput(metadata) {
-  if (!metadata || typeof metadata !== 'object') {
-    throw new Error('metadata is required');
+  const source = metadata ?? {};
+  if (typeof source !== 'object' || Array.isArray(source)) {
+    throw new Error('metadata must be an object');
   }
   const normalized = {};
   for (const field of METADATA_FIELDS) {
-    const rawValue = metadata[field];
+    const rawValue = source[field];
     const value =
       field === 'compensation'
         ? normalizeCompensationValue(rawValue)
         : sanitizeString(rawValue);
     if (value) normalized[field] = value;
   }
-  const explicitSynced = metadata.syncedAt ?? metadata.synced_at;
+  const explicitSynced = source.syncedAt ?? source.synced_at;
   if (explicitSynced !== undefined) {
     normalized.synced_at = normalizeSyncedAt(explicitSynced);
-  }
-  if (Object.keys(normalized).length === 0) {
-    throw new Error('at least one metadata field is required');
   }
   if (!normalized.synced_at) {
     normalized.synced_at = new Date().toISOString();
