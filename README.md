@@ -495,8 +495,12 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist tag job-123 dream remote
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist discard job-123 --reason "Not remote" --tags "Remote,onsite"
 # Discarded job-123: Not remote
 
-JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist sync job-123 --location Remote --level Senior --compensation "$185k" --synced-at 2025-03-06T08:00:00Z
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist sync job-123
 # Synced job-123 metadata
+# (synced_at defaults to the current timestamp when no metadata flags are provided)
+
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist sync job-123 --location Remote --level Senior --compensation "$185k" --synced-at 2025-03-06T08:00:00Z
+# Synced job-123 metadata with refreshed fields
 
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --location remote
 # job-123
@@ -557,6 +561,10 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist archive job-123
 # - 2025-03-05T12:00:00.000Z — Not remote
 #   Tags: Remote, onsite
 ```
+
+Automated CLI tests cover both the new-entry and refresh flows so `jobbot shortlist sync <job_id>`
+continues to stamp `synced_at` when metadata flags are omitted and when existing records are
+refreshed. These cases live alongside the broader shortlist suite in `test/cli.test.js`.
 
 Shortlist tags deduplicate case-insensitively so reapplying a label with different casing keeps
 filters tidy. Legacy discard tag history is normalized the same way so `Last Discard Tags` and

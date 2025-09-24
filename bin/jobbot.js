@@ -802,12 +802,16 @@ async function cmdShortlistSync(args) {
   const syncedAt = getFlag(rest, '--synced-at');
   if (syncedAt) metadata.syncedAt = syncedAt;
 
-  if (!jobId || !hasMetadata(metadata)) {
+  if (!jobId) {
     console.error(
       'Usage: jobbot shortlist sync <job_id> [--location <value>] [--level <value>] ' +
         '[--compensation <value>] [--synced-at <iso8601>]'
     );
     process.exit(2);
+  }
+
+  if (!hasMetadata(metadata)) {
+    metadata.syncedAt = new Date().toISOString();
   }
 
   await syncShortlistJob(jobId, metadata);
