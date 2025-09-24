@@ -640,6 +640,62 @@ describe('jobbot CLI', () => {
     );
   });
 
+  it('summarizes lifecycle statuses with track board', () => {
+    runCli(['track', 'add', 'job-1', '--status', 'screening', '--note', 'Awaiting recruiter']);
+    runCli(['track', 'add', 'job-2', '--status', 'onsite']);
+    runCli(['track', 'add', 'job-3', '--status', 'offer', '--note', 'Prep for negotiation']);
+
+    const text = runCli(['track', 'board']);
+    expect(text).toContain('Screening');
+    expect(text).toMatch(/- job-1 \(/);
+    expect(text).toContain('Note: Awaiting recruiter');
+    expect(text).toContain('Onsite');
+    expect(text).toMatch(/- job-2 \(/);
+    expect(text).toContain('Offer');
+    expect(text).toContain('Note: Prep for negotiation');
+
+    const json = runCli(['track', 'board', '--json']);
+    const parsed = JSON.parse(json);
+    const screening = parsed.columns.find(column => column.status === 'screening');
+    expect(screening.jobs.map(job => job.job_id)).toContain('job-1');
+    const offer = parsed.columns.find(column => column.status === 'offer');
+    expect(offer.jobs[0]).toMatchObject({ job_id: 'job-3', note: 'Prep for negotiation' });
+  });
+
+  it('surfaces the next reminder for each job in track board output', () => {
+    runCli(['track', 'add', 'job-1', '--status', 'screening']);
+    runCli([
+      'track',
+      'log',
+      'job-1',
+      '--channel',
+      'follow_up',
+      '--remind-at',
+      '2099-01-01T12:00:00Z',
+      '--note',
+      'Send update',
+      '--contact',
+      'Avery Hiring Manager',
+    ]);
+
+    const text = runCli(['track', 'board']);
+    expect(text).toContain('Reminder: 2099-01-01T12:00:00.000Z (follow_up, upcoming)');
+    expect(text).toContain('Reminder Note: Send update');
+    expect(text).toContain('Reminder Contact: Avery Hiring Manager');
+
+    const json = runCli(['track', 'board', '--json']);
+    const parsed = JSON.parse(json);
+    const screening = parsed.columns.find(column => column.status === 'screening');
+    expect(screening.jobs[0].reminder).toMatchObject({
+      job_id: 'job-1',
+      remind_at: '2099-01-01T12:00:00.000Z',
+      past_due: false,
+      channel: 'follow_up',
+      note: 'Send update',
+      contact: 'Avery Hiring Manager',
+    });
+  });
+
   it('archives discarded jobs with reasons', () => {
     const output = runCli([
       'track',

@@ -117,7 +117,10 @@ aggressively to respect rate limits.
    withdrawn, and acceptance outcomes (accepted/acceptance/hired) are stored in
    `data/applications.json`, which is serialized safely to prevent data loss. The CLI
    exposes `jobbot track add <job_id> --status <status> [--note <note>]` so users can log updates and
-   quick notes inline with other workflows.
+   quick notes inline with other workflows. `jobbot track board` summarizes the pipeline as a
+   Kanban, grouping each job by lifecycle stage (including legacy `next_round` entries) and surfacing
+   notes and the next reminder inline so the candidate can scan open opportunities and time-sensitive
+   follow-ups at a glance.
 3. Follow-up reminders and note-taking surfaces help the user prepare for upcoming steps while
    consolidating feedback for future tailoring. Use `jobbot track log --remind-at <iso8601>` to
    capture the next follow-up timestamp with each note, review recorded outreach with

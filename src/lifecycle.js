@@ -83,6 +83,38 @@ function extractStatus(entry) {
   return undefined;
 }
 
+function normalizeLifecycleEntry(jobId, entry) {
+  if (!jobId) return null;
+  const status = extractStatus(entry);
+  if (typeof status !== 'string') return null;
+  const normalizedStatus = status.trim();
+  if (!STATUSES.includes(normalizedStatus)) return null;
+
+  let updatedAt;
+  if (entry && typeof entry === 'object') {
+    const rawUpdated = entry.updated_at ?? entry.updatedAt;
+    if (typeof rawUpdated === 'string' && rawUpdated.trim()) {
+      const parsed = new Date(rawUpdated);
+      if (!Number.isNaN(parsed.getTime())) {
+        updatedAt = parsed.toISOString();
+      }
+    }
+  }
+
+  let note;
+  if (entry && typeof entry === 'object' && typeof entry.note === 'string') {
+    const trimmed = entry.note.trim();
+    if (trimmed) note = trimmed;
+  }
+
+  return {
+    job_id: jobId,
+    status: normalizedStatus,
+    updated_at: updatedAt,
+    note,
+  };
+}
+
 /**
  * Record an application's status. Throws if the lifecycle file cannot be read or contains
  * invalid JSON.
@@ -138,4 +170,45 @@ export async function getLifecycleCounts() {
     }
   }
   return counts;
+}
+
+function sortBoardJobs(jobs) {
+  jobs.sort((a, b) => {
+    const aTime = a.updated_at ? Date.parse(a.updated_at) : NaN;
+    const bTime = b.updated_at ? Date.parse(b.updated_at) : NaN;
+    const aValid = !Number.isNaN(aTime);
+    const bValid = !Number.isNaN(bTime);
+    if (aValid && bValid) {
+      if (aTime === bTime) return a.job_id.localeCompare(b.job_id);
+      return bTime - aTime;
+    }
+    if (aValid) return -1;
+    if (bValid) return 1;
+    return a.job_id.localeCompare(b.job_id);
+  });
+}
+
+/**
+ * Group lifecycle entries by status in the defined STATUSES order.
+ * Returns an array of columns so callers can render a Kanban-style board.
+ */
+export async function getLifecycleBoard() {
+  const { file } = getPaths();
+  const data = await readLifecycleFile(file);
+  const columns = STATUSES.map(status => ({ status, jobs: [] }));
+  const columnByStatus = new Map(columns.map(column => [column.status, column]));
+
+  for (const [jobId, raw] of Object.entries(data)) {
+    const normalized = normalizeLifecycleEntry(jobId, raw);
+    if (!normalized) continue;
+    const column = columnByStatus.get(normalized.status);
+    if (!column) continue;
+    column.jobs.push(normalized);
+  }
+
+  for (const column of columns) {
+    sortBoardJobs(column.jobs);
+  }
+
+  return columns;
 }
