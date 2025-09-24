@@ -947,6 +947,17 @@ describe('jobbot CLI', () => {
     expect(textOutput).toContain('Question: Share a metric-driven accomplishment');
   });
 
+  it('advertises all intake subcommands in usage output', () => {
+    const bin = path.resolve('bin', 'jobbot.js');
+    const result = spawnSync('node', [bin, 'intake'], {
+      encoding: 'utf8',
+      env: { ...process.env, JOBBOT_DATA_DIR: dataDir },
+    });
+
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('Usage: jobbot intake <record|list|bullets> ...');
+  });
+
   it('tags shortlist entries and persists labels', () => {
     const output = runCli(['shortlist', 'tag', 'job-abc', 'dream', 'remote']);
     expect(output.trim()).toBe('Tagged job-abc with dream, remote');
