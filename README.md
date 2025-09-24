@@ -616,6 +616,10 @@ Automated CLI tests cover both the new-entry and refresh flows so `jobbot shortl
 continues to stamp `synced_at` when metadata flags are omitted and when existing records are
 refreshed. These cases live alongside the broader shortlist suite in `test/cli.test.js`.
 
+Programmatic consumers can call `syncShortlistJob(jobId)` without metadata to refresh the
+timestamp while leaving prior fields intact; `test/shortlist.test.js` now locks in that
+touch-only coverage.
+
 Shortlist tags deduplicate case-insensitively so reapplying a label with different casing keeps
 filters tidy. Legacy discard tag history is normalized the same way so `Last Discard Tags` and
 archive views never repeat labels when older records mix casing.
