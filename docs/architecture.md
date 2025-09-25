@@ -23,7 +23,8 @@ User (CLI / future UI)
 
 Data persists inside the git-ignored `data/` directory:
 
-- `data/profile/` – canonical resume/profile artifacts managed by `jobbot profile` commands.
+- `data/profile/` – canonical resume/profile artifacts managed by `jobbot init` and
+  `jobbot profile` commands.
 - `data/jobs/` – normalized job postings written by `jobbot ingest …` commands.
 - `data/applications.json` and `data/application_events.json` – pipeline tracking state.
 - `data/deliverables/{job_id}/` – tailored resumes, cover letters, and build logs.
@@ -33,8 +34,9 @@ Data persists inside the git-ignored `data/` directory:
 `src/index.js` is the primary entry point for CLI commands. It orchestrates prompt selection, config
 loading, and error reporting. Commands fan out to domain modules that encapsulate each workflow:
 
-- **Resume:** `jobbot resume` commands coordinate with `src/resume.js` to normalize inputs and write
-  JSON Resume files under `data/profile/`.
+- **Profile:** `jobbot init` and `jobbot profile <init|import>` commands coordinate with
+  `src/profile.js`/`src/resume.js` to normalize inputs and write JSON Resume files under
+  `data/profile/`.
 - **Jobs:** `jobbot ingest` routes to `src/jobs.js`, which relies on provider adapters (for example
   `src/greenhouse.js`) to list openings, normalize snapshots, and persist them locally.
 - **Shortlist:** `jobbot shortlist` calls `src/shortlist.js` to tag, discard, and sync tracked roles.
