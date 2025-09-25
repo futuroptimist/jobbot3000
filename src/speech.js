@@ -43,10 +43,43 @@ function resolveSynthesizerCommand(optionCommand) {
   return trimmed;
 }
 
-function shellEscape(value) {
-  if (value === undefined || value === null) return "''";
+function escapeWindowsArg(str) {
+  let result = '"';
+  let backslashes = 0;
+
+  for (const char of str) {
+    if (char === '\\') {
+      backslashes += 1;
+      continue;
+    }
+
+    if (char === '"') {
+      result += '\\'.repeat(backslashes * 2 + 1);
+      result += '"';
+      backslashes = 0;
+      continue;
+    }
+
+    result += '\\'.repeat(backslashes);
+    backslashes = 0;
+    result += char;
+  }
+
+  result += '\\'.repeat(backslashes * 2);
+  result += '"';
+  return result;
+}
+
+export function escapeShellArg(value, platform = process.platform) {
+  const isWindows = platform === 'win32';
+  if (value === undefined || value === null) return isWindows ? '""' : "''";
   const str = String(value);
-  if (str === '') return "''";
+  if (str === '') return isWindows ? '""' : "''";
+
+  if (isWindows) {
+    return escapeWindowsArg(str);
+  }
+
   const SINGLE_QUOTE = "'";
   const ESCAPED_QUOTE = "'\\'" + "'";
   return SINGLE_QUOTE + str.split(SINGLE_QUOTE).join(ESCAPED_QUOTE) + SINGLE_QUOTE;
@@ -121,7 +154,7 @@ export async function transcribeAudio(filePath, options = {}) {
   }
 
   const commandTemplate = resolveTranscriberCommand(options.command);
-  const escapedPath = shellEscape(resolved);
+  const escapedPath = escapeShellArg(resolved);
   const command = commandTemplate.includes('{{input}}')
     ? commandTemplate.split('{{input}}').join(escapedPath)
     : `${commandTemplate} ${escapedPath}`;
@@ -144,7 +177,7 @@ export async function synthesizeSpeech(text, options = {}) {
   let command = commandTemplate;
 
   if (commandTemplate.includes('{{input}}')) {
-    command = commandTemplate.split('{{input}}').join(shellEscape(trimmed));
+    command = commandTemplate.split('{{input}}').join(escapeShellArg(trimmed));
     shouldPipeInput = false;
   }
 
