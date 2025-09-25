@@ -295,7 +295,12 @@ function normalizeFilterTags(tags) {
 function normalizeFilters(filters = {}) {
   const normalized = {};
   for (const field of METADATA_FIELDS) {
-    const value = sanitizeString(filters[field]);
+    let value;
+    if (field === 'compensation') {
+      value = normalizeCompensationValue(filters[field]);
+    } else {
+      value = sanitizeString(filters[field]);
+    }
     if (value) normalized[field] = value.toLowerCase();
   }
   const tags = normalizeFilterTags(filters.tags);

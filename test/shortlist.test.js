@@ -108,6 +108,23 @@ describe('shortlist metadata sync and filters', () => {
     expect(Object.keys(none.jobs)).toEqual([]);
   });
 
+  it('filters shortlist entries by compensation without a currency symbol', async () => {
+    const { syncShortlistJob, filterShortlist } = await import('../src/shortlist.js');
+
+    await syncShortlistJob('job-comp', {
+      location: 'Remote',
+      level: 'Staff',
+      compensation: '185k',
+      syncedAt: '2025-03-06T08:00:00Z',
+    });
+
+    const filtered = await filterShortlist({ compensation: '185k' });
+    expect(Object.keys(filtered.jobs)).toEqual(['job-comp']);
+    expect(filtered.jobs['job-comp'].metadata).toMatchObject({
+      compensation: '$185k',
+    });
+  });
+
   it('deduplicates shortlist tags ignoring case', async () => {
     const { addJobTags, getShortlist } = await import('../src/shortlist.js');
 
