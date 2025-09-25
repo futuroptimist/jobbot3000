@@ -329,6 +329,13 @@ at 12 entries and cached per resume/requirement pairing to keep repeated evaluat
 comparisons) fast. Extremely large resumes (more than 5,000 unique tokens) skip overlap extraction to
 preserve cold-start latency targets.
 
+When a job already has tailoring or rehearsal artifacts, JSON match payloads attach a `prior_activity`
+block summarizing deliverable runs and interview sessions (including the latest coaching notes). The
+Markdown report mirrors the same insights in a `## Prior Activity` section so reviewers can spot the
+most recent work without opening the underlying files. Interview summaries fall back to the
+session's `started_at` timestamp—or, if that is unavailable, the recording's filesystem metadata—so
+even partially captured sessions still surface when reviewing prior work.
+
 ```bash
 cat <<'EOF' > resume.txt
 Designed large-scale services and mentored senior engineers.

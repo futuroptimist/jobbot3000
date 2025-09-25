@@ -17,6 +17,7 @@ import {
   toDocxMatch,
 } from '../src/exporters.js';
 import { saveJobSnapshot, jobIdFromSource } from '../src/jobs.js';
+import { summarizeJobActivity } from '../src/activity-insights.js';
 import {
   logApplicationEvent,
   getApplicationEvents,
@@ -293,8 +294,26 @@ export async function cmdMatch(args) {
     : jobInput === '-' || jobInput === '/dev/stdin'
       ? null
       : { type: 'file', value: path.resolve(process.cwd(), jobInput) };
+  const jobIdentifier = jobSource
+    ? jobSource.type === 'url'
+      ? jobSource.value
+      : `${jobSource.type}:${jobSource.value}`
+    : null;
+  const jobId = jobIdentifier ? jobIdFromSource(jobIdentifier) : null;
   if (jobSource) {
     await persistJobSnapshot(jobRaw, parsed, jobSource, requestHeaders);
+  }
+
+  if (jobId) {
+    try {
+      const activity = await summarizeJobActivity(jobId);
+      if (activity) payload.prior_activity = activity;
+    } catch (err) {
+      if (process.env.JOBBOT_DEBUG) {
+        const message = err?.message || String(err);
+        console.error(`jobbot: failed to summarize activity for ${jobId}: ${message}`);
+      }
+    }
   }
 
   const localizedPayload = locale ? { ...payload, locale } : payload;
@@ -311,11 +330,23 @@ export async function cmdMatch(args) {
     console.log(toJson(jsonPayload));
   } else {
     const report = toMarkdownMatch(localizedPayload);
+    const priorSection = formatPriorActivitySection(payload.prior_activity);
     if (!explain) {
-      console.log(report);
+      if (priorSection) {
+        const segments = [];
+        if (report) segments.push(report);
+        segments.push(priorSection);
+        console.log(segments.join('\n\n'));
+      } else {
+        console.log(report);
+      }
     } else {
       const explanationMd = toMarkdownMatchExplanation(localizedPayload);
-      console.log(report ? `${report}\n\n${explanationMd}` : explanationMd);
+      const segments = [];
+      if (report) segments.push(report);
+      segments.push(explanationMd);
+      if (priorSection) segments.push(priorSection);
+      console.log(segments.filter(Boolean).join('\n\n'));
     }
   }
 }
@@ -368,6 +399,57 @@ function formatStatusLabel(status) {
     .split('_')
     .map(part => (part ? part[0].toUpperCase() + part.slice(1) : part))
     .join(' ');
+}
+
+function formatPriorActivitySection(activity) {
+  if (!activity || typeof activity !== 'object') return '';
+  const { deliverables, interviews } = activity;
+  if (!deliverables && !interviews) return '';
+
+  const lines = ['## Prior Activity'];
+
+  if (deliverables) {
+    const runs = typeof deliverables.runs === 'number' ? deliverables.runs : 0;
+    if (runs > 0) {
+      const noun = runs === 1 ? 'run' : 'runs';
+      let line = `- Deliverables: ${runs} ${noun}`;
+      if (deliverables.last_run_at) {
+        line += ` (last run ${deliverables.last_run_at})`;
+      }
+      lines.push(line);
+    }
+  }
+
+  if (interviews) {
+    const sessions = typeof interviews.sessions === 'number' ? interviews.sessions : 0;
+    if (sessions > 0) {
+      const noun = sessions === 1 ? 'session' : 'sessions';
+      let line = `- Interviews: ${sessions} ${noun}`;
+      const details = [];
+      const last = interviews.last_session;
+      if (last) {
+        if (last.recorded_at) details.push(last.recorded_at);
+        const descriptors = [];
+        if (last.stage) descriptors.push(last.stage);
+        if (last.mode) descriptors.push(last.mode);
+        if (descriptors.length > 0) details.push(descriptors.join(' / '));
+      }
+      if (details.length > 0) {
+        line += ` (${details.join(', ')})`;
+      }
+      lines.push(line);
+
+      const tighten = last?.critique?.tighten_this;
+      if (Array.isArray(tighten) && tighten.length > 0) {
+        lines.push('  Coaching notes:');
+        for (const note of tighten) {
+          if (note) lines.push(`  - ${note}`);
+        }
+      }
+    }
+  }
+
+  return lines.length > 1 ? lines.join('\n') : '';
 }
 
 async function cmdTrackLog(args) {

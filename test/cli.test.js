@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { summarize } from '../src/index.js';
 import JSZip from 'jszip';
 import { STATUSES } from '../src/lifecycle.js';
+import { jobIdFromSource } from '../src/jobs.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -317,6 +318,73 @@ describe('jobbot CLI', () => {
       'Strong communication skills',
     ]);
     expect(payload.keyword_overlap).toEqual(['developer', 'experience']);
+  });
+
+  it('includes prior activity summaries in match output', () => {
+    const job = [
+      'Title: Staff Engineer',
+      'Company: ExampleCorp',
+      'Requirements',
+      '- Distributed systems experience',
+    ].join('\n');
+    const resume = 'Built distributed systems and led engineering teams.';
+    const jobPath = path.join(dataDir, 'job-activity.txt');
+    const resumePath = path.join(dataDir, 'resume-activity.txt');
+    fs.writeFileSync(jobPath, job);
+    fs.writeFileSync(resumePath, resume);
+
+    const jobId = jobIdFromSource(`file:${path.resolve(jobPath)}`);
+    const deliverableDir = path.join(dataDir, 'deliverables', jobId, '2025-02-01T10-00-00Z');
+    fs.mkdirSync(deliverableDir, { recursive: true });
+    const deliverableFile = path.join(deliverableDir, 'resume.pdf');
+    fs.writeFileSync(deliverableFile, 'resume');
+    const deliverableTimestamp = new Date('2025-02-01T10:00:00.000Z');
+    fs.utimesSync(deliverableFile, deliverableTimestamp, deliverableTimestamp);
+    fs.utimesSync(deliverableDir, deliverableTimestamp, deliverableTimestamp);
+
+    const interviewDir = path.join(dataDir, 'interviews', jobId);
+    fs.mkdirSync(interviewDir, { recursive: true });
+    const sessionPath = path.join(interviewDir, 'session.json');
+    fs.writeFileSync(
+      sessionPath,
+      JSON.stringify(
+        {
+          session_id: 'session-1',
+          recorded_at: '2025-02-02T11:00:00.000Z',
+          stage: 'Behavioral',
+          mode: 'Voice',
+          heuristics: { critique: { tighten_this: ['Tighten this: trim filler words.'] } },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const jsonOut = runCli([
+      'match',
+      '--resume',
+      resumePath,
+      '--job',
+      jobPath,
+      '--json',
+    ]);
+    const payload = JSON.parse(jsonOut);
+    expect(payload.prior_activity?.deliverables?.runs).toBe(1);
+    expect(payload.prior_activity?.interviews?.sessions).toBe(1);
+    expect(payload.prior_activity?.interviews?.last_session?.critique?.tighten_this).toEqual([
+      'Tighten this: trim filler words.',
+    ]);
+
+    const mdOut = runCli([
+      'match',
+      '--resume',
+      resumePath,
+      '--job',
+      jobPath,
+    ]);
+    expect(mdOut).toContain('## Prior Activity');
+    expect(mdOut).toContain('Deliverables: 1 run');
+    expect(mdOut).toContain('Interviews: 1 session');
   });
 
   it('explains hits and gaps with match --explain', () => {
