@@ -13,6 +13,7 @@
     "test:ci": "vitest run",
     "summarize": "node scripts/summarize.js",
     "chore:prompts": "node scripts/chore-prompts.js",
+    "chore:reminders": "node scripts/chore-reminders.js",
     "postinstall": "node scripts/install-console-font.js"
   },
   "engines": {

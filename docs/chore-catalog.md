@@ -20,3 +20,7 @@ stays accurate.
 
 Add additional rows as new routines emerge (for example, dependency bumps or localization sweeps)
 and expand the coverage expectations in `test/chore-catalog.test.js` as the catalog grows.
+
+Run `npm run chore:reminders` to print this catalog in a shareable digest (pass `--json` for machine-
+readable output). CI jobs can surface the same summary before merges so contributors remember to run
+each routine locally.

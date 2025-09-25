@@ -35,6 +35,11 @@ _Update (2025-10-06):_ `src/adapters/job-source.js` now defines the shared
 `listOpenings`, `normalizeJob`, and `toApplicationEvent`, and the ingestion flows have been wired to
 use those adapters directly.
 
+_Update (2025-10-21):_ `src/jobs/adapters/common.js` centralizes adapter helpers so connectors share
+rate-limit resolution, pagination, and snapshot normalization. Coverage in
+`test/jobs-adapters-common.test.js` keeps the rate-limit override, paginated fetcher, and snapshot
+metadata aligned across providers.
+
 **Suggested Steps**
 - Define a `JobSourceAdapter` TypeScript definition (or JSDoc typedef) capturing the expected
   methods (e.g., `listOpenings`, `normalizeJob`, `toApplicationEvent`).
@@ -82,8 +87,10 @@ would cut coordination overhead.
   that `docs/prompt-docs-summary.md` only references existing files. The chore coverage lives in
   `test/chore-prompts.test.js`, which gives the spellcheck up to 20 seconds on CI to absorb
   occasional npm start-up slowness.
-- Configure CI to surface chore reminders (perhaps via scheduled GitHub Actions) pointing back to the
-  catalog.
+- `npm run chore:reminders` prints the catalog as either a human-readable digest or JSON (pass
+  `--json`), giving CI jobs a reliable summary to surface before merges. Coverage in
+  `test/chore-reminders.test.js` exercises the JSON output and keeps the parser aligned with the
+  Markdown table structure.
 - Encourage contributors to append playbook entries whenever they discover a new repetitive task.
 
 ## 5. Layer Simplified Abstractions Around Low-Level Utilities
