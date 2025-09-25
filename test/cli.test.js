@@ -718,6 +718,31 @@ describe('jobbot CLI', () => {
     });
   });
 
+  it('prints headings with (none) when reminders are filtered out', () => {
+    runCli([
+      'track',
+      'log',
+      'job-only-past-due',
+      '--channel',
+      'follow_up',
+      '--date',
+      '2025-03-01T08:00:00Z',
+      '--remind-at',
+      '2025-03-02T09:00:00Z',
+    ]);
+
+    const output = runCli([
+      'track',
+      'reminders',
+      '--upcoming-only',
+      '--now',
+      '2025-03-10T00:00:00Z',
+    ]);
+
+    const lines = output.trimEnd().split('\n');
+    expect(lines).toEqual(['Upcoming', '  (none)']);
+  });
+
   it('formats reminder summaries and respects --upcoming-only', () => {
     runCli([
       'track',
@@ -912,6 +937,20 @@ describe('jobbot CLI', () => {
       channel: 'call',
       note: 'Prep next check-in',
     });
+  });
+
+  it('shows a reminder placeholder on the board when none are scheduled', () => {
+    runCli(['track', 'add', 'job-no-reminder', '--status', 'screening']);
+
+    const text = runCli(['track', 'board']);
+    const lines = text.trim().split('\n');
+    expect(lines).toContain('  Reminder: (none)');
+
+    const json = runCli(['track', 'board', '--json']);
+    const parsed = JSON.parse(json);
+    const screening = parsed.columns.find(column => column.status === 'screening');
+    const entry = screening.jobs.find(job => job.job_id === 'job-no-reminder');
+    expect(entry).not.toHaveProperty('reminder');
   });
 
   it('archives discarded jobs with reasons', () => {
