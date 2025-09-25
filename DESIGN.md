@@ -43,7 +43,8 @@ A privacy-first, open-source, self-hosted assistant that helps an individual can
 6. **Tracker**  
    A Kanban of opportunities → applied → interview → offer, with checklists, notes, and due reminders.  
 
-Stretch (v1.x): portfolio site generator, role heatmap, compensation tracker, referral finder (manual inputs only), CLI-only “headless” mode.
+Stretch (v1.x): portfolio site generator, role heatmap, referral finder (manual inputs only), CLI-only “headless” mode.
+Compensation tracker shipped via the CLI's `jobbot analytics compensation` summary.
 
 ---
 
