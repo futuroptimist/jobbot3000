@@ -595,13 +595,28 @@ async function cmdTrackBoard(args) {
   const reminderByJob = new Map();
   for (const reminder of reminders) {
     if (!reminder || typeof reminder.job_id !== 'string') continue;
-    if (reminderByJob.has(reminder.job_id)) continue;
-    reminderByJob.set(reminder.job_id, reminder);
+    const jobId = reminder.job_id;
+    let entry = reminderByJob.get(jobId);
+    if (!entry) {
+      entry = { upcoming: undefined, pastDue: undefined };
+      reminderByJob.set(jobId, entry);
+    }
+    if (reminder.past_due) {
+      entry.pastDue = reminder;
+    } else if (!entry.upcoming) {
+      entry.upcoming = reminder;
+    }
   }
+
+  const resolveReminderForJob = jobId => {
+    const entry = reminderByJob.get(jobId);
+    if (!entry) return undefined;
+    return entry.upcoming || entry.pastDue;
+  };
 
   for (const column of columns) {
     for (const job of column.jobs) {
-      const reminder = reminderByJob.get(job.job_id);
+      const reminder = resolveReminderForJob(job.job_id);
       if (reminder) {
         job.reminder = reminder;
       }

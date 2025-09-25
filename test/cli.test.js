@@ -807,6 +807,45 @@ describe('jobbot CLI', () => {
     });
   });
 
+  it('prefers upcoming reminders on the board when multiple entries exist', () => {
+    runCli(['track', 'add', 'job-42', '--status', 'screening']);
+    runCli([
+      'track',
+      'log',
+      'job-42',
+      '--channel',
+      'email',
+      '--remind-at',
+      '2020-01-01T00:00:00Z',
+    ]);
+    runCli([
+      'track',
+      'log',
+      'job-42',
+      '--channel',
+      'call',
+      '--remind-at',
+      '2099-01-10T15:00:00Z',
+      '--note',
+      'Prep next check-in',
+    ]);
+
+    const text = runCli(['track', 'board']);
+    expect(text).toContain('Reminder: 2099-01-10T15:00:00.000Z (call, upcoming)');
+    expect(text).not.toContain('Reminder: 2020-01-01T00:00:00.000Z (email, past due)');
+
+    const json = runCli(['track', 'board', '--json']);
+    const parsed = JSON.parse(json);
+    const screening = parsed.columns.find(column => column.status === 'screening');
+    expect(screening.jobs.find(job => job.job_id === 'job-42').reminder).toMatchObject({
+      job_id: 'job-42',
+      remind_at: '2099-01-10T15:00:00.000Z',
+      past_due: false,
+      channel: 'call',
+      note: 'Prep next check-in',
+    });
+  });
+
   it('archives discarded jobs with reasons', () => {
     const output = runCli([
       'track',

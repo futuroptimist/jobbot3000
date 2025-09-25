@@ -128,7 +128,8 @@ aggressively to respect rate limits.
    (add `--upcoming-only` to hide past-due entries and `--json` when piping into other tools).
    The digest prints `Past Due` and `Upcoming` sections so urgent follow-ups remain visible even
    when one bucket is empty, showing `(none)` under empty headings so users can confirm nothing is
-   pending there.
+   pending there. Lifecycle board summaries surface the soonest upcoming reminder per job and fall
+   back to the most recent past-due entry when no future timestamp is scheduled.
 
 **Unhappy paths:** conflicting updates (e.g., two devices editing simultaneously) trigger a merge
 flow that preserves both sets of notes.
