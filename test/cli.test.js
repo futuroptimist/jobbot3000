@@ -819,6 +819,22 @@ describe('jobbot CLI', () => {
     );
   });
 
+  it('prints empty reminder sections when none exist', () => {
+    const output = runCli(['track', 'reminders']);
+
+    expect(output).not.toContain('No reminders scheduled');
+
+    const lines = output.trim().split('\n');
+    const pastDueIndex = lines.indexOf('Past Due');
+    const upcomingIndex = lines.indexOf('Upcoming');
+
+    expect(pastDueIndex).toBeGreaterThan(-1);
+    expect(lines[pastDueIndex + 1]).toBe('  (none)');
+
+    expect(upcomingIndex).toBeGreaterThan(-1);
+    expect(lines[upcomingIndex + 1]).toBe('  (none)');
+  });
+
   it('summarizes lifecycle statuses with track board', () => {
     runCli(['track', 'add', 'job-1', '--status', 'screening', '--note', 'Awaiting recruiter']);
     runCli(['track', 'add', 'job-2', '--status', 'onsite']);
