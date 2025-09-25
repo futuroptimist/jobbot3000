@@ -75,6 +75,20 @@ describe('jobbot CLI', () => {
     expect(resume.meta?.generator).toBe('jobbot3000');
   });
 
+  it('initializes a resume skeleton with profile init command', () => {
+    const output = runCli(['profile', 'init']);
+    expect(output.trim()).toMatch(/Initialized profile at/);
+
+    const profileDir = path.join(dataDir, 'profile');
+    const resumePath = path.join(profileDir, 'resume.json');
+    const raw = fs.readFileSync(resumePath, 'utf8');
+    const resume = JSON.parse(raw);
+
+    expect(resume.basics).toBeDefined();
+    expect(Array.isArray(resume.work)).toBe(true);
+    expect(resume.meta?.generator).toBe('jobbot3000');
+  });
+
   it('summarize from stdin', () => {
     const out = runCli(['summarize', '-'], 'First sentence. Second.');
     expect(out).toMatch(/First sentence\./);
@@ -178,6 +192,19 @@ describe('jobbot CLI', () => {
     ]);
   });
 
+  it('imports LinkedIn profile exports with profile import', () => {
+    const fixture = path.resolve('test', 'fixtures', 'linkedin-profile.json');
+    const out = runCli(['profile', 'import', 'linkedin', fixture]);
+    expect(out).toMatch(/Imported LinkedIn profile to/);
+
+    const resumePath = path.join(dataDir, 'profile', 'resume.json');
+    const resume = JSON.parse(fs.readFileSync(resumePath, 'utf8'));
+
+    expect(resume.basics.name).toBe('Casey Taylor');
+    expect(resume.work).toHaveLength(1);
+    expect(resume.work[0]).toMatchObject({ name: 'ExampleCorp', position: 'Staff SRE' });
+  });
+
   it('match from local files', () => {
     const job = 'Title: Engineer\nCompany: ACME\nRequirements\n- JavaScript\n- Node.js\n';
     const resume = 'I am an engineer with JavaScript experience.';
@@ -189,6 +216,30 @@ describe('jobbot CLI', () => {
     const out = runCli(['match', '--resume', resumePath, '--job', jobPath, '--json']);
     const data = JSON.parse(out);
     expect(data.score).toBeGreaterThanOrEqual(50);
+  });
+
+  it('overrides title and location when flags are provided to match', () => {
+    const jobPath = path.join(dataDir, 'job-override.txt');
+    const resumePath = path.join(dataDir, 'resume-override.txt');
+    fs.writeFileSync(jobPath, 'Requirements\n- Node.js\n');
+    fs.writeFileSync(resumePath, 'Experienced Node.js engineer.');
+
+    const out = runCli([
+      'match',
+      '--resume',
+      resumePath,
+      '--job',
+      jobPath,
+      '--json',
+      '--role',
+      'Senior SRE',
+      '--location',
+      'SF Bay Area',
+    ]);
+
+    const payload = JSON.parse(out);
+    expect(payload.title).toBe('Senior SRE');
+    expect(payload.location).toBe('SF Bay Area');
   });
 
   it('localizes match reports when --locale is provided', () => {

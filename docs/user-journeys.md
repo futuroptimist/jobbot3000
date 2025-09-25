@@ -10,9 +10,10 @@ translate them into backlog items, prompts, and acceptance tests.
 jobbot3000.
 
 1. The user selects a local resume file (PDF, Markdown, MDX, or plain text) or points to an existing
-   `resume.json`. When they start from scratch, `jobbot init` scaffolds
-   `data/profile/resume.json` with empty JSON Resume sections ready for editing.
-   When a LinkedIn data export is available, `jobbot import linkedin <file>`
+   `resume.json`. When they start from scratch, `jobbot init` (or
+   `jobbot profile init`) scaffolds `data/profile/resume.json` with empty JSON
+   Resume sections ready for editing. When a LinkedIn data export is available,
+   `jobbot import linkedin <file>` or `jobbot profile import linkedin <file>`
    merges contact details, work history, education, and skills into the same
    profile without overwriting confirmed fields.
 2. The CLI or UI calls the resume loader to extract clean text and metadata.

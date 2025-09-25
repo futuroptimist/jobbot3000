@@ -254,12 +254,16 @@ Initialize a JSON Resume skeleton when you do not have an existing file:
 ```bash
 JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot init
 # Initialized profile at /tmp/jobbot-profile-XXXX/profile/resume.json
+
+# The profile namespace exposes the same initializer
+JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot profile init
 ```
 
-`jobbot init` writes `profile/resume.json` under the data directory with empty
-basics, work, education, skills, projects, certificates, and languages
-sections. The command is idempotent and preserves existing resumes; see
-`test/cli.test.js` and `test/profile.test.js` for coverage.
+`jobbot init` (and its `jobbot profile init` alias) writes `profile/resume.json`
+under the data directory with empty basics, work, education, skills, projects,
+certificates, and languages sections. The command is idempotent and preserves
+existing resumes; see `test/cli.test.js` and `test/profile.test.js` for
+coverage of both entry points.
 
 Import a LinkedIn profile export to seed the resume with verified contact,
 work history, education, and skills:
@@ -267,6 +271,9 @@ work history, education, and skills:
 ```bash
 JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot import linkedin linkedin-profile.json
 # Imported LinkedIn profile to /tmp/jobbot-profile-XXXX/profile/resume.json (basics +5, work +1, education +1, skills +3)
+
+# The profile namespace forwards to the same importer
+JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot profile import linkedin linkedin-profile.json
 ```
 
 The importer accepts LinkedIn JSON exports (downloadable from
@@ -274,7 +281,7 @@ The importer accepts LinkedIn JSON exports (downloadable from
 existing resume without overwriting confirmed fields. Work history, education,
 and skill entries are deduplicated so repeated imports keep the profile tidy.
 See `test/profile-import.test.js` for normalization edge cases and
-`test/cli.test.js` for CLI wiring.
+`test/cli.test.js` for CLI wiring (including the `jobbot profile import` path).
 
 Format parsed results as Markdown. The exporters escape Markdown control characters so job
 content cannot inject arbitrary links or formatting when rendered downstream:
@@ -431,6 +438,11 @@ JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot match --resume resume.txt --job job.txt 
 JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot match --resume resume.txt --job job.txt --locale fr --docx match-fr.docx
 # => Markdown and DOCX outputs render translated labels
 ```
+
+Provide `--role <title>` and/or `--location <value>` when the source material omits those fields or
+when you want to override parsed metadata for reporting purposes. The overrides flow into Markdown,
+JSON, and DOCX outputs as well as the saved job snapshot so downstream tooling sees the adjusted
+context.
 
 Fit scoring recognizes common abbreviations so lexical-only resumes still match spelled-out
 requirements. `AWS` on a resume matches `Amazon Web Services`, `ML` pairs with `Machine learning`,

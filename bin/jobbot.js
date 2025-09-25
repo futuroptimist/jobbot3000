@@ -231,7 +231,8 @@ export async function cmdMatch(args) {
   const resumeIdx = args.indexOf('--resume');
   const usage =
     'Usage: jobbot match --resume <file> --job <file|url> [--json] [--explain] ' +
-    '[--docx <path>] [--locale <code>] [--max-bytes <bytes>]';
+    '[--docx <path>] [--locale <code>] [--role <title>] [--location <value>] ' +
+    '[--timeout <ms>] [--max-bytes <bytes>]';
   if (resumeIdx === -1 || !args[resumeIdx + 1]) {
     console.error(usage);
     process.exit(2);
@@ -256,6 +257,21 @@ export async function cmdMatch(args) {
     console.error(usage);
     process.exit(2);
   }
+  const roleSpecified = args.includes('--role');
+  const roleFlag = getFlag(args, '--role');
+  const role = typeof roleFlag === 'string' ? roleFlag.trim() : roleFlag;
+  if (roleSpecified && !role) {
+    console.error(usage);
+    process.exit(2);
+  }
+  const locationSpecified = args.includes('--location');
+  const locationFlag = getFlag(args, '--location');
+  const locationOverride =
+    typeof locationFlag === 'string' ? locationFlag.trim() : locationFlag;
+  if (locationSpecified && !locationOverride) {
+    console.error(usage);
+    process.exit(2);
+  }
   const timeoutMs = getNumberFlag(args, '--timeout', 10000);
   const maxBytes = getNumberFlag(args, '--max-bytes');
   const resumePath = args[resumeIdx + 1];
@@ -271,6 +287,8 @@ export async function cmdMatch(args) {
     ? await fetchTextFromUrl(jobUrl, fetchOptions)
     : await readSource(jobInput);
   const parsed = parseJobText(jobRaw);
+  if (role) parsed.title = role;
+  if (locationOverride) parsed.location = locationOverride;
   const payload = matchResumeToJob(resumeText, parsed, {
     jobUrl,
     locale,
@@ -1638,7 +1656,10 @@ async function cmdRehearse(args) {
 async function cmdImportLinkedIn(args) {
   const source = args[0];
   if (!source) {
-    console.error('Usage: jobbot import linkedin <file>');
+    console.error(
+      'Usage: jobbot import linkedin <file>\n' +
+        '   or: jobbot profile import linkedin <file>'
+    );
     process.exit(2);
   }
 
@@ -1657,6 +1678,12 @@ async function cmdImportLinkedIn(args) {
   }
 }
 
+async function runProfileInit(force) {
+  const { created, path: resumePath } = await initProfile({ force });
+  if (created) console.log(`Initialized profile at ${resumePath}`);
+  else console.log(`Profile already exists at ${resumePath}`);
+}
+
 async function cmdImport(args) {
   const sub = args[0];
   if (sub === 'linkedin') return cmdImportLinkedIn(args.slice(1));
@@ -1666,14 +1693,31 @@ async function cmdImport(args) {
 
 async function cmdInit(args) {
   const force = args.includes('--force');
-  const { created, path: resumePath } = await initProfile({ force });
-  if (created) console.log(`Initialized profile at ${resumePath}`);
-  else console.log(`Profile already exists at ${resumePath}`);
+  await runProfileInit(force);
+}
+
+async function cmdProfileInit(args) {
+  const force = args.includes('--force');
+  await runProfileInit(force);
+}
+
+async function cmdProfile(args) {
+  const sub = args[0];
+  if (sub === 'init') return cmdProfileInit(args.slice(1));
+  if (sub === 'import' && args[1] === 'linkedin') {
+    return cmdImportLinkedIn(args.slice(2));
+  }
+  console.error(
+    'Usage: jobbot profile init [--force]\n' +
+      '   or: jobbot profile import linkedin <file>'
+  );
+  process.exit(2);
 }
 
 async function main() {
   const [, , cmd, ...args] = process.argv;
   if (cmd === 'init') return cmdInit(args);
+  if (cmd === 'profile') return cmdProfile(args);
   if (cmd === 'summarize') return cmdSummarize(args);
   if (cmd === 'match') return cmdMatch(args);
   if (cmd === 'track') return cmdTrack(args);
@@ -1687,7 +1731,7 @@ async function main() {
   if (cmd === 'interviews') return cmdInterviews(args);
   if (cmd === 'schedule') return cmdSchedule(args);
   console.error(
-    'Usage: jobbot <init|import|summarize|match|track|shortlist|analytics|' +
+    'Usage: jobbot <init|profile|import|summarize|match|track|shortlist|analytics|' +
       'rehearse|deliverables|interviews|intake|ingest|schedule> [options]'
   );
   process.exit(2);
