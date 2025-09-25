@@ -15,5 +15,14 @@ export default {
   noHits: 'Aucune correspondance directe depuis le CV.',
   noGaps: 'Aucune exigence manquante détectée.',
   coverageSummary: 'Correspond {matched} sur {total} exigences ({score} %).',
-  greeting: 'Bonjour, {name}!'
+  greeting: 'Bonjour, {name}!',
+  priorActivityHeading: 'Activités précédentes',
+  priorActivityDeliverablesLabel: 'Livrables',
+  priorActivityRunSingular: 'exécution',
+  priorActivityRunPlural: 'exécutions',
+  priorActivityLastRunSuffix: ' (dernière exécution {timestamp})',
+  priorActivityInterviewsLabel: 'Entretiens',
+  priorActivitySessionSingular: 'session',
+  priorActivitySessionPlural: 'sessions',
+  priorActivityCoachingNotesLabel: 'Notes de coaching',
 };

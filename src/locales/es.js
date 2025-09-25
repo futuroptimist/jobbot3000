@@ -15,5 +15,14 @@ export default {
   blockers: 'Obstáculos',
   noBlockers: 'No se identificaron obstáculos.',
   coverageSummary: 'Coincidió con {matched} de {total} requisitos ({score}%).',
-  greeting: '¡Hola, {name}!'
+  greeting: '¡Hola, {name}!',
+  priorActivityHeading: 'Actividad previa',
+  priorActivityDeliverablesLabel: 'Entregables',
+  priorActivityRunSingular: 'ejecución',
+  priorActivityRunPlural: 'ejecuciones',
+  priorActivityLastRunSuffix: ' (última ejecución {timestamp})',
+  priorActivityInterviewsLabel: 'Entrevistas',
+  priorActivitySessionSingular: 'sesión',
+  priorActivitySessionPlural: 'sesiones',
+  priorActivityCoachingNotesLabel: 'Notas de coaching',
 };

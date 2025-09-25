@@ -15,5 +15,14 @@ export default {
   blockers: 'Blockers',
   noBlockers: 'No blockers flagged.',
   coverageSummary: 'Matched {matched} of {total} requirements ({score}%).',
-  greeting: 'Hello, {name}!'
+  greeting: 'Hello, {name}!',
+  priorActivityHeading: 'Prior Activity',
+  priorActivityDeliverablesLabel: 'Deliverables',
+  priorActivityRunSingular: 'run',
+  priorActivityRunPlural: 'runs',
+  priorActivityLastRunSuffix: ' (last run {timestamp})',
+  priorActivityInterviewsLabel: 'Interviews',
+  priorActivitySessionSingular: 'session',
+  priorActivitySessionPlural: 'sessions',
+  priorActivityCoachingNotesLabel: 'Coaching notes',
 };

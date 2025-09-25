@@ -388,6 +388,20 @@ describe('jobbot CLI', () => {
     expect(mdOut).toContain('## Prior Activity');
     expect(mdOut).toContain('Deliverables: 1 run');
     expect(mdOut).toContain('Interviews: 1 session');
+
+    const localizedOut = runCli([
+      'match',
+      '--resume',
+      resumePath,
+      '--job',
+      jobPath,
+      '--locale',
+      'es',
+    ]);
+    expect(localizedOut).toContain('## Actividad previa');
+    expect(localizedOut).toContain('Entregables: 1 ejecución');
+    expect(localizedOut).toContain('Entrevistas: 1 sesión');
+    expect(localizedOut).toContain('  Notas de coaching:');
   });
 
   it('explains hits and gaps with match --explain', () => {

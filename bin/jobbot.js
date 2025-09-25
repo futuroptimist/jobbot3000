@@ -51,6 +51,7 @@ import { ingestJobUrl } from '../src/url-ingest.js';
 import { bundleDeliverables } from '../src/deliverables.js';
 import { createTaskScheduler, loadScheduleConfig, buildScheduledTasks } from '../src/schedule.js';
 import { transcribeAudio, synthesizeSpeech } from '../src/speech.js';
+import { t, DEFAULT_LOCALE } from '../src/i18n.js';
 
 function isHttpUrl(s) {
   return /^https?:\/\//i.test(s);
@@ -322,7 +323,10 @@ export async function cmdMatch(args) {
     console.log(toJson(jsonPayload));
   } else {
     const report = toMarkdownMatch(localizedPayload);
-    const priorSection = formatPriorActivitySection(payload.prior_activity);
+    const priorSection = formatPriorActivitySection(
+      payload.prior_activity,
+      payload.locale || locale,
+    );
     if (!explain) {
       if (priorSection) {
         const segments = [];
@@ -393,20 +397,21 @@ function formatStatusLabel(status) {
     .join(' ');
 }
 
-function formatPriorActivitySection(activity) {
+function formatPriorActivitySection(activity, locale = DEFAULT_LOCALE) {
   if (!activity || typeof activity !== 'object') return '';
   const { deliverables, interviews } = activity;
   if (!deliverables && !interviews) return '';
 
-  const lines = ['## Prior Activity'];
+  const lines = [`## ${t('priorActivityHeading', locale)}`];
 
   if (deliverables) {
     const runs = typeof deliverables.runs === 'number' ? deliverables.runs : 0;
     if (runs > 0) {
-      const noun = runs === 1 ? 'run' : 'runs';
-      let line = `- Deliverables: ${runs} ${noun}`;
+      const nounKey = runs === 1 ? 'priorActivityRunSingular' : 'priorActivityRunPlural';
+      const deliverablesLabel = t('priorActivityDeliverablesLabel', locale);
+      let line = `- ${deliverablesLabel}: ${runs} ${t(nounKey, locale)}`;
       if (deliverables.last_run_at) {
-        line += ` (last run ${deliverables.last_run_at})`;
+        line += t('priorActivityLastRunSuffix', locale, { timestamp: deliverables.last_run_at });
       }
       lines.push(line);
     }
@@ -415,8 +420,10 @@ function formatPriorActivitySection(activity) {
   if (interviews) {
     const sessions = typeof interviews.sessions === 'number' ? interviews.sessions : 0;
     if (sessions > 0) {
-      const noun = sessions === 1 ? 'session' : 'sessions';
-      let line = `- Interviews: ${sessions} ${noun}`;
+      const nounKey =
+        sessions === 1 ? 'priorActivitySessionSingular' : 'priorActivitySessionPlural';
+      const interviewsLabel = t('priorActivityInterviewsLabel', locale);
+      let line = `- ${interviewsLabel}: ${sessions} ${t(nounKey, locale)}`;
       const details = [];
       const last = interviews.last_session;
       if (last) {
@@ -433,7 +440,7 @@ function formatPriorActivitySection(activity) {
 
       const tighten = last?.critique?.tighten_this;
       if (Array.isArray(tighten) && tighten.length > 0) {
-        lines.push('  Coaching notes:');
+        lines.push(`  ${t('priorActivityCoachingNotesLabel', locale)}:`);
         for (const note of tighten) {
           if (note) lines.push(`  - ${note}`);
         }
