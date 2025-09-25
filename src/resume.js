@@ -316,13 +316,28 @@ function detectAmbiguities(raw) {
 
   const ambiguities = [];
   const lines = raw.split(/\r?\n/);
-  for (const line of lines) {
+  const lineStarts = createLineStartIndex(raw);
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
     if (!MONTH_NAME_RE.test(line)) continue;
     if (YEAR_RE.test(line)) continue;
-    ambiguities.push({
+
+    let location;
+    const match = line.match(MONTH_NAME_RE);
+    if (match) {
+      const columnIndex = line.indexOf(match[0]);
+      if (columnIndex !== -1) {
+        const absoluteIndex = (lineStarts[i] ?? 0) + columnIndex;
+        location = findLocation(lineStarts, absoluteIndex);
+      }
+    }
+
+    const entry = {
       type: 'dates',
       message: 'Detected month references without four-digit years; confirm date ranges are clear.',
-    });
+    };
+    if (location) entry.location = location;
+    ambiguities.push(entry);
     break;
   }
 
