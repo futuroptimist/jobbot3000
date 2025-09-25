@@ -198,6 +198,9 @@ describe('loadResume', () => {
         expect.objectContaining({ type: 'titles' }),
       ]),
     );
+
+    const dateHint = result.metadata.ambiguities.find(entry => entry.type === 'dates');
+    expect(dateHint?.location).toMatchObject({ line: 5, column: 1 });
   });
 
   it('retains duplicate placeholder values and preserves document order', async () => {

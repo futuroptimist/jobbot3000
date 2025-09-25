@@ -215,6 +215,8 @@ order so callers can highlight every placeholder directly in downstream editors.
 Plain text and PDF resumes receive the same aggregate `dates`, `metrics`, and
 `titles` hints, with additional coverage in `test/resume.test.js` confirming the
 non-Markdown path.
+Month-range heuristics now tag the first ambiguous month with its source line and column even when no
+placeholder tokens (such as `20XX`) exist, keeping plain-text imports aligned with the Markdown branch.
 
 Initialize a JSON Resume skeleton when you do not have an existing file:
 
