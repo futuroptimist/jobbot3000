@@ -9,6 +9,52 @@ practices for linting, testing, and documentation.
 
 Requires [Node.js](https://nodejs.org/) 20 or newer.
 
+### Cross-platform setup checklist
+
+All platforms:
+
+- Install Node.js 20+ and run `npm ci` from the project root.
+- Verify the repo stays green with `npm run lint` and `npm run test:ci`.
+- When you are done with a temporary data directory, remove it to avoid stale state.
+
+#### Linux, macOS, and Windows Subsystem for Linux (WSL)
+
+The POSIX shells bundled with these environments support the same commands.
+
+```bash
+export JOBBOT_DATA_DIR=$(mktemp -d)
+npm run lint
+npm run test:ci
+npx jobbot init
+npx jobbot track add job-123 --status screening
+rm -rf "$JOBBOT_DATA_DIR"
+unset JOBBOT_DATA_DIR
+```
+
+#### Windows 11 PowerShell
+
+Use PowerShell syntax when exporting environment variables. The CLI automatically
+quotes Windows paths when invoking external tools (for example, custom speech
+transcribers), so commands with spaces do not need manual escaping.
+
+```powershell
+$jobbotData = Join-Path $env:TEMP ([guid]::NewGuid())
+New-Item -ItemType Directory -Path $jobbotData | Out-Null
+$env:JOBBOT_DATA_DIR = $jobbotData
+npm run lint
+npm run test:ci
+npx jobbot init
+npx jobbot track add job-123 --status screening
+Remove-Item $jobbotData -Recurse -Force
+Remove-Item Env:JOBBOT_DATA_DIR
+```
+
+The `postinstall` script that provisions console fonts on Linux safely no-ops on
+macOS, WSL, and Windows when those assets are unavailable.
+
+See [docs/platform-support.md](docs/platform-support.md) for deeper platform
+guidance, environment variable recipes, and troubleshooting notes.
+
 ```bash
 # Clone your fork
 git clone git@github.com:YOURNAME/jobbot3000.git
@@ -740,8 +786,8 @@ so downstream tools can surface the most recent rationale and how often a role h
 without traversing the full history. Add `--json` to the
 shortlist list command when piping entries into other tools; include `--out <path>` to persist the
 snapshot on disk. Filter by metadata or tags (`--location`, `--level`, `--compensation`, or repeated
-`--tag` flags) when triaging opportunities. Text output also surfaces `Last Discard Tags` when tag
-history exists so the rationale stays visible without opening the archive. The archive reader trims
+`--tag` flags) when triaging opportunities. Text output also surfaces `Discard Count` and `Last Discard Tags`
+when history exists so the rationale stays visible without opening the archive. The archive reader trims
 messy history entries, sorts them chronologically, and fills missing timestamps with `(unknown time)`
 so legacy discards still surface their rationale. Metadata syncs stamp a `synced_at` ISO 8601 timestamp for
 refresh schedulers. Shells treat `$` as a variable prefix, so `--compensation "$185k"` expands to
@@ -749,7 +795,9 @@ refresh schedulers. Shells treat `$` as a variable prefix, so `--compensation "$
 dollar sign (`--compensation "\$185k"`) when you need the digits preserved. Override the auto-attached
 symbol by setting `JOBBOT_SHORTLIST_CURRENCY` (for example, `JOBBOT_SHORTLIST_CURRENCY='€'`).
 Existing shortlist files missing a currency symbol are normalized on read using the same default so
-filters and reports stay consistent.
+filters and reports stay consistent. Programmatic filters apply the same default when the
+compensation criterion omits a symbol, letting `filterShortlist({ compensation: '185k' })`
+match stored `$185k` entries just like the CLI.
 Newest-first shortlist snapshots saved by earlier releases now derive `last_discard` from the
 leading entry, keeping the summary aligned with the exported history. Unit coverage in
 [`test/shortlist.test.js`](test/shortlist.test.js) locks in this legacy scenario alongside the discard
@@ -1091,21 +1139,24 @@ transcripts or feedback. Configure
 `JOBBOT_SPEECH_TRANSCRIBER` with a local command that accepts the audio path via `{{input}}`
 (or pass `--transcriber <command>` at runtime) to automatically transcribe recordings;
 the CLI records the derived transcript alongside an `audio_source` marker. Set
-`JOBBOT_SPEECH_SYNTHESIZER` (or pass `--speaker <command>`) to read dialog prompts aloud when
-`jobbot interviews plan --speak` is used so candidates can rehearse responses hands-free. The CLI
-accepts `--*-file` options for longer inputs (for example, `--transcript-file transcript.md`).
-Automated coverage in [`test/interviews.test.js`](test/interviews.test.js) and
-[`test/cli.test.js`](test/cli.test.js) verifies persistence, retrieval paths, stage/mode shortcuts,
-the defaulted rehearse metadata, audio transcription integration, synthesizer execution for dialog
-prompts, manual recordings inheriting the same Behavioral/Voice defaults (even when no transcript is
-provided), and the stage-specific rehearsal plans emitted by `jobbot interviews plan`. Plans now include a
-`Flashcards` checklist, a numbered `Question bank`, and a branching `Dialog tree` so candidates can
-drill concepts by focus area and practice follow-ups; the updated tests assert that all sections
-appear in JSON and CLI output. New coverage in [`test/interviews.test.js`](test/interviews.test.js)
-locks in the Onsite logistics plan’s dialog prompts alongside the recruiter screen pitch and
-timeline checkpoints, while [`test/cli.test.js`](test/cli.test.js) confirms the CLI surfaces the
-screen plan’s timeline reminders, stage transitions, and audio metadata consistently across
-releases.
+`JOBBOT_SPEECH_SYNTHESIZER` (or pass `--speaker <command>`) to narrate the entire study packet when
+`jobbot interviews plan --speak` is used—the stage header, summary, section checklists, resources,
+flashcards, question bank prompts, and dialog tree follow-ups all stream through the synthesizer so
+candidates can drill hands-free. The CLI accepts `--*-file` options for longer inputs (for example,
+`--transcript-file transcript.md`). Automated coverage in
+[`test/interviews.test.js`](test/interviews.test.js) and [`test/cli.test.js`](test/cli.test.js)
+verifies persistence, retrieval paths, stage/mode shortcuts, the defaulted rehearse metadata, audio
+transcription integration, synthesizer execution for the narrated sections (including resources and
+flashcards), manual recordings inheriting the same Behavioral/Voice defaults (even when no
+transcript is provided), and the stage-specific rehearsal plans emitted by `jobbot interviews plan`.
+Plans now include a `Flashcards` checklist, a numbered `Question bank`, and a branching `Dialog tree`
+so candidates can drill concepts by focus area and practice follow-ups; the updated tests assert that
+all sections appear in JSON and CLI output. New coverage in
+[`test/interviews.test.js`](test/interviews.test.js) locks in the Onsite logistics plan’s dialog
+prompts alongside the recruiter screen pitch and timeline checkpoints, while
+[`test/cli.test.js`](test/cli.test.js) confirms the CLI surfaces the screen plan’s timeline
+reminders, stage transitions, audio metadata, and synthesized study-packet narration consistently
+across releases.
 
 Recorded sessions now attach a `heuristics` block that summarizes brevity (word count, sentence
 count, average sentence length, and estimated words per minute when timestamps are present), filler
@@ -1260,16 +1311,19 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track board --json | jq '.columns[1]'
 Notes stay attached to each entry so checklists remain visible alongside due
 reminders and outreach history when triaging the pipeline. Each job now shows
 the next reminder (with channel, note, and contact) directly on the board, and
-JSON payloads expose the same `reminder` object for downstream tooling. When a
-job carries multiple reminders, the board surfaces the soonest upcoming entry
-and falls back to the most recent past-due reminder when no future timestamp is
-scheduled.
+JSON payloads expose the same `reminder` object for downstream tooling.
+Jobs without a scheduled follow-up display `Reminder: (none)` so you can confirm
+nothing is queued for that opportunity. When a job carries multiple reminders,
+the board surfaces the soonest upcoming entry and falls back to the most recent
+past-due reminder when no future timestamp is scheduled.
 
 Surface follow-up work with `jobbot track reminders`. Pass `--now` to view from a
 given timestamp (defaults to the current time), `--upcoming-only` to suppress past-due
 entries, and `--json` for structured output. The digest groups results by urgency so
 past-due work stays visible without scanning the whole list. Empty sections print `(none)` so
-you can confirm there isn't hidden work before moving on:
+you can confirm there isn't hidden work before moving on. When filters remove every reminder
+(for example, `--upcoming-only` against a day with only past-due entries), the CLI still prints
+an `Upcoming` heading with `(none)` so it's obvious nothing is scheduled:
 
 ```bash
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track reminders --now 2025-03-06T00:00:00Z

@@ -77,8 +77,10 @@ revisit them later without blocking the workflow.
 4. The shortlist view exposes filters (location, level, compensation, tags) via
    `jobbot shortlist list --location <value>` (and repeated `--tag <value>` flags)
    and records sync metadata with `jobbot shortlist sync` so future refreshes know
-   when entries were last updated. Add `--json` (and optionally
-   `--out <path>`) when exporting the filtered shortlist to other tools.
+   when entries were last updated. Text summaries now also show `Discard Count` and
+   `Last Discard Tags` for each job so candidates can spot churn without opening the
+   archive. Add `--json` (and optionally `--out <path>`) when exporting the filtered
+   shortlist to other tools.
 5. Teams can automate recurring ingestion and matching runs with
    `jobbot schedule run --config <file> [--cycles <count>]`. Configured tasks pull
    boards on a cadence and compute fit scores against the latest resume so the
@@ -129,8 +131,12 @@ aggressively to respect rate limits.
    (add `--upcoming-only` to hide past-due entries and `--json` when piping into other tools).
    The digest prints `Past Due` and `Upcoming` sections so urgent follow-ups remain visible even
    when one bucket is empty, showing `(none)` under empty headings so users can confirm nothing is
-   pending there. Lifecycle board summaries surface the soonest upcoming reminder per job and fall
-   back to the most recent past-due entry when no future timestamp is scheduled.
+   pending there. When filters remove every reminder (for example, `--upcoming-only` on a day with
+   only past-due entries), the CLI still prints an `Upcoming` heading with `(none)` so it is clear
+   nothing new is scheduled. Lifecycle board summaries surface the soonest upcoming reminder per job
+   and fall back to the most recent past-due entry when no future timestamp is scheduled. When a job
+   has no reminders at all, the board prints `Reminder: (none)` so idle opportunities are obvious at
+   a glance.
 
 **Unhappy paths:** conflicting updates (e.g., two devices editing simultaneously) trigger a merge
 flow that preserves both sets of notes.
@@ -148,8 +154,9 @@ flow that preserves both sets of notes.
    `JOBBOT_SPEECH_TRANSCRIBER` (or pass `--transcriber <command>`) and run
    `jobbot rehearse <job_id> --audio <file>` to convert recorded answers into transcripts that are
    stored alongside the session metadata. Set `JOBBOT_SPEECH_SYNTHESIZER` (or pass
-   `--speaker <command>`) and call `jobbot interviews plan --stage <stage> --speak` to play the dialog
-   prompts aloud before answering.
+   `--speaker <command>`) and call `jobbot interviews plan --stage <stage> --speak` to hear the full
+   rehearsal packet—stage summary, checklist items, resources, flashcards, question prompts, and
+   dialog follow-ups—before answering.
 4. Sessions capture transcripts, user reflections, and coach feedback in
    `data/interviews/{job_id}/{session_id}.json` for future review via
    `jobbot interviews record`. Quick run-throughs can use
