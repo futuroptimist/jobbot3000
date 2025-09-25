@@ -763,7 +763,9 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist archive job-123
 
 Automated CLI tests cover both the new-entry and refresh flows so `jobbot shortlist sync <job_id>`
 continues to stamp `synced_at` when metadata flags are omitted and when existing records are
-refreshed. These cases live alongside the broader shortlist suite in `test/cli.test.js`.
+refreshed. These cases live alongside the broader shortlist suite in `test/cli.test.js`, and
+`test/shortlist.test.js` now asserts that compensation filters succeed even when the query omits
+currency symbols—mirroring the CLI example above for `--compensation 185k`.
 
 Programmatic consumers can call `syncShortlistJob(jobId)` without metadata to refresh the
 timestamp while leaving prior fields intact; `test/shortlist.test.js` now locks in that
