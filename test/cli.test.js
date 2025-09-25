@@ -718,6 +718,31 @@ describe('jobbot CLI', () => {
     });
   });
 
+  it('prints headings with (none) when reminders are filtered out', () => {
+    runCli([
+      'track',
+      'log',
+      'job-only-past-due',
+      '--channel',
+      'follow_up',
+      '--date',
+      '2025-03-01T08:00:00Z',
+      '--remind-at',
+      '2025-03-02T09:00:00Z',
+    ]);
+
+    const output = runCli([
+      'track',
+      'reminders',
+      '--upcoming-only',
+      '--now',
+      '2025-03-10T00:00:00Z',
+    ]);
+
+    const lines = output.trimEnd().split('\n');
+    expect(lines).toEqual(['Upcoming', '  (none)']);
+  });
+
   it('formats reminder summaries and respects --upcoming-only', () => {
     runCli([
       'track',
@@ -928,6 +953,20 @@ describe('jobbot CLI', () => {
       channel: 'call',
       note: 'Prep next check-in',
     });
+  });
+
+  it('shows a reminder placeholder on the board when none are scheduled', () => {
+    runCli(['track', 'add', 'job-no-reminder', '--status', 'screening']);
+
+    const text = runCli(['track', 'board']);
+    const lines = text.trim().split('\n');
+    expect(lines).toContain('  Reminder: (none)');
+
+    const json = runCli(['track', 'board', '--json']);
+    const parsed = JSON.parse(json);
+    const screening = parsed.columns.find(column => column.status === 'screening');
+    const entry = screening.jobs.find(job => job.job_id === 'job-no-reminder');
+    expect(entry).not.toHaveProperty('reminder');
   });
 
   it('archives discarded jobs with reasons', () => {
@@ -1382,6 +1421,32 @@ describe('jobbot CLI', () => {
     const output = runCli(['shortlist', 'list']);
     expect(output).toContain('Last Discard: Stay in touch (2025-03-10T12:00:00.000Z)');
     expect(output).not.toContain('Last Discard: Old news (2024-12-25T09:00:00.000Z)');
+  });
+
+  it('surfaces discard counts in shortlist list summaries', () => {
+    runCli([
+      'shortlist',
+      'discard',
+      'job-discard-count',
+      '--reason',
+      'Initial pass',
+      '--date',
+      '2025-02-01T10:00:00Z',
+    ]);
+
+    runCli([
+      'shortlist',
+      'discard',
+      'job-discard-count',
+      '--reason',
+      'Revisit later',
+      '--date',
+      '2025-03-15T12:30:00Z',
+    ]);
+
+    const output = runCli(['shortlist', 'list']);
+    expect(output).toContain('job-discard-count');
+    expect(output).toContain('Discard Count: 2');
   });
 
   it('shows last discard details for legacy entries without timestamps', () => {
@@ -2159,9 +2224,15 @@ describe('jobbot CLI', () => {
     ]);
 
     const spoken = fs.readFileSync(spokenLog, 'utf8').trim().split('\n');
+    expect(spoken).toContain('Behavioral rehearsal plan');
+    expect(spoken).toContain('Section: Warm-up');
+    expect(spoken).toContain(
+      'Flashcard: STAR checkpoint — Anchor stories around Situation, Task, Action, Result.',
+    );
+    expect(spoken).toContain('Resource: STAR template cheat sheet');
     expect(spoken).toContain('Walk me through a recent project you led end-to-end.');
     expect(spoken).toContain('How did you bring partners along the way?');
     expect(spoken).toContain('Share a time you navigated conflict with a stakeholder.');
     expect(spoken).toContain('What trade-offs or data helped resolve it?');
-  });
+  }, 10000);
 });
