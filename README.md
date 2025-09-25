@@ -346,6 +346,28 @@ console.log(md);
 // - Rust
 ```
 
+Orchestrate parsing and scoring in one call with `matchResumeToJob` from
+[`src/match.js`](src/match.js). It accepts either raw job text or a parsed
+object and returns the same shape the CLI prints, including `skills_hit`,
+`skills_gap`, blocker detection, and optional localized explanations:
+
+```js
+import { matchResumeToJob } from './src/match.js';
+
+const resume = 'Built Node.js services and automated Terraform deployments.';
+const jobDescription = `Title: Platform Engineer\nRequirements:\n- Experience with Node.js\n- Must have Kubernetes certification\n- Terraform proficiency\n`;
+
+const match = matchResumeToJob(resume, jobDescription, {
+  includeExplanation: true,
+  locale: 'fr',
+});
+
+console.log(match.score); // 67
+console.log(match.matched); // ['Experience with Node.js', 'Terraform proficiency']
+console.log(match.explanation);
+// Correspond 2 sur 3 exigences (67 %).\n// Points forts: Experience with Node.js; Terraform proficiency\n// Lacunes: Must have Kubernetes certification\n// Blocages: Must have Kubernetes certification
+```
+
 When only the matched or missing lists are present, the Markdown output starts with the
 corresponding section heading instead of an extra leading blank line.
 

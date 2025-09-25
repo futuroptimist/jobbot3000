@@ -6,7 +6,6 @@ import { summarize as summarizeFirstSentence } from '../src/index.js';
 import { fetchTextFromUrl, DEFAULT_FETCH_HEADERS } from '../src/fetch.js';
 import { parseJobText } from '../src/parser.js';
 import { loadResume } from '../src/resume.js';
-import { computeFitScore } from '../src/scoring.js';
 import {
   toJson,
   toMarkdownSummary,
@@ -16,6 +15,7 @@ import {
   toDocxSummary,
   toDocxMatch,
 } from '../src/exporters.js';
+import { matchResumeToJob } from '../src/match.js';
 import { saveJobSnapshot, jobIdFromSource } from '../src/jobs.js';
 import { summarizeJobActivity } from '../src/activity-insights.js';
 import {
@@ -271,23 +271,11 @@ export async function cmdMatch(args) {
     ? await fetchTextFromUrl(jobUrl, fetchOptions)
     : await readSource(jobInput);
   const parsed = parseJobText(jobRaw);
-  const { score, matched, missing, must_haves_missed, keyword_overlap } = computeFitScore(
-    resumeText,
-    parsed.requirements,
-  );
-
-  const payload = {
-    ...parsed,
-    url: jobUrl,
-    score,
-    matched,
-    missing,
-    skills_hit: matched,
-    skills_gap: missing,
-    must_haves_missed,
-    keyword_overlap,
-  };
-  if (locale) payload.locale = locale;
+  const payload = matchResumeToJob(resumeText, parsed, {
+    jobUrl,
+    locale,
+    includeExplanation: format === 'json' && explain,
+  });
 
   const jobSource = jobUrl
     ? { type: 'url', value: jobUrl }
@@ -324,9 +312,13 @@ export async function cmdMatch(args) {
   }
 
   if (format === 'json') {
-    const jsonPayload = explain
-      ? { ...payload, explanation: formatMatchExplanation(localizedPayload) }
-      : payload;
+    let jsonPayload = payload;
+    if (explain && !jsonPayload.explanation) {
+      jsonPayload = {
+        ...jsonPayload,
+        explanation: formatMatchExplanation(localizedPayload),
+      };
+    }
     console.log(toJson(jsonPayload));
   } else {
     const report = toMarkdownMatch(localizedPayload);

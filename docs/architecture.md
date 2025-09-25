@@ -76,7 +76,11 @@ supported providers.
 
 Matching compares normalized job postings against the candidate profile.
 
-- `src/match.js` and `src/scoring.js` compute relevance using lexical and semantic features.
+- `src/match.js` exposes `matchResumeToJob`, which parses job text, delegates scoring to
+  `src/scoring.js`, and can emit localized explanation summaries alongside `skills_hit`
+  and `skills_gap` aliases. Coverage in [`test/match.test.js`](../test/match.test.js)
+  exercises raw text inputs, pre-parsed job objects, and French explanations so the
+  helper stays aligned with the CLI output.
 - Performance-focused suites in `test/scoring.*.test.js` guard regression budgets.
 - Explanations highlight hits, gaps, and blockers. CLI output is formatted in `src/cli.js` helpers.
 
