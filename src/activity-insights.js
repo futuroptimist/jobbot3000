@@ -123,14 +123,25 @@ async function summarizeInterviewSessions(jobId) {
     const sessionId =
       typeof payload.session_id === 'string' ? payload.session_id.trim() : undefined;
     let recordedAt = coerceIsoTimestamp(payload.recorded_at);
-    if (!recordedAt) {
-      recordedAt = coerceIsoTimestamp(payload.started_at);
+    let recordedAtSource;
+    if (recordedAt) {
+      recordedAtSource = 'recorded_at';
+    } else {
+      const startedAt = coerceIsoTimestamp(payload.started_at);
+      if (startedAt) {
+        recordedAt = startedAt;
+        recordedAtSource = 'started_at';
+      }
     }
     let fallbackTime;
     if (!recordedAt) {
       try {
         const stats = await fs.stat(filePath);
-        fallbackTime = stats.mtime?.toISOString();
+        const mtimeMs = Number.isFinite(stats.mtimeMs) ? stats.mtimeMs : stats.mtime?.getTime();
+        if (Number.isFinite(mtimeMs)) {
+          fallbackTime = new Date(mtimeMs).toISOString();
+          recordedAtSource = 'file_mtime';
+        }
       } catch {
         // Ignore filesystem errors when deriving fallback timestamps.
       }
@@ -138,6 +149,7 @@ async function summarizeInterviewSessions(jobId) {
     sessions.push({
       session_id: sessionId,
       recorded_at: recordedAt ?? fallbackTime,
+      recorded_at_source: recordedAtSource,
       stage: typeof payload.stage === 'string' ? payload.stage.trim() : undefined,
       mode: typeof payload.mode === 'string' ? payload.mode.trim() : undefined,
       critique: normalizeTightenThis(payload.heuristics),
@@ -161,6 +173,7 @@ async function summarizeInterviewSessions(jobId) {
     const detail = {};
     if (lastSession.session_id) detail.session_id = lastSession.session_id;
     if (lastSession.recorded_at) detail.recorded_at = lastSession.recorded_at;
+    if (lastSession.recorded_at_source) detail.recorded_at_source = lastSession.recorded_at_source;
     if (lastSession.stage) detail.stage = lastSession.stage;
     if (lastSession.mode) detail.mode = lastSession.mode;
     if (lastSession.critique) {

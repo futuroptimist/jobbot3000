@@ -66,6 +66,7 @@ describe('summarizeInterviewSessions', () => {
     expect(summary.last_session).toMatchObject({
       session_id: 'prep-2025-03-02',
       recorded_at: '2025-03-02T09:30:00.000Z',
+      recorded_at_source: 'recorded_at',
       stage: 'Onsite',
       mode: 'Voice',
     });
@@ -91,7 +92,30 @@ describe('summarizeInterviewSessions', () => {
     fs.utimesSync(sessionPath, legacyMtime, legacyMtime);
 
     const summary = await summarizeInterviewSessions('job-456');
-    expect(summary?.last_session?.recorded_at).toBe('2025-03-04T17:20:00.000Z');
+    expect(summary?.last_session).toMatchObject({
+      recorded_at: '2025-03-04T17:20:00.000Z',
+      recorded_at_source: 'started_at',
+    });
+  });
+
+  it('falls back to the session file mtime when timestamps are missing', async () => {
+    const jobId = 'job-fallback';
+    const jobDir = path.join(tmpDir, 'interviews', jobId);
+    fs.mkdirSync(jobDir, { recursive: true });
+    const sessionPath = path.join(jobDir, 'session.json');
+    fs.writeFileSync(
+      sessionPath,
+      JSON.stringify({ session_id: 'session-1', transcript: 'Quick notes' }, null, 2),
+    );
+
+    const expected = new Date('2025-04-05T12:34:56.000Z');
+    fs.utimesSync(sessionPath, expected, expected);
+
+    const summary = await summarizeJobActivity(jobId);
+    expect(summary?.interviews?.last_session).toMatchObject({
+      recorded_at: expected.toISOString(),
+      recorded_at_source: 'file_mtime',
+    });
   });
 });
 

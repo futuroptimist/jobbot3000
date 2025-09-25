@@ -374,6 +374,9 @@ describe('jobbot CLI', () => {
     expect(payload.prior_activity?.interviews?.last_session?.critique?.tighten_this).toEqual([
       'Tighten this: trim filler words.',
     ]);
+    expect(payload.prior_activity?.interviews?.last_session?.recorded_at_source).toBe(
+      'recorded_at',
+    );
 
     const mdOut = runCli([
       'match',
