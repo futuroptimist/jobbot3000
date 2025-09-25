@@ -1321,9 +1321,10 @@ Surface follow-up work with `jobbot track reminders`. Pass `--now` to view from 
 given timestamp (defaults to the current time), `--upcoming-only` to suppress past-due
 entries, and `--json` for structured output. The digest groups results by urgency so
 past-due work stays visible without scanning the whole list. Empty sections print `(none)` so
-you can confirm there isn't hidden work before moving on. When filters remove every reminder
-(for example, `--upcoming-only` against a day with only past-due entries), the CLI still prints
-an `Upcoming` heading with `(none)` so it's obvious nothing is scheduled:
+you can confirm there isn't hidden work before moving on. When no reminders exist, the command
+still prints the `Past Due` and `Upcoming` headings with `(none)` placeholders so the absence is
+explicit; the CLI suite in [`test/cli.test.js`](test/cli.test.js) now covers the zero-reminder
+case to keep that behavior locked in:
 
 ```bash
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track reminders --now 2025-03-06T00:00:00Z

@@ -14,7 +14,6 @@ function tokenize(text) {
   const tokens = new Set();
   let start = -1;
   let needsLower = false;
-  let lowerKey;
 
   for (let i = 0; i < key.length; i++) {
     const code = key.charCodeAt(i);
@@ -30,24 +29,16 @@ function tokenize(text) {
       if (isUpper) needsLower = true;
     } else if (start !== -1) {
       const end = i;
-      if (needsLower) {
-        if (!lowerKey) lowerKey = key.toLowerCase();
-        tokens.add(lowerKey.slice(start, end));
-      } else {
-        tokens.add(key.slice(start, end));
-      }
+      const segment = key.slice(start, end);
+      tokens.add(needsLower ? segment.toLowerCase() : segment);
       start = -1;
       needsLower = false;
     }
   }
 
   if (start !== -1) {
-    if (needsLower) {
-      if (!lowerKey) lowerKey = key.toLowerCase();
-      tokens.add(lowerKey.slice(start));
-    } else {
-      tokens.add(key.slice(start));
-    }
+    const segment = key.slice(start);
+    tokens.add(needsLower ? segment.toLowerCase() : segment);
   }
 
   // Simple cache eviction to bound memory.
@@ -60,6 +51,8 @@ function tokenize(text) {
 // is scored against multiple job postings.
 let cachedResume = '';
 let cachedTokens = new Set();
+let cachedNormalizedResumeInput = '';
+let cachedNormalizedResumeOutput = '';
 
 const SYNONYM_GROUPS = [
   ['aws', 'amazon web services'],
@@ -86,6 +79,15 @@ function resumeTokens(text) {
   cachedTokens = tokenize(normalized);
   cachedResume = normalized;
   return cachedTokens;
+}
+
+function normalizedResumeText(text) {
+  const normalized = typeof text === 'string' ? text : String(text || '');
+  if (normalized === cachedNormalizedResumeInput) return cachedNormalizedResumeOutput;
+  const result = normalizeForSynonyms(normalized);
+  cachedNormalizedResumeInput = normalized;
+  cachedNormalizedResumeOutput = result;
+  return result;
 }
 
 function normalizeForSynonyms(value) {
@@ -221,7 +223,7 @@ export function computeFitScore(resumeText, requirements) {
   let normalizedResume;
   const getNormalizedResume = () => {
     if (normalizedResume !== undefined) return normalizedResume;
-    normalizedResume = normalizeForSynonyms(resumeText);
+    normalizedResume = normalizedResumeText(resumeText);
     return normalizedResume;
   };
   const matched = [];
@@ -286,4 +288,6 @@ export function __resetScoringCachesForTest() {
   cachedResume = '';
   cachedTokens = new Set();
   KEYWORD_OVERLAP_CACHE.clear();
+  cachedNormalizedResumeInput = '';
+  cachedNormalizedResumeOutput = '';
 }
