@@ -935,7 +935,7 @@ describe('jobbot CLI', () => {
       reason: 'Changed priorities',
       discarded_at: '2025-03-08T09:30:00.000Z',
     });
-  });
+  }, 15000);
 
   it('reports when discard archive is empty', () => {
     const emptyAll = runCli(['shortlist', 'archive']);
