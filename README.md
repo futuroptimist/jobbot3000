@@ -9,6 +9,52 @@ practices for linting, testing, and documentation.
 
 Requires [Node.js](https://nodejs.org/) 20 or newer.
 
+### Cross-platform setup checklist
+
+All platforms:
+
+- Install Node.js 20+ and run `npm ci` from the project root.
+- Verify the repo stays green with `npm run lint` and `npm run test:ci`.
+- When you are done with a temporary data directory, remove it to avoid stale state.
+
+#### Linux, macOS, and Windows Subsystem for Linux (WSL)
+
+The POSIX shells bundled with these environments support the same commands.
+
+```bash
+export JOBBOT_DATA_DIR=$(mktemp -d)
+npm run lint
+npm run test:ci
+npx jobbot init
+npx jobbot track add job-123 --status screening
+rm -rf "$JOBBOT_DATA_DIR"
+unset JOBBOT_DATA_DIR
+```
+
+#### Windows 11 PowerShell
+
+Use PowerShell syntax when exporting environment variables. The CLI automatically
+quotes Windows paths when invoking external tools (for example, custom speech
+transcribers), so commands with spaces do not need manual escaping.
+
+```powershell
+$jobbotData = Join-Path $env:TEMP ([guid]::NewGuid())
+New-Item -ItemType Directory -Path $jobbotData | Out-Null
+$env:JOBBOT_DATA_DIR = $jobbotData
+npm run lint
+npm run test:ci
+npx jobbot init
+npx jobbot track add job-123 --status screening
+Remove-Item $jobbotData -Recurse -Force
+Remove-Item Env:JOBBOT_DATA_DIR
+```
+
+The `postinstall` script that provisions console fonts on Linux safely no-ops on
+macOS, WSL, and Windows when those assets are unavailable.
+
+See [docs/platform-support.md](docs/platform-support.md) for deeper platform
+guidance, environment variable recipes, and troubleshooting notes.
+
 ```bash
 # Clone your fork
 git clone git@github.com:YOURNAME/jobbot3000.git
