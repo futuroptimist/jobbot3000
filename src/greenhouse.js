@@ -1,24 +1,28 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import fetch from 'node-fetch';
-import { extractTextFromHtml, normalizeRateLimitInterval } from './fetch.js';
-import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
+import { extractTextFromHtml } from './fetch.js';
+import { saveJobSnapshot } from './jobs.js';
 import { JOB_SOURCE_ADAPTER_VERSION } from './adapters/job-source.js';
 import { parseJobText } from './parser.js';
-import { createHttpClient } from './services/http.js';
+import {
+  createAdapterHttpClient,
+  createSnapshot,
+  resolveAdapterRateLimit,
+} from './jobs/adapters/common.js';
 
 const GREENHOUSE_BASE = 'https://boards.greenhouse.io/v1/boards';
 
 const GREENHOUSE_HEADERS = { 'User-Agent': 'jobbot3000' };
-const GREENHOUSE_RATE_LIMIT_MS = normalizeRateLimitInterval(
-  process.env.JOBBOT_GREENHOUSE_RATE_LIMIT_MS,
-  500,
-);
+const GREENHOUSE_RATE_LIMIT_MS = resolveAdapterRateLimit({
+  envVar: 'JOBBOT_GREENHOUSE_RATE_LIMIT_MS',
+  fallbackMs: 500,
+});
 
-const httpClient = createHttpClient({
+const httpClient = createAdapterHttpClient({
   provider: 'greenhouse',
-  defaultHeaders: GREENHOUSE_HEADERS,
-  defaultRateLimitMs: GREENHOUSE_RATE_LIMIT_MS,
+  headers: GREENHOUSE_HEADERS,
+  rateLimitMs: GREENHOUSE_RATE_LIMIT_MS,
 });
 
 function resolveDataDir() {
@@ -169,15 +173,14 @@ function toGreenhouseSnapshot(job, slug) {
   const html = typeof job.content === 'string' ? job.content : '';
   const raw = html ? extractTextFromHtml(html) : '';
   const parsed = mergeParsedJob(parseJobText(raw), job);
-  const id = jobIdFromSource({ provider: 'greenhouse', url: absoluteUrl });
-  return {
-    id,
+  return createSnapshot({
+    provider: 'greenhouse',
+    url: absoluteUrl,
     raw,
     parsed,
-    source: { type: 'greenhouse', value: absoluteUrl },
-    requestHeaders: GREENHOUSE_HEADERS,
+    headers: GREENHOUSE_HEADERS,
     fetchedAt: job.updated_at,
-  };
+  });
 }
 
 export const greenhouseAdapter = {

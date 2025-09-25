@@ -1,22 +1,27 @@
 import fetch from 'node-fetch';
-import { extractTextFromHtml, normalizeRateLimitInterval } from './fetch.js';
-import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
+import { extractTextFromHtml } from './fetch.js';
+import { saveJobSnapshot } from './jobs.js';
 import { JOB_SOURCE_ADAPTER_VERSION } from './adapters/job-source.js';
 import { parseJobText } from './parser.js';
-import { createHttpClient } from './services/http.js';
+import {
+  collectPaginatedResults,
+  createAdapterHttpClient,
+  createSnapshot,
+  resolveAdapterRateLimit,
+} from './jobs/adapters/common.js';
 
 const SMARTRECRUITERS_BASE = 'https://api.smartrecruiters.com/v1/companies';
 const SMARTRECRUITERS_HEADERS = { 'User-Agent': 'jobbot3000' };
 const DEFAULT_LIMIT = 100;
-const SMARTRECRUITERS_RATE_LIMIT_MS = normalizeRateLimitInterval(
-  process.env.JOBBOT_SMARTRECRUITERS_RATE_LIMIT_MS,
-  500,
-);
+const SMARTRECRUITERS_RATE_LIMIT_MS = resolveAdapterRateLimit({
+  envVar: 'JOBBOT_SMARTRECRUITERS_RATE_LIMIT_MS',
+  fallbackMs: 500,
+});
 
-const httpClient = createHttpClient({
+const httpClient = createAdapterHttpClient({
   provider: 'smartrecruiters',
-  defaultHeaders: SMARTRECRUITERS_HEADERS,
-  defaultRateLimitMs: SMARTRECRUITERS_RATE_LIMIT_MS,
+  headers: SMARTRECRUITERS_HEADERS,
+  rateLimitMs: SMARTRECRUITERS_RATE_LIMIT_MS,
 });
 
 function normalizeCompanySlug(company) {
@@ -79,32 +84,34 @@ function mergeParsedJob(parsed, posting, detail) {
   return merged;
 }
 
-export async function fetchSmartRecruitersPostings(company, { fetchImpl = fetch, retry } = {}) {
+export async function fetchSmartRecruitersPostings(
+  company,
+  { fetchImpl = fetch, retry } = {},
+) {
   const slug = normalizeCompanySlug(company);
-  const postings = [];
-  let offset = 0;
-
-  while (true) {
+  const rateLimitKey = `smartrecruiters:${slug}`;
+  const postings = await collectPaginatedResults(async ({ offset }) => {
     const url = buildListUrl(slug, offset);
     const payload = await httpClient.json(url, {
       fetchImpl,
       retry,
-      rateLimit: { key: `smartrecruiters:${slug}` },
+      rateLimit: { key: rateLimitKey },
       onError: ({ response }) => {
         const statusLabel = `${response.status} ${response.statusText}`;
         return new Error(`Failed to fetch SmartRecruiters company ${slug}: ${statusLabel}`);
       },
     });
     const items = Array.isArray(payload?.content) ? payload.content : [];
-    postings.push(...items);
     const totalFound =
-      typeof payload?.totalFound === 'number' ? payload.totalFound : postings.length;
-    offset += items.length;
-    if (offset >= totalFound || items.length < DEFAULT_LIMIT) {
-      break;
-    }
-    if (items.length === 0) break;
-  }
+      typeof payload?.totalFound === 'number' ? payload.totalFound : offset + items.length;
+    const nextOffset = offset + items.length;
+    const hasMore = nextOffset < totalFound && items.length >= DEFAULT_LIMIT;
+    return {
+      items,
+      nextOffset,
+      done: !hasMore,
+    };
+  });
 
   return { slug, postings };
 }
@@ -133,15 +140,14 @@ async function toSmartRecruitersSnapshot(posting, context) {
     (typeof posting?.postingUrl === 'string' && posting.postingUrl.trim()) ||
     (typeof posting?.applyUrl === 'string' && posting.applyUrl.trim()) ||
     detailUrl;
-  const id = jobIdFromSource({ provider: 'smartrecruiters', url: postingUrl });
-  return {
-    id,
+  return createSnapshot({
+    provider: 'smartrecruiters',
+    url: postingUrl,
     raw,
     parsed,
-    source: { type: 'smartrecruiters', value: postingUrl },
-    requestHeaders: SMARTRECRUITERS_HEADERS,
+    headers: SMARTRECRUITERS_HEADERS,
     fetchedAt: detail?.releasedDate ?? posting?.releasedDate,
-  };
+  });
 }
 
 export const smartRecruitersAdapter = {

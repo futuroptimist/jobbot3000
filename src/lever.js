@@ -1,21 +1,25 @@
 import fetch from 'node-fetch';
-import { extractTextFromHtml, normalizeRateLimitInterval } from './fetch.js';
-import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
+import { extractTextFromHtml } from './fetch.js';
+import { saveJobSnapshot } from './jobs.js';
 import { JOB_SOURCE_ADAPTER_VERSION } from './adapters/job-source.js';
 import { parseJobText } from './parser.js';
-import { createHttpClient } from './services/http.js';
+import {
+  createAdapterHttpClient,
+  createSnapshot,
+  resolveAdapterRateLimit,
+} from './jobs/adapters/common.js';
 
 const LEVER_BASE = 'https://api.lever.co/v0/postings';
 const LEVER_HEADERS = { 'User-Agent': 'jobbot3000' };
-const LEVER_RATE_LIMIT_MS = normalizeRateLimitInterval(
-  process.env.JOBBOT_LEVER_RATE_LIMIT_MS,
-  500,
-);
+const LEVER_RATE_LIMIT_MS = resolveAdapterRateLimit({
+  envVar: 'JOBBOT_LEVER_RATE_LIMIT_MS',
+  fallbackMs: 500,
+});
 
-const httpClient = createHttpClient({
+const httpClient = createAdapterHttpClient({
   provider: 'lever',
-  defaultHeaders: LEVER_HEADERS,
-  defaultRateLimitMs: LEVER_RATE_LIMIT_MS,
+  headers: LEVER_HEADERS,
+  rateLimitMs: LEVER_RATE_LIMIT_MS,
 });
 
 function normalizeOrgSlug(org) {
@@ -80,15 +84,14 @@ function toLeverSnapshot(job, slug) {
   const hostedUrl = resolveHostedUrl(job, slug);
   const raw = extractRawDescription(job);
   const parsed = mergeParsedJob(parseJobText(raw), job);
-  const id = jobIdFromSource({ provider: 'lever', url: hostedUrl });
-  return {
-    id,
+  return createSnapshot({
+    provider: 'lever',
+    url: hostedUrl,
     raw,
     parsed,
-    source: { type: 'lever', value: hostedUrl },
-    requestHeaders: LEVER_HEADERS,
+    headers: LEVER_HEADERS,
     fetchedAt: job.updatedAt ?? job.createdAt,
-  };
+  });
 }
 
 export const leverAdapter = {

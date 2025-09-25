@@ -1,24 +1,28 @@
 import fetch from 'node-fetch';
-import { extractTextFromHtml, normalizeRateLimitInterval } from './fetch.js';
-import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
+import { extractTextFromHtml } from './fetch.js';
+import { saveJobSnapshot } from './jobs.js';
 import { JOB_SOURCE_ADAPTER_VERSION } from './adapters/job-source.js';
 import { parseJobText } from './parser.js';
-import { createHttpClient } from './services/http.js';
+import {
+  createAdapterHttpClient,
+  createSnapshot,
+  resolveAdapterRateLimit,
+} from './jobs/adapters/common.js';
 
 const WORKABLE_BASE = 'https://www.workable.com/api/accounts';
 const WORKABLE_BASE_HEADERS = Object.freeze({
   'User-Agent': 'jobbot3000',
   Accept: 'application/json',
 });
-const WORKABLE_RATE_LIMIT_MS = normalizeRateLimitInterval(
-  process.env.JOBBOT_WORKABLE_RATE_LIMIT_MS,
-  500,
-);
+const WORKABLE_RATE_LIMIT_MS = resolveAdapterRateLimit({
+  envVar: 'JOBBOT_WORKABLE_RATE_LIMIT_MS',
+  fallbackMs: 500,
+});
 
-const httpClient = createHttpClient({
+const httpClient = createAdapterHttpClient({
   provider: 'workable',
-  defaultHeaders: WORKABLE_BASE_HEADERS,
-  defaultRateLimitMs: WORKABLE_RATE_LIMIT_MS,
+  headers: WORKABLE_BASE_HEADERS,
+  rateLimitMs: WORKABLE_RATE_LIMIT_MS,
 });
 
 function sanitizeString(value) {
@@ -242,17 +246,14 @@ async function toWorkableSnapshot(job, context) {
   const parsed = mergeParsedJob(parseJobText(raw), job, detail);
   const canonicalUrl = resolveCanonicalUrl({ job, detail, account: slug, shortcode });
   const sanitizedHeaders = snapshotHeaders || sanitizeHeadersForSnapshot(headers || {});
-  return {
-    id: jobIdFromSource({ provider: 'workable', url: canonicalUrl }),
+  return createSnapshot({
+    provider: 'workable',
+    url: canonicalUrl,
     raw,
     parsed,
-    source: {
-      type: 'workable',
-      value: canonicalUrl,
-    },
-    requestHeaders: sanitizedHeaders,
+    headers: sanitizedHeaders,
     fetchedAt: selectFetchedAt(detail, job),
-  };
+  });
 }
 
 export const workableAdapter = {
@@ -289,14 +290,7 @@ export async function ingestWorkableBoard({ account, fetchImpl = fetch, retry } 
 
   for (const job of jobs) {
     const snapshot = await workableAdapter.normalizeJob(job, context);
-    await saveJobSnapshot({
-      ...snapshot,
-      source: {
-        type: 'workable',
-        value: snapshot.source.value,
-        headers: snapshot.requestHeaders,
-      },
-    });
+    await saveJobSnapshot(snapshot);
     jobIds.push(snapshot.id);
   }
 
