@@ -158,6 +158,37 @@ extensions are read as plain text.
 Pass `{ withMetadata: true }` to capture basic file statistics alongside the
 cleaned text:
 
+## Call ATS APIs with the shared HTTP client
+
+Normalize HTTP wiring across connectors with `createHttpClient`. It centralizes
+default headers, rate limiting, retries, and timeouts so feature modules avoid
+copying boilerplate:
+
+```js
+import { createHttpClient } from './src/services/http.js';
+
+const client = createHttpClient({
+  provider: 'greenhouse',
+  defaultHeaders: { Accept: 'application/json' },
+  defaultRateLimitMs: 750,
+});
+
+const response = await client.json('https://boards.greenhouse.io/v1/boards/acme/jobs', {
+  headers: { Authorization: `Bearer ${process.env.GREENHOUSE_TOKEN}` },
+  rateLimit: { key: 'greenhouse:acme' },
+});
+
+console.log(`Fetched ${response.jobs.length} jobs`);
+```
+
+`createHttpClient` automatically adds the repository's `User-Agent` header when
+one is not provided, applies per-host rate limits, and aborts requests that
+exceed the configured timeout. Pass `client.request(url, { fetchImpl })` to
+bring your own `fetch` implementation or override `timeoutMs`, `retry`, and
+`rateLimit` settings per call. Tests in
+[`test/services-http.test.js`](test/services-http.test.js) cover header merges,
+timeout aborts, and rate-limit propagation so connectors stay consistent.
+
 ```js
 const { text, metadata } = await loadResume('resume.md', { withMetadata: true });
 console.log(metadata);

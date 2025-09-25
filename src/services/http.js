@@ -49,6 +49,23 @@ function normalizeTimeoutMs(timeoutMs, fallback) {
   return timeoutMs < 0 ? 0 : timeoutMs;
 }
 
+/**
+ * Create a pre-configured HTTP client for ATS integrations.
+ *
+ * @example
+ * import { createHttpClient } from './src/services/http.js';
+ *
+ * const client = createHttpClient({
+ *   provider: 'greenhouse',
+ *   defaultHeaders: { Accept: 'application/json' },
+ *   defaultRateLimitMs: 750,
+ * });
+ * const response = await client.json('https://boards.greenhouse.io/v1/boards/acme/jobs', {
+ *   headers: { Authorization: `Bearer ${process.env.GREENHOUSE_TOKEN}` },
+ *   rateLimit: { key: 'greenhouse:acme' },
+ * });
+ * console.log(response.jobs.length);
+ */
 export function createHttpClient({
   provider,
   defaultHeaders = {},
