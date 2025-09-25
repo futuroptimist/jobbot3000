@@ -1089,21 +1089,24 @@ transcripts or feedback. Configure
 `JOBBOT_SPEECH_TRANSCRIBER` with a local command that accepts the audio path via `{{input}}`
 (or pass `--transcriber <command>` at runtime) to automatically transcribe recordings;
 the CLI records the derived transcript alongside an `audio_source` marker. Set
-`JOBBOT_SPEECH_SYNTHESIZER` (or pass `--speaker <command>`) to read dialog prompts aloud when
-`jobbot interviews plan --speak` is used so candidates can rehearse responses hands-free. The CLI
-accepts `--*-file` options for longer inputs (for example, `--transcript-file transcript.md`).
-Automated coverage in [`test/interviews.test.js`](test/interviews.test.js) and
-[`test/cli.test.js`](test/cli.test.js) verifies persistence, retrieval paths, stage/mode shortcuts,
-the defaulted rehearse metadata, audio transcription integration, synthesizer execution for dialog
-prompts, manual recordings inheriting the same Behavioral/Voice defaults (even when no transcript is
-provided), and the stage-specific rehearsal plans emitted by `jobbot interviews plan`. Plans now include a
-`Flashcards` checklist, a numbered `Question bank`, and a branching `Dialog tree` so candidates can
-drill concepts by focus area and practice follow-ups; the updated tests assert that all sections
-appear in JSON and CLI output. New coverage in [`test/interviews.test.js`](test/interviews.test.js)
-locks in the Onsite logistics plan’s dialog prompts alongside the recruiter screen pitch and
-timeline checkpoints, while [`test/cli.test.js`](test/cli.test.js) confirms the CLI surfaces the
-screen plan’s timeline reminders, stage transitions, and audio metadata consistently across
-releases.
+`JOBBOT_SPEECH_SYNTHESIZER` (or pass `--speaker <command>`) to narrate the entire study packet when
+`jobbot interviews plan --speak` is used—the stage header, summary, section checklists, resources,
+flashcards, question bank prompts, and dialog tree follow-ups all stream through the synthesizer so
+candidates can drill hands-free. The CLI accepts `--*-file` options for longer inputs (for example,
+`--transcript-file transcript.md`). Automated coverage in
+[`test/interviews.test.js`](test/interviews.test.js) and [`test/cli.test.js`](test/cli.test.js)
+verifies persistence, retrieval paths, stage/mode shortcuts, the defaulted rehearse metadata, audio
+transcription integration, synthesizer execution for the narrated sections (including resources and
+flashcards), manual recordings inheriting the same Behavioral/Voice defaults (even when no
+transcript is provided), and the stage-specific rehearsal plans emitted by `jobbot interviews plan`.
+Plans now include a `Flashcards` checklist, a numbered `Question bank`, and a branching `Dialog tree`
+so candidates can drill concepts by focus area and practice follow-ups; the updated tests assert that
+all sections appear in JSON and CLI output. New coverage in
+[`test/interviews.test.js`](test/interviews.test.js) locks in the Onsite logistics plan’s dialog
+prompts alongside the recruiter screen pitch and timeline checkpoints, while
+[`test/cli.test.js`](test/cli.test.js) confirms the CLI surfaces the screen plan’s timeline
+reminders, stage transitions, audio metadata, and synthesized study-packet narration consistently
+across releases.
 
 Recorded sessions now attach a `heuristics` block that summarizes brevity (word count, sentence
 count, average sentence length, and estimated words per minute when timestamps are present), filler

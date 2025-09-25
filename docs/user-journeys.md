@@ -148,8 +148,9 @@ flow that preserves both sets of notes.
    `JOBBOT_SPEECH_TRANSCRIBER` (or pass `--transcriber <command>`) and run
    `jobbot rehearse <job_id> --audio <file>` to convert recorded answers into transcripts that are
    stored alongside the session metadata. Set `JOBBOT_SPEECH_SYNTHESIZER` (or pass
-   `--speaker <command>`) and call `jobbot interviews plan --stage <stage> --speak` to play the dialog
-   prompts aloud before answering.
+   `--speaker <command>`) and call `jobbot interviews plan --stage <stage> --speak` to hear the full
+   rehearsal packet—stage summary, checklist items, resources, flashcards, question prompts, and
+   dialog follow-ups—before answering.
 4. Sessions capture transcripts, user reflections, and coach feedback in
    `data/interviews/{job_id}/{session_id}.json` for future review via
    `jobbot interviews record`. Quick run-throughs can use

@@ -1512,33 +1512,96 @@ function collectPlanVoicePrompts(plan) {
   }
 
   const prompts = [];
+  const normalize = value => {
+    if (value === undefined || value === null) return undefined;
+    const str = typeof value === 'string' ? value : String(value);
+    const trimmed = str.trim();
+    return trimmed ? trimmed : undefined;
+  };
 
-  if (Array.isArray(plan.dialog_tree)) {
-    for (const node of plan.dialog_tree) {
-      const prompt = typeof node?.prompt === 'string' ? node.prompt.trim() : '';
-      if (prompt) prompts.push(prompt);
-      const followUps = Array.isArray(node?.follow_ups) ? node.follow_ups : [];
-      for (const followUp of followUps) {
-        const value = typeof followUp === 'string' ? followUp.trim() : '';
-        if (value) prompts.push(value);
+  const stage = normalize(plan.stage);
+  if (stage) {
+    prompts.push(`${stage} rehearsal plan`);
+  }
+
+  const summary = normalize(plan.summary);
+  if (summary) {
+    prompts.push(summary);
+  }
+
+  if (Array.isArray(plan.sections)) {
+    for (const section of plan.sections) {
+      const title = normalize(section?.title);
+      if (title) {
+        prompts.push(`Section: ${title}`);
+      }
+      if (Array.isArray(section?.items)) {
+        for (const item of section.items) {
+          const detail = normalize(item);
+          if (detail) prompts.push(detail);
+        }
+      }
+    }
+  }
+
+  if (Array.isArray(plan.resources)) {
+    for (const resource of plan.resources) {
+      const detail = normalize(resource);
+      if (detail) prompts.push(`Resource: ${detail}`);
+    }
+  }
+
+  if (Array.isArray(plan.flashcards)) {
+    for (const card of plan.flashcards) {
+      const front = normalize(card?.front);
+      const back = normalize(card?.back);
+      if (!front && !back) continue;
+      if (front && back) {
+        prompts.push(`Flashcard: ${front} — ${back}`);
+      } else {
+        prompts.push(`Flashcard: ${front || back}`);
       }
     }
   }
 
   if (Array.isArray(plan.question_bank)) {
     for (const question of plan.question_bank) {
-      const prompt = typeof question?.prompt === 'string' ? question.prompt.trim() : '';
+      const prompt = normalize(question?.prompt);
+      if (!prompt) continue;
+      let entry = prompt;
+      const tags = Array.isArray(question?.tags)
+        ? question.tags
+            .map(tag => normalize(tag))
+            .filter(Boolean)
+        : [];
+      if (tags.length > 0) {
+        entry = `${prompt} (${tags.join(', ')})`;
+      }
+      prompts.push(`Question: ${entry}`);
+    }
+  }
+
+  if (Array.isArray(plan.dialog_tree)) {
+    for (const node of plan.dialog_tree) {
+      const prompt = normalize(node?.prompt);
       if (prompt) prompts.push(prompt);
+      const followUps = Array.isArray(node?.follow_ups) ? node.follow_ups : [];
+      for (const followUp of followUps) {
+        const value = normalize(followUp);
+        if (value) prompts.push(value);
+      }
     }
   }
 
   const seen = new Set();
   const ordered = [];
   for (const item of prompts) {
-    const key = item.toLowerCase();
+    const value = normalize(item);
+    if (!value) continue;
+    const key = value.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    ordered.push(item);
+    ordered.push(value);
   }
   return ordered;
 }

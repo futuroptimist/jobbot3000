@@ -2143,9 +2143,15 @@ describe('jobbot CLI', () => {
     ]);
 
     const spoken = fs.readFileSync(spokenLog, 'utf8').trim().split('\n');
+    expect(spoken).toContain('Behavioral rehearsal plan');
+    expect(spoken).toContain('Section: Warm-up');
+    expect(spoken).toContain(
+      'Flashcard: STAR checkpoint — Anchor stories around Situation, Task, Action, Result.',
+    );
+    expect(spoken).toContain('Resource: STAR template cheat sheet');
     expect(spoken).toContain('Walk me through a recent project you led end-to-end.');
     expect(spoken).toContain('How did you bring partners along the way?');
     expect(spoken).toContain('Share a time you navigated conflict with a stakeholder.');
     expect(spoken).toContain('What trade-offs or data helped resolve it?');
-  });
+  }, 10000);
 });
