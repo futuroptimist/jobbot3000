@@ -81,7 +81,7 @@ describe('interview session archive', () => {
     expect(fetched).toEqual(disk);
   });
 
-  it('rejects missing identifiers or empty payloads', async () => {
+  it('rejects missing identifiers', async () => {
     const { setInterviewDataDir, recordInterviewSession } = await import('../src/interviews.js');
     setInterviewDataDir(dataDir);
 
@@ -91,9 +91,32 @@ describe('interview session archive', () => {
     await expect(recordInterviewSession('job', '', { transcript: 'x' })).rejects.toThrow(
       'session id is required'
     );
-    await expect(recordInterviewSession('job', 's1', {})).rejects.toThrow(
-      'at least one session field is required'
+  });
+
+  it('records sessions with default metadata when optional fields are omitted', async () => {
+    const { setInterviewDataDir, recordInterviewSession, getInterviewSession } = await import(
+      '../src/interviews.js'
     );
+
+    setInterviewDataDir(dataDir);
+
+    const recorded = await recordInterviewSession('job-empty', 'session-empty', {});
+
+    expect(recorded).toMatchObject({
+      job_id: 'job-empty',
+      session_id: 'session-empty',
+      stage: 'Behavioral',
+      mode: 'Voice',
+    });
+    expect(recorded).toHaveProperty('recorded_at');
+    expect(recorded).not.toHaveProperty('transcript');
+    expect(recorded).not.toHaveProperty('reflections');
+    expect(recorded).not.toHaveProperty('feedback');
+    expect(recorded).not.toHaveProperty('notes');
+    expect(recorded).not.toHaveProperty('heuristics');
+
+    const fromDisk = await getInterviewSession('job-empty', 'session-empty');
+    expect(fromDisk).toEqual(recorded);
   });
 
   it('rejects identifiers that escape the interviews directory', async () => {

@@ -1005,7 +1005,9 @@ JOBBOT_SPEECH_SYNTHESIZER="node local/say.js --text {{input}}" \
 
 Sessions are stored under `data/interviews/{job_id}/{session_id}.json` with ISO 8601 timestamps so
 coaches and candidates can revisit transcripts later. Stage and mode default to `Behavioral` and
-`Voice` when omitted, mirroring the quick-runthrough workflow. Configure
+`Voice` when omitted, mirroring the quick-runthrough workflow. Run `jobbot rehearse <job_id>` with no
+additional flags to log a placeholder session that captures those defaults before you add richer
+transcripts or feedback. Configure
 `JOBBOT_SPEECH_TRANSCRIBER` with a local command that accepts the audio path via `{{input}}`
 (or pass `--transcriber <command>` at runtime) to automatically transcribe recordings;
 the CLI records the derived transcript alongside an `audio_source` marker. Set
@@ -1015,8 +1017,8 @@ accepts `--*-file` options for longer inputs (for example, `--transcript-file tr
 Automated coverage in [`test/interviews.test.js`](test/interviews.test.js) and
 [`test/cli.test.js`](test/cli.test.js) verifies persistence, retrieval paths, stage/mode shortcuts,
 the defaulted rehearse metadata, audio transcription integration, synthesizer execution for dialog
-prompts, manual recordings inheriting the same Behavioral/Voice defaults, and the stage-specific
-rehearsal plans emitted by `jobbot interviews plan`. Plans now include a
+prompts, manual recordings inheriting the same Behavioral/Voice defaults (even when no transcript is
+provided), and the stage-specific rehearsal plans emitted by `jobbot interviews plan`. Plans now include a
 `Flashcards` checklist, a numbered `Question bank`, and a branching `Dialog tree` so candidates can
 drill concepts by focus area and practice follow-ups; the updated tests assert that all sections
 appear in JSON and CLI output. New coverage in [`test/interviews.test.js`](test/interviews.test.js)
