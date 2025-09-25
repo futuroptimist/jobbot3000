@@ -50,6 +50,13 @@ scoring are spread across [`src/profile.js`](../src/profile.js), [`src/scoring.j
 and [`src/application-events.js`](../src/application-events.js). Splitting the pipeline into distinct
 stages would make it easier to reason about transformations.
 
+_Update (2025-10-17):_ [`src/pipeline/resume-pipeline.js`](../src/pipeline/resume-pipeline.js)
+introduces a typed, stage-driven resume pipeline. The new
+[`test/resume-pipeline.test.js`](../test/resume-pipeline.test.js) table-drives markdown and text
+fixtures through the pipeline, asserting each stage's output (source metadata, ATS warnings,
+ambiguity heuristics, and confidence metrics) so future refactors can extend the stages with
+confidence.
+
 **Suggested Steps**
 - Define explicit pipeline stages (load ➜ normalize ➜ enrich ➜ score) and move them into a
   `src/pipeline/` directory with one module per stage.
