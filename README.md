@@ -389,7 +389,10 @@ block summarizing deliverable runs and interview sessions (including the latest 
 Markdown report mirrors the same insights in a `## Prior Activity` section so reviewers can spot the
 most recent work without opening the underlying files. Interview summaries fall back to the
 session's `started_at` timestamp—or, if that is unavailable, the recording's filesystem metadata—so
-even partially captured sessions still surface when reviewing prior work.
+even partially captured sessions still surface when reviewing prior work. The session detail now
+annotates the timestamp source via `recorded_at_source` (`recorded_at`, `started_at`, or
+`file_mtime`) so reviewers know whether they're looking at an explicit log or a filesystem-derived
+fallback.
 
 ```bash
 cat <<'EOF' > resume.txt
