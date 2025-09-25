@@ -16,5 +16,7 @@ describe('architecture documentation', () => {
     expect(contents).toMatch(/Job ingestion/);
     expect(contents).toMatch(/Matching and scoring/);
     expect(contents).toMatch(/Deliverables/);
+    expect(contents).toMatch(/src\/application-events\.js/);
+    expect(contents).toMatch(/src\/lifecycle\.js/);
   });
 });
