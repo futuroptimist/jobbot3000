@@ -18,7 +18,7 @@ User (CLI / future UI)
          ├─► Resume ingestion (src/resume.js, src/profile.js)
          ├─► Job ingestion (src/jobs.js + adapters)
          ├─► Matching & scoring (src/match.js, src/scoring.js)
-         └─► Deliverables & trackers (src/deliverables.js, src/track.js)
+         └─► Deliverables & trackers (src/deliverables.js, src/application-events.js, src/lifecycle.js)
 ```
 
 Data persists inside the git-ignored `data/` directory:
@@ -39,9 +39,9 @@ loading, and error reporting. Commands fan out to domain modules that encapsulat
   `src/greenhouse.js`) to list openings, normalize snapshots, and persist them locally.
 - **Shortlist:** `jobbot shortlist` calls `src/shortlist.js` to tag, discard, and sync tracked roles.
 - **Tracker:** `jobbot track` commands write to `data/applications.json` and
-  `data/application_events.json` using helpers in `src/application-events.js`.
-- **Scheduling:** `jobbot schedule run` loads configuration via `src/schedule-config.js` and hands off
-  to `src/scheduler.js` to run repeated ingest/match workflows.
+  `data/application_events.json` using helpers in `src/application-events.js` and `src/lifecycle.js`.
+- **Scheduling:** `jobbot schedule run` loads configuration and executes recurring workflows via
+  `src/schedule.js`.
 
 ## Resume ingestion
 
