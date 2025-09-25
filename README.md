@@ -1258,16 +1258,19 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track board --json | jq '.columns[1]'
 Notes stay attached to each entry so checklists remain visible alongside due
 reminders and outreach history when triaging the pipeline. Each job now shows
 the next reminder (with channel, note, and contact) directly on the board, and
-JSON payloads expose the same `reminder` object for downstream tooling. When a
-job carries multiple reminders, the board surfaces the soonest upcoming entry
-and falls back to the most recent past-due reminder when no future timestamp is
-scheduled.
+JSON payloads expose the same `reminder` object for downstream tooling.
+Jobs without a scheduled follow-up display `Reminder: (none)` so you can confirm
+nothing is queued for that opportunity. When a job carries multiple reminders,
+the board surfaces the soonest upcoming entry and falls back to the most recent
+past-due reminder when no future timestamp is scheduled.
 
 Surface follow-up work with `jobbot track reminders`. Pass `--now` to view from a
 given timestamp (defaults to the current time), `--upcoming-only` to suppress past-due
 entries, and `--json` for structured output. The digest groups results by urgency so
 past-due work stays visible without scanning the whole list. Empty sections print `(none)` so
-you can confirm there isn't hidden work before moving on:
+you can confirm there isn't hidden work before moving on. When filters remove every reminder
+(for example, `--upcoming-only` against a day with only past-due entries), the CLI still prints
+an `Upcoming` heading with `(none)` so it's obvious nothing is scheduled:
 
 ```bash
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track reminders --now 2025-03-06T00:00:00Z

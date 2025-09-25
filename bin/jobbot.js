@@ -556,11 +556,6 @@ async function cmdTrackReminders(args) {
     return;
   }
 
-  if (reminders.length === 0) {
-    console.log('No reminders scheduled');
-    return;
-  }
-
   const includePastDue = !upcomingOnly;
   const pastDue = includePastDue
     ? reminders.filter(reminder => reminder.past_due)
@@ -670,6 +665,8 @@ async function cmdTrackBoard(args) {
         if (job.reminder.contact) {
           lines.push(`  Reminder Contact: ${job.reminder.contact}`);
         }
+      } else {
+        lines.push('  Reminder: (none)');
       }
     }
     lines.push('');
