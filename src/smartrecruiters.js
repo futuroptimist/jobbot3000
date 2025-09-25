@@ -1,13 +1,9 @@
 import fetch from 'node-fetch';
-import {
-  extractTextFromHtml,
-  fetchWithRetry,
-  setFetchRateLimit,
-  normalizeRateLimitInterval,
-} from './fetch.js';
+import { extractTextFromHtml, normalizeRateLimitInterval } from './fetch.js';
 import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
 import { JOB_SOURCE_ADAPTER_VERSION } from './adapters/job-source.js';
 import { parseJobText } from './parser.js';
+import { createHttpClient } from './services/http.js';
 
 const SMARTRECRUITERS_BASE = 'https://api.smartrecruiters.com/v1/companies';
 const SMARTRECRUITERS_HEADERS = { 'User-Agent': 'jobbot3000' };
@@ -16,6 +12,12 @@ const SMARTRECRUITERS_RATE_LIMIT_MS = normalizeRateLimitInterval(
   process.env.JOBBOT_SMARTRECRUITERS_RATE_LIMIT_MS,
   500,
 );
+
+const httpClient = createHttpClient({
+  provider: 'smartrecruiters',
+  defaultHeaders: SMARTRECRUITERS_HEADERS,
+  defaultRateLimitMs: SMARTRECRUITERS_RATE_LIMIT_MS,
+});
 
 function normalizeCompanySlug(company) {
   if (!company || typeof company !== 'string' || !company.trim()) {
@@ -81,26 +83,18 @@ export async function fetchSmartRecruitersPostings(company, { fetchImpl = fetch,
   const slug = normalizeCompanySlug(company);
   const postings = [];
   let offset = 0;
-  const rateLimitKey = `smartrecruiters:${slug}`;
-  if (SMARTRECRUITERS_RATE_LIMIT_MS > 0) {
-    setFetchRateLimit(rateLimitKey, SMARTRECRUITERS_RATE_LIMIT_MS);
-  } else {
-    setFetchRateLimit(rateLimitKey, 0);
-  }
 
   while (true) {
     const url = buildListUrl(slug, offset);
-    const response = await fetchWithRetry(url, {
+    const payload = await httpClient.json(url, {
       fetchImpl,
-      headers: SMARTRECRUITERS_HEADERS,
       retry,
-      rateLimitKey,
+      rateLimit: { key: `smartrecruiters:${slug}` },
+      onError: ({ response }) => {
+        const statusLabel = `${response.status} ${response.statusText}`;
+        return new Error(`Failed to fetch SmartRecruiters company ${slug}: ${statusLabel}`);
+      },
     });
-    if (!response.ok) {
-      const statusLabel = `${response.status} ${response.statusText}`;
-      throw new Error(`Failed to fetch SmartRecruiters company ${slug}: ${statusLabel}`);
-    }
-    const payload = await response.json();
     const items = Array.isArray(payload?.content) ? payload.content : [];
     postings.push(...items);
     const totalFound =
@@ -121,18 +115,16 @@ async function toSmartRecruitersSnapshot(posting, context) {
     throw new Error('SmartRecruiters company slug is required for snapshot normalization');
   }
   const detailUrl = resolveDetailUrl(slug, posting);
-  const detailResponse = await fetchWithRetry(detailUrl, {
+  const detail = await httpClient.json(detailUrl, {
     fetchImpl,
-    headers: SMARTRECRUITERS_HEADERS,
     retry,
-    rateLimitKey,
+    rateLimit: { key: rateLimitKey },
+    onError: ({ response }) => {
+      const statusLabel = `${response.status} ${response.statusText}`;
+      const postingId = posting?.id ?? '';
+      return new Error(`Failed to fetch SmartRecruiters posting ${postingId}: ${statusLabel}`);
+    },
   });
-  if (!detailResponse.ok) {
-    const statusLabel = `${detailResponse.status} ${detailResponse.statusText}`;
-    const postingId = posting?.id ?? '';
-    throw new Error(`Failed to fetch SmartRecruiters posting ${postingId}: ${statusLabel}`);
-  }
-  const detail = await detailResponse.json();
   const sectionsText = extractSectionsText(detail);
   const raw = sectionsText || toPlainText(detail?.jobAd?.text) || '';
   const parsed = mergeParsedJob(parseJobText(raw), posting, detail);
@@ -158,11 +150,6 @@ export const smartRecruitersAdapter = {
   async listOpenings({ company, fetchImpl = fetch, retry } = {}) {
     const result = await fetchSmartRecruitersPostings(company, { fetchImpl, retry });
     const rateLimitKey = `smartrecruiters:${result.slug}`;
-    if (SMARTRECRUITERS_RATE_LIMIT_MS > 0) {
-      setFetchRateLimit(rateLimitKey, SMARTRECRUITERS_RATE_LIMIT_MS);
-    } else {
-      setFetchRateLimit(rateLimitKey, 0);
-    }
     return {
       jobs: result.postings,
       context: { slug: result.slug, fetchImpl, retry, rateLimitKey },

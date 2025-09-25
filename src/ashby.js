@@ -1,13 +1,9 @@
 import fetch from 'node-fetch';
-import {
-  extractTextFromHtml,
-  fetchWithRetry,
-  setFetchRateLimit,
-  normalizeRateLimitInterval,
-} from './fetch.js';
+import { extractTextFromHtml, normalizeRateLimitInterval } from './fetch.js';
 import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
 import { JOB_SOURCE_ADAPTER_VERSION } from './adapters/job-source.js';
 import { parseJobText } from './parser.js';
+import { createHttpClient } from './services/http.js';
 
 const ASHBY_BASE = 'https://jobs.ashbyhq.com/api/postings';
 
@@ -19,6 +15,12 @@ const ASHBY_RATE_LIMIT_MS = normalizeRateLimitInterval(
   process.env.JOBBOT_ASHBY_RATE_LIMIT_MS,
   500,
 );
+
+const httpClient = createHttpClient({
+  provider: 'ashby',
+  defaultHeaders: ASHBY_HEADERS,
+  defaultRateLimitMs: ASHBY_RATE_LIMIT_MS,
+});
 
 function normalizeOrgSlug(org) {
   if (!org || typeof org !== 'string' || !org.trim()) {
@@ -81,24 +83,15 @@ function mergeParsedJob(parsed, job) {
 export async function fetchAshbyJobs(org, { fetchImpl = fetch, retry } = {}) {
   const slug = normalizeOrgSlug(org);
   const url = buildOrgUrl(slug);
-  const rateLimitKey = `ashby:${slug}`;
-  if (ASHBY_RATE_LIMIT_MS > 0) {
-    setFetchRateLimit(rateLimitKey, ASHBY_RATE_LIMIT_MS);
-  } else {
-    setFetchRateLimit(rateLimitKey, 0);
-  }
-  const response = await fetchWithRetry(url, {
+  const payload = await httpClient.json(url, {
     fetchImpl,
-    headers: ASHBY_HEADERS,
     retry,
-    rateLimitKey,
+    rateLimit: { key: `ashby:${slug}` },
+    onError: ({ response }) =>
+      new Error(
+        `Failed to fetch Ashby org ${slug}: ${response.status} ${response.statusText}`,
+      ),
   });
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch Ashby org ${slug}: ${response.status} ${response.statusText}`,
-    );
-  }
-  const payload = await response.json();
   const jobPostings = Array.isArray(payload?.jobPostings) ? payload.jobPostings : [];
   return { slug, jobPostings };
 }

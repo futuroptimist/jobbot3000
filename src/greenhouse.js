@@ -1,15 +1,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import fetch from 'node-fetch';
-import {
-  extractTextFromHtml,
-  fetchWithRetry,
-  setFetchRateLimit,
-  normalizeRateLimitInterval,
-} from './fetch.js';
+import { extractTextFromHtml, normalizeRateLimitInterval } from './fetch.js';
 import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
 import { JOB_SOURCE_ADAPTER_VERSION } from './adapters/job-source.js';
 import { parseJobText } from './parser.js';
+import { createHttpClient } from './services/http.js';
 
 const GREENHOUSE_BASE = 'https://boards.greenhouse.io/v1/boards';
 
@@ -18,6 +14,12 @@ const GREENHOUSE_RATE_LIMIT_MS = normalizeRateLimitInterval(
   process.env.JOBBOT_GREENHOUSE_RATE_LIMIT_MS,
   500,
 );
+
+const httpClient = createHttpClient({
+  provider: 'greenhouse',
+  defaultHeaders: GREENHOUSE_HEADERS,
+  defaultRateLimitMs: GREENHOUSE_RATE_LIMIT_MS,
+});
 
 function resolveDataDir() {
   return process.env.JOBBOT_DATA_DIR || path.resolve('data');
@@ -120,23 +122,15 @@ export async function fetchGreenhouseJobs(board, { fetchImpl = fetch, retry } = 
   const slug = normalizeBoardSlug(board);
   const url = buildBoardUrl(slug);
   const cacheMetadata = await readCacheMetadata(slug);
-  const rateLimitKey = `greenhouse:${slug}`;
-  if (GREENHOUSE_RATE_LIMIT_MS > 0) {
-    setFetchRateLimit(rateLimitKey, GREENHOUSE_RATE_LIMIT_MS, {
-      lastInvokedAt: cacheMetadata.fetchedAt,
-    });
-  } else {
-    setFetchRateLimit(rateLimitKey, 0);
-  }
   const headers = { ...GREENHOUSE_HEADERS };
   if (cacheMetadata.etag) headers['If-None-Match'] = cacheMetadata.etag;
   if (cacheMetadata.lastModified) headers['If-Modified-Since'] = cacheMetadata.lastModified;
 
-  const response = await fetchWithRetry(url, {
+  const response = await httpClient.request(url, {
     fetchImpl,
-    headers,
     retry,
-    rateLimitKey,
+    headers,
+    rateLimit: { key: `greenhouse:${slug}`, lastInvokedAt: cacheMetadata.fetchedAt },
   });
 
   const notModified = response.status === 304;

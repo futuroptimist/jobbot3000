@@ -85,6 +85,17 @@ expose powerful primitives (custom retry queues, sentence parsing) but require c
 intricate details. Introducing thin wrappers would preserve flexibility while providing ergonomic
 entry points.
 
+_Update (2025-10-12):_ [`src/services/http.js`](../src/services/http.js) now exposes a
+`createHttpClient` helper that centralizes rate limits, default headers, and request timeouts for
+ATS connectors. Tests in [`test/services-http.test.js`](../test/services-http.test.js) cover header
+merging, rate-limit propagation, and timeout behavior.
+
+_Update (2025-10-14):_ [`src/sentence-extractor.js`](../src/sentence-extractor.js) implements a
+reusable `SentenceExtractor` iterator with `next()` and `reset()` methods that powers
+[`summarize`](../src/index.js). Coverage in
+[`test/sentence-extractor.test.js`](../test/sentence-extractor.test.js) exercises sequential
+extraction, iterator resets, and decimal-number safety.
+
 **Suggested Steps**
 - Publish a `src/services/http.js` wrapper that configures sensible defaults (timeouts, rate limits,
   user-agent) so feature modules call a single helper instead of wiring `fetchWithRetry` manually.

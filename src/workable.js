@@ -1,13 +1,9 @@
 import fetch from 'node-fetch';
-import {
-  extractTextFromHtml,
-  fetchWithRetry,
-  setFetchRateLimit,
-  normalizeRateLimitInterval,
-} from './fetch.js';
+import { extractTextFromHtml, normalizeRateLimitInterval } from './fetch.js';
 import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
 import { JOB_SOURCE_ADAPTER_VERSION } from './adapters/job-source.js';
 import { parseJobText } from './parser.js';
+import { createHttpClient } from './services/http.js';
 
 const WORKABLE_BASE = 'https://www.workable.com/api/accounts';
 const WORKABLE_BASE_HEADERS = Object.freeze({
@@ -18,6 +14,12 @@ const WORKABLE_RATE_LIMIT_MS = normalizeRateLimitInterval(
   process.env.JOBBOT_WORKABLE_RATE_LIMIT_MS,
   500,
 );
+
+const httpClient = createHttpClient({
+  provider: 'workable',
+  defaultHeaders: WORKABLE_BASE_HEADERS,
+  defaultRateLimitMs: WORKABLE_RATE_LIMIT_MS,
+});
 
 function sanitizeString(value) {
   if (value == null) return '';
@@ -197,24 +199,17 @@ export async function fetchWorkableJobs(
 ) {
   const slug = normalizeAccountSlug(account);
   const url = buildJobsUrl(slug);
-  const rateLimitKey = `workable:${slug}`;
-  if (WORKABLE_RATE_LIMIT_MS > 0) {
-    setFetchRateLimit(rateLimitKey, WORKABLE_RATE_LIMIT_MS);
-  } else {
-    setFetchRateLimit(rateLimitKey, 0);
-  }
   const requestHeaders = headers || buildWorkableHeaders(token);
-  const response = await fetchWithRetry(url, {
+  const payload = await httpClient.json(url, {
     fetchImpl,
-    headers: requestHeaders,
     retry,
-    rateLimitKey,
+    headers: requestHeaders,
+    rateLimit: { key: `workable:${slug}` },
+    onError: ({ response }) => {
+      const statusLabel = `${response.status} ${response.statusText}`;
+      return new Error(`Failed to fetch Workable account ${slug}: ${statusLabel}`);
+    },
   });
-  if (!response.ok) {
-    const statusLabel = `${response.status} ${response.statusText}`;
-    throw new Error(`Failed to fetch Workable account ${slug}: ${statusLabel}`);
-  }
-  const payload = await response.json();
   const jobsArray = Array.isArray(payload?.jobs)
     ? payload.jobs
     : Array.isArray(payload)
@@ -233,17 +228,16 @@ async function toWorkableSnapshot(job, context) {
   }
   const shortcode = resolveShortcode(job);
   const detailUrl = buildJobDetailUrl(slug, shortcode);
-  const detailResponse = await fetchWithRetry(detailUrl, {
+  const detail = await httpClient.json(detailUrl, {
     fetchImpl,
     headers,
     retry,
-    rateLimitKey,
+    rateLimit: { key: rateLimitKey },
+    onError: ({ response }) => {
+      const statusLabel = `${response.status} ${response.statusText}`;
+      return new Error(`Failed to fetch Workable job ${shortcode}: ${statusLabel}`);
+    },
   });
-  if (!detailResponse.ok) {
-    const statusLabel = `${detailResponse.status} ${detailResponse.statusText}`;
-    throw new Error(`Failed to fetch Workable job ${shortcode}: ${statusLabel}`);
-  }
-  const detail = await detailResponse.json();
   const raw = gatherDetailText(detail, job);
   const parsed = mergeParsedJob(parseJobText(raw), job, detail);
   const canonicalUrl = resolveCanonicalUrl({ job, detail, account: slug, shortcode });
@@ -268,11 +262,6 @@ export const workableAdapter = {
     const headers = buildWorkableHeaders(token);
     const result = await fetchWorkableJobs(account, { fetchImpl, retry, headers, token });
     const rateLimitKey = `workable:${result.account}`;
-    if (WORKABLE_RATE_LIMIT_MS > 0) {
-      setFetchRateLimit(rateLimitKey, WORKABLE_RATE_LIMIT_MS);
-    } else {
-      setFetchRateLimit(rateLimitKey, 0);
-    }
     const snapshotHeaders = sanitizeHeadersForSnapshot(headers);
     return {
       jobs: result.jobs,

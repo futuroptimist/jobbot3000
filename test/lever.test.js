@@ -55,7 +55,7 @@ Requirements
 
     expect(fetch).toHaveBeenCalledWith(
       'https://api.lever.co/v0/postings/example?mode=json',
-      { headers: { 'User-Agent': 'jobbot3000' } },
+      expect.objectContaining({ headers: { 'User-Agent': 'jobbot3000' } }),
     );
 
     expect(result).toMatchObject({ org: 'example', saved: 1 });
