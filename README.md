@@ -793,7 +793,9 @@ refresh schedulers. Shells treat `$` as a variable prefix, so `--compensation "$
 dollar sign (`--compensation "\$185k"`) when you need the digits preserved. Override the auto-attached
 symbol by setting `JOBBOT_SHORTLIST_CURRENCY` (for example, `JOBBOT_SHORTLIST_CURRENCY='€'`).
 Existing shortlist files missing a currency symbol are normalized on read using the same default so
-filters and reports stay consistent.
+filters and reports stay consistent. Programmatic filters apply the same default when the
+compensation criterion omits a symbol, letting `filterShortlist({ compensation: '185k' })`
+match stored `$185k` entries just like the CLI.
 Newest-first shortlist snapshots saved by earlier releases now derive `last_discard` from the
 leading entry, keeping the summary aligned with the exported history. Unit coverage in
 [`test/shortlist.test.js`](test/shortlist.test.js) locks in this legacy scenario alongside the discard

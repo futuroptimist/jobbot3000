@@ -215,6 +215,19 @@ describe('shortlist metadata sync and filters', () => {
     }
   });
 
+  it('matches compensation filters without an explicit currency symbol', async () => {
+    const { syncShortlistJob, filterShortlist } = await import('../src/shortlist.js');
+
+    await syncShortlistJob('job-compensation-filter', {
+      location: 'Remote',
+      compensation: '$180k',
+    });
+
+    const filtered = await filterShortlist({ compensation: '180k' });
+    expect(Object.keys(filtered.jobs)).toEqual(['job-compensation-filter']);
+    expect(filtered.jobs['job-compensation-filter'].metadata.compensation).toBe('$180k');
+  });
+
   it('exposes the latest discard summary alongside shortlist entries', async () => {
     const { discardJob, getShortlist, filterShortlist } = await import('../src/shortlist.js');
 
