@@ -1910,6 +1910,32 @@ describe('jobbot CLI', () => {
     expect(stored).toHaveProperty('recorded_at');
   });
 
+  it('records quick rehearsal sessions without additional fields', () => {
+    const output = runCli(['rehearse', 'job-empty']);
+
+    const trimmed = output.trim();
+    expect(trimmed.startsWith('Recorded rehearsal ')).toBe(true);
+    const match = trimmed.match(/^Recorded rehearsal (.+) for job-empty$/);
+    expect(match).not.toBeNull();
+    const [, sessionId] = match;
+
+    const file = path.join(dataDir, 'interviews', 'job-empty', `${sessionId}.json`);
+    const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
+
+    expect(stored).toMatchObject({
+      job_id: 'job-empty',
+      session_id: sessionId,
+      stage: 'Behavioral',
+      mode: 'Voice',
+    });
+    expect(stored).toHaveProperty('recorded_at');
+    expect(stored).not.toHaveProperty('transcript');
+    expect(stored).not.toHaveProperty('reflections');
+    expect(stored).not.toHaveProperty('feedback');
+    expect(stored).not.toHaveProperty('notes');
+    expect(stored).not.toHaveProperty('heuristics');
+  });
+
   it('transcribes audio rehearsals when a local speech transcriber is configured', () => {
     const audioPath = path.join(dataDir, 'voice-note.txt');
     fs.writeFileSync(audioPath, 'Discussed roadmap alignment');

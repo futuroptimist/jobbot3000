@@ -885,10 +885,6 @@ export async function recordInterviewSession(jobId, sessionId, data = {}) {
   const notes = normalizeNotes(data.notes);
   const audioSource = normalizeAudioSource(data.audioSource ?? data.audio_source);
 
-  if (!transcript && !reflections && !feedback && !notes) {
-    throw new Error('at least one session field is required');
-  }
-
   const stage = sanitizeString(data.stage) || 'Behavioral';
   const mode = sanitizeString(data.mode) || 'Voice';
   const startedAt = normalizeTimestamp(data.startedAt ?? data.started_at, 'start');

@@ -151,8 +151,9 @@ flow that preserves both sets of notes.
 4. Sessions capture transcripts, user reflections, and coach feedback in
    `data/interviews/{job_id}/{session_id}.json` for future review via
    `jobbot interviews record`. Quick run-throughs can use
-   `jobbot rehearse <job_id>` to auto-generate session identifiers and default the stage/mode to
-   Behavioral/Voice before replaying them with `jobbot interviews show`.
+   `jobbot rehearse <job_id>`—even without additional flags—to auto-generate session identifiers,
+   default the stage/mode to Behavioral/Voice, and log placeholder metadata before replaying them
+   with `jobbot interviews show` once richer notes are available.
 5. Recorded sessions attach heuristics that summarize brevity (word counts, sentence averages,
    words per minute when timestamps exist), filler words, and STAR coverage so coaches can steer
    follow-up drills toward habits that need the most attention. A `critique.tighten_this` list calls
