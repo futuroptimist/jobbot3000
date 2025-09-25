@@ -392,7 +392,8 @@ session's `started_at` timestamp—or, if that is unavailable, the recording's f
 even partially captured sessions still surface when reviewing prior work. The session detail now
 annotates the timestamp source via `recorded_at_source` (`recorded_at`, `started_at`, or
 `file_mtime`) so reviewers know whether they're looking at an explicit log or a filesystem-derived
-fallback.
+fallback. When `--locale` is provided, the Prior Activity heading and bullet labels respect the
+requested language so localized reports stay consistent end to end.
 
 ```bash
 cat <<'EOF' > resume.txt
