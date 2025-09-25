@@ -1189,7 +1189,10 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track board --json | jq '.columns[1]'
 Notes stay attached to each entry so checklists remain visible alongside due
 reminders and outreach history when triaging the pipeline. Each job now shows
 the next reminder (with channel, note, and contact) directly on the board, and
-JSON payloads expose the same `reminder` object for downstream tooling.
+JSON payloads expose the same `reminder` object for downstream tooling. When a
+job carries multiple reminders, the board surfaces the soonest upcoming entry
+and falls back to the most recent past-due reminder when no future timestamp is
+scheduled.
 
 Surface follow-up work with `jobbot track reminders`. Pass `--now` to view from a
 given timestamp (defaults to the current time), `--upcoming-only` to suppress past-due
