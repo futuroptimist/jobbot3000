@@ -784,8 +784,8 @@ so downstream tools can surface the most recent rationale and how often a role h
 without traversing the full history. Add `--json` to the
 shortlist list command when piping entries into other tools; include `--out <path>` to persist the
 snapshot on disk. Filter by metadata or tags (`--location`, `--level`, `--compensation`, or repeated
-`--tag` flags) when triaging opportunities. Text output also surfaces `Last Discard Tags` when tag
-history exists so the rationale stays visible without opening the archive. The archive reader trims
+`--tag` flags) when triaging opportunities. Text output also surfaces `Discard Count` and `Last Discard Tags`
+when history exists so the rationale stays visible without opening the archive. The archive reader trims
 messy history entries, sorts them chronologically, and fills missing timestamps with `(unknown time)`
 so legacy discards still surface their rationale. Metadata syncs stamp a `synced_at` ISO 8601 timestamp for
 refresh schedulers. Shells treat `$` as a variable prefix, so `--compensation "$185k"` expands to

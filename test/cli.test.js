@@ -1368,6 +1368,32 @@ describe('jobbot CLI', () => {
     expect(output).not.toContain('Last Discard: Old news (2024-12-25T09:00:00.000Z)');
   });
 
+  it('surfaces discard counts in shortlist list summaries', () => {
+    runCli([
+      'shortlist',
+      'discard',
+      'job-discard-count',
+      '--reason',
+      'Initial pass',
+      '--date',
+      '2025-02-01T10:00:00Z',
+    ]);
+
+    runCli([
+      'shortlist',
+      'discard',
+      'job-discard-count',
+      '--reason',
+      'Revisit later',
+      '--date',
+      '2025-03-15T12:30:00Z',
+    ]);
+
+    const output = runCli(['shortlist', 'list']);
+    expect(output).toContain('job-discard-count');
+    expect(output).toContain('Discard Count: 2');
+  });
+
   it('shows last discard details for legacy entries without timestamps', () => {
     const shortlistPath = path.join(dataDir, 'shortlist.json');
     const legacyPayload = {
