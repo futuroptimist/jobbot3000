@@ -1,13 +1,9 @@
 import fetch from 'node-fetch';
-import {
-  extractTextFromHtml,
-  fetchWithRetry,
-  setFetchRateLimit,
-  normalizeRateLimitInterval,
-} from './fetch.js';
+import { extractTextFromHtml, normalizeRateLimitInterval } from './fetch.js';
 import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
 import { JOB_SOURCE_ADAPTER_VERSION } from './adapters/job-source.js';
 import { parseJobText } from './parser.js';
+import { createHttpClient } from './services/http.js';
 
 const ASHBY_BASE = 'https://jobs.ashbyhq.com/api/postings';
 
@@ -82,17 +78,14 @@ export async function fetchAshbyJobs(org, { fetchImpl = fetch, retry } = {}) {
   const slug = normalizeOrgSlug(org);
   const url = buildOrgUrl(slug);
   const rateLimitKey = `ashby:${slug}`;
-  if (ASHBY_RATE_LIMIT_MS > 0) {
-    setFetchRateLimit(rateLimitKey, ASHBY_RATE_LIMIT_MS);
-  } else {
-    setFetchRateLimit(rateLimitKey, 0);
-  }
-  const response = await fetchWithRetry(url, {
+  const http = createHttpClient({
     fetchImpl,
-    headers: ASHBY_HEADERS,
     retry,
     rateLimitKey,
+    rateLimitMs: ASHBY_RATE_LIMIT_MS,
+    headers: ASHBY_HEADERS,
   });
+  const response = await http.request(url);
   if (!response.ok) {
     throw new Error(
       `Failed to fetch Ashby org ${slug}: ${response.status} ${response.statusText}`,

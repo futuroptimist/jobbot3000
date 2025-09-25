@@ -1,13 +1,9 @@
 import fetch from 'node-fetch';
-import {
-  extractTextFromHtml,
-  fetchWithRetry,
-  setFetchRateLimit,
-  normalizeRateLimitInterval,
-} from './fetch.js';
+import { extractTextFromHtml, normalizeRateLimitInterval } from './fetch.js';
 import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
 import { JOB_SOURCE_ADAPTER_VERSION } from './adapters/job-source.js';
 import { parseJobText } from './parser.js';
+import { createHttpClient } from './services/http.js';
 
 const LEVER_BASE = 'https://api.lever.co/v0/postings';
 const LEVER_HEADERS = { 'User-Agent': 'jobbot3000' };
@@ -62,17 +58,14 @@ export async function fetchLeverJobs(org, { fetchImpl = fetch, retry } = {}) {
   const slug = normalizeOrgSlug(org);
   const url = buildOrgUrl(slug);
   const rateLimitKey = `lever:${slug}`;
-  if (LEVER_RATE_LIMIT_MS > 0) {
-    setFetchRateLimit(rateLimitKey, LEVER_RATE_LIMIT_MS);
-  } else {
-    setFetchRateLimit(rateLimitKey, 0);
-  }
-  const response = await fetchWithRetry(url, {
+  const http = createHttpClient({
     fetchImpl,
-    headers: LEVER_HEADERS,
     retry,
     rateLimitKey,
+    rateLimitMs: LEVER_RATE_LIMIT_MS,
+    headers: LEVER_HEADERS,
   });
+  const response = await http.request(url);
   if (!response.ok) {
     throw new Error(`Failed to fetch Lever org ${slug}: ${response.status} ${response.statusText}`);
   }

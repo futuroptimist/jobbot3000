@@ -1,15 +1,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import fetch from 'node-fetch';
-import {
-  extractTextFromHtml,
-  fetchWithRetry,
-  setFetchRateLimit,
-  normalizeRateLimitInterval,
-} from './fetch.js';
+import { extractTextFromHtml, normalizeRateLimitInterval } from './fetch.js';
 import { jobIdFromSource, saveJobSnapshot } from './jobs.js';
 import { JOB_SOURCE_ADAPTER_VERSION } from './adapters/job-source.js';
 import { parseJobText } from './parser.js';
+import { createHttpClient } from './services/http.js';
 
 const GREENHOUSE_BASE = 'https://boards.greenhouse.io/v1/boards';
 
@@ -121,23 +117,23 @@ export async function fetchGreenhouseJobs(board, { fetchImpl = fetch, retry } = 
   const url = buildBoardUrl(slug);
   const cacheMetadata = await readCacheMetadata(slug);
   const rateLimitKey = `greenhouse:${slug}`;
-  if (GREENHOUSE_RATE_LIMIT_MS > 0) {
-    setFetchRateLimit(rateLimitKey, GREENHOUSE_RATE_LIMIT_MS, {
-      lastInvokedAt: cacheMetadata.fetchedAt,
-    });
-  } else {
-    setFetchRateLimit(rateLimitKey, 0);
-  }
-  const headers = { ...GREENHOUSE_HEADERS };
-  if (cacheMetadata.etag) headers['If-None-Match'] = cacheMetadata.etag;
-  if (cacheMetadata.lastModified) headers['If-Modified-Since'] = cacheMetadata.lastModified;
-
-  const response = await fetchWithRetry(url, {
+  const http = createHttpClient({
     fetchImpl,
-    headers,
     retry,
     rateLimitKey,
+    rateLimitMs: GREENHOUSE_RATE_LIMIT_MS,
+    rateLimitLastInvokedAt: cacheMetadata.fetchedAt,
+    headers: GREENHOUSE_HEADERS,
   });
+  const conditionalHeaders = {};
+  if (cacheMetadata.etag) {
+    conditionalHeaders['If-None-Match'] = cacheMetadata.etag;
+  }
+  if (cacheMetadata.lastModified) {
+    conditionalHeaders['If-Modified-Since'] = cacheMetadata.lastModified;
+  }
+
+  const response = await http.request(url, { headers: conditionalHeaders });
 
   const notModified = response.status === 304;
   const etag = getResponseHeader(response, 'etag');

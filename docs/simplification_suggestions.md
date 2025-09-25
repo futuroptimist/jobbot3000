@@ -85,6 +85,12 @@ expose powerful primitives (custom retry queues, sentence parsing) but require c
 intricate details. Introducing thin wrappers would preserve flexibility while providing ergonomic
 entry points.
 
+_Update (2025-10-10):_ [`src/services/http.js`](../src/services/http.js) now exports
+`createHttpClient`, which centralizes retry defaults, per-provider rate limits, and the shared
+`User-Agent` header. ATS adapters import this helper so they no longer wire
+`fetchWithRetry` directly, and `test/services-http.test.js` covers header defaults, rate-limiting,
+and JSON parsing.
+
 **Suggested Steps**
 - Publish a `src/services/http.js` wrapper that configures sensible defaults (timeouts, rate limits,
   user-agent) so feature modules call a single helper instead of wiring `fetchWithRetry` manually.
