@@ -96,6 +96,10 @@ reusable `SentenceExtractor` iterator with `next()` and `reset()` methods that p
 [`test/sentence-extractor.test.js`](../test/sentence-extractor.test.js) exercises sequential
 extraction, iterator resets, and decimal-number safety.
 
+_Update (2025-10-15):_ The README now ships a runnable `createHttpClient` example, and the helper's
+JSDoc includes the same snippet so connectors can copy/paste the pattern without spelunking through
+tests.
+
 **Suggested Steps**
 - Publish a `src/services/http.js` wrapper that configures sensible defaults (timeouts, rate limits,
   user-agent) so feature modules call a single helper instead of wiring `fetchWithRetry` manually.
