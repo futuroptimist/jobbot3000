@@ -1066,6 +1066,7 @@ function formatShortlistList(jobs) {
     if (metadata.synced_at) lines.push(`  Synced At: ${metadata.synced_at}`);
     if (tags.length) lines.push(`  Tags: ${tags.join(', ')}`);
     const normalizedDiscard = normalizeDiscardEntries(discarded);
+    lines.push(`  Discard Count: ${normalizedDiscard.length}`);
     if (normalizedDiscard.length > 0) {
       const latest = normalizedDiscard[0];
       const reason = latest.reason || 'Unknown reason';
