@@ -966,7 +966,7 @@ describe('jobbot CLI', () => {
     const parsed = JSON.parse(json);
     const screening = parsed.columns.find(column => column.status === 'screening');
     const entry = screening.jobs.find(job => job.job_id === 'job-no-reminder');
-    expect(entry).not.toHaveProperty('reminder');
+    expect(entry).toHaveProperty('reminder', null);
   });
 
   it('archives discarded jobs with reasons', () => {
