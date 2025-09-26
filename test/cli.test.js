@@ -1728,6 +1728,47 @@ describe('jobbot CLI', () => {
     expect(JSON.stringify(payload)).not.toContain('job-2');
   });
 
+  it('summarizes shortlist compensation analytics', () => {
+    runCli(['shortlist', 'sync', 'job-dollar', '--compensation', '185k']);
+
+    process.env.JOBBOT_SHORTLIST_CURRENCY = '€';
+    try {
+      runCli(['shortlist', 'sync', 'job-euro-fixed', '--compensation', '95k']);
+      runCli(['shortlist', 'sync', 'job-euro-range', '--compensation', '€95 – 140k']);
+    } finally {
+      delete process.env.JOBBOT_SHORTLIST_CURRENCY;
+    }
+
+    runCli(['shortlist', 'sync', 'job-unparsed', '--compensation', 'Competitive']);
+
+    const jsonReport = runCli(['analytics', 'compensation', '--json']);
+    const payload = JSON.parse(jsonReport);
+    expect(payload.totals).toEqual({
+      shortlisted_jobs: 4,
+      with_compensation: 4,
+      parsed: 3,
+      unparsed: 1,
+    });
+    const euro = payload.currencies.find(entry => entry.currency === '€');
+    expect(euro.stats).toMatchObject({
+      count: 2,
+      range: 1,
+      minimum: 95000,
+      maximum: 140000,
+    });
+    const usd = payload.currencies.find(entry => entry.currency === '$');
+    expect(usd.stats).toMatchObject({ count: 1, minimum: 185000, maximum: 185000 });
+    expect(payload.issues).toEqual([
+      { job_id: 'job-unparsed', value: 'Competitive' },
+    ]);
+
+    const textReport = runCli(['analytics', 'compensation']);
+    expect(textReport).toContain('Compensation summary');
+    expect(textReport).toContain('$185,000');
+    expect(textReport).toContain('€95,000 – €140,000');
+    expect(textReport).toContain('job-unparsed: Competitive');
+  });
+
   it('runs scheduled matching tasks from configuration', () => {
     const resumePath = path.join(dataDir, 'resume.txt');
     fs.writeFileSync(
