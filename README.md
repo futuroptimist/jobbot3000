@@ -1338,6 +1338,11 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track board --json | jq '.columns[1]'
 # }
 ```
 
+Jobs that do not have a scheduled follow-up still include a `"reminder": null`
+placeholder in the JSON payload so downstream tooling can distinguish an
+explicit "no reminder" state without checking for a missing field. The text
+board continues to print `Reminder: (none)` in the same scenario.
+
 Notes stay attached to each entry so checklists remain visible alongside due
 reminders and outreach history when triaging the pipeline. Each job now shows
 the next reminder (with channel, note, and contact) directly on the board, and

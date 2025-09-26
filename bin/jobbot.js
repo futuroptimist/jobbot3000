@@ -634,9 +634,7 @@ async function cmdTrackBoard(args) {
   for (const column of columns) {
     for (const job of column.jobs) {
       const reminder = resolveReminderForJob(job.job_id);
-      if (reminder) {
-        job.reminder = reminder;
-      }
+      job.reminder = reminder ?? null;
     }
   }
 
