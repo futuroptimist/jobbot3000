@@ -1608,6 +1608,16 @@ function collectPlanVoicePrompts(plan) {
     prompts.push(`${stage} rehearsal plan`);
   }
 
+  const role = normalize(plan.role);
+  if (role) {
+    prompts.push(`Role focus: ${role}`);
+  }
+
+  const duration = plan.duration_minutes;
+  if (Number.isFinite(duration)) {
+    prompts.push(`Suggested duration: ${duration} minutes`);
+  }
+
   const summary = normalize(plan.summary);
   if (summary) {
     prompts.push(summary);
