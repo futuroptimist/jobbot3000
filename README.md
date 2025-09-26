@@ -1354,6 +1354,41 @@ nothing is queued for that opportunity. When a job carries multiple reminders,
 the board surfaces the soonest upcoming entry and falls back to the most recent
 past-due reminder when no future timestamp is scheduled.
 
+### Lifecycle experiment playbooks
+
+Every lifecycle column now publishes pre-registered experiment scaffolding so we
+can run small, statistically sound A/B tests without forcing applicants to write
+custom math. The new [`src/lifecycle-experiments.js`](src/lifecycle-experiments.js)
+module exposes helpers that map lifecycle stages to ready-to-run experiments,
+including hypotheses, minimum sample sizes, guardrail metrics, and sequential
+stopping rules. Use them to compare resume tone variations, onsite follow-up
+cadences, or offer-negotiation scripts while automatically adjusting for multiple
+comparisons and guarding against p-hacking/data dredging anti-patterns.
+
+```js
+import {
+  listExperimentsForStatus,
+  analyzeExperiment,
+} from 'jobbot3000';
+
+const experiments = listExperimentsForStatus('screening');
+const analysis = analyzeExperiment('screening_resume_language', {
+  primaryMetric: {
+    control: { successes: 18, trials: 200 },
+    variants: {
+      warm_language: { successes: 34, trials: 200 },
+    },
+  },
+});
+
+console.log(analysis.recommendationSummary);
+```
+
+Actionable summaries pair recommendations with the supporting effect sizes, guardrail
+checks, and adjusted p-values so users can make confident changes quickly. See
+[`docs/lifecycle-experiments.md`](docs/lifecycle-experiments.md) for the full set of
+experiments, analysis plans, and reporting guardrails.
+
 Surface follow-up work with `jobbot track reminders`. Pass `--now` to view from a
 given timestamp (defaults to the current time), `--upcoming-only` to suppress past-due
 entries, and `--json` for structured output. The digest groups results by urgency so

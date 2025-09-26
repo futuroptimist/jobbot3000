@@ -52,3 +52,8 @@ export function summarize(text, count = 1) {
 }
 
 export { recordApplication, getLifecycleCounts, STATUSES } from './lifecycle.js';
+export {
+  listExperimentsForStatus,
+  getExperimentById,
+  analyzeExperiment,
+} from './lifecycle-experiments.js';
