@@ -1172,9 +1172,10 @@ transcripts or feedback. Configure
 (or pass `--transcriber <command>` at runtime) to automatically transcribe recordings;
 the CLI records the derived transcript alongside an `audio_source` marker. Set
 `JOBBOT_SPEECH_SYNTHESIZER` (or pass `--speaker <command>`) to narrate the entire study packet when
-`jobbot interviews plan --speak` is used—the stage header, summary, section checklists, resources,
-flashcards, question bank prompts, and dialog tree follow-ups all stream through the synthesizer so
-candidates can drill hands-free. The CLI accepts `--*-file` options for longer inputs (for example,
+`jobbot interviews plan --speak` is used—the stage header, role focus, suggested duration, summary,
+section checklists, resources, flashcards, question bank prompts, and dialog tree follow-ups all
+stream through the synthesizer so candidates can drill hands-free. The CLI accepts `--*-file`
+options for longer inputs (for example,
 `--transcript-file transcript.md`). Automated coverage in
 [`test/interviews.test.js`](test/interviews.test.js) and [`test/cli.test.js`](test/cli.test.js)
 verifies persistence, retrieval paths, stage/mode shortcuts, the defaulted rehearse metadata, audio

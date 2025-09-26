@@ -2275,6 +2275,8 @@ describe('jobbot CLI', () => {
       'plan',
       '--stage',
       'behavioral',
+      '--role',
+      'Engineering Manager',
       '--speak',
       '--speaker',
       synthesizer,
@@ -2282,6 +2284,8 @@ describe('jobbot CLI', () => {
 
     const spoken = fs.readFileSync(spokenLog, 'utf8').trim().split('\n');
     expect(spoken).toContain('Behavioral rehearsal plan');
+    expect(spoken).toContain('Role focus: Engineering Manager');
+    expect(spoken).toContain('Suggested duration: 45 minutes');
     expect(spoken).toContain('Section: Warm-up');
     expect(spoken).toContain(
       'Flashcard: STAR checkpoint — Anchor stories around Situation, Task, Action, Result.',
