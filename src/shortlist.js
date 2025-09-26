@@ -10,6 +10,7 @@ export function getShortlistDataDir() {
 }
 
 const METADATA_FIELDS = ['location', 'level', 'compensation'];
+const UNKNOWN_TIME_SENTINEL = '(unknown time)';
 
 const CURRENCY_SYMBOL_RE = /^\p{Sc}/u;
 const SIMPLE_NUMERIC_RE = /^\d[\d.,]*(?:\s?(?:k|m|b))?$/i;
@@ -81,12 +82,15 @@ function normalizeDiscardEntry(entry) {
   if (!entry || typeof entry !== 'object') return null;
   const reason = sanitizeString(entry.reason);
   const rawTimestamp = entry.discarded_at ?? entry.discardedAt ?? entry.date;
-  const discardedAt = normalizeDiscardTimestamp(rawTimestamp);
   const tags = normalizeDiscardTags(entry.tags);
   const normalized = {};
   if (reason) normalized.reason = reason;
-  if (discardedAt) normalized.discarded_at = discardedAt;
   if (tags) normalized.tags = tags;
+  let discardedAt = normalizeDiscardTimestamp(rawTimestamp);
+  if (!discardedAt && (normalized.reason || normalized.tags)) {
+    discardedAt = UNKNOWN_TIME_SENTINEL;
+  }
+  if (discardedAt) normalized.discarded_at = discardedAt;
   if (Object.keys(normalized).length === 0) return null;
   return normalized;
 }
