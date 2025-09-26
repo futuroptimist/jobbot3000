@@ -7,6 +7,7 @@ import url from 'node:url';
 const ROOT_DIR = path.resolve(path.dirname(url.fileURLToPath(import.meta.url)), '..');
 const DOCS_DIR = path.join(ROOT_DIR, 'docs');
 const SUMMARY_PATH = path.join(DOCS_DIR, 'prompt-docs-summary.md');
+const PROMPTS_DIR = path.join(DOCS_DIR, 'prompts');
 
 function resolveBin(name) {
   const binName = process.platform === 'win32' ? `${name}.cmd` : name;
@@ -76,9 +77,160 @@ async function validatePromptSummaryLinks() {
   console.log('Prompt doc summary references are valid.');
 }
 
+async function collectMarkdownFiles(dir) {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    if (entry.name.startsWith('.')) continue;
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const nested = await collectMarkdownFiles(fullPath);
+      files.push(...nested);
+    } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.md')) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+function extractLinkTarget(raw) {
+  if (!raw) return '';
+  let target = raw.trim();
+  if (!target) return '';
+  if (target.startsWith('<') && target.endsWith('>')) {
+    target = target.slice(1, -1).trim();
+  }
+  if (!target) return '';
+  const spaceIndex = target.search(/\s/);
+  if (spaceIndex !== -1) {
+    target = target.slice(0, spaceIndex);
+  }
+  return target.trim();
+}
+
+function shouldCheckTarget(target) {
+  if (!target) return false;
+  if (target.startsWith('#')) return false;
+  const lower = target.toLowerCase();
+  if (lower.startsWith('http://') || lower.startsWith('https://')) return false;
+  if (lower.startsWith('mailto:') || lower.startsWith('tel:') || lower.startsWith('data:')) {
+    return false;
+  }
+  if (/^[a-z]+:/.test(lower) && !lower.startsWith('./') && !lower.startsWith('../')) {
+    return false;
+  }
+  return true;
+}
+
+function normalizeTargetPath(target) {
+  const [withoutFragment] = target.split('#');
+  const [withoutQuery] = withoutFragment.split('?');
+  return withoutQuery.trim();
+}
+
+async function checkLinkTarget(filePath, target, cache) {
+  const normalized = normalizeTargetPath(target);
+  if (!normalized) return true;
+  const cacheKey = `${filePath}::${normalized}`;
+  if (cache.has(cacheKey)) return cache.get(cacheKey);
+  const resolved = path.resolve(path.dirname(filePath), normalized);
+  try {
+    const stat = await fs.stat(resolved);
+    const exists = stat.isFile() || stat.isDirectory();
+    cache.set(cacheKey, exists);
+    return exists;
+  } catch {
+    cache.set(cacheKey, false);
+    return false;
+  }
+}
+
+async function findBrokenLinks(filePath) {
+  const contents = await fs.readFile(filePath, 'utf8');
+  const broken = [];
+  const cache = new Map();
+  const referenceDefs = new Map();
+  const seen = new Set();
+  const referencePattern = /^\s{0,3}\[([^\]]+)\]:\s+(.+)$/gm;
+  let match;
+  while ((match = referencePattern.exec(contents)) !== null) {
+    const label = match[1]?.trim();
+    const rawTarget = match[2] ?? '';
+    const target = extractLinkTarget(rawTarget);
+    if (!label || !target) continue;
+    referenceDefs.set(label.toLowerCase(), target);
+    if (!shouldCheckTarget(target)) continue;
+    const ok = await checkLinkTarget(filePath, target, cache);
+    if (!ok) {
+      const key = `${filePath}::${target}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        broken.push({ file: filePath, target });
+      }
+    }
+  }
+
+  const inlinePattern = /!?\[[^\]]*\]\((<[^>]+>|[^)\s]+)(?:\s+"[^"]*")?\)/g;
+  while ((match = inlinePattern.exec(contents)) !== null) {
+    const target = extractLinkTarget(match[1]);
+    if (!shouldCheckTarget(target)) continue;
+    const ok = await checkLinkTarget(filePath, target, cache);
+    if (!ok) {
+      const key = `${filePath}::${target}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        broken.push({ file: filePath, target });
+      }
+    }
+  }
+
+  const referenceUsePattern = /!?\[([^\]]*)\]\[([^\]]*)\]/g;
+  while ((match = referenceUsePattern.exec(contents)) !== null) {
+    const labelRaw = match[2]?.trim();
+    const fallback = match[1]?.trim();
+    const key = (labelRaw || fallback || '').toLowerCase();
+    if (!key) continue;
+    const target = referenceDefs.get(key);
+    if (!target || !shouldCheckTarget(target)) continue;
+    const ok = await checkLinkTarget(filePath, target, cache);
+    if (!ok) {
+      const seenKey = `${filePath}::${target}`;
+      if (!seen.has(seenKey)) {
+        seen.add(seenKey);
+        broken.push({ file: filePath, target });
+      }
+    }
+  }
+
+  return broken;
+}
+
+async function validatePromptDocLinks() {
+  const files = await collectMarkdownFiles(PROMPTS_DIR);
+  files.push(SUMMARY_PATH);
+  const issues = [];
+  for (const file of files) {
+    const broken = await findBrokenLinks(file);
+    if (broken.length > 0) {
+      for (const entry of broken) {
+        const relative = path.relative(ROOT_DIR, entry.file);
+        issues.push(`${relative} -> ${entry.target}`);
+      }
+    }
+  }
+
+  if (issues.length > 0) {
+    const details = issues.map(item => ` - ${item}`).join('\n');
+    throw new Error(`Broken Markdown links found in prompt docs:\n${details}`);
+  }
+
+  console.log('Prompt doc Markdown links are valid.');
+}
+
 async function main() {
   await runSpellcheck();
   await validatePromptSummaryLinks();
+  await validatePromptDocLinks();
   console.log('Prompt docs chore completed successfully.');
 }
 
