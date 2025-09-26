@@ -348,4 +348,43 @@ describe('shortlist metadata sync and filters', () => {
       tags: ['Focus'],
     });
   });
+
+  it('fills missing discard timestamps with (unknown time) in shortlist snapshots', async () => {
+    const fs = await import('node:fs/promises');
+    const snapshot = {
+      jobs: {
+        'job-legacy-missing-time': {
+          tags: [],
+          discarded: [
+            { reason: 'Legacy entry without timestamp' },
+            { reason: 'Legacy blank timestamp', discarded_at: '   ' },
+          ],
+          metadata: {},
+        },
+      },
+    };
+
+    await fs.writeFile(
+      path.join(dataDir, 'shortlist.json'),
+      `${JSON.stringify(snapshot, null, 2)}\n`,
+      'utf8',
+    );
+
+    const { getShortlist, filterShortlist } = await import('../src/shortlist.js');
+
+    const record = await getShortlist('job-legacy-missing-time');
+    expect(record.discarded.map(entry => entry.discarded_at)).toEqual([
+      '(unknown time)',
+      '(unknown time)',
+    ]);
+    expect(record.last_discard.discarded_at).toBe('(unknown time)');
+
+    const filtered = await filterShortlist();
+    expect(
+      filtered.jobs['job-legacy-missing-time'].discarded.map(entry => entry.discarded_at),
+    ).toEqual(['(unknown time)', '(unknown time)']);
+    expect(filtered.jobs['job-legacy-missing-time'].last_discard.discarded_at).toBe(
+      '(unknown time)',
+    );
+  });
 });
