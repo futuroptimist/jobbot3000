@@ -1371,6 +1371,22 @@ describe('jobbot CLI', () => {
     expect(output).toContain('Last Discard Tags: Remote, onsite');
   });
 
+  it('highlights when the latest discard has no tags in shortlist summaries', () => {
+    runCli([
+      'shortlist',
+      'discard',
+      'job-without-discard-tags',
+      '--reason',
+      'Keeping options open',
+      '--date',
+      '2025-03-09T08:30:00Z',
+    ]);
+
+    const output = runCli(['shortlist', 'list']);
+    expect(output).toContain('job-without-discard-tags');
+    expect(output).toContain('Last Discard Tags: (none)');
+  });
+
   it('deduplicates discard tags in shortlist archive output', () => {
     const archivePath = path.join(dataDir, 'discarded_jobs.json');
     fs.writeFileSync(
