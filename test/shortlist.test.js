@@ -202,6 +202,44 @@ describe('shortlist metadata sync and filters', () => {
     expect(filtered.jobs['job-legacy'].discard_count).toBe(0);
   });
 
+  it('fills in missing discard timestamps with the (unknown time) sentinel', async () => {
+    const fs = await import('node:fs/promises');
+    await fs.writeFile(
+      path.join(dataDir, 'shortlist.json'),
+      JSON.stringify(
+        {
+          jobs: {
+            'job-missing-time': {
+              tags: [],
+              discarded: [
+                {
+                  reason: 'Legacy discard without timestamp',
+                },
+              ],
+              metadata: {},
+            },
+          },
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    );
+
+    const { getShortlist } = await import('../src/shortlist.js');
+    const record = await getShortlist('job-missing-time');
+    expect(record.discarded).toEqual([
+      {
+        reason: 'Legacy discard without timestamp',
+        discarded_at: '(unknown time)',
+      },
+    ]);
+    expect(record.last_discard).toEqual({
+      reason: 'Legacy discard without timestamp',
+      discarded_at: '(unknown time)',
+    });
+  });
+
   it('applies JOBBOT_SHORTLIST_CURRENCY to legacy compensation values', async () => {
     const fs = await import('node:fs/promises');
     await fs.writeFile(
