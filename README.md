@@ -783,11 +783,13 @@ shortlist history stay in sync. Archive views list the newest discard first so t
 visible immediately, while JSON exports include a newest-first `discarded` array,
 `last_discard` summary, and `discard_count`
 so downstream tools can surface the most recent rationale and how often a role has been reconsidered
-without traversing the full history. Add `--json` to the
+without traversing the full history. Missing timestamps surface as the shared `(unknown time)` placeholder
+in both CLI and JSON responses so downstream tooling can rely on a single sentinel. Add `--json` to the
 shortlist list command when piping entries into other tools; include `--out <path>` to persist the
 snapshot on disk. Filter by metadata or tags (`--location`, `--level`, `--compensation`, or repeated
 `--tag` flags) when triaging opportunities. Text output also surfaces `Discard Count` and `Last Discard Tags`
-when history exists so the rationale stays visible without opening the archive. The archive reader trims
+when history exists so the rationale stays visible without opening the archive. When the latest discard omits
+tags, the summary prints `Last Discard Tags: (none)` so the absence is explicit. The archive reader trims
 messy history entries, sorts them chronologically, and fills missing timestamps with `(unknown time)`
 so legacy discards still surface their rationale. Metadata syncs stamp a `synced_at` ISO 8601 timestamp for
 refresh schedulers. Shells treat `$` as a variable prefix, so `--compensation "$185k"` expands to

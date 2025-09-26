@@ -1070,11 +1070,14 @@ function formatShortlistList(jobs) {
     if (normalizedDiscard.length > 0) {
       const latest = normalizedDiscard[0];
       const reason = latest.reason || 'Unknown reason';
-      const timestamp = latest.discarded_at || 'unknown time';
-      lines.push(`  Last Discard: ${reason} (${timestamp})`);
-      if (latest.tags && latest.tags.length > 0) {
-        lines.push(`  Last Discard Tags: ${latest.tags.join(', ')}`);
-      }
+      const timestamp = latest.discarded_at || '(unknown time)';
+      const timestampDisplay = timestamp.startsWith('(')
+        ? timestamp
+        : `(${timestamp})`;
+      lines.push(`  Last Discard: ${reason} ${timestampDisplay}`);
+      const hasTags = Array.isArray(latest.tags) && latest.tags.length > 0;
+      const tagSummary = hasTags ? latest.tags.join(', ') : '(none)';
+      lines.push(`  Last Discard Tags: ${tagSummary}`);
     }
     lines.push('');
   }
@@ -1083,6 +1086,7 @@ function formatShortlistList(jobs) {
 }
 
 function formatDiscardTimestamp(timestamp) {
+  if (timestamp === '(unknown time)') return '(unknown time)';
   return timestamp === 'unknown time' ? '(unknown time)' : timestamp;
 }
 

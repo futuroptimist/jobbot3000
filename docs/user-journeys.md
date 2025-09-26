@@ -76,11 +76,13 @@ revisit them later without blocking the workflow.
    optional `--location`, `--level`, `--compensation`, or explicit `--synced-at` overrides.
 4. The shortlist view exposes filters (location, level, compensation, tags) via
    `jobbot shortlist list --location <value>` (and repeated `--tag <value>` flags)
-   and records sync metadata with `jobbot shortlist sync` so future refreshes know
-   when entries were last updated. Text summaries now also show `Discard Count` and
-   `Last Discard Tags` for each job so candidates can spot churn without opening the
-   archive. Add `--json` (and optionally `--out <path>`) when exporting the filtered
-   shortlist to other tools.
+  and records sync metadata with `jobbot shortlist sync` so future refreshes know
+  when entries were last updated. Text summaries now also show `Discard Count` and
+  `Last Discard Tags` for each job so candidates can spot churn without opening the
+  archive. When a discard omits tags entirely, the summary line renders `Last Discard Tags: (none)`
+  so the absence is obvious. Add `--json` (and optionally `--out <path>`) when exporting the filtered
+  shortlist to other tools. Missing timestamps surface as `(unknown time)` in both CLI and JSON archives so
+  downstream scripts can rely on the same sentinel value when displaying legacy entries.
 5. Teams can automate recurring ingestion and matching runs with
    `jobbot schedule run --config <file> [--cycles <count>]`. Configured tasks pull
    boards on a cadence and compute fit scores against the latest resume so the
