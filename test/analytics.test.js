@@ -360,6 +360,48 @@ describe('analytics conversion funnel', () => {
     ]);
   });
 
+  it('parses compensation values with repeated thousands separators', async () => {
+    const { syncShortlistJob } = await import('../src/shortlist.js');
+
+    await syncShortlistJob('job-million', {
+      location: 'Remote',
+      compensation: '$1,200,000',
+    });
+
+    const { computeCompensationSummary, setAnalyticsDataDir } = await import(
+      '../src/analytics.js'
+    );
+    setAnalyticsDataDir(dataDir);
+    restoreAnalyticsDir = async () => setAnalyticsDataDir(undefined);
+
+    const summary = await computeCompensationSummary();
+
+    expect(summary.totals).toEqual({
+      shortlisted_jobs: 1,
+      with_compensation: 1,
+      parsed: 1,
+      unparsed: 0,
+    });
+
+    const usd = summary.currencies.find(entry => entry.currency === '$');
+    expect(usd).toBeDefined();
+    expect(usd?.stats).toMatchObject({
+      count: 1,
+      minimum: 1_200_000,
+      maximum: 1_200_000,
+      average: 1_200_000,
+      median: 1_200_000,
+    });
+    expect(usd?.jobs).toEqual([
+      expect.objectContaining({
+        job_id: 'job-million',
+        original: '$1,200,000',
+        minimum: 1_200_000,
+        maximum: 1_200_000,
+      }),
+    ]);
+  });
+
   it('respects analytics data directory overrides when summarizing compensation', async () => {
     const { syncShortlistJob } = await import('../src/shortlist.js');
     await syncShortlistJob('job-override', {

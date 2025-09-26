@@ -8,7 +8,8 @@ let overrideDir;
 const KNOWN_STATUSES = new Set(STATUSES.map(status => status.toLowerCase()));
 const CURRENCY_SYMBOL_PREFIX_RE = /^\p{Sc}+/u;
 const ADDITIONAL_CURRENCY_SYMBOL_RE = /\p{Sc}/gu;
-const COMPENSATION_VALUE_RE = /(\d+(?:[.,]\d+)?)(?:\s*(k|m|b))?/gi;
+const COMPENSATION_VALUE_RE =
+  /((?:\d{1,3}(?:[.,\s]\d{3})+|\d+)(?:[.,]\d+)?)(?:\s*(k|m|b))?/gi;
 const CURRENCY_CODE_PATTERN = /\b([A-Z]{3,4})\b/g;
 const KNOWN_CURRENCY_CODES = new Set([
   'USD',
