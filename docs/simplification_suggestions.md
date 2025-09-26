@@ -62,6 +62,10 @@ fixtures through the pipeline, asserting each stage's output (source metadata, A
 ambiguity heuristics, and confidence metrics) so future refactors can extend the stages with
 confidence.
 
+_Update (2025-10-26):_ [`docs/resume-pipeline-guide.md`](resume-pipeline-guide.md) now documents how
+to insert new stages, mutate the shared context safely, and extend the pipeline's regression suite so
+contributors can grow the enrichment flow without spelunking through implementation details.
+
 **Suggested Steps**
 - Define explicit pipeline stages (load ➜ normalize ➜ enrich ➜ score) and move them into a
   `src/pipeline/` directory with one module per stage.
