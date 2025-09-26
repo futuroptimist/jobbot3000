@@ -87,6 +87,10 @@ would cut coordination overhead.
   that `docs/prompt-docs-summary.md` only references existing files. The chore coverage lives in
   `test/chore-prompts.test.js`, which gives the spellcheck up to 20 seconds on CI to absorb
   occasional npm start-up slowness.
+- _Update (2025-10-30):_ `npm run chore:prompts` also validates relative Markdown links within
+  `docs/prompts/**`. The expanded suite in [`test/chore-prompts.test.js`](../test/chore-prompts.test.js)
+  now creates a throwaway prompt doc with a broken link and expects the chore to fail with a "Broken
+  Markdown links" error, keeping the prompt catalog discoverable.
 - `npm run chore:reminders` prints the catalog as either a human-readable digest or JSON (pass
   `--json`), giving CI jobs a reliable summary to surface before merges. Coverage in
   `test/chore-reminders.test.js` exercises the JSON output and keeps the parser aligned with the
