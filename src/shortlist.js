@@ -13,6 +13,7 @@ const METADATA_FIELDS = ['location', 'level', 'compensation'];
 
 const CURRENCY_SYMBOL_RE = /^\p{Sc}/u;
 const SIMPLE_NUMERIC_RE = /^\d[\d.,]*(?:\s?(?:k|m|b))?$/i;
+const UNKNOWN_DISCARD_TIMESTAMP = '(unknown time)';
 
 function getDefaultCurrencySymbol() {
   const raw = process.env.JOBBOT_SHORTLIST_CURRENCY;
@@ -105,10 +106,20 @@ function cloneDiscardList(list) {
   const clones = list.map(entry => {
     const clone = { ...entry };
     if (Array.isArray(clone.tags)) clone.tags = clone.tags.slice();
+    clone.discarded_at = normalizeDiscardTimestampForSnapshot(clone.discarded_at);
     return clone;
   });
   clones.sort(compareDiscardEntries);
   return clones;
+}
+
+function normalizeDiscardTimestampForSnapshot(value) {
+  const sanitized = sanitizeString(value);
+  if (!sanitized) return UNKNOWN_DISCARD_TIMESTAMP;
+  if (sanitized === 'unknown time' || sanitized === UNKNOWN_DISCARD_TIMESTAMP) {
+    return UNKNOWN_DISCARD_TIMESTAMP;
+  }
+  return sanitized;
 }
 
 function compareDiscardEntries(a, b) {

@@ -82,7 +82,8 @@ revisit them later without blocking the workflow.
   archive. When a discard omits tags entirely, the summary line renders `Last Discard Tags: (none)`
   so the absence is obvious. Add `--json` (and optionally `--out <path>`) when exporting the filtered
   shortlist to other tools. Missing timestamps surface as `(unknown time)` in both CLI and JSON archives so
-  downstream scripts can rely on the same sentinel value when displaying legacy entries.
+  downstream scripts can rely on the same sentinel value when displaying legacy entries; see
+  [`test/shortlist.test.js`](../test/shortlist.test.js) for coverage that locks the JSON sentinel in place.
 5. Teams can automate recurring ingestion and matching runs with
    `jobbot schedule run --config <file> [--cycles <count>]`. Configured tasks pull
    boards on a cadence and compute fit scores against the latest resume so the

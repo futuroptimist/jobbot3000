@@ -807,7 +807,9 @@ ordering assertions so downstream tooling always sees the latest rationale in bo
 Unit tests in [`test/shortlist.test.js`](test/shortlist.test.js) and the CLI suite in
 [`test/cli.test.js`](test/cli.test.js) exercise metadata updates, tag filters, discard tags, archive
 exports, and the persisted format. Additional CLI coverage locks in the `(unknown time)` placeholder
-for legacy discard entries so missing timestamps remain readable in archive output.
+for legacy discard entries so missing timestamps remain readable in archive output, and the shortlist
+unit tests now assert that JSON snapshots propagate the same `(unknown time)` sentinel so downstream
+consumers see identical state whether they read from the CLI or the JSON file.
 [`test/discards.test.js`](test/discards.test.js) now asserts archive order returns the latest discard
 first even when older entries remain, keeping the newest-first guarantee enforced.
 
