@@ -5,6 +5,10 @@ import { recordJobDiscard } from './discards.js';
 
 let overrideDir;
 
+export function getShortlistDataDir() {
+  return overrideDir;
+}
+
 const METADATA_FIELDS = ['location', 'level', 'compensation'];
 
 const CURRENCY_SYMBOL_RE = /^\p{Sc}/u;

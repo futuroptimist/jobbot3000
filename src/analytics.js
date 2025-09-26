@@ -6,6 +6,35 @@ import { STATUSES } from './lifecycle.js';
 let overrideDir;
 
 const KNOWN_STATUSES = new Set(STATUSES.map(status => status.toLowerCase()));
+const CURRENCY_SYMBOL_PREFIX_RE = /^\p{Sc}+/u;
+const ADDITIONAL_CURRENCY_SYMBOL_RE = /\p{Sc}/gu;
+const COMPENSATION_VALUE_RE =
+  /((?:\d{1,3}(?:[.,\s]\d{3})+|\d+)(?:[.,]\d+)?)(?:\s*(k|m|b))?/gi;
+const CURRENCY_CODE_PATTERN = /\b([A-Z]{3,4})\b/g;
+const KNOWN_CURRENCY_CODES = new Set([
+  'USD',
+  'EUR',
+  'GBP',
+  'CAD',
+  'AUD',
+  'NZD',
+  'CHF',
+  'SEK',
+  'NOK',
+  'DKK',
+  'JPY',
+  'CNY',
+  'HKD',
+  'SGD',
+  'INR',
+  'BRL',
+  'MXN',
+  'ZAR',
+  'PLN',
+  'TRY',
+  'KRW',
+  'ILS',
+]);
 
 function resolveDataDir() {
   return overrideDir || process.env.JOBBOT_DATA_DIR || path.resolve('data');
@@ -344,6 +373,248 @@ function formatStageLine(stage, index) {
   const percentLabel = percent === undefined ? 'n/a' : `${percent}%`;
   const dropSuffix = stage.dropOff > 0 ? `, ${stage.dropOff} drop-off` : '';
   return `${base} (${percentLabel} conversion${dropSuffix})`;
+}
+
+function stripKnownCurrencyCodes(text) {
+  if (!text) return '';
+  return text.replace(CURRENCY_CODE_PATTERN, (match, code) => {
+    return KNOWN_CURRENCY_CODES.has(code) ? ' ' : match;
+  });
+}
+
+function extractCurrencyPrefix(raw) {
+  const trimmed = raw.trim();
+  if (!trimmed) return { currency: '', remainder: '' };
+  const symbolMatch = trimmed.match(CURRENCY_SYMBOL_PREFIX_RE);
+  if (symbolMatch) {
+    return {
+      currency: symbolMatch[0],
+      remainder: trimmed.slice(symbolMatch[0].length).trim(),
+    };
+  }
+  const prefix = trimmed.slice(0, 4);
+  const codeMatch = prefix.match(/^[A-Z]{3,4}/);
+  if (codeMatch && KNOWN_CURRENCY_CODES.has(codeMatch[0])) {
+    return {
+      currency: codeMatch[0],
+      remainder: trimmed.slice(codeMatch[0].length).trim(),
+    };
+  }
+  return { currency: '', remainder: trimmed };
+}
+
+function toNumericAmount(value, suffix, fallbackSuffix) {
+  const sanitized = value.replace(/[\s,]/g, '');
+  const parsed = Number.parseFloat(sanitized);
+  if (!Number.isFinite(parsed)) return null;
+  const suffixKey = (suffix || fallbackSuffix || '').toLowerCase();
+  if (suffixKey === 'k') return parsed * 1_000;
+  if (suffixKey === 'm') return parsed * 1_000_000;
+  if (suffixKey === 'b') return parsed * 1_000_000_000;
+  return parsed;
+}
+
+function isRangeConnector(text) {
+  if (!text) return true;
+  const normalized = text.replace(/[\s,]+/g, ' ').trim().toLowerCase();
+  if (!normalized) return true;
+  if (/^[-–—]+$/.test(normalized)) return true;
+  if (normalized === 'to') return true;
+  return false;
+}
+
+function roundAmount(value) {
+  return Math.round(value * 100) / 100;
+}
+
+function parseCompensationEntry(jobId, rawValue) {
+  if (typeof rawValue !== 'string') return null;
+  const trimmed = rawValue.trim();
+  if (!trimmed) return null;
+
+  const { currency, remainder } = extractCurrencyPrefix(trimmed);
+  const scrubbed = stripKnownCurrencyCodes(
+    remainder.replace(ADDITIONAL_CURRENCY_SYMBOL_RE, ' '),
+  );
+
+  const entries = [];
+  let lastSuffix;
+  let previousEnd = 0;
+  for (const match of scrubbed.matchAll(COMPENSATION_VALUE_RE)) {
+    const [, number, suffix] = match;
+    if (!number) continue;
+    const start = match.index ?? scrubbed.indexOf(match[0], previousEnd);
+    const gapFromPrevious = scrubbed.slice(previousEnd, start);
+    previousEnd = start + match[0].length;
+
+    const numeric = toNumericAmount(number, suffix, lastSuffix);
+    if (numeric == null) continue;
+
+    const entry = {
+      numeric,
+      number,
+      appliedSuffix: (suffix || lastSuffix || '').toLowerCase(),
+      gapFromPrevious,
+    };
+    entries.push(entry);
+
+    if (suffix) {
+      const appliedSuffix = suffix.toLowerCase();
+      let index = entries.length - 2;
+      let connector = gapFromPrevious;
+      while (index >= 0) {
+        const previous = entries[index];
+        if (previous.appliedSuffix) break;
+        if (!isRangeConnector(connector)) break;
+        const updated = toNumericAmount(previous.number, appliedSuffix, appliedSuffix);
+        if (updated == null) break;
+        previous.numeric = updated;
+        previous.appliedSuffix = appliedSuffix;
+        connector = entries[index].gapFromPrevious;
+        index -= 1;
+      }
+      lastSuffix = appliedSuffix;
+    }
+  }
+
+  const values = entries.map(entry => entry.numeric);
+
+  if (values.length === 0) return null;
+  values.sort((a, b) => a - b);
+  const minimum = roundAmount(values[0]);
+  const maximum = roundAmount(values[values.length - 1]);
+  const midpoint = roundAmount((values[0] + values[values.length - 1]) / 2);
+  return {
+    job_id: jobId,
+    currency: currency || 'unspecified',
+    original: trimmed,
+    minimum,
+    maximum,
+    midpoint,
+  };
+}
+
+function computeAverage(values) {
+  if (!values.length) return 0;
+  const total = values.reduce((sum, value) => sum + value, 0);
+  return roundAmount(total / values.length);
+}
+
+function computeMedian(values) {
+  if (values.length === 0) return 0;
+  const mid = Math.floor(values.length / 2);
+  if (values.length % 2 === 1) {
+    return roundAmount(values[mid]);
+  }
+  return roundAmount((values[mid - 1] + values[mid]) / 2);
+}
+
+function summarizeCurrencyEntries(currency, entries) {
+  const sorted = entries
+    .slice()
+    .sort((a, b) => a.midpoint - b.midpoint || a.job_id.localeCompare(b.job_id));
+  const stats = {
+    count: sorted.length,
+    single_value: 0,
+    range: 0,
+    minimum: sorted.length ? sorted[0].minimum : 0,
+    maximum: sorted.length ? sorted[sorted.length - 1].maximum : 0,
+    average: 0,
+    median: 0,
+  };
+
+  const midpoints = [];
+  for (const entry of sorted) {
+    if (entry.minimum === entry.maximum) stats.single_value += 1;
+    else stats.range += 1;
+    midpoints.push(entry.midpoint);
+  }
+
+  stats.average = computeAverage(midpoints);
+  stats.median = computeMedian(midpoints);
+  if (sorted.length > 0) {
+    stats.minimum = sorted.reduce(
+      (min, entry) => Math.min(min, entry.minimum),
+      sorted[0].minimum,
+    );
+    stats.maximum = sorted.reduce(
+      (max, entry) => Math.max(max, entry.maximum),
+      sorted[0].maximum,
+    );
+  }
+
+  return { currency, stats, jobs: sorted };
+}
+
+export async function computeCompensationSummary() {
+  const { getShortlist, setShortlistDataDir, getShortlistDataDir } = await import(
+    './shortlist.js'
+  );
+
+  const analyticsOverride = overrideDir;
+  let previousShortlistOverride;
+
+  let snapshot;
+  if (analyticsOverride !== undefined) {
+    if (typeof getShortlistDataDir === 'function') {
+      previousShortlistOverride = getShortlistDataDir();
+    }
+    if (typeof setShortlistDataDir === 'function') {
+      setShortlistDataDir(analyticsOverride);
+    }
+    try {
+      snapshot = await getShortlist();
+    } finally {
+      if (typeof setShortlistDataDir === 'function') {
+        setShortlistDataDir(previousShortlistOverride);
+      }
+    }
+  } else {
+    snapshot = await getShortlist();
+  }
+  const jobs = snapshot && typeof snapshot === 'object' ? snapshot.jobs : undefined;
+  const entries = jobs && typeof jobs === 'object' ? Object.entries(jobs) : [];
+
+  const totals = {
+    shortlisted_jobs: entries.length,
+    with_compensation: 0,
+    parsed: 0,
+    unparsed: 0,
+  };
+
+  const grouped = new Map();
+  const issues = [];
+
+  for (const [jobId, record] of entries) {
+    const compensation = record?.metadata?.compensation;
+    if (typeof compensation !== 'string' || !compensation.trim()) {
+      continue;
+    }
+    totals.with_compensation += 1;
+    const parsed = parseCompensationEntry(jobId, compensation);
+    if (!parsed) {
+      totals.unparsed += 1;
+      issues.push({ job_id: jobId, value: compensation });
+      continue;
+    }
+    totals.parsed += 1;
+    const key = parsed.currency;
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(parsed);
+  }
+
+  const currencies = [...grouped.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([currency, list]) => summarizeCurrencyEntries(currency, list));
+
+  issues.sort((a, b) => a.job_id.localeCompare(b.job_id));
+
+  return {
+    generated_at: new Date().toISOString(),
+    totals,
+    currencies,
+    issues,
+  };
 }
 
 export async function computeFunnel() {

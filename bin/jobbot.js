@@ -45,7 +45,12 @@ import { ingestGreenhouseBoard } from '../src/greenhouse.js';
 import { ingestLeverBoard } from '../src/lever.js';
 import { ingestSmartRecruitersBoard } from '../src/smartrecruiters.js';
 import { ingestAshbyBoard } from '../src/ashby.js';
-import { computeFunnel, exportAnalyticsSnapshot, formatFunnelReport } from '../src/analytics.js';
+import {
+  computeFunnel,
+  exportAnalyticsSnapshot,
+  formatFunnelReport,
+  computeCompensationSummary,
+} from '../src/analytics.js';
 import { ingestWorkableBoard } from '../src/workable.js';
 import { ingestJobUrl } from '../src/url-ingest.js';
 import { bundleDeliverables } from '../src/deliverables.js';
@@ -1204,6 +1209,74 @@ async function cmdShortlist(args) {
   process.exit(2);
 }
 
+const NUMBER_FORMATTERS = new Map();
+
+function formatNumber(value, decimals) {
+  const key = decimals;
+  let formatter = NUMBER_FORMATTERS.get(key);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat('en-US', {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    });
+    NUMBER_FORMATTERS.set(key, formatter);
+  }
+  return formatter.format(value);
+}
+
+function formatCurrencyAmount(currency, value) {
+  if (!Number.isFinite(value)) return 'n/a';
+  const rounded = Math.round(value * 100) / 100;
+  const decimals = Number.isInteger(rounded) ? 0 : 2;
+  const formatted = formatNumber(rounded, decimals);
+  if (!currency || currency === 'unspecified') return formatted;
+  if (/^[A-Za-z]{2,}$/.test(currency)) return `${currency} ${formatted}`;
+  return `${currency}${formatted}`;
+}
+
+function formatCompensationSummary(summary) {
+  if (!summary || !summary.totals) {
+    return 'No compensation data available';
+  }
+  const totals = summary.totals;
+  const parsed = totals.parsed ?? 0;
+  const withComp = totals.with_compensation ?? 0;
+  const unparsed = totals.unparsed ?? 0;
+  const lines = [
+    `Compensation summary (${parsed} parsed of ${withComp} entries; ${unparsed} unparsed)`,
+  ];
+
+  if (Array.isArray(summary.currencies) && summary.currencies.length > 0) {
+    for (const entry of summary.currencies) {
+      const stats = entry.stats ?? {};
+      const count = stats.count ?? 0;
+      const range = stats.range ?? 0;
+      const label = entry.currency === 'unspecified' ? 'Unspecified' : entry.currency;
+      const descriptor = count === 1 ? 'job' : 'jobs';
+      const rangeLabel = range > 0 ? ` (${range} range${range === 1 ? '' : 's'})` : '';
+      lines.push(`- ${label} — ${count} ${descriptor}${rangeLabel}`);
+      const minFormatted = formatCurrencyAmount(entry.currency, stats.minimum ?? 0);
+      const maxFormatted = formatCurrencyAmount(entry.currency, stats.maximum ?? 0);
+      const avgFormatted = formatCurrencyAmount(entry.currency, stats.average ?? 0);
+      const medianFormatted = formatCurrencyAmount(entry.currency, stats.median ?? 0);
+      lines.push(`  Range: ${minFormatted} – ${maxFormatted}`);
+      lines.push(`  Average midpoint: ${avgFormatted}`);
+      lines.push(`  Median midpoint: ${medianFormatted}`);
+    }
+  } else {
+    lines.push('No parsed compensation entries found.');
+  }
+
+  if (Array.isArray(summary.issues) && summary.issues.length > 0) {
+    lines.push('Unparsed entries:');
+    for (const issue of summary.issues) {
+      lines.push(`- ${issue.job_id}: ${issue.value}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
 async function cmdAnalyticsFunnel(args) {
   const format = args.includes('--json') ? 'json' : 'text';
   const funnel = await computeFunnel();
@@ -1228,11 +1301,22 @@ async function cmdAnalyticsExport(args) {
   console.log(payload.trimEnd());
 }
 
+async function cmdAnalyticsCompensation(args) {
+  const asJson = args.includes('--json');
+  const summary = await computeCompensationSummary();
+  if (asJson) {
+    console.log(JSON.stringify(summary, null, 2));
+    return;
+  }
+  console.log(formatCompensationSummary(summary));
+}
+
 async function cmdAnalytics(args) {
   const sub = args[0];
   if (sub === 'funnel') return cmdAnalyticsFunnel(args.slice(1));
   if (sub === 'export') return cmdAnalyticsExport(args.slice(1));
-  console.error('Usage: jobbot analytics <funnel|export> [options]');
+  if (sub === 'compensation') return cmdAnalyticsCompensation(args.slice(1));
+  console.error('Usage: jobbot analytics <funnel|export|compensation> [options]');
   process.exit(2);
 }
 
