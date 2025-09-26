@@ -888,21 +888,51 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot analytics export --out analytics.json
 #   "offer_accepted": 1,
 #   "referral": 1
 # }
+
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot analytics compensation
+# Compensation summary (3 parsed of 4 entries; 1 unparsed)
+# - $ — 1 job
+#   Range: $185,000 – $185,000
+#   Average midpoint: $185,000
+#   Median midpoint: $185,000
+# - € — 2 jobs (1 range)
+#   Range: €95,000 – €140,000
+#   Average midpoint: €107,500
+#   Median midpoint: €107,500
+# Unparsed entries:
+# - job-unparsed: Competitive
+
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot analytics compensation --json | jq '.currencies[0].stats'
+# {
+#   "count": 1,
+#   "single_value": 1,
+#   "range": 0,
+#   "minimum": 185000,
+#   "maximum": 185000,
+#   "average": 185000,
+#   "median": 185000
+# }
 ```
+
+Analytics helpers respect `JOBBOT_DATA_DIR` and `setAnalyticsDataDir()` overrides for shortlist
+metadata as well as lifecycle records, so temporary fixtures and tests can point compensation
+reports at isolated directories without touching production data. The corresponding unit tests in
+[`test/analytics.test.js`](test/analytics.test.js) assert this override propagation.
 
 The analytics command reads `applications.json` and `application_events.json`, summarising stage
 counts, drop-offs, and conversion percentages. A dedicated unit test in
 [`test/analytics.test.js`](test/analytics.test.js) and a CLI flow in [`test/cli.test.js`](test/cli.test.js)
 cover outreach counts, acceptance detection, JSON formatting, the largest drop-off highlight, and the
-anonymized snapshot export. The `analytics export` subcommand captures aggregate status counts and
-event channels without embedding raw job identifiers so personal records stay scrubbed. JSON exports
-now include a `funnel.sankey` payload describing nodes and links for outreach ➜ acceptance flows,
-making it trivial to render Sankey diagrams without recomputing the stage math. They also surface
-an `activity` summary that counts how many deliverable runs and interview sessions exist across the
-data directory without revealing the associated job IDs, giving the recommender a privacy-preserving
-signal about tailoring and rehearsal momentum. Legacy deliverable folders that store files directly
-under a job directory are counted as a single run so older tailoring archives stay visible in the
-activity totals.
+anonymized snapshot export. Additional analytics coverage in those suites exercises the compensation
+summary so currency ranges, averages, and text/JSON formatting stay stable. The `analytics export`
+subcommand captures aggregate status counts and event channels without embedding raw job identifiers
+so personal records stay scrubbed. JSON exports now include a `funnel.sankey` payload describing nodes
+and links for outreach ➜ acceptance flows, making it trivial to render Sankey diagrams without
+recomputing the stage math. They also surface an `activity` summary that counts how many deliverable
+runs and interview sessions exist across the data directory without revealing the associated job IDs,
+giving the recommender a privacy-preserving signal about tailoring and rehearsal momentum. Legacy
+deliverable folders that store files directly under a job directory are counted as a single run so
+older tailoring archives stay visible in the activity totals.
 
 When outreach events exist without a matching lifecycle status, the report now prints a
 `Missing data: …` line listing the affected job IDs so you can backfill outcomes quickly.

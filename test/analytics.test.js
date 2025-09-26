@@ -264,6 +264,134 @@ describe('analytics conversion funnel', () => {
     expect(serialized).not.toContain('job-screening');
   });
 
+  it('summarizes shortlist compensation metadata by currency', async () => {
+    const { syncShortlistJob } = await import('../src/shortlist.js');
+
+    await syncShortlistJob('job-dollar', {
+      location: 'Remote',
+      compensation: '185k',
+    });
+
+    process.env.JOBBOT_SHORTLIST_CURRENCY = '€';
+    try {
+      await syncShortlistJob('job-euro-fixed', {
+        location: 'Berlin',
+        compensation: '95k',
+      });
+      await syncShortlistJob('job-euro-range', {
+        location: 'Berlin',
+        compensation: '€95 – 140k',
+      });
+    } finally {
+      delete process.env.JOBBOT_SHORTLIST_CURRENCY;
+    }
+
+    await syncShortlistJob('job-unparsed', {
+      location: 'Remote',
+      compensation: 'Competitive',
+    });
+
+    const { computeCompensationSummary, setAnalyticsDataDir } = await import(
+      '../src/analytics.js'
+    );
+    setAnalyticsDataDir(dataDir);
+    restoreAnalyticsDir = async () => setAnalyticsDataDir(undefined);
+
+    const summary = await computeCompensationSummary();
+
+    expect(typeof summary.generated_at).toBe('string');
+    expect(summary.totals).toEqual({
+      shortlisted_jobs: 4,
+      with_compensation: 4,
+      parsed: 3,
+      unparsed: 1,
+    });
+
+    const usd = summary.currencies.find(entry => entry.currency === '$');
+    expect(usd).toBeDefined();
+    expect(usd.stats).toMatchObject({
+      count: 1,
+      single_value: 1,
+      range: 0,
+      minimum: 185000,
+      maximum: 185000,
+      average: 185000,
+      median: 185000,
+    });
+    expect(usd.jobs).toEqual([
+      expect.objectContaining({
+        job_id: 'job-dollar',
+        original: '$185k',
+        minimum: 185000,
+        maximum: 185000,
+      }),
+    ]);
+
+    const euro = summary.currencies.find(entry => entry.currency === '€');
+    expect(euro).toBeDefined();
+    expect(euro.stats).toMatchObject({
+      count: 2,
+      single_value: 1,
+      range: 1,
+      minimum: 95000,
+      maximum: 140000,
+      average: 106250,
+      median: 106250,
+    });
+    expect(euro.jobs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          job_id: 'job-euro-fixed',
+          original: '€95k',
+          minimum: 95000,
+          maximum: 95000,
+        }),
+        expect.objectContaining({
+          job_id: 'job-euro-range',
+          original: '€95 – 140k',
+          minimum: 95000,
+          maximum: 140000,
+        }),
+      ])
+    );
+
+    expect(summary.issues).toEqual([
+      { job_id: 'job-unparsed', value: 'Competitive' },
+    ]);
+  });
+
+  it('respects analytics data directory overrides when summarizing compensation', async () => {
+    const { syncShortlistJob } = await import('../src/shortlist.js');
+    await syncShortlistJob('job-override', {
+      location: 'Remote',
+      compensation: '$120k',
+    });
+
+    const { computeCompensationSummary, setAnalyticsDataDir } = await import(
+      '../src/analytics.js'
+    );
+    setAnalyticsDataDir(dataDir);
+    restoreAnalyticsDir = async () => setAnalyticsDataDir(undefined);
+
+    delete process.env.JOBBOT_DATA_DIR;
+
+    try {
+      const summary = await computeCompensationSummary();
+
+      expect(summary.totals).toMatchObject({
+        shortlisted_jobs: 1,
+        with_compensation: 1,
+        parsed: 1,
+        unparsed: 0,
+      });
+      const usd = summary.currencies.find(entry => entry.currency === '$');
+      expect(usd).toBeDefined();
+      expect(usd?.stats).toMatchObject({ count: 1, minimum: 120000, maximum: 120000 });
+    } finally {
+      process.env.JOBBOT_DATA_DIR = dataDir;
+    }
+  });
+
   it('summarizes deliverable runs and interview sessions without exposing job ids', async () => {
     const fs = await import('node:fs/promises');
     const deliverablesRoot = path.join(dataDir, 'deliverables');
