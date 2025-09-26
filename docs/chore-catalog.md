@@ -9,7 +9,10 @@ stays accurate.
 |------|-------|-----------|----------|
 | Lint & test sweep | All contributors | Every pull request and before publishing a release | `npm run lint`<br>`npm run test:ci` |
 | Secret scan before push | All contributors | Before every commit and prior to opening a pull request | `git diff --cached \| ./scripts/scan-secrets.py` |
-| Prompt docs audit | Prompt Docs maintainers | Whenever prompt documentation changes or monthly during content reviews | `npm run lint -- docs/prompts`<br>`git status docs/prompts docs/prompt-docs-summary.md` |
+| Prompt docs audit | Prompt Docs maintainers | Whenever prompt documentation changes or monthly during content reviews | `npm run chore:prompts -- --check`<br>`git status docs/prompts docs/prompt-docs-summary.md` |
+
+The prompt docs chore formats Markdown, runs spellcheck, validates the summary index, and now also
+verifies that every prompt document links back to the repository `README.md`.
 
 ## How to use this catalog
 
