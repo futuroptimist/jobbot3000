@@ -83,8 +83,10 @@ would cut coordination overhead.
   scan pipeline).
 - Add npm scripts or `bin/` commands that encapsulate multi-step chores (for example, a single
   `npm run chore:prompts` task that runs spellcheck, formatting, and link validation for prompt docs).
-- The repository now ships `npm run chore:prompts`, which runs cspell over prompt docs and verifies
-  that `docs/prompt-docs-summary.md` only references existing files. The chore coverage lives in
+- The repository now ships `npm run chore:prompts`, which formats prompt docs with Prettier, runs
+  cspell, verifies that `docs/prompt-docs-summary.md` only references existing files, and now
+  ensures each prompt doc links back to the repository `README.md`. Pass
+  `--check` to run the formatting step in validation mode. The chore coverage lives in
   `test/chore-prompts.test.js`, which gives the spellcheck up to 20 seconds on CI to absorb
   occasional npm start-up slowness.
 - `npm run chore:reminders` prints the catalog as either a human-readable digest or JSON (pass
