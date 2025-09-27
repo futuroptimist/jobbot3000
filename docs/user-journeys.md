@@ -98,7 +98,9 @@ aggressively to respect rate limits.
 
 1. For a selected job, the matcher scores fit using semantic + lexical signals and explains hits,
    gaps, and blockers. CLI users can run `jobbot match --explain` to append the narrative summary to
-   the Markdown report or add an `explanation` string to JSON payloads.
+   the Markdown report or add an `explanation` string to JSON payloads. JSON responses also surface an
+   `evidence` array containing the matched requirement snippets (tagged with their source) so prep
+   workflows can cite the original job text without recomputing matches.
 2. The resume renderer clones the base profile, selects the most relevant bullets, and prepares a
    tailored resume (PDF, text preview) plus optional cover letter. All outputs cite the source
    fields they originate from so the user can audit changes.

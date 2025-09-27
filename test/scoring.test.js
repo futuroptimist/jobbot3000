@@ -12,6 +12,9 @@ describe('computeFitScore', () => {
     expect(result.missing).toEqual(['Python']);
     expect(result.must_haves_missed).toEqual([]);
     expect(result.keyword_overlap).toEqual(['javascript']);
+    expect(result.evidence).toEqual([
+      { text: 'JavaScript', source: 'requirements' },
+    ]);
   });
 
   it('matches tokens case-insensitively', () => {
@@ -24,6 +27,7 @@ describe('computeFitScore', () => {
       missing: [],
       must_haves_missed: [],
       keyword_overlap: ['python'],
+      evidence: [{ text: 'python', source: 'requirements' }],
     });
   });
 
@@ -37,6 +41,7 @@ describe('computeFitScore', () => {
       missing: [],
       must_haves_missed: [],
       keyword_overlap: ['go'],
+      evidence: [{ text: 'Go', source: 'requirements' }],
     });
   });
 
@@ -48,6 +53,7 @@ describe('computeFitScore', () => {
       missing: ['JS'],
       must_haves_missed: [],
       keyword_overlap: [],
+      evidence: [],
     });
   });
 
@@ -61,6 +67,7 @@ describe('computeFitScore', () => {
       missing: [],
       must_haves_missed: [],
       keyword_overlap: ['javascript'],
+      evidence: [{ text: 'JavaScript', source: 'requirements' }],
     });
   });
 
@@ -72,6 +79,7 @@ describe('computeFitScore', () => {
       missing: [],
       must_haves_missed: [],
       keyword_overlap: [],
+      evidence: [],
     });
   });
 
@@ -83,6 +91,7 @@ describe('computeFitScore', () => {
       missing: [],
       must_haves_missed: [],
       keyword_overlap: [],
+      evidence: [],
     });
   });
 
@@ -107,6 +116,7 @@ describe('computeFitScore', () => {
         'artificial intelligence',
         'postgresql',
       ],
+      evidence: requirements.map(text => ({ text, source: 'requirements' })),
     });
   });
 
@@ -135,6 +145,7 @@ describe('computeFitScore', () => {
         'javascript',
         'typescript',
       ],
+      evidence: requirements.map(text => ({ text, source: 'requirements' })),
     });
   });
 
@@ -151,6 +162,7 @@ describe('computeFitScore', () => {
       'Security clearance required',
     ]);
     expect(result.keyword_overlap).toEqual([]);
+    expect(result.evidence).toEqual([]);
   });
 
   it('reports keyword overlap for matched requirements', () => {
@@ -167,6 +179,10 @@ describe('computeFitScore', () => {
       'systems',
       'experience',
       'amazon web services',
+    ]);
+    expect(result.evidence).toEqual([
+      { text: 'Distributed systems experience', source: 'requirements' },
+      { text: 'Amazon Web Services architecture expertise', source: 'requirements' },
     ]);
   });
 
@@ -187,6 +203,8 @@ describe('computeFitScore', () => {
 
     expect(first.keyword_overlap.length).toBeLessThanOrEqual(12);
     expect(second.keyword_overlap).toEqual(first.keyword_overlap);
+    expect(first.evidence).toHaveLength(first.matched.length);
+    expect(second.evidence).toEqual(first.evidence);
   });
 
   it('skips keyword overlap extraction when the resume has more than 5k unique tokens', () => {
@@ -197,6 +215,7 @@ describe('computeFitScore', () => {
 
     expect(result.matched).toEqual(requirements);
     expect(result.keyword_overlap).toEqual([]);
+    expect(result.evidence.map(entry => entry.text)).toEqual(result.matched);
   });
 
 

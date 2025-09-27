@@ -216,7 +216,14 @@ function collectKeywordOverlap(line, resumeSet, getNormalizedResume) {
  */
 export function computeFitScore(resumeText, requirements) {
   if (!Array.isArray(requirements) || requirements.length === 0) {
-    return { score: 0, matched: [], missing: [], must_haves_missed: [], keyword_overlap: [] };
+    return {
+      score: 0,
+      matched: [],
+      missing: [],
+      must_haves_missed: [],
+      keyword_overlap: [],
+      evidence: [],
+    };
   }
 
   const resumeSet = resumeTokens(resumeText);
@@ -228,6 +235,7 @@ export function computeFitScore(resumeText, requirements) {
   };
   const matched = [];
   const missing = [];
+  const evidence = [];
   let total = 0;
 
   for (const entry of requirements) {
@@ -235,11 +243,23 @@ export function computeFitScore(resumeText, requirements) {
     const trimmed = entry.trim();
     if (!trimmed) continue;
     total += 1;
-    (hasOverlap(trimmed, resumeSet, getNormalizedResume) ? matched : missing).push(trimmed);
+    if (hasOverlap(trimmed, resumeSet, getNormalizedResume)) {
+      matched.push(trimmed);
+      evidence.push({ text: trimmed, source: 'requirements' });
+    } else {
+      missing.push(trimmed);
+    }
   }
 
   if (total === 0)
-    return { score: 0, matched: [], missing: [], must_haves_missed: [], keyword_overlap: [] };
+    return {
+      score: 0,
+      matched: [],
+      missing: [],
+      must_haves_missed: [],
+      keyword_overlap: [],
+      evidence: [],
+    };
 
   const score = Math.round((matched.length / total) * 100);
   const mustHavesMissed = identifyBlockers(missing);
@@ -280,6 +300,7 @@ export function computeFitScore(resumeText, requirements) {
     missing,
     must_haves_missed: mustHavesMissed,
     keyword_overlap: keywordOverlapArray,
+    evidence,
   };
 }
 

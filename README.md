@@ -424,6 +424,11 @@ console.log(match.score); // 67
 console.log(match.matched); // ['Experience with Node.js', 'Terraform proficiency']
 console.log(match.explanation);
 // Correspond 2 sur 3 exigences (67 %).\n// Points forts: Experience with Node.js; Terraform proficiency\n// Lacunes: Must have Kubernetes certification\n// Blocages: Must have Kubernetes certification
+console.log(match.evidence);
+// [
+//   { text: 'Experience with Node.js', source: 'requirements' },
+//   { text: 'Terraform proficiency', source: 'requirements' },
+// ]
 ```
 
 When only the matched or missing lists are present, the Markdown output starts with the
@@ -441,6 +446,9 @@ see which concrete words or abbreviations aligned without recomputing overlaps. 
 at 12 entries and cached per resume/requirement pairing to keep repeated evaluations (like multi-job
 comparisons) fast. Extremely large resumes (more than 5,000 unique tokens) skip overlap extraction to
 preserve cold-start latency targets.
+
+An `evidence` array lists the matched requirement snippets alongside their source label so consumers
+can cite the original job text without re-running the matcher or re-parsing CLI output.
 
 When a job already has tailoring or rehearsal artifacts, JSON match payloads attach a `prior_activity`
 block summarizing deliverable runs and interview sessions (including the latest coaching notes). The

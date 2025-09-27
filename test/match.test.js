@@ -37,6 +37,16 @@ describe('matchResumeToJob', () => {
     expect(result.skills_hit).toEqual(result.matched);
     expect(result.skills_gap).toEqual(result.missing);
     expect(Array.isArray(result.keyword_overlap)).toBe(true);
+    expect(result.evidence).toEqual([
+      {
+        text: 'Experience with Node.js',
+        source: 'requirements',
+      },
+      {
+        text: 'Terraform proficiency',
+        source: 'requirements',
+      },
+    ]);
   });
 
   it('optionally includes a localized explanation summary', () => {
