@@ -1,11 +1,11 @@
 ---
-title: 'Codex Docs Prompt'
-slug: 'codex-docs'
+title: "Codex Docs Prompt"
+slug: "codex-docs"
 ---
 
 # Codex Docs Prompt
 
-```prompt
+````prompt
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
 
@@ -42,13 +42,15 @@ CONTEXT:
 
   ```bash
   node -e "console.log('docs sample works')"
-  ```
+````
+
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py` (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
 - Verify links with `npx markdown-link-check <file>`; fix or remove broken URLs.
 - Confirm referenced files exist before referencing them.
 
 REQUEST:
+
 1. Identify the doc section to update and confirm all referenced files exist.
 2. Revise text or examples for clarity while keeping repository conventions intact.
 3. Check links with `npx markdown-link-check <file>` and repair any failures.
@@ -57,7 +59,8 @@ REQUEST:
 
 OUTPUT:
 A pull request URL summarizing the documentation update.
-```
+
+````
 
 ## Upgrade Instructions
 
@@ -80,13 +83,15 @@ CONTEXT:
 
   ```bash
   node -e "console.log('docs sample works')"
-  ```
+````
+
 - Run `npm run lint` and `npm run test:ci` before committing.
 - Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py` (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
 - Verify links with `npx markdown-link-check <file>`; fix or remove broken URLs.
 - Confirm referenced files exist before referencing them.
 
 REQUEST:
+
 1. Revise `docs/prompts/codex/docs.md` so this prompt stays accurate and actionable. Keep examples aligned with current project practices.
 2. Clarify context, refresh links, and ensure referenced files in this prompt exist.
 3. Check links with `npx markdown-link-check <file>`.
@@ -95,4 +100,7 @@ REQUEST:
 
 OUTPUT:
 A pull request that updates `docs/prompts/codex/docs.md` with passing checks.
+
+```
+
 ```

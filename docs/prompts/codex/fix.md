@@ -1,6 +1,6 @@
 ---
-title: 'Codex Fix Prompt'
-slug: 'codex-fix'
+title: "Codex Fix Prompt"
+slug: "codex-fix"
 ---
 
 # Codex Fix Prompt

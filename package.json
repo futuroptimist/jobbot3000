@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "license": "MIT",
   "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
   "bin": {
     "jobbot": "bin/jobbot.js"
   },

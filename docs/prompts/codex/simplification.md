@@ -1,9 +1,10 @@
 ---
-title: 'Codex Simplification Prompt'
-slug: 'codex-simplification'
+title: "Codex Simplification Prompt"
+slug: "codex-simplification"
 ---
 
 # Codex Simplification Prompt
+
 Use this prompt when simplifying workflows, onboarding, or internal tooling for the jobbot3000
 repository while preserving existing capabilities.
 
@@ -46,6 +47,7 @@ A pull request summarizing the simplification and confirming passing checks.
 Copy this block whenever simplifying jobbot3000.
 
 ## Upgrade Prompt
+
 Type: evergreen
 
 Use this prompt when refining `docs/prompts/codex/simplification.md` itself.

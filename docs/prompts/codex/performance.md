@@ -1,13 +1,14 @@
 ---
-title: 'Codex Performance Prompt'
-slug: 'codex-performance'
+title: "Codex Performance Prompt"
+slug: "codex-performance"
 ---
 
 # Codex Performance Prompt
+
 Use this prompt whenever you need to improve runtime performance in jobbot3000 without
 changing public behavior.
 
-```prompt
+````prompt
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
 
@@ -48,9 +49,10 @@ CONTEXT:
       // code under test
     }
   });
-  ```
+````
 
 REQUEST:
+
 1. Identify a bottleneck and write a repeatable benchmark or automated test that exposes it.
 2. Capture baseline metrics (for example, with Node's
    [`console.time`](https://nodejs.org/api/console.html#consoletime) or
@@ -61,7 +63,8 @@ REQUEST:
 
 OUTPUT:
 A pull request summarizing the performance improvement with verified metrics and passing CI.
-```
+
+````
 
 ## Upgrade Instructions
 
@@ -90,4 +93,4 @@ REQUEST:
 
 OUTPUT:
 A pull request that updates `docs/prompts/codex/performance.md` with passing checks.
-```
+````

@@ -1,6 +1,6 @@
 ---
-title: 'Codex Accessibility Prompt'
-slug: 'codex-accessibility'
+title: "Codex Accessibility Prompt"
+slug: "codex-accessibility"
 ---
 
 # Codex Accessibility Prompt

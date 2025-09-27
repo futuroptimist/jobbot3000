@@ -1,6 +1,6 @@
 ---
-title: 'Codex Refactor Prompt'
-slug: 'codex-refactor'
+title: "Codex Refactor Prompt"
+slug: "codex-refactor"
 ---
 
 # Codex Refactor Prompt

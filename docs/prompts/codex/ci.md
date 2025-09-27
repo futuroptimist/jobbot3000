@@ -1,6 +1,6 @@
 ---
-title: 'Codex CI Prompt'
-slug: 'codex-ci'
+title: "Codex CI Prompt"
+slug: "codex-ci"
 ---
 
 # Codex CI Prompt
