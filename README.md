@@ -1236,6 +1236,16 @@ structure (for example, `notes/interview.txt`). Automated coverage in
 [`test/deliverables.test.js`](test/deliverables.test.js) exercises latest-run selection and explicit
 timestamps, and the CLI suite verifies `jobbot deliverables bundle` writes archives to disk.
 
+When a tailored run ships a `resume.json`, the bundler now compares it to the base
+`profile/resume.json` and includes a `resume.diff.json` summary in the archive. The diff captures
+added, removed, and changed resume paths (for example, `skills[2]` or `work[0].company`), giving
+reviewers a quick snapshot of how the tailored variant diverges from the canonical profile without
+opening the full documents. Bundles also synthesize a `resume.txt` plain-text preview from the
+tailored JSON resume so ATS scanners and accessibility tooling can audit the output without opening
+the PDF. Unit coverage in [`test/deliverables.test.js`](test/deliverables.test.js) asserts the diff
+is emitted with accurate before/after values and the preview captures core resume sections, keeping
+the audit trail intact.
+
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 See [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) for a list of prompt documents.
 See [docs/chore-catalog.md](docs/chore-catalog.md) for the recurring chores and required commands

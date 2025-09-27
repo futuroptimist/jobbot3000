@@ -103,13 +103,17 @@ aggressively to respect rate limits.
    `evidence` array containing the matched requirement snippets (tagged with their source) so prep
    workflows can cite the original job text without recomputing matches.
 2. The resume renderer clones the base profile, selects the most relevant bullets, and prepares a
-   tailored resume (PDF, text preview) plus optional cover letter. All outputs cite the source
-   fields they originate from so the user can audit changes.
+   tailored resume (PDF, a synthesized `resume.txt` preview) plus optional cover letter. All outputs
+   cite the source fields they originate from so the user can audit changes, and the preview keeps
+   ATS tooling in sync with the JSON resume even when the PDF is unavailable.
 3. Users can tweak sections manually; the assistant suggests language improvements but refuses to
    fabricate experience.
 4. Generated files, diffs, and build logs live in `data/deliverables/{job_id}/` and are versioned by
    timestamp. Export the latest bundle (or a specific run with `--timestamp`) via
    `jobbot deliverables bundle <job_id> --out <zip_path>` when sharing prep artifacts with mentors.
+   Bundles now include a `resume.diff.json` summary whenever a tailored `resume.json` is present,
+   highlighting added, removed, and changed resume fields so reviewers can scan adjustments without
+   re-opening the full documents.
 
 **Unhappy paths:** low fit scores or missing must-haves trigger guidance
   (e.g., suggest skill prep or highlight transferable experience) and let the user decline
