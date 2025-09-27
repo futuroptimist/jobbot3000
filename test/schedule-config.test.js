@@ -14,6 +14,7 @@ vi.mock('../src/scoring.js', () => ({
     missing: [],
     must_haves_missed: [],
     keyword_overlap: [],
+    evidence: [{ text: 'Team leadership', source: 'requirements' }],
   })),
 }));
 

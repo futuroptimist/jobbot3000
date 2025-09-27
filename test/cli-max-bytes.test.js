@@ -49,6 +49,7 @@ vi.mock('../src/scoring.js', () => ({
     missing: ['Ship faster'],
     must_haves_missed: [],
     keyword_overlap: [],
+    evidence: [{ text: 'Build things', source: 'requirements' }],
   }),
 }));
 

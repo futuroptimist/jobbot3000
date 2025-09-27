@@ -38,7 +38,7 @@ export function matchResumeToJob(resumeText, jobInput, options = {}) {
     ? parsedJob.requirements.slice()
     : [];
 
-  const { score, matched, missing, must_haves_missed, keyword_overlap } = computeFitScore(
+  const { score, matched, missing, must_haves_missed, keyword_overlap, evidence } = computeFitScore(
     resumeText,
     requirements,
   );
@@ -53,6 +53,7 @@ export function matchResumeToJob(resumeText, jobInput, options = {}) {
     skills_gap: missing,
     must_haves_missed,
     keyword_overlap,
+    evidence,
   };
 
   const normalizedOptions = normalizeOptions(options);
