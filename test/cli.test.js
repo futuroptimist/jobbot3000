@@ -1465,6 +1465,21 @@ describe('jobbot CLI', () => {
     expect(output).toContain('Discard Count: 2');
   });
 
+  it('omits discard summaries when a shortlist entry has no history', () => {
+    runCli(['shortlist', 'sync', 'job-no-history', '--location', 'Remote']);
+
+    const output = runCli(['shortlist', 'list']);
+    const blocks = output
+      .split(/\n{2,}/)
+      .map(block => block.trim())
+      .filter(Boolean);
+    const jobBlock = blocks.find(block => block.startsWith('job-no-history'));
+    expect(jobBlock).toBeDefined();
+    expect(jobBlock).not.toContain('Discard Count:');
+    expect(jobBlock).not.toContain('Last Discard:');
+    expect(jobBlock).not.toContain('Last Discard Tags:');
+  });
+
   it('shows last discard details for legacy entries without timestamps', () => {
     const shortlistPath = path.join(dataDir, 'shortlist.json');
     const legacyPayload = {
