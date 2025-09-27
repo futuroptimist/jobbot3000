@@ -37,7 +37,8 @@ with retry options and explain how to manually fix the source file.
 
 1. After import, the LLM reviews the normalized profile and drafts a question plan that targets
    missing or ambiguous details (career goals, relocation preferences, compensation guardrails,
-   visa status, measurable outcomes, tools).
+   visa status, measurable outcomes, tools). `jobbot intake plan` surfaces the prioritized prompts
+   (add `--json` for structured exports) so contributors can capture the missing data immediately.
 2. The user answers via chat or a structured form. The assistant keeps asking follow-ups until it
    reaches a configured confidence threshold.
 3. Responses are appended to the profile as structured notes (`data/profile/intake.json`) via

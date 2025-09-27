@@ -1276,6 +1276,31 @@ describe('jobbot CLI', () => {
     expect(textOutput).toContain('Question: Share a metric-driven accomplishment');
   });
 
+  it('generates an intake question plan when details are missing', () => {
+    const planOutput = runCli(['intake', 'plan']);
+    expect(planOutput).toContain('Intake question plan');
+    expect(planOutput).toContain('What roles are you targeting next');
+    expect(planOutput).toMatch(/Resume: .*profile\/resume\.json/);
+  });
+
+  it('exports the intake question plan as JSON', () => {
+    runCli([
+      'intake',
+      'record',
+      '--question',
+      'Where are you willing to relocate?',
+      '--answer',
+      'Open to West Coast US and remote-first roles.',
+      '--tags',
+      'relocation',
+    ]);
+
+    const payload = JSON.parse(runCli(['intake', 'plan', '--json']));
+    expect(Array.isArray(payload.plan)).toBe(true);
+    expect(payload.resume_path).toMatch(/profile\/resume\.json$/);
+    expect(payload.plan.length).toBeGreaterThan(0);
+  });
+
   it('advertises all intake subcommands in usage output', () => {
     const bin = path.resolve('bin', 'jobbot.js');
     const result = spawnSync('node', [bin, 'intake'], {
@@ -1284,7 +1309,7 @@ describe('jobbot CLI', () => {
     });
 
     expect(result.status).toBe(2);
-    expect(result.stderr).toContain('Usage: jobbot intake <record|list|bullets> ...');
+    expect(result.stderr).toContain('Usage: jobbot intake <record|list|bullets|plan> ...');
   });
 
   it('tags shortlist entries and persists labels', () => {
