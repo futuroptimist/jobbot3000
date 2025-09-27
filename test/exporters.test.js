@@ -122,6 +122,53 @@ describe('exporters', () => {
     expect(output).toBe('## Matched\n- JS\n\n## Missing\n- Rust');
   });
 
+  it('appends prior activity details to markdown match reports', () => {
+    const output = toMarkdownMatch({
+      title: 'Dev',
+      matched: ['JS'],
+      prior_activity: {
+        deliverables: {
+          runs: 2,
+          last_run_at: '2025-03-05T12:00:00.000Z',
+        },
+        interviews: {
+          sessions: 1,
+          last_session: {
+            recorded_at: '2025-03-06T10:00:00.000Z',
+            stage: 'Screen',
+            mode: 'Voice',
+            critique: { tighten_this: ['Tighten intro'] },
+          },
+        },
+      },
+    });
+
+    expect(output).toContain('## Prior Activity');
+    expect(output).toContain('- Deliverables: 2 runs (last run 2025-03-05T12:00:00.000Z)');
+    expect(output).toContain('- Interviews: 1 session (2025-03-06T10:00:00.000Z, Screen / Voice)');
+    expect(output).toContain('  Coaching notes:');
+    expect(output).toContain('  - Tighten intro');
+  });
+
+  it('localizes prior activity markdown output', () => {
+    const output = toMarkdownMatch({
+      locale: 'es',
+      prior_activity: {
+        deliverables: { runs: 1 },
+        interviews: {
+          sessions: 1,
+          last_session: {
+            recorded_at: '2025-03-07T09:30:00.000Z',
+          },
+        },
+      },
+    });
+
+    expect(output).toContain('## Actividad previa');
+    expect(output).toContain('- Entregables: 1 ejecución');
+    expect(output).toContain('- Entrevistas: 1 sesión (2025-03-07T09:30:00.000Z)');
+  });
+
   it('escapes markdown control characters to prevent injection in summaries', () => {
     const output = toMarkdownSummary({
       title: '[Lead](javascript:alert(1))',

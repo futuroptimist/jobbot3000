@@ -23,6 +23,7 @@ vi.mock('../src/exporters.js', () => ({
   toMarkdownMatchExplanation: vi.fn().mockReturnValue('## Explanation'),
   toDocxMatch: vi.fn().mockResolvedValue(Buffer.from('docx-match')),
   formatMatchExplanation: vi.fn().mockReturnValue('explanation'),
+  formatPriorActivitySection: vi.fn().mockReturnValue(''),
 }));
 
 vi.mock('../src/parser.js', () => ({
