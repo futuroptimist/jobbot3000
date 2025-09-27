@@ -78,8 +78,9 @@ revisit them later without blocking the workflow.
    `jobbot shortlist list --location <value>` (and repeated `--tag <value>` flags)
   and records sync metadata with `jobbot shortlist sync` so future refreshes know
   when entries were last updated. Text summaries now also show `Discard Count` and
-  `Last Discard Tags` for each job so candidates can spot churn without opening the
-  archive. When a discard omits tags entirely, the summary line renders `Last Discard Tags: (none)`
+  `Last Discard Tags` for each job when history exists so candidates can spot churn without opening the
+  archive. Entries without discards omit those summary lines entirely to keep the output compact. When a
+  discard omits tags entirely, the summary line renders `Last Discard Tags: (none)`
   so the absence is obvious. Add `--json` (and optionally `--out <path>`) when exporting the filtered
   shortlist to other tools. Missing timestamps surface as `(unknown time)` in both CLI and JSON archives so
   downstream scripts can rely on the same sentinel value when displaying legacy entries; see

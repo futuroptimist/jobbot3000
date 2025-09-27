@@ -713,6 +713,7 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --location remote
 #   Compensation: $185k
 #   Synced At: 2025-03-06T08:00:00.000Z
 #   Tags: dream, remote
+#   Discard Count: 1
 #   Last Discard: Not remote (2025-03-05T12:00:00.000Z)
 #   Last Discard Tags: Remote, onsite
 
@@ -723,6 +724,7 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --tag dream --tag remote
 #   Compensation: $185k
 #   Synced At: 2025-03-06T08:00:00.000Z
 #   Tags: dream, remote
+#   Discard Count: 1
 #   Last Discard: Not remote (2025-03-05T12:00:00.000Z)
 #   Last Discard Tags: Remote, onsite
 
@@ -793,7 +795,9 @@ in both CLI and JSON responses so downstream tooling can rely on a single sentin
 shortlist list command when piping entries into other tools; include `--out <path>` to persist the
 snapshot on disk. Filter by metadata or tags (`--location`, `--level`, `--compensation`, or repeated
 `--tag` flags) when triaging opportunities. Text output also surfaces `Discard Count` and `Last Discard Tags`
-when history exists so the rationale stays visible without opening the archive. When the latest discard omits
+when history exists so the rationale stays visible without opening the archive. Entries without discard history
+omit those lines entirely to keep summaries compact. CLI coverage in [`test/cli.test.js`](test/cli.test.js)
+asserts the omission so regressions are caught early. When the latest discard omits
 tags, the summary prints `Last Discard Tags: (none)` so the absence is explicit. The archive reader trims
 messy history entries, sorts them chronologically, and fills missing timestamps with `(unknown time)`
 so legacy discards still surface their rationale. Metadata syncs stamp a `synced_at` ISO 8601 timestamp for
