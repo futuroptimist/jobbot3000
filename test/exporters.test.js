@@ -328,4 +328,23 @@ describe('exporters', () => {
     expect(xml).toContain('Correspondances');
     expect(xml).toContain('Manquants');
   });
+
+  it('includes blockers when DOCX match reports detect mandatory gaps', async () => {
+    const buffer = await toDocxMatch({
+      title: 'Security Engineer',
+      missing: [
+        'Must have active security clearance',
+        'Experience with Terraform automation',
+      ],
+      locale: 'en',
+    });
+
+    expect(buffer instanceof Uint8Array || Buffer.isBuffer(buffer)).toBe(true);
+    const zip = await JSZip.loadAsync(buffer);
+    const xml = await zip.file('word/document.xml').async('string');
+
+    expect(xml).toContain('Blockers');
+    const occurrences = (xml.match(/Must have active security clearance/g) || []).length;
+    expect(occurrences).toBeGreaterThan(1);
+  });
 });
