@@ -95,6 +95,9 @@ would cut coordination overhead.
   `docs/prompts/**`. The expanded suite in [`test/chore-prompts.test.js`](../test/chore-prompts.test.js)
   now creates a throwaway prompt doc with a broken link and expects the chore to fail with a "Broken
   Markdown links" error, keeping the prompt catalog discoverable.
+- _Update (2025-11-04):_ The prompts chore now enforces Prettier formatting for changed prompt docs
+  (pass `--write`/`--fix` and `--all` to auto-format the entire catalog) so headings, lists, and
+  tables stay consistent across the catalog.
 - `npm run chore:reminders` prints the catalog as either a human-readable digest or JSON (pass
   `--json`), giving CI jobs a reliable summary to surface before merges. Coverage in
   `test/chore-reminders.test.js` exercises the JSON output and keeps the parser aligned with the
