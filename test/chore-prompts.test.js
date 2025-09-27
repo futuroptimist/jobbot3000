@@ -50,4 +50,74 @@ describe('chore:prompts', () => {
       cleanup();
     }
   }, 20000);
+
+  it('fails when prompt docs are not formatted consistently', () => {
+    const unformattedFile = path.join(repoRoot, 'docs', 'prompts', 'unformatted.md');
+    const cleanup = () => {
+      if (fs.existsSync(unformattedFile)) {
+        fs.unlinkSync(unformattedFile);
+      }
+    };
+
+    fs.writeFileSync(unformattedFile, '-    Item one\n', 'utf8');
+
+    try {
+      const { status, stderr, stdout } = runChorePrompts();
+      expect(status).not.toBe(0);
+      const combined = `${stdout}\n${stderr}`;
+      expect(combined).toMatch(/format/i);
+      expect(combined).toContain('unformatted.md');
+    } finally {
+      cleanup();
+    }
+  }, 20000);
+
+  it('passes when a prompt doc deletion is staged', () => {
+    const docPath = path.join(repoRoot, 'docs', 'prompts', 'codex', 'automation.md');
+    const backupPath = `${docPath}.bak`;
+    const summaryPath = path.join(repoRoot, 'docs', 'prompt-docs-summary.md');
+    const originalSummary = fs.readFileSync(summaryPath, 'utf8');
+    const sanitizedSummary = originalSummary
+      .split(/\r?\n/)
+      .filter(line => !line.toLowerCase().includes('automation'))
+      .join('\n');
+
+    const formatSummary = () => {
+      const prettierBin = path.join(
+        repoRoot,
+        'node_modules',
+        '.bin',
+        process.platform === 'win32' ? 'prettier.cmd' : 'prettier',
+      );
+      const result = spawnSync(prettierBin, ['--write', summaryPath], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        stdio: 'ignore',
+      });
+      if (result.status !== 0) {
+        throw new Error(`prettier --write ${summaryPath} failed`);
+      }
+    };
+
+    if (fs.existsSync(backupPath)) {
+      fs.unlinkSync(backupPath);
+    }
+
+    fs.writeFileSync(summaryPath, `${sanitizedSummary}\n`, 'utf8');
+    formatSummary();
+    fs.renameSync(docPath, backupPath);
+
+    try {
+      const { status, stdout, stderr } = runChorePrompts();
+      if (status !== 0) {
+        const combined = `${stdout}\n${stderr}`;
+        throw new Error(`chore:prompts exited with code ${status}:\n${combined}`);
+      }
+    } finally {
+      if (fs.existsSync(backupPath)) {
+        fs.renameSync(backupPath, docPath);
+      }
+      fs.writeFileSync(summaryPath, originalSummary, 'utf8');
+    }
+  }, 20000);
 });
