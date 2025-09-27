@@ -369,8 +369,9 @@ If `summary` is omitted, the requirements section is still separated by a blank 
 
 `toDocxSummary` and `toDocxMatch` provide `.docx` exports with the same localized labels and bullet
 structure. Automated coverage in [`test/exporters.test.js`](test/exporters.test.js) inspects the
-generated `word/document.xml`, and [`test/cli.test.js`](test/cli.test.js) verifies the CLI's
-`--docx` flag writes those documents without altering stdout output.
+generated `word/document.xml`, confirms mandatory blockers render alongside missing requirements, and
+[`test/cli.test.js`](test/cli.test.js) verifies the CLI's `--docx` flag writes those documents
+without altering stdout output.
 
 Both exporters accept an optional `locale` field to translate labels.
 The default locale is `'en'`; Spanish (`'es'`) and French (`'fr'`) are also supported.

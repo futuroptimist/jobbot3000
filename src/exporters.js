@@ -346,5 +346,12 @@ export async function toDocxMatch({
     appendBulletList(paragraphs, gaps);
   }
 
+  const blockers = identifyBlockers(gaps);
+  if (blockers.length > 0) {
+    const blockersHeading = headingParagraph(t('blockers', locale), HeadingLevel.HEADING_2);
+    if (blockersHeading) paragraphs.push(blockersHeading);
+    appendBulletList(paragraphs, blockers);
+  }
+
   return packDocument(paragraphs);
 }
