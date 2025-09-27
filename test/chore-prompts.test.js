@@ -50,4 +50,25 @@ describe('chore:prompts', () => {
       cleanup();
     }
   }, 20000);
+
+  it('fails when prompt docs are not formatted consistently', () => {
+    const unformattedFile = path.join(repoRoot, 'docs', 'prompts', 'unformatted.md');
+    const cleanup = () => {
+      if (fs.existsSync(unformattedFile)) {
+        fs.unlinkSync(unformattedFile);
+      }
+    };
+
+    fs.writeFileSync(unformattedFile, '-    Item one\n', 'utf8');
+
+    try {
+      const { status, stderr, stdout } = runChorePrompts();
+      expect(status).not.toBe(0);
+      const combined = `${stdout}\n${stderr}`;
+      expect(combined).toMatch(/format/i);
+      expect(combined).toContain('unformatted.md');
+    } finally {
+      cleanup();
+    }
+  }, 20000);
 });
