@@ -462,6 +462,9 @@ annotates the timestamp source via `recorded_at_source` (`recorded_at`, `started
 fallback. When `--locale` is provided, the Prior Activity heading and bullet labels respect the
 requested language so localized reports stay consistent end to end.
 
+Library consumers can call `toMarkdownMatch` with the same `prior_activity` payload to render the
+section when generating reports outside of the CLI.
+
 ```bash
 cat <<'EOF' > resume.txt
 Designed large-scale services and mentored senior engineers.

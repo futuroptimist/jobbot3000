@@ -139,6 +139,62 @@ function appendListSection(lines, header, items, { leadingNewline = false } = {}
   }
 }
 
+function formatPriorActivitySection(activity, locale = DEFAULT_LOCALE) {
+  if (!activity || typeof activity !== 'object') return '';
+  const { deliverables, interviews } = activity;
+  if (!deliverables && !interviews) return '';
+
+  const lines = [`## ${t('priorActivityHeading', locale)}`];
+
+  if (deliverables && typeof deliverables === 'object') {
+    const runs = typeof deliverables.runs === 'number' ? deliverables.runs : 0;
+    if (runs > 0) {
+      const nounKey = runs === 1 ? 'priorActivityRunSingular' : 'priorActivityRunPlural';
+      const deliverablesLabel = t('priorActivityDeliverablesLabel', locale);
+      let line = `- ${deliverablesLabel}: ${runs} ${t(nounKey, locale)}`;
+      if (deliverables.last_run_at) {
+        line += t('priorActivityLastRunSuffix', locale, {
+          timestamp: deliverables.last_run_at,
+        });
+      }
+      lines.push(line);
+    }
+  }
+
+  if (interviews && typeof interviews === 'object') {
+    const sessions = typeof interviews.sessions === 'number' ? interviews.sessions : 0;
+    if (sessions > 0) {
+      const nounKey =
+        sessions === 1 ? 'priorActivitySessionSingular' : 'priorActivitySessionPlural';
+      const interviewsLabel = t('priorActivityInterviewsLabel', locale);
+      let line = `- ${interviewsLabel}: ${sessions} ${t(nounKey, locale)}`;
+      const details = [];
+      const last = interviews.last_session;
+      if (last && typeof last === 'object') {
+        if (last.recorded_at) details.push(last.recorded_at);
+        const descriptors = [];
+        if (last.stage) descriptors.push(last.stage);
+        if (last.mode) descriptors.push(last.mode);
+        if (descriptors.length > 0) details.push(descriptors.join(' / '));
+      }
+      if (details.length > 0) {
+        line += ` (${details.join(', ')})`;
+      }
+      lines.push(line);
+
+      const tighten = last?.critique?.tighten_this;
+      if (Array.isArray(tighten) && tighten.length > 0) {
+        lines.push(`  ${t('priorActivityCoachingNotesLabel', locale)}:`);
+        for (const note of tighten) {
+          if (note) lines.push(`  - ${note}`);
+        }
+      }
+    }
+  }
+
+  return lines.length > 1 ? lines.join('\n') : '';
+}
+
 /**
  * Format parsed job data as Markdown.
  * @param {object} params
@@ -194,6 +250,7 @@ export function toMarkdownSummary({
  * @param {number} [params.score] Fit score percentage.
  * @param {string[]} [params.matched]
  * @param {string[]} [params.missing]
+ * @param {object} [params.prior_activity] Summary of deliverable and interview history.
  * @returns {string}
  */
 export function toMarkdownMatch({
@@ -204,6 +261,7 @@ export function toMarkdownMatch({
   score,
   matched,
   missing,
+  prior_activity,
   locale = DEFAULT_LOCALE,
 }) {
   const lines = [];
@@ -220,7 +278,12 @@ export function toMarkdownMatch({
     lines.push(`**${t('fitScore', locale)}**: ${score}%`);
   appendListSection(lines, t('matched', locale), matched, { leadingNewline: true });
   appendListSection(lines, t('missing', locale), missing, { leadingNewline: true });
-  return lines.join('\n');
+  const report = lines.join('\n');
+  const priorSection = formatPriorActivitySection(prior_activity, locale);
+  if (priorSection) {
+    return report ? `${report}\n\n${priorSection}` : priorSection;
+  }
+  return report;
 }
 
 const EXPLANATION_LIMIT = 5;
@@ -355,3 +418,5 @@ export async function toDocxMatch({
 
   return packDocument(paragraphs);
 }
+
+export { formatPriorActivitySection };
