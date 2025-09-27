@@ -1,11 +1,11 @@
 ---
-title: 'Codex Test Prompt'
-slug: 'codex-test'
+title: "Codex Test Prompt"
+slug: "codex-test"
 ---
 
 # Codex Test Prompt
 
-```prompt
+````prompt
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
 
@@ -26,10 +26,12 @@ import { test, expect } from 'vitest';
 test('math works', () => {
   expect(1 + 1).toBe(2);
 });
-```
+````
+
 Run it with `npx vitest run path/to/test-file`.
 
 CONTEXT:
+
 - Follow [README.md](../../../README.md); see the [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
 - Tests live in [test/](../../../test) and use the `*.test.js` naming convention.
@@ -42,6 +44,7 @@ CONTEXT:
 - Ensure any code samples compile with `node` (v20+) or `ts-node`.
 
 REQUEST:
+
 1. Identify missing or weak tests.
 2. Add or update tests to cover edge cases.
 3. Ensure tests are deterministic and isolated.
@@ -49,7 +52,8 @@ REQUEST:
 
 OUTPUT:
 A pull request URL summarizing the test improvement.
-```
+
+````
 
 ## Upgrade Instructions
 
@@ -80,4 +84,4 @@ REQUEST:
 
 OUTPUT:
 A pull request that updates `docs/prompts/codex/test.md` with passing checks.
-```
+````

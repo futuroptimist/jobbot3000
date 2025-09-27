@@ -1,9 +1,10 @@
 ---
-title: 'Codex Security Prompt'
-slug: 'codex-security'
+title: "Codex Security Prompt"
+slug: "codex-security"
 ---
 
 # Codex Security Prompt
+
 Use this prompt when you need to triage or remediate security vulnerabilities in jobbot3000.
 
 ```prompt
@@ -49,14 +50,14 @@ Copy this block whenever addressing security-related work in jobbot3000.
 ### Example: Generating a secure token
 
 ```ts
-import { randomBytes } from 'node:crypto';
+import { randomBytes } from "node:crypto";
 
 export function generateToken(): string {
-  return randomBytes(32).toString('hex');
+  return randomBytes(32).toString("hex");
 }
 
 if (generateToken().length !== 64) {
-  throw new Error('Token length is incorrect');
+  throw new Error("Token length is incorrect");
 }
 ```
 
@@ -64,6 +65,7 @@ Run it with `ts-node --esm` (Node.js ≥20) to verify the token length is 64.
 See [`randomBytes`](https://nodejs.org/api/crypto.html#cryptorandombytessize-callback) for details.
 
 ## Upgrade Prompt
+
 Type: evergreen
 
 ## Upgrade Instructions

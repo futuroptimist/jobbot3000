@@ -1,11 +1,11 @@
 ---
-title: 'Codex Style Prompt'
-slug: 'codex-style'
+title: "Codex Style Prompt"
+slug: "codex-style"
 ---
 
 # Codex Style Prompt
 
-```prompt
+````prompt
 SYSTEM:
 You are an automated contributor for the jobbot3000 repository.
 
@@ -36,12 +36,14 @@ Remove unnecessary code while keeping output stable:
 ```js
 const greet = (name) => `Hi, ${name}!`;
 console.log(greet('Codex'));
-```
+````
+
 Run it with `node -e "const greet = (name) => \`Hi, ${name}!\`; console.log(greet('Codex'))"`.
 
 OUTPUT:
 A pull request URL summarizing the style improvements.
-```
+
+````
 
 ## Upgrade Instructions
 
@@ -70,4 +72,4 @@ REQUEST:
 
 OUTPUT:
 A pull request that updates `docs/prompts/codex/style.md` with passing checks.
-```
+````

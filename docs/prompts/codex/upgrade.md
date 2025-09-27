@@ -1,6 +1,6 @@
 ---
-title: 'Codex Upgrade Prompt'
-slug: 'codex-upgrade'
+title: "Codex Upgrade Prompt"
+slug: "codex-upgrade"
 ---
 
 # Codex Upgrade Prompt

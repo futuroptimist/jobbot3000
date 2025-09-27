@@ -1,9 +1,10 @@
 ---
-title: 'Codex Feature Prompt'
-slug: 'codex-feature'
+title: "Codex Feature Prompt"
+slug: "codex-feature"
 ---
 
 # Codex Feature Prompt
+
 Use this prompt when shipping a small, well-tested feature for jobbot3000.
 
 Use this prompt when shipping a focused feature for jobbot3000.

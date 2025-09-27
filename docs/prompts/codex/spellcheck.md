@@ -1,6 +1,6 @@
 ---
-title: 'Codex Spellcheck Prompt'
-slug: 'codex-spellcheck'
+title: "Codex Spellcheck Prompt"
+slug: "codex-spellcheck"
 ---
 
 # Codex Spellcheck Prompt

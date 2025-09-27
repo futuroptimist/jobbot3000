@@ -1,6 +1,6 @@
 ---
-title: 'Codex Localization Prompt'
-slug: 'codex-localization'
+title: "Codex Localization Prompt"
+slug: "codex-localization"
 ---
 
 # Codex Localization Prompt
@@ -45,6 +45,7 @@ A pull request summarizing the localization changes with passing checks.
 ```
 
 ## Upgrade Prompt
+
 Type: evergreen
 
 ```upgrade

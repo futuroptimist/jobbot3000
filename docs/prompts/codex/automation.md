@@ -1,6 +1,6 @@
 ---
-title: 'Codex Automation Prompt'
-slug: 'codex-automation'
+title: "Codex Automation Prompt"
+slug: "codex-automation"
 ---
 
 # Codex Automation Prompt

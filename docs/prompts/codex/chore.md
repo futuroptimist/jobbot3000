@@ -1,9 +1,10 @@
 ---
-title: 'Codex Chore Prompt'
-slug: 'codex-chore'
+title: "Codex Chore Prompt"
+slug: "codex-chore"
 ---
 
 # Codex Chore Prompt
+
 Use this prompt when performing maintenance for the jobbot3000 repository.
 
 ```prompt
@@ -41,6 +42,7 @@ A pull request summarizing the maintenance work and confirming passing checks.
 Copy this block whenever running chore tasks in jobbot3000.
 
 ## Upgrade Prompt
+
 Type: evergreen
 
 Use this prompt when refreshing `docs/prompts/codex/chore.md` itself.

@@ -1385,6 +1385,8 @@ including hypotheses, minimum sample sizes, guardrail metrics, and sequential
 stopping rules. Use them to compare resume tone variations, onsite follow-up
 cadences, or offer-negotiation scripts while automatically adjusting for multiple
 comparisons and guarding against p-hacking/data dredging anti-patterns.
+Tests in [`test/package-export.test.js`](test/package-export.test.js) ensure the package entrypoint
+continues to re-export these helpers.
 
 ```js
 import {
