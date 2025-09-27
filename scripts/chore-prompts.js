@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import url from 'node:url';
@@ -8,6 +8,10 @@ const ROOT_DIR = path.resolve(path.dirname(url.fileURLToPath(import.meta.url)), 
 const DOCS_DIR = path.join(ROOT_DIR, 'docs');
 const SUMMARY_PATH = path.join(DOCS_DIR, 'prompt-docs-summary.md');
 const PROMPTS_DIR = path.join(DOCS_DIR, 'prompts');
+const CLI_ARGS = process.argv.slice(2);
+
+const wantsWrite = CLI_ARGS.includes('--write') || CLI_ARGS.includes('--fix');
+const formattingMode = wantsWrite ? 'write' : 'check';
 
 function resolveBin(name) {
   const binName = process.platform === 'win32' ? `${name}.cmd` : name;
@@ -43,6 +47,111 @@ async function runSpellcheck() {
   const args = ['--no-progress', '--no-summary', '--relative', ...patterns];
   await runCommand(cspellBin, args, { cwd: ROOT_DIR });
   console.log('Spellcheck completed for prompt docs.');
+}
+
+function listChangedPromptDocs() {
+  const targets = new Set();
+
+  const collect = output => {
+    if (!output) return;
+    for (const line of output.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const normalized = path
+        .normalize(trimmed.split(' -> ').pop())
+        .replace(/\\/g, '/');
+      const lower = normalized.toLowerCase();
+      const isPromptDoc =
+        normalized.startsWith('docs/prompts/') && lower.endsWith('.md');
+      if (isPromptDoc || normalized === 'docs/prompt-docs-summary.md') {
+        targets.add(normalized);
+      }
+    }
+  };
+
+  const diff = spawnSync(
+    'git',
+    [
+      'diff',
+      '--name-only',
+      '--diff-filter=ACMR',
+      '--relative',
+      'HEAD',
+      '--',
+      'docs/prompts',
+      'docs/prompt-docs-summary.md',
+    ],
+    { cwd: ROOT_DIR, encoding: 'utf8' },
+  );
+  if (diff.status === 0) collect(diff.stdout);
+
+  const untracked = spawnSync(
+    'git',
+    [
+      'ls-files',
+      '--others',
+      '--exclude-standard',
+      '--',
+      'docs/prompts',
+      'docs/prompt-docs-summary.md',
+    ],
+    { cwd: ROOT_DIR, encoding: 'utf8' },
+  );
+  if (untracked.status === 0) collect(untracked.stdout);
+
+  return [...targets];
+}
+
+async function filterExistingPaths(paths) {
+  const results = [];
+  for (const target of paths) {
+    const absolute = path.resolve(ROOT_DIR, target);
+    try {
+      const stat = await fs.stat(absolute);
+      if (stat.isFile()) {
+        results.push(target);
+      }
+    } catch {
+      // Ignore paths that no longer exist (e.g., deleted prompt docs).
+    }
+  }
+  return results;
+}
+
+async function runFormatting(mode = 'check') {
+  const prettierBin = resolveBin('prettier');
+  try {
+    await fs.access(prettierBin);
+  } catch {
+    throw new Error('prettier binary not found. Run `npm ci` to install dev dependencies.');
+  }
+
+  const wantsAll = CLI_ARGS.includes('--all');
+  let targets = wantsAll
+    ? ['docs/prompts/**/*.md', 'docs/prompt-docs-summary.md']
+    : await filterExistingPaths(listChangedPromptDocs());
+
+  if (targets.length === 0) {
+    console.log('No prompt doc formatting changes detected; skipping formatting check.');
+    return;
+  }
+
+  const args = [mode === 'write' ? '--write' : '--check', ...targets];
+  try {
+    await runCommand(prettierBin, args, { cwd: ROOT_DIR });
+  } catch {
+    const suggestion = [
+      'Prompt doc formatting check failed.',
+      'Run `npx prettier --write "docs/prompts/**/*.md" "docs/prompt-docs-summary.md"`.',
+    ].join('\n');
+    throw new Error(suggestion);
+  }
+
+  if (mode === 'write') {
+    console.log('Prompt doc formatting normalized.');
+  } else {
+    console.log('Prompt doc formatting check passed.');
+  }
 }
 
 async function validatePromptSummaryLinks() {
@@ -228,6 +337,7 @@ async function validatePromptDocLinks() {
 }
 
 async function main() {
+  await runFormatting(formattingMode);
   await runSpellcheck();
   await validatePromptSummaryLinks();
   await validatePromptDocLinks();
