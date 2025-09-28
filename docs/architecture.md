@@ -69,6 +69,8 @@ Job ingestion normalizes public ATS job boards into a consistent snapshot schema
 - Provider modules (`src/greenhouse.js`, `src/lever.js`, `src/ashby.js`, `src/smartrecruiters.js`,
   `src/workable.js`) expose adapters that satisfy the shared `JobSourceAdapter` contract defined in
   `src/adapters/job-source.js`.
+- See [`docs/job-source-adapters-guide.md`](job-source-adapters-guide.md) for the quick-start
+  checklist when adding new providers to the ingestion pipeline.
 - Snapshots land under `data/jobs/{job_id}.json` alongside fetch metadata (headers, timestamps).
 
 `jobbot ingest url` uses the same normalization pipeline to capture single postings outside of

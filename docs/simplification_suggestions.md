@@ -44,6 +44,10 @@ rate-limit resolution, pagination, and snapshot normalization. Coverage in
 `test/jobs-adapters-common.test.js` keeps the rate-limit override, paginated fetcher, and snapshot
 metadata aligned across providers.
 
+_Update (2025-11-12):_ [`docs/job-source-adapters-guide.md`](job-source-adapters-guide.md) now
+documents the `JobSourceAdapter` contract, quick-start checklist, and regression tests for new
+providers so contributors can ship connectors without spelunking through existing modules.
+
 **Suggested Steps**
 - Define a `JobSourceAdapter` TypeScript definition (or JSDoc typedef) capturing the expected
   methods (e.g., `listOpenings`, `normalizeJob`, `toApplicationEvent`).
