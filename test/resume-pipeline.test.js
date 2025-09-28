@@ -36,9 +36,30 @@ describe('resume pipeline', () => {
       expect(context.source.path).toBe(filePath);
       expect(context.metadata.format).toBe(testCase.expect.format);
       expect(Array.isArray(context.stages)).toBe(true);
-      expect(context.stages.map(stage => stage.name)).toEqual(
-        expect.arrayContaining(['load', 'analyze']),
-      );
+      const stageNames = context.stages.map(stage => stage.name);
+      expect(stageNames).toEqual(expect.arrayContaining(['load', 'normalize', 'analyze']));
+
+      const normalizeStage = context.stages.find(stage => stage.name === 'normalize');
+      expect(normalizeStage).toBeDefined();
+      expect(context.normalized).toEqual(normalizeStage.output);
+      expect(normalizeStage.output).toMatchObject({
+        lineCount: expect.any(Number),
+        nonEmptyLineCount: expect.any(Number),
+        wordCount: expect.any(Number),
+        sections: expect.any(Object),
+        sectionOrder: expect.any(Array),
+      });
+
+      if (testCase.name.includes('markdown')) {
+        expect(normalizeStage.output.sections.experience).toEqual(
+          expect.arrayContaining(['Senior Developer at Example Corp']),
+        );
+        expect(normalizeStage.output.sections.skills).toBeDefined();
+      } else {
+        expect(normalizeStage.output.sections.body).toEqual(
+          expect.arrayContaining(['I am an engineer with JavaScript experience.']),
+        );
+      }
 
       const warningTypes = (context.analysis.warnings || []).map(entry => entry.type);
       expect(new Set(warningTypes)).toEqual(new Set(testCase.expect.warningTypes));

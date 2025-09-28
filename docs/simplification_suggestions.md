@@ -74,6 +74,11 @@ _Update (2025-10-26):_ [`docs/resume-pipeline-guide.md`](resume-pipeline-guide.m
 to insert new stages, mutate the shared context safely, and extend the pipeline's regression suite so
 contributors can grow the enrichment flow without spelunking through implementation details.
 
+_Update (2025-11-18):_ The resume pipeline now includes an explicit `normalize` stage that organizes
+plain-text resumes into canonical sections (`experience`, `skills`, `projects`, and a `body`
+fallback), counts trimmed lines and words, and exposes the summary via
+`context.normalizedResume`/`normalized` for downstream enrichment.
+
 **Suggested Steps**
 - Define explicit pipeline stages (load ➜ normalize ➜ enrich ➜ score) and move them into a
   `src/pipeline/` directory with one module per stage.
