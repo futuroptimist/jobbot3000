@@ -455,6 +455,10 @@ function formatPriorActivitySection(activity, locale = DEFAULT_LOCALE) {
         const descriptors = [];
         if (last.stage) descriptors.push(last.stage);
         if (last.mode) descriptors.push(last.mode);
+        if (last.recorded_at_source) {
+          const sourceLabel = t('priorActivityTimestampSourceLabel', locale);
+          descriptors.push(`${sourceLabel}: ${last.recorded_at_source}`);
+        }
         if (descriptors.length > 0) details.push(descriptors.join(' / '));
       }
       if (details.length > 0) {

@@ -25,4 +25,5 @@ export default {
   priorActivitySessionSingular: 'session',
   priorActivitySessionPlural: 'sessions',
   priorActivityCoachingNotesLabel: 'Coaching notes',
+  priorActivityTimestampSourceLabel: 'Timestamp source',
 };
