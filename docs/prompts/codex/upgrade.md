@@ -28,6 +28,7 @@ CONTEXT:
 - Prompt docs live in [`docs/prompts/`](../../); keep front matter titles/slugs unique.
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
+- Aim for 100% patch coverage to minimize regressions and surprises.
 - Ensure any code samples compile with `node` or `ts-node`.
 - Use project-local tooling via `npm exec`, e.g. `npm exec markdown-link-check docs/prompts/codex/<file>.md`.
 - Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py` (see [`scripts/scan-secrets.py`](../../../scripts/scan-secrets.py)).
@@ -62,6 +63,7 @@ CONTEXT:
 - Keep this doc's front matter accurate and the slug unique within `docs/prompts/`.
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
+- Aim for 100% patch coverage to minimize regressions and surprises.
 - Ensure any code samples compile with `node` or `ts-node`.
 - Use `npm exec markdown-link-check docs/prompts/codex/upgrade.md` to verify links.
 - Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py` (see [scripts/scan-secrets.py](../../../scripts/scan-secrets.py)).
