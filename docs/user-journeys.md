@@ -153,13 +153,14 @@ aggressively to respect rate limits.
    (add `--upcoming-only` to hide past-due entries and `--json` when piping into other tools).
    The digest prints `Past Due` and `Upcoming` sections so urgent follow-ups remain visible even
    when one bucket is empty, showing `(none)` under empty headings so users can confirm nothing is
-   pending there. When filters remove every reminder (for example, `--upcoming-only` on a day with
-   only past-due entries), the CLI still prints an `Upcoming` heading with `(none)` so it is clear
-    nothing new is scheduled. Lifecycle board summaries surface the soonest upcoming reminder per job
-    and fall back to the most recent past-due entry when no future timestamp is scheduled. When a job
-    has no reminders at all, the board prints `Reminder: (none)` so idle opportunities are obvious at
-    a glance, and the JSON board surfaces the same state with an explicit `"reminder": null`
-    placeholder for downstream automation.
+   pending there. JSON exports mirror the same grouping via a `sections` array so automation can
+   consume the digest structure without reimplementing it. When filters remove every reminder
+   (for example, `--upcoming-only` on a day with only past-due entries), the CLI still prints an
+   `Upcoming` heading with `(none)` so it is clear nothing new is scheduled. Lifecycle board
+   summaries surface the soonest upcoming reminder per job and fall back to the most recent past-due
+   entry when no future timestamp is scheduled. When a job has no reminders at all, the board prints
+   `Reminder: (none)` so idle opportunities are obvious at a glance, and the JSON board surfaces the
+   same state with an explicit `"reminder": null` placeholder for downstream automation.
 
 **Unhappy paths:** conflicting updates (e.g., two devices editing simultaneously) trigger a merge
 flow that preserves both sets of notes.

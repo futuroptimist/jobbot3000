@@ -775,6 +775,32 @@ describe('jobbot CLI', () => {
           past_due: false,
         },
       ],
+      sections: [
+        {
+          heading: 'Past Due',
+          reminders: [
+            {
+              job_id: 'job-1',
+              remind_at: '2025-03-05T09:00:00.000Z',
+              channel: 'follow_up',
+              note: 'Send status update',
+              past_due: true,
+            },
+          ],
+        },
+        {
+          heading: 'Upcoming',
+          reminders: [
+            {
+              job_id: 'job-2',
+              remind_at: '2025-03-07T15:00:00.000Z',
+              channel: 'call',
+              contact: 'Avery Hiring Manager',
+              past_due: false,
+            },
+          ],
+        },
+      ],
     });
   });
 
