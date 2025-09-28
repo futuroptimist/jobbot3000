@@ -25,4 +25,5 @@ export default {
   priorActivitySessionSingular: 'session',
   priorActivitySessionPlural: 'sessions',
   priorActivityCoachingNotesLabel: 'Notes de coaching',
+  priorActivityTimestampSourceLabel: "Source de l'horodatage",
 };
