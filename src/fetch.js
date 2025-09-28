@@ -30,6 +30,8 @@ const HOST_LAST_INVOCATION = new Map();
  *
  * Each invocation waits for the prior job to settle (successfully or not) before executing
  * `fn`. The queue is cleared once the current job finishes so subsequent callers can run.
+ * See docs/architecture.md (HTTP helpers queue) for how this guard fits into the ingestion
+ * pipeline and other rate-limit surfaces.
  *
  * Coverage:
  * - `fetchTextFromUrl serializes requests per host so fetches run sequentially`
