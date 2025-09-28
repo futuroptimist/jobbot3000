@@ -120,7 +120,8 @@ function cloneDiscardList(list) {
 function normalizeDiscardTimestampForSnapshot(value) {
   const sanitized = sanitizeString(value);
   if (!sanitized) return UNKNOWN_DISCARD_TIMESTAMP;
-  if (sanitized === 'unknown time' || sanitized === UNKNOWN_DISCARD_TIMESTAMP) {
+  const lower = sanitized.toLowerCase();
+  if (lower === 'unknown time' || sanitized === UNKNOWN_DISCARD_TIMESTAMP) {
     return UNKNOWN_DISCARD_TIMESTAMP;
   }
   return sanitized;
