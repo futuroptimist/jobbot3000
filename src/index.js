@@ -60,3 +60,4 @@ export {
   archiveExperimentAnalysis,
   getExperimentAnalysisHistory,
 } from './lifecycle-experiments.js';
+export { generateCoverLetter } from './cover-letter.js';
