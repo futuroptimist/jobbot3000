@@ -279,6 +279,45 @@ describe('shortlist metadata sync and filters', () => {
     });
   });
 
+  it('normalizes invalid discard timestamps to the (unknown time) sentinel', async () => {
+    const fs = await import('node:fs/promises');
+    await fs.writeFile(
+      path.join(dataDir, 'shortlist.json'),
+      JSON.stringify(
+        {
+          jobs: {
+            'job-invalid-timestamp': {
+              tags: ['legacy'],
+              discarded: [
+                {
+                  reason: 'Legacy invalid timestamp',
+                  discarded_at: 'not-a-real-date',
+                },
+                {
+                  reason: 'Legacy another invalid',
+                  discarded_at: '13/32/2024',
+                },
+              ],
+              metadata: {},
+            },
+          },
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    );
+
+    const { getShortlist } = await import('../src/shortlist.js');
+    const record = await getShortlist('job-invalid-timestamp');
+    expect(record.discarded.map(entry => entry.discarded_at)).toEqual([
+      '(unknown time)',
+      '(unknown time)',
+    ]);
+    expect(record.last_discard.discarded_at).toBe('(unknown time)');
+    expect(record.discard_count).toBe(2);
+  });
+
   it('applies JOBBOT_SHORTLIST_CURRENCY to legacy compensation values', async () => {
     const fs = await import('node:fs/promises');
     await fs.writeFile(

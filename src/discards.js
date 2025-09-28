@@ -61,8 +61,7 @@ function toIsoTimestamp(value) {
   if (value == null) return 'unknown time';
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) {
-    const fallback = sanitizeString(value);
-    return fallback || 'unknown time';
+    return 'unknown time';
   }
   return date.toISOString();
 }

@@ -74,7 +74,7 @@ function normalizeDiscardTimestamp(input) {
   const value = sanitizeString(input);
   if (!value) return undefined;
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
+  if (Number.isNaN(parsed.getTime())) return UNKNOWN_TIME_SENTINEL;
   return parsed.toISOString();
 }
 

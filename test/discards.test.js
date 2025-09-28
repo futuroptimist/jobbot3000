@@ -141,7 +141,7 @@ describe('discarded job archive', () => {
       },
       {
         reason: 'Unknown reason',
-        discarded_at: 'not a date',
+        discarded_at: '(unknown time)',
       },
       {
         reason: 'Legacy without time',
