@@ -98,6 +98,24 @@ describe('lifecycle experiments', () => {
     expect(variantResult.recommendation).toMatch(/wrong direction/i);
   });
 
+  test('returns actionable notes for downstream experiment surfaces', () => {
+    const experiment = getExperimentById('screening_resume_language');
+    expect(Array.isArray(experiment.actionableNotes)).toBe(true);
+
+    const result = analyzeExperiment('screening_resume_language', {
+      primaryMetric: {
+        control: { successes: 18, trials: 200 },
+        variants: {
+          warm_language: { successes: 34, trials: 200 },
+        },
+      },
+    });
+
+    expect(result.actionableNotes).toEqual(experiment.actionableNotes);
+    expect(result.actionableNotes).not.toBe(experiment.actionableNotes);
+    expect(result.actionableNotes.length).toBeGreaterThan(0);
+  });
+
   test('rejects analysis requests that are not pre-registered', () => {
     expect(() =>
       analyzeExperiment('screening_resume_language', {
@@ -130,6 +148,9 @@ describe('lifecycle experiments', () => {
 
     expect(entry.recorded_at).toBe('2025-03-02T18:00:00.000Z');
     expect(entry.result.recommendationSummary).toContain('resume');
+    expect(entry.result.actionableNotes).toEqual(
+      expect.arrayContaining(analysis.actionableNotes),
+    );
 
     const history = await getExperimentAnalysisHistory('screening_resume_language');
     expect(history).toHaveLength(1);

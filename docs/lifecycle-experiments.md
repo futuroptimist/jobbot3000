@@ -32,9 +32,10 @@ variants do not win at the expense of professionalism, sentiment, or negotiation
    adjusts p-values with Bonferroni corrections, and checks every guardrail before issuing a
    recommendation.
 4. **Surface actionable insights.** The return payload highlights the winning variant (if any), the
-   supporting effect sizes, adjusted p-values, and any guardrail breaches. Feed the
-   `recommendationSummary` and `supportingData` back into the lifecycle UI so users can adopt changes
-   confidently.
+   supporting effect sizes, adjusted p-values, any guardrail breaches, and experiment-specific
+   `actionableNotes`. Feed the `recommendationSummary`, `actionableNotes`, and `supportingData` back
+   into the lifecycle UI so users can adopt changes confidently without duplicating prose from the
+   playbook definitions.
 5. **Archive the analysis for future runs.** Call `archiveExperimentAnalysis(id, result, options)`
    with the object returned from `analyzeExperiment` (pass `recordedAt` to override the default
    timestamp) so the outcome is written to `data/experiment_analyses.json`. Retrieve prior runs with
