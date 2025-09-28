@@ -1621,7 +1621,7 @@ describe('jobbot CLI', () => {
       '--synced-at',
       '2025-04-05T06:07:08Z',
     ]);
-    expect(syncOutput.trim()).toBe('Synced job-sync metadata');
+    expect(syncOutput.trim()).toBe('Synced job-sync metadata with refreshed fields');
 
     const store = JSON.parse(
       fs.readFileSync(path.join(dataDir, 'shortlist.json'), 'utf8')

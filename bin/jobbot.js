@@ -1107,12 +1107,15 @@ async function cmdShortlistSync(args) {
     process.exit(2);
   }
 
-  if (!hasMetadata(metadata)) {
+  const hasUserProvidedMetadata = hasMetadata(metadata);
+
+  if (!hasUserProvidedMetadata) {
     metadata.syncedAt = new Date().toISOString();
   }
 
   await syncShortlistJob(jobId, metadata);
-  console.log(`Synced ${jobId} metadata`);
+  const suffix = hasUserProvidedMetadata ? ' with refreshed fields' : '';
+  console.log(`Synced ${jobId} metadata${suffix}`);
 }
 
 function formatShortlistList(jobs) {
