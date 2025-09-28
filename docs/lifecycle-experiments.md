@@ -35,6 +35,10 @@ variants do not win at the expense of professionalism, sentiment, or negotiation
    supporting effect sizes, adjusted p-values, and any guardrail breaches. Feed the
    `recommendationSummary` and `supportingData` back into the lifecycle UI so users can adopt changes
    confidently.
+5. **Archive the analysis for future runs.** Call `archiveExperimentAnalysis(id, result, options)`
+   with the object returned from `analyzeExperiment` (pass `recordedAt` to override the default
+   timestamp) so the outcome is written to `data/experiment_analyses.json`. Retrieve prior runs with
+   `getExperimentAnalysisHistory(id)` when seeding future baselines or presenting evidence to users.
 
 ## Statistical guardrails
 
@@ -58,6 +62,9 @@ The automation follows the same evidence standards we expect from disciplined ex
 - Promote the winning variant only when the recommendation summary signals adoption. Guardrail
   breaches return hold messages with the offending metric spelled out.
 - Archive analysis results alongside lifecycle history so future experiments can start with empirical
-  baselines instead of anecdotes.
+  baselines instead of anecdotes. `archiveExperimentAnalysis` persists each run and
+  `getExperimentAnalysisHistory` surfaces the stored entries; see
+  [`test/experiments.test.js`](../test/experiments.test.js) for coverage that locks the archive format
+  and timestamp normalization in place.
 - Expand the catalog as new lifecycle touch-points appear. Ensure each addition includes a clear
   hypothesis, success metric, guardrail metric(s), and a stopping rule before exposing it to users.

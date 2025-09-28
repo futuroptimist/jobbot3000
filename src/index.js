@@ -56,4 +56,7 @@ export {
   listExperimentsForStatus,
   getExperimentById,
   analyzeExperiment,
+  setLifecycleExperimentDataDir,
+  archiveExperimentAnalysis,
+  getExperimentAnalysisHistory,
 } from './lifecycle-experiments.js';
