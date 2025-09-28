@@ -41,6 +41,7 @@ CONTEXT:
   [Vitest](https://vitest.dev/); ensure new suites mirror existing patterns.
 - Install dependencies with `npm ci` if the workspace is missing `node_modules`.
 - Run `npm run lint` and `npm run test:ci` before committing to keep trunk green.
+- Aim for 100% patch coverage to minimize regressions and surprises.
 - Use `rg` (ripgrep) to inventory TODO, FIXME, "future work", and similar
   markers across code, tests, and docs. Prioritize work items that can ship in a
   single PR and unlock immediate user value.
@@ -85,6 +86,7 @@ CONTEXT:
 - Follow [README.md](../../../README.md); see the [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
 - Run `npm run lint` and `npm run test:ci` before committing.
+- Aim for 100% patch coverage to minimize regressions and surprises.
 - Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
 - Confirm referenced files exist; update [prompt-docs-summary.md](../../prompt-docs-summary.md) when adding prompt docs.
 

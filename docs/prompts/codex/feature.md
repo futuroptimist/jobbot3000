@@ -29,6 +29,7 @@ CONTEXT:
 - Create branches as `codex/{feature}` and keep changes focused so trunk stays green.
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
+- Aim for 100% patch coverage to minimize regressions and surprises.
 - Ensure any code samples compile with `node` or `ts-node`.
 - Keep source line length at 100 characters or fewer unless otherwise noted.
 - Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
@@ -68,6 +69,7 @@ CONTEXT:
 - Review [.github/workflows](../../../.github/workflows) to anticipate CI checks.
 - Install dependencies with `npm ci` if needed.
 - Run `npm run lint` and `npm run test:ci` before committing.
+- Aim for 100% patch coverage to minimize regressions and surprises.
 - Ensure any code samples compile with `node` or `ts-node`.
 - Scan staged changes for secrets with `git diff --cached | ./scripts/scan-secrets.py`.
 - Confirm referenced files exist; update

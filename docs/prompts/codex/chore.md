@@ -24,6 +24,7 @@ CONTEXT:
 - Consult [.github/workflows](../../../.github/workflows) to anticipate required CI checks.
 - Install dependencies with `npm ci` when package-lock.json changes or tooling is missing.
 - Run `npm run lint` and `npm run test:ci` before committing.
+- Aim for 100% patch coverage to minimize regressions and surprises.
 - Scan staged changes with `git diff --cached | ./scripts/scan-secrets.py`.
   See [scripts/scan-secrets.py](../../../scripts/scan-secrets.py).
 - Update [docs/prompt-docs-summary.md](../../prompt-docs-summary.md) when you modify prompt docs.
@@ -63,6 +64,7 @@ CONTEXT:
 - Consult [.github/workflows](../../../.github/workflows) to anticipate required CI checks.
 - Install dependencies with `npm ci` if tooling is missing.
 - Run `npm run lint` and `npm run test:ci` before committing.
+- Aim for 100% patch coverage to minimize regressions and surprises.
 - Scan staged changes with `git diff --cached | ./scripts/scan-secrets.py`.
   See [scripts/scan-secrets.py](../../../scripts/scan-secrets.py).
 - Update [docs/prompt-docs-summary.md](../../prompt-docs-summary.md) when you modify prompt docs.
