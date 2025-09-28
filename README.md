@@ -831,7 +831,8 @@ unit tests now assert that JSON snapshots propagate the same `(unknown time)` se
 consumers see identical state whether they read from the CLI or the JSON file. Additional coverage
 ensures legacy `Unknown Time` strings normalize to that sentinel so CLI and JSON outputs stay aligned.
 [`test/discards.test.js`](test/discards.test.js) now asserts archive order returns the latest discard
-first even when older entries remain, keeping the newest-first guarantee enforced.
+first even when older entries remain and that messy legacy timestamps normalize to the shared
+`(unknown time)` sentinel, keeping both the newest-first guarantee and timestamp semantics enforced.
 
 ## Intake responses
 

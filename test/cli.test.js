@@ -1530,6 +1530,34 @@ describe('jobbot CLI', () => {
     expect(output).toContain('Last Discard Tags: legacy, manual');
   });
 
+  it('treats invalid discard timestamps as (unknown time) in shortlist output', () => {
+    const shortlistPath = path.join(dataDir, 'shortlist.json');
+    const payload = {
+      jobs: {
+        'job-invalid': {
+          tags: [],
+          discarded: [
+            {
+              reason: 'Legacy invalid timestamp',
+              discarded_at: 'not-a-real-date',
+            },
+            {
+              reason: 'Legacy another invalid',
+              discarded_at: '13/32/2024',
+            },
+          ],
+          metadata: {},
+        },
+      },
+    };
+    fs.writeFileSync(shortlistPath, `${JSON.stringify(payload, null, 2)}\n`);
+
+    const output = runCli(['shortlist', 'list']);
+    expect(output).toContain('Last Discard: Legacy invalid timestamp (unknown time)');
+    expect(output).not.toContain('not-a-real-date');
+    expect(output).not.toContain('13/32/2024');
+  });
+
   it('includes last_discard metadata in shortlist list --json exports', () => {
     runCli([
       'shortlist',
