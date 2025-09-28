@@ -1536,6 +1536,20 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track reminders --now 2025-03-06T00:00:00Z
 # Upcoming
 # job-2 — 2025-03-07T15:00:00.000Z (call)
 #   Contact: Avery Hiring Manager
+
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track reminders --json | jq '.sections[0]'
+# {
+#   "heading": "Past Due",
+#   "reminders": [
+#     {
+#       "job_id": "job-1",
+#       "remind_at": "2025-03-05T09:00:00.000Z",
+#       "channel": "follow_up",
+#       "note": "Send status update",
+#       "past_due": true
+#     }
+#   ]
+# }
 ```
 
 Unit tests in [`test/application-events.test.js`](test/application-events.test.js)

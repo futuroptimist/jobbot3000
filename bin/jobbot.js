@@ -658,30 +658,27 @@ async function cmdTrackReminders(args) {
     process.exit(1);
   }
 
+  const includePastDue = !upcomingOnly;
+  const pastDue = includePastDue ? reminders.filter(reminder => reminder.past_due) : [];
+  const upcoming = reminders.filter(reminder => !reminder.past_due);
+  const sections = [];
+  if (includePastDue) {
+    sections.push({ heading: 'Past Due', reminders: pastDue });
+  }
+  sections.push({ heading: 'Upcoming', reminders: upcoming });
+
   if (asJson) {
-    console.log(JSON.stringify({ reminders }, null, 2));
+    console.log(JSON.stringify({ reminders, sections }, null, 2));
     return;
   }
 
-  const includePastDue = !upcomingOnly;
-  const pastDue = includePastDue
-    ? reminders.filter(reminder => reminder.past_due)
-    : [];
-  const upcoming = reminders.filter(reminder => !reminder.past_due);
-
-  const groups = [];
-  if (includePastDue) {
-    groups.push({ heading: 'Past Due', items: pastDue });
-  }
-  groups.push({ heading: 'Upcoming', items: upcoming });
-
   const lines = [];
-  for (const group of groups) {
-    lines.push(group.heading);
-    if (group.items.length === 0) {
+  for (const section of sections) {
+    lines.push(section.heading);
+    if (section.reminders.length === 0) {
       lines.push('  (none)');
     } else {
-      for (const reminder of group.items) {
+      for (const reminder of section.reminders) {
         const descriptors = [];
         if (reminder.channel) descriptors.push(reminder.channel);
         const suffix = descriptors.length ? ` (${descriptors.join(', ')})` : '';
