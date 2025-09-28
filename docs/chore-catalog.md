@@ -9,7 +9,7 @@ stays accurate.
 |------|-------|-----------|----------|
 | Lint & test sweep | All contributors | Every pull request and before publishing a release | `npm run lint`<br>`npm run test:ci` |
 | Secret scan before push | All contributors | Before every commit and prior to opening a pull request | `git diff --cached \| ./scripts/scan-secrets.py` |
-| Prompt docs audit | Prompt Docs maintainers | Whenever prompt documentation changes or monthly during content reviews | `npm run lint -- docs/prompts`<br>`git status docs/prompts docs/prompt-docs-summary.md` |
+| Prompt docs audit | Prompt Docs maintainers | Whenever prompt documentation changes or monthly during content reviews | `npm run chore:prompts`<br>`npm run chore:prompts --write` *(when auto-fixing formatting)* |
 
 ## How to use this catalog
 
@@ -23,4 +23,5 @@ and expand the coverage expectations in `test/chore-catalog.test.js` as the cata
 
 Run `npm run chore:reminders` to print this catalog in a shareable digest (pass `--json` for machine-
 readable output). CI jobs can surface the same summary before merges so contributors remember to run
-each routine locally.
+each routine locally. The prompt chore wraps spellcheck, Prettier verification, and Markdown link
+validation; add `--all` when you want to reformat the entire prompt catalog.
