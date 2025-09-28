@@ -439,6 +439,7 @@ describe('jobbot CLI', () => {
     expect(mdOut).toContain('## Prior Activity');
     expect(mdOut).toContain('Deliverables: 1 run');
     expect(mdOut).toContain('Interviews: 1 session');
+    expect(mdOut).toContain('recorded_at_source=recorded_at');
 
     const localizedOut = runCli([
       'match',
@@ -453,6 +454,145 @@ describe('jobbot CLI', () => {
     expect(localizedOut).toContain('Entregables: 1 ejecución');
     expect(localizedOut).toContain('Entrevistas: 1 sesión');
     expect(localizedOut).toContain('  Notas de coaching:');
+    expect(localizedOut).toContain('recorded_at_source=recorded_at');
+  });
+
+  it('annotates prior activity timestamps using started_at when recorded_at is missing', () => {
+    const job = [
+      'Title: Staff Engineer',
+      'Company: ExampleCorp',
+      'Requirements',
+      '- Distributed systems experience',
+    ].join('\n');
+    const resume = 'Built distributed systems and led engineering teams.';
+    const jobPath = path.join(dataDir, 'job-activity-started.txt');
+    const resumePath = path.join(dataDir, 'resume-activity-started.txt');
+    fs.writeFileSync(jobPath, job);
+    fs.writeFileSync(resumePath, resume);
+
+    const jobId = jobIdFromSource(`file:${path.resolve(jobPath)}`);
+    const deliverableDir = path.join(dataDir, 'deliverables', jobId, '2025-02-01T10-00-00Z');
+    fs.mkdirSync(deliverableDir, { recursive: true });
+    const deliverableFile = path.join(deliverableDir, 'resume.pdf');
+    fs.writeFileSync(deliverableFile, 'resume');
+    const deliverableTimestamp = new Date('2025-02-01T10:00:00.000Z');
+    fs.utimesSync(deliverableFile, deliverableTimestamp, deliverableTimestamp);
+    fs.utimesSync(deliverableDir, deliverableTimestamp, deliverableTimestamp);
+
+    const interviewDir = path.join(dataDir, 'interviews', jobId);
+    fs.mkdirSync(interviewDir, { recursive: true });
+    const sessionPath = path.join(interviewDir, 'session-started.json');
+    const startedAt = '2025-02-03T09:30:00.000Z';
+    fs.writeFileSync(
+      sessionPath,
+      JSON.stringify(
+        {
+          session_id: 'session-started',
+          started_at: startedAt,
+          stage: 'Onsite',
+          mode: 'Panel',
+        },
+        null,
+        2,
+      ),
+    );
+
+    const jsonOut = runCli([
+      'match',
+      '--resume',
+      resumePath,
+      '--job',
+      jobPath,
+      '--json',
+    ]);
+    const payload = JSON.parse(jsonOut);
+    expect(payload.prior_activity?.interviews?.last_session?.recorded_at_source).toBe('started_at');
+    expect(payload.prior_activity?.interviews?.last_session?.recorded_at).toBe(startedAt);
+
+    const mdOut = runCli([
+      'match',
+      '--resume',
+      resumePath,
+      '--job',
+      jobPath,
+    ]);
+    expect(mdOut).toContain(startedAt);
+    expect(mdOut).toContain('recorded_at_source=started_at');
+
+    const localizedOut = runCli([
+      'match',
+      '--resume',
+      resumePath,
+      '--job',
+      jobPath,
+      '--locale',
+      'es',
+    ]);
+    expect(localizedOut).toContain('recorded_at_source=started_at');
+  });
+
+  it('annotates prior activity when using file modification timestamp fallbacks', () => {
+    const job = [
+      'Title: Staff Engineer',
+      'Company: ExampleCorp',
+      'Requirements',
+      '- Distributed systems experience',
+    ].join('\n');
+    const resume = 'Built distributed systems and led engineering teams.';
+    const jobPath = path.join(dataDir, 'job-activity-fallback.txt');
+    const resumePath = path.join(dataDir, 'resume-activity-fallback.txt');
+    fs.writeFileSync(jobPath, job);
+    fs.writeFileSync(resumePath, resume);
+
+    const jobId = jobIdFromSource(`file:${path.resolve(jobPath)}`);
+    const deliverableDir = path.join(dataDir, 'deliverables', jobId, '2025-02-01T10-00-00Z');
+    fs.mkdirSync(deliverableDir, { recursive: true });
+    const deliverableFile = path.join(deliverableDir, 'resume.pdf');
+    fs.writeFileSync(deliverableFile, 'resume');
+    const deliverableTimestamp = new Date('2025-02-01T10:00:00.000Z');
+    fs.utimesSync(deliverableFile, deliverableTimestamp, deliverableTimestamp);
+    fs.utimesSync(deliverableDir, deliverableTimestamp, deliverableTimestamp);
+
+    const interviewDir = path.join(dataDir, 'interviews', jobId);
+    fs.mkdirSync(interviewDir, { recursive: true });
+    const sessionPath = path.join(interviewDir, 'session-fallback.json');
+    const fallbackIso = '2025-02-04T12:00:00.000Z';
+    fs.writeFileSync(
+      sessionPath,
+      JSON.stringify(
+        {
+          session_id: 'session-fallback',
+          stage: 'System design',
+          mode: 'Voice',
+        },
+        null,
+        2,
+      ),
+    );
+    const fallbackTimestamp = new Date(fallbackIso);
+    fs.utimesSync(sessionPath, fallbackTimestamp, fallbackTimestamp);
+
+    const jsonOut = runCli([
+      'match',
+      '--resume',
+      resumePath,
+      '--job',
+      jobPath,
+      '--json',
+    ]);
+    const payload = JSON.parse(jsonOut);
+    expect(payload.prior_activity?.interviews?.last_session?.recorded_at_source).toBe('file_mtime');
+    expect(payload.prior_activity?.interviews?.last_session?.recorded_at).toBe(fallbackIso);
+
+    const mdOut = runCli([
+      'match',
+      '--resume',
+      resumePath,
+      '--job',
+      jobPath,
+    ]);
+    expect(mdOut).toContain(fallbackIso);
+    expect(mdOut).toContain('recorded_at_source=file_mtime');
   });
 
   it('explains hits and gaps with match --explain', () => {

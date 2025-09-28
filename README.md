@@ -459,8 +459,12 @@ session's `started_at` timestamp—or, if that is unavailable, the recording's f
 even partially captured sessions still surface when reviewing prior work. The session detail now
 annotates the timestamp source via `recorded_at_source` (`recorded_at`, `started_at`, or
 `file_mtime`) so reviewers know whether they're looking at an explicit log or a filesystem-derived
-fallback. When `--locale` is provided, the Prior Activity heading and bullet labels respect the
-requested language so localized reports stay consistent end to end.
+fallback, and the Markdown bullet prints the annotation as `recorded_at_source=<value>` after the
+timestamp and stage descriptors. When `--locale` is provided, the Prior Activity heading and bullet
+labels respect the requested language so localized reports stay consistent end to end. Coverage in
+[`test/cli.test.js`](test/cli.test.js) verifies the annotation appears in both English and Spanish
+outputs so regressions surface immediately, and now asserts the `started_at` and filesystem
+modification fallbacks so provenance stays accurate even when explicit timestamps are missing.
 
 ```bash
 cat <<'EOF' > resume.txt

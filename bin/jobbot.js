@@ -456,6 +456,9 @@ function formatPriorActivitySection(activity, locale = DEFAULT_LOCALE) {
         if (last.stage) descriptors.push(last.stage);
         if (last.mode) descriptors.push(last.mode);
         if (descriptors.length > 0) details.push(descriptors.join(' / '));
+        if (last.recorded_at_source) {
+          details.push(`recorded_at_source=${last.recorded_at_source}`);
+        }
       }
       if (details.length > 0) {
         line += ` (${details.join(', ')})`;

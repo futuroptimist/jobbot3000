@@ -200,9 +200,11 @@ suggestions to prevent burnout.
    tailoring/interview work alongside fit scores. When interview payloads only capture a
    `started_at` timestamp (or when JSON omits timing entirely), the summary falls back to that value
    or the session file's modification time so the chronology stays visible and notes the timestamp
-   provenance with `recorded_at_source`. Legacy deliverable directories that store files
-   directly under a job folder count as a single run so older tailoring work remains part of the
-   signal.
+   provenance with `recorded_at_source`, rendered as `recorded_at_source=<value>` alongside the
+   timestamp details. CLI coverage in [`test/cli.test.js`](../test/cli.test.js) now locks the
+   `started_at` and filesystem modification fallbacks so the provenance label stays accurate even
+   when explicit timestamps are missing. Legacy deliverable directories that store files directly
+   under a job folder count as a single run so older tailoring work remains part of the signal.
 3. Users can export anonymized aggregates with `jobbot analytics export --out <file>` for personal
    record keeping without exposing raw PII.
 
