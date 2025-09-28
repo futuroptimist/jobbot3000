@@ -907,6 +907,34 @@ Recorded timestamps reflect when the command runs. Automated coverage in
 [`test/intake.test.js`](test/intake.test.js) and [`test/cli.test.js`](test/cli.test.js) verifies the
 stored shape, CLI workflows, and the skipped-only view for follow-up planning.
 
+Surface the next intake prompts with a question plan that flags missing context (career goals,
+location preferences, compensation guardrails, visa status, measurable outcomes, and tool stacks):
+
+```bash
+# Generate a plan highlighting the highest-impact questions to ask next
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot intake plan
+# Intake question plan
+# 1. What roles are you targeting next and what impact do you want to make?
+#    Reason: Resume summary is missing or too short to capture career goals.
+#    Tags: career, goals
+# ...
+
+# Export the same plan as structured JSON
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot intake plan --json | jq '.plan[0]'
+# {
+#   "id": "career_goals",
+#   "prompt": "What roles are you targeting next and what impact do you want to make?",
+#   "tags": [
+#     "career",
+#     "goals"
+#   ],
+#   "reason": "Resume summary is missing or too short to capture career goals."
+# }
+```
+
+[`test/intake-plan.test.js`](test/intake-plan.test.js) and the CLI coverage ensure the heuristics stay
+aligned with the documented prompts for both text and JSON output formats.
+
 ## Conversion funnel analytics
 
 Build a quick snapshot of outreach ➜ screening ➜ onsite ➜ offer ➜ acceptance conversions:
