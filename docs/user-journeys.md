@@ -116,7 +116,12 @@ aggressively to respect rate limits.
 3. Users can tweak sections manually; the assistant suggests language improvements but refuses to
    fabricate experience.
 4. Generated files, diffs, and build logs live in `data/deliverables/{job_id}/` and are versioned by
-   timestamp. Export the latest bundle (or a specific run with `--timestamp`) via
+   timestamp. Each run writes a `build.json` log summarizing the snapshot path, resume source,
+   generated artifacts, match metrics (score plus matched/missing/blocker counts), and prior-activity
+   counters so reviewers can trace how the bundle was produced without re-reading the markdown. Even
+   first-run logs include `deliverables_runs: 0` and `interview_sessions: 0` so teams can confirm a
+   bundle is the opening iteration before the follow-on tailoring sessions. Export the latest bundle
+   (or a specific run with `--timestamp`) via
    `jobbot deliverables bundle <job_id> --out <zip_path>` when sharing prep artifacts with mentors.
    Bundles now include a `resume.diff.json` summary whenever a tailored `resume.json` is present,
    highlighting added, removed, and changed resume fields so reviewers can scan adjustments without
