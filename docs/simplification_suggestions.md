@@ -14,6 +14,10 @@ _Update (2025-10-08):_ [`docs/architecture.md`](architecture.md) now documents t
 module graph, data directories, and onboarding checklist linked from the README so new contributors
 can ramp without spelunking through individual files first.
 
+_Update (2025-11-10):_ The host queue helper in [`src/fetch.js`](../src/fetch.js) now links directly
+to the architecture map so engineers debugging rate limits can jump from the code to the onboarding
+diagram immediately.
+
 **Suggested Steps**
 - Draft a high-level diagram (module graph or swim lanes) that shows how summarization, ingestion,
   tracking, and exporter flows interact.
