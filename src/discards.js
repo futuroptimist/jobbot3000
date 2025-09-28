@@ -92,7 +92,9 @@ function normalizeDiscardEntries(entries) {
     const sourceTimestamp = entry.discarded_at ?? entry.discardedAt;
     const discardedAt = toIsoTimestamp(sourceTimestamp);
     const normalizedTimestamp =
-      discardedAt === 'unknown time' ? '(unknown time)' : discardedAt;
+      typeof discardedAt === 'string' && discardedAt.toLowerCase() === 'unknown time'
+        ? '(unknown time)'
+        : discardedAt;
     const tags = normalizeTagList(entry.tags);
     const payload = { reason, discarded_at: normalizedTimestamp };
     if (tags) payload.tags = tags.slice();

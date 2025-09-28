@@ -1151,8 +1151,10 @@ function formatShortlistList(jobs) {
 }
 
 function formatDiscardTimestamp(timestamp) {
-  if (timestamp === '(unknown time)') return '(unknown time)';
-  return timestamp === 'unknown time' ? '(unknown time)' : timestamp;
+  const value = typeof timestamp === 'string' ? timestamp.trim() : '';
+  if (!value) return '(unknown time)';
+  if (value === '(unknown time)') return '(unknown time)';
+  return value.toLowerCase() === 'unknown time' ? '(unknown time)' : value;
 }
 
 function formatDiscardHistory(jobId, entries) {

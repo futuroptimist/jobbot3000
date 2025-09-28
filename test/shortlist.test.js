@@ -240,6 +240,45 @@ describe('shortlist metadata sync and filters', () => {
     });
   });
 
+  it('normalizes mixed-case unknown time discard timestamps to the sentinel', async () => {
+    const fs = await import('node:fs/promises');
+    await fs.writeFile(
+      path.join(dataDir, 'shortlist.json'),
+      JSON.stringify(
+        {
+          jobs: {
+            'job-unknown-case': {
+              tags: [],
+              discarded: [
+                {
+                  reason: 'Legacy unknown time',
+                  discarded_at: 'Unknown Time',
+                },
+              ],
+              metadata: {},
+            },
+          },
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    );
+
+    const { getShortlist } = await import('../src/shortlist.js');
+    const record = await getShortlist('job-unknown-case');
+    expect(record.discarded).toEqual([
+      {
+        reason: 'Legacy unknown time',
+        discarded_at: '(unknown time)',
+      },
+    ]);
+    expect(record.last_discard).toEqual({
+      reason: 'Legacy unknown time',
+      discarded_at: '(unknown time)',
+    });
+  });
+
   it('applies JOBBOT_SHORTLIST_CURRENCY to legacy compensation values', async () => {
     const fs = await import('node:fs/promises');
     await fs.writeFile(
