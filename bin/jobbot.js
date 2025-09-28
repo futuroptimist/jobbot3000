@@ -1652,6 +1652,58 @@ async function cmdTailor(args) {
   );
   await writeTextFile(path.join(runDir, 'resume.txt'), ensureTrailingNewline(resumePreview));
 
+  const toDataRelativePath = targetPath => {
+    if (!targetPath) return null;
+    const resolved = path.resolve(targetPath);
+    if (resolved === dataDir) return '.';
+    if (resolved.startsWith(`${dataDir}${path.sep}`)) {
+      return path.relative(dataDir, resolved) || '.';
+    }
+    return resolved;
+  };
+
+  const matchSummary = {
+    score: Number.isFinite(matchJsonPayload.score) ? Number(matchJsonPayload.score) : null,
+    matched_count: Array.isArray(matchJsonPayload.matched)
+      ? matchJsonPayload.matched.length
+      : 0,
+    missing_count: Array.isArray(matchJsonPayload.missing)
+      ? matchJsonPayload.missing.length
+      : 0,
+    blockers_count: Array.isArray(matchJsonPayload.blockers)
+      ? matchJsonPayload.blockers.length
+      : 0,
+    locale: matchJsonPayload.locale || locale || 'en',
+  };
+
+  const profileSourcePath = profileSpecified
+    ? path.resolve(process.cwd(), profilePath)
+    : path.join(dataDir, 'profile', 'resume.json');
+
+  const deliverablesRuns = activity?.deliverables?.runs;
+  const interviewSessions = activity?.interviews?.sessions;
+
+  const buildLog = {
+    job_id: jobId,
+    run_label: runLabel,
+    generated_at: new Date().toISOString(),
+    job_snapshot: {
+      path: path.join('jobs', `${jobId}.json`),
+      fetched_at: snapshot.fetched_at ?? null,
+      source: snapshot.source ?? null,
+    },
+    profile_resume_path: toDataRelativePath(profileSourcePath),
+    outputs: ['match.md', 'match.json', 'resume.json', 'resume.txt', 'cover_letter.md'],
+    cover_letter_included: true,
+    match_summary: matchSummary,
+    prior_activity: {
+      deliverables_runs: Number.isFinite(deliverablesRuns) ? deliverablesRuns : 0,
+      interview_sessions: Number.isFinite(interviewSessions) ? interviewSessions : 0,
+    },
+  };
+
+  await writeTextFile(path.join(runDir, 'build.json'), `${JSON.stringify(buildLog, null, 2)}\n`);
+
   console.log(`Generated deliverables for ${jobId} at ${runDir}`);
 }
 

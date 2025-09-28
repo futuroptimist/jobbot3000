@@ -2190,6 +2190,7 @@ describe('jobbot CLI', () => {
     const runDir = path.join(deliverablesRoot, runs[0]);
     const entries = fs.readdirSync(runDir).sort();
     expect(entries).toEqual([
+      'build.json',
       'cover_letter.md',
       'match.json',
       'match.md',
@@ -2202,7 +2203,39 @@ describe('jobbot CLI', () => {
     expect(coverLetter).toContain('Platform Engineer');
     expect(coverLetter).toContain('Node.js experience');
 
+    const buildLog = JSON.parse(fs.readFileSync(path.join(runDir, 'build.json'), 'utf8'));
+    expect(buildLog).toMatchObject({
+      job_id: jobId,
+      run_label: runs[0],
+      cover_letter_included: true,
+    });
+    expect(() => new Date(buildLog.generated_at).toISOString()).not.toThrow();
+    const snapshotPath = buildLog.job_snapshot?.path;
+    expect(snapshotPath && snapshotPath.replace(/\\/g, '/')).toBe(`jobs/${jobId}.json`);
+    expect(buildLog.job_snapshot?.source?.value).toBe(jobSource);
+    const profilePath = buildLog.profile_resume_path;
+    expect(profilePath && profilePath.replace(/\\/g, '/')).toBe('profile/resume.json');
+    expect(buildLog.outputs).toEqual(
+      expect.arrayContaining([
+        'match.md',
+        'match.json',
+        'resume.json',
+        'resume.txt',
+        'cover_letter.md',
+      ]),
+    );
+    expect(buildLog.prior_activity).toEqual({
+      deliverables_runs: 0,
+      interview_sessions: 0,
+    });
+
     const matchJson = JSON.parse(fs.readFileSync(path.join(runDir, 'match.json'), 'utf8'));
+    expect(buildLog.match_summary).toMatchObject({
+      locale: 'en',
+      matched_count: matchJson.matched.length,
+      missing_count: matchJson.missing.length,
+    });
+    expect(typeof buildLog.match_summary.score).toBe('number');
     expect(matchJson.title).toBe('Platform Engineer');
     expect(matchJson.company).toBe('ExampleCorp');
     expect(matchJson.matched).toContain('Node.js experience');

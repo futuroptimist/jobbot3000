@@ -550,7 +550,7 @@ JOB_ID=$(ls "$DATA_DIR/jobs" | head -n1 | sed 's/\.json$//')
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot tailor "$JOB_ID"
 # => Generated deliverables for <job_id> at $DATA_DIR/deliverables/<job_id>/<timestamp>
 ls "$DATA_DIR/deliverables/$JOB_ID"
-# => cover_letter.md  match.json  match.md  resume.json  resume.txt
+# => build.json  cover_letter.md  match.json  match.md  resume.json  resume.txt
 rm -rf "$DATA_DIR"
 
 # Use --timestamp to control the subdirectory label and --out to change the base output directory
@@ -567,6 +567,16 @@ Provide `--role <title>` and/or `--location <value>` when the source material om
 when you want to override parsed metadata for reporting purposes. The overrides flow into Markdown,
 JSON, and DOCX outputs as well as the saved job snapshot so downstream tooling sees the adjusted
 context.
+
+Tailoring runs also produce a structured `build.json` log that records the job snapshot
+(`jobs/<job_id>.json`), the profile resume path, generated file list, and the match summary
+(score, matched/missing counts, blocker count, and locale) so reviewers can audit what each run
+produced without re-parsing the artifacts. Coverage in
+[`test/cli.test.js`](test/cli.test.js) asserts the log exists and includes the metadata above for
+every `jobbot tailor` invocation. The log always includes a `prior_activity` object with
+`deliverables_runs` and `interview_sessions` counts, defaulting to `0` when no earlier work has been
+recorded so reviewers can see at a glance whether a bundle represents the first pass or a later
+iteration.
 
 Fit scoring recognizes common abbreviations so lexical-only resumes still match spelled-out
 requirements. `AWS` on a resume matches `Amazon Web Services`, `ML` pairs with `Machine learning`,
