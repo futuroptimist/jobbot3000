@@ -432,6 +432,46 @@ console.log(match.evidence);
 // ]
 ```
 
+Turn the same inputs into a Markdown cover letter anchored in the profile resume. The helper surfaces
+contact details, matched skills, and highlights from `work`, `projects`, and `volunteer` sections so
+the output stays grounded in confirmed experience:
+
+```js
+import { generateCoverLetter } from './src/index.js';
+
+const profileResume = {
+  basics: {
+    name: 'Ada Lovelace',
+    email: 'ada@example.com',
+    phone: '+44 20 7946 0958',
+    summary: 'Platform engineer with Node.js and Terraform expertise.',
+    location: { city: 'London', region: 'UK' },
+  },
+  work: [
+    {
+      company: 'Analytical Engines',
+      position: 'Lead Engineer',
+      highlights: [
+        'Scaled Node.js services to 10x traffic without downtime.',
+        'Automated Terraform deployments that cut release cycles in half.',
+      ],
+    },
+  ],
+};
+
+const letter = generateCoverLetter({ resume: profileResume, match });
+console.log(letter);
+// Ada Lovelace
+// ada@example.com | +44 20 7946 0958 | London, UK
+//
+// Hiring Team at Platform Engineer Company
+// ...
+```
+
+[`test/cover-letter.test.js`](test/cover-letter.test.js) and the CLI suite exercise contact
+formatting, matched skill deduplication, highlight selection, and fallback behaviour when profile
+details are missing.
+
 When only the matched or missing lists are present, the Markdown output starts with the
 corresponding section heading instead of an extra leading blank line.
 
@@ -495,6 +535,28 @@ JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot match --resume resume.txt --job job.txt 
 # Persist a DOCX match report while keeping machine-readable output
 JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot match --resume resume.txt --job job.txt --json --docx match.docx
 # => JSON match report prints to stdout; match.docx contains the formatted document
+
+# Generate a Markdown cover letter template using profile resume highlights
+DATA_DIR=$(mktemp -d)
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot init > /dev/null
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot match --resume resume.txt --job job.txt --cover-letter cover-letter.md
+# => cover-letter.md references profile basics, matched skills, and recent highlights
+
+# Tailor a deliverables run for a saved job snapshot
+DATA_DIR=$(mktemp -d)
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot init > /dev/null
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot match --resume resume.txt --job job.txt --json > /dev/null
+JOB_ID=$(ls "$DATA_DIR/jobs" | head -n1 | sed 's/\.json$//')
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot tailor "$JOB_ID"
+# => Generated deliverables for <job_id> at $DATA_DIR/deliverables/<job_id>/<timestamp>
+ls "$DATA_DIR/deliverables/$JOB_ID"
+# => cover_letter.md  match.json  match.md  resume.json  resume.txt
+rm -rf "$DATA_DIR"
+
+# Use --timestamp to control the subdirectory label and --out to change the base output directory
+# (for example, npx jobbot tailor "$JOB_ID" --timestamp 2025-03-10T09-00-00Z --out ./prep-artifacts)
+# Provide --profile <resume.json> to tailor against an alternate profile store and --locale <code> to
+# localize the embedded match summary and explanation.
 
 # Localize match reports and explanations
 JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot match --resume resume.txt --job job.txt --locale fr --docx match-fr.docx

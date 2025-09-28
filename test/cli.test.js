@@ -299,6 +299,64 @@ describe('jobbot CLI', () => {
     expect(xml).toContain('Matched');
   });
 
+  it('writes cover letters when --cover-letter is provided', () => {
+    runCli(['init']);
+    const profileDir = path.join(dataDir, 'profile');
+    const resumeProfilePath = path.join(profileDir, 'resume.json');
+    const profile = JSON.parse(fs.readFileSync(resumeProfilePath, 'utf8'));
+    profile.basics.name = 'Ada Lovelace';
+    profile.basics.email = 'ada@example.com';
+    profile.basics.phone = '+44 20 7946 0958';
+    profile.basics.summary =
+      'Platform engineer who blends Node.js expertise with collaborative delivery.';
+    profile.basics.location = { city: 'London', region: 'UK' };
+    profile.work = [
+      {
+        company: 'Analytical Engines',
+        position: 'Lead Engineer',
+        highlights: [
+          'Scaled Node.js services to support 10x traffic without downtime.',
+          'Automated Terraform deployments that cut release cycles in half.',
+        ],
+      },
+    ];
+    fs.writeFileSync(resumeProfilePath, `${JSON.stringify(profile, null, 2)}\n`);
+
+    const job = [
+      'Title: Platform Engineer',
+      'Company: ACME',
+      'Requirements',
+      '- Node.js',
+      '- Terraform',
+      '- Mentorship',
+    ].join('\n');
+    const resumeText = 'Experienced Node.js engineer and mentor focused on Terraform automation.';
+    const jobPath = path.join(dataDir, 'job-cover.txt');
+    const resumePath = path.join(dataDir, 'resume-cover.txt');
+    fs.writeFileSync(jobPath, job);
+    fs.writeFileSync(resumePath, resumeText);
+
+    const letterPath = path.join(dataDir, 'cover-letter.md');
+    const output = runCli([
+      'match',
+      '--resume',
+      resumePath,
+      '--job',
+      jobPath,
+      '--cover-letter',
+      letterPath,
+    ]);
+
+    expect(output).toContain('## Matched');
+    const letter = fs.readFileSync(letterPath, 'utf8');
+    expect(letter).toContain('Ada Lovelace');
+    expect(letter).toContain('Hiring Team at ACME');
+    expect(letter).toContain('Platform Engineer role at ACME');
+    expect(letter).toMatch(/Node\.js, Terraform, and Mentorship matches outcomes/);
+    expect(letter).toMatch(/Scaled Node.js services/);
+    expect(letter).toMatch(/Sincerely,\nAda Lovelace$/);
+  });
+
   it('localizes match output when --locale is provided', () => {
     const job = [
       'Title: Desarrollador',
@@ -2027,6 +2085,127 @@ describe('jobbot CLI', () => {
     const entries = Object.keys(zip.files).sort();
     expect(entries).toEqual(['cover_letter.md', 'resume.pdf']);
     await expect(zip.file('resume.pdf').async('string')).resolves.toBe('fresh resume');
+  });
+
+  it('tailor generates deliverables with cover letter and match artifacts', () => {
+    const profileDir = path.join(dataDir, 'profile');
+    fs.mkdirSync(profileDir, { recursive: true });
+    const resume = {
+      basics: {
+        name: 'Ada Example',
+        email: 'ada@example.com',
+        phone: '+1-555-1234',
+        summary: 'Platform engineer focused on resilient Node.js systems.',
+      },
+      work: [
+        {
+          company: 'Analytical Engines',
+          position: 'Staff Engineer',
+          highlights: [
+            'Delivered Node.js experience improvements that cut latency by 35%.',
+            'Led Terraform automation for multi-region deployments.',
+          ],
+        },
+      ],
+      projects: [
+        {
+          name: 'Incident Radar',
+          highlights: ['Implemented on-call rotations with clear communication playbooks.'],
+        },
+      ],
+    };
+    fs.writeFileSync(
+      path.join(profileDir, 'resume.json'),
+      JSON.stringify(resume, null, 2),
+      'utf8',
+    );
+
+    const jobSource = 'https://example.com/jobs/platform-engineer';
+    const jobId = jobIdFromSource(jobSource);
+    const jobsDir = path.join(dataDir, 'jobs');
+    fs.mkdirSync(jobsDir, { recursive: true });
+    const jobSnapshot = {
+      id: jobId,
+      fetched_at: '2025-02-01T12:00:00.000Z',
+      raw: [
+        'Title: Platform Engineer',
+        'Company: ExampleCorp',
+        'Location: Remote',
+        'Summary',
+        'Keep Node.js infrastructure reliable while expanding Terraform coverage.',
+        'Requirements',
+        '- Node.js experience',
+        '- Terraform automation',
+        '- Clear communication',
+      ].join('\n'),
+      parsed: {
+        title: 'Platform Engineer',
+        company: 'ExampleCorp',
+        location: 'Remote',
+        summary: 'Keep Node.js infrastructure reliable while expanding Terraform coverage.',
+        requirements: ['Node.js experience', 'Terraform automation', 'Clear communication'],
+      },
+      source: { type: 'url', value: jobSource, headers: {} },
+    };
+    fs.writeFileSync(
+      path.join(jobsDir, `${jobId}.json`),
+      JSON.stringify(jobSnapshot, null, 2),
+      'utf8',
+    );
+
+    const out = runCli(['tailor', jobId]);
+    expect(out.trim()).toMatch(new RegExp(`^Generated deliverables for ${jobId} at `));
+
+    const deliverablesRoot = path.join(dataDir, 'deliverables', jobId);
+    const runs = fs.readdirSync(deliverablesRoot);
+    expect(runs).toHaveLength(1);
+    const runDir = path.join(deliverablesRoot, runs[0]);
+    const entries = fs.readdirSync(runDir).sort();
+    expect(entries).toEqual([
+      'cover_letter.md',
+      'match.json',
+      'match.md',
+      'resume.json',
+      'resume.txt',
+    ]);
+
+    const coverLetter = fs.readFileSync(path.join(runDir, 'cover_letter.md'), 'utf8');
+    expect(coverLetter).toContain('Ada Example');
+    expect(coverLetter).toContain('Platform Engineer');
+    expect(coverLetter).toContain('Node.js experience');
+
+    const matchJson = JSON.parse(fs.readFileSync(path.join(runDir, 'match.json'), 'utf8'));
+    expect(matchJson.title).toBe('Platform Engineer');
+    expect(matchJson.company).toBe('ExampleCorp');
+    expect(matchJson.matched).toContain('Node.js experience');
+    expect(matchJson.matched).toContain('Terraform automation');
+
+    const matchMarkdown = fs.readFileSync(path.join(runDir, 'match.md'), 'utf8');
+    expect(matchMarkdown).toContain('# Platform Engineer');
+    expect(matchMarkdown).toContain('## Matched');
+
+    const resumePreview = fs.readFileSync(path.join(runDir, 'resume.txt'), 'utf8');
+    expect(resumePreview).toContain('Ada Example');
+    expect(resumePreview).toContain('Analytical Engines');
+  });
+
+  it('fails gracefully when tailoring for a missing job', () => {
+    const profileDir = path.join(dataDir, 'profile');
+    fs.mkdirSync(profileDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(profileDir, 'resume.json'),
+      JSON.stringify({ basics: { name: 'Ada Example' } }, null, 2),
+      'utf8',
+    );
+
+    const bin = path.resolve('bin', 'jobbot.js');
+    const result = spawnSync('node', [bin, 'tailor', 'missing-job'], {
+      encoding: 'utf8',
+      env: { ...process.env, JOBBOT_DATA_DIR: dataDir },
+    });
+
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toMatch(/Job snapshot not found/i);
   });
 
   it('records interview sessions with transcripts and notes', () => {

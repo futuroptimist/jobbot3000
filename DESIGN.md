@@ -231,7 +231,7 @@ jobbot import linkedin  # manual export JSON (no scraping), merge into profile
 jobbot ingest greenhouse --company foo
 jobbot ingest lever --org bar
 jobbot match --role "Senior SRE" --location "SF Bay Area"
-jobbot tailor <job_id>  # produces resume_<job_id>.pdf + cover_letter.pdf
+jobbot tailor <job_id>  # writes match.md/match.json, resume.json/resume.txt, and cover_letter.md under data/deliverables/<job_id>/<timestamp>
 jobbot rehearse <job_id> --behavioral --voice
 jobbot track add <job_id> --status applied --note "emailed hiring manager"
 ```
@@ -275,7 +275,7 @@ jobbot track add <job_id> --status applied --note "emailed hiring manager"
 - Templating (choose Typst or LaTeX first; Tectonic/Typst CLI).
 - One-page constraint, dynamic bullet swapping.
 - ATS plain text preview + warnings (tables/images detection). (shipped)
-- Cover letter template + slot-fill with job-specific context.
+- Cover letter template + slot-fill with job-specific context. (shipped)
 
 **Phase 4 — Interview rehearsal (1 week)**
 - Behavioral question packs, STAR scaffolding.

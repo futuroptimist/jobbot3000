@@ -18,6 +18,8 @@ import {
 import { matchResumeToJob } from '../src/match.js';
 import { saveJobSnapshot, jobIdFromSource } from '../src/jobs.js';
 import { summarizeJobActivity } from '../src/activity-insights.js';
+import { generateCoverLetter } from '../src/cover-letter.js';
+import { renderResumeTextPreview } from '../src/resume-preview.js';
 import {
   logApplicationEvent,
   getApplicationEvents,
@@ -121,6 +123,29 @@ function generateRehearsalSessionId() {
   return `prep-${sanitized}`;
 }
 
+function createDeliverableRunLabel() {
+  const iso = new Date().toISOString().replace(/\.(\d{3})Z$/, 'Z');
+  return iso.replace(/:/g, '-');
+}
+
+function sanitizeRunLabel(value) {
+  if (value == null) throw new Error('timestamp label is required');
+  const trimmed = String(value).trim();
+  if (!trimmed) throw new Error('timestamp label cannot be empty');
+  if (trimmed === '.' || trimmed === '..') {
+    throw new Error('timestamp label cannot reference parent directories');
+  }
+  if (/[\\/]/.test(trimmed)) {
+    throw new Error('timestamp label cannot contain path separators');
+  }
+  return trimmed;
+}
+
+function ensureTrailingNewline(value) {
+  const str = value == null ? '' : String(value);
+  return str.endsWith('\n') ? str : `${str}\n`;
+}
+
 function hasFlag(args, name) {
   return args.includes(name);
 }
@@ -182,6 +207,47 @@ async function writeDocxFile(targetPath, buffer) {
   await fs.promises.writeFile(resolved, buffer);
 }
 
+async function writeTextFile(targetPath, contents) {
+  if (!targetPath) return;
+  const resolved = path.resolve(process.cwd(), targetPath);
+  await fs.promises.mkdir(path.dirname(resolved), { recursive: true });
+  await fs.promises.writeFile(resolved, contents, 'utf8');
+}
+
+async function loadProfileResume(profilePath, { required = false } = {}) {
+  const baseDir = process.env.JOBBOT_DATA_DIR || path.resolve('data');
+  const resolved = profilePath
+    ? path.resolve(process.cwd(), profilePath)
+    : path.join(baseDir, 'profile', 'resume.json');
+
+  let raw;
+  try {
+    raw = await fs.promises.readFile(resolved, 'utf8');
+  } catch (err) {
+    if (err?.code === 'ENOENT') {
+      if (required) {
+        throw new Error(`Profile resume not found: ${resolved}`);
+      }
+      return null;
+    }
+    throw err;
+  }
+
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    if (required) {
+      throw new Error(`Profile resume at ${resolved} could not be parsed as JSON`);
+    }
+    if (process.env.JOBBOT_DEBUG) {
+      console.error(
+        `jobbot: profile resume at ${resolved} could not be parsed as JSON: ${err.message || err}`,
+      );
+    }
+    return null;
+  }
+}
+
 export async function cmdSummarize(args) {
   const usage =
     'Usage: jobbot summarize <file|url|-> [--json] [--text] [--sentences <count>] ' +
@@ -238,8 +304,9 @@ export async function cmdMatch(args) {
   const resumeIdx = args.indexOf('--resume');
   const usage =
     'Usage: jobbot match --resume <file> --job <file|url> [--json] [--explain] ' +
-    '[--docx <path>] [--locale <code>] [--role <title>] [--location <value>] ' +
-    '[--timeout <ms>] [--max-bytes <bytes>]';
+    '[--docx <path>] [--cover-letter <path>] [--profile <resume.json>] ' +
+    '[--locale <code>] [--role <title>] [--location <value>] [--timeout <ms>] ' +
+    '[--max-bytes <bytes>]';
   if (resumeIdx === -1 || !args[resumeIdx + 1]) {
     console.error(usage);
     process.exit(2);
@@ -254,6 +321,12 @@ export async function cmdMatch(args) {
   const docxSpecified = args.includes('--docx');
   const docxPath = getFlag(args, '--docx');
   if (docxSpecified && !docxPath) {
+    console.error(usage);
+    process.exit(2);
+  }
+  const coverLetterSpecified = args.includes('--cover-letter');
+  const coverLetterPath = getFlag(args, '--cover-letter');
+  if (coverLetterSpecified && !coverLetterPath) {
     console.error(usage);
     process.exit(2);
   }
@@ -276,6 +349,12 @@ export async function cmdMatch(args) {
   const locationOverride =
     typeof locationFlag === 'string' ? locationFlag.trim() : locationFlag;
   if (locationSpecified && !locationOverride) {
+    console.error(usage);
+    process.exit(2);
+  }
+  const profileSpecified = args.includes('--profile');
+  const profilePath = getFlag(args, '--profile');
+  if (profileSpecified && !profilePath) {
     console.error(usage);
     process.exit(2);
   }
@@ -334,6 +413,24 @@ export async function cmdMatch(args) {
   if (docxPath) {
     const buffer = await toDocxMatch(localizedPayload);
     await writeDocxFile(docxPath, buffer);
+  }
+
+  if (coverLetterPath) {
+    let profileResume;
+    try {
+      profileResume = await loadProfileResume(profilePath, {
+        required: Boolean(profilePath),
+      });
+    } catch (err) {
+      console.error(err.message || String(err));
+      process.exit(1);
+    }
+    const coverLetter = generateCoverLetter({
+      resume: profileResume || undefined,
+      match: payload,
+      job: localizedPayload,
+    });
+    await writeTextFile(coverLetterPath, coverLetter);
   }
 
   if (format === 'json') {
@@ -1393,6 +1490,171 @@ async function cmdAnalytics(args) {
   process.exit(2);
 }
 
+async function cmdTailor(args) {
+  const jobId = args[0];
+  const rest = args.slice(1);
+  const usage =
+    'Usage: jobbot tailor <job_id> [--profile <resume.json>] [--out <dir>] ' +
+    '[--timestamp <label>] [--locale <code>]';
+  if (!jobId) {
+    console.error(usage);
+    process.exit(2);
+  }
+
+  const profileSpecified = rest.includes('--profile');
+  const profilePath = getFlag(rest, '--profile');
+  if (profileSpecified && !profilePath) {
+    console.error(usage);
+    process.exit(2);
+  }
+
+  const outSpecified = rest.includes('--out');
+  const outBase = getFlag(rest, '--out');
+  if (outSpecified && !outBase) {
+    console.error(usage);
+    process.exit(2);
+  }
+
+  const timestampSpecified = rest.includes('--timestamp');
+  const timestampFlag = getFlag(rest, '--timestamp');
+  if (timestampSpecified && !timestampFlag) {
+    console.error(usage);
+    process.exit(2);
+  }
+
+  const localeSpecified = rest.includes('--locale');
+  const localeFlag = getFlag(rest, '--locale');
+  const locale = localeSpecified
+    ? typeof localeFlag === 'string'
+      ? localeFlag.trim()
+      : localeFlag
+    : undefined;
+  if (localeSpecified && !locale) {
+    console.error(usage);
+    process.exit(2);
+  }
+
+  const dataDir = process.env.JOBBOT_DATA_DIR || path.resolve('data');
+  const jobPath = path.join(dataDir, 'jobs', `${jobId}.json`);
+
+  let snapshotRaw;
+  try {
+    snapshotRaw = await fs.promises.readFile(jobPath, 'utf8');
+  } catch (err) {
+    if (err?.code === 'ENOENT') {
+      console.error(`Job snapshot not found: ${jobPath}`);
+      process.exit(1);
+    }
+    throw err;
+  }
+
+  let snapshot;
+  try {
+    snapshot = JSON.parse(snapshotRaw);
+  } catch (err) {
+    const reason = err?.message ? `: ${err.message}` : '';
+    console.error(`Job snapshot at ${jobPath} could not be parsed as JSON${reason}`);
+    process.exit(1);
+  }
+
+  let profileResume;
+  try {
+    profileResume = await loadProfileResume(profilePath, { required: true });
+  } catch (err) {
+    console.error(err.message || String(err));
+    process.exit(1);
+  }
+
+  const jobDetails =
+    snapshot.parsed && typeof snapshot.parsed === 'object'
+      ? { ...snapshot.parsed }
+      : parseJobText(snapshot.raw || '');
+
+  const jobUrl = snapshot.source?.type === 'url' ? snapshot.source.value : undefined;
+  if (jobUrl) jobDetails.url = jobUrl;
+  if (locale) jobDetails.locale = locale;
+
+  const resumePreview = renderResumeTextPreview(profileResume);
+
+  let matchPayload;
+  try {
+    matchPayload = matchResumeToJob(resumePreview, jobDetails, { jobUrl, locale });
+  } catch (err) {
+    console.error(err.message || String(err));
+    process.exit(1);
+  }
+
+  let activity;
+  try {
+    activity = await summarizeJobActivity(jobId);
+  } catch (err) {
+    if (process.env.JOBBOT_DEBUG) {
+      const message = err?.message || String(err);
+      console.error(`jobbot: failed to summarize activity for ${jobId}: ${message}`);
+    }
+  }
+
+  const matchBase = { ...matchPayload };
+  if (activity) matchBase.prior_activity = activity;
+
+  const explanationText = formatMatchExplanation({
+    matched: matchBase.matched,
+    missing: matchBase.missing,
+    score: matchBase.score,
+    locale: locale || matchBase.locale,
+  });
+
+  const matchJsonPayload = explanationText
+    ? { ...matchBase, explanation: explanationText }
+    : matchBase;
+
+  const matchMarkdown = toMarkdownMatch({ ...matchBase, locale: locale || matchBase.locale });
+  const explanationSection = toMarkdownMatchExplanation({
+    matched: matchBase.matched,
+    missing: matchBase.missing,
+    score: matchBase.score,
+    locale: locale || matchBase.locale,
+  });
+  const combinedMarkdown = explanationSection
+    ? `${matchMarkdown}\n\n${explanationSection}`
+    : matchMarkdown;
+
+  const coverLetter = generateCoverLetter({
+    resume: profileResume,
+    match: matchJsonPayload,
+    job: matchJsonPayload,
+  });
+
+  const baseOutputDir = outBase
+    ? path.resolve(process.cwd(), outBase)
+    : path.join(dataDir, 'deliverables', jobId);
+
+  let runLabel;
+  try {
+    runLabel = sanitizeRunLabel(timestampFlag || createDeliverableRunLabel());
+  } catch (err) {
+    console.error(err.message || String(err));
+    process.exit(2);
+  }
+
+  const runDir = path.join(baseOutputDir, runLabel);
+  await fs.promises.mkdir(runDir, { recursive: true });
+
+  await writeTextFile(path.join(runDir, 'match.md'), ensureTrailingNewline(combinedMarkdown));
+  await writeTextFile(
+    path.join(runDir, 'match.json'),
+    `${JSON.stringify(matchJsonPayload, null, 2)}\n`,
+  );
+  await writeTextFile(path.join(runDir, 'cover_letter.md'), ensureTrailingNewline(coverLetter));
+  await writeTextFile(
+    path.join(runDir, 'resume.json'),
+    `${JSON.stringify(profileResume, null, 2)}\n`,
+  );
+  await writeTextFile(path.join(runDir, 'resume.txt'), ensureTrailingNewline(resumePreview));
+
+  console.log(`Generated deliverables for ${jobId} at ${runDir}`);
+}
+
 async function cmdDeliverablesBundle(args) {
   const jobId = args[0];
   const rest = args.slice(1);
@@ -1959,6 +2221,7 @@ async function main() {
   if (cmd === 'shortlist') return cmdShortlist(args);
   if (cmd === 'analytics') return cmdAnalytics(args);
   if (cmd === 'rehearse') return cmdRehearse(args);
+  if (cmd === 'tailor') return cmdTailor(args);
   if (cmd === 'deliverables') return cmdDeliverables(args);
   if (cmd === 'import') return cmdImport(args);
   if (cmd === 'intake') return cmdIntake(args);
@@ -1967,7 +2230,7 @@ async function main() {
   if (cmd === 'schedule') return cmdSchedule(args);
   console.error(
     'Usage: jobbot <init|profile|import|summarize|match|track|shortlist|analytics|' +
-      'rehearse|deliverables|interviews|intake|ingest|schedule> [options]'
+      'rehearse|tailor|deliverables|interviews|intake|ingest|schedule> [options]'
   );
   process.exit(2);
 }
