@@ -2,6 +2,96 @@ import path from 'node:path';
 
 import { loadResume } from '../resume.js';
 
+const SECTION_PATTERNS = [
+  { key: 'summary', patterns: [/^summary$/i, /^professional summary$/i] },
+  {
+    key: 'experience',
+    patterns: [/^experience$/i, /^work experience$/i, /^professional experience$/i],
+  },
+  {
+    key: 'skills',
+    patterns: [/^skills$/i, /^technical skills$/i, /^core competencies$/i],
+  },
+  { key: 'education', patterns: [/^education$/i, /^education & certifications$/i] },
+  { key: 'projects', patterns: [/^projects$/i, /^selected projects$/i] },
+  { key: 'certifications', patterns: [/^certifications$/i, /^licenses$/i] },
+  { key: 'volunteer', patterns: [/^volunteer$/i, /^volunteer experience$/i] },
+];
+
+function normalizeHeading(line) {
+  if (!line) return '';
+  const stripped = line
+    .replace(/^#+\s*/, '')
+    .replace(/\s*[-:]+\s*$/, '')
+    .trim();
+  return stripped;
+}
+
+function detectSectionKey(line) {
+  const normalized = normalizeHeading(line);
+  if (!normalized) return null;
+  for (const { key, patterns } of SECTION_PATTERNS) {
+    for (const pattern of patterns) {
+      if (pattern.test(normalized)) {
+        if (pattern.lastIndex !== 0) pattern.lastIndex = 0;
+        return key;
+      }
+    }
+  }
+  return null;
+}
+
+function splitLines(text) {
+  if (!text) return [];
+  return String(text)
+    .replace(/\r/g, '')
+    .split('\n');
+}
+
+function countWords(lines) {
+  let total = 0;
+  for (const line of lines) {
+    if (!line) continue;
+    total += line
+      .split(/\s+/)
+      .map(token => token.trim())
+      .filter(Boolean).length;
+  }
+  return total;
+}
+
+function buildSectionSummary(trimmedLines) {
+  const sections = {};
+  const order = [];
+
+  let current = 'body';
+  sections[current] = [];
+  order.push(current);
+
+  for (const line of trimmedLines) {
+    if (!line) continue;
+    const detected = detectSectionKey(line);
+    if (detected) {
+      current = detected;
+      if (!sections[current]) {
+        sections[current] = [];
+        order.push(current);
+      }
+      continue;
+    }
+    sections[current].push(line);
+  }
+
+  for (const key of Object.keys(sections)) {
+    if (!sections[key] || sections[key].length === 0) {
+      delete sections[key];
+    }
+  }
+
+  const sectionOrder = order.filter((key, index) => order.indexOf(key) === index && sections[key]);
+  return { sections, sectionOrder };
+}
+
 /**
  * Stage-driven helper that runs the resume ingestion pipeline against a single source file.
  * Each stage mutates the shared context with typed outputs so downstream consumers can
@@ -30,6 +120,25 @@ const RESUME_PIPELINE_STAGES = [
       context.text = text;
       context.metadata = metadata;
       return { text, metadata };
+    },
+  },
+  {
+    name: 'normalize',
+    run: context => {
+      const lines = splitLines(context.text || '');
+      const trimmedLines = lines.map(line => line.trim());
+      const nonEmptyLines = trimmedLines.filter(Boolean);
+      const { sections, sectionOrder } = buildSectionSummary(trimmedLines);
+      const output = {
+        lineCount: lines.length,
+        nonEmptyLineCount: nonEmptyLines.length,
+        wordCount: countWords(nonEmptyLines),
+        sections,
+        sectionOrder,
+        lines: trimmedLines,
+      };
+      context.normalizedResume = output;
+      return output;
     },
   },
   {
@@ -77,6 +186,7 @@ export async function runResumePipeline(filePath, options = {}) {
     source: context.source,
     text: context.text,
     metadata: context.metadata,
+    normalized: context.normalizedResume,
     analysis: context.analysis,
     stages: context.stages.map(stage => ({ name: stage.name, output: stage.output })),
   };
