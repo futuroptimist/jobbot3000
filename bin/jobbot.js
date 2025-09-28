@@ -41,6 +41,7 @@ import {
   getIntakeResponses,
   getIntakeBulletOptions,
 } from '../src/intake.js';
+import { loadIntakeQuestionPlan } from '../src/intake-plan.js';
 import { ingestGreenhouseBoard } from '../src/greenhouse.js';
 import { ingestLeverBoard } from '../src/lever.js';
 import { ingestSmartRecruitersBoard } from '../src/smartrecruiters.js';
@@ -795,6 +796,36 @@ function formatIntakeBullets(bullets) {
   return lines.join('\n');
 }
 
+function formatIntakePlan(plan, resumePath) {
+  const lines = ['Intake question plan'];
+
+  if (!Array.isArray(plan) || plan.length === 0) {
+    lines.push('All core intake topics are already covered.');
+    if (resumePath) {
+      lines.push(`Resume: ${resumePath}`);
+    }
+    return lines.join('\n');
+  }
+
+  plan.forEach((item, index) => {
+    lines.push(`${index + 1}. ${item.prompt}`);
+    if (item.reason) lines.push(`   Reason: ${item.reason}`);
+    if (Array.isArray(item.tags) && item.tags.length > 0) {
+      lines.push(`   Tags: ${item.tags.join(', ')}`);
+    }
+    lines.push('');
+  });
+
+  if (lines[lines.length - 1] === '') {
+    lines.pop();
+  }
+  if (resumePath) {
+    lines.push(`Resume: ${resumePath}`);
+  }
+
+  return lines.join('\n');
+}
+
 async function cmdIntakeRecord(args) {
   const skip = args.includes('--skip');
   const question = readContentFromArgs(args, '--question', '--question-file');
@@ -853,12 +884,43 @@ async function cmdIntakeBullets(args) {
   console.log(formatIntakeBullets(bullets));
 }
 
+async function cmdIntakePlan(args) {
+  const asJson = args.includes('--json');
+
+  let result;
+  try {
+    result = await loadIntakeQuestionPlan();
+  } catch (err) {
+    console.error(err?.message || String(err));
+    process.exit(1);
+  }
+
+  const { plan, resumePath } = result;
+
+  if (asJson) {
+    console.log(
+      JSON.stringify(
+        {
+          plan,
+          resume_path: resumePath,
+        },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+
+  console.log(formatIntakePlan(plan, resumePath));
+}
+
 async function cmdIntake(args) {
   const sub = args[0];
   if (sub === 'record') return cmdIntakeRecord(args.slice(1));
   if (sub === 'list') return cmdIntakeList(args.slice(1));
   if (sub === 'bullets') return cmdIntakeBullets(args.slice(1));
-  console.error('Usage: jobbot intake <record|list|bullets> ...');
+  if (sub === 'plan') return cmdIntakePlan(args.slice(1));
+  console.error('Usage: jobbot intake <record|list|bullets|plan> ...');
   process.exit(2);
 }
 
