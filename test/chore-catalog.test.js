@@ -12,5 +12,6 @@ describe('chore catalog documentation', () => {
     expect(contents).toMatch(/npm run test:ci/);
     expect(contents).toMatch(/git diff --cached \\?\| \.\/scripts\/scan-secrets\.py/);
     expect(contents).toMatch(/Prompt Docs/i);
+    expect(contents).toMatch(/npm run chore:prompts/);
   });
 });
