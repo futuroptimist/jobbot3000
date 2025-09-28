@@ -1444,10 +1444,13 @@ const analysis = analyzeExperiment('screening_resume_language', {
 });
 
 console.log(analysis.recommendationSummary);
+console.log(analysis.actionableNotes);
 ```
 
 Actionable summaries pair recommendations with the supporting effect sizes, guardrail
-checks, and adjusted p-values so users can make confident changes quickly. See
+checks, and adjusted p-values so users can make confident changes quickly. `actionableNotes`
+surface experiment-specific guidance (for example, anonymization or follow-up prompts) so
+the UI can mirror the playbooks without hard-coding prose. See
 [`docs/lifecycle-experiments.md`](docs/lifecycle-experiments.md) for the full set of
 experiments, analysis plans, and reporting guardrails.
 

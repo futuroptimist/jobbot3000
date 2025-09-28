@@ -264,6 +264,22 @@ function cloneAnalysisResult(result) {
   return JSON.parse(JSON.stringify(result));
 }
 
+function normalizeActionableNotes(notes) {
+  if (!Array.isArray(notes)) return [];
+  const normalized = [];
+  const seen = new Set();
+  for (const note of notes) {
+    if (typeof note !== 'string') continue;
+    const trimmed = note.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(trimmed);
+  }
+  return normalized;
+}
+
 function sortEntriesByRecordedAt(entries) {
   entries.sort((a, b) => {
     const aTime = Date.parse(a.recorded_at);
@@ -385,6 +401,7 @@ export function analyzeExperiment(id, dataset) {
   if (!experiment) {
     throw new Error(`unknown experiment: ${id}`);
   }
+  const actionableNotes = normalizeActionableNotes(experiment.actionableNotes);
   validateDatasetKeys(dataset);
 
   const { analysisPlan } = experiment;
@@ -493,6 +510,7 @@ export function analyzeExperiment(id, dataset) {
   return {
     experiment: { id: experiment.id, name: experiment.name },
     recommendationSummary,
+    actionableNotes,
     primaryMetric: {
       id: analysisPlan.primaryMetric.id,
       name: analysisPlan.primaryMetric.name,
