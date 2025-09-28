@@ -1,4 +1,10 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+
 import { STATUSES } from './lifecycle.js';
+
+let overrideDataDir;
+let archiveWriteLock = Promise.resolve();
 
 const LIFECYCLE_EXPERIMENTS = [
   {
@@ -202,6 +208,76 @@ function assertKnownStatus(status) {
   if (!STATUSES.includes(status)) {
     throw new Error(`unknown status: ${status}`);
   }
+}
+
+function resolveDataDir() {
+  return overrideDataDir || process.env.JOBBOT_DATA_DIR || path.resolve('data');
+}
+
+function getArchivePaths() {
+  const dir = resolveDataDir();
+  return { dir, file: path.join(dir, 'experiment_analyses.json') };
+}
+
+async function readArchiveFile(file) {
+  try {
+    const raw = await fs.readFile(file, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed;
+    }
+    return {};
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return {};
+    throw err;
+  }
+}
+
+async function writeArchiveFile(file, data) {
+  const tmp = `${file}.tmp`;
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(tmp, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+  await fs.rename(tmp, file);
+}
+
+function normalizeRecordedAt(input) {
+  if (input === undefined) {
+    return new Date().toISOString();
+  }
+  if (input instanceof Date) {
+    if (Number.isNaN(input.getTime())) {
+      throw new Error(`invalid analysis timestamp: ${input}`);
+    }
+    return input.toISOString();
+  }
+  const value = new Date(input);
+  if (Number.isNaN(value.getTime())) {
+    throw new Error(`invalid analysis timestamp: ${input}`);
+  }
+  return value.toISOString();
+}
+
+function cloneAnalysisResult(result) {
+  if (!result || typeof result !== 'object') {
+    throw new Error('analysis result is required');
+  }
+  return JSON.parse(JSON.stringify(result));
+}
+
+function sortEntriesByRecordedAt(entries) {
+  entries.sort((a, b) => {
+    const aTime = Date.parse(a.recorded_at);
+    const bTime = Date.parse(b.recorded_at);
+    const aValid = !Number.isNaN(aTime);
+    const bValid = !Number.isNaN(bTime);
+    if (aValid && bValid) {
+      if (aTime === bTime) return 0;
+      return bTime - aTime;
+    }
+    if (aValid) return -1;
+    if (bValid) return 1;
+    return 0;
+  });
 }
 
 function validateDatasetKeys(dataset) {
@@ -446,4 +522,79 @@ export function analyzeExperiment(id, dataset) {
       },
     },
   };
+}
+
+export function setLifecycleExperimentDataDir(dir) {
+  overrideDataDir = dir || undefined;
+}
+
+export function archiveExperimentAnalysis(id, analysis, options = {}) {
+  const experimentId = typeof id === 'string' ? id.trim() : '';
+  if (!experimentId) {
+    return Promise.reject(new Error('experiment id is required'));
+  }
+
+  let normalizedResult;
+  try {
+    normalizedResult = cloneAnalysisResult(analysis);
+  } catch (err) {
+    return Promise.reject(err);
+  }
+
+  let recordedAt;
+  try {
+    recordedAt = normalizeRecordedAt(options.recordedAt);
+  } catch (err) {
+    return Promise.reject(err);
+  }
+
+  const entry = {
+    recorded_at: recordedAt,
+    result: normalizedResult,
+  };
+
+  const { dir, file } = getArchivePaths();
+
+  const run = async () => {
+    await fs.mkdir(dir, { recursive: true });
+    const archive = await readArchiveFile(file);
+    const entries = Array.isArray(archive[experimentId]) ? archive[experimentId] : [];
+    entries.push(entry);
+    sortEntriesByRecordedAt(entries);
+    archive[experimentId] = entries;
+    await writeArchiveFile(file, archive);
+    return entry;
+  };
+
+  archiveWriteLock = archiveWriteLock.then(run, run);
+  return archiveWriteLock;
+}
+
+export async function getExperimentAnalysisHistory(id) {
+  const { file } = getArchivePaths();
+  const archive = await readArchiveFile(file);
+  if (id === undefined) {
+    const result = {};
+    for (const [experimentId, entries] of Object.entries(archive)) {
+      const normalized = Array.isArray(entries)
+        ? entries.map(entry => ({
+            recorded_at: entry.recorded_at,
+            result: cloneAnalysisResult(entry.result),
+          }))
+        : [];
+      sortEntriesByRecordedAt(normalized);
+      result[experimentId] = normalized;
+    }
+    return result;
+  }
+
+  const experimentId = typeof id === 'string' ? id.trim() : '';
+  if (!experimentId) return [];
+  const entries = Array.isArray(archive[experimentId]) ? archive[experimentId] : [];
+  const normalized = entries.map(entry => ({
+    recorded_at: entry.recorded_at,
+    result: cloneAnalysisResult(entry.result),
+  }));
+  sortEntriesByRecordedAt(normalized);
+  return normalized;
 }

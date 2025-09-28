@@ -1,12 +1,34 @@
-import { describe, expect, test } from 'vitest';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
+import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 
 import {
   listExperimentsForStatus,
   analyzeExperiment,
   getExperimentById,
+  archiveExperimentAnalysis,
+  getExperimentAnalysisHistory,
+  setLifecycleExperimentDataDir,
 } from '../src/lifecycle-experiments.js';
 
 const KNOWN_STATUS = 'screening';
+
+let experimentsDir;
+
+beforeEach(async () => {
+  experimentsDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jobbot-experiments-'));
+  setLifecycleExperimentDataDir(experimentsDir);
+});
+
+afterEach(async () => {
+  setLifecycleExperimentDataDir(undefined);
+  if (experimentsDir) {
+    await fs.rm(experimentsDir, { recursive: true, force: true });
+    experimentsDir = undefined;
+  }
+});
 
 describe('lifecycle experiments', () => {
   test('exposes pre-registered experiments for each lifecycle stage', () => {
@@ -87,5 +109,37 @@ describe('lifecycle experiments', () => {
         },
       }),
     ).toThrow(/pre-registered/i);
+  });
+
+  test('archives experiment analyses alongside lifecycle data', async () => {
+    const analysis = analyzeExperiment('screening_resume_language', {
+      primaryMetric: {
+        control: { successes: 50, trials: 120 },
+        variants: {
+          warm_language: { successes: 72, trials: 120 },
+        },
+      },
+    });
+
+    const recordedAt = '2025-03-02T18:00:00Z';
+    const entry = await archiveExperimentAnalysis(
+      'screening_resume_language',
+      analysis,
+      { recordedAt },
+    );
+
+    expect(entry.recorded_at).toBe('2025-03-02T18:00:00.000Z');
+    expect(entry.result.recommendationSummary).toContain('resume');
+
+    const history = await getExperimentAnalysisHistory('screening_resume_language');
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({
+      recorded_at: '2025-03-02T18:00:00.000Z',
+      result: expect.objectContaining({ recommendationSummary: expect.stringContaining('resume') }),
+    });
+
+    const archivePath = path.join(experimentsDir, 'experiment_analyses.json');
+    const raw = JSON.parse(await fs.readFile(archivePath, 'utf8'));
+    expect(Array.isArray(raw.screening_resume_language)).toBe(true);
   });
 });
