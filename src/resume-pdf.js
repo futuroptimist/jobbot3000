@@ -4,9 +4,18 @@ function sanitizeLine(line) {
   if (!line) return '';
   const normalized = line
     .replace(/\r/g, '')
-    .replace(/[\t]/g, '    ')
-    .replace(/[\u0000-\u001F\u007F-\u009F]/g, '?');
-  const asciiSafe = normalized.replace(/[^\x20-\x7E]/g, '?');
+    .replace(/[\t]/g, '    ');
+
+  let asciiSafe = '';
+  for (let index = 0; index < normalized.length; index += 1) {
+    const code = normalized.charCodeAt(index);
+    if (code < 32 || code === 127 || (code >= 128 && code <= 159) || code > 126) {
+      asciiSafe += '?';
+    } else {
+      asciiSafe += normalized[index];
+    }
+  }
+
   return asciiSafe
     .replace(/\\/g, '\\\\')
     .replace(/\(/g, '\\(')
@@ -50,7 +59,13 @@ function synthesizePdf(lines) {
   addObject(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
   addObject(
     3,
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    [
+      '<< /Type /Page',
+      '/Parent 2 0 R',
+      '/MediaBox [0 0 612 792]',
+      '/Resources << /Font << /F1 4 0 R >> >>',
+      '/Contents 5 0 R >>',
+    ].join(' '),
   );
   addObject(4, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
   addObject(
