@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 const COMMAND_METHODS = {
   summarize: 'cmdSummarize',
   match: 'cmdMatch',
@@ -39,30 +41,51 @@ function formatLogArg(arg) {
   }
 }
 
-async function captureConsole(fn) {
-  const originalLog = console.log;
-  const originalError = console.error;
-  const logs = [];
-  const errors = [];
+const consoleCaptureStorage = new AsyncLocalStorage();
+let consoleHooksInstalled = false;
+let originalConsoleLog = console.log.bind(console);
+let originalConsoleError = console.error.bind(console);
+
+function ensureConsoleHooks() {
+  if (consoleHooksInstalled) return;
+  consoleHooksInstalled = true;
+  originalConsoleLog = console.log.bind(console);
+  originalConsoleError = console.error.bind(console);
   console.log = (...args) => {
-    logs.push(args.map(formatLogArg).join(' '));
+    const store = consoleCaptureStorage.getStore();
+    if (store) {
+      store.logs.push(args.map(formatLogArg).join(' '));
+    } else {
+      originalConsoleLog(...args);
+    }
   };
   console.error = (...args) => {
-    errors.push(args.map(formatLogArg).join(' '));
-  };
-  try {
-    const result = await fn();
-    return { result, stdout: logs.join('\n'), stderr: errors.join('\n') };
-  } catch (err) {
-    if (err && typeof err === 'object') {
-      err.stdout = logs.join('\n');
-      err.stderr = errors.join('\n');
+    const store = consoleCaptureStorage.getStore();
+    if (store) {
+      store.errors.push(args.map(formatLogArg).join(' '));
+    } else {
+      originalConsoleError(...args);
     }
-    throw err;
-  } finally {
-    console.log = originalLog;
-    console.error = originalError;
-  }
+  };
+}
+
+async function captureConsole(fn) {
+  ensureConsoleHooks();
+  const logs = [];
+  const errors = [];
+  const context = { logs, errors };
+  return consoleCaptureStorage.run(context, async () => {
+    try {
+      const result = await fn();
+      return { result, stdout: logs.join('\n'), stderr: errors.join('\n') };
+    } catch (err) {
+      if (err && typeof err === 'object') {
+        err.stdout = logs.join('\n');
+        err.stderr = errors.join('\n');
+      }
+      throw err;
+    }
+  });
 }
 
 function humanizeMethod(method) {
