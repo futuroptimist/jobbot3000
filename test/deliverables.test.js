@@ -205,4 +205,41 @@ describe('deliverables bundling', () => {
       ].join('\n'),
     );
   });
+
+  it('synthesizes a resume PDF when missing but a tailored resume exists', async () => {
+    const runDir = path.join(dataDir, 'deliverables', 'job-222', '2025-05-06T08-15-00Z');
+    await fs.mkdir(runDir, { recursive: true });
+
+    const tailoredResume = {
+      basics: {
+        name: 'Ada Example',
+        label: 'Staff Engineer',
+        email: 'ada@example.com',
+      },
+      work: [
+        {
+          company: 'Analytical Engines',
+          position: 'Staff Engineer',
+          highlights: ['Built resilient systems.'],
+        },
+      ],
+    };
+
+    await fs.writeFile(
+      path.join(runDir, 'resume.json'),
+      JSON.stringify(tailoredResume, null, 2),
+    );
+
+    const buffer = await bundleDeliverables('job-222', {
+      timestamp: '2025-05-06T08-15-00Z',
+    });
+
+    const zip = await JSZip.loadAsync(buffer);
+    const entries = Object.keys(zip.files);
+    expect(entries).toContain('resume.pdf');
+
+    const pdfBuffer = await zip.file('resume.pdf').async('nodebuffer');
+    expect(pdfBuffer.length).toBeGreaterThan(100);
+    expect(pdfBuffer.subarray(0, 4).toString()).toBe('%PDF');
+  });
 });

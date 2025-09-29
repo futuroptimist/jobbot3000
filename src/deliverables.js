@@ -3,6 +3,7 @@ import path from 'node:path';
 import JSZip from 'jszip';
 
 import { renderResumeTextPreview } from './resume-preview.js';
+import { renderResumePdf } from './resume-pdf.js';
 
 let overrideDir;
 
@@ -277,6 +278,19 @@ export async function bundleDeliverables(jobId, options = {}) {
     if (preview && !zip.file('resume.txt')) {
       const content = preview.endsWith('\n') ? preview : `${preview}\n`;
       zip.file('resume.txt', content);
+    }
+    if (!zip.file('resume.pdf')) {
+      try {
+        const pdfBuffer = await renderResumePdf(tailoredResume.json);
+        if (pdfBuffer && pdfBuffer.length > 0) {
+          zip.file('resume.pdf', pdfBuffer);
+        }
+      } catch (err) {
+        if (process.env.JOBBOT_DEBUG) {
+          const reason = err?.message || String(err);
+          console.warn(`jobbot: failed to synthesize resume.pdf during bundling: ${reason}`);
+        }
+      }
     }
   }
   const diffPayload = await buildResumeDiffPayload(selection.root, tailoredResume);

@@ -106,13 +106,14 @@ aggressively to respect rate limits.
 2. The resume renderer clones the base profile, selects the most relevant bullets, and prepares a
    tailored artifact set: a synthesized `resume.txt` preview, the canonical `resume.json`, the
    localized match report (`match.md`/`match.json`), and a grounded cover letter. Run
-   `jobbot match --cover-letter <path>` to emit an ad-hoc Markdown template or
-   `jobbot tailor <job_id>` to save the full deliverables bundle under
-   `data/deliverables/{job_id}/{timestamp}/`. Tailoring runs accept `--timestamp` to control the
-   subdirectory label, `--out` to redirect the base path, and `--profile <resume.json>` when testing
-   alternative profile variants. All outputs cite the source fields they originate from so the user
-   can audit changes, and the preview keeps ATS tooling in sync with the JSON resume even when PDFs
-   are unavailable.
+  `jobbot match --cover-letter <path>` to emit an ad-hoc Markdown template or
+  `jobbot tailor <job_id>` to save the full deliverables bundle under
+  `data/deliverables/{job_id}/{timestamp}/`. Tailoring runs accept `--timestamp` to control the
+  subdirectory label, `--out` to redirect the base path, and `--profile <resume.json>` when testing
+  alternative profile variants. All outputs cite the source fields they originate from so the user
+  can audit changes. Bundles now guarantee both `resume.pdf` and `resume.txt` exist—older runs missing
+  the PDF are patched during bundling—so reviewers have accessible text and shareable print layouts
+  without regenerating deliverables.
 3. Users can tweak sections manually; the assistant suggests language improvements but refuses to
    fabricate experience.
 4. Generated files, diffs, and build logs live in `data/deliverables/{job_id}/` and are versioned by
