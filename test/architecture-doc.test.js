@@ -19,4 +19,11 @@ describe('architecture documentation', () => {
     expect(contents).toMatch(/src\/application-events\.js/);
     expect(contents).toMatch(/src\/lifecycle\.js/);
   });
+
+  it('references the current CLI entrypoint instead of stale helper paths', () => {
+    const contents = readFileSync(ARCHITECTURE_DOC_PATH, 'utf8');
+
+    expect(contents).toMatch(/bin\/jobbot\.js/);
+    expect(contents).not.toMatch(/src\/cli\.js/);
+  });
 });
