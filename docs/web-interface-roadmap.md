@@ -63,7 +63,13 @@
 ### 3. Security Hardening Plan
 
 - Implement allow-list based routing: each API endpoint corresponds to a predefined CLI command and
-  argument schema.
+  argument schema. The new [`src/services/command-allowlist.js`](../src/services/command-allowlist.js)
+  helper defines the matrix and emits sanitized CLI arguments for orchestrated calls.
+- Spawn CLI commands without shell interpolation. [`src/services/cli-runner.js`](../src/services/cli-runner.js)
+  uses Node's `spawn` with `shell: false`, streams stdout/stderr, and enforces optional execution
+  timeouts so the orchestrator can terminate runaway jobs safely. Coverage in
+  [`test/services-cli-runner.test.js`](../test/services-cli-runner.test.js) exercises argument
+  sanitization, error propagation, and timeout handling.
 - Validate payloads with a shared schema library (e.g., Zod) on both frontend and backend to ensure
   alignment.
 - Avoid shell invocation; use `spawn`/`execFile` with explicit argument arrays.
@@ -138,8 +144,8 @@
 
 ## Safe Implementation Checklist
 
-- [ ] Command allow-list with schema validation
-- [ ] Secure process spawning without shell interpolation
+- [x] Command allow-list with schema validation
+- [x] Secure process spawning without shell interpolation
 - [ ] Input sanitization and output redaction
 - [ ] Logging with redacted secrets and trace IDs
 - [ ] Automated tests spanning unit → e2e layers
