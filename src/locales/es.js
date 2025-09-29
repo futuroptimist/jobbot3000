@@ -26,4 +26,5 @@ export default {
   priorActivitySessionPlural: 'sesiones',
   priorActivityCoachingNotesLabel: 'Notas de coaching',
   priorActivityTimestampSourceLabel: 'Fuente de la marca de tiempo',
+  priorActivitySessionsSinceLastDeliverable: 'Sesiones desde la última entrega',
 };

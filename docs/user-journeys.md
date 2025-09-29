@@ -205,18 +205,19 @@ suggestions to prevent burnout.
    ➜ acceptance) and highlight the largest drop-off. JSON exports expose a `funnel.sankey`
    structure so visualization layers can consume nodes and links directly.
 2. Metadata from tailoring and rehearsal sessions feeds back into the recommender so it can surface
-   what worked (e.g., bullet variants correlated with interviews) while staying privacy-first. The
-   analytics export reports aggregate deliverable runs and interview session counts in an
-   `activity` block so planners can gauge momentum without exposing specific job identifiers, and
-   `jobbot match` echoes that context in its `prior_activity` summary so reviewers see the latest
-   tailoring/interview work alongside fit scores. When interview payloads only capture a
-  `started_at` timestamp (or when JSON omits timing entirely), the summary falls back to that value
-  or the session file's modification time so the chronology stays visible and notes the timestamp
-  provenance with `recorded_at_source`. The CLI surfaces the same detail with a localized
-  `Timestamp source: …` annotation so readers can tell whether the time came from the log or a
-  filesystem fallback. Legacy deliverable directories that store files
-   directly under a job folder count as a single run so older tailoring work remains part of the
-   signal.
+   the freshest work while staying privacy-first. The analytics export reports aggregate
+   deliverable runs, interview counts, and how many sessions landed after the most recent
+   tailoring pass inside an `activity` block so planners can gauge momentum without exposing
+   specific job identifiers. `jobbot match` echoes the same detail in its `prior_activity` summary,
+   pairing the latest coaching notes with a localized `Sessions since last deliverable`
+   annotation so reviewers can connect bullet work to ensuing conversations. When interview
+   payloads only capture a `started_at` timestamp (or when JSON omits timing entirely), the
+   summary falls back to that value or the session file's modification time so the chronology
+   stays visible and notes the timestamp provenance with `recorded_at_source`. The CLI surfaces
+   the same detail with a localized `Timestamp source: …` annotation so readers can tell whether
+   the time came from the log or a filesystem fallback. Legacy deliverable directories that store
+   files directly under a job folder count as a single run so older tailoring work remains part of
+   the signal.
 3. Users can export anonymized aggregates with `jobbot analytics export --out <file>` for personal
    record keeping without exposing raw PII.
 

@@ -117,6 +117,34 @@ describe('summarizeInterviewSessions', () => {
       recorded_at_source: 'file_mtime',
     });
   });
+
+  it('counts sessions recorded after a provided timestamp', async () => {
+    const jobDir = path.join(tmpDir, 'interviews', 'job-correlation');
+    fs.mkdirSync(jobDir, { recursive: true });
+    const early = {
+      session_id: 'session-early',
+      recorded_at: '2025-03-01T08:00:00.000Z',
+      stage: 'Screen',
+    };
+    const late = {
+      session_id: 'session-late',
+      recorded_at: '2025-03-15T09:30:00.000Z',
+      stage: 'Onsite',
+    };
+    fs.writeFileSync(
+      path.join(jobDir, 'early.json'),
+      JSON.stringify(early, null, 2),
+    );
+    fs.writeFileSync(
+      path.join(jobDir, 'late.json'),
+      JSON.stringify(late, null, 2),
+    );
+
+    const summary = await summarizeInterviewSessions('job-correlation', {
+      after: '2025-03-10T00:00:00.000Z',
+    });
+    expect(summary?.sessions_after_last_deliverable).toBe(1);
+  });
 });
 
 describe('summarizeJobActivity', () => {
@@ -140,6 +168,7 @@ describe('summarizeJobActivity', () => {
     const activity = await summarizeJobActivity('job-xyz');
     expect(activity?.deliverables?.runs).toBe(1);
     expect(activity?.interviews?.sessions).toBe(1);
+    expect(activity?.interviews?.sessions_after_last_deliverable).toBe(1);
   });
 
   it('returns null when no activity exists', async () => {
