@@ -89,7 +89,9 @@ Matching compares normalized job postings against the candidate profile.
   exercises raw text inputs, pre-parsed job objects, and French explanations so the
   helper stays aligned with the CLI output.
 - Performance-focused suites in `test/scoring.*.test.js` guard regression budgets.
-- Explanations highlight hits, gaps, and blockers. CLI output is formatted in `src/cli.js` helpers.
+- Explanations highlight hits, gaps, and blockers. CLI output is formatted in `bin/jobbot.js`
+  helpers that normalize shortlist, activity, and analytics summaries before printing them to the
+  terminal.
 
 ## Deliverables
 
