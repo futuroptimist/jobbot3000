@@ -18,6 +18,7 @@
     "summarize": "node scripts/summarize.js",
     "chore:prompts": "node scripts/chore-prompts.js",
     "chore:reminders": "node scripts/chore-reminders.js",
+    "web:server": "node scripts/web-server.js",
     "postinstall": "node scripts/install-console-font.js"
   },
   "engines": {
@@ -25,6 +26,7 @@
   },
   "dependencies": {
     "docx": "^9.5.1",
+    "express": "^4.21.2",
     "html-to-text": "9.0.5",
     "jszip": "^3.10.1",
     "node-fetch": "^3.3.2",

@@ -86,6 +86,9 @@
 
 1. **Foundations**
    - Scaffold backend Express app with health check endpoint.
+     _Implemented (2025-11-23):_ [`src/web/server.js`](../src/web/server.js) now exposes an Express
+     app with a `/health` route that aggregates pluggable status checks. Start the backend with
+     `npm run web:server` to serve the health endpoint locally while wiring additional adapters.
    - Build command adapter with a mocked CLI module and comprehensive tests.
    - Establish shared TypeScript types and validation schemas.
 
