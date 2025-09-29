@@ -1585,6 +1585,24 @@ decisions. The `track discard` command shares the shortlist writer so history in
 workflow. Unit tests in `test/discards.test.js` and the CLI suite cover the JSON
 format and command invocation.
 
+## Web server foundations
+
+Start the experimental Express backend with the built-in health check endpoint:
+
+```bash
+npm run web:server
+# jobbot web server listening on http://127.0.0.1:3000
+# Press Ctrl+C to stop.
+```
+
+`GET /health` responds with service metadata, uptime, and the results of each
+registered check. Health checks default to a single `ok` status but can be
+extended by passing custom check functions to
+[`startWebServer`](src/web/server.js). Automated coverage in
+[`test/web-server.test.js`](test/web-server.test.js) exercises both successful
+and failing checks so future endpoints can rely on the health contract when the
+web interface expands beyond the CLI wrappers.
+
 ## Documentation
 
 - [DESIGN.md](DESIGN.md) – architecture details and roadmap
