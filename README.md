@@ -1346,11 +1346,12 @@ When a tailored run ships a `resume.json`, the bundler now compares it to the ba
 `profile/resume.json` and includes a `resume.diff.json` summary in the archive. The diff captures
 added, removed, and changed resume paths (for example, `skills[2]` or `work[0].company`), giving
 reviewers a quick snapshot of how the tailored variant diverges from the canonical profile without
-opening the full documents. Bundles also synthesize a `resume.txt` plain-text preview from the
-tailored JSON resume so ATS scanners and accessibility tooling can audit the output without opening
-the PDF. Unit coverage in [`test/deliverables.test.js`](test/deliverables.test.js) asserts the diff
-is emitted with accurate before/after values and the preview captures core resume sections, keeping
-the audit trail intact.
+opening the full documents. Bundles also synthesize both a `resume.pdf` derived from the tailored
+JSON resume and a `resume.txt` plain-text preview so ATS scanners and accessibility tooling can audit
+the output in whichever format they prefer. Unit coverage in
+[`test/deliverables.test.js`](test/deliverables.test.js) asserts the diff is emitted with accurate
+before/after values, the PDF renderer runs even when the original run did not persist a PDF, and the
+preview captures core resume sections, keeping the audit trail intact.
 
 See [DESIGN.md](DESIGN.md) for architecture details and roadmap.
 See [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) for a list of prompt documents.
