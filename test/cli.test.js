@@ -486,6 +486,9 @@ describe('jobbot CLI', () => {
     expect(payload.prior_activity?.interviews?.last_session?.recorded_at_source).toBe(
       'recorded_at',
     );
+    expect(
+      payload.prior_activity?.interviews?.sessions_after_last_deliverable,
+    ).toBe(1);
 
     const mdOut = runCli([
       'match',
@@ -497,6 +500,7 @@ describe('jobbot CLI', () => {
     expect(mdOut).toContain('## Prior Activity');
     expect(mdOut).toContain('Deliverables: 1 run');
     expect(mdOut).toContain('Interviews: 1 session');
+    expect(mdOut).toContain('Sessions since last deliverable: 1');
     expect(mdOut).toContain('Timestamp source: recorded_at');
 
     const localizedOut = runCli([
@@ -512,6 +516,7 @@ describe('jobbot CLI', () => {
     expect(localizedOut).toContain('Entregables: 1 ejecución');
     expect(localizedOut).toContain('Entrevistas: 1 sesión');
     expect(localizedOut).toContain('  Notas de coaching:');
+    expect(localizedOut).toContain('Sesiones desde la última entrega: 1');
     expect(localizedOut).toContain('Fuente de la marca de tiempo: recorded_at');
   });
 

@@ -552,6 +552,12 @@ function formatPriorActivitySection(activity, locale = DEFAULT_LOCALE) {
         const descriptors = [];
         if (last.stage) descriptors.push(last.stage);
         if (last.mode) descriptors.push(last.mode);
+        if (typeof interviews.sessions_after_last_deliverable === 'number') {
+          const sinceLabel = t('priorActivitySessionsSinceLastDeliverable', locale);
+          descriptors.push(
+            `${sinceLabel}: ${interviews.sessions_after_last_deliverable}`,
+          );
+        }
         if (last.recorded_at_source) {
           const sourceLabel = t('priorActivityTimestampSourceLabel', locale);
           descriptors.push(`${sourceLabel}: ${last.recorded_at_source}`);
@@ -1679,6 +1685,10 @@ async function cmdTailor(args) {
 
   const deliverablesRuns = activity?.deliverables?.runs;
   const interviewSessions = activity?.interviews?.sessions;
+  const sessionsAfterLastDeliverable =
+    typeof activity?.interviews?.sessions_after_last_deliverable === 'number'
+      ? activity.interviews.sessions_after_last_deliverable
+      : undefined;
 
   const buildLog = {
     job_id: jobId,
@@ -1698,6 +1708,9 @@ async function cmdTailor(args) {
       interview_sessions: Number.isFinite(interviewSessions) ? interviewSessions : 0,
     },
   };
+  if (sessionsAfterLastDeliverable !== undefined) {
+    buildLog.prior_activity.sessions_after_last_deliverable = sessionsAfterLastDeliverable;
+  }
 
   await writeTextFile(path.join(runDir, 'build.json'), `${JSON.stringify(buildLog, null, 2)}\n`);
 

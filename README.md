@@ -500,8 +500,11 @@ even partially captured sessions still surface when reviewing prior work. The se
 annotates the timestamp source via `recorded_at_source` (`recorded_at`, `started_at`, or
 `file_mtime`) so reviewers know whether they're looking at an explicit log or a filesystem-derived
 fallback, and the CLI renders the same annotation with a localized `Timestamp source: …` label inside
-the prior activity summary. When `--locale` is provided, the Prior Activity heading and bullet labels
-respect the requested language so localized reports stay consistent end to end.
+the prior activity summary. When a deliverable run exists, the summary also highlights how many
+interview sessions landed after the most recent tailoring pass via the localized `Sessions since last
+deliverable: …` annotation, helping teams connect bullet variants to subsequent conversations. When
+`--locale` is provided, the Prior Activity heading and bullet labels respect the requested language so
+localized reports stay consistent end to end.
 
 ```bash
 cat <<'EOF' > resume.txt

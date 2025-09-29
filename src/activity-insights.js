@@ -28,6 +28,21 @@ function isVisibleFile(entry) {
   return entry.isFile() && !entry.name.startsWith('.');
 }
 
+function parseDeliverableDirectoryTimestamp(name) {
+  if (typeof name !== 'string') return undefined;
+  const trimmed = name.trim();
+  if (!trimmed) return undefined;
+  const match = trimmed.match(
+    /^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})(?:Z)?$/,
+  );
+  if (!match) return undefined;
+  const [, datePart, hour, minute, second] = match;
+  const isoCandidate = `${datePart}T${hour}:${minute}:${second}Z`;
+  const timestamp = Date.parse(isoCandidate);
+  if (Number.isNaN(timestamp)) return undefined;
+  return { iso: isoCandidate, ms: timestamp };
+}
+
 async function summarizeDeliverableRuns(jobId) {
   const jobDir = path.join(resolveDataDir(), 'deliverables', jobId);
   const entries = await safeReadDir(jobDir);
@@ -36,6 +51,7 @@ async function summarizeDeliverableRuns(jobId) {
   let runs = 0;
   let hasFiles = false;
   let latestRunTimestamp;
+  let latestRunIso;
   let latestLegacyTimestamp;
 
   for (const entry of entries) {
@@ -48,18 +64,28 @@ async function summarizeDeliverableRuns(jobId) {
       continue;
     }
     const mtime = stats.mtime?.getTime();
-    if (Number.isFinite(mtime)) {
-      if (isVisibleDirectory(entry)) {
-        if (latestRunTimestamp === undefined || mtime > latestRunTimestamp) {
-          latestRunTimestamp = mtime;
-        }
-      } else if (isVisibleFile(entry)) {
-        if (latestLegacyTimestamp === undefined || mtime > latestLegacyTimestamp) {
-          latestLegacyTimestamp = mtime;
+    const fromName = isVisibleDirectory(entry)
+      ? parseDeliverableDirectoryTimestamp(entry.name)
+      : undefined;
+    let candidateTimestamp;
+    if (fromName) {
+      candidateTimestamp = fromName.ms;
+    } else if (Number.isFinite(mtime)) {
+      candidateTimestamp = mtime;
+    }
+    if (isVisibleDirectory(entry)) {
+      runs += 1;
+      if (candidateTimestamp !== undefined) {
+        if (latestRunTimestamp === undefined || candidateTimestamp > latestRunTimestamp) {
+          latestRunTimestamp = candidateTimestamp;
+          latestRunIso = fromName?.iso ?? new Date(candidateTimestamp).toISOString();
         }
       }
+    } else if (Number.isFinite(mtime)) {
+      if (latestLegacyTimestamp === undefined || mtime > latestLegacyTimestamp) {
+        latestLegacyTimestamp = mtime;
+      }
     }
-    if (isVisibleDirectory(entry)) runs += 1;
     if (isVisibleFile(entry)) hasFiles = true;
   }
 
@@ -72,7 +98,7 @@ async function summarizeDeliverableRuns(jobId) {
     latestTimestamp = latestLegacyTimestamp;
   }
   if (latestTimestamp !== undefined) {
-    summary.last_run_at = new Date(latestTimestamp).toISOString();
+    summary.last_run_at = latestRunIso ?? new Date(latestTimestamp).toISOString();
   }
   return summary;
 }
@@ -103,12 +129,17 @@ function coerceIsoTimestamp(value) {
   return date.toISOString();
 }
 
-async function summarizeInterviewSessions(jobId) {
+async function summarizeInterviewSessions(jobId, options = {}) {
   const jobDir = path.join(resolveDataDir(), 'interviews', jobId);
   const entries = await safeReadDir(jobDir);
   if (entries.length === 0) return undefined;
 
   const sessions = [];
+  const afterRaw = typeof options.after === 'string' ? options.after.trim() : undefined;
+  const afterTimestamp = afterRaw ? new Date(afterRaw) : undefined;
+  const afterMs = afterTimestamp && !Number.isNaN(afterTimestamp.getTime())
+    ? afterTimestamp.getTime()
+    : undefined;
   for (const entry of entries) {
     if (!isVisibleFile(entry)) continue;
     const filePath = path.join(jobDir, entry.name);
@@ -183,6 +214,15 @@ async function summarizeInterviewSessions(jobId) {
       summary.last_session = detail;
     }
   }
+  if (afterMs !== undefined) {
+    const sessionsAfter = sessions.reduce((count, session) => {
+      if (!session.recorded_at) return count;
+      const ts = Date.parse(session.recorded_at);
+      if (Number.isNaN(ts)) return count;
+      return ts > afterMs ? count + 1 : count;
+    }, 0);
+    summary.sessions_after_last_deliverable = sessionsAfter;
+  }
   return summary;
 }
 
@@ -191,10 +231,11 @@ export async function summarizeJobActivity(jobId) {
     return null;
   }
 
-  const [deliverables, interviews] = await Promise.all([
-    summarizeDeliverableRuns(jobId.trim()),
-    summarizeInterviewSessions(jobId.trim()),
-  ]);
+  const trimmedId = jobId.trim();
+  const deliverables = await summarizeDeliverableRuns(trimmedId);
+  const interviews = await summarizeInterviewSessions(trimmedId, {
+    after: deliverables?.last_run_at,
+  });
 
   const result = {};
   if (deliverables) result.deliverables = deliverables;
