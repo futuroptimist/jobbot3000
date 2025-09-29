@@ -89,7 +89,14 @@
      _Implemented (2025-11-23):_ [`src/web/server.js`](../src/web/server.js) now exposes an Express
      app with a `/health` route that aggregates pluggable status checks. Start the backend with
      `npm run web:server` to serve the health endpoint locally while wiring additional adapters.
-   - Build command adapter with a mocked CLI module and comprehensive tests.
+  - Build command adapter with a mocked CLI module and comprehensive tests.
+    _Implemented (2025-11-24):_ [`src/web/command-adapter.js`](../src/web/command-adapter.js)
+    now exposes `createCommandAdapter`, which wraps CLI command handlers, captures
+    stdout/stderr output, and normalizes arguments for summarize/match calls.
+    Regression coverage in
+    [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
+    uses mocked CLI functions to assert argument shaping, JSON parsing, and
+    error translation so future endpoints can reuse the adapter safely.
    - Establish shared TypeScript types and validation schemas.
 
 2. **CLI Integration Layer**
