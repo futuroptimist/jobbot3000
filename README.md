@@ -38,9 +38,10 @@ unset JOBBOT_DATA_DIR
 
 #### Windows 11 PowerShell
 
-Use PowerShell syntax when exporting environment variables. The CLI automatically
-quotes Windows paths when invoking external tools (for example, custom speech
-transcribers), so commands with spaces do not need manual escaping.
+Use PowerShell syntax when exporting environment variables. The CLI tokenizes
+custom speech transcriber and synthesizer commands into executables and
+arguments before spawning them (no shell interpolation), so wrap any segment
+containing spaces in quotes when defining the environment variable.
 
 ```powershell
 $jobbotData = Join-Path $env:TEMP ([guid]::NewGuid())

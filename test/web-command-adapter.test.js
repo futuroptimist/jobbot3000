@@ -1,8 +1,58 @@
-import { describe, expect, it, vi } from 'vitest';
+vi.mock('node:child_process', async () => {
+  const actual = await vi.importActual('node:child_process');
+  return { ...actual, spawn: vi.fn() };
+});
+
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { PassThrough } from 'node:stream';
+import { EventEmitter } from 'node:events';
+import * as childProcess from 'node:child_process';
 
 import { createCommandAdapter } from '../src/web/command-adapter.js';
 
 describe('createCommandAdapter', () => {
+  afterEach(() => {
+    childProcess.spawn.mockReset();
+  });
+
+  function createTempJobFile(contents = 'Role: Example Engineer') {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jobbot-web-adapter-'));
+    const filePath = path.join(dir, 'posting.txt');
+    fs.writeFileSync(filePath, `${contents}\n`, 'utf8');
+    return {
+      dir,
+      filePath,
+      cleanup() {
+        fs.rmSync(dir, { recursive: true, force: true });
+      },
+    };
+  }
+
+  function createSpawnedProcess({ stdout = '', stderr = '', exitCode = 0, signal = null } = {}) {
+    const child = new EventEmitter();
+    const stdoutStream = new PassThrough();
+    const stderrStream = new PassThrough();
+    stdoutStream.setEncoding('utf8');
+    stderrStream.setEncoding('utf8');
+
+    child.stdout = stdoutStream;
+    child.stderr = stderrStream;
+    child.kill = vi.fn();
+
+    setImmediate(() => {
+      if (stdout) stdoutStream.write(stdout);
+      stdoutStream.end();
+      if (stderr) stderrStream.write(stderr);
+      stderrStream.end();
+      child.emit('close', exitCode, signal);
+    });
+
+    return child;
+  }
+
   it('runs summarize with json format and parses output', async () => {
     const cli = {
       cmdSummarize: vi.fn(async args => {
@@ -266,5 +316,60 @@ describe('createCommandAdapter', () => {
     expect(entry.correlationId).toBe('trace-secret');
     expect(entry.traceId).toBe('trace-secret');
     expect(entry.errorMessage).toBe('Request failed with API_KEY=***');
+  });
+
+  it('spawns the CLI without shell interpolation when no cli module is provided', async () => {
+    const spawnMock = childProcess.spawn;
+    spawnMock.mockImplementation((command, args, options) => {
+      expect(command).toBe(process.execPath);
+      expect(options).toMatchObject({
+        shell: false,
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      return createSpawnedProcess({ stdout: '{"summary":"ok"}\n' });
+    });
+
+    const temp = createTempJobFile('We are hiring a senior engineer.');
+
+    try {
+      const adapter = createCommandAdapter();
+      const result = await adapter.summarize({ input: temp.filePath, format: 'json' });
+
+      expect(spawnMock).toHaveBeenCalledTimes(1);
+      const [spawnCommand, spawnArgs] = spawnMock.mock.calls[0];
+      expect(spawnCommand).toBe(process.execPath);
+      const expectedCliPath = fs.realpathSync(path.join(process.cwd(), 'bin', 'jobbot.js'));
+      expect(spawnArgs[0]).toBe(expectedCliPath);
+      expect(spawnArgs.slice(1)).toEqual(['summarize', temp.filePath, '--json']);
+      expect(result).toMatchObject({
+        command: 'summarize',
+        format: 'json',
+        stdout: '{"summary":"ok"}\n',
+        data: { summary: 'ok' },
+      });
+    } finally {
+      temp.cleanup();
+    }
+  });
+
+  it('propagates stderr when the spawned CLI exits with a non-zero code', async () => {
+    const spawnMock = childProcess.spawn;
+    spawnMock.mockImplementation(() =>
+      createSpawnedProcess({ stdout: '', stderr: 'boom\n', exitCode: 2 }),
+    );
+
+    const temp = createTempJobFile('The role requires leadership.');
+
+    try {
+      const adapter = createCommandAdapter();
+      await expect(adapter.summarize({ input: temp.filePath })).rejects.toMatchObject({
+        message: expect.stringContaining('summarize command failed'),
+        stderr: 'boom\n',
+      });
+      expect(spawnMock).toHaveBeenCalledTimes(1);
+    } finally {
+      temp.cleanup();
+    }
   });
 });

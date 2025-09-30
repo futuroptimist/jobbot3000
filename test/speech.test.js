@@ -49,29 +49,7 @@ describe('speech shell integration', () => {
     return child;
   }
 
-  it('escapes shell arguments on POSIX systems with single quotes', () => {
-    const { escapeShellArg } = speech;
-
-    expect(escapeShellArg('hello')).toBe("'hello'");
-    expect(escapeShellArg("needs 'quotes'")).toBe("'needs '\\''quotes'\\'''"
-    );
-    expect(escapeShellArg('')).toBe("''");
-  });
-
-  it('escapes shell arguments for Windows shells', () => {
-    const { escapeShellArg } = speech;
-
-    const windowsPath = 'C:/Users/Casey/Job Files/voice note.txt';
-    expect(escapeShellArg(windowsPath, 'win32')).toBe('"C:/Users/Casey/Job Files/voice note.txt"');
-
-    const withQuotes = 'C:/Jobs/"important"/brief.txt';
-    expect(escapeShellArg(withQuotes, 'win32')).toBe('"C:/Jobs/\\"important\\"/brief.txt"');
-
-    const trailingSlash = 'C:/Jobs/notes\\';
-    expect(escapeShellArg(trailingSlash, 'win32')).toBe('"C:/Jobs/notes\\\\"');
-  });
-
-  it('substitutes escaped paths when building transcriber commands', async () => {
+  it('spawns the transcriber without shell interpolation and preserves spaced paths', async () => {
     const audioPath = path.join(tempDir, 'voice memo.txt');
     fs.writeFileSync(audioPath, 'Discuss roadmap');
 
@@ -84,12 +62,46 @@ describe('speech shell integration', () => {
     expect(result).toBe('Transcript');
     expect(spawnMock).toHaveBeenCalledTimes(1);
 
-    const [command, options] = spawnMock.mock.calls[0];
-    expect(command).toContain("'" + audioPath + "'");
-    expect(options).toMatchObject({ shell: true });
+    const [file, args, options] = spawnMock.mock.calls[0];
+    expect(file).toBe('node');
+    expect(args).toEqual(['local/transcribe.js', '--file', audioPath]);
+    expect(options).toMatchObject({ stdio: ['ignore', 'pipe', 'pipe'] });
+    expect(options.shell).toBeUndefined();
   });
 
-  it('injects escaped text into synthesizer commands that use {{input}}', async () => {
+  it('supports quoted command segments when parsing the transcriber template', async () => {
+    const scriptPath = path.join('tools', 'voice', 'transcriber.js');
+    const clipPath = path.join(tempDir, 'clip.wav');
+    fs.writeFileSync(clipPath, 'Discuss roadmap');
+    spawnMock.mockImplementation(() => createChildProcess({ stdoutText: 'Words' }));
+
+    await speech.transcribeAudio(clipPath, {
+      command: `node "${scriptPath}" --file "{{input}}"`,
+    });
+
+    const [file, args] = spawnMock.mock.calls[0];
+    expect(file).toBe('node');
+    expect(args[0]).toBe(scriptPath);
+    expect(args[1]).toBe('--file');
+    expect(args[2]).toMatch(/clip\.wav$/);
+  });
+
+  it('appends the audio path when the transcriber command omits {{input}}', async () => {
+    const audioPath = path.join(tempDir, 'note.wav');
+    fs.writeFileSync(audioPath, 'Discuss roadmap');
+
+    spawnMock.mockImplementation(() => createChildProcess({ stdoutText: 'Transcript' }));
+
+    await speech.transcribeAudio(audioPath, {
+      command: 'python scripts/transcribe.py --fast',
+    });
+
+    const [file, args] = spawnMock.mock.calls[0];
+    expect(file).toBe('python');
+    expect(args).toEqual(['scripts/transcribe.py', '--fast', audioPath]);
+  });
+
+  it('injects text into synthesizer arguments that use {{input}}', async () => {
     spawnMock.mockImplementation(() => createChildProcess({ exitCode: 0 }));
 
     await speech.synthesizeSpeech('Need a win', {
@@ -97,7 +109,29 @@ describe('speech shell integration', () => {
     });
 
     expect(spawnMock).toHaveBeenCalledTimes(1);
-    const [command] = spawnMock.mock.calls[0];
-    expect(command).toContain("'Need a win'");
+    const [file, args, options] = spawnMock.mock.calls[0];
+    expect(file).toBe('say');
+    expect(args).toEqual(['--voice', 'assistant', 'Need a win']);
+    expect(options).toMatchObject({ stdio: ['pipe', 'ignore', 'pipe'] });
+  });
+
+  it('pipes synthesizer input when the template omits {{input}}', async () => {
+    let captured = '';
+    spawnMock.mockImplementation(() => {
+      const child = createChildProcess({ exitCode: 0 });
+      child.stdin.on('data', chunk => {
+        captured += chunk.toString();
+      });
+      return child;
+    });
+
+    await speech.synthesizeSpeech('Ship it', {
+      command: 'node ./synthesizer.js --mode stream',
+    });
+
+    expect(captured).toBe('Ship it');
+    const [file, args] = spawnMock.mock.calls[0];
+    expect(file).toBe('node');
+    expect(args).toEqual(['./synthesizer.js', '--mode', 'stream']);
   });
 });
