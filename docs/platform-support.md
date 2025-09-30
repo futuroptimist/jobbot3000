@@ -36,11 +36,11 @@ retain their data directories.
 
 ## Speech command integration
 
-`speech.js` launches user-provided transcription and synthesis commands via
-`child_process.spawn` with `shell: true`. The helper automatically escapes
-arguments with POSIX-compatible single quotes on Linux/macOS/WSL and with CMD
-compatible double quotes on Windows. This means the following commands are
-valid across all supported platforms:
+`speech.js` tokenizes user-provided transcription and synthesis commands into a
+binary plus argument vector and launches them with `child_process.spawn`
+without `shell: true`. The helper understands both quoted strings and JSON
+array literals, so the following commands are valid across all supported
+platforms:
 
 ```bash
 # Linux/macOS/WSL
@@ -54,8 +54,14 @@ $env:JOBBOT_SPEECH_TRANSCRIBER = "node local/transcribe.js --file {{input}}"
 $env:JOBBOT_SPEECH_SYNTHESIZER = "node local/say.js --text {{input}}"
 ```
 
-Avoid adding your own quoting around `{{input}}`; the CLI injects a
-platform-appropriate escaped value automatically.
+Wrap any path or argument that includes spaces in quotes (single or double) so
+the tokenizer preserves it as one argument. You can also provide a JSON array
+(`["node","local/transcribe.js","--file","{{input}}"]`) when you want to bypass
+quoting entirely.
+
+Tests in [`test/speech.test.js`](../test/speech.test.js) cover quoted segments,
+missing `{{input}}` placeholders (which trigger stdin piping), and multi-word
+arguments so regressions surface immediately.
 
 ## Postinstall behavior
 

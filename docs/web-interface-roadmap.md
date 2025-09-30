@@ -169,7 +169,8 @@
 ## Safe Implementation Checklist
 
 - [x] Command allow-list with schema validation
-- [ ] Secure process spawning without shell interpolation
+- [x] Secure process spawning without shell interpolation (speech commands now
+  tokenize templates and spawn without `shell: true`; see `test/speech.test.js`)
 - [ ] Input sanitization and output redaction
 - [ ] Logging with redacted secrets and trace IDs
 - [ ] Automated tests spanning unit → e2e layers
