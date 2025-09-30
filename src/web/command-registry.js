@@ -1,0 +1,193 @@
+const SUMMARIZE_ALLOWED_FIELDS = new Set([
+  'input',
+  'source',
+  'format',
+  'sentences',
+  'locale',
+  'timeout',
+  'timeoutMs',
+  'maxBytes',
+]);
+
+const MATCH_ALLOWED_FIELDS = new Set([
+  'resume',
+  'job',
+  'format',
+  'explain',
+  'locale',
+  'role',
+  'location',
+  'profile',
+  'timeout',
+  'timeoutMs',
+  'maxBytes',
+]);
+
+const ALLOWED_FORMATS = new Set(['markdown', 'json', 'text']);
+
+function ensurePlainObject(value, commandName) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${commandName} payload must be a JSON object`);
+  }
+  return value;
+}
+
+function assertAllowedFields(payload, allowedFields, commandName) {
+  for (const key of Object.keys(payload)) {
+    if (!allowedFields.has(key)) {
+      throw new Error(`Unexpected field "${key}" in ${commandName} payload`);
+    }
+  }
+}
+
+function coerceString(value, { name, required = false }) {
+  if (value == null) {
+    if (required) {
+      throw new Error(`${name} is required`);
+    }
+    return undefined;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (required && !trimmed) {
+      throw new Error(`${name} cannot be empty`);
+    }
+    return trimmed || undefined;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    const str = String(value).trim();
+    if (required && !str) {
+      throw new Error(`${name} cannot be empty`);
+    }
+    return str || undefined;
+  }
+
+  throw new Error(`${name} must be a string`);
+}
+
+function coerceFormat(value, commandName) {
+  const format = coerceString(value, { name: 'format' });
+  if (!format) return undefined;
+  const normalized = format.toLowerCase();
+  if (!ALLOWED_FORMATS.has(normalized)) {
+    throw new Error(`${commandName} format must be one of: markdown, json, text`);
+  }
+  return normalized;
+}
+
+function coerceInteger(value, { name, min }) {
+  const number = coerceNumber(value, { name, min });
+  if (number === undefined) return undefined;
+  const integer = Math.trunc(number);
+  if (integer !== number) {
+    throw new Error(`${name} must be an integer`);
+  }
+  return integer;
+}
+
+function coerceNumber(value, { name, min }) {
+  if (value == null || value === '') return undefined;
+  const num = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(num)) {
+    throw new Error(`${name} must be a finite number`);
+  }
+  if (min !== undefined && num < min) {
+    throw new Error(`${name} must be greater than or equal to ${min}`);
+  }
+  return num;
+}
+
+function coerceBoolean(value, { name }) {
+  if (value == null) return undefined;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true') return true;
+    if (normalized === 'false') return false;
+  }
+  throw new Error(`${name} must be a boolean`);
+}
+
+function coerceTimeout(payload, commandName) {
+  const { timeoutMs, timeout } = payload;
+  if (timeoutMs != null && timeout != null) {
+    const first = coerceNumber(timeoutMs, { name: 'timeoutMs', min: 0 });
+    const second = coerceNumber(timeout, { name: 'timeout', min: 0 });
+    if (first !== second) {
+      throw new Error(`${commandName} payload timeoutMs and timeout must match when both provided`);
+    }
+    return first;
+  }
+  if (timeoutMs != null) {
+    return coerceNumber(timeoutMs, { name: 'timeoutMs', min: 0 });
+  }
+  if (timeout != null) {
+    return coerceNumber(timeout, { name: 'timeout', min: 0 });
+  }
+  return undefined;
+}
+
+function validateSummarizePayload(rawPayload) {
+  const payload = ensurePlainObject(rawPayload, 'summarize');
+  assertAllowedFields(payload, SUMMARIZE_ALLOWED_FIELDS, 'summarize');
+
+  const input = coerceString(payload.input ?? payload.source, { name: 'input', required: true });
+  const format = coerceFormat(payload.format, 'summarize');
+  const sentences = coerceInteger(payload.sentences, { name: 'sentences', min: 1 });
+  const locale = coerceString(payload.locale, { name: 'locale' });
+  const timeoutMs = coerceTimeout(payload, 'summarize');
+  const maxBytes = coerceNumber(payload.maxBytes, { name: 'maxBytes', min: 1 });
+
+  const sanitized = { input };
+  if (format) sanitized.format = format;
+  if (sentences !== undefined) sanitized.sentences = sentences;
+  if (locale) sanitized.locale = locale;
+  if (timeoutMs !== undefined) sanitized.timeoutMs = timeoutMs;
+  if (maxBytes !== undefined) sanitized.maxBytes = maxBytes;
+  return sanitized;
+}
+
+function validateMatchPayload(rawPayload) {
+  const payload = ensurePlainObject(rawPayload, 'match');
+  assertAllowedFields(payload, MATCH_ALLOWED_FIELDS, 'match');
+
+  const resume = coerceString(payload.resume, { name: 'resume', required: true });
+  const job = coerceString(payload.job, { name: 'job', required: true });
+  const format = coerceFormat(payload.format, 'match');
+  const explain = coerceBoolean(payload.explain, { name: 'explain' });
+  const locale = coerceString(payload.locale, { name: 'locale' });
+  const role = coerceString(payload.role, { name: 'role' });
+  const location = coerceString(payload.location, { name: 'location' });
+  const profile = coerceString(payload.profile, { name: 'profile' });
+  const timeoutMs = coerceTimeout(payload, 'match');
+  const maxBytes = coerceNumber(payload.maxBytes, { name: 'maxBytes', min: 1 });
+
+  const sanitized = { resume, job };
+  if (format) sanitized.format = format;
+  if (explain !== undefined) sanitized.explain = explain;
+  if (locale) sanitized.locale = locale;
+  if (role) sanitized.role = role;
+  if (location) sanitized.location = location;
+  if (profile) sanitized.profile = profile;
+  if (timeoutMs !== undefined) sanitized.timeoutMs = timeoutMs;
+  if (maxBytes !== undefined) sanitized.maxBytes = maxBytes;
+  return sanitized;
+}
+
+const COMMAND_VALIDATORS = Object.freeze({
+  summarize: validateSummarizePayload,
+  match: validateMatchPayload,
+});
+
+export const ALLOW_LISTED_COMMANDS = Object.freeze(Object.keys(COMMAND_VALIDATORS));
+
+export function validateCommandPayload(command, payload) {
+  const validator = COMMAND_VALIDATORS[command];
+  if (!validator) {
+    throw new Error(`Unknown command: ${command}`);
+  }
+  return validator(payload);
+}
+

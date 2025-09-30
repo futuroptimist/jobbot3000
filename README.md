@@ -1603,6 +1603,23 @@ extended by passing custom check functions to
 and failing checks so future endpoints can rely on the health contract when the
 web interface expands beyond the CLI wrappers.
 
+Call allow-listed CLI commands through the new `POST /commands/:command`
+endpoint. Requests must contain valid JSON bodies that match the per-command
+schema; unexpected fields or type mismatches return a `400` status before the
+CLI is invoked. The route delegates to `createCommandAdapter`, so responses
+mirror the underlying CLI output:
+
+```bash
+curl -s \
+  -X POST http://127.0.0.1:3000/commands/summarize \
+  -H 'Content-Type: application/json' \
+  -d '{"input":"job.txt","format":"json","sentences":3}' | jq
+```
+
+Schema validation and error handling are locked down in
+[`test/web-server.test.js`](test/web-server.test.js) so new endpoints inherit
+the same guardrails.
+
 ## Documentation
 
 - [DESIGN.md](DESIGN.md) – architecture details and roadmap

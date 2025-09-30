@@ -1,6 +1,9 @@
 import express from 'express';
 import { performance } from 'node:perf_hooks';
 
+import { createCommandAdapter } from './command-adapter.js';
+import { ALLOW_LISTED_COMMANDS, validateCommandPayload } from './command-registry.js';
+
 function normalizeInfo(info) {
   if (!info || typeof info !== 'object') return {};
   const normalized = {};
@@ -92,10 +95,14 @@ async function runHealthChecks(checks) {
   return results;
 }
 
-export function createWebApp({ info, healthChecks } = {}) {
+export function createWebApp({ info, healthChecks, commandAdapter } = {}) {
   const normalizedInfo = normalizeInfo(info);
   const normalizedChecks = normalizeHealthChecks(healthChecks);
   const app = express();
+  const availableCommands = new Set(
+    ALLOW_LISTED_COMMANDS.filter(name => typeof commandAdapter?.[name] === 'function'),
+  );
+  const jsonParser = express.json({ limit: '1mb' });
 
   app.get('/health', async (req, res) => {
     const timestamp = new Date().toISOString();
@@ -111,6 +118,44 @@ export function createWebApp({ info, healthChecks } = {}) {
     res.status(statusCode).json(payload);
   });
 
+  app.post('/commands/:command', jsonParser, async (req, res) => {
+    const commandParam = typeof req.params.command === 'string' ? req.params.command.trim() : '';
+    if (!availableCommands.has(commandParam)) {
+      res.status(404).json({ error: `Unknown command "${commandParam}"` });
+      return;
+    }
+
+    let payload;
+    try {
+      payload = validateCommandPayload(commandParam, req.body ?? {});
+    } catch (err) {
+      res.status(400).json({ error: err?.message ?? 'Invalid command payload' });
+      return;
+    }
+
+    try {
+      const result = await commandAdapter[commandParam](payload);
+      res.status(200).json(result);
+    } catch (err) {
+      const response = { error: err?.message ?? 'Command execution failed' };
+      if (err && typeof err.stdout === 'string' && err.stdout) {
+        response.stdout = err.stdout;
+      }
+      if (err && typeof err.stderr === 'string' && err.stderr) {
+        response.stderr = err.stderr;
+      }
+      res.status(502).json(response);
+    }
+  });
+
+  app.use((err, req, res, next) => {
+    if (err && err.type === 'entity.parse.failed') {
+      res.status(400).json({ error: 'Invalid JSON payload' });
+      return;
+    }
+    next(err);
+  });
+
   return app;
 }
 
@@ -121,7 +166,9 @@ export function startWebServer(options = {}) {
   if (!Number.isFinite(port) || port < 0 || port > 65535) {
     throw new Error('port must be a number between 0 and 65535');
   }
-  const app = createWebApp(options);
+  const { commandAdapter: providedCommandAdapter, ...rest } = options;
+  const commandAdapter = providedCommandAdapter ?? createCommandAdapter();
+  const app = createWebApp({ ...rest, commandAdapter });
 
   return new Promise((resolve, reject) => {
     const server = app
