@@ -2,31 +2,12 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 
+import { normalizeMatchRequest, normalizeSummarizeRequest } from './schemas.js';
+
 const COMMAND_METHODS = {
   summarize: 'cmdSummarize',
   match: 'cmdMatch',
 };
-
-function normalizeString(value, { name, required = false } = {}) {
-  if (value == null) {
-    if (required) {
-      throw new Error(`${name || 'value'} is required`);
-    }
-    return undefined;
-  }
-  const str = typeof value === 'string' ? value : String(value);
-  const trimmed = str.trim();
-  if (required && !trimmed) {
-    throw new Error(`${name || 'value'} cannot be empty`);
-  }
-  return trimmed || undefined;
-}
-
-function toFiniteNumber(value) {
-  if (value == null || value === '') return undefined;
-  const num = Number(value);
-  return Number.isFinite(num) ? num : undefined;
-}
 
 function formatLogArg(arg) {
   if (typeof arg === 'string') return arg;
@@ -216,15 +197,8 @@ export function createCommandAdapter(options = {}) {
   }
 
   async function summarize(options = {}) {
-    const input = normalizeString(options.input ?? options.source, {
-      name: 'input',
-      required: true,
-    });
-    const format = normalizeString(options.format)?.toLowerCase() ?? 'markdown';
-    const locale = normalizeString(options.locale);
-    const sentences = toFiniteNumber(options.sentences);
-    const timeout = toFiniteNumber(options.timeoutMs ?? options.timeout);
-    const maxBytes = toFiniteNumber(options.maxBytes);
+    const normalized = normalizeSummarizeRequest(options);
+    const { input, format, locale, sentences, timeoutMs, maxBytes } = normalized;
 
     const args = [input];
     if (format === 'json') args.push('--json');
@@ -235,8 +209,8 @@ export function createCommandAdapter(options = {}) {
     if (locale) {
       args.push('--locale', locale);
     }
-    if (Number.isFinite(timeout)) {
-      args.push('--timeout', String(timeout));
+    if (Number.isFinite(timeoutMs)) {
+      args.push('--timeout', String(timeoutMs));
     }
     if (Number.isFinite(maxBytes) && maxBytes > 0) {
       args.push('--max-bytes', String(maxBytes));
@@ -263,16 +237,9 @@ export function createCommandAdapter(options = {}) {
   }
 
   async function match(options = {}) {
-    const resume = normalizeString(options.resume, { name: 'resume', required: true });
-    const job = normalizeString(options.job, { name: 'job', required: true });
-    const format = normalizeString(options.format)?.toLowerCase() ?? 'markdown';
-    const locale = normalizeString(options.locale);
-    const role = normalizeString(options.role);
-    const location = normalizeString(options.location);
-    const profile = normalizeString(options.profile);
-    const timeout = toFiniteNumber(options.timeoutMs ?? options.timeout);
-    const maxBytes = toFiniteNumber(options.maxBytes);
-    const explain = Boolean(options.explain);
+    const normalized = normalizeMatchRequest(options);
+    const { resume, job, format, locale, role, location, profile, timeoutMs, maxBytes, explain } =
+      normalized;
 
     const args = ['--resume', resume, '--job', job];
     if (format === 'json') {
@@ -293,8 +260,8 @@ export function createCommandAdapter(options = {}) {
     if (profile) {
       args.push('--profile', profile);
     }
-    if (Number.isFinite(timeout)) {
-      args.push('--timeout', String(timeout));
+    if (Number.isFinite(timeoutMs)) {
+      args.push('--timeout', String(timeoutMs));
     }
     if (Number.isFinite(maxBytes) && maxBytes > 0) {
       args.push('--max-bytes', String(maxBytes));

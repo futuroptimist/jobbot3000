@@ -99,11 +99,20 @@
     _Implemented (2025-11-24):_ [`src/web/command-adapter.js`](../src/web/command-adapter.js)
     now exposes `createCommandAdapter`, which wraps CLI command handlers, captures
     stdout/stderr output, and normalizes arguments for summarize/match calls.
-    Regression coverage in
+   Regression coverage in
     [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
     uses mocked CLI functions to assert argument shaping, JSON parsing, and
     error translation so future endpoints can reuse the adapter safely.
    - Establish shared TypeScript types and validation schemas.
+     _Implemented (2025-11-25):_ [`src/web/schemas.js`](../src/web/schemas.js)
+     now defines shared request types for summarize and match calls, enforcing
+     supported formats and numeric constraints before CLI execution. Regression
+     coverage in
+     [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
+     and
+     [`test/web-schemas.test.js`](../test/web-schemas.test.js)
+     guards the validation layer with happy-path and failure-path tests so
+     future web endpoints inherit consistent payload validation.
 
 2. **CLI Integration Layer**
    - Implement real CLI invocations behind feature flags.
