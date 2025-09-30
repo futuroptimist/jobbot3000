@@ -20,7 +20,7 @@ const SECRET_KEYS = [
 const SECRET_KEY_VALUE_PATTERN =
   "\\b(?:" +
   SECRET_KEYS.join('|') +
-  ")\\b\\s*[:=]\\s*(?:\"([^\"]+)\"|'([^']+)'|([^\\s,;]+))";
+  ")\\b\\s*[:=]\\s*(?:\"([^\"]+)\"|'([^']+)'|([^,;\\r\\n]+))";
 const SECRET_KEY_VALUE_RE = new RegExp(SECRET_KEY_VALUE_PATTERN, 'gi');
 const SECRET_BEARER_RE = /\bBearer\s+([A-Za-z0-9._\-+/=]{8,})/gi;
 
