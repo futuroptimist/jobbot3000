@@ -43,51 +43,123 @@ function resolveSynthesizerCommand(optionCommand) {
   return trimmed;
 }
 
-function escapeWindowsArg(str) {
-  let result = '"';
-  let backslashes = 0;
+const WHITESPACE_CHARS = new Set([' ', '\n', '\r', '\t']);
 
-  for (const char of str) {
-    if (char === '\\') {
-      backslashes += 1;
+function isWhitespace(char) {
+  return WHITESPACE_CHARS.has(char);
+}
+
+function parseCommandTemplate(template) {
+  const trimmed = template.trim();
+  if (!trimmed) return [];
+
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed) && parsed.every(part => typeof part === 'string')) {
+        return parsed;
+      }
+    } catch {
+      // Fall through to string parsing when JSON parsing fails.
+    }
+  }
+
+  const tokens = [];
+  let current = '';
+  let mode = null; // null, 'single', 'double'
+
+  for (let i = 0; i < trimmed.length; i += 1) {
+    const char = trimmed[i];
+
+    if (mode === 'single') {
+      if (char === "'") {
+        mode = null;
+        continue;
+      }
+      current += char;
       continue;
     }
 
+    if (mode === 'double') {
+      if (char === '"') {
+        mode = null;
+        continue;
+      }
+      if (char === '\\') {
+        const next = trimmed[i + 1];
+        if (next === '"' || next === '\\') {
+          current += next;
+          i += 1;
+          continue;
+        }
+        current += '\\';
+        continue;
+      }
+      current += char;
+      continue;
+    }
+
+    if (char === "'") {
+      mode = 'single';
+      continue;
+    }
     if (char === '"') {
-      result += '\\'.repeat(backslashes * 2 + 1);
-      result += '"';
-      backslashes = 0;
+      mode = 'double';
+      continue;
+    }
+    if (isWhitespace(char)) {
+      if (current) {
+        tokens.push(current);
+        current = '';
+      }
+      continue;
+    }
+    if (char === '\\') {
+      const next = trimmed[i + 1];
+      if (next === undefined) {
+        current += '\\';
+        continue;
+      }
+      if (next === '"' || next === '\\') {
+        current += next;
+        i += 1;
+        continue;
+      }
+      if (isWhitespace(next)) {
+        current += next;
+        i += 1;
+        continue;
+      }
+      current += '\\';
       continue;
     }
 
-    result += '\\'.repeat(backslashes);
-    backslashes = 0;
-    result += char;
+    current += char;
   }
 
-  result += '\\'.repeat(backslashes * 2);
-  result += '"';
-  return result;
-}
-
-export function escapeShellArg(value, platform = process.platform) {
-  const isWindows = platform === 'win32';
-  if (value === undefined || value === null) return isWindows ? '""' : "''";
-  const str = String(value);
-  if (str === '') return isWindows ? '""' : "''";
-
-  if (isWindows) {
-    return escapeWindowsArg(str);
+  if (mode === 'single' || mode === 'double') {
+    throw new Error('speech command has unmatched quotes');
   }
 
-  const SINGLE_QUOTE = "'";
-  const ESCAPED_QUOTE = "'\\'" + "'";
-  return SINGLE_QUOTE + str.split(SINGLE_QUOTE).join(ESCAPED_QUOTE) + SINGLE_QUOTE;
+  if (current) tokens.push(current);
+  return tokens;
 }
 
-function runShellCommand(command) {
+function injectPlaceholder(tokens, value) {
+  let replaced = false;
+  const result = tokens.map(token => {
+    if (token.includes('{{input}}')) {
+      replaced = true;
+      return token.split('{{input}}').join(value);
+    }
+    return token;
+  });
+  return { replaced, tokens: result };
+}
+
+function runTranscriber(command, args) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, { shell: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', chunk => {
@@ -115,9 +187,9 @@ function runShellCommand(command) {
   });
 }
 
-function runSpeechCommand(command, { input } = {}) {
+function runSynthesizer(command, args, { input } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, { shell: true, stdio: ['pipe', 'ignore', 'pipe'] });
+    const child = spawn(command, args, { stdio: ['pipe', 'ignore', 'pipe'] });
     let stderr = '';
 
     if (input !== undefined && input !== null) {
@@ -154,12 +226,18 @@ export async function transcribeAudio(filePath, options = {}) {
   }
 
   const commandTemplate = resolveTranscriberCommand(options.command);
-  const escapedPath = escapeShellArg(resolved);
-  const command = commandTemplate.includes('{{input}}')
-    ? commandTemplate.split('{{input}}').join(escapedPath)
-    : `${commandTemplate} ${escapedPath}`;
+  const parts = parseCommandTemplate(commandTemplate);
+  if (parts.length === 0) {
+    throw new Error('speech transcriber command is not configured.');
+  }
+  const { replaced, tokens } = injectPlaceholder(parts, resolved);
+  const invocation = replaced ? tokens.slice() : [...parts, resolved];
+  if (invocation.length === 0) {
+    throw new Error('speech transcriber command is not configured.');
+  }
+  const [command, ...args] = invocation;
 
-  return runShellCommand(command);
+  return runTranscriber(command, args);
 }
 
 export async function synthesizeSpeech(text, options = {}) {
@@ -173,13 +251,16 @@ export async function synthesizeSpeech(text, options = {}) {
   }
 
   const commandTemplate = resolveSynthesizerCommand(options.command);
-  let shouldPipeInput = true;
-  let command = commandTemplate;
-
-  if (commandTemplate.includes('{{input}}')) {
-    command = commandTemplate.split('{{input}}').join(escapeShellArg(trimmed));
-    shouldPipeInput = false;
+  const parts = parseCommandTemplate(commandTemplate);
+  if (parts.length === 0) {
+    throw new Error('speech synthesizer command is not configured.');
   }
+  const { replaced, tokens } = injectPlaceholder(parts, trimmed);
+  const invocation = tokens.slice();
+  if (invocation.length === 0) {
+    throw new Error('speech synthesizer command is not configured.');
+  }
+  const [command, ...args] = invocation;
 
-  await runSpeechCommand(command, { input: shouldPipeInput ? trimmed : undefined });
+  await runSynthesizer(command, args, { input: replaced ? undefined : trimmed });
 }
