@@ -171,7 +171,12 @@
 - [x] Command allow-list with schema validation
 - [ ] Secure process spawning without shell interpolation
 - [ ] Input sanitization and output redaction
-- [ ] Logging with redacted secrets and trace IDs
+- [x] Logging with redacted secrets and trace IDs
+  _Implemented (2025-12-05):_ [`src/web/command-adapter.js`](../src/web/command-adapter.js)
+  now redacts secret-like values before emitting telemetry, attaches a `traceId`
+  to each invocation, and [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
+  plus [`test/web-server.test.js`](../test/web-server.test.js) assert the sanitized
+  logs and identifiers propagate to API clients.
 - [ ] Automated tests spanning unit → e2e layers
 - [ ] Accessibility and performance audits
 - [ ] Deployment artifacts and environment parity

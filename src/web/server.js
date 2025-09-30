@@ -144,6 +144,12 @@ export function createWebApp({ info, healthChecks, commandAdapter } = {}) {
       if (err && typeof err.stderr === 'string' && err.stderr) {
         response.stderr = err.stderr;
       }
+      if (err && typeof err.correlationId === 'string' && err.correlationId) {
+        response.correlationId = err.correlationId;
+      }
+      if (err && typeof err.traceId === 'string' && err.traceId) {
+        response.traceId = err.traceId;
+      }
       res.status(502).json(response);
     }
   });
