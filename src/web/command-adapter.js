@@ -137,10 +137,14 @@ export function createCommandAdapter(options = {}) {
     if (!logger) return;
     const fn = level && typeof logger[level] === 'function' ? logger[level] : undefined;
     if (!fn) return;
-    fn({
-      timestamp: new Date().toISOString(),
-      ...payload,
-    });
+    try {
+      fn({
+        timestamp: new Date().toISOString(),
+        ...payload,
+      });
+    } catch {
+      // Swallow logger errors so telemetry does not affect command outcomes.
+    }
   }
 
   function roundDuration(value) {
