@@ -103,6 +103,11 @@
    - Implement real CLI invocations behind feature flags.
    - Add structured logging, metrics, and error handling utilities.
    - Write integration tests that execute representative CLI commands in a sandboxed environment.
+   _Update (2025-11-30):_ The Express app now exposes `POST /commands/:command`, which validates
+   requests against an allow-listed schema before delegating to the CLI via
+   `createCommandAdapter`. Coverage in
+   [`test/web-server.test.js`](../test/web-server.test.js) locks the sanitized payloads and error
+   handling so future endpoints inherit the same guardrails.
 
 3. **Frontend Shell**
    - Set up routing, layout, and theme providers.
@@ -148,7 +153,7 @@
 
 ## Safe Implementation Checklist
 
-- [ ] Command allow-list with schema validation
+- [x] Command allow-list with schema validation
 - [ ] Secure process spawning without shell interpolation
 - [ ] Input sanitization and output redaction
 - [ ] Logging with redacted secrets and trace IDs

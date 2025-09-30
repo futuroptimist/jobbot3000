@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 let activeServers = [];
 
@@ -103,5 +103,129 @@ describe('web server health endpoint', () => {
     expect(() => startWebServer({ healthChecks: [{ name: 'bad-check' }] })).toThrow(
       /health check/,
     );
+  });
+});
+
+describe('web server command endpoint', () => {
+  it('executes allow-listed commands with validated payloads', async () => {
+    const commandAdapter = {
+      summarize: vi.fn(async options => {
+        expect(options).toEqual({
+          input: 'job.txt',
+          format: 'json',
+          sentences: 2,
+          locale: 'en',
+          timeoutMs: 5000,
+          maxBytes: 2048,
+        });
+        return {
+          command: 'summarize',
+          format: 'json',
+          stdout: '{"summary":"ok"}',
+          stderr: '',
+          data: { summary: 'ok' },
+        };
+      }),
+    };
+
+    const server = await startServer({ commandAdapter });
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        input: 'job.txt',
+        format: 'json',
+        sentences: '2',
+        locale: 'en',
+        timeoutMs: 5000,
+        maxBytes: 2048,
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload).toEqual({
+      command: 'summarize',
+      format: 'json',
+      stdout: '{"summary":"ok"}',
+      stderr: '',
+      data: { summary: 'ok' },
+    });
+    expect(commandAdapter.summarize).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects unknown commands', async () => {
+    const server = await startServer({ commandAdapter: {} });
+    const response = await fetch(`${server.url}/commands/unknown`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+
+    expect(response.status).toBe(404);
+    const payload = await response.json();
+    expect(payload.error).toMatch(/unknown command/i);
+  });
+
+  it('rejects payloads with unexpected fields', async () => {
+    const commandAdapter = {
+      summarize: vi.fn(),
+    };
+
+    const server = await startServer({ commandAdapter });
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ input: 'job.txt', unexpected: true }),
+    });
+
+    expect(response.status).toBe(400);
+    const payload = await response.json();
+    expect(payload.error).toMatch(/unexpected/i);
+    expect(commandAdapter.summarize).not.toHaveBeenCalled();
+  });
+
+  it('returns a 502 status when the CLI invocation fails', async () => {
+    const error = new Error('summarize command failed: boom');
+    error.stdout = 'cli-out';
+    error.stderr = 'cli-error';
+    const commandAdapter = {
+      summarize: vi.fn(async () => {
+        throw error;
+      }),
+    };
+
+    const server = await startServer({ commandAdapter });
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ input: 'job.txt' }),
+    });
+
+    expect(response.status).toBe(502);
+    const payload = await response.json();
+    expect(payload).toMatchObject({
+      error: 'summarize command failed: boom',
+      stdout: 'cli-out',
+      stderr: 'cli-error',
+    });
+  });
+
+  it('rejects malformed JSON payloads before invoking the CLI', async () => {
+    const commandAdapter = {
+      summarize: vi.fn(),
+    };
+
+    const server = await startServer({ commandAdapter });
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{',
+    });
+
+    expect(response.status).toBe(400);
+    const payload = await response.json();
+    expect(payload.error).toMatch(/invalid json payload/i);
+    expect(commandAdapter.summarize).not.toHaveBeenCalled();
   });
 });
