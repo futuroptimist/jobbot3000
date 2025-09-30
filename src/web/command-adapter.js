@@ -1,6 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
+import { spawn as defaultSpawn } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
+import { fileURLToPath } from 'node:url';
 
 import { normalizeMatchRequest, normalizeSummarizeRequest } from './schemas.js';
 
@@ -8,6 +10,8 @@ const COMMAND_METHODS = {
   summarize: 'cmdSummarize',
   match: 'cmdMatch',
 };
+
+const DEFAULT_CLI_PATH = fileURLToPath(new URL('../../bin/jobbot.js', import.meta.url));
 
 function formatLogArg(arg) {
   if (typeof arg === 'string') return arg;
@@ -97,8 +101,15 @@ function parseJsonOutput(command, stdout, stderr) {
 }
 
 export function createCommandAdapter(options = {}) {
-  const { cli: injectedCli, logger, generateCorrelationId } = options;
-  let cachedCliPromise;
+  const {
+    cli: injectedCli,
+    logger,
+    generateCorrelationId,
+    spawn: spawnOverride,
+    nodePath,
+    cliPath,
+    env,
+  } = options;
 
   function nextCorrelationId() {
     if (typeof generateCorrelationId === 'function') {
@@ -136,27 +147,140 @@ export function createCommandAdapter(options = {}) {
     return typeof value === 'string' ? value.length : 0;
   }
 
-  function getCliModule() {
-    if (injectedCli) {
-      return Promise.resolve(injectedCli);
-    }
-    if (!cachedCliPromise) {
-      cachedCliPromise = import('../../bin/jobbot.js');
-    }
-    return cachedCliPromise;
+  async function runCliProcess(command, args) {
+    const spawnFn = typeof spawnOverride === 'function' ? spawnOverride : defaultSpawn;
+    const executable =
+      typeof nodePath === 'string' && nodePath.trim() ? nodePath : process.execPath;
+    const resolvedCliPath =
+      typeof cliPath === 'string' && cliPath.trim() ? cliPath : DEFAULT_CLI_PATH;
+    const environment = env === undefined ? process.env : env;
+
+    return await new Promise((resolve, reject) => {
+      let stdout = '';
+      let stderr = '';
+      let resolved = false;
+
+      let child;
+      try {
+        child = spawnFn(executable, [resolvedCliPath, command, ...args], {
+          shell: false,
+          windowsHide: true,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: environment,
+        });
+      } catch (err) {
+        const spawnError = new Error(`Failed to spawn CLI process for ${command}`);
+        spawnError.cause = err;
+        reject(spawnError);
+        return;
+      }
+
+      if (!child || typeof child.on !== 'function') {
+        reject(new Error('spawn must return a ChildProcess instance'));
+        return;
+      }
+
+      if (child.stdout) {
+        child.stdout.setEncoding('utf8');
+        child.stdout.on('data', chunk => {
+          stdout += chunk;
+        });
+      }
+
+      if (child.stderr) {
+        child.stderr.setEncoding('utf8');
+        child.stderr.on('data', chunk => {
+          stderr += chunk;
+        });
+      }
+
+      const finalize = (fn, value) => {
+        if (resolved) return;
+        resolved = true;
+        fn(value);
+      };
+
+      child.on('error', err => {
+        const error = new Error(`Failed to run ${command} command`);
+        error.cause = err;
+        error.stdout = stdout;
+        error.stderr = stderr;
+        finalize(reject, error);
+      });
+
+      child.on('close', (code, signal) => {
+        if (code === 0) {
+          finalize(resolve, { stdout, stderr, exitCode: 0, signal: signal ?? null });
+          return;
+        }
+        const exitError = new Error(
+          signal
+            ? `${command} command terminated with signal ${signal}`
+            : `${command} command exited with code ${code ?? 'unknown'}`,
+        );
+        if (typeof code === 'number') exitError.exitCode = code;
+        if (signal) exitError.signal = signal;
+        exitError.stdout = stdout;
+        exitError.stderr = stderr;
+        finalize(reject, exitError);
+      });
+    });
   }
 
   async function runCli(method, args) {
-    const cli = await getCliModule();
-    const fn = cli?.[method];
-    if (typeof fn !== 'function') {
-      throw new Error(`unknown CLI command method: ${method}`);
-    }
     const commandName = humanizeMethod(method);
     const correlationId = nextCorrelationId();
     const started = performance.now();
+
+    if (injectedCli) {
+      const fn = injectedCli?.[method];
+      if (typeof fn !== 'function') {
+        throw new Error(`unknown CLI command method: ${method}`);
+      }
+      try {
+        const { result, stdout, stderr } = await captureConsole(() => fn(args));
+        const durationMs = roundDuration(performance.now() - started);
+        logTelemetry('info', {
+          event: 'cli.command',
+          command: commandName,
+          status: 'success',
+          exitCode: 0,
+          correlationId,
+          durationMs,
+          stdoutLength: safeLength(stdout),
+          stderrLength: safeLength(stderr),
+        });
+        return { command: commandName, returnValue: result, stdout, stderr, correlationId };
+      } catch (err) {
+        const durationMs = roundDuration(performance.now() - started);
+        const message = err?.message ?? 'Unknown error';
+        const error = new Error(`${commandName} command failed: ${message}`);
+        error.cause = err;
+        if (err && typeof err.stdout === 'string') {
+          error.stdout = err.stdout;
+        }
+        if (err && typeof err.stderr === 'string') {
+          error.stderr = err.stderr;
+        }
+        error.correlationId = correlationId;
+        const errorMessage = message;
+        logTelemetry('error', {
+          event: 'cli.command',
+          command: commandName,
+          status: 'error',
+          exitCode: 1,
+          correlationId,
+          durationMs,
+          errorMessage,
+          stdoutLength: safeLength(err?.stdout),
+          stderrLength: safeLength(err?.stderr),
+        });
+        throw error;
+      }
+    }
+
     try {
-      const { result, stdout, stderr } = await captureConsole(() => fn(args));
+      const { stdout, stderr } = await runCliProcess(commandName, args);
       const durationMs = roundDuration(performance.now() - started);
       logTelemetry('info', {
         event: 'cli.command',
@@ -168,10 +292,11 @@ export function createCommandAdapter(options = {}) {
         stdoutLength: safeLength(stdout),
         stderrLength: safeLength(stderr),
       });
-      return { command: commandName, returnValue: result, stdout, stderr, correlationId };
+      return { command: commandName, returnValue: undefined, stdout, stderr, correlationId };
     } catch (err) {
       const durationMs = roundDuration(performance.now() - started);
-      const error = new Error(`${commandName} command failed: ${err?.message ?? 'Unknown error'}`);
+      const baseMessage = err?.message ?? 'Unknown error';
+      const error = new Error(`${commandName} command failed: ${baseMessage}`);
       error.cause = err;
       if (err && typeof err.stdout === 'string') {
         error.stdout = err.stdout;
@@ -179,16 +304,18 @@ export function createCommandAdapter(options = {}) {
       if (err && typeof err.stderr === 'string') {
         error.stderr = err.stderr;
       }
+      if (typeof err?.exitCode === 'number') {
+        error.exitCode = err.exitCode;
+      }
       error.correlationId = correlationId;
-      const errorMessage = err?.message ?? 'Unknown error';
       logTelemetry('error', {
         event: 'cli.command',
         command: commandName,
         status: 'error',
-        exitCode: 1,
+        exitCode: typeof err?.exitCode === 'number' ? err.exitCode : 1,
         correlationId,
         durationMs,
-        errorMessage,
+        errorMessage: baseMessage,
         stdoutLength: safeLength(err?.stdout),
         stderrLength: safeLength(err?.stderr),
       });
