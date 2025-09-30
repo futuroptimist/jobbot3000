@@ -100,11 +100,44 @@ describe('createCommandAdapter', () => {
     expect(cli.cmdSummarize).not.toHaveBeenCalled();
   });
 
+  it('rejects unsupported summarize formats', async () => {
+    const cli = { cmdSummarize: vi.fn() };
+    const adapter = createCommandAdapter({ cli });
+
+    await expect(
+      adapter.summarize({ input: 'job.txt', format: 'xml' }),
+    ).rejects.toThrow("format must be one of: markdown, text, json");
+
+    expect(cli.cmdSummarize).not.toHaveBeenCalled();
+  });
+
+  it('rejects summarize requests with non-positive sentence counts', async () => {
+    const cli = { cmdSummarize: vi.fn() };
+    const adapter = createCommandAdapter({ cli });
+
+    await expect(
+      adapter.summarize({ input: 'job.txt', sentences: 0 }),
+    ).rejects.toThrow('sentences must be a positive integer');
+
+    expect(cli.cmdSummarize).not.toHaveBeenCalled();
+  });
+
   it('throws when required match arguments are missing', async () => {
     const cli = { cmdMatch: vi.fn() };
     const adapter = createCommandAdapter({ cli });
     await expect(adapter.match({ job: 'job.txt' })).rejects.toThrow('resume is required');
     await expect(adapter.match({ resume: 'resume.txt' })).rejects.toThrow('job is required');
+    expect(cli.cmdMatch).not.toHaveBeenCalled();
+  });
+
+  it('rejects unsupported match formats', async () => {
+    const cli = { cmdMatch: vi.fn() };
+    const adapter = createCommandAdapter({ cli });
+
+    await expect(
+      adapter.match({ resume: 'resume.txt', job: 'job.txt', format: 'xml' }),
+    ).rejects.toThrow("format must be one of: markdown, text, json");
+
     expect(cli.cmdMatch).not.toHaveBeenCalled();
   });
 
