@@ -59,6 +59,12 @@
   rely on backend for persistence.
 - **Observability**: Structured logging (pino/winston) capturing command, duration, exit codes, and
   correlation IDs; expose health and readiness probes.
+  _Implemented (2025-11-27):_ [`src/web/command-adapter.js`](../src/web/command-adapter.js)
+  now emits JSON-friendly telemetry for each CLI invocation, including the
+  command name, correlation ID, duration, and synthesized exit code. Regression
+  coverage in [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
+  verifies both success and failure paths capture telemetry and surface the
+  correlation identifier to callers for downstream log stitching.
 
 ### 3. Security Hardening Plan
 

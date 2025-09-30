@@ -1,4 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { randomUUID } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 
 const COMMAND_METHODS = {
   summarize: 'cmdSummarize',
@@ -114,8 +116,40 @@ function parseJsonOutput(command, stdout, stderr) {
 }
 
 export function createCommandAdapter(options = {}) {
-  const { cli: injectedCli } = options;
+  const { cli: injectedCli, logger, generateCorrelationId } = options;
   let cachedCliPromise;
+
+  function nextCorrelationId() {
+    if (typeof generateCorrelationId === 'function') {
+      try {
+        const value = generateCorrelationId();
+        if (typeof value === 'string' && value.trim()) {
+          return value.trim();
+        }
+      } catch {
+        // Ignore generator errors and fall back to random UUIDs.
+      }
+    }
+    return randomUUID();
+  }
+
+  function logTelemetry(level, payload) {
+    if (!logger) return;
+    const fn = level && typeof logger[level] === 'function' ? logger[level] : undefined;
+    if (!fn) return;
+    fn({
+      timestamp: new Date().toISOString(),
+      ...payload,
+    });
+  }
+
+  function roundDuration(value) {
+    return Number(Number(value).toFixed(3));
+  }
+
+  function safeLength(value) {
+    return typeof value === 'string' ? value.length : 0;
+  }
 
   function getCliModule() {
     if (injectedCli) {
@@ -134,10 +168,24 @@ export function createCommandAdapter(options = {}) {
       throw new Error(`unknown CLI command method: ${method}`);
     }
     const commandName = humanizeMethod(method);
+    const correlationId = nextCorrelationId();
+    const started = performance.now();
     try {
       const { result, stdout, stderr } = await captureConsole(() => fn(args));
-      return { command: commandName, returnValue: result, stdout, stderr };
+      const durationMs = roundDuration(performance.now() - started);
+      logTelemetry('info', {
+        event: 'cli.command',
+        command: commandName,
+        status: 'success',
+        exitCode: 0,
+        correlationId,
+        durationMs,
+        stdoutLength: safeLength(stdout),
+        stderrLength: safeLength(stderr),
+      });
+      return { command: commandName, returnValue: result, stdout, stderr, correlationId };
     } catch (err) {
+      const durationMs = roundDuration(performance.now() - started);
       const error = new Error(`${commandName} command failed: ${err?.message ?? 'Unknown error'}`);
       error.cause = err;
       if (err && typeof err.stdout === 'string') {
@@ -146,6 +194,19 @@ export function createCommandAdapter(options = {}) {
       if (err && typeof err.stderr === 'string') {
         error.stderr = err.stderr;
       }
+      error.correlationId = correlationId;
+      const errorMessage = err?.message ?? 'Unknown error';
+      logTelemetry('error', {
+        event: 'cli.command',
+        command: commandName,
+        status: 'error',
+        exitCode: 1,
+        correlationId,
+        durationMs,
+        errorMessage,
+        stdoutLength: safeLength(err?.stdout),
+        stderrLength: safeLength(err?.stderr),
+      });
       throw error;
     }
   }
@@ -177,7 +238,10 @@ export function createCommandAdapter(options = {}) {
       args.push('--max-bytes', String(maxBytes));
     }
 
-    const { stdout, stderr, returnValue } = await runCli(COMMAND_METHODS.summarize, args);
+    const { stdout, stderr, returnValue, correlationId } = await runCli(
+      COMMAND_METHODS.summarize,
+      args,
+    );
     const payload = {
       command: 'summarize',
       format,
@@ -185,6 +249,9 @@ export function createCommandAdapter(options = {}) {
       stderr,
       returnValue,
     };
+    if (correlationId) {
+      payload.correlationId = correlationId;
+    }
     if (format === 'json') {
       payload.data = parseJsonOutput('summarize', stdout, stderr);
     }
@@ -229,7 +296,12 @@ export function createCommandAdapter(options = {}) {
       args.push('--max-bytes', String(maxBytes));
     }
 
-    const { stdout, stderr, returnValue } = await runCli(COMMAND_METHODS.match, args);
+    const {
+      stdout,
+      stderr,
+      returnValue,
+      correlationId,
+    } = await runCli(COMMAND_METHODS.match, args);
     const payload = {
       command: 'match',
       format,
@@ -237,6 +309,9 @@ export function createCommandAdapter(options = {}) {
       stderr,
       returnValue,
     };
+    if (correlationId) {
+      payload.correlationId = correlationId;
+    }
     if (format === 'json') {
       payload.data = parseJsonOutput('match', stdout, stderr);
     }
