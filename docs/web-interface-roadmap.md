@@ -73,6 +73,14 @@
 - Validate payloads with a shared schema library (e.g., Zod) on both frontend and backend to ensure
   alignment.
 - Avoid shell invocation; use `spawn`/`execFile` with explicit argument arrays.
+  _Implemented (2025-12-06):_ [`src/web/command-adapter.js`](../src/web/command-adapter.js)
+  now executes CLI commands via `child_process.spawn` with `shell: false`,
+  `windowsHide: true`, and explicit argument arrays. The adapter streams
+  stdout/stderr, rejects on non-zero exit codes, and surfaces correlation IDs
+  to callers. Regression coverage in
+  [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
+  verifies the secure spawn configuration and error propagation when the CLI
+  process fails.
 - Apply rate limiting and CSRF defenses even in local deployments to simplify production hardening.
 - Store sensitive configuration (API tokens, credentials) via environment variables managed through
   secure storage solutions.
@@ -169,7 +177,7 @@
 ## Safe Implementation Checklist
 
 - [x] Command allow-list with schema validation
-- [ ] Secure process spawning without shell interpolation
+- [x] Secure process spawning without shell interpolation
 - [ ] Input sanitization and output redaction
 - [ ] Logging with redacted secrets and trace IDs
 - [ ] Automated tests spanning unit → e2e layers
