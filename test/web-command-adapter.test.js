@@ -122,6 +122,77 @@ describe('createCommandAdapter', () => {
     });
   });
 
+  it('logs structured telemetry for successful commands', async () => {
+    const info = vi.fn();
+    const error = vi.fn();
+    const cli = {
+      cmdSummarize: vi.fn(async () => {
+        console.log('{"status":"ok"}');
+      }),
+    };
+
+    const adapter = createCommandAdapter({
+      cli,
+      logger: { info, error },
+      generateCorrelationId: () => 'corr-success',
+    });
+
+    const result = await adapter.summarize({ input: 'job.txt', format: 'json' });
+
+    expect(result.correlationId).toBe('corr-success');
+    expect(info).toHaveBeenCalledTimes(1);
+    expect(error).not.toHaveBeenCalled();
+
+    const entry = info.mock.calls[0][0];
+    expect(entry).toMatchObject({
+      event: 'cli.command',
+      command: 'summarize',
+      status: 'success',
+      exitCode: 0,
+      correlationId: 'corr-success',
+    });
+    expect(typeof entry.durationMs).toBe('number');
+    expect(entry.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('logs structured telemetry for failed commands', async () => {
+    const info = vi.fn();
+    const error = vi.fn();
+    const cli = {
+      cmdSummarize: vi.fn(async () => {
+        console.error('bad');
+        throw new Error('boom');
+      }),
+    };
+
+    const adapter = createCommandAdapter({
+      cli,
+      logger: { info, error },
+      generateCorrelationId: () => 'corr-fail',
+    });
+
+    await expect(adapter.summarize({ input: 'job.txt' })).rejects.toMatchObject({
+      message: 'summarize command failed: boom',
+      stderr: 'bad',
+      correlationId: 'corr-fail',
+    });
+
+    expect(info).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledTimes(1);
+
+    const entry = error.mock.calls[0][0];
+    expect(entry).toMatchObject({
+      event: 'cli.command',
+      command: 'summarize',
+      status: 'error',
+      exitCode: 1,
+      correlationId: 'corr-fail',
+      errorMessage: 'boom',
+    });
+    expect(typeof entry.durationMs).toBe('number');
+    expect(entry.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
   it('throws when CLI method is missing', async () => {
     const adapter = createCommandAdapter({ cli: {} });
     await expect(adapter.summarize({ input: 'job.txt' })).rejects.toThrow(
