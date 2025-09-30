@@ -306,15 +306,24 @@ export function createCommandAdapter(options = {}) {
           status: 'success',
           exitCode: 0,
           correlationId,
+          traceId: correlationId,
           durationMs,
           stdoutLength: safeLength(stdout),
           stderrLength: safeLength(stderr),
         });
-        return { command: commandName, returnValue: result, stdout, stderr, correlationId };
+        return {
+          command: commandName,
+          returnValue: result,
+          stdout,
+          stderr,
+          correlationId,
+          traceId: correlationId,
+        };
       } catch (err) {
         const durationMs = roundDuration(performance.now() - started);
-        const message = err?.message ?? 'Unknown error';
-        const error = new Error(`${commandName} command failed: ${message}`);
+        const rawMessage = err?.message ?? 'Unknown error';
+        const sanitizedMessage = redactSecrets(rawMessage);
+        const error = new Error(`${commandName} command failed: ${sanitizedMessage}`);
         error.cause = err;
         if (err && typeof err.stdout === 'string') {
           error.stdout = err.stdout;
@@ -323,13 +332,18 @@ export function createCommandAdapter(options = {}) {
           error.stderr = err.stderr;
         }
         error.correlationId = correlationId;
-        const errorMessage = message;
+        error.traceId = correlationId;
+        const errorMessage = sanitizedMessage;
+        if (typeof err?.exitCode === 'number') {
+          error.exitCode = err.exitCode;
+        }
         logTelemetry('error', {
           event: 'cli.command',
           command: commandName,
           status: 'error',
-          exitCode: 1,
+          exitCode: typeof err?.exitCode === 'number' ? err.exitCode : 1,
           correlationId,
+          traceId: correlationId,
           durationMs,
           errorMessage,
           stdoutLength: safeLength(err?.stdout),
