@@ -211,6 +211,35 @@ describe('web server command endpoint', () => {
     });
   });
 
+  it('includes trace identifiers in error responses when available', async () => {
+    const error = new Error('summarize command failed: sanitized');
+    error.stdout = '';
+    error.stderr = 'boom';
+    error.correlationId = 'trace-42';
+    error.traceId = 'trace-42';
+    const commandAdapter = {
+      summarize: vi.fn(async () => {
+        throw error;
+      }),
+    };
+
+    const server = await startServer({ commandAdapter });
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ input: 'job.txt' }),
+    });
+
+    expect(response.status).toBe(502);
+    const payload = await response.json();
+    expect(payload).toMatchObject({
+      error: 'summarize command failed: sanitized',
+      correlationId: 'trace-42',
+      traceId: 'trace-42',
+      stderr: 'boom',
+    });
+  });
+
   it('rejects malformed JSON payloads before invoking the CLI', async () => {
     const commandAdapter = {
       summarize: vi.fn(),

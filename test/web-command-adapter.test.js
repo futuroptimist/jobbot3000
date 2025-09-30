@@ -223,6 +223,7 @@ describe('createCommandAdapter', () => {
     const result = await adapter.summarize({ input: 'job.txt', format: 'json' });
 
     expect(result.correlationId).toBe('corr-success');
+    expect(result.traceId).toBe('corr-success');
     expect(info).toHaveBeenCalledTimes(1);
     expect(error).not.toHaveBeenCalled();
 
@@ -234,6 +235,7 @@ describe('createCommandAdapter', () => {
       exitCode: 0,
       correlationId: 'corr-success',
     });
+    expect(entry.traceId).toBe('corr-success');
     expect(typeof entry.durationMs).toBe('number');
     expect(entry.durationMs).toBeGreaterThanOrEqual(0);
   });
@@ -258,6 +260,7 @@ describe('createCommandAdapter', () => {
       message: 'summarize command failed: boom',
       stderr: 'bad',
       correlationId: 'corr-fail',
+      traceId: 'corr-fail',
     });
 
     expect(info).not.toHaveBeenCalled();
@@ -272,6 +275,7 @@ describe('createCommandAdapter', () => {
       correlationId: 'corr-fail',
       errorMessage: 'boom',
     });
+    expect(entry.traceId).toBe('corr-fail');
     expect(typeof entry.durationMs).toBe('number');
     expect(entry.durationMs).toBeGreaterThanOrEqual(0);
   });
@@ -281,6 +285,37 @@ describe('createCommandAdapter', () => {
     await expect(adapter.summarize({ input: 'job.txt' })).rejects.toThrow(
       'unknown CLI command method: cmdSummarize',
     );
+  });
+
+  it('redacts secret-like tokens in telemetry logs and error messages', async () => {
+    const info = vi.fn();
+    const error = vi.fn();
+    const cli = {
+      cmdSummarize: vi.fn(async () => {
+        console.error('API_KEY=abcd1234secret');
+        throw new Error('Request failed with API_KEY=abcd1234secret');
+      }),
+    };
+
+    const adapter = createCommandAdapter({
+      cli,
+      logger: { info, error },
+      generateCorrelationId: () => 'trace-secret',
+    });
+
+    await expect(adapter.summarize({ input: 'job.txt' })).rejects.toMatchObject({
+      message: 'summarize command failed: Request failed with API_KEY=***',
+      correlationId: 'trace-secret',
+      traceId: 'trace-secret',
+      stderr: 'API_KEY=abcd1234secret',
+    });
+
+    expect(info).not.toHaveBeenCalled();
+    expect(error).toHaveBeenCalledTimes(1);
+    const entry = error.mock.calls[0][0];
+    expect(entry.correlationId).toBe('trace-secret');
+    expect(entry.traceId).toBe('trace-secret');
+    expect(entry.errorMessage).toBe('Request failed with API_KEY=***');
   });
 
   it('spawns the CLI without shell interpolation when no cli module is provided', async () => {

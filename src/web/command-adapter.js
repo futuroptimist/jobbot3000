@@ -6,6 +6,65 @@ import { fileURLToPath } from 'node:url';
 
 import { normalizeMatchRequest, normalizeSummarizeRequest } from './schemas.js';
 
+const SECRET_KEYS = [
+  'api[-_]?key',
+  'api[-_]?token',
+  'auth[-_]?token',
+  'authorization',
+  'client[-_]?secret',
+  'client[-_]?token',
+  'secret',
+  'token',
+  'password',
+  'passphrase',
+];
+
+const SECRET_KEY_VALUE_PATTERN =
+  "\\b(?:" +
+  SECRET_KEYS.join('|') +
+  ")\\b\\s*[:=]\\s*(?:\"([^\"]+)\"|'([^']+)'|([^,;\\r\\n]+))";
+const SECRET_KEY_VALUE_RE = new RegExp(SECRET_KEY_VALUE_PATTERN, 'gi');
+const SECRET_BEARER_RE = /\bBearer\s+([A-Za-z0-9._\-+/=]{8,})/gi;
+
+function replaceSecret(match, doubleQuoted, singleQuoted, bareValue) {
+  if (doubleQuoted) {
+    return match.replace(doubleQuoted, '***');
+  }
+  if (singleQuoted) {
+    return match.replace(singleQuoted, '***');
+  }
+  if (bareValue) {
+    return match.replace(bareValue, '***');
+  }
+  return match;
+}
+
+function redactSecrets(value) {
+  if (typeof value !== 'string' || !value) return value;
+  let redacted = value;
+  redacted = redacted.replace(SECRET_KEY_VALUE_RE, replaceSecret);
+  redacted = redacted.replace(SECRET_BEARER_RE, (match, token) => match.replace(token, '***'));
+  return redacted;
+}
+
+function sanitizeTelemetryPayload(payload) {
+  if (payload == null) return payload;
+  if (typeof payload === 'string') {
+    return redactSecrets(payload);
+  }
+  if (Array.isArray(payload)) {
+    return payload.map(entry => sanitizeTelemetryPayload(entry));
+  }
+  if (typeof payload !== 'object') {
+    return payload;
+  }
+  const sanitized = {};
+  for (const [key, value] of Object.entries(payload)) {
+    sanitized[key] = sanitizeTelemetryPayload(value);
+  }
+  return sanitized;
+}
+
 const COMMAND_METHODS = {
   summarize: 'cmdSummarize',
   match: 'cmdMatch',
@@ -130,10 +189,11 @@ export function createCommandAdapter(options = {}) {
     const fn = level && typeof logger[level] === 'function' ? logger[level] : undefined;
     if (!fn) return;
     try {
-      fn({
+      const eventPayload = sanitizeTelemetryPayload({
         timestamp: new Date().toISOString(),
         ...payload,
       });
+      fn(eventPayload);
     } catch {
       // Swallow logger errors so telemetry does not affect command outcomes.
     }
@@ -246,15 +306,24 @@ export function createCommandAdapter(options = {}) {
           status: 'success',
           exitCode: 0,
           correlationId,
+          traceId: correlationId,
           durationMs,
           stdoutLength: safeLength(stdout),
           stderrLength: safeLength(stderr),
         });
-        return { command: commandName, returnValue: result, stdout, stderr, correlationId };
+        return {
+          command: commandName,
+          returnValue: result,
+          stdout,
+          stderr,
+          correlationId,
+          traceId: correlationId,
+        };
       } catch (err) {
         const durationMs = roundDuration(performance.now() - started);
-        const message = err?.message ?? 'Unknown error';
-        const error = new Error(`${commandName} command failed: ${message}`);
+        const rawMessage = err?.message ?? 'Unknown error';
+        const sanitizedMessage = redactSecrets(rawMessage);
+        const error = new Error(`${commandName} command failed: ${sanitizedMessage}`);
         error.cause = err;
         if (err && typeof err.stdout === 'string') {
           error.stdout = err.stdout;
@@ -263,13 +332,18 @@ export function createCommandAdapter(options = {}) {
           error.stderr = err.stderr;
         }
         error.correlationId = correlationId;
-        const errorMessage = message;
+        error.traceId = correlationId;
+        const errorMessage = sanitizedMessage;
+        if (typeof err?.exitCode === 'number') {
+          error.exitCode = err.exitCode;
+        }
         logTelemetry('error', {
           event: 'cli.command',
           command: commandName,
           status: 'error',
-          exitCode: 1,
+          exitCode: typeof err?.exitCode === 'number' ? err.exitCode : 1,
           correlationId,
+          traceId: correlationId,
           durationMs,
           errorMessage,
           stdoutLength: safeLength(err?.stdout),
@@ -288,15 +362,24 @@ export function createCommandAdapter(options = {}) {
         status: 'success',
         exitCode: 0,
         correlationId,
+        traceId: correlationId,
         durationMs,
         stdoutLength: safeLength(stdout),
         stderrLength: safeLength(stderr),
       });
-      return { command: commandName, returnValue: undefined, stdout, stderr, correlationId };
+      return {
+        command: commandName,
+        returnValue: undefined,
+        stdout,
+        stderr,
+        correlationId,
+        traceId: correlationId,
+      };
     } catch (err) {
       const durationMs = roundDuration(performance.now() - started);
-      const baseMessage = err?.message ?? 'Unknown error';
-      const error = new Error(`${commandName} command failed: ${baseMessage}`);
+      const rawMessage = err?.message ?? 'Unknown error';
+      const sanitizedMessage = redactSecrets(rawMessage);
+      const error = new Error(`${commandName} command failed: ${sanitizedMessage}`);
       error.cause = err;
       if (err && typeof err.stdout === 'string') {
         error.stdout = err.stdout;
@@ -308,14 +391,16 @@ export function createCommandAdapter(options = {}) {
         error.exitCode = err.exitCode;
       }
       error.correlationId = correlationId;
+      error.traceId = correlationId;
       logTelemetry('error', {
         event: 'cli.command',
         command: commandName,
         status: 'error',
         exitCode: typeof err?.exitCode === 'number' ? err.exitCode : 1,
         correlationId,
+        traceId: correlationId,
+        errorMessage: sanitizedMessage,
         durationMs,
-        errorMessage: baseMessage,
         stdoutLength: safeLength(err?.stdout),
         stderrLength: safeLength(err?.stderr),
       });
@@ -343,7 +428,7 @@ export function createCommandAdapter(options = {}) {
       args.push('--max-bytes', String(maxBytes));
     }
 
-    const { stdout, stderr, returnValue, correlationId } = await runCli(
+    const { stdout, stderr, returnValue, correlationId, traceId } = await runCli(
       COMMAND_METHODS.summarize,
       args,
     );
@@ -356,6 +441,9 @@ export function createCommandAdapter(options = {}) {
     };
     if (correlationId) {
       payload.correlationId = correlationId;
+    }
+    if (traceId) {
+      payload.traceId = traceId;
     }
     if (format === 'json') {
       payload.data = parseJsonOutput('summarize', stdout, stderr);
@@ -394,12 +482,10 @@ export function createCommandAdapter(options = {}) {
       args.push('--max-bytes', String(maxBytes));
     }
 
-    const {
-      stdout,
-      stderr,
-      returnValue,
-      correlationId,
-    } = await runCli(COMMAND_METHODS.match, args);
+    const { stdout, stderr, returnValue, correlationId, traceId } = await runCli(
+      COMMAND_METHODS.match,
+      args,
+    );
     const payload = {
       command: 'match',
       format,
@@ -409,6 +495,9 @@ export function createCommandAdapter(options = {}) {
     };
     if (correlationId) {
       payload.correlationId = correlationId;
+    }
+    if (traceId) {
+      payload.traceId = traceId;
     }
     if (format === 'json') {
       payload.data = parseJsonOutput('match', stdout, stderr);
