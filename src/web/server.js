@@ -63,9 +63,27 @@ function buildHealthResponse({ info, uptime, timestamp, checks }) {
   return payload;
 }
 
+function isPlainObject(value) {
+  if (!value || typeof value !== 'object') return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === null || prototype === Object.prototype;
+}
+
 function sanitizeCommandResult(result) {
-  if (!result || typeof result !== 'object') {
+  if (result == null) {
     return {};
+  }
+  if (typeof result === 'string') {
+    return sanitizeOutputString(result);
+  }
+  if (typeof result !== 'object') {
+    return result;
+  }
+  if (Array.isArray(result)) {
+    return sanitizeOutputValue(result);
+  }
+  if (!isPlainObject(result)) {
+    return sanitizeOutputValue(result);
   }
   const sanitized = {};
   for (const [key, value] of Object.entries(result)) {

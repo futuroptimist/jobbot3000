@@ -285,4 +285,21 @@ describe('web server command endpoint', () => {
     expect(payload.stderr).toBe('Bearer ***');
     expect(payload.data).toEqual({ token: '***', nested: { client_secret: '***' } });
   });
+
+  it('preserves primitive command responses while sanitizing strings', async () => {
+    const commandAdapter = {
+      summarize: vi.fn(async () => 'API_KEY=abcd1234secret\u0007'),
+    };
+
+    const server = await startServer({ commandAdapter });
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ input: 'job.txt' }),
+    });
+
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload).toBe('API_KEY=***');
+  });
 });
