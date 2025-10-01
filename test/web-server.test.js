@@ -4,9 +4,25 @@ let activeServers = [];
 
 async function startServer(options) {
   const { startWebServer } = await import('../src/web/server.js');
-  const server = await startWebServer({ host: '127.0.0.1', port: 0, ...options });
+  const server = await startWebServer({
+    host: '127.0.0.1',
+    port: 0,
+    csrfToken: 'test-csrf-token',
+    rateLimit: { windowMs: 1000, max: 50 },
+    ...options,
+  });
   activeServers.push(server);
   return server;
+}
+
+function buildCommandHeaders(server, overrides = {}) {
+  const headerName = server?.csrfHeaderName ?? 'x-jobbot-csrf';
+  const token = server?.csrfToken ?? 'test-csrf-token';
+  return {
+    'content-type': 'application/json',
+    [headerName]: token,
+    ...overrides,
+  };
 }
 
 afterEach(async () => {
@@ -131,7 +147,7 @@ describe('web server command endpoint', () => {
     const server = await startServer({ commandAdapter });
     const response = await fetch(`${server.url}/commands/summarize`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: buildCommandHeaders(server),
       body: JSON.stringify({
         input: 'job.txt',
         format: 'json',
@@ -158,7 +174,7 @@ describe('web server command endpoint', () => {
     const server = await startServer({ commandAdapter: {} });
     const response = await fetch(`${server.url}/commands/unknown`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: buildCommandHeaders(server),
       body: JSON.stringify({}),
     });
 
@@ -175,7 +191,7 @@ describe('web server command endpoint', () => {
     const server = await startServer({ commandAdapter });
     const response = await fetch(`${server.url}/commands/summarize`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: buildCommandHeaders(server),
       body: JSON.stringify({ input: 'job.txt', unexpected: true }),
     });
 
@@ -198,7 +214,7 @@ describe('web server command endpoint', () => {
     const server = await startServer({ commandAdapter });
     const response = await fetch(`${server.url}/commands/summarize`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: buildCommandHeaders(server),
       body: JSON.stringify({ input: 'job.txt' }),
     });
 
@@ -226,7 +242,7 @@ describe('web server command endpoint', () => {
     const server = await startServer({ commandAdapter });
     const response = await fetch(`${server.url}/commands/summarize`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: buildCommandHeaders(server),
       body: JSON.stringify({ input: 'job.txt' }),
     });
 
@@ -248,7 +264,7 @@ describe('web server command endpoint', () => {
     const server = await startServer({ commandAdapter });
     const response = await fetch(`${server.url}/commands/summarize`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: buildCommandHeaders(server),
       body: '{',
     });
 
@@ -301,5 +317,60 @@ describe('web server command endpoint', () => {
     expect(response.status).toBe(200);
     const payload = await response.json();
     expect(payload).toBe('API_KEY=***');
+  });
+
+  it('rejects command requests without a valid CSRF token', async () => {
+    const commandAdapter = {
+      summarize: vi.fn(),
+    };
+
+    const server = await startServer({ commandAdapter });
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ input: 'job.txt' }),
+    });
+
+    expect(response.status).toBe(403);
+    const payload = await response.json();
+    expect(payload.error).toMatch(/csrf/i);
+    expect(commandAdapter.summarize).not.toHaveBeenCalled();
+  });
+
+  it('rate limits repeated command requests per client', async () => {
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({ ok: true })),
+    };
+
+    const server = await startServer({
+      commandAdapter,
+      rateLimit: { windowMs: 5000, max: 2 },
+    });
+
+    const headers = buildCommandHeaders(server);
+    const body = JSON.stringify({ input: 'job.txt' });
+
+    const first = await fetch(`${server.url}/commands/summarize`, {
+      method: 'POST',
+      headers,
+      body,
+    });
+    expect(first.status).toBe(200);
+
+    const second = await fetch(`${server.url}/commands/summarize`, {
+      method: 'POST',
+      headers,
+      body,
+    });
+    expect(second.status).toBe(200);
+
+    const third = await fetch(`${server.url}/commands/summarize`, {
+      method: 'POST',
+      headers,
+      body,
+    });
+    expect(third.status).toBe(429);
+    expect(await third.json()).toMatchObject({ error: expect.stringMatching(/too many/i) });
+    expect(commandAdapter.summarize).toHaveBeenCalledTimes(2);
   });
 });

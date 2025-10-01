@@ -1604,6 +1604,13 @@ extended by passing custom check functions to
 and failing checks so future endpoints can rely on the health contract when the
 web interface expands beyond the CLI wrappers.
 
+Every server start prints a one-time CSRF secret. Attach the emitted header and
+token (for example, `X-Jobbot-Csrf: <token>`) to every `POST /commands` request.
+Missing or invalid CSRF headers return `403` errors before the CLI adapter runs.
+The command endpoint also enforces a per-client rate limit (30 requests per
+minute by default) and responds with `429`/`Retry-After` metadata when callers
+exceed the budget.
+
 Call allow-listed CLI commands through the new `POST /commands/:command`
 endpoint. Requests must contain valid JSON bodies that match the per-command
 schema; unexpected fields or type mismatches return a `400` status before the
@@ -1614,6 +1621,7 @@ mirror the underlying CLI output:
 curl -s \
   -X POST http://127.0.0.1:3000/commands/summarize \
   -H 'Content-Type: application/json' \
+  -H 'X-Jobbot-Csrf: replace-with-token-from-server-startup' \
   -d '{"input":"job.txt","format":"json","sentences":3}' | jq
 ```
 

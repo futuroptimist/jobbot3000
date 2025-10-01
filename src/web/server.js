@@ -1,4 +1,5 @@
 import express from 'express';
+import { randomBytes } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 
 import {
@@ -7,6 +8,53 @@ import {
   sanitizeOutputValue,
 } from './command-adapter.js';
 import { ALLOW_LISTED_COMMANDS, validateCommandPayload } from './command-registry.js';
+
+function createInMemoryRateLimiter(options = {}) {
+  const windowMs = Number(options.windowMs ?? 60000);
+  if (!Number.isFinite(windowMs) || windowMs <= 0) {
+    throw new Error('rateLimit.windowMs must be a positive number');
+  }
+  const maxRaw = options.max ?? 30;
+  const max = Math.trunc(Number(maxRaw));
+  if (!Number.isFinite(max) || max <= 0) {
+    throw new Error('rateLimit.max must be a positive integer');
+  }
+
+  const buckets = new Map();
+  return {
+    limit: max,
+    windowMs,
+    check(key) {
+      const now = Date.now();
+      const entry = buckets.get(key);
+      if (!entry || entry.reset <= now) {
+        const reset = now + windowMs;
+        buckets.set(key, { count: 1, reset });
+        return { allowed: true, remaining: Math.max(0, max - 1), reset };
+      }
+
+      entry.count += 1;
+      const allowed = entry.count <= max;
+      const remaining = Math.max(0, max - entry.count);
+      return { allowed, remaining, reset: entry.reset };
+    },
+  };
+}
+
+function normalizeCsrfOptions(csrf = {}) {
+  const headerName =
+    typeof csrf.headerName === 'string' && csrf.headerName.trim()
+      ? csrf.headerName.trim()
+      : 'x-jobbot-csrf';
+  const token = typeof csrf.token === 'string' ? csrf.token.trim() : '';
+  if (!token) {
+    throw new Error('csrf.token must be provided');
+  }
+  return {
+    headerName,
+    token,
+  };
+}
 
 function normalizeInfo(info) {
   if (!info || typeof info !== 'object') return {};
@@ -136,9 +184,11 @@ async function runHealthChecks(checks) {
   return results;
 }
 
-export function createWebApp({ info, healthChecks, commandAdapter } = {}) {
+export function createWebApp({ info, healthChecks, commandAdapter, csrf, rateLimit } = {}) {
   const normalizedInfo = normalizeInfo(info);
   const normalizedChecks = normalizeHealthChecks(healthChecks);
+  const csrfOptions = normalizeCsrfOptions(csrf);
+  const rateLimiter = createInMemoryRateLimiter(rateLimit);
   const app = express();
   const availableCommands = new Set(
     ALLOW_LISTED_COMMANDS.filter(name => typeof commandAdapter?.[name] === 'function'),
@@ -163,6 +213,24 @@ export function createWebApp({ info, healthChecks, commandAdapter } = {}) {
     const commandParam = typeof req.params.command === 'string' ? req.params.command.trim() : '';
     if (!availableCommands.has(commandParam)) {
       res.status(404).json({ error: `Unknown command "${commandParam}"` });
+      return;
+    }
+
+    const rateKey = req.ip || req.socket?.remoteAddress || 'unknown';
+    const rateStatus = rateLimiter.check(rateKey);
+    res.set('X-RateLimit-Limit', String(rateLimiter.limit));
+    res.set('X-RateLimit-Remaining', String(Math.max(0, rateStatus.remaining)));
+    res.set('X-RateLimit-Reset', new Date(rateStatus.reset).toISOString());
+    if (!rateStatus.allowed) {
+      const retryAfterSeconds = Math.max(1, Math.ceil((rateStatus.reset - Date.now()) / 1000));
+      res.set('Retry-After', String(retryAfterSeconds));
+      res.status(429).json({ error: 'Too many requests' });
+      return;
+    }
+
+    const providedToken = req.get(csrfOptions.headerName);
+    if ((providedToken ?? '').trim() !== csrfOptions.token) {
+      res.status(403).json({ error: 'Invalid or missing CSRF token' });
       return;
     }
 
@@ -207,9 +275,28 @@ export function startWebServer(options = {}) {
   if (!Number.isFinite(port) || port < 0 || port > 65535) {
     throw new Error('port must be a number between 0 and 65535');
   }
-  const { commandAdapter: providedCommandAdapter, ...rest } = options;
+  const {
+    commandAdapter: providedCommandAdapter,
+    csrfToken: providedCsrfToken,
+    csrfHeaderName,
+    rateLimit,
+    ...rest
+  } = options;
   const commandAdapter = providedCommandAdapter ?? createCommandAdapter();
-  const app = createWebApp({ ...rest, commandAdapter });
+  const resolvedCsrfToken =
+    typeof providedCsrfToken === 'string' && providedCsrfToken.trim()
+      ? providedCsrfToken.trim()
+      : (process.env.JOBBOT_WEB_CSRF_TOKEN || '').trim() || randomBytes(32).toString('hex');
+  const resolvedHeaderName =
+    typeof csrfHeaderName === 'string' && csrfHeaderName.trim()
+      ? csrfHeaderName.trim()
+      : 'x-jobbot-csrf';
+  const app = createWebApp({
+    ...rest,
+    commandAdapter,
+    csrf: { token: resolvedCsrfToken, headerName: resolvedHeaderName },
+    rateLimit,
+  });
 
   return new Promise((resolve, reject) => {
     const server = app
@@ -221,6 +308,8 @@ export function startWebServer(options = {}) {
           host,
           port: actualPort,
           url: `http://${host}:${actualPort}`,
+          csrfToken: resolvedCsrfToken,
+          csrfHeaderName: resolvedHeaderName,
           async close() {
             await new Promise((resolveClose, rejectClose) => {
               server.close(err => {
