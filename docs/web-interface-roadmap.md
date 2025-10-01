@@ -185,7 +185,15 @@
 - [x] Command allow-list with schema validation
 - [x] Secure process spawning without shell interpolation (speech commands now
   tokenize templates and spawn without `shell: true`; see `test/speech.test.js`)
-- [ ] Input sanitization and output redaction
+- [x] Input sanitization and output redaction
+  _Implemented (2025-12-09):_ [`src/web/command-adapter.js`](../src/web/command-adapter.js)
+  now strips control characters and redacts secret-like values before
+  returning CLI output. The web server sanitizes successful payloads and
+  error responses to shield clients from leaked credentials. Regression
+  coverage in [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
+  and [`test/web-server.test.js`](../test/web-server.test.js) verifies
+  that stdout/stderr, parsed JSON, and adapter return values all receive
+  consistent redaction.
 - [x] Logging with redacted secrets and trace IDs
   _Implemented (2025-12-05):_ [`src/web/command-adapter.js`](../src/web/command-adapter.js)
   now redacts secret-like values before emitting telemetry, attaches a `traceId`
