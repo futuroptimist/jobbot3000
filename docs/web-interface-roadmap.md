@@ -82,6 +82,12 @@
   verifies the secure spawn configuration and error propagation when the CLI
   process fails.
 - Apply rate limiting and CSRF defenses even in local deployments to simplify production hardening.
+  _Implemented (2025-12-11):_ [`src/web/server.js`](../src/web/server.js) now enforces a
+  startup-provided CSRF header and in-memory per-client rate limiting on
+  `POST /commands`. Coverage in [`test/web-server.test.js`](../test/web-server.test.js)
+  verifies 403 responses for missing tokens and 429 responses once
+  callers exhaust the request budget. [`scripts/web-server.js`](../scripts/web-server.js) prints the
+  header name and token on boot so the frontend can attach it securely.
 - Store sensitive configuration (API tokens, credentials) via environment variables managed through
   secure storage solutions.
 - Log sensitive fields using redaction filters and enforce secure log transport when deployed beyond
