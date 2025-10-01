@@ -92,6 +92,20 @@ describe('createCommandAdapter', () => {
     expect(cli.cmdSummarize).toHaveBeenCalledTimes(1);
   });
 
+  it('redacts secrets from parsed JSON payloads', async () => {
+    const cli = {
+      cmdSummarize: vi.fn(async () => {
+        console.log('{"token":"abcd1234secret","details":{"client_secret":"supersecret"}}');
+      }),
+    };
+
+    const adapter = createCommandAdapter({ cli });
+    const result = await adapter.summarize({ input: 'job.txt', format: 'json' });
+
+    expect(result.stdout).toBe('{"token":"***","details":{"client_secret":"***"}}');
+    expect(result.data).toEqual({ token: '***', details: { client_secret: '***' } });
+  });
+
   it('runs match with optional flags and parses json output', async () => {
     const cli = {
       cmdMatch: vi.fn(async args => {
@@ -307,7 +321,7 @@ describe('createCommandAdapter', () => {
       message: 'summarize command failed: Request failed with API_KEY=***',
       correlationId: 'trace-secret',
       traceId: 'trace-secret',
-      stderr: 'API_KEY=abcd1234secret',
+      stderr: 'API_KEY=***',
     });
 
     expect(info).not.toHaveBeenCalled();
@@ -316,6 +330,23 @@ describe('createCommandAdapter', () => {
     expect(entry.correlationId).toBe('trace-secret');
     expect(entry.traceId).toBe('trace-secret');
     expect(entry.errorMessage).toBe('Request failed with API_KEY=***');
+  });
+
+  it('sanitizes stdout, stderr, and return values for inline CLI adapters', async () => {
+    const cli = {
+      cmdSummarize: vi.fn(async () => {
+        console.log('API_KEY=abcd1234secret');
+        console.error('Bearer sk_live_1234567890');
+        return { token: 'abcd1234secret', nested: { client_secret: 'supersecret' } };
+      }),
+    };
+
+    const adapter = createCommandAdapter({ cli });
+    const result = await adapter.summarize({ input: 'job.txt' });
+
+    expect(result.stdout).toBe('API_KEY=***');
+    expect(result.stderr).toBe('Bearer ***');
+    expect(result.returnValue).toEqual({ token: '***', nested: { client_secret: '***' } });
   });
 
   it('spawns the CLI without shell interpolation when no cli module is provided', async () => {

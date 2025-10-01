@@ -20,11 +20,14 @@ const SECRET_KEYS = [
 ];
 
 const SECRET_KEY_VALUE_PATTERN =
-  "\\b(?:" +
+  "(?:[\"']?)(?:" +
   SECRET_KEYS.join('|') +
-  ")\\b\\s*[:=]\\s*(?:\"([^\"]+)\"|'([^']+)'|([^,;\\r\\n]+))";
+  ")(?:[\"']?)\\s*[:=]\\s*(?:\"([^\"]+)\"|'([^']+)'|([^,;\\r\\n]+))";
 const SECRET_KEY_VALUE_RE = new RegExp(SECRET_KEY_VALUE_PATTERN, 'gi');
 const SECRET_BEARER_RE = /\bBearer\s+([A-Za-z0-9._\-+/=]{8,})/gi;
+const SECRET_KEY_FIELD_RE = new RegExp(`(?:${SECRET_KEYS.join('|')})`, 'i');
+// eslint-disable-next-line no-control-regex -- intentionally strip ASCII control characters.
+const CONTROL_CHARS_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
 
 function replaceSecret(match, doubleQuoted, singleQuoted, bareValue) {
   if (doubleQuoted) {
@@ -45,6 +48,33 @@ function redactSecrets(value) {
   redacted = redacted.replace(SECRET_KEY_VALUE_RE, replaceSecret);
   redacted = redacted.replace(SECRET_BEARER_RE, (match, token) => match.replace(token, '***'));
   return redacted;
+}
+
+function sanitizeOutputString(value) {
+  if (typeof value !== 'string') return value;
+  const withoutControlChars = value.replace(CONTROL_CHARS_RE, '');
+  const redacted = redactSecrets(withoutControlChars);
+  return redacted;
+}
+
+function sanitizeOutputValue(value, { key } = {}) {
+  if (key && SECRET_KEY_FIELD_RE.test(String(key))) {
+    return '***';
+  }
+  if (typeof value === 'string') {
+    return sanitizeOutputString(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(entry => sanitizeOutputValue(entry));
+  }
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+  const sanitized = {};
+  for (const [entryKey, entryValue] of Object.entries(value)) {
+    sanitized[entryKey] = sanitizeOutputValue(entryValue, { key: entryKey });
+  }
+  return sanitized;
 }
 
 function sanitizeTelemetryPayload(payload) {
@@ -311,11 +341,14 @@ export function createCommandAdapter(options = {}) {
           stdoutLength: safeLength(stdout),
           stderrLength: safeLength(stderr),
         });
+        const sanitizedStdout = sanitizeOutputString(stdout);
+        const sanitizedStderr = sanitizeOutputString(stderr);
+        const sanitizedReturnValue = sanitizeOutputValue(result);
         return {
           command: commandName,
-          returnValue: result,
-          stdout,
-          stderr,
+          returnValue: sanitizedReturnValue,
+          stdout: sanitizedStdout,
+          stderr: sanitizedStderr,
           correlationId,
           traceId: correlationId,
         };
@@ -326,10 +359,10 @@ export function createCommandAdapter(options = {}) {
         const error = new Error(`${commandName} command failed: ${sanitizedMessage}`);
         error.cause = err;
         if (err && typeof err.stdout === 'string') {
-          error.stdout = err.stdout;
+          error.stdout = sanitizeOutputString(err.stdout);
         }
         if (err && typeof err.stderr === 'string') {
-          error.stderr = err.stderr;
+          error.stderr = sanitizeOutputString(err.stderr);
         }
         error.correlationId = correlationId;
         error.traceId = correlationId;
@@ -367,11 +400,13 @@ export function createCommandAdapter(options = {}) {
         stdoutLength: safeLength(stdout),
         stderrLength: safeLength(stderr),
       });
+      const sanitizedStdout = sanitizeOutputString(stdout);
+      const sanitizedStderr = sanitizeOutputString(stderr);
       return {
         command: commandName,
         returnValue: undefined,
-        stdout,
-        stderr,
+        stdout: sanitizedStdout,
+        stderr: sanitizedStderr,
         correlationId,
         traceId: correlationId,
       };
@@ -382,10 +417,10 @@ export function createCommandAdapter(options = {}) {
       const error = new Error(`${commandName} command failed: ${sanitizedMessage}`);
       error.cause = err;
       if (err && typeof err.stdout === 'string') {
-        error.stdout = err.stdout;
+        error.stdout = sanitizeOutputString(err.stdout);
       }
       if (err && typeof err.stderr === 'string') {
-        error.stderr = err.stderr;
+        error.stderr = sanitizeOutputString(err.stderr);
       }
       if (typeof err?.exitCode === 'number') {
         error.exitCode = err.exitCode;
@@ -446,7 +481,8 @@ export function createCommandAdapter(options = {}) {
       payload.traceId = traceId;
     }
     if (format === 'json') {
-      payload.data = parseJsonOutput('summarize', stdout, stderr);
+      const data = parseJsonOutput('summarize', payload.stdout, payload.stderr);
+      payload.data = sanitizeOutputValue(data);
     }
     return payload;
   }
@@ -500,7 +536,8 @@ export function createCommandAdapter(options = {}) {
       payload.traceId = traceId;
     }
     if (format === 'json') {
-      payload.data = parseJsonOutput('match', stdout, stderr);
+      const data = parseJsonOutput('match', payload.stdout, payload.stderr);
+      payload.data = sanitizeOutputValue(data);
     }
     return payload;
   }
@@ -510,3 +547,5 @@ export function createCommandAdapter(options = {}) {
     match,
   };
 }
+
+export { sanitizeOutputString, sanitizeOutputValue };

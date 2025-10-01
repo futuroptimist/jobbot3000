@@ -1,7 +1,11 @@
 import express from 'express';
 import { performance } from 'node:perf_hooks';
 
-import { createCommandAdapter } from './command-adapter.js';
+import {
+  createCommandAdapter,
+  sanitizeOutputString,
+  sanitizeOutputValue,
+} from './command-adapter.js';
 import { ALLOW_LISTED_COMMANDS, validateCommandPayload } from './command-registry.js';
 
 function normalizeInfo(info) {
@@ -57,6 +61,25 @@ function buildHealthResponse({ info, uptime, timestamp, checks }) {
   if (info.service) payload.service = info.service;
   if (info.version) payload.version = info.version;
   return payload;
+}
+
+function sanitizeCommandResult(result) {
+  if (!result || typeof result !== 'object') {
+    return {};
+  }
+  const sanitized = {};
+  for (const [key, value] of Object.entries(result)) {
+    if (key === 'stdout' || key === 'stderr' || key === 'error') {
+      sanitized[key] = sanitizeOutputString(value);
+      continue;
+    }
+    if (key === 'data' || key === 'returnValue') {
+      sanitized[key] = sanitizeOutputValue(value, { key });
+      continue;
+    }
+    sanitized[key] = value;
+  }
+  return sanitized;
 }
 
 async function runHealthChecks(checks) {
@@ -135,21 +158,15 @@ export function createWebApp({ info, healthChecks, commandAdapter } = {}) {
 
     try {
       const result = await commandAdapter[commandParam](payload);
-      res.status(200).json(result);
+      res.status(200).json(sanitizeCommandResult(result));
     } catch (err) {
-      const response = { error: err?.message ?? 'Command execution failed' };
-      if (err && typeof err.stdout === 'string' && err.stdout) {
-        response.stdout = err.stdout;
-      }
-      if (err && typeof err.stderr === 'string' && err.stderr) {
-        response.stderr = err.stderr;
-      }
-      if (err && typeof err.correlationId === 'string' && err.correlationId) {
-        response.correlationId = err.correlationId;
-      }
-      if (err && typeof err.traceId === 'string' && err.traceId) {
-        response.traceId = err.traceId;
-      }
+      const response = sanitizeCommandResult({
+        error: err?.message ?? 'Command execution failed',
+        stdout: err?.stdout,
+        stderr: err?.stderr,
+        correlationId: err?.correlationId,
+        traceId: err?.traceId,
+      });
       res.status(502).json(response);
     }
   });

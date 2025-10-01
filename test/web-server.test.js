@@ -257,4 +257,32 @@ describe('web server command endpoint', () => {
     expect(payload.error).toMatch(/invalid json payload/i);
     expect(commandAdapter.summarize).not.toHaveBeenCalled();
   });
+
+  it('redacts secret-like tokens from command responses', async () => {
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({
+        command: 'summarize',
+        format: 'json',
+        stdout: 'API_KEY=abcd1234secret',
+        stderr: 'Bearer sk_live_1234567890',
+        data: {
+          token: 'abcd1234secret',
+          nested: { client_secret: 'supersecret' },
+        },
+      })),
+    };
+
+    const server = await startServer({ commandAdapter });
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ input: 'job.txt', format: 'json' }),
+    });
+
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload.stdout).toBe('API_KEY=***');
+    expect(payload.stderr).toBe('Bearer ***');
+    expect(payload.data).toEqual({ token: '***', nested: { client_secret: '***' } });
+  });
 });
