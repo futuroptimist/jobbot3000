@@ -44,6 +44,10 @@ async function main() {
   });
 
   console.log(`jobbot web server listening on ${server.url}`);
+  console.log(
+    `Attach ${server.csrfHeaderName}: ${server.csrfToken} to POST /commands requests.`,
+  );
+  console.log('Treat the CSRF token as a secret.');
   console.log('Press Ctrl+C to stop.');
 
   await new Promise((resolve, reject) => {
