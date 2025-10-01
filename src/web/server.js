@@ -175,12 +175,6 @@ export function createWebApp({ info, healthChecks, commandAdapter, csrf, rateLim
       return;
     }
 
-    const providedToken = req.get(csrfOptions.headerName);
-    if ((providedToken ?? '').trim() !== csrfOptions.token) {
-      res.status(403).json({ error: 'Invalid or missing CSRF token' });
-      return;
-    }
-
     const rateKey = req.ip || req.socket?.remoteAddress || 'unknown';
     const rateStatus = rateLimiter.check(rateKey);
     res.set('X-RateLimit-Limit', String(rateLimiter.limit));
@@ -190,6 +184,12 @@ export function createWebApp({ info, healthChecks, commandAdapter, csrf, rateLim
       const retryAfterSeconds = Math.max(1, Math.ceil((rateStatus.reset - Date.now()) / 1000));
       res.set('Retry-After', String(retryAfterSeconds));
       res.status(429).json({ error: 'Too many requests' });
+      return;
+    }
+
+    const providedToken = req.get(csrfOptions.headerName);
+    if ((providedToken ?? '').trim() !== csrfOptions.token) {
+      res.status(403).json({ error: 'Invalid or missing CSRF token' });
       return;
     }
 
