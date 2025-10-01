@@ -291,7 +291,7 @@ describe('web server command endpoint', () => {
     const server = await startServer({ commandAdapter });
     const response = await fetch(`${server.url}/commands/summarize`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: buildCommandHeaders(server),
       body: JSON.stringify({ input: 'job.txt', format: 'json' }),
     });
 
@@ -310,7 +310,7 @@ describe('web server command endpoint', () => {
     const server = await startServer({ commandAdapter });
     const response = await fetch(`${server.url}/commands/summarize`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: buildCommandHeaders(server),
       body: JSON.stringify({ input: 'job.txt' }),
     });
 
