@@ -184,7 +184,66 @@ async function runHealthChecks(checks) {
   return results;
 }
 
-export function createWebApp({ info, healthChecks, commandAdapter, csrf, rateLimit } = {}) {
+function stringLength(value) {
+  return typeof value === 'string' ? value.length : 0;
+}
+
+function roundDuration(started) {
+  return Number((performance.now() - started).toFixed(3));
+}
+
+function buildCommandLogEntry({
+  command,
+  status,
+  httpStatus,
+  durationMs,
+  payloadFields = [],
+  clientIp,
+  userAgent,
+  result,
+  errorMessage,
+}) {
+  const entry = {
+    event: 'web.command',
+    command,
+    status,
+    httpStatus,
+    durationMs,
+    payloadFields: Array.isArray(payloadFields) ? payloadFields : [],
+    stdoutLength: result ? stringLength(result.stdout) : 0,
+    stderrLength: result ? stringLength(result.stderr) : 0,
+  };
+  if (clientIp) entry.clientIp = clientIp;
+  if (userAgent) entry.userAgent = userAgent;
+  if (result && typeof result.correlationId === 'string' && result.correlationId) {
+    entry.correlationId = result.correlationId;
+  }
+  if (result && typeof result.traceId === 'string' && result.traceId) {
+    entry.traceId = result.traceId;
+  }
+  if (errorMessage) entry.errorMessage = errorMessage;
+  return entry;
+}
+
+function logCommandTelemetry(logger, level, details) {
+  if (!logger) return;
+  const fn = typeof logger[level] === 'function' ? logger[level] : undefined;
+  if (!fn) return;
+  try {
+    fn(buildCommandLogEntry(details));
+  } catch {
+    // Ignore logger failures so HTTP responses are unaffected.
+  }
+}
+
+export function createWebApp({
+  info,
+  healthChecks,
+  commandAdapter,
+  csrf,
+  rateLimit,
+  logger,
+} = {}) {
   const normalizedInfo = normalizeInfo(info);
   const normalizedChecks = normalizeHealthChecks(healthChecks);
   const csrfOptions = normalizeCsrfOptions(csrf);
@@ -216,6 +275,10 @@ export function createWebApp({ info, healthChecks, commandAdapter, csrf, rateLim
       return;
     }
 
+    const started = performance.now();
+    const clientIp = req.ip || req.socket?.remoteAddress || undefined;
+    const userAgent = req.get('user-agent');
+
     const rateKey = req.ip || req.socket?.remoteAddress || 'unknown';
     const rateStatus = rateLimiter.check(rateKey);
     res.set('X-RateLimit-Limit', String(rateLimiter.limit));
@@ -242,9 +305,23 @@ export function createWebApp({ info, healthChecks, commandAdapter, csrf, rateLim
       return;
     }
 
+    const payloadFields = Object.keys(payload ?? {}).sort();
+
     try {
       const result = await commandAdapter[commandParam](payload);
-      res.status(200).json(sanitizeCommandResult(result));
+      const sanitizedResult = sanitizeCommandResult(result);
+      const durationMs = roundDuration(started);
+      logCommandTelemetry(logger, 'info', {
+        command: commandParam,
+        status: 'success',
+        httpStatus: 200,
+        durationMs,
+        payloadFields,
+        clientIp,
+        userAgent,
+        result: sanitizedResult,
+      });
+      res.status(200).json(sanitizedResult);
     } catch (err) {
       const response = sanitizeCommandResult({
         error: err?.message ?? 'Command execution failed',
@@ -252,6 +329,18 @@ export function createWebApp({ info, healthChecks, commandAdapter, csrf, rateLim
         stderr: err?.stderr,
         correlationId: err?.correlationId,
         traceId: err?.traceId,
+      });
+      const durationMs = roundDuration(started);
+      logCommandTelemetry(logger, 'error', {
+        command: commandParam,
+        status: 'error',
+        httpStatus: 502,
+        durationMs,
+        payloadFields,
+        clientIp,
+        userAgent,
+        result: response,
+        errorMessage: response?.error,
       });
       res.status(502).json(response);
     }
@@ -277,12 +366,15 @@ export function startWebServer(options = {}) {
   }
   const {
     commandAdapter: providedCommandAdapter,
+    commandAdapterOptions,
     csrfToken: providedCsrfToken,
     csrfHeaderName,
     rateLimit,
+    logger,
     ...rest
   } = options;
-  const commandAdapter = providedCommandAdapter ?? createCommandAdapter();
+  const commandAdapter =
+    providedCommandAdapter ?? createCommandAdapter({ logger, ...(commandAdapterOptions ?? {}) });
   const resolvedCsrfToken =
     typeof providedCsrfToken === 'string' && providedCsrfToken.trim()
       ? providedCsrfToken.trim()
@@ -296,6 +388,7 @@ export function startWebServer(options = {}) {
     commandAdapter,
     csrf: { token: resolvedCsrfToken, headerName: resolvedHeaderName },
     rateLimit,
+    logger,
   });
 
   return new Promise((resolve, reject) => {

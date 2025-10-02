@@ -131,6 +131,12 @@
 2. **CLI Integration Layer**
    - Implement real CLI invocations behind feature flags.
    - Add structured logging, metrics, and error handling utilities.
+     _Implemented (2025-12-20):_ [`src/web/server.js`](../src/web/server.js)
+     now emits structured `web.command` telemetry for every command request,
+     capturing durations, sanitized stdout/stderr lengths, and correlation IDs.
+     The regression coverage in
+     [`test/web-server.test.js`](../test/web-server.test.js) asserts both
+     success and failure logs remain wired without leaking sensitive fields.
    - Write integration tests that execute representative CLI commands in a sandboxed environment.
    _Update (2025-11-30):_ The Express app now exposes `POST /commands/:command`, which validates
    requests against an allow-listed schema before delegating to the CLI via
