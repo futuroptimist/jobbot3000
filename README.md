@@ -1604,6 +1604,16 @@ extended by passing custom check functions to
 and failing checks so future endpoints can rely on the health contract when the
 web interface expands beyond the CLI wrappers.
 
+Environment presets now live in
+[`loadWebConfig`](src/web/config.js), which provides development, staging, and
+production defaults for hosts, ports, and rate limits. The `web:server` script
+respects `JOBBOT_WEB_ENV`, `JOBBOT_WEB_HOST`, `JOBBOT_WEB_PORT`, and matching
+rate-limit overrides (`JOBBOT_WEB_RATE_LIMIT_WINDOW_MS`,
+`JOBBOT_WEB_RATE_LIMIT_MAX`) alongside new command-line flags such as
+`--env`, `--rate-limit-window-ms`, and `--rate-limit-max`. Tests in
+[`test/web-config.test.js`](test/web-config.test.js) lock the presets and
+override hierarchy in place so deployments stay consistent across tiers.
+
 Every server start prints a one-time CSRF secret. Attach the emitted header and
 token (for example, `X-Jobbot-Csrf: <token>`) to every `POST /commands` request.
 Missing or invalid CSRF headers return `403` errors before the CLI adapter runs.
