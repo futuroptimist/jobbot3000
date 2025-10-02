@@ -198,6 +198,14 @@ describe('createCommandAdapter', () => {
     expect(cli.cmdSummarize).not.toHaveBeenCalled();
   });
 
+  it('treats non-finite numeric enableNativeCli options as disabled', async () => {
+    const adapter = createCommandAdapter({ enableNativeCli: Number(undefined) });
+
+    await expect(
+      adapter.summarize({ input: 'job.txt' }),
+    ).rejects.toMatchObject({ code: 'NATIVE_CLI_DISABLED' });
+  });
+
   it('throws when required match arguments are missing', async () => {
     const cli = { cmdMatch: vi.fn() };
     const adapter = createCommandAdapter({ cli });
