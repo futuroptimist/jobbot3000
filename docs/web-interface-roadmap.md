@@ -169,6 +169,12 @@
 6. **Hardening and Packaging**
    - Implement rate limiting, input sanitization, and CSRF tokens.
    - Add configuration for local, staging, and production environments.
+     _Implemented (2025-12-18):_ [`src/web/config.js`](../src/web/config.js)
+     centralizes environment presets (development/staging/production) and
+     powers `scripts/web-server.js` so the CLI picks up consistent hosts,
+     ports, and rate limits per tier. Regression coverage in
+     [`test/web-config.test.js`](../test/web-config.test.js) locks the
+     defaults and override semantics in place.
    - Provide Dockerfile and docker-compose for reproducible deployment.
    - Document operational playbooks (monitoring, alerting, on-call runbooks).
 
@@ -217,7 +223,9 @@
   adapter, asserting the HTTP stack, schema validation, and sanitized payloads
   round-trip real job text without mocks.
 - [ ] Accessibility and performance audits
-- [ ] Deployment artifacts and environment parity
+- [ ] Deployment artifacts and environment parity *(configuration presets
+  shipped via [`src/web/config.js`](../src/web/config.js); container images
+  remain outstanding)*
 
 ## Roadmap Timeline (Quarterly)
 
