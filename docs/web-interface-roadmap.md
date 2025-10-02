@@ -129,7 +129,14 @@
      future web endpoints inherit consistent payload validation.
 
 2. **CLI Integration Layer**
-   - Implement real CLI invocations behind feature flags.
+  - Implement real CLI invocations behind feature flags.
+    _Implemented (2025-12-30):_ [`src/web/command-adapter.js`](../src/web/command-adapter.js)
+    now requires setting `JOBBOT_WEB_ENABLE_NATIVE_CLI=1` (or passing
+    `enableNativeCli: true` to [`startWebServer`](../src/web/server.js))
+    before spawning the CLI. Otherwise callers must inject a mocked
+    adapter. Regression coverage in
+    [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
+    asserts native execution stays gated behind the feature flag.
    - Add structured logging, metrics, and error handling utilities.
      _Implemented (2025-12-20):_ [`src/web/server.js`](../src/web/server.js)
      now emits structured `web.command` telemetry for every command request,

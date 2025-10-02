@@ -101,6 +101,32 @@ const COMMAND_METHODS = {
 };
 
 const DEFAULT_CLI_PATH = fileURLToPath(new URL('../../bin/jobbot.js', import.meta.url));
+const TRUTHY_FLAG_VALUES = new Set(['1', 'true', 'yes', 'on', 'enabled']);
+const FALSY_FLAG_VALUES = new Set(['0', 'false', 'no', 'off', 'disabled']);
+
+function resolveNativeCliFlag(value) {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'number') {
+    return Number(value) !== 0;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (TRUTHY_FLAG_VALUES.has(normalized)) return true;
+    if (FALSY_FLAG_VALUES.has(normalized)) return false;
+    if (normalized) return false;
+  }
+
+  const envValue = process.env.JOBBOT_WEB_ENABLE_NATIVE_CLI;
+  if (envValue === undefined) {
+    return false;
+  }
+  const normalized = envValue.trim().toLowerCase();
+  if (TRUTHY_FLAG_VALUES.has(normalized)) return true;
+  if (FALSY_FLAG_VALUES.has(normalized)) return false;
+  return false;
+}
 
 function formatLogArg(arg) {
   if (typeof arg === 'string') return arg;
@@ -198,7 +224,9 @@ export function createCommandAdapter(options = {}) {
     nodePath,
     cliPath,
     env,
+    enableNativeCli: enableNativeCliOption,
   } = options;
+  const enableNativeCli = resolveNativeCliFlag(enableNativeCliOption);
 
   function nextCorrelationId() {
     if (typeof generateCorrelationId === 'function') {
@@ -384,6 +412,17 @@ export function createCommandAdapter(options = {}) {
         });
         throw error;
       }
+    }
+
+    if (!enableNativeCli) {
+      const error = new Error(
+        'Native CLI execution is disabled. Provide a CLI adapter or set ' +
+          'JOBBOT_WEB_ENABLE_NATIVE_CLI=1.',
+      );
+      error.code = 'NATIVE_CLI_DISABLED';
+      error.correlationId = correlationId;
+      error.traceId = correlationId;
+      throw error;
     }
 
     try {

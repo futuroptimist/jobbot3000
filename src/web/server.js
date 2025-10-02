@@ -371,10 +371,12 @@ export function startWebServer(options = {}) {
     csrfHeaderName,
     rateLimit,
     logger,
+    enableNativeCli,
     ...rest
   } = options;
   const commandAdapter =
-    providedCommandAdapter ?? createCommandAdapter({ logger, ...(commandAdapterOptions ?? {}) });
+    providedCommandAdapter ??
+    createCommandAdapter({ logger, enableNativeCli, ...(commandAdapterOptions ?? {}) });
   const resolvedCsrfToken =
     typeof providedCsrfToken === 'string' && providedCsrfToken.trim()
       ? providedCsrfToken.trim()
