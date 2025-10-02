@@ -337,6 +337,103 @@ describe('web server command endpoint', () => {
     expect(commandAdapter.summarize).not.toHaveBeenCalled();
   });
 
+  it('logs telemetry when commands succeed', async () => {
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+    const commandAdapter = {
+      summarize: vi.fn(async options => {
+        expect(options).toEqual({ input: 'job.txt' });
+        return {
+          command: 'summarize',
+          stdout: 'ok',
+          stderr: '',
+          correlationId: 'corr-123',
+          traceId: 'corr-123',
+        };
+      }),
+    };
+
+    const server = await startServer({ commandAdapter, logger });
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: 'POST',
+      headers: buildCommandHeaders(server),
+      body: JSON.stringify({ input: 'job.txt' }),
+    });
+
+    expect(response.status).toBe(200);
+    await response.json();
+
+    expect(logger.info).toHaveBeenCalledTimes(1);
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
+
+    const entry = logger.info.mock.calls[0][0];
+    expect(entry).toMatchObject({
+      event: 'web.command',
+      command: 'summarize',
+      status: 'success',
+      httpStatus: 200,
+      correlationId: 'corr-123',
+      traceId: 'corr-123',
+      payloadFields: ['input'],
+    });
+    expect(typeof entry.durationMs).toBe('number');
+    expect(entry.durationMs).toBeGreaterThanOrEqual(0);
+    expect(entry.stdoutLength).toBe(2);
+    expect(entry.stderrLength).toBe(0);
+  });
+
+  it('logs telemetry when commands fail', async () => {
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+    const error = new Error('summarize command failed: boom');
+    error.stdout = 'oops';
+    error.stderr = 'fail';
+    error.correlationId = 'corr-err';
+    error.traceId = 'corr-err';
+    const commandAdapter = {
+      summarize: vi.fn(async () => {
+        throw error;
+      }),
+    };
+
+    const server = await startServer({ commandAdapter, logger });
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: 'POST',
+      headers: buildCommandHeaders(server),
+      body: JSON.stringify({ input: 'job.txt' }),
+    });
+
+    expect(response.status).toBe(502);
+    await response.json();
+
+    expect(logger.info).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledTimes(1);
+
+    const entry = logger.error.mock.calls[0][0];
+    expect(entry).toMatchObject({
+      event: 'web.command',
+      command: 'summarize',
+      status: 'error',
+      httpStatus: 502,
+      correlationId: 'corr-err',
+      traceId: 'corr-err',
+      payloadFields: ['input'],
+      errorMessage: 'summarize command failed: boom',
+    });
+    expect(typeof entry.durationMs).toBe('number');
+    expect(entry.durationMs).toBeGreaterThanOrEqual(0);
+    expect(entry.stdoutLength).toBe(4);
+    expect(entry.stderrLength).toBe(4);
+  });
+
   it('rate limits repeated command requests per client', async () => {
     const commandAdapter = {
       summarize: vi.fn(async () => ({ ok: true })),
