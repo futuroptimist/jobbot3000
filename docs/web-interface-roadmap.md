@@ -137,7 +137,12 @@
      The regression coverage in
      [`test/web-server.test.js`](../test/web-server.test.js) asserts both
      success and failure logs remain wired without leaking sensitive fields.
-   - Write integration tests that execute representative CLI commands in a sandboxed environment.
+  - Write integration tests that execute representative CLI commands in a sandboxed environment.
+    _Implemented (2025-12-22):_ [`test/web-server-integration.test.js`](../test/web-server-integration.test.js)
+    now boots the Express server with the real command adapter, calls the `match`
+    endpoint against sandboxed resume and job fixtures, verifies sanitized JSON
+    responses, and asserts job snapshots land inside the temporary
+    `JOBBOT_DATA_DIR` so web requests never escape their test environment.
    _Update (2025-11-30):_ The Express app now exposes `POST /commands/:command`, which validates
    requests against an allow-listed schema before delegating to the CLI via
    `createCommandAdapter`. Coverage in
