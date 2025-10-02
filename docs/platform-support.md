@@ -34,6 +34,20 @@ Unset the variable with `unset JOBBOT_DATA_DIR` (POSIX shells) or
 uses `path.resolve('data')` when the variable is not provided, so existing users
 retain their data directories.
 
+The experimental web server reads tier-aware defaults from
+[`loadWebConfig`](../src/web/config.js). Override them with:
+
+- `JOBBOT_WEB_ENV` (`development`, `staging`, or `production`) to pick a preset.
+- `JOBBOT_WEB_HOST` / `JOBBOT_WEB_PORT` to customize bind address and port.
+- `JOBBOT_WEB_RATE_LIMIT_WINDOW_MS` / `JOBBOT_WEB_RATE_LIMIT_MAX` for rate
+  limiting budgets.
+- `JOBBOT_WEB_CSRF_HEADER` / `JOBBOT_WEB_CSRF_TOKEN` to supply custom CSRF
+  metadata when embedding the backend behind a proxy.
+
+These variables mirror the new CLI flags exposed by
+`npm run web:server`; see [`test/web-config.test.js`](../test/web-config.test.js)
+for the supported combinations.
+
 ## Speech command integration
 
 `speech.js` tokenizes user-provided transcription and synthesis commands into a
