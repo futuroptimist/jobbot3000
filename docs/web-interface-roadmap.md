@@ -200,7 +200,11 @@
   to each invocation, and [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
   plus [`test/web-server.test.js`](../test/web-server.test.js) assert the sanitized
   logs and identifiers propagate to API clients.
-- [ ] Automated tests spanning unit → e2e layers
+- [x] Automated tests spanning unit → e2e layers
+  _Implemented (2025-12-15):_ [`test/web-e2e.test.js`](../test/web-e2e.test.js)
+  exercises `POST /commands/summarize` end to end against the CLI-backed
+  adapter, asserting the HTTP stack, schema validation, and sanitized payloads
+  round-trip real job text without mocks.
 - [ ] Accessibility and performance audits
 - [ ] Deployment artifacts and environment parity
 
