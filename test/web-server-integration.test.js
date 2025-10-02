@@ -77,55 +77,66 @@ describe('web server integration with CLI', () => {
       'utf8',
     );
 
-    const server = await startServer({
-      commandAdapterOptions: {
-        env: { ...process.env, JOBBOT_DATA_DIR: sandboxDataDir },
-      },
-    });
+    const originalEnableNativeCli = process.env.JOBBOT_WEB_ENABLE_NATIVE_CLI;
+    process.env.JOBBOT_WEB_ENABLE_NATIVE_CLI = '1';
 
-    const response = await fetch(`${server.url}/commands/match`, {
-      method: 'POST',
-      headers: buildHeaders(server),
-      body: JSON.stringify({
-        resume: resumePath,
-        job: jobPath,
+    try {
+      const server = await startServer({
+        commandAdapterOptions: {
+          env: { ...process.env, JOBBOT_DATA_DIR: sandboxDataDir },
+        },
+      });
+
+      const response = await fetch(`${server.url}/commands/match`, {
+        method: 'POST',
+        headers: buildHeaders(server),
+        body: JSON.stringify({
+          resume: resumePath,
+          job: jobPath,
+          format: 'json',
+          explain: true,
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      const payload = await response.json();
+      expect(payload).toMatchObject({
+        command: 'match',
         format: 'json',
-        explain: true,
-      }),
-    });
-
-    expect(response.status).toBe(200);
-    const payload = await response.json();
-    expect(payload).toMatchObject({
-      command: 'match',
-      format: 'json',
-      stderr: '',
-      data: {
+        stderr: '',
+        data: {
+          title: 'Platform Engineer',
+          score: 100,
+          matched: ['Node.js', 'Terraform'],
+          missing: [],
+        },
+      });
+      expect(typeof payload.stdout).toBe('string');
+      const stdoutJson = JSON.parse(payload.stdout);
+      expect(stdoutJson).toMatchObject({
         title: 'Platform Engineer',
         score: 100,
         matched: ['Node.js', 'Terraform'],
         missing: [],
-      },
-    });
-    expect(typeof payload.stdout).toBe('string');
-    const stdoutJson = JSON.parse(payload.stdout);
-    expect(stdoutJson).toMatchObject({
-      title: 'Platform Engineer',
-      score: 100,
-      matched: ['Node.js', 'Terraform'],
-      missing: [],
-    });
-    expect(Array.isArray(payload.data.evidence)).toBe(true);
-    expect(payload.data.evidence[0]).toMatchObject({ source: 'requirements' });
+      });
+      expect(Array.isArray(payload.data.evidence)).toBe(true);
+      expect(payload.data.evidence[0]).toMatchObject({ source: 'requirements' });
 
-    const jobsDir = path.join(sandboxDataDir, 'jobs');
-    const jobFiles = await readdir(jobsDir);
-    expect(jobFiles.length).toBeGreaterThan(0);
-    const snapshotPath = path.join(jobsDir, jobFiles[0]);
-    const snapshot = JSON.parse(await readFile(snapshotPath, 'utf8'));
-    expect(snapshot).toMatchObject({
-      parsed: { title: 'Platform Engineer' },
-      source: { type: 'file' },
-    });
+      const jobsDir = path.join(sandboxDataDir, 'jobs');
+      const jobFiles = await readdir(jobsDir);
+      expect(jobFiles.length).toBeGreaterThan(0);
+      const snapshotPath = path.join(jobsDir, jobFiles[0]);
+      const snapshot = JSON.parse(await readFile(snapshotPath, 'utf8'));
+      expect(snapshot).toMatchObject({
+        parsed: { title: 'Platform Engineer' },
+        source: { type: 'file' },
+      });
+    } finally {
+      if (originalEnableNativeCli === undefined) {
+        delete process.env.JOBBOT_WEB_ENABLE_NATIVE_CLI;
+      } else {
+        process.env.JOBBOT_WEB_ENABLE_NATIVE_CLI = originalEnableNativeCli;
+      }
+    }
   });
 });

@@ -3,7 +3,7 @@ vi.mock('node:child_process', async () => {
   return { ...actual, spawn: vi.fn() };
 });
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -14,8 +14,20 @@ import * as childProcess from 'node:child_process';
 import { createCommandAdapter } from '../src/web/command-adapter.js';
 
 describe('createCommandAdapter', () => {
+  let originalEnableNativeCli;
+
+  beforeEach(() => {
+    originalEnableNativeCli = process.env.JOBBOT_WEB_ENABLE_NATIVE_CLI;
+    delete process.env.JOBBOT_WEB_ENABLE_NATIVE_CLI;
+  });
+
   afterEach(() => {
     childProcess.spawn.mockReset();
+    if (originalEnableNativeCli === undefined) {
+      delete process.env.JOBBOT_WEB_ENABLE_NATIVE_CLI;
+    } else {
+      process.env.JOBBOT_WEB_ENABLE_NATIVE_CLI = originalEnableNativeCli;
+    }
   });
 
   function createTempJobFile(contents = 'Role: Example Engineer') {
@@ -186,6 +198,22 @@ describe('createCommandAdapter', () => {
     expect(cli.cmdSummarize).not.toHaveBeenCalled();
   });
 
+  it('treats non-finite numeric enableNativeCli options as disabled', async () => {
+    const adapter = createCommandAdapter({ enableNativeCli: Number(undefined) });
+
+    await expect(
+      adapter.summarize({ input: 'job.txt' }),
+    ).rejects.toMatchObject({ code: 'NATIVE_CLI_DISABLED' });
+  });
+
+  it('treats non-finite numeric enableNativeCli options as disabled', async () => {
+    const adapter = createCommandAdapter({ enableNativeCli: Number(undefined) });
+
+    await expect(
+      adapter.summarize({ input: 'job.txt' }),
+    ).rejects.toMatchObject({ code: 'NATIVE_CLI_DISABLED' });
+  });
+
   it('throws when required match arguments are missing', async () => {
     const cli = { cmdMatch: vi.fn() };
     const adapter = createCommandAdapter({ cli });
@@ -350,6 +378,7 @@ describe('createCommandAdapter', () => {
   });
 
   it('spawns the CLI without shell interpolation when no cli module is provided', async () => {
+    process.env.JOBBOT_WEB_ENABLE_NATIVE_CLI = '1';
     const spawnMock = childProcess.spawn;
     spawnMock.mockImplementation((command, args, options) => {
       expect(command).toBe(process.execPath);
@@ -385,6 +414,7 @@ describe('createCommandAdapter', () => {
   });
 
   it('propagates stderr when the spawned CLI exits with a non-zero code', async () => {
+    process.env.JOBBOT_WEB_ENABLE_NATIVE_CLI = 'true';
     const spawnMock = childProcess.spawn;
     spawnMock.mockImplementation(() =>
       createSpawnedProcess({ stdout: '', stderr: 'boom\n', exitCode: 2 }),
@@ -402,5 +432,14 @@ describe('createCommandAdapter', () => {
     } finally {
       temp.cleanup();
     }
+  });
+
+  it('requires enabling native CLI execution when no inline adapter is provided', async () => {
+    const adapter = createCommandAdapter({ enableNativeCli: false });
+
+    await expect(adapter.summarize({ input: 'job.txt' })).rejects.toThrow(
+      /native cli execution is disabled/i,
+    );
+    expect(childProcess.spawn).not.toHaveBeenCalled();
   });
 });
