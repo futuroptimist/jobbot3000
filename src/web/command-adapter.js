@@ -109,7 +109,9 @@ function resolveNativeCliFlag(value) {
     return value;
   }
   if (typeof value === 'number') {
-    return Number(value) !== 0;
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) return false;
+    return numericValue !== 0;
   }
   if (typeof value === 'string') {
     const normalized = value.trim().toLowerCase();
