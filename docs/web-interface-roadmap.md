@@ -158,7 +158,15 @@
 
 3. **Frontend Shell**
    - Set up routing, layout, and theme providers.
-   - Implement authentication stubs if future remote deployment is anticipated.
+  - Implement authentication stubs if future remote deployment is anticipated.
+    _Implemented (2025-12-13):_ [`src/web/server.js`](../src/web/server.js)
+    now enforces configurable static authorization tokens for
+    `/commands/:command` requests when `startWebServer` receives `auth`
+    options or the `JOBBOT_WEB_AUTH_TOKENS` environment variable. Callers
+    can override the header name and scheme (including scheme-less API
+    keys), and unauthorized requests receive 401 responses. Coverage in
+    [`test/web-server.test.js`](../test/web-server.test.js) exercises the
+    missing-token guard, Bearer token flow, and custom header handling.
    - Create base components and loading/error states.
 
 4. **Core Features**
