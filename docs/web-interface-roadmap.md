@@ -179,7 +179,13 @@
    - Unit tests for frontend components (Jest/Testing Library) and backend modules (Jest/Supertest).
    - Contract tests ensuring backend responses align with CLI output fixtures.
    - End-to-end tests (Playwright/Cypress) simulating user flows with mocked CLI responses.
-   - Accessibility audits (axe-core) and performance benchmarks (Lighthouse).
+  - Accessibility audits (axe-core) and performance benchmarks (Lighthouse).
+    _Implemented (2025-12-19):_ [`src/web/audits.js`](../src/web/audits.js)
+    now runs axe-core against the status page while translating
+    Lighthouse scoring formulas to real HTTP timings. The regression
+    suite in [`test/web-audits.test.js`](../test/web-audits.test.js)
+    boots the Express adapter, fetches the HTML dashboard, and asserts the
+    audits return zero WCAG AA violations with a performance score ≥0.9.
 
 6. **Hardening and Packaging**
    - Implement rate limiting, input sanitization, and CSRF tokens.
@@ -237,7 +243,13 @@
   exercises `POST /commands/summarize` end to end against the CLI-backed
   adapter, asserting the HTTP stack, schema validation, and sanitized payloads
   round-trip real job text without mocks.
-- [ ] Accessibility and performance audits
+- [x] Accessibility and performance audits
+  _Implemented (2025-12-19):_ The homepage served by
+  [`startWebServer`](../src/web/server.js) now exposes a WCAG-compliant
+  status page. [`src/web/audits.js`](../src/web/audits.js) and
+  [`test/web-audits.test.js`](../test/web-audits.test.js) run axe-core and
+  Lighthouse-derived scoring on every build, preventing regressions before
+  the UI launches.
 - [ ] Deployment artifacts and environment parity *(configuration presets
   shipped via [`src/web/config.js`](../src/web/config.js); container images
   remain outstanding)*

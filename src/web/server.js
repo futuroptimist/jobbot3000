@@ -41,6 +41,26 @@ function createInMemoryRateLimiter(options = {}) {
   };
 }
 
+function escapeHtml(value) {
+  if (typeof value !== 'string') return '';
+  return value.replace(/[&<>"']/g, character => {
+    switch (character) {
+      case '&':
+        return '&amp;';
+      case '<':
+        return '&lt;';
+      case '>':
+        return '&gt;';
+      case '"':
+        return '&quot;';
+      case "'":
+        return '&#39;';
+      default:
+        return character;
+    }
+  });
+}
+
 function normalizeCsrfOptions(csrf = {}) {
   const headerName =
     typeof csrf.headerName === 'string' && csrf.headerName.trim()
@@ -317,6 +337,174 @@ export function createWebApp({
     ALLOW_LISTED_COMMANDS.filter(name => typeof commandAdapter?.[name] === 'function'),
   );
   const jsonParser = express.json({ limit: '1mb' });
+
+  app.get('/', (req, res) => {
+    const serviceName = normalizedInfo.service || 'jobbot web interface';
+    const version = normalizedInfo.version ? `Version ${normalizedInfo.version}` : 'Local build';
+    const commands = Array.from(availableCommands).sort();
+    const commandList =
+      commands.length === 0
+        ? '<li><em>No CLI commands have been allowed yet.</em></li>'
+        : commands
+            .map(name => {
+              const escapedName = escapeHtml(name);
+              return [
+                '<li><code>',
+                escapedName,
+                '</code> &mdash; accessible via POST /commands/',
+                escapedName,
+                '</li>',
+              ].join('');
+            })
+            .join('');
+    const skipLinkStyle =
+      'position:absolute;left:-999px;top:auto;width:1px;height:1px;overflow:hidden;';
+    const repoUrl = 'https://github.com/jobbot3000/jobbot3000';
+    const readmeUrl = `${repoUrl}/blob/main/README.md`;
+    const roadmapUrl = `${repoUrl}/blob/main/docs/web-interface-roadmap.md`;
+
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.send(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${escapeHtml(serviceName)}</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family:
+          'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background-color: #0b0d0f;
+        color: #f1f5f9;
+      }
+      body {
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+      header,
+      main,
+      footer {
+        margin: 0 auto;
+        width: min(960px, 100%);
+        padding: 2rem 1.5rem;
+      }
+      header {
+        padding-bottom: 1rem;
+      }
+      h1 {
+        font-size: clamp(2rem, 4vw, 2.5rem);
+        margin-bottom: 0.5rem;
+      }
+      h2 {
+        font-size: clamp(1.4rem, 3vw, 1.75rem);
+        margin-top: 2rem;
+      }
+      p {
+        max-width: 65ch;
+      }
+      code {
+        background-color: rgba(148, 163, 184, 0.12);
+        border-radius: 0.35rem;
+        padding: 0.15rem 0.4rem;
+      }
+      ul {
+        padding-left: 1.5rem;
+      }
+      a {
+        color: #38bdf8;
+      }
+      a:focus,
+      button:focus,
+      summary:focus {
+        outline: 3px solid #facc15;
+        outline-offset: 2px;
+      }
+      footer {
+        margin-top: auto;
+        border-top: 1px solid rgba(148, 163, 184, 0.25);
+        color: #cbd5f5;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        background-color: rgba(56, 189, 248, 0.12);
+        border-radius: 999px;
+        padding: 0.35rem 0.85rem;
+        font-size: 0.9rem;
+      }
+      .grid {
+        display: grid;
+        gap: 1.5rem;
+      }
+      @media (min-width: 768px) {
+        .grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a href="#main" class="pill" style="${skipLinkStyle}">Skip to main content</a>
+    <header>
+      <p class="pill" aria-label="Service metadata">
+        <strong>${escapeHtml(serviceName)}</strong>
+        <span aria-hidden="true">•</span>
+        <span>${escapeHtml(version)}</span>
+      </p>
+      <h1>${escapeHtml(serviceName)}</h1>
+      <p>
+          This lightweight status page surfaces the Express adapter that bridges the jobbot3000 CLI
+          with the experimental web interface. API consumers can discover available commands below
+          and review the automated audits that keep accessibility and performance in check.
+      </p>
+    </header>
+    <main id="main" tabindex="-1">
+      <section aria-labelledby="commands-heading">
+        <h2 id="commands-heading">Allow-listed CLI commands</h2>
+        <p>
+          The adapter only exposes safe CLI entry points. Each command requires a CSRF header and
+          JSON payload that matches the schema enforced by the backend validators.
+        </p>
+        <ul>${commandList}</ul>
+      </section>
+      <section class="grid" aria-labelledby="audits-heading">
+        <div>
+          <h2 id="audits-heading">Automated audits</h2>
+          <p>
+            Continuous accessibility checks rely on <code>axe-core</code> while performance scoring
+            applies Lighthouse metrics to real HTTP responses. See
+            <code>test/web-audits.test.js</code> for the automated coverage that enforces both
+            baselines.
+          </p>
+        </div>
+        <div>
+          <details>
+            <summary>Helpful references</summary>
+            <nav aria-label="Documentation links">
+              <ul>
+                <li><a href="${repoUrl}">Repository</a></li>
+                <li><a href="${readmeUrl}">README</a></li>
+                <li><a href="${roadmapUrl}">Web interface roadmap</a></li>
+              </ul>
+            </nav>
+          </details>
+        </div>
+      </section>
+    </main>
+    <footer>
+        <p>
+          Built for local-first deployments. Keep your CSRF token secret and run
+          <code>npm run lint</code> and <code>npm run test:ci</code> before shipping changes.
+        </p>
+    </footer>
+  </body>
+</html>`);
+  });
 
   app.get('/health', async (req, res) => {
     const timestamp = new Date().toISOString();
