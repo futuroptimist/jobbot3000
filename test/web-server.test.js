@@ -337,6 +337,85 @@ describe('web server command endpoint', () => {
     expect(commandAdapter.summarize).not.toHaveBeenCalled();
   });
 
+  it('requires a valid authorization token when configured', async () => {
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({ ok: true })),
+    };
+
+    const server = await startServer({
+      commandAdapter,
+      auth: { tokens: ['secret-token-123'] },
+    });
+    const body = JSON.stringify({ input: 'job.txt' });
+
+    const missingAuth = await fetch(`${server.url}/commands/summarize`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        [server.csrfHeaderName]: server.csrfToken,
+      },
+      body,
+    });
+    expect(missingAuth.status).toBe(401);
+    expect(await missingAuth.json()).toMatchObject({
+      error: expect.stringMatching(/authorization/i),
+    });
+    expect(commandAdapter.summarize).not.toHaveBeenCalled();
+
+    const invalidAuth = await fetch(`${server.url}/commands/summarize`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        [server.csrfHeaderName]: server.csrfToken,
+        authorization: 'Bearer nope',
+      },
+      body,
+    });
+    expect(invalidAuth.status).toBe(401);
+    expect(await invalidAuth.json()).toMatchObject({
+      error: expect.stringMatching(/authorization/i),
+    });
+    expect(commandAdapter.summarize).not.toHaveBeenCalled();
+
+    const validAuth = await fetch(`${server.url}/commands/summarize`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        [server.csrfHeaderName]: server.csrfToken,
+        authorization: 'Bearer secret-token-123',
+      },
+      body,
+    });
+    expect(validAuth.status).toBe(200);
+    expect(await validAuth.json()).toEqual({ ok: true });
+    expect(commandAdapter.summarize).toHaveBeenCalledTimes(1);
+  });
+
+  it('supports custom authorization headers without schemes', async () => {
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({ ok: true })),
+    };
+
+    const server = await startServer({
+      commandAdapter,
+      auth: { tokens: ['magic-token'], headerName: 'x-api-key', scheme: '' },
+    });
+
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        [server.csrfHeaderName]: server.csrfToken,
+        'x-api-key': 'magic-token',
+      },
+      body: JSON.stringify({ input: 'job.txt' }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(commandAdapter.summarize).toHaveBeenCalledTimes(1);
+  });
+
   it('logs telemetry when commands succeed', async () => {
     const logger = {
       info: vi.fn(),

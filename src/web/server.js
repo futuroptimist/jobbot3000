@@ -56,6 +56,68 @@ function normalizeCsrfOptions(csrf = {}) {
   };
 }
 
+function normalizeAuthOptions(auth) {
+  if (!auth || auth === false) {
+    return null;
+  }
+  if (auth.__normalizedAuth === true) {
+    return auth;
+  }
+
+  const rawTokens = auth.tokens ?? auth.token;
+  let tokenCandidates = [];
+  if (Array.isArray(rawTokens)) {
+    tokenCandidates = rawTokens;
+  } else if (typeof rawTokens === 'string') {
+    tokenCandidates = rawTokens.split(',');
+  }
+
+  const normalizedTokens = [];
+  for (const candidate of tokenCandidates) {
+    if (typeof candidate !== 'string') {
+      throw new Error('auth tokens must be provided as strings');
+    }
+    const trimmed = candidate.trim();
+    if (!trimmed) {
+      continue;
+    }
+    normalizedTokens.push(trimmed);
+  }
+
+  if (normalizedTokens.length === 0) {
+    throw new Error('auth.tokens must include at least one non-empty token');
+  }
+
+  const headerName =
+    typeof auth.headerName === 'string' && auth.headerName.trim()
+      ? auth.headerName.trim()
+      : 'authorization';
+
+  let scheme = 'Bearer';
+  if (auth.scheme === '' || auth.scheme === false || auth.scheme === null) {
+    scheme = '';
+  } else if (typeof auth.scheme === 'string') {
+    const trimmed = auth.scheme.trim();
+    scheme = trimmed;
+  } else if (auth.scheme !== undefined && auth.scheme !== null) {
+    throw new Error('auth.scheme must be a string when provided');
+  }
+
+  const requireScheme = Boolean(scheme);
+  const schemePrefix = requireScheme ? `${scheme} ` : '';
+  const normalized = {
+    __normalizedAuth: true,
+    headerName,
+    scheme: requireScheme ? scheme : '',
+    requireScheme,
+    tokens: new Set(normalizedTokens),
+    schemePrefixLower: schemePrefix.toLowerCase(),
+    schemePrefixLength: schemePrefix.length,
+  };
+
+  return normalized;
+}
+
 function normalizeInfo(info) {
   if (!info || typeof info !== 'object') return {};
   const normalized = {};
@@ -243,11 +305,13 @@ export function createWebApp({
   csrf,
   rateLimit,
   logger,
+  auth,
 } = {}) {
   const normalizedInfo = normalizeInfo(info);
   const normalizedChecks = normalizeHealthChecks(healthChecks);
   const csrfOptions = normalizeCsrfOptions(csrf);
   const rateLimiter = createInMemoryRateLimiter(rateLimit);
+  const authOptions = normalizeAuthOptions(auth);
   const app = express();
   const availableCommands = new Set(
     ALLOW_LISTED_COMMANDS.filter(name => typeof commandAdapter?.[name] === 'function'),
@@ -289,6 +353,41 @@ export function createWebApp({
       res.set('Retry-After', String(retryAfterSeconds));
       res.status(429).json({ error: 'Too many requests' });
       return;
+    }
+
+    if (authOptions) {
+      const respondUnauthorized = () => {
+        if (authOptions.requireScheme && authOptions.scheme) {
+          res.set('WWW-Authenticate', `${authOptions.scheme} realm="jobbot-web"`);
+        }
+        res.status(401).json({ error: 'Invalid or missing authorization token' });
+      };
+
+      const providedAuth = req.get(authOptions.headerName);
+      const headerValue = typeof providedAuth === 'string' ? providedAuth.trim() : '';
+      if (!headerValue) {
+        respondUnauthorized();
+        return;
+      }
+
+      let tokenValue = headerValue;
+      if (authOptions.requireScheme) {
+        const lowerValue = headerValue.toLowerCase();
+        if (!lowerValue.startsWith(authOptions.schemePrefixLower)) {
+          respondUnauthorized();
+          return;
+        }
+        tokenValue = headerValue.slice(authOptions.schemePrefixLength).trim();
+        if (!tokenValue) {
+          respondUnauthorized();
+          return;
+        }
+      }
+
+      if (!authOptions.tokens.has(tokenValue)) {
+        respondUnauthorized();
+        return;
+      }
     }
 
     const providedToken = req.get(csrfOptions.headerName);
@@ -372,6 +471,10 @@ export function startWebServer(options = {}) {
     rateLimit,
     logger,
     enableNativeCli,
+    auth: providedAuth,
+    authTokens,
+    authHeaderName,
+    authScheme,
     ...rest
   } = options;
   const commandAdapter =
@@ -385,12 +488,28 @@ export function startWebServer(options = {}) {
     typeof csrfHeaderName === 'string' && csrfHeaderName.trim()
       ? csrfHeaderName.trim()
       : 'x-jobbot-csrf';
+  let authConfig = providedAuth;
+  if (authConfig === undefined || authConfig === null) {
+    const tokensSource =
+      authTokens ??
+      process.env.JOBBOT_WEB_AUTH_TOKENS ??
+      process.env.JOBBOT_WEB_AUTH_TOKEN;
+    if (tokensSource !== undefined && tokensSource !== null && tokensSource !== false) {
+      authConfig = {
+        tokens: tokensSource,
+        headerName: authHeaderName ?? process.env.JOBBOT_WEB_AUTH_HEADER,
+        scheme: authScheme ?? process.env.JOBBOT_WEB_AUTH_SCHEME,
+      };
+    }
+  }
+  const normalizedAuth = normalizeAuthOptions(authConfig);
   const app = createWebApp({
     ...rest,
     commandAdapter,
     csrf: { token: resolvedCsrfToken, headerName: resolvedHeaderName },
     rateLimit,
     logger,
+    auth: normalizedAuth,
   });
 
   return new Promise((resolve, reject) => {
@@ -405,6 +524,8 @@ export function startWebServer(options = {}) {
           url: `http://${host}:${actualPort}`,
           csrfToken: resolvedCsrfToken,
           csrfHeaderName: resolvedHeaderName,
+          authHeaderName: normalizedAuth?.headerName ?? null,
+          authScheme: normalizedAuth?.scheme ?? null,
           async close() {
             await new Promise((resolveClose, rejectClose) => {
               server.close(err => {
