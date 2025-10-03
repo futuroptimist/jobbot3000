@@ -158,7 +158,15 @@
 
 3. **Frontend Shell**
    - Set up routing, layout, and theme providers.
-   - Implement authentication stubs if future remote deployment is anticipated.
+  - Implement authentication stubs if future remote deployment is anticipated.
+    _Implemented (2025-12-13):_ [`src/web/server.js`](../src/web/server.js)
+    now enforces configurable static authorization tokens for
+    `/commands/:command` requests when `startWebServer` receives `auth`
+    options or the `JOBBOT_WEB_AUTH_TOKENS` environment variable. Callers
+    can override the header name and scheme (including scheme-less API
+    keys), and unauthorized requests receive 401 responses. Coverage in
+    [`test/web-server.test.js`](../test/web-server.test.js) exercises the
+    missing-token guard, Bearer token flow, and custom header handling.
    - Create base components and loading/error states.
 
 4. **Core Features**
@@ -171,7 +179,13 @@
    - Unit tests for frontend components (Jest/Testing Library) and backend modules (Jest/Supertest).
    - Contract tests ensuring backend responses align with CLI output fixtures.
    - End-to-end tests (Playwright/Cypress) simulating user flows with mocked CLI responses.
-   - Accessibility audits (axe-core) and performance benchmarks (Lighthouse).
+  - Accessibility audits (axe-core) and performance benchmarks (Lighthouse).
+    _Implemented (2025-12-19):_ [`src/web/audits.js`](../src/web/audits.js)
+    now runs axe-core against the status page while translating
+    Lighthouse scoring formulas to real HTTP timings. The regression
+    suite in [`test/web-audits.test.js`](../test/web-audits.test.js)
+    boots the Express adapter, fetches the HTML dashboard, and asserts the
+    audits return zero WCAG AA violations with a performance score ≥0.9.
 
 6. **Hardening and Packaging**
    - Implement rate limiting, input sanitization, and CSRF tokens.
@@ -229,7 +243,13 @@
   exercises `POST /commands/summarize` end to end against the CLI-backed
   adapter, asserting the HTTP stack, schema validation, and sanitized payloads
   round-trip real job text without mocks.
-- [ ] Accessibility and performance audits
+- [x] Accessibility and performance audits
+  _Implemented (2025-12-19):_ The homepage served by
+  [`startWebServer`](../src/web/server.js) now exposes a WCAG-compliant
+  status page. [`src/web/audits.js`](../src/web/audits.js) and
+  [`test/web-audits.test.js`](../test/web-audits.test.js) run axe-core and
+  Lighthouse-derived scoring on every build, preventing regressions before
+  the UI launches.
 - [x] Deployment artifacts and environment parity *(configuration presets
   shipped via [`src/web/config.js`](../src/web/config.js); container images
   now ship with the repository)*
@@ -256,4 +276,3 @@
 - **Performance**: P95 page load <2s on mid-tier hardware; backend command latency <500ms median.
 - **Accessibility**: WCAG AA compliance validated quarterly.
 - **Security**: Zero critical findings in quarterly security reviews.
-
