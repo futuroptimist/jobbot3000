@@ -230,9 +230,15 @@
   adapter, asserting the HTTP stack, schema validation, and sanitized payloads
   round-trip real job text without mocks.
 - [ ] Accessibility and performance audits
-- [ ] Deployment artifacts and environment parity *(configuration presets
+- [x] Deployment artifacts and environment parity *(configuration presets
   shipped via [`src/web/config.js`](../src/web/config.js); container images
-  remain outstanding)*
+  now ship with the repository)*
+  _Implemented (2025-12-30):_ [`Dockerfile`](../Dockerfile) and
+  [`docker-compose.web.yml`](../docker-compose.web.yml) now build the web
+  server with production defaults, mount `/data`, and bind to
+  `0.0.0.0`. Regression coverage in
+  [`test/web-deployment.test.js`](../test/web-deployment.test.js) keeps the
+  artifacts present and pinned to the hardened entrypoint.
 
 ## Roadmap Timeline (Quarterly)
 

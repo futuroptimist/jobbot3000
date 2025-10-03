@@ -1,0 +1,23 @@
+version: "3.9"
+services:
+  web:
+    image: jobbot3000-web:latest
+    build:
+      context: .
+      target: runtime
+    environment:
+      - JOBBOT_WEB_ENV=production
+      - JOBBOT_WEB_HOST=0.0.0.0
+      - JOBBOT_WEB_PORT=3000
+      - JOBBOT_DATA_DIR=/data
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/data
+    command:
+      - node
+      - scripts/web-server.js
+      - --env
+      - production
+      - --host
+      - 0.0.0.0
