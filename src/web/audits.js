@@ -30,17 +30,23 @@ function escapeForHtmlAttribute(value) {
   });
 }
 
+function removeScriptElements(document) {
+  const scripts = document.querySelectorAll('script');
+  for (const script of scripts) {
+    script.remove();
+  }
+}
+
 export async function runAccessibilityAudit(html, options = {}) {
   if (typeof html !== 'string' || !html.trim()) {
     throw new Error('Accessibility audit requires non-empty HTML input');
   }
 
-  const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: 'dangerously' });
+  const dom = new JSDOM(html, { pretendToBeVisual: true, runScripts: 'outside-only' });
   try {
     const { window } = dom;
-    const script = window.document.createElement('script');
-    script.textContent = axe.source;
-    window.document.head.appendChild(script);
+    removeScriptElements(window.document);
+    window.eval(axe.source);
     const context = options.context ?? window.document;
     const defaultConfig = {
       runOnly: {

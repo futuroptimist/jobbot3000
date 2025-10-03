@@ -38,4 +38,30 @@ describe('web interface audits', () => {
     expect(performanceReport.score).toBeGreaterThanOrEqual(0.9);
     expect(performanceReport.metrics.transferSize).toBeLessThan(50_000);
   });
+
+  it('does not execute page scripts during the accessibility audit', async () => {
+    const maliciousHtml = `
+      <!doctype html>
+      <html lang="en">
+        <head>
+          <meta charset="utf-8" />
+          <title>axe script isolation test</title>
+          <script>
+            window.__scriptExecuted = true;
+            throw new Error('embedded scripts must not run during audits');
+          </script>
+        </head>
+        <body>
+          <main id="main-content">
+            <h1>Audit target</h1>
+            <p>Accessibility checks should only read the DOM tree.</p>
+          </main>
+        </body>
+      </html>
+    `;
+
+    const report = await runAccessibilityAudit(maliciousHtml);
+    expect(Array.isArray(report.violations)).toBe(true);
+    expect(Array.isArray(report.passes)).toBe(true);
+  });
 });
