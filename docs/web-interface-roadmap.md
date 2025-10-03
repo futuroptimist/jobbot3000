@@ -250,9 +250,15 @@
   [`test/web-audits.test.js`](../test/web-audits.test.js) run axe-core and
   Lighthouse-derived scoring on every build, preventing regressions before
   the UI launches.
-- [ ] Deployment artifacts and environment parity *(configuration presets
+- [x] Deployment artifacts and environment parity *(configuration presets
   shipped via [`src/web/config.js`](../src/web/config.js); container images
-  remain outstanding)*
+  now ship with the repository)*
+  _Implemented (2025-12-30):_ [`Dockerfile`](../Dockerfile) and
+  [`docker-compose.web.yml`](../docker-compose.web.yml) now build the web
+  server with production defaults, mount `/data`, and bind to
+  `0.0.0.0`. Regression coverage in
+  [`test/web-deployment.test.js`](../test/web-deployment.test.js) keeps the
+  artifacts present and pinned to the hardened entrypoint.
 
 ## Roadmap Timeline (Quarterly)
 
@@ -270,4 +276,3 @@
 - **Performance**: P95 page load <2s on mid-tier hardware; backend command latency <500ms median.
 - **Accessibility**: WCAG AA compliance validated quarterly.
 - **Security**: Zero critical findings in quarterly security reviews.
-
