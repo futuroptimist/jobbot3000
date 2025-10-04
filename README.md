@@ -2,7 +2,6 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/futuroptimist/jobbot3000/.github/workflows/ci.yml?label=ci)](https://github.com/futuroptimist/jobbot3000/actions/workflows/ci.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/futuroptimist/jobbot3000/.github/workflows/codeql.yml?label=codeql)](https://github.com/futuroptimist/jobbot3000/actions/workflows/codeql.yml)
-[![PR Reaper](https://img.shields.io/github/actions/workflow/status/futuroptimist/jobbot3000/.github/workflows/pr-reaper.yml?label=pr%20reaper)](https://github.com/futuroptimist/jobbot3000/actions/workflows/pr-reaper.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](#license)
 
 **jobbot3000** is a self-hosted, open-source job search copilot.
