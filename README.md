@@ -1565,6 +1565,13 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track reminders --json | jq '.sections[0]'
 #     }
 #   ]
 # }
+
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track reminders --ics reminders.ics --now 2025-03-06T00:00:00Z
+# Saved reminder calendar to /tmp/jobbot-data/reminders.ics
+# Import the ICS into your local calendar to receive native alerts for upcoming reminders
+# (past-due entries are omitted from the feed by design). The test suite locks in
+# the calendar escaping rules so commas, semicolons, and newlines survive import
+# in native calendar clients.
 ```
 
 Unit tests in [`test/application-events.test.js`](test/application-events.test.js)

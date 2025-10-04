@@ -60,6 +60,7 @@ import { bundleDeliverables } from '../src/deliverables.js';
 import { createTaskScheduler, loadScheduleConfig, buildScheduledTasks } from '../src/schedule.js';
 import { transcribeAudio, synthesizeSpeech } from '../src/speech.js';
 import { t, DEFAULT_LOCALE } from '../src/i18n.js';
+import { createReminderCalendar } from '../src/reminders-calendar.js';
 
 function isHttpUrl(s) {
   return /^https?:\/\//i.test(s);
@@ -652,6 +653,21 @@ async function cmdTrackReminders(args) {
   const asJson = args.includes('--json');
   const nowValue = getFlag(args, '--now');
   const upcomingOnly = args.includes('--upcoming-only');
+  const icsRequested = args.includes('--ics');
+  const icsPath = getFlag(args, '--ics');
+
+  if (icsRequested && asJson) {
+    console.error('--ics cannot be combined with --json');
+    process.exit(2);
+  }
+
+  if (icsRequested && (!icsPath || icsPath.startsWith('--'))) {
+    console.error(
+      'Usage: jobbot track reminders [--json] [--upcoming-only] ' +
+        '[--now <iso>] [--ics <path>]',
+    );
+    process.exit(2);
+  }
 
   let reminders;
   try {
@@ -672,6 +688,22 @@ async function cmdTrackReminders(args) {
     sections.push({ heading: 'Past Due', reminders: pastDue });
   }
   sections.push({ heading: 'Upcoming', reminders: upcoming });
+
+  if (icsRequested) {
+    const resolved = path.resolve(process.cwd(), icsPath);
+    let stamp = new Date();
+    if (nowValue) {
+      const parsed = new Date(nowValue);
+      if (!Number.isNaN(parsed.getTime())) {
+        stamp = parsed;
+      }
+    }
+    const calendar = createReminderCalendar(upcoming, { now: stamp });
+    await fs.promises.mkdir(path.dirname(resolved), { recursive: true });
+    await fs.promises.writeFile(resolved, calendar, 'utf8');
+    console.log(`Saved reminder calendar to ${resolved}`);
+    return;
+  }
 
   if (asJson) {
     console.log(JSON.stringify({ reminders, sections }, null, 2));

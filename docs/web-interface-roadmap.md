@@ -174,6 +174,15 @@
    - Application detail view showing lifecycle timeline, notes, and attachments via CLI `show`.
    - Action panel enabling create/update status workflows mapped to CLI `create`/`update`.
    - Notification hooks for reminders, leveraging CLI scheduling or local system integration.
+     _Implemented (2025-12-31):_ [`bin/jobbot.js`](../bin/jobbot.js) now supports
+     `jobbot track reminders --ics <file>`, wiring the upcoming reminders feed into
+     [`createReminderCalendar`](../src/reminders-calendar.js) so contributors can
+     subscribe via native calendar apps. Coverage in
+    [`test/cli.test.js`](../test/cli.test.js) and
+    [`test/reminders-calendar.test.js`](../test/reminders-calendar.test.js)
+    verifies that only upcoming entries appear in the ICS export, escape
+    sequences follow the iCalendar spec (covering commas, semicolons, and
+    newlines), and invalid timestamps are ignored.
 
 5. **Testing and QA**
    - Unit tests for frontend components (Jest/Testing Library) and backend modules (Jest/Supertest).
