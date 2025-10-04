@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { JSDOM } from 'jsdom';
 
 let activeServers = [];
 
@@ -548,5 +549,48 @@ describe('web server command endpoint', () => {
     expect(third.status).toBe(429);
     expect(await third.json()).toMatchObject({ error: expect.stringMatching(/too many/i) });
     expect(commandAdapter.summarize).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('web server status page', () => {
+  it('exposes an accessible theme toggle that switches between dark and light modes', async () => {
+    const server = await startServer();
+    const response = await fetch(`${server.url}/`);
+    expect(response.status).toBe(200);
+    const html = await response.text();
+
+    const dom = new JSDOM(html, {
+      url: 'https://jobbot.example',
+      runScripts: 'dangerously',
+      resources: 'usable',
+      pretendToBeVisual: true,
+    });
+
+    await new Promise(resolve => {
+      if (dom.window.document.readyState === 'complete') {
+        resolve();
+        return;
+      }
+      dom.window.addEventListener('load', () => resolve(), { once: true });
+    });
+
+    const toggle = dom.window.document.getElementById('theme-toggle');
+    expect(toggle).toBeTruthy();
+    expect(toggle?.getAttribute('aria-pressed')).toBe('false');
+    expect(dom.window.document.documentElement.getAttribute('data-theme')).toBe('dark');
+
+    toggle?.click();
+    await Promise.resolve();
+    expect(dom.window.document.documentElement.getAttribute('data-theme')).toBe('light');
+    expect(toggle?.getAttribute('aria-pressed')).toBe('true');
+    expect(dom.window.localStorage.getItem('jobbot-theme')).toBe('light');
+
+    toggle?.click();
+    await Promise.resolve();
+    expect(dom.window.document.documentElement.getAttribute('data-theme')).toBe('dark');
+    expect(toggle?.getAttribute('aria-pressed')).toBe('false');
+    expect(dom.window.localStorage.getItem('jobbot-theme')).toBe('dark');
+
+    dom.window.close();
   });
 });

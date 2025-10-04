@@ -1606,9 +1606,13 @@ web interface expands beyond the CLI wrappers.
 
 `GET /` renders an accessible status page that surfaces the allow-listed CLI
 commands, links to roadmap docs, and summarizes the automated audits guarding
-the adapter. The markup follows WCAG AA guidance (landmarks, focus styles, skip
-links) and doubles as the fixture for the new `axe-core` and Lighthouse checks
-exercised in [`test/web-audits.test.js`](test/web-audits.test.js).
+the adapter. It now ships a keyboard-friendly theme toggle that persists the
+light/dark preference in `localStorage`, keeping the dark theme as the default
+until the user opts into light mode. The markup follows WCAG AA guidance
+(landmarks, focus styles, skip links) and doubles as the fixture for the
+`axe-core` and Lighthouse checks exercised in
+[`test/web-audits.test.js`](test/web-audits.test.js) alongside the new toggle
+coverage in [`test/web-server.test.js`](test/web-server.test.js).
 
 Environment presets now live in
 [`loadWebConfig`](src/web/config.js), which provides development, staging, and

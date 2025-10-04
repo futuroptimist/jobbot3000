@@ -365,25 +365,60 @@ export function createWebApp({
 
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(`<!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${escapeHtml(serviceName)}</title>
     <style>
       :root {
-        color-scheme: dark;
         font-family:
           'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        background-color: #0b0d0f;
-        color: #f1f5f9;
+        line-height: 1.6;
+        --page-background: #0b0d0f;
+        --text-color: #f1f5f9;
+        --muted-color: #cbd5f5;
+        --surface-background: rgba(15, 23, 42, 0.85);
+        --surface-border: rgba(148, 163, 184, 0.25);
+        --link-color: #38bdf8;
+        --code-background: rgba(148, 163, 184, 0.12);
+        --pill-background: rgba(56, 189, 248, 0.12);
+        --pill-border: rgba(56, 189, 248, 0.35);
+        --pill-hover: rgba(56, 189, 248, 0.24);
+        --focus-color: #facc15;
+        --footer-color: #cbd5f5;
+        --surface-shadow: 0 24px 48px rgba(2, 6, 23, 0.7);
+        --background-gradient: linear-gradient(135deg, #0f172a, #1e293b);
+      }
+      :root[data-theme='dark'] {
+        color-scheme: dark;
+      }
+      :root[data-theme='light'] {
+        color-scheme: light;
+        --page-background: #f8fafc;
+        --text-color: #0f172a;
+        --muted-color: #1f2937;
+        --surface-background: rgba(255, 255, 255, 0.94);
+        --surface-border: rgba(148, 163, 184, 0.35);
+        --link-color: #0369a1;
+        --code-background: rgba(148, 163, 184, 0.16);
+        --pill-background: rgba(14, 165, 233, 0.18);
+        --pill-border: rgba(14, 165, 233, 0.35);
+        --pill-hover: rgba(14, 165, 233, 0.26);
+        --focus-color: #b45309;
+        --footer-color: #1f2937;
+        --surface-shadow: 0 20px 40px rgba(15, 23, 42, 0.25);
+        --background-gradient: linear-gradient(135deg, #e2e8f0, #cbd5f5);
       }
       body {
         margin: 0;
         padding: 0;
+        min-height: 100vh;
         display: flex;
         flex-direction: column;
-        min-height: 100vh;
+        background-color: var(--page-background);
+        background: var(--background-gradient);
+        color: var(--text-color);
       }
       header,
       main,
@@ -394,6 +429,13 @@ export function createWebApp({
       }
       header {
         padding-bottom: 1rem;
+      }
+      .header-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
       }
       h1 {
         font-size: clamp(2rem, 4vw, 2.5rem);
@@ -406,8 +448,14 @@ export function createWebApp({
       p {
         max-width: 65ch;
       }
+      main {
+        background-color: var(--surface-background);
+        border-radius: 1rem;
+        border: 1px solid var(--surface-border);
+        box-shadow: var(--surface-shadow);
+      }
       code {
-        background-color: rgba(148, 163, 184, 0.12);
+        background-color: var(--code-background);
         border-radius: 0.35rem;
         padding: 0.15rem 0.4rem;
       }
@@ -415,27 +463,38 @@ export function createWebApp({
         padding-left: 1.5rem;
       }
       a {
-        color: #38bdf8;
+        color: var(--link-color);
       }
       a:focus,
       button:focus,
       summary:focus {
-        outline: 3px solid #facc15;
+        outline: 3px solid var(--focus-color);
         outline-offset: 2px;
       }
       footer {
         margin-top: auto;
-        border-top: 1px solid rgba(148, 163, 184, 0.25);
-        color: #cbd5f5;
+        border-top: 1px solid var(--surface-border);
+        color: var(--footer-color);
       }
       .pill {
         display: inline-flex;
         align-items: center;
         gap: 0.5rem;
-        background-color: rgba(56, 189, 248, 0.12);
+        background-color: var(--pill-background);
+        border: 1px solid var(--pill-border);
         border-radius: 999px;
         padding: 0.35rem 0.85rem;
         font-size: 0.9rem;
+      }
+      .theme-toggle {
+        cursor: pointer;
+        transition:
+          background-color 150ms ease,
+          color 150ms ease,
+          border-color 150ms ease;
+      }
+      .theme-toggle:hover {
+        background-color: var(--pill-hover);
       }
       .grid {
         display: grid;
@@ -451,11 +510,22 @@ export function createWebApp({
   <body>
     <a href="#main" class="pill" style="${skipLinkStyle}">Skip to main content</a>
     <header>
-      <p class="pill" aria-label="Service metadata">
-        <strong>${escapeHtml(serviceName)}</strong>
-        <span aria-hidden="true">•</span>
-        <span>${escapeHtml(version)}</span>
-      </p>
+      <div class="header-bar">
+        <p class="pill" aria-label="Service metadata">
+          <strong>${escapeHtml(serviceName)}</strong>
+          <span aria-hidden="true">•</span>
+          <span>${escapeHtml(version)}</span>
+        </p>
+        <button
+          id="theme-toggle"
+          class="pill theme-toggle"
+          type="button"
+          aria-pressed="false"
+          aria-label="Switch to light theme"
+        >
+          Switch to light theme
+        </button>
+      </div>
       <h1>${escapeHtml(serviceName)}</h1>
       <p>
           This lightweight status page surfaces the Express adapter that bridges the jobbot3000 CLI
@@ -497,11 +567,62 @@ export function createWebApp({
       </section>
     </main>
     <footer>
-        <p>
-          Built for local-first deployments. Keep your CSRF token secret and run
-          <code>npm run lint</code> and <code>npm run test:ci</code> before shipping changes.
-        </p>
+      <p>
+        Built for local-first deployments. Keep your CSRF token secret and run
+        <code>npm run lint</code> and <code>npm run test:ci</code> before shipping changes.
+      </p>
     </footer>
+    <script>
+      (function () {
+        const root = document.documentElement;
+        const toggle = document.getElementById('theme-toggle');
+        const storageKey = 'jobbot-theme';
+        if (!root || !toggle) {
+          return;
+        }
+
+        function safeGetTheme() {
+          try {
+            const value = window.localStorage.getItem(storageKey);
+            if (value === 'light' || value === 'dark') {
+              return value;
+            }
+          } catch (err) {
+            void err;
+          }
+          return null;
+        }
+
+        function safeStoreTheme(value) {
+          try {
+            window.localStorage.setItem(storageKey, value);
+          } catch (err) {
+            void err;
+          }
+        }
+
+        function applyTheme(theme) {
+          const nextTheme = theme === 'light' ? 'light' : 'dark';
+          root.setAttribute('data-theme', nextTheme);
+          root.style.colorScheme = nextTheme === 'light' ? 'light' : 'dark';
+          const isLight = nextTheme === 'light';
+          const label = isLight ? 'Switch to dark theme' : 'Switch to light theme';
+          toggle.setAttribute('aria-pressed', isLight ? 'true' : 'false');
+          toggle.setAttribute('aria-label', label);
+          toggle.textContent = label;
+          safeStoreTheme(nextTheme);
+        }
+
+        const stored = safeGetTheme();
+        applyTheme(stored ?? 'dark');
+
+        toggle.addEventListener('click', () => {
+          const current = root.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+          const next = current === 'light' ? 'dark' : 'light';
+          applyTheme(next);
+        });
+      })();
+    </script>
   </body>
 </html>`);
   });
