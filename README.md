@@ -482,10 +482,13 @@ the flag is supplied. JSON payloads also include `skills_hit` and `skills_gap` a
 matched/missing sections so downstream tools can treat them as normalized competency buckets without
 having to re-scan Markdown output. A `must_haves_missed` array lists missing requirements flagged as
 blockers (for example, entries containing 'must have', 'required', or specific clearance language)
-so downstream tooling can highlight hard-stops without re-parsing the text. A `keyword_overlap` array
-surfaces the lower-cased tokens and synonym phrases that triggered a match so follow-up tooling can
-see which concrete words or abbreviations aligned without recomputing overlaps. The list is capped
-at 12 entries and cached per resume/requirement pairing to keep repeated evaluations (like multi-job
+so downstream tooling can highlight hard-stops without re-parsing the text. The payload also mirrors
+those entries in a `blockers` array so deliverable logs and integrations can count must-haves without
+recomputing heuristics. Regression coverage in [`test/match.test.js`](test/match.test.js) and
+[`test/cli.test.js`](test/cli.test.js) keeps the alias and build-log summary aligned. A `keyword_overlap`
+array surfaces the lower-cased tokens and synonym phrases that triggered a match so follow-up tooling can
+see which concrete words or abbreviations aligned without recomputing overlaps. The list is capped at 12
+entries and cached per resume/requirement pairing to keep repeated evaluations (like multi-job
 comparisons) fast. Extremely large resumes (more than 5,000 unique tokens) skip overlap extraction to
 preserve cold-start latency targets.
 
