@@ -809,6 +809,80 @@ describe('jobbot CLI', () => {
     });
   });
 
+  it('exports upcoming reminders to an ICS calendar with --ics', () => {
+    runCli([
+      'track',
+      'log',
+      'job-past-due',
+      '--channel',
+      'follow_up',
+      '--date',
+      '2025-03-01T08:00:00Z',
+      '--note',
+      'Past reminder',
+      '--remind-at',
+      '2025-03-02T09:00:00Z',
+    ]);
+    runCli([
+      'track',
+      'log',
+      'job-upcoming',
+      '--channel',
+      'call',
+      '--date',
+      '2025-03-05T10:00:00Z',
+      '--contact',
+      'Jordan Recruiter',
+      '--note',
+      'Schedule check-in',
+      '--remind-at',
+      '2025-03-10T15:30:00Z',
+    ]);
+
+    const calendarPath = path.join(dataDir, 'reminders.ics');
+    const output = runCli([
+      'track',
+      'reminders',
+      '--ics',
+      calendarPath,
+      '--now',
+      '2025-03-06T00:00:00Z',
+    ]);
+
+    expect(output.trim()).toBe(`Saved reminder calendar to ${calendarPath}`);
+
+    const ics = fs.readFileSync(calendarPath, 'utf8');
+    expect(ics).toContain('BEGIN:VCALENDAR');
+    expect(ics).toContain('SUMMARY:job-upcoming — call');
+    expect(ics).toContain('DTSTART:20250310T153000Z');
+    expect(ics).toContain('CONTACT:Jordan Recruiter');
+    const description = (() => {
+      const lines = ics.split('\r\n');
+      let buffer = '';
+      let capturing = false;
+      for (const line of lines) {
+        if (!capturing && line.startsWith('DESCRIPTION:')) {
+          buffer += line.slice('DESCRIPTION:'.length);
+          capturing = true;
+          continue;
+        }
+        if (capturing) {
+          if (line.startsWith(' ')) {
+            buffer += line.slice(1);
+            continue;
+          }
+          break;
+        }
+      }
+      return buffer;
+    })();
+
+    expect(description).toBe(
+      'Job ID: job-upcoming\\nChannel: call\\nContact: Jordan Recruiter\\nNote: Schedule check-in',
+    );
+    expect(ics).not.toContain('job-past-due');
+  });
+
   it('prints headings with (none) when reminders are filtered out', () => {
     runCli([
       'track',

@@ -161,7 +161,11 @@ aggressively to respect rate limits.
    summaries surface the soonest upcoming reminder per job and fall back to the most recent past-due
    entry when no future timestamp is scheduled. When a job has no reminders at all, the board prints
    `Reminder: (none)` so idle opportunities are obvious at a glance, and the JSON board surfaces the
-   same state with an explicit `"reminder": null` placeholder for downstream automation.
+    same state with an explicit `"reminder": null` placeholder for downstream automation. Users can
+    also run `jobbot track reminders --ics <file>` to publish upcoming reminders as an iCalendar
+    feed; the export omits past-due entries and preserves newline formatting (commas and semicolons
+    are escaped to satisfy the iCalendar spec) so native calendar apps emit local notifications
+    without additional scripting.
 
 **Unhappy paths:** conflicting updates (e.g., two devices editing simultaneously) trigger a merge
 flow that preserves both sets of notes.
