@@ -42,6 +42,7 @@ export function matchResumeToJob(resumeText, jobInput, options = {}) {
     resumeText,
     requirements,
   );
+  const blockers = Array.isArray(must_haves_missed) ? must_haves_missed.slice() : [];
 
   const payload = {
     ...parsedJob,
@@ -52,6 +53,7 @@ export function matchResumeToJob(resumeText, jobInput, options = {}) {
     skills_hit: matched,
     skills_gap: missing,
     must_haves_missed,
+    blockers,
     keyword_overlap,
     evidence,
   };

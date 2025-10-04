@@ -2202,7 +2202,12 @@ describe('jobbot CLI', () => {
         company: 'ExampleCorp',
         location: 'Remote',
         summary: 'Keep Node.js infrastructure reliable while expanding Terraform coverage.',
-        requirements: ['Node.js experience', 'Terraform automation', 'Clear communication'],
+        requirements: [
+          'Node.js experience',
+          'Terraform automation',
+          'Clear communication',
+          'Security clearance required',
+        ],
       },
       source: { type: 'url', value: jobSource, headers: {} },
     };
@@ -2265,12 +2270,14 @@ describe('jobbot CLI', () => {
       locale: 'en',
       matched_count: matchJson.matched.length,
       missing_count: matchJson.missing.length,
+      blockers_count: matchJson.blockers.length,
     });
     expect(typeof buildLog.match_summary.score).toBe('number');
     expect(matchJson.title).toBe('Platform Engineer');
     expect(matchJson.company).toBe('ExampleCorp');
     expect(matchJson.matched).toContain('Node.js experience');
     expect(matchJson.matched).toContain('Terraform automation');
+    expect(matchJson.blockers).toEqual(['Security clearance required']);
 
     const matchMarkdown = fs.readFileSync(path.join(runDir, 'match.md'), 'utf8');
     expect(matchMarkdown).toContain('# Platform Engineer');

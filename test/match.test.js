@@ -32,6 +32,7 @@ describe('matchResumeToJob', () => {
       matched: ['Experience with Node.js', 'Terraform proficiency'],
       missing: ['Must have Kubernetes certification'],
       must_haves_missed: ['Must have Kubernetes certification'],
+      blockers: ['Must have Kubernetes certification'],
     });
 
     expect(result.skills_hit).toEqual(result.matched);
