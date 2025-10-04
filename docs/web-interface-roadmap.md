@@ -101,6 +101,13 @@
 - Provide responsive layouts using a grid/flex approach; ensure minimum touch target sizes for mobile.
 - Integrate a global keyboard navigation layer and focus outlines for accessibility.
 - Offer optional light theme toggle for future parity, but prioritize dark mode for initial release.
+  _Implemented (2026-01-15):_ The status page served by
+  [`startWebServer`](../src/web/server.js) now exposes an accessible light/dark
+  theme toggle that persists the user's preference in `localStorage` and
+  honors `prefers-color-scheme`. Coverage in
+  [`test/web-server.test.js`](../test/web-server.test.js) locks the presence of
+  the toggle, storage key, and system preference listener so future UI changes
+  keep the feature intact.
 
 ### 5. Development Roadmap
 

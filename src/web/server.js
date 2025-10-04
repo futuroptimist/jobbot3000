@@ -365,7 +365,7 @@ export function createWebApp({
 
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(`<!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -373,10 +373,34 @@ export function createWebApp({
     <style>
       :root {
         color-scheme: dark;
-        font-family:
-          'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        background-color: #0b0d0f;
-        color: #f1f5f9;
+        --background: #0b0d0f;
+        --foreground: #f1f5f9;
+        --muted: #94a3b8;
+        --accent: #38bdf8;
+        --focus: #facc15;
+        --pill-bg: rgba(56, 189, 248, 0.12);
+        --pill-bg-hover: rgba(56, 189, 248, 0.18);
+        --pill-border: rgba(56, 189, 248, 0.35);
+        --pill-text: #e2e8f0;
+        --card-border: rgba(148, 163, 184, 0.25);
+        --code-bg: rgba(148, 163, 184, 0.12);
+        --body-font: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background-color: var(--background);
+        color: var(--foreground);
+      }
+      [data-theme='light'] {
+        color-scheme: light;
+        --background: #f8fafc;
+        --foreground: #0f172a;
+        --muted: #475569;
+        --accent: #0ea5e9;
+        --focus: #ca8a04;
+        --pill-bg: rgba(14, 165, 233, 0.12);
+        --pill-bg-hover: rgba(14, 165, 233, 0.2);
+        --pill-border: rgba(14, 165, 233, 0.3);
+        --pill-text: #0f172a;
+        --card-border: rgba(148, 163, 184, 0.35);
+        --code-bg: rgba(15, 23, 42, 0.12);
       }
       body {
         margin: 0;
@@ -384,6 +408,9 @@ export function createWebApp({
         display: flex;
         flex-direction: column;
         min-height: 100vh;
+        background-color: var(--background);
+        color: var(--foreground);
+        font-family: var(--body-font);
       }
       header,
       main,
@@ -394,6 +421,12 @@ export function createWebApp({
       }
       header {
         padding-bottom: 1rem;
+      }
+      .header-actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 1rem;
       }
       h1 {
         font-size: clamp(2rem, 4vw, 2.5rem);
@@ -407,7 +440,7 @@ export function createWebApp({
         max-width: 65ch;
       }
       code {
-        background-color: rgba(148, 163, 184, 0.12);
+        background-color: var(--code-bg);
         border-radius: 0.35rem;
         padding: 0.15rem 0.4rem;
       }
@@ -415,27 +448,48 @@ export function createWebApp({
         padding-left: 1.5rem;
       }
       a {
-        color: #38bdf8;
+        color: var(--accent);
       }
       a:focus,
       button:focus,
       summary:focus {
-        outline: 3px solid #facc15;
+        outline: 3px solid var(--focus);
         outline-offset: 2px;
       }
       footer {
         margin-top: auto;
-        border-top: 1px solid rgba(148, 163, 184, 0.25);
-        color: #cbd5f5;
+        border-top: 1px solid var(--card-border);
+        color: var(--muted);
       }
       .pill {
         display: inline-flex;
         align-items: center;
         gap: 0.5rem;
-        background-color: rgba(56, 189, 248, 0.12);
+        background-color: var(--pill-bg);
         border-radius: 999px;
         padding: 0.35rem 0.85rem;
         font-size: 0.9rem;
+        color: var(--pill-text);
+        border: 1px solid var(--pill-border);
+      }
+      .theme-toggle-button {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        background-color: var(--pill-bg);
+        border: 1px solid var(--pill-border);
+        border-radius: 999px;
+        color: var(--pill-text);
+        cursor: pointer;
+        padding: 0.35rem 0.85rem;
+        font: inherit;
+        transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out;
+      }
+      .theme-toggle-button:hover {
+        background-color: var(--pill-bg-hover);
+      }
+      .theme-toggle-button span[aria-hidden='true'] {
+        font-size: 1.1rem;
       }
       .grid {
         display: grid;
@@ -451,11 +505,22 @@ export function createWebApp({
   <body>
     <a href="#main" class="pill" style="${skipLinkStyle}">Skip to main content</a>
     <header>
-      <p class="pill" aria-label="Service metadata">
-        <strong>${escapeHtml(serviceName)}</strong>
-        <span aria-hidden="true">•</span>
-        <span>${escapeHtml(version)}</span>
-      </p>
+      <div class="header-actions">
+        <p class="pill" aria-label="Service metadata">
+          <strong>${escapeHtml(serviceName)}</strong>
+          <span aria-hidden="true">•</span>
+          <span>${escapeHtml(version)}</span>
+        </p>
+        <button
+          type="button"
+          class="theme-toggle-button"
+          data-theme-toggle
+          aria-pressed="false"
+        >
+          <span aria-hidden="true">🌓</span>
+          <span data-theme-toggle-label>Enable light theme</span>
+        </button>
+      </div>
       <h1>${escapeHtml(serviceName)}</h1>
       <p>
           This lightweight status page surfaces the Express adapter that bridges the jobbot3000 CLI
@@ -502,6 +567,86 @@ export function createWebApp({
           <code>npm run lint</code> and <code>npm run test:ci</code> before shipping changes.
         </p>
     </footer>
+    <script>
+      (() => {
+        const storageKey = 'jobbot:web:theme';
+        const root = document.documentElement;
+        const toggle = document.querySelector('[data-theme-toggle]');
+        const label = toggle ? toggle.querySelector('[data-theme-toggle-label]') : null;
+        const prefersDark =
+          typeof window.matchMedia === 'function'
+            ? window.matchMedia('(prefers-color-scheme: dark)')
+            : null;
+
+        function updateToggle(theme) {
+          if (!toggle) return;
+          const isLight = theme === 'light';
+          toggle.setAttribute('aria-pressed', isLight ? 'true' : 'false');
+          const labelText = isLight ? 'Enable dark theme' : 'Enable light theme';
+          if (label) {
+            label.textContent = labelText;
+          }
+          toggle.setAttribute('title', labelText);
+          toggle.setAttribute('aria-label', labelText);
+        }
+
+        function applyTheme(theme, options = {}) {
+          const normalized = theme === 'light' ? 'light' : 'dark';
+          root.setAttribute('data-theme', normalized);
+          updateToggle(normalized);
+          if (options.persist) {
+            try {
+              localStorage.setItem(storageKey, normalized);
+            } catch {
+              // Ignore storage failures (for example, private browsing)
+            }
+          }
+        }
+
+        function readStoredTheme() {
+          try {
+            const value = localStorage.getItem(storageKey);
+            if (value === 'light' || value === 'dark') {
+              return value;
+            }
+          } catch {
+            return null;
+          }
+          return null;
+        }
+
+        function resolveInitialTheme() {
+          const stored = readStoredTheme();
+          if (stored) {
+            return stored;
+          }
+          if (prefersDark && typeof prefersDark.matches === 'boolean') {
+            return prefersDark.matches ? 'dark' : 'light';
+          }
+          return 'dark';
+        }
+
+        const initialTheme = resolveInitialTheme();
+        applyTheme(initialTheme);
+
+        if (toggle) {
+          toggle.addEventListener('click', () => {
+            const current = root.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+            const next = current === 'light' ? 'dark' : 'light';
+            applyTheme(next, { persist: true });
+          });
+        }
+
+        if (prefersDark && typeof prefersDark.addEventListener === 'function') {
+          prefersDark.addEventListener('change', event => {
+            if (readStoredTheme()) {
+              return;
+            }
+            applyTheme(event.matches ? 'dark' : 'light');
+          });
+        }
+      })();
+    </script>
   </body>
 </html>`);
   });

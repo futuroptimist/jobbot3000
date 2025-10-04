@@ -122,6 +122,20 @@ describe('web server health endpoint', () => {
   });
 });
 
+describe('web server status page', () => {
+  it('exposes a theme toggle that persists the preferred mode', async () => {
+    const server = await startServer();
+
+    const response = await fetch(`${server.url}/`);
+    expect(response.status).toBe(200);
+    const html = await response.text();
+
+    expect(html).toContain('data-theme-toggle');
+    expect(html).toMatch(/jobbot:web:theme/);
+    expect(html).toMatch(/prefers-color-scheme/);
+  });
+});
+
 describe('web server command endpoint', () => {
   it('executes allow-listed commands with validated payloads', async () => {
     const commandAdapter = {
