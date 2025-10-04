@@ -22,7 +22,7 @@ CONTEXT:
 - Follow [README.md](../../../README.md); see the
   [AGENTS spec](https://agentsmd.net/AGENTS.md) for instruction semantics.
 - Review [.github/workflows](../../../.github/workflows) to understand active automation
-  (e.g., `ci.yml`, `codeql.yml`, `pr-reaper.yml`).
+  (e.g., `ci.yml`, `codeql.yml`).
 - When touching `ci.yml`, preserve the Node 20 toolchain, npm cache, and required steps:
   `npm ci`, `npm run lint`, `npm run test:ci`, and
 - Aim for 100% patch coverage to minimize regressions and surprises.
