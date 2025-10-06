@@ -10,11 +10,11 @@ New contributors must infer relationships by reading files such as
 [`src/analytics.js`](../src/analytics.js). Creating a lightweight architecture map would shorten
 onboarding and highlight reuse opportunities.
 
-_Update (2025-10-08):_ [`docs/architecture.md`](architecture.md) now documents the high-level
+_Update (2025-09-24):_ [`docs/architecture.md`](architecture.md) now documents the high-level
 module graph, data directories, and onboarding checklist linked from the README so new contributors
 can ramp without spelunking through individual files first.
 
-_Update (2025-11-10):_ The host queue helper in [`src/fetch.js`](../src/fetch.js) now links directly
+_Update (2025-09-28):_ The host queue helper in [`src/fetch.js`](../src/fetch.js) now links directly
 to the architecture map so engineers debugging rate limits can jump from the code to the onboarding
 diagram immediately.
 
@@ -34,17 +34,17 @@ Multiple files implement vendor-specific logic (`src/ashby.js`, `src/greenhouse.
 normalizing jobs, yet the calling conventions vary. A shared interface would remove repetitive
 boilerplate and clarify extension points.
 
-_Update (2025-10-06):_ `src/adapters/job-source.js` now defines the shared
+_Update (2025-09-24):_ `src/adapters/job-source.js` now defines the shared
 `JobSourceAdapter` contract. Each connector exports a provider-specific adapter that implements
 `listOpenings`, `normalizeJob`, and `toApplicationEvent`, and the ingestion flows have been wired to
 use those adapters directly.
 
-_Update (2025-10-21):_ `src/jobs/adapters/common.js` centralizes adapter helpers so connectors share
+_Update (2025-09-24):_ `src/jobs/adapters/common.js` centralizes adapter helpers so connectors share
 rate-limit resolution, pagination, and snapshot normalization. Coverage in
 `test/jobs-adapters-common.test.js` keeps the rate-limit override, paginated fetcher, and snapshot
 metadata aligned across providers.
 
-_Update (2025-11-12):_ [`docs/job-source-adapters-guide.md`](job-source-adapters-guide.md) now
+_Update (2025-09-28):_ [`docs/job-source-adapters-guide.md`](job-source-adapters-guide.md) now
 documents the `JobSourceAdapter` contract, quick-start checklist, and regression tests for new
 providers so contributors can ship connectors without spelunking through existing modules.
 
@@ -63,18 +63,18 @@ scoring are spread across [`src/profile.js`](../src/profile.js), [`src/scoring.j
 and [`src/application-events.js`](../src/application-events.js). Splitting the pipeline into distinct
 stages would make it easier to reason about transformations.
 
-_Update (2025-10-17):_ [`src/pipeline/resume-pipeline.js`](../src/pipeline/resume-pipeline.js)
+_Update (2025-09-24):_ [`src/pipeline/resume-pipeline.js`](../src/pipeline/resume-pipeline.js)
 introduces a typed, stage-driven resume pipeline. The new
 [`test/resume-pipeline.test.js`](../test/resume-pipeline.test.js) table-drives markdown and text
 fixtures through the pipeline, asserting each stage's output (source metadata, ATS warnings,
 ambiguity heuristics, and confidence metrics) so future refactors can extend the stages with
 confidence.
 
-_Update (2025-10-26):_ [`docs/resume-pipeline-guide.md`](resume-pipeline-guide.md) now documents how
+_Update (2025-09-26):_ [`docs/resume-pipeline-guide.md`](resume-pipeline-guide.md) now documents how
 to insert new stages, mutate the shared context safely, and extend the pipeline's regression suite so
 contributors can grow the enrichment flow without spelunking through implementation details.
 
-_Update (2025-11-18):_ The resume pipeline now includes an explicit `normalize` stage that organizes
+_Update (2025-09-28):_ The resume pipeline now includes an explicit `normalize` stage that organizes
 plain-text resumes into canonical sections (`experience`, `skills`, `projects`, and a `body`
 fallback), counts trimmed lines and words, and exposes the summary via
 `context.normalizedResume`/`normalized` for downstream enrichment.
@@ -104,11 +104,11 @@ would cut coordination overhead.
   that `docs/prompt-docs-summary.md` only references existing files. The chore coverage lives in
   `test/chore-prompts.test.js`, which gives the spellcheck up to 20 seconds on CI to absorb
   occasional npm start-up slowness.
-- _Update (2025-10-30):_ `npm run chore:prompts` also validates relative Markdown links within
+- _Update (2025-09-26):_ `npm run chore:prompts` also validates relative Markdown links within
   `docs/prompts/**`. The expanded suite in [`test/chore-prompts.test.js`](../test/chore-prompts.test.js)
   now creates a throwaway prompt doc with a broken link and expects the chore to fail with a "Broken
   Markdown links" error, keeping the prompt catalog discoverable.
-- _Update (2025-11-04):_ The prompts chore now enforces Prettier formatting for changed prompt docs
+- _Update (2025-09-26):_ The prompts chore now enforces Prettier formatting for changed prompt docs
   (pass `--write`/`--fix` and `--all` to auto-format the entire catalog) so headings, lists, and
   tables stay consistent across the catalog.
 - `npm run chore:reminders` prints the catalog as either a human-readable digest or JSON (pass
@@ -123,18 +123,18 @@ expose powerful primitives (custom retry queues, sentence parsing) but require c
 intricate details. Introducing thin wrappers would preserve flexibility while providing ergonomic
 entry points.
 
-_Update (2025-10-12):_ [`src/services/http.js`](../src/services/http.js) now exposes a
+_Update (2025-09-24):_ [`src/services/http.js`](../src/services/http.js) now exposes a
 `createHttpClient` helper that centralizes rate limits, default headers, and request timeouts for
 ATS connectors. Tests in [`test/services-http.test.js`](../test/services-http.test.js) cover header
 merging, rate-limit propagation, and timeout behavior.
 
-_Update (2025-10-14):_ [`src/sentence-extractor.js`](../src/sentence-extractor.js) implements a
+_Update (2025-09-24):_ [`src/sentence-extractor.js`](../src/sentence-extractor.js) implements a
 reusable `SentenceExtractor` iterator with `next()` and `reset()` methods that powers
 [`summarize`](../src/index.js). Coverage in
 [`test/sentence-extractor.test.js`](../test/sentence-extractor.test.js) exercises sequential
 extraction, iterator resets, and decimal-number safety.
 
-_Update (2025-10-15):_ The README now ships a runnable `createHttpClient` example, and the helper's
+_Update (2025-09-24):_ The README now ships a runnable `createHttpClient` example, and the helper's
 JSDoc includes the same snippet so connectors can copy/paste the pattern without spelunking through
 tests.
 

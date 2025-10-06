@@ -36,7 +36,7 @@ describe('adapter common utilities', () => {
       raw: 'Raw text',
       parsed: { title: 'Example' },
       headers: { 'User-Agent': 'jobbot3000-tests' },
-      fetchedAt: '2025-10-20T12:00:00Z',
+      fetchedAt: '2025-09-24T12:00:00Z',
     });
 
     expect(snapshot).toMatchObject({
@@ -44,7 +44,7 @@ describe('adapter common utilities', () => {
       parsed: { title: 'Example' },
       source: { type: 'example', value: 'https://jobs.example.com/posting/123' },
       requestHeaders: { 'User-Agent': 'jobbot3000-tests' },
-      fetchedAt: '2025-10-20T12:00:00Z',
+      fetchedAt: '2025-09-24T12:00:00Z',
     });
     expect(snapshot.id).toBe(
       jobIdFromSource({ provider: 'example', url: 'https://jobs.example.com/posting/123' }),
