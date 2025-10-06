@@ -59,7 +59,7 @@
   rely on backend for persistence.
 - **Observability**: Structured logging (pino/winston) capturing command, duration, exit codes, and
   correlation IDs; expose health and readiness probes.
-  _Implemented (2025-11-27):_ [`src/web/command-adapter.js`](../src/web/command-adapter.js)
+  _Implemented (2025-09-29):_ [`src/web/command-adapter.js`](../src/web/command-adapter.js)
   now emits JSON-friendly telemetry for each CLI invocation, including the
   command name, correlation ID, duration, and synthesized exit code. Regression
   coverage in [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
@@ -73,7 +73,7 @@
 - Validate payloads with a shared schema library (e.g., Zod) on both frontend and backend to ensure
   alignment.
 - Avoid shell invocation; use `spawn`/`execFile` with explicit argument arrays.
-  _Implemented (2025-12-06):_ [`src/web/command-adapter.js`](../src/web/command-adapter.js)
+  _Implemented (2025-09-30):_ [`src/web/command-adapter.js`](../src/web/command-adapter.js)
   now executes CLI commands via `child_process.spawn` with `shell: false`,
   `windowsHide: true`, and explicit argument arrays. The adapter streams
   stdout/stderr, rejects on non-zero exit codes, and surfaces correlation IDs
@@ -82,7 +82,7 @@
   verifies the secure spawn configuration and error propagation when the CLI
   process fails.
 - Apply rate limiting and CSRF defenses even in local deployments to simplify production hardening.
-  _Implemented (2025-12-11):_ [`src/web/server.js`](../src/web/server.js) now enforces a
+  _Implemented (2025-09-30):_ [`src/web/server.js`](../src/web/server.js) now enforces a
   startup-provided CSRF header and in-memory per-client rate limiting on
   `POST /commands`. Coverage in [`test/web-server.test.js`](../test/web-server.test.js)
   verifies 403 responses for missing tokens and 429 responses once
@@ -100,8 +100,8 @@
 - Create reusable components (buttons, tables, timeline, status badges) adhering to the token system.
 - Provide responsive layouts using a grid/flex approach; ensure minimum touch target sizes for mobile.
 - Integrate a global keyboard navigation layer and focus outlines for accessibility.
-- Offer optional light theme toggle for future parity, but prioritize dark mode for initial release.
-  _Implemented (2026-01-15):_ The status page served by
+  - Offer optional light theme toggle for future parity, but prioritize dark mode for initial release.
+    _Implemented (2025-10-04):_ The status page served by
   [`startWebServer`](../src/web/server.js) now exposes an accessible light/dark
   theme toggle that persists the user's preference in `localStorage` and
   honors `prefers-color-scheme`. Coverage in
@@ -113,11 +113,11 @@
 
 1. **Foundations**
    - Scaffold backend Express app with health check endpoint.
-     _Implemented (2025-11-23):_ [`src/web/server.js`](../src/web/server.js) now exposes an Express
+    _Implemented (2025-09-28):_ [`src/web/server.js`](../src/web/server.js) now exposes an Express
      app with a `/health` route that aggregates pluggable status checks. Start the backend with
      `npm run web:server` to serve the health endpoint locally while wiring additional adapters.
   - Build command adapter with a mocked CLI module and comprehensive tests.
-    _Implemented (2025-11-24):_ [`src/web/command-adapter.js`](../src/web/command-adapter.js)
+    _Implemented (2025-09-29):_ [`src/web/command-adapter.js`](../src/web/command-adapter.js)
     now exposes `createCommandAdapter`, which wraps CLI command handlers, captures
     stdout/stderr output, and normalizes arguments for summarize/match calls.
    Regression coverage in
@@ -125,7 +125,7 @@
     uses mocked CLI functions to assert argument shaping, JSON parsing, and
     error translation so future endpoints can reuse the adapter safely.
    - Establish shared TypeScript types and validation schemas.
-     _Implemented (2025-11-25):_ [`src/web/schemas.js`](../src/web/schemas.js)
+     _Implemented (2025-09-29):_ [`src/web/schemas.js`](../src/web/schemas.js)
      now defines shared request types for summarize and match calls, enforcing
      supported formats and numeric constraints before CLI execution. Regression
      coverage in
@@ -137,7 +137,7 @@
 
 2. **CLI Integration Layer**
   - Implement real CLI invocations behind feature flags.
-    _Implemented (2025-12-30):_ [`src/web/command-adapter.js`](../src/web/command-adapter.js)
+    _Implemented (2025-10-02):_ [`src/web/command-adapter.js`](../src/web/command-adapter.js)
     now requires setting `JOBBOT_WEB_ENABLE_NATIVE_CLI=1` (or passing
     `enableNativeCli: true` to [`startWebServer`](../src/web/server.js))
     before spawning the CLI. Otherwise callers must inject a mocked
@@ -145,19 +145,19 @@
     [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
     asserts native execution stays gated behind the feature flag.
    - Add structured logging, metrics, and error handling utilities.
-     _Implemented (2025-12-20):_ [`src/web/server.js`](../src/web/server.js)
+     _Implemented (2025-10-01):_ [`src/web/server.js`](../src/web/server.js)
      now emits structured `web.command` telemetry for every command request,
      capturing durations, sanitized stdout/stderr lengths, and correlation IDs.
      The regression coverage in
      [`test/web-server.test.js`](../test/web-server.test.js) asserts both
      success and failure logs remain wired without leaking sensitive fields.
   - Write integration tests that execute representative CLI commands in a sandboxed environment.
-    _Implemented (2025-12-22):_ [`test/web-server-integration.test.js`](../test/web-server-integration.test.js)
+    _Implemented (2025-10-02):_ [`test/web-server-integration.test.js`](../test/web-server-integration.test.js)
     now boots the Express server with the real command adapter, calls the `match`
     endpoint against sandboxed resume and job fixtures, verifies sanitized JSON
     responses, and asserts job snapshots land inside the temporary
     `JOBBOT_DATA_DIR` so web requests never escape their test environment.
-   _Update (2025-11-30):_ The Express app now exposes `POST /commands/:command`, which validates
+   _Update (2025-09-29):_ The Express app now exposes `POST /commands/:command`, which validates
    requests against an allow-listed schema before delegating to the CLI via
    `createCommandAdapter`. Coverage in
    [`test/web-server.test.js`](../test/web-server.test.js) locks the sanitized payloads and error
@@ -166,7 +166,7 @@
 3. **Frontend Shell**
    - Set up routing, layout, and theme providers.
   - Implement authentication stubs if future remote deployment is anticipated.
-    _Implemented (2025-12-13):_ [`src/web/server.js`](../src/web/server.js)
+    _Implemented (2025-10-02):_ [`src/web/server.js`](../src/web/server.js)
     now enforces configurable static authorization tokens for
     `/commands/:command` requests when `startWebServer` receives `auth`
     options or the `JOBBOT_WEB_AUTH_TOKENS` environment variable. Callers
@@ -181,7 +181,7 @@
    - Application detail view showing lifecycle timeline, notes, and attachments via CLI `show`.
    - Action panel enabling create/update status workflows mapped to CLI `create`/`update`.
    - Notification hooks for reminders, leveraging CLI scheduling or local system integration.
-     _Implemented (2025-12-31):_ [`bin/jobbot.js`](../bin/jobbot.js) now supports
+     _Implemented (2025-10-04):_ [`bin/jobbot.js`](../bin/jobbot.js) now supports
      `jobbot track reminders --ics <file>`, wiring the upcoming reminders feed into
      [`createReminderCalendar`](../src/reminders-calendar.js) so contributors can
      subscribe via native calendar apps. Coverage in
@@ -196,7 +196,7 @@
    - Contract tests ensuring backend responses align with CLI output fixtures.
    - End-to-end tests (Playwright/Cypress) simulating user flows with mocked CLI responses.
   - Accessibility audits (axe-core) and performance benchmarks (Lighthouse).
-    _Implemented (2025-12-19):_ [`src/web/audits.js`](../src/web/audits.js)
+    _Implemented (2025-10-02):_ [`src/web/audits.js`](../src/web/audits.js)
     now runs axe-core against the status page while translating
     Lighthouse scoring formulas to real HTTP timings. The regression
     suite in [`test/web-audits.test.js`](../test/web-audits.test.js)
@@ -206,7 +206,7 @@
 6. **Hardening and Packaging**
    - Implement rate limiting, input sanitization, and CSRF tokens.
    - Add configuration for local, staging, and production environments.
-     _Implemented (2025-12-18):_ [`src/web/config.js`](../src/web/config.js)
+     _Implemented (2025-10-02):_ [`src/web/config.js`](../src/web/config.js)
      centralizes environment presets (development/staging/production) and
      powers `scripts/web-server.js` so the CLI picks up consistent hosts,
      ports, and rate limits per tier. Regression coverage in
@@ -240,7 +240,7 @@
 - [x] Secure process spawning without shell interpolation (speech commands now
   tokenize templates and spawn without `shell: true`; see `test/speech.test.js`)
 - [x] Input sanitization and output redaction
-  _Implemented (2025-12-09):_ [`src/web/command-adapter.js`](../src/web/command-adapter.js)
+  _Implemented (2025-09-30):_ [`src/web/command-adapter.js`](../src/web/command-adapter.js)
   now strips control characters and redacts secret-like values before
   returning CLI output. The web server sanitizes successful payloads and
   error responses to shield clients from leaked credentials. Regression
@@ -249,18 +249,18 @@
   that stdout/stderr, parsed JSON, and adapter return values all receive
   consistent redaction.
 - [x] Logging with redacted secrets and trace IDs
-  _Implemented (2025-12-05):_ [`src/web/command-adapter.js`](../src/web/command-adapter.js)
+  _Implemented (2025-09-30):_ [`src/web/command-adapter.js`](../src/web/command-adapter.js)
   now redacts secret-like values before emitting telemetry, attaches a `traceId`
   to each invocation, and [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
   plus [`test/web-server.test.js`](../test/web-server.test.js) assert the sanitized
   logs and identifiers propagate to API clients.
 - [x] Automated tests spanning unit → e2e layers
-  _Implemented (2025-12-15):_ [`test/web-e2e.test.js`](../test/web-e2e.test.js)
+  _Implemented (2025-10-01):_ [`test/web-e2e.test.js`](../test/web-e2e.test.js)
   exercises `POST /commands/summarize` end to end against the CLI-backed
   adapter, asserting the HTTP stack, schema validation, and sanitized payloads
   round-trip real job text without mocks.
 - [x] Accessibility and performance audits
-  _Implemented (2025-12-19):_ The homepage served by
+  _Implemented (2025-10-02):_ The homepage served by
   [`startWebServer`](../src/web/server.js) now exposes a WCAG-compliant
   status page. [`src/web/audits.js`](../src/web/audits.js) and
   [`test/web-audits.test.js`](../test/web-audits.test.js) run axe-core and
@@ -269,7 +269,7 @@
 - [x] Deployment artifacts and environment parity *(configuration presets
   shipped via [`src/web/config.js`](../src/web/config.js); container images
   now ship with the repository)*
-  _Implemented (2025-12-30):_ [`Dockerfile`](../Dockerfile) and
+  _Implemented (2025-10-02):_ [`Dockerfile`](../Dockerfile) and
   [`docker-compose.web.yml`](../docker-compose.web.yml) now build the web
   server with production defaults, mount `/data`, and bind to
   `0.0.0.0`. Regression coverage in

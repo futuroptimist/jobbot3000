@@ -119,4 +119,4 @@ New contributors can follow this checklist to ramp up quickly:
 4. Run `npm run lint` and `npm run test:ci` before committing changes.
 5. Use the fixtures in `test/fixtures/` when writing new ingestion or resume parsing tests.
 
-_Last updated: 2025-10-08._
+_Last updated: 2025-09-24._
