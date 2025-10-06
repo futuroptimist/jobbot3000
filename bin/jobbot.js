@@ -655,6 +655,19 @@ async function cmdTrackReminders(args) {
   const upcomingOnly = args.includes('--upcoming-only');
   const icsRequested = args.includes('--ics');
   const icsPath = getFlag(args, '--ics');
+  const calendarNameFlagIndex = args.indexOf('--calendar-name');
+  let calendarName;
+  if (calendarNameFlagIndex !== -1) {
+    const value = args[calendarNameFlagIndex + 1];
+    if (!value || value.startsWith('--')) {
+      console.error(
+        'Usage: jobbot track reminders [--json] [--upcoming-only] ' +
+          '[--now <iso>] [--ics <path>] [--calendar-name <name>]',
+      );
+      process.exit(2);
+    }
+    calendarName = value;
+  }
 
   if (icsRequested && asJson) {
     console.error('--ics cannot be combined with --json');
@@ -664,8 +677,13 @@ async function cmdTrackReminders(args) {
   if (icsRequested && (!icsPath || icsPath.startsWith('--'))) {
     console.error(
       'Usage: jobbot track reminders [--json] [--upcoming-only] ' +
-        '[--now <iso>] [--ics <path>]',
+        '[--now <iso>] [--ics <path>] [--calendar-name <name>]',
     );
+    process.exit(2);
+  }
+
+  if (!icsRequested && calendarName) {
+    console.error('--calendar-name requires --ics');
     process.exit(2);
   }
 
@@ -698,7 +716,10 @@ async function cmdTrackReminders(args) {
         stamp = parsed;
       }
     }
-    const calendar = createReminderCalendar(upcoming, { now: stamp });
+    const calendar = createReminderCalendar(upcoming, {
+      now: stamp,
+      calendarName,
+    });
     await fs.promises.mkdir(path.dirname(resolved), { recursive: true });
     await fs.promises.writeFile(resolved, calendar, 'utf8');
     console.log(`Saved reminder calendar to ${resolved}`);

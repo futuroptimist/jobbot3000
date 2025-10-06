@@ -883,6 +883,40 @@ describe('jobbot CLI', () => {
     expect(ics).not.toContain('job-past-due');
   });
 
+  it('allows customizing the ICS calendar name with --calendar-name', () => {
+    runCli([
+      'track',
+      'log',
+      'job-calendar-name',
+      '--channel',
+      'call',
+      '--date',
+      '2025-03-05T10:00:00Z',
+      '--note',
+      'Prep talking points',
+      '--contact',
+      'Jamie Hiring Manager',
+      '--remind-at',
+      '2025-03-10T15:00:00Z',
+    ]);
+
+    const calendarPath = path.join(dataDir, 'custom-name.ics');
+    runCli([
+      'track',
+      'reminders',
+      '--ics',
+      calendarPath,
+      '--calendar-name',
+      'Coaching Reminders',
+      '--now',
+      '2025-03-06T00:00:00Z',
+    ]);
+
+    const ics = fs.readFileSync(calendarPath, 'utf8');
+    expect(ics).toContain('NAME:Coaching Reminders');
+    expect(ics).toContain('X-WR-CALNAME:Coaching Reminders');
+  });
+
   it('prints headings with (none) when reminders are filtered out', () => {
     runCli([
       'track',
