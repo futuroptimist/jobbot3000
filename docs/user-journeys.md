@@ -165,7 +165,8 @@ aggressively to respect rate limits.
     also run `jobbot track reminders --ics <file>` to publish upcoming reminders as an iCalendar
     feed; the export omits past-due entries and preserves newline formatting (commas and semicolons
     are escaped to satisfy the iCalendar spec) so native calendar apps emit local notifications
-    without additional scripting.
+    without additional scripting. Pass `--calendar-name <label>` to override the default
+    "jobbot3000 Reminders" calendar title when subscribing multiple feeds.
 
 **Unhappy paths:** conflicting updates (e.g., two devices editing simultaneously) trigger a merge
 flow that preserves both sets of notes.
