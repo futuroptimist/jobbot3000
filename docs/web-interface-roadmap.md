@@ -164,7 +164,13 @@
    handling so future endpoints inherit the same guardrails.
 
 3. **Frontend Shell**
-   - Set up routing, layout, and theme providers.
+  - Set up routing, layout, and theme providers.
+    _Implemented (2025-10-05):_ The status hub served by
+    [`startWebServer`](../src/web/server.js) now includes a hash-based router that
+    persists the active section and theme toggle across reloads. Regression
+    coverage in [`test/web-server.test.js`](../test/web-server.test.js) drives the
+    router through navigation events to ensure the stored route, `aria-current`
+    markers, and section visibility stay in sync.
   - Implement authentication stubs if future remote deployment is anticipated.
     _Implemented (2025-10-02):_ [`src/web/server.js`](../src/web/server.js)
     now enforces configurable static authorization tokens for
@@ -175,6 +181,14 @@
     [`test/web-server.test.js`](../test/web-server.test.js) exercises the
     missing-token guard, Bearer token flow, and custom header handling.
    - Create base components and loading/error states.
+     _Implemented (2025-10-05):_ The status hub wraps the Commands and Audits
+     sections in reusable status panels with ready/loading/error slots. The
+     client script now exposes a `JobbotStatusHub` helper and fires a
+     `jobbot:status-panels-ready` event so asynchronous CLI data loaders can
+     flip between skeleton, success, and descriptive failure states. Regression
+     coverage in [`test/web-server.test.js`](../test/web-server.test.js)
+     exercises the API surface and DOM transitions to keep the affordances
+     stable.
 
 4. **Core Features**
    - Application list view with filtering and pagination backed by CLI `list` command.

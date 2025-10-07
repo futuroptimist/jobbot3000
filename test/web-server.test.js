@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { JSDOM } from 'jsdom';
 
 let activeServers = [];
 
@@ -133,6 +134,108 @@ describe('web server status page', () => {
     expect(html).toContain('data-theme-toggle');
     expect(html).toMatch(/jobbot:web:theme/);
     expect(html).toMatch(/prefers-color-scheme/);
+  });
+
+  it('supports hash-based navigation between status sections', async () => {
+    const server = await startServer();
+
+    const response = await fetch(`${server.url}/`);
+    expect(response.status).toBe(200);
+    const html = await response.text();
+
+    const dom = new JSDOM(html, {
+      runScripts: 'dangerously',
+      url: `${server.url}/`,
+    });
+
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('router never became ready')), 200);
+      dom.window.document.addEventListener('jobbot:router-ready', () => {
+        clearTimeout(timeout);
+        resolve();
+      });
+    });
+
+    const { document } = dom.window;
+    const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
+    const overview = document.querySelector('[data-route="overview"]');
+    const commands = document.querySelector('[data-route="commands"]');
+    const overviewLink = document.querySelector('[data-route-link="overview"]');
+    const commandsLink = document.querySelector('[data-route-link="commands"]');
+
+    expect(overview).not.toBeNull();
+    expect(commands).not.toBeNull();
+    expect(overview?.hasAttribute('hidden')).toBe(false);
+    expect(commands?.hasAttribute('hidden')).toBe(true);
+    expect(overviewLink?.getAttribute('aria-current')).toBe('page');
+    expect(commandsLink?.hasAttribute('aria-current')).toBe(false);
+
+    dom.window.location.hash = '#commands';
+    dom.window.dispatchEvent(new HashChange('hashchange'));
+
+    expect(commands?.hasAttribute('hidden')).toBe(false);
+    expect(overview?.hasAttribute('hidden')).toBe(true);
+    expect(commandsLink?.getAttribute('aria-current')).toBe('page');
+    expect(overviewLink?.hasAttribute('aria-current')).toBe(false);
+  });
+
+  it('exposes status panels with loading and error states', async () => {
+    const server = await startServer();
+
+    const response = await fetch(`${server.url}/`);
+    expect(response.status).toBe(200);
+    const html = await response.text();
+
+    const dom = new JSDOM(html, {
+      runScripts: 'dangerously',
+      url: `${server.url}/`,
+    });
+
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('status panels never became ready')), 200);
+      dom.window.document.addEventListener('jobbot:status-panels-ready', () => {
+        clearTimeout(timeout);
+        resolve();
+      });
+    });
+
+    const { document } = dom.window;
+    const api = dom.window.JobbotStatusHub;
+
+    expect(typeof api).toBe('object');
+    expect(typeof api?.setPanelState).toBe('function');
+    expect(typeof api?.getPanelState).toBe('function');
+
+    const commandsPanel = document.querySelector('[data-status-panel="commands"]');
+    expect(commandsPanel).not.toBeNull();
+    expect(commandsPanel?.getAttribute('data-state')).toBe('ready');
+
+    const readySlot = commandsPanel?.querySelector('[data-state-slot="ready"]');
+    const loadingSlot = commandsPanel?.querySelector('[data-state-slot="loading"]');
+    const errorSlot = commandsPanel?.querySelector('[data-state-slot="error"]');
+
+    expect(readySlot?.hasAttribute('hidden')).toBe(false);
+    expect(loadingSlot?.hasAttribute('hidden')).toBe(true);
+    expect(errorSlot?.hasAttribute('hidden')).toBe(true);
+
+    expect(api?.getPanelState('commands')).toBe('ready');
+
+    expect(api?.setPanelState('commands', 'loading')).toBe(true);
+    expect(commandsPanel?.getAttribute('data-state')).toBe('loading');
+    expect(loadingSlot?.hasAttribute('hidden')).toBe(false);
+    expect(readySlot?.hasAttribute('hidden')).toBe(true);
+
+    expect(api?.setPanelState('commands', 'error', { message: 'Failed to load' })).toBe(true);
+    expect(commandsPanel?.getAttribute('data-state')).toBe('error');
+    expect(errorSlot?.hasAttribute('hidden')).toBe(false);
+    const errorMessage = errorSlot?.querySelector('[data-error-message]');
+    expect(errorMessage?.textContent).toContain('Failed to load');
+
+    expect(api?.setPanelState('commands', 'unknown')).toBe(true);
+    expect(commandsPanel?.getAttribute('data-state')).toBe('ready');
+    expect(readySlot?.hasAttribute('hidden')).toBe(false);
+
+    expect(api?.setPanelState('missing', 'loading')).toBe(false);
   });
 });
 
