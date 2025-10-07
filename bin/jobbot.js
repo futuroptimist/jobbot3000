@@ -1008,8 +1008,11 @@ async function cmdIntakeRecord(args) {
 async function cmdIntakeList(args) {
   const asJson = args.includes('--json');
   const skippedOnly = args.includes('--skipped-only');
-  const filters = skippedOnly ? { status: 'skipped' } : undefined;
-  const entries = await getIntakeResponses(filters);
+  const redact = args.includes('--redact');
+  const options = {};
+  if (skippedOnly) options.status = 'skipped';
+  if (redact) options.redact = true;
+  const entries = await getIntakeResponses(options);
   if (asJson) {
     console.log(JSON.stringify({ responses: entries }, null, 2));
     return;
@@ -1073,13 +1076,40 @@ async function cmdIntakePlan(args) {
   console.log(formatIntakePlan(plan, resumePath));
 }
 
+async function cmdIntakeExport(args) {
+  const outSpecified = args.includes('--out');
+  const outPath = getFlag(args, '--out');
+  if (outSpecified && !outPath) {
+    console.error(
+      'Usage: jobbot intake export [--out <path>] [--json] [--redact]',
+    );
+    process.exit(2);
+  }
+  const redact = args.includes('--redact');
+  const emitJson = args.includes('--json') || !outPath;
+  const entries = await getIntakeResponses({ redact });
+  const payload = { responses: entries };
+
+  if (outPath) {
+    const resolved = path.resolve(process.cwd(), outPath);
+    await fs.promises.mkdir(path.dirname(resolved), { recursive: true });
+    await fs.promises.writeFile(resolved, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+    console.log(`Saved intake export to ${resolved}`);
+  }
+
+  if (emitJson) {
+    console.log(JSON.stringify(payload, null, 2));
+  }
+}
+
 async function cmdIntake(args) {
   const sub = args[0];
   if (sub === 'record') return cmdIntakeRecord(args.slice(1));
   if (sub === 'list') return cmdIntakeList(args.slice(1));
   if (sub === 'bullets') return cmdIntakeBullets(args.slice(1));
   if (sub === 'plan') return cmdIntakePlan(args.slice(1));
-  console.error('Usage: jobbot intake <record|list|bullets|plan> ...');
+  if (sub === 'export') return cmdIntakeExport(args.slice(1));
+  console.error('Usage: jobbot intake <record|list|bullets|plan|export> ...');
   process.exit(2);
 }
 

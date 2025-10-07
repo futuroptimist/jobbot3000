@@ -188,4 +188,43 @@ describe('intake responses', () => {
       'Reduced churn by 10%',
     ]);
   });
+
+  it('redacts sensitive responses when requested', async () => {
+    const { recordIntakeResponse, getIntakeResponses } = await import('../src/intake.js');
+
+    const compensation = await recordIntakeResponse({
+      question: 'What compensation range keeps you engaged?',
+      answer: 'Base $220k + 20% bonus',
+      tags: ['Compensation', 'salary'],
+      notes: 'Open to equity-heavy packages',
+    });
+
+    const leadership = await recordIntakeResponse({
+      question: 'Share a leadership win',
+      answer: 'Mentored two engineers through promotion',
+      tags: ['Leadership'],
+    });
+
+    const normal = await getIntakeResponses();
+    const baseline = normal.find(entry => entry.id === compensation.id);
+    expect(baseline).toMatchObject({
+      answer: 'Base $220k + 20% bonus',
+      notes: 'Open to equity-heavy packages',
+    });
+    expect(baseline.redacted).toBeUndefined();
+
+    const redacted = await getIntakeResponses({ redact: true });
+    const sensitive = redacted.find(entry => entry.id === compensation.id);
+    expect(sensitive).toMatchObject({
+      answer: '[redacted]',
+      notes: '[redacted]',
+      redacted: true,
+    });
+
+    const regular = redacted.find(entry => entry.id === leadership.id);
+    expect(regular).toMatchObject({
+      answer: 'Mentored two engineers through promotion',
+    });
+    expect(regular.redacted).toBeUndefined();
+  });
 });
