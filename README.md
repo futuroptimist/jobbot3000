@@ -1093,17 +1093,33 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot analytics compensation --json | jq '.curren
 #   "average": 185000,
 #   "median": 185000
 # }
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot analytics health
+# Analytics health (generated 2025-02-15T00:00:00.000Z)
+# Missing statuses: 1 job (job-missing)
+# Unknown statuses: 1 job (job-unknown)
+# Stale statuses (>30d): 1 job (job-stale (updated 2024-10-01T00:00:00.000Z, 137d old))
+# Stale outreach (>30d): 2 jobs (job-missing (last 2024-12-01T00:00:00.000Z, 76d old),
+# job-stale (last 2024-10-15T00:00:00.000Z, 123d old))
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot analytics health --json \
+  | jq '.issues.staleStatuses.entries[0]'
+# {
+#   "job_id": "job-missing",
+#   "last_event_at": "2024-12-01T00:00:00.000Z",
+#   "age_days": 76
+# }
 ```
 
 Analytics helpers respect `JOBBOT_DATA_DIR` and `setAnalyticsDataDir()` overrides for shortlist
 metadata as well as lifecycle records, so temporary fixtures and tests can point compensation
 reports at isolated directories without touching production data. The corresponding unit tests in
-[`test/analytics.test.js`](test/analytics.test.js) assert this override propagation.
+[`test/analytics.test.js`](test/analytics.test.js) assert this override propagation and cover the
+`jobbot analytics health` warning buckets.
 
 The analytics command reads `applications.json` and `application_events.json`, summarising stage
 counts, drop-offs, and conversion percentages. A dedicated unit test in
 [`test/analytics.test.js`](test/analytics.test.js) and a CLI flow in [`test/cli.test.js`](test/cli.test.js)
-cover outreach counts, acceptance detection, JSON formatting, the largest drop-off highlight, and the
+cover outreach counts, acceptance detection, JSON formatting, the largest drop-off highlight,
+the new health report, and the
 anonymized snapshot export. Additional analytics coverage in those suites exercises the compensation
 summary so currency ranges, averages, and text/JSON formatting stay stable. The `analytics export`
 subcommand captures aggregate status counts and event channels without embedding raw job identifiers
