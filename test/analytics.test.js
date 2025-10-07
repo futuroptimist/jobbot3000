@@ -360,6 +360,108 @@ describe('analytics conversion funnel', () => {
     ]);
   });
 
+  it('highlights missing data, schema drift, and stale analytics snapshots', async () => {
+    const fs = await import('node:fs/promises');
+
+    const applications = {
+      'job-known': {
+        status: 'screening',
+        updated_at: '2025-02-10T00:00:00.000Z',
+      },
+      'job-unknown': {
+        status: 'custom_stage',
+        updated_at: '2025-02-01T00:00:00.000Z',
+      },
+      'job-string': 'onsite',
+      'job-stale': {
+        status: 'offer',
+        updated_at: '2024-10-01T00:00:00.000Z',
+      },
+    };
+
+    const events = {
+      'job-known': [{ channel: 'email', date: '2025-02-10T09:00:00.000Z' }],
+      'job-missing': [{ channel: 'email', date: '2024-12-01T00:00:00.000Z' }],
+      'job-stale': [{ channel: 'email', date: '2024-10-15T00:00:00.000Z' }],
+    };
+
+    await fs.writeFile(
+      path.join(dataDir, 'applications.json'),
+      `${JSON.stringify(applications, null, 2)}\n`,
+    );
+    await fs.writeFile(
+      path.join(dataDir, 'application_events.json'),
+      `${JSON.stringify(events, null, 2)}\n`,
+    );
+
+    const {
+      computeAnalyticsHealth,
+      formatAnalyticsHealthReport,
+      setAnalyticsDataDir,
+    } = await import('../src/analytics.js');
+    setAnalyticsDataDir(dataDir);
+    restoreAnalyticsDir = async () => setAnalyticsDataDir(undefined);
+
+    const health = await computeAnalyticsHealth({ now: '2025-02-15T00:00:00.000Z' });
+
+    expect(health.summary).toEqual({
+      tracked_jobs: 5,
+      jobs_with_status: 3,
+      jobs_with_events: 3,
+    });
+
+    expect(health.issues.missingStatus).toEqual({
+      count: 1,
+      jobs: ['job-missing'],
+    });
+
+    expect(health.issues.unknownStatuses).toEqual({
+      count: 1,
+      entries: [
+        { job_id: 'job-unknown', status: 'custom_stage' },
+      ],
+    });
+
+    expect(health.issues.staleStatuses).toEqual({
+      count: 1,
+      entries: [
+        {
+          job_id: 'job-stale',
+          status: 'offer',
+          updated_at: '2024-10-01T00:00:00.000Z',
+          age_days: 137,
+        },
+      ],
+    });
+
+    expect(health.issues.staleEvents).toEqual({
+      count: 2,
+      entries: [
+        {
+          job_id: 'job-missing',
+          last_event_at: '2024-12-01T00:00:00.000Z',
+          age_days: 76,
+        },
+        {
+          job_id: 'job-stale',
+          last_event_at: '2024-10-15T00:00:00.000Z',
+          age_days: 123,
+        },
+      ],
+    });
+
+    const report = formatAnalyticsHealthReport(health);
+    expect(report).toContain('Missing statuses: 1 job');
+    expect(report).toContain('job-missing');
+    expect(report).toContain('Unknown statuses: 1 job');
+    expect(report).toContain('custom_stage');
+    expect(report).toContain('Stale statuses (>30d): 1 job');
+    expect(report).toContain('updated 2024-10-01');
+    expect(report).toContain('Stale outreach (>30d): 2 jobs');
+    expect(report).toContain('job-missing');
+    expect(report).toContain('last 2024-10-15');
+  });
+
   it('parses compensation values with repeated thousands separators', async () => {
     const { syncShortlistJob } = await import('../src/shortlist.js');
 

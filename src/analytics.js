@@ -36,6 +36,68 @@ const KNOWN_CURRENCY_CODES = new Set([
   'ILS',
 ]);
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const STALE_STATUS_DAYS = 30;
+const STALE_EVENT_DAYS = 30;
+
+function resolveReferenceDate(now) {
+  if (now === undefined) return new Date();
+  if (now instanceof Date) {
+    if (Number.isNaN(now.getTime())) {
+      throw new Error(`Invalid analytics reference timestamp: ${now}`);
+    }
+    return now;
+  }
+  const parsed = new Date(now);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`Invalid analytics reference timestamp: ${now}`);
+  }
+  return parsed;
+}
+
+function extractUpdatedAtValue(entry) {
+  if (!entry || typeof entry !== 'object') return undefined;
+  const candidates = [entry.updated_at, entry.updatedAt];
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string' || !candidate.trim()) continue;
+    const parsed = new Date(candidate);
+    if (Number.isNaN(parsed.getTime())) continue;
+    return parsed.toISOString();
+  }
+  return undefined;
+}
+
+function calculateAgeDays(reference, isoTimestamp) {
+  if (!isoTimestamp) return 0;
+  const parsed = new Date(isoTimestamp);
+  if (Number.isNaN(parsed.getTime())) return 0;
+  const diffMs = reference.getTime() - parsed.getTime();
+  if (diffMs <= 0) return 0;
+  return Math.floor(diffMs / MS_PER_DAY);
+}
+
+function uniqueSortedJobs(jobIds) {
+  if (!Array.isArray(jobIds) || jobIds.length === 0) return [];
+  const set = new Set(jobIds.filter(id => typeof id === 'string' && id));
+  return [...set].sort((a, b) => a.localeCompare(b));
+}
+
+function findLatestEventDate(history) {
+  if (!Array.isArray(history)) return undefined;
+  let latest;
+  for (const entry of history) {
+    const raw = typeof entry?.date === 'string' ? entry.date.trim() : '';
+    if (!raw) continue;
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) continue;
+    const iso = parsed.toISOString();
+    if (!latest || iso > latest) {
+      latest = iso;
+    }
+  }
+  return latest;
+}
+
 function resolveDataDir() {
   return overrideDir || process.env.JOBBOT_DATA_DIR || path.resolve('data');
 }
@@ -241,6 +303,184 @@ async function summarizeActivity() {
     summarizeInterviewActivity(path.join(dataDir, 'interviews')),
   ]);
   return { deliverables, interviews };
+}
+
+export async function computeAnalyticsHealth(options = {}) {
+  const reference = resolveReferenceDate(options.now);
+  const { statuses, interactions } = await readAnalyticsSources();
+  const tracked = unionJobIds(statuses, interactions);
+  const eventsList = listJobsWithEvents(interactions);
+  const jobsWithEvents = new Set(eventsList);
+
+  const missingStatusCandidates = [];
+  const unknownStatusEntries = [];
+  const staleStatusEntries = [];
+  const staleEventEntries = [];
+
+  let jobsWithStatus = 0;
+
+  for (const [jobId, rawStatus] of Object.entries(statuses)) {
+    const normalized = normalizeStatusKey(rawStatus);
+    const statusLabel = extractStatusValue(rawStatus);
+    const recognized = normalized && KNOWN_STATUSES.has(normalized);
+    if (recognized) {
+      jobsWithStatus += 1;
+    }
+    if (normalized && !recognized) {
+      unknownStatusEntries.push({
+        job_id: jobId,
+        status: statusLabel || normalized,
+      });
+    }
+    if (jobsWithEvents.has(jobId) && (!normalized || !recognized)) {
+      missingStatusCandidates.push(jobId);
+    }
+    if (recognized) {
+      const updatedAt = extractUpdatedAtValue(rawStatus);
+      if (updatedAt) {
+        const ageDays = calculateAgeDays(reference, updatedAt);
+        if (ageDays > STALE_STATUS_DAYS) {
+          staleStatusEntries.push({
+            job_id: jobId,
+            status: statusLabel || normalized,
+            updated_at: updatedAt,
+            age_days: ageDays,
+          });
+        }
+      }
+    }
+  }
+
+  for (const jobId of jobsWithEvents) {
+    if (!(jobId in statuses)) {
+      missingStatusCandidates.push(jobId);
+    }
+  }
+
+  for (const [jobId, history] of Object.entries(interactions)) {
+    if (!Array.isArray(history) || history.length === 0) continue;
+    const latest = findLatestEventDate(history);
+    if (!latest) continue;
+    const ageDays = calculateAgeDays(reference, latest);
+    if (ageDays > STALE_EVENT_DAYS) {
+      staleEventEntries.push({
+        job_id: jobId,
+        last_event_at: latest,
+        age_days: ageDays,
+      });
+    }
+  }
+
+  unknownStatusEntries.sort((a, b) => a.job_id.localeCompare(b.job_id));
+  staleStatusEntries.sort((a, b) => a.job_id.localeCompare(b.job_id));
+  staleEventEntries.sort((a, b) => a.job_id.localeCompare(b.job_id));
+
+  const missingJobs = uniqueSortedJobs(missingStatusCandidates);
+
+  return {
+    generated_at: new Date(reference).toISOString(),
+    summary: {
+      tracked_jobs: tracked.size,
+      jobs_with_status: jobsWithStatus,
+      jobs_with_events: jobsWithEvents.size,
+    },
+    thresholds: {
+      stale_status_days: STALE_STATUS_DAYS,
+      stale_event_days: STALE_EVENT_DAYS,
+    },
+    issues: {
+      missingStatus: { count: missingJobs.length, jobs: missingJobs },
+      unknownStatuses: { count: unknownStatusEntries.length, entries: unknownStatusEntries },
+      staleStatuses: { count: staleStatusEntries.length, entries: staleStatusEntries },
+      staleEvents: { count: staleEventEntries.length, entries: staleEventEntries },
+    },
+  };
+}
+
+function formatIssueLine(label, items, formatter, noun = 'job') {
+  const list = Array.isArray(items) ? items : [];
+  if (list.length === 0) {
+    return `${label}: none`;
+  }
+  const formatted = list.map(formatter).filter(Boolean);
+  const nounLabel = list.length === 1 ? noun : `${noun}s`;
+  const suffix = formatted.length ? ` (${formatted.join(', ')})` : '';
+  return `${label}: ${list.length} ${nounLabel}${suffix}`;
+}
+
+export function formatAnalyticsHealthReport(health) {
+  if (!health || typeof health !== 'object') {
+    return 'No analytics health data available';
+  }
+
+  const summary = health.summary ?? {};
+  const thresholds = health.thresholds ?? {};
+  const issues = health.issues ?? {};
+
+  const lines = [];
+  const generatedAt =
+    typeof health.generated_at === 'string' && health.generated_at
+      ? health.generated_at
+      : undefined;
+  lines.push(
+    generatedAt ? `Analytics health (generated ${generatedAt})` : 'Analytics health',
+  );
+
+  const tracked = summary.tracked_jobs ?? 0;
+  const withStatus = summary.jobs_with_status ?? 0;
+  const withEvents = summary.jobs_with_events ?? 0;
+  lines.push(`Tracked jobs: ${tracked}; with status: ${withStatus}; with outreach: ${withEvents}`);
+
+  const statusThreshold = thresholds.stale_status_days ?? STALE_STATUS_DAYS;
+  const eventThreshold = thresholds.stale_event_days ?? STALE_EVENT_DAYS;
+
+  lines.push(
+    formatIssueLine('Missing statuses', issues.missingStatus?.jobs, jobId => jobId),
+  );
+
+  lines.push(
+    formatIssueLine(
+      'Unknown statuses',
+      issues.unknownStatuses?.entries,
+      entry => {
+        if (!entry || typeof entry.job_id !== 'string' || !entry.job_id) return undefined;
+        return entry.status ? `${entry.job_id} (${entry.status})` : entry.job_id;
+      },
+    ),
+  );
+
+  lines.push(
+    formatIssueLine(
+      `Stale statuses (>${statusThreshold}d)`,
+      issues.staleStatuses?.entries,
+      entry => {
+        if (!entry || typeof entry.job_id !== 'string' || !entry.job_id) return undefined;
+        const details = [];
+        if (entry.status) details.push(entry.status);
+        if (entry.updated_at) details.push(`updated ${entry.updated_at}`);
+        if (Number.isFinite(entry.age_days)) details.push(`${entry.age_days}d old`);
+        const suffix = details.length ? ` (${details.join(', ')})` : '';
+        return `${entry.job_id}${suffix}`;
+      },
+    ),
+  );
+
+  lines.push(
+    formatIssueLine(
+      `Stale outreach (>${eventThreshold}d)`,
+      issues.staleEvents?.entries,
+      entry => {
+        if (!entry || typeof entry.job_id !== 'string' || !entry.job_id) return undefined;
+        const details = [];
+        if (entry.last_event_at) details.push(`last ${entry.last_event_at}`);
+        if (Number.isFinite(entry.age_days)) details.push(`${entry.age_days}d old`);
+        const suffix = details.length ? ` (${details.join(', ')})` : '';
+        return `${entry.job_id}${suffix}`;
+      },
+    ),
+  );
+
+  return lines.join('\n');
 }
 
 function buildFunnel(statuses, interactions) {
