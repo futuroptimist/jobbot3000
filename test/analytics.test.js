@@ -262,6 +262,100 @@ describe('analytics conversion funnel', () => {
     const serialized = JSON.stringify(snapshot);
     expect(serialized).not.toContain('job-accepted');
     expect(serialized).not.toContain('job-screening');
+    expect(Array.isArray(snapshot.companies)).toBe(true);
+  });
+
+  it('summarizes companies and redacts names when requested', async () => {
+    const fs = await import('node:fs/promises');
+    await fs.writeFile(
+      path.join(dataDir, 'applications.json'),
+      JSON.stringify(
+        {
+          'job-1': { status: 'screening' },
+          'job-2': { status: 'offer' },
+        },
+        null,
+        2,
+      ),
+    );
+    await fs.writeFile(
+      path.join(dataDir, 'application_events.json'),
+      JSON.stringify(
+        {
+          'job-1': [{ channel: 'email', date: '2025-01-02T10:00:00Z' }],
+          'job-3': [{ channel: 'referral', date: '2025-01-03T12:00:00Z' }],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const jobsDir = path.join(dataDir, 'jobs');
+    await fs.mkdir(jobsDir, { recursive: true });
+    await fs.writeFile(
+      path.join(jobsDir, 'job-1.json'),
+      JSON.stringify({ parsed: { company: 'Example Labs' } }, null, 2),
+    );
+    await fs.writeFile(
+      path.join(jobsDir, 'job-2.json'),
+      JSON.stringify({ parsed: { company: 'Example Labs' } }, null, 2),
+    );
+    await fs.writeFile(
+      path.join(jobsDir, 'job-3.json'),
+      JSON.stringify({ parsed: { company: 'Future Works' } }, null, 2),
+    );
+
+    const { exportAnalyticsSnapshot, setAnalyticsDataDir } = await import('../src/analytics.js');
+    setAnalyticsDataDir(dataDir);
+    restoreAnalyticsDir = async () => setAnalyticsDataDir(undefined);
+
+    const snapshot = await exportAnalyticsSnapshot();
+    expect(snapshot.companies).toEqual([
+      {
+        name: 'Example Labs',
+        tracked_jobs: 2,
+        with_events: 1,
+        statusless_jobs: 0,
+        statuses: expect.objectContaining({
+          screening: 1,
+          offer: 1,
+        }),
+      },
+      {
+        name: 'Future Works',
+        tracked_jobs: 1,
+        with_events: 1,
+        statusless_jobs: 1,
+        statuses: expect.objectContaining({
+          screening: 0,
+          offer: 0,
+        }),
+      },
+    ]);
+
+    const redacted = await exportAnalyticsSnapshot({ redactCompanies: true });
+    expect(redacted.companies).toEqual([
+      {
+        name: 'Company 1',
+        tracked_jobs: 2,
+        with_events: 1,
+        statusless_jobs: 0,
+        statuses: expect.objectContaining({
+          screening: 1,
+          offer: 1,
+        }),
+      },
+      {
+        name: 'Company 2',
+        tracked_jobs: 1,
+        with_events: 1,
+        statusless_jobs: 1,
+        statuses: expect.objectContaining({
+          screening: 0,
+          offer: 0,
+        }),
+      },
+    ]);
   });
 
   it('summarizes shortlist compensation metadata by currency', async () => {

@@ -1515,7 +1515,8 @@ async function cmdAnalyticsFunnel(args) {
 
 async function cmdAnalyticsExport(args) {
   const output = getFlag(args, '--out');
-  const snapshot = await exportAnalyticsSnapshot();
+  const redact = args.includes('--redact');
+  const snapshot = await exportAnalyticsSnapshot({ redactCompanies: redact });
   const payload = `${JSON.stringify(snapshot, null, 2)}\n`;
   if (output) {
     const resolved = path.resolve(process.cwd(), output);

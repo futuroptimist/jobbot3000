@@ -1070,6 +1070,9 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot analytics export --out analytics.json
 #   "referral": 1
 # }
 
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot analytics export --redact --out analytics-redacted.json
+# Saved analytics snapshot to /tmp/jobbot-cli-XXXX/analytics-redacted.json
+
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot analytics compensation
 # Compensation summary (3 parsed of 4 entries; 1 unparsed)
 # - $ — 1 job
@@ -1114,6 +1117,11 @@ runs and interview sessions exist across the data directory without revealing th
 giving the recommender a privacy-preserving signal about tailoring and rehearsal momentum. Legacy
 deliverable folders that store files directly under a job directory are counted as a single run so
 older tailoring archives stay visible in the activity totals.
+
+The snapshot's `companies` array summarizes tracked jobs per company, including stage counts, outreach
+activity, and how many outreach-only records still await status updates. Pass `--redact` to `jobbot
+analytics export` to replace company names with anonymized labels before sharing the report externally;
+the CLI flag mirrors the web dashboard's **Redact company** toggle.
 
 When outreach events exist without a matching lifecycle status, the report now prints a
 `Missing data: …` line listing the affected job IDs so you can backfill outcomes quickly.

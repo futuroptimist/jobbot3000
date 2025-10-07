@@ -346,6 +346,8 @@ jobbot3000.
 4. Schedule periodic exports via `jobbot schedule run --config configs/analytics.yml` to ensure
    analytics stay current.
 5. Share sanitized aggregates through `jobbot analytics export --out share/analytics.csv`.
+   Include `--redact` when you need to anonymize company names in the exported `companies` summary
+   before circulating metrics outside the immediate team.
 
 ### Web flow
 

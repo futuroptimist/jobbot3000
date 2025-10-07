@@ -6,6 +6,7 @@ import { STATUSES } from './lifecycle.js';
 let overrideDir;
 
 const KNOWN_STATUSES = new Set(STATUSES.map(status => status.toLowerCase()));
+const STATUS_TEMPLATE = Object.freeze(Object.fromEntries(STATUSES.map(status => [status, 0])));
 const CURRENCY_SYMBOL_PREFIX_RE = /^\p{Sc}+/u;
 const ADDITIONAL_CURRENCY_SYMBOL_RE = /\p{Sc}/gu;
 const COMPENSATION_VALUE_RE =
@@ -97,6 +98,16 @@ function getStatusCounts(statuses) {
 function normalizeStatusKey(value) {
   const extracted = extractStatusValue(value);
   return extracted ? extracted.toLowerCase() : '';
+}
+
+function extractCompanyFromStatusEntry(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  const company = entry.company ?? entry.company_name ?? entry.companyName;
+  if (typeof company === 'string') {
+    const trimmed = company.trim();
+    if (trimmed) return trimmed;
+  }
+  return null;
 }
 
 const ACCEPTANCE_STATUS = new Set(['accepted', 'acceptance', 'hired']);
@@ -241,6 +252,122 @@ async function summarizeActivity() {
     summarizeInterviewActivity(path.join(dataDir, 'interviews')),
   ]);
   return { deliverables, interviews };
+}
+
+function cloneStatusTemplate() {
+  return { ...STATUS_TEMPLATE };
+}
+
+function extractCompanyFromSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return null;
+  if (typeof snapshot.company === 'string' && snapshot.company.trim()) {
+    return snapshot.company.trim();
+  }
+  const parsedCompany = snapshot.parsed?.company;
+  if (typeof parsedCompany === 'string' && parsedCompany.trim()) {
+    return parsedCompany.trim();
+  }
+  return null;
+}
+
+async function readCompanyFromSnapshot(jobsDir, jobId) {
+  if (!jobId) return null;
+  const file = path.join(jobsDir, `${jobId}.json`);
+  try {
+    const contents = await fs.readFile(file, 'utf8');
+    const snapshot = JSON.parse(contents);
+    return extractCompanyFromSnapshot(snapshot);
+  } catch (err) {
+    if (err && err.code === 'ENOENT') {
+      return null;
+    }
+    return null;
+  }
+}
+
+function createCompanySummary(name) {
+  return {
+    name: name ?? null,
+    tracked_jobs: 0,
+    with_events: 0,
+    statusless_jobs: 0,
+    statuses: cloneStatusTemplate(),
+  };
+}
+
+function cloneCompanySummary(summary, nameOverride) {
+  return {
+    name: nameOverride !== undefined ? nameOverride : summary.name ?? null,
+    tracked_jobs: summary.tracked_jobs,
+    with_events: summary.with_events,
+    statusless_jobs: summary.statusless_jobs,
+    statuses: { ...summary.statuses },
+  };
+}
+
+function cloneCompanySummaries(summaries) {
+  return summaries.map(summary => cloneCompanySummary(summary));
+}
+
+function redactCompanySummaries(summaries) {
+  let counter = 1;
+  return summaries.map(summary => {
+    if (!summary || typeof summary !== 'object') {
+      return summary;
+    }
+    let nameOverride = summary.name;
+    if (summary.name) {
+      nameOverride = `Company ${counter}`;
+      counter += 1;
+    } else {
+      nameOverride = null;
+    }
+    return cloneCompanySummary(summary, nameOverride);
+  });
+}
+
+async function summarizeCompanies(statuses = {}, interactions = {}) {
+  const jobIds = Array.from(unionJobIds(statuses, interactions));
+  if (jobIds.length === 0) return [];
+  const jobsDir = path.join(resolveDataDir(), 'jobs');
+  const jobsWithEvents = new Set(listJobsWithEvents(interactions));
+  const summaries = new Map();
+
+  for (const jobId of jobIds) {
+    const statusEntry = statuses[jobId];
+    let company = extractCompanyFromStatusEntry(statusEntry);
+    if (!company) {
+      company = await readCompanyFromSnapshot(jobsDir, jobId);
+    }
+    if (company) {
+      company = company.trim();
+    }
+    const key = company ? company.toLowerCase() : '__unknown__';
+    let summary = summaries.get(key);
+    if (!summary) {
+      summary = createCompanySummary(company);
+      summaries.set(key, summary);
+    } else if (!summary.name && company) {
+      summary.name = company;
+    }
+    summary.tracked_jobs += 1;
+    if (jobsWithEvents.has(jobId)) {
+      summary.with_events += 1;
+    }
+    const normalizedStatus = normalizeStatusKey(statusEntry);
+    if (normalizedStatus && summary.statuses[normalizedStatus] !== undefined) {
+      summary.statuses[normalizedStatus] += 1;
+    } else if (jobsWithEvents.has(jobId) && !normalizedStatus) {
+      summary.statusless_jobs += 1;
+    }
+  }
+
+  return Array.from(summaries.values()).sort((a, b) => {
+    if (a.name && b.name) return a.name.localeCompare(b.name);
+    if (a.name) return -1;
+    if (b.name) return 1;
+    return 0;
+  });
 }
 
 function buildFunnel(statuses, interactions) {
@@ -636,7 +763,8 @@ function countEventChannels(events) {
   return Object.fromEntries([...counts.entries()].sort(([a], [b]) => a.localeCompare(b)));
 }
 
-export async function exportAnalyticsSnapshot() {
+export async function exportAnalyticsSnapshot(options = {}) {
+  const { redactCompanies = false } = options;
   const { statuses, interactions } = await readAnalyticsSources();
   const activity = await summarizeActivity();
   const funnel = buildFunnel(statuses, interactions);
@@ -645,6 +773,11 @@ export async function exportAnalyticsSnapshot() {
   for (const status of STATUSES) {
     statusTotals[status] = statusCounts.get(status) ?? 0;
   }
+
+  const companySummaries = await summarizeCompanies(statuses, interactions);
+  const companies = redactCompanies
+    ? redactCompanySummaries(companySummaries)
+    : cloneCompanySummaries(companySummaries);
 
   return {
     generated_at: new Date().toISOString(),
@@ -662,6 +795,7 @@ export async function exportAnalyticsSnapshot() {
       },
     },
     activity,
+    companies,
   };
 }
 
