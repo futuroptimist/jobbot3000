@@ -1096,17 +1096,33 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot analytics compensation --json | jq '.curren
 #   "average": 185000,
 #   "median": 185000
 # }
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot analytics health
+# Analytics health (generated 2025-02-15T00:00:00.000Z)
+# Missing statuses: 1 job (job-missing)
+# Unknown statuses: 1 job (job-unknown)
+# Stale statuses (>30d): 1 job (job-stale (updated 2024-10-01T00:00:00.000Z, 137d old))
+# Stale outreach (>30d): 2 jobs (job-missing (last 2024-12-01T00:00:00.000Z, 76d old),
+# job-stale (last 2024-10-15T00:00:00.000Z, 123d old))
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot analytics health --json \
+  | jq '.issues.staleStatuses.entries[0]'
+# {
+#   "job_id": "job-missing",
+#   "last_event_at": "2024-12-01T00:00:00.000Z",
+#   "age_days": 76
+# }
 ```
 
 Analytics helpers respect `JOBBOT_DATA_DIR` and `setAnalyticsDataDir()` overrides for shortlist
 metadata as well as lifecycle records, so temporary fixtures and tests can point compensation
 reports at isolated directories without touching production data. The corresponding unit tests in
-[`test/analytics.test.js`](test/analytics.test.js) assert this override propagation.
+[`test/analytics.test.js`](test/analytics.test.js) assert this override propagation and cover the
+`jobbot analytics health` warning buckets.
 
 The analytics command reads `applications.json` and `application_events.json`, summarising stage
 counts, drop-offs, and conversion percentages. A dedicated unit test in
 [`test/analytics.test.js`](test/analytics.test.js) and a CLI flow in [`test/cli.test.js`](test/cli.test.js)
-cover outreach counts, acceptance detection, JSON formatting, the largest drop-off highlight, and the
+cover outreach counts, acceptance detection, JSON formatting, the largest drop-off highlight,
+the new health report, and the
 anonymized snapshot export. Additional analytics coverage in those suites exercises the compensation
 summary so currency ranges, averages, and text/JSON formatting stay stable. The `analytics export`
 subcommand captures aggregate status counts and event channels without embedding raw job identifiers
@@ -1622,11 +1638,40 @@ extended by passing custom check functions to
 and failing checks so future endpoints can rely on the health contract when the
 web interface expands beyond the CLI wrappers.
 
-`GET /` renders an accessible status page that surfaces the allow-listed CLI
-commands, links to roadmap docs, and summarizes the automated audits guarding
-the adapter. The markup follows WCAG AA guidance (landmarks, focus styles, skip
-links) and doubles as the fixture for the new `axe-core` and Lighthouse checks
-exercised in [`test/web-audits.test.js`](test/web-audits.test.js).
+`GET /` renders an accessible status hub with hash-based navigation that keeps
+the active section and theme preference in sync across reloads. It surfaces the
+allow-listed CLI commands, roadmap links, and automated audits guarding the
+adapter while preserving WCAG AA guidance (landmarks, focus styles, skip links).
+[`test/web-server.test.js`](test/web-server.test.js) now exercises the router in
+addition to the theme toggle, and [`test/web-audits.test.js`](test/web-audits.test.js)
+continues to lock the accessibility and performance baselines.
+
+Each routed section is wrapped in a reusable status panel that exposes ready,
+loading, and error slots. The client script attaches a `JobbotStatusHub` helper
+alongside a `jobbot:status-panels-ready` event so future integrations can flip
+panels while async data streams in from the CLI. Use the helper to provide
+optimistic feedback and descriptive error fallbacks:
+
+```js
+document.addEventListener('jobbot:status-panels-ready', () => {
+  window.JobbotStatusHub.setPanelState('commands', 'loading');
+
+  fetch('/commands/summarize')
+    .then(response => response.json())
+    .then(() => {
+      window.JobbotStatusHub.setPanelState('commands', 'ready');
+    })
+    .catch(error => {
+      window.JobbotStatusHub.setPanelState('commands', 'error', {
+        message: `Command bridge failed: ${error.message}`,
+      });
+    });
+});
+```
+
+[`test/web-server.test.js`](test/web-server.test.js) locks the DOM transitions,
+API surface, and error messaging so future UI changes preserve the loading and
+failure affordances.
 
 Environment presets now live in
 [`loadWebConfig`](src/web/config.js), which provides development, staging, and

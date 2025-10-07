@@ -53,6 +53,8 @@ import {
   exportAnalyticsSnapshot,
   formatFunnelReport,
   computeCompensationSummary,
+  computeAnalyticsHealth,
+  formatAnalyticsHealthReport,
 } from '../src/analytics.js';
 import { ingestWorkableBoard } from '../src/workable.js';
 import { ingestJobUrl } from '../src/url-ingest.js';
@@ -1538,12 +1540,35 @@ async function cmdAnalyticsCompensation(args) {
   console.log(formatCompensationSummary(summary));
 }
 
+async function cmdAnalyticsHealth(args) {
+  const asJson = args.includes('--json');
+  const nowValue = getFlag(args, '--now');
+  const options = {};
+  if (nowValue) options.now = nowValue;
+
+  let health;
+  try {
+    health = await computeAnalyticsHealth(options);
+  } catch (err) {
+    console.error(err?.message || String(err));
+    process.exit(1);
+  }
+
+  if (asJson) {
+    console.log(JSON.stringify(health, null, 2));
+    return;
+  }
+
+  console.log(formatAnalyticsHealthReport(health));
+}
+
 async function cmdAnalytics(args) {
   const sub = args[0];
   if (sub === 'funnel') return cmdAnalyticsFunnel(args.slice(1));
   if (sub === 'export') return cmdAnalyticsExport(args.slice(1));
   if (sub === 'compensation') return cmdAnalyticsCompensation(args.slice(1));
-  console.error('Usage: jobbot analytics <funnel|export|compensation> [options]');
+  if (sub === 'health') return cmdAnalyticsHealth(args.slice(1));
+  console.error('Usage: jobbot analytics <funnel|export|compensation|health> [options]');
   process.exit(2);
 }
 

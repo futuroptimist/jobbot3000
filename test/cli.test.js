@@ -2133,6 +2133,93 @@ describe('jobbot CLI', () => {
     expect(textReport).toContain('job-unparsed: Competitive');
   });
 
+  it('reports analytics health issues for missing statuses and stale outreach', () => {
+    runCli(['track', 'log', 'job-known', '--channel', 'email', '--date', '2025-02-10']);
+    runCli(['track', 'add', 'job-known', '--status', 'screening']);
+
+    runCli(['track', 'log', 'job-stale', '--channel', 'email', '--date', '2024-10-15']);
+    runCli(['track', 'add', 'job-stale', '--status', 'offer']);
+
+    runCli(['track', 'log', 'job-missing', '--channel', 'email', '--date', '2024-12-01']);
+
+    runCli(['track', 'add', 'job-unknown', '--status', 'screening']);
+
+    const applicationsPath = path.join(dataDir, 'applications.json');
+    const lifecycle = JSON.parse(fs.readFileSync(applicationsPath, 'utf8'));
+    lifecycle['job-known'].updated_at = '2025-02-10T00:00:00.000Z';
+    lifecycle['job-unknown'] = {
+      status: 'custom_stage',
+      updated_at: '2025-02-01T00:00:00.000Z',
+    };
+    lifecycle['job-stale'].updated_at = '2024-10-01T00:00:00.000Z';
+    fs.writeFileSync(applicationsPath, `${JSON.stringify(lifecycle, null, 2)}\n`);
+
+    const eventsPath = path.join(dataDir, 'application_events.json');
+    const interactions = JSON.parse(fs.readFileSync(eventsPath, 'utf8'));
+    interactions['job-known'] = [
+      { channel: 'email', date: '2025-02-10T00:00:00.000Z' },
+    ];
+    interactions['job-missing'] = [
+      { channel: 'email', date: '2024-12-01T00:00:00.000Z' },
+    ];
+    interactions['job-stale'] = [
+      { channel: 'email', date: '2024-10-15T00:00:00.000Z' },
+    ];
+    fs.writeFileSync(eventsPath, `${JSON.stringify(interactions, null, 2)}\n`);
+
+    const textReport = runCli(['analytics', 'health', '--now', '2025-02-15T00:00:00Z']);
+    expect(textReport).toContain('Missing statuses: 1 job');
+    expect(textReport).toContain('job-missing');
+    expect(textReport).toContain('Unknown statuses: 1 job');
+    expect(textReport).toContain('custom_stage');
+    expect(textReport).toContain('Stale statuses (>30d): 1 job');
+    expect(textReport).toContain('job-stale');
+    expect(textReport).toContain('Stale outreach (>30d): 2 jobs');
+    expect(textReport).toContain('job-missing');
+    expect(textReport).toContain('last 2024-10-15');
+
+    const jsonReport = runCli([
+      'analytics',
+      'health',
+      '--json',
+      '--now',
+      '2025-02-15T00:00:00Z',
+    ]);
+    const payload = JSON.parse(jsonReport);
+    expect(payload.summary).toEqual({
+      tracked_jobs: 4,
+      jobs_with_status: 2,
+      jobs_with_events: 3,
+    });
+    expect(payload.issues.missingStatus.jobs).toEqual(['job-missing']);
+    expect(payload.issues.unknownStatuses.entries).toEqual([
+      { job_id: 'job-unknown', status: 'custom_stage' },
+    ]);
+    expect(payload.issues.staleStatuses.entries).toEqual([
+      {
+        job_id: 'job-stale',
+        status: 'offer',
+        updated_at: '2024-10-01T00:00:00.000Z',
+        age_days: 137,
+      },
+    ]);
+    expect(payload.issues.staleEvents).toEqual({
+      count: 2,
+      entries: [
+        {
+          job_id: 'job-missing',
+          last_event_at: '2024-12-01T00:00:00.000Z',
+          age_days: 76,
+        },
+        {
+          job_id: 'job-stale',
+          last_event_at: '2024-10-15T00:00:00.000Z',
+          age_days: 123,
+        },
+      ],
+    });
+  });
+
   it('runs scheduled matching tasks from configuration', () => {
     const resumePath = path.join(dataDir, 'resume.txt');
     fs.writeFileSync(

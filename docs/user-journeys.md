@@ -343,6 +343,9 @@ jobbot3000.
    summarizing deliverable runs and interview sessions.
 3. Inspect gaps using `jobbot analytics health` which highlights missing data, schema drift, or stale
    snapshots.
+   Regression coverage in [`test/analytics.test.js`](../test/analytics.test.js) and
+   [`test/cli.test.js`](../test/cli.test.js) keeps the missing-status, schema-drift, and
+   stale-outreach warnings aligned with the CLI output.
 4. Schedule periodic exports via `jobbot schedule run --config configs/analytics.yml` to ensure
    analytics stay current.
 5. Share sanitized aggregates through `jobbot analytics export --out share/analytics.csv`.

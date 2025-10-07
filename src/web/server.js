@@ -383,7 +383,11 @@ export function createWebApp({
         --pill-border: rgba(56, 189, 248, 0.35);
         --pill-text: #e2e8f0;
         --card-border: rgba(148, 163, 184, 0.25);
+        --card-surface: rgba(15, 23, 42, 0.35);
         --code-bg: rgba(148, 163, 184, 0.12);
+        --danger-bg: rgba(239, 68, 68, 0.16);
+        --danger-border: rgba(239, 68, 68, 0.55);
+        --danger-text: #fca5a5;
         --body-font: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         background-color: var(--background);
         color: var(--foreground);
@@ -399,8 +403,12 @@ export function createWebApp({
         --pill-bg-hover: rgba(14, 165, 233, 0.2);
         --pill-border: rgba(14, 165, 233, 0.3);
         --pill-text: #0f172a;
-        --card-border: rgba(148, 163, 184, 0.35);
-        --code-bg: rgba(15, 23, 42, 0.12);
+        --card-border: rgba(148, 163, 184, 0.3);
+        --card-surface: rgba(255, 255, 255, 0.8);
+        --code-bg: rgba(15, 23, 42, 0.08);
+        --danger-bg: rgba(239, 68, 68, 0.12);
+        --danger-border: rgba(239, 68, 68, 0.45);
+        --danger-text: #b91c1c;
       }
       body {
         margin: 0;
@@ -435,6 +443,10 @@ export function createWebApp({
       h2 {
         font-size: clamp(1.4rem, 3vw, 1.75rem);
         margin-top: 2rem;
+      }
+      h3 {
+        margin-top: 0;
+        font-size: clamp(1.15rem, 2vw, 1.35rem);
       }
       p {
         max-width: 65ch;
@@ -491,14 +503,90 @@ export function createWebApp({
       .theme-toggle-button span[aria-hidden='true'] {
         font-size: 1.1rem;
       }
+      .primary-nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        margin-top: 2rem;
+      }
+      .primary-nav a {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.35rem 0.85rem;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        color: var(--foreground);
+        background-color: transparent;
+        text-decoration: none;
+        font-weight: 500;
+      }
+      .primary-nav a[aria-current='page'] {
+        background-color: var(--pill-bg);
+        border-color: var(--pill-border);
+        color: var(--pill-text);
+      }
       .grid {
         display: grid;
         gap: 1.5rem;
       }
-      @media (min-width: 768px) {
-        .grid {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
+      .grid.two-column {
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      }
+      .card {
+        border: 1px solid var(--card-border);
+        border-radius: 1rem;
+        padding: 1.5rem;
+        background-color: var(--card-surface);
+      }
+      .status-panel {
+        position: relative;
+        display: block;
+      }
+      .status-panel [data-state-slot] {
+        margin: 0;
+      }
+      .status-panel [data-state-slot][hidden] {
+        display: none !important;
+      }
+      .status-panel__loading {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.75rem;
+        color: var(--muted);
+      }
+      .status-panel__loading::before {
+        content: '';
+        display: inline-block;
+        width: 1rem;
+        height: 1rem;
+        border-radius: 50%;
+        border: 2px solid var(--pill-border);
+        border-top-color: var(--accent);
+        animation: status-panel-spin 0.9s linear infinite;
+      }
+      @keyframes status-panel-spin {
+        to {
+          transform: rotate(360deg);
         }
+      }
+      .status-panel__error {
+        border-radius: 0.85rem;
+        border: 1px solid var(--danger-border);
+        background-color: var(--danger-bg);
+        color: var(--danger-text);
+        padding: 1rem 1.25rem;
+      }
+      .status-panel__error strong {
+        display: block;
+        font-size: 1rem;
+        margin-bottom: 0.35rem;
+      }
+      .references ul {
+        padding-left: 1rem;
+      }
+      [hidden] {
+        display: none !important;
       }
     </style>
   </head>
@@ -523,41 +611,121 @@ export function createWebApp({
       </div>
       <h1>${escapeHtml(serviceName)}</h1>
       <p>
-          This lightweight status page surfaces the Express adapter that bridges the jobbot3000 CLI
-          with the experimental web interface. API consumers can discover available commands below
-          and review the automated audits that keep accessibility and performance in check.
+          This lightweight status hub surfaces the Express adapter that bridges the jobbot3000 CLI
+          with the experimental web interface. Use the navigation below to switch between the
+          overview, available commands, and automated audits.
       </p>
+      <nav class="primary-nav" aria-label="Status navigation">
+        <a href="#overview" data-route-link="overview">Overview</a>
+        <a href="#commands" data-route-link="commands">Commands</a>
+        <a href="#audits" data-route-link="audits">Audits</a>
+      </nav>
     </header>
-    <main id="main" tabindex="-1">
-      <section aria-labelledby="commands-heading">
-        <h2 id="commands-heading">Allow-listed CLI commands</h2>
+    <main id="main" tabindex="-1" data-router>
+      <section class="view" data-route="overview" aria-labelledby="overview-heading">
+        <h2 id="overview-heading">Overview</h2>
         <p>
-          The adapter only exposes safe CLI entry points. Each command requires a CSRF header and
-          JSON payload that matches the schema enforced by the backend validators.
+          The adapter exposes jobbot3000 CLI workflows through guarded HTTP endpoints. Routing is
+          entirely hash-based so the page remains static and local-friendly while still supporting
+          deep links to individual sections.
         </p>
-        <ul>${commandList}</ul>
-      </section>
-      <section class="grid" aria-labelledby="audits-heading">
-        <div>
-          <h2 id="audits-heading">Automated audits</h2>
-          <p>
-            Continuous accessibility checks rely on <code>axe-core</code> while performance scoring
-            applies Lighthouse metrics to real HTTP responses. See
-            <code>test/web-audits.test.js</code> for the automated coverage that enforces both
-            baselines.
-          </p>
+        <div class="grid two-column">
+          <article class="card">
+            <h3>CLI bridge</h3>
+            <p>
+              Every request funnels through <code>createCommandAdapter</code>, which validates
+              payloads, redacts sensitive output, and streams telemetry for observability. See
+              <code>test/web-command-adapter.test.js</code> for coverage across success and error
+              paths.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Operational safeguards</h3>
+            <p>
+              Rate limiting, CSRF protection, and optional auth tokens mirror the production guard
+              rails baked into the Express server. The status view keeps requirements front and
+              center so API consumers wire headers correctly.
+            </p>
+          </article>
         </div>
-        <div>
-          <details>
-            <summary>Helpful references</summary>
-            <nav aria-label="Documentation links">
-              <ul>
-                <li><a href="${repoUrl}">Repository</a></li>
-                <li><a href="${readmeUrl}">README</a></li>
-                <li><a href="${roadmapUrl}">Web interface roadmap</a></li>
-              </ul>
-            </nav>
-          </details>
+      </section>
+      <section class="view" data-route="commands" aria-labelledby="commands-heading" hidden>
+        <h2 id="commands-heading">Allow-listed CLI commands</h2>
+        <div
+          class="status-panel"
+          data-status-panel="commands"
+          data-state="ready"
+          aria-live="polite"
+        >
+          <div data-state-slot="ready">
+            <p>
+              The adapter only exposes safe CLI entry points. Each command requires a CSRF header
+              and JSON payload that matches the schema enforced by the backend validators.
+            </p>
+            <ul>${commandList}</ul>
+          </div>
+          <div data-state-slot="loading" hidden>
+            <p class="status-panel__loading" role="status" aria-live="polite">
+              Loading allow-listed commands…
+            </p>
+          </div>
+          <div data-state-slot="error" hidden>
+            <div class="status-panel__error" role="alert">
+              <strong>Unable to load commands</strong>
+              <p
+                data-error-message
+                data-error-default="Please refresh the page or retry shortly."
+              >
+                Please refresh the page or retry shortly.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="view" data-route="audits" aria-labelledby="audits-heading" hidden>
+        <h2 id="audits-heading">Automated audits</h2>
+        <div
+          class="status-panel"
+          data-status-panel="audits"
+          data-state="ready"
+          aria-live="polite"
+        >
+          <div data-state-slot="ready">
+            <div class="grid two-column">
+              <p>
+                Continuous accessibility checks rely on <code>axe-core</code> while performance
+                scoring applies Lighthouse metrics to real HTTP responses. See
+                <code>test/web-audits.test.js</code> for the automated coverage that enforces both
+                baselines.
+              </p>
+              <article class="card references">
+                <h3>Helpful references</h3>
+                <nav aria-label="Documentation links">
+                  <ul>
+                    <li><a href="${repoUrl}">Repository</a></li>
+                    <li><a href="${readmeUrl}">README</a></li>
+                    <li><a href="${roadmapUrl}">Web interface roadmap</a></li>
+                  </ul>
+                </nav>
+              </article>
+            </div>
+          </div>
+          <div data-state-slot="loading" hidden>
+            <p class="status-panel__loading" role="status" aria-live="polite">
+              Loading automated audit results…
+            </p>
+          </div>
+          <div data-state-slot="error" hidden>
+            <div class="status-panel__error" role="alert">
+              <strong>Audit status unavailable</strong>
+              <p
+                data-error-message
+                data-error-default="Check the server logs and reload to fetch audit results."
+              >
+                Check the server logs and reload to fetch audit results.
+              </p>
+            </div>
+          </div>
         </div>
       </section>
     </main>
@@ -569,10 +737,139 @@ export function createWebApp({
     </footer>
     <script>
       (() => {
-        const storageKey = 'jobbot:web:theme';
+        const themeStorageKey = 'jobbot:web:theme';
+        const routeStorageKey = 'jobbot:web:route';
         const root = document.documentElement;
         const toggle = document.querySelector('[data-theme-toggle]');
         const label = toggle ? toggle.querySelector('[data-theme-toggle-label]') : null;
+        const router = document.querySelector('[data-router]');
+        const routeSections = router ? Array.from(router.querySelectorAll('[data-route]')) : [];
+        const routeNames = new Set(
+          routeSections.map(section => section.getAttribute('data-route')),
+        );
+        const navLinks = Array.from(document.querySelectorAll('[data-route-link]'));
+        const statusPanels = new Map();
+
+        function normalizePanelId(value) {
+          if (typeof value !== 'string') {
+            return null;
+          }
+          const trimmed = value.trim();
+          return trimmed.length > 0 ? trimmed : null;
+        }
+
+        function describePanel(panel) {
+          const id = normalizePanelId(panel.getAttribute('data-status-panel'));
+          if (!id) {
+            return null;
+          }
+
+          const slotElements = Array.from(panel.querySelectorAll('[data-state-slot]'));
+          if (slotElements.length === 0) {
+            return null;
+          }
+
+          const slots = new Map();
+          for (const slot of slotElements) {
+            const state = normalizePanelId(slot.getAttribute('data-state-slot'));
+            if (!state) {
+              continue;
+            }
+            slots.set(state, slot);
+          }
+
+          if (slots.size === 0) {
+            return null;
+          }
+
+          const initialStateAttr = normalizePanelId(panel.getAttribute('data-state'));
+          const defaultState = initialStateAttr && slots.has(initialStateAttr)
+            ? initialStateAttr
+            : slots.has('ready')
+              ? 'ready'
+              : slots.keys().next().value;
+          const messageElement = panel.querySelector('[data-error-message]');
+
+          return {
+            id,
+            element: panel,
+            slots,
+            defaultState,
+            messageElement,
+            messageDefault:
+              messageElement?.dataset.errorDefault?.trim() ??
+              messageElement?.textContent ??
+              '',
+            state: null,
+          };
+        }
+
+        function applyPanelState(panel, nextState, options = {}) {
+          if (!panel) {
+            return false;
+          }
+          const normalized = panel.slots.has(nextState) ? nextState : panel.defaultState;
+          for (const [stateName, slotElement] of panel.slots) {
+            if (stateName === normalized) {
+              slotElement.removeAttribute('hidden');
+            } else {
+              slotElement.setAttribute('hidden', '');
+            }
+          }
+
+          panel.element.setAttribute('data-state', normalized);
+          if (normalized === 'loading') {
+            panel.element.setAttribute('aria-busy', 'true');
+          } else {
+            panel.element.removeAttribute('aria-busy');
+          }
+
+          if (panel.messageElement) {
+            if (normalized === 'error') {
+              const provided = typeof options.message === 'string' ? options.message.trim() : '';
+              panel.messageElement.textContent = provided || panel.messageDefault;
+            } else if (!options.preserveMessage) {
+              panel.messageElement.textContent = panel.messageDefault;
+            }
+          }
+
+          panel.state = normalized;
+          return true;
+        }
+
+        function setPanelState(id, state, options = {}) {
+          const normalizedId = normalizePanelId(id);
+          if (!normalizedId) {
+            return false;
+          }
+          const panel = statusPanels.get(normalizedId);
+          if (!panel) {
+            return false;
+          }
+          return applyPanelState(panel, normalizePanelId(state) ?? state, options);
+        }
+
+        function getPanelState(id) {
+          const normalizedId = normalizePanelId(id);
+          return normalizedId ? statusPanels.get(normalizedId)?.state ?? null : null;
+        }
+
+        function listStatusPanelIds() {
+          return Array.from(statusPanels.keys());
+        }
+
+        function initializeStatusPanels() {
+          statusPanels.clear();
+          const panels = Array.from(document.querySelectorAll('[data-status-panel]'));
+          for (const element of panels) {
+            const descriptor = describePanel(element);
+            if (!descriptor) {
+              continue;
+            }
+            statusPanels.set(descriptor.id, descriptor);
+            applyPanelState(descriptor, descriptor.state ?? descriptor.defaultState);
+          }
+        }
         const prefersDark =
           typeof window.matchMedia === 'function'
             ? window.matchMedia('(prefers-color-scheme: dark)')
@@ -596,7 +893,7 @@ export function createWebApp({
           updateToggle(normalized);
           if (options.persist) {
             try {
-              localStorage.setItem(storageKey, normalized);
+              localStorage.setItem(themeStorageKey, normalized);
             } catch {
               // Ignore storage failures (for example, private browsing)
             }
@@ -605,7 +902,7 @@ export function createWebApp({
 
         function readStoredTheme() {
           try {
-            const value = localStorage.getItem(storageKey);
+            const value = localStorage.getItem(themeStorageKey);
             if (value === 'light' || value === 'dark') {
               return value;
             }
@@ -620,35 +917,175 @@ export function createWebApp({
           if (stored) {
             return stored;
           }
-          if (prefersDark && typeof prefersDark.matches === 'boolean') {
-            return prefersDark.matches ? 'dark' : 'light';
+          if (prefersDark?.matches === false) {
+            return 'light';
           }
           return 'dark';
         }
 
-        const initialTheme = resolveInitialTheme();
-        applyTheme(initialTheme);
+        applyTheme(resolveInitialTheme());
 
-        if (toggle) {
-          toggle.addEventListener('click', () => {
-            const current = root.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
-            const next = current === 'light' ? 'dark' : 'light';
-            applyTheme(next, { persist: true });
+        toggle?.addEventListener('click', () => {
+          const currentTheme = root.getAttribute('data-theme');
+          const nextTheme = currentTheme === 'light' ? 'dark' : 'light';
+          applyTheme(nextTheme, { persist: true });
+        });
+
+        prefersDark?.addEventListener('change', event => {
+          if (readStoredTheme()) {
+            return;
+          }
+          applyTheme(event.matches ? 'dark' : 'light');
+        });
+
+        function normalizeRoute(value) {
+          if (typeof value !== 'string') {
+            return null;
+          }
+          const trimmed = value.trim().toLowerCase();
+          return routeNames.has(trimmed) ? trimmed : null;
+        }
+
+        const defaultRoute = routeSections[0]?.getAttribute('data-route') ?? null;
+
+        function readStoredRoute() {
+          try {
+            const value = localStorage.getItem(routeStorageKey);
+            return normalizeRoute(value);
+          } catch {
+            return null;
+          }
+        }
+
+        function writeStoredRoute(route) {
+          try {
+            localStorage.setItem(routeStorageKey, route);
+          } catch {
+            // Ignore storage failures (for example, private browsing)
+          }
+        }
+
+        function applyRoute(route, options = {}) {
+          const normalized = normalizeRoute(route) ?? defaultRoute;
+          if (!normalized) {
+            return;
+          }
+
+          router?.setAttribute('data-active-route', normalized);
+
+          for (const section of routeSections) {
+            const sectionRoute = section.getAttribute('data-route');
+            if (sectionRoute === normalized) {
+              section.removeAttribute('hidden');
+              section.setAttribute('data-active', 'true');
+            } else {
+              section.setAttribute('hidden', '');
+              section.removeAttribute('data-active');
+            }
+          }
+
+          for (const link of navLinks) {
+            const target = normalizeRoute(link.getAttribute('data-route-link'));
+            if (target === normalized) {
+              link.setAttribute('aria-current', 'page');
+            } else {
+              link.removeAttribute('aria-current');
+            }
+          }
+
+          if (options.persist) {
+            writeStoredRoute(normalized);
+          }
+
+          if (options.syncHash) {
+            const nextHash = '#' + normalized;
+            if (window.location.hash !== nextHash) {
+              window.location.hash = nextHash;
+              return;
+            }
+          }
+        }
+
+        function routeFromHash() {
+          if (!window.location.hash) {
+            return null;
+          }
+          return normalizeRoute(window.location.hash.slice(1));
+        }
+
+        function handleHashChange() {
+          const fromHash = routeFromHash();
+          if (!fromHash) {
+            return;
+          }
+          applyRoute(fromHash, { persist: true });
+        }
+
+        const initialRoute = routeFromHash() ?? readStoredRoute() ?? defaultRoute;
+        if (initialRoute) {
+          applyRoute(initialRoute, { persist: true, syncHash: true });
+        }
+
+        window.addEventListener('hashchange', handleHashChange);
+
+        for (const link of navLinks) {
+          link.addEventListener('click', event => {
+            const targetRoute = normalizeRoute(link.getAttribute('data-route-link'));
+            if (!targetRoute) {
+              return;
+            }
+            event.preventDefault();
+            applyRoute(targetRoute, { persist: true, syncHash: true });
           });
         }
 
-        if (prefersDark && typeof prefersDark.addEventListener === 'function') {
-          prefersDark.addEventListener('change', event => {
-            if (readStoredTheme()) {
-              return;
-            }
-            applyTheme(event.matches ? 'dark' : 'light');
-          });
+        initializeStatusPanels();
+
+        const jobbotStatusApi = {
+          setPanelState(id, state, options) {
+            return setPanelState(id, state, options ?? {});
+          },
+          getPanelState(id) {
+            return getPanelState(id);
+          },
+          listPanels() {
+            return listStatusPanelIds();
+          },
+        };
+
+        window.JobbotStatusHub = jobbotStatusApi;
+
+        const dispatchRouterReady = () => {
+          document.dispatchEvent(new Event('jobbot:router-ready'));
+        };
+
+        const dispatchStatusPanelsReady = () => {
+          const detail = { panels: listStatusPanelIds() };
+          try {
+            document.dispatchEvent(new CustomEvent('jobbot:status-panels-ready', { detail }));
+          } catch {
+            const fallbackEvent = document.createEvent('Event');
+            fallbackEvent.initEvent('jobbot:status-panels-ready', true, true);
+            fallbackEvent.detail = detail;
+            document.dispatchEvent(fallbackEvent);
+          }
+        };
+
+        const notifyReady = () => {
+          dispatchRouterReady();
+          dispatchStatusPanelsReady();
+        };
+
+        if (typeof queueMicrotask === 'function') {
+          queueMicrotask(notifyReady);
+        } else {
+          setTimeout(notifyReady, 0);
         }
       })();
     </script>
   </body>
 </html>`);
+
   });
 
   app.get('/health', async (req, res) => {
