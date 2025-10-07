@@ -4,6 +4,29 @@ import { randomUUID } from 'node:crypto';
 
 let overrideDir;
 
+const REDACTED_PLACEHOLDER = '[redacted]';
+const SENSITIVE_TAGS = new Set([
+  'compensation',
+  'salary',
+  'pay',
+  'band',
+  'visa',
+  'sponsorship',
+  'work authorization',
+  'work_authorization',
+  'work permit',
+]);
+const SENSITIVE_KEYWORDS = [
+  'compensation',
+  'salary',
+  'pay range',
+  'pay band',
+  'visa',
+  'sponsor',
+  'work authorization',
+  'work permit',
+];
+
 function resolveDataDir() {
   return overrideDir || process.env.JOBBOT_DATA_DIR || path.resolve('data');
 }
@@ -182,6 +205,45 @@ function normalizeStatusFilter(status) {
   return allowed.size > 0 ? allowed : undefined;
 }
 
+function hasSensitiveTag(entry) {
+  if (!Array.isArray(entry.tags) || entry.tags.length === 0) return false;
+  for (const tag of entry.tags) {
+    if (typeof tag !== 'string') continue;
+    const normalized = tag.trim().toLowerCase();
+    if (!normalized) continue;
+    if (SENSITIVE_TAGS.has(normalized)) return true;
+  }
+  return false;
+}
+
+function hasSensitiveKeyword(entry) {
+  const fields = [];
+  if (typeof entry.question === 'string') fields.push(entry.question);
+  if (typeof entry.answer === 'string') fields.push(entry.answer);
+  if (typeof entry.notes === 'string') fields.push(entry.notes);
+  for (const field of fields) {
+    const value = field.toLowerCase();
+    if (SENSITIVE_KEYWORDS.some(keyword => value.includes(keyword))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function redactEntry(entry) {
+  if (!entry || typeof entry !== 'object') return entry;
+  const shouldRedact = hasSensitiveTag(entry) || hasSensitiveKeyword(entry);
+  if (!shouldRedact) return entry;
+  const clone = { ...entry, redacted: true };
+  if (typeof clone.answer === 'string' && clone.answer) {
+    clone.answer = REDACTED_PLACEHOLDER;
+  }
+  if (typeof clone.notes === 'string' && clone.notes) {
+    clone.notes = REDACTED_PLACEHOLDER;
+  }
+  return clone;
+}
+
 export async function getIntakeResponses(options = {}) {
   const { file } = getPaths();
   const responses = await readIntakeFile(file);
@@ -192,9 +254,15 @@ export async function getIntakeResponses(options = {}) {
   }));
 
   const statusFilter = normalizeStatusFilter(options.status);
-  if (!statusFilter) return normalized;
+  const filtered = statusFilter
+    ? normalized.filter(entry => statusFilter.has(entry.status))
+    : normalized;
 
-  return normalized.filter(entry => statusFilter.has(entry.status));
+  if (options.redact) {
+    return filtered.map(redactEntry);
+  }
+
+  return filtered;
 }
 
 function splitAnswerIntoFragments(answer) {

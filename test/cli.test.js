@@ -1425,6 +1425,78 @@ describe('jobbot CLI', () => {
     });
   });
 
+  it('redacts sensitive intake entries when requested', () => {
+    runCli([
+      'intake',
+      'record',
+      '--question',
+      'What compensation range keeps you engaged?',
+      '--answer',
+      'Base $220k + bonus',
+      '--tags',
+      'compensation',
+      '--notes',
+      'Discuss equity expectations at onsite',
+    ]);
+    runCli([
+      'intake',
+      'record',
+      '--question',
+      'Share a leadership win',
+      '--answer',
+      'Mentored two engineers through promotion',
+      '--tags',
+      'leadership',
+    ]);
+
+    const list = runCli(['intake', 'list', '--redact']);
+    expect(list).toContain('Answer: [redacted]');
+    expect(list).toContain('Notes: [redacted]');
+    expect(list).toContain('Answer: Mentored two engineers through promotion');
+
+    const payload = JSON.parse(runCli(['intake', 'list', '--json', '--redact']));
+    expect(payload.responses[0]).toMatchObject({
+      answer: '[redacted]',
+      notes: '[redacted]',
+      redacted: true,
+    });
+    expect(payload.responses[1].answer).toBe('Mentored two engineers through promotion');
+    expect(payload.responses[1].redacted).toBeUndefined();
+  });
+
+  it('exports intake responses to disk and stdout', () => {
+    runCli([
+      'intake',
+      'record',
+      '--question',
+      'What compensation range keeps you engaged?',
+      '--answer',
+      'Base $200k + bonus',
+      '--tags',
+      'compensation',
+    ]);
+    runCli([
+      'intake',
+      'record',
+      '--question',
+      'Share a leadership win',
+      '--answer',
+      'Mentored two engineers through promotion',
+    ]);
+
+    const target = path.join(dataDir, 'profile', 'intake-export.json');
+    const message = runCli(['intake', 'export', '--out', target, '--redact']);
+    expect(message).toContain('Saved intake export to');
+
+    const saved = JSON.parse(fs.readFileSync(target, 'utf8'));
+    expect(saved.responses[0]).toMatchObject({ answer: '[redacted]', redacted: true });
+
+    const stdout = runCli(['intake', 'export', '--json', '--redact']);
+    const payload = JSON.parse(stdout);
+    expect(payload.responses[0].answer).toBe('[redacted]');
+    expect(payload.responses[1].answer).toBe('Mentored two engineers through promotion');
+  });
+
   it('surfaces intake bullet suggestions and supports tag filters', () => {
     const leadershipOutput = runCli([
       'intake',
@@ -1508,7 +1580,7 @@ describe('jobbot CLI', () => {
     });
 
     expect(result.status).toBe(2);
-    expect(result.stderr).toContain('Usage: jobbot intake <record|list|bullets|plan> ...');
+    expect(result.stderr).toContain('Usage: jobbot intake <record|list|bullets|plan|export> ...');
   });
 
   it('tags shortlist entries and persists labels', () => {

@@ -83,7 +83,9 @@ jobbot3000.
 4. Summarize collected insights with `jobbot intake bullets --tag strengths --json` and merge them
    into the profile via `jobbot profile merge intake` once the candidate confirms accuracy.
 5. Export the session transcript with `jobbot intake export --out data/profile/intake-<date>.json`
-   for regression testing and audit trails.
+   for regression testing and audit trails. Pass `--redact` to mask compensation, visa, and other
+   sensitive answers in the exported JSON. This lets teammates review structure without seeing
+   private values.
 
 ### Web flow
 
@@ -110,7 +112,8 @@ jobbot3000.
 - Conflicting answers (e.g., contradictory location preferences) trigger conflict resolution prompts
   requiring the user to pick a canonical value before continuing.
 - Sensitive questions (compensation, visa) respect redaction flags; the UI and CLI both mask stored
-  values when `--redact` is active so tests can confirm privacy compliance.
+  values when `--redact` is active so tests can confirm privacy compliance. CLI listings and exports
+  replace answers/notes with `[redacted]` while preserving metadata for downstream automation.
 
 ### Failure modes & alerts
 
