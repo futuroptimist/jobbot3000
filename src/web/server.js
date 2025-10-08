@@ -217,7 +217,7 @@ function sanitizeCommandResult(result) {
   }
   const sanitized = {};
   for (const [key, value] of Object.entries(result)) {
-    if (key === 'stdout' || key === 'stderr' || key === 'error') {
+    if (key === 'stdout' || key === 'stderr' || key === 'error' || key === 'calendar') {
       sanitized[key] = sanitizeOutputString(value);
       continue;
     }

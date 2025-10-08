@@ -1708,6 +1708,40 @@ Schema validation and error handling are locked down in
 [`test/web-server.test.js`](test/web-server.test.js) so new endpoints inherit
 the same guardrails.
 
+Use the same bridge to surface follow-up work in the **Reminders** panel:
+
+```bash
+curl -s \
+  -X POST http://127.0.0.1:3000/commands/reminders \
+  -H 'Content-Type: application/json' \
+  -H 'X-Jobbot-Csrf: replace-with-token-from-server-startup' \
+  -d '{"now":"2025-03-01T00:00:00Z","upcomingOnly":true}' | jq '.data.sections[0]'
+```
+
+The response mirrors `jobbot track reminders --json`, returning a
+`reminders` array alongside grouped `sections` so the web UI can highlight
+upcoming follow-ups without shipping a custom data pipeline. Regression
+coverage in [`test/web-server-integration.test.js`](test/web-server-integration.test.js)
+executes the CLI in a sandboxed data directory to keep the adapter honest.
+
+Download sanitized ICS files for calendar sync via the new `remindersCalendar`
+bridge:
+
+```bash
+curl -s \
+  -X POST http://127.0.0.1:3000/commands/remindersCalendar \
+  -H 'Content-Type: application/json' \
+  -H 'X-Jobbot-Csrf: replace-with-token-from-server-startup' \
+  -d '{"calendarName":"Follow-ups"}' | jq -r '.calendar' > follow-ups.ics
+```
+
+The endpoint spawns `jobbot track reminders --ics` behind the scenes,
+returning sanitized ICS text so browsers can download the calendar without
+touching shared storage. End-to-end coverage in
+[`test/web-server-integration.test.js`](test/web-server-integration.test.js)
+verifies the exported events match the CLI output and include contact details
+with proper escaping.
+
 ## Documentation
 
 - [DESIGN.md](DESIGN.md) – architecture details and roadmap

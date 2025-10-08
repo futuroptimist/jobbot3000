@@ -169,6 +169,83 @@ describe('createCommandAdapter', () => {
     expect(cli.cmdMatch).toHaveBeenCalledTimes(1);
   });
 
+  it('runs reminders with optional filters and parses json output', async () => {
+    const cli = {
+      cmdTrackReminders: vi.fn(async args => {
+        expect(args).toEqual(['--json', '--now', '2025-03-04T09:00:00Z', '--upcoming-only']);
+        console.log(
+          JSON.stringify({
+            reminders: [
+              { job_id: 'job-1', remind_at: '2025-03-05T09:00:00.000Z', past_due: false },
+            ],
+            sections: [
+              { heading: 'Upcoming', reminders: [{ job_id: 'job-1', past_due: false }] },
+            ],
+          }),
+        );
+      }),
+    };
+
+    const adapter = createCommandAdapter({ cli });
+    const result = await adapter.reminders({
+      now: '2025-03-04T09:00:00Z',
+      upcomingOnly: true,
+    });
+
+    expect(result).toMatchObject({ command: 'reminders', format: 'json' });
+    expect(result.data).toEqual({
+      reminders: [{ job_id: 'job-1', remind_at: '2025-03-05T09:00:00.000Z', past_due: false }],
+      sections: [{ heading: 'Upcoming', reminders: [{ job_id: 'job-1', past_due: false }] }],
+    });
+    expect(JSON.parse(result.stdout)).toEqual(result.data);
+    expect(cli.cmdTrackReminders).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws when reminders options are invalid', async () => {
+    const cli = { cmdTrackReminders: vi.fn() };
+    const adapter = createCommandAdapter({ cli });
+
+    await expect(adapter.reminders({ upcomingOnly: 'later' })).rejects.toThrow(
+      'upcomingOnly must be a boolean',
+    );
+    expect(cli.cmdTrackReminders).not.toHaveBeenCalled();
+  });
+
+  it('writes reminders calendars via the CLI and returns ICS content', async () => {
+    const cli = {
+      cmdTrackReminders: vi.fn(async args => {
+        const icsIndex = args.indexOf('--ics');
+        expect(icsIndex).toBeGreaterThan(-1);
+        const calendarPath = args[icsIndex + 1];
+        expect(typeof calendarPath).toBe('string');
+        expect(path.basename(calendarPath)).toBe('reminders.ics');
+        expect(args).toContain('--now');
+        expect(args).toContain('2025-03-04T09:00:00Z');
+        expect(args).toContain('--upcoming-only');
+        expect(args).toContain('--calendar-name');
+        expect(args).toContain('Follow-ups');
+        await fs.promises.writeFile(
+          calendarPath,
+          'BEGIN:VCALENDAR\nSUMMARY:Follow up\nEND:VCALENDAR\n',
+          'utf8',
+        );
+        console.log('Saved reminder calendar');
+      }),
+    };
+
+    const adapter = createCommandAdapter({ cli });
+    const result = await adapter.remindersCalendar({
+      now: '2025-03-04T09:00:00Z',
+      upcomingOnly: true,
+      calendarName: 'Follow-ups',
+    });
+
+    expect(result).toMatchObject({ command: 'remindersCalendar', format: 'ics' });
+    expect(result.calendar).toContain('BEGIN:VCALENDAR');
+    expect(result.stdout).toContain('Saved reminder calendar');
+    expect(cli.cmdTrackReminders).toHaveBeenCalledTimes(1);
+  });
+
   it('throws when required summarize input is missing', async () => {
     const cli = { cmdSummarize: vi.fn() };
     const adapter = createCommandAdapter({ cli });

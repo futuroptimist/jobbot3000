@@ -258,7 +258,11 @@ jobbot3000.
    for optional notes.
 3. Review reminders in the **Follow-ups** sidebar, which mirrors the CLI digest (Past Due vs
    Upcoming) and supports snooze/done actions.
-4. Export ICS files via the **Calendar Sync** button and confirm downloads contain sanitized data.
+   The sidebar calls `POST /commands/reminders` so the UI and CLI share the
+   same JSON sections, keeping filters like `--upcoming-only` consistent.
+4. Export ICS files via the **Calendar Sync** button, which POSTs to
+   `/commands/remindersCalendar`, and confirm the downloaded ICS text is sanitized
+   (contact info, notes, and job IDs escape commas and semicolons).
 5. Open a job detail drawer to view the full history, add comments, or share updates with mentors.
 
 ### Unhappy paths & recovery

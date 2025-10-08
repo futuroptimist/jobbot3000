@@ -197,13 +197,25 @@
    - Notification hooks for reminders, leveraging CLI scheduling or local system integration.
      _Implemented (2025-10-04):_ [`bin/jobbot.js`](../bin/jobbot.js) now supports
      `jobbot track reminders --ics <file>`, wiring the upcoming reminders feed into
-     [`createReminderCalendar`](../src/reminders-calendar.js) so contributors can
-     subscribe via native calendar apps. Coverage in
-    [`test/cli.test.js`](../test/cli.test.js) and
-    [`test/reminders-calendar.test.js`](../test/reminders-calendar.test.js)
-    verifies that only upcoming entries appear in the ICS export, escape
-    sequences follow the iCalendar spec (covering commas, semicolons, and
-    newlines), and invalid timestamps are ignored.
+    [`createReminderCalendar`](../src/reminders-calendar.js) so contributors can
+    subscribe via native calendar apps. Coverage in
+   [`test/cli.test.js`](../test/cli.test.js) and
+  [`test/reminders-calendar.test.js`](../test/reminders-calendar.test.js)
+  verifies that only upcoming entries appear in the ICS export, escape
+  sequences follow the iCalendar spec (covering commas, semicolons, and
+  newlines), and invalid timestamps are ignored.
+    _Implemented (2025-10-06):_ `POST /commands/reminders` now proxies
+    `jobbot track reminders --json` through the web adapter, returning grouped
+    sections for the Follow-ups sidebar. End-to-end coverage in
+    [`test/web-server-integration.test.js`](../test/web-server-integration.test.js)
+    boots the Express server with the real CLI to ensure upcoming filters and
+    reminder metadata stay consistent across the UI and CLI surfaces.
+    _Implemented (2025-10-07):_ `POST /commands/remindersCalendar` streams the
+    ICS export produced by `jobbot track reminders --ics`, returning sanitized
+    calendar text so browsers can trigger downloads directly. Integration
+    coverage in [`test/web-server-integration.test.js`](../test/web-server-integration.test.js)
+    verifies contact details, notes, and channel metadata survive the export
+    with proper escaping.
 
 5. **Testing and QA**
    - Unit tests for frontend components (Jest/Testing Library) and backend modules (Jest/Supertest).

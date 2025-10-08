@@ -23,6 +23,8 @@ const MATCH_ALLOWED_FIELDS = new Set([
   'maxBytes',
 ]);
 
+const REMINDERS_ALLOWED_FIELDS = new Set(['now', 'upcomingOnly', 'calendarName']);
+
 const ALLOWED_FORMATS = new Set(['markdown', 'json', 'text']);
 
 function ensurePlainObject(value, commandName) {
@@ -176,9 +178,28 @@ function validateMatchPayload(rawPayload) {
   return sanitized;
 }
 
+function validateRemindersPayload(rawPayload) {
+  const payload = ensurePlainObject(rawPayload ?? {}, 'reminders');
+  assertAllowedFields(payload, REMINDERS_ALLOWED_FIELDS, 'reminders');
+
+  const now = coerceString(payload.now, { name: 'now' });
+  if (payload.now !== undefined && !now) {
+    throw new Error('now cannot be empty');
+  }
+  const upcomingOnly = coerceBoolean(payload.upcomingOnly, { name: 'upcomingOnly' }) ?? false;
+  const calendarName = coerceString(payload.calendarName, { name: 'calendarName' });
+  if (payload.calendarName !== undefined && !calendarName) {
+    throw new Error('calendarName cannot be empty');
+  }
+
+  return { now, upcomingOnly, calendarName };
+}
+
 const COMMAND_VALIDATORS = Object.freeze({
   summarize: validateSummarizePayload,
   match: validateMatchPayload,
+  reminders: validateRemindersPayload,
+  remindersCalendar: validateRemindersPayload,
 });
 
 export const ALLOW_LISTED_COMMANDS = Object.freeze(Object.keys(COMMAND_VALIDATORS));

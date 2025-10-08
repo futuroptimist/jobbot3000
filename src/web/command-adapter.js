@@ -1,10 +1,17 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { spawn as defaultSpawn } from 'node:child_process';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 
-import { normalizeMatchRequest, normalizeSummarizeRequest } from './schemas.js';
+import {
+  normalizeMatchRequest,
+  normalizeSummarizeRequest,
+  normalizeRemindersRequest,
+} from './schemas.js';
 
 const SECRET_KEYS = [
   'api[-_]?key',
@@ -96,8 +103,10 @@ function sanitizeTelemetryPayload(payload) {
 }
 
 const COMMAND_METHODS = {
-  summarize: 'cmdSummarize',
-  match: 'cmdMatch',
+  summarize: { method: 'cmdSummarize', cli: ['summarize'] },
+  match: { method: 'cmdMatch', cli: ['match'] },
+  reminders: { method: 'cmdTrackReminders', cli: ['track', 'reminders'] },
+  remindersCalendar: { method: 'cmdTrackReminders', cli: ['track', 'reminders'] },
 };
 
 const DEFAULT_CLI_PATH = fileURLToPath(new URL('../../bin/jobbot.js', import.meta.url));
@@ -198,6 +207,28 @@ function humanizeMethod(method) {
   return name ? name.charAt(0).toLowerCase() + name.slice(1) : method;
 }
 
+function normalizeCommandConfig(config) {
+  if (typeof config === 'string') {
+    const method = config;
+    return { method, cli: [humanizeMethod(method)] };
+  }
+  if (!config || typeof config.method !== 'string') {
+    throw new Error('invalid command configuration');
+  }
+  const cliParts = Array.isArray(config.cli) && config.cli.length > 0 ? config.cli : null;
+  if (cliParts) {
+    const normalizedParts = [];
+    for (const part of cliParts) {
+      if (typeof part !== 'string' || !part.trim()) {
+        throw new Error('cli command parts must be non-empty strings');
+      }
+      normalizedParts.push(part.trim());
+    }
+    return { method: config.method, cli: normalizedParts };
+  }
+  return { method: config.method, cli: [humanizeMethod(config.method)] };
+}
+
 function parseJsonOutput(command, stdout, stderr) {
   const trimmed = stdout.trim();
   if (!trimmed) {
@@ -274,6 +305,9 @@ export function createCommandAdapter(options = {}) {
     const resolvedCliPath =
       typeof cliPath === 'string' && cliPath.trim() ? cliPath : DEFAULT_CLI_PATH;
     const environment = env === undefined ? process.env : env;
+    const commandParts = Array.isArray(command) ? command : [command];
+    const normalizedParts = commandParts.map(part => String(part));
+    const commandLabel = normalizedParts.join(' ');
 
     return await new Promise((resolve, reject) => {
       let stdout = '';
@@ -282,14 +316,14 @@ export function createCommandAdapter(options = {}) {
 
       let child;
       try {
-        child = spawnFn(executable, [resolvedCliPath, command, ...args], {
+        child = spawnFn(executable, [resolvedCliPath, ...normalizedParts, ...args], {
           shell: false,
           windowsHide: true,
           stdio: ['ignore', 'pipe', 'pipe'],
           env: environment,
         });
       } catch (err) {
-        const spawnError = new Error(`Failed to spawn CLI process for ${command}`);
+        const spawnError = new Error(`Failed to spawn CLI process for ${commandLabel}`);
         spawnError.cause = err;
         reject(spawnError);
         return;
@@ -321,7 +355,7 @@ export function createCommandAdapter(options = {}) {
       };
 
       child.on('error', err => {
-        const error = new Error(`Failed to run ${command} command`);
+        const error = new Error(`Failed to run ${commandLabel} command`);
         error.cause = err;
         error.stdout = stdout;
         error.stderr = stderr;
@@ -335,8 +369,8 @@ export function createCommandAdapter(options = {}) {
         }
         const exitError = new Error(
           signal
-            ? `${command} command terminated with signal ${signal}`
-            : `${command} command exited with code ${code ?? 'unknown'}`,
+            ? `${commandLabel} command terminated with signal ${signal}`
+            : `${commandLabel} command exited with code ${code ?? 'unknown'}`,
         );
         if (typeof code === 'number') exitError.exitCode = code;
         if (signal) exitError.signal = signal;
@@ -347,8 +381,9 @@ export function createCommandAdapter(options = {}) {
     });
   }
 
-  async function runCli(method, args) {
-    const commandName = humanizeMethod(method);
+  async function runCli(commandConfig, args) {
+    const { method, cli } = normalizeCommandConfig(commandConfig);
+    const commandName = cli.join(' ');
     const correlationId = nextCorrelationId();
     const started = performance.now();
 
@@ -358,7 +393,7 @@ export function createCommandAdapter(options = {}) {
         throw new Error(`unknown CLI command method: ${method}`);
       }
       try {
-        const { result, stdout, stderr } = await captureConsole(() => fn(args));
+      const { result, stdout, stderr } = await captureConsole(() => fn(args));
         const durationMs = roundDuration(performance.now() - started);
         logTelemetry('info', {
           event: 'cli.command',
@@ -428,7 +463,7 @@ export function createCommandAdapter(options = {}) {
     }
 
     try {
-      const { stdout, stderr } = await runCliProcess(commandName, args);
+    const { stdout, stderr } = await runCliProcess(cli, args);
       const durationMs = roundDuration(performance.now() - started);
       logTelemetry('info', {
         event: 'cli.command',
@@ -583,9 +618,106 @@ export function createCommandAdapter(options = {}) {
     return payload;
   }
 
+  async function reminders(options = {}) {
+    const normalized = normalizeRemindersRequest(options);
+    const { now, upcomingOnly } = normalized;
+
+    const args = ['--json'];
+    if (now) {
+      args.push('--now', now);
+    }
+    if (upcomingOnly) {
+      args.push('--upcoming-only');
+    }
+
+    const { stdout, stderr, returnValue, correlationId, traceId } = await runCli(
+      COMMAND_METHODS.reminders,
+      args,
+    );
+    const payload = {
+      command: 'reminders',
+      format: 'json',
+      stdout,
+      stderr,
+      returnValue,
+    };
+    if (correlationId) {
+      payload.correlationId = correlationId;
+    }
+    if (traceId) {
+      payload.traceId = traceId;
+    }
+
+    const data = parseJsonOutput('reminders', payload.stdout, payload.stderr);
+    payload.data = sanitizeOutputValue(data);
+    return payload;
+  }
+
+  async function remindersCalendar(options = {}) {
+    const normalized = normalizeRemindersRequest(options);
+    const { now, upcomingOnly, calendarName } = normalized;
+
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), 'jobbot-web-reminders-'));
+    const calendarPath = path.join(tempDir, 'reminders.ics');
+    const args = ['--ics', calendarPath];
+    if (now) {
+      args.push('--now', now);
+    }
+    if (upcomingOnly) {
+      args.push('--upcoming-only');
+    }
+    if (calendarName) {
+      args.push('--calendar-name', calendarName);
+    }
+
+    try {
+      const { stdout, stderr, returnValue, correlationId, traceId } = await runCli(
+        COMMAND_METHODS.remindersCalendar,
+        args,
+      );
+
+      let calendar;
+      try {
+        calendar = await readFile(calendarPath, 'utf8');
+      } catch (err) {
+        const readError = new Error('Failed to read generated reminders calendar');
+        readError.cause = err;
+        readError.stdout = stdout;
+        readError.stderr = stderr;
+        if (correlationId) {
+          readError.correlationId = correlationId;
+        }
+        if (traceId) {
+          readError.traceId = traceId;
+        }
+        throw readError;
+      }
+
+      const payload = {
+        command: 'remindersCalendar',
+        format: 'ics',
+        stdout,
+        stderr,
+        returnValue,
+        calendar: sanitizeOutputString(calendar),
+      };
+      if (correlationId) {
+        payload.correlationId = correlationId;
+      }
+      if (traceId) {
+        payload.traceId = traceId;
+      }
+      return payload;
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  }
+
   return {
     summarize,
     match,
+    reminders,
+    remindersCalendar,
   };
 }
 

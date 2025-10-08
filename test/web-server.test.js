@@ -287,6 +287,94 @@ describe('web server command endpoint', () => {
     expect(commandAdapter.summarize).toHaveBeenCalledTimes(1);
   });
 
+  it('executes the reminders command and normalizes filters', async () => {
+    const commandAdapter = {
+      reminders: vi.fn(async options => {
+        expect(options).toEqual({ now: '2025-03-04T09:00:00Z', upcomingOnly: true });
+        return {
+          command: 'reminders',
+          format: 'json',
+          stdout: JSON.stringify({
+            reminders: [
+              { job_id: 'job-1', remind_at: '2025-03-05T09:00:00.000Z', past_due: false },
+            ],
+            sections: [
+              { heading: 'Upcoming', reminders: [{ job_id: 'job-1', past_due: false }] },
+            ],
+          }),
+          stderr: '',
+          data: {
+            reminders: [
+              { job_id: 'job-1', remind_at: '2025-03-05T09:00:00.000Z', past_due: false },
+            ],
+            sections: [
+              { heading: 'Upcoming', reminders: [{ job_id: 'job-1', past_due: false }] },
+            ],
+          },
+        };
+      }),
+    };
+
+    const server = await startServer({ commandAdapter });
+    const response = await fetch(`${server.url}/commands/reminders`, {
+      method: 'POST',
+      headers: buildCommandHeaders(server),
+      body: JSON.stringify({ now: '2025-03-04T09:00:00Z', upcomingOnly: true }),
+    });
+
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload.command).toBe('reminders');
+    expect(payload.format).toBe('json');
+    expect(payload.stderr).toBe('');
+    expect(payload.data).toEqual({
+      reminders: [
+        { job_id: 'job-1', remind_at: '2025-03-05T09:00:00.000Z', past_due: false },
+      ],
+      sections: [
+        { heading: 'Upcoming', reminders: [{ job_id: 'job-1', past_due: false }] },
+      ],
+    });
+    expect(JSON.parse(payload.stdout)).toEqual(payload.data);
+    expect(commandAdapter.reminders).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns reminders calendars as ICS strings', async () => {
+    const commandAdapter = {
+      remindersCalendar: vi.fn(async options => {
+        expect(options).toEqual({
+          now: '2025-03-04T09:00:00Z',
+          upcomingOnly: false,
+          calendarName: 'Follow-ups',
+        });
+        return {
+          command: 'remindersCalendar',
+          format: 'ics',
+          stdout: 'Saved reminder calendar',
+          stderr: '',
+          calendar: 'BEGIN:VCALENDAR\nSUMMARY:Follow ups\nEND:VCALENDAR\n',
+        };
+      }),
+    };
+
+    const server = await startServer({ commandAdapter });
+    const response = await fetch(`${server.url}/commands/remindersCalendar`, {
+      method: 'POST',
+      headers: buildCommandHeaders(server),
+      body: JSON.stringify({
+        now: '2025-03-04T09:00:00Z',
+        calendarName: 'Follow-ups',
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload.command).toBe('remindersCalendar');
+    expect(payload.format).toBe('ics');
+    expect(payload.calendar).toContain('BEGIN:VCALENDAR');
+    expect(commandAdapter.remindersCalendar).toHaveBeenCalledTimes(1);
+  });
+
   it('rejects unknown commands', async () => {
     const server = await startServer({ commandAdapter: {} });
     const response = await fetch(`${server.url}/commands/unknown`, {

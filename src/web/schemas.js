@@ -53,6 +53,17 @@ function normalizeFormat(value) {
   return normalized;
 }
 
+function normalizeBoolean(value, name) {
+  if (value == null) return undefined;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true') return true;
+    if (normalized === 'false') return false;
+  }
+  throw new Error(`${name} must be a boolean`);
+}
+
 /**
  * @typedef {Object} SummarizeRequest
  * @property {string} input
@@ -116,3 +127,30 @@ export function normalizeMatchRequest(options) {
 }
 
 export const WEB_SUPPORTED_FORMATS = [...SUPPORTED_FORMATS];
+
+/**
+ * @typedef {Object} RemindersRequest
+ * @property {string} [now]
+ * @property {boolean} [upcomingOnly]
+ * @property {string} [calendarName]
+ */
+
+/**
+ * Normalizes reminders request options used by the web command adapter.
+ * @param {unknown} [options]
+ * @returns {RemindersRequest}
+ */
+export function normalizeRemindersRequest(options) {
+  const normalizedOptions = options ?? {};
+  assertPlainObject(normalizedOptions, 'reminders options');
+  const now = normalizeString(normalizedOptions.now);
+  if (normalizedOptions.now !== undefined && !now) {
+    throw new Error('now cannot be empty');
+  }
+  const upcomingOnly = normalizeBoolean(normalizedOptions.upcomingOnly, 'upcomingOnly') ?? false;
+  const calendarName = normalizeString(normalizedOptions.calendarName);
+  if (normalizedOptions.calendarName !== undefined && !calendarName) {
+    throw new Error('calendarName cannot be empty');
+  }
+  return { now, upcomingOnly, calendarName };
+}
