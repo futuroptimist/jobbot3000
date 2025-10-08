@@ -192,10 +192,18 @@
 
 4. **Core Features**
    - Application list view with filtering and pagination backed by CLI `list` command.
-     _Implemented (2025-10-06):_ The status hub now exposes an Applications
-     route powered by `POST /commands/shortlist-list`, which reuses the CLI
-     schema, streams shortlist data, and paginates it client-side. Regression
-     coverage in [`test/web-server.test.js`](../test/web-server.test.js),
+     _Implemented (2025-10-07):_ `jobbot track list` now surfaces tracked
+     applications in paginated batches with optional status filters. The CLI
+     pulls from the shared lifecycle store via
+     [`listLifecycleEntries`](../src/lifecycle.js) and prints both text and JSON
+     payloads for downstream tooling. Regression coverage in
+     [`test/lifecycle.test.js`](../test/lifecycle.test.js) and
+     [`test/cli.test.js`](../test/cli.test.js) locks the sorting, filter
+     validation, and pagination math. The status hub also exposes an
+     **Applications** route powered by `POST /commands/shortlist-list`, which
+     reuses the same CLI schema, streams shortlist data, and paginates it
+     client-side. Regression coverage in
+     [`test/web-server.test.js`](../test/web-server.test.js),
      [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js),
      and [`test/web-e2e.test.js`](../test/web-e2e.test.js) keeps the adapter,
      HTML view, and CLI integration aligned.

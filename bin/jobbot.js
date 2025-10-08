@@ -25,7 +25,12 @@ import {
   getApplicationEvents,
   getApplicationReminders,
 } from '../src/application-events.js';
-import { recordApplication, getLifecycleBoard, STATUSES } from '../src/lifecycle.js';
+import {
+  recordApplication,
+  getLifecycleBoard,
+  listLifecycleEntries,
+  STATUSES,
+} from '../src/lifecycle.js';
 import {
   getDiscardedJobs,
   normalizeDiscardEntries,
@@ -756,6 +761,73 @@ async function cmdTrackReminders(args) {
   console.log(lines.join('\n'));
 }
 
+async function cmdTrackList(args) {
+  const usage =
+    'Usage: jobbot track list [--status <status[,status]>] [--page <number>] ' +
+    '[--page-size <number>] [--json]';
+
+  const statuses = collectStatusFilters(args, usage);
+  const invalid = statuses.filter(status => !STATUSES.includes(status));
+  if (invalid.length > 0) {
+    console.error(
+      `Unknown status filter(s): ${invalid.join(', ')}\nValid statuses: ${STATUSES.join(', ')}`,
+    );
+    process.exit(2);
+  }
+
+  const asJson = args.includes('--json');
+  const page = getNumberFlag(args, '--page', 1);
+  const pageSizeFlag = getNumberFlag(args, '--page-size');
+  const perPageFlag = getNumberFlag(args, '--per-page');
+  const pageSize = pageSizeFlag ?? perPageFlag;
+
+  let result;
+  try {
+    result = await listLifecycleEntries({
+      statuses,
+      page,
+      pageSize,
+    });
+  } catch (err) {
+    console.error(err && err.message ? err.message : String(err));
+    process.exit(1);
+  }
+
+  if (asJson) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  const { entries, pagination, filters } = result;
+  if (entries.length === 0) {
+    if (filters.statuses.length > 0) {
+      console.log('No applications matched the provided filters');
+    } else {
+      console.log('No applications tracked');
+    }
+    return;
+  }
+
+  const displayTotalPages = Math.max(pagination.totalPages, 1);
+  const header = [
+    `Showing ${entries.length} of ${pagination.totalEntries} applications`,
+    `(page ${pagination.page} of ${displayTotalPages})`,
+  ].join(' ');
+  const lines = [header];
+  if (filters.statuses.length > 0) {
+    lines.push(`Filters: status = ${filters.statuses.join(', ')}`);
+  }
+  for (const entry of entries) {
+    const timestamp = entry.updated_at ?? 'no timestamp';
+    lines.push(`- ${entry.job_id} — ${formatStatusLabel(entry.status)} — ${timestamp}`);
+    if (entry.note) {
+      lines.push(`  Note: ${entry.note}`);
+    }
+  }
+
+  console.log(lines.join('\n'));
+}
+
 async function cmdTrackBoard(args) {
   const asJson = args.includes('--json');
 
@@ -870,6 +942,32 @@ function collectTagFilters(args) {
     i++;
   }
   return tags.length > 0 ? tags : undefined;
+}
+
+function collectStatusFilters(args, usage) {
+  const statuses = [];
+  for (let i = 0; i < args.length; i += 1) {
+    if (args[i] !== '--status') continue;
+    const value = args[i + 1];
+    if (!value || value.startsWith('--')) {
+      console.error(usage);
+      process.exit(2);
+    }
+    for (const entry of String(value).split(',')) {
+      const trimmed = entry.trim();
+      if (trimmed) statuses.push(trimmed);
+    }
+    i += 1;
+  }
+  if (statuses.length === 0) return [];
+  const seen = new Set();
+  const unique = [];
+  for (const status of statuses) {
+    if (seen.has(status)) continue;
+    seen.add(status);
+    unique.push(status);
+  }
+  return unique;
 }
 
 function formatIntakeList(entries) {
@@ -1131,12 +1229,13 @@ async function cmdTrackDiscard(args) {
 async function cmdTrack(args) {
   const sub = args[0];
   if (sub === 'add') return cmdTrackAdd(args.slice(1));
+  if (sub === 'list') return cmdTrackList(args.slice(1));
   if (sub === 'log') return cmdTrackLog(args.slice(1));
   if (sub === 'history') return cmdTrackHistory(args.slice(1));
   if (sub === 'discard') return cmdTrackDiscard(args.slice(1));
   if (sub === 'reminders') return cmdTrackReminders(args.slice(1));
   if (sub === 'board') return cmdTrackBoard(args.slice(1));
-  console.error('Usage: jobbot track <add|log|history|discard|reminders|board> ...');
+  console.error('Usage: jobbot track <add|list|log|history|discard|reminders|board> ...');
   process.exit(2);
 }
 

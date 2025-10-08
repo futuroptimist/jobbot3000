@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { summarize } from '../src/index.js';
 import JSZip from 'jszip';
-import { STATUSES } from '../src/lifecycle.js';
+import { recordApplication, STATUSES } from '../src/lifecycle.js';
 import { jobIdFromSource } from '../src/jobs.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1057,6 +1057,73 @@ describe('jobbot CLI', () => {
 
     expect(upcomingIndex).toBeGreaterThan(-1);
     expect(lines[upcomingIndex + 1]).toBe('  (none)');
+  });
+
+  it('lists tracked applications with filters and pagination', async () => {
+    process.env.JOBBOT_DATA_DIR = dataDir;
+    await recordApplication('job-old-screening', 'screening', {
+      date: '2025-02-02T09:00:00Z',
+      note: 'Followed up with recruiter',
+    });
+    await recordApplication('job-new-screening', 'screening', {
+      date: '2025-02-04T15:30:00Z',
+    });
+    await recordApplication('job-offer', 'offer', {
+      date: '2025-02-05T12:00:00Z',
+      note: 'Offer call scheduled',
+    });
+    await recordApplication('job-rejected', 'rejected', {
+      date: '2025-01-20T08:00:00Z',
+    });
+    delete process.env.JOBBOT_DATA_DIR;
+
+    const json = runCli([
+      'track',
+      'list',
+      '--json',
+      '--status',
+      'screening,offer',
+      '--page',
+      '1',
+      '--page-size',
+      '2',
+    ]);
+    const parsed = JSON.parse(json);
+    expect(parsed.entries).toEqual([
+      expect.objectContaining({
+        job_id: 'job-offer',
+        status: 'offer',
+        updated_at: '2025-02-05T12:00:00.000Z',
+        note: 'Offer call scheduled',
+      }),
+      expect.objectContaining({
+        job_id: 'job-new-screening',
+        status: 'screening',
+        updated_at: '2025-02-04T15:30:00.000Z',
+      }),
+    ]);
+    expect(parsed.pagination).toEqual({
+      page: 1,
+      pageSize: 2,
+      totalEntries: 3,
+      totalPages: 2,
+    });
+    expect(parsed.filters).toEqual({ statuses: ['screening', 'offer'] });
+
+    const text = runCli([
+      'track',
+      'list',
+      '--status',
+      'screening,offer',
+      '--page',
+      '2',
+      '--page-size',
+      '2',
+    ]);
+    expect(text).toContain('Showing 1 of 3 applications (page 2 of 2)');
+    expect(text).toContain('job-old-screening — Screening');
+    expect(text).toContain('2025-02-02T09:00:00.000Z');
+    expect(text).toContain('Followed up with recruiter');
   });
 
   it('summarizes lifecycle statuses with track board', () => {

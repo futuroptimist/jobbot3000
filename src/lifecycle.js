@@ -172,20 +172,23 @@ export async function getLifecycleCounts() {
   return counts;
 }
 
+function compareLifecycleEntries(a, b) {
+  if (!a || !b) return 0;
+  const aTime = a.updated_at ? Date.parse(a.updated_at) : NaN;
+  const bTime = b.updated_at ? Date.parse(b.updated_at) : NaN;
+  const aValid = !Number.isNaN(aTime);
+  const bValid = !Number.isNaN(bTime);
+  if (aValid && bValid) {
+    if (aTime === bTime) return a.job_id.localeCompare(b.job_id);
+    return bTime - aTime;
+  }
+  if (aValid) return -1;
+  if (bValid) return 1;
+  return a.job_id.localeCompare(b.job_id);
+}
+
 function sortBoardJobs(jobs) {
-  jobs.sort((a, b) => {
-    const aTime = a.updated_at ? Date.parse(a.updated_at) : NaN;
-    const bTime = b.updated_at ? Date.parse(b.updated_at) : NaN;
-    const aValid = !Number.isNaN(aTime);
-    const bValid = !Number.isNaN(bTime);
-    if (aValid && bValid) {
-      if (aTime === bTime) return a.job_id.localeCompare(b.job_id);
-      return bTime - aTime;
-    }
-    if (aValid) return -1;
-    if (bValid) return 1;
-    return a.job_id.localeCompare(b.job_id);
-  });
+  jobs.sort(compareLifecycleEntries);
 }
 
 /**
@@ -211,4 +214,81 @@ export async function getLifecycleBoard() {
   }
 
   return columns;
+}
+
+function normalizeStatusesFilter(statuses) {
+  if (!Array.isArray(statuses) || statuses.length === 0) {
+    return { values: [], set: null };
+  }
+
+  const normalized = [];
+  const seen = new Set();
+  for (const candidate of statuses) {
+    if (typeof candidate !== 'string') continue;
+    const trimmed = candidate.trim();
+    if (!trimmed || seen.has(trimmed) || !STATUSES.includes(trimmed)) continue;
+    seen.add(trimmed);
+    normalized.push(trimmed);
+  }
+
+  if (normalized.length === 0) {
+    return { values: [], set: null };
+  }
+
+  return { values: normalized, set: new Set(normalized) };
+}
+
+function normalizePositiveInteger(value, fallback) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  const truncated = Math.trunc(parsed);
+  if (truncated <= 0) return fallback;
+  return truncated;
+}
+
+function normalizePageSize(value) {
+  const normalized = normalizePositiveInteger(value, 20);
+  return Math.min(normalized, 100);
+}
+
+export async function listLifecycleEntries(options = {}) {
+  const { values: statuses, set: statusSet } = normalizeStatusesFilter(options.statuses);
+  const pageSize = normalizePageSize(options.pageSize);
+  const { file } = getPaths();
+  const data = await readLifecycleFile(file);
+  const entries = [];
+
+  for (const [jobId, raw] of Object.entries(data)) {
+    const normalized = normalizeLifecycleEntry(jobId, raw);
+    if (!normalized) continue;
+    if (statusSet && !statusSet.has(normalized.status)) continue;
+    entries.push(normalized);
+  }
+
+  entries.sort(compareLifecycleEntries);
+
+  const totalEntries = entries.length;
+  const totalPages = totalEntries === 0 ? 0 : Math.ceil(totalEntries / pageSize);
+  let page = normalizePositiveInteger(options.page, 1);
+  if (totalPages > 0) {
+    page = Math.min(Math.max(page, 1), totalPages);
+  } else {
+    page = 1;
+  }
+
+  const start = (page - 1) * pageSize;
+  const paginated = entries.slice(start, start + pageSize);
+
+  return {
+    entries: paginated,
+    pagination: {
+      page,
+      pageSize,
+      totalEntries,
+      totalPages,
+    },
+    filters: {
+      statuses,
+    },
+  };
 }

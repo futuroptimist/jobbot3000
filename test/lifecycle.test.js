@@ -2,7 +2,12 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, afterEach, test, expect } from 'vitest';
-import { recordApplication, getLifecycleCounts, getLifecycleBoard } from '../src/lifecycle.js';
+import {
+  recordApplication,
+  getLifecycleCounts,
+  getLifecycleBoard,
+  listLifecycleEntries,
+} from '../src/lifecycle.js';
 
 let dataDir;
 
@@ -183,6 +188,55 @@ test('organizes lifecycle entries into ordered board columns', async () => {
   expect(nextRoundColumn?.jobs).toEqual([
     expect.objectContaining({ job_id: 'job-legacy', updated_at: undefined }),
   ]);
+});
+
+test('lists lifecycle entries with filters and pagination', async () => {
+  await recordApplication('job-screening-old', 'screening', {
+    date: '2025-02-02T09:00:00Z',
+    note: 'Followed up with recruiter',
+  });
+  await recordApplication('job-screening-new', 'screening', {
+    date: '2025-02-04T15:30:00Z',
+  });
+  await recordApplication('job-offer', 'offer', {
+    date: '2025-02-05T12:00:00Z',
+    note: 'Offer call scheduled',
+  });
+  await recordApplication('job-rejected', 'rejected', {
+    date: '2025-01-20T08:00:00Z',
+  });
+
+  const pageOne = await listLifecycleEntries({
+    statuses: ['screening', 'offer'],
+    page: 1,
+    pageSize: 2,
+  });
+  expect(pageOne.entries.map(entry => entry.job_id)).toEqual([
+    'job-offer',
+    'job-screening-new',
+  ]);
+  expect(pageOne.pagination).toEqual({
+    page: 1,
+    pageSize: 2,
+    totalEntries: 3,
+    totalPages: 2,
+  });
+  expect(pageOne.filters).toEqual({ statuses: ['screening', 'offer'] });
+
+  const pageTwo = await listLifecycleEntries({
+    statuses: ['screening', 'offer'],
+    page: 2,
+    pageSize: 2,
+  });
+  expect(pageTwo.entries.map(entry => entry.job_id)).toEqual(['job-screening-old']);
+  expect(pageTwo.pagination.page).toBe(2);
+  expect(pageTwo.pagination.totalPages).toBe(2);
+
+  const unmatched = await listLifecycleEntries({ statuses: ['onsite'] });
+  expect(unmatched.entries).toEqual([]);
+  expect(unmatched.pagination.totalEntries).toBe(0);
+  expect(unmatched.pagination.totalPages).toBe(0);
+  expect(unmatched.filters).toEqual({ statuses: ['onsite'] });
 });
 
 test('ignores unknown statuses when summarizing lifecycle data', async () => {

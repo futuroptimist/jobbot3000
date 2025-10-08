@@ -1458,6 +1458,32 @@ clobber history and that invalid channels or dates are rejected.
 outputs, including channel-first bullet formatting and reminder labels, so the
 note-taking surface stays reliable.
 
+List tracked applications with filtering and pagination using
+`jobbot track list`. Provide one or more statuses (comma-separated) to narrow the
+results, and combine `--page`/`--page-size` to step through longer histories:
+
+```bash
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track list --status screening,offer --page 2 --page-size 2
+# Showing 1 of 3 applications (page 2 of 2)
+# Filters: status = screening, offer
+# - job-old-screening — Screening — 2025-02-02T09:00:00.000Z
+#   Note: Followed up with recruiter
+
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track list --json --status screening,offer --page 1 --page-size 2 \
+  | jq '.entries[0]'
+# {
+#   "job_id": "job-offer",
+#   "status": "offer",
+#   "updated_at": "2025-02-05T12:00:00.000Z",
+#   "note": "Offer call scheduled"
+# }
+```
+
+[`test/lifecycle.test.js`](test/lifecycle.test.js) and
+[`test/cli.test.js`](test/cli.test.js) lock the sorting, filter sanitization,
+and pagination math so downstream tooling and docs stay aligned with the CLI
+output.
+
 Summarize the lifecycle board with `jobbot track board` to see which stage each
 application currently occupies. The board prints lifecycle columns in the
 defined order (including `next_round` and the acceptance synonyms) and orders
