@@ -362,6 +362,8 @@ export function createWebApp({
     const repoUrl = 'https://github.com/jobbot3000/jobbot3000';
     const readmeUrl = `${repoUrl}/blob/main/README.md`;
     const roadmapUrl = `${repoUrl}/blob/main/docs/web-interface-roadmap.md`;
+    const csrfHeaderAttr = escapeHtml(csrfOptions.headerName);
+    const csrfTokenAttr = escapeHtml(csrfOptions.token);
 
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(`<!doctype html>
@@ -582,6 +584,97 @@ export function createWebApp({
         font-size: 1rem;
         margin-bottom: 0.35rem;
       }
+      .filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        margin: 1.5rem 0 1rem;
+      }
+      .filters label {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        font-size: 0.95rem;
+        min-width: 160px;
+        color: var(--muted);
+      }
+      .filters input {
+        border-radius: 0.6rem;
+        border: 1px solid var(--card-border);
+        padding: 0.5rem 0.75rem;
+        font-size: 0.95rem;
+        background-color: rgba(15, 23, 42, 0.35);
+        color: var(--foreground);
+      }
+      [data-theme='light'] .filters input {
+        background-color: rgba(255, 255, 255, 0.9);
+      }
+      .filters__actions {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+      .filters__actions button {
+        border-radius: 999px;
+        border: 1px solid var(--pill-border);
+        background-color: var(--pill-bg);
+        color: var(--pill-text);
+        padding: 0.4rem 1rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .filters__actions button[data-variant='ghost'] {
+        background-color: transparent;
+        border-color: var(--card-border);
+        color: var(--foreground);
+      }
+      .table-container {
+        overflow-x: auto;
+      }
+      table.shortlist-table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 720px;
+      }
+      table.shortlist-table th,
+      table.shortlist-table td {
+        border-bottom: 1px solid var(--card-border);
+        padding: 0.65rem 0.85rem;
+        text-align: left;
+        vertical-align: top;
+      }
+      table.shortlist-table th {
+        font-size: 0.95rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+      }
+      table.shortlist-table tbody tr:last-child td {
+        border-bottom-color: transparent;
+      }
+      .pagination {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-top: 1rem;
+      }
+      .pagination button {
+        border-radius: 999px;
+        border: 1px solid var(--card-border);
+        background-color: transparent;
+        color: var(--foreground);
+        padding: 0.4rem 1rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .pagination button:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      .pagination-info {
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
       .references ul {
         padding-left: 1rem;
       }
@@ -590,7 +683,7 @@ export function createWebApp({
       }
     </style>
   </head>
-  <body>
+  <body data-csrf-header="${csrfHeaderAttr}" data-csrf-token="${csrfTokenAttr}">
     <a href="#main" class="pill" style="${skipLinkStyle}">Skip to main content</a>
     <header>
       <div class="header-actions">
@@ -617,6 +710,7 @@ export function createWebApp({
       </p>
       <nav class="primary-nav" aria-label="Status navigation">
         <a href="#overview" data-route-link="overview">Overview</a>
+        <a href="#applications" data-route-link="applications">Applications</a>
         <a href="#commands" data-route-link="commands">Commands</a>
         <a href="#audits" data-route-link="audits">Audits</a>
       </nav>
@@ -647,6 +741,113 @@ export function createWebApp({
               center so API consumers wire headers correctly.
             </p>
           </article>
+        </div>
+      </section>
+      <section class="view" data-route="applications" aria-labelledby="applications-heading" hidden>
+        <h2 id="applications-heading">Applications</h2>
+          <p>
+            Review shortlisted roles captured by the CLI. Filters map directly to
+            <code>jobbot shortlist list</code> flags so the web view stays aligned
+            with scripted flows.
+          </p>
+        <form class="filters" data-shortlist-filters>
+          <label>
+            <span>Location</span>
+            <input
+              type="text"
+              placeholder="Remote"
+              autocomplete="off"
+              data-shortlist-filter="location"
+            />
+          </label>
+          <label>
+            <span>Level</span>
+            <input
+              type="text"
+              placeholder="Senior"
+              autocomplete="off"
+              data-shortlist-filter="level"
+            />
+          </label>
+          <label>
+            <span>Compensation</span>
+            <input
+              type="text"
+              placeholder="$185k"
+              autocomplete="off"
+              data-shortlist-filter="compensation"
+            />
+          </label>
+          <label>
+            <span>Tags</span>
+            <input
+              type="text"
+              placeholder="remote,dream"
+              autocomplete="off"
+              data-shortlist-filter="tags"
+            />
+          </label>
+          <label>
+            <span>Page size</span>
+            <input
+              type="number"
+              min="1"
+              max="100"
+              value="10"
+              data-shortlist-filter="limit"
+            />
+          </label>
+          <div class="filters__actions">
+            <button type="submit">Apply filters</button>
+            <button type="button" data-shortlist-reset data-variant="ghost">Reset</button>
+          </div>
+        </form>
+        <div
+          class="status-panel"
+          data-status-panel="applications"
+          data-state="ready"
+          aria-live="polite"
+        >
+          <div data-state-slot="ready">
+            <p data-shortlist-empty hidden>No matching applications found.</p>
+            <div class="table-container">
+              <table class="shortlist-table" data-shortlist-table hidden>
+                <thead>
+                  <tr>
+                    <th scope="col">Job ID</th>
+                    <th scope="col">Location</th>
+                    <th scope="col">Level</th>
+                    <th scope="col">Compensation</th>
+                    <th scope="col">Tags</th>
+                    <th scope="col">Synced</th>
+                    <th scope="col">Discard summary</th>
+                  </tr>
+                </thead>
+                <tbody data-shortlist-body></tbody>
+              </table>
+            </div>
+            <div class="pagination" data-shortlist-pagination hidden>
+              <button type="button" data-shortlist-prev>Previous</button>
+              <span class="pagination-info" data-shortlist-range>Showing 0 of 0</span>
+              <button type="button" data-shortlist-next>Next</button>
+            </div>
+          </div>
+          <div data-state-slot="loading" hidden>
+            <p class="status-panel__loading" role="status" aria-live="polite">
+              Loading shortlist entries…
+            </p>
+          </div>
+          <div data-state-slot="error" hidden>
+            <div class="status-panel__error" role="alert">
+              <strong>Unable to load shortlist</strong>
+              <p
+                data-error-message
+                data-error-default="Check the server logs or retry shortly."
+              >
+                Check the server logs or retry shortly.
+              </p>
+            </div>
+          </div>
         </div>
       </section>
       <section class="view" data-route="commands" aria-labelledby="commands-heading" hidden>
@@ -749,6 +950,9 @@ export function createWebApp({
         );
         const navLinks = Array.from(document.querySelectorAll('[data-route-link]'));
         const statusPanels = new Map();
+        const csrfHeader = document.body?.dataset.csrfHeader || '';
+        const csrfToken = document.body?.dataset.csrfToken || '';
+        const routeListeners = new Map();
 
         function normalizePanelId(value) {
           if (typeof value !== 'string') {
@@ -870,6 +1074,344 @@ export function createWebApp({
             applyPanelState(descriptor, descriptor.state ?? descriptor.defaultState);
           }
         }
+
+        function setupShortlistView() {
+          const section = document.querySelector('[data-route="applications"]');
+          if (!section) {
+            return null;
+          }
+
+          const form = section.querySelector('[data-shortlist-filters]');
+          const inputs = {
+            location: form?.querySelector('[data-shortlist-filter="location"]') ?? null,
+            level: form?.querySelector('[data-shortlist-filter="level"]') ?? null,
+            compensation: form?.querySelector('[data-shortlist-filter="compensation"]') ?? null,
+            tags: form?.querySelector('[data-shortlist-filter="tags"]') ?? null,
+            limit: form?.querySelector('[data-shortlist-filter="limit"]') ?? null,
+          };
+          const resetButton = section.querySelector('[data-shortlist-reset]');
+          const table = section.querySelector('[data-shortlist-table]');
+          const tbody = section.querySelector('[data-shortlist-body]');
+          const emptyState = section.querySelector('[data-shortlist-empty]');
+          const pagination = section.querySelector('[data-shortlist-pagination]');
+          const range = section.querySelector('[data-shortlist-range]');
+          const prevButton = section.querySelector('[data-shortlist-prev]');
+          const nextButton = section.querySelector('[data-shortlist-next]');
+
+          function clampLimit(value) {
+            const number = Number.parseInt(value, 10);
+            if (!Number.isFinite(number) || Number.isNaN(number)) {
+              return 10;
+            }
+            if (number < 1) return 1;
+            if (number > 100) return 100;
+            return number;
+          }
+
+          const defaultLimit = clampLimit(inputs.limit?.value ?? 10);
+          if (inputs.limit) {
+            inputs.limit.value = String(defaultLimit);
+          }
+
+          const state = {
+            loaded: false,
+            loading: false,
+            offset: 0,
+            limit: defaultLimit,
+            total: 0,
+            filters: {},
+            lastError: null,
+          };
+
+          function parseTags(value) {
+            if (!value) return [];
+            return value
+              .split(',')
+              .map(entry => entry.trim())
+              .filter(entry => entry.length > 0);
+          }
+
+          function readFiltersFromInputs() {
+            const filters = {};
+            const location = inputs.location?.value?.trim();
+            if (location) filters.location = location;
+            const level = inputs.level?.value?.trim();
+            if (level) filters.level = level;
+            const compensation = inputs.compensation?.value?.trim();
+            if (compensation) filters.compensation = compensation;
+            const tagsList = parseTags(inputs.tags?.value ?? '');
+            if (tagsList.length > 0) {
+              filters.tags = tagsList;
+            }
+            return filters;
+          }
+
+          function buildRequestPayload(filters, offset, limit) {
+            const payload = { offset, limit };
+            if (filters.location) payload.location = filters.location;
+            if (filters.level) payload.level = filters.level;
+            if (filters.compensation) payload.compensation = filters.compensation;
+            if (Array.isArray(filters.tags) && filters.tags.length > 0) {
+              payload.tags = filters.tags;
+            }
+            return payload;
+          }
+
+          function buildDiscardSummary(count, summary) {
+            if (!count || count <= 0 || !summary || typeof summary !== 'object') {
+              return 'No discards';
+            }
+            const reason = summary.reason || 'Unknown reason';
+            const when = summary.discarded_at || '(unknown time)';
+            const tagsSummary =
+              Array.isArray(summary.tags) && summary.tags.length > 0
+                ? 'Tags: ' + summary.tags.join(', ')
+                : '';
+            const parts = ['Count: ' + count, reason + ' (' + when + ')'];
+            if (tagsSummary) parts.push(tagsSummary);
+            return parts.join(' • ');
+          }
+
+          function renderRows(items) {
+            if (!tbody) return;
+            tbody.textContent = '';
+            if (!Array.isArray(items) || items.length === 0) {
+              emptyState?.removeAttribute('hidden');
+              table?.setAttribute('hidden', '');
+              pagination?.setAttribute('hidden', '');
+              return;
+            }
+
+            emptyState?.setAttribute('hidden', '');
+            table?.removeAttribute('hidden');
+
+            const fragment = document.createDocumentFragment();
+            for (const item of items) {
+              const row = document.createElement('tr');
+              const hasMetadata =
+                item &&
+                typeof item === 'object' &&
+                item.metadata &&
+                typeof item.metadata === 'object';
+              const metadata = hasMetadata ? item.metadata : {};
+              const tagsList = Array.isArray(item?.tags)
+                ? item.tags.filter(tag => typeof tag === 'string' && tag.trim())
+                : [];
+              const discardCount = typeof item?.discard_count === 'number' ? item.discard_count : 0;
+              const hasLastDiscard =
+                item &&
+                typeof item === 'object' &&
+                item.last_discard &&
+                typeof item.last_discard === 'object';
+              const lastDiscard = hasLastDiscard ? item.last_discard : null;
+
+              const cells = [
+                item && typeof item.id === 'string' && item.id.trim() ? item.id.trim() : 'Unknown',
+                metadata.location || '—',
+                metadata.level || '—',
+                metadata.compensation || '—',
+                tagsList.length > 0 ? tagsList.join(', ') : '—',
+                metadata.synced_at || '—',
+                buildDiscardSummary(discardCount, lastDiscard),
+              ];
+
+              for (const value of cells) {
+                const cell = document.createElement('td');
+                cell.textContent = value;
+                row.appendChild(cell);
+              }
+              fragment.appendChild(row);
+            }
+
+            tbody.appendChild(fragment);
+            pagination?.removeAttribute('hidden');
+          }
+
+          function updatePaginationControls(data) {
+            const total = Number.isFinite(data?.total) ? data.total : state.total;
+            const offset = Number.isFinite(data?.offset) ? data.offset : state.offset;
+            const limit = clampLimit(data?.limit ?? state.limit);
+            state.total = Math.max(0, total);
+            state.offset = Math.max(0, offset);
+            state.limit = limit;
+
+            if (range) {
+              if (state.total === 0) {
+                range.textContent = 'Showing 0 of 0';
+              } else {
+                const start = state.offset + 1;
+                const end = Math.min(state.offset + state.limit, state.total);
+                range.textContent =
+                  'Showing ' + start + '-' + end + ' of ' + state.total;
+              }
+            }
+
+            if (pagination) {
+              if (state.total === 0) {
+                pagination.setAttribute('hidden', '');
+              } else {
+                pagination.removeAttribute('hidden');
+              }
+            }
+
+            if (prevButton) {
+              prevButton.disabled = state.offset <= 0;
+            }
+            if (nextButton) {
+              nextButton.disabled = state.offset + state.limit >= state.total;
+            }
+          }
+
+          async function fetchShortlist(payload) {
+            if (typeof fetch !== 'function') {
+              throw new Error('Fetch API is unavailable in this environment');
+            }
+            const headers = { 'content-type': 'application/json' };
+            if (csrfHeader && csrfToken) {
+              headers[csrfHeader] = csrfToken;
+            }
+              const commandUrl = new URL(
+                '/commands/shortlist-list',
+                window.location.href,
+              );
+              const response = await fetch(commandUrl, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(payload),
+              });
+            let parsed;
+            try {
+              parsed = await response.json();
+            } catch {
+              throw new Error('Received invalid response while loading shortlist');
+            }
+            if (!response.ok) {
+              const message =
+                parsed && typeof parsed.error === 'string'
+                  ? parsed.error
+                  : 'Failed to load shortlist';
+              throw new Error(message);
+            }
+            return parsed;
+          }
+
+          async function refresh(options = {}) {
+            if (state.loading) {
+              return false;
+            }
+
+            const useForm = options.useForm === true;
+              const filters =
+                options.filters ?? (useForm ? readFiltersFromInputs() : state.filters);
+              const nextLimit = clampLimit(
+                options.limit ?? (useForm ? inputs.limit?.value : state.limit),
+              );
+              const nextOffset = Math.max(
+                0,
+                options.offset ?? (options.resetOffset ? 0 : state.offset),
+              );
+
+            if (inputs.limit) {
+              inputs.limit.value = String(nextLimit);
+            }
+
+            const payload = buildRequestPayload(filters || {}, nextOffset, nextLimit);
+
+            state.loading = true;
+            setPanelState('applications', 'loading', { preserveMessage: true });
+
+            try {
+              const response = await fetchShortlist(payload);
+              const data = response?.data || {};
+              const items = Array.isArray(data.items) ? data.items : [];
+              state.loaded = true;
+              state.loading = false;
+              state.filters = filters || {};
+              state.limit = clampLimit(data.limit ?? nextLimit);
+              state.offset = Math.max(0, data.offset ?? nextOffset);
+              state.total = Math.max(0, data.total ?? items.length);
+              state.lastError = null;
+              renderRows(items);
+              updatePaginationControls(data);
+              setPanelState('applications', 'ready', { preserveMessage: true });
+              dispatchApplicationsLoaded(data);
+              return true;
+            } catch (err) {
+              state.loading = false;
+              state.lastError = err;
+              const message =
+                err && typeof err.message === 'string'
+                  ? err.message
+                  : 'Unable to load shortlist';
+              setPanelState('applications', 'error', { message });
+              return false;
+            }
+          }
+
+          function resetFilters() {
+            if (inputs.location) inputs.location.value = '';
+            if (inputs.level) inputs.level.value = '';
+            if (inputs.compensation) inputs.compensation.value = '';
+            if (inputs.tags) inputs.tags.value = '';
+            if (inputs.limit) inputs.limit.value = String(defaultLimit);
+            state.filters = {};
+            state.offset = 0;
+            state.limit = defaultLimit;
+          }
+
+            form?.addEventListener('submit', event => {
+              event.preventDefault();
+              const filters = readFiltersFromInputs();
+              refresh({
+                filters,
+                offset: 0,
+                limit: inputs.limit?.value,
+                useForm: true,
+                resetOffset: true,
+              });
+            });
+
+            resetButton?.addEventListener('click', () => {
+              resetFilters();
+              refresh({
+                filters: {},
+                offset: 0,
+                limit: defaultLimit,
+                useForm: false,
+                resetOffset: true,
+              });
+            });
+
+          prevButton?.addEventListener('click', () => {
+            const nextOffset = Math.max(0, state.offset - state.limit);
+            refresh({ offset: nextOffset });
+          });
+
+          nextButton?.addEventListener('click', () => {
+            const nextOffset = state.offset + state.limit;
+            refresh({ offset: nextOffset });
+          });
+
+          addRouteListener('applications', () => {
+            if (!state.loaded && !state.loading) {
+              const filters = readFiltersFromInputs();
+              state.filters = filters;
+              refresh({ filters, offset: 0, limit: inputs.limit?.value, resetOffset: true });
+            }
+          });
+
+          scheduleApplicationsReady({ available: true });
+
+          return {
+            refresh,
+            getState() {
+              return {
+                ...state,
+                filters: { ...state.filters },
+              };
+            },
+          };
+        }
         const prefersDark =
           typeof window.matchMedia === 'function'
             ? window.matchMedia('(prefers-color-scheme: dark)')
@@ -946,6 +1488,42 @@ export function createWebApp({
           return routeNames.has(trimmed) ? trimmed : null;
         }
 
+        function addRouteListener(route, handler) {
+          const normalized = normalizeRoute(route);
+          if (!normalized || typeof handler !== 'function') {
+            return;
+          }
+          if (!routeListeners.has(normalized)) {
+            routeListeners.set(normalized, new Set());
+          }
+          routeListeners.get(normalized).add(handler);
+        }
+
+        function notifyRouteListeners(route) {
+          const listeners = routeListeners.get(route);
+          if (!listeners) {
+            return;
+          }
+          for (const listener of listeners) {
+            try {
+              listener(route);
+            } catch {
+              // Ignore listener failures so navigation remains responsive.
+            }
+          }
+        }
+
+        function dispatchRouteChanged(route) {
+          try {
+            document.dispatchEvent(new CustomEvent('jobbot:route-changed', { detail: { route } }));
+          } catch {
+            const fallback = document.createEvent('Event');
+            fallback.initEvent('jobbot:route-changed', true, true);
+            fallback.detail = { route };
+            document.dispatchEvent(fallback);
+          }
+        }
+
         const defaultRoute = routeSections[0]?.getAttribute('data-route') ?? null;
 
         function readStoredRoute() {
@@ -992,6 +1570,9 @@ export function createWebApp({
               link.removeAttribute('aria-current');
             }
           }
+
+          notifyRouteListeners(normalized);
+          dispatchRouteChanged(normalized);
 
           if (options.persist) {
             writeStoredRoute(normalized);
@@ -1041,6 +1622,11 @@ export function createWebApp({
 
         initializeStatusPanels();
 
+        const shortlistApi = setupShortlistView();
+        if (!shortlistApi) {
+          scheduleApplicationsReady({ available: false });
+        }
+
         const jobbotStatusApi = {
           setPanelState(id, state, options) {
             return setPanelState(id, state, options ?? {});
@@ -1051,9 +1637,52 @@ export function createWebApp({
           listPanels() {
             return listStatusPanelIds();
           },
+          refreshApplications(options) {
+            return shortlistApi ? shortlistApi.refresh(options ?? {}) : false;
+          },
+          getApplicationsState() {
+            return shortlistApi ? shortlistApi.getState() : null;
+          },
         };
 
         window.JobbotStatusHub = jobbotStatusApi;
+
+        function dispatchApplicationsReady(detail = {}) {
+          try {
+            document.dispatchEvent(
+              new CustomEvent('jobbot:applications-ready', { detail }),
+            );
+          } catch {
+            const fallback = document.createEvent('Event');
+            fallback.initEvent('jobbot:applications-ready', true, true);
+            fallback.detail = detail;
+            document.dispatchEvent(fallback);
+          }
+        }
+
+        function scheduleApplicationsReady(detail = {}) {
+          const emit = () => {
+            dispatchApplicationsReady(detail);
+          };
+          if (typeof queueMicrotask === 'function') {
+            queueMicrotask(emit);
+          } else {
+            setTimeout(emit, 0);
+          }
+        }
+
+        function dispatchApplicationsLoaded(detail = {}) {
+          try {
+            document.dispatchEvent(
+              new CustomEvent('jobbot:applications-loaded', { detail }),
+            );
+          } catch {
+            const fallback = document.createEvent('Event');
+            fallback.initEvent('jobbot:applications-loaded', true, true);
+            fallback.detail = detail;
+            document.dispatchEvent(fallback);
+          }
+        }
 
         const dispatchRouterReady = () => {
           document.dispatchEvent(new Event('jobbot:router-ready'));

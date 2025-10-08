@@ -199,7 +199,14 @@
      payloads for downstream tooling. Regression coverage in
      [`test/lifecycle.test.js`](../test/lifecycle.test.js) and
      [`test/cli.test.js`](../test/cli.test.js) locks the sorting, filter
-     validation, and pagination math.
+     validation, and pagination math. The status hub also exposes an
+     **Applications** route powered by `POST /commands/shortlist-list`, which
+     reuses the same CLI schema, streams shortlist data, and paginates it
+     client-side. Regression coverage in
+     [`test/web-server.test.js`](../test/web-server.test.js),
+     [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js),
+     and [`test/web-e2e.test.js`](../test/web-e2e.test.js) keeps the adapter,
+     HTML view, and CLI integration aligned.
    - Application detail view showing lifecycle timeline, notes, and attachments via CLI `show`.
    - Action panel enabling create/update status workflows mapped to CLI `create`/`update`.
    - Notification hooks for reminders, leveraging CLI scheduling or local system integration.
