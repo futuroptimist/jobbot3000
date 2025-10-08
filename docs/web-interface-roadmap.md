@@ -227,7 +227,12 @@
      [`test/web-config.test.js`](../test/web-config.test.js) locks the
      defaults and override semantics in place.
    - Provide Dockerfile and docker-compose for reproducible deployment.
-   - Document operational playbooks (monitoring, alerting, on-call runbooks).
+  - Document operational playbooks (monitoring, alerting, on-call runbooks).
+    _Implemented (2025-10-05):_ [`docs/web-operational-playbook.md`](web-operational-playbook.md)
+    now captures the on-call checklist, guardrails, and incident response
+    steps for the Express adapter. The status hub links to the playbook and
+    [`test/web-server.test.js`](../test/web-server.test.js) asserts the link
+    remains visible so future UI updates keep the operations guidance handy.
 
 7. **Release Prep**
    - Finalize documentation (README updates, API reference, UX guidelines).

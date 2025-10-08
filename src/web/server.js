@@ -362,6 +362,7 @@ export function createWebApp({
     const repoUrl = 'https://github.com/jobbot3000/jobbot3000';
     const readmeUrl = `${repoUrl}/blob/main/README.md`;
     const roadmapUrl = `${repoUrl}/blob/main/docs/web-interface-roadmap.md`;
+    const operationsUrl = `${repoUrl}/blob/main/docs/web-operational-playbook.md`;
 
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(`<!doctype html>
@@ -705,6 +706,7 @@ export function createWebApp({
                     <li><a href="${repoUrl}">Repository</a></li>
                     <li><a href="${readmeUrl}">README</a></li>
                     <li><a href="${roadmapUrl}">Web interface roadmap</a></li>
+                    <li><a href="${operationsUrl}">Operations playbook</a></li>
                   </ul>
                 </nav>
               </article>

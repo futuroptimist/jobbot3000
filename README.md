@@ -1642,6 +1642,9 @@ web interface expands beyond the CLI wrappers.
 the active section and theme preference in sync across reloads. It surfaces the
 allow-listed CLI commands, roadmap links, and automated audits guarding the
 adapter while preserving WCAG AA guidance (landmarks, focus styles, skip links).
+The “Helpful references” card now links directly to the repository, README,
+web roadmap, and the new [web operations playbook](docs/web-operational-playbook.md)
+so on-call responders can jump from the dashboard to runbooks in one click.
 [`test/web-server.test.js`](test/web-server.test.js) now exercises the router in
 addition to the theme toggle, and [`test/web-audits.test.js`](test/web-audits.test.js)
 continues to lock the accessibility and performance baselines.
