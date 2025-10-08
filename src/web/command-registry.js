@@ -25,6 +25,15 @@ const MATCH_ALLOWED_FIELDS = new Set([
 
 const ALLOWED_FORMATS = new Set(['markdown', 'json', 'text']);
 
+const SHORTLIST_LIST_ALLOWED_FIELDS = new Set([
+  'location',
+  'level',
+  'compensation',
+  'tags',
+  'offset',
+  'limit',
+]);
+
 function ensurePlainObject(value, commandName) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error(`${commandName} payload must be a JSON object`);
@@ -129,6 +138,22 @@ function coerceTimeout(payload, commandName) {
   return undefined;
 }
 
+function coerceTagList(value, { name }) {
+  if (value == null) return undefined;
+  const list = Array.isArray(value) ? value : [value];
+  const normalized = [];
+  const seen = new Set();
+  for (const entry of list) {
+    const tag = coerceString(entry, { name, required: false });
+    if (!tag) continue;
+    const key = tag.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(tag);
+  }
+  return normalized.length > 0 ? normalized : undefined;
+}
+
 function validateSummarizePayload(rawPayload) {
   const payload = ensurePlainObject(rawPayload, 'summarize');
   assertAllowedFields(payload, SUMMARIZE_ALLOWED_FIELDS, 'summarize');
@@ -176,9 +201,35 @@ function validateMatchPayload(rawPayload) {
   return sanitized;
 }
 
+function validateShortlistListPayload(rawPayload) {
+  const payload = ensurePlainObject(rawPayload, 'shortlist-list');
+  assertAllowedFields(payload, SHORTLIST_LIST_ALLOWED_FIELDS, 'shortlist-list');
+
+  const location = coerceString(payload.location, { name: 'location' });
+  const level = coerceString(payload.level, { name: 'level' });
+  const compensation = coerceString(payload.compensation, { name: 'compensation' });
+  const tags = coerceTagList(payload.tags, { name: 'tags' });
+  const offset = coerceInteger(payload.offset, { name: 'offset', min: 0 });
+  const limit = coerceInteger(payload.limit, { name: 'limit', min: 1 });
+
+  if (limit !== undefined && limit > 100) {
+    throw new Error('limit must be less than or equal to 100');
+  }
+
+  const sanitized = {};
+  if (location) sanitized.location = location;
+  if (level) sanitized.level = level;
+  if (compensation) sanitized.compensation = compensation;
+  if (tags) sanitized.tags = tags;
+  if (offset !== undefined) sanitized.offset = offset;
+  if (limit !== undefined) sanitized.limit = limit;
+  return sanitized;
+}
+
 const COMMAND_VALIDATORS = Object.freeze({
   summarize: validateSummarizePayload,
   match: validateMatchPayload,
+  'shortlist-list': validateShortlistListPayload,
 });
 
 export const ALLOW_LISTED_COMMANDS = Object.freeze(Object.keys(COMMAND_VALIDATORS));

@@ -237,6 +237,146 @@ describe('web server status page', () => {
 
     expect(api?.setPanelState('missing', 'loading')).toBe(false);
   });
+
+  it('renders the applications view with shortlist filters and pagination markup', async () => {
+    const server = await startServer();
+
+    const response = await fetch(`${server.url}/`);
+    expect(response.status).toBe(200);
+    const html = await response.text();
+
+    expect(html).toContain('data-route="applications"');
+    expect(html).toContain('data-shortlist-filters');
+    expect(html).toContain('data-shortlist-table');
+    expect(html).toContain('data-shortlist-pagination');
+  });
+
+  it('loads shortlist entries and paginates the applications view with filters', async () => {
+    const jobs = [
+      {
+        id: 'job-1',
+        metadata: {
+          location: 'Remote',
+          level: 'Senior',
+          compensation: '$185k',
+          synced_at: '2025-03-06T08:00:00.000Z',
+        },
+        tags: ['remote', 'dream'],
+        discard_count: 0,
+      },
+      {
+        id: 'job-2',
+        metadata: {
+          location: 'Remote',
+          level: 'Senior',
+          compensation: '$185k',
+          synced_at: '2025-03-04T09:00:00.000Z',
+        },
+        tags: ['remote'],
+        discard_count: 1,
+        last_discard: {
+          reason: 'Paused hiring',
+          discarded_at: '2025-03-02T10:00:00.000Z',
+          tags: ['paused'],
+        },
+      },
+    ];
+
+    const commandAdapter = {
+      'shortlist-list': vi.fn(async payload => {
+        const offset = Number(payload.offset ?? 0);
+        const limit = Number(payload.limit ?? 20);
+        const slice = jobs.slice(offset, offset + limit);
+        return {
+          command: 'shortlist-list',
+          format: 'json',
+          stdout: '',
+          stderr: '',
+          data: {
+            total: jobs.length,
+            offset,
+            limit,
+            filters: { ...payload },
+            items: slice,
+            hasMore: offset + limit < jobs.length,
+          },
+        };
+      }),
+    };
+    commandAdapter.shortlistList = commandAdapter['shortlist-list'];
+
+    const server = await startServer({ commandAdapter });
+    const response = await fetch(`${server.url}/`);
+    expect(response.status).toBe(200);
+    const html = await response.text();
+
+    const dom = new JSDOM(html, {
+      runScripts: 'dangerously',
+      resources: 'usable',
+      url: `${server.url}/`,
+      pretendToBeVisual: true,
+    });
+    dom.window.fetch = (input, init) => fetch(input, init);
+
+    const waitForEvent = (name, timeout = 500) =>
+      new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`${name} timed out`)), timeout);
+        dom.window.document.addEventListener(
+          name,
+          event => {
+            clearTimeout(timer);
+            resolve(event);
+          },
+          { once: true },
+        );
+      });
+
+    const readyEvent = await waitForEvent('jobbot:applications-ready');
+    expect(readyEvent.detail).toMatchObject({ available: true });
+
+    const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
+    dom.window.location.hash = '#applications';
+    dom.window.dispatchEvent(new HashChange('hashchange'));
+
+    await waitForEvent('jobbot:applications-loaded');
+    expect(commandAdapter['shortlist-list']).toHaveBeenCalledTimes(1);
+
+    const document = dom.window.document;
+    const tableBody = document.querySelector('[data-shortlist-body]');
+    expect(tableBody?.children.length).toBe(2);
+    expect(tableBody?.children[0].querySelector('td')?.textContent).toBe('job-1');
+
+    const locationInput = document.querySelector('[data-shortlist-filter="location"]');
+    const tagsInput = document.querySelector('[data-shortlist-filter="tags"]');
+    const limitInput = document.querySelector('[data-shortlist-filter="limit"]');
+    if (locationInput) locationInput.value = 'Remote';
+    if (tagsInput) tagsInput.value = 'remote';
+    if (limitInput) limitInput.value = '1';
+
+    const form = document.querySelector('[data-shortlist-filters]');
+    form?.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+
+    await waitForEvent('jobbot:applications-loaded');
+    expect(commandAdapter['shortlist-list']).toHaveBeenCalledTimes(2);
+    const latestCall = commandAdapter['shortlist-list'].mock.calls.at(-1)?.[0] ?? {};
+    expect(latestCall).toMatchObject({ location: 'Remote', tags: ['remote'], limit: 1, offset: 0 });
+
+    expect(tableBody?.children.length).toBe(1);
+    expect(tableBody?.children[0].querySelector('td')?.textContent).toBe('job-1');
+    const range = document.querySelector('[data-shortlist-range]');
+    expect(range?.textContent).toContain('Showing 1-1 of 2');
+
+    const nextButton = document.querySelector('[data-shortlist-next]');
+    nextButton?.dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+
+    await waitForEvent('jobbot:applications-loaded');
+    expect(commandAdapter['shortlist-list']).toHaveBeenCalledTimes(3);
+    const nextCall = commandAdapter['shortlist-list'].mock.calls.at(-1)?.[0] ?? {};
+    expect(nextCall).toMatchObject({ offset: 1, limit: 1 });
+    expect(tableBody?.children.length).toBe(1);
+    expect(tableBody?.children[0].querySelector('td')?.textContent).toBe('job-2');
+    expect(range?.textContent).toContain('Showing 2-2 of 2');
+  });
 });
 
 describe('web server command endpoint', () => {
@@ -417,6 +557,70 @@ describe('web server command endpoint', () => {
     expect(payload.stdout).toBe('API_KEY=***');
     expect(payload.stderr).toBe('Bearer ***');
     expect(payload.data).toEqual({ token: '***', nested: { client_secret: '***' } });
+  });
+
+  it('executes shortlist-list commands with sanitized payloads', async () => {
+    const commandAdapter = {
+      'shortlist-list': vi.fn(async payload => {
+        expect(payload).toEqual({
+          location: 'Remote',
+          level: 'Senior',
+          compensation: '$185k',
+          tags: ['remote', 'dream'],
+          offset: 5,
+          limit: 25,
+        });
+        return {
+          command: 'shortlist-list',
+          format: 'json',
+          stdout: '',
+          stderr: '',
+          data: {
+            total: 1,
+            offset: 5,
+            limit: 25,
+            filters: payload,
+            items: [
+              {
+                id: 'job-remote',
+                metadata: { location: 'Remote', level: 'Senior', compensation: '$185k' },
+                tags: ['remote', 'dream'],
+                discard_count: 0,
+              },
+            ],
+            hasMore: false,
+          },
+        };
+      }),
+    };
+    commandAdapter.shortlistList = commandAdapter['shortlist-list'];
+
+    const server = await startServer({ commandAdapter });
+    const response = await fetch(`${server.url}/commands/shortlist-list`, {
+      method: 'POST',
+      headers: buildCommandHeaders(server),
+      body: JSON.stringify({
+        location: 'Remote',
+        level: 'Senior',
+        compensation: '$185k',
+        tags: ['remote', 'dream'],
+        offset: 5,
+        limit: 25,
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload.command).toBe('shortlist-list');
+    expect(payload.data).toMatchObject({
+      total: 1,
+      offset: 5,
+      limit: 25,
+      hasMore: false,
+    });
+    expect(Array.isArray(payload.data.items)).toBe(true);
+    expect(payload.data.items[0]).toMatchObject({ id: 'job-remote' });
+    expect(commandAdapter['shortlist-list']).toHaveBeenCalledTimes(1);
   });
 
   it('preserves primitive command responses while sanitizing strings', async () => {

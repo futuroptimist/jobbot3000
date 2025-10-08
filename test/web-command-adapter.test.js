@@ -377,6 +377,87 @@ describe('createCommandAdapter', () => {
     expect(result.returnValue).toEqual({ token: '***', nested: { client_secret: '***' } });
   });
 
+  it('runs shortlist list with filters and paginates CLI output', async () => {
+    const cli = {
+      cmdShortlistList: vi.fn(async args => {
+        expect(args).toEqual([
+          '--json',
+          '--location',
+          'Remote',
+          '--level',
+          'Senior',
+          '--compensation',
+          '$185k',
+          '--tag',
+          'remote',
+          '--tag',
+          'dream',
+        ]);
+        console.log(
+          JSON.stringify({
+            jobs: {
+              'job-1': {
+                metadata: {
+                  location: 'Remote',
+                  level: 'Senior',
+                  compensation: '$185k',
+                  synced_at: '2025-03-06T08:00:00.000Z',
+                },
+                tags: ['remote', 'dream'],
+                discard_count: 1,
+                last_discard: {
+                  reason: 'Paused hiring',
+                  discarded_at: '2025-03-05T12:00:00.000Z',
+                  tags: ['paused'],
+                },
+              },
+              'job-2': {
+                metadata: {
+                  location: 'Remote',
+                  level: 'Senior',
+                  compensation: '$185k',
+                  synced_at: '2025-03-04T09:00:00.000Z',
+                },
+                tags: ['remote'],
+                discard_count: 0,
+              },
+            },
+          }),
+        );
+      }),
+    };
+
+    const adapter = createCommandAdapter({ cli });
+    const result = await adapter['shortlist-list']({
+      location: 'Remote',
+      level: 'Senior',
+      compensation: '$185k',
+      tags: ['remote', 'dream'],
+      limit: 1,
+      offset: 1,
+    });
+
+    expect(cli.cmdShortlistList).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      command: 'shortlist-list',
+      format: 'json',
+      data: {
+        total: 2,
+        offset: 1,
+        limit: 1,
+        filters: {
+          location: 'Remote',
+          level: 'Senior',
+          compensation: '$185k',
+          tags: ['remote', 'dream'],
+        },
+        hasMore: false,
+      },
+    });
+    expect(result.data.items).toHaveLength(1);
+    expect(result.data.items[0]).toMatchObject({ id: 'job-2' });
+  });
+
   it('spawns the CLI without shell interpolation when no cli module is provided', async () => {
     process.env.JOBBOT_WEB_ENABLE_NATIVE_CLI = '1';
     const spawnMock = childProcess.spawn;

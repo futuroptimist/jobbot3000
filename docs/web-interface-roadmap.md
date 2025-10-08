@@ -192,6 +192,13 @@
 
 4. **Core Features**
    - Application list view with filtering and pagination backed by CLI `list` command.
+     _Implemented (2025-10-06):_ The status hub now exposes an Applications
+     route powered by `POST /commands/shortlist-list`, which reuses the CLI
+     schema, streams shortlist data, and paginates it client-side. Regression
+     coverage in [`test/web-server.test.js`](../test/web-server.test.js),
+     [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js),
+     and [`test/web-e2e.test.js`](../test/web-e2e.test.js) keeps the adapter,
+     HTML view, and CLI integration aligned.
    - Application detail view showing lifecycle timeline, notes, and attachments via CLI `show`.
    - Action panel enabling create/update status workflows mapped to CLI `create`/`update`.
    - Notification hooks for reminders, leveraging CLI scheduling or local system integration.
