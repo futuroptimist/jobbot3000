@@ -1385,7 +1385,7 @@ function formatDiscardArchive(archive) {
   return lines.join('\n');
 }
 
-async function cmdShortlistList(args) {
+export async function cmdShortlistList(args) {
   const asJson = args.includes('--json');
   const outPath = getFlag(args, '--out');
   const filteredArgs = [];

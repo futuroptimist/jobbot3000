@@ -36,6 +36,15 @@ function assertPositiveInteger(value, name) {
   return numberValue;
 }
 
+function assertNonNegativeInteger(value, name) {
+  const numberValue = coerceNumber(value);
+  if (numberValue === undefined) return undefined;
+  if (!Number.isInteger(numberValue) || numberValue < 0) {
+    throw new Error(`${name} must be a non-negative integer`);
+  }
+  return numberValue;
+}
+
 function assertPositiveNumber(value, name) {
   const numberValue = coerceNumber(value);
   if (numberValue === undefined) return undefined;
@@ -113,6 +122,60 @@ export function normalizeMatchRequest(options) {
   const maxBytes = assertPositiveInteger(options.maxBytes, 'maxBytes');
 
   return { resume, job, format, locale, role, location, profile, explain, timeoutMs, maxBytes };
+}
+
+/**
+ * @typedef {Object} ShortlistListRequest
+ * @property {string} [location]
+ * @property {string} [level]
+ * @property {string} [compensation]
+ * @property {string[]} [tags]
+ * @property {number} offset
+ * @property {number} limit
+ */
+
+/**
+ * Normalizes shortlist list request options for the web command adapter.
+ * @param {unknown} options
+ * @returns {ShortlistListRequest}
+ */
+export function normalizeShortlistListRequest(options) {
+  assertPlainObject(options, 'shortlist list options');
+
+  const location = normalizeString(options.location);
+  const level = normalizeString(options.level);
+  const compensation = normalizeString(options.compensation);
+  const normalizedTags = [];
+  const seenTags = new Set();
+  const rawTags =
+    options.tags == null
+      ? []
+      : Array.isArray(options.tags)
+        ? options.tags
+        : [options.tags];
+
+  for (const candidate of rawTags) {
+    const tag = normalizeString(candidate);
+    if (!tag) continue;
+    const key = tag.toLowerCase();
+    if (seenTags.has(key)) continue;
+    seenTags.add(key);
+    normalizedTags.push(tag);
+  }
+
+  const offset = assertNonNegativeInteger(options.offset, 'offset') ?? 0;
+  const limitCandidate = assertPositiveInteger(options.limit, 'limit');
+  const limit = limitCandidate ?? 20;
+  if (limit > 100) {
+    throw new Error('limit must be less than or equal to 100');
+  }
+
+  const request = { offset, limit };
+  if (location) request.location = location;
+  if (level) request.level = level;
+  if (compensation) request.compensation = compensation;
+  if (normalizedTags.length > 0) request.tags = normalizedTags;
+  return request;
 }
 
 export const WEB_SUPPORTED_FORMATS = [...SUPPORTED_FORMATS];
