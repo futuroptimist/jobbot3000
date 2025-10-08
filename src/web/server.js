@@ -1553,17 +1553,25 @@ export function createWebApp({
             setDetailState('loading', { forceVisible: true });
             try {
               const data = await fetchShortlistDetail(jobId);
+              if (detailState.jobId !== jobId) {
+                return;
+              }
               renderDetail(jobId, data);
               setDetailState('ready', { forceVisible: true });
               dispatchApplicationDetailLoaded(data);
             } catch (err) {
+              if (detailState.jobId !== jobId) {
+                return;
+              }
               const message =
                 err && typeof err.message === 'string'
                   ? err.message
                   : 'Unable to load application detail';
               setDetailState('error', { message, forceVisible: true });
             } finally {
-              detailState.loading = false;
+              if (detailState.jobId === jobId) {
+                detailState.loading = false;
+              }
             }
           }
 
