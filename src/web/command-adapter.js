@@ -4,7 +4,11 @@ import { spawn as defaultSpawn } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 
-import { normalizeMatchRequest, normalizeSummarizeRequest } from './schemas.js';
+import {
+  normalizeMatchRequest,
+  normalizeShortlistListRequest,
+  normalizeSummarizeRequest,
+} from './schemas.js';
 
 const SECRET_KEYS = [
   'api[-_]?key',
@@ -95,10 +99,26 @@ function sanitizeTelemetryPayload(payload) {
   return sanitized;
 }
 
-const COMMAND_METHODS = {
-  summarize: 'cmdSummarize',
-  match: 'cmdMatch',
-};
+const COMMANDS = Object.freeze({
+  summarize: {
+    method: 'cmdSummarize',
+    cliCommand: ['summarize'],
+    name: 'summarize',
+    errorLabel: 'summarize',
+  },
+  match: {
+    method: 'cmdMatch',
+    cliCommand: ['match'],
+    name: 'match',
+    errorLabel: 'match',
+  },
+  'shortlist-list': {
+    method: 'cmdShortlistList',
+    cliCommand: ['shortlist', 'list'],
+    name: 'shortlist-list',
+    errorLabel: 'shortlist list',
+  },
+});
 
 const DEFAULT_CLI_PATH = fileURLToPath(new URL('../../bin/jobbot.js', import.meta.url));
 const TRUTHY_FLAG_VALUES = new Set(['1', 'true', 'yes', 'on', 'enabled']);
@@ -192,12 +212,6 @@ async function captureConsole(fn) {
   });
 }
 
-function humanizeMethod(method) {
-  if (!method.startsWith('cmd')) return method;
-  const name = method.slice(3);
-  return name ? name.charAt(0).toLowerCase() + name.slice(1) : method;
-}
-
 function parseJsonOutput(command, stdout, stderr) {
   const trimmed = stdout.trim();
   if (!trimmed) {
@@ -267,13 +281,16 @@ export function createCommandAdapter(options = {}) {
     return typeof value === 'string' ? value.length : 0;
   }
 
-  async function runCliProcess(command, args) {
+  async function runCliProcess(commandArgs, args, commandLabel) {
     const spawnFn = typeof spawnOverride === 'function' ? spawnOverride : defaultSpawn;
     const executable =
       typeof nodePath === 'string' && nodePath.trim() ? nodePath : process.execPath;
     const resolvedCliPath =
       typeof cliPath === 'string' && cliPath.trim() ? cliPath : DEFAULT_CLI_PATH;
     const environment = env === undefined ? process.env : env;
+    const cliArgs = Array.isArray(commandArgs) ? commandArgs : [commandArgs];
+    const label =
+      commandLabel || (Array.isArray(commandArgs) ? commandArgs.join(' ') : String(commandArgs));
 
     return await new Promise((resolve, reject) => {
       let stdout = '';
@@ -282,14 +299,14 @@ export function createCommandAdapter(options = {}) {
 
       let child;
       try {
-        child = spawnFn(executable, [resolvedCliPath, command, ...args], {
+        child = spawnFn(executable, [resolvedCliPath, ...cliArgs, ...args], {
           shell: false,
           windowsHide: true,
           stdio: ['ignore', 'pipe', 'pipe'],
           env: environment,
         });
       } catch (err) {
-        const spawnError = new Error(`Failed to spawn CLI process for ${command}`);
+        const spawnError = new Error(`Failed to spawn CLI process for ${label}`);
         spawnError.cause = err;
         reject(spawnError);
         return;
@@ -321,7 +338,7 @@ export function createCommandAdapter(options = {}) {
       };
 
       child.on('error', err => {
-        const error = new Error(`Failed to run ${command} command`);
+        const error = new Error(`Failed to run ${label} command`);
         error.cause = err;
         error.stdout = stdout;
         error.stderr = stderr;
@@ -335,8 +352,8 @@ export function createCommandAdapter(options = {}) {
         }
         const exitError = new Error(
           signal
-            ? `${command} command terminated with signal ${signal}`
-            : `${command} command exited with code ${code ?? 'unknown'}`,
+            ? `${label} command terminated with signal ${signal}`
+            : `${label} command exited with code ${code ?? 'unknown'}`,
         );
         if (typeof code === 'number') exitError.exitCode = code;
         if (signal) exitError.signal = signal;
@@ -347,8 +364,12 @@ export function createCommandAdapter(options = {}) {
     });
   }
 
-  async function runCli(method, args) {
-    const commandName = humanizeMethod(method);
+  async function runCli(commandKey, args) {
+    const config = COMMANDS[commandKey];
+    if (!config) {
+      throw new Error(`unknown command: ${commandKey}`);
+    }
+    const { method, cliCommand, name, errorLabel } = config;
     const correlationId = nextCorrelationId();
     const started = performance.now();
 
@@ -362,7 +383,7 @@ export function createCommandAdapter(options = {}) {
         const durationMs = roundDuration(performance.now() - started);
         logTelemetry('info', {
           event: 'cli.command',
-          command: commandName,
+          command: name,
           status: 'success',
           exitCode: 0,
           correlationId,
@@ -375,7 +396,7 @@ export function createCommandAdapter(options = {}) {
         const sanitizedStderr = sanitizeOutputString(stderr);
         const sanitizedReturnValue = sanitizeOutputValue(result);
         return {
-          command: commandName,
+          command: name,
           returnValue: sanitizedReturnValue,
           stdout: sanitizedStdout,
           stderr: sanitizedStderr,
@@ -386,7 +407,7 @@ export function createCommandAdapter(options = {}) {
         const durationMs = roundDuration(performance.now() - started);
         const rawMessage = err?.message ?? 'Unknown error';
         const sanitizedMessage = redactSecrets(rawMessage);
-        const error = new Error(`${commandName} command failed: ${sanitizedMessage}`);
+        const error = new Error(`${errorLabel} command failed: ${sanitizedMessage}`);
         error.cause = err;
         if (err && typeof err.stdout === 'string') {
           error.stdout = sanitizeOutputString(err.stdout);
@@ -402,7 +423,7 @@ export function createCommandAdapter(options = {}) {
         }
         logTelemetry('error', {
           event: 'cli.command',
-          command: commandName,
+          command: name,
           status: 'error',
           exitCode: typeof err?.exitCode === 'number' ? err.exitCode : 1,
           correlationId,
@@ -428,11 +449,11 @@ export function createCommandAdapter(options = {}) {
     }
 
     try {
-      const { stdout, stderr } = await runCliProcess(commandName, args);
+      const { stdout, stderr } = await runCliProcess(cliCommand, args, errorLabel);
       const durationMs = roundDuration(performance.now() - started);
       logTelemetry('info', {
         event: 'cli.command',
-        command: commandName,
+        command: name,
         status: 'success',
         exitCode: 0,
         correlationId,
@@ -444,7 +465,7 @@ export function createCommandAdapter(options = {}) {
       const sanitizedStdout = sanitizeOutputString(stdout);
       const sanitizedStderr = sanitizeOutputString(stderr);
       return {
-        command: commandName,
+        command: name,
         returnValue: undefined,
         stdout: sanitizedStdout,
         stderr: sanitizedStderr,
@@ -455,7 +476,7 @@ export function createCommandAdapter(options = {}) {
       const durationMs = roundDuration(performance.now() - started);
       const rawMessage = err?.message ?? 'Unknown error';
       const sanitizedMessage = redactSecrets(rawMessage);
-      const error = new Error(`${commandName} command failed: ${sanitizedMessage}`);
+      const error = new Error(`${errorLabel} command failed: ${sanitizedMessage}`);
       error.cause = err;
       if (err && typeof err.stdout === 'string') {
         error.stdout = sanitizeOutputString(err.stdout);
@@ -470,7 +491,7 @@ export function createCommandAdapter(options = {}) {
       error.traceId = correlationId;
       logTelemetry('error', {
         event: 'cli.command',
-        command: commandName,
+        command: name,
         status: 'error',
         exitCode: typeof err?.exitCode === 'number' ? err.exitCode : 1,
         correlationId,
@@ -505,7 +526,7 @@ export function createCommandAdapter(options = {}) {
     }
 
     const { stdout, stderr, returnValue, correlationId, traceId } = await runCli(
-      COMMAND_METHODS.summarize,
+      'summarize',
       args,
     );
     const payload = {
@@ -559,10 +580,7 @@ export function createCommandAdapter(options = {}) {
       args.push('--max-bytes', String(maxBytes));
     }
 
-    const { stdout, stderr, returnValue, correlationId, traceId } = await runCli(
-      COMMAND_METHODS.match,
-      args,
-    );
+    const { stdout, stderr, returnValue, correlationId, traceId } = await runCli('match', args);
     const payload = {
       command: 'match',
       format,
@@ -583,10 +601,93 @@ export function createCommandAdapter(options = {}) {
     return payload;
   }
 
-  return {
+  async function shortlistList(options = {}) {
+    const normalized = normalizeShortlistListRequest(options);
+    const { location, level, compensation, tags, offset, limit } = normalized;
+
+    const args = ['--json'];
+    if (location) {
+      args.push('--location', location);
+    }
+    if (level) {
+      args.push('--level', level);
+    }
+    if (compensation) {
+      args.push('--compensation', compensation);
+    }
+    if (Array.isArray(tags)) {
+      for (const tag of tags) {
+        args.push('--tag', tag);
+      }
+    }
+
+    const { stdout, stderr, returnValue, correlationId, traceId } = await runCli(
+      'shortlist-list',
+      args,
+    );
+
+    const payload = {
+      command: 'shortlist-list',
+      format: 'json',
+      stdout,
+      stderr,
+      returnValue,
+    };
+
+    if (correlationId) {
+      payload.correlationId = correlationId;
+    }
+    if (traceId) {
+      payload.traceId = traceId;
+    }
+
+    const parsed = parseJsonOutput('shortlist list', payload.stdout, payload.stderr);
+    const jobs =
+      parsed && typeof parsed === 'object' && parsed.jobs && typeof parsed.jobs === 'object'
+        ? parsed.jobs
+        : {};
+    const sanitizedJobs = sanitizeOutputValue(jobs);
+    const entries = [];
+    for (const [jobId, record] of Object.entries(sanitizedJobs)) {
+      if (record && typeof record === 'object' && !Array.isArray(record)) {
+        entries.push({ id: jobId, ...record });
+      } else {
+        entries.push({ id: jobId, record });
+      }
+    }
+
+    const total = entries.length;
+    const safeOffset = Math.max(0, Math.min(offset, total));
+    const endIndex = Math.min(safeOffset + limit, total);
+    const items = entries.slice(safeOffset, endIndex);
+
+    const filters = {};
+    if (location) filters.location = location;
+    if (level) filters.level = level;
+    if (compensation) filters.compensation = compensation;
+    if (Array.isArray(tags) && tags.length > 0) {
+      filters.tags = [...tags];
+    }
+
+    payload.data = {
+      total,
+      offset: safeOffset,
+      limit,
+      items,
+      filters,
+      hasMore: endIndex < total,
+    };
+
+    return payload;
+  }
+
+  const adapter = {
     summarize,
     match,
+    shortlistList,
   };
+  adapter['shortlist-list'] = shortlistList;
+  return adapter;
 }
 
 export { sanitizeOutputString, sanitizeOutputValue };
