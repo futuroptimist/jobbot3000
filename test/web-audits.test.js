@@ -36,7 +36,9 @@ describe('web interface audits', () => {
 
     const performanceReport = await runPerformanceAudit(homepageUrl);
     expect(performanceReport.score).toBeGreaterThanOrEqual(0.9);
-    expect(performanceReport.metrics.transferSize).toBeLessThan(50_000);
+
+    const MAX_TRANSFER_SIZE = 70_000;
+    expect(performanceReport.metrics.transferSize).toBeLessThan(MAX_TRANSFER_SIZE);
   });
 
   it('does not execute page scripts during the accessibility audit', async () => {

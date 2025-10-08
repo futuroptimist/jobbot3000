@@ -844,6 +844,58 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --json
 #   }
 # }
 
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist show job-123
+# Job: job-123
+# 
+# Metadata:
+#   Location: Remote
+#   Level: Senior
+#   Compensation: $185k
+#   Synced: 2025-03-06T08:00:00.000Z
+# 
+# Tags: dream, remote
+# 
+# Discard history:
+#   Discard count: 1 • Last discard: Not remote (2025-03-05T12:00:00.000Z) • Last discard tags: Remote, onsite
+# 
+# Timeline:
+# - email (2025-03-05T12:00:00.000Z)
+#   Note: Sent resume
+#   Documents: resume.pdf
+# - call (2025-03-07T09:00:00.000Z)
+#   Note: Scheduled screening
+
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist show job-123 --json
+# {
+#   "job_id": "job-123",
+#   "metadata": {
+#     "location": "Remote",
+#     "level": "Senior",
+#     "compensation": "$185k",
+#     "synced_at": "2025-03-06T08:00:00.000Z"
+#   },
+#   "tags": ["dream", "remote"],
+#   "discard_count": 1,
+#   "last_discard": {
+#     "reason": "Not remote",
+#     "discarded_at": "2025-03-05T12:00:00.000Z",
+#     "tags": ["Remote", "onsite"]
+#   },
+#   "events": [
+#     {
+#       "channel": "email",
+#       "note": "Sent resume",
+#       "documents": ["resume.pdf"],
+#       "remind_at": "2025-03-06T15:00:00.000Z"
+#     },
+#     {
+#       "channel": "call",
+#       "date": "2025-03-07T09:00:00.000Z",
+#       "note": "Scheduled screening"
+#     }
+#   ]
+# }
+
 # Persist the filtered shortlist to disk for sharing
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot shortlist list --json --out shortlist.json
 # Saved shortlist snapshot to /tmp/jobbot-cli-XXXX/shortlist.json

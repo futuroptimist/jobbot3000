@@ -178,4 +178,10 @@ export function normalizeShortlistListRequest(options) {
   return request;
 }
 
+export function normalizeShortlistShowRequest(options) {
+  assertPlainObject(options, 'shortlist show options');
+  const jobId = assertRequiredString(options.jobId ?? options.job_id, 'jobId');
+  return { jobId };
+}
+
 export const WEB_SUPPORTED_FORMATS = [...SUPPORTED_FORMATS];

@@ -458,6 +458,53 @@ describe('createCommandAdapter', () => {
     expect(result.data.items[0]).toMatchObject({ id: 'job-2' });
   });
 
+  it('loads shortlist show details with sanitized output', async () => {
+    const cli = {
+      cmdShortlistShow: vi.fn(async args => {
+        expect(args).toEqual(['job-7', '--json']);
+        console.log(
+          JSON.stringify({
+            job_id: 'job-7',
+            metadata: { location: 'Remote' },
+            tags: ['remote'],
+            discard_count: 1,
+            last_discard: { reason: 'Paused', discarded_at: '2025-03-05T12:00:00.000Z' },
+            events: [
+              {
+                channel: 'email',
+                note: 'Sent resume',
+                documents: ['resume.pdf'],
+                remind_at: '2025-03-06T15:00:00.000Z',
+              },
+            ],
+          }),
+        );
+      }),
+    };
+
+    const adapter = createCommandAdapter({ cli });
+    const result = await adapter['shortlist-show']({ jobId: 'job-7' });
+
+    expect(cli.cmdShortlistShow).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      command: 'shortlist-show',
+      format: 'json',
+      data: {
+        job_id: 'job-7',
+        metadata: { location: 'Remote' },
+        tags: ['remote'],
+      },
+    });
+    expect(result.data.events).toEqual([
+      {
+        channel: 'email',
+        note: 'Sent resume',
+        documents: ['resume.pdf'],
+        remind_at: '2025-03-06T15:00:00.000Z',
+      },
+    ]);
+  });
+
   it('spawns the CLI without shell interpolation when no cli module is provided', async () => {
     process.env.JOBBOT_WEB_ENABLE_NATIVE_CLI = '1';
     const spawnMock = childProcess.spawn;
