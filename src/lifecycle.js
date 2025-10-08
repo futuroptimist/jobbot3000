@@ -216,6 +216,25 @@ export async function getLifecycleBoard() {
   return columns;
 }
 
+function normalizeLifecycleJobId(jobId) {
+  if (typeof jobId !== 'string') return '';
+  return jobId.trim();
+}
+
+export async function getLifecycleEntry(jobId) {
+  const normalizedId = normalizeLifecycleJobId(jobId);
+  if (!normalizedId) {
+    throw new Error('job id is required');
+  }
+
+  const { file } = getPaths();
+  const data = await readLifecycleFile(file);
+  const raw = data[normalizedId];
+  if (!raw) return null;
+  const normalized = normalizeLifecycleEntry(normalizedId, raw);
+  return normalized ?? null;
+}
+
 function normalizeStatusesFilter(statuses) {
   if (!Array.isArray(statuses) || statuses.length === 0) {
     return { values: [], set: null };

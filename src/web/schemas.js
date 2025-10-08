@@ -1,4 +1,9 @@
+import { STATUSES } from '../lifecycle.js';
+
 const SUPPORTED_FORMATS = ['markdown', 'text', 'json'];
+const KNOWN_STATUSES = new Set(STATUSES);
+const TRUTHY_VALUES = new Set(['1', 'true', 'yes', 'on']);
+const FALSY_VALUES = new Set(['0', 'false', 'no', 'off']);
 
 function assertPlainObject(value, name) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -13,10 +18,46 @@ function normalizeString(value) {
   return trimmed ? trimmed : undefined;
 }
 
+function normalizeBooleanCandidate(value) {
+  if (value == null) return undefined;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return undefined;
+    return value !== 0;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return undefined;
+    if (TRUTHY_VALUES.has(normalized)) return true;
+    if (FALSY_VALUES.has(normalized)) return false;
+    if (normalized === 'true') return true;
+    if (normalized === 'false') return false;
+  }
+  return undefined;
+}
+
+function assertOptionalBoolean(value, name) {
+  const normalized = normalizeBooleanCandidate(value);
+  if (normalized === undefined) return undefined;
+  if (typeof normalized === 'boolean') return normalized;
+  throw new Error(`${name} must be a boolean`);
+}
+
 function assertRequiredString(value, name) {
   const normalized = normalizeString(value);
   if (!normalized) {
     throw new Error(`${name} is required`);
+  }
+  return normalized;
+}
+
+function assertLifecycleStatus(value) {
+  const normalized = normalizeString(value)?.toLowerCase();
+  if (!normalized) {
+    throw new Error('status is required');
+  }
+  if (!KNOWN_STATUSES.has(normalized)) {
+    throw new Error(`status must be one of: ${STATUSES.join(', ')}`);
   }
   return normalized;
 }
@@ -179,3 +220,63 @@ export function normalizeShortlistListRequest(options) {
 }
 
 export const WEB_SUPPORTED_FORMATS = [...SUPPORTED_FORMATS];
+
+export function normalizeTrackShowRequest(options) {
+  assertPlainObject(options, 'track show options');
+  const jobId = assertRequiredString(options.jobId ?? options.job_id, 'jobId');
+  return { jobId };
+}
+
+export function normalizeTrackRemindersRequest(options) {
+  assertPlainObject(options, 'track reminders options');
+
+  const includePastDueCandidate =
+    options.includePastDue ?? options.include_past_due ?? options.includePastdue;
+  const upcomingOnlyCandidate = options.upcomingOnly ?? options.upcoming_only;
+
+  let includePastDue = true;
+  const includePastDueValue = assertOptionalBoolean(includePastDueCandidate, 'includePastDue');
+  if (includePastDueValue !== undefined) {
+    includePastDue = includePastDueValue;
+  }
+  const upcomingOnlyValue = assertOptionalBoolean(upcomingOnlyCandidate, 'upcomingOnly');
+  if (upcomingOnlyValue === true) {
+    includePastDue = false;
+  }
+
+  const now = normalizeString(options.now);
+  if (now) {
+    const parsed = Date.parse(now);
+    if (Number.isNaN(parsed)) {
+      throw new Error('now must be an ISO 8601 timestamp');
+    }
+  }
+
+  const calendarName = normalizeString(options.calendarName ?? options.calendar_name);
+
+  const request = { includePastDue };
+  if (now) request.now = now;
+  if (calendarName) request.calendarName = calendarName;
+  return request;
+}
+
+export function normalizeTrackAddRequest(options) {
+  assertPlainObject(options, 'track add options');
+
+  const jobId = assertRequiredString(options.jobId ?? options.job_id, 'jobId');
+  const status = assertLifecycleStatus(options.status);
+  const note = normalizeString(options.note ?? options.notes);
+  const dateRaw = normalizeString(options.date ?? options.updatedAt ?? options.updated_at);
+
+  if (dateRaw) {
+    const parsed = Date.parse(dateRaw);
+    if (Number.isNaN(parsed)) {
+      throw new Error('date must be an ISO 8601 timestamp');
+    }
+  }
+
+  const request = { jobId, status };
+  if (note) request.note = note;
+  if (dateRaw) request.date = dateRaw;
+  return request;
+}

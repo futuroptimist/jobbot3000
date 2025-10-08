@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { normalizeMatchRequest, normalizeSummarizeRequest } from '../src/web/schemas.js';
+import {
+  normalizeMatchRequest,
+  normalizeSummarizeRequest,
+  normalizeTrackShowRequest,
+} from '../src/web/schemas.js';
 
 describe('web request schemas', () => {
   describe('normalizeSummarizeRequest', () => {
@@ -59,6 +63,18 @@ describe('web request schemas', () => {
     it('throws when options are not an object', () => {
       expect(() => normalizeMatchRequest(null)).toThrow('match options must be an object');
       expect(() => normalizeMatchRequest([])).toThrow('match options must be an object');
+    });
+  });
+
+  describe('normalizeTrackShowRequest', () => {
+    it('normalizes job identifiers and accepts aliases', () => {
+      const options = normalizeTrackShowRequest({ job_id: ' job-123 ' });
+      expect(options).toEqual({ jobId: 'job-123' });
+    });
+
+    it('throws when job identifier is missing', () => {
+      expect(() => normalizeTrackShowRequest({})).toThrow('jobId is required');
+      expect(() => normalizeTrackShowRequest(null)).toThrow('track show options must be an object');
     });
   });
 });

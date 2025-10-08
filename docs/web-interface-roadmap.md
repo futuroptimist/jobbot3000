@@ -192,11 +192,11 @@
 
 4. **Core Features**
    - Application list view with filtering and pagination backed by CLI `list` command.
-     _Implemented (2025-10-07):_ `jobbot track list` now surfaces tracked
-     applications in paginated batches with optional status filters. The CLI
-     pulls from the shared lifecycle store via
-     [`listLifecycleEntries`](../src/lifecycle.js) and prints both text and JSON
-     payloads for downstream tooling. Regression coverage in
+   _Implemented (2025-10-07):_ `jobbot track list` now surfaces tracked
+   applications in paginated batches with optional status filters. The CLI
+   pulls from the shared lifecycle store via
+   [`listLifecycleEntries`](../src/lifecycle.js) and prints both text and JSON
+   payloads for downstream tooling. Regression coverage in
      [`test/lifecycle.test.js`](../test/lifecycle.test.js) and
      [`test/cli.test.js`](../test/cli.test.js) locks the sorting, filter
      validation, and pagination math. The status hub also exposes an
@@ -204,11 +204,56 @@
      reuses the same CLI schema, streams shortlist data, and paginates it
      client-side. Regression coverage in
      [`test/web-server.test.js`](../test/web-server.test.js),
-     [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js),
-     and [`test/web-e2e.test.js`](../test/web-e2e.test.js) keeps the adapter,
-     HTML view, and CLI integration aligned.
+    [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js),
+    and [`test/web-e2e.test.js`](../test/web-e2e.test.js) keeps the adapter,
+    HTML view, and CLI integration aligned.
    - Application detail view showing lifecycle timeline, notes, and attachments via CLI `show`.
+     _Implemented (2025-10-08):_ [`bin/jobbot.js`](../bin/jobbot.js) now exposes
+     `jobbot track show`, which merges lifecycle status, outreach history, and
+     deduplicated attachments for a given job. The web adapter allow-lists the
+     command through `POST /commands/track-show`, validating payloads via
+     [`src/web/command-registry.js`](../src/web/command-registry.js) and
+     normalizing inputs in [`src/web/schemas.js`](../src/web/schemas.js).
+     Regression coverage in [`test/cli.test.js`](../test/cli.test.js),
+      [`test/lifecycle.test.js`](../test/lifecycle.test.js),
+      [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js),
+      [`test/web-schemas.test.js`](../test/web-schemas.test.js), and
+      [`test/web-server.test.js`](../test/web-server.test.js) locks the text and
+      JSON shapes so the status hub's Track Detail panel can rely on the CLI
+      surface. _Update (2025-10-10):_ The web UI now renders sanitized status,
+      attachments, and timeline events via the new Track Detail panel, including
+      correlation IDs from the adapter. Fresh coverage in
+      [`test/web-server.test.js`](../test/web-server.test.js) exercises the DOM
+      transitions, empty state, and `POST /commands/track-show` integration.
+      The expanded inline client script raises the transfer-size ceiling in the
+      performance audit to <120 kB so Lighthouse-based checks still reflect the
+      richer UI without overfitting the previous payload. Subsequent drawer and
+      calendar helpers increased the inline payload to roughly 115 kB, so the
+      audit now targets that budget while still flagging accidental bloat.
+      _Update (2025-10-11):_ The Applications view now includes a Track
+      Reminders panel that downloads sanitized iCalendar feeds from
+      `GET /commands/track-reminders.ics`, omitting past-due entries and
+      redacting secret-like notes before export. Regression coverage in
+      [`test/web-server.test.js`](../test/web-server.test.js) drives the new
+      endpoint, verifies redaction, and exercises the success/error states of
+      the download button.
+      _Update (2025-10-12):_ Shortlist rows now expose a job detail drawer that
+      reuses the Track Detail renderer, pre-fills the Track Action form, and
+      offers a copy-to-clipboard summary for mentor updates. Tests in
+      [`test/web-server.test.js`](../test/web-server.test.js) simulate opening
+      the drawer from the shortlist, assert the sanitized timeline, and verify
+      the share + prefill affordances.
    - Action panel enabling create/update status workflows mapped to CLI `create`/`update`.
+     _Implemented (2025-10-09):_ The status hub now exposes a Track Action panel that posts
+     to `/commands/track-add`, validating payloads via
+     [`src/web/command-registry.js`](../src/web/command-registry.js) and shared schema helpers.
+     [`src/web/command-adapter.js`](../src/web/command-adapter.js) invokes
+     `jobbot track add` with sanitized stdout/stderr while the UI form collects job IDs, statuses,
+     optional notes, and timestamps. Regression coverage in
+     [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js),
+     [`test/web-schemas.test.js`](../test/web-schemas.test.js), and
+     [`test/web-server.test.js`](../test/web-server.test.js) exercises validation, redaction, and
+     DOM flows so future tweaks preserve the workflow.
    - Notification hooks for reminders, leveraging CLI scheduling or local system integration.
      _Implemented (2025-10-04):_ [`bin/jobbot.js`](../bin/jobbot.js) now supports
      `jobbot track reminders --ics <file>`, wiring the upcoming reminders feed into

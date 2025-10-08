@@ -458,6 +458,25 @@ describe('createCommandAdapter', () => {
     expect(result.data.items[0]).toMatchObject({ id: 'job-2' });
   });
 
+  it('runs track-show with job id and parses json output', async () => {
+    const cli = {
+      cmdTrackShow: vi.fn(async args => {
+        expect(args).toEqual(['job-42', '--json']);
+        console.log('{"job_id":"job-42","status":{"value":"screening"}}');
+      }),
+    };
+
+    const adapter = createCommandAdapter({ cli });
+    const result = await adapter['track-show']({ jobId: 'job-42' });
+
+    expect(cli.cmdTrackShow).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      command: 'track-show',
+      stdout: '{"job_id":"job-42","status":{"value":"screening"}}',
+      data: { job_id: 'job-42', status: { value: 'screening' } },
+    });
+  });
+
   it('spawns the CLI without shell interpolation when no cli module is provided', async () => {
     process.env.JOBBOT_WEB_ENABLE_NATIVE_CLI = '1';
     const spawnMock = childProcess.spawn;

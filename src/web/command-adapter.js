@@ -8,6 +8,7 @@ import {
   normalizeMatchRequest,
   normalizeShortlistListRequest,
   normalizeSummarizeRequest,
+  normalizeTrackShowRequest,
 } from './schemas.js';
 
 const SECRET_KEYS = [
@@ -41,7 +42,17 @@ function replaceSecret(match, doubleQuoted, singleQuoted, bareValue) {
     return match.replace(singleQuoted, '***');
   }
   if (bareValue) {
-    return match.replace(bareValue, '***');
+    const trimmed = bareValue.trimEnd();
+    const trailingWhitespace = bareValue.slice(trimmed.length);
+    let suffix = '';
+    let core = trimmed;
+    const suffixMatch = core.match(/([)\]}>'\"]+)$/);
+    if (suffixMatch) {
+      suffix = suffixMatch[1];
+      core = core.slice(0, -suffix.length);
+    }
+    const replacement = `***${suffix}${trailingWhitespace}`;
+    return match.replace(bareValue, replacement);
   }
   return match;
 }
@@ -117,6 +128,12 @@ const COMMANDS = Object.freeze({
     cliCommand: ['shortlist', 'list'],
     name: 'shortlist-list',
     errorLabel: 'shortlist list',
+  },
+  'track-show': {
+    method: 'cmdTrackShow',
+    cliCommand: ['track', 'show'],
+    name: 'track-show',
+    errorLabel: 'track show',
   },
 });
 
@@ -681,12 +698,44 @@ export function createCommandAdapter(options = {}) {
     return payload;
   }
 
+  async function trackShow(options = {}) {
+    const normalized = normalizeTrackShowRequest(options);
+    const { jobId } = normalized;
+
+    const args = [jobId, '--json'];
+    const { stdout, stderr, returnValue, correlationId, traceId } = await runCli(
+      'track-show',
+      args,
+    );
+
+    const payload = {
+      command: 'track-show',
+      format: 'json',
+      stdout,
+      stderr,
+      returnValue,
+    };
+
+    if (correlationId) {
+      payload.correlationId = correlationId;
+    }
+    if (traceId) {
+      payload.traceId = traceId;
+    }
+
+    const data = parseJsonOutput('track show', payload.stdout, payload.stderr);
+    payload.data = sanitizeOutputValue(data);
+    return payload;
+  }
+
   const adapter = {
     summarize,
     match,
     shortlistList,
+    trackShow,
   };
   adapter['shortlist-list'] = shortlistList;
+  adapter['track-show'] = trackShow;
   return adapter;
 }
 

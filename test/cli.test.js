@@ -721,6 +721,96 @@ describe('jobbot CLI', () => {
     ]);
   });
 
+  it('renders lifecycle details with track show', () => {
+    runCli([
+      'track',
+      'add',
+      'job-detail',
+      '--status',
+      'screening',
+      '--note',
+      'Awaiting hiring manager feedback',
+      '--date',
+      '2025-03-05T12:30:00Z',
+    ]);
+
+    runCli([
+      'track',
+      'log',
+      'job-detail',
+      '--channel',
+      'applied',
+      '--date',
+      '2025-03-01T08:00:00Z',
+      '--documents',
+      'resume.pdf,portfolio.pdf',
+      '--note',
+      'Submitted via referral portal',
+    ]);
+
+    runCli([
+      'track',
+      'log',
+      'job-detail',
+      '--channel',
+      'interview',
+      '--date',
+      '2025-03-08T15:45:00Z',
+      '--contact',
+      'Jordan Interviewer',
+      '--documents',
+      'portfolio.pdf,feedback.docx',
+      '--note',
+      'Panel interview completed',
+    ]);
+
+    const textOutput = runCli(['track', 'show', 'job-detail']);
+    expect(textOutput).toContain('job-detail');
+    expect(textOutput).toContain('Status: screening');
+    expect(textOutput).toContain('Updated: 2025-03-05T12:30:00.000Z');
+    expect(textOutput).toContain('Note: Awaiting hiring manager feedback');
+    expect(textOutput).toContain('Attachments: resume.pdf, portfolio.pdf, feedback.docx');
+    expect(textOutput).toContain('Timeline:');
+    expect(textOutput).toContain('- applied (2025-03-01T08:00:00.000Z)');
+    expect(textOutput).toContain('  Note: Submitted via referral portal');
+    expect(textOutput).toContain('- interview (2025-03-08T15:45:00.000Z)');
+    expect(textOutput).toContain('  Contact: Jordan Interviewer');
+
+    const jsonOutput = runCli(['track', 'show', 'job-detail', '--json']);
+    const parsed = JSON.parse(jsonOutput);
+    expect(parsed).toEqual({
+      job_id: 'job-detail',
+      status: {
+        value: 'screening',
+        updated_at: '2025-03-05T12:30:00.000Z',
+        note: 'Awaiting hiring manager feedback',
+      },
+      timeline: [
+        {
+          channel: 'applied',
+          date: '2025-03-01T08:00:00.000Z',
+          documents: ['resume.pdf', 'portfolio.pdf'],
+          note: 'Submitted via referral portal',
+        },
+        {
+          channel: 'interview',
+          date: '2025-03-08T15:45:00.000Z',
+          contact: 'Jordan Interviewer',
+          documents: ['portfolio.pdf', 'feedback.docx'],
+          note: 'Panel interview completed',
+        },
+      ],
+      attachments: {
+        documents: ['resume.pdf', 'portfolio.pdf', 'feedback.docx'],
+      },
+    });
+  });
+
+  it('indicates when no details are tracked for track show', () => {
+    const output = runCli(['track', 'show', 'job-missing']);
+    expect(output.trim()).toBe('No details for job-missing');
+  });
+
   it('notifies when application history is empty', () => {
     const output = runCli(['track', 'history', 'job-missing']);
     expect(output.trim()).toBe('No history for job-missing');

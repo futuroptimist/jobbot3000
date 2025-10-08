@@ -1414,6 +1414,9 @@ JOBBOT_DATA_DIR=$(mktemp -d) npx jobbot track add job-123 --status screening \
 # Recorded job-123 as screening
 ```
 
+Provide `--date <iso8601>` to backfill the status timestamp when migrating
+historical entries.
+
 This persists entries to `applications.json` as objects that record the status,
 an `updated_at` ISO 8601 timestamp, and optional notes:
 
@@ -1457,6 +1460,30 @@ clobber history and that invalid channels or dates are rejected.
 `test/cli.test.js` adds coverage for the history subcommand's text and JSON
 outputs, including channel-first bullet formatting and reminder labels, so the
 note-taking surface stays reliable.
+
+Aggregate the current status, lifecycle note, and outreach artifacts with
+`jobbot track show <job_id>`. The command deduplicates attachments across the
+timeline and exposes the same structure over JSON for the web dashboard:
+
+```bash
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track show job-1
+# job-1
+# Status: screening
+# Updated: 2025-03-05T12:30:00.000Z
+# Note: Awaiting hiring manager feedback
+# Attachments: resume.pdf, portfolio.pdf, feedback.docx
+# Timeline:
+# - applied (2025-03-01T08:00:00.000Z)
+#   Note: Submitted via referral portal
+# - interview (2025-03-08T15:45:00.000Z)
+#   Contact: Jordan Interviewer
+```
+
+Passing `--json` returns `{ job_id, status, timeline, attachments }`, matching
+the shape consumed by `POST /commands/track-show`. Regression coverage in
+`test/cli.test.js`, `test/lifecycle.test.js`, `test/web-command-adapter.test.js`,
+`test/web-schemas.test.js`, and `test/web-server.test.js` locks the response
+format and schema validation in place.
 
 List tracked applications with filtering and pagination using
 `jobbot track list`. Provide one or more statuses (comma-separated) to narrow the
@@ -1668,14 +1695,23 @@ web interface expands beyond the CLI wrappers.
 the active section and theme preference in sync across reloads. It includes an
 **Applications** view that calls `POST /commands/shortlist-list` to stream
 shortlist entries through the CLI adapter, apply filters (`location`, `level`,
-`compensation`, tags), and paginate results client-side. The hub also surfaces
+`compensation`, tags), and paginate results client-side. The view now ships a
+Track Detail panel that invokes `POST /commands/track-show` to render lifecycle
+status, attachments, and timeline events with redacted correlation IDs. Each
+shortlist row exposes a “View details” control that opens a job detail drawer
+with the same sanitized timeline, a clipboard-friendly summary export that keeps
+multiline formatting intact without breaking the inline client script, and a
+shortcut that pre-fills the Track Action form wired to `POST /commands/track-add`
+for quick status updates. A Track Reminders download wired to
+`GET /commands/track-reminders.ics` continues to produce sanitized iCalendar
+feeds of upcoming follow-ups. The hub also surfaces
 the allow-listed CLI commands, roadmap links, and automated audits guarding the
 adapter while preserving WCAG AA guidance (landmarks, focus styles, skip links).
 The “Helpful references” card links directly to the repository, README, web
 roadmap, and the [web operations playbook](docs/web-operational-playbook.md) so
 on-call responders can jump from the dashboard to runbooks in one click.
 [`test/web-server.test.js`](test/web-server.test.js) now exercises the router,
-shortlist view, and theme toggle, while
+shortlist view, detail panel, and theme toggle, while
 [`test/web-audits.test.js`](test/web-audits.test.js) continues to lock the
 accessibility and performance baselines.
 
