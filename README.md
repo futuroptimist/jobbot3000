@@ -1639,14 +1639,17 @@ and failing checks so future endpoints can rely on the health contract when the
 web interface expands beyond the CLI wrappers.
 
 `GET /` renders an accessible status hub with hash-based navigation that keeps
-the active section and theme preference in sync across reloads. It now includes
-an **Applications** view that calls `POST /commands/shortlist-list` to stream
+the active section and theme preference in sync across reloads. It includes an
+**Applications** view that calls `POST /commands/shortlist-list` to stream
 shortlist entries through the CLI adapter, apply filters (`location`, `level`,
 `compensation`, tags), and paginate results client-side. The hub also surfaces
 the allow-listed CLI commands, roadmap links, and automated audits guarding the
-adapter while preserving WCAG AA guidance (landmarks, focus styles, skip
-links). [`test/web-server.test.js`](test/web-server.test.js) now exercises the
-router, shortlist view, and theme toggle, while
+adapter while preserving WCAG AA guidance (landmarks, focus styles, skip links).
+The “Helpful references” card links directly to the repository, README, web
+roadmap, and the [web operations playbook](docs/web-operational-playbook.md) so
+on-call responders can jump from the dashboard to runbooks in one click.
+[`test/web-server.test.js`](test/web-server.test.js) now exercises the router,
+shortlist view, and theme toggle, while
 [`test/web-audits.test.js`](test/web-audits.test.js) continues to lock the
 accessibility and performance baselines.
 

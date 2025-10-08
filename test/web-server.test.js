@@ -136,6 +136,21 @@ describe('web server status page', () => {
     expect(html).toMatch(/prefers-color-scheme/);
   });
 
+  it('links to the web operations playbook for on-call guidance', async () => {
+    const server = await startServer();
+
+    const response = await fetch(`${server.url}/`);
+    expect(response.status).toBe(200);
+    const html = await response.text();
+
+    const dom = new JSDOM(html);
+    const operationsLink = dom.window.document.querySelector(
+      'nav[aria-label="Documentation links"] a[href$="docs/web-operational-playbook.md"]',
+    );
+
+    expect(operationsLink?.textContent).toMatch(/Operations playbook/i);
+  });
+
   it('supports hash-based navigation between status sections', async () => {
     const server = await startServer();
 
