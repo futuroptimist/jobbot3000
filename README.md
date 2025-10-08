@@ -1510,6 +1510,32 @@ clobber history and that invalid channels or dates are rejected.
 outputs, including channel-first bullet formatting and reminder labels, so the
 note-taking surface stays reliable.
 
+Surface the current status, lifecycle notes, and aggregated attachments with
+`jobbot track show <job_id>`. The command merges the active lifecycle entry with
+the outreach timeline so you can see what happened, when, and which documents
+were shared. Use `--json` for downstream automation:
+
+```bash
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track show job-1
+# job-1
+# Status: screening (updated 2025-03-03T08:00:00.000Z)
+# Note: Waiting on recruiter feedback
+# Timeline:
+# - applied (2025-03-01T09:30:00.000Z)
+#   Contact: Jordan Hiring Manager
+#   Attachments: resume.pdf, cover-letter.pdf
+#   Reminder: 2025-03-10T09:00:00.000Z
+# - follow_up (2025-03-05T10:15:00.000Z)
+#   Note: Checked in after onsite invite
+# Attachments:
+# - resume.pdf
+# - cover-letter.pdf
+```
+
+Regression coverage in [`test/cli.test.js`](test/cli.test.js) ensures the
+timeline order, attachment rollups, and JSON payload stay stable so future web
+detail views can rely on the same surface.
+
 List tracked applications with filtering and pagination using
 `jobbot track list`. Provide one or more statuses (comma-separated) to narrow the
 results, and combine `--page`/`--page-size` to step through longer histories:

@@ -721,6 +721,92 @@ describe('jobbot CLI', () => {
     ]);
   });
 
+  it('shows lifecycle details, timeline, and attachments with track show', () => {
+    runCli([
+      'track',
+      'add',
+      'job-detail',
+      '--status',
+      'screening',
+      '--note',
+      'Waiting on recruiter feedback',
+      '--date',
+      '2025-03-03T08:00:00Z',
+    ]);
+
+    runCli([
+      'track',
+      'log',
+      'job-detail',
+      '--channel',
+      'applied',
+      '--date',
+      '2025-03-01T09:30:00Z',
+      '--contact',
+      'Jordan Hiring Manager',
+      '--documents',
+      'resume.pdf,cover-letter.pdf',
+      '--note',
+      'Submitted via referral portal',
+      '--remind-at',
+      '2025-03-10T09:00:00Z',
+    ]);
+
+    runCli([
+      'track',
+      'log',
+      'job-detail',
+      '--channel',
+      'follow_up',
+      '--date',
+      '2025-03-05T10:15:00Z',
+      '--contact',
+      'Jordan Hiring Manager',
+      '--note',
+      'Checked in after onsite invite',
+    ]);
+
+    const output = runCli(['track', 'show', 'job-detail']);
+    expect(output).toContain('job-detail');
+    expect(output).toMatch(/Status: screening \(updated \d{4}-\d{2}-\d{2}T/);
+    expect(output).toContain('Note: Waiting on recruiter feedback');
+    expect(output).toContain('Timeline:');
+    expect(output).toContain('- applied (2025-03-01T09:30:00.000Z)');
+    expect(output).toContain('  Contact: Jordan Hiring Manager');
+    expect(output).toContain('  Attachments: resume.pdf, cover-letter.pdf');
+    expect(output).toContain('  Reminder: 2025-03-10T09:00:00.000Z');
+    expect(output).toContain('- follow_up (2025-03-05T10:15:00.000Z)');
+    expect(output).toContain('  Note: Checked in after onsite invite');
+    expect(output).toContain('Attachments:\n- resume.pdf\n- cover-letter.pdf');
+
+    const jsonOutput = runCli(['track', 'show', 'job-detail', '--json']);
+    const detail = JSON.parse(jsonOutput);
+    expect(detail.job_id).toBe('job-detail');
+    expect(detail.status).toMatchObject({
+      job_id: 'job-detail',
+      status: 'screening',
+      note: 'Waiting on recruiter feedback',
+    });
+    expect(detail.status.updated_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(detail.events).toEqual([
+      {
+        channel: 'applied',
+        date: '2025-03-01T09:30:00.000Z',
+        contact: 'Jordan Hiring Manager',
+        documents: ['resume.pdf', 'cover-letter.pdf'],
+        note: 'Submitted via referral portal',
+        remind_at: '2025-03-10T09:00:00.000Z',
+      },
+      {
+        channel: 'follow_up',
+        date: '2025-03-05T10:15:00.000Z',
+        contact: 'Jordan Hiring Manager',
+        note: 'Checked in after onsite invite',
+      },
+    ]);
+    expect(detail.attachments).toEqual(['resume.pdf', 'cover-letter.pdf']);
+  });
+
   it('notifies when application history is empty', () => {
     const output = runCli(['track', 'history', 'job-missing']);
     expect(output.trim()).toBe('No history for job-missing');

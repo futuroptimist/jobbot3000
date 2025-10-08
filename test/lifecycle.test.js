@@ -7,6 +7,7 @@ import {
   getLifecycleCounts,
   getLifecycleBoard,
   listLifecycleEntries,
+  getLifecycleEntry,
 } from '../src/lifecycle.js';
 
 let dataDir;
@@ -188,6 +189,36 @@ test('organizes lifecycle entries into ordered board columns', async () => {
   expect(nextRoundColumn?.jobs).toEqual([
     expect.objectContaining({ job_id: 'job-legacy', updated_at: undefined }),
   ]);
+});
+
+test('reads normalized lifecycle entry by job id', async () => {
+  await recordApplication('job-detail', 'onsite', {
+    date: '2025-03-15T14:05:00Z',
+    note: 'Prep onsite interview panel',
+  });
+
+  const entry = await getLifecycleEntry('job-detail');
+  expect(entry).toEqual({
+    job_id: 'job-detail',
+    status: 'onsite',
+    updated_at: '2025-03-15T14:05:00.000Z',
+    note: 'Prep onsite interview panel',
+  });
+});
+
+test('returns null when lifecycle entry is missing or invalid', async () => {
+  await recordApplication('job-missing-note', 'screening');
+
+  const missing = await getLifecycleEntry('not-tracked');
+  expect(missing).toBeNull();
+
+  const entry = await getLifecycleEntry('job-missing-note');
+  expect(entry).toEqual({
+    job_id: 'job-missing-note',
+    status: 'screening',
+    updated_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+    note: undefined,
+  });
 });
 
 test('lists lifecycle entries with filters and pagination', async () => {

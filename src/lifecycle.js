@@ -216,6 +216,23 @@ export async function getLifecycleBoard() {
   return columns;
 }
 
+export async function getLifecycleEntry(jobId) {
+  if (typeof jobId !== 'string' || !jobId.trim()) {
+    throw new Error('job id is required');
+  }
+
+  const normalizedId = jobId.trim();
+  const { file } = getPaths();
+  const data = await readLifecycleFile(file);
+  const raw = data[normalizedId];
+  if (raw === undefined) {
+    return null;
+  }
+
+  const normalized = normalizeLifecycleEntry(normalizedId, raw);
+  return normalized ?? null;
+}
+
 function normalizeStatusesFilter(statuses) {
   if (!Array.isArray(statuses) || statuses.length === 0) {
     return { values: [], set: null };
