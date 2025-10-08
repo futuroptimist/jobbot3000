@@ -34,6 +34,8 @@ const SHORTLIST_LIST_ALLOWED_FIELDS = new Set([
   'limit',
 ]);
 
+const SHORTLIST_SHOW_ALLOWED_FIELDS = new Set(['jobId', 'job_id']);
+
 function ensurePlainObject(value, commandName) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error(`${commandName} payload must be a JSON object`);
@@ -226,10 +228,18 @@ function validateShortlistListPayload(rawPayload) {
   return sanitized;
 }
 
+function validateShortlistShowPayload(rawPayload) {
+  const payload = ensurePlainObject(rawPayload, 'shortlist-show');
+  assertAllowedFields(payload, SHORTLIST_SHOW_ALLOWED_FIELDS, 'shortlist-show');
+  const jobId = coerceString(payload.jobId ?? payload.job_id, { name: 'jobId', required: true });
+  return { jobId };
+}
+
 const COMMAND_VALIDATORS = Object.freeze({
   summarize: validateSummarizePayload,
   match: validateMatchPayload,
   'shortlist-list': validateShortlistListPayload,
+  'shortlist-show': validateShortlistShowPayload,
 });
 
 export const ALLOW_LISTED_COMMANDS = Object.freeze(Object.keys(COMMAND_VALIDATORS));

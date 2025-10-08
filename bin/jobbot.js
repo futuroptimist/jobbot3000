@@ -37,7 +37,13 @@ import {
   normalizeDiscardEntries,
   normalizeDiscardArchive,
 } from '../src/discards.js';
-import { addJobTags, discardJob, filterShortlist, syncShortlistJob } from '../src/shortlist.js';
+import {
+  addJobTags,
+  discardJob,
+  filterShortlist,
+  syncShortlistJob,
+  getShortlist,
+} from '../src/shortlist.js';
 import {
   recordInterviewSession,
   getInterviewSession,
@@ -113,6 +119,159 @@ function normalizeCompensation(value) {
   if (!simpleNumeric.test(trimmed)) return trimmed;
   const symbol = DEFAULT_SHORTLIST_CURRENCY || '$';
   return `${symbol}${trimmed}`;
+}
+
+function trimString(value) {
+  if (value == null) return undefined;
+  const stringValue = typeof value === 'string' ? value : String(value);
+  const trimmed = stringValue.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function normalizeDetailDocuments(documents) {
+  if (!documents) return [];
+  if (Array.isArray(documents)) {
+    return documents.map(trimString).filter(Boolean);
+  }
+  return String(documents)
+    .split(',')
+    .map(entry => trimString(entry))
+    .filter(Boolean);
+}
+
+function normalizeTimelineEvent(event) {
+  if (!event || typeof event !== 'object') return null;
+  const channel = trimString(event.channel);
+  if (!channel) return null;
+  const normalized = { channel };
+  const date = trimString(event.date);
+  if (date) normalized.date = date;
+  const contact = trimString(event.contact);
+  if (contact) normalized.contact = contact;
+  const note = trimString(event.note);
+  if (note) normalized.note = note;
+  const remindAt = trimString(event.remind_at ?? event.remindAt);
+  if (remindAt) normalized.remind_at = remindAt;
+  const docs = normalizeDetailDocuments(event.documents);
+  if (docs.length > 0) normalized.documents = docs;
+  return normalized;
+}
+
+function buildShortlistDetail(jobId, record, events) {
+  const metadata = record && typeof record.metadata === 'object' ? { ...record.metadata } : {};
+  const tags = Array.isArray(record?.tags)
+    ? record.tags
+        .map(tag => trimString(tag))
+        .filter(value => value !== undefined)
+    : [];
+  const discardList = Array.isArray(record?.discarded)
+    ? record.discarded
+        .map(entry => (entry && typeof entry === 'object' ? { ...entry } : null))
+        .filter(value => value !== null)
+    : [];
+  const normalizedEvents = Array.isArray(events)
+    ? events
+        .map(normalizeTimelineEvent)
+        .filter(Boolean)
+        .sort((a, b) => {
+          const aTime = a?.date ? Date.parse(a.date) : NaN;
+          const bTime = b?.date ? Date.parse(b.date) : NaN;
+          const aValid = !Number.isNaN(aTime);
+          const bValid = !Number.isNaN(bTime);
+          if (aValid && bValid) {
+            if (aTime === bTime) return 0;
+            return aTime - bTime;
+          }
+          if (aValid) return -1;
+          if (bValid) return 1;
+          return 0;
+        })
+    : [];
+
+  const detail = {
+    job_id: jobId,
+    metadata,
+    tags,
+    discard_count:
+      typeof record?.discard_count === 'number'
+        ? record.discard_count
+        : Array.isArray(record?.discarded)
+          ? record.discarded.length
+          : 0,
+    discarded: discardList,
+    events: normalizedEvents,
+  };
+
+  if (record?.last_discard && typeof record.last_discard === 'object') {
+    detail.last_discard = { ...record.last_discard };
+  }
+
+  return detail;
+}
+
+function formatShortlistDetail(detail) {
+  const lines = [`Job: ${detail.job_id}`];
+
+  const metadata = detail.metadata ?? {};
+  const metaEntries = [
+    ['Location', metadata.location || '—'],
+    ['Level', metadata.level || '—'],
+    ['Compensation', metadata.compensation || '—'],
+    ['Synced', metadata.synced_at || '—'],
+  ];
+
+  lines.push('', 'Metadata:');
+  for (const [label, value] of metaEntries) {
+    lines.push(`  ${label}: ${value}`);
+  }
+
+  const tags = Array.isArray(detail.tags) ? detail.tags.filter(Boolean) : [];
+  lines.push('', `Tags: ${tags.length > 0 ? tags.join(', ') : '(none)'}`);
+
+  lines.push('', 'Discard history:');
+  if (detail.discard_count > 0) {
+    lines.push(`  Count: ${detail.discard_count}`);
+    if (detail.last_discard) {
+      const reason = detail.last_discard.reason || 'Unknown reason';
+      const when = detail.last_discard.discarded_at || 'unknown time';
+      lines.push(`  Last discard: ${reason} (${when})`);
+      const discardTags = Array.isArray(detail.last_discard.tags)
+        ? detail.last_discard.tags.filter(Boolean)
+        : [];
+      if (discardTags.length > 0) {
+        lines.push(`  Last discard tags: ${discardTags.join(', ')}`);
+      }
+    }
+  } else {
+    lines.push('  (none)');
+  }
+
+  lines.push('', 'Timeline:');
+  if (detail.events.length === 0) {
+    lines.push('  (no events recorded)');
+  } else {
+    for (const event of detail.events) {
+      const headerParts = [event.channel];
+      if (event.date) {
+        headerParts.push(`(${event.date})`);
+      }
+      lines.push(`- ${headerParts.join(' ')}`);
+      if (event.contact) {
+        lines.push(`  Contact: ${event.contact}`);
+      }
+      if (event.note) {
+        lines.push(`  Note: ${event.note}`);
+      }
+      if (Array.isArray(event.documents) && event.documents.length > 0) {
+        lines.push(`  Documents: ${event.documents.join(', ')}`);
+      }
+      if (event.remind_at) {
+        lines.push(`  Reminder: ${event.remind_at}`);
+      }
+    }
+  }
+
+  return lines.join('\n');
 }
 
 function parseMultilineList(value) {
@@ -1637,6 +1796,30 @@ export async function cmdShortlistList(args) {
   console.log(formatShortlistList(store.jobs));
 }
 
+export async function cmdShortlistShow(args) {
+  const jobId = args[0];
+  if (!jobId) {
+    console.error('Usage: jobbot shortlist show <job_id> [--json]');
+    process.exit(2);
+  }
+
+  let detail;
+  try {
+    const [record, events] = await Promise.all([getShortlist(jobId), getApplicationEvents(jobId)]);
+    detail = buildShortlistDetail(jobId, record, events);
+  } catch (err) {
+    console.error(err?.message || String(err));
+    process.exit(1);
+  }
+
+  if (args.includes('--json')) {
+    console.log(JSON.stringify(detail, null, 2));
+    return;
+  }
+
+  console.log(formatShortlistDetail(detail));
+}
+
 async function cmdShortlistArchive(args) {
   const asJson = args.includes('--json');
   const filtered = args.filter(arg => arg !== '--json');
@@ -1671,8 +1854,9 @@ async function cmdShortlist(args) {
   if (sub === 'discard') return cmdShortlistDiscard(args.slice(1));
   if (sub === 'sync') return cmdShortlistSync(args.slice(1));
   if (sub === 'list') return cmdShortlistList(args.slice(1));
+  if (sub === 'show') return cmdShortlistShow(args.slice(1));
   if (sub === 'archive') return cmdShortlistArchive(args.slice(1));
-  console.error('Usage: jobbot shortlist <tag|discard|sync|list|archive> ...');
+  console.error('Usage: jobbot shortlist <tag|discard|sync|list|show|archive> ...');
   process.exit(2);
 }
 

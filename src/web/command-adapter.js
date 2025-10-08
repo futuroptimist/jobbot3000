@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import {
   normalizeMatchRequest,
   normalizeShortlistListRequest,
+  normalizeShortlistShowRequest,
   normalizeSummarizeRequest,
 } from './schemas.js';
 
@@ -117,6 +118,12 @@ const COMMANDS = Object.freeze({
     cliCommand: ['shortlist', 'list'],
     name: 'shortlist-list',
     errorLabel: 'shortlist list',
+  },
+  'shortlist-show': {
+    method: 'cmdShortlistShow',
+    cliCommand: ['shortlist', 'show'],
+    name: 'shortlist-show',
+    errorLabel: 'shortlist show',
   },
 });
 
@@ -681,12 +688,42 @@ export function createCommandAdapter(options = {}) {
     return payload;
   }
 
+  async function shortlistShow(options = {}) {
+    const { jobId } = normalizeShortlistShowRequest(options);
+    const args = [jobId, '--json'];
+    const { stdout, stderr, returnValue, correlationId, traceId } = await runCli(
+      'shortlist-show',
+      args,
+    );
+
+    const payload = {
+      command: 'shortlist-show',
+      format: 'json',
+      stdout,
+      stderr,
+      returnValue,
+    };
+
+    if (correlationId) {
+      payload.correlationId = correlationId;
+    }
+    if (traceId) {
+      payload.traceId = traceId;
+    }
+
+    const parsed = parseJsonOutput('shortlist show', payload.stdout, payload.stderr);
+    payload.data = sanitizeOutputValue(parsed);
+    return payload;
+  }
+
   const adapter = {
     summarize,
     match,
     shortlistList,
+    shortlistShow,
   };
   adapter['shortlist-list'] = shortlistList;
+  adapter['shortlist-show'] = shortlistShow;
   return adapter;
 }
 

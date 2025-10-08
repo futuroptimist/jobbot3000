@@ -392,6 +392,134 @@ describe('web server status page', () => {
     expect(tableBody?.children[0].querySelector('td')?.textContent).toBe('job-2');
     expect(range?.textContent).toContain('Showing 2-2 of 2');
   });
+
+  it('shows application detail drawer with timeline and attachments', async () => {
+    const shortlistEntry = {
+      id: 'job-42',
+      metadata: {
+        location: 'Remote',
+        level: 'Staff',
+        compensation: '$200k',
+        synced_at: '2025-03-05T12:00:00.000Z',
+      },
+      tags: ['remote', 'priority'],
+      discard_count: 1,
+      last_discard: {
+        reason: 'Paused hiring',
+        discarded_at: '2025-03-04T18:00:00.000Z',
+      },
+    };
+
+    const commandAdapter = {
+      'shortlist-list': vi.fn(async () => ({
+        command: 'shortlist-list',
+        format: 'json',
+        stdout: '',
+        stderr: '',
+        returnValue: 0,
+        data: {
+          total: 1,
+          offset: 0,
+          limit: 20,
+          filters: {},
+          hasMore: false,
+          items: [shortlistEntry],
+        },
+      })),
+      'shortlist-show': vi.fn(async payload => {
+        expect(payload).toEqual({ jobId: 'job-42' });
+        return {
+          command: 'shortlist-show',
+          format: 'json',
+          stdout: '',
+          stderr: '',
+          returnValue: 0,
+          data: {
+            job_id: 'job-42',
+            metadata: {
+              location: 'Remote',
+              level: 'Staff',
+              compensation: '$200k',
+              synced_at: '2025-03-05T12:00:00.000Z',
+            },
+            tags: ['remote', 'priority'],
+            discard_count: 1,
+            last_discard: {
+              reason: 'Paused hiring',
+              discarded_at: '2025-03-04T18:00:00.000Z',
+            },
+            events: [
+              {
+                channel: 'email',
+                contact: 'Recruiter',
+                note: 'Sent resume',
+                documents: ['resume.pdf', 'cover-letter.pdf'],
+                remind_at: '2025-03-06T15:00:00.000Z',
+              },
+              {
+                channel: 'call',
+                note: 'Follow-up scheduled',
+                date: '2025-03-07T09:00:00.000Z',
+              },
+            ],
+          },
+        };
+      }),
+    };
+
+    commandAdapter.shortlistList = commandAdapter['shortlist-list'];
+    commandAdapter.shortlistShow = commandAdapter['shortlist-show'];
+
+    const server = await startServer({ commandAdapter });
+    const response = await fetch(`${server.url}/`);
+    const html = await response.text();
+
+    const dom = new JSDOM(html, {
+      runScripts: 'dangerously',
+      resources: 'usable',
+      url: `${server.url}/`,
+      pretendToBeVisual: true,
+    });
+    dom.window.fetch = (input, init) => fetch(input, init);
+
+    const waitForEvent = (name, timeout = 500) =>
+      new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`${name} timed out`)), timeout);
+        dom.window.document.addEventListener(
+          name,
+          event => {
+            clearTimeout(timer);
+            resolve(event);
+          },
+          { once: true },
+        );
+      });
+
+    await waitForEvent('jobbot:applications-ready');
+    const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
+    dom.window.location.hash = '#applications';
+    dom.window.dispatchEvent(new HashChange('hashchange'));
+
+    await waitForEvent('jobbot:applications-loaded');
+    expect(commandAdapter['shortlist-list']).toHaveBeenCalledTimes(1);
+
+    const detailToggle = dom.window.document.querySelector('[data-shortlist-view]');
+    expect(detailToggle?.getAttribute('data-shortlist-view')).toBe('job-42');
+
+    const detailLoaded = waitForEvent('jobbot:application-detail-loaded');
+    detailToggle?.dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+    await detailLoaded;
+
+    expect(commandAdapter['shortlist-show']).toHaveBeenCalledTimes(1);
+
+    const detailPanel = dom.window.document.querySelector('[data-application-detail]');
+    expect(detailPanel?.hasAttribute('hidden')).toBe(false);
+    expect(detailPanel?.textContent).toContain('job-42');
+    expect(detailPanel?.textContent).toContain('Remote');
+    expect(detailPanel?.textContent).toContain('Sent resume');
+    expect(detailPanel?.textContent).toContain('resume.pdf');
+    expect(detailPanel?.textContent).toContain('Follow-up scheduled');
+  });
 });
 
 describe('web server command endpoint', () => {

@@ -215,15 +215,23 @@
      [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js),
      and [`test/web-e2e.test.js`](../test/web-e2e.test.js) keeps the adapter,
      HTML view, and CLI integration aligned.
-  - Application detail view showing lifecycle timeline, notes, and attachments via CLI `show`.
-    _Implemented (2025-10-08):_ [`jobbot track show`](../bin/jobbot.js) now
-    reads lifecycle entries via [`getLifecycleEntry`](../src/lifecycle.js),
-    stitches together activity logs, and prints both human-friendly and JSON
-    payloads with aggregated attachments. Coverage in
-    [`test/cli.test.js`](../test/cli.test.js) and
-    [`test/lifecycle.test.js`](../test/lifecycle.test.js) verifies the status
-    metadata, timeline ordering, and document rollups so future UI detail views
-    inherit the same contract.
+   - Application detail view showing lifecycle timeline, notes, and attachments via CLI `show`.
+     _Implemented (2025-10-08):_ [`jobbot track show`](../bin/jobbot.js) now
+     reads lifecycle entries via [`getLifecycleEntry`](../src/lifecycle.js),
+     stitches together activity logs, and prints both human-friendly and JSON
+     payloads with aggregated attachments. Coverage in
+     [`test/cli.test.js`](../test/cli.test.js) and
+     [`test/lifecycle.test.js`](../test/lifecycle.test.js) verifies the status
+     metadata, timeline ordering, and document rollups so future UI detail views
+     inherit the same contract. The Applications view also renders a detail drawer
+     powered by `shortlist show`, wiring the new `/commands/shortlist-show`
+     endpoint and client-side renderer. [`src/web/server.js`](../src/web/server.js)
+     injects an actions column, fetches the detail payload, and formats metadata,
+     discard history, and timeline entries with attachments. Regression coverage in
+     [`test/web-server.test.js`](../test/web-server.test.js),
+     [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js),
+     and [`test/cli.test.js`](../test/cli.test.js) exercises the CLI output,
+     adapter wiring, and DOM updates to keep the drawer and timeline stable.
    - Action panel enabling create/update status workflows mapped to CLI `create`/`update`.
    - Notification hooks for reminders, leveraging CLI scheduling or local system integration.
      _Implemented (2025-10-04):_ [`bin/jobbot.js`](../bin/jobbot.js) now supports
@@ -246,7 +254,9 @@
     Lighthouse scoring formulas to real HTTP timings. The regression
     suite in [`test/web-audits.test.js`](../test/web-audits.test.js)
     boots the Express adapter, fetches the HTML dashboard, and asserts the
-    audits return zero WCAG AA violations with a performance score ≥0.9.
+    audits return zero WCAG AA violations with a performance score ≥0.9 while
+    keeping the HTML transfer size below 70 KB, even with the Applications
+    detail drawer markup loaded.
 
 6. **Hardening and Packaging**
    - Implement rate limiting, input sanitization, and CSRF tokens.

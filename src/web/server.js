@@ -679,6 +679,78 @@ export function createWebApp({
       .references ul {
         padding-left: 1rem;
       }
+      .link-button {
+        background: none;
+        border: none;
+        color: var(--accent);
+        cursor: pointer;
+        padding: 0;
+        font: inherit;
+        text-decoration: underline;
+      }
+      .link-button:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      .application-detail {
+        margin-top: 1.5rem;
+        padding: 1.25rem;
+        border: 1px solid var(--card-border);
+        border-radius: 1rem;
+        background-color: var(--card-surface);
+      }
+      [data-theme='light'] .application-detail {
+        background-color: rgba(255, 255, 255, 0.9);
+      }
+      .application-detail__section + .application-detail__section {
+        margin-top: 1rem;
+      }
+      .application-detail__meta {
+        display: grid;
+        grid-template-columns: minmax(120px, 160px) 1fr;
+        gap: 0.35rem 1rem;
+        margin: 0;
+      }
+      .application-detail__meta dt {
+        font-weight: 600;
+        color: var(--muted);
+      }
+      .application-detail__meta dd {
+        margin: 0;
+      }
+      .application-detail__tags {
+        margin: 0;
+      }
+      .application-detail__events {
+        margin: 0;
+        padding-left: 1.25rem;
+      }
+      .application-detail__events li {
+        margin-bottom: 0.75rem;
+      }
+      .application-detail__events li:last-child {
+        margin-bottom: 0;
+      }
+      .application-detail__event-header {
+        font-weight: 600;
+      }
+      .application-detail__empty {
+        color: var(--muted);
+      }
+      .application-detail__loading {
+        color: var(--muted);
+      }
+      .application-detail__error {
+        border-radius: 0.85rem;
+        border: 1px solid var(--danger-border);
+        background-color: var(--danger-bg);
+        color: var(--danger-text);
+        padding: 0.85rem 1rem;
+      }
+      .application-detail__error strong {
+        display: block;
+        margin-bottom: 0.35rem;
+      }
       [hidden] {
         display: none !important;
       }
@@ -822,6 +894,7 @@ export function createWebApp({
                     <th scope="col">Tags</th>
                     <th scope="col">Synced</th>
                     <th scope="col">Discard summary</th>
+                    <th scope="col">Actions</th>
                   </tr>
                 </thead>
                 <tbody data-shortlist-body></tbody>
@@ -831,6 +904,43 @@ export function createWebApp({
               <button type="button" data-shortlist-prev>Previous</button>
               <span class="pagination-info" data-shortlist-range>Showing 0 of 0</span>
               <button type="button" data-shortlist-next>Next</button>
+            </div>
+            <div class="application-detail" data-application-detail hidden>
+              <div
+                class="application-detail__section application-detail__empty"
+                data-detail-state="empty"
+              >
+                <p>Select an application to view its timeline.</p>
+              </div>
+              <div
+                class="application-detail__section application-detail__loading"
+                data-detail-state="loading"
+                hidden
+              >
+                <p class="application-detail__loading" role="status" aria-live="polite">
+                  Loading application detail…
+                </p>
+              </div>
+              <div
+                class="application-detail__section application-detail__error"
+                data-detail-state="error"
+                hidden
+              >
+                <strong>Unable to load application detail</strong>
+                <p
+                  data-detail-error
+                  data-detail-error-default="Check the server logs or retry shortly."
+                >
+                  Check the server logs or retry shortly.
+                </p>
+              </div>
+              <div class="application-detail__section" data-detail-state="ready" hidden>
+                <h3 class="application-detail__title" data-detail-title></h3>
+                <dl class="application-detail__meta" data-detail-meta></dl>
+                <p class="application-detail__tags" data-detail-tags></p>
+                <div class="application-detail__section" data-detail-discard></div>
+                <ul class="application-detail__events" data-detail-events></ul>
+              </div>
             </div>
           </div>
           <div data-state-slot="loading" hidden>
@@ -1099,6 +1209,26 @@ export function createWebApp({
           const range = section.querySelector('[data-shortlist-range]');
           const prevButton = section.querySelector('[data-shortlist-prev]');
           const nextButton = section.querySelector('[data-shortlist-next]');
+          const detailElements = (() => {
+            const container = section.querySelector('[data-application-detail]');
+            if (!container) return null;
+            return {
+              container,
+              blocks: {
+                empty: container.querySelector('[data-detail-state="empty"]'),
+                loading: container.querySelector('[data-detail-state="loading"]'),
+                error: container.querySelector('[data-detail-state="error"]'),
+                ready: container.querySelector('[data-detail-state="ready"]'),
+              },
+              title: container.querySelector('[data-detail-title]'),
+              meta: container.querySelector('[data-detail-meta]'),
+              tags: container.querySelector('[data-detail-tags]'),
+              discard: container.querySelector('[data-detail-discard]'),
+              events: container.querySelector('[data-detail-events]'),
+              errorMessage: container.querySelector('[data-detail-error]'),
+            };
+          })();
+          const detailState = { loading: false, jobId: null };
 
           function clampLimit(value) {
             const number = Number.parseInt(value, 10);
@@ -1174,6 +1304,175 @@ export function createWebApp({
             return parts.join(' • ');
           }
 
+          function toggleDetailVisibility(visible) {
+            if (!detailElements?.container) return;
+            if (visible) {
+              detailElements.container.removeAttribute('hidden');
+            } else {
+              detailElements.container.setAttribute('hidden', '');
+            }
+          }
+
+          function setDetailState(state, options = {}) {
+            if (!detailElements) return;
+            const blocks = detailElements.blocks || {};
+            const target = blocks[state] ? state : 'empty';
+            const forceVisible = options.forceVisible === true;
+            if (target === 'empty' && !forceVisible) {
+              toggleDetailVisibility(false);
+            } else {
+              toggleDetailVisibility(true);
+            }
+            for (const [name, element] of Object.entries(blocks)) {
+              if (!element) continue;
+              if (name === target) {
+                element.removeAttribute('hidden');
+              } else {
+                element.setAttribute('hidden', '');
+              }
+            }
+            if (detailElements.errorMessage) {
+              const defaultMessage =
+                detailElements.errorMessage.getAttribute('data-detail-error-default') ||
+                'Check the server logs or retry shortly.';
+              if (target === 'error') {
+                const message =
+                  typeof options.message === 'string' && options.message.trim()
+                    ? options.message.trim()
+                    : defaultMessage;
+                detailElements.errorMessage.textContent = message;
+              } else {
+                detailElements.errorMessage.textContent = defaultMessage;
+              }
+            }
+          }
+
+          function clearDetailContents() {
+            if (!detailElements) return;
+            if (detailElements.title) detailElements.title.textContent = '';
+            if (detailElements.meta) detailElements.meta.textContent = '';
+            if (detailElements.tags) detailElements.tags.textContent = '';
+            if (detailElements.discard) detailElements.discard.textContent = '';
+            if (detailElements.events) detailElements.events.textContent = '';
+          }
+
+          function renderDetail(jobId, data) {
+            if (!detailElements) return;
+            detailState.jobId = jobId;
+            clearDetailContents();
+            const metadata = data && typeof data === 'object' ? data.metadata || {} : {};
+
+            if (detailElements.title) {
+              detailElements.title.textContent = 'Application ' + jobId;
+            }
+
+            if (detailElements.meta) {
+              const fragment = document.createDocumentFragment();
+              const entries = [
+                ['Location', metadata?.location || '—'],
+                ['Level', metadata?.level || '—'],
+                ['Compensation', metadata?.compensation || '—'],
+                ['Synced', metadata?.synced_at || '—'],
+              ];
+              for (const [label, value] of entries) {
+                const dt = document.createElement('dt');
+                dt.textContent = label;
+                fragment.appendChild(dt);
+                const dd = document.createElement('dd');
+                dd.textContent = value || '—';
+                fragment.appendChild(dd);
+              }
+              detailElements.meta.appendChild(fragment);
+            }
+
+            if (detailElements.tags) {
+              const tags = Array.isArray(data?.tags)
+                ? data.tags.filter(tag => typeof tag === 'string' && tag.trim())
+                : [];
+              detailElements.tags.textContent =
+                tags.length > 0 ? 'Tags: ' + tags.join(', ') : 'Tags: (none)';
+            }
+
+            if (detailElements.discard) {
+              const count =
+                typeof data?.discard_count === 'number' ? data.discard_count : 0;
+              const parts = ['Discard count: ' + count];
+              if (data?.last_discard && typeof data.last_discard === 'object') {
+                const reason =
+                  typeof data.last_discard.reason === 'string' && data.last_discard.reason.trim()
+                    ? data.last_discard.reason.trim()
+                    : 'Unknown reason';
+                const when =
+                  typeof data.last_discard.discarded_at === 'string' &&
+                  data.last_discard.discarded_at.trim()
+                    ? data.last_discard.discarded_at.trim()
+                    : 'unknown time';
+                parts.push('Last discard: ' + reason + ' (' + when + ')');
+                const discardTags = Array.isArray(data.last_discard.tags)
+                  ? data.last_discard.tags.filter(tag => typeof tag === 'string' && tag.trim())
+                  : [];
+                const tagSummary =
+                  discardTags.length > 0 ? discardTags.join(', ') : '(none)';
+                parts.push('Last discard tags: ' + tagSummary);
+              } else if (count === 0) {
+                parts.push('No discards recorded.');
+              }
+              detailElements.discard.textContent = parts.join(' • ');
+            }
+
+            if (detailElements.events) {
+              detailElements.events.textContent = '';
+              const events = Array.isArray(data?.events) ? data.events : [];
+              if (events.length === 0) {
+                const empty = document.createElement('li');
+                empty.className = 'application-detail__empty';
+                empty.textContent = 'No timeline entries recorded.';
+                detailElements.events.appendChild(empty);
+              } else {
+                for (const entry of events) {
+                  const li = document.createElement('li');
+                  const header = document.createElement('div');
+                  header.className = 'application-detail__event-header';
+                  const headerParts = [];
+                  if (typeof entry?.channel === 'string' && entry.channel.trim()) {
+                    headerParts.push(entry.channel.trim());
+                  }
+                  if (typeof entry?.date === 'string' && entry.date.trim()) {
+                    headerParts.push('(' + entry.date.trim() + ')');
+                  }
+                  header.textContent = headerParts.length > 0 ? headerParts.join(' ') : 'Event';
+                  li.appendChild(header);
+                  if (typeof entry?.contact === 'string' && entry.contact.trim()) {
+                    const contact = document.createElement('div');
+                    contact.textContent = 'Contact: ' + entry.contact.trim();
+                    li.appendChild(contact);
+                  }
+                  if (typeof entry?.note === 'string' && entry.note.trim()) {
+                    const note = document.createElement('div');
+                    note.textContent = 'Note: ' + entry.note.trim();
+                    li.appendChild(note);
+                  }
+                  if (Array.isArray(entry?.documents) && entry.documents.length > 0) {
+                    const documentsList = entry.documents
+                      .filter(doc => typeof doc === 'string' && doc.trim())
+                      .join(', ');
+                    if (documentsList) {
+                      const documents = document.createElement('div');
+                      documents.textContent = 'Documents: ' + documentsList;
+                      li.appendChild(documents);
+                    }
+                  }
+                  if (typeof entry?.remind_at === 'string' && entry.remind_at.trim()) {
+                    const remind = document.createElement('div');
+                    remind.textContent = 'Reminder: ' + entry.remind_at.trim();
+                    li.appendChild(remind);
+                  }
+                  detailElements.events.appendChild(li);
+                }
+              }
+            }
+          }
+
           function renderRows(items) {
             if (!tbody) return;
             tbody.textContent = '';
@@ -1207,8 +1506,10 @@ export function createWebApp({
                 typeof item.last_discard === 'object';
               const lastDiscard = hasLastDiscard ? item.last_discard : null;
 
+              const jobId =
+                item && typeof item.id === 'string' && item.id.trim() ? item.id.trim() : 'Unknown';
               const cells = [
-                item && typeof item.id === 'string' && item.id.trim() ? item.id.trim() : 'Unknown',
+                jobId,
                 metadata.location || '—',
                 metadata.level || '—',
                 metadata.compensation || '—',
@@ -1217,16 +1518,61 @@ export function createWebApp({
                 buildDiscardSummary(discardCount, lastDiscard),
               ];
 
+              row.setAttribute('data-job-id', jobId);
+
               for (const value of cells) {
                 const cell = document.createElement('td');
                 cell.textContent = value;
                 row.appendChild(cell);
               }
+
+              const actionCell = document.createElement('td');
+              const viewButton = document.createElement('button');
+              viewButton.type = 'button';
+              viewButton.className = 'link-button';
+              viewButton.textContent = 'View details';
+              viewButton.setAttribute('data-shortlist-view', jobId);
+              actionCell.appendChild(viewButton);
+              row.appendChild(actionCell);
               fragment.appendChild(row);
             }
 
             tbody.appendChild(fragment);
             pagination?.removeAttribute('hidden');
+          }
+
+          async function loadDetail(jobId) {
+            if (!detailElements || !jobId) {
+              return;
+            }
+            if (detailState.loading && detailState.jobId === jobId) {
+              return;
+            }
+            detailState.loading = true;
+            detailState.jobId = jobId;
+            setDetailState('loading', { forceVisible: true });
+            try {
+              const data = await fetchShortlistDetail(jobId);
+              if (detailState.jobId !== jobId) {
+                return;
+              }
+              renderDetail(jobId, data);
+              setDetailState('ready', { forceVisible: true });
+              dispatchApplicationDetailLoaded(data);
+            } catch (err) {
+              if (detailState.jobId !== jobId) {
+                return;
+              }
+              const message =
+                err && typeof err.message === 'string'
+                  ? err.message
+                  : 'Unable to load application detail';
+              setDetailState('error', { message, forceVisible: true });
+            } finally {
+              if (detailState.jobId === jobId) {
+                detailState.loading = false;
+              }
+            }
           }
 
           function updatePaginationControls(data) {
@@ -1272,15 +1618,15 @@ export function createWebApp({
             if (csrfHeader && csrfToken) {
               headers[csrfHeader] = csrfToken;
             }
-              const commandUrl = new URL(
-                '/commands/shortlist-list',
-                window.location.href,
-              );
-              const response = await fetch(commandUrl, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify(payload),
-              });
+            const commandUrl = new URL(
+              '/commands/shortlist-list',
+              window.location.href,
+            );
+            const response = await fetch(commandUrl, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify(payload),
+            });
             let parsed;
             try {
               parsed = await response.json();
@@ -1295,6 +1641,46 @@ export function createWebApp({
               throw new Error(message);
             }
             return parsed;
+          }
+
+          async function fetchShortlistDetail(jobId) {
+            if (!jobId) {
+              throw new Error('Job ID is required');
+            }
+            if (typeof fetch !== 'function') {
+              throw new Error('Fetch API is unavailable in this environment');
+            }
+            const headers = { 'content-type': 'application/json' };
+            if (csrfHeader && csrfToken) {
+              headers[csrfHeader] = csrfToken;
+            }
+            const commandUrl = new URL(
+              '/commands/shortlist-show',
+              window.location.href,
+            );
+            const response = await fetch(commandUrl, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ jobId }),
+            });
+            let parsed;
+            try {
+              parsed = await response.json();
+            } catch {
+              throw new Error('Received invalid response while loading application detail');
+            }
+            if (!response.ok) {
+              const message =
+                parsed && typeof parsed.error === 'string'
+                  ? parsed.error
+                  : 'Failed to load application detail';
+              throw new Error(message);
+            }
+            const data = parsed?.data;
+            if (!data || typeof data !== 'object') {
+              throw new Error('Received invalid detail payload');
+            }
+            return data;
           }
 
           async function refresh(options = {}) {
@@ -1393,6 +1779,25 @@ export function createWebApp({
             const nextOffset = state.offset + state.limit;
             refresh({ offset: nextOffset });
           });
+
+          tbody?.addEventListener('click', event => {
+            const target = event.target;
+            if (!(target instanceof Element)) {
+              return;
+            }
+            const button = target.closest('[data-shortlist-view]');
+            if (!button) {
+              return;
+            }
+            const jobId = button.getAttribute('data-shortlist-view');
+            if (!jobId) {
+              return;
+            }
+            event.preventDefault();
+            loadDetail(jobId);
+          });
+
+          setDetailState('empty');
 
           addRouteListener('applications', () => {
             if (!state.loaded && !state.loading) {
@@ -1682,6 +2087,24 @@ export function createWebApp({
             const fallback = document.createEvent('Event');
             fallback.initEvent('jobbot:applications-loaded', true, true);
             fallback.detail = detail;
+            document.dispatchEvent(fallback);
+          }
+        }
+
+        function dispatchApplicationDetailLoaded(detail = {}) {
+          const jobId =
+            typeof detail?.job_id === 'string' && detail.job_id.trim()
+              ? detail.job_id.trim()
+              : detailState.jobId;
+          const eventDetail = { jobId, data: detail };
+          try {
+            document.dispatchEvent(
+              new CustomEvent('jobbot:application-detail-loaded', { detail: eventDetail }),
+            );
+          } catch {
+            const fallback = document.createEvent('Event');
+            fallback.initEvent('jobbot:application-detail-loaded', true, true);
+            fallback.detail = eventDetail;
             document.dispatchEvent(fallback);
           }
         }

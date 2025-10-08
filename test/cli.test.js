@@ -2012,6 +2012,98 @@ describe('jobbot CLI', () => {
     expect(json.jobs['job-json'].discard_count).toBe(2);
   });
 
+  it('shows shortlist details with timeline events and attachments', () => {
+    runCli([
+      'shortlist',
+      'sync',
+      'job-detail',
+      '--location',
+      'Remote',
+      '--level',
+      'Staff',
+      '--compensation',
+      '$200k',
+    ]);
+
+    runCli(['shortlist', 'tag', 'job-detail', 'remote', 'priority']);
+
+    runCli([
+      'shortlist',
+      'discard',
+      'job-detail',
+      '--reason',
+      'Paused hiring',
+      '--tags',
+      'follow_up',
+      '--date',
+      '2025-03-05T12:00:00Z',
+    ]);
+
+    runCli([
+      'track',
+      'log',
+      'job-detail',
+      '--channel',
+      'email',
+      '--contact',
+      'Recruiter',
+      '--note',
+      'Sent resume',
+      '--documents',
+      'resume.pdf,cover-letter.pdf',
+      '--remind-at',
+      '2025-03-06T15:00:00Z',
+    ]);
+
+    runCli([
+      'track',
+      'log',
+      'job-detail',
+      '--channel',
+      'call',
+      '--note',
+      'Scheduled screening',
+      '--date',
+      '2025-03-07T09:00:00Z',
+    ]);
+
+    const detail = JSON.parse(runCli(['shortlist', 'show', 'job-detail', '--json']));
+
+    expect(detail).toMatchObject({
+      job_id: 'job-detail',
+      metadata: {
+        location: 'Remote',
+        level: 'Staff',
+        compensation: '$200k',
+      },
+      tags: ['remote', 'priority'],
+      discard_count: 1,
+      last_discard: {
+        reason: 'Paused hiring',
+        discarded_at: '2025-03-05T12:00:00.000Z',
+        tags: ['follow_up'],
+      },
+    });
+
+    expect(Array.isArray(detail.events)).toBe(true);
+    expect(detail.events).toHaveLength(2);
+    expect(detail.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          channel: 'email',
+          contact: 'Recruiter',
+          note: 'Sent resume',
+          documents: ['resume.pdf', 'cover-letter.pdf'],
+          remind_at: '2025-03-06T15:00:00.000Z',
+        }),
+        expect.objectContaining({
+          channel: 'call',
+          note: 'Scheduled screening',
+        }),
+      ]),
+    );
+  });
+
   it('writes shortlist JSON snapshots to disk with --out', () => {
     runCli([
       'shortlist',
