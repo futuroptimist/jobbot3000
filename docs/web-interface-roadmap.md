@@ -37,6 +37,14 @@
 
 ## Implementation Strategy
 
+> [!NOTE]
+> **Future work triage (2025-10-08):**
+> - *Application detail view showing lifecycle timeline, notes, and attachments via CLI `show`.*
+>   Fits within a single PR because the CLI already persists lifecycle statuses and activity logs,
+>   so the feature primarily needs a read-focused command and documentation updates.
+> - *Action panel enabling create/update status workflows mapped to CLI `create`/`update`.*
+>   Requires new mutation endpoints and UI flows, so it remains a larger follow-up task.
+
 ### 1. Requirements and Domain Mapping
 
 - Audit existing CLI commands, arguments, and expected JSON/text outputs.
@@ -207,7 +215,15 @@
      [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js),
      and [`test/web-e2e.test.js`](../test/web-e2e.test.js) keeps the adapter,
      HTML view, and CLI integration aligned.
-   - Application detail view showing lifecycle timeline, notes, and attachments via CLI `show`.
+  - Application detail view showing lifecycle timeline, notes, and attachments via CLI `show`.
+    _Implemented (2025-10-08):_ [`jobbot track show`](../bin/jobbot.js) now
+    reads lifecycle entries via [`getLifecycleEntry`](../src/lifecycle.js),
+    stitches together activity logs, and prints both human-friendly and JSON
+    payloads with aggregated attachments. Coverage in
+    [`test/cli.test.js`](../test/cli.test.js) and
+    [`test/lifecycle.test.js`](../test/lifecycle.test.js) verifies the status
+    metadata, timeline ordering, and document rollups so future UI detail views
+    inherit the same contract.
    - Action panel enabling create/update status workflows mapped to CLI `create`/`update`.
    - Notification hooks for reminders, leveraging CLI scheduling or local system integration.
      _Implemented (2025-10-04):_ [`bin/jobbot.js`](../bin/jobbot.js) now supports

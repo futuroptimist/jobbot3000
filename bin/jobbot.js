@@ -29,6 +29,7 @@ import {
   recordApplication,
   getLifecycleBoard,
   listLifecycleEntries,
+  getLifecycleEntry,
   STATUSES,
 } from '../src/lifecycle.js';
 import {
@@ -656,6 +657,114 @@ async function cmdTrackHistory(args) {
   console.log(lines.join('\n'));
 }
 
+async function cmdTrackShow(args) {
+  const jobId = args[0];
+  if (!jobId) {
+    console.error('Usage: jobbot track show <job_id> [--json]');
+    process.exit(2);
+  }
+
+  const asJson = args.includes('--json');
+
+  let statusEntry = null;
+  try {
+    statusEntry = await getLifecycleEntry(jobId);
+  } catch (err) {
+    console.error(err && err.message ? err.message : String(err));
+    process.exit(1);
+  }
+
+  let events = [];
+  try {
+    events = await getApplicationEvents(jobId);
+  } catch (err) {
+    console.error(err && err.message ? err.message : String(err));
+    process.exit(1);
+  }
+
+  const attachments = [];
+  const seenAttachments = new Set();
+  for (const event of events) {
+    if (!event || !Array.isArray(event.documents)) continue;
+    for (const doc of event.documents) {
+      if (typeof doc !== 'string') continue;
+      const normalized = doc.trim();
+      if (!normalized || seenAttachments.has(normalized)) continue;
+      seenAttachments.add(normalized);
+      attachments.push(normalized);
+    }
+  }
+
+  const detail = {
+    job_id: jobId,
+    status: statusEntry,
+    events,
+  };
+  if (attachments.length > 0) {
+    detail.attachments = attachments;
+  }
+
+  if (asJson) {
+    console.log(JSON.stringify(detail, null, 2));
+    return;
+  }
+
+  const lines = [jobId];
+
+  if (statusEntry) {
+    const statusParts = [`Status: ${statusEntry.status}`];
+    if (statusEntry.updated_at) {
+      statusParts.push(`(updated ${statusEntry.updated_at})`);
+    }
+    lines.push(statusParts.join(' '));
+    if (statusEntry.note) {
+      lines.push(`Note: ${statusEntry.note}`);
+    }
+  } else {
+    lines.push('Status: (not tracked)');
+  }
+
+  if (events.length > 0) {
+    lines.push('Timeline:');
+    for (const event of events) {
+      if (!event || typeof event !== 'object') continue;
+      const channel =
+        typeof event.channel === 'string' && event.channel.trim()
+          ? event.channel.trim()
+          : 'unknown';
+      const timestamp =
+        typeof event.date === 'string' && event.date.trim()
+          ? event.date.trim()
+          : '';
+      const header = timestamp ? `${channel} (${timestamp})` : channel;
+      lines.push(`- ${header}`);
+      if (event.contact) {
+        lines.push(`  Contact: ${event.contact}`);
+      }
+      if (event.note) {
+        lines.push(`  Note: ${event.note}`);
+      }
+      if (Array.isArray(event.documents) && event.documents.length > 0) {
+        lines.push(`  Attachments: ${event.documents.join(', ')}`);
+      }
+      if (event.remind_at) {
+        lines.push(`  Reminder: ${event.remind_at}`);
+      }
+    }
+  } else {
+    lines.push('Timeline: (none)');
+  }
+
+  if (attachments.length > 0) {
+    lines.push('Attachments:');
+    for (const doc of attachments) {
+      lines.push(`- ${doc}`);
+    }
+  }
+
+  console.log(lines.join('\n'));
+}
+
 async function cmdTrackReminders(args) {
   const asJson = args.includes('--json');
   const nowValue = getFlag(args, '--now');
@@ -1232,10 +1341,11 @@ async function cmdTrack(args) {
   if (sub === 'list') return cmdTrackList(args.slice(1));
   if (sub === 'log') return cmdTrackLog(args.slice(1));
   if (sub === 'history') return cmdTrackHistory(args.slice(1));
+  if (sub === 'show') return cmdTrackShow(args.slice(1));
   if (sub === 'discard') return cmdTrackDiscard(args.slice(1));
   if (sub === 'reminders') return cmdTrackReminders(args.slice(1));
   if (sub === 'board') return cmdTrackBoard(args.slice(1));
-  console.error('Usage: jobbot track <add|list|log|history|discard|reminders|board> ...');
+  console.error('Usage: jobbot track <add|list|log|history|show|discard|reminders|board> ...');
   process.exit(2);
 }
 
