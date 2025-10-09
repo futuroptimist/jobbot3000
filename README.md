@@ -1757,6 +1757,16 @@ shortlist view, and theme toggle, while
 [`test/web-audits.test.js`](test/web-audits.test.js) continues to lock the
 accessibility and performance baselines.
 
+Selecting “View details” opens a drawer backed by `POST /commands/shortlist-show`
+that renders shortlist metadata, discard history, and the application timeline.
+The drawer now exposes the current lifecycle status and note, plus an inline
+form that submits to `POST /commands/track-add` so you can record the next
+status without leaving the dashboard. Regression coverage in
+[`test/web-server.test.js`](test/web-server.test.js) and
+[`test/web-command-adapter.test.js`](test/web-command-adapter.test.js) lock the
+form wiring, CLI argument shaping, DOM updates after a successful status change,
+and gzip compression so Lighthouse budgets stay green.
+
 Each routed section is wrapped in a reusable status panel that exposes ready,
 loading, and error slots. The client script attaches a `JobbotStatusHub` helper
 alongside a `jobbot:status-panels-ready` event so future integrations can flip

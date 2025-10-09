@@ -1,6 +1,7 @@
 import express from 'express';
 import { randomBytes } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
+import { gzipSync } from 'node:zlib';
 
 import {
   createCommandAdapter,
@@ -8,6 +9,7 @@ import {
   sanitizeOutputValue,
 } from './command-adapter.js';
 import { ALLOW_LISTED_COMMANDS, validateCommandPayload } from './command-registry.js';
+import { STATUSES } from '../lifecycle.js';
 
 function createInMemoryRateLimiter(options = {}) {
   const windowMs = Number(options.windowMs ?? 60000);
@@ -366,8 +368,7 @@ export function createWebApp({
     const csrfHeaderAttr = escapeHtml(csrfOptions.headerName);
     const csrfTokenAttr = escapeHtml(csrfOptions.token);
 
-    res.set('Content-Type', 'text/html; charset=utf-8');
-    res.send(`<!doctype html>
+    const rawHtml = `<!doctype html>
 <html lang="en" data-theme="dark">
   <head>
     <meta charset="utf-8" />
@@ -718,6 +719,10 @@ export function createWebApp({
       .application-detail__meta dd {
         margin: 0;
       }
+      .application-detail__status {
+        margin: 0;
+        font-weight: 600;
+      }
       .application-detail__tags {
         margin: 0;
       }
@@ -733,6 +738,48 @@ export function createWebApp({
       }
       .application-detail__event-header {
         font-weight: 600;
+      }
+      .application-detail__actions {
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--card-border);
+      }
+      .application-detail__actions form {
+        display: grid;
+        gap: 0.75rem;
+      }
+      .application-detail__actions label {
+        display: grid;
+        gap: 0.35rem;
+      }
+      .application-detail__actions select,
+      .application-detail__actions input {
+        border-radius: 0.6rem;
+        border: 1px solid var(--card-border);
+        padding: 0.5rem 0.75rem;
+        background-color: rgba(15, 23, 42, 0.35);
+        color: var(--foreground);
+      }
+      [data-theme='light'] .application-detail__actions select,
+      [data-theme='light'] .application-detail__actions input {
+        background-color: rgba(255, 255, 255, 0.9);
+      }
+      .application-detail__actions button {
+        border-radius: 999px;
+        border: 1px solid var(--pill-border);
+        background-color: var(--pill-bg);
+        color: var(--pill-text);
+        padding: 0.45rem 1.1rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .application-detail__actions button[disabled] {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      .application-detail__action-footer {
+        display: flex;
+        justify-content: flex-start;
       }
       .application-detail__empty {
         color: var(--muted);
@@ -936,9 +983,34 @@ export function createWebApp({
               </div>
               <div class="application-detail__section" data-detail-state="ready" hidden>
                 <h3 class="application-detail__title" data-detail-title></h3>
+                <p class="application-detail__status" data-detail-status-display></p>
                 <dl class="application-detail__meta" data-detail-meta></dl>
                 <p class="application-detail__tags" data-detail-tags></p>
                 <div class="application-detail__section" data-detail-discard></div>
+                <div
+                  class="application-detail__section application-detail__actions"
+                  data-detail-actions
+                >
+                  <h4>Update status</h4>
+                  <form data-detail-action-form>
+                    <label>
+                      <span>Status</span>
+                      <select data-detail-status-select></select>
+                    </label>
+                    <label>
+                      <span>Note</span>
+                      <input
+                        type="text"
+                        data-detail-status-note
+                        placeholder="Optional note"
+                        autocomplete="off"
+                      />
+                    </label>
+                    <div class="application-detail__action-footer">
+                      <button type="submit" data-detail-action-submit>Save status</button>
+                    </div>
+                  </form>
+                </div>
                 <ul class="application-detail__events" data-detail-events></ul>
               </div>
             </div>
@@ -1065,6 +1137,8 @@ export function createWebApp({
         const csrfHeader = document.body?.dataset.csrfHeader || '';
         const csrfToken = document.body?.dataset.csrfToken || '';
         const routeListeners = new Map();
+        const LIFECYCLE_STATUSES = Object.freeze(${JSON.stringify(STATUSES)});
+        const STATUS_SET = new Set(LIFECYCLE_STATUSES);
 
         function normalizePanelId(value) {
           if (typeof value !== 'string') {
@@ -1221,14 +1295,20 @@ export function createWebApp({
                 ready: container.querySelector('[data-detail-state="ready"]'),
               },
               title: container.querySelector('[data-detail-title]'),
+              statusDisplay: container.querySelector('[data-detail-status-display]'),
               meta: container.querySelector('[data-detail-meta]'),
               tags: container.querySelector('[data-detail-tags]'),
               discard: container.querySelector('[data-detail-discard]'),
               events: container.querySelector('[data-detail-events]'),
+              actions: container.querySelector('[data-detail-actions]'),
+              actionForm: container.querySelector('[data-detail-action-form]'),
+              statusSelect: container.querySelector('[data-detail-status-select]'),
+              statusNote: container.querySelector('[data-detail-status-note]'),
+              actionSubmit: container.querySelector('[data-detail-action-submit]'),
               errorMessage: container.querySelector('[data-detail-error]'),
             };
           })();
-          const detailState = { loading: false, jobId: null };
+          const detailState = { loading: false, jobId: null, updating: false };
 
           function clampLimit(value) {
             const number = Number.parseInt(value, 10);
@@ -1350,10 +1430,52 @@ export function createWebApp({
           function clearDetailContents() {
             if (!detailElements) return;
             if (detailElements.title) detailElements.title.textContent = '';
+            if (detailElements.statusDisplay) detailElements.statusDisplay.textContent = '';
             if (detailElements.meta) detailElements.meta.textContent = '';
             if (detailElements.tags) detailElements.tags.textContent = '';
             if (detailElements.discard) detailElements.discard.textContent = '';
             if (detailElements.events) detailElements.events.textContent = '';
+            if (detailElements.statusNote) detailElements.statusNote.value = '';
+            if (detailElements.statusSelect) detailElements.statusSelect.value = '';
+            if (detailElements.actionSubmit) {
+              detailElements.actionSubmit.disabled = false;
+            }
+          }
+
+          let statusOptionsInitialized = false;
+
+          function formatStatusLabel(status) {
+            if (typeof status !== 'string' || !status.trim()) {
+              return '(not tracked)';
+            }
+            return status
+              .split('_')
+              .map(part => (part ? part[0].toUpperCase() + part.slice(1) : part))
+              .join(' ');
+          }
+
+          function ensureStatusOptions() {
+            if (!detailElements?.statusSelect) return;
+            if (statusOptionsInitialized) return;
+            const select = detailElements.statusSelect;
+            select.textContent = '';
+            for (const status of LIFECYCLE_STATUSES) {
+              if (typeof status !== 'string' || !status) {
+                continue;
+              }
+              const option = document.createElement('option');
+              option.value = status;
+              option.textContent = formatStatusLabel(status);
+              select.appendChild(option);
+            }
+            statusOptionsInitialized = true;
+          }
+
+          function setActionSubmitting(submitting) {
+            detailState.updating = submitting === true;
+            if (detailElements?.actionSubmit) {
+              detailElements.actionSubmit.disabled = detailState.updating;
+            }
           }
 
           function renderDetail(jobId, data) {
@@ -1361,6 +1483,50 @@ export function createWebApp({
             detailState.jobId = jobId;
             clearDetailContents();
             const metadata = data && typeof data === 'object' ? data.metadata || {} : {};
+            const statusEntry =
+              data && typeof data === 'object' && data.status ? data.status : null;
+            const statusValue =
+              statusEntry && typeof statusEntry.status === 'string' ? statusEntry.status : '';
+
+            ensureStatusOptions();
+
+            if (detailElements.statusDisplay) {
+              const label = STATUS_SET.has(statusValue)
+                ? formatStatusLabel(statusValue)
+                : '(not tracked)';
+              const parts = ['Current status: ' + label];
+              if (
+                statusEntry &&
+                typeof statusEntry.updated_at === 'string' &&
+                statusEntry.updated_at
+              ) {
+                parts.push('Updated ' + statusEntry.updated_at);
+              }
+              if (
+                statusEntry &&
+                typeof statusEntry.note === 'string' &&
+                statusEntry.note
+              ) {
+                parts.push('Note: ' + statusEntry.note);
+              }
+              detailElements.statusDisplay.textContent = parts.join(' • ');
+            }
+
+            if (detailElements.statusSelect && detailElements.statusSelect.options.length > 0) {
+              if (STATUS_SET.has(statusValue)) {
+                detailElements.statusSelect.value = statusValue;
+              } else {
+                detailElements.statusSelect.value = detailElements.statusSelect.options[0].value;
+              }
+            }
+
+            if (detailElements.actions) {
+              if (LIFECYCLE_STATUSES.length === 0) {
+                detailElements.actions.setAttribute('hidden', '');
+              } else {
+                detailElements.actions.removeAttribute('hidden');
+              }
+            }
 
             if (detailElements.title) {
               detailElements.title.textContent = 'Application ' + jobId;
@@ -1470,6 +1636,77 @@ export function createWebApp({
                   detailElements.events.appendChild(li);
                 }
               }
+            }
+          }
+
+          async function submitStatusUpdate(event) {
+            event.preventDefault();
+            if (!detailElements || detailState.updating) {
+              return;
+            }
+            const jobId = detailState.jobId;
+            if (!jobId) {
+              setDetailState('error', {
+                message: 'Select an application before updating its status.',
+                forceVisible: true,
+              });
+              return;
+            }
+            if (!detailElements.statusSelect) {
+              setDetailState('error', {
+                message: 'Status controls are unavailable.',
+                forceVisible: true,
+              });
+              return;
+            }
+            const status = detailElements.statusSelect.value;
+            if (!STATUS_SET.has(status)) {
+              setDetailState('error', {
+                message: 'Choose a valid status before saving.',
+                forceVisible: true,
+              });
+              return;
+            }
+            const note = detailElements.statusNote?.value?.trim();
+            const payload = note ? { jobId, status, note } : { jobId, status };
+
+            setActionSubmitting(true);
+
+            try {
+              const headers = { 'content-type': 'application/json' };
+              if (csrfHeader && csrfToken) {
+                headers[csrfHeader] = csrfToken;
+              }
+              const response = await fetch(new URL('/commands/track-add', window.location.href), {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(payload),
+              });
+              let parsed;
+              try {
+                parsed = await response.json();
+              } catch {
+                parsed = null;
+              }
+              if (!response.ok) {
+                const message =
+                  parsed && typeof parsed.error === 'string'
+                    ? parsed.error
+                    : 'Failed to update status';
+                throw new Error(message);
+              }
+              if (detailElements.statusNote) {
+                detailElements.statusNote.value = '';
+              }
+              await loadDetail(jobId);
+            } catch (err) {
+              const message =
+                err && typeof err.message === 'string'
+                  ? err.message
+                  : 'Unable to update status';
+              setDetailState('error', { message, forceVisible: true });
+            } finally {
+              setActionSubmitting(false);
             }
           }
 
@@ -1769,6 +2006,8 @@ export function createWebApp({
                 resetOffset: true,
               });
             });
+
+          detailElements?.actionForm?.addEventListener('submit', submitStatusUpdate);
 
           prevButton?.addEventListener('click', () => {
             const nextOffset = Math.max(0, state.offset - state.limit);
@@ -2138,7 +2377,24 @@ export function createWebApp({
       })();
     </script>
   </body>
-</html>`);
+</html>`;
+
+    const html = rawHtml.replace(/\n[ \t]+/g, '\n');
+
+    const acceptEncoding = String(req.headers['accept-encoding'] || '');
+    res.set('Vary', 'Accept-Encoding');
+    if (/\bgzip\b/.test(acceptEncoding)) {
+      const compressed = gzipSync(Buffer.from(html, 'utf8'));
+      res.set('Content-Type', 'text/html; charset=utf-8');
+      res.set('Content-Encoding', 'gzip');
+      res.set('Content-Length', String(compressed.length));
+      res.send(compressed);
+      return;
+    }
+
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.set('Content-Length', String(Buffer.byteLength(html)));
+    res.send(html);
 
   });
 

@@ -505,6 +505,27 @@ describe('createCommandAdapter', () => {
     ]);
   });
 
+  it('records lifecycle updates through track add', async () => {
+    const cli = {
+      cmdTrackAdd: vi.fn(async args => {
+        expect(args).toEqual(['job-9', '--status', 'screening', '--note', 'Reached out']);
+        console.log('Recorded job-9 as screening');
+      }),
+    };
+
+    const adapter = createCommandAdapter({ cli });
+    const result = await adapter['track-add']({
+      jobId: 'job-9',
+      status: 'screening',
+      note: 'Reached out',
+    });
+
+    expect(cli.cmdTrackAdd).toHaveBeenCalledTimes(1);
+    expect(result.command).toBe('track-add');
+    expect(result.stdout).toBe('Recorded job-9 as screening');
+    expect(result.returnValue).toBeUndefined();
+  });
+
   it('spawns the CLI without shell interpolation when no cli module is provided', async () => {
     process.env.JOBBOT_WEB_ENABLE_NATIVE_CLI = '1';
     const spawnMock = childProcess.spawn;

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { normalizeMatchRequest, normalizeSummarizeRequest } from '../src/web/schemas.js';
+import {
+  normalizeMatchRequest,
+  normalizeSummarizeRequest,
+  normalizeTrackAddRequest,
+} from '../src/web/schemas.js';
 
 describe('web request schemas', () => {
   describe('normalizeSummarizeRequest', () => {
@@ -59,6 +63,33 @@ describe('web request schemas', () => {
     it('throws when options are not an object', () => {
       expect(() => normalizeMatchRequest(null)).toThrow('match options must be an object');
       expect(() => normalizeMatchRequest([])).toThrow('match options must be an object');
+    });
+  });
+
+  describe('normalizeTrackAddRequest', () => {
+    it('normalizes lifecycle requests and trims note', () => {
+      const options = normalizeTrackAddRequest({
+        jobId: ' job-42 ',
+        status: 'screening',
+        note: '  Scheduled recruiter call  ',
+      });
+
+      expect(options).toEqual({
+        jobId: 'job-42',
+        status: 'screening',
+        note: 'Scheduled recruiter call',
+      });
+    });
+
+    it('rejects unsupported statuses', () => {
+      expect(() =>
+        normalizeTrackAddRequest({ jobId: 'job-1', status: 'unknown' }),
+      ).toThrow('status must be one of:');
+    });
+
+    it('throws when options are not an object', () => {
+      expect(() => normalizeTrackAddRequest(null)).toThrow('track add options must be an object');
+      expect(() => normalizeTrackAddRequest([])).toThrow('track add options must be an object');
     });
   });
 });

@@ -1,3 +1,6 @@
+import { request as httpRequest } from 'node:http';
+import { gunzipSync } from 'node:zlib';
+
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { JSDOM } from 'jsdom';
 
@@ -14,6 +17,39 @@ async function startServer(options) {
   });
   activeServers.push(server);
   return server;
+}
+
+async function fetchRaw(url, options = {}) {
+  const target = new URL(url);
+  const headers = options.headers || {};
+  return new Promise((resolve, reject) => {
+    const request = httpRequest(
+      {
+        hostname: target.hostname,
+        port: target.port,
+        path: target.pathname + target.search,
+        protocol: target.protocol,
+        method: options.method || 'GET',
+        headers,
+      },
+      response => {
+        const chunks = [];
+        response.on('data', chunk => chunks.push(chunk));
+        response.on('end', () => {
+          resolve({
+            status: response.statusCode || 0,
+            headers: response.headers,
+            body: Buffer.concat(chunks),
+          });
+        });
+      },
+    );
+    request.on('error', reject);
+    if (options.body) {
+      request.write(options.body);
+    }
+    request.end();
+  });
 }
 
 function buildCommandHeaders(server, overrides = {}) {
@@ -264,6 +300,20 @@ describe('web server status page', () => {
     expect(html).toContain('data-shortlist-filters');
     expect(html).toContain('data-shortlist-table');
     expect(html).toContain('data-shortlist-pagination');
+  });
+
+  it('compresses the status page when the client accepts gzip responses', async () => {
+    const server = await startServer();
+
+    const { status, headers, body } = await fetchRaw(`${server.url}/`, {
+      headers: { 'accept-encoding': 'gzip' },
+    });
+
+    expect(status).toBe(200);
+    expect(headers['content-encoding']).toBe('gzip');
+
+    const decoded = gunzipSync(body).toString('utf8');
+    expect(decoded).toContain('data-router');
   });
 
   it('loads shortlist entries and paginates the applications view with filters', async () => {
@@ -519,6 +569,140 @@ describe('web server status page', () => {
     expect(detailPanel?.textContent).toContain('Sent resume');
     expect(detailPanel?.textContent).toContain('resume.pdf');
     expect(detailPanel?.textContent).toContain('Follow-up scheduled');
+  });
+
+  it('submits lifecycle updates from the action panel', async () => {
+    const shortlistEntry = {
+      id: 'job-42',
+      metadata: {
+        location: 'Remote',
+        level: 'Staff',
+        compensation: '$200k',
+        synced_at: '2025-03-05T12:00:00.000Z',
+      },
+      tags: ['remote', 'priority'],
+      discard_count: 0,
+    };
+
+    let detailCalls = 0;
+    const commandAdapter = {
+      'shortlist-list': vi.fn(async () => ({
+        command: 'shortlist-list',
+        format: 'json',
+        stdout: '',
+        stderr: '',
+        returnValue: 0,
+        data: {
+          total: 1,
+          offset: 0,
+          limit: 20,
+          filters: {},
+          hasMore: false,
+          items: [shortlistEntry],
+        },
+      })),
+      'shortlist-show': vi.fn(async payload => {
+        expect(payload).toEqual({ jobId: 'job-42' });
+        const statusEntry =
+          detailCalls === 0
+            ? {
+                status: 'screening',
+                updated_at: '2025-03-05T12:00:00.000Z',
+              }
+            : {
+                status: 'offer',
+                updated_at: '2025-03-08T09:30:00.000Z',
+              };
+        detailCalls += 1;
+        return {
+          command: 'shortlist-show',
+          format: 'json',
+          stdout: '',
+          stderr: '',
+          returnValue: 0,
+          data: {
+            job_id: 'job-42',
+            metadata: shortlistEntry.metadata,
+            tags: shortlistEntry.tags,
+            discard_count: shortlistEntry.discard_count,
+            status: statusEntry,
+            events: [],
+          },
+        };
+      }),
+      'track-add': vi.fn(async payload => {
+        expect(payload).toEqual({ jobId: 'job-42', status: 'offer', note: 'Signed offer' });
+        return {
+          command: 'track-add',
+          stdout: 'Recorded job-42 as offer\n',
+          stderr: '',
+          returnValue: 0,
+        };
+      }),
+    };
+
+    commandAdapter.shortlistList = commandAdapter['shortlist-list'];
+    commandAdapter.shortlistShow = commandAdapter['shortlist-show'];
+    commandAdapter.trackAdd = commandAdapter['track-add'];
+
+    const server = await startServer({ commandAdapter });
+    const response = await fetch(`${server.url}/`);
+    const html = await response.text();
+
+    const dom = new JSDOM(html, {
+      runScripts: 'dangerously',
+      resources: 'usable',
+      url: `${server.url}/`,
+      pretendToBeVisual: true,
+    });
+    dom.window.fetch = (input, init) => fetch(input, init);
+
+    const waitForEvent = (name, timeout = 500) =>
+      new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`${name} timed out`)), timeout);
+        dom.window.document.addEventListener(
+          name,
+          event => {
+            clearTimeout(timer);
+            resolve(event);
+          },
+          { once: true },
+        );
+      });
+
+    await waitForEvent('jobbot:applications-ready');
+    const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
+    dom.window.location.hash = '#applications';
+    dom.window.dispatchEvent(new HashChange('hashchange'));
+
+    await waitForEvent('jobbot:applications-loaded');
+
+    const detailToggle = dom.window.document.querySelector('[data-shortlist-view]');
+    const initialDetailLoaded = waitForEvent('jobbot:application-detail-loaded');
+    detailToggle?.dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+    await initialDetailLoaded;
+
+    const statusDisplay = dom.window.document.querySelector('[data-detail-status-display]');
+    expect(statusDisplay?.textContent).toContain('Screening');
+
+    const statusSelect = dom.window.document.querySelector('[data-detail-status-select]');
+    const noteInput = dom.window.document.querySelector('[data-detail-status-note]');
+    const actionForm = dom.window.document.querySelector('[data-detail-action-form]');
+
+    expect(statusSelect?.value).toBe('screening');
+    if (statusSelect) statusSelect.value = 'offer';
+    if (noteInput) noteInput.value = 'Signed offer';
+
+    const updatedDetailLoaded = waitForEvent('jobbot:application-detail-loaded');
+    actionForm?.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    await updatedDetailLoaded;
+
+    expect(commandAdapter['track-add']).toHaveBeenCalledTimes(1);
+    expect(commandAdapter['shortlist-show']).toHaveBeenCalledTimes(2);
+
+    expect(statusSelect?.value).toBe('offer');
+    expect(statusDisplay?.textContent).toContain('Offer');
+    expect(noteInput?.value).toBe('');
   });
 });
 

@@ -1,3 +1,5 @@
+import { STATUSES } from '../lifecycle.js';
+
 const SUMMARIZE_ALLOWED_FIELDS = new Set([
   'input',
   'source',
@@ -35,6 +37,10 @@ const SHORTLIST_LIST_ALLOWED_FIELDS = new Set([
 ]);
 
 const SHORTLIST_SHOW_ALLOWED_FIELDS = new Set(['jobId', 'job_id']);
+
+const TRACK_ADD_ALLOWED_FIELDS = new Set(['jobId', 'job_id', 'status', 'note']);
+
+const STATUS_SET = new Set(STATUSES);
 
 function ensurePlainObject(value, commandName) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -235,11 +241,26 @@ function validateShortlistShowPayload(rawPayload) {
   return { jobId };
 }
 
+function validateTrackAddPayload(rawPayload) {
+  const payload = ensurePlainObject(rawPayload, 'track-add');
+  assertAllowedFields(payload, TRACK_ADD_ALLOWED_FIELDS, 'track-add');
+  const jobId = coerceString(payload.jobId ?? payload.job_id, { name: 'jobId', required: true });
+  const status = coerceString(payload.status, { name: 'status', required: true });
+  if (!STATUS_SET.has(status)) {
+    throw new Error(`status must be one of: ${STATUSES.join(', ')}`);
+  }
+  const note = coerceString(payload.note, { name: 'note' });
+  const sanitized = { jobId, status };
+  if (note) sanitized.note = note;
+  return sanitized;
+}
+
 const COMMAND_VALIDATORS = Object.freeze({
   summarize: validateSummarizePayload,
   match: validateMatchPayload,
   'shortlist-list': validateShortlistListPayload,
   'shortlist-show': validateShortlistShowPayload,
+  'track-add': validateTrackAddPayload,
 });
 
 export const ALLOW_LISTED_COMMANDS = Object.freeze(Object.keys(COMMAND_VALIDATORS));

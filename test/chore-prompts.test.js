@@ -103,6 +103,20 @@ describe('chore:prompts', () => {
       fs.unlinkSync(backupPath);
     }
 
+    const createdDoc = !fs.existsSync(docPath);
+    if (createdDoc) {
+      const placeholderDoc = [
+        '---',
+        'title: "Codex Automation Prompt"',
+        'slug: "codex-automation"',
+        '---',
+        '',
+        '# Codex Automation Prompt',
+        '',
+      ].join('\n');
+      fs.writeFileSync(docPath, `${placeholderDoc}\n`, 'utf8');
+    }
+
     fs.writeFileSync(summaryPath, `${sanitizedSummary}\n`, 'utf8');
     formatSummary();
     fs.renameSync(docPath, backupPath);
@@ -116,6 +130,9 @@ describe('chore:prompts', () => {
     } finally {
       if (fs.existsSync(backupPath)) {
         fs.renameSync(backupPath, docPath);
+      }
+      if (createdDoc && fs.existsSync(docPath)) {
+        fs.unlinkSync(docPath);
       }
       fs.writeFileSync(summaryPath, originalSummary, 'utf8');
     }

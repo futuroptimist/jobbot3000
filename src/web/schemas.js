@@ -1,4 +1,7 @@
+import { STATUSES } from '../lifecycle.js';
+
 const SUPPORTED_FORMATS = ['markdown', 'text', 'json'];
+const STATUS_SET = new Set(STATUSES);
 
 function assertPlainObject(value, name) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -182,6 +185,19 @@ export function normalizeShortlistShowRequest(options) {
   assertPlainObject(options, 'shortlist show options');
   const jobId = assertRequiredString(options.jobId ?? options.job_id, 'jobId');
   return { jobId };
+}
+
+export function normalizeTrackAddRequest(options) {
+  assertPlainObject(options, 'track add options');
+  const jobId = assertRequiredString(options.jobId ?? options.job_id, 'jobId');
+  const status = assertRequiredString(options.status, 'status');
+  if (!STATUS_SET.has(status)) {
+    throw new Error(`status must be one of: ${STATUSES.join(', ')}`);
+  }
+  const note = normalizeString(options.note);
+  const request = { jobId, status };
+  if (note) request.note = note;
+  return request;
 }
 
 export const WEB_SUPPORTED_FORMATS = [...SUPPORTED_FORMATS];

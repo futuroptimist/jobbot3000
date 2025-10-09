@@ -233,6 +233,16 @@
      and [`test/cli.test.js`](../test/cli.test.js) exercises the CLI output,
      adapter wiring, and DOM updates to keep the drawer and timeline stable.
    - Action panel enabling create/update status workflows mapped to CLI `create`/`update`.
+     _Implemented (2025-10-09):_ The Applications drawer now renders lifecycle
+     status metadata from [`shortlist show`](../bin/jobbot.js) and includes an
+     inline form that posts to `POST /commands/track-add`. The client script
+     validates statuses against [`STATUSES`](../src/lifecycle.js), submits the
+     payload via the web command adapter, and refreshes the drawer once the CLI
+     records the update. Coverage in
+     [`test/web-server.test.js`](../test/web-server.test.js),
+     [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js),
+     and [`test/web-schemas.test.js`](../test/web-schemas.test.js) locks the DOM
+     interactions, CLI argument shaping, and request normalization.
    - Notification hooks for reminders, leveraging CLI scheduling or local system integration.
      _Implemented (2025-10-04):_ [`bin/jobbot.js`](../bin/jobbot.js) now supports
      `jobbot track reminders --ics <file>`, wiring the upcoming reminders feed into

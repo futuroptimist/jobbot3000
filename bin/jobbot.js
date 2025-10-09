@@ -157,7 +157,7 @@ function normalizeTimelineEvent(event) {
   return normalized;
 }
 
-function buildShortlistDetail(jobId, record, events) {
+function buildShortlistDetail(jobId, record, events, statusEntry) {
   const metadata = record && typeof record.metadata === 'object' ? { ...record.metadata } : {};
   const tags = Array.isArray(record?.tags)
     ? record.tags
@@ -206,11 +206,32 @@ function buildShortlistDetail(jobId, record, events) {
     detail.last_discard = { ...record.last_discard };
   }
 
+  if (statusEntry && typeof statusEntry === 'object') {
+    detail.status = { ...statusEntry };
+    if ('job_id' in detail.status) {
+      delete detail.status.job_id;
+    }
+  }
+
   return detail;
 }
 
 function formatShortlistDetail(detail) {
   const lines = [`Job: ${detail.job_id}`];
+
+  if (detail.status && typeof detail.status === 'object') {
+    const statusLabel = detail.status.status || '(not tracked)';
+    const parts = [`Status: ${statusLabel}`];
+    if (detail.status.updated_at) {
+      parts.push(`(updated ${detail.status.updated_at})`);
+    }
+    lines.push(parts.join(' '));
+    if (detail.status.note) {
+      lines.push(`Status note: ${detail.status.note}`);
+    }
+  } else {
+    lines.push('Status: (not tracked)');
+  }
 
   const metadata = detail.metadata ?? {};
   const metaEntries = [
@@ -636,7 +657,7 @@ export async function cmdMatch(args) {
   }
 }
 
-async function cmdTrackAdd(args) {
+export async function cmdTrackAdd(args) {
   const jobId = args[0];
   const status = getFlag(args, '--status');
   const usage =
@@ -1805,8 +1826,12 @@ export async function cmdShortlistShow(args) {
 
   let detail;
   try {
-    const [record, events] = await Promise.all([getShortlist(jobId), getApplicationEvents(jobId)]);
-    detail = buildShortlistDetail(jobId, record, events);
+    const [record, events, statusEntry] = await Promise.all([
+      getShortlist(jobId),
+      getApplicationEvents(jobId),
+      getLifecycleEntry(jobId),
+    ]);
+    detail = buildShortlistDetail(jobId, record, events, statusEntry);
   } catch (err) {
     console.error(err?.message || String(err));
     process.exit(1);
