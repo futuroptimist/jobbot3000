@@ -505,6 +505,33 @@ describe('createCommandAdapter', () => {
     ]);
   });
 
+  it('records application status updates via track-record command', async () => {
+    const cli = {
+      cmdTrackAdd: vi.fn(async args => {
+        expect(args).toEqual(['job-7', '--status', 'offer', '--note', 'Signed offer']);
+        console.log('Recorded job-7 as offer');
+      }),
+    };
+
+    const adapter = createCommandAdapter({ cli });
+    const result = await adapter['track-record']({
+      jobId: 'job-7',
+      status: 'offer',
+      note: 'Signed offer',
+    });
+
+    expect(cli.cmdTrackAdd).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      command: 'track-record',
+      format: 'text',
+      data: {
+        jobId: 'job-7',
+        status: 'offer',
+      },
+    });
+    expect(result.data.message).toContain('Recorded job-7 as offer');
+  });
+
   it('spawns the CLI without shell interpolation when no cli module is provided', async () => {
     process.env.JOBBOT_WEB_ENABLE_NATIVE_CLI = '1';
     const spawnMock = childProcess.spawn;

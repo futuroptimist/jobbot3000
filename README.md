@@ -1764,6 +1764,17 @@ shortlist view, and theme toggle, while
 [`test/web-audits.test.js`](test/web-audits.test.js) continues to lock the
 accessibility and performance baselines.
 
+The Applications drawer now exposes a status action panel that posts to
+`POST /commands/track-record`, mapping directly to `jobbot track add` so web
+interactions create or update lifecycle entries with optional notes. The form
+validates selections, surfaces success and error messages inline, and emits a
+`jobbot:application-status-recorded` event for extensions that need to refresh
+adjacent widgets. Regression coverage in
+[`test/web-server.test.js`](test/web-server.test.js) drives the DOM form,
+mocked command adapter, and event dispatch, while
+[`test/web-command-adapter.test.js`](test/web-command-adapter.test.js) verifies
+the adapter calls `cmdTrackAdd` and returns sanitized status payloads.
+
 Each routed section is wrapped in a reusable status panel that exposes ready,
 loading, and error slots. The client script attaches a `JobbotStatusHub` helper
 alongside a `jobbot:status-panels-ready` event so future integrations can flip
