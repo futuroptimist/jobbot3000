@@ -1712,6 +1712,22 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track reminders --ics reminders.ics --now 2
 # in native calendar clients.
 ```
 
+Snooze reminders or mark them complete without editing JSON manually:
+
+```bash
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track reminders snooze job-123 --until 2025-03-08T10:15:00Z
+# Snoozed reminder for job-123 until 2025-03-08T10:15:00.000Z
+
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track reminders done job-123 --at 2025-03-07T18:00:00Z
+# Marked reminder for job-123 as done at 2025-03-07T18:00:00.000Z
+```
+
+Regression coverage in [`test/application-events.test.js`](test/application-events.test.js)
+locks the snooze and completion helpers so the latest reminder entry is updated (or cleared) without
+clobbering earlier history. [`test/cli.test.js`](test/cli.test.js) exercises the new
+`track reminders snooze`/`done` flows to ensure the CLI prints deterministic confirmations and the
+digest reflects the updated reminder state.
+
 Unit tests in [`test/application-events.test.js`](test/application-events.test.js)
 cover reminder extraction, including past-due filtering. The CLI suite in
 [`test/cli.test.js`](test/cli.test.js) verifies the `--json` output and ensures the
