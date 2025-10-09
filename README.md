@@ -1753,14 +1753,17 @@ web interface expands beyond the CLI wrappers.
 the active section and theme preference in sync across reloads. It includes an
 **Applications** view that calls `POST /commands/shortlist-list` to stream
 shortlist entries through the CLI adapter, apply filters (`location`, `level`,
-`compensation`, tags), and paginate results client-side. The hub also surfaces
-the allow-listed CLI commands, roadmap links, and automated audits guarding the
-adapter while preserving WCAG AA guidance (landmarks, focus styles, skip links).
-The “Helpful references” card links directly to the repository, README, web
-roadmap, and the [web operations playbook](docs/web-operational-playbook.md) so
-on-call responders can jump from the dashboard to runbooks in one click.
+`compensation`, tags), and paginate results client-side. The hub also exposes an
+**Analytics** dashboard powered by `POST /commands/analytics-funnel`, which
+renders funnel stage counts, conversion percentages, largest drop-offs, and
+missing-status alerts sourced from `jobbot analytics funnel --json`. The
+allow-listed CLI commands, roadmap links, and automated audits continue to guard
+the adapter while preserving WCAG AA guidance (landmarks, focus styles, skip
+links). The “Helpful references” card links directly to the repository, README,
+web roadmap, and the [web operations playbook](docs/web-operational-playbook.md)
+so on-call responders can jump from the dashboard to runbooks in one click.
 [`test/web-server.test.js`](test/web-server.test.js) now exercises the router,
-shortlist view, and theme toggle, while
+shortlist view, analytics dashboard, and theme toggle, while
 [`test/web-audits.test.js`](test/web-audits.test.js) continues to lock the
 accessibility and performance baselines.
 

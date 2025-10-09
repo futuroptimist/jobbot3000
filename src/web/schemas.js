@@ -128,6 +128,18 @@ export function normalizeMatchRequest(options) {
   return { resume, job, format, locale, role, location, profile, explain, timeoutMs, maxBytes };
 }
 
+export function normalizeAnalyticsFunnelRequest(options) {
+  if (options == null) {
+    return {};
+  }
+  assertPlainObject(options, 'analytics funnel options');
+  const keys = Object.keys(options);
+  if (keys.length > 0) {
+    throw new Error('analytics funnel does not accept request parameters');
+  }
+  return {};
+}
+
 /**
  * @typedef {Object} ShortlistListRequest
  * @property {string} [location]

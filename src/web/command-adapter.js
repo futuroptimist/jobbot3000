@@ -5,6 +5,7 @@ import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 
 import {
+  normalizeAnalyticsFunnelRequest,
   normalizeMatchRequest,
   normalizeShortlistListRequest,
   normalizeShortlistShowRequest,
@@ -131,6 +132,12 @@ const COMMANDS = Object.freeze({
     cliCommand: ['track', 'add'],
     name: 'track-record',
     errorLabel: 'track add',
+  },
+  'analytics-funnel': {
+    method: 'cmdAnalyticsFunnel',
+    cliCommand: ['analytics', 'funnel'],
+    name: 'analytics-funnel',
+    errorLabel: 'analytics funnel',
   },
 });
 
@@ -723,6 +730,34 @@ export function createCommandAdapter(options = {}) {
     return payload;
   }
 
+  async function analyticsFunnel(options = {}) {
+    normalizeAnalyticsFunnelRequest(options);
+    const args = ['--json'];
+    const { stdout, stderr, returnValue, correlationId, traceId } = await runCli(
+      'analytics-funnel',
+      args,
+    );
+
+    const payload = {
+      command: 'analytics-funnel',
+      format: 'json',
+      stdout,
+      stderr,
+      returnValue,
+    };
+
+    if (correlationId) {
+      payload.correlationId = correlationId;
+    }
+    if (traceId) {
+      payload.traceId = traceId;
+    }
+
+    const parsed = parseJsonOutput('analytics funnel', payload.stdout, payload.stderr);
+    payload.data = sanitizeOutputValue(parsed);
+    return payload;
+  }
+
   async function trackRecord(options = {}) {
     const { jobId, status, note } = normalizeTrackRecordRequest(options);
     const args = [jobId, '--status', status];
@@ -763,10 +798,12 @@ export function createCommandAdapter(options = {}) {
     match,
     shortlistList,
     shortlistShow,
+    analyticsFunnel,
     trackRecord,
   };
   adapter['shortlist-list'] = shortlistList;
   adapter['shortlist-show'] = shortlistShow;
+  adapter['analytics-funnel'] = analyticsFunnel;
   adapter['track-record'] = trackRecord;
   adapter.trackRecord = trackRecord;
   return adapter;
