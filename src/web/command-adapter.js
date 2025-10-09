@@ -9,6 +9,7 @@ import {
   normalizeShortlistListRequest,
   normalizeShortlistShowRequest,
   normalizeSummarizeRequest,
+  normalizeTrackRecordRequest,
 } from './schemas.js';
 
 const SECRET_KEYS = [
@@ -124,6 +125,12 @@ const COMMANDS = Object.freeze({
     cliCommand: ['shortlist', 'show'],
     name: 'shortlist-show',
     errorLabel: 'shortlist show',
+  },
+  'track-record': {
+    method: 'cmdTrackAdd',
+    cliCommand: ['track', 'add'],
+    name: 'track-record',
+    errorLabel: 'track add',
   },
 });
 
@@ -716,14 +723,52 @@ export function createCommandAdapter(options = {}) {
     return payload;
   }
 
+  async function trackRecord(options = {}) {
+    const { jobId, status, note } = normalizeTrackRecordRequest(options);
+    const args = [jobId, '--status', status];
+    if (note) {
+      args.push('--note', note);
+    }
+
+    const { stdout, stderr, returnValue, correlationId, traceId } = await runCli(
+      'track-record',
+      args,
+    );
+
+    const payload = {
+      command: 'track-record',
+      format: 'text',
+      stdout,
+      stderr,
+      returnValue,
+    };
+
+    if (correlationId) {
+      payload.correlationId = correlationId;
+    }
+    if (traceId) {
+      payload.traceId = traceId;
+    }
+
+    const message = sanitizeOutputString(stdout).trim();
+    const data = { jobId, status };
+    if (note) data.note = note;
+    if (message) data.message = message;
+    payload.data = sanitizeOutputValue(data, { key: 'data' });
+    return payload;
+  }
+
   const adapter = {
     summarize,
     match,
     shortlistList,
     shortlistShow,
+    trackRecord,
   };
   adapter['shortlist-list'] = shortlistList;
   adapter['shortlist-show'] = shortlistShow;
+  adapter['track-record'] = trackRecord;
+  adapter.trackRecord = trackRecord;
   return adapter;
 }
 
