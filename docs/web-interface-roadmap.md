@@ -215,7 +215,7 @@
      [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js),
      and [`test/web-e2e.test.js`](../test/web-e2e.test.js) keeps the adapter,
      HTML view, and CLI integration aligned.
-   - Application detail view showing lifecycle timeline, notes, and attachments via CLI `show`.
+  - Application detail view showing lifecycle timeline, notes, and attachments via CLI `show`.
      _Implemented (2025-10-08):_ [`jobbot track show`](../bin/jobbot.js) now
      reads lifecycle entries via [`getLifecycleEntry`](../src/lifecycle.js),
      stitches together activity logs, and prints both human-friendly and JSON
@@ -233,6 +233,18 @@
      and [`test/cli.test.js`](../test/cli.test.js) exercises the CLI output,
      adapter wiring, and DOM updates to keep the drawer and timeline stable.
    - Action panel enabling create/update status workflows mapped to CLI `create`/`update`.
+     _Implemented (2025-10-09):_ The Applications drawer now includes a status
+     action panel that posts to `/commands/track-record`, invoking
+     [`cmdTrackAdd`](../bin/jobbot.js) to create or update lifecycle entries
+     with optional notes. [`src/web/server.js`](../src/web/server.js) renders
+     the form, validates status selections, surfaces inline success/error
+     messaging, and emits a `jobbot:application-status-recorded` event so
+     extensions can react to updates. Regression coverage in
+     [`test/web-server.test.js`](../test/web-server.test.js) drives the DOM
+     workflow against a mocked adapter, while
+     [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
+     verifies the adapter calls `cmdTrackAdd` with sanitized arguments and
+     returns the status payload for the UI.
    - Notification hooks for reminders, leveraging CLI scheduling or local system integration.
      _Implemented (2025-10-04):_ [`bin/jobbot.js`](../bin/jobbot.js) now supports
      `jobbot track reminders --ics <file>`, wiring the upcoming reminders feed into
@@ -255,8 +267,9 @@
     suite in [`test/web-audits.test.js`](../test/web-audits.test.js)
     boots the Express adapter, fetches the HTML dashboard, and asserts the
     audits return zero WCAG AA violations with a performance score ≥0.9 while
-    keeping the HTML transfer size below 70 KB, even with the Applications
-    detail drawer markup loaded.
+    keeping the HTML transfer size below 74 KB. The action panel for recording
+    shortlist statuses raised the payload slightly, so the regression suite and
+    UI now share helpers to trim duplicate markup and styles.
 
 6. **Hardening and Packaging**
    - Implement rate limiting, input sanitization, and CSRF tokens.

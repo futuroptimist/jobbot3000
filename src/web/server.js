@@ -8,6 +8,7 @@ import {
   sanitizeOutputValue,
 } from './command-adapter.js';
 import { ALLOW_LISTED_COMMANDS, validateCommandPayload } from './command-registry.js';
+import { STATUSES } from '../lifecycle.js';
 
 function createInMemoryRateLimiter(options = {}) {
   const windowMs = Number(options.windowMs ?? 60000);
@@ -59,6 +60,13 @@ function escapeHtml(value) {
         return character;
     }
   });
+}
+
+function formatStatusLabel(status) {
+  return status
+    .split('_')
+    .map(part => (part ? part[0].toUpperCase() + part.slice(1) : part))
+    .join(' ');
 }
 
 function normalizeCsrfOptions(csrf = {}) {
@@ -391,6 +399,9 @@ export function createWebApp({
         --danger-bg: rgba(239, 68, 68, 0.16);
         --danger-border: rgba(239, 68, 68, 0.55);
         --danger-text: #fca5a5;
+        --success-bg: rgba(34, 197, 94, 0.16);
+        --success-border: rgba(34, 197, 94, 0.5);
+        --success-text: #bbf7d0;
         --body-font: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         background-color: var(--background);
         color: var(--foreground);
@@ -412,6 +423,9 @@ export function createWebApp({
         --danger-bg: rgba(239, 68, 68, 0.12);
         --danger-border: rgba(239, 68, 68, 0.45);
         --danger-text: #b91c1c;
+        --success-bg: rgba(34, 197, 94, 0.12);
+        --success-border: rgba(34, 197, 94, 0.45);
+        --success-text: #166534;
       }
       body {
         margin: 0;
@@ -624,6 +638,10 @@ export function createWebApp({
         font-weight: 600;
         cursor: pointer;
       }
+      .filters__actions button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
       .filters__actions button[data-variant='ghost'] {
         background-color: transparent;
         border-color: var(--card-border);
@@ -692,15 +710,69 @@ export function createWebApp({
         outline: 2px solid var(--accent);
         outline-offset: 2px;
       }
-      .application-detail {
+      .application-detail,
+      .application-actions {
         margin-top: 1.5rem;
         padding: 1.25rem;
         border: 1px solid var(--card-border);
         border-radius: 1rem;
         background-color: var(--card-surface);
       }
-      [data-theme='light'] .application-detail {
+      [data-theme='light'] .application-detail,
+      [data-theme='light'] .application-actions {
         background-color: rgba(255, 255, 255, 0.9);
+      }
+      .application-actions__title {
+        margin: 0 0 0.75rem;
+        font-size: 1.1rem;
+      }
+      .application-actions__form {
+        display: grid;
+        gap: 0.75rem;
+      }
+      .application-actions label {
+        display: grid;
+        gap: 0.35rem;
+        font-weight: 500;
+      }
+      .application-actions select,
+      .application-actions textarea {
+        width: 100%;
+        border-radius: 0.75rem;
+        border: 1px solid var(--card-border);
+        background-color: transparent;
+        color: var(--foreground);
+        padding: 0.6rem 0.75rem;
+        font: inherit;
+      }
+      [data-theme='light'] .application-actions select,
+      [data-theme='light'] .application-actions textarea {
+        background-color: rgba(255, 255, 255, 0.9);
+      }
+      .application-actions textarea {
+        min-height: 3.5rem;
+        resize: vertical;
+      }
+      .application-actions__message {
+        margin: 0;
+        padding: 0.55rem 0.85rem;
+        border-radius: 0.75rem;
+        font-size: 0.95rem;
+      }
+      .application-actions__message[data-variant='info'] {
+        background-color: var(--pill-bg);
+        border: 1px solid var(--pill-border);
+        color: var(--accent);
+      }
+      .application-actions__message[data-variant='success'] {
+        background-color: var(--success-bg);
+        border: 1px solid var(--success-border);
+        color: var(--success-text);
+      }
+      .application-actions__message[data-variant='error'] {
+        background-color: var(--danger-bg);
+        border: 1px solid var(--danger-border);
+        color: var(--danger-text);
       }
       .application-detail__section + .application-detail__section {
         margin-top: 1rem;
@@ -941,6 +1013,35 @@ export function createWebApp({
                 <div class="application-detail__section" data-detail-discard></div>
                 <ul class="application-detail__events" data-detail-events></ul>
               </div>
+            </div>
+            <div class="application-actions" data-application-actions hidden>
+              <h3 class="application-actions__title">Record status update</h3>
+              <form class="application-actions__form" data-application-status-form>
+                <label>
+                  <span>Status</span>
+                  <select data-application-status>
+                    <option value="">Select status</option>
+                    ${STATUSES.map(status => {
+                      const optionLabel = escapeHtml(formatStatusLabel(status));
+                      const value = escapeHtml(status);
+                      return `<option value="${value}">${optionLabel}</option>`;
+                    }).join('')}
+                  </select>
+                </label>
+                <label>
+                  <span>Note (optional)</span>
+                  <textarea
+                    rows="2"
+                    data-application-note
+                    placeholder="Waiting on recruiter feedback"
+                  ></textarea>
+                </label>
+                <div class="filters__actions">
+                  <button type="submit">Save status</button>
+                  <button type="button" data-action-clear data-variant="ghost">Clear</button>
+                </div>
+                <p class="application-actions__message" data-action-message hidden></p>
+              </form>
             </div>
           </div>
           <div data-state-slot="loading" hidden>
@@ -1229,6 +1330,100 @@ export function createWebApp({
             };
           })();
           const detailState = { loading: false, jobId: null };
+          const actionElements = (() => {
+            const container = section.querySelector('[data-application-actions]');
+            if (!container) return null;
+            const form = container.querySelector('[data-application-status-form]');
+            return {
+              container,
+              form,
+              status: container.querySelector('[data-application-status]'),
+              note: container.querySelector('[data-application-note]'),
+              clear: container.querySelector('[data-action-clear]'),
+              message: container.querySelector('[data-action-message]'),
+              submit: form?.querySelector('button[type="submit"]') ?? null,
+            };
+          })();
+          const actionState = { jobId: null, submitting: false, enabled: false };
+
+          function formatStatusLabelText(value) {
+            return (value || '')
+              .split('_')
+              .map(part => (part ? part[0].toUpperCase() + part.slice(1) : part))
+              .join(' ');
+          }
+
+          function setActionMessage(variant, text) {
+            if (!actionElements?.message) return;
+            const messageText = typeof text === 'string' ? text.trim() : '';
+            if (!variant || !messageText) {
+              actionElements.message.textContent = '';
+              actionElements.message.setAttribute('hidden', '');
+              actionElements.message.removeAttribute('data-variant');
+              return;
+            }
+            actionElements.message.textContent = messageText;
+            actionElements.message.setAttribute('data-variant', variant);
+            actionElements.message.removeAttribute('hidden');
+          }
+
+          function resetActionForm(options = {}) {
+            if (!actionElements) return;
+            if (actionElements.status) actionElements.status.value = '';
+            if (actionElements.note) actionElements.note.value = '';
+            if (!options.preserveMessage) {
+              setActionMessage(null);
+            }
+          }
+
+          function updateActionControls(options = {}) {
+            if (!actionElements) return;
+            if (typeof options.enabled === 'boolean') {
+              actionState.enabled = options.enabled;
+            }
+            if (typeof options.submitting === 'boolean') {
+              actionState.submitting = options.submitting;
+            }
+            const disabled = !actionState.enabled || actionState.submitting;
+            const controls = [
+              actionElements.status,
+              actionElements.note,
+              actionElements.submit,
+              actionElements.clear,
+            ];
+            for (const control of controls) {
+              if (control) {
+                control.disabled = disabled;
+              }
+            }
+          }
+
+          function updateActionVisibility(visible) {
+            if (!actionElements?.container) return;
+            if (visible) {
+              actionElements.container.removeAttribute('hidden');
+            } else {
+              actionElements.container.setAttribute('hidden', '');
+            }
+          }
+
+          function prepareActionPanel(jobId, { preserveMessage = false } = {}) {
+            if (!actionElements) return;
+            actionState.jobId = jobId;
+            if (!jobId) {
+              resetActionForm({ preserveMessage: false });
+              updateActionControls({ enabled: false, submitting: false });
+              updateActionVisibility(false);
+              return;
+            }
+            resetActionForm({ preserveMessage });
+            updateActionControls({ enabled: true, submitting: false });
+            updateActionVisibility(true);
+          }
+
+          if (actionElements) {
+            prepareActionPanel(null);
+          }
 
           function clampLimit(value) {
             const number = Number.parseInt(value, 10);
@@ -1311,6 +1506,13 @@ export function createWebApp({
             } else {
               detailElements.container.setAttribute('hidden', '');
             }
+            if (actionElements?.container) {
+              if (visible && actionState.jobId) {
+                updateActionVisibility(true);
+              } else if (!visible) {
+                updateActionVisibility(false);
+              }
+            }
           }
 
           function setDetailState(state, options = {}) {
@@ -1343,6 +1545,13 @@ export function createWebApp({
                 detailElements.errorMessage.textContent = message;
               } else {
                 detailElements.errorMessage.textContent = defaultMessage;
+              }
+            }
+            if (actionElements) {
+              if (target === 'ready' && detailState.jobId) {
+                prepareActionPanel(detailState.jobId, { preserveMessage: options.preserveMessage });
+              } else if (target !== 'ready') {
+                prepareActionPanel(null);
               }
             }
           }
@@ -1610,7 +1819,11 @@ export function createWebApp({
             }
           }
 
-          async function fetchShortlist(payload) {
+          function buildCommandUrl(pathname) {
+            return new URL(pathname, window.location.href);
+          }
+
+          async function postCommand(pathname, payload, { invalidResponse, failureMessage }) {
             if (typeof fetch !== 'function') {
               throw new Error('Fetch API is unavailable in this environment');
             }
@@ -1618,11 +1831,7 @@ export function createWebApp({
             if (csrfHeader && csrfToken) {
               headers[csrfHeader] = csrfToken;
             }
-            const commandUrl = new URL(
-              '/commands/shortlist-list',
-              window.location.href,
-            );
-            const response = await fetch(commandUrl, {
+            const response = await fetch(buildCommandUrl(pathname), {
               method: 'POST',
               headers,
               body: JSON.stringify(payload),
@@ -1631,56 +1840,56 @@ export function createWebApp({
             try {
               parsed = await response.json();
             } catch {
-              throw new Error('Received invalid response while loading shortlist');
+              throw new Error(invalidResponse);
             }
             if (!response.ok) {
               const message =
-                parsed && typeof parsed.error === 'string'
-                  ? parsed.error
-                  : 'Failed to load shortlist';
+                parsed && typeof parsed.error === 'string' ? parsed.error : failureMessage;
               throw new Error(message);
             }
-            return parsed;
+            const data = parsed?.data;
+            if (!data || typeof data !== 'object') {
+              throw new Error(invalidResponse);
+            }
+            return data;
+          }
+
+          async function fetchShortlist(payload) {
+            return postCommand('/commands/shortlist-list', payload, {
+              invalidResponse: 'Received invalid response while loading shortlist',
+              failureMessage: 'Failed to load shortlist',
+            });
           }
 
           async function fetchShortlistDetail(jobId) {
             if (!jobId) {
               throw new Error('Job ID is required');
             }
-            if (typeof fetch !== 'function') {
-              throw new Error('Fetch API is unavailable in this environment');
-            }
-            const headers = { 'content-type': 'application/json' };
-            if (csrfHeader && csrfToken) {
-              headers[csrfHeader] = csrfToken;
-            }
-            const commandUrl = new URL(
+            return postCommand(
               '/commands/shortlist-show',
-              window.location.href,
+              { jobId },
+              {
+                invalidResponse: 'Received invalid response while loading application detail',
+                failureMessage: 'Failed to load application detail',
+              },
             );
-            const response = await fetch(commandUrl, {
-              method: 'POST',
-              headers,
-              body: JSON.stringify({ jobId }),
+          }
+
+          async function recordApplicationStatus(jobId, status, note) {
+            if (!jobId) {
+              throw new Error('Job ID is required');
+            }
+            if (!status) {
+              throw new Error('Status is required');
+            }
+            const payload = { jobId, status };
+            if (note) {
+              payload.note = note;
+            }
+            return postCommand('/commands/track-record', payload, {
+              invalidResponse: 'Received invalid response while recording application status',
+              failureMessage: 'Failed to record application status',
             });
-            let parsed;
-            try {
-              parsed = await response.json();
-            } catch {
-              throw new Error('Received invalid response while loading application detail');
-            }
-            if (!response.ok) {
-              const message =
-                parsed && typeof parsed.error === 'string'
-                  ? parsed.error
-                  : 'Failed to load application detail';
-              throw new Error(message);
-            }
-            const data = parsed?.data;
-            if (!data || typeof data !== 'object') {
-              throw new Error('Received invalid detail payload');
-            }
-            return data;
           }
 
           async function refresh(options = {}) {
@@ -1709,8 +1918,7 @@ export function createWebApp({
             setPanelState('applications', 'loading', { preserveMessage: true });
 
             try {
-              const response = await fetchShortlist(payload);
-              const data = response?.data || {};
+              const data = await fetchShortlist(payload);
               const items = Array.isArray(data.items) ? data.items : [];
               state.loaded = true;
               state.loading = false;
@@ -1769,6 +1977,68 @@ export function createWebApp({
                 resetOffset: true,
               });
             });
+
+          actionElements?.clear?.addEventListener('click', () => {
+            if (actionState.submitting) {
+              return;
+            }
+            resetActionForm();
+          });
+
+          actionElements?.form?.addEventListener('submit', async event => {
+            event.preventDefault();
+            if (actionState.submitting) {
+              return;
+            }
+            const jobId = actionState.jobId;
+            if (!jobId) {
+              setActionMessage('error', 'Select an application before recording status');
+              return;
+            }
+            const statusValue =
+              typeof actionElements.status?.value === 'string'
+                ? actionElements.status.value.trim()
+                : '';
+            if (!statusValue) {
+              setActionMessage('error', 'Select a status before saving');
+              return;
+            }
+            const noteValue =
+              typeof actionElements.note?.value === 'string'
+                ? actionElements.note.value.trim()
+                : '';
+            try {
+              updateActionControls({ submitting: true });
+              setActionMessage('info', 'Saving status…');
+              const data = await recordApplicationStatus(
+                jobId,
+                statusValue,
+                noteValue || undefined,
+              );
+              const fallbackMessage =
+                'Recorded ' + jobId + ' as ' + formatStatusLabelText(statusValue);
+              const message =
+                data && typeof data.message === 'string' && data.message.trim()
+                  ? data.message.trim()
+                  : fallbackMessage;
+              setActionMessage('success', message);
+              dispatchApplicationStatusRecorded({
+                jobId,
+                status: statusValue,
+                note: noteValue || undefined,
+                data,
+              });
+              resetActionForm({ preserveMessage: true });
+            } catch (err) {
+              const message =
+                err && typeof err.message === 'string' && err.message.trim()
+                  ? err.message.trim()
+                  : 'Unable to record application status';
+              setActionMessage('error', message);
+            } finally {
+              updateActionControls({ submitting: false });
+            }
+          });
 
           prevButton?.addEventListener('click', () => {
             const nextOffset = Math.max(0, state.offset - state.limit);
@@ -1921,14 +2191,7 @@ export function createWebApp({
         }
 
         function dispatchRouteChanged(route) {
-          try {
-            document.dispatchEvent(new CustomEvent('jobbot:route-changed', { detail: { route } }));
-          } catch {
-            const fallback = document.createEvent('Event');
-            fallback.initEvent('jobbot:route-changed', true, true);
-            fallback.detail = { route };
-            document.dispatchEvent(fallback);
-          }
+          dispatchDocumentEvent('jobbot:route-changed', { route });
         }
 
         const defaultRoute = routeSections[0]?.getAttribute('data-route') ?? null;
@@ -2054,17 +2317,22 @@ export function createWebApp({
 
         window.JobbotStatusHub = jobbotStatusApi;
 
-        function dispatchApplicationsReady(detail = {}) {
+        function dispatchDocumentEvent(name, detail, options = {}) {
+          const { bubbles = false, cancelable = false } = options;
           try {
-            document.dispatchEvent(
-              new CustomEvent('jobbot:applications-ready', { detail }),
-            );
+            document.dispatchEvent(new CustomEvent(name, { detail, bubbles, cancelable }));
           } catch {
             const fallback = document.createEvent('Event');
-            fallback.initEvent('jobbot:applications-ready', true, true);
-            fallback.detail = detail;
+            fallback.initEvent(name, bubbles, cancelable);
+            if (detail !== undefined) {
+              fallback.detail = detail;
+            }
             document.dispatchEvent(fallback);
           }
+        }
+
+        function dispatchApplicationsReady(detail = {}) {
+          dispatchDocumentEvent('jobbot:applications-ready', detail);
         }
 
         function scheduleApplicationsReady(detail = {}) {
@@ -2079,16 +2347,7 @@ export function createWebApp({
         }
 
         function dispatchApplicationsLoaded(detail = {}) {
-          try {
-            document.dispatchEvent(
-              new CustomEvent('jobbot:applications-loaded', { detail }),
-            );
-          } catch {
-            const fallback = document.createEvent('Event');
-            fallback.initEvent('jobbot:applications-loaded', true, true);
-            fallback.detail = detail;
-            document.dispatchEvent(fallback);
-          }
+          dispatchDocumentEvent('jobbot:applications-loaded', detail);
         }
 
         function dispatchApplicationDetailLoaded(detail = {}) {
@@ -2097,32 +2356,33 @@ export function createWebApp({
               ? detail.job_id.trim()
               : detailState.jobId;
           const eventDetail = { jobId, data: detail };
-          try {
-            document.dispatchEvent(
-              new CustomEvent('jobbot:application-detail-loaded', { detail: eventDetail }),
-            );
-          } catch {
-            const fallback = document.createEvent('Event');
-            fallback.initEvent('jobbot:application-detail-loaded', true, true);
-            fallback.detail = eventDetail;
-            document.dispatchEvent(fallback);
-          }
+          dispatchDocumentEvent('jobbot:application-detail-loaded', eventDetail);
+        }
+
+        function dispatchApplicationStatusRecorded(detail = {}) {
+          const jobId =
+            typeof detail?.jobId === 'string' && detail.jobId.trim()
+              ? detail.jobId.trim()
+              : detailState.jobId;
+          const eventDetail = {
+            jobId,
+            status: typeof detail?.status === 'string' ? detail.status : undefined,
+            note:
+              typeof detail?.note === 'string' && detail.note.trim()
+                ? detail.note.trim()
+                : undefined,
+            data: detail?.data,
+          };
+          dispatchDocumentEvent('jobbot:application-status-recorded', eventDetail);
         }
 
         const dispatchRouterReady = () => {
-          document.dispatchEvent(new Event('jobbot:router-ready'));
+          dispatchDocumentEvent('jobbot:router-ready');
         };
 
         const dispatchStatusPanelsReady = () => {
           const detail = { panels: listStatusPanelIds() };
-          try {
-            document.dispatchEvent(new CustomEvent('jobbot:status-panels-ready', { detail }));
-          } catch {
-            const fallbackEvent = document.createEvent('Event');
-            fallbackEvent.initEvent('jobbot:status-panels-ready', true, true);
-            fallbackEvent.detail = detail;
-            document.dispatchEvent(fallbackEvent);
-          }
+          dispatchDocumentEvent('jobbot:status-panels-ready', detail);
         };
 
         const notifyReady = () => {

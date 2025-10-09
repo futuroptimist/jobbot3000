@@ -37,7 +37,8 @@ describe('web interface audits', () => {
     const performanceReport = await runPerformanceAudit(homepageUrl);
     expect(performanceReport.score).toBeGreaterThanOrEqual(0.9);
 
-    const MAX_TRANSFER_SIZE = 70_000;
+    // Budget accounts for the record status panel while keeping HTML lean.
+    const MAX_TRANSFER_SIZE = 74_000;
     expect(performanceReport.metrics.transferSize).toBeLessThan(MAX_TRANSFER_SIZE);
   });
 

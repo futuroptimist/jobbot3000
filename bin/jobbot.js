@@ -636,7 +636,7 @@ export async function cmdMatch(args) {
   }
 }
 
-async function cmdTrackAdd(args) {
+export async function cmdTrackAdd(args) {
   const jobId = args[0];
   const status = getFlag(args, '--status');
   const usage =

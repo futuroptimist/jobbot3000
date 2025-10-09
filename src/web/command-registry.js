@@ -1,3 +1,5 @@
+import { normalizeTrackRecordRequest } from './schemas.js';
+
 const SUMMARIZE_ALLOWED_FIELDS = new Set([
   'input',
   'source',
@@ -35,6 +37,7 @@ const SHORTLIST_LIST_ALLOWED_FIELDS = new Set([
 ]);
 
 const SHORTLIST_SHOW_ALLOWED_FIELDS = new Set(['jobId', 'job_id']);
+const TRACK_RECORD_ALLOWED_FIELDS = new Set(['jobId', 'job_id', 'status', 'note']);
 
 function ensurePlainObject(value, commandName) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -235,11 +238,18 @@ function validateShortlistShowPayload(rawPayload) {
   return { jobId };
 }
 
+function validateTrackRecordPayload(rawPayload) {
+  const payload = ensurePlainObject(rawPayload, 'track-record');
+  assertAllowedFields(payload, TRACK_RECORD_ALLOWED_FIELDS, 'track-record');
+  return normalizeTrackRecordRequest(payload);
+}
+
 const COMMAND_VALIDATORS = Object.freeze({
   summarize: validateSummarizePayload,
   match: validateMatchPayload,
   'shortlist-list': validateShortlistListPayload,
   'shortlist-show': validateShortlistShowPayload,
+  'track-record': validateTrackRecordPayload,
 });
 
 export const ALLOW_LISTED_COMMANDS = Object.freeze(Object.keys(COMMAND_VALIDATORS));

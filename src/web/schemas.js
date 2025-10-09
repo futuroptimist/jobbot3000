@@ -1,4 +1,8 @@
+import { STATUSES } from '../lifecycle.js';
+
 const SUPPORTED_FORMATS = ['markdown', 'text', 'json'];
+const TRACK_RECORD_ALLOWED_KEYS = new Set(['jobId', 'job_id', 'status', 'note']);
+const VALID_STATUSES = new Set(STATUSES.map(status => status.trim().toLowerCase()));
 
 function assertPlainObject(value, name) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -182,6 +186,27 @@ export function normalizeShortlistShowRequest(options) {
   assertPlainObject(options, 'shortlist show options');
   const jobId = assertRequiredString(options.jobId ?? options.job_id, 'jobId');
   return { jobId };
+}
+
+export function normalizeTrackRecordRequest(options) {
+  assertPlainObject(options, 'track record options');
+  for (const key of Object.keys(options)) {
+    if (!TRACK_RECORD_ALLOWED_KEYS.has(key)) {
+      throw new Error(`Unexpected field "${key}" in track record options`);
+    }
+  }
+
+  const jobId = assertRequiredString(options.jobId ?? options.job_id, 'jobId');
+  const rawStatus = assertRequiredString(options.status, 'status');
+  const normalizedStatus = rawStatus.trim().toLowerCase();
+  if (!VALID_STATUSES.has(normalizedStatus)) {
+    throw new Error(`status must be one of: ${STATUSES.join(', ')}`);
+  }
+
+  const note = normalizeString(options.note);
+  const request = { jobId, status: normalizedStatus };
+  if (note) request.note = note;
+  return request;
 }
 
 export const WEB_SUPPORTED_FORMATS = [...SUPPORTED_FORMATS];
