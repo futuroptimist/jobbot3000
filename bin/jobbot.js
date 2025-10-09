@@ -104,6 +104,16 @@ function getNumberFlag(args, name, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function assertFlagHasValue(args, flag, usage) {
+  const index = args.indexOf(flag);
+  if (index === -1) return;
+  const next = args[index + 1];
+  if (!next || next.startsWith('--')) {
+    console.error(usage);
+    process.exit(2);
+  }
+}
+
 const CURRENCY_SYMBOL_RE = /^\p{Sc}/u;
 const DEFAULT_SHORTLIST_CURRENCY = process.env.JOBBOT_SHORTLIST_CURRENCY
   ? process.env.JOBBOT_SHORTLIST_CURRENCY.trim()
@@ -642,32 +652,61 @@ export async function cmdTrackAdd(args) {
   const usage =
     `Usage: jobbot track add <job_id> --status <status>\n` +
     `Valid statuses: ${STATUSES.join(', ')}\n` +
-    'Optional: --note <note>';
+    'Optional: --note <note> [--date <iso>]';
   if (!jobId || !status) {
     console.error(usage);
     process.exit(2);
   }
 
-  const noteFlagIndex = args.indexOf('--note');
-  if (noteFlagIndex !== -1) {
-    const next = args[noteFlagIndex + 1];
-    if (!next || next.startsWith('--')) {
-      console.error(usage);
-      process.exit(2);
-    }
-  }
-
+  assertFlagHasValue(args, '--note', usage);
+  assertFlagHasValue(args, '--date', usage);
   const note = getFlag(args, '--note');
+  const date = getFlag(args, '--date');
   try {
-    const recorded = await recordApplication(jobId, status.trim(), { note });
+    const recorded = await recordApplication(jobId, status.trim(), { note, date });
     console.log(`Recorded ${jobId} as ${recorded}`);
   } catch (err) {
-    if (err && /note cannot be empty/i.test(String(err.message))) {
-      console.error('Note cannot be empty');
-      process.exit(2);
-    }
-    throw err;
+    handleLifecycleRecordError(err);
   }
+}
+
+async function cmdTrackUpdate(args) {
+  const jobId = args[0];
+  const status = getFlag(args, '--status');
+  const usage =
+    `Usage: jobbot track update <job_id> --status <status>\n` +
+    `Valid statuses: ${STATUSES.join(', ')}\n` +
+    'Optional: --note <note> [--date <iso>]';
+  if (!jobId || !status) {
+    console.error(usage);
+    process.exit(2);
+  }
+
+  assertFlagHasValue(args, '--note', usage);
+  assertFlagHasValue(args, '--date', usage);
+
+  const note = getFlag(args, '--note');
+  const date = getFlag(args, '--date');
+
+  try {
+    const recorded = await recordApplication(jobId, status.trim(), { note, date });
+    console.log(`Updated ${jobId} to ${recorded}`);
+  } catch (err) {
+    handleLifecycleRecordError(err);
+  }
+}
+
+function handleLifecycleRecordError(err) {
+  const message = err && err.message ? String(err.message) : '';
+  if (/note cannot be empty/i.test(message)) {
+    console.error('Note cannot be empty');
+    process.exit(2);
+  }
+  if (/invalid status timestamp/i.test(message)) {
+    console.error('Date must be a valid ISO 8601 timestamp');
+    process.exit(2);
+  }
+  throw err;
 }
 
 function parseDocumentsFlag(args) {
@@ -1497,6 +1536,7 @@ async function cmdTrackDiscard(args) {
 async function cmdTrack(args) {
   const sub = args[0];
   if (sub === 'add') return cmdTrackAdd(args.slice(1));
+  if (sub === 'update') return cmdTrackUpdate(args.slice(1));
   if (sub === 'list') return cmdTrackList(args.slice(1));
   if (sub === 'log') return cmdTrackLog(args.slice(1));
   if (sub === 'history') return cmdTrackHistory(args.slice(1));
@@ -1504,7 +1544,9 @@ async function cmdTrack(args) {
   if (sub === 'discard') return cmdTrackDiscard(args.slice(1));
   if (sub === 'reminders') return cmdTrackReminders(args.slice(1));
   if (sub === 'board') return cmdTrackBoard(args.slice(1));
-  console.error('Usage: jobbot track <add|list|log|history|show|discard|reminders|board> ...');
+  console.error(
+    'Usage: jobbot track <add|update|list|log|history|show|discard|reminders|board> ...'
+  );
   process.exit(2);
 }
 

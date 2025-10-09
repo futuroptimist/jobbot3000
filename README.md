@@ -97,6 +97,13 @@ npx jobbot summarize job.txt --docx output/summary-es.docx --locale es
 npx jobbot track add job-123 --status screening
 # => Recorded job-123 as screening
 
+# Backdate the status timestamp or update notes later
+npx jobbot track add job-123 --status screening --date 2025-03-02T08:30:00Z
+# => Recorded job-123 as screening
+npx jobbot track update job-123 --status onsite --note "Onsite loop scheduled" \
+  --date 2025-03-04T10:00:00Z
+# => Updated job-123 to onsite
+
 # Schedule a follow-up reminder when logging outreach
 npx jobbot track log job-123 --channel follow_up --remind-at 2025-03-11T09:00:00Z --note "Check in"
 # => Logged job-123 event follow_up
