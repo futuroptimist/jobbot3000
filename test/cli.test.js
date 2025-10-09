@@ -807,6 +807,54 @@ describe('jobbot CLI', () => {
     expect(detail.attachments).toEqual(['resume.pdf', 'cover-letter.pdf']);
   });
 
+  it('updates lifecycle status and note with track update', () => {
+    const initialDate = '2025-03-02T08:30:00Z';
+    const expectedInitialIso = new Date(initialDate).toISOString();
+    const updateDate = '2025-03-04T10:00:00Z';
+    const expectedUpdateIso = new Date(updateDate).toISOString();
+
+    const addOutput = runCli([
+      'track',
+      'add',
+      'job-update',
+      '--status',
+      'screening',
+      '--note',
+      'Initial recruiter screen',
+      '--date',
+      initialDate,
+    ]);
+    expect(addOutput.trim()).toBe('Recorded job-update as screening');
+
+    const updateOutput = runCli([
+      'track',
+      'update',
+      'job-update',
+      '--status',
+      'onsite',
+      '--note',
+      'Onsite loop scheduled',
+      '--date',
+      updateDate,
+    ]);
+    expect(updateOutput.trim()).toBe('Updated job-update to onsite');
+
+    const textDetail = runCli(['track', 'show', 'job-update']);
+    expect(textDetail).toContain(`Status: onsite (updated ${expectedUpdateIso})`);
+    expect(textDetail).toContain('Note: Onsite loop scheduled');
+    expect(textDetail).not.toContain(expectedInitialIso);
+
+    const jsonDetail = runCli(['track', 'show', 'job-update', '--json']);
+    const parsedDetail = JSON.parse(jsonDetail);
+    expect(parsedDetail.status).toEqual({
+      job_id: 'job-update',
+      status: 'onsite',
+      note: 'Onsite loop scheduled',
+      updated_at: expectedUpdateIso,
+    });
+    expect(parsedDetail.events).toEqual([]);
+  });
+
   it('notifies when application history is empty', () => {
     const output = runCli(['track', 'history', 'job-missing']);
     expect(output.trim()).toBe('No history for job-missing');

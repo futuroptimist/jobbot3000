@@ -233,6 +233,13 @@
      and [`test/cli.test.js`](../test/cli.test.js) exercises the CLI output,
      adapter wiring, and DOM updates to keep the drawer and timeline stable.
    - Action panel enabling create/update status workflows mapped to CLI `create`/`update`.
+     _Implemented (2025-10-08):_ [`jobbot track add`](../bin/jobbot.js) and
+     [`jobbot track update`](../bin/jobbot.js) now accept optional `--date`
+     timestamps alongside status notes so UI actions can backdate entries and
+     push updates without diverging from CLI behavior. Regression coverage in
+     [`test/cli.test.js`](../test/cli.test.js) exercises both commands, asserting
+     the JSON detail view emits the latest timestamp and note so the action
+     panel can trust the shared contract.
    - Notification hooks for reminders, leveraging CLI scheduling or local system integration.
      _Implemented (2025-10-04):_ [`bin/jobbot.js`](../bin/jobbot.js) now supports
      `jobbot track reminders --ics <file>`, wiring the upcoming reminders feed into
