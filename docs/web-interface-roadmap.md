@@ -267,7 +267,7 @@
     suite in [`test/web-audits.test.js`](../test/web-audits.test.js)
     boots the Express adapter, fetches the HTML dashboard, and asserts the
     audits return zero WCAG AA violations with a performance score ≥0.9 while
-    keeping the HTML transfer size below 74 KB. The action panel for recording
+    keeping the HTML transfer size below 80 KB. The action panel for recording
     shortlist statuses raised the payload slightly, so the regression suite and
     UI now share helpers to trim duplicate markup and styles.
 

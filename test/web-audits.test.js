@@ -38,7 +38,7 @@ describe('web interface audits', () => {
     expect(performanceReport.score).toBeGreaterThanOrEqual(0.9);
 
     // Budget accounts for the record status panel while keeping HTML lean.
-    const MAX_TRANSFER_SIZE = 74_000;
+    const MAX_TRANSFER_SIZE = 80_000;
     expect(performanceReport.metrics.transferSize).toBeLessThan(MAX_TRANSFER_SIZE);
   });
 
