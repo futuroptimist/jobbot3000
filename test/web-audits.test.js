@@ -42,6 +42,17 @@ describe('web interface audits', () => {
     expect(performanceReport.metrics.transferSize).toBeLessThan(MAX_TRANSFER_SIZE);
   });
 
+  it('serves HTML under the transfer budget', async () => {
+    const homepageUrl = `${server.url}/`;
+    const response = await fetch(homepageUrl);
+    expect(response.ok).toBe(true);
+    const html = await response.text();
+
+    const MAX_HTML_BYTES = 74_000;
+    const byteLength = Buffer.byteLength(html, 'utf8');
+    expect(byteLength).toBeLessThan(MAX_HTML_BYTES);
+  });
+
   it('does not execute page scripts during the accessibility audit', async () => {
     const maliciousHtml = `
       <!doctype html>

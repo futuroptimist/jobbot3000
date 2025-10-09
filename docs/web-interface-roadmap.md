@@ -45,6 +45,12 @@
 > - *Action panel enabling create/update status workflows mapped to CLI `create`/`update`.*
 >   Requires new mutation endpoints and UI flows, so it remains a larger follow-up task.
 
+> [!NOTE]
+> **Future work triage (2025-10-10):**
+> - *Slim status hub HTML to satisfy the 74 KB audit budget.* The regression test in
+>   [`test/web-audits.test.js`](../test/web-audits.test.js) currently fails due to an oversized DOM,
+>   so minifying inline styles and markup can ship independently and restores the documented budget.
+
 ### 1. Requirements and Domain Mapping
 
 - Audit existing CLI commands, arguments, and expected JSON/text outputs.
@@ -242,10 +248,22 @@
      extensions can react to updates. Regression coverage in
      [`test/web-server.test.js`](../test/web-server.test.js) drives the DOM
      workflow against a mocked adapter, while
+   [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
+    verifies the adapter calls `cmdTrackAdd` with sanitized arguments and
+    returns the status payload for the UI.
+  - Analytics dashboard summarizing application funnels and outcomes.
+     _Implemented (2025-10-10):_ The status hub now includes an **Analytics**
+     view backed by `/commands/analytics-funnel`, which invokes
+     [`cmdAnalyticsFunnel`](../bin/jobbot.js) to stream the
+     `jobbot analytics funnel --json` payload. [`src/web/server.js`](../src/web/server.js)
+     renders stage counts, conversion percentages, largest drop-offs, and
+     missing-status alerts while dispatching `jobbot:analytics-ready`/
+     `jobbot:analytics-loaded` events for extensions. Regression coverage in
+     [`test/web-server.test.js`](../test/web-server.test.js) drives the DOM
+     workflow and summaries, and
      [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
-     verifies the adapter calls `cmdTrackAdd` with sanitized arguments and
-     returns the status payload for the UI.
-   - Notification hooks for reminders, leveraging CLI scheduling or local system integration.
+     locks the adapter's JSON parsing and sanitization.
+  - Notification hooks for reminders, leveraging CLI scheduling or local system integration.
      _Implemented (2025-10-04):_ [`bin/jobbot.js`](../bin/jobbot.js) now supports
      `jobbot track reminders --ics <file>`, wiring the upcoming reminders feed into
      [`createReminderCalendar`](../src/reminders-calendar.js) so contributors can
@@ -267,9 +285,10 @@
     suite in [`test/web-audits.test.js`](../test/web-audits.test.js)
     boots the Express adapter, fetches the HTML dashboard, and asserts the
     audits return zero WCAG AA violations with a performance score ≥0.9 while
-    keeping the HTML transfer size below 80 KB. The action panel for recording
-    shortlist statuses raised the payload slightly, so the regression suite and
-    UI now share helpers to trim duplicate markup and styles.
+    keeping both the Lighthouse-reported transfer size and the raw HTML payload
+    below 80 KB. The action panel for recording shortlist statuses raised the
+    payload slightly, so the regression suite and UI now share helpers to trim
+    duplicate markup and styles.
 
 6. **Hardening and Packaging**
    - Implement rate limiting, input sanitization, and CSRF tokens.
@@ -305,7 +324,6 @@
 - Multi-user support with role-based access control and audit trails.
 - Real-time collaboration via WebSocket subscriptions to CLI state changes.
 - Plugin system enabling external automation integrations (e.g., calendar, CRM).
-- Analytics dashboards summarizing application funnels and outcomes.
 
 ## Safe Implementation Checklist
 
@@ -336,9 +354,9 @@
   _Implemented (2025-10-02):_ The homepage served by
   [`startWebServer`](../src/web/server.js) now exposes a WCAG-compliant
   status page. [`src/web/audits.js`](../src/web/audits.js) and
-  [`test/web-audits.test.js`](../test/web-audits.test.js) run axe-core and
-  Lighthouse-derived scoring on every build, preventing regressions before
-  the UI launches.
+  [`test/web-audits.test.js`](../test/web-audits.test.js) run axe-core,
+  Lighthouse-derived scoring, and a byte-budget assertion on every build,
+  preventing regressions before the UI launches.
 - [x] Deployment artifacts and environment parity *(configuration presets
   shipped via [`src/web/config.js`](../src/web/config.js); container images
   now ship with the repository)*

@@ -257,7 +257,8 @@ jobbot3000.
 2. Drag-and-drop jobs between columns to update status; the system records transitions and prompts
    for optional notes.
 3. Review reminders in the **Follow-ups** sidebar, which mirrors the CLI digest (Past Due vs
-   Upcoming) and supports snooze/done actions.
+   Upcoming) and supports snooze/done actions backed by `jobbot track reminders snooze <job_id>
+   --until <iso>` and `jobbot track reminders done <job_id> [--at <iso>]`.
 4. Export ICS files via the **Calendar Sync** button and confirm downloads contain sanitized data.
 5. Open a job detail drawer to view the full history, add comments, or share updates with mentors.
 

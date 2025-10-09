@@ -24,6 +24,8 @@ import {
   logApplicationEvent,
   getApplicationEvents,
   getApplicationReminders,
+  snoozeApplicationReminder,
+  completeApplicationReminder,
 } from '../src/application-events.js';
 import {
   recordApplication,
@@ -963,7 +965,66 @@ async function cmdTrackShow(args) {
   console.log(lines.join('\n'));
 }
 
+async function cmdTrackRemindersSnooze(args) {
+  const usage = 'Usage: jobbot track reminders snooze <job_id> --until <iso>'; 
+  const jobId = args[0];
+  if (!jobId) {
+    console.error(usage);
+    process.exit(2);
+  }
+  assertFlagHasValue(args, '--until', usage);
+  const until = getFlag(args, '--until');
+  if (!until || until.startsWith('--')) {
+    console.error(usage);
+    process.exit(2);
+  }
+
+  let result;
+  try {
+    result = await snoozeApplicationReminder(jobId, { until });
+  } catch (err) {
+    console.error(err && err.message ? err.message : String(err));
+    process.exit(1);
+  }
+
+  console.log(`Snoozed reminder for ${jobId} until ${result.remind_at}`);
+}
+
+async function cmdTrackRemindersDone(args) {
+  const usage = 'Usage: jobbot track reminders done <job_id> [--at <iso>]';
+  const jobId = args[0];
+  if (!jobId) {
+    console.error(usage);
+    process.exit(2);
+  }
+  const atIndex = args.indexOf('--at');
+  if (atIndex !== -1) {
+    const value = args[atIndex + 1];
+    if (!value || value.startsWith('--')) {
+      console.error(usage);
+      process.exit(2);
+    }
+  }
+  const at = getFlag(args, '--at');
+
+  let result;
+  try {
+    result = await completeApplicationReminder(jobId, { completedAt: at });
+  } catch (err) {
+    console.error(err && err.message ? err.message : String(err));
+    process.exit(1);
+  }
+
+  console.log(
+    `Marked reminder for ${jobId} as done at ${result.reminder_completed_at}`,
+  );
+}
+
 async function cmdTrackReminders(args) {
+  const sub = args[0];
+  if (sub === 'snooze') return cmdTrackRemindersSnooze(args.slice(1));
+  if (sub === 'done') return cmdTrackRemindersDone(args.slice(1));
+
   const asJson = args.includes('--json');
   const nowValue = getFlag(args, '--now');
   const upcomingOnly = args.includes('--upcoming-only');

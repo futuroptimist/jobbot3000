@@ -1712,6 +1712,22 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track reminders --ics reminders.ics --now 2
 # in native calendar clients.
 ```
 
+Snooze reminders or mark them complete without editing JSON manually:
+
+```bash
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track reminders snooze job-123 --until 2025-03-08T10:15:00Z
+# Snoozed reminder for job-123 until 2025-03-08T10:15:00.000Z
+
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track reminders done job-123 --at 2025-03-07T18:00:00Z
+# Marked reminder for job-123 as done at 2025-03-07T18:00:00.000Z
+```
+
+Regression coverage in [`test/application-events.test.js`](test/application-events.test.js)
+locks the snooze and completion helpers so the latest reminder entry is updated (or cleared) without
+clobbering earlier history. [`test/cli.test.js`](test/cli.test.js) exercises the new
+`track reminders snooze`/`done` flows to ensure the CLI prints deterministic confirmations and the
+digest reflects the updated reminder state.
+
 Unit tests in [`test/application-events.test.js`](test/application-events.test.js)
 cover reminder extraction, including past-due filtering. The CLI suite in
 [`test/cli.test.js`](test/cli.test.js) verifies the `--json` output and ensures the
@@ -1753,14 +1769,17 @@ web interface expands beyond the CLI wrappers.
 the active section and theme preference in sync across reloads. It includes an
 **Applications** view that calls `POST /commands/shortlist-list` to stream
 shortlist entries through the CLI adapter, apply filters (`location`, `level`,
-`compensation`, tags), and paginate results client-side. The hub also surfaces
-the allow-listed CLI commands, roadmap links, and automated audits guarding the
-adapter while preserving WCAG AA guidance (landmarks, focus styles, skip links).
-The “Helpful references” card links directly to the repository, README, web
-roadmap, and the [web operations playbook](docs/web-operational-playbook.md) so
-on-call responders can jump from the dashboard to runbooks in one click.
+`compensation`, tags), and paginate results client-side. The hub also exposes an
+**Analytics** dashboard powered by `POST /commands/analytics-funnel`, which
+renders funnel stage counts, conversion percentages, largest drop-offs, and
+missing-status alerts sourced from `jobbot analytics funnel --json`. The
+allow-listed CLI commands, roadmap links, and automated audits continue to guard
+the adapter while preserving WCAG AA guidance (landmarks, focus styles, skip
+links). The “Helpful references” card links directly to the repository, README,
+web roadmap, and the [web operations playbook](docs/web-operational-playbook.md)
+so on-call responders can jump from the dashboard to runbooks in one click.
 [`test/web-server.test.js`](test/web-server.test.js) now exercises the router,
-shortlist view, and theme toggle, while
+shortlist view, analytics dashboard, and theme toggle, while
 [`test/web-audits.test.js`](test/web-audits.test.js) continues to lock the
 accessibility and performance baselines.
 

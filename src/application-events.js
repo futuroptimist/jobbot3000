@@ -64,6 +64,44 @@ function sanitizeString(value) {
 
 let writeLock = Promise.resolve();
 
+function normalizeJobId(jobId) {
+  if (typeof jobId !== 'string') {
+    throw new Error('job id is required');
+  }
+  const trimmed = jobId.trim();
+  if (!trimmed) {
+    throw new Error('job id is required');
+  }
+  return trimmed;
+}
+
+function findLatestReminder(history) {
+  if (!Array.isArray(history) || history.length === 0) {
+    return null;
+  }
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const entry = history[index];
+    if (!entry || typeof entry !== 'object') continue;
+    const reminder = typeof entry.remind_at === 'string' ? entry.remind_at.trim() : '';
+    if (reminder) {
+      return { index, entry };
+    }
+  }
+  return null;
+}
+
+function cloneHistoryEntries(history) {
+  if (!Array.isArray(history)) {
+    return null;
+  }
+  return history.map(entry => {
+    if (entry && typeof entry === 'object') {
+      return { ...entry };
+    }
+    return entry;
+  });
+}
+
 export function logApplicationEvent(jobId, event) {
   if (!jobId || typeof jobId !== 'string') {
     return Promise.reject(new Error('job id is required'));
@@ -179,4 +217,78 @@ export async function getApplicationReminders({ now, includePastDue = true } = {
   });
 
   return reminders;
+}
+
+export function snoozeApplicationReminder(jobId, options = {}) {
+  const normalizedJobId = normalizeJobId(jobId);
+  const untilInput =
+    options.until ?? options.remindAt ?? options.remind_at ?? options.date ?? options.at;
+  if (untilInput === undefined) {
+    return Promise.reject(new Error('snooze until timestamp is required'));
+  }
+
+  let nextTimestamp;
+  try {
+    nextTimestamp = normalizeDate(untilInput);
+  } catch (err) {
+    return Promise.reject(err);
+  }
+
+  const { dir, file } = getPaths();
+
+  const run = async () => {
+    await fs.mkdir(dir, { recursive: true });
+    const data = await readEventsFile(file);
+    const history = cloneHistoryEntries(data[normalizedJobId]);
+
+    const latest = history ? findLatestReminder(history) : null;
+    if (!latest) {
+      throw new Error(`no reminder found for ${normalizedJobId}`);
+    }
+
+    const updated = { ...latest.entry, remind_at: nextTimestamp };
+    history[latest.index] = updated;
+    data[normalizedJobId] = history;
+    await writeJsonFile(file, data);
+    return updated;
+  };
+
+  writeLock = writeLock.then(run, run);
+  return writeLock;
+}
+
+export function completeApplicationReminder(jobId, options = {}) {
+  const normalizedJobId = normalizeJobId(jobId);
+  const completedInput =
+    options.completedAt ?? options.completed_at ?? options.at ?? options.date ?? undefined;
+  let completedAt;
+  try {
+    completedAt = normalizeDate(completedInput);
+  } catch (err) {
+    return Promise.reject(err);
+  }
+
+  const { dir, file } = getPaths();
+
+  const run = async () => {
+    await fs.mkdir(dir, { recursive: true });
+    const data = await readEventsFile(file);
+    const history = cloneHistoryEntries(data[normalizedJobId]);
+
+    const latest = history ? findLatestReminder(history) : null;
+    if (!latest) {
+      throw new Error(`no reminder found for ${normalizedJobId}`);
+    }
+
+    const updated = { ...latest.entry };
+    delete updated.remind_at;
+    updated.reminder_completed_at = completedAt;
+    history[latest.index] = updated;
+    data[normalizedJobId] = history;
+    await writeJsonFile(file, data);
+    return updated;
+  };
+
+  writeLock = writeLock.then(run, run);
+  return writeLock;
 }
