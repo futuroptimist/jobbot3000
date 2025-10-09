@@ -1,4 +1,4 @@
-import { normalizeTrackRecordRequest } from './schemas.js';
+import { normalizeAnalyticsFunnelRequest, normalizeTrackRecordRequest } from './schemas.js';
 
 const SUMMARIZE_ALLOWED_FIELDS = new Set([
   'input',
@@ -244,12 +244,17 @@ function validateTrackRecordPayload(rawPayload) {
   return normalizeTrackRecordRequest(payload);
 }
 
+function validateAnalyticsFunnelPayload(rawPayload) {
+  return normalizeAnalyticsFunnelRequest(rawPayload ?? {});
+}
+
 const COMMAND_VALIDATORS = Object.freeze({
   summarize: validateSummarizePayload,
   match: validateMatchPayload,
   'shortlist-list': validateShortlistListPayload,
   'shortlist-show': validateShortlistShowPayload,
   'track-record': validateTrackRecordPayload,
+  'analytics-funnel': validateAnalyticsFunnelPayload,
 });
 
 export const ALLOW_LISTED_COMMANDS = Object.freeze(Object.keys(COMMAND_VALIDATORS));

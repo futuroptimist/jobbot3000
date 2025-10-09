@@ -521,6 +521,127 @@ describe('web server status page', () => {
     expect(detailPanel?.textContent).toContain('Follow-up scheduled');
   });
 
+  it('renders analytics funnel dashboard from CLI data', async () => {
+    const commandAdapter = {
+      'analytics-funnel': vi.fn(async () => ({
+        command: 'analytics-funnel',
+        format: 'json',
+        stdout: '',
+        stderr: '',
+        returnValue: 0,
+        data: {
+          totals: { trackedJobs: 7, withEvents: 5 },
+          stages: [
+            { key: 'outreach', label: 'Outreach', count: 5, conversionRate: 1 },
+            {
+              key: 'screening',
+              label: 'Screening',
+              count: 3,
+              conversionRate: 0.6,
+              dropOff: 2,
+            },
+            {
+              key: 'onsite',
+              label: 'Onsite',
+              count: 2,
+              conversionRate: 0.6666666667,
+              dropOff: 1,
+            },
+            {
+              key: 'offer',
+              label: 'Offer',
+              count: 1,
+              conversionRate: 0.5,
+              dropOff: 1,
+            },
+          ],
+          largestDropOff: {
+            from: 'screening',
+            fromLabel: 'Screening',
+            to: 'onsite',
+            toLabel: 'Onsite',
+            dropOff: 1,
+          },
+          missing: {
+            statuslessJobs: {
+              count: 2,
+            },
+          },
+          sankey: {
+            nodes: [
+              { key: 'outreach', label: 'Outreach' },
+              { key: 'screening', label: 'Screening' },
+              { key: 'onsite', label: 'Onsite' },
+            ],
+            links: [
+              { source: 'outreach', target: 'screening', value: 3 },
+              { source: 'outreach', target: 'outreach_drop', value: 2, drop: true },
+              { source: 'screening', target: 'onsite', value: 2 },
+            ],
+          },
+        },
+      })),
+    };
+
+    commandAdapter.analyticsFunnel = commandAdapter['analytics-funnel'];
+
+    const server = await startServer({ commandAdapter });
+    const response = await fetch(`${server.url}/`);
+    const html = await response.text();
+
+    const dom = new JSDOM(html, {
+      runScripts: 'dangerously',
+      resources: 'usable',
+      url: `${server.url}/`,
+      pretendToBeVisual: true,
+    });
+    dom.window.fetch = (input, init) => fetch(input, init);
+
+    const waitForEvent = (name, timeout = 500) =>
+      new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`${name} timed out`)), timeout);
+        dom.window.document.addEventListener(
+          name,
+          event => {
+            clearTimeout(timer);
+            resolve(event);
+          },
+          { once: true },
+        );
+      });
+
+    await waitForEvent('jobbot:analytics-ready');
+
+    const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
+    dom.window.location.hash = '#analytics';
+    dom.window.dispatchEvent(new HashChange('hashchange'));
+
+    await waitForEvent('jobbot:analytics-loaded');
+
+    expect(commandAdapter['analytics-funnel']).toHaveBeenCalledTimes(1);
+
+    const navLink = dom.window.document.querySelector('[data-route-link="analytics"]');
+    expect(navLink?.textContent).toContain('Analytics');
+
+    const summary = dom.window.document.querySelector('[data-analytics-summary]');
+    expect(summary?.textContent).toContain('Tracked jobs: 7');
+    expect(summary?.textContent).toContain('Outreach events: 5');
+    expect(summary?.textContent).toContain('Largest drop-off: Screening → Onsite (1)');
+
+    const table = dom.window.document.querySelector('[data-analytics-table]');
+    expect(table?.textContent).toContain('Outreach');
+    expect(table?.textContent).toContain('Screening');
+    expect(table?.textContent).toContain('100%');
+    expect(table?.textContent).toContain('60%');
+
+    const missing = dom.window.document.querySelector('[data-analytics-missing]');
+    expect(missing?.textContent).toContain('2 jobs with outreach but no status recorded');
+
+    const sankey = dom.window.document.querySelector('[data-analytics-sankey]');
+    expect(sankey?.textContent).toContain('3 links');
+    expect(sankey?.textContent).toContain('drop-off edges: 1');
+  });
+
   it('records status updates from the applications action panel', async () => {
     const shortlistEntry = {
       id: 'job-42',

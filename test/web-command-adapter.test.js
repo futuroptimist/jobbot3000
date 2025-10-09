@@ -505,6 +505,66 @@ describe('createCommandAdapter', () => {
     ]);
   });
 
+  it('loads analytics funnel data with sanitized output', async () => {
+    const cli = {
+      cmdAnalyticsFunnel: vi.fn(async args => {
+        expect(args).toEqual(['--json']);
+        console.log(
+          JSON.stringify({
+            totals: { trackedJobs: 5, withEvents: 4 },
+            stages: [
+              { key: 'outreach', label: 'Outreach', count: 4, conversionRate: 1 },
+              {
+                key: 'screening',
+                label: 'Screening',
+                count: 3,
+                conversionRate: 0.75,
+                dropOff: 1,
+              },
+            ],
+            largestDropOff: {
+              from: 'screening',
+              fromLabel: 'Screening',
+              to: 'onsite',
+              toLabel: 'Onsite',
+              dropOff: 2,
+            },
+            missing: {
+              statuslessJobs: {
+                count: 1,
+                ids: ['job-99'],
+              },
+            },
+            sankey: {
+              nodes: [
+                { key: 'outreach', label: 'Outreach' },
+                { key: 'screening', label: 'Screening' },
+              ],
+              links: [
+                { source: 'outreach', target: 'screening', value: 3 },
+                { source: 'outreach', target: 'outreach_drop', value: 1, drop: true },
+              ],
+            },
+          }),
+        );
+      }),
+    };
+
+    const adapter = createCommandAdapter({ cli });
+    const result = await adapter['analytics-funnel']({});
+
+    expect(cli.cmdAnalyticsFunnel).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      command: 'analytics-funnel',
+      format: 'json',
+    });
+    expect(result.data).toMatchObject({
+      totals: { trackedJobs: 5, withEvents: 4 },
+      largestDropOff: { dropOff: 2 },
+    });
+    expect(result.data.sankey?.links?.[1]?.drop).toBe(true);
+  });
+
   it('records application status updates via track-record command', async () => {
     const cli = {
       cmdTrackAdd: vi.fn(async args => {
