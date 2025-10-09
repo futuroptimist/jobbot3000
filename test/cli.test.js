@@ -943,6 +943,88 @@ describe('jobbot CLI', () => {
     });
   });
 
+  it('snoozes reminders via track reminders snooze', () => {
+    runCli([
+      'track',
+      'log',
+      'job-snooze',
+      '--channel',
+      'follow_up',
+      '--date',
+      '2025-03-01T08:00:00Z',
+      '--remind-at',
+      '2025-03-05T09:00:00Z',
+    ]);
+
+    const output = runCli([
+      'track',
+      'reminders',
+      'snooze',
+      'job-snooze',
+      '--until',
+      '2025-03-08T10:15:00Z',
+    ]);
+
+    expect(output.trim()).toBe('Snoozed reminder for job-snooze until 2025-03-08T10:15:00.000Z');
+
+    const payload = JSON.parse(
+      runCli(['track', 'reminders', '--json', '--now', '2025-03-06T00:00:00Z']),
+    );
+
+    expect(payload.reminders).toEqual([
+      {
+        job_id: 'job-snooze',
+        remind_at: '2025-03-08T10:15:00.000Z',
+        channel: 'follow_up',
+        past_due: false,
+      },
+    ]);
+    expect(payload.sections[0]).toEqual({ heading: 'Past Due', reminders: [] });
+    expect(payload.sections[1]).toMatchObject({ heading: 'Upcoming' });
+    expect(payload.sections[1].reminders).toEqual([
+      {
+        job_id: 'job-snooze',
+        remind_at: '2025-03-08T10:15:00.000Z',
+        channel: 'follow_up',
+        past_due: false,
+      },
+    ]);
+  });
+
+  it('marks reminders done via track reminders done', () => {
+    runCli([
+      'track',
+      'log',
+      'job-done',
+      '--channel',
+      'call',
+      '--date',
+      '2025-03-01T08:00:00Z',
+      '--remind-at',
+      '2025-03-06T14:00:00Z',
+      '--note',
+      'Prep talking points',
+    ]);
+
+    const output = runCli([
+      'track',
+      'reminders',
+      'done',
+      'job-done',
+      '--at',
+      '2025-03-05T13:00:00Z',
+    ]);
+
+    expect(output.trim()).toBe('Marked reminder for job-done as done at 2025-03-05T13:00:00.000Z');
+
+    const payload = JSON.parse(runCli(['track', 'reminders', '--json']));
+    expect(payload.reminders).toEqual([]);
+    expect(payload.sections).toEqual([
+      { heading: 'Past Due', reminders: [] },
+      { heading: 'Upcoming', reminders: [] },
+    ]);
+  });
+
   it('exports upcoming reminders to an ICS calendar with --ics', () => {
     runCli([
       'track',

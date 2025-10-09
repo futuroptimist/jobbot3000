@@ -6,6 +6,8 @@ import {
   getApplicationEvents,
   getApplicationReminders,
   setApplicationEventsDataDir,
+  snoozeApplicationReminder,
+  completeApplicationReminder,
 } from '../src/application-events.js';
 
 const dataDirRoot = path.resolve('test', 'tmp-events');
@@ -162,5 +164,109 @@ describe('application events', () => {
         past_due: false,
       },
     ]);
+  });
+
+  it('snoozes the most recent reminder and preserves prior history', async () => {
+    await logApplicationEvent('job-1', {
+      channel: 'email',
+      date: '2025-02-01T10:00:00Z',
+      remindAt: '2025-02-04T09:00:00Z',
+      note: 'Initial reach out',
+    });
+    await logApplicationEvent('job-1', {
+      channel: 'call',
+      date: '2025-02-02T12:00:00Z',
+      remindAt: '2025-02-05T11:00:00Z',
+    });
+
+    const result = await snoozeApplicationReminder('job-1', {
+      until: '2025-02-07T15:30:00Z',
+    });
+
+    expect(result).toMatchObject({
+      channel: 'call',
+      date: '2025-02-02T12:00:00.000Z',
+      remind_at: '2025-02-07T15:30:00.000Z',
+    });
+
+    const events = await getApplicationEvents('job-1');
+    expect(events).toEqual([
+      {
+        channel: 'email',
+        date: '2025-02-01T10:00:00.000Z',
+        note: 'Initial reach out',
+        remind_at: '2025-02-04T09:00:00.000Z',
+      },
+      {
+        channel: 'call',
+        date: '2025-02-02T12:00:00.000Z',
+        remind_at: '2025-02-07T15:30:00.000Z',
+      },
+    ]);
+
+    const reminders = await getApplicationReminders({ now: '2025-02-06T00:00:00Z' });
+    expect(reminders).toEqual([
+      {
+        job_id: 'job-1',
+        remind_at: '2025-02-04T09:00:00.000Z',
+        channel: 'email',
+        note: 'Initial reach out',
+        past_due: true,
+      },
+      {
+        job_id: 'job-1',
+        remind_at: '2025-02-07T15:30:00.000Z',
+        channel: 'call',
+        past_due: false,
+      },
+    ]);
+  });
+
+  it('marks reminders done by clearing remind_at and stamping completion time', async () => {
+    await logApplicationEvent('job-2', {
+      channel: 'follow_up',
+      date: '2025-02-03T09:00:00Z',
+      remindAt: '2025-02-08T12:00:00Z',
+      note: 'Send prep materials',
+    });
+
+    const result = await completeApplicationReminder('job-2', {
+      completedAt: '2025-02-06T10:00:00Z',
+    });
+
+    expect(result).toMatchObject({
+      channel: 'follow_up',
+      date: '2025-02-03T09:00:00.000Z',
+      note: 'Send prep materials',
+      reminder_completed_at: '2025-02-06T10:00:00.000Z',
+    });
+    expect(result).not.toHaveProperty('remind_at');
+
+    const events = await getApplicationEvents('job-2');
+    expect(events).toEqual([
+      {
+        channel: 'follow_up',
+        date: '2025-02-03T09:00:00.000Z',
+        note: 'Send prep materials',
+        reminder_completed_at: '2025-02-06T10:00:00.000Z',
+      },
+    ]);
+
+    const reminders = await getApplicationReminders({ now: '2025-02-07T00:00:00Z' });
+    expect(reminders).toEqual([]);
+  });
+
+  it('rejects snooze or completion when no reminder exists for a job', async () => {
+    await logApplicationEvent('job-3', {
+      channel: 'applied',
+      date: '2025-02-04T11:00:00Z',
+    });
+
+    await expect(
+      snoozeApplicationReminder('job-3', { until: '2025-02-10T09:00:00Z' }),
+    ).rejects.toThrow(/no reminder/i);
+    await expect(
+      completeApplicationReminder('job-3', { completedAt: '2025-02-05T09:00:00Z' }),
+    ).rejects.toThrow(/no reminder/i);
   });
 });
