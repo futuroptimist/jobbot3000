@@ -286,7 +286,7 @@
     boots the Express adapter, fetches the HTML dashboard, and asserts the
     audits return zero WCAG AA violations with a performance score ≥0.9 while
     keeping both the Lighthouse-reported transfer size and the raw HTML payload
-    below 74 KB. The action panel for recording shortlist statuses raised the
+    below 80 KB. The action panel for recording shortlist statuses raised the
     payload slightly, so the regression suite and UI now share helpers to trim
     duplicate markup and styles.
 
