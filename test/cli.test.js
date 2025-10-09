@@ -2012,7 +2012,19 @@ describe('jobbot CLI', () => {
     expect(json.jobs['job-json'].discard_count).toBe(2);
   });
 
-  it('shows shortlist details with timeline events and attachments', () => {
+  it('shows shortlist details with lifecycle status, timeline, and attachments', () => {
+    runCli([
+      'track',
+      'add',
+      'job-detail',
+      '--status',
+      'screening',
+      '--note',
+      'Waiting on recruiter feedback',
+      '--date',
+      '2025-03-04T08:00:00Z',
+    ]);
+
     runCli([
       'shortlist',
       'sync',
@@ -2071,6 +2083,11 @@ describe('jobbot CLI', () => {
 
     expect(detail).toMatchObject({
       job_id: 'job-detail',
+      status: expect.objectContaining({
+        job_id: 'job-detail',
+        status: 'screening',
+        note: 'Waiting on recruiter feedback',
+      }),
       metadata: {
         location: 'Remote',
         level: 'Staff',
@@ -2099,9 +2116,16 @@ describe('jobbot CLI', () => {
         expect.objectContaining({
           channel: 'call',
           note: 'Scheduled screening',
+          date: '2025-03-07T09:00:00.000Z',
         }),
       ]),
     );
+    expect(detail.attachments).toEqual(['resume.pdf', 'cover-letter.pdf']);
+
+    const textOutput = runCli(['shortlist', 'show', 'job-detail']);
+    expect(textOutput).toContain('Status: screening (updated 2025-03-04T08:00:00.000Z)');
+    expect(textOutput).toContain('Note: Waiting on recruiter feedback');
+    expect(textOutput).toContain('Attachments:\n- resume.pdf\n- cover-letter.pdf');
   });
 
   it('writes shortlist JSON snapshots to disk with --out', () => {

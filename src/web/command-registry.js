@@ -35,6 +35,15 @@ const SHORTLIST_LIST_ALLOWED_FIELDS = new Set([
 ]);
 
 const SHORTLIST_SHOW_ALLOWED_FIELDS = new Set(['jobId', 'job_id']);
+const TRACK_ADD_ALLOWED_FIELDS = new Set([
+  'jobId',
+  'job_id',
+  'status',
+  'note',
+  'date',
+  'updatedAt',
+  'updated_at',
+]);
 
 function ensurePlainObject(value, commandName) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -235,11 +244,27 @@ function validateShortlistShowPayload(rawPayload) {
   return { jobId };
 }
 
+function validateTrackAddPayload(rawPayload) {
+  const payload = ensurePlainObject(rawPayload, 'track-add');
+  assertAllowedFields(payload, TRACK_ADD_ALLOWED_FIELDS, 'track-add');
+  const jobId = coerceString(payload.jobId ?? payload.job_id, { name: 'jobId', required: true });
+  const status = coerceString(payload.status, { name: 'status', required: true });
+  const note = coerceString(payload.note, { name: 'note' });
+  const sanitized = { jobId, status };
+  if (note) sanitized.note = note;
+  const date = coerceString(payload.date ?? payload.updatedAt ?? payload.updated_at, {
+    name: 'date',
+  });
+  if (date) sanitized.date = date;
+  return sanitized;
+}
+
 const COMMAND_VALIDATORS = Object.freeze({
   summarize: validateSummarizePayload,
   match: validateMatchPayload,
   'shortlist-list': validateShortlistListPayload,
   'shortlist-show': validateShortlistShowPayload,
+  'track-add': validateTrackAddPayload,
 });
 
 export const ALLOW_LISTED_COMMANDS = Object.freeze(Object.keys(COMMAND_VALIDATORS));

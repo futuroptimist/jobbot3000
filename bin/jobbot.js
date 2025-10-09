@@ -157,7 +157,7 @@ function normalizeTimelineEvent(event) {
   return normalized;
 }
 
-function buildShortlistDetail(jobId, record, events) {
+function buildShortlistDetail(jobId, record, events, statusEntry) {
   const metadata = record && typeof record.metadata === 'object' ? { ...record.metadata } : {};
   const tags = Array.isArray(record?.tags)
     ? record.tags
@@ -206,11 +206,43 @@ function buildShortlistDetail(jobId, record, events) {
     detail.last_discard = { ...record.last_discard };
   }
 
+  if (statusEntry && typeof statusEntry === 'object') {
+    detail.status = { ...statusEntry };
+  }
+
+  const attachments = [];
+  const seenAttachments = new Set();
+  for (const event of normalizedEvents) {
+    if (!event || !Array.isArray(event.documents)) continue;
+    for (const doc of event.documents) {
+      if (!doc || seenAttachments.has(doc)) continue;
+      seenAttachments.add(doc);
+      attachments.push(doc);
+    }
+  }
+  if (attachments.length > 0) {
+    detail.attachments = attachments;
+  }
+
   return detail;
 }
 
 function formatShortlistDetail(detail) {
   const lines = [`Job: ${detail.job_id}`];
+
+  if (detail.status && typeof detail.status === 'object') {
+    const statusValue = detail.status.status || 'unknown';
+    const statusParts = [`Status: ${statusValue}`];
+    if (detail.status.updated_at) {
+      statusParts.push(`(updated ${detail.status.updated_at})`);
+    }
+    lines.push(statusParts.join(' '));
+    if (detail.status.note) {
+      lines.push(`Note: ${detail.status.note}`);
+    }
+  } else {
+    lines.push('Status: (not tracked)');
+  }
 
   const metadata = detail.metadata ?? {};
   const metaEntries = [
@@ -268,6 +300,13 @@ function formatShortlistDetail(detail) {
       if (event.remind_at) {
         lines.push(`  Reminder: ${event.remind_at}`);
       }
+    }
+  }
+
+  if (Array.isArray(detail.attachments) && detail.attachments.length > 0) {
+    lines.push('', 'Attachments:');
+    for (const doc of detail.attachments) {
+      lines.push(`- ${doc}`);
     }
   }
 
@@ -636,13 +675,13 @@ export async function cmdMatch(args) {
   }
 }
 
-async function cmdTrackAdd(args) {
+export async function cmdTrackAdd(args) {
   const jobId = args[0];
   const status = getFlag(args, '--status');
   const usage =
     `Usage: jobbot track add <job_id> --status <status>\n` +
     `Valid statuses: ${STATUSES.join(', ')}\n` +
-    'Optional: --note <note>';
+    'Optional: --note <note> --date <iso-timestamp>';
   if (!jobId || !status) {
     console.error(usage);
     process.exit(2);
@@ -657,9 +696,22 @@ async function cmdTrackAdd(args) {
     }
   }
 
+  const dateFlagIndex = args.indexOf('--date');
+  if (dateFlagIndex !== -1) {
+    const next = args[dateFlagIndex + 1];
+    if (!next || next.startsWith('--')) {
+      console.error(usage);
+      process.exit(2);
+    }
+  }
+
   const note = getFlag(args, '--note');
+  const date = getFlag(args, '--date');
   try {
-    const recorded = await recordApplication(jobId, status.trim(), { note });
+    const options = {};
+    if (note) options.note = note;
+    if (date) options.date = date;
+    const recorded = await recordApplication(jobId, status.trim(), options);
     console.log(`Recorded ${jobId} as ${recorded}`);
   } catch (err) {
     if (err && /note cannot be empty/i.test(String(err.message))) {
@@ -1805,8 +1857,12 @@ export async function cmdShortlistShow(args) {
 
   let detail;
   try {
-    const [record, events] = await Promise.all([getShortlist(jobId), getApplicationEvents(jobId)]);
-    detail = buildShortlistDetail(jobId, record, events);
+    const [record, events, statusEntry] = await Promise.all([
+      getShortlist(jobId),
+      getApplicationEvents(jobId),
+      getLifecycleEntry(jobId),
+    ]);
+    detail = buildShortlistDetail(jobId, record, events, statusEntry);
   } catch (err) {
     console.error(err?.message || String(err));
     process.exit(1);

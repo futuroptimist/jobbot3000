@@ -8,6 +8,7 @@ import {
   sanitizeOutputValue,
 } from './command-adapter.js';
 import { ALLOW_LISTED_COMMANDS, validateCommandPayload } from './command-registry.js';
+import { STATUSES } from '../lifecycle.js';
 
 function createInMemoryRateLimiter(options = {}) {
   const windowMs = Number(options.windowMs ?? 60000);
@@ -59,6 +60,47 @@ function escapeHtml(value) {
         return character;
     }
   });
+}
+
+const SCRIPT_ESCAPE_LOOKUP = {
+  '<': '\\u003C',
+  '>': '\\u003E',
+  '/': '\\u002F',
+  '\u2028': '\\u2028',
+  '\u2029': '\\u2029',
+};
+
+const SCRIPT_ESCAPE_PATTERN = /[<>/\u2028\u2029]/g;
+
+function serializeForInlineScript(value) {
+  const json = JSON.stringify(value);
+  if (json === undefined) {
+    return 'undefined';
+  }
+  return json.replace(SCRIPT_ESCAPE_PATTERN, match => SCRIPT_ESCAPE_LOOKUP[match] ?? match);
+}
+
+function normalizeTrackStatuses(statuses) {
+  if (!Array.isArray(statuses)) {
+    return STATUSES;
+  }
+
+  const allowed = new Set(STATUSES);
+  const normalized = [];
+  const seen = new Set();
+  for (const entry of statuses) {
+    if (typeof entry !== 'string') {
+      continue;
+    }
+    const trimmed = entry.trim();
+    if (!trimmed || !allowed.has(trimmed) || seen.has(trimmed)) {
+      continue;
+    }
+    normalized.push(trimmed);
+    seen.add(trimmed);
+  }
+
+  return normalized.length > 0 ? normalized : STATUSES;
 }
 
 function normalizeCsrfOptions(csrf = {}) {
@@ -326,6 +368,7 @@ export function createWebApp({
   rateLimit,
   logger,
   auth,
+  lifecycleStatuses,
 } = {}) {
   const normalizedInfo = normalizeInfo(info);
   const normalizedChecks = normalizeHealthChecks(healthChecks);
@@ -336,6 +379,7 @@ export function createWebApp({
   const availableCommands = new Set(
     ALLOW_LISTED_COMMANDS.filter(name => typeof commandAdapter?.[name] === 'function'),
   );
+  const trackStatuses = normalizeTrackStatuses(lifecycleStatuses);
   const jsonParser = express.json({ limit: '1mb' });
 
   app.get('/', (req, res) => {
@@ -711,6 +755,81 @@ export function createWebApp({
         gap: 0.35rem 1rem;
         margin: 0;
       }
+      .application-detail__status-grid {
+        display: grid;
+        gap: 1rem;
+        margin: 0 0 1rem;
+      }
+      .application-detail__status {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+      .application-detail__status strong {
+        color: var(--foreground);
+      }
+      .application-detail__status-form {
+        display: grid;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+        border-radius: 0.85rem;
+        border: 1px solid var(--card-border);
+        background-color: rgba(0, 0, 0, 0.15);
+      }
+      [data-theme='light'] .application-detail__status-form {
+        background-color: rgba(255, 255, 255, 0.75);
+      }
+      .application-detail__status-form label {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        font-size: 0.95rem;
+        color: var(--muted);
+      }
+      .application-detail__status-form select,
+      .application-detail__status-form textarea {
+        border-radius: 0.6rem;
+        border: 1px solid var(--card-border);
+        background-color: var(--card-surface);
+        color: var(--foreground);
+        padding: 0.5rem 0.75rem;
+        font: inherit;
+        resize: vertical;
+      }
+      .application-detail__status-form textarea {
+        min-height: 3.5rem;
+      }
+      .application-detail__actions {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+      }
+      .application-detail__status-form button {
+        border-radius: 999px;
+        border: none;
+        background-color: var(--accent);
+        color: white;
+        padding: 0.45rem 1.15rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .application-detail__status-form button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      .application-detail__status-message {
+        font-size: 0.9rem;
+        color: var(--muted);
+      }
+      .application-detail__status-message[data-variant='error'] {
+        color: var(--danger-text);
+      }
+      .application-detail__status-message[data-variant='success'] {
+        color: var(--accent);
+      }
       .application-detail__meta dt {
         font-weight: 600;
         color: var(--muted);
@@ -720,6 +839,17 @@ export function createWebApp({
       }
       .application-detail__tags {
         margin: 0;
+      }
+      .application-detail__subheading {
+        margin: 0 0 0.5rem;
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: var(--muted);
+      }
+      .application-detail__attachments {
+        margin: 0;
+        padding-left: 1rem;
+        list-style: disc;
       }
       .application-detail__events {
         margin: 0;
@@ -936,10 +1066,43 @@ export function createWebApp({
               </div>
               <div class="application-detail__section" data-detail-state="ready" hidden>
                 <h3 class="application-detail__title" data-detail-title></h3>
+                <div class="application-detail__status-grid">
+                  <div class="application-detail__status" data-detail-status></div>
+                  <form class="application-detail__status-form" data-detail-status-form>
+                    <label>
+                      <span>Status</span>
+                      <select data-detail-status-select></select>
+                    </label>
+                    <label>
+                      <span>Note</span>
+                      <textarea
+                        data-detail-status-note
+                        rows="2"
+                        placeholder="Add context (optional)"
+                      ></textarea>
+                    </label>
+                    <div class="application-detail__actions">
+                      <button type="submit">Update status</button>
+                      <span
+                        class="application-detail__status-message"
+                        data-detail-status-message
+                        aria-live="polite"
+                      ></span>
+                    </div>
+                  </form>
+                </div>
                 <dl class="application-detail__meta" data-detail-meta></dl>
                 <p class="application-detail__tags" data-detail-tags></p>
                 <div class="application-detail__section" data-detail-discard></div>
                 <ul class="application-detail__events" data-detail-events></ul>
+                <div
+                  class="application-detail__section"
+                  data-detail-attachments-section
+                  hidden
+                >
+                  <h4 class="application-detail__subheading">Attachments</h4>
+                  <ul class="application-detail__attachments" data-detail-attachments></ul>
+                </div>
               </div>
             </div>
           </div>
@@ -1049,6 +1212,7 @@ export function createWebApp({
         </p>
     </footer>
     <script>
+      const JOBBOT_TRACK_STATUSES = ${serializeForInlineScript(trackStatuses)};
       (() => {
         const themeStorageKey = 'jobbot:web:theme';
         const routeStorageKey = 'jobbot:web:route';
@@ -1212,23 +1376,70 @@ export function createWebApp({
           const detailElements = (() => {
             const container = section.querySelector('[data-application-detail]');
             if (!container) return null;
-            return {
-              container,
-              blocks: {
-                empty: container.querySelector('[data-detail-state="empty"]'),
-                loading: container.querySelector('[data-detail-state="loading"]'),
-                error: container.querySelector('[data-detail-state="error"]'),
-                ready: container.querySelector('[data-detail-state="ready"]'),
-              },
-              title: container.querySelector('[data-detail-title]'),
-              meta: container.querySelector('[data-detail-meta]'),
-              tags: container.querySelector('[data-detail-tags]'),
-              discard: container.querySelector('[data-detail-discard]'),
-              events: container.querySelector('[data-detail-events]'),
-              errorMessage: container.querySelector('[data-detail-error]'),
-            };
-          })();
-          const detailState = { loading: false, jobId: null };
+              return {
+                container,
+                blocks: {
+                  empty: container.querySelector('[data-detail-state="empty"]'),
+                  loading: container.querySelector('[data-detail-state="loading"]'),
+                  error: container.querySelector('[data-detail-state="error"]'),
+                  ready: container.querySelector('[data-detail-state="ready"]'),
+                },
+                title: container.querySelector('[data-detail-title]'),
+                status: container.querySelector('[data-detail-status]'),
+                statusForm: container.querySelector('[data-detail-status-form]'),
+                statusSelect: container.querySelector('[data-detail-status-select]'),
+                statusNote: container.querySelector('[data-detail-status-note]'),
+                statusMessage: container.querySelector('[data-detail-status-message]'),
+                meta: container.querySelector('[data-detail-meta]'),
+                tags: container.querySelector('[data-detail-tags]'),
+                discard: container.querySelector('[data-detail-discard]'),
+                events: container.querySelector('[data-detail-events]'),
+                attachmentsSection: container.querySelector('[data-detail-attachments-section]'),
+                attachments: container.querySelector('[data-detail-attachments]'),
+                errorMessage: container.querySelector('[data-detail-error]'),
+              };
+            })();
+          const detailState = { loading: false, jobId: null, statusSubmitting: false };
+          const STATUS_OPTIONS = Array.isArray(JOBBOT_TRACK_STATUSES)
+            ? JOBBOT_TRACK_STATUSES.filter(status => typeof status === 'string' && status.trim())
+            : [];
+
+          function formatStatusOptionLabel(value) {
+            return value
+              .split('_')
+              .map(part => (part ? part[0].toUpperCase() + part.slice(1) : part))
+              .join(' ');
+          }
+
+          function initializeStatusOptions(select) {
+            if (!select) return;
+            if (select.dataset.initialized === '1') return;
+            select.textContent = '';
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = 'Select status';
+            placeholder.disabled = true;
+            placeholder.hidden = true;
+            select.appendChild(placeholder);
+            for (const status of STATUS_OPTIONS) {
+              const option = document.createElement('option');
+              option.value = status;
+              option.textContent = formatStatusOptionLabel(status);
+              select.appendChild(option);
+            }
+            select.dataset.initialized = '1';
+          }
+
+          function setStatusMessage(message, { variant } = {}) {
+            if (!detailElements?.statusMessage) return;
+            const text = typeof message === 'string' ? message.trim() : '';
+            detailElements.statusMessage.textContent = text;
+            if (variant) {
+              detailElements.statusMessage.setAttribute('data-variant', variant);
+            } else {
+              detailElements.statusMessage.removeAttribute('data-variant');
+            }
+          }
 
           function clampLimit(value) {
             const number = Number.parseInt(value, 10);
@@ -1350,10 +1561,24 @@ export function createWebApp({
           function clearDetailContents() {
             if (!detailElements) return;
             if (detailElements.title) detailElements.title.textContent = '';
+            if (detailElements.status) detailElements.status.textContent = '';
+            if (detailElements.statusMessage) detailElements.statusMessage.textContent = '';
+            if (detailElements.statusMessage) {
+              detailElements.statusMessage.removeAttribute('data-variant');
+            }
+            if (detailElements.statusSelect) {
+              initializeStatusOptions(detailElements.statusSelect);
+              detailElements.statusSelect.value = '';
+            }
+            if (detailElements.statusNote) detailElements.statusNote.value = '';
             if (detailElements.meta) detailElements.meta.textContent = '';
             if (detailElements.tags) detailElements.tags.textContent = '';
             if (detailElements.discard) detailElements.discard.textContent = '';
             if (detailElements.events) detailElements.events.textContent = '';
+            if (detailElements.attachments) detailElements.attachments.textContent = '';
+            if (detailElements.attachmentsSection) {
+              detailElements.attachmentsSection.setAttribute('hidden', '');
+            }
           }
 
           function renderDetail(jobId, data) {
@@ -1365,6 +1590,48 @@ export function createWebApp({
             if (detailElements.title) {
               detailElements.title.textContent = 'Application ' + jobId;
             }
+
+            if (detailElements.status) {
+              detailElements.status.textContent = '';
+              const fragment = document.createDocumentFragment();
+              if (data?.status && typeof data.status === 'object') {
+                const statusLine = document.createElement('div');
+                const statusLabel = document.createElement('strong');
+                const statusValue = data.status.status || 'not tracked';
+                statusLabel.textContent = 'Status: ' + statusValue;
+                statusLine.appendChild(statusLabel);
+                if (data.status.updated_at) {
+                  const updated = document.createElement('span');
+                  updated.textContent = ' (updated ' + data.status.updated_at + ')';
+                  statusLine.appendChild(updated);
+                }
+                fragment.appendChild(statusLine);
+                if (data.status.note) {
+                  const noteLine = document.createElement('div');
+                  noteLine.textContent = 'Note: ' + data.status.note;
+                  fragment.appendChild(noteLine);
+                }
+              } else {
+                const fallback = document.createElement('div');
+                fallback.textContent = 'Status: (not tracked)';
+                fragment.appendChild(fallback);
+              }
+              detailElements.status.appendChild(fragment);
+            }
+
+            initializeStatusOptions(detailElements.statusSelect);
+            if (detailElements.statusSelect) {
+              const statusValue =
+                data?.status && typeof data.status === 'object' ? data.status.status : '';
+              detailElements.statusSelect.value = statusValue || '';
+            }
+            if (detailElements.statusNote) {
+              detailElements.statusNote.value =
+                data?.status && typeof data.status === 'object' && data.status.note
+                  ? data.status.note
+                  : '';
+            }
+            setStatusMessage('');
 
             if (detailElements.meta) {
               const fragment = document.createDocumentFragment();
@@ -1469,6 +1736,23 @@ export function createWebApp({
                   }
                   detailElements.events.appendChild(li);
                 }
+              }
+            }
+
+            if (detailElements.attachments) {
+              detailElements.attachments.textContent = '';
+              const attachments = Array.isArray(data?.attachments) ? data.attachments : [];
+              if (attachments.length > 0) {
+                const fragment = document.createDocumentFragment();
+                for (const doc of attachments) {
+                  const item = document.createElement('li');
+                  item.textContent = doc;
+                  fragment.appendChild(item);
+                }
+                detailElements.attachments.appendChild(fragment);
+                detailElements.attachmentsSection?.removeAttribute('hidden');
+              } else if (detailElements.attachmentsSection) {
+                detailElements.attachmentsSection.setAttribute('hidden', '');
               }
             }
           }
@@ -1681,6 +1965,88 @@ export function createWebApp({
               throw new Error('Received invalid detail payload');
             }
             return data;
+          }
+
+          async function updateLifecycleStatus(payload) {
+            if (typeof fetch !== 'function') {
+              throw new Error('Fetch API is unavailable in this environment');
+            }
+            const headers = { 'content-type': 'application/json' };
+            if (csrfHeader && csrfToken) {
+              headers[csrfHeader] = csrfToken;
+            }
+            const commandUrl = new URL('/commands/track-add', window.location.href);
+            const response = await fetch(commandUrl, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify(payload),
+            });
+            let parsed;
+            try {
+              parsed = await response.json();
+            } catch {
+              throw new Error('Received invalid response while updating status');
+            }
+            if (!response.ok) {
+              const message =
+                parsed && typeof parsed.error === 'string'
+                  ? parsed.error
+                  : 'Failed to update status';
+              throw new Error(message);
+            }
+            return parsed;
+          }
+
+          if (detailElements?.statusForm) {
+            detailElements.statusForm.addEventListener('submit', async event => {
+              event.preventDefault();
+              if (!detailElements || detailState.statusSubmitting) {
+                return;
+              }
+              const jobId = detailState.jobId;
+              if (!jobId) {
+                setStatusMessage('Select an application before updating its status.', {
+                  variant: 'error',
+                });
+                return;
+              }
+              const select = detailElements.statusSelect;
+              const statusValue = typeof select?.value === 'string' ? select.value.trim() : '';
+              if (!statusValue) {
+                setStatusMessage('Select a status before updating.', { variant: 'error' });
+                return;
+              }
+              const noteValue =
+                typeof detailElements.statusNote?.value === 'string'
+                  ? detailElements.statusNote.value.trim()
+                  : '';
+              const payload = noteValue
+                ? { jobId, status: statusValue, note: noteValue }
+                : { jobId, status: statusValue };
+
+              detailState.statusSubmitting = true;
+              const submitButton = detailElements.statusForm.querySelector('button[type="submit"]');
+              submitButton?.setAttribute('disabled', '');
+              setStatusMessage('Updating status…');
+
+              try {
+                await updateLifecycleStatus(payload);
+                const updated = await fetchShortlistDetail(jobId);
+                renderDetail(jobId, updated);
+                setDetailState('ready', { forceVisible: true });
+                dispatchApplicationDetailLoaded(updated);
+                setStatusMessage('Status updated to ' + statusValue + '.', { variant: 'success' });
+              } catch (err) {
+                const message =
+                  err && typeof err.message === 'string'
+                    ? err.message
+                    : 'Failed to update status';
+                setStatusMessage(message, { variant: 'error' });
+              } finally {
+                detailState.statusSubmitting = false;
+                submitButton?.removeAttribute('disabled');
+              }
+            });
           }
 
           async function refresh(options = {}) {

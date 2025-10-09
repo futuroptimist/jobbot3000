@@ -9,6 +9,7 @@ import {
   normalizeShortlistListRequest,
   normalizeShortlistShowRequest,
   normalizeSummarizeRequest,
+  normalizeTrackAddRequest,
 } from './schemas.js';
 
 const SECRET_KEYS = [
@@ -124,6 +125,12 @@ const COMMANDS = Object.freeze({
     cliCommand: ['shortlist', 'show'],
     name: 'shortlist-show',
     errorLabel: 'shortlist show',
+  },
+  'track-add': {
+    method: 'cmdTrackAdd',
+    cliCommand: ['track', 'add'],
+    name: 'track-add',
+    errorLabel: 'track add',
   },
 });
 
@@ -716,14 +723,42 @@ export function createCommandAdapter(options = {}) {
     return payload;
   }
 
+  async function trackAdd(options = {}) {
+    const { jobId, status, note, date } = normalizeTrackAddRequest(options);
+    const args = [jobId, '--status', status];
+    if (note) {
+      args.push('--note', note);
+    }
+    if (date) {
+      args.push('--date', date);
+    }
+    const { stdout, stderr, returnValue, correlationId, traceId } = await runCli('track-add', args);
+    const payload = {
+      command: 'track-add',
+      format: 'text',
+      stdout,
+      stderr,
+      returnValue,
+    };
+    if (correlationId) {
+      payload.correlationId = correlationId;
+    }
+    if (traceId) {
+      payload.traceId = traceId;
+    }
+    return payload;
+  }
+
   const adapter = {
     summarize,
     match,
     shortlistList,
     shortlistShow,
+    trackAdd,
   };
   adapter['shortlist-list'] = shortlistList;
   adapter['shortlist-show'] = shortlistShow;
+  adapter['track-add'] = trackAdd;
   return adapter;
 }
 

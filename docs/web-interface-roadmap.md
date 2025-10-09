@@ -38,12 +38,14 @@
 ## Implementation Strategy
 
 > [!NOTE]
-> **Future work triage (2025-10-08):**
+> **Future work triage (2025-10-08, updated 2025-10-10):**
 > - *Application detail view showing lifecycle timeline, notes, and attachments via CLI `show`.*
->   Fits within a single PR because the CLI already persists lifecycle statuses and activity logs,
->   so the feature primarily needs a read-focused command and documentation updates.
+>   _Implemented (2025-10-08) — see below._
 > - *Action panel enabling create/update status workflows mapped to CLI `create`/`update`.*
->   Requires new mutation endpoints and UI flows, so it remains a larger follow-up task.
+>   _Implemented (2025-10-09, updated 2025-10-10):_ The lifecycle action panel now filters status
+>   options to the CLI-defined `STATUSES` list before serializing them into the inline script.
+>   Regression coverage in [`test/web-server.test.js`](../test/web-server.test.js) verifies only
+>   CLI-approved statuses appear in the dropdown after sanitization.
 
 ### 1. Requirements and Domain Mapping
 
@@ -233,6 +235,20 @@
      and [`test/cli.test.js`](../test/cli.test.js) exercises the CLI output,
      adapter wiring, and DOM updates to keep the drawer and timeline stable.
    - Action panel enabling create/update status workflows mapped to CLI `create`/`update`.
+     _Implemented (2025-10-09):_ The Applications view now renders a lifecycle
+     status action panel that posts to the `track-add` command through
+     `/commands/track-add`. [`bin/jobbot.js`](../bin/jobbot.js) expands
+     `shortlist show` details with lifecycle status metadata and aggregated
+     attachments so the web drawer mirrors CLI output. The web adapter wires a
+     new `track-add` command, validates payloads via
+     [`src/web/command-registry.js`](../src/web/command-registry.js), and updates
+     the drawer after successful submissions. Regression coverage in
+     [`test/cli.test.js`](../test/cli.test.js),
+     [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js),
+     and [`test/web-server.test.js`](../test/web-server.test.js) verifies the CLI
+     detail contract, adapter wiring, and DOM interactions (including optimistic
+     messaging, attachment rendering, and lifecycle dropdown filtering so only
+     CLI-recognized statuses surface to operators).
    - Notification hooks for reminders, leveraging CLI scheduling or local system integration.
      _Implemented (2025-10-04):_ [`bin/jobbot.js`](../bin/jobbot.js) now supports
      `jobbot track reminders --ics <file>`, wiring the upcoming reminders feed into
@@ -255,8 +271,8 @@
     suite in [`test/web-audits.test.js`](../test/web-audits.test.js)
     boots the Express adapter, fetches the HTML dashboard, and asserts the
     audits return zero WCAG AA violations with a performance score ≥0.9 while
-    keeping the HTML transfer size below 70 KB, even with the Applications
-    detail drawer markup loaded.
+    keeping the HTML transfer size below 80 KB, even with the Applications
+    detail drawer and lifecycle status action panel markup loaded.
 
 6. **Hardening and Packaging**
    - Implement rate limiting, input sanitization, and CSRF tokens.

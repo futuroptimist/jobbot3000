@@ -37,7 +37,8 @@ describe('web interface audits', () => {
     const performanceReport = await runPerformanceAudit(homepageUrl);
     expect(performanceReport.score).toBeGreaterThanOrEqual(0.9);
 
-    const MAX_TRANSFER_SIZE = 70_000;
+    // Lifecycle status action panel markup increases the base document weight.
+    const MAX_TRANSFER_SIZE = 80_000;
     expect(performanceReport.metrics.transferSize).toBeLessThan(MAX_TRANSFER_SIZE);
   });
 

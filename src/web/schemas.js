@@ -184,4 +184,16 @@ export function normalizeShortlistShowRequest(options) {
   return { jobId };
 }
 
+export function normalizeTrackAddRequest(options) {
+  assertPlainObject(options, 'track add options');
+  const jobId = assertRequiredString(options.jobId ?? options.job_id, 'jobId');
+  const status = assertRequiredString(options.status, 'status');
+  const note = normalizeString(options.note);
+  const payload = { jobId, status };
+  if (note) payload.note = note;
+  const date = normalizeString(options.date ?? options.updatedAt ?? options.updated_at);
+  if (date) payload.date = date;
+  return payload;
+}
+
 export const WEB_SUPPORTED_FORMATS = [...SUPPORTED_FORMATS];

@@ -31,6 +31,9 @@ afterEach(async () => {
     const server = activeServers.pop();
     await server.close();
   }
+  vi.unmock('../src/lifecycle.js');
+  vi.clearAllMocks();
+  vi.resetModules();
 });
 
 describe('web server health endpoint', () => {
@@ -194,6 +197,30 @@ describe('web server status page', () => {
     expect(overviewLink?.hasAttribute('aria-current')).toBe(false);
   });
 
+  it('filters lifecycle status options to known CLI statuses', async () => {
+    const server = await startServer({
+      lifecycleStatuses: [
+        ' offer ',
+        'invalid',
+        '',
+        'screening',
+        'offer',
+        'screening',
+        '<script>alert(1)</script>',
+      ],
+    });
+
+    const response = await fetch(`${server.url}/`);
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    const expectedStatuses =
+      'const JOBBOT_TRACK_STATUSES = ["offer","screening"];';
+
+    expect(html).toContain(expectedStatuses);
+    expect(html).not.toContain('"invalid"');
+    expect(html).not.toContain('\\u003Cscript\\u003Ealert(1)');
+  });
+
   it('exposes status panels with loading and error states', async () => {
     const server = await startServer();
 
@@ -251,6 +278,27 @@ describe('web server status page', () => {
     expect(readySlot?.hasAttribute('hidden')).toBe(false);
 
     expect(api?.setPanelState('missing', 'loading')).toBe(false);
+  });
+
+  it('serializes lifecycle statuses into the inline script safely', async () => {
+    const server = await startServer({
+      lifecycleStatuses: ['screening', '</script><script>alert(1)</script>'],
+    });
+
+    const response = await fetch(`${server.url}/`);
+    expect(response.status).toBe(200);
+    const html = await response.text();
+
+    const match = html.match(/const JOBBOT_TRACK_STATUSES = (.*?);/);
+    expect(match).not.toBeNull();
+    const serialized = match?.[1];
+    expect(serialized).toBeDefined();
+    expect(serialized).not.toContain('</script>');
+    expect(serialized).not.toMatch(/\\u003C\\u002Fscript/);
+
+    const parsed = JSON.parse(serialized);
+    expect(parsed).toEqual(['screening']);
+    expect(parsed).not.toContain('</script><script>alert(1)</script>');
   });
 
   it('renders the applications view with shortlist filters and pagination markup', async () => {
@@ -333,7 +381,7 @@ describe('web server status page', () => {
     });
     dom.window.fetch = (input, init) => fetch(input, init);
 
-    const waitForEvent = (name, timeout = 500) =>
+    const waitForEvent = (name, timeout = 1500) =>
       new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error(`${name} timed out`)), timeout);
         dom.window.document.addEventListener(
@@ -436,6 +484,12 @@ describe('web server status page', () => {
           returnValue: 0,
           data: {
             job_id: 'job-42',
+            status: {
+              job_id: 'job-42',
+              status: 'screening',
+              note: 'Waiting on recruiter feedback',
+              updated_at: '2025-03-05T08:00:00.000Z',
+            },
             metadata: {
               location: 'Remote',
               level: 'Staff',
@@ -462,6 +516,7 @@ describe('web server status page', () => {
                 date: '2025-03-07T09:00:00.000Z',
               },
             ],
+            attachments: ['resume.pdf', 'cover-letter.pdf'],
           },
         };
       }),
@@ -482,7 +537,7 @@ describe('web server status page', () => {
     });
     dom.window.fetch = (input, init) => fetch(input, init);
 
-    const waitForEvent = (name, timeout = 500) =>
+    const waitForEvent = (name, timeout = 1500) =>
       new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error(`${name} timed out`)), timeout);
         dom.window.document.addEventListener(
@@ -519,6 +574,178 @@ describe('web server status page', () => {
     expect(detailPanel?.textContent).toContain('Sent resume');
     expect(detailPanel?.textContent).toContain('resume.pdf');
     expect(detailPanel?.textContent).toContain('Follow-up scheduled');
+    expect(detailPanel?.textContent).toContain('Status: screening');
+    expect(detailPanel?.textContent).toContain('Waiting on recruiter feedback');
+  });
+
+  it('submits status updates from the application action panel', async () => {
+    const shortlistEntry = {
+      id: 'job-99',
+      metadata: {
+        location: 'Remote',
+        level: 'Staff',
+        compensation: '$200k',
+        synced_at: '2025-03-05T12:00:00.000Z',
+      },
+      tags: ['remote'],
+      discard_count: 0,
+    };
+
+    const shortlistShowMock = vi
+      .fn(async () => ({
+        command: 'shortlist-show',
+        format: 'json',
+        stdout: '',
+        stderr: '',
+        returnValue: 0,
+        data: {
+          job_id: 'job-99',
+          status: {
+            job_id: 'job-99',
+            status: 'screening',
+            updated_at: '2025-03-05T08:00:00.000Z',
+          },
+          metadata: shortlistEntry.metadata,
+          tags: shortlistEntry.tags,
+          discard_count: 0,
+          events: [],
+          attachments: [],
+        },
+      }))
+      .mockImplementationOnce(async () => ({
+        command: 'shortlist-show',
+        format: 'json',
+        stdout: '',
+        stderr: '',
+        returnValue: 0,
+        data: {
+          job_id: 'job-99',
+          status: {
+            job_id: 'job-99',
+            status: 'screening',
+            updated_at: '2025-03-05T08:00:00.000Z',
+          },
+          metadata: shortlistEntry.metadata,
+          tags: shortlistEntry.tags,
+          discard_count: 0,
+          events: [],
+          attachments: [],
+        },
+      }))
+      .mockImplementationOnce(async () => ({
+        command: 'shortlist-show',
+        format: 'json',
+        stdout: '',
+        stderr: '',
+        returnValue: 0,
+        data: {
+          job_id: 'job-99',
+          status: {
+            job_id: 'job-99',
+            status: 'offer',
+            note: 'Signed final paperwork',
+            updated_at: '2025-03-08T10:15:00.000Z',
+          },
+          metadata: shortlistEntry.metadata,
+          tags: shortlistEntry.tags,
+          discard_count: 0,
+          events: [],
+          attachments: [],
+        },
+      }));
+
+    const commandAdapter = {
+      'shortlist-list': vi.fn(async () => ({
+        command: 'shortlist-list',
+        format: 'json',
+        stdout: '',
+        stderr: '',
+        returnValue: 0,
+        data: {
+          total: 1,
+          offset: 0,
+          limit: 20,
+          filters: {},
+          hasMore: false,
+          items: [shortlistEntry],
+        },
+      })),
+      'shortlist-show': shortlistShowMock,
+      'track-add': vi.fn(async payload => {
+        expect(payload).toEqual({
+          jobId: 'job-99',
+          status: 'offer',
+          note: 'Signed final paperwork',
+        });
+        return {
+          command: 'track-add',
+          format: 'text',
+          stdout: 'Recorded job-99 as offer',
+          stderr: '',
+          returnValue: 0,
+        };
+      }),
+    };
+
+    commandAdapter.shortlistList = commandAdapter['shortlist-list'];
+    commandAdapter.shortlistShow = commandAdapter['shortlist-show'];
+    commandAdapter.trackAdd = commandAdapter['track-add'];
+
+    const server = await startServer({ commandAdapter });
+    const response = await fetch(`${server.url}/`);
+    const html = await response.text();
+
+    const dom = new JSDOM(html, {
+      runScripts: 'dangerously',
+      resources: 'usable',
+      url: `${server.url}/`,
+      pretendToBeVisual: true,
+    });
+    dom.window.fetch = (input, init) => fetch(input, init);
+
+    const waitForEvent = (name, timeout = 1500) =>
+      new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`${name} timed out`)), timeout);
+        dom.window.document.addEventListener(
+          name,
+          event => {
+            clearTimeout(timer);
+            resolve(event);
+          },
+          { once: true },
+        );
+      });
+
+    await waitForEvent('jobbot:applications-ready');
+    const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
+    dom.window.location.hash = '#applications';
+    dom.window.dispatchEvent(new HashChange('hashchange'));
+
+    await waitForEvent('jobbot:applications-loaded');
+    const detailToggle = dom.window.document.querySelector('[data-shortlist-view]');
+    expect(detailToggle?.getAttribute('data-shortlist-view')).toBe('job-99');
+
+    const firstDetailLoad = waitForEvent('jobbot:application-detail-loaded');
+    detailToggle?.dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+    await firstDetailLoad;
+
+    const form = dom.window.document.querySelector('[data-detail-status-form]');
+    const select = dom.window.document.querySelector('[data-detail-status-select]');
+    const noteInput = dom.window.document.querySelector('[data-detail-status-note]');
+    expect(form).not.toBeNull();
+    if (select) select.value = 'offer';
+    if (noteInput) noteInput.value = 'Signed final paperwork';
+
+    const submission = waitForEvent('jobbot:application-detail-loaded');
+    form?.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    await submission;
+
+    expect(commandAdapter['track-add']).toHaveBeenCalledTimes(1);
+    expect(commandAdapter['shortlist-show']).toHaveBeenCalledTimes(2);
+
+    const statusDisplay = dom.window.document.querySelector('[data-detail-status]');
+    expect(statusDisplay?.textContent).toContain('offer');
+    expect(statusDisplay?.textContent).toContain('Signed final paperwork');
   });
 });
 
