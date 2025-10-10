@@ -1257,18 +1257,87 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             });
           }
 
-          async function fetchShortlistDetail(jobId) {
+          function mergeApplicationDetail(jobId, shortlistDetail, trackDetail) {
+            const shortlist =
+              shortlistDetail && typeof shortlistDetail === 'object' ? shortlistDetail : {};
+            const track =
+              trackDetail && typeof trackDetail === 'object' ? trackDetail : {};
+            const normalizedJobId = (() => {
+              const trackId = typeof track.job_id === 'string' && track.job_id.trim();
+              if (trackId) return trackId.trim();
+              const shortlistId = typeof shortlist.job_id === 'string' && shortlist.job_id.trim();
+              if (shortlistId) return shortlistId.trim();
+              return jobId;
+            })();
+
+            const seenAttachments = new Set();
+            const attachments = [];
+            const addAttachment = value => {
+              if (typeof value !== 'string') return;
+              const trimmed = value.trim();
+              if (!trimmed || seenAttachments.has(trimmed)) return;
+              seenAttachments.add(trimmed);
+              attachments.push(trimmed);
+            };
+
+            const collectFromList = list => {
+              if (!Array.isArray(list)) return;
+              for (const value of list) {
+                if (typeof value === 'string') {
+                  addAttachment(value);
+                }
+              }
+            };
+
+            collectFromList(track.attachments);
+            collectFromList(shortlist.attachments);
+
+            const events = Array.isArray(track.events) && track.events.length > 0
+              ? track.events
+              : Array.isArray(shortlist.events)
+                ? shortlist.events
+                : [];
+
+            const collectFromEvents = list => {
+              if (!Array.isArray(list)) return;
+              for (const entry of list) {
+                if (!entry || typeof entry !== 'object') continue;
+                const documents = Array.isArray(entry.documents) ? entry.documents : [];
+                for (const doc of documents) {
+                  if (typeof doc === 'string') {
+                    addAttachment(doc);
+                  }
+                }
+              }
+            };
+
+            collectFromEvents(track.events);
+            collectFromEvents(shortlist.events);
+            collectFromEvents(events);
+
+            const detail = { ...shortlist };
+            detail.job_id = normalizedJobId;
+            detail.status = track.status;
+            detail.attachments = attachments;
+            detail.events = events;
+            detail.track = track;
+            detail.shortlist = shortlist;
+            return detail;
+          }
+
+          async function fetchApplicationDetail(jobId) {
             if (!jobId) {
               throw new Error('Job ID is required');
             }
-            return postCommand(
-              '/commands/shortlist-show',
-              { jobId },
-              {
-                invalidResponse: 'Received invalid response while loading application detail',
-                failureMessage: 'Failed to load application detail',
-              },
-            );
+            const detailRequest = {
+              invalidResponse: 'Received invalid response while loading application detail',
+              failureMessage: 'Failed to load application detail',
+            };
+            const [shortlistDetail, trackDetail] = await Promise.all([
+              postCommand('/commands/shortlist-show', { jobId }, detailRequest),
+              postCommand('/commands/track-show', { jobId }, detailRequest),
+            ]);
+            return mergeApplicationDetail(jobId, shortlistDetail, trackDetail);
           }
 
           async function recordApplicationStatus(jobId, status, note) {
