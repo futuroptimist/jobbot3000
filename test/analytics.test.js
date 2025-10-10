@@ -358,6 +358,83 @@ describe('analytics conversion funnel', () => {
     ]);
   });
 
+  it('filters funnel analytics by timeframe and company', async () => {
+    const fs = await import('node:fs/promises');
+    await fs.writeFile(
+      path.join(dataDir, 'applications.json'),
+      JSON.stringify(
+        {
+          'job-early': {
+            status: 'screening',
+            updated_at: '2025-01-05T09:00:00.000Z',
+          },
+          'job-target': {
+            status: 'screening',
+            updated_at: '2025-02-10T12:00:00.000Z',
+          },
+          'job-late': {
+            status: 'offer',
+            updated_at: '2025-03-15T12:00:00.000Z',
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await fs.writeFile(
+      path.join(dataDir, 'application_events.json'),
+      JSON.stringify(
+        {
+          'job-early': [
+            { channel: 'email', date: '2025-01-04T09:00:00.000Z' },
+          ],
+          'job-target': [
+            { channel: 'email', date: '2025-02-09T14:00:00.000Z' },
+          ],
+          'job-late': [
+            { channel: 'email', date: '2025-03-14T14:00:00.000Z' },
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const jobsDir = path.join(dataDir, 'jobs');
+    await fs.mkdir(jobsDir, { recursive: true });
+    await fs.writeFile(
+      path.join(jobsDir, 'job-early.json'),
+      JSON.stringify({ parsed: { company: 'Example Labs' } }, null, 2),
+    );
+    await fs.writeFile(
+      path.join(jobsDir, 'job-target.json'),
+      JSON.stringify({ parsed: { company: 'Future Works' } }, null, 2),
+    );
+    await fs.writeFile(
+      path.join(jobsDir, 'job-late.json'),
+      JSON.stringify({ parsed: { company: 'Future Works' } }, null, 2),
+    );
+
+    const { computeFunnel, setAnalyticsDataDir } = await import('../src/analytics.js');
+    setAnalyticsDataDir(dataDir);
+    restoreAnalyticsDir = async () => setAnalyticsDataDir(undefined);
+
+    const funnel = await computeFunnel({
+      from: '2025-02-01T00:00:00.000Z',
+      to: '2025-02-28T23:59:59.000Z',
+      company: 'future works',
+    });
+
+    expect(funnel.totals).toEqual({ trackedJobs: 1, withEvents: 1 });
+    const stagesByKey = Object.fromEntries(
+      funnel.stages.map(stage => [stage.key, stage]),
+    );
+    expect(stagesByKey.outreach.count).toBe(1);
+    expect(stagesByKey.screening.count).toBe(1);
+    expect(stagesByKey.offer.count).toBe(0);
+    expect(funnel.missing.statuslessJobs.count).toBe(0);
+  });
+
   it('summarizes shortlist compensation metadata by currency', async () => {
     const { syncShortlistJob } = await import('../src/shortlist.js');
 

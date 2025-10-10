@@ -2032,8 +2032,29 @@ function formatCompensationSummary(summary) {
 }
 
 async function cmdAnalyticsFunnel(args) {
+  const usage =
+    'Usage: jobbot analytics funnel [--json] [--from <iso>] [--to <iso>] [--company <name>]';
+  assertFlagHasValue(args, '--from', usage);
+  assertFlagHasValue(args, '--to', usage);
+  assertFlagHasValue(args, '--company', usage);
+
   const format = args.includes('--json') ? 'json' : 'text';
-  const funnel = await computeFunnel();
+  const options = {};
+  const fromValue = getFlag(args, '--from');
+  if (fromValue) options.from = fromValue;
+  const toValue = getFlag(args, '--to');
+  if (toValue) options.to = toValue;
+  const companyValue = getFlag(args, '--company');
+  if (companyValue) options.company = companyValue;
+
+  let funnel;
+  try {
+    funnel = await computeFunnel(options);
+  } catch (err) {
+    console.error(err?.message || String(err));
+    process.exit(1);
+  }
+
   if (format === 'json') {
     console.log(JSON.stringify(funnel, null, 2));
     return;

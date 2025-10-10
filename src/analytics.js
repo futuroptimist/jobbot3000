@@ -56,6 +56,58 @@ function resolveReferenceDate(now) {
   return parsed;
 }
 
+function parseRangeBoundary(value, label) {
+  if (value == null) return null;
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) {
+      throw new Error(`Invalid analytics ${label} date: ${value}`);
+    }
+    return value;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      throw new Error(`Invalid analytics ${label} date: ${value}`);
+    }
+    const parsed = new Date(trimmed);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new Error(`Invalid analytics ${label} date: ${value}`);
+    }
+    return parsed;
+  }
+  throw new Error(`Invalid analytics ${label} date: ${value}`);
+}
+
+function isWithinRange(date, fromDate, toDate) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return false;
+  if (fromDate && date < fromDate) return false;
+  if (toDate && date > toDate) return false;
+  return true;
+}
+
+function filterEventsByRange(events, fromDate, toDate) {
+  if (!Array.isArray(events) || events.length === 0) return [];
+  if (!fromDate && !toDate) return events.slice();
+  const filtered = [];
+  for (const entry of events) {
+    const raw = typeof entry?.date === 'string' ? entry.date.trim() : '';
+    if (!raw) continue;
+    const parsed = new Date(raw);
+    if (!isWithinRange(parsed, fromDate, toDate)) continue;
+    filtered.push(entry);
+  }
+  return filtered;
+}
+
+function statusWithinRange(statusEntry, fromDate, toDate) {
+  if (statusEntry === undefined) return false;
+  if (!fromDate && !toDate) return true;
+  const iso = extractUpdatedAtValue(statusEntry);
+  if (!iso) return false;
+  const parsed = new Date(iso);
+  return isWithinRange(parsed, fromDate, toDate);
+}
+
 function extractUpdatedAtValue(entry) {
   if (!entry || typeof entry !== 'object') return undefined;
   const candidates = [entry.updated_at, entry.updatedAt];
@@ -984,9 +1036,70 @@ export async function computeCompensationSummary() {
   };
 }
 
-export async function computeFunnel() {
+async function applyAnalyticsFilters(statuses, interactions, options = {}) {
+  const fromDate = parseRangeBoundary(options.from, 'from');
+  const toDate = parseRangeBoundary(options.to, 'to');
+  if (fromDate && toDate && fromDate > toDate) {
+    throw new Error('Analytics from date must not be after the to date');
+  }
+
+  const companyValue = typeof options.company === 'string' ? options.company.trim() : '';
+  const companyFilter = companyValue ? companyValue.toLowerCase() : '';
+
+  if (!fromDate && !toDate && !companyFilter) {
+    return { statuses, interactions };
+  }
+
+  const filteredStatuses = {};
+  const filteredInteractions = {};
+  const jobIds = unionJobIds(statuses, interactions);
+  const jobsDir = companyFilter ? path.join(resolveDataDir(), 'jobs') : null;
+  const companyCache = new Map();
+
+  for (const jobId of jobIds) {
+    const statusEntry = statuses[jobId];
+
+    if (companyFilter) {
+      let companyName = extractCompanyFromStatusEntry(statusEntry);
+      if (!companyName) {
+        if (companyCache.has(jobId)) {
+          companyName = companyCache.get(jobId);
+        } else {
+          companyName = jobsDir ? await readCompanyFromSnapshot(jobsDir, jobId) : null;
+          companyCache.set(jobId, companyName);
+        }
+      }
+      const normalizedCompany =
+        typeof companyName === 'string' ? companyName.trim().toLowerCase() : '';
+      if (normalizedCompany !== companyFilter) {
+        continue;
+      }
+    }
+
+    const events = interactions[jobId];
+    const filteredEvents = filterEventsByRange(events, fromDate, toDate);
+    const includeEvents = filteredEvents.length > 0;
+    const includeStatus = statusWithinRange(statusEntry, fromDate, toDate);
+
+    if (!includeEvents && !includeStatus) {
+      continue;
+    }
+
+    if (includeStatus && statusEntry !== undefined) {
+      filteredStatuses[jobId] = statusEntry;
+    }
+    if (includeEvents) {
+      filteredInteractions[jobId] = filteredEvents;
+    }
+  }
+
+  return { statuses: filteredStatuses, interactions: filteredInteractions };
+}
+
+export async function computeFunnel(options = {}) {
   const { statuses, interactions } = await readAnalyticsSources();
-  return buildFunnel(statuses, interactions);
+  const filtered = await applyAnalyticsFilters(statuses, interactions, options);
+  return buildFunnel(filtered.statuses, filtered.interactions);
 }
 
 function countEventChannels(events) {
