@@ -309,3 +309,160 @@ export async function listLifecycleEntries(options = {}) {
     },
   };
 }
+
+function resolveResolutionList(resolutions) {
+  if (Array.isArray(resolutions)) {
+    return resolutions;
+  }
+
+  if (resolutions && typeof resolutions === 'object') {
+    if (Array.isArray(resolutions.jobs)) {
+      return resolutions.jobs;
+    }
+    if (Array.isArray(resolutions.resolutions)) {
+      return resolutions.resolutions;
+    }
+  }
+
+  throw new Error('resolution plan must provide an array of jobs');
+}
+
+function resolveFallbackTimestamp(now) {
+  if (now === undefined) {
+    return null;
+  }
+
+  try {
+    return normalizeTimestamp(now);
+  } catch (err) {
+    const message = err && err.message ? String(err.message) : '';
+    if (/invalid status timestamp/i.test(message)) {
+      throw new Error(`invalid resolution timestamp: ${now}`);
+    }
+    throw err;
+  }
+}
+
+function normalizeResolutionEntry(entry, fallbackTimestamp, defaultTimestamp) {
+  if (!entry || typeof entry !== 'object') {
+    throw new Error('resolution entry must be an object');
+  }
+
+  const rawJobId = entry.job_id ?? entry.jobId;
+  if (typeof rawJobId !== 'string' || !rawJobId.trim()) {
+    throw new Error('resolution job_id is required');
+  }
+
+  const rawStatus = entry.status;
+  if (typeof rawStatus !== 'string' || !rawStatus.trim()) {
+    throw new Error('resolution status is required');
+  }
+
+  const status = rawStatus.trim();
+  if (!STATUSES.includes(status)) {
+    throw new Error(`unknown status: ${status}`);
+  }
+
+  const hasNote = Object.prototype.hasOwnProperty.call(entry, 'note');
+  let note;
+  if (hasNote) {
+    const rawNote = entry.note;
+    if (rawNote == null) {
+      note = null;
+    } else {
+      note = normalizeNote(rawNote);
+    }
+  }
+
+  const updatedInput = entry.updated_at ?? entry.updatedAt;
+  let updatedAt;
+  try {
+    if (updatedInput !== undefined) {
+      updatedAt = normalizeTimestamp(updatedInput);
+    } else if (fallbackTimestamp) {
+      updatedAt = fallbackTimestamp;
+    } else {
+      updatedAt = defaultTimestamp;
+    }
+  } catch (err) {
+    const message = err && err.message ? String(err.message) : '';
+    if (/invalid status timestamp/i.test(message)) {
+      const label =
+        updatedInput !== undefined ? `invalid resolution timestamp: ${updatedInput}` :
+        'invalid resolution timestamp';
+      throw new Error(label);
+    }
+    throw err;
+  }
+
+  return {
+    job_id: rawJobId.trim(),
+    status,
+    updated_at: updatedAt,
+    note,
+    noteProvided: hasNote,
+  };
+}
+
+export function resolveLifecycleConflicts(resolutions, options = {}) {
+  const list = resolveResolutionList(resolutions);
+  if (list.length === 0) {
+    return Promise.resolve([]);
+  }
+
+  let defaultTimestamp;
+  let fallbackTimestamp;
+  try {
+    fallbackTimestamp = resolveFallbackTimestamp(options.now);
+    defaultTimestamp = fallbackTimestamp ?? normalizeTimestamp(undefined);
+  } catch (err) {
+    return Promise.reject(err);
+  }
+
+  let normalized;
+  try {
+    normalized = list.map(entry =>
+      normalizeResolutionEntry(entry, fallbackTimestamp, defaultTimestamp),
+    );
+  } catch (err) {
+    return Promise.reject(err);
+  }
+
+  const { dir, file } = getPaths();
+
+  const run = async () => {
+    await fs.mkdir(dir, { recursive: true });
+    const data = await readLifecycleFile(file);
+    const applied = [];
+
+    for (const entry of normalized) {
+      const current = data[entry.job_id];
+      const payload = { status: entry.status, updated_at: entry.updated_at };
+
+      if (entry.noteProvided) {
+        if (entry.note !== null) {
+          payload.note = entry.note;
+        }
+      } else if (current && typeof current === 'object' && typeof current.note === 'string') {
+        const preserved = current.note.trim();
+        if (preserved) {
+          payload.note = preserved;
+        }
+      }
+
+      data[entry.job_id] = payload;
+      applied.push({
+        job_id: entry.job_id,
+        status: entry.status,
+        updated_at: entry.updated_at,
+        note: payload.note ?? null,
+      });
+    }
+
+    await writeJsonFile(file, data);
+    return applied;
+  };
+
+  writeLock = writeLock.then(run, run);
+  return writeLock;
+}
