@@ -53,6 +53,17 @@ describe('web interface audits', () => {
     expect(byteLength).toBeLessThan(MAX_HTML_BYTES);
   });
 
+  it('maintains headroom beneath the HTML budget to catch regressions', async () => {
+    const homepageUrl = `${server.url}/`;
+    const response = await fetch(homepageUrl);
+    expect(response.ok).toBe(true);
+    const html = await response.text();
+
+    const HEADROOM_HTML_BYTES = 56_000;
+    const byteLength = Buffer.byteLength(html, 'utf8');
+    expect(byteLength).toBeLessThan(HEADROOM_HTML_BYTES);
+  });
+
   it('does not execute page scripts during the accessibility audit', async () => {
     const maliciousHtml = `
       <!doctype html>

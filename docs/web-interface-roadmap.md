@@ -47,9 +47,10 @@
 
 > [!NOTE]
 > **Future work triage (2025-10-10):**
-> - *Slim status hub HTML to satisfy the 74 KB audit budget.* The regression test in
->   [`test/web-audits.test.js`](../test/web-audits.test.js) currently fails due to an oversized DOM,
->   so minifying inline styles and markup can ship independently and restores the documented budget.
+> - _Implemented (2025-10-11):_ The status hub now defers its client script to
+>   `/assets/status-hub.js`, trims copy, and adds a 56 KB headroom assertion in
+>   [`test/web-audits.test.js`](../test/web-audits.test.js) so the 74 KB transfer
+>   budget stays green.
 
 ### 1. Requirements and Domain Mapping
 

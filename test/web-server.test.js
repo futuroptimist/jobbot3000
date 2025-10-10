@@ -132,8 +132,14 @@ describe('web server status page', () => {
     const html = await response.text();
 
     expect(html).toContain('data-theme-toggle');
-    expect(html).toMatch(/jobbot:web:theme/);
-    expect(html).toMatch(/prefers-color-scheme/);
+    expect(html).toContain('src="/assets/status-hub.js"');
+
+    const scriptResponse = await fetch(`${server.url}/assets/status-hub.js`);
+    expect(scriptResponse.status).toBe(200);
+    const script = await scriptResponse.text();
+
+    expect(script).toMatch(/jobbot:web:theme/);
+    expect(script).toMatch(/prefers-color-scheme/);
   });
 
   it('links to the web operations playbook for on-call guidance', async () => {
@@ -160,6 +166,7 @@ describe('web server status page', () => {
 
     const dom = new JSDOM(html, {
       runScripts: 'dangerously',
+      resources: 'usable',
       url: `${server.url}/`,
     });
 
@@ -203,6 +210,7 @@ describe('web server status page', () => {
 
     const dom = new JSDOM(html, {
       runScripts: 'dangerously',
+      resources: 'usable',
       url: `${server.url}/`,
     });
 

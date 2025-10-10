@@ -1781,7 +1781,8 @@ so on-call responders can jump from the dashboard to runbooks in one click.
 [`test/web-server.test.js`](test/web-server.test.js) now exercises the router,
 shortlist view, analytics dashboard, and theme toggle, while
 [`test/web-audits.test.js`](test/web-audits.test.js) continues to lock the
-accessibility and performance baselines.
+accessibility and performance baselines while enforcing a 56 KB HTML headroom so
+the 74 KB transfer budget stays healthy.
 
 The Applications drawer now exposes a status action panel that posts to
 `POST /commands/track-record`, mapping directly to `jobbot track add` so web
