@@ -74,6 +74,14 @@ function minifyInlineCss(css) {
     .trim();
 }
 
+const LEADING_WHITESPACE_SENSITIVE_TAGS = new Set([
+  'pre',
+  'code',
+  'textarea',
+  'script',
+  'style',
+]);
+
 function compactHtml(value) {
   if (typeof value !== 'string') {
     return '';
@@ -82,7 +90,29 @@ function compactHtml(value) {
     .replace(/\r?\n/g, ' ')
     .replace(/\s{2,}/g, ' ')
     .replace(/>\s+</g, '><')
-    .replace(/>\s+/g, '>')
+    .replace(/>\s+/g, (match, offset, source) => {
+      const tagStart = source.lastIndexOf('<', offset);
+      if (tagStart === -1) {
+        return match;
+      }
+
+      const tag = source.slice(tagStart, offset);
+      if (/^<\//.test(tag) || /^<!/.test(tag) || /^<\?/.test(tag)) {
+        return match;
+      }
+
+      const tagNameMatch = /^<\s*([a-z0-9:-]+)/i.exec(tag);
+      if (!tagNameMatch) {
+        return match;
+      }
+
+      const tagName = tagNameMatch[1].toLowerCase();
+      if (LEADING_WHITESPACE_SENSITIVE_TAGS.has(tagName)) {
+        return match;
+      }
+
+      return '>';
+    })
     .trim();
 }
 
