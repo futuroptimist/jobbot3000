@@ -170,12 +170,12 @@ export function normalizeAnalyticsFunnelRequest(options) {
 
 export function normalizeAnalyticsExportRequest(options) {
   if (options == null) {
-    return { redact: false };
+    return { redact: true };
   }
   assertPlainObject(options, 'analytics export options');
   const redact = normalizeBoolean(
     options.redact ?? options.redactCompanies ?? options.redact_companies,
-    { name: 'redact', defaultValue: false },
+    { name: 'redact', defaultValue: true },
   );
   return { redact };
 }

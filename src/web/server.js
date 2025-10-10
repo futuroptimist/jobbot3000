@@ -1791,7 +1791,7 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             button.disabled = true;
             button.setAttribute('aria-busy', 'true');
             updateExportMessage('Preparing analytics export…', { variant: 'info' });
-            const payload = { redact: false };
+            const payload = { redact: true };
             try {
               const data = await postCommand(
                 '/commands/analytics-export',

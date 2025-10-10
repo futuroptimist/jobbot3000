@@ -686,7 +686,7 @@ describe('web server status page', () => {
         data: funnelPayload,
       })),
       'analytics-export': vi.fn(async payload => {
-        expect(payload).toEqual({ redact: false });
+        expect(payload).toEqual({ redact: true });
         return {
           command: 'analytics-export',
           format: 'json',

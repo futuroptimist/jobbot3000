@@ -1784,8 +1784,8 @@ shortlist view, analytics dashboard, and theme toggle, while
 accessibility and performance baselines.
 
 The analytics panel also surfaces **Download JSON** and **Download CSV** actions
-that invoke `/commands/analytics-export` before streaming the sanitized payloads
-to the browser. The client script converts the CLI snapshot into prettified
+that invoke `/commands/analytics-export` with redaction enabled before streaming
+the sanitized payloads to the browser. The client script converts the CLI snapshot into prettified
 JSON or funnel-stage CSV rows, updates a status message, and emits a
 `jobbot:analytics-exported` event after each attempt. Regression coverage in
 [`test/web-server.test.js`](test/web-server.test.js) confirms the buttons
