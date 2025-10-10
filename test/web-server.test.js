@@ -16,6 +16,58 @@ async function startServer(options) {
   return server;
 }
 
+async function fetchStatusHtml(server) {
+  const response = await fetch(`${server.url}/`);
+  expect(response.status).toBe(200);
+  return response.text();
+}
+
+async function loadStatusHubScript(server, dom) {
+  const asset = await fetch(`${server.url}/assets/status-hub.js`);
+  expect(asset.status).toBe(200);
+  const code = await asset.text();
+  dom.window.eval(code);
+}
+
+async function renderStatusDom(server, options = {}) {
+  const { autoBoot = true, ...jsdomOptions } = options;
+  const html = await fetchStatusHtml(server);
+  const dom = new JSDOM(html, {
+    runScripts: 'dangerously',
+    url: `${server.url}/`,
+    ...jsdomOptions,
+  });
+  if (!dom.window.fetch) {
+    dom.window.fetch = (input, init) => fetch(input, init);
+  }
+
+  const boot = async () => {
+    if (dom.__jobbotBooted) return;
+    await loadStatusHubScript(server, dom);
+    dom.__jobbotBooted = true;
+  };
+
+  if (autoBoot) {
+    await boot();
+  }
+
+  return { dom, html, boot };
+}
+
+function waitForDomEvent(dom, name, timeout = 500) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${name} timed out`)), timeout);
+    dom.window.document.addEventListener(
+      name,
+      event => {
+        clearTimeout(timer);
+        resolve(event);
+      },
+      { once: true },
+    );
+  });
+}
+
 function buildCommandHeaders(server, overrides = {}) {
   const headerName = server?.csrfHeaderName ?? 'x-jobbot-csrf';
   const token = server?.csrfToken ?? 'test-csrf-token';
@@ -127,13 +179,14 @@ describe('web server status page', () => {
   it('exposes a theme toggle that persists the preferred mode', async () => {
     const server = await startServer();
 
-    const response = await fetch(`${server.url}/`);
-    expect(response.status).toBe(200);
-    const html = await response.text();
-
+    const html = await fetchStatusHtml(server);
     expect(html).toContain('data-theme-toggle');
-    expect(html).toMatch(/jobbot:web:theme/);
-    expect(html).toMatch(/prefers-color-scheme/);
+
+    const asset = await fetch(`${server.url}/assets/status-hub.js`);
+    expect(asset.status).toBe(200);
+    const code = await asset.text();
+    expect(code).toMatch(/jobbot:web:theme/);
+    expect(code).toMatch(/prefers-color-scheme/);
   });
 
   it('links to the web operations playbook for on-call guidance', async () => {
@@ -151,25 +204,36 @@ describe('web server status page', () => {
     expect(operationsLink?.textContent).toMatch(/Operations playbook/i);
   });
 
+  it('serves the status hub script via an external asset endpoint', async () => {
+    const server = await startServer();
+
+    const homepage = await fetch(`${server.url}/`);
+    expect(homepage.status).toBe(200);
+    const html = await homepage.text();
+    const dom = new JSDOM(html);
+    const scriptEl = dom.window.document.querySelector('script[src="/assets/status-hub.js"]');
+
+    expect(scriptEl).not.toBeNull();
+    expect(scriptEl?.getAttribute('defer')).not.toBeNull();
+
+    const asset = await fetch(`${server.url}/assets/status-hub.js`);
+    expect(asset.status).toBe(200);
+    expect(asset.headers.get('content-type')).toBe('application/javascript; charset=utf-8');
+    expect(asset.headers.get('cache-control')).toBe('no-store');
+    const code = await asset.text();
+    expect(code.trim().startsWith('(() => {')).toBe(true);
+    expect(code).toContain('jobbot:status-panels-ready');
+    expect(code.trim().endsWith('})();')).toBe(true);
+  });
+
   it('supports hash-based navigation between status sections', async () => {
     const server = await startServer();
 
-    const response = await fetch(`${server.url}/`);
-    expect(response.status).toBe(200);
-    const html = await response.text();
+    const { dom, boot } = await renderStatusDom(server, { autoBoot: false });
 
-    const dom = new JSDOM(html, {
-      runScripts: 'dangerously',
-      url: `${server.url}/`,
-    });
-
-    await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('router never became ready')), 200);
-      dom.window.document.addEventListener('jobbot:router-ready', () => {
-        clearTimeout(timeout);
-        resolve();
-      });
-    });
+    const routerReady = waitForDomEvent(dom, 'jobbot:router-ready');
+    await boot();
+    await routerReady;
 
     const { document } = dom.window;
     const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
@@ -197,22 +261,11 @@ describe('web server status page', () => {
   it('exposes status panels with loading and error states', async () => {
     const server = await startServer();
 
-    const response = await fetch(`${server.url}/`);
-    expect(response.status).toBe(200);
-    const html = await response.text();
+    const { dom, boot } = await renderStatusDom(server, { autoBoot: false });
 
-    const dom = new JSDOM(html, {
-      runScripts: 'dangerously',
-      url: `${server.url}/`,
-    });
-
-    await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('status panels never became ready')), 200);
-      dom.window.document.addEventListener('jobbot:status-panels-ready', () => {
-        clearTimeout(timeout);
-        resolve();
-      });
-    });
+    const panelsReady = waitForDomEvent(dom, 'jobbot:status-panels-ready');
+    await boot();
+    await panelsReady;
 
     const { document } = dom.window;
     const api = dom.window.JobbotStatusHub;
@@ -321,32 +374,16 @@ describe('web server status page', () => {
     commandAdapter.shortlistList = commandAdapter['shortlist-list'];
 
     const server = await startServer({ commandAdapter });
-    const response = await fetch(`${server.url}/`);
-    expect(response.status).toBe(200);
-    const html = await response.text();
-
-    const dom = new JSDOM(html, {
-      runScripts: 'dangerously',
-      resources: 'usable',
-      url: `${server.url}/`,
+    const { dom, boot } = await renderStatusDom(server, {
       pretendToBeVisual: true,
+      autoBoot: false,
     });
-    dom.window.fetch = (input, init) => fetch(input, init);
 
-    const waitForEvent = (name, timeout = 500) =>
-      new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(`${name} timed out`)), timeout);
-        dom.window.document.addEventListener(
-          name,
-          event => {
-            clearTimeout(timer);
-            resolve(event);
-          },
-          { once: true },
-        );
-      });
+    const waitForEvent = (name, timeout = 500) => waitForDomEvent(dom, name, timeout);
 
-    const readyEvent = await waitForEvent('jobbot:applications-ready');
+    const readyPromise = waitForEvent('jobbot:applications-ready');
+    await boot();
+    const readyEvent = await readyPromise;
     expect(readyEvent.detail).toMatchObject({ available: true });
 
     const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
@@ -471,31 +508,16 @@ describe('web server status page', () => {
     commandAdapter.shortlistShow = commandAdapter['shortlist-show'];
 
     const server = await startServer({ commandAdapter });
-    const response = await fetch(`${server.url}/`);
-    const html = await response.text();
-
-    const dom = new JSDOM(html, {
-      runScripts: 'dangerously',
-      resources: 'usable',
-      url: `${server.url}/`,
+    const { dom, boot } = await renderStatusDom(server, {
       pretendToBeVisual: true,
+      autoBoot: false,
     });
-    dom.window.fetch = (input, init) => fetch(input, init);
 
-    const waitForEvent = (name, timeout = 500) =>
-      new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(`${name} timed out`)), timeout);
-        dom.window.document.addEventListener(
-          name,
-          event => {
-            clearTimeout(timer);
-            resolve(event);
-          },
-          { once: true },
-        );
-      });
+    const waitForEvent = (name, timeout = 500) => waitForDomEvent(dom, name, timeout);
 
-    await waitForEvent('jobbot:applications-ready');
+    const readyPromise = waitForEvent('jobbot:applications-ready');
+    await boot();
+    await readyPromise;
     const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
     dom.window.location.hash = '#applications';
     dom.window.dispatchEvent(new HashChange('hashchange'));
@@ -586,31 +608,16 @@ describe('web server status page', () => {
     commandAdapter.analyticsFunnel = commandAdapter['analytics-funnel'];
 
     const server = await startServer({ commandAdapter });
-    const response = await fetch(`${server.url}/`);
-    const html = await response.text();
-
-    const dom = new JSDOM(html, {
-      runScripts: 'dangerously',
-      resources: 'usable',
-      url: `${server.url}/`,
+    const { dom, boot } = await renderStatusDom(server, {
       pretendToBeVisual: true,
+      autoBoot: false,
     });
-    dom.window.fetch = (input, init) => fetch(input, init);
 
-    const waitForEvent = (name, timeout = 500) =>
-      new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(`${name} timed out`)), timeout);
-        dom.window.document.addEventListener(
-          name,
-          event => {
-            clearTimeout(timer);
-            resolve(event);
-          },
-          { once: true },
-        );
-      });
+    const waitForEvent = (name, timeout = 500) => waitForDomEvent(dom, name, timeout);
 
-    await waitForEvent('jobbot:analytics-ready');
+    const readyPromise = waitForEvent('jobbot:analytics-ready');
+    await boot();
+    await readyPromise;
 
     const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
     dom.window.location.hash = '#analytics';
@@ -711,31 +718,16 @@ describe('web server status page', () => {
     commandAdapter.trackRecord = commandAdapter['track-record'];
 
     const server = await startServer({ commandAdapter });
-    const response = await fetch(`${server.url}/`);
-    const html = await response.text();
-
-    const dom = new JSDOM(html, {
-      runScripts: 'dangerously',
-      resources: 'usable',
-      url: `${server.url}/`,
+    const { dom, boot } = await renderStatusDom(server, {
       pretendToBeVisual: true,
+      autoBoot: false,
     });
-    dom.window.fetch = (input, init) => fetch(input, init);
 
-    const waitForEvent = (name, timeout = 500) =>
-      new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error(`${name} timed out`)), timeout);
-        dom.window.document.addEventListener(
-          name,
-          event => {
-            clearTimeout(timer);
-            resolve(event);
-          },
-          { once: true },
-        );
-      });
+    const waitForEvent = (name, timeout = 500) => waitForDomEvent(dom, name, timeout);
 
-    await waitForEvent('jobbot:applications-ready');
+    const readyPromise = waitForEvent('jobbot:applications-ready');
+    await boot();
+    await readyPromise;
     const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
     dom.window.location.hash = '#applications';
     dom.window.dispatchEvent(new HashChange('hashchange'));
