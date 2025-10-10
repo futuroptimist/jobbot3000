@@ -397,7 +397,7 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     margin-top: 1rem;
     color: var(--muted);
   }
-  .pagination button {
+  .pagination button { 
     border-radius: 999px;
     border: 1px solid var(--pill-border);
     background-color: var(--pill-bg);
@@ -409,6 +409,34 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
   .pagination button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+  .analytics-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 1rem 0;
+  }
+  .analytics-actions button {
+    border-radius: 999px;
+    border: 1px solid var(--pill-border);
+    background-color: var(--pill-bg);
+    color: var(--pill-text);
+    padding: 0.4rem 1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .analytics-actions button[disabled] {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  .analytics-actions__message {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+  .analytics-actions__message[data-variant='error'] {
+    color: var(--danger-text);
   }
   .status-panel__empty {
     color: var(--muted);
@@ -1499,8 +1527,105 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           const rowsContainer = section.querySelector('[data-analytics-rows]');
           const emptyEl = section.querySelector('[data-analytics-empty]');
           const sankeyEl = section.querySelector('[data-analytics-sankey]');
+          const exportButtons = {
+            json: section.querySelector('[data-analytics-export-json]'),
+            csv: section.querySelector('[data-analytics-export-csv]'),
+          };
+          const exportMessage = section.querySelector('[data-analytics-export-message]');
 
           const state = { loading: false, loaded: false, data: null, lastError: null };
+          const exportState = { running: false };
+
+          function updateExportMessage(message, { variant = 'info' } = {}) {
+            if (!exportMessage) {
+              return;
+            }
+            if (!message) {
+              exportMessage.textContent = '';
+              exportMessage.setAttribute('hidden', '');
+              exportMessage.removeAttribute('role');
+              exportMessage.removeAttribute('data-variant');
+              return;
+            }
+            exportMessage.textContent = message;
+            exportMessage.setAttribute('data-variant', variant);
+            exportMessage.setAttribute('role', variant === 'error' ? 'alert' : 'status');
+            exportMessage.removeAttribute('hidden');
+          }
+
+          function formatCsvValue(value) {
+            if (value == null) {
+              return '';
+            }
+            const text = String(value);
+            if (/[",\n]/.test(text)) {
+              return '"' + text.replace(/"/g, '""') + '"';
+            }
+            return text;
+          }
+
+          function buildAnalyticsCsv(data) {
+            const stages = Array.isArray(data?.funnel?.stages) ? data.funnel.stages : [];
+            const lines = ['stage,label,count,conversion_rate,drop_off'];
+            for (const stage of stages) {
+              const rawKey = typeof stage?.key === 'string' ? stage.key.trim() : '';
+              const rawLabel = typeof stage?.label === 'string' ? stage.label.trim() : '';
+              const label = rawLabel || rawKey || 'Stage';
+              const countValue = Number(stage?.count);
+              const conversionValue = Number(stage?.conversionRate);
+              const dropValue = Number(stage?.dropOff);
+              lines.push(
+                [
+                  formatCsvValue(rawKey || label),
+                  formatCsvValue(label),
+                  formatCsvValue(Number.isFinite(countValue) ? countValue : ''),
+                  formatCsvValue(Number.isFinite(conversionValue) ? conversionValue : ''),
+                  formatCsvValue(Number.isFinite(dropValue) ? dropValue : ''),
+                ].join(','),
+              );
+            }
+            if (lines.length === 1) {
+              lines.push(
+                [
+                  formatCsvValue(''),
+                  formatCsvValue(''),
+                  formatCsvValue(''),
+                  formatCsvValue(''),
+                  formatCsvValue(''),
+                ].join(','),
+              );
+            }
+            return lines.join('\\n') + '\\n';
+          }
+
+          function downloadFile(contents, { filename, type }) {
+            if (!window || typeof window !== 'object') {
+              throw new Error('Browser environment is required for downloads');
+            }
+            if (
+              typeof Blob !== 'function' ||
+              !window.URL ||
+              typeof window.URL.createObjectURL !== 'function'
+            ) {
+              throw new Error('File downloads are not supported in this environment');
+            }
+            const blob = new Blob([contents], { type });
+            const url = window.URL.createObjectURL(blob);
+            try {
+              const link = document.createElement('a');
+              link.href = url;
+              link.download = filename;
+              link.style.display = 'none';
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+            } finally {
+              if (typeof window.URL.revokeObjectURL === 'function') {
+                window.URL.revokeObjectURL(url);
+              }
+            }
+            return blob;
+          }
 
           function formatConversion(rate) {
             if (!Number.isFinite(rate)) {
@@ -1654,11 +1779,76 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             }
           }
 
+          async function runAnalyticsExport(format) {
+            if (exportState.running) {
+              return false;
+            }
+            const button = exportButtons[format];
+            if (!button) {
+              return false;
+            }
+            exportState.running = true;
+            button.disabled = true;
+            button.setAttribute('aria-busy', 'true');
+            updateExportMessage('Preparing analytics export…', { variant: 'info' });
+            const payload = { redact: false };
+            try {
+              const data = await postCommand(
+                '/commands/analytics-export',
+                payload,
+                {
+                  invalidResponse: 'Received invalid response while exporting analytics',
+                  failureMessage: 'Failed to export analytics',
+                },
+              );
+              const filename =
+                format === 'csv' ? 'analytics-stages.csv' : 'analytics-snapshot.json';
+              const contents =
+                format === 'csv'
+                  ? buildAnalyticsCsv(data)
+                  : JSON.stringify(data, null, 2) + '\\n';
+              const mimeType = format === 'csv' ? 'text/csv' : 'application/json';
+              downloadFile(contents, { filename, type: mimeType });
+              updateExportMessage('Download ready: ' + filename, { variant: 'info' });
+              dispatchAnalyticsExported({ format, success: true, filename });
+              return true;
+            } catch (error) {
+              const message =
+                error && typeof error.message === 'string'
+                  ? error.message
+                  : 'Failed to export analytics';
+              updateExportMessage(message, { variant: 'error' });
+              dispatchAnalyticsExported({
+                format,
+                success: false,
+                error: message,
+              });
+              return false;
+            } finally {
+              exportState.running = false;
+              button.disabled = false;
+              button.removeAttribute('aria-busy');
+            }
+          }
+
           addRouteListener('analytics', () => {
             if (!state.loaded && !state.loading) {
               refresh();
             }
           });
+
+          if (exportButtons.json) {
+            exportButtons.json.addEventListener('click', event => {
+              event.preventDefault();
+              runAnalyticsExport('json');
+            });
+          }
+          if (exportButtons.csv) {
+            exportButtons.csv.addEventListener('click', event => {
+              event.preventDefault();
+              runAnalyticsExport('csv');
+            });
+          }
 
           scheduleAnalyticsReady({ available: true });
 
@@ -1958,6 +2148,10 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
 
         function dispatchAnalyticsLoaded(detail = {}) {
           dispatchDocumentEvent('jobbot:analytics-loaded', detail);
+        }
+
+        function dispatchAnalyticsExported(detail = {}) {
+          dispatchDocumentEvent('jobbot:analytics-exported', detail);
         }
 
         function dispatchApplicationDetailLoaded(detail = {}) {
@@ -2621,6 +2815,11 @@ export function createWebApp({
               <p data-analytics-dropoff>Largest drop-off: none</p>
             </div>
             <p data-analytics-missing hidden></p>
+            <div class="analytics-actions">
+              <button type="button" data-analytics-export-json>Download JSON</button>
+              <button type="button" data-analytics-export-csv>Download CSV</button>
+              <p class="analytics-actions__message" data-analytics-export-message hidden></p>
+            </div>
             <div class="table-container">
               <table class="shortlist-table" data-analytics-table hidden>
                 <thead>

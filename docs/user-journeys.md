@@ -364,7 +364,12 @@ jobbot3000.
    `--company`) so automated tests can reuse fixtures.
 3. Drill into anomalies via the **Health** tab which lists missing statuses or outdated deliverables
    and links back to the relevant workflows.
-4. Export dashboards as CSV/JSON via buttons that call the shared export service.
+4. Export dashboards as CSV/JSON via the **Download** buttons, which call the
+   shared `/commands/analytics-export` service before streaming blobs to the
+   browser. [`test/web-server.test.js`](../test/web-server.test.js) verifies the
+   DOM workflow, emitted `jobbot:analytics-exported` events, and sanitized
+   filenames, while [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
+   ensures the adapter forwards the CLI payload without leaking secrets.
 5. Subscribe to weekly summary emails via **Notifications**, which piggyback on the scheduler.
 
 ### Unhappy paths & recovery

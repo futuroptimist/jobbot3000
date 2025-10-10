@@ -25,6 +25,34 @@ function assertRequiredString(value, name) {
   return normalized;
 }
 
+function normalizeBoolean(value, { name, defaultValue = false } = {}) {
+  if (value == null || value === '') {
+    return defaultValue;
+  }
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      throw new Error(`${name ?? 'value'} must be a boolean`);
+    }
+    return value !== 0;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) {
+      return defaultValue;
+    }
+    if (['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)) {
+      return true;
+    }
+    if (['0', 'false', 'no', 'off', 'disabled'].includes(normalized)) {
+      return false;
+    }
+  }
+  throw new Error(`${name ?? 'value'} must be a boolean`);
+}
+
 function coerceNumber(value) {
   if (value == null || value === '') return undefined;
   const num = Number(value);
@@ -138,6 +166,18 @@ export function normalizeAnalyticsFunnelRequest(options) {
     throw new Error('analytics funnel does not accept request parameters');
   }
   return {};
+}
+
+export function normalizeAnalyticsExportRequest(options) {
+  if (options == null) {
+    return { redact: false };
+  }
+  assertPlainObject(options, 'analytics export options');
+  const redact = normalizeBoolean(
+    options.redact ?? options.redactCompanies ?? options.redact_companies,
+    { name: 'redact', defaultValue: false },
+  );
+  return { redact };
 }
 
 /**
