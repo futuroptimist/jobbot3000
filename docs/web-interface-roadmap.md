@@ -52,6 +52,10 @@
 >   [`test/web-server.test.js`](../test/web-server.test.js) and
 >   [`test/web-audits.test.js`](../test/web-audits.test.js) locks both the whitespace and transfer
 >   budgets in place.
+> - The status hub now streams its client script from
+>   [`/assets/status-hub.js`](../src/web/server.js), reducing the initial HTML payload well below the
+>   documented ceiling. The regression suite enforces a tightened 56 KB budget and verifies the new
+>   asset endpoint to ensure future refactors keep the markup lean.
 
 ### 1. Requirements and Domain Mapping
 
