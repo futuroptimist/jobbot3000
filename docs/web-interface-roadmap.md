@@ -46,10 +46,11 @@
 >   Requires new mutation endpoints and UI flows, so it remains a larger follow-up task.
 
 > [!NOTE]
-> **Future work triage (2025-10-10):**
-> - *Slim status hub HTML to satisfy the 74 KB audit budget.* The regression test in
->   [`test/web-audits.test.js`](../test/web-audits.test.js) currently fails due to an oversized DOM,
->   so minifying inline styles and markup can ship independently and restores the documented budget.
+> **Update (2025-10-11):** The status hub now streams its client script from
+> [`/assets/status-hub.js`](../src/web/server.js), reducing the initial HTML payload well below the
+> documented 74 KB ceiling. [`test/web-audits.test.js`](../test/web-audits.test.js) enforces a tightened
+> 56 KB budget, and [`test/web-server.test.js`](../test/web-server.test.js) exercises the new asset
+> endpoint to ensure future refactors keep the markup lean.
 
 ### 1. Requirements and Domain Mapping
 

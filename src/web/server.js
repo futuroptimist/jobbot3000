@@ -74,6 +74,18 @@ function minifyInlineCss(css) {
     .trim();
 }
 
+function minifyInlineScript(script) {
+  if (typeof script !== 'string') {
+    return '';
+  }
+  return script
+    .split('\n')
+    .map(line => line.trimEnd())
+    .filter((line, index, lines) => line.length > 0 || (index > 0 && lines[index - 1].length > 0))
+    .join('\n')
+    .trim();
+}
+
 function compactHtml(value) {
   if (typeof value !== 'string') {
     return '';
@@ -534,704 +546,7 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     display: none !important;
   }
 `);
-
-function formatStatusLabel(status) {
-  return status
-    .split('_')
-    .map(part => (part ? part[0].toUpperCase() + part.slice(1) : part))
-    .join(' ');
-}
-
-function normalizeCsrfOptions(csrf = {}) {
-  const headerName =
-    typeof csrf.headerName === 'string' && csrf.headerName.trim()
-      ? csrf.headerName.trim()
-      : 'x-jobbot-csrf';
-  const token = typeof csrf.token === 'string' ? csrf.token.trim() : '';
-  if (!token) {
-    throw new Error('csrf.token must be provided');
-  }
-  return {
-    headerName,
-    token,
-  };
-}
-
-function normalizeAuthOptions(auth) {
-  if (!auth || auth === false) {
-    return null;
-  }
-  if (auth.__normalizedAuth === true) {
-    return auth;
-  }
-
-  const rawTokens = auth.tokens ?? auth.token;
-  let tokenCandidates = [];
-  if (Array.isArray(rawTokens)) {
-    tokenCandidates = rawTokens;
-  } else if (typeof rawTokens === 'string') {
-    tokenCandidates = rawTokens.split(',');
-  }
-
-  const normalizedTokens = [];
-  for (const candidate of tokenCandidates) {
-    if (typeof candidate !== 'string') {
-      throw new Error('auth tokens must be provided as strings');
-    }
-    const trimmed = candidate.trim();
-    if (!trimmed) {
-      continue;
-    }
-    normalizedTokens.push(trimmed);
-  }
-
-  if (normalizedTokens.length === 0) {
-    throw new Error('auth.tokens must include at least one non-empty token');
-  }
-
-  const headerName =
-    typeof auth.headerName === 'string' && auth.headerName.trim()
-      ? auth.headerName.trim()
-      : 'authorization';
-
-  let scheme = 'Bearer';
-  if (auth.scheme === '' || auth.scheme === false || auth.scheme === null) {
-    scheme = '';
-  } else if (typeof auth.scheme === 'string') {
-    const trimmed = auth.scheme.trim();
-    scheme = trimmed;
-  } else if (auth.scheme !== undefined && auth.scheme !== null) {
-    throw new Error('auth.scheme must be a string when provided');
-  }
-
-  const requireScheme = Boolean(scheme);
-  const schemePrefix = requireScheme ? `${scheme} ` : '';
-  const normalized = {
-    __normalizedAuth: true,
-    headerName,
-    scheme: requireScheme ? scheme : '',
-    requireScheme,
-    tokens: new Set(normalizedTokens),
-    schemePrefixLower: schemePrefix.toLowerCase(),
-    schemePrefixLength: schemePrefix.length,
-  };
-
-  return normalized;
-}
-
-function normalizeInfo(info) {
-  if (!info || typeof info !== 'object') return {};
-  const normalized = {};
-  if (typeof info.service === 'string' && info.service.trim()) {
-    normalized.service = info.service.trim();
-  }
-  if (typeof info.version === 'string' && info.version.trim()) {
-    normalized.version = info.version.trim();
-  }
-  return normalized;
-}
-
-function normalizeHealthChecks(checks) {
-  if (checks == null) return [];
-  if (!Array.isArray(checks)) {
-    throw new Error('health checks must be provided as an array');
-  }
-  return checks.map((check, index) => {
-    if (!check || typeof check !== 'object') {
-      throw new Error(`health check at index ${index} must be an object`);
-    }
-    const { name, run } = check;
-    if (typeof name !== 'string' || !name.trim()) {
-      throw new Error(`health check at index ${index} requires a non-empty name`);
-    }
-    if (typeof run !== 'function') {
-      throw new Error(`health check "${name}" must provide a run() function`);
-    }
-    return { name: name.trim(), run };
-  });
-}
-
-function buildHealthResponse({ info, uptime, timestamp, checks }) {
-  let status = 'ok';
-  for (const entry of checks) {
-    if (entry.status === 'error') {
-      status = 'error';
-      break;
-    }
-    if (status === 'ok' && entry.status === 'warn') {
-      status = 'warn';
-    }
-  }
-
-  const payload = {
-    status,
-    uptime,
-    timestamp,
-    checks,
-  };
-  if (info.service) payload.service = info.service;
-  if (info.version) payload.version = info.version;
-  return payload;
-}
-
-function isPlainObject(value) {
-  if (!value || typeof value !== 'object') return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === null || prototype === Object.prototype;
-}
-
-function sanitizeCommandResult(result) {
-  if (result == null) {
-    return {};
-  }
-  if (typeof result === 'string') {
-    return sanitizeOutputString(result);
-  }
-  if (typeof result !== 'object') {
-    return result;
-  }
-  if (Array.isArray(result)) {
-    return sanitizeOutputValue(result);
-  }
-  if (!isPlainObject(result)) {
-    return sanitizeOutputValue(result);
-  }
-  const sanitized = {};
-  for (const [key, value] of Object.entries(result)) {
-    if (key === 'stdout' || key === 'stderr' || key === 'error') {
-      sanitized[key] = sanitizeOutputString(value);
-      continue;
-    }
-    if (key === 'data' || key === 'returnValue') {
-      sanitized[key] = sanitizeOutputValue(value, { key });
-      continue;
-    }
-    sanitized[key] = value;
-  }
-  return sanitized;
-}
-
-async function runHealthChecks(checks) {
-  const results = [];
-  for (const { name, run } of checks) {
-    const started = performance.now();
-    const result = { name, status: 'ok' };
-    try {
-      const outcome = await run();
-      if (outcome && typeof outcome === 'object') {
-        if (outcome.status && typeof outcome.status === 'string') {
-          const status = outcome.status.toLowerCase();
-          if (status === 'warn' || status === 'warning') {
-            result.status = 'warn';
-          } else if (status === 'error' || status === 'fail' || status === 'failed') {
-            result.status = 'error';
-          }
-        }
-        if (outcome.details !== undefined) {
-          result.details = outcome.details;
-        }
-        if (outcome.error && typeof outcome.error === 'string') {
-          result.error = outcome.error;
-          result.status = 'error';
-        }
-      }
-    } catch (err) {
-      result.status = 'error';
-      result.error = err?.message ? String(err.message) : String(err);
-    }
-
-    const duration = performance.now() - started;
-    result.duration_ms = Number(duration.toFixed(3));
-    results.push(result);
-  }
-  return results;
-}
-
-function stringLength(value) {
-  return typeof value === 'string' ? value.length : 0;
-}
-
-function roundDuration(started) {
-  return Number((performance.now() - started).toFixed(3));
-}
-
-function buildCommandLogEntry({
-  command,
-  status,
-  httpStatus,
-  durationMs,
-  payloadFields = [],
-  clientIp,
-  userAgent,
-  result,
-  errorMessage,
-}) {
-  const entry = {
-    event: 'web.command',
-    command,
-    status,
-    httpStatus,
-    durationMs,
-    payloadFields: Array.isArray(payloadFields) ? payloadFields : [],
-    stdoutLength: result ? stringLength(result.stdout) : 0,
-    stderrLength: result ? stringLength(result.stderr) : 0,
-  };
-  if (clientIp) entry.clientIp = clientIp;
-  if (userAgent) entry.userAgent = userAgent;
-  if (result && typeof result.correlationId === 'string' && result.correlationId) {
-    entry.correlationId = result.correlationId;
-  }
-  if (result && typeof result.traceId === 'string' && result.traceId) {
-    entry.traceId = result.traceId;
-  }
-  if (errorMessage) entry.errorMessage = errorMessage;
-  return entry;
-}
-
-function logCommandTelemetry(logger, level, details) {
-  if (!logger) return;
-  const fn = typeof logger[level] === 'function' ? logger[level] : undefined;
-  if (!fn) return;
-  try {
-    fn(buildCommandLogEntry(details));
-  } catch {
-    // Ignore logger failures so HTTP responses are unaffected.
-  }
-}
-
-export function createWebApp({
-  info,
-  healthChecks,
-  commandAdapter,
-  csrf,
-  rateLimit,
-  logger,
-  auth,
-} = {}) {
-  const normalizedInfo = normalizeInfo(info);
-  const normalizedChecks = normalizeHealthChecks(healthChecks);
-  const csrfOptions = normalizeCsrfOptions(csrf);
-  const rateLimiter = createInMemoryRateLimiter(rateLimit);
-  const authOptions = normalizeAuthOptions(auth);
-  const app = express();
-  const availableCommands = new Set(
-    ALLOW_LISTED_COMMANDS.filter(name => typeof commandAdapter?.[name] === 'function'),
-  );
-  const jsonParser = express.json({ limit: '1mb' });
-
-  app.get('/', (req, res) => {
-    const serviceName = normalizedInfo.service || 'jobbot web interface';
-    const version = normalizedInfo.version ? `Version ${normalizedInfo.version}` : 'Local build';
-    const commands = Array.from(availableCommands).sort();
-    const commandList =
-      commands.length === 0
-        ? '<li><em>No CLI commands have been allowed yet.</em></li>'
-        : commands
-            .map(name => {
-              const escapedName = escapeHtml(name);
-              return [
-                '<li><code>',
-                escapedName,
-                '</code> &mdash; accessible via POST /commands/',
-                escapedName,
-                '</li>',
-              ].join('');
-            })
-            .join('');
-    const skipLinkStyle =
-      'position:absolute;left:-999px;top:auto;width:1px;height:1px;overflow:hidden;';
-    const repoUrl = 'https://github.com/jobbot3000/jobbot3000';
-    const readmeUrl = `${repoUrl}/blob/main/README.md`;
-    const roadmapUrl = `${repoUrl}/blob/main/docs/web-interface-roadmap.md`;
-    const operationsUrl = `${repoUrl}/blob/main/docs/web-operational-playbook.md`;
-    const csrfHeaderAttr = escapeHtml(csrfOptions.headerName);
-    const csrfTokenAttr = escapeHtml(csrfOptions.token);
-
-    res.set('Content-Type', 'text/html; charset=utf-8');
-    const rawHtml = `<!doctype html>
-<html lang="en" data-theme="dark">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${escapeHtml(serviceName)}</title>
-    <style>${STATUS_PAGE_STYLES}</style>
-  </head>
-  <body data-csrf-header="${csrfHeaderAttr}" data-csrf-token="${csrfTokenAttr}">
-    <a href="#main" class="pill" style="${skipLinkStyle}">Skip to main content</a>
-    <header>
-      <div class="header-actions">
-        <p class="pill" aria-label="Service metadata">
-          <strong>${escapeHtml(serviceName)}</strong>
-          <span aria-hidden="true">•</span>
-          <span>${escapeHtml(version)}</span>
-        </p>
-        <button
-          type="button"
-          class="theme-toggle-button"
-          data-theme-toggle
-          aria-pressed="false"
-        >
-          <span aria-hidden="true">🌓</span>
-          <span data-theme-toggle-label>Enable light theme</span>
-        </button>
-      </div>
-      <h1>${escapeHtml(serviceName)}</h1>
-      <p>
-          This lightweight status hub surfaces the Express adapter that bridges the jobbot3000 CLI
-          with the experimental web interface. Use the navigation below to switch between the
-          overview, available commands, and automated audits.
-      </p>
-      <nav class="primary-nav" aria-label="Status navigation">
-        <a href="#overview" data-route-link="overview">Overview</a>
-        <a href="#applications" data-route-link="applications">Applications</a>
-        <a href="#commands" data-route-link="commands">Commands</a>
-        <a href="#analytics" data-route-link="analytics">Analytics</a>
-        <a href="#audits" data-route-link="audits">Audits</a>
-      </nav>
-    </header>
-    <main id="main" tabindex="-1" data-router>
-      <section class="view" data-route="overview" aria-labelledby="overview-heading">
-        <h2 id="overview-heading">Overview</h2>
-        <p>
-          The adapter exposes jobbot3000 CLI workflows through guarded HTTP endpoints. Routing is
-          entirely hash-based so the page remains static and local-friendly while still supporting
-          deep links to individual sections.
-        </p>
-        <div class="grid two-column">
-          <article class="card">
-            <h3>CLI bridge</h3>
-            <p>
-              Every request funnels through <code>createCommandAdapter</code>, which validates
-              payloads, redacts sensitive output, and streams telemetry for observability. See
-              <code>test/web-command-adapter.test.js</code> for coverage across success and error
-              paths.
-            </p>
-          </article>
-          <article class="card">
-            <h3>Operational safeguards</h3>
-            <p>
-              Rate limiting, CSRF protection, and optional auth tokens mirror the production guard
-              rails baked into the Express server. The status view keeps requirements front and
-              center so API consumers wire headers correctly.
-            </p>
-          </article>
-        </div>
-      </section>
-      <section class="view" data-route="applications" aria-labelledby="applications-heading" hidden>
-        <h2 id="applications-heading">Applications</h2>
-          <p>
-            Review shortlisted roles captured by the CLI. Filters map directly to
-            <code>jobbot shortlist list</code> flags so the web view stays aligned
-            with scripted flows.
-          </p>
-        <form class="filters" data-shortlist-filters>
-          <label>
-            <span>Location</span>
-            <input
-              type="text"
-              placeholder="Remote"
-              autocomplete="off"
-              data-shortlist-filter="location"
-            />
-          </label>
-          <label>
-            <span>Level</span>
-            <input
-              type="text"
-              placeholder="Senior"
-              autocomplete="off"
-              data-shortlist-filter="level"
-            />
-          </label>
-          <label>
-            <span>Compensation</span>
-            <input
-              type="text"
-              placeholder="$185k"
-              autocomplete="off"
-              data-shortlist-filter="compensation"
-            />
-          </label>
-          <label>
-            <span>Tags</span>
-            <input
-              type="text"
-              placeholder="remote,dream"
-              autocomplete="off"
-              data-shortlist-filter="tags"
-            />
-          </label>
-          <label>
-            <span>Page size</span>
-            <input
-              type="number"
-              min="1"
-              max="100"
-              value="10"
-              data-shortlist-filter="limit"
-            />
-          </label>
-          <div class="filters__actions">
-            <button type="submit">Apply filters</button>
-            <button type="button" data-shortlist-reset data-variant="ghost">Reset</button>
-          </div>
-        </form>
-        <div
-          class="status-panel"
-          data-status-panel="applications"
-          data-state="ready"
-          aria-live="polite"
-        >
-          <div data-state-slot="ready">
-            <p data-shortlist-empty hidden>No matching applications found.</p>
-            <div class="table-container">
-              <table class="shortlist-table" data-shortlist-table hidden>
-                <thead>
-                  <tr>
-                    <th scope="col">Job ID</th>
-                    <th scope="col">Location</th>
-                    <th scope="col">Level</th>
-                    <th scope="col">Compensation</th>
-                    <th scope="col">Tags</th>
-                    <th scope="col">Synced</th>
-                    <th scope="col">Discard summary</th>
-                    <th scope="col">Actions</th>
-                  </tr>
-                </thead>
-                <tbody data-shortlist-body></tbody>
-              </table>
-            </div>
-            <div class="pagination" data-shortlist-pagination hidden>
-              <button type="button" data-shortlist-prev>Previous</button>
-              <span class="pagination-info" data-shortlist-range>Showing 0 of 0</span>
-              <button type="button" data-shortlist-next>Next</button>
-            </div>
-            <div class="application-detail" data-application-detail hidden>
-              <div
-                class="application-detail__section application-detail__empty"
-                data-detail-state="empty"
-              >
-                <p>Select an application to view its timeline.</p>
-              </div>
-              <div
-                class="application-detail__section application-detail__loading"
-                data-detail-state="loading"
-                hidden
-              >
-                <p class="application-detail__loading" role="status" aria-live="polite">
-                  Loading application detail…
-                </p>
-              </div>
-              <div
-                class="application-detail__section application-detail__error"
-                data-detail-state="error"
-                hidden
-              >
-                <strong>Unable to load application detail</strong>
-                <p
-                  data-detail-error
-                  data-detail-error-default="Check the server logs or retry shortly."
-                >
-                  Check the server logs or retry shortly.
-                </p>
-              </div>
-              <div class="application-detail__section" data-detail-state="ready" hidden>
-                <h3 class="application-detail__title" data-detail-title></h3>
-                <dl class="application-detail__meta" data-detail-meta></dl>
-                <p class="application-detail__tags" data-detail-tags></p>
-                <div class="application-detail__section" data-detail-discard></div>
-                <ul class="application-detail__events" data-detail-events></ul>
-              </div>
-            </div>
-            <div class="application-actions" data-application-actions hidden>
-              <h3 class="application-actions__title">Record status update</h3>
-              <form class="application-actions__form" data-application-status-form>
-                <label>
-                  <span>Status</span>
-                  <select data-application-status>
-                    <option value="">Select status</option>
-                    ${STATUSES.map(status => {
-                      const optionLabel = escapeHtml(formatStatusLabel(status));
-                      const value = escapeHtml(status);
-                      return `<option value="${value}">${optionLabel}</option>`;
-                    }).join('')}
-                  </select>
-                </label>
-                <label>
-                  <span>Note (optional)</span>
-                  <textarea
-                    rows="2"
-                    data-application-note
-                    placeholder="Waiting on recruiter feedback"
-                  ></textarea>
-                </label>
-                <div class="filters__actions">
-                  <button type="submit">Save status</button>
-                  <button type="button" data-action-clear data-variant="ghost">Clear</button>
-                </div>
-                <p class="application-actions__message" data-action-message hidden></p>
-              </form>
-            </div>
-          </div>
-          <div data-state-slot="loading" hidden>
-            <p class="status-panel__loading" role="status" aria-live="polite">
-              Loading shortlist entries…
-            </p>
-          </div>
-          <div data-state-slot="error" hidden>
-            <div class="status-panel__error" role="alert">
-              <strong>Unable to load shortlist</strong>
-              <p
-                data-error-message
-                data-error-default="Check the server logs or retry shortly."
-              >
-                Check the server logs or retry shortly.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-      <section class="view" data-route="commands" aria-labelledby="commands-heading" hidden>
-        <h2 id="commands-heading">Allow-listed CLI commands</h2>
-        <div
-          class="status-panel"
-          data-status-panel="commands"
-          data-state="ready"
-          aria-live="polite"
-        >
-          <div data-state-slot="ready">
-            <p>
-              The adapter only exposes safe CLI entry points. Each command requires a CSRF header
-              and JSON payload that matches the schema enforced by the backend validators.
-            </p>
-            <ul>${commandList}</ul>
-          </div>
-          <div data-state-slot="loading" hidden>
-            <p class="status-panel__loading" role="status" aria-live="polite">
-              Loading allow-listed commands…
-            </p>
-          </div>
-          <div data-state-slot="error" hidden>
-            <div class="status-panel__error" role="alert">
-              <strong>Unable to load commands</strong>
-              <p
-                data-error-message
-                data-error-default="Please refresh the page or retry shortly."
-              >
-                Please refresh the page or retry shortly.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-      <section class="view" data-route="analytics" aria-labelledby="analytics-heading" hidden>
-        <h2 id="analytics-heading">Analytics</h2>
-        <p>
-          View funnel metrics from <code>jobbot analytics funnel --json</code>:
-          stage counts, conversion percentages, drop-offs, and missing statuses.
-        </p>
-        <div
-          class="status-panel"
-          data-status-panel="analytics"
-          data-state="ready"
-          aria-live="polite"
-        >
-          <div data-state-slot="ready">
-            <div data-analytics-summary>
-              <p data-analytics-totals>Tracked jobs: —</p>
-              <p data-analytics-dropoff>Largest drop-off: none</p>
-            </div>
-            <p data-analytics-missing hidden></p>
-            <div class="table-container">
-              <table class="shortlist-table" data-analytics-table hidden>
-                <thead>
-                  <tr>
-                    <th scope="col">Stage</th>
-                    <th scope="col">Count</th>
-                    <th scope="col">Conversion</th>
-                    <th scope="col">Drop-off</th>
-                  </tr>
-                </thead>
-                <tbody data-analytics-rows></tbody>
-              </table>
-            </div>
-            <p data-analytics-empty hidden>No analytics data available.</p>
-            <p data-analytics-sankey hidden></p>
-          </div>
-          <div data-state-slot="loading" hidden>
-            <p class="status-panel__loading" role="status" aria-live="polite">
-              Loading analytics funnel…
-            </p>
-          </div>
-          <div data-state-slot="error" hidden>
-            <div class="status-panel__error" role="alert">
-              <strong>Unable to load analytics</strong>
-              <p
-                data-error-message
-                data-error-default="Check the server logs or retry shortly."
-              >
-                Check the server logs or retry shortly.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-      <section class="view" data-route="audits" aria-labelledby="audits-heading" hidden>
-        <h2 id="audits-heading">Automated audits</h2>
-        <div
-          class="status-panel"
-          data-status-panel="audits"
-          data-state="ready"
-          aria-live="polite"
-        >
-          <div data-state-slot="ready">
-            <div class="grid two-column">
-              <p>
-                Continuous accessibility checks rely on <code>axe-core</code> while performance
-                scoring applies Lighthouse metrics to real HTTP responses. See
-                <code>test/web-audits.test.js</code> for the automated coverage that enforces both
-                baselines.
-              </p>
-              <article class="card references">
-                <h3>Helpful references</h3>
-                <nav aria-label="Documentation links">
-                  <ul>
-                    <li><a href="${repoUrl}">Repository</a></li>
-                    <li><a href="${readmeUrl}">README</a></li>
-                    <li><a href="${roadmapUrl}">Web interface roadmap</a></li>
-                    <li><a href="${operationsUrl}">Operations playbook</a></li>
-                  </ul>
-                </nav>
-              </article>
-            </div>
-          </div>
-          <div data-state-slot="loading" hidden>
-            <p class="status-panel__loading" role="status" aria-live="polite">
-              Loading automated audit results…
-            </p>
-          </div>
-          <div data-state-slot="error" hidden>
-            <div class="status-panel__error" role="alert">
-              <strong>Audit status unavailable</strong>
-              <p
-                data-error-message
-                data-error-default="Check the server logs and reload to fetch audit results."
-              >
-                Check the server logs and reload to fetch audit results.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-    </main>
-    <footer>
-        <p>
-          Built for local-first deployments. Keep your CSRF token secret and run
-          <code>npm run lint</code> and <code>npm run test:ci</code> before shipping changes.
-        </p>
-    </footer>
-    <script>
-      (() => {
+const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
         const themeStorageKey = 'jobbot:web:theme';
         const routeStorageKey = 'jobbot:web:route';
         const root = document.documentElement;
@@ -2690,8 +2005,711 @@ export function createWebApp({
         } else {
           setTimeout(notifyReady, 0);
         }
-      })();
-    </script>
+      })();`);
+
+
+function formatStatusLabel(status) {
+  return status
+    .split('_')
+    .map(part => (part ? part[0].toUpperCase() + part.slice(1) : part))
+    .join(' ');
+}
+
+function normalizeCsrfOptions(csrf = {}) {
+  const headerName =
+    typeof csrf.headerName === 'string' && csrf.headerName.trim()
+      ? csrf.headerName.trim()
+      : 'x-jobbot-csrf';
+  const token = typeof csrf.token === 'string' ? csrf.token.trim() : '';
+  if (!token) {
+    throw new Error('csrf.token must be provided');
+  }
+  return {
+    headerName,
+    token,
+  };
+}
+
+function normalizeAuthOptions(auth) {
+  if (!auth || auth === false) {
+    return null;
+  }
+  if (auth.__normalizedAuth === true) {
+    return auth;
+  }
+
+  const rawTokens = auth.tokens ?? auth.token;
+  let tokenCandidates = [];
+  if (Array.isArray(rawTokens)) {
+    tokenCandidates = rawTokens;
+  } else if (typeof rawTokens === 'string') {
+    tokenCandidates = rawTokens.split(',');
+  }
+
+  const normalizedTokens = [];
+  for (const candidate of tokenCandidates) {
+    if (typeof candidate !== 'string') {
+      throw new Error('auth tokens must be provided as strings');
+    }
+    const trimmed = candidate.trim();
+    if (!trimmed) {
+      continue;
+    }
+    normalizedTokens.push(trimmed);
+  }
+
+  if (normalizedTokens.length === 0) {
+    throw new Error('auth.tokens must include at least one non-empty token');
+  }
+
+  const headerName =
+    typeof auth.headerName === 'string' && auth.headerName.trim()
+      ? auth.headerName.trim()
+      : 'authorization';
+
+  let scheme = 'Bearer';
+  if (auth.scheme === '' || auth.scheme === false || auth.scheme === null) {
+    scheme = '';
+  } else if (typeof auth.scheme === 'string') {
+    const trimmed = auth.scheme.trim();
+    scheme = trimmed;
+  } else if (auth.scheme !== undefined && auth.scheme !== null) {
+    throw new Error('auth.scheme must be a string when provided');
+  }
+
+  const requireScheme = Boolean(scheme);
+  const schemePrefix = requireScheme ? `${scheme} ` : '';
+  const normalized = {
+    __normalizedAuth: true,
+    headerName,
+    scheme: requireScheme ? scheme : '',
+    requireScheme,
+    tokens: new Set(normalizedTokens),
+    schemePrefixLower: schemePrefix.toLowerCase(),
+    schemePrefixLength: schemePrefix.length,
+  };
+
+  return normalized;
+}
+
+function normalizeInfo(info) {
+  if (!info || typeof info !== 'object') return {};
+  const normalized = {};
+  if (typeof info.service === 'string' && info.service.trim()) {
+    normalized.service = info.service.trim();
+  }
+  if (typeof info.version === 'string' && info.version.trim()) {
+    normalized.version = info.version.trim();
+  }
+  return normalized;
+}
+
+function normalizeHealthChecks(checks) {
+  if (checks == null) return [];
+  if (!Array.isArray(checks)) {
+    throw new Error('health checks must be provided as an array');
+  }
+  return checks.map((check, index) => {
+    if (!check || typeof check !== 'object') {
+      throw new Error(`health check at index ${index} must be an object`);
+    }
+    const { name, run } = check;
+    if (typeof name !== 'string' || !name.trim()) {
+      throw new Error(`health check at index ${index} requires a non-empty name`);
+    }
+    if (typeof run !== 'function') {
+      throw new Error(`health check "${name}" must provide a run() function`);
+    }
+    return { name: name.trim(), run };
+  });
+}
+
+function buildHealthResponse({ info, uptime, timestamp, checks }) {
+  let status = 'ok';
+  for (const entry of checks) {
+    if (entry.status === 'error') {
+      status = 'error';
+      break;
+    }
+    if (status === 'ok' && entry.status === 'warn') {
+      status = 'warn';
+    }
+  }
+
+  const payload = {
+    status,
+    uptime,
+    timestamp,
+    checks,
+  };
+  if (info.service) payload.service = info.service;
+  if (info.version) payload.version = info.version;
+  return payload;
+}
+
+function isPlainObject(value) {
+  if (!value || typeof value !== 'object') return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === null || prototype === Object.prototype;
+}
+
+function sanitizeCommandResult(result) {
+  if (result == null) {
+    return {};
+  }
+  if (typeof result === 'string') {
+    return sanitizeOutputString(result);
+  }
+  if (typeof result !== 'object') {
+    return result;
+  }
+  if (Array.isArray(result)) {
+    return sanitizeOutputValue(result);
+  }
+  if (!isPlainObject(result)) {
+    return sanitizeOutputValue(result);
+  }
+  const sanitized = {};
+  for (const [key, value] of Object.entries(result)) {
+    if (key === 'stdout' || key === 'stderr' || key === 'error') {
+      sanitized[key] = sanitizeOutputString(value);
+      continue;
+    }
+    if (key === 'data' || key === 'returnValue') {
+      sanitized[key] = sanitizeOutputValue(value, { key });
+      continue;
+    }
+    sanitized[key] = value;
+  }
+  return sanitized;
+}
+
+async function runHealthChecks(checks) {
+  const results = [];
+  for (const { name, run } of checks) {
+    const started = performance.now();
+    const result = { name, status: 'ok' };
+    try {
+      const outcome = await run();
+      if (outcome && typeof outcome === 'object') {
+        if (outcome.status && typeof outcome.status === 'string') {
+          const status = outcome.status.toLowerCase();
+          if (status === 'warn' || status === 'warning') {
+            result.status = 'warn';
+          } else if (status === 'error' || status === 'fail' || status === 'failed') {
+            result.status = 'error';
+          }
+        }
+        if (outcome.details !== undefined) {
+          result.details = outcome.details;
+        }
+        if (outcome.error && typeof outcome.error === 'string') {
+          result.error = outcome.error;
+          result.status = 'error';
+        }
+      }
+    } catch (err) {
+      result.status = 'error';
+      result.error = err?.message ? String(err.message) : String(err);
+    }
+
+    const duration = performance.now() - started;
+    result.duration_ms = Number(duration.toFixed(3));
+    results.push(result);
+  }
+  return results;
+}
+
+function stringLength(value) {
+  return typeof value === 'string' ? value.length : 0;
+}
+
+function roundDuration(started) {
+  return Number((performance.now() - started).toFixed(3));
+}
+
+function buildCommandLogEntry({
+  command,
+  status,
+  httpStatus,
+  durationMs,
+  payloadFields = [],
+  clientIp,
+  userAgent,
+  result,
+  errorMessage,
+}) {
+  const entry = {
+    event: 'web.command',
+    command,
+    status,
+    httpStatus,
+    durationMs,
+    payloadFields: Array.isArray(payloadFields) ? payloadFields : [],
+    stdoutLength: result ? stringLength(result.stdout) : 0,
+    stderrLength: result ? stringLength(result.stderr) : 0,
+  };
+  if (clientIp) entry.clientIp = clientIp;
+  if (userAgent) entry.userAgent = userAgent;
+  if (result && typeof result.correlationId === 'string' && result.correlationId) {
+    entry.correlationId = result.correlationId;
+  }
+  if (result && typeof result.traceId === 'string' && result.traceId) {
+    entry.traceId = result.traceId;
+  }
+  if (errorMessage) entry.errorMessage = errorMessage;
+  return entry;
+}
+
+function logCommandTelemetry(logger, level, details) {
+  if (!logger) return;
+  const fn = typeof logger[level] === 'function' ? logger[level] : undefined;
+  if (!fn) return;
+  try {
+    fn(buildCommandLogEntry(details));
+  } catch {
+    // Ignore logger failures so HTTP responses are unaffected.
+  }
+}
+
+export function createWebApp({
+  info,
+  healthChecks,
+  commandAdapter,
+  csrf,
+  rateLimit,
+  logger,
+  auth,
+} = {}) {
+  const normalizedInfo = normalizeInfo(info);
+  const normalizedChecks = normalizeHealthChecks(healthChecks);
+  const csrfOptions = normalizeCsrfOptions(csrf);
+  const rateLimiter = createInMemoryRateLimiter(rateLimit);
+  const authOptions = normalizeAuthOptions(auth);
+  const app = express();
+  const availableCommands = new Set(
+    ALLOW_LISTED_COMMANDS.filter(name => typeof commandAdapter?.[name] === 'function'),
+  );
+  const jsonParser = express.json({ limit: '1mb' });
+
+  app.get('/assets/status-hub.js', (req, res) => {
+    res.set('Content-Type', 'application/javascript; charset=utf-8');
+    res.set('Cache-Control', 'no-store');
+    res.send(STATUS_PAGE_SCRIPT);
+  });
+
+  app.get('/', (req, res) => {
+    const serviceName = normalizedInfo.service || 'jobbot web interface';
+    const version = normalizedInfo.version ? `Version ${normalizedInfo.version}` : 'Local build';
+    const commands = Array.from(availableCommands).sort();
+    const commandList =
+      commands.length === 0
+        ? '<li><em>No CLI commands have been allowed yet.</em></li>'
+        : commands
+            .map(name => {
+              const escapedName = escapeHtml(name);
+              return [
+                '<li><code>',
+                escapedName,
+                '</code> &mdash; accessible via POST /commands/',
+                escapedName,
+                '</li>',
+              ].join('');
+            })
+            .join('');
+    const skipLinkStyle =
+      'position:absolute;left:-999px;top:auto;width:1px;height:1px;overflow:hidden;';
+    const repoUrl = 'https://github.com/jobbot3000/jobbot3000';
+    const readmeUrl = `${repoUrl}/blob/main/README.md`;
+    const roadmapUrl = `${repoUrl}/blob/main/docs/web-interface-roadmap.md`;
+    const operationsUrl = `${repoUrl}/blob/main/docs/web-operational-playbook.md`;
+    const csrfHeaderAttr = escapeHtml(csrfOptions.headerName);
+    const csrfTokenAttr = escapeHtml(csrfOptions.token);
+
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    const rawHtml = `<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${escapeHtml(serviceName)}</title>
+    <style>${STATUS_PAGE_STYLES}</style>
+  </head>
+  <body data-csrf-header="${csrfHeaderAttr}" data-csrf-token="${csrfTokenAttr}">
+    <a href="#main" class="pill" style="${skipLinkStyle}">Skip to main content</a>
+    <header>
+      <div class="header-actions">
+        <p class="pill" aria-label="Service metadata">
+          <strong>${escapeHtml(serviceName)}</strong>
+          <span aria-hidden="true">•</span>
+          <span>${escapeHtml(version)}</span>
+        </p>
+        <button
+          type="button"
+          class="theme-toggle-button"
+          data-theme-toggle
+          aria-pressed="false"
+        >
+          <span aria-hidden="true">🌓</span>
+          <span data-theme-toggle-label>Enable light theme</span>
+        </button>
+      </div>
+      <h1>${escapeHtml(serviceName)}</h1>
+      <p>
+          This lightweight status hub surfaces the Express adapter that bridges the jobbot3000 CLI
+          with the experimental web interface. Use the navigation below to switch between the
+          overview, available commands, and automated audits.
+      </p>
+      <nav class="primary-nav" aria-label="Status navigation">
+        <a href="#overview" data-route-link="overview">Overview</a>
+        <a href="#applications" data-route-link="applications">Applications</a>
+        <a href="#commands" data-route-link="commands">Commands</a>
+        <a href="#analytics" data-route-link="analytics">Analytics</a>
+        <a href="#audits" data-route-link="audits">Audits</a>
+      </nav>
+    </header>
+    <main id="main" tabindex="-1" data-router>
+      <section class="view" data-route="overview" aria-labelledby="overview-heading">
+        <h2 id="overview-heading">Overview</h2>
+        <p>
+          The adapter exposes jobbot3000 CLI workflows through guarded HTTP endpoints. Routing is
+          entirely hash-based so the page remains static and local-friendly while still supporting
+          deep links to individual sections.
+        </p>
+        <div class="grid two-column">
+          <article class="card">
+            <h3>CLI bridge</h3>
+            <p>
+              Every request funnels through <code>createCommandAdapter</code>, which validates
+              payloads, redacts sensitive output, and streams telemetry for observability. See
+              <code>test/web-command-adapter.test.js</code> for coverage across success and error
+              paths.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Operational safeguards</h3>
+            <p>
+              Rate limiting, CSRF protection, and optional auth tokens mirror the production guard
+              rails baked into the Express server. The status view keeps requirements front and
+              center so API consumers wire headers correctly.
+            </p>
+          </article>
+        </div>
+      </section>
+      <section class="view" data-route="applications" aria-labelledby="applications-heading" hidden>
+        <h2 id="applications-heading">Applications</h2>
+          <p>
+            Review shortlisted roles captured by the CLI. Filters map directly to
+            <code>jobbot shortlist list</code> flags so the web view stays aligned
+            with scripted flows.
+          </p>
+        <form class="filters" data-shortlist-filters>
+          <label>
+            <span>Location</span>
+            <input
+              type="text"
+              placeholder="Remote"
+              autocomplete="off"
+              data-shortlist-filter="location"
+            />
+          </label>
+          <label>
+            <span>Level</span>
+            <input
+              type="text"
+              placeholder="Senior"
+              autocomplete="off"
+              data-shortlist-filter="level"
+            />
+          </label>
+          <label>
+            <span>Compensation</span>
+            <input
+              type="text"
+              placeholder="$185k"
+              autocomplete="off"
+              data-shortlist-filter="compensation"
+            />
+          </label>
+          <label>
+            <span>Tags</span>
+            <input
+              type="text"
+              placeholder="remote,dream"
+              autocomplete="off"
+              data-shortlist-filter="tags"
+            />
+          </label>
+          <label>
+            <span>Page size</span>
+            <input
+              type="number"
+              min="1"
+              max="100"
+              value="10"
+              data-shortlist-filter="limit"
+            />
+          </label>
+          <div class="filters__actions">
+            <button type="submit">Apply filters</button>
+            <button type="button" data-shortlist-reset data-variant="ghost">Reset</button>
+          </div>
+        </form>
+        <div
+          class="status-panel"
+          data-status-panel="applications"
+          data-state="ready"
+          aria-live="polite"
+        >
+          <div data-state-slot="ready">
+            <p data-shortlist-empty hidden>No matching applications found.</p>
+            <div class="table-container">
+              <table class="shortlist-table" data-shortlist-table hidden>
+                <thead>
+                  <tr>
+                    <th scope="col">Job ID</th>
+                    <th scope="col">Location</th>
+                    <th scope="col">Level</th>
+                    <th scope="col">Compensation</th>
+                    <th scope="col">Tags</th>
+                    <th scope="col">Synced</th>
+                    <th scope="col">Discard summary</th>
+                    <th scope="col">Actions</th>
+                  </tr>
+                </thead>
+                <tbody data-shortlist-body></tbody>
+              </table>
+            </div>
+            <div class="pagination" data-shortlist-pagination hidden>
+              <button type="button" data-shortlist-prev>Previous</button>
+              <span class="pagination-info" data-shortlist-range>Showing 0 of 0</span>
+              <button type="button" data-shortlist-next>Next</button>
+            </div>
+            <div class="application-detail" data-application-detail hidden>
+              <div
+                class="application-detail__section application-detail__empty"
+                data-detail-state="empty"
+              >
+                <p>Select an application to view its timeline.</p>
+              </div>
+              <div
+                class="application-detail__section application-detail__loading"
+                data-detail-state="loading"
+                hidden
+              >
+                <p class="application-detail__loading" role="status" aria-live="polite">
+                  Loading application detail…
+                </p>
+              </div>
+              <div
+                class="application-detail__section application-detail__error"
+                data-detail-state="error"
+                hidden
+              >
+                <strong>Unable to load application detail</strong>
+                <p
+                  data-detail-error
+                  data-detail-error-default="Check the server logs or retry shortly."
+                >
+                  Check the server logs or retry shortly.
+                </p>
+              </div>
+              <div class="application-detail__section" data-detail-state="ready" hidden>
+                <h3 class="application-detail__title" data-detail-title></h3>
+                <dl class="application-detail__meta" data-detail-meta></dl>
+                <p class="application-detail__tags" data-detail-tags></p>
+                <div class="application-detail__section" data-detail-discard></div>
+                <ul class="application-detail__events" data-detail-events></ul>
+              </div>
+            </div>
+            <div class="application-actions" data-application-actions hidden>
+              <h3 class="application-actions__title">Record status update</h3>
+              <form class="application-actions__form" data-application-status-form>
+                <label>
+                  <span>Status</span>
+                  <select data-application-status>
+                    <option value="">Select status</option>
+                    ${STATUSES.map(status => {
+                      const optionLabel = escapeHtml(formatStatusLabel(status));
+                      const value = escapeHtml(status);
+                      return `<option value="${value}">${optionLabel}</option>`;
+                    }).join('')}
+                  </select>
+                </label>
+                <label>
+                  <span>Note (optional)</span>
+                  <textarea
+                    rows="2"
+                    data-application-note
+                    placeholder="Waiting on recruiter feedback"
+                  ></textarea>
+                </label>
+                <div class="filters__actions">
+                  <button type="submit">Save status</button>
+                  <button type="button" data-action-clear data-variant="ghost">Clear</button>
+                </div>
+                <p class="application-actions__message" data-action-message hidden></p>
+              </form>
+            </div>
+          </div>
+          <div data-state-slot="loading" hidden>
+            <p class="status-panel__loading" role="status" aria-live="polite">
+              Loading shortlist entries…
+            </p>
+          </div>
+          <div data-state-slot="error" hidden>
+            <div class="status-panel__error" role="alert">
+              <strong>Unable to load shortlist</strong>
+              <p
+                data-error-message
+                data-error-default="Check the server logs or retry shortly."
+              >
+                Check the server logs or retry shortly.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="view" data-route="commands" aria-labelledby="commands-heading" hidden>
+        <h2 id="commands-heading">Allow-listed CLI commands</h2>
+        <div
+          class="status-panel"
+          data-status-panel="commands"
+          data-state="ready"
+          aria-live="polite"
+        >
+          <div data-state-slot="ready">
+            <p>
+              The adapter only exposes safe CLI entry points. Each command requires a CSRF header
+              and JSON payload that matches the schema enforced by the backend validators.
+            </p>
+            <ul>${commandList}</ul>
+          </div>
+          <div data-state-slot="loading" hidden>
+            <p class="status-panel__loading" role="status" aria-live="polite">
+              Loading allow-listed commands…
+            </p>
+          </div>
+          <div data-state-slot="error" hidden>
+            <div class="status-panel__error" role="alert">
+              <strong>Unable to load commands</strong>
+              <p
+                data-error-message
+                data-error-default="Please refresh the page or retry shortly."
+              >
+                Please refresh the page or retry shortly.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="view" data-route="analytics" aria-labelledby="analytics-heading" hidden>
+        <h2 id="analytics-heading">Analytics</h2>
+        <p>
+          View funnel metrics from <code>jobbot analytics funnel --json</code>:
+          stage counts, conversion percentages, drop-offs, and missing statuses.
+        </p>
+        <div
+          class="status-panel"
+          data-status-panel="analytics"
+          data-state="ready"
+          aria-live="polite"
+        >
+          <div data-state-slot="ready">
+            <div data-analytics-summary>
+              <p data-analytics-totals>Tracked jobs: —</p>
+              <p data-analytics-dropoff>Largest drop-off: none</p>
+            </div>
+            <p data-analytics-missing hidden></p>
+            <div class="table-container">
+              <table class="shortlist-table" data-analytics-table hidden>
+                <thead>
+                  <tr>
+                    <th scope="col">Stage</th>
+                    <th scope="col">Count</th>
+                    <th scope="col">Conversion</th>
+                    <th scope="col">Drop-off</th>
+                  </tr>
+                </thead>
+                <tbody data-analytics-rows></tbody>
+              </table>
+            </div>
+            <p data-analytics-empty hidden>No analytics data available.</p>
+            <p data-analytics-sankey hidden></p>
+          </div>
+          <div data-state-slot="loading" hidden>
+            <p class="status-panel__loading" role="status" aria-live="polite">
+              Loading analytics funnel…
+            </p>
+          </div>
+          <div data-state-slot="error" hidden>
+            <div class="status-panel__error" role="alert">
+              <strong>Unable to load analytics</strong>
+              <p
+                data-error-message
+                data-error-default="Check the server logs or retry shortly."
+              >
+                Check the server logs or retry shortly.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="view" data-route="audits" aria-labelledby="audits-heading" hidden>
+        <h2 id="audits-heading">Automated audits</h2>
+        <div
+          class="status-panel"
+          data-status-panel="audits"
+          data-state="ready"
+          aria-live="polite"
+        >
+          <div data-state-slot="ready">
+            <div class="grid two-column">
+              <p>
+                Continuous accessibility checks rely on <code>axe-core</code> while performance
+                scoring applies Lighthouse metrics to real HTTP responses. See
+                <code>test/web-audits.test.js</code> for the automated coverage that enforces both
+                baselines.
+              </p>
+              <article class="card references">
+                <h3>Helpful references</h3>
+                <nav aria-label="Documentation links">
+                  <ul>
+                    <li><a href="${repoUrl}">Repository</a></li>
+                    <li><a href="${readmeUrl}">README</a></li>
+                    <li><a href="${roadmapUrl}">Web interface roadmap</a></li>
+                    <li><a href="${operationsUrl}">Operations playbook</a></li>
+                  </ul>
+                </nav>
+              </article>
+            </div>
+          </div>
+          <div data-state-slot="loading" hidden>
+            <p class="status-panel__loading" role="status" aria-live="polite">
+              Loading automated audit results…
+            </p>
+          </div>
+          <div data-state-slot="error" hidden>
+            <div class="status-panel__error" role="alert">
+              <strong>Audit status unavailable</strong>
+              <p
+                data-error-message
+                data-error-default="Check the server logs and reload to fetch audit results."
+              >
+                Check the server logs and reload to fetch audit results.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+    <footer>
+        <p>
+          Built for local-first deployments. Keep your CSRF token secret and run
+          <code>npm run lint</code> and <code>npm run test:ci</code> before shipping changes.
+        </p>
+    </footer>
+    <script src="/assets/status-hub.js" defer></script>
   </body>
 </html>`;
     res.send(compactHtml(rawHtml));
