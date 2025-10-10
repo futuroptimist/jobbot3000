@@ -79,10 +79,10 @@ function compactHtml(value) {
     return '';
   }
   return value
-    .split('\n')
-    .map(line => line.trimStart())
-    .join('\n')
-    .replace(/\n{3,}/g, '\n\n')
+    .replace(/\r?\n/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/>\s+</g, '><')
+    .replace(/>\s+/g, '>')
     .trim();
 }
 
@@ -2379,7 +2379,7 @@ export function createWebApp({
             try {
               localStorage.setItem(themeStorageKey, normalized);
             } catch {
-              // Ignore storage failures (for example, private browsing)
+              /* Ignore storage failures (for example, private browsing) */
             }
           }
         }
@@ -2450,7 +2450,7 @@ export function createWebApp({
             try {
               listener(route);
             } catch {
-              // Ignore listener failures so navigation remains responsive.
+              /* Ignore listener failures so navigation remains responsive. */
             }
           }
         }
@@ -2474,7 +2474,7 @@ export function createWebApp({
           try {
             localStorage.setItem(routeStorageKey, route);
           } catch {
-            // Ignore storage failures (for example, private browsing)
+            /* Ignore storage failures (for example, private browsing) */
           }
         }
 

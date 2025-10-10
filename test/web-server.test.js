@@ -194,6 +194,17 @@ describe('web server status page', () => {
     expect(overviewLink?.hasAttribute('aria-current')).toBe(false);
   });
 
+  it('minifies the status page markup to avoid extraneous whitespace', async () => {
+    const server = await startServer();
+
+    const response = await fetch(`${server.url}/`);
+    expect(response.status).toBe(200);
+    const html = await response.text();
+
+    const newlineCount = (html.match(/\n/g) ?? []).length;
+    expect(newlineCount).toBeLessThan(50);
+  });
+
   it('exposes status panels with loading and error states', async () => {
     const server = await startServer();
 

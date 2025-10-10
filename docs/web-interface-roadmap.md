@@ -46,10 +46,12 @@
 >   Requires new mutation endpoints and UI flows, so it remains a larger follow-up task.
 
 > [!NOTE]
-> **Future work triage (2025-10-10):**
-> - *Slim status hub HTML to satisfy the 74 KB audit budget.* The regression test in
->   [`test/web-audits.test.js`](../test/web-audits.test.js) currently fails due to an oversized DOM,
->   so minifying inline styles and markup can ship independently and restores the documented budget.
+> **Update (2025-10-12):**
+> - *Slim status hub HTML to satisfy the 74 KB audit budget.* Inline markup minification keeps the
+>   status hub payload lean, and regression coverage in
+>   [`test/web-server.test.js`](../test/web-server.test.js) and
+>   [`test/web-audits.test.js`](../test/web-audits.test.js) locks both the whitespace and transfer
+>   budgets in place.
 
 ### 1. Requirements and Domain Mapping
 
