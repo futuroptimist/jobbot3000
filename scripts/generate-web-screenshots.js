@@ -4,6 +4,8 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
+import { setTimeout as delay } from 'node:timers/promises';
+
 import puppeteer from 'puppeteer';
 
 import { startWebServer } from '../src/web/server.js';
