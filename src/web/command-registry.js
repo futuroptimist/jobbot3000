@@ -44,6 +44,25 @@ const SHORTLIST_SHOW_ALLOWED_FIELDS = new Set(['jobId', 'job_id']);
 const TRACK_SHOW_ALLOWED_FIELDS = new Set(['jobId', 'job_id']);
 const TRACK_RECORD_ALLOWED_FIELDS = new Set(['jobId', 'job_id', 'status', 'note']);
 const ANALYTICS_EXPORT_ALLOWED_FIELDS = new Set(['redact', 'redactCompanies', 'redact_companies']);
+const LISTINGS_ALLOWED_PROVIDERS = new Set([
+  'greenhouse',
+  'lever',
+  'ashby',
+  'smartrecruiters',
+  'workable',
+]);
+const LISTINGS_FETCH_ALLOWED_FIELDS = new Set([
+  'provider',
+  'identifier',
+  'location',
+  'title',
+  'team',
+  'department',
+  'remote',
+  'limit',
+]);
+const LISTINGS_INGEST_ALLOWED_FIELDS = new Set(['provider', 'identifier', 'jobId', 'job_id']);
+const LISTINGS_ARCHIVE_ALLOWED_FIELDS = new Set(['jobId', 'job_id', 'reason']);
 
 function ensurePlainObject(value, commandName) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -267,6 +286,71 @@ function validateAnalyticsExportPayload(rawPayload) {
   return normalizeAnalyticsExportRequest(payload);
 }
 
+function coerceListingsProvider(value, commandName) {
+  const provider = coerceString(value, { name: 'provider', required: true });
+  const normalized = provider.toLowerCase();
+  if (!normalized) {
+    throw new Error(`${commandName} provider is required`);
+  }
+  if (!LISTINGS_ALLOWED_PROVIDERS.has(normalized)) {
+    const allowedProviders = Array.from(LISTINGS_ALLOWED_PROVIDERS).join(', ');
+    throw new Error(`${commandName} provider must be one of: ${allowedProviders}`);
+  }
+  return normalized;
+}
+
+function validateListingsFetchPayload(rawPayload) {
+  const payload = ensurePlainObject(rawPayload, 'listings-fetch');
+  assertAllowedFields(payload, LISTINGS_FETCH_ALLOWED_FIELDS, 'listings-fetch');
+
+  const provider = coerceListingsProvider(payload.provider, 'listings-fetch');
+  const identifier = coerceString(payload.identifier, {
+    name: 'identifier',
+    required: true,
+  });
+  const location = coerceString(payload.location, { name: 'location' });
+  const title = coerceString(payload.title, { name: 'title' });
+  const team = coerceString(payload.team ?? payload.department, { name: 'team' });
+  const remote = coerceBoolean(payload.remote, { name: 'remote' });
+  const limit = coerceInteger(payload.limit, { name: 'limit', min: 1 });
+
+  const filters = { provider, identifier };
+  if (location) filters.location = location;
+  if (title) filters.title = title;
+  if (team) filters.team = team;
+  if (remote !== undefined) filters.remote = remote;
+  if (limit !== undefined) filters.limit = limit;
+  return filters;
+}
+
+function validateListingsIngestPayload(rawPayload) {
+  const payload = ensurePlainObject(rawPayload, 'listings-ingest');
+  assertAllowedFields(payload, LISTINGS_INGEST_ALLOWED_FIELDS, 'listings-ingest');
+  const provider = coerceListingsProvider(payload.provider, 'listings-ingest');
+  const identifier = coerceString(payload.identifier, {
+    name: 'identifier',
+    required: true,
+  });
+  const jobId = coerceString(payload.jobId ?? payload.job_id, {
+    name: 'jobId',
+    required: true,
+  });
+  return { provider, identifier, jobId };
+}
+
+function validateListingsArchivePayload(rawPayload) {
+  const payload = ensurePlainObject(rawPayload, 'listings-archive');
+  assertAllowedFields(payload, LISTINGS_ARCHIVE_ALLOWED_FIELDS, 'listings-archive');
+  const jobId = coerceString(payload.jobId ?? payload.job_id, {
+    name: 'jobId',
+    required: true,
+  });
+  const reason = coerceString(payload.reason, { name: 'reason' });
+  const sanitized = { jobId };
+  if (reason) sanitized.reason = reason;
+  return sanitized;
+}
+
 const COMMAND_VALIDATORS = Object.freeze({
   summarize: validateSummarizePayload,
   match: validateMatchPayload,
@@ -276,6 +360,16 @@ const COMMAND_VALIDATORS = Object.freeze({
   'track-record': validateTrackRecordPayload,
   'analytics-funnel': validateAnalyticsFunnelPayload,
   'analytics-export': validateAnalyticsExportPayload,
+  'listings-fetch': validateListingsFetchPayload,
+  'listings-ingest': validateListingsIngestPayload,
+  'listings-archive': validateListingsArchivePayload,
+  'listings-providers': payload => {
+    const data = ensurePlainObject(payload ?? {}, 'listings-providers');
+    if (Object.keys(data).length > 0) {
+      throw new Error('listings-providers does not accept any fields');
+    }
+    return {};
+  },
 });
 
 export const ALLOW_LISTED_COMMANDS = Object.freeze(Object.keys(COMMAND_VALIDATORS));
