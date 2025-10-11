@@ -264,12 +264,9 @@ function filterListings(listings, filters = {}) {
   });
 }
 
-function normalizeIdentifier(value, provider) {
+function normalizeIdentifier(value) {
   const identifier = sanitizeString(value);
-  if (!identifier) {
-    throw new Error(`A ${provider.identifierLabel.toLowerCase()} is required`);
-  }
-  return identifier;
+  return identifier; // optional; empty string means unknown
 }
 
 async function normalizeSnapshot(adapter, job, context) {
@@ -288,7 +285,19 @@ export async function fetchListings({
   limit,
 } = {}) {
   const providerEntry = ensureProvider(provider);
-  const targetIdentifier = normalizeIdentifier(identifier, providerEntry);
+  const targetIdentifier = normalizeIdentifier(identifier);
+
+  // If no identifier is provided, return an empty result set without error.
+  if (!targetIdentifier) {
+    return {
+      provider: providerEntry.id,
+      identifier: '',
+      fetched_at: new Date().toISOString(),
+      total: 0,
+      listings: [],
+    };
+  }
+
   const args = { [providerEntry.identifierKey]: targetIdentifier };
   const { jobs, context } = await providerEntry.adapter.listOpenings(args);
   const existingIdsPromise = listExistingJobIds();

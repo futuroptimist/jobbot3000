@@ -1996,8 +1996,8 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
 
             const providerValue = payload?.provider?.trim() || '';
             const identifierValue = payload?.identifier?.trim() || '';
-            if (!providerValue || !identifierValue) {
-              setMessage('error', 'Select a provider and identifier before fetching listings');
+            if (!providerValue) {
+              setMessage('error', 'Select a provider before fetching listings');
               return false;
             }
 
@@ -3535,7 +3535,7 @@ export function createWebApp({
             <input type="text" autocomplete="off" data-listings-filter="team" />
           </label>
           <label>
-            <span>Remote</span>
+            <span>Location</span>
             <select data-listings-filter="remote">
               <option value="">Any</option>
               <option value="true">Remote</option>
