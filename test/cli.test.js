@@ -2521,6 +2521,113 @@ describe('jobbot CLI', () => {
     expect(stagesByKey.acceptance.count).toBe(1);
   }, 15000);
 
+  it('filters analytics funnel with timeframe and company flags', () => {
+    const jobsDir = path.join(dataDir, 'jobs');
+    fs.mkdirSync(jobsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(jobsDir, 'job-target.json'),
+      `${JSON.stringify({ parsed: { company: 'Future Works' } }, null, 2)}\n`,
+      'utf8',
+    );
+    fs.writeFileSync(
+      path.join(jobsDir, 'job-other.json'),
+      `${JSON.stringify({ parsed: { company: 'Example Labs' } }, null, 2)}\n`,
+      'utf8',
+    );
+    fs.writeFileSync(
+      path.join(jobsDir, 'job-outside.json'),
+      `${JSON.stringify({ parsed: { company: 'Future Works' } }, null, 2)}\n`,
+      'utf8',
+    );
+
+    runCli([
+      'track',
+      'log',
+      'job-target',
+      '--channel',
+      'email',
+      '--date',
+      '2025-02-09T09:00:00Z',
+    ]);
+    runCli([
+      'track',
+      'add',
+      'job-target',
+      '--status',
+      'screening',
+      '--date',
+      '2025-02-10T12:00:00Z',
+    ]);
+
+    runCli([
+      'track',
+      'log',
+      'job-other',
+      '--channel',
+      'email',
+      '--date',
+      '2025-02-11T10:00:00Z',
+    ]);
+    runCli([
+      'track',
+      'add',
+      'job-other',
+      '--status',
+      'screening',
+      '--date',
+      '2025-02-12T11:00:00Z',
+    ]);
+
+    runCli([
+      'track',
+      'log',
+      'job-outside',
+      '--channel',
+      'email',
+      '--date',
+      '2025-01-04T09:00:00Z',
+    ]);
+    runCli([
+      'track',
+      'add',
+      'job-outside',
+      '--status',
+      'screening',
+      '--date',
+      '2025-01-05T12:00:00Z',
+    ]);
+
+    const jsonReport = runCli([
+      'analytics',
+      'funnel',
+      '--from',
+      '2025-02-01',
+      '--to',
+      '2025-02-28',
+      '--company',
+      'Future Works',
+      '--json',
+    ]);
+    const parsed = JSON.parse(jsonReport);
+    expect(parsed.totals).toEqual({ trackedJobs: 1, withEvents: 1 });
+    const stages = Object.fromEntries(parsed.stages.map(stage => [stage.key, stage]));
+    expect(stages.outreach.count).toBe(1);
+    expect(stages.screening.count).toBe(1);
+
+    const textReport = runCli([
+      'analytics',
+      'funnel',
+      '--from',
+      '2025-02-01',
+      '--to',
+      '2025-02-28',
+      '--company',
+      'Future Works',
+    ]);
+    expect(textReport).toContain('Outreach: 1');
+    expect(textReport).toContain('Screening: 1 (100% conversion)');
+  });
+
   it('exports anonymized analytics snapshots to disk', () => {
     runCli(['track', 'log', 'job-1', '--channel', 'email', '--date', '2025-03-01']);
     runCli(['track', 'add', 'job-1', '--status', 'screening']);

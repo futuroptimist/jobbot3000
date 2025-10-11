@@ -1120,6 +1120,15 @@ JOBBOT_DATA_DIR=$DATA_DIR npx jobbot analytics funnel --json | jq '.stages[0]'
 #   "conversionRate": 1
 # }
 
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot analytics funnel \
+  --from 2025-02-01 \
+  --to 2025-02-28 \
+  --company "Future Works"
+# Outreach: 1
+# Screening: 1 (100% conversion)
+# Largest drop-off: none
+# Tracked jobs: 1 total; 1 with outreach events
+
 JOBBOT_DATA_DIR=$DATA_DIR npx jobbot analytics export --out analytics.json
 # Saved analytics snapshot to /tmp/jobbot-cli-XXXX/analytics.json
 # jq '.channels' analytics.json
