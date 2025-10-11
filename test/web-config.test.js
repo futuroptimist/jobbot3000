@@ -44,7 +44,7 @@ describe('loadWebConfig', () => {
 
     expect(config.env).toBe('development');
     expect(config.host).toBe('127.0.0.1');
-    expect(config.port).toBe(3000);
+    expect(config.port).toBe(3100);
     expect(config.rateLimit).toEqual({ windowMs: 60000, max: 30 });
     expect(config.csrfHeaderName).toBe('x-jobbot-csrf');
     expect(config.info).toMatchObject({ service: 'jobbot-web', environment: 'development' });
