@@ -155,6 +155,12 @@ const COMMANDS = Object.freeze({
     name: 'ingest-greenhouse',
     errorLabel: 'ingest greenhouse',
   },
+  'ingest-url': {
+    method: null,
+    cliCommand: ['ingest', 'url'],
+    name: 'ingest-url',
+    errorLabel: 'ingest url',
+  },
 });
 
 const DEFAULT_CLI_PATH = fileURLToPath(new URL('../../bin/jobbot.js', import.meta.url));
@@ -965,6 +971,75 @@ export function createCommandAdapter(options = {}) {
     };
   }
 
+  // New: ingest a standard job URL using the CLI
+  async function ingestUrl(options = {}) {
+    const targetUrl = typeof options?.url === 'string' ? options.url.trim() : '';
+    if (!targetUrl) {
+      throw new Error('url is required');
+    }
+    const args = ['--timeout'];
+    const timeout = Number.isFinite(options?.timeoutMs) ? options.timeoutMs : 10000;
+    args.push(String(timeout));
+    if (Number.isFinite(options?.maxBytes) && options.maxBytes > 0) {
+      args.push('--max-bytes', String(options.maxBytes));
+    }
+    const started = performance.now();
+    try {
+      const { stdout, stderr } = await runCliProcess(
+        ['ingest', 'url', targetUrl],
+        args,
+        'ingest url',
+      );
+      const durationMs = roundDuration(performance.now() - started);
+      logTelemetry('info', {
+        event: 'cli.command',
+        command: 'ingest-url',
+        status: 'success',
+        exitCode: 0,
+        durationMs,
+        stdoutLength: safeLength(stdout),
+        stderrLength: safeLength(stderr),
+      });
+      return {
+        command: 'ingest-url',
+        format: 'text',
+        stdout: sanitizeOutputString(stdout),
+        stderr: sanitizeOutputString(stderr),
+        returnValue: undefined,
+      };
+    } catch (err) {
+      const durationMs = roundDuration(performance.now() - started);
+      const rawMessage = err?.message ?? 'Unknown error';
+      const sanitizedMessage = redactSecrets(rawMessage);
+      logTelemetry('error', {
+        event: 'cli.command',
+        command: 'ingest-url',
+        status: 'error',
+        exitCode: typeof err?.exitCode === 'number' ? err.exitCode : 1,
+        durationMs,
+        errorMessage: sanitizedMessage,
+        stdoutLength: safeLength(err?.stdout),
+        stderrLength: safeLength(err?.stderr),
+      });
+      const error = new Error(`ingest url command failed: ${sanitizedMessage}`);
+      if (typeof err?.exitCode === 'number') error.exitCode = err.exitCode;
+      if (typeof err?.stdout === 'string') error.stdout = sanitizeOutputString(err.stdout);
+      if (typeof err?.stderr === 'string') error.stderr = sanitizeOutputString(err.stderr);
+      throw error;
+    }
+  }
+
+  // New: discover openings by URL (single GET using provider adapters is future work; for now return empty)
+  async function discoverOpenings() {
+    return {
+      command: 'discover-openings',
+      format: 'json',
+      stdout: '',
+      stderr: '',
+      data: { items: [] },
+    };
+  }
+
   const adapter = {
     summarize,
     match,
@@ -976,6 +1051,8 @@ export function createCommandAdapter(options = {}) {
     // new
     'ingest-greenhouse': ingestGreenhouse,
     'sources-list': sourcesList,
+    'ingest-url': ingestUrl,
+    'discover-openings': discoverOpenings,
   };
   adapter['shortlist-list'] = shortlistList;
   adapter['shortlist-show'] = shortlistShow;

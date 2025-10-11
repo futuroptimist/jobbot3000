@@ -47,6 +47,9 @@ const ANALYTICS_EXPORT_ALLOWED_FIELDS = new Set(['redact', 'redactCompanies', 'r
 
 const INGEST_GREENHOUSE_ALLOWED_FIELDS = new Set(['board']);
 const SOURCES_LIST_ALLOWED_FIELDS = new Set(['provider', 'offset', 'limit']);
+const INGEST_URL_ALLOWED_FIELDS = new Set(['url', 'timeout', 'timeoutMs', 'maxBytes']);
+const DISCOVER_OPENINGS_ALLOWED_FIELDS = new Set(['url', 'limit']);
+const PROVIDERS_LIST_ALLOWED_FIELDS = new Set([]);
 
 function ensurePlainObject(value, commandName) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -293,6 +296,34 @@ function validateSourcesListPayload(rawPayload) {
   return sanitized;
 }
 
+function validateIngestUrlPayload(rawPayload) {
+  const payload = ensurePlainObject(rawPayload, 'ingest-url');
+  assertAllowedFields(payload, INGEST_URL_ALLOWED_FIELDS, 'ingest-url');
+  const url = coerceString(payload.url, { name: 'url', required: true });
+  const timeoutMs = coerceTimeout(payload, 'ingest-url');
+  const maxBytes = coerceNumber(payload.maxBytes, { name: 'maxBytes', min: 1 });
+  const sanitized = { url };
+  if (timeoutMs !== undefined) sanitized.timeoutMs = timeoutMs;
+  if (maxBytes !== undefined) sanitized.maxBytes = maxBytes;
+  return sanitized;
+}
+
+function validateDiscoverOpeningsPayload(rawPayload) {
+  const payload = ensurePlainObject(rawPayload, 'discover-openings');
+  assertAllowedFields(payload, DISCOVER_OPENINGS_ALLOWED_FIELDS, 'discover-openings');
+  const url = coerceString(payload.url, { name: 'url', required: true });
+  const limit = coerceInteger(payload.limit, { name: 'limit', min: 1 });
+  const sanitized = { url };
+  if (limit !== undefined) sanitized.limit = limit;
+  return sanitized;
+}
+
+function validateProvidersListPayload(rawPayload) {
+  const payload = ensurePlainObject(rawPayload ?? {}, 'providers-list');
+  assertAllowedFields(payload, PROVIDERS_LIST_ALLOWED_FIELDS, 'providers-list');
+  return {};
+}
+
 const COMMAND_VALIDATORS = Object.freeze({
   summarize: validateSummarizePayload,
   match: validateMatchPayload,
@@ -304,6 +335,9 @@ const COMMAND_VALIDATORS = Object.freeze({
   'analytics-export': validateAnalyticsExportPayload,
   'ingest-greenhouse': validateIngestGreenhousePayload,
   'sources-list': validateSourcesListPayload,
+  'ingest-url': validateIngestUrlPayload,
+  'discover-openings': validateDiscoverOpeningsPayload,
+  'providers-list': validateProvidersListPayload,
 });
 
 export const ALLOW_LISTED_COMMANDS = Object.freeze(Object.keys(COMMAND_VALIDATORS));

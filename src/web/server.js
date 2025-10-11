@@ -1614,6 +1614,8 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           const ingestBoard = section.querySelector('[data-greenhouse-board]');
           const ingestButton = section.querySelector('[data-greenhouse-ingest]');
           const ingestMessage = section.querySelector('[data-greenhouse-message]');
+          const ingestUrlInput = section.querySelector('[data-ingest-url]');
+          const ingestUrlButton = section.querySelector('[data-ingest-url-run]');
 
           async function runGreenhouseIngest(board) {
             if (!board) throw new Error('Board slug is required');
@@ -1668,6 +1670,35 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               setIngestMessage('error', err?.message || 'Ingestion failed');
             } finally {
               ingestButton.disabled = false;
+            }
+          });
+
+          ingestUrlButton?.addEventListener('click', async () => {
+            if (!ingestUrlInput) return;
+            const url = (ingestUrlInput.value || '').trim();
+            if (!url) {
+              setIngestMessage('error', 'Please paste a job posting URL');
+              return;
+            }
+            ingestUrlButton.disabled = true;
+            setIngestMessage('info', 'Importing from URL…');
+            try {
+              const headers = { 'content-type': 'application/json' };
+              if (csrfHeader && csrfToken) headers[csrfHeader] = csrfToken;
+              const response = await fetch(buildCommandUrl('/commands/ingest-url'), {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ url }),
+              });
+              if (!response.ok) {
+                const payload = await response.json().catch(() => ({}));
+                throw new Error(payload?.error || 'URL ingestion failed');
+              }
+              setIngestMessage('success', 'Imported job from URL');
+            } catch (err) {
+              setIngestMessage('error', err?.message || 'URL ingestion failed');
+            } finally {
+              ingestUrlButton.disabled = false;
             }
           });
 
@@ -2976,6 +3007,13 @@ export function createWebApp({
             <span>Page size</span>
             <input type="number" min="1" max="1000" value="10" data-sources-filter="limit" />
           </label>
+          <label>
+            <span>Paste job URL</span>
+            <input type="url" placeholder="https://boards.greenhouse.io/acme/jobs/123" autocomplete="off" data-ingest-url />
+          </label>
+          <div class="filters__actions">
+            <button type="button" data-ingest-url-run>Ingest URL</button>
+          </div>
           <div class="filters__actions">
             <button type="submit">Apply filters</button>
             <button type="button" data-sources-reset data-variant="ghost">Reset</button>
