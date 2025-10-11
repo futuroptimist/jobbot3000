@@ -755,6 +755,7 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               title: container.querySelector('[data-detail-title]'),
               meta: container.querySelector('[data-detail-meta]'),
               tags: container.querySelector('[data-detail-tags]'),
+              attachments: container.querySelector('[data-detail-attachments]'),
               discard: container.querySelector('[data-detail-discard]'),
               events: container.querySelector('[data-detail-events]'),
               errorMessage: container.querySelector('[data-detail-error]'),
@@ -992,6 +993,7 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             if (detailElements.title) detailElements.title.textContent = '';
             if (detailElements.meta) detailElements.meta.textContent = '';
             if (detailElements.tags) detailElements.tags.textContent = '';
+            if (detailElements.attachments) detailElements.attachments.textContent = '';
             if (detailElements.discard) detailElements.discard.textContent = '';
             if (detailElements.events) detailElements.events.textContent = '';
           }
@@ -1031,6 +1033,16 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
                 : [];
               detailElements.tags.textContent =
                 tags.length > 0 ? 'Tags: ' + tags.join(', ') : 'Tags: (none)';
+            }
+
+            if (detailElements.attachments) {
+              const attachments = Array.isArray(data?.attachments)
+                ? data.attachments.filter(doc => typeof doc === 'string' && doc.trim())
+                : [];
+              detailElements.attachments.textContent =
+                attachments.length > 0
+                  ? 'Attachments: ' + attachments.join(', ')
+                  : 'Attachments: (none)';
             }
 
             if (detailElements.discard) {
@@ -1192,7 +1204,7 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             detailState.jobId = jobId;
             setDetailState('loading', { forceVisible: true });
             try {
-              const data = await fetchShortlistDetail(jobId);
+              const data = await fetchApplicationDetail(jobId);
               if (detailState.jobId !== jobId) {
                 return;
               }
@@ -1292,11 +1304,21 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             collectFromList(track.attachments);
             collectFromList(shortlist.attachments);
 
-            const events = Array.isArray(track.events) && track.events.length > 0
-              ? track.events
-              : Array.isArray(shortlist.events)
-                ? shortlist.events
-                : [];
+            const seenEventKeys = new Set();
+            const events = [];
+            const appendEvents = list => {
+              if (!Array.isArray(list)) return;
+              for (const entry of list) {
+                if (!entry || typeof entry !== 'object') continue;
+                const key = JSON.stringify(entry);
+                if (seenEventKeys.has(key)) continue;
+                seenEventKeys.add(key);
+                events.push(entry);
+              }
+            };
+
+            appendEvents(track.events);
+            appendEvents(shortlist.events);
 
             const collectFromEvents = list => {
               if (!Array.isArray(list)) return;
@@ -2587,6 +2609,7 @@ export function createWebApp({
                 <h3 class="application-detail__title" data-detail-title></h3>
                 <dl class="application-detail__meta" data-detail-meta></dl>
                 <p class="application-detail__tags" data-detail-tags></p>
+                <p class="application-detail__attachments" data-detail-attachments></p>
                 <div class="application-detail__section" data-detail-discard></div>
                 <ul class="application-detail__events" data-detail-events></ul>
               </div>
