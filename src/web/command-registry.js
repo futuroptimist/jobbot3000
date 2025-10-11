@@ -304,17 +304,15 @@ function validateListingsFetchPayload(rawPayload) {
   assertAllowedFields(payload, LISTINGS_FETCH_ALLOWED_FIELDS, 'listings-fetch');
 
   const provider = coerceListingsProvider(payload.provider, 'listings-fetch');
-  const identifier = coerceString(payload.identifier, {
-    name: 'identifier',
-    required: true,
-  });
+  const identifier = coerceString(payload.identifier, { name: 'identifier' });
   const location = coerceString(payload.location, { name: 'location' });
   const title = coerceString(payload.title, { name: 'title' });
   const team = coerceString(payload.team ?? payload.department, { name: 'team' });
   const remote = coerceBoolean(payload.remote, { name: 'remote' });
   const limit = coerceInteger(payload.limit, { name: 'limit', min: 1 });
 
-  const filters = { provider, identifier };
+  const filters = { provider };
+  if (identifier) filters.identifier = identifier;
   if (location) filters.location = location;
   if (title) filters.title = title;
   if (team) filters.team = team;

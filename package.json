@@ -19,6 +19,7 @@
     "chore:prompts": "node scripts/chore-prompts.js",
     "chore:reminders": "node scripts/chore-reminders.js",
     "web:server": "node scripts/web-server.js",
+    "dev": "node scripts/web-server.js --env development",
     "web:screenshots": "node scripts/generate-web-screenshots.js",
     "postinstall": "node scripts/install-console-font.js"
   },
