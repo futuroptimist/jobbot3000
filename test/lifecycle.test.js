@@ -8,6 +8,7 @@ import {
   getLifecycleBoard,
   listLifecycleEntries,
   getLifecycleEntry,
+  resolveLifecycleConflicts,
 } from '../src/lifecycle.js';
 
 let dataDir;
@@ -268,6 +269,82 @@ test('lists lifecycle entries with filters and pagination', async () => {
   expect(unmatched.pagination.totalEntries).toBe(0);
   expect(unmatched.pagination.totalPages).toBe(0);
   expect(unmatched.filters).toEqual({ statuses: ['onsite'] });
+});
+
+test('resolves lifecycle conflicts with plan entries', async () => {
+  await recordApplication('job-keep', 'screening', {
+    note: 'Preserve note',
+    date: '2025-02-01T10:00:00Z',
+  });
+  await recordApplication('job-update', 'onsite', {
+    note: 'Old onsite note',
+    date: '2025-02-02T11:00:00Z',
+  });
+  await recordApplication('job-remove', 'offer', {
+    note: 'Remove me',
+    date: '2025-02-03T12:00:00Z',
+  });
+
+  const results = await resolveLifecycleConflicts(
+    [
+      {
+        job_id: 'job-update',
+        status: 'offer',
+        note: 'Selected offer',
+        updated_at: '2025-02-05T09:30:00Z',
+      },
+      {
+        job_id: 'job-remove',
+        status: 'offer',
+        note: null,
+        updated_at: '2025-02-06T08:15:00Z',
+      },
+      {
+        job_id: 'job-keep',
+        status: 'onsite',
+      },
+    ],
+    { now: '2025-02-07T07:00:00Z' },
+  );
+
+  expect(results).toEqual([
+    {
+      job_id: 'job-update',
+      status: 'offer',
+      updated_at: '2025-02-05T09:30:00.000Z',
+      note: 'Selected offer',
+    },
+    {
+      job_id: 'job-remove',
+      status: 'offer',
+      updated_at: '2025-02-06T08:15:00.000Z',
+      note: null,
+    },
+    {
+      job_id: 'job-keep',
+      status: 'onsite',
+      updated_at: '2025-02-07T07:00:00.000Z',
+      note: 'Preserve note',
+    },
+  ]);
+
+  const raw = JSON.parse(
+    await fs.readFile(path.join(dataDir, 'applications.json'), 'utf8'),
+  );
+  expect(raw['job-update']).toEqual({
+    status: 'offer',
+    note: 'Selected offer',
+    updated_at: '2025-02-05T09:30:00.000Z',
+  });
+  expect(raw['job-remove']).toEqual({
+    status: 'offer',
+    updated_at: '2025-02-06T08:15:00.000Z',
+  });
+  expect(raw['job-keep']).toEqual({
+    status: 'onsite',
+    note: 'Preserve note',
+    updated_at: '2025-02-07T07:00:00.000Z',
+  });
 });
 
 test('ignores unknown statuses when summarizing lifecycle data', async () => {

@@ -265,8 +265,9 @@ jobbot3000.
 ### Unhappy paths & recovery
 
 - Merge conflicts from multi-device edits trigger a reconciliation wizard that shows both versions
-  and lets users pick the correct note/status. CLI prompts to run `jobbot track resolve` to apply the
-  chosen merge.
+  and lets users pick the correct note/status. The wizard writes a JSON resolution plan that
+  `jobbot track resolve --plan <file>` applies, keeping selected notes intact or clearing them when
+  entries set `"note": null` (equivalent to passing `--clear-note`).
 - Invalid status transitions (e.g., moving from `rejected` back to `onsite`) require confirmation and
   log an audit entry.
 

@@ -51,7 +51,12 @@ export function summarize(text, count = 1) {
   return collapseWhitespace(summary);
 }
 
-export { recordApplication, getLifecycleCounts, STATUSES } from './lifecycle.js';
+export {
+  recordApplication,
+  getLifecycleCounts,
+  resolveLifecycleConflicts,
+  STATUSES,
+} from './lifecycle.js';
 export {
   listExperimentsForStatus,
   getExperimentById,

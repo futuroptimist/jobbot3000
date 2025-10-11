@@ -589,6 +589,100 @@ describe('jobbot CLI', () => {
     );
   });
 
+  it('applies lifecycle resolutions from a plan file with track resolve --plan', () => {
+    runCli(['track', 'add', 'job-keep', '--status', 'screening', '--note', 'Preserve note']);
+    runCli(['track', 'add', 'job-update', '--status', 'onsite', '--note', 'Old onsite note']);
+    runCli(['track', 'add', 'job-remove', '--status', 'offer', '--note', 'Remove me']);
+
+    const plan = {
+      jobs: [
+        {
+          job_id: 'job-update',
+          status: 'offer',
+          note: 'Selected offer',
+          updated_at: '2025-02-05T09:30:00Z',
+        },
+        {
+          job_id: 'job-remove',
+          status: 'offer',
+          note: null,
+          updated_at: '2025-02-06T08:15:00Z',
+        },
+        {
+          job_id: 'job-keep',
+          status: 'onsite',
+        },
+      ],
+    };
+    const planPath = path.join(dataDir, 'resolution-plan.json');
+    fs.writeFileSync(planPath, JSON.stringify(plan, null, 2));
+
+    const output = runCli(['track', 'resolve', '--plan', planPath]);
+    expect(output.trim().split('\n')).toEqual([
+      'Resolved job-update to offer — note: Selected offer',
+      'Resolved job-remove to offer — note cleared',
+      'Resolved job-keep to onsite — note: Preserve note',
+    ]);
+
+    const raw = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'applications.json'), 'utf8')
+    );
+    expect(raw['job-update']).toMatchObject({
+      status: 'offer',
+      note: 'Selected offer',
+      updated_at: '2025-02-05T09:30:00.000Z',
+    });
+    expect(raw['job-remove']).toEqual({
+      status: 'offer',
+      updated_at: '2025-02-06T08:15:00.000Z',
+    });
+    expect(raw['job-keep']).toMatchObject({ status: 'onsite', note: 'Preserve note' });
+  });
+
+  it('resolves a single lifecycle entry with track resolve', () => {
+    runCli(['track', 'add', 'job-single', '--status', 'screening', '--note', 'Initial note']);
+
+    const first = runCli([
+      'track',
+      'resolve',
+      'job-single',
+      '--status',
+      'offer',
+      '--note',
+      'Selected offer',
+      '--date',
+      '2025-02-07T09:30:00Z',
+    ]);
+    expect(first.trim()).toBe('Resolved job-single to offer — note: Selected offer');
+
+    let raw = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'applications.json'), 'utf8')
+    );
+    expect(raw['job-single']).toEqual({
+      status: 'offer',
+      note: 'Selected offer',
+      updated_at: '2025-02-07T09:30:00.000Z',
+    });
+
+    const cleared = runCli([
+      'track',
+      'resolve',
+      'job-single',
+      '--status',
+      'offer',
+      '--clear-note',
+      '--date',
+      '2025-02-08T10:00:00Z',
+    ]);
+    expect(cleared.trim()).toBe('Resolved job-single to offer — note cleared');
+
+    raw = JSON.parse(fs.readFileSync(path.join(dataDir, 'applications.json'), 'utf8'));
+    expect(raw['job-single']).toEqual({
+      status: 'offer',
+      updated_at: '2025-02-08T10:00:00.000Z',
+    });
+  });
+
   it('logs application events with track log', () => {
     const output = runCli([
       'track',

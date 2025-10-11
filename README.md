@@ -1639,6 +1639,57 @@ nothing is queued for that opportunity. When a job carries multiple reminders,
 the board surfaces the soonest upcoming entry and falls back to the most recent
 past-due reminder when no future timestamp is scheduled.
 
+### Resolve lifecycle conflicts
+
+When multi-device edits introduce diverging statuses or notes, capture the chosen
+outcome in a resolution plan and apply it with `jobbot track resolve`. Plans
+accept either an array or an object with a `jobs` array; each entry specifies the
+final status, optional note, and optional timestamp:
+
+```json
+{
+  "jobs": [
+    {
+      "job_id": "job-update",
+      "status": "offer",
+      "note": "Selected offer",
+      "updated_at": "2025-02-05T09:30:00Z"
+    },
+    {
+      "job_id": "job-remove",
+      "status": "offer",
+      "note": null,
+      "updated_at": "2025-02-06T08:15:00Z"
+    },
+    {
+      "job_id": "job-keep",
+      "status": "onsite"
+    }
+  ]
+}
+```
+
+```bash
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track resolve --plan resolution.json
+# Resolved job-update to offer — note: Selected offer
+# Resolved job-remove to offer — note cleared
+# Resolved job-keep to onsite — note: Preserve note
+```
+
+Notes omitted from the plan keep their existing value; set `"note": null` or
+pass `--clear-note` to remove stale text. You can also resolve a single entry
+directly:
+
+```bash
+JOBBOT_DATA_DIR=$DATA_DIR npx jobbot track resolve job-123 \
+  --status offer --note "Selected offer" --date 2025-02-07T09:30:00Z
+# Resolved job-123 to offer — note: Selected offer
+```
+
+[`test/lifecycle.test.js`](test/lifecycle.test.js) and
+[`test/cli.test.js`](test/cli.test.js) cover plan-based resolutions, note
+preservation, and note clearing to keep the command contract stable.
+
 ### Lifecycle experiment playbooks
 
 Every lifecycle column now publishes pre-registered experiment scaffolding so we

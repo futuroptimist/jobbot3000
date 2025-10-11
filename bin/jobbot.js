@@ -29,6 +29,7 @@ import {
 } from '../src/application-events.js';
 import {
   recordApplication,
+  resolveLifecycleConflicts,
   getLifecycleBoard,
   listLifecycleEntries,
   getLifecycleEntry,
@@ -709,6 +710,50 @@ function handleLifecycleRecordError(err) {
     process.exit(2);
   }
   throw err;
+}
+
+function handleLifecycleResolveError(err, context = {}) {
+  const message = err && err.message ? String(err.message) : '';
+  if (/resolution plan must provide an array of jobs/i.test(message)) {
+    const prefix = context.planPath ? `Resolution plan ${context.planPath}` : 'Resolution plan';
+    console.error(`${prefix} must include an array of jobs under "jobs" or "resolutions".`);
+    process.exit(2);
+  }
+  if (/resolution entry must be an object/i.test(message)) {
+    console.error('Each resolution entry must be an object with job details.');
+    process.exit(2);
+  }
+  if (/resolution job_id is required/i.test(message)) {
+    console.error('Resolution job_id is required.');
+    process.exit(2);
+  }
+  if (/resolution status is required/i.test(message)) {
+    console.error('Resolution status is required.');
+    process.exit(2);
+  }
+  if (/invalid resolution timestamp/i.test(message)) {
+    console.error(message);
+    process.exit(2);
+  }
+  if (/note cannot be empty/i.test(message)) {
+    console.error('Note cannot be empty');
+    process.exit(2);
+  }
+  if (/unknown status/i.test(message)) {
+    console.error(message);
+    process.exit(2);
+  }
+  throw err;
+}
+
+function formatResolutionOutput(entry) {
+  let message = `Resolved ${entry.job_id} to ${entry.status}`;
+  if (entry.note) {
+    message += ` — note: ${entry.note}`;
+  } else if (entry.note === null) {
+    message += ' — note cleared';
+  }
+  return message;
 }
 
 function parseDocumentsFlag(args) {
@@ -1594,6 +1639,88 @@ async function cmdTrackDiscard(args) {
   console.log(`Discarded ${jobId}: ${entry.reason}`);
 }
 
+async function cmdTrackResolve(args) {
+  const usage = [
+    'Usage: jobbot track resolve <job_id> --status <status> [--note <note>]',
+    '  [--date <iso>] [--clear-note]',
+    '   or: jobbot track resolve --plan <path>',
+  ].join('\n');
+
+  if (args.includes('--plan')) {
+    assertFlagHasValue(args, '--plan', usage);
+    const planPath = getFlag(args, '--plan');
+    if (!planPath) {
+      console.error(usage);
+      process.exit(2);
+    }
+
+    const resolvedPlanPath = path.resolve(process.cwd(), planPath);
+    let plan;
+    try {
+      plan = JSON.parse(fs.readFileSync(resolvedPlanPath, 'utf8'));
+    } catch (err) {
+      console.error(`Failed to read resolution plan ${resolvedPlanPath}: ${err.message || err}`);
+      process.exit(1);
+    }
+
+    let results;
+    try {
+      results = await resolveLifecycleConflicts(plan);
+    } catch (err) {
+      handleLifecycleResolveError(err, { planPath: resolvedPlanPath });
+      return;
+    }
+
+    for (const entry of results) {
+      console.log(formatResolutionOutput(entry));
+    }
+    return;
+  }
+
+  const jobId = args[0];
+  const statusFlag = getFlag(args, '--status');
+  const clearNote = args.includes('--clear-note');
+  if (!jobId || !statusFlag || (clearNote && args.includes('--note'))) {
+    console.error(usage);
+    process.exit(2);
+  }
+
+  const status = typeof statusFlag === 'string' ? statusFlag.trim() : '';
+  if (!status) {
+    console.error(usage);
+    process.exit(2);
+  }
+
+  assertFlagHasValue(args, '--note', usage);
+  assertFlagHasValue(args, '--date', usage);
+
+  const date = getFlag(args, '--date');
+  const noteValue = clearNote ? null : getFlag(args, '--note');
+
+  const resolution = { job_id: jobId, status };
+  if (date) {
+    resolution.updated_at = date;
+  }
+  if (clearNote) {
+    resolution.note = null;
+  } else if (noteValue) {
+    resolution.note = noteValue;
+  }
+
+  let results;
+  try {
+    results = await resolveLifecycleConflicts([resolution]);
+  } catch (err) {
+    handleLifecycleResolveError(err);
+    return;
+  }
+
+  const [entry] = results || [];
+  if (entry) {
+    console.log(formatResolutionOutput(entry));
+  }
+}
+
 async function cmdTrack(args) {
   const sub = args[0];
   if (sub === 'add') return cmdTrackAdd(args.slice(1));
@@ -1603,10 +1730,11 @@ async function cmdTrack(args) {
   if (sub === 'history') return cmdTrackHistory(args.slice(1));
   if (sub === 'show') return cmdTrackShow(args.slice(1));
   if (sub === 'discard') return cmdTrackDiscard(args.slice(1));
+  if (sub === 'resolve') return cmdTrackResolve(args.slice(1));
   if (sub === 'reminders') return cmdTrackReminders(args.slice(1));
   if (sub === 'board') return cmdTrackBoard(args.slice(1));
   console.error(
-    'Usage: jobbot track <add|update|list|log|history|show|discard|reminders|board> ...'
+    'Usage: jobbot track <add|update|list|log|history|show|discard|resolve|reminders|board> ...'
   );
   process.exit(2);
 }
