@@ -1,4 +1,8 @@
-import { normalizeAnalyticsFunnelRequest, normalizeTrackRecordRequest } from './schemas.js';
+import {
+  normalizeAnalyticsExportRequest,
+  normalizeAnalyticsFunnelRequest,
+  normalizeTrackRecordRequest,
+} from './schemas.js';
 
 const SUMMARIZE_ALLOWED_FIELDS = new Set([
   'input',
@@ -38,6 +42,7 @@ const SHORTLIST_LIST_ALLOWED_FIELDS = new Set([
 
 const SHORTLIST_SHOW_ALLOWED_FIELDS = new Set(['jobId', 'job_id']);
 const TRACK_RECORD_ALLOWED_FIELDS = new Set(['jobId', 'job_id', 'status', 'note']);
+const ANALYTICS_EXPORT_ALLOWED_FIELDS = new Set(['redact', 'redactCompanies', 'redact_companies']);
 
 function ensurePlainObject(value, commandName) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -248,6 +253,12 @@ function validateAnalyticsFunnelPayload(rawPayload) {
   return normalizeAnalyticsFunnelRequest(rawPayload ?? {});
 }
 
+function validateAnalyticsExportPayload(rawPayload) {
+  const payload = ensurePlainObject(rawPayload ?? {}, 'analytics-export');
+  assertAllowedFields(payload, ANALYTICS_EXPORT_ALLOWED_FIELDS, 'analytics-export');
+  return normalizeAnalyticsExportRequest(payload);
+}
+
 const COMMAND_VALIDATORS = Object.freeze({
   summarize: validateSummarizePayload,
   match: validateMatchPayload,
@@ -255,6 +266,7 @@ const COMMAND_VALIDATORS = Object.freeze({
   'shortlist-show': validateShortlistShowPayload,
   'track-record': validateTrackRecordPayload,
   'analytics-funnel': validateAnalyticsFunnelPayload,
+  'analytics-export': validateAnalyticsExportPayload,
 });
 
 export const ALLOW_LISTED_COMMANDS = Object.freeze(Object.keys(COMMAND_VALIDATORS));

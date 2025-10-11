@@ -381,6 +381,8 @@ describe('web server status page', () => {
 
     const waitForEvent = (name, timeout = 500) => waitForDomEvent(dom, name, timeout);
 
+    vi.spyOn(dom.window.HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
     const readyPromise = waitForEvent('jobbot:applications-ready');
     await boot();
     const readyEvent = await readyPromise;
@@ -419,7 +421,9 @@ describe('web server status page', () => {
     expect(range?.textContent).toContain('Showing 1-1 of 2');
 
     const nextButton = document.querySelector('[data-shortlist-next]');
-    nextButton?.dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+    nextButton?.dispatchEvent(
+      new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }),
+    );
 
     await waitForEvent('jobbot:applications-loaded');
     expect(commandAdapter['shortlist-list']).toHaveBeenCalledTimes(3);
@@ -529,7 +533,9 @@ describe('web server status page', () => {
     expect(detailToggle?.getAttribute('data-shortlist-view')).toBe('job-42');
 
     const detailLoaded = waitForEvent('jobbot:application-detail-loaded');
-    detailToggle?.dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+    detailToggle?.dispatchEvent(
+      new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }),
+    );
     await detailLoaded;
 
     expect(commandAdapter['shortlist-show']).toHaveBeenCalledTimes(1);
@@ -649,6 +655,109 @@ describe('web server status page', () => {
     expect(sankey?.textContent).toContain('drop-off edges: 1');
   });
 
+  it('downloads analytics exports as JSON and CSV', async () => {
+    const funnelPayload = {
+      totals: { trackedJobs: 4, withEvents: 3 },
+      stages: [
+        { key: 'outreach', label: 'Outreach', count: 4, conversionRate: 1, dropOff: 0 },
+      ],
+      largestDropOff: null,
+      missing: { statuslessJobs: { count: 0 } },
+      sankey: { nodes: [], links: [] },
+    };
+
+    const snapshot = {
+      generated_at: '2025-03-09T09:30:00.000Z',
+      totals: funnelPayload.totals,
+      funnel: { stages: funnelPayload.stages },
+      statuses: { outreach: 4 },
+      channels: { email: 3 },
+      activity: { interviewsScheduled: 1 },
+      companies: [{ name: 'Acme', status: 'onsite' }],
+    };
+
+    const commandAdapter = {
+      'analytics-funnel': vi.fn(async () => ({
+        command: 'analytics-funnel',
+        format: 'json',
+        stdout: '',
+        stderr: '',
+        returnValue: 0,
+        data: funnelPayload,
+      })),
+      'analytics-export': vi.fn(async payload => {
+        expect(payload).toEqual({ redact: true });
+        return {
+          command: 'analytics-export',
+          format: 'json',
+          stdout: '',
+          stderr: '',
+          returnValue: 0,
+          data: snapshot,
+        };
+      }),
+    };
+
+    commandAdapter.analyticsFunnel = commandAdapter['analytics-funnel'];
+    commandAdapter.analyticsExport = commandAdapter['analytics-export'];
+
+    const server = await startServer({ commandAdapter });
+    const { dom, boot } = await renderStatusDom(server, {
+      pretendToBeVisual: true,
+      autoBoot: false,
+    });
+
+    const waitForEvent = (name, timeout = 500) => waitForDomEvent(dom, name, timeout);
+
+    const readyPromise = waitForEvent('jobbot:analytics-ready');
+    await boot();
+    await readyPromise;
+
+    const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
+    dom.window.location.hash = '#analytics';
+    dom.window.dispatchEvent(new HashChange('hashchange'));
+    await waitForEvent('jobbot:analytics-loaded');
+
+    const { URL } = dom.window;
+    URL.createObjectURL = vi.fn(() => 'blob:analytics');
+    URL.revokeObjectURL = vi.fn();
+    const anchorClick = vi
+      .spyOn(dom.window.HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {});
+
+    const jsonButton = dom.window.document.querySelector('[data-analytics-export-json]');
+    const csvButton = dom.window.document.querySelector('[data-analytics-export-csv]');
+    const message = dom.window.document.querySelector('[data-analytics-export-message]');
+
+    const click = () =>
+      new dom.window.MouseEvent('click', { bubbles: true, cancelable: true });
+
+    jsonButton?.dispatchEvent(click());
+
+    await waitForEvent('jobbot:analytics-exported');
+
+    expect(commandAdapter['analytics-export']).toHaveBeenCalledTimes(1);
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+    const jsonBlob = URL.createObjectURL.mock.calls[0]?.[0];
+    expect(jsonBlob).toBeInstanceOf(dom.window.Blob);
+    expect(jsonBlob.type).toBe('application/json');
+    expect(jsonBlob.size).toBeGreaterThan(0);
+    expect(message?.textContent).toContain('analytics-snapshot.json');
+
+    csvButton?.dispatchEvent(click());
+
+    await waitForEvent('jobbot:analytics-exported');
+
+    expect(commandAdapter['analytics-export']).toHaveBeenCalledTimes(2);
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(2);
+    expect(anchorClick).toHaveBeenCalledTimes(2);
+    const csvBlob = URL.createObjectURL.mock.calls[1]?.[0];
+    expect(csvBlob).toBeInstanceOf(dom.window.Blob);
+    expect(csvBlob.type).toBe('text/csv');
+    expect(csvBlob.size).toBeGreaterThan(0);
+    expect(message?.textContent).toContain('analytics-stages.csv');
+  });
+
   it('records status updates from the applications action panel', async () => {
     const shortlistEntry = {
       id: 'job-42',
@@ -739,7 +848,9 @@ describe('web server status page', () => {
     expect(detailToggle?.getAttribute('data-shortlist-view')).toBe('job-42');
 
     const detailLoaded = waitForEvent('jobbot:application-detail-loaded');
-    detailToggle?.dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+    detailToggle?.dispatchEvent(
+      new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }),
+    );
     await detailLoaded;
 
     const statusSelect = dom.window.document.querySelector('[data-application-status]');

@@ -565,6 +565,40 @@ describe('createCommandAdapter', () => {
     expect(result.data.sankey?.links?.[1]?.drop).toBe(true);
   });
 
+  it('exports analytics snapshots for download workflows', async () => {
+    const snapshot = {
+      generated_at: '2025-03-08T12:00:00.000Z',
+      totals: { trackedJobs: 7, withEvents: 5 },
+      funnel: {
+        stages: [
+          { key: 'outreach', label: 'Outreach', count: 7, conversionRate: 1, dropOff: 0 },
+          { key: 'screening', label: 'Screening', count: 5, conversionRate: 0.71, dropOff: 2 },
+        ],
+      },
+    };
+
+    const cli = {
+      cmdAnalyticsExport: vi.fn(async args => {
+        expect(args).toEqual(['--redact']);
+        console.log(JSON.stringify(snapshot));
+      }),
+    };
+
+    const adapter = createCommandAdapter({ cli });
+    const result = await adapter['analytics-export']({ redact: true });
+
+    expect(cli.cmdAnalyticsExport).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      command: 'analytics-export',
+      format: 'json',
+    });
+    expect(result.data).toMatchObject({
+      generated_at: '2025-03-08T12:00:00.000Z',
+      totals: { trackedJobs: 7 },
+      funnel: { stages: expect.any(Array) },
+    });
+  });
+
   it('records application status updates via track-record command', async () => {
     const cli = {
       cmdTrackAdd: vi.fn(async args => {

@@ -264,6 +264,18 @@
      workflow and summaries, and
      [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
      locks the adapter's JSON parsing and sanitization.
+  - Analytics export buttons for JSON and CSV snapshots.
+     _Implemented (2025-10-12):_ The **Analytics** panel now surfaces
+     "Download JSON" and "Download CSV" actions that invoke the new
+     `/commands/analytics-export` endpoint, which maps to
+     [`cmdAnalyticsExport`](../bin/jobbot.js). The client script converts the
+     CLI snapshot into prettified JSON or funnel-stage CSV files, streams the
+     blob to the browser, and emits a `jobbot:analytics-exported` event after
+     each attempt. Regression coverage in
+     [`test/web-server.test.js`](../test/web-server.test.js) verifies the
+     buttons dispatch downloads with sanitized filenames, while
+     [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
+     asserts the adapter forwards `--redact` flags and parses the CLI payload.
   - Notification hooks for reminders, leveraging CLI scheduling or local system integration.
      _Implemented (2025-10-04):_ [`bin/jobbot.js`](../bin/jobbot.js) now supports
      `jobbot track reminders --ics <file>`, wiring the upcoming reminders feed into

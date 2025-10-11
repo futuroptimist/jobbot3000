@@ -1792,6 +1792,17 @@ shortlist view, analytics dashboard, and theme toggle, while
 [`test/web-audits.test.js`](test/web-audits.test.js) continues to lock the
 accessibility and performance baselines.
 
+The analytics panel also surfaces **Download JSON** and **Download CSV** actions
+that invoke `/commands/analytics-export` with redaction enabled before streaming
+the sanitized payloads to the browser. The client script converts the CLI snapshot into prettified
+JSON or funnel-stage CSV rows, updates a status message, and emits a
+`jobbot:analytics-exported` event after each attempt. Regression coverage in
+[`test/web-server.test.js`](test/web-server.test.js) confirms the buttons
+dispatch downloads with stable filenames, and
+[`test/web-command-adapter.test.js`](test/web-command-adapter.test.js) guards the
+adapter’s parsing and `--redact` wiring so secrets never leak into browser
+payloads.
+
 The Applications drawer now exposes a status action panel that posts to
 `POST /commands/track-record`, mapping directly to `jobbot track add` so web
 interactions create or update lifecycle entries with optional notes. The form

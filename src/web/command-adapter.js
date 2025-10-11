@@ -5,6 +5,7 @@ import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 
 import {
+  normalizeAnalyticsExportRequest,
   normalizeAnalyticsFunnelRequest,
   normalizeMatchRequest,
   normalizeShortlistListRequest,
@@ -138,6 +139,12 @@ const COMMANDS = Object.freeze({
     cliCommand: ['analytics', 'funnel'],
     name: 'analytics-funnel',
     errorLabel: 'analytics funnel',
+  },
+  'analytics-export': {
+    method: 'cmdAnalyticsExport',
+    cliCommand: ['analytics', 'export'],
+    name: 'analytics-export',
+    errorLabel: 'analytics export',
   },
 });
 
@@ -758,6 +765,38 @@ export function createCommandAdapter(options = {}) {
     return payload;
   }
 
+  async function analyticsExport(options = {}) {
+    const { redact } = normalizeAnalyticsExportRequest(options);
+    const args = [];
+    if (redact) {
+      args.push('--redact');
+    }
+
+    const { stdout, stderr, returnValue, correlationId, traceId } = await runCli(
+      'analytics-export',
+      args,
+    );
+
+    const payload = {
+      command: 'analytics-export',
+      format: 'json',
+      stdout,
+      stderr,
+      returnValue,
+    };
+
+    if (correlationId) {
+      payload.correlationId = correlationId;
+    }
+    if (traceId) {
+      payload.traceId = traceId;
+    }
+
+    const parsed = parseJsonOutput('analytics export', payload.stdout, payload.stderr);
+    payload.data = sanitizeOutputValue(parsed);
+    return payload;
+  }
+
   async function trackRecord(options = {}) {
     const { jobId, status, note } = normalizeTrackRecordRequest(options);
     const args = [jobId, '--status', status];
@@ -799,13 +838,16 @@ export function createCommandAdapter(options = {}) {
     shortlistList,
     shortlistShow,
     analyticsFunnel,
+    analyticsExport,
     trackRecord,
   };
   adapter['shortlist-list'] = shortlistList;
   adapter['shortlist-show'] = shortlistShow;
   adapter['analytics-funnel'] = analyticsFunnel;
+  adapter['analytics-export'] = analyticsExport;
   adapter['track-record'] = trackRecord;
   adapter.trackRecord = trackRecord;
+  adapter.analyticsExport = analyticsExport;
   return adapter;
 }
 
