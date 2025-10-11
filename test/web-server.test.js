@@ -434,6 +434,210 @@ describe('web server status page', () => {
     expect(range?.textContent).toContain('Showing 2-2 of 2');
   });
 
+  it('loads provider listings and supports ingesting and archiving roles', async () => {
+    const providers = [
+      {
+        id: 'greenhouse',
+        label: 'Greenhouse',
+        identifierLabel: 'Greenhouse board token',
+        placeholder: 'acme-co',
+      },
+    ];
+    const listings = [
+      {
+        jobId: 'job-1',
+        title: 'Staff Software Engineer',
+        company: 'Acme Co',
+        location: 'Remote',
+        team: 'Platform',
+        remote: true,
+        url: 'https://example.com/job-1',
+        ingested: false,
+      },
+      {
+        jobId: 'job-2',
+        title: 'Product Manager',
+        company: 'Acme Co',
+        location: 'New York, NY',
+        team: 'Product',
+        remote: false,
+        url: 'https://example.com/job-2',
+        ingested: false,
+      },
+    ];
+
+    const commandAdapter = {
+      'listings-providers': vi.fn(async () => ({
+        command: 'listings-providers',
+        format: 'json',
+        stdout: '',
+        stderr: '',
+        data: { providers },
+      })),
+      'listings-fetch': vi.fn(async payload => ({
+        command: 'listings-fetch',
+        format: 'json',
+        stdout: '',
+        stderr: '',
+        data: {
+          provider: payload.provider,
+          identifier: payload.identifier,
+          listings,
+        },
+      })),
+      'listings-ingest': vi.fn(async payload => ({
+        command: 'listings-ingest',
+        format: 'json',
+        stdout: '',
+        stderr: '',
+        data: {
+          listing: { ...listings[0], jobId: payload.jobId, ingested: true, archived: false },
+        },
+      })),
+      'listings-archive': vi.fn(async payload => ({
+        command: 'listings-archive',
+        format: 'json',
+        stdout: '',
+        stderr: '',
+        data: { jobId: payload.jobId, archived: true },
+      })),
+    };
+    commandAdapter.listingsProviders = commandAdapter['listings-providers'];
+    commandAdapter.listingsFetch = commandAdapter['listings-fetch'];
+    commandAdapter.listingsIngest = commandAdapter['listings-ingest'];
+    commandAdapter.listingsArchive = commandAdapter['listings-archive'];
+
+    const server = await startServer({ commandAdapter });
+    const { dom, boot } = await renderStatusDom(server, {
+      pretendToBeVisual: true,
+      autoBoot: false,
+    });
+
+    const waitForEvent = (name, timeout = 1000) => waitForDomEvent(dom, name, timeout);
+
+    const readyPromise = waitForEvent('jobbot:listings-ready', 1000);
+    await boot();
+    const readyEvent = await readyPromise;
+    expect(readyEvent.detail).toMatchObject({ available: true });
+
+    await vi.waitFor(() => {
+      expect(commandAdapter['listings-providers']).toHaveBeenCalledTimes(1);
+    });
+
+    const document = dom.window.document;
+    const listingsSection = document.querySelector('[data-route="listings"]');
+    expect(listingsSection?.hasAttribute('hidden')).toBe(true);
+
+    const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
+    dom.window.location.hash = '#listings';
+    dom.window.dispatchEvent(new HashChange('hashchange'));
+
+    await vi.waitFor(() => {
+      expect(listingsSection?.hasAttribute('hidden')).toBe(false);
+    });
+
+    const providerSelect = document.querySelector('[data-listings-provider]');
+    const identifierInput = document.querySelector('[data-listings-identifier]');
+    const locationInput = document.querySelector('[data-listings-filter="location"]');
+    const titleInput = document.querySelector('[data-listings-filter="title"]');
+    const teamInput = document.querySelector('[data-listings-filter="team"]');
+    const remoteSelect = document.querySelector('[data-listings-filter="remote"]');
+
+    if (providerSelect instanceof dom.window.HTMLSelectElement) {
+      providerSelect.value = 'greenhouse';
+      providerSelect.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    }
+    if (identifierInput instanceof dom.window.HTMLInputElement) {
+      identifierInput.value = 'acme-co';
+    }
+    if (locationInput instanceof dom.window.HTMLInputElement) {
+      locationInput.value = 'Remote';
+    }
+    if (titleInput instanceof dom.window.HTMLInputElement) {
+      titleInput.value = 'Staff Software Engineer';
+    }
+    if (teamInput instanceof dom.window.HTMLInputElement) {
+      teamInput.value = 'Platform';
+    }
+    if (remoteSelect instanceof dom.window.HTMLSelectElement) {
+      remoteSelect.value = 'true';
+    }
+
+    const form = document.querySelector('[data-listings-form]');
+    form?.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+
+    const loadedEvent = await waitForEvent('jobbot:listings-loaded', 1000);
+    expect(Array.isArray(loadedEvent.detail?.listings)).toBe(true);
+    expect(loadedEvent.detail?.listings).toHaveLength(2);
+
+    expect(commandAdapter['listings-fetch']).toHaveBeenCalledTimes(1);
+    const fetchPayload = commandAdapter['listings-fetch'].mock.calls.at(-1)?.[0] ?? {};
+    expect(fetchPayload).toMatchObject({
+      provider: 'greenhouse',
+      identifier: 'acme-co',
+      location: 'Remote',
+      title: 'Staff Software Engineer',
+      team: 'Platform',
+    });
+    expect(fetchPayload.remote).toBe(true);
+
+    const resultsContainer = document.querySelector('[data-listings-results]');
+    expect(resultsContainer?.children.length).toBe(2);
+    const range = document.querySelector('[data-listings-range]');
+    expect(range?.textContent).toContain('Showing 1-2 of 2');
+
+    const ingestButton = resultsContainer
+      ?.querySelector('[data-listing-id="job-1"] [data-listings-action="ingest"]');
+    ingestButton?.dispatchEvent(
+      new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }),
+    );
+
+    await vi.waitFor(() => {
+      expect(commandAdapter['listings-ingest']).toHaveBeenCalledTimes(1);
+    });
+    const ingestPayload = commandAdapter['listings-ingest'].mock.calls.at(-1)?.[0] ?? {};
+    expect(ingestPayload).toMatchObject({
+      provider: 'greenhouse',
+      identifier: 'acme-co',
+      jobId: 'job-1',
+    });
+
+    await vi.waitFor(() => {
+      const card = document.querySelector('[data-listings-results] [data-listing-id="job-1"]');
+      expect(card).not.toBeNull();
+      const badge = card?.querySelector('.listing-card__badge');
+      expect(badge?.textContent).toContain('Ingested');
+      const archive = card?.querySelector('[data-listings-action="archive"]');
+      expect(archive).not.toBeNull();
+    });
+
+    const archiveButton = document.querySelector(
+      '[data-listings-results] [data-listing-id="job-1"] [data-listings-action="archive"]',
+    );
+    archiveButton?.dispatchEvent(
+      new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }),
+    );
+
+    await vi.waitFor(() => {
+      expect(commandAdapter['listings-archive']).toHaveBeenCalledTimes(1);
+    });
+    const archivePayload = commandAdapter['listings-archive'].mock.calls.at(-1)?.[0] ?? {};
+    expect(archivePayload).toMatchObject({ jobId: 'job-1' });
+
+    await vi.waitFor(() => {
+      const activeIds = Array.from(
+        document.querySelectorAll('[data-listings-results] [data-listing-id]'),
+      ).map(node => node.getAttribute('data-listing-id'));
+      expect(activeIds).not.toContain('job-1');
+      expect(activeIds).toContain('job-2');
+    });
+
+    await vi.waitFor(() => {
+      const updatedRange = document.querySelector('[data-listings-range]');
+      expect(updatedRange?.textContent).toContain('Showing 1-1 of 1');
+    });
+  });
+
   it('shows application detail drawer with timeline and attachments', async () => {
     const shortlistEntry = {
       id: 'job-42',

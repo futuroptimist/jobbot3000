@@ -13,6 +13,12 @@ import {
   normalizeSummarizeRequest,
   normalizeTrackRecordRequest,
 } from './schemas.js';
+import {
+  listListingProviders,
+  fetchListings,
+  ingestListing,
+  archiveListing,
+} from '../listings.js';
 
 const SECRET_KEYS = [
   'api[-_]?key',
@@ -832,6 +838,59 @@ export function createCommandAdapter(options = {}) {
     return payload;
   }
 
+  async function listingsProviders() {
+    const providers = listListingProviders();
+    const data = { providers };
+    const stdout = JSON.stringify(data, null, 2);
+    return {
+      command: 'listings-providers',
+      format: 'json',
+      stdout,
+      stderr: '',
+      returnValue: 0,
+      data: sanitizeOutputValue(data, { key: 'data' }),
+    };
+  }
+
+  async function listingsFetchCommand(options = {}) {
+    const result = await fetchListings(options);
+    const stdout = JSON.stringify(result, null, 2);
+    return {
+      command: 'listings-fetch',
+      format: 'json',
+      stdout,
+      stderr: '',
+      returnValue: 0,
+      data: sanitizeOutputValue(result, { key: 'data' }),
+    };
+  }
+
+  async function listingsIngestCommand(options = {}) {
+    const result = await ingestListing(options);
+    const stdout = JSON.stringify(result, null, 2);
+    return {
+      command: 'listings-ingest',
+      format: 'json',
+      stdout,
+      stderr: '',
+      returnValue: 0,
+      data: sanitizeOutputValue(result, { key: 'data' }),
+    };
+  }
+
+  async function listingsArchiveCommand(options = {}) {
+    const result = await archiveListing(options);
+    const stdout = JSON.stringify(result, null, 2);
+    return {
+      command: 'listings-archive',
+      format: 'json',
+      stdout,
+      stderr: '',
+      returnValue: 0,
+      data: sanitizeOutputValue(result, { key: 'data' }),
+    };
+  }
+
   const adapter = {
     summarize,
     match,
@@ -840,12 +899,20 @@ export function createCommandAdapter(options = {}) {
     analyticsFunnel,
     analyticsExport,
     trackRecord,
+    listingsProviders,
+    listingsFetch: listingsFetchCommand,
+    listingsIngest: listingsIngestCommand,
+    listingsArchive: listingsArchiveCommand,
   };
   adapter['shortlist-list'] = shortlistList;
   adapter['shortlist-show'] = shortlistShow;
   adapter['analytics-funnel'] = analyticsFunnel;
   adapter['analytics-export'] = analyticsExport;
   adapter['track-record'] = trackRecord;
+  adapter['listings-providers'] = listingsProviders;
+  adapter['listings-fetch'] = listingsFetchCommand;
+  adapter['listings-ingest'] = listingsIngestCommand;
+  adapter['listings-archive'] = listingsArchiveCommand;
   adapter.trackRecord = trackRecord;
   adapter.analyticsExport = analyticsExport;
   return adapter;

@@ -338,7 +338,18 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     background-color: rgba(15, 23, 42, 0.35);
     color: var(--foreground);
   }
+  .filters select {
+    border-radius: 0.6rem;
+    border: 1px solid var(--card-border);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.95rem;
+    background-color: rgba(15, 23, 42, 0.35);
+    color: var(--foreground);
+  }
   [data-theme='light'] .filters input {
+    background-color: rgba(255, 255, 255, 0.9);
+  }
+  [data-theme='light'] .filters select {
     background-color: rgba(255, 255, 255, 0.9);
   }
   .filters__actions {
@@ -409,6 +420,92 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
   .pagination button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+  .listings-grid {
+    display: grid;
+    gap: 1rem;
+  }
+  .listing-card {
+    border: 1px solid var(--card-border);
+    border-radius: 1rem;
+    padding: 1.25rem;
+    background-color: var(--card-surface);
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .listing-card__header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  .listing-card__title {
+    margin: 0;
+    font-size: 1.1rem;
+  }
+  .listing-card__meta {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+  .listing-card__snippet {
+    margin: 0;
+  }
+  .listing-card__requirements {
+    margin: 0;
+    padding-left: 1.25rem;
+  }
+  .listing-card__requirements li {
+    margin-bottom: 0.35rem;
+  }
+  .listing-card__requirements li:last-child {
+    margin-bottom: 0;
+  }
+  .listing-card__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+  }
+  .listing-card__actions button,
+  .listing-card__actions a {
+    border-radius: 999px;
+    border: 1px solid var(--pill-border);
+    background-color: var(--pill-bg);
+    color: var(--pill-text);
+    padding: 0.35rem 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .listing-card__actions button[disabled] {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .listing-card__badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 999px;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.85rem;
+    border: 1px solid var(--pill-border);
+    background-color: var(--pill-bg);
+    color: var(--pill-text);
+  }
+  .listings-message {
+    margin: 0.5rem 0 1rem;
+    font-size: 0.95rem;
+    color: var(--muted);
+  }
+  .listings-message[data-variant='error'] {
+    color: var(--danger-text);
+  }
+  .listings-message[data-variant='success'] {
+    color: var(--success-text);
+  }
+  .listings-empty {
+    color: var(--muted);
   }
   .analytics-actions {
     display: flex;
@@ -1594,14 +1691,530 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
 
           scheduleApplicationsReady({ available: true });
 
+        return {
+          refresh,
+          getState() {
+            return {
+              ...state,
+              filters: { ...state.filters },
+            };
+          },
+        };
+      }
+
+        function setupListingsView() {
+          const section = document.querySelector('[data-route="listings"]');
+          if (!section) {
+            scheduleListingsReady({ available: false });
+            return null;
+          }
+
+          const form = section.querySelector('[data-listings-form]');
+          const providerSelect = form?.querySelector('[data-listings-provider]') ?? null;
+          const identifierInput = form?.querySelector('[data-listings-identifier]') ?? null;
+          const identifierLabel = form?.querySelector('[data-listings-identifier-label]') ?? null;
+          const locationInput = form?.querySelector('[data-listings-filter="location"]') ?? null;
+          const titleInput = form?.querySelector('[data-listings-filter="title"]') ?? null;
+          const teamInput = form?.querySelector('[data-listings-filter="team"]') ?? null;
+          const remoteSelect = form?.querySelector('[data-listings-filter="remote"]') ?? null;
+          const submitButton = form?.querySelector('[data-listings-submit]') ?? null;
+          const resetButton = form?.querySelector('[data-listings-reset]') ?? null;
+          const messageElement = section.querySelector('[data-listings-message]');
+          const emptyElement = section.querySelector('[data-listings-empty]');
+          const resultsContainer = section.querySelector('[data-listings-results]');
+          const pagination = section.querySelector('[data-listings-pagination]');
+          const range = section.querySelector('[data-listings-range]');
+          const prevButton = section.querySelector('[data-listings-prev]');
+          const nextButton = section.querySelector('[data-listings-next]');
+          const panelId = 'listings';
+
+          const state = {
+            loading: false,
+            fetched: false,
+            providers: [],
+            providerMap: new Map(),
+            listings: [],
+            current: null,
+            page: 0,
+            pageSize: 10,
+          };
+
+          function setMessage(variant, text) {
+            if (!messageElement) return;
+            const messageText = typeof text === 'string' ? text.trim() : '';
+            if (!variant || !messageText) {
+              messageElement.textContent = '';
+              messageElement.setAttribute('hidden', '');
+              messageElement.removeAttribute('data-variant');
+              return;
+            }
+            messageElement.textContent = messageText;
+            messageElement.setAttribute('data-variant', variant);
+            messageElement.removeAttribute('hidden');
+          }
+
+          function clearMessage() {
+            setMessage(null);
+          }
+
+          function updateIdentifierCopy(providerId) {
+            const meta = providerId ? state.providerMap.get(providerId) : null;
+            const labelText =
+              meta && typeof meta.identifierLabel === 'string' && meta.identifierLabel.trim()
+                ? meta.identifierLabel.trim()
+                : 'Company or board';
+            if (identifierLabel) {
+              identifierLabel.textContent = labelText;
+            }
+            const placeholder =
+              meta && typeof meta.placeholder === 'string' && meta.placeholder.trim()
+                ? meta.placeholder.trim()
+                : 'acme-co';
+            if (identifierInput) {
+              identifierInput.placeholder = placeholder;
+            }
+          }
+
+          function setFormDisabled(disabled) {
+            const controls = [
+              providerSelect,
+              identifierInput,
+              locationInput,
+              titleInput,
+              teamInput,
+              remoteSelect,
+              submitButton,
+              resetButton,
+            ];
+            for (const control of controls) {
+              if (!control) continue;
+              control.disabled = disabled;
+            }
+          }
+
+          function populateProviders(list) {
+            if (!providerSelect) return;
+            const currentValue = providerSelect.value;
+            providerSelect.textContent = '';
+            const placeholderOption = document.createElement('option');
+            placeholderOption.value = '';
+            placeholderOption.textContent = 'Select a provider';
+            providerSelect.appendChild(placeholderOption);
+            for (const provider of list) {
+              if (!provider || typeof provider.id !== 'string') continue;
+              const option = document.createElement('option');
+              option.value = provider.id;
+              option.textContent = provider.label || provider.id;
+              providerSelect.appendChild(option);
+            }
+            if (currentValue && state.providerMap.has(currentValue)) {
+              providerSelect.value = currentValue;
+            }
+            updateIdentifierCopy(providerSelect.value);
+          }
+
+          function getActiveListings() {
+            return state.listings.filter(item => item && item.archived !== true);
+          }
+
+          function createListingCard(listing) {
+            const card = document.createElement('article');
+            card.className = 'listing-card';
+            card.setAttribute('data-listing-id', listing.jobId || '');
+
+            const header = document.createElement('div');
+            header.className = 'listing-card__header';
+
+            const title = document.createElement('h3');
+            title.className = 'listing-card__title';
+            title.textContent = listing.title || listing.jobId || 'Listing';
+            header.appendChild(title);
+
+            const metaParts = [];
+            if (listing.company) metaParts.push(listing.company);
+            if (listing.location) metaParts.push(listing.location);
+            if (listing.remote) metaParts.push('Remote friendly');
+            if (listing.team) metaParts.push(listing.team);
+            const meta = document.createElement('p');
+            meta.className = 'listing-card__meta';
+            meta.textContent = metaParts.length > 0 ? metaParts.join(' • ') : '—';
+            header.appendChild(meta);
+
+            card.appendChild(header);
+
+            if (listing.snippet) {
+              const snippet = document.createElement('p');
+              snippet.className = 'listing-card__snippet';
+              snippet.textContent = listing.snippet;
+              card.appendChild(snippet);
+            }
+
+            if (Array.isArray(listing.requirements) && listing.requirements.length > 0) {
+              const requirements = document.createElement('ul');
+              requirements.className = 'listing-card__requirements';
+              for (const entry of listing.requirements) {
+                if (typeof entry !== 'string' || !entry.trim()) continue;
+                const item = document.createElement('li');
+                item.textContent = entry.trim();
+                requirements.appendChild(item);
+              }
+              if (requirements.childElementCount > 0) {
+                card.appendChild(requirements);
+              }
+            }
+
+            const actions = document.createElement('div');
+            actions.className = 'listing-card__actions';
+
+            if (listing.url) {
+              const link = document.createElement('a');
+              link.href = listing.url;
+              link.target = '_blank';
+              link.rel = 'noopener noreferrer';
+              link.textContent = 'View listing';
+              actions.appendChild(link);
+            }
+
+            if (!listing.ingested) {
+              const ingestButton = document.createElement('button');
+              ingestButton.type = 'button';
+              ingestButton.textContent = 'Ingest listing';
+              ingestButton.setAttribute('data-listings-action', 'ingest');
+              ingestButton.setAttribute('data-listing-id', listing.jobId || '');
+              actions.appendChild(ingestButton);
+            } else {
+              const badge = document.createElement('span');
+              badge.className = 'listing-card__badge';
+              badge.textContent = 'Ingested';
+              actions.appendChild(badge);
+              if (!listing.archived) {
+                const archiveButton = document.createElement('button');
+                archiveButton.type = 'button';
+                archiveButton.textContent = 'Archive';
+                archiveButton.setAttribute('data-listings-action', 'archive');
+                archiveButton.setAttribute('data-listing-id', listing.jobId || '');
+                actions.appendChild(archiveButton);
+              }
+            }
+
+            card.appendChild(actions);
+            return card;
+          }
+
+          function renderListings() {
+            if (!resultsContainer) return;
+            const active = getActiveListings();
+            const total = active.length;
+            if (state.page * state.pageSize >= total && total > 0) {
+              state.page = Math.max(0, Math.ceil(total / state.pageSize) - 1);
+            }
+            const start = total === 0 ? 0 : state.page * state.pageSize;
+            const end = total === 0 ? 0 : Math.min(start + state.pageSize, total);
+
+            resultsContainer.textContent = '';
+
+            if (total === 0) {
+              if (pagination) pagination.setAttribute('hidden', '');
+              if (range) range.textContent = 'Showing 0 of 0';
+              if (emptyElement) {
+                if (state.fetched) {
+                  emptyElement.removeAttribute('hidden');
+                } else {
+                  emptyElement.setAttribute('hidden', '');
+                }
+              }
+              return;
+            }
+
+            if (emptyElement) emptyElement.setAttribute('hidden', '');
+
+            for (const listing of active.slice(start, end)) {
+              resultsContainer.appendChild(createListingCard(listing));
+            }
+
+            if (pagination) pagination.removeAttribute('hidden');
+            if (range) {
+              const startIndex = start + 1;
+              const label = 'Showing ' + startIndex + '-' + end + ' of ' + total;
+              range.textContent = label;
+            }
+            if (prevButton) prevButton.disabled = start === 0;
+            if (nextButton) nextButton.disabled = end >= total;
+          }
+
+          function readFetchPayload() {
+            const payload = {};
+            const providerValue = providerSelect?.value?.trim() ?? '';
+            const identifierValue = identifierInput?.value?.trim() ?? '';
+            if (providerValue) payload.provider = providerValue;
+            if (identifierValue) payload.identifier = identifierValue;
+            const locationValue = locationInput?.value?.trim() ?? '';
+            if (locationValue) payload.location = locationValue;
+            const titleValue = titleInput?.value?.trim() ?? '';
+            if (titleValue) payload.title = titleValue;
+            const teamValue = teamInput?.value?.trim() ?? '';
+            if (teamValue) payload.team = teamValue;
+            const remoteValue = remoteSelect?.value ?? '';
+            if (remoteValue === 'true' || remoteValue === 'false') {
+              payload.remote = remoteValue;
+            }
+            return payload;
+          }
+
+          async function loadProviders() {
+            if (state.providers.length > 0) {
+              return state.providers;
+            }
+            try {
+              const data = await postCommand('/commands/listings-providers', {}, {
+                invalidResponse: 'Received invalid response while loading providers',
+                failureMessage: 'Failed to load providers',
+              });
+              const providers = Array.isArray(data.providers) ? data.providers : [];
+              state.providers = providers;
+              state.providerMap = new Map(
+                providers
+                  .filter(entry => entry && typeof entry.id === 'string')
+                  .map(entry => [entry.id, entry]),
+              );
+              populateProviders(providers);
+              return providers;
+            } catch (err) {
+              const message =
+                err && typeof err.message === 'string'
+                  ? err.message
+                  : 'Unable to load listing providers';
+              setMessage('error', message);
+              return [];
+            }
+          }
+
+          async function refreshListings(payload) {
+            if (state.loading) {
+              return false;
+            }
+
+            const providerValue = payload?.provider?.trim() || '';
+            const identifierValue = payload?.identifier?.trim() || '';
+            if (!providerValue || !identifierValue) {
+              setMessage('error', 'Select a provider and identifier before fetching listings');
+              return false;
+            }
+
+            state.loading = true;
+            setFormDisabled(true);
+            setPanelState(panelId, 'loading', { preserveMessage: true });
+            setMessage('info', 'Fetching listings…');
+
+            try {
+              const data = await postCommand('/commands/listings-fetch', payload, {
+                invalidResponse: 'Received invalid response while loading listings',
+                failureMessage: 'Failed to load listings',
+              });
+              const listings = Array.isArray(data.listings) ? data.listings : [];
+              state.listings = listings.map(entry => ({ ...entry }));
+              state.page = 0;
+              state.fetched = true;
+              state.current = {
+                provider: data.provider || providerValue,
+                identifier: data.identifier || identifierValue,
+              };
+              renderListings();
+              setPanelState(panelId, 'ready', { preserveMessage: true });
+              const totalCount = listings.length;
+              const suffix = totalCount === 1 ? '' : 's';
+              const summary = 'Loaded ' + totalCount + ' listing' + suffix + '.';
+              setMessage('success', summary);
+              dispatchListingsLoaded(data);
+              return true;
+            } catch (err) {
+              const message =
+                err && typeof err.message === 'string'
+                  ? err.message
+                  : 'Unable to load listings';
+              setPanelState(panelId, 'error', { message });
+              setMessage('error', message);
+              return false;
+            } finally {
+              state.loading = false;
+              setFormDisabled(false);
+            }
+          }
+
+          function resetForm() {
+            if (providerSelect) providerSelect.value = '';
+            if (identifierInput) identifierInput.value = '';
+            if (locationInput) locationInput.value = '';
+            if (titleInput) titleInput.value = '';
+            if (teamInput) teamInput.value = '';
+            if (remoteSelect) remoteSelect.value = '';
+            updateIdentifierCopy('');
+            clearMessage();
+            state.listings = [];
+            state.page = 0;
+            state.fetched = false;
+            state.current = null;
+            renderListings();
+            setPanelState(panelId, 'ready');
+          }
+
+          async function handleIngest(jobId, button) {
+            if (!state.current) {
+              setMessage('error', 'Fetch listings before ingesting roles');
+              return;
+            }
+            const listing = state.listings.find(item => item?.jobId === jobId);
+            if (!listing) {
+              setMessage('error', 'Listing could not be found');
+              return;
+            }
+            if (listing.ingested) {
+              setMessage('info', 'Listing already ingested');
+              return;
+            }
+            state.loading = true;
+            setFormDisabled(true);
+            if (button) button.disabled = true;
+            setMessage('info', 'Ingesting listing…');
+            try {
+              const payload = {
+                provider: state.current.provider,
+                identifier: state.current.identifier,
+                jobId,
+              };
+              const data = await postCommand('/commands/listings-ingest', payload, {
+                invalidResponse: 'Received invalid response while ingesting listing',
+                failureMessage: 'Failed to ingest listing',
+              });
+              if (data && typeof data.listing === 'object') {
+                const updated = { ...listing, ...data.listing, ingested: true, archived: false };
+                const index = state.listings.indexOf(listing);
+                if (index !== -1) {
+                  state.listings[index] = updated;
+                }
+              } else {
+                listing.ingested = true;
+                listing.archived = false;
+              }
+              renderListings();
+              setMessage('success', 'Listing ingested and tracking started.');
+            } catch (err) {
+              const message =
+                err && typeof err.message === 'string'
+                  ? err.message
+                  : 'Unable to ingest listing';
+              setMessage('error', message);
+            } finally {
+              state.loading = false;
+              setFormDisabled(false);
+              if (button) button.disabled = false;
+            }
+          }
+
+          async function handleArchive(jobId, button) {
+            const listing = state.listings.find(item => item?.jobId === jobId);
+            if (!listing) {
+              setMessage('error', 'Listing could not be found');
+              return;
+            }
+            state.loading = true;
+            setFormDisabled(true);
+            if (button) button.disabled = true;
+            setMessage('info', 'Archiving listing…');
+            try {
+              await postCommand('/commands/listings-archive', { jobId }, {
+                invalidResponse: 'Received invalid response while archiving listing',
+                failureMessage: 'Failed to archive listing',
+              });
+              listing.archived = true;
+              renderListings();
+              setMessage('success', 'Listing archived and hidden.');
+            } catch (err) {
+              const message =
+                err && typeof err.message === 'string'
+                  ? err.message
+                  : 'Unable to archive listing';
+              setMessage('error', message);
+              if (button) button.disabled = false;
+            } finally {
+              state.loading = false;
+              setFormDisabled(false);
+            }
+          }
+
+          resultsContainer?.addEventListener('click', event => {
+            const target = event.target;
+            if (!(target instanceof Element)) {
+              return;
+            }
+            const actionButton = target.closest('[data-listings-action]');
+            if (!actionButton) {
+              return;
+            }
+            const action = actionButton.getAttribute('data-listings-action');
+            const jobId = actionButton.getAttribute('data-listing-id');
+            if (!action || !jobId) {
+              return;
+            }
+            event.preventDefault();
+            if (action === 'ingest') {
+              handleIngest(jobId, actionButton);
+            } else if (action === 'archive') {
+              handleArchive(jobId, actionButton);
+            }
+          });
+
+          providerSelect?.addEventListener('change', () => {
+            updateIdentifierCopy(providerSelect.value);
+            clearMessage();
+          });
+
+          form?.addEventListener('submit', event => {
+            event.preventDefault();
+            const payload = readFetchPayload();
+            refreshListings(payload);
+          });
+
+          resetButton?.addEventListener('click', () => {
+            resetForm();
+          });
+
+          prevButton?.addEventListener('click', () => {
+            if (state.page === 0) return;
+            state.page = Math.max(0, state.page - 1);
+            renderListings();
+          });
+
+          nextButton?.addEventListener('click', () => {
+            const total = getActiveListings().length;
+            if (total === 0) return;
+            const maxPage = Math.max(0, Math.ceil(total / state.pageSize) - 1);
+            if (state.page >= maxPage) return;
+            state.page = Math.min(maxPage, state.page + 1);
+            renderListings();
+          });
+
+          renderListings();
+          loadProviders();
+          addRouteListener('listings', () => {
+            loadProviders();
+          });
+
+          scheduleListingsReady({ available: true });
+
           return {
-            refresh,
+            refresh(options = {}) {
+              const payload = options.payload ?? readFetchPayload();
+              return refreshListings(payload);
+            },
             getState() {
               return {
                 ...state,
-                filters: { ...state.filters },
+                listings: state.listings.slice(),
+                providers: state.providers.slice(),
               };
             },
+            loadProviders,
           };
         }
 
@@ -2158,6 +2771,11 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           scheduleApplicationsReady({ available: false });
         }
 
+        const listingsApi = setupListingsView();
+        if (!listingsApi) {
+          scheduleListingsReady({ available: false });
+        }
+
         const analyticsApi = setupAnalyticsView();
         if (!analyticsApi) {
           scheduleAnalyticsReady({ available: false });
@@ -2178,6 +2796,12 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           },
           getApplicationsState() {
             return shortlistApi ? shortlistApi.getState() : null;
+          },
+          refreshListings(options) {
+            return listingsApi ? listingsApi.refresh(options ?? {}) : false;
+          },
+          getListingsState() {
+            return listingsApi ? listingsApi.getState() : null;
           },
           refreshAnalytics() {
             return analyticsApi ? analyticsApi.refresh() : false;
@@ -2220,6 +2844,25 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
 
         function dispatchApplicationsLoaded(detail = {}) {
           dispatchDocumentEvent('jobbot:applications-loaded', detail);
+        }
+
+        function dispatchListingsReady(detail = {}) {
+          dispatchDocumentEvent('jobbot:listings-ready', detail);
+        }
+
+        function scheduleListingsReady(detail = {}) {
+          const emit = () => {
+            dispatchListingsReady(detail);
+          };
+          if (typeof queueMicrotask === 'function') {
+            queueMicrotask(emit);
+          } else {
+            setTimeout(emit, 0);
+          }
+        }
+
+        function dispatchListingsLoaded(detail = {}) {
+          dispatchDocumentEvent('jobbot:listings-loaded', detail);
         }
 
         function dispatchAnalyticsReady(detail = {}) {
@@ -2648,6 +3291,7 @@ export function createWebApp({
       <nav class="primary-nav" aria-label="Status navigation">
         <a href="#overview" data-route-link="overview">Overview</a>
         <a href="#applications" data-route-link="applications">Applications</a>
+        <a href="#listings" data-route-link="listings">Listings</a>
         <a href="#commands" data-route-link="commands">Commands</a>
         <a href="#analytics" data-route-link="analytics">Analytics</a>
         <a href="#audits" data-route-link="audits">Audits</a>
@@ -2851,6 +3495,87 @@ export function createWebApp({
                 data-error-default="Check the server logs or retry shortly."
               >
                 Check the server logs or retry shortly.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="view" data-route="listings" aria-labelledby="listings-heading" hidden>
+        <h2 id="listings-heading">Listings</h2>
+        <p>
+          Preview open roles from supported providers, then ingest the ones you want to track in
+          jobbot3000.
+        </p>
+        <form class="filters" data-listings-form>
+          <label>
+            <span>Provider</span>
+            <select data-listings-provider>
+              <option value="">Select a provider</option>
+            </select>
+          </label>
+          <label>
+            <span data-listings-identifier-label>Company or board</span>
+            <input
+              type="text"
+              autocomplete="off"
+              placeholder="acme-co"
+              data-listings-identifier
+            />
+          </label>
+          <label>
+            <span>Location</span>
+            <input type="text" autocomplete="off" data-listings-filter="location" />
+          </label>
+          <label>
+            <span>Job title</span>
+            <input type="text" autocomplete="off" data-listings-filter="title" />
+          </label>
+          <label>
+            <span>Team</span>
+            <input type="text" autocomplete="off" data-listings-filter="team" />
+          </label>
+          <label>
+            <span>Remote</span>
+            <select data-listings-filter="remote">
+              <option value="">Any</option>
+              <option value="true">Remote</option>
+              <option value="false">Onsite or hybrid</option>
+            </select>
+          </label>
+          <div class="filters__actions">
+            <button type="submit" data-listings-submit>Fetch listings</button>
+            <button type="button" data-listings-reset data-variant="ghost">Reset</button>
+          </div>
+        </form>
+        <p class="listings-message" data-listings-message hidden></p>
+        <div
+          class="status-panel"
+          data-status-panel="listings"
+          data-state="ready"
+          aria-live="polite"
+        >
+          <div data-state-slot="ready">
+            <p class="listings-empty" data-listings-empty hidden>No listings match your filters.</p>
+            <div class="listings-grid" data-listings-results></div>
+            <div class="pagination" data-listings-pagination hidden>
+              <button type="button" data-listings-prev>Previous</button>
+              <span class="pagination-info" data-listings-range>Showing 0 of 0</span>
+              <button type="button" data-listings-next>Next</button>
+            </div>
+          </div>
+          <div data-state-slot="loading" hidden>
+            <p class="status-panel__loading" role="status" aria-live="polite">
+              Loading listings…
+            </p>
+          </div>
+          <div data-state-slot="error" hidden>
+            <div class="status-panel__error" role="alert">
+              <strong>Unable to load listings</strong>
+              <p
+                data-error-message
+                data-error-default="Check the provider details and retry."
+              >
+                Check the provider details and retry.
               </p>
             </div>
           </div>

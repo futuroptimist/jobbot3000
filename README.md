@@ -1840,6 +1840,19 @@ the active section and theme preference in sync across reloads. It includes an
 **Applications** view that calls `POST /commands/shortlist-list` to stream
 shortlist entries through the CLI adapter, apply filters (`location`, `level`,
 `compensation`, tags), and paginate results client-side. The hub also exposes an
+**Listings** tab that fetches live job boards via `POST /commands/listings-fetch`
+for Greenhouse, Lever, Ashby, SmartRecruiters, and Workable. The client lets you
+scope results by provider identifier, location, job title, team, and remote
+status, then paginate 10 at a time with inline ingest and archive actions. When
+you ingest a role the web layer persists the snapshot, syncs shortlist metadata,
+and records lifecycle tracking immediately; archived listings are hidden from
+subsequent fetches. A summary message stream and `jobbot:listings-*` custom
+events keep extensions aware of fetch, ingest, and archive progress. Regression
+coverage in [`test/listings.test.js`](test/listings.test.js) exercises the
+provider registry, fetch filters, ingestion workflow, and archive flow without
+touching the network.
+
+The hub also exposes an
 **Analytics** dashboard powered by `POST /commands/analytics-funnel`, which
 renders funnel stage counts, conversion percentages, largest drop-offs, and
 missing-status alerts sourced from `jobbot analytics funnel --json`. The
