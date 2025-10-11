@@ -1605,6 +1605,217 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           };
         }
 
+        function setupSourcesView() {
+          const section = document.querySelector('[data-route="applications"]');
+          if (!section) return null;
+
+          // Ingest: Greenhouse
+          const ingestForm = section.querySelector('[data-greenhouse-form]');
+          const ingestBoard = section.querySelector('[data-greenhouse-board]');
+          const ingestButton = section.querySelector('[data-greenhouse-ingest]');
+          const ingestMessage = section.querySelector('[data-greenhouse-message]');
+
+          async function runGreenhouseIngest(board) {
+            if (!board) throw new Error('Board slug is required');
+            const headers = { 'content-type': 'application/json' };
+            if (csrfHeader && csrfToken) headers[csrfHeader] = csrfToken;
+            const response = await fetch(buildCommandUrl('/commands/ingest-greenhouse'), {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ board }),
+            });
+            let payload = null;
+            try {
+              payload = await response.json();
+            } catch {
+              // ignore
+            }
+            if (!response.ok) {
+              const message = payload?.error || 'Ingestion failed';
+              throw new Error(message);
+            }
+            return payload;
+          }
+
+          function setIngestMessage(variant, text) {
+            if (!ingestMessage) return;
+            const value = typeof text === 'string' ? text.trim() : '';
+            if (!value) {
+              ingestMessage.textContent = '';
+              ingestMessage.setAttribute('hidden', '');
+              ingestMessage.removeAttribute('data-variant');
+              return;
+            }
+            ingestMessage.textContent = value;
+            ingestMessage.setAttribute('data-variant', variant || 'info');
+            ingestMessage.removeAttribute('hidden');
+          }
+
+          ingestForm?.addEventListener('submit', async event => {
+            event.preventDefault();
+            if (!ingestBoard || !ingestButton) return;
+            const board = (ingestBoard.value || '').trim();
+            if (!board) {
+              setIngestMessage('error', 'Please enter a Greenhouse board slug');
+              return;
+            }
+            ingestButton.disabled = true;
+            setIngestMessage('info', 'Importing…');
+            try {
+              await runGreenhouseIngest(board);
+              setIngestMessage('success', 'Imported jobs from ' + board);
+            } catch (err) {
+              setIngestMessage('error', err?.message || 'Ingestion failed');
+            } finally {
+              ingestButton.disabled = false;
+            }
+          });
+
+          // Sources list
+          const sourcesForm = section.querySelector('[data-sources-filters]');
+          const sourcesInputs = {
+            provider: sourcesForm?.querySelector('[data-sources-filter="provider"]') ?? null,
+            limit: sourcesForm?.querySelector('[data-sources-filter="limit"]') ?? null,
+          };
+          const sourcesReset = section.querySelector('[data-sources-reset]');
+          const sourcesTable = section.querySelector('[data-sources-table]');
+          const sourcesBody = section.querySelector('[data-sources-body]');
+          const sourcesEmpty = section.querySelector('[data-sources-empty]');
+          const sourcesPagination = section.querySelector('[data-sources-pagination]');
+          const sourcesRange = section.querySelector('[data-sources-range]');
+          const sourcesPrev = section.querySelector('[data-sources-prev]');
+          const sourcesNext = section.querySelector('[data-sources-next]');
+
+          function clampSourcesLimit(value) {
+            const number = Number.parseInt(value, 10);
+            if (!Number.isFinite(number) || Number.isNaN(number)) return 10;
+            if (number < 1) return 1;
+            if (number > 1000) return 1000;
+            return number;
+          }
+
+          const sourcesState = { loaded: false, loading: false, offset: 0, limit: 10, total: 0, filters: {}, lastError: null };
+          if (sourcesInputs.limit) sourcesInputs.limit.value = String(sourcesState.limit);
+
+          function readSourcesFilters() {
+            const filters = {};
+            const provider = sourcesInputs.provider?.value?.trim();
+            if (provider) filters.provider = provider;
+            return filters;
+          }
+
+          function buildSourcesPayload(filters, offset, limit) {
+            const payload = { offset, limit };
+            if (filters.provider) payload.provider = filters.provider;
+            return payload;
+          }
+
+          function setSourcesPanelState(name) {
+            // reuse shortlist status-panel containers if desired; keep simple visibility toggles here
+            // show/hide table and empty message
+          }
+
+          function renderSources(items) {
+            if (!sourcesBody) return;
+            const rows = [];
+            for (const entry of items) {
+              const id = escapeHtml(entry.id || '—');
+              const provider = escapeHtml(entry.provider || '—');
+              const title = escapeHtml(entry.title || '—');
+              const location = escapeHtml(entry.location || '—');
+              const fetched = escapeHtml(entry.fetched_at || '—');
+              rows.push(
+                '<tr>' +
+                  '<td>' + id + '</td>' +
+                  '<td>' + provider + '</td>' +
+                  '<td>' + title + '</td>' +
+                  '<td>' + location + '</td>' +
+                  '<td>' + fetched + '</td>' +
+                '</tr>'
+              );
+            }
+            sourcesBody.innerHTML = rows.join('');
+          }
+
+          function updateSourcesPagination() {
+            const start = sourcesState.total === 0 ? 0 : sourcesState.offset + 1;
+            const end = Math.min(sourcesState.offset + sourcesState.limit, sourcesState.total);
+            if (sourcesRange) sourcesRange.textContent = 'Showing ' + start + ' – ' + end + ' of ' + sourcesState.total;
+            const hasPrev = sourcesState.offset > 0;
+            const hasNext = sourcesState.offset + sourcesState.limit < sourcesState.total;
+            if (sourcesPrev) sourcesPrev.disabled = !hasPrev;
+            if (sourcesNext) sourcesNext.disabled = !hasNext;
+            const visible = sourcesState.total > sourcesState.limit;
+            if (sourcesPagination) {
+              if (visible) sourcesPagination.removeAttribute('hidden');
+              else sourcesPagination.setAttribute('hidden', '');
+            }
+          }
+
+          async function refreshSources({ filters, offset, limit, resetOffset } = {}) {
+            if (sourcesState.loading) return false;
+            sourcesState.loading = true;
+            if (filters) sourcesState.filters = { ...filters };
+            if (typeof limit === 'number') sourcesState.limit = clampSourcesLimit(limit);
+            if (typeof offset === 'number') sourcesState.offset = Math.max(0, offset);
+            if (resetOffset) sourcesState.offset = 0;
+            const payload = buildSourcesPayload(sourcesState.filters, sourcesState.offset, sourcesState.limit);
+            let data;
+            try {
+              data = await postCommand('/commands/sources-list', payload, {
+                invalidResponse: 'Invalid sources response',
+                failureMessage: 'Unable to load sources list',
+              });
+              sourcesState.total = Number.isFinite(data.total) ? data.total : 0;
+              renderSources(Array.isArray(data.items) ? data.items : []);
+              updateSourcesPagination();
+              if (sourcesEmpty) sourcesEmpty.hidden = sourcesState.total !== 0;
+              if (sourcesTable) sourcesTable.hidden = sourcesState.total === 0;
+              sourcesState.loaded = true;
+              sourcesState.lastError = null;
+              return true;
+            } catch (err) {
+              sourcesState.lastError = err;
+              if (sourcesEmpty) {
+                sourcesEmpty.textContent = err?.message || 'Unable to load sources';
+                sourcesEmpty.hidden = false;
+              }
+              if (sourcesTable) sourcesTable.hidden = true;
+              return false;
+            } finally {
+              sourcesState.loading = false;
+            }
+          }
+
+          sourcesForm?.addEventListener('submit', event => {
+            event.preventDefault();
+            const filters = readSourcesFilters();
+            refreshSources({ filters, limit: sourcesInputs.limit?.value, resetOffset: true });
+          });
+          sourcesReset?.addEventListener('click', () => {
+            if (sourcesInputs.provider) sourcesInputs.provider.value = '';
+            if (sourcesInputs.limit) sourcesInputs.limit.value = String(sourcesState.limit);
+            refreshSources({ filters: {}, offset: 0, limit: sourcesState.limit, resetOffset: true });
+          });
+          sourcesPrev?.addEventListener('click', () => {
+            const prev = Math.max(0, sourcesState.offset - sourcesState.limit);
+            refreshSources({ offset: prev });
+          });
+          sourcesNext?.addEventListener('click', () => {
+            const next = sourcesState.offset + sourcesState.limit;
+            refreshSources({ offset: next });
+          });
+
+          addRouteListener('applications', () => {
+            if (!sourcesState.loaded && !sourcesState.loading) {
+              const filters = readSourcesFilters();
+              refreshSources({ filters, offset: 0, limit: sourcesInputs.limit?.value, resetOffset: true });
+            }
+          });
+
+          return { refresh: refreshSources };
+        }
+
         function setupAnalyticsView() {
           const section = document.querySelector('[data-route="analytics"]');
           if (!section) {
@@ -2154,6 +2365,7 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
         initializeStatusPanels();
 
         const shortlistApi = setupShortlistView();
+        const sourcesApi = setupSourcesView();
         if (!shortlistApi) {
           scheduleApplicationsReady({ available: false });
         }
@@ -2688,6 +2900,21 @@ export function createWebApp({
             <code>jobbot shortlist list</code> flags so the web view stays aligned
             with scripted flows.
           </p>
+        <form class="filters" data-greenhouse-form>
+          <label>
+            <span>Greenhouse board</span>
+            <input
+              type="text"
+              placeholder="acme"
+              autocomplete="off"
+              data-greenhouse-board
+            />
+          </label>
+          <div class="filters__actions">
+            <button type="submit" data-greenhouse-ingest>Ingest</button>
+          </div>
+          <p class="application-actions__message" data-greenhouse-message hidden></p>
+        </form>
         <form class="filters" data-shortlist-filters>
           <label>
             <span>Location</span>
@@ -2740,6 +2967,20 @@ export function createWebApp({
             <button type="button" data-shortlist-reset data-variant="ghost">Reset</button>
           </div>
         </form>
+        <form class="filters" data-sources-filters>
+          <label>
+            <span>Provider</span>
+            <input type="text" placeholder="greenhouse" autocomplete="off" data-sources-filter="provider" />
+          </label>
+          <label>
+            <span>Page size</span>
+            <input type="number" min="1" max="1000" value="10" data-sources-filter="limit" />
+          </label>
+          <div class="filters__actions">
+            <button type="submit">Apply filters</button>
+            <button type="button" data-sources-reset data-variant="ghost">Reset</button>
+          </div>
+        </form>
         <div
           class="status-panel"
           data-status-panel="applications"
@@ -2769,6 +3010,27 @@ export function createWebApp({
               <button type="button" data-shortlist-prev>Previous</button>
               <span class="pagination-info" data-shortlist-range>Showing 0 of 0</span>
               <button type="button" data-shortlist-next>Next</button>
+            </div>
+            <h3>Sources</h3>
+            <p data-sources-empty hidden>No sources found.</p>
+            <div class="table-container">
+              <table class="shortlist-table" data-sources-table hidden>
+                <thead>
+                  <tr>
+                    <th scope="col">ID</th>
+                    <th scope="col">Provider</th>
+                    <th scope="col">Title</th>
+                    <th scope="col">Location</th>
+                    <th scope="col">Fetched</th>
+                  </tr>
+                </thead>
+                <tbody data-sources-body></tbody>
+              </table>
+            </div>
+            <div class="pagination" data-sources-pagination hidden>
+              <button type="button" data-sources-prev>Previous</button>
+              <span class="pagination-info" data-sources-range>Showing 0 of 0</span>
+              <button type="button" data-sources-next>Next</button>
             </div>
             <div class="application-detail" data-application-detail hidden>
               <div
