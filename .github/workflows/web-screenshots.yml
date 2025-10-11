@@ -23,7 +23,6 @@ jobs:
           sudo apt-get install -y \
             libatk1.0-0 \
             libatk-bridge2.0-0 \
-            libasound2 \
             libdrm-dev \
             libgbm-dev \
             libgtk-3-0 \
@@ -33,6 +32,7 @@ jobs:
             libxrandr2 \
             libxkbcommon0 \
             xdg-utils
+          sudo apt-get install -y libasound2t64 || sudo apt-get install -y libasound2
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
