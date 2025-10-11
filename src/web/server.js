@@ -1610,66 +1610,47 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           if (!section) return null;
 
           // Ingest: Greenhouse
-          const ingestForm = section.querySelector('[data-greenhouse-form]');
-          const ingestBoard = section.querySelector('[data-greenhouse-board]');
-          const ingestButton = section.querySelector('[data-greenhouse-ingest]');
-          const ingestMessage = section.querySelector('[data-greenhouse-message]');
+          const discoverForm = section.querySelector('[data-discover-listings]');
+          const discoverTitle = section.querySelector('[data-discover-title]');
+          const discoverButton = section.querySelector('[data-discover-run]');
+          const discoverMessage = section.querySelector('[data-discover-message]');
           const ingestUrlInput = section.querySelector('[data-ingest-url]');
           const ingestUrlButton = section.querySelector('[data-ingest-url-run]');
 
-          async function runGreenhouseIngest(board) {
-            if (!board) throw new Error('Board slug is required');
-            const headers = { 'content-type': 'application/json' };
-            if (csrfHeader && csrfToken) headers[csrfHeader] = csrfToken;
-            const response = await fetch(buildCommandUrl('/commands/ingest-greenhouse'), {
-              method: 'POST',
-              headers,
-              body: JSON.stringify({ board }),
-            });
-            let payload = null;
-            try {
-              payload = await response.json();
-            } catch {
-              // ignore
-            }
-            if (!response.ok) {
-              const message = payload?.error || 'Ingestion failed';
-              throw new Error(message);
-            }
-            return payload;
-          }
-
           function setIngestMessage(variant, text) {
-            if (!ingestMessage) return;
+            if (!discoverMessage) return;
             const value = typeof text === 'string' ? text.trim() : '';
             if (!value) {
-              ingestMessage.textContent = '';
-              ingestMessage.setAttribute('hidden', '');
-              ingestMessage.removeAttribute('data-variant');
+              discoverMessage.textContent = '';
+              discoverMessage.setAttribute('hidden', '');
+              discoverMessage.removeAttribute('data-variant');
               return;
             }
-            ingestMessage.textContent = value;
-            ingestMessage.setAttribute('data-variant', variant || 'info');
-            ingestMessage.removeAttribute('hidden');
+            discoverMessage.textContent = value;
+            discoverMessage.setAttribute('data-variant', variant || 'info');
+            discoverMessage.removeAttribute('hidden');
           }
 
-          ingestForm?.addEventListener('submit', async event => {
-            event.preventDefault();
-            if (!ingestBoard || !ingestButton) return;
-            const board = (ingestBoard.value || '').trim();
-            if (!board) {
-              setIngestMessage('error', 'Please enter a Greenhouse board slug');
+          discoverButton?.addEventListener('click', async () => {
+            const title = (discoverTitle?.value || '').trim();
+            setIngestMessage('info', 'Loading listings…');
+            const headers = { 'content-type': 'application/json' };
+            if (csrfHeader && csrfToken) headers[csrfHeader] = csrfToken;
+            const response = await fetch(buildCommandUrl('/commands/discover-openings'), {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({ url: 'local://discover', title, limit: 25 }),
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              setIngestMessage('error', payload?.error || 'Unable to load listings');
               return;
             }
-            ingestButton.disabled = true;
-            setIngestMessage('info', 'Importing…');
-            try {
-              await runGreenhouseIngest(board);
-              setIngestMessage('success', 'Imported jobs from ' + board);
-            } catch (err) {
-              setIngestMessage('error', err?.message || 'Ingestion failed');
-            } finally {
-              ingestButton.disabled = false;
+            const items = Array.isArray(payload?.data?.items) ? payload.data.items : [];
+            if (items.length === 0) {
+              setIngestMessage('info', 'No listings matched');
+            } else {
+              setIngestMessage('success', 'Loaded ' + items.length + ' listings');
             }
           });
 
@@ -1706,7 +1687,9 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           const sourcesForm = section.querySelector('[data-sources-filters]');
           const sourcesInputs = {
             provider: sourcesForm?.querySelector('[data-sources-filter="provider"]') ?? null,
+            title: sourcesForm?.querySelector('[data-sources-filter="title"]') ?? null,
             limit: sourcesForm?.querySelector('[data-sources-filter="limit"]') ?? null,
+            random: sourcesForm?.querySelector('[data-sources-filter="random"]') ?? null,
           };
           const sourcesReset = section.querySelector('[data-sources-reset]');
           const sourcesTable = section.querySelector('[data-sources-table]');
@@ -1732,12 +1715,18 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             const filters = {};
             const provider = sourcesInputs.provider?.value?.trim();
             if (provider) filters.provider = provider;
+            const title = sourcesInputs.title?.value?.trim();
+            if (title) filters.title = title;
+            const random = sourcesInputs.random?.checked === true;
+            if (random) filters.random = true;
             return filters;
           }
 
           function buildSourcesPayload(filters, offset, limit) {
             const payload = { offset, limit };
             if (filters.provider) payload.provider = filters.provider;
+            if (filters.title) payload.title = filters.title;
+            if (filters.random) payload.random = true;
             return payload;
           }
 
@@ -2927,25 +2916,37 @@ export function createWebApp({
       <section class="view" data-route="applications" aria-labelledby="applications-heading" hidden>
         <h2 id="applications-heading">Applications</h2>
           <p>
-            Review shortlisted roles captured by the CLI. Filters map directly to
-            <code>jobbot shortlist list</code> flags so the web view stays aligned
-            with scripted flows.
+            Use these sections to discover new roles and manage your shortlist.
           </p>
-        <form class="filters" data-greenhouse-form>
+        <h3>1) Discover and ingest listings</h3>
+        <p>
+          Paste a job posting URL from any supported provider, or use a provider-specific field.
+          Ingestion saves a local snapshot for later matching and tracking.
+        </p>
+        <form class="filters" data-discover-listings>
           <label>
-            <span>Greenhouse board</span>
-            <input
-              type="text"
-              placeholder="acme"
-              autocomplete="off"
-              data-greenhouse-board
-            />
+            <span>Job Title</span>
+            <input type="text" placeholder="Software Engineer" autocomplete="off" data-discover-title />
           </label>
           <div class="filters__actions">
-            <button type="submit" data-greenhouse-ingest>Ingest</button>
+            <button type="button" data-discover-run>Show listings</button>
           </div>
-          <p class="application-actions__message" data-greenhouse-message hidden></p>
+          <p class="application-actions__message" data-discover-message hidden></p>
         </form>
+        <form class="filters">
+          <label>
+            <span>Job URL</span>
+            <input type="url" placeholder="https://example/job-posting" autocomplete="off" data-ingest-url />
+          </label>
+          <div class="filters__actions">
+            <button type="button" data-ingest-url-run>Ingest URL</button>
+          </div>
+        </form>
+        <h3>2) Shortlist filters</h3>
+        <p>
+          These map directly to <code>jobbot shortlist list</code>. Adjust and Apply to see matching
+          applications. Select an entry to view details and record a status update.
+        </p>
         <form class="filters" data-shortlist-filters>
           <label>
             <span>Location</span>
@@ -2998,24 +2999,30 @@ export function createWebApp({
             <button type="button" data-shortlist-reset data-variant="ghost">Reset</button>
           </div>
         </form>
+        <h3>3) Browse saved sources</h3>
+        <p>
+          Use these filters to list previously ingested job snapshots. You can search by provider,
+          set a page size, or request a random batch. The list updates below.
+        </p>
         <form class="filters" data-sources-filters>
           <label>
             <span>Provider</span>
             <input type="text" placeholder="greenhouse" autocomplete="off" data-sources-filter="provider" />
           </label>
           <label>
+            <span>Job Title</span>
+            <input type="text" placeholder="Software Engineer" autocomplete="off" data-sources-filter="title" />
+          </label>
+          <label>
             <span>Page size</span>
             <input type="number" min="1" max="1000" value="10" data-sources-filter="limit" />
           </label>
           <label>
-            <span>Paste job URL</span>
-            <input type="url" placeholder="https://boards.greenhouse.io/acme/jobs/123" autocomplete="off" data-ingest-url />
+            <span>Randomize</span>
+            <input type="checkbox" data-sources-filter="random" />
           </label>
           <div class="filters__actions">
-            <button type="button" data-ingest-url-run>Ingest URL</button>
-          </div>
-          <div class="filters__actions">
-            <button type="submit">Apply filters</button>
+            <button type="submit">Show listings</button>
             <button type="button" data-sources-reset data-variant="ghost">Reset</button>
           </div>
         </form>

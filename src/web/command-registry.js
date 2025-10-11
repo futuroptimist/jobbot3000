@@ -46,9 +46,9 @@ const TRACK_RECORD_ALLOWED_FIELDS = new Set(['jobId', 'job_id', 'status', 'note'
 const ANALYTICS_EXPORT_ALLOWED_FIELDS = new Set(['redact', 'redactCompanies', 'redact_companies']);
 
 const INGEST_GREENHOUSE_ALLOWED_FIELDS = new Set(['board']);
-const SOURCES_LIST_ALLOWED_FIELDS = new Set(['provider', 'offset', 'limit']);
+const SOURCES_LIST_ALLOWED_FIELDS = new Set(['provider', 'title', 'offset', 'limit', 'random']);
 const INGEST_URL_ALLOWED_FIELDS = new Set(['url', 'timeout', 'timeoutMs', 'maxBytes']);
-const DISCOVER_OPENINGS_ALLOWED_FIELDS = new Set(['url', 'limit']);
+const DISCOVER_OPENINGS_ALLOWED_FIELDS = new Set(['url', 'title', 'limit']);
 const PROVIDERS_LIST_ALLOWED_FIELDS = new Set([]);
 
 function ensurePlainObject(value, commandName) {
@@ -284,15 +284,19 @@ function validateSourcesListPayload(rawPayload) {
   const payload = ensurePlainObject(rawPayload ?? {}, 'sources-list');
   assertAllowedFields(payload, SOURCES_LIST_ALLOWED_FIELDS, 'sources-list');
   const provider = coerceString(payload.provider, { name: 'provider' });
+  const title = coerceString(payload.title, { name: 'title' });
   const offset = coerceInteger(payload.offset, { name: 'offset', min: 0 });
   const limit = coerceInteger(payload.limit, { name: 'limit', min: 1 });
+  const random = coerceBoolean(payload.random, { name: 'random' });
   if (limit !== undefined && limit > 1000) {
     throw new Error('limit must be less than or equal to 1000');
   }
   const sanitized = {};
   if (provider) sanitized.provider = provider.toLowerCase();
+  if (title) sanitized.title = title;
   if (offset !== undefined) sanitized.offset = offset;
   if (limit !== undefined) sanitized.limit = limit;
+  if (random !== undefined) sanitized.random = random;
   return sanitized;
 }
 
@@ -313,7 +317,9 @@ function validateDiscoverOpeningsPayload(rawPayload) {
   assertAllowedFields(payload, DISCOVER_OPENINGS_ALLOWED_FIELDS, 'discover-openings');
   const url = coerceString(payload.url, { name: 'url', required: true });
   const limit = coerceInteger(payload.limit, { name: 'limit', min: 1 });
+  const title = coerceString(payload.title, { name: 'title' });
   const sanitized = { url };
+  if (title) sanitized.title = title;
   if (limit !== undefined) sanitized.limit = limit;
   return sanitized;
 }

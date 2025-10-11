@@ -927,20 +927,34 @@ export function createCommandAdapter(options = {}) {
         const parsed = JSON.parse(raw);
         const provider = String(parsed?.source?.type || '').toLowerCase();
         if (providerFilter && provider !== providerFilter) continue;
-        entries.push({
+        const entry = {
           id: parsed?.id || name.replace(/\.json$/, ''),
           provider,
           url: parsed?.source?.value || null,
           fetched_at: parsed?.fetched_at || null,
           title: parsed?.parsed?.title || null,
           location: parsed?.parsed?.location || null,
-        });
+        };
+        if (options?.title) {
+          const t = String(options.title).toLowerCase();
+          const titleLower = String(entry.title || '').toLowerCase();
+          if (!titleLower.includes(t)) continue;
+        }
+        entries.push(entry);
       } catch {
         // skip unreadable entries
       }
     }
 
-    entries.sort((a, b) => {
+    if (options?.random) {
+      for (let i = entries.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const tmp = entries[i];
+        entries[i] = entries[j];
+        entries[j] = tmp;
+      }
+    } else {
+      entries.sort((a, b) => {
       const at = Date.parse(a.fetched_at || '');
       const bt = Date.parse(b.fetched_at || '');
       const aValid = !Number.isNaN(at);
@@ -949,7 +963,8 @@ export function createCommandAdapter(options = {}) {
       if (aValid) return -1;
       if (bValid) return 1;
       return 0;
-    });
+      });
+    }
 
     const total = entries.length;
     const start = Math.min(offset, total);
@@ -1030,13 +1045,15 @@ export function createCommandAdapter(options = {}) {
   }
 
   // New: discover openings by URL (single GET using provider adapters is future work; for now return empty)
-  async function discoverOpenings() {
+  async function discoverOpenings(options = {}) {
+    // For now, synthesize listings from local snapshots and title filter
+    const list = await sourcesList({ title: options?.title, limit: options?.limit ?? 20, random: true });
     return {
       command: 'discover-openings',
       format: 'json',
       stdout: '',
       stderr: '',
-      data: { items: [] },
+      data: list?.data || { items: [] },
     };
   }
 
