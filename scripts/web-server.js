@@ -10,11 +10,15 @@ function getFlag(args, name) {
   return args[index + 1];
 }
 
+function hasFlag(args, name) {
+  return args.includes(name);
+}
+
 function printUsage() {
   console.error(
     'Usage: node scripts/web-server.js [--env <environment>] [--host <value>] [--port <number>] ' +
       '[--rate-limit-window-ms <number>] [--rate-limit-max <number>] [--csrf-header <value>] ' +
-      '[--csrf-token <value>]',
+      '[--csrf-token <value>] [--enable-native-cli]',
   );
 }
 
@@ -27,6 +31,7 @@ async function main() {
   const rateMaxOverride = getFlag(args, '--rate-limit-max');
   const csrfHeaderOverride = getFlag(args, '--csrf-header');
   const csrfTokenOverride = getFlag(args, '--csrf-token');
+  const enableNativeCli = hasFlag(args, '--enable-native-cli');
 
   let version = 'dev';
   try {
@@ -67,6 +72,7 @@ async function main() {
     rateLimit: config.rateLimit,
     csrfToken: config.csrfToken,
     csrfHeaderName: config.csrfHeaderName,
+    enableNativeCli,
   });
 
   console.log(`jobbot web server listening on ${server.url}`);
