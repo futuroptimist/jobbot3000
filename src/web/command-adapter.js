@@ -1,4 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { spawn as defaultSpawn } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
@@ -145,6 +147,13 @@ const COMMANDS = Object.freeze({
     cliCommand: ['analytics', 'export'],
     name: 'analytics-export',
     errorLabel: 'analytics export',
+  },
+  // Native CLI only; no injected CLI method for ingest
+  'ingest-greenhouse': {
+    method: null,
+    cliCommand: ['ingest', 'greenhouse'],
+    name: 'ingest-greenhouse',
+    errorLabel: 'ingest greenhouse',
   },
 });
 
@@ -832,6 +841,130 @@ export function createCommandAdapter(options = {}) {
     return payload;
   }
 
+  // New: trigger greenhouse ingest via native CLI
+  async function ingestGreenhouse(options = {}) {
+    const board = typeof options?.board === 'string' ? options.board.trim() : '';
+    if (!board) {
+      throw new Error('board is required');
+    }
+    // Always go through native CLI; this command is not supported by injected CLI
+    const started = performance.now();
+    try {
+      const { stdout, stderr } = await runCliProcess(
+        ['ingest', 'greenhouse'],
+        ['--company', board],
+        'ingest greenhouse',
+      );
+      const durationMs = roundDuration(performance.now() - started);
+      logTelemetry('info', {
+        event: 'cli.command',
+        command: 'ingest-greenhouse',
+        status: 'success',
+        exitCode: 0,
+        durationMs,
+        stdoutLength: safeLength(stdout),
+        stderrLength: safeLength(stderr),
+      });
+      return {
+        command: 'ingest-greenhouse',
+        format: 'text',
+        stdout: sanitizeOutputString(stdout),
+        stderr: sanitizeOutputString(stderr),
+        returnValue: undefined,
+      };
+    } catch (err) {
+      const durationMs = roundDuration(performance.now() - started);
+      const rawMessage = err?.message ?? 'Unknown error';
+      const sanitizedMessage = redactSecrets(rawMessage);
+      logTelemetry('error', {
+        event: 'cli.command',
+        command: 'ingest-greenhouse',
+        status: 'error',
+        exitCode: typeof err?.exitCode === 'number' ? err.exitCode : 1,
+        durationMs,
+        errorMessage: sanitizedMessage,
+        stdoutLength: safeLength(err?.stdout),
+        stderrLength: safeLength(err?.stderr),
+      });
+      const error = new Error(`ingest greenhouse command failed: ${sanitizedMessage}`);
+      if (typeof err?.exitCode === 'number') error.exitCode = err.exitCode;
+      if (typeof err?.stdout === 'string') error.stdout = sanitizeOutputString(err.stdout);
+      if (typeof err?.stderr === 'string') error.stderr = sanitizeOutputString(err.stderr);
+      throw error;
+    }
+  }
+
+  // New: list saved job source snapshots from data/jobs
+  async function sourcesList(options = {}) {
+    const providerFilter =
+      typeof options?.provider === 'string' && options.provider.trim()
+        ? options.provider.trim().toLowerCase()
+        : undefined;
+    const offset = Number.isFinite(options?.offset) ? Math.max(0, options.offset) : 0;
+    const limit = Number.isFinite(options?.limit) ? Math.max(1, options.limit) : 50;
+
+    const dataDir = process.env.JOBBOT_DATA_DIR || path.resolve('data');
+    const jobsDir = path.join(dataDir, 'jobs');
+
+    let files = [];
+    try {
+      files = await fs.readdir(jobsDir);
+    } catch {
+      files = [];
+    }
+    const jsonFiles = files.filter(name => name.endsWith('.json'));
+
+    const entries = [];
+    for (const name of jsonFiles) {
+      try {
+        const raw = await fs.readFile(path.join(jobsDir, name), 'utf8');
+        const parsed = JSON.parse(raw);
+        const provider = String(parsed?.source?.type || '').toLowerCase();
+        if (providerFilter && provider !== providerFilter) continue;
+        entries.push({
+          id: parsed?.id || name.replace(/\.json$/, ''),
+          provider,
+          url: parsed?.source?.value || null,
+          fetched_at: parsed?.fetched_at || null,
+          title: parsed?.parsed?.title || null,
+          location: parsed?.parsed?.location || null,
+        });
+      } catch {
+        // skip unreadable entries
+      }
+    }
+
+    entries.sort((a, b) => {
+      const at = Date.parse(a.fetched_at || '');
+      const bt = Date.parse(b.fetched_at || '');
+      const aValid = !Number.isNaN(at);
+      const bValid = !Number.isNaN(bt);
+      if (aValid && bValid) return bt - at;
+      if (aValid) return -1;
+      if (bValid) return 1;
+      return 0;
+    });
+
+    const total = entries.length;
+    const start = Math.min(offset, total);
+    const end = Math.min(start + limit, total);
+    const items = entries.slice(start, end);
+
+    return {
+      command: 'sources-list',
+      format: 'json',
+      stdout: '',
+      stderr: '',
+      data: {
+        total,
+        offset: start,
+        limit,
+        items: sanitizeOutputValue(items),
+        hasMore: end < total,
+      },
+    };
+  }
+
   const adapter = {
     summarize,
     match,
@@ -840,6 +973,9 @@ export function createCommandAdapter(options = {}) {
     analyticsFunnel,
     analyticsExport,
     trackRecord,
+    // new
+    'ingest-greenhouse': ingestGreenhouse,
+    'sources-list': sourcesList,
   };
   adapter['shortlist-list'] = shortlistList;
   adapter['shortlist-show'] = shortlistShow;

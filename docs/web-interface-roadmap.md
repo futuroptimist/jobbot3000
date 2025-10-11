@@ -52,6 +52,15 @@
 > 56 KB budget, and [`test/web-server.test.js`](../test/web-server.test.js) exercises the new asset
 > endpoint to ensure future refactors keep the markup lean.
 
+> [!NOTE]
+> **Update (2025-10-11):** New web commands surface job source ingestion and listing:
+> - `POST /commands/ingest-greenhouse` with payload `{ board: "<slug>" }` to import jobs via the CLI
+>   (requires native CLI enabled).
+> - `POST /commands/sources-list` with optional `{ provider, offset, limit }` to enumerate saved
+>   job snapshots from `data/jobs`. See regression tests in
+>   [`test/web-ingest-greenhouse.test.js`](../test/web-ingest-greenhouse.test.js) and
+>   [`test/web-sources-list.test.js`](../test/web-sources-list.test.js).
+
 ### 1. Requirements and Domain Mapping
 
 - Audit existing CLI commands, arguments, and expected JSON/text outputs.

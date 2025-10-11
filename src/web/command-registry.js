@@ -45,6 +45,9 @@ const TRACK_SHOW_ALLOWED_FIELDS = new Set(['jobId', 'job_id']);
 const TRACK_RECORD_ALLOWED_FIELDS = new Set(['jobId', 'job_id', 'status', 'note']);
 const ANALYTICS_EXPORT_ALLOWED_FIELDS = new Set(['redact', 'redactCompanies', 'redact_companies']);
 
+const INGEST_GREENHOUSE_ALLOWED_FIELDS = new Set(['board']);
+const SOURCES_LIST_ALLOWED_FIELDS = new Set(['provider', 'offset', 'limit']);
+
 function ensurePlainObject(value, commandName) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error(`${commandName} payload must be a JSON object`);
@@ -267,6 +270,29 @@ function validateAnalyticsExportPayload(rawPayload) {
   return normalizeAnalyticsExportRequest(payload);
 }
 
+function validateIngestGreenhousePayload(rawPayload) {
+  const payload = ensurePlainObject(rawPayload, 'ingest-greenhouse');
+  assertAllowedFields(payload, INGEST_GREENHOUSE_ALLOWED_FIELDS, 'ingest-greenhouse');
+  const board = coerceString(payload.board, { name: 'board', required: true });
+  return { board };
+}
+
+function validateSourcesListPayload(rawPayload) {
+  const payload = ensurePlainObject(rawPayload ?? {}, 'sources-list');
+  assertAllowedFields(payload, SOURCES_LIST_ALLOWED_FIELDS, 'sources-list');
+  const provider = coerceString(payload.provider, { name: 'provider' });
+  const offset = coerceInteger(payload.offset, { name: 'offset', min: 0 });
+  const limit = coerceInteger(payload.limit, { name: 'limit', min: 1 });
+  if (limit !== undefined && limit > 1000) {
+    throw new Error('limit must be less than or equal to 1000');
+  }
+  const sanitized = {};
+  if (provider) sanitized.provider = provider.toLowerCase();
+  if (offset !== undefined) sanitized.offset = offset;
+  if (limit !== undefined) sanitized.limit = limit;
+  return sanitized;
+}
+
 const COMMAND_VALIDATORS = Object.freeze({
   summarize: validateSummarizePayload,
   match: validateMatchPayload,
@@ -276,6 +302,8 @@ const COMMAND_VALIDATORS = Object.freeze({
   'track-record': validateTrackRecordPayload,
   'analytics-funnel': validateAnalyticsFunnelPayload,
   'analytics-export': validateAnalyticsExportPayload,
+  'ingest-greenhouse': validateIngestGreenhousePayload,
+  'sources-list': validateSourcesListPayload,
 });
 
 export const ALLOW_LISTED_COMMANDS = Object.freeze(Object.keys(COMMAND_VALIDATORS));
