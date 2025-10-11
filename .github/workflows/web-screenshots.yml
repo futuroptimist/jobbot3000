@@ -20,10 +20,15 @@ jobs:
       - name: Install Chromium dependencies
         run: |
           sudo apt-get update
+          if apt-cache show libasound2t64 >/dev/null 2>&1; then
+            ALSA_PACKAGE=libasound2t64
+          else
+            ALSA_PACKAGE=libasound2
+          fi
           sudo apt-get install -y \
             libatk1.0-0 \
             libatk-bridge2.0-0 \
-            libasound2 \
+            "${ALSA_PACKAGE}" \
             libdrm-dev \
             libgbm-dev \
             libgtk-3-0 \
