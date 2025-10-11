@@ -19,6 +19,7 @@
     "chore:prompts": "node scripts/chore-prompts.js",
     "chore:reminders": "node scripts/chore-reminders.js",
     "web:server": "node scripts/web-server.js",
+    "web:screenshots": "node scripts/generate-web-screenshots.js",
     "postinstall": "node scripts/install-console-font.js"
   },
   "engines": {
@@ -34,14 +35,15 @@
     "remove-markdown": "^0.6.2"
   },
   "devDependencies": {
-    "axe-core": "^4.10.0",
     "@eslint/js": "^9.35.0",
-    "jsdom": "^25.0.1",
-    "lighthouse": "^11.7.1",
+    "axe-core": "^4.10.0",
     "cspell": "^8.15.4",
     "eslint": "^9.36.0",
     "globals": "^16.4.0",
+    "jsdom": "^25.0.1",
+    "lighthouse": "^11.7.1",
     "prettier": "^3.3.3",
+    "puppeteer": "^23.9.0",
     "vitest": "^3.2.4"
   }
 }

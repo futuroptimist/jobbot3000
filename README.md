@@ -116,6 +116,21 @@ summarizes how CLI commands (`src/index.js`) fan out to ingestion, scoring, deli
 analytics modules. The guide also links to the git-ignored `data/` directories so you know where
 local artifacts land during dry runs.
 
+## Web interface gallery
+
+The [web screenshots workflow](.github/workflows/web-screenshots.yml) spins up the Express status
+hub with fixture data, captures each tab, and commits the resulting PNGs into
+`docs/screenshots/`. Trigger it from the Actions tab or run `npm run web:screenshots` locally
+before shipping UI tweaks so the documentation stays current.
+
+| Overview | Applications | Commands |
+| --- | --- | --- |
+| ![Overview tab](docs/screenshots/overview.png) | ![Applications tab](docs/screenshots/applications.png) | ![Commands tab](docs/screenshots/commands.png) |
+
+| Analytics | Audits |
+| --- | --- |
+| ![Analytics tab](docs/screenshots/analytics.png) | ![Audits tab](docs/screenshots/audits.png) |
+
 # Continuous integration
 GitHub Actions runs lint and test checks on each push and pull request that includes code changes.
 Markdown-only updates skip CI to keep the pipeline fast, and in-progress runs for the same branch are
