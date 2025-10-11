@@ -1,7 +1,7 @@
 const DEFAULT_CONFIGS = {
   development: {
     host: '127.0.0.1',
-    port: 3000,
+    port: 3100,
     rateLimit: { windowMs: 60_000, max: 30 },
   },
   staging: {
