@@ -1,5 +1,10 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import fs from 'node:fs/promises';
+import { greenhouseAdapter } from '../greenhouse.js';
+import { leverAdapter } from '../lever.js';
+import { smartRecruitersAdapter } from '../smartrecruiters.js';
+import { ashbyAdapter } from '../ashby.js';
+import { workableAdapter } from '../workable.js';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { spawn as defaultSpawn } from 'node:child_process';
@@ -1046,15 +1051,98 @@ export function createCommandAdapter(options = {}) {
 
   // New: discover openings by URL (single GET using provider adapters is future work; for now return empty)
   async function discoverOpenings(options = {}) {
-    // For now, synthesize listings from local snapshots and title filter
-    const list = await sourcesList({ title: options?.title, limit: options?.limit ?? 20, random: true });
-    return {
-      command: 'discover-openings',
-      format: 'json',
-      stdout: '',
-      stderr: '',
-      data: list?.data || { items: [] },
-    };
+    const titleFilter = typeof options?.title === 'string' ? options.title.trim().toLowerCase() : '';
+    const limit = Number.isFinite(options?.limit) ? Math.max(1, options.limit) : 25;
+    const boardUrl = typeof options?.url === 'string' ? options.url.trim() : '';
+
+    async function fromLocalSnapshots() {
+      const list = await sourcesList({ title: options?.title, limit, random: true });
+      return list?.data?.items || [];
+    }
+
+    function parseProviderUrl(url) {
+      try {
+        const u = new URL(url);
+        const host = u.hostname.toLowerCase();
+        const parts = u.pathname.split('/').filter(Boolean);
+        if (host.includes('greenhouse.io')) {
+          const slug = parts[0];
+          if (slug) return { provider: 'greenhouse', board: slug };
+        }
+        if (host.includes('lever.co')) {
+          const org = parts[0];
+          if (org) return { provider: 'lever', org };
+        }
+        if (host.includes('ashbyhq.com')) {
+          const org = parts[0];
+          if (org) return { provider: 'ashby', org };
+        }
+        if (host.includes('smartrecruiters.com')) {
+          // e.g., /CompanyName
+          const company = parts[0];
+          if (company) return { provider: 'smartrecruiters', company };
+        }
+        if (host.includes('workable.com') || host.includes('apply.workable.com')) {
+          const account = parts[0] === 'api' && parts[1] === 'accounts' ? parts[2] : parts[0];
+          if (account) return { provider: 'workable', account };
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    }
+
+    async function fetchProviderListings() {
+      const meta = parseProviderUrl(boardUrl);
+      if (!meta) return [];
+      try {
+        if (meta.provider === 'greenhouse') {
+          const { jobs } = await greenhouseAdapter.listOpenings({ board: meta.board });
+          return jobs.map(j => greenhouseAdapter.normalizeJob(j, { slug: meta.board }));
+        }
+        if (meta.provider === 'lever') {
+          const { jobs, context } = await leverAdapter.listOpenings({ org: meta.org });
+          return jobs.map(j => leverAdapter.normalizeJob(j, context));
+        }
+        if (meta.provider === 'ashby') {
+          const { jobs, context } = await ashbyAdapter.listOpenings({ org: meta.org });
+          return jobs.map(j => ashbyAdapter.normalizeJob(j, context));
+        }
+        if (meta.provider === 'smartrecruiters') {
+          const { jobs, context } = await smartRecruitersAdapter.listOpenings({ company: meta.company });
+          return jobs.map(j => smartRecruitersAdapter.normalizeJob(j, context));
+        }
+        if (meta.provider === 'workable') {
+          const { jobs, context } = await workableAdapter.listOpenings({ account: meta.account });
+          return jobs.map(j => workableAdapter.normalizeJob(j, context));
+        }
+      } catch {
+        return [];
+      }
+      return [];
+    }
+
+    let items = [];
+    if (boardUrl) {
+      const snapshots = await fetchProviderListings();
+      items = snapshots.map(s => ({
+        id: s.id,
+        provider: s.source?.type || 'unknown',
+        title: s.parsed?.title || null,
+        location: s.parsed?.location || null,
+        url: s.source?.value || null,
+        fetched_at: s.fetchedAt || null,
+      }));
+    } else {
+      items = await fromLocalSnapshots();
+    }
+
+    if (titleFilter) {
+      items = items.filter(entry => String(entry.title || '').toLowerCase().includes(titleFilter));
+    }
+    if (items.length > limit) items = items.slice(0, limit);
+
+    return { command: 'discover-openings', format: 'json', stdout: '', stderr: '', data: { items } };
   }
 
   const adapter = {
