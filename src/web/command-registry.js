@@ -41,6 +41,7 @@ const SHORTLIST_LIST_ALLOWED_FIELDS = new Set([
 ]);
 
 const SHORTLIST_SHOW_ALLOWED_FIELDS = new Set(['jobId', 'job_id']);
+const TRACK_SHOW_ALLOWED_FIELDS = new Set(['jobId', 'job_id']);
 const TRACK_RECORD_ALLOWED_FIELDS = new Set(['jobId', 'job_id', 'status', 'note']);
 const ANALYTICS_EXPORT_ALLOWED_FIELDS = new Set(['redact', 'redactCompanies', 'redact_companies']);
 
@@ -243,6 +244,13 @@ function validateShortlistShowPayload(rawPayload) {
   return { jobId };
 }
 
+function validateTrackShowPayload(rawPayload) {
+  const payload = ensurePlainObject(rawPayload, 'track-show');
+  assertAllowedFields(payload, TRACK_SHOW_ALLOWED_FIELDS, 'track-show');
+  const jobId = coerceString(payload.jobId ?? payload.job_id, { name: 'jobId', required: true });
+  return { jobId };
+}
+
 function validateTrackRecordPayload(rawPayload) {
   const payload = ensurePlainObject(rawPayload, 'track-record');
   assertAllowedFields(payload, TRACK_RECORD_ALLOWED_FIELDS, 'track-record');
@@ -264,6 +272,7 @@ const COMMAND_VALIDATORS = Object.freeze({
   match: validateMatchPayload,
   'shortlist-list': validateShortlistListPayload,
   'shortlist-show': validateShortlistShowPayload,
+  'track-show': validateTrackShowPayload,
   'track-record': validateTrackRecordPayload,
   'analytics-funnel': validateAnalyticsFunnelPayload,
   'analytics-export': validateAnalyticsExportPayload,

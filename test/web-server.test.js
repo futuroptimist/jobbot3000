@@ -506,10 +506,36 @@ describe('web server status page', () => {
           },
         };
       }),
+      'track-show': vi.fn(async payload => {
+        expect(payload).toEqual({ jobId: 'job-42' });
+        return {
+          command: 'track-show',
+          format: 'json',
+          stdout: '',
+          stderr: '',
+          returnValue: 0,
+          data: {
+            job_id: 'job-42',
+            status: {
+              status: 'screening',
+              note: 'Waiting for feedback',
+              updated_at: '2025-03-05T16:00:00.000Z',
+            },
+            events: [
+              {
+                channel: 'interview',
+                note: 'Scheduled technical interview',
+                date: '2025-03-06T18:00:00.000Z',
+              },
+            ],
+          },
+        };
+      }),
     };
 
     commandAdapter.shortlistList = commandAdapter['shortlist-list'];
     commandAdapter.shortlistShow = commandAdapter['shortlist-show'];
+    commandAdapter.trackShow = commandAdapter['track-show'];
 
     const server = await startServer({ commandAdapter });
     const { dom, boot } = await renderStatusDom(server, {
@@ -539,6 +565,7 @@ describe('web server status page', () => {
     await detailLoaded;
 
     expect(commandAdapter['shortlist-show']).toHaveBeenCalledTimes(1);
+    expect(commandAdapter['track-show']).toHaveBeenCalledTimes(1);
 
     const detailPanel = dom.window.document.querySelector('[data-application-detail]');
     expect(detailPanel?.hasAttribute('hidden')).toBe(false);
@@ -547,6 +574,123 @@ describe('web server status page', () => {
     expect(detailPanel?.textContent).toContain('Sent resume');
     expect(detailPanel?.textContent).toContain('resume.pdf');
     expect(detailPanel?.textContent).toContain('Follow-up scheduled');
+  });
+
+  it('merges attachments from shortlist events when track detail omits them', async () => {
+    const shortlistEntry = {
+      id: 'job-77',
+      metadata: {
+        location: 'Remote',
+        level: 'Senior',
+        compensation: '$180k',
+        synced_at: '2025-03-02T15:00:00.000Z',
+      },
+      tags: ['priority'],
+      discard_count: 0,
+    };
+
+    const shortlistEvents = [
+      {
+        channel: 'email',
+        date: '2025-03-03T09:00:00.000Z',
+        documents: [' portfolio.pdf ', 'resume.pdf'],
+      },
+      {
+        channel: 'call',
+        date: '2025-03-04T11:30:00.000Z',
+        documents: ['resume.pdf', 'notes.txt'],
+      },
+    ];
+
+    const commandAdapter = {
+      'shortlist-list': vi.fn(async () => ({
+        command: 'shortlist-list',
+        format: 'json',
+        stdout: '',
+        stderr: '',
+        returnValue: 0,
+        data: {
+          total: 1,
+          offset: 0,
+          limit: 20,
+          filters: {},
+          hasMore: false,
+          items: [shortlistEntry],
+        },
+      })),
+      'shortlist-show': vi.fn(async payload => {
+        expect(payload).toEqual({ jobId: 'job-77' });
+        return {
+          command: 'shortlist-show',
+          format: 'json',
+          stdout: '',
+          stderr: '',
+          returnValue: 0,
+          data: {
+            job_id: 'job-77',
+            metadata: shortlistEntry.metadata,
+            tags: shortlistEntry.tags,
+            discard_count: shortlistEntry.discard_count,
+            events: shortlistEvents,
+          },
+        };
+      }),
+      'track-show': vi.fn(async payload => {
+        expect(payload).toEqual({ jobId: 'job-77' });
+        return {
+          command: 'track-show',
+          format: 'json',
+          stdout: '',
+          stderr: '',
+          returnValue: 0,
+          data: {
+            job_id: 'job-77',
+            status: {
+              status: 'screening',
+              note: 'Waiting for feedback',
+              updated_at: '2025-03-04T12:00:00.000Z',
+            },
+            events: [],
+          },
+        };
+      }),
+    };
+
+    commandAdapter.shortlistList = commandAdapter['shortlist-list'];
+    commandAdapter.shortlistShow = commandAdapter['shortlist-show'];
+    commandAdapter.trackShow = commandAdapter['track-show'];
+
+    const server = await startServer({ commandAdapter });
+    const { dom, boot } = await renderStatusDom(server, {
+      pretendToBeVisual: true,
+      autoBoot: false,
+    });
+
+    const waitForEvent = (name, timeout = 500) => waitForDomEvent(dom, name, timeout);
+
+    const readyPromise = waitForEvent('jobbot:applications-ready');
+    await boot();
+    await readyPromise;
+    const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
+    dom.window.location.hash = '#applications';
+    dom.window.dispatchEvent(new HashChange('hashchange'));
+
+    await waitForEvent('jobbot:applications-loaded');
+    expect(commandAdapter['shortlist-list']).toHaveBeenCalledTimes(1);
+
+    const detailToggle = dom.window.document.querySelector('[data-shortlist-view]');
+    expect(detailToggle?.getAttribute('data-shortlist-view')).toBe('job-77');
+
+    const detailLoaded = waitForEvent('jobbot:application-detail-loaded');
+    detailToggle?.dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+    await detailLoaded;
+
+    expect(commandAdapter['shortlist-show']).toHaveBeenCalledTimes(1);
+    expect(commandAdapter['track-show']).toHaveBeenCalledTimes(1);
+
+    const detailPanel = dom.window.document.querySelector('[data-application-detail]');
+    expect(detailPanel?.hasAttribute('hidden')).toBe(false);
+    expect(detailPanel?.textContent).toContain('Attachments: portfolio.pdf, resume.pdf, notes.txt');
   });
 
   it('renders analytics funnel dashboard from CLI data', async () => {
@@ -804,6 +948,25 @@ describe('web server status page', () => {
           },
         };
       }),
+      'track-show': vi.fn(async payload => {
+        expect(payload).toEqual({ jobId: 'job-42' });
+        return {
+          command: 'track-show',
+          format: 'json',
+          stdout: '',
+          stderr: '',
+          returnValue: 0,
+          data: {
+            job_id: 'job-42',
+            status: {
+              status: 'screening',
+              note: 'Initial screening',
+              updated_at: '2025-03-05T12:30:00.000Z',
+            },
+            events: [],
+          },
+        };
+      }),
       'track-record': vi.fn(async payload => {
         expect(payload).toEqual({ jobId: 'job-42', status: 'offer', note: 'Signed offer' });
         return {
@@ -824,6 +987,7 @@ describe('web server status page', () => {
 
     commandAdapter.shortlistList = commandAdapter['shortlist-list'];
     commandAdapter.shortlistShow = commandAdapter['shortlist-show'];
+    commandAdapter.trackShow = commandAdapter['track-show'];
     commandAdapter.trackRecord = commandAdapter['track-record'];
 
     const server = await startServer({ commandAdapter });
@@ -852,6 +1016,7 @@ describe('web server status page', () => {
       new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }),
     );
     await detailLoaded;
+    expect(commandAdapter['track-show']).toHaveBeenCalledTimes(1);
 
     const statusSelect = dom.window.document.querySelector('[data-application-status]');
     expect(statusSelect).not.toBeNull();

@@ -1552,6 +1552,16 @@ Regression coverage in [`test/cli.test.js`](test/cli.test.js) ensures the
 timeline order, attachment rollups, and JSON payload stay stable so future web
 detail views can rely on the same surface.
 
+The status hub served by [`src/web/server.js`](src/web/server.js) now calls the
+`/commands/track-show` endpoint to merge shortlist metadata with this lifecycle
+detail, rendering status, notes, attachments, and outreach events directly in
+the application drawer. The drawer deduplicates attachments gathered from both
+track and shortlist timelines so documents stay visible even if older CLI
+payloads omit the aggregated list. Tests in
+[`test/web-server.test.js`](test/web-server.test.js) and
+[`test/web-command-adapter.test.js`](test/web-command-adapter.test.js) guard the
+adapter wiring and DOM rendering so the web experience tracks the CLI output.
+
 List tracked applications with filtering and pagination using
 `jobbot track list`. Provide one or more statuses (comma-separated) to narrow the
 results, and combine `--page`/`--page-size` to step through longer histories:

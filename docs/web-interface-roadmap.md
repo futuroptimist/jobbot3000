@@ -222,7 +222,14 @@
      [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js),
      and [`test/web-e2e.test.js`](../test/web-e2e.test.js) keeps the adapter,
      HTML view, and CLI integration aligned.
-  - Application detail view showing lifecycle timeline, notes, and attachments via CLI `show`.
+  - _Implemented (2025-10-12):_ Application detail view merges shortlist metadata with
+    `jobbot track show` output to display lifecycle status, notes, attachments, and timeline
+    events inside the detail drawer. Because the CLI already persisted these artifacts, the
+    integration remained a read-only bridge. Regression coverage in
+    [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js) and
+    [`test/web-server.test.js`](../test/web-server.test.js) keeps the adapter and DOM integration
+    aligned with the CLI output while ensuring attachments are deduplicated across
+    shortlist and track timelines.
      _Implemented (2025-10-08):_ [`jobbot track show`](../bin/jobbot.js) now
      reads lifecycle entries via [`getLifecycleEntry`](../src/lifecycle.js),
      stitches together activity logs, and prints both human-friendly and JSON
