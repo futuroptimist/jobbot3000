@@ -4,6 +4,8 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
+import { setTimeout as delay } from 'node:timers/promises';
+
 import puppeteer from 'puppeteer';
 
 import { startWebServer } from '../src/web/server.js';
@@ -356,7 +358,7 @@ async function captureScreenshots(baseUrl, outputDir) {
       process.stdout.write(`Capturing ${slug} view from ${targetUrl}\n`);
       await page.goto(targetUrl, { waitUntil: 'networkidle0' });
       await wait();
-      await page.waitForTimeout(500);
+      await delay(500);
       const outputPath = path.join(outputDir, `${slug}.png`);
       await page.screenshot({ path: outputPath, fullPage: true });
       process.stdout.write(`  → Saved ${path.relative(projectRoot, outputPath)}\n`);
