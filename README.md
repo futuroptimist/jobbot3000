@@ -18,6 +18,23 @@ npm run dev
 
 For detailed setup, CLI usage, and environment options, see [docs/getting-started.md](docs/getting-started.md).
 
+## HTTP client example
+
+Use the built-in HTTP client helper when integrating with external services:
+
+```js
+import { createHttpClient } from './src/services/http.js';
+
+const client = createHttpClient({
+  baseUrl: 'https://api.example.com',
+});
+
+const response = await client.get('/status');
+console.log(await response.json());
+```
+
+Run the snippet with `node example.js` after saving it to a file in the project root.
+
 ## Documentation
 
 - [DESIGN.md](DESIGN.md) – architecture details and roadmap
