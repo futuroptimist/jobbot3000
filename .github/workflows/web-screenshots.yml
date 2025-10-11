@@ -19,11 +19,19 @@ jobs:
           fetch-depth: 0
       - name: Install Chromium dependencies
         run: |
+          set -euo pipefail
           sudo apt-get update
+
+          if apt-cache show libasound2t64 >/dev/null 2>&1; then
+            LIBASOUND_PKG=libasound2t64
+          else
+            LIBASOUND_PKG=libasound2
+          fi
+
           sudo apt-get install -y \
             libatk1.0-0 \
             libatk-bridge2.0-0 \
-            libasound2 \
+            "${LIBASOUND_PKG}" \
             libdrm-dev \
             libgbm-dev \
             libgtk-3-0 \
