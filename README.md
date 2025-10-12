@@ -44,6 +44,14 @@ Run the snippet with `node example.js` after saving it to a file in the project 
 - [docs/user-journeys.md](docs/user-journeys.md) – primary user journeys and flows
 - [GitHub Actions: web-screenshots.yml](https://github.com/futuroptimist/jobbot3000/actions/workflows/web-screenshots.yml) – captures the latest UI flows for regressions
 
+## UI screenshots
+
+![Overview screen](docs/screenshots/overview.png "Overview screen")
+![Applications pipeline](docs/screenshots/applications.png "Applications pipeline")
+![Command palette](docs/screenshots/commands.png "Command palette")
+![Audit log](docs/screenshots/audits.png "Audit log")
+![Analytics dashboard](docs/screenshots/analytics.png "Analytics dashboard")
+
 ## License
 
 This project is licensed under the terms of the [MIT License](LICENSE).
