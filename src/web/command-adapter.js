@@ -13,6 +13,7 @@ import {
   normalizeSummarizeRequest,
   normalizeTrackShowRequest,
   normalizeTrackRecordRequest,
+  normalizeTrackShowRequest,
 } from './schemas.js';
 import {
   listListingProviders,
@@ -752,13 +753,10 @@ export function createCommandAdapter(options = {}) {
   async function trackShow(options = {}) {
     const { jobId } = normalizeTrackShowRequest(options);
     const args = [jobId, '--json'];
-    const {
-      stdout,
-      stderr,
-      returnValue,
-      correlationId,
-      traceId,
-    } = await runCli('track-show', args);
+    const { stdout, stderr, returnValue, correlationId, traceId } = await runCli(
+      'track-show',
+      args,
+    );
 
     const payload = {
       command: 'track-show',

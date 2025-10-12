@@ -1,6 +1,7 @@
 import {
   normalizeAnalyticsExportRequest,
   normalizeAnalyticsFunnelRequest,
+  normalizeTrackShowRequest,
   normalizeTrackRecordRequest,
 } from './schemas.js';
 
@@ -266,8 +267,7 @@ function validateShortlistShowPayload(rawPayload) {
 function validateTrackShowPayload(rawPayload) {
   const payload = ensurePlainObject(rawPayload, 'track-show');
   assertAllowedFields(payload, TRACK_SHOW_ALLOWED_FIELDS, 'track-show');
-  const jobId = coerceString(payload.jobId ?? payload.job_id, { name: 'jobId', required: true });
-  return { jobId };
+  return normalizeTrackShowRequest(payload);
 }
 
 function validateTrackRecordPayload(rawPayload) {

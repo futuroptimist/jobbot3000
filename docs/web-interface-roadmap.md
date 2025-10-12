@@ -39,14 +39,9 @@
 
 > [!NOTE]
 > **Future work triage (2025-10-08):**
-> - ~~*Application detail view showing lifecycle timeline, notes, and attachments via CLI `show`.*~~
->   _Implemented (2025-10-12):_ the status hub now wires `/commands/track-show` through
->   [`src/web/command-adapter.js`](../src/web/command-adapter.js) so the drawer merges shortlist
->   metadata with lifecycle telemetry from the CLI. Regression coverage in
->   [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js) exercises the new
->   adapter command, validates secret redaction, and asserts error handling for missing job IDs.
->   This change was prioritized because the CLI already surfaced the persisted lifecycle data,
->   enabling a single-PR implementation without new storage work.
+> - ✅ *Application detail view showing lifecycle timeline, notes, and attachments via CLI `show`.*
+>   Shipped on 2025-10-12 by wiring the existing CLI detail surface into the status hub (see details
+>   below), so follow-up work can focus on mutation flows.
 > - *Action panel enabling create/update status workflows mapped to CLI `create`/`update`.*
 >   Requires new mutation endpoints and UI flows, so it remains a larger follow-up task.
 
@@ -234,7 +229,8 @@
     [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js) and
     [`test/web-server.test.js`](../test/web-server.test.js) keeps the adapter and DOM integration
     aligned with the CLI output while ensuring attachments are deduplicated across
-    shortlist and track timelines.
+    shortlist and track timelines. Fresh adapter coverage locks the `jobbot track show`
+    bridge with sanitized JSON output so secrets stay redacted inside the drawer payloads.
      _Implemented (2025-10-08):_ [`jobbot track show`](../bin/jobbot.js) now
      reads lifecycle entries via [`getLifecycleEntry`](../src/lifecycle.js),
      stitches together activity logs, and prints both human-friendly and JSON
