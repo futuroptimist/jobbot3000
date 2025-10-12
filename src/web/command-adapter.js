@@ -11,8 +11,8 @@ import {
   normalizeShortlistListRequest,
   normalizeShortlistShowRequest,
   normalizeSummarizeRequest,
-  normalizeTrackRecordRequest,
   normalizeTrackShowRequest,
+  normalizeTrackRecordRequest,
 } from './schemas.js';
 import {
   listListingProviders,
@@ -34,10 +34,9 @@ const SECRET_KEYS = [
   'passphrase',
 ];
 
-const SECRET_KEY_VALUE_PATTERN =
-  "(?:[\"']?)(?:" +
-  SECRET_KEYS.join('|') +
-  ")(?:[\"']?)\\s*[:=]\\s*(?:\"([^\"]+)\"|'([^']+)'|([^,;\\r\\n]+))";
+const SECRET_KEY_VALUE_PATTERN = String.raw`(?:["']?)(?:${SECRET_KEYS.join(
+  '|',
+)})(?:["']?)\s*[:=]\s*(?:"([^"]+)"|'([^']+)'|([^,;\s\r\n)\]"'}]+))`;
 const SECRET_KEY_VALUE_RE = new RegExp(SECRET_KEY_VALUE_PATTERN, 'gi');
 const SECRET_BEARER_RE = /\bBearer\s+([A-Za-z0-9._\-+/=]{8,})/gi;
 const SECRET_KEY_FIELD_RE = new RegExp(`(?:${SECRET_KEYS.join('|')})`, 'i');
