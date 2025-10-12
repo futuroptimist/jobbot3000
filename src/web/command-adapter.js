@@ -13,7 +13,6 @@ import {
   normalizeSummarizeRequest,
   normalizeTrackShowRequest,
   normalizeTrackRecordRequest,
-  normalizeTrackShowRequest,
 } from './schemas.js';
 import {
   listListingProviders,
