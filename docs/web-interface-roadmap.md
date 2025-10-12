@@ -39,9 +39,9 @@
 
 > [!NOTE]
 > **Future work triage (2025-10-08):**
-> - *Application detail view showing lifecycle timeline, notes, and attachments via CLI `show`.*
->   Fits within a single PR because the CLI already persists lifecycle statuses and activity logs,
->   so the feature primarily needs a read-focused command and documentation updates.
+> - ✅ *Application detail view showing lifecycle timeline, notes, and attachments via CLI `show`.*
+>   Shipped on 2025-10-12 by wiring the existing CLI detail surface into the status hub (see details
+>   below), so follow-up work can focus on mutation flows.
 > - *Action panel enabling create/update status workflows mapped to CLI `create`/`update`.*
 >   Requires new mutation endpoints and UI flows, so it remains a larger follow-up task.
 
@@ -229,7 +229,8 @@
     [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js) and
     [`test/web-server.test.js`](../test/web-server.test.js) keeps the adapter and DOM integration
     aligned with the CLI output while ensuring attachments are deduplicated across
-    shortlist and track timelines.
+    shortlist and track timelines. Fresh adapter coverage locks the `jobbot track show`
+    bridge with sanitized JSON output so secrets stay redacted inside the drawer payloads.
      _Implemented (2025-10-08):_ [`jobbot track show`](../bin/jobbot.js) now
      reads lifecycle entries via [`getLifecycleEntry`](../src/lifecycle.js),
      stitches together activity logs, and prints both human-friendly and JSON

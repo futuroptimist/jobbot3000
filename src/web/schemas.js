@@ -240,6 +240,12 @@ export function normalizeShortlistShowRequest(options) {
   return { jobId };
 }
 
+export function normalizeTrackShowRequest(options) {
+  assertPlainObject(options, 'track show options');
+  const jobId = assertRequiredString(options.jobId ?? options.job_id, 'jobId');
+  return { jobId };
+}
+
 export function normalizeTrackRecordRequest(options) {
   assertPlainObject(options, 'track record options');
   for (const key of Object.keys(options)) {
