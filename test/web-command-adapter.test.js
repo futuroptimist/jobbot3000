@@ -505,6 +505,61 @@ describe('createCommandAdapter', () => {
     ]);
   });
 
+  it('loads track show details with sanitized output', async () => {
+    const cli = {
+      cmdTrackShow: vi.fn(async args => {
+        expect(args).toEqual(['job-11', '--json']);
+        console.log(
+          JSON.stringify({
+            job_id: 'job-11',
+            status: {
+              status: 'offer',
+              note: 'Offer extended',
+              token: 'abcd123',
+              updated_at: '2025-03-09T12:00:00.000Z',
+            },
+            events: [
+              {
+                channel: 'email',
+                note: 'Shared onboarding packet',
+                documents: ['resume.pdf'],
+                auth_token: 'xyz789',
+              },
+            ],
+            attachments: ['resume.pdf', 'offer.pdf'],
+          }),
+        );
+      }),
+    };
+
+    const adapter = createCommandAdapter({ cli });
+    const result = await adapter['track-show']({ jobId: 'job-11' });
+
+    expect(cli.cmdTrackShow).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      command: 'track-show',
+      format: 'json',
+      data: {
+        job_id: 'job-11',
+        status: {
+          status: 'offer',
+          note: 'Offer extended',
+          updated_at: '2025-03-09T12:00:00.000Z',
+        },
+        attachments: ['resume.pdf', 'offer.pdf'],
+      },
+    });
+    expect(result.data.status.token).toBe('***');
+    expect(result.data.events).toEqual([
+      {
+        channel: 'email',
+        note: 'Shared onboarding packet',
+        documents: ['resume.pdf'],
+        auth_token: '***',
+      },
+    ]);
+  });
+
   it('loads analytics funnel data with sanitized output', async () => {
     const cli = {
       cmdAnalyticsFunnel: vi.fn(async args => {
