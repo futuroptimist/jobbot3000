@@ -1462,11 +1462,54 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             collectFromEvents(shortlist.events);
             collectFromEvents(events);
 
+            const extractEventTimestamp = entry => {
+              if (!entry || typeof entry !== 'object') {
+                return Number.NEGATIVE_INFINITY;
+              }
+              const fields = [
+                'date',
+                'occurred_at',
+                'occurredAt',
+                'remind_at',
+                'remindAt',
+                'updated_at',
+                'updatedAt',
+                'created_at',
+                'createdAt',
+              ];
+              for (const field of fields) {
+                const value = entry[field];
+                if (typeof value === 'string') {
+                  const trimmed = value.trim();
+                  if (!trimmed) continue;
+                  const timestamp = Date.parse(trimmed);
+                  if (!Number.isNaN(timestamp)) {
+                    return timestamp;
+                  }
+                }
+              }
+              return Number.NEGATIVE_INFINITY;
+            };
+
+            const timeline = events
+              .map((entry, index) => ({
+                entry,
+                index,
+                timestamp: extractEventTimestamp(entry),
+              }))
+              .sort((a, b) => {
+                if (a.timestamp === b.timestamp) {
+                  return a.index - b.index;
+                }
+                return b.timestamp - a.timestamp;
+              })
+              .map(item => item.entry);
+
             const detail = { ...shortlist };
             detail.job_id = normalizedJobId;
             detail.status = track.status;
             detail.attachments = attachments;
-            detail.events = events;
+            detail.events = timeline;
             detail.track = track;
             detail.shortlist = shortlist;
             return detail;

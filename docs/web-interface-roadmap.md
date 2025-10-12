@@ -40,8 +40,10 @@
 > [!NOTE]
 > **Future work triage (2025-10-08):**
 > - *Application detail view showing lifecycle timeline, notes, and attachments via CLI `show`.*
->   Fits within a single PR because the CLI already persists lifecycle statuses and activity logs,
->   so the feature primarily needs a read-focused command and documentation updates.
+>   _Implemented (2025-10-12):_ The applications drawer now merges shortlist and tracker detail
+>   responses, sorts timeline events by most recent activity, and surfaces attachments inline.
+>   Regression coverage in [`test/web-server.test.js`](../test/web-server.test.js) keeps the timeline
+>   order locked so future changes continue to surface the latest updates first.
 > - *Action panel enabling create/update status workflows mapped to CLI `create`/`update`.*
 >   Requires new mutation endpoints and UI flows, so it remains a larger follow-up task.
 

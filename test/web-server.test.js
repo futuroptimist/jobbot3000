@@ -897,6 +897,131 @@ describe('web server status page', () => {
     expect(detailPanel?.textContent).toContain('Attachments: portfolio.pdf, resume.pdf, notes.txt');
   });
 
+  it('orders application timeline events by most recent activity first', async () => {
+    const shortlistEntry = {
+      id: 'job-88',
+      metadata: {
+        location: 'Remote',
+        level: 'Lead',
+        compensation: '$210k',
+        synced_at: '2025-03-10T08:00:00.000Z',
+      },
+    };
+
+    const shortlistEvents = [
+      {
+        channel: 'call',
+        note: 'Checked in with recruiter',
+        date: '2025-03-04T11:00:00.000Z',
+      },
+    ];
+
+    const trackEvents = [
+      {
+        channel: 'interview',
+        note: 'Technical interview scheduled',
+        date: '2025-03-03T16:00:00.000Z',
+      },
+      {
+        channel: 'email',
+        note: 'Offer extended',
+        date: '2025-03-07T09:30:00.000Z',
+      },
+    ];
+
+    const commandAdapter = {
+      'shortlist-list': vi.fn(async () => ({
+        command: 'shortlist-list',
+        format: 'json',
+        stdout: '',
+        stderr: '',
+        returnValue: 0,
+        data: {
+          total: 1,
+          offset: 0,
+          limit: 20,
+          filters: {},
+          hasMore: false,
+          items: [shortlistEntry],
+        },
+      })),
+      'shortlist-show': vi.fn(async payload => {
+        expect(payload).toEqual({ jobId: 'job-88' });
+        return {
+          command: 'shortlist-show',
+          format: 'json',
+          stdout: '',
+          stderr: '',
+          returnValue: 0,
+          data: {
+            job_id: 'job-88',
+            metadata: shortlistEntry.metadata,
+            events: shortlistEvents,
+          },
+        };
+      }),
+      'track-show': vi.fn(async payload => {
+        expect(payload).toEqual({ jobId: 'job-88' });
+        return {
+          command: 'track-show',
+          format: 'json',
+          stdout: '',
+          stderr: '',
+          returnValue: 0,
+          data: {
+            job_id: 'job-88',
+            status: {
+              status: 'offer',
+              note: 'Pending signature',
+              updated_at: '2025-03-07T12:00:00.000Z',
+            },
+            events: trackEvents,
+          },
+        };
+      }),
+    };
+
+    commandAdapter.shortlistList = commandAdapter['shortlist-list'];
+    commandAdapter.shortlistShow = commandAdapter['shortlist-show'];
+    commandAdapter.trackShow = commandAdapter['track-show'];
+
+    const server = await startServer({ commandAdapter });
+    const { dom, boot } = await renderStatusDom(server, {
+      pretendToBeVisual: true,
+      autoBoot: false,
+    });
+
+    const waitForEvent = (name, timeout = 500) => waitForDomEvent(dom, name, timeout);
+
+    const readyPromise = waitForEvent('jobbot:applications-ready');
+    await boot();
+    await readyPromise;
+    const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
+    dom.window.location.hash = '#applications';
+    dom.window.dispatchEvent(new HashChange('hashchange'));
+
+    await waitForEvent('jobbot:applications-loaded');
+    expect(commandAdapter['shortlist-list']).toHaveBeenCalledTimes(1);
+
+    const detailToggle = dom.window.document.querySelector('[data-shortlist-view]');
+    expect(detailToggle?.getAttribute('data-shortlist-view')).toBe('job-88');
+
+    const detailLoaded = waitForEvent('jobbot:application-detail-loaded');
+    detailToggle?.dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+    await detailLoaded;
+
+    const detailPanel = dom.window.document.querySelector('[data-application-detail]');
+    expect(detailPanel?.hasAttribute('hidden')).toBe(false);
+
+    const timelineEntries = Array.from(
+      detailPanel?.querySelectorAll('.application-detail__events li') ?? [],
+    ).map(node => node.textContent ?? '');
+
+    expect(timelineEntries[0]).toContain('Offer extended');
+    expect(timelineEntries[1]).toContain('Checked in with recruiter');
+    expect(timelineEntries[2]).toContain('Technical interview scheduled');
+  });
+
   it('renders analytics funnel dashboard from CLI data', async () => {
     const commandAdapter = {
       'analytics-funnel': vi.fn(async () => ({
