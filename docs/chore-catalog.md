@@ -21,6 +21,11 @@ stays accurate.
 Add additional rows as new routines emerge (for example, dependency bumps or localization sweeps)
 and expand the coverage expectations in `test/chore-catalog.test.js` as the catalog grows.
 
+Vitest now runs the suite in a single worker to avoid the worker RPC timeout that previously caused
+`npm run test:ci` to exit with status 1 after all tests passed. Expect the command to take a few
+minutes on slower machines, and keep the dedicated configuration test green when adjusting the
+runner.
+
 Run `npm run chore:reminders` to print this catalog in a shareable digest (pass `--json` for machine-
 readable output). CI jobs can surface the same summary before merges so contributors remember to run
 each routine locally. The prompt chore wraps spellcheck, Prettier verification, and Markdown link

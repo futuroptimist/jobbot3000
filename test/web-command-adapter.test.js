@@ -505,6 +505,80 @@ describe('createCommandAdapter', () => {
     ]);
   });
 
+  it('loads lifecycle detail, timeline, and attachments with track-show', async () => {
+    const cli = {
+      cmdTrackShow: vi.fn(async args => {
+        expect(args).toEqual(['job-42', '--json']);
+        console.log(
+          JSON.stringify({
+            job_id: 'job-42',
+            status: {
+              status: 'screening',
+              note: 'Waiting on recruiter feedback (api_key=supersecret)',
+              updated_at: '2025-03-05T16:00:00.000Z',
+            },
+            attachments: ['resume.pdf', 'cover-letter.pdf'],
+            events: [
+              {
+                channel: 'applied',
+                date: '2025-03-01T09:30:00.000Z',
+                note: 'Submitted resume (token=abc12345)',
+                documents: ['resume.pdf', 'cover-letter.pdf'],
+              },
+              {
+                channel: 'follow_up',
+                date: '2025-03-05T10:15:00.000Z',
+                note: 'Checked in with recruiter',
+              },
+            ],
+          }),
+        );
+      }),
+    };
+
+    const adapter = createCommandAdapter({ cli });
+    const result = await adapter['track-show']({ jobId: 'job-42' });
+
+    expect(cli.cmdTrackShow).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      command: 'track-show',
+      format: 'json',
+    });
+    expect(result.data).toMatchObject({
+      job_id: 'job-42',
+      status: {
+        status: 'screening',
+        updated_at: '2025-03-05T16:00:00.000Z',
+      },
+    });
+    expect(result.data.status?.note).toContain('api_key=***)');
+    expect(result.data.events).toEqual([
+      {
+        channel: 'applied',
+        date: '2025-03-01T09:30:00.000Z',
+        note: 'Submitted resume (token=***)',
+        documents: ['resume.pdf', 'cover-letter.pdf'],
+      },
+      {
+        channel: 'follow_up',
+        date: '2025-03-05T10:15:00.000Z',
+        note: 'Checked in with recruiter',
+      },
+    ]);
+    expect(result.data.attachments).toEqual(['resume.pdf', 'cover-letter.pdf']);
+  });
+
+  it('requires a jobId when invoking track-show', async () => {
+    const cli = {
+      cmdTrackShow: vi.fn(),
+    };
+
+    const adapter = createCommandAdapter({ cli });
+
+    await expect(adapter['track-show']({})).rejects.toThrow('jobId is required');
+    expect(cli.cmdTrackShow).not.toHaveBeenCalled();
+  });
+
   it('loads analytics funnel data with sanitized output', async () => {
     const cli = {
       cmdAnalyticsFunnel: vi.fn(async args => {

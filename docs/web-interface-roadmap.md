@@ -39,9 +39,14 @@
 
 > [!NOTE]
 > **Future work triage (2025-10-08):**
-> - *Application detail view showing lifecycle timeline, notes, and attachments via CLI `show`.*
->   Fits within a single PR because the CLI already persists lifecycle statuses and activity logs,
->   so the feature primarily needs a read-focused command and documentation updates.
+> - ~~*Application detail view showing lifecycle timeline, notes, and attachments via CLI `show`.*~~
+>   _Implemented (2025-10-12):_ the status hub now wires `/commands/track-show` through
+>   [`src/web/command-adapter.js`](../src/web/command-adapter.js) so the drawer merges shortlist
+>   metadata with lifecycle telemetry from the CLI. Regression coverage in
+>   [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js) exercises the new
+>   adapter command, validates secret redaction, and asserts error handling for missing job IDs.
+>   This change was prioritized because the CLI already surfaced the persisted lifecycle data,
+>   enabling a single-PR implementation without new storage work.
 > - *Action panel enabling create/update status workflows mapped to CLI `create`/`update`.*
 >   Requires new mutation endpoints and UI flows, so it remains a larger follow-up task.
 

@@ -11,6 +11,7 @@ import {
   normalizeShortlistListRequest,
   normalizeShortlistShowRequest,
   normalizeSummarizeRequest,
+  normalizeTrackShowRequest,
   normalizeTrackRecordRequest,
 } from './schemas.js';
 import {
@@ -33,10 +34,9 @@ const SECRET_KEYS = [
   'passphrase',
 ];
 
-const SECRET_KEY_VALUE_PATTERN =
-  "(?:[\"']?)(?:" +
-  SECRET_KEYS.join('|') +
-  ")(?:[\"']?)\\s*[:=]\\s*(?:\"([^\"]+)\"|'([^']+)'|([^,;\\r\\n]+))";
+const SECRET_KEY_VALUE_PATTERN = String.raw`(?:["']?)(?:${SECRET_KEYS.join(
+  '|',
+)})(?:["']?)\s*[:=]\s*(?:"([^"]+)"|'([^']+)'|([^,;\s\r\n)\]"'}]+))`;
 const SECRET_KEY_VALUE_RE = new RegExp(SECRET_KEY_VALUE_PATTERN, 'gi');
 const SECRET_BEARER_RE = /\bBearer\s+([A-Za-z0-9._\-+/=]{8,})/gi;
 const SECRET_KEY_FIELD_RE = new RegExp(`(?:${SECRET_KEYS.join('|')})`, 'i');
@@ -133,6 +133,12 @@ const COMMANDS = Object.freeze({
     cliCommand: ['shortlist', 'show'],
     name: 'shortlist-show',
     errorLabel: 'shortlist show',
+  },
+  'track-show': {
+    method: 'cmdTrackShow',
+    cliCommand: ['track', 'show'],
+    name: 'track-show',
+    errorLabel: 'track show',
   },
   'track-record': {
     method: 'cmdTrackAdd',
@@ -743,6 +749,37 @@ export function createCommandAdapter(options = {}) {
     return payload;
   }
 
+  async function trackShow(options = {}) {
+    const { jobId } = normalizeTrackShowRequest(options);
+    const args = [jobId, '--json'];
+    const {
+      stdout,
+      stderr,
+      returnValue,
+      correlationId,
+      traceId,
+    } = await runCli('track-show', args);
+
+    const payload = {
+      command: 'track-show',
+      format: 'json',
+      stdout,
+      stderr,
+      returnValue,
+    };
+
+    if (correlationId) {
+      payload.correlationId = correlationId;
+    }
+    if (traceId) {
+      payload.traceId = traceId;
+    }
+
+    const parsed = parseJsonOutput('track show', payload.stdout, payload.stderr);
+    payload.data = sanitizeOutputValue(parsed);
+    return payload;
+  }
+
   async function analyticsFunnel(options = {}) {
     normalizeAnalyticsFunnelRequest(options);
     const args = ['--json'];
@@ -896,6 +933,7 @@ export function createCommandAdapter(options = {}) {
     match,
     shortlistList,
     shortlistShow,
+    trackShow,
     analyticsFunnel,
     analyticsExport,
     trackRecord,
@@ -906,6 +944,7 @@ export function createCommandAdapter(options = {}) {
   };
   adapter['shortlist-list'] = shortlistList;
   adapter['shortlist-show'] = shortlistShow;
+  adapter['track-show'] = trackShow;
   adapter['analytics-funnel'] = analyticsFunnel;
   adapter['analytics-export'] = analyticsExport;
   adapter['track-record'] = trackRecord;
@@ -915,6 +954,7 @@ export function createCommandAdapter(options = {}) {
   adapter['listings-archive'] = listingsArchiveCommand;
   adapter.trackRecord = trackRecord;
   adapter.analyticsExport = analyticsExport;
+  adapter.trackShow = trackShow;
   return adapter;
 }
 
