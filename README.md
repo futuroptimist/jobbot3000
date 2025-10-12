@@ -2,6 +2,7 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/futuroptimist/jobbot3000/.github/workflows/ci.yml?label=ci)](https://github.com/futuroptimist/jobbot3000/actions/workflows/ci.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/futuroptimist/jobbot3000/.github/workflows/codeql.yml?label=codeql)](https://github.com/futuroptimist/jobbot3000/actions/workflows/codeql.yml)
+[![Web screenshots](https://img.shields.io/github/actions/workflow/status/futuroptimist/jobbot3000/.github/workflows/web-screenshots.yml?label=web%20screenshots)](https://github.com/futuroptimist/jobbot3000/actions/workflows/web-screenshots.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](#license)
 
 **jobbot3000** is a self-hosted, open-source job search copilot.
@@ -41,6 +42,15 @@ Run the snippet with `node example.js` after saving it to a file in the project 
 - [SECURITY.md](SECURITY.md) – security guidelines
 - [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) – prompt reference index
 - [docs/user-journeys.md](docs/user-journeys.md) – primary user journeys and flows
+- [GitHub Actions: web-screenshots.yml](https://github.com/futuroptimist/jobbot3000/actions/workflows/web-screenshots.yml) – captures the latest UI flows for regressions
+
+## UI screenshots
+
+![Overview screen](docs/screenshots/overview.png "Overview screen")
+![Applications pipeline](docs/screenshots/applications.png "Applications pipeline")
+![Command palette](docs/screenshots/commands.png "Command palette")
+![Audit log](docs/screenshots/audits.png "Audit log")
+![Analytics dashboard](docs/screenshots/analytics.png "Analytics dashboard")
 
 ## License
 
