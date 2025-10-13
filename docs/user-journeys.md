@@ -23,8 +23,11 @@ jobbot3000.
 4. Confirm or edit the parsed sections via `jobbot profile edit <section>` or re-run `jobbot import`
    with `--merge-strategy replace|merge` to control overwrites.
 5. Persist the normalized profile to `data/profile/` and version subsequent edits with
-   `jobbot profile snapshot --note <message>` so downstream tailoring can reference specific
-   revisions.
+   `jobbot profile snapshot --note <message>`. The command writes structured JSON snapshots under
+   `data/profile/snapshots/` that include the ISO timestamp, optional note, and a copy of the
+   current `resume.json`, letting downstream tailoring reference specific revisions. Regression
+   coverage in [`test/cli.test.js`](../test/cli.test.js) exercises the happy path, JSON output, and
+   missing-resume failure case.
 
 ### Web flow
 
@@ -39,7 +42,7 @@ jobbot3000.
 4. Save to the local workspace; the UI confirms the destination path under `data/profile/` and
    surfaces a link to open the file in the preferred editor.
 5. Optionally trigger **Create Snapshot** from the toolbar, which mirrors `jobbot profile snapshot`
-   and stores timestamped revisions for later auditing.
+   and stores timestamped revisions under `data/profile/snapshots/` for later auditing.
 
 ### Unhappy paths & recovery
 
