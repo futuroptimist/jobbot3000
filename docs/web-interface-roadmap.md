@@ -42,8 +42,11 @@
 > - ✅ *Application detail view showing lifecycle timeline, notes, and attachments via CLI `show`.*
 >   Shipped on 2025-10-12 by wiring the existing CLI detail surface into the status hub (see details
 >   below), so follow-up work can focus on mutation flows.
-> - *Action panel enabling create/update status workflows mapped to CLI `create`/`update`.*
->   Requires new mutation endpoints and UI flows, so it remains a larger follow-up task.
+> - ✅ *Action panel enabling create/update status workflows mapped to CLI `create`/`update`.*
+>   Shipped alongside automatic detail refresh so newly recorded statuses appear immediately in the
+>   Applications drawer. [`test/web-server.test.js`](../test/web-server.test.js) now exercises the
+>   end-to-end flow, verifying the UI re-renders lifecycle status after posting to
+>   `/commands/track-record`.
 
 > [!NOTE]
 > **Update (2025-10-11):** The status hub now streams its client script from
@@ -253,8 +256,9 @@
      [`cmdTrackAdd`](../bin/jobbot.js) to create or update lifecycle entries
      with optional notes. [`src/web/server.js`](../src/web/server.js) renders
      the form, validates status selections, surfaces inline success/error
-     messaging, and emits a `jobbot:application-status-recorded` event so
-     extensions can react to updates. Regression coverage in
+     messaging, surfaces the current lifecycle status in the drawer header, and
+     reloads application detail after each save. A `jobbot:application-status-recorded`
+     event lets extensions react to updates without polling. Regression coverage in
      [`test/web-server.test.js`](../test/web-server.test.js) drives the DOM
      workflow against a mocked adapter, while
    [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)

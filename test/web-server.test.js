@@ -1361,12 +1361,220 @@ describe('web server status page', () => {
     expect(form).not.toBeNull();
 
     const statusRecorded = waitForEvent('jobbot:application-status-recorded');
+    const detailReloaded = waitForEvent('jobbot:application-detail-loaded');
     form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
     await statusRecorded;
+    await detailReloaded;
+    await new Promise(resolve => dom.window.setTimeout(resolve, 0));
 
     expect(commandAdapter['track-record']).toHaveBeenCalledTimes(1);
     const message = dom.window.document.querySelector('[data-action-message]');
     expect(message?.textContent).toContain('Recorded job-42 as offer');
+  });
+
+  it('refreshes application detail after recording a status update', async () => {
+    const shortlistDetail = {
+      command: 'shortlist-show',
+      format: 'json',
+      stdout: JSON.stringify({
+        job_id: 'job-42',
+        metadata: {
+          location: 'Remote',
+          level: 'Senior',
+          compensation: '$150k',
+          synced_at: '2025-03-05T10:00:00.000Z',
+        },
+        tags: ['remote'],
+        attachments: ['resume.pdf'],
+        events: [],
+      }),
+      stderr: '',
+      returnValue: 0,
+      data: {
+        job_id: 'job-42',
+        metadata: {
+          location: 'Remote',
+          level: 'Senior',
+          compensation: '$150k',
+          synced_at: '2025-03-05T10:00:00.000Z',
+        },
+        tags: ['remote'],
+        attachments: ['resume.pdf'],
+        events: [],
+      },
+    };
+
+    const trackShowInitial = {
+      command: 'track-show',
+      format: 'json',
+      stdout: JSON.stringify({
+        job_id: 'job-42',
+        status: 'screening',
+        events: [],
+      }),
+      stderr: '',
+      returnValue: 0,
+      data: {
+        job_id: 'job-42',
+        status: 'screening',
+        events: [],
+      },
+    };
+
+    const trackShowUpdated = {
+      command: 'track-show',
+      format: 'json',
+      stdout: JSON.stringify({
+        job_id: 'job-42',
+        status: 'offer',
+        events: [
+          {
+            channel: 'email',
+            date: '2025-03-06T09:30:00.000Z',
+            note: 'Offer signed',
+          },
+        ],
+      }),
+      stderr: '',
+      returnValue: 0,
+      data: {
+        job_id: 'job-42',
+        status: 'offer',
+        events: [
+          {
+            channel: 'email',
+            date: '2025-03-06T09:30:00.000Z',
+            note: 'Offer signed',
+          },
+        ],
+      },
+    };
+
+    const commandAdapter = {
+      'shortlist-list': vi.fn(async () => ({
+        command: 'shortlist-list',
+        format: 'json',
+        stdout: JSON.stringify({
+          total: 1,
+          offset: 0,
+          limit: 10,
+          items: [
+            {
+              id: 'job-42',
+              metadata: {
+                location: 'Remote',
+                level: 'Senior',
+                compensation: '$150k',
+                synced_at: '2025-03-05T10:00:00.000Z',
+              },
+              tags: ['remote'],
+              discard_count: 0,
+            },
+          ],
+        }),
+        stderr: '',
+        returnValue: 0,
+        data: {
+          total: 1,
+          offset: 0,
+          limit: 10,
+          items: [
+            {
+              id: 'job-42',
+              metadata: {
+                location: 'Remote',
+                level: 'Senior',
+                compensation: '$150k',
+                synced_at: '2025-03-05T10:00:00.000Z',
+              },
+              tags: ['remote'],
+              discard_count: 0,
+            },
+          ],
+        },
+      })),
+      'shortlist-show': vi
+        .fn()
+        .mockResolvedValueOnce(shortlistDetail)
+        .mockResolvedValueOnce(shortlistDetail),
+      'track-show': vi
+        .fn()
+        .mockResolvedValueOnce(trackShowInitial)
+        .mockResolvedValueOnce(trackShowUpdated),
+      'track-record': vi.fn(async payload => {
+        expect(payload).toEqual({ jobId: 'job-42', status: 'offer', note: 'Signed offer' });
+        return {
+          command: 'track-record',
+          format: 'text',
+          stdout: 'Recorded job-42 as offer\n',
+          stderr: '',
+          returnValue: 0,
+          data: {
+            message: 'Recorded job-42 as offer',
+            jobId: 'job-42',
+            status: 'offer',
+            note: 'Signed offer',
+          },
+        };
+      }),
+    };
+
+    commandAdapter.shortlistList = commandAdapter['shortlist-list'];
+    commandAdapter.shortlistShow = commandAdapter['shortlist-show'];
+    commandAdapter.trackShow = commandAdapter['track-show'];
+    commandAdapter.trackRecord = commandAdapter['track-record'];
+
+    const server = await startServer({ commandAdapter });
+    const { dom, boot } = await renderStatusDom(server, {
+      pretendToBeVisual: true,
+      autoBoot: false,
+    });
+
+    const waitForEvent = (name, timeout = 500) => waitForDomEvent(dom, name, timeout);
+
+    const readyPromise = waitForEvent('jobbot:applications-ready');
+    await boot();
+    await readyPromise;
+
+    const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
+    dom.window.location.hash = '#applications';
+    dom.window.dispatchEvent(new HashChange('hashchange'));
+
+    await waitForEvent('jobbot:applications-loaded');
+    expect(commandAdapter['shortlist-list']).toHaveBeenCalledTimes(1);
+
+    const detailToggle = dom.window.document.querySelector('[data-shortlist-view]');
+    expect(detailToggle?.getAttribute('data-shortlist-view')).toBe('job-42');
+
+    const detailLoadedPromise = waitForEvent('jobbot:application-detail-loaded');
+    detailToggle?.dispatchEvent(
+      new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }),
+    );
+    const firstDetailEvent = await detailLoadedPromise;
+
+    expect(commandAdapter['track-show']).toHaveBeenCalledTimes(1);
+
+    expect(firstDetailEvent?.detail?.data?.status).toBe('screening');
+
+    const statusSelect = dom.window.document.querySelector('[data-application-status]');
+    statusSelect.value = 'offer';
+    statusSelect.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+
+    const noteInput = dom.window.document.querySelector('[data-application-note]');
+    noteInput.value = 'Signed offer';
+    noteInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+
+    const form = dom.window.document.querySelector('[data-application-status-form]');
+    const statusRecorded = waitForEvent('jobbot:application-status-recorded');
+    const nextDetailLoadedPromise = waitForEvent('jobbot:application-detail-loaded');
+    form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    await statusRecorded;
+    const secondDetailEvent = await nextDetailLoadedPromise;
+
+    expect(commandAdapter['track-record']).toHaveBeenCalledTimes(1);
+    expect(commandAdapter['track-show']).toHaveBeenCalledTimes(2);
+    expect(commandAdapter['shortlist-show']).toHaveBeenCalledTimes(2);
+    expect(secondDetailEvent?.detail?.data?.status).toBe('offer');
   });
 });
 
