@@ -10,6 +10,7 @@ import { ingestJobUrl } from './url-ingest.js';
 import { loadResume } from './resume.js';
 import { parseJobText } from './parser.js';
 import { computeFitScore } from './scoring.js';
+import { sendWeeklySummaryEmail } from './notifications.js';
 
 const DEFAULT_LOGGER = {
   info: message => console.log(message),
@@ -313,6 +314,61 @@ function normalizeMatchTask(definition, baseDir) {
   return params;
 }
 
+function normalizeNotificationTask(definition, baseDir) {
+  const type = typeof definition.notification === 'string' ? definition.notification.trim() : '';
+  if (!type) {
+    throw new Error(`notification task ${definition.id} requires a notification type`);
+  }
+  const normalizedType = type.toLowerCase();
+  if (normalizedType !== 'weekly-summary') {
+    throw new Error(`unsupported notification type: ${type}`);
+  }
+
+  const recipientsSource =
+    definition.to ?? definition.recipients ?? definition.recipient ?? definition.address;
+  const recipientsRaw = Array.isArray(recipientsSource)
+    ? recipientsSource
+    : typeof recipientsSource === 'string'
+      ? recipientsSource.split(',')
+      : [];
+  const recipients = recipientsRaw
+    .map(entry => (typeof entry === 'string' ? entry.trim() : ''))
+    .filter(Boolean);
+  if (recipients.length === 0) {
+    throw new Error(`notification task ${definition.id} requires one or more recipients`);
+  }
+
+  let rangeDays;
+  if (definition.rangeDays != null || definition.days != null) {
+    const value = Number(definition.rangeDays ?? definition.days);
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new Error(`notification task ${definition.id} rangeDays must be a positive number`);
+    }
+    rangeDays = Math.floor(value);
+  }
+
+  const subjectPrefix =
+    typeof definition.subjectPrefix === 'string' && definition.subjectPrefix.trim()
+      ? definition.subjectPrefix.trim()
+      : undefined;
+
+  const sender =
+    typeof definition.from === 'string' && definition.from.trim()
+      ? definition.from.trim()
+      : undefined;
+
+  const outbox = definition.outbox ? resolvePathRelative(definition.outbox, baseDir) : undefined;
+
+  return {
+    notification: 'weekly-summary',
+    recipients,
+    from: sender,
+    outbox,
+    rangeDays,
+    subjectPrefix,
+  };
+}
+
 export async function loadScheduleConfig(configPath) {
   if (!configPath || typeof configPath !== 'string') {
     throw new Error('config path is required');
@@ -375,6 +431,21 @@ export async function loadScheduleConfig(configPath) {
         id,
         type: 'match',
         params,
+        intervalMs,
+        initialDelayMs,
+        maxRuns,
+      });
+    } else if (typeRaw === 'notification') {
+      const config = normalizeNotificationTask({ ...definition, id }, baseDir);
+      definitions.push({
+        id,
+        type: 'notification',
+        notification: config.notification,
+        recipients: config.recipients,
+        from: config.from,
+        outbox: config.outbox,
+        rangeDays: config.rangeDays,
+        subjectPrefix: config.subjectPrefix,
         intervalMs,
         initialDelayMs,
         maxRuns,
@@ -532,6 +603,27 @@ export function buildScheduledTasks(
       taskConfig.run = () => runIngestTask(definition);
     } else if (definition.type === 'match') {
       taskConfig.run = () => runMatchTask(definition);
+    } else if (definition.type === 'notification') {
+      if (definition.notification !== 'weekly-summary') {
+        throw new Error(`unsupported notification type: ${definition.notification}`);
+      }
+      taskConfig.run = async () => {
+        const referenceNow = typeof now === 'function' ? now() : new Date();
+        const result = await sendWeeklySummaryEmail({
+          to: definition.recipients,
+          from: definition.from,
+          outboxDir: definition.outbox,
+          rangeDays: definition.rangeDays,
+          subjectPrefix: definition.subjectPrefix,
+          now: referenceNow,
+        });
+        const recipientList = Array.isArray(result.to) ? result.to.join(', ') : String(result.to);
+        const relativePath = result.outboxPath
+          ? path.relative(process.cwd(), result.outboxPath)
+          : undefined;
+        const suffix = relativePath && !relativePath.startsWith('..') ? ` at ${relativePath}` : '';
+        return `Weekly summary email queued for ${recipientList}${suffix}`.trim();
+      };
     } else {
       throw new Error(`unsupported task type: ${definition.type}`);
     }

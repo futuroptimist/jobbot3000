@@ -78,6 +78,7 @@ import { createTaskScheduler, loadScheduleConfig, buildScheduledTasks } from '..
 import { transcribeAudio, synthesizeSpeech } from '../src/speech.js';
 import { t, DEFAULT_LOCALE } from '../src/i18n.js';
 import { createReminderCalendar } from '../src/reminders-calendar.js';
+import { sendWeeklySummaryEmail } from '../src/notifications.js';
 
 function isHttpUrl(s) {
   return /^https?:\/\//i.test(s);
@@ -105,6 +106,19 @@ function getNumberFlag(args, name, fallback) {
   const raw = getFlag(args, name);
   const n = Number(raw);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function parseRecipientList(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map(entry => (typeof entry === 'string' ? entry.trim() : ''))
+      .filter(Boolean);
+  }
+  return String(value)
+    .split(',')
+    .map(entry => entry.trim())
+    .filter(Boolean);
 }
 
 function assertFlagHasValue(args, flag, usage) {
@@ -2567,6 +2581,80 @@ async function cmdSchedule(args) {
   process.exit(2);
 }
 
+async function cmdNotificationsWeeklySummary(args) {
+  const usage =
+    'Usage: jobbot notifications weekly-summary --to <email[,email...]> ' +
+    '[--from <address>] [--outbox <path>] [--days <count>] [--now <iso8601>] ' +
+    '[--subject-prefix <text>]';
+  assertFlagHasValue(args, '--to', usage);
+  assertFlagHasValue(args, '--from', usage);
+  assertFlagHasValue(args, '--outbox', usage);
+  assertFlagHasValue(args, '--days', usage);
+  assertFlagHasValue(args, '--now', usage);
+  assertFlagHasValue(args, '--subject-prefix', usage);
+
+  const toRaw = getFlag(args, '--to');
+  const recipients = parseRecipientList(toRaw);
+  if (recipients.length === 0) {
+    console.error('At least one --to recipient is required.');
+    process.exit(2);
+  }
+
+  const from = getFlag(args, '--from') || 'jobbot3000 <jobbot@localhost>';
+  const outboxFlag = getFlag(args, '--outbox');
+  const outboxDir = outboxFlag ? path.resolve(process.cwd(), outboxFlag) : undefined;
+
+  const days = getNumberFlag(args, '--days');
+  if (days !== undefined && (!Number.isFinite(days) || days <= 0)) {
+    console.error('--days must be a positive number');
+    process.exit(2);
+  }
+
+  const nowFlag = getFlag(args, '--now');
+  let now;
+  if (nowFlag) {
+    const parsed = new Date(nowFlag);
+    if (Number.isNaN(parsed.getTime())) {
+      console.error('--now must be a valid ISO-8601 timestamp');
+      process.exit(2);
+    }
+    now = parsed;
+  }
+
+  const subjectPrefix = getFlag(args, '--subject-prefix');
+
+  try {
+    const result = await sendWeeklySummaryEmail({
+      to: recipients,
+      from,
+      outboxDir,
+      rangeDays: days,
+      subjectPrefix,
+      now,
+    });
+    const list = Array.isArray(result.to) ? result.to.join(', ') : String(result.to);
+    let location = result.outboxPath;
+    if (location) {
+      const relative = path.relative(process.cwd(), location);
+      if (!relative.startsWith('..')) {
+        location = relative;
+      }
+    }
+    const suffix = location ? ` at ${location}` : '';
+    console.log(`Queued weekly summary email for ${list}${suffix}`);
+  } catch (err) {
+    console.error(err.message || String(err));
+    process.exit(1);
+  }
+}
+
+async function cmdNotifications(args) {
+  const sub = args[0];
+  if (sub === 'weekly-summary') return cmdNotificationsWeeklySummary(args.slice(1));
+  console.error('Usage: jobbot notifications <weekly-summary> [options]');
+  process.exit(2);
+}
+
 async function cmdInterviewsRecord(args) {
   const jobId = args[0];
   const sessionId = args[1];
@@ -3044,9 +3132,10 @@ async function main() {
   if (cmd === 'ingest') return cmdIngest(args);
   if (cmd === 'interviews') return cmdInterviews(args);
   if (cmd === 'schedule') return cmdSchedule(args);
+  if (cmd === 'notifications') return cmdNotifications(args);
   console.error(
     'Usage: jobbot <init|profile|import|summarize|match|track|shortlist|analytics|' +
-      'rehearse|tailor|deliverables|interviews|intake|ingest|schedule> [options]'
+      'rehearse|tailor|deliverables|interviews|intake|ingest|schedule|notifications> [options]'
   );
   process.exit(2);
 }

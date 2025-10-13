@@ -102,6 +102,61 @@ describe('jobbot CLI', () => {
     expect(out.trim()).toBe('## Summary\n\nFirst. Second.');
   });
 
+  it('spools weekly summary emails through notifications command', () => {
+    const applicationsPath = path.join(dataDir, 'applications.json');
+    fs.writeFileSync(
+      applicationsPath,
+      JSON.stringify(
+        {
+          'job-1': { status: 'onsite', updated_at: '2025-01-30T18:00:00.000Z' },
+        },
+        null,
+        2,
+      ),
+    );
+
+    const eventsPath = path.join(dataDir, 'application_events.json');
+    fs.writeFileSync(
+      eventsPath,
+      JSON.stringify(
+        {
+          'job-1': [
+            { channel: 'email', date: '2025-01-27T10:00:00.000Z' },
+            { channel: 'call', date: '2025-01-29T16:30:00.000Z' },
+          ],
+          'job-2': [{ channel: 'email', date: '2025-01-28T09:15:00.000Z' }],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const outboxDir = path.join(dataDir, 'outbox');
+    const output = runCli([
+      'notifications',
+      'weekly-summary',
+      '--to',
+      'ops@example.com',
+      '--from',
+      'jobbot <alerts@example.com>',
+      '--outbox',
+      outboxDir,
+      '--now',
+      '2025-02-01T12:00:00.000Z',
+      '--days',
+      '7',
+    ]);
+
+    expect(output).toContain('Queued weekly summary email for ops@example.com');
+    const pathMatch = output.trim().match(/ at (.+)$/);
+    expect(pathMatch).not.toBeNull();
+    const spoolPath = pathMatch ? pathMatch[1].trim() : '';
+    expect(fs.existsSync(spoolPath)).toBe(true);
+    const payload = fs.readFileSync(spoolPath, 'utf8');
+    expect(payload).toContain('Subject: jobbot3000 Weekly Summary (2025-01-26 → 2025-02-01)');
+    expect(payload).toContain('To: ops@example.com');
+  });
+
   it('writes DOCX summaries when --docx is provided', async () => {
     const target = path.join(dataDir, 'summary.docx');
     const input = [
