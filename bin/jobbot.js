@@ -78,6 +78,7 @@ import { createTaskScheduler, loadScheduleConfig, buildScheduledTasks } from '..
 import { transcribeAudio, synthesizeSpeech } from '../src/speech.js';
 import { t, DEFAULT_LOCALE } from '../src/i18n.js';
 import { createReminderCalendar } from '../src/reminders-calendar.js';
+import { normalizeRecipientEmail } from '../src/notifications.js';
 
 function isHttpUrl(s) {
   return /^https?:\/\//i.test(s);
@@ -2567,6 +2568,151 @@ async function cmdSchedule(args) {
   process.exit(2);
 }
 
+function resolveDefaultNotificationsConfig() {
+  const dataDir = process.env.JOBBOT_DATA_DIR || path.resolve('data');
+  return path.join(dataDir, 'notifications', 'schedule.json');
+}
+
+async function cmdNotificationsSubscribe(args) {
+  const cadence = args[0];
+  const rest = args.slice(1);
+  const usage =
+    'Usage: jobbot notifications subscribe weekly --email <address> [--config <file>] ' +
+    '[--outbox <dir>] [--interval-minutes <minutes>] [--initial-delay-minutes <minutes>]';
+
+  if (cadence !== 'weekly') {
+    console.error(usage);
+    process.exit(2);
+  }
+
+  assertFlagHasValue(rest, '--email', usage);
+  if (rest.includes('--config')) assertFlagHasValue(rest, '--config', usage);
+  if (rest.includes('--outbox')) assertFlagHasValue(rest, '--outbox', usage);
+  if (rest.includes('--interval-minutes')) {
+    assertFlagHasValue(rest, '--interval-minutes', usage);
+  }
+  if (rest.includes('--initial-delay-minutes')) {
+    assertFlagHasValue(rest, '--initial-delay-minutes', usage);
+  }
+
+  const emailRaw = getFlag(rest, '--email');
+  if (!emailRaw) {
+    console.error(usage);
+    process.exit(2);
+  }
+
+  let email;
+  try {
+    email = normalizeRecipientEmail(emailRaw);
+  } catch (err) {
+    console.error(err.message || String(err));
+    process.exit(2);
+  }
+
+  const configFlag = getFlag(rest, '--config');
+  const configPath = path.resolve(process.cwd(), configFlag || resolveDefaultNotificationsConfig());
+
+  const outboxFlag = getFlag(rest, '--outbox');
+  const outbox = outboxFlag ? path.resolve(process.cwd(), outboxFlag) : undefined;
+
+  const intervalMinutesRaw = getNumberFlag(rest, '--interval-minutes');
+  const intervalMinutes = Number.isFinite(intervalMinutesRaw) && intervalMinutesRaw > 0
+    ? Math.round(intervalMinutesRaw)
+    : 7 * 24 * 60;
+
+  const initialDelayMinutesRaw = getNumberFlag(rest, '--initial-delay-minutes');
+  const initialDelayMinutes =
+    Number.isFinite(initialDelayMinutesRaw) && initialDelayMinutesRaw >= 0
+      ? Math.round(initialDelayMinutesRaw)
+      : undefined;
+
+  let config = { tasks: [] };
+  try {
+    const existing = fs.readFileSync(configPath, 'utf8');
+    const parsed = JSON.parse(existing);
+    if (parsed && typeof parsed === 'object') {
+      config = parsed;
+    }
+  } catch (err) {
+    if (err?.code !== 'ENOENT') {
+      console.error(`Failed to read ${configPath}: ${err.message || err}`);
+      process.exit(1);
+    }
+  }
+
+  if (!config || typeof config !== 'object') config = { tasks: [] };
+  if (!Array.isArray(config.tasks)) config.tasks = [];
+
+  const slug =
+    email
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'recipient';
+  const baseId = `notifications-weekly-${slug}`;
+  const existingIndex = config.tasks.findIndex(task => {
+    if (!task) return false;
+    if (task.type !== 'notification') return false;
+    if (task.template !== 'weekly-summary') return false;
+    return task.email === email;
+  });
+
+  let taskId = baseId;
+  if (existingIndex === -1) {
+    let counter = 1;
+    while (
+      config.tasks.some(task => task?.id === taskId && task.email !== email)
+    ) {
+      taskId = `${baseId}-${counter}`;
+      counter += 1;
+    }
+  } else if (typeof config.tasks[existingIndex]?.id === 'string') {
+    taskId = config.tasks[existingIndex].id;
+  }
+
+  const taskDefinition = {
+    id: taskId,
+    type: 'notification',
+    template: 'weekly-summary',
+    email,
+    intervalMinutes,
+  };
+  if (initialDelayMinutes !== undefined) {
+    taskDefinition.initialDelayMinutes = initialDelayMinutes;
+  }
+  if (outbox) {
+    taskDefinition.outbox = outbox;
+  }
+
+  if (existingIndex === -1) {
+    config.tasks.push(taskDefinition);
+  } else {
+    config.tasks[existingIndex] = { ...config.tasks[existingIndex], ...taskDefinition };
+  }
+
+  await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
+  await fs.promises.writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, 'utf8');
+
+  const notes = [`interval=${intervalMinutes} minutes`];
+  if (outbox) notes.push(`outbox=${outbox}`);
+  if (initialDelayMinutes !== undefined) {
+    notes.push(`initialDelay=${initialDelayMinutes} minutes`);
+  }
+  console.log(
+    `Subscribed weekly summary emails for ${email}. Scheduler config updated at ${configPath} ` +
+      `(${notes.join(', ')})`,
+  );
+}
+
+async function cmdNotifications(args) {
+  const sub = args[0];
+  if (sub === 'subscribe') return cmdNotificationsSubscribe(args.slice(1));
+  console.error(
+    'Usage: jobbot notifications subscribe weekly --email <address> [--config <file>] ' +
+      '[--outbox <dir>]',
+  );
+  process.exit(2);
+}
+
 async function cmdInterviewsRecord(args) {
   const jobId = args[0];
   const sessionId = args[1];
@@ -3044,9 +3190,10 @@ async function main() {
   if (cmd === 'ingest') return cmdIngest(args);
   if (cmd === 'interviews') return cmdInterviews(args);
   if (cmd === 'schedule') return cmdSchedule(args);
+  if (cmd === 'notifications') return cmdNotifications(args);
   console.error(
     'Usage: jobbot <init|profile|import|summarize|match|track|shortlist|analytics|' +
-      'rehearse|tailor|deliverables|interviews|intake|ingest|schedule> [options]'
+      'rehearse|tailor|deliverables|interviews|intake|ingest|schedule|notifications> [options]'
   );
   process.exit(2);
 }

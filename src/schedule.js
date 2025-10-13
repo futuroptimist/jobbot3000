@@ -10,6 +10,7 @@ import { ingestJobUrl } from './url-ingest.js';
 import { loadResume } from './resume.js';
 import { parseJobText } from './parser.js';
 import { computeFitScore } from './scoring.js';
+import { normalizeRecipientEmail, sendWeeklySummaryEmail } from './notifications.js';
 
 const DEFAULT_LOGGER = {
   info: message => console.log(message),
@@ -379,6 +380,41 @@ export async function loadScheduleConfig(configPath) {
         initialDelayMs,
         maxRuns,
       });
+    } else if (typeRaw === 'notification') {
+      const templateRaw = typeof definition.template === 'string' ? definition.template.trim() : '';
+      if (!templateRaw) {
+        throw new Error(`notification task ${id} requires a template`);
+      }
+      const template = templateRaw.toLowerCase();
+      if (template !== 'weekly-summary') {
+        throw new Error(`notification task ${id} unsupported template: ${templateRaw}`);
+      }
+
+      let email;
+      try {
+        email = normalizeRecipientEmail(definition.email);
+      } catch (err) {
+        throw new Error(`notification task ${id} ${err.message}`);
+      }
+
+      let outbox;
+      if (definition.outbox != null) {
+        const rawOutbox = String(definition.outbox).trim();
+        if (rawOutbox) {
+          outbox = path.isAbsolute(rawOutbox) ? rawOutbox : path.resolve(baseDir, rawOutbox);
+        }
+      }
+
+      definitions.push({
+        id,
+        type: 'notification',
+        template,
+        email,
+        outbox,
+        intervalMs,
+        initialDelayMs,
+        maxRuns,
+      });
     } else {
       throw new Error(`unsupported task type: ${typeRaw}`);
     }
@@ -532,6 +568,27 @@ export function buildScheduledTasks(
       taskConfig.run = () => runIngestTask(definition);
     } else if (definition.type === 'match') {
       taskConfig.run = () => runMatchTask(definition);
+    } else if (definition.type === 'notification') {
+      if (definition.template === 'weekly-summary') {
+        taskConfig.run = async () => {
+          const result = await sendWeeklySummaryEmail({
+            email: definition.email,
+            outboxDir: definition.outbox,
+            now: now(),
+          });
+          const relativePath = (() => {
+            if (!result?.path) return '';
+            const outDir = definition.outbox;
+            if (outDir && result.path.startsWith(outDir)) {
+              return ` (${path.relative(outDir, result.path)})`;
+            }
+            return ` (${result.path})`;
+          })();
+          return `Sent weekly summary email to ${definition.email}${relativePath}`;
+        };
+      } else {
+        throw new Error(`unsupported notification template: ${definition.template}`);
+      }
     } else {
       throw new Error(`unsupported task type: ${definition.type}`);
     }

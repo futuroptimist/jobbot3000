@@ -374,7 +374,12 @@ jobbot3000.
    DOM workflow, emitted `jobbot:analytics-exported` events, and sanitized
    filenames, while [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
    ensures the adapter forwards the CLI payload without leaking secrets.
-5. Subscribe to weekly summary emails via **Notifications**, which piggyback on the scheduler.
+5. Subscribe to weekly summary emails via **Notifications** using
+   `jobbot notifications subscribe weekly --email <address>`. The command writes a
+   scheduler config so `jobbot schedule run --config …` can deliver the digest, and
+   [`test/notifications.test.js`](../test/notifications.test.js) verifies the CLI wiring
+   plus the generated `.eml` report (funnel totals, largest drop-offs, and follow-up
+   counts).
 
 ### Unhappy paths & recovery
 
