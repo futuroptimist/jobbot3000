@@ -43,7 +43,7 @@ jobs:
       - name: Capture web interface screenshots
         run: npm run web:screenshots
       - name: Commit updated screenshots
-        uses: stefanzweifel/git-auto-commit-action@v5
+        uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: "chore: update web screenshots"
           file_pattern: docs/screenshots/*.png
