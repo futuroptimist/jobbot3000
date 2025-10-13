@@ -43,10 +43,15 @@
 >   Shipped on 2025-10-12 by wiring the existing CLI detail surface into the status hub (see details
 >   below), so follow-up work can focus on mutation flows.
 > - ✅ *Action panel enabling create/update status workflows mapped to CLI `create`/`update`.*
->   Shipped alongside automatic detail refresh so newly recorded statuses appear immediately in the
->   Applications drawer. [`test/web-server.test.js`](../test/web-server.test.js) now exercises the
->   end-to-end flow, verifying the UI re-renders lifecycle status after posting to
->   `/commands/track-record`.
+>   Shipped on 2025-10-09 with `/commands/track-record` powering the action
+>   drawer. Event payloads now expose human-friendly `statusLabel` values so
+>   extensions can react to lifecycle updates without reimplementing label
+>   formatting. [`test/web-server.test.js`](../test/web-server.test.js)
+>   exercises the DOM workflow and asserts the event payload contract. The
+>   decision is documented in
+>   [`ADR-0001`](architecture-decisions/status-hub-event-payloads.md), and
+>   [`test/docs-adr.test.js`](../test/docs-adr.test.js) keeps the ADR catalog in
+>   sync with regression coverage.
 
 > [!NOTE]
 > **Update (2025-10-11):** The status hub now streams its client script from
@@ -250,17 +255,17 @@
      [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js),
      and [`test/cli.test.js`](../test/cli.test.js) exercises the CLI output,
      adapter wiring, and DOM updates to keep the drawer and timeline stable.
-   - Action panel enabling create/update status workflows mapped to CLI `create`/`update`.
-     _Implemented (2025-10-09):_ The Applications drawer now includes a status
-     action panel that posts to `/commands/track-record`, invoking
-     [`cmdTrackAdd`](../bin/jobbot.js) to create or update lifecycle entries
-     with optional notes. [`src/web/server.js`](../src/web/server.js) renders
-     the form, validates status selections, surfaces inline success/error
-     messaging, surfaces the current lifecycle status in the drawer header, and
-     reloads application detail after each save. A `jobbot:application-status-recorded`
-     event lets extensions react to updates without polling. Regression coverage in
-     [`test/web-server.test.js`](../test/web-server.test.js) drives the DOM
-     workflow against a mocked adapter, while
+  - Action panel enabling create/update status workflows mapped to CLI `create`/`update`.
+    _Implemented (2025-10-09):_ The Applications drawer now includes a status
+    action panel that posts to `/commands/track-record`, invoking
+    [`cmdTrackAdd`](../bin/jobbot.js) to create or update lifecycle entries
+    with optional notes. [`src/web/server.js`](../src/web/server.js) renders
+    the form, validates status selections, surfaces inline success/error
+    messaging, and emits a `jobbot:application-status-recorded` event with a
+    `statusLabel` payload so extensions can react to updates without
+    reimplementing label formatting. Regression coverage in
+    [`test/web-server.test.js`](../test/web-server.test.js) drives the DOM
+    workflow and event contract against a mocked adapter, while
    [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
     verifies the adapter calls `cmdTrackAdd` with sanitized arguments and
     returns the status payload for the UI.

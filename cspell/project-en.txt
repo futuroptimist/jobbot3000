@@ -24,6 +24,8 @@ jobbot
 moderncv
 polyrepo
 pgvector
+rollouts
+runbooks
 sandboxing
 shadcn
 unlogged

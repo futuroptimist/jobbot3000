@@ -1,0 +1,18 @@
+[
+  {
+    "id": "ADR-0001",
+    "slug": "status-hub-event-payloads",
+    "title": "Expose status hub event payloads with formatted labels",
+    "status": "Accepted",
+    "decidedAt": "2025-10-12",
+    "summary": "Status hub dispatches jobbot:application-status-recorded events with statusLabel for extensions.",
+    "tests": [
+      "test/web-server.test.js",
+      "test/docs-adr.test.js"
+    ],
+    "documents": [
+      "docs/web-interface-roadmap.md",
+      "docs/architecture-decisions/status-hub-event-payloads.md"
+    ]
+  }
+]
