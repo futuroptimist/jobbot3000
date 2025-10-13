@@ -68,6 +68,10 @@ describe('notifications', () => {
     });
 
     expect(result.subject).toBe('jobbot3000 Weekly Summary (2025-01-26 → 2025-02-01)');
+    expect(result.range).toEqual({
+      from: '2025-01-26T00:00:00.000Z',
+      to: '2025-02-01T23:59:59.999Z',
+    });
     expect(result.stats).toMatchObject({
       trackedJobs: 2,
       outreach: 2,

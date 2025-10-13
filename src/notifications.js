@@ -11,6 +11,18 @@ import {
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+function startOfUtcDay(date) {
+  const result = new Date(date);
+  result.setUTCHours(0, 0, 0, 0);
+  return result;
+}
+
+function endOfUtcDay(date) {
+  const result = new Date(date);
+  result.setUTCHours(23, 59, 59, 999);
+  return result;
+}
+
 function resolveDataDir() {
   return process.env.JOBBOT_DATA_DIR || path.resolve('data');
 }
@@ -176,9 +188,9 @@ function buildOutboxFileName({ fromDate, toDate, now }) {
 export async function composeWeeklySummaryEmail(options = {}) {
   const now = ensureDate(options.now, 'reference timestamp');
   const rangeDays = normalizeRangeDays(options.rangeDays);
-  const fromMs = now.getTime() - (rangeDays - 1) * MS_PER_DAY;
-  const fromDate = new Date(fromMs);
-  const toDate = now;
+  const toDate = endOfUtcDay(now);
+  const rawFromDate = new Date(toDate.getTime() - (rangeDays - 1) * MS_PER_DAY);
+  const fromDate = startOfUtcDay(rawFromDate);
 
   const funnel = await computeFunnel({ from: fromDate.toISOString(), to: toDate.toISOString() });
   const funnelReport = formatFunnelReport(funnel);
