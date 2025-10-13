@@ -18,14 +18,27 @@ vi.mock('../src/scoring.js', () => ({
   })),
 }));
 
+vi.mock('../src/notifications.js', () => ({
+  runWeeklySummaryNotifications: vi.fn(async () => ({
+    sent: 1,
+    results: [{ email: 'ada@example.com', file: '/tmp/subscriber.eml' }],
+  })),
+  sendWeeklySummaryNotification: vi.fn(async () => ({ filePath: '/tmp/direct.eml' })),
+}));
+
 import { loadScheduleConfig, buildScheduledTasks } from '../src/schedule.js';
 import { ingestGreenhouseBoard } from '../src/greenhouse.js';
 import { computeFitScore } from '../src/scoring.js';
+import {
+  runWeeklySummaryNotifications,
+  sendWeeklySummaryNotification,
+} from '../src/notifications.js';
 
 describe('schedule config', () => {
   let tmpDir;
 
   beforeEach(async () => {
+    vi.clearAllMocks();
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jobbot-schedule-'));
   });
 
@@ -67,6 +80,45 @@ describe('schedule config', () => {
         params: expect.objectContaining({ board: 'acme' }),
         intervalMs: 60 * 60 * 1000,
         initialDelayMs: 5 * 60 * 1000,
+      }),
+    ]);
+  });
+
+  it('parses notification tasks with optional recipients and outbox overrides', async () => {
+    const configPath = path.join(tmpDir, 'notifications.json');
+    await fs.writeFile(
+      configPath,
+      JSON.stringify(
+        {
+          tasks: [
+            {
+              id: 'weekly-summary',
+              type: 'notifications',
+              intervalMinutes: 60,
+              outbox: 'mail/outbox',
+              recipients: ['direct@example.com'],
+              lookbackDays: 14,
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const definitions = await loadScheduleConfig(configPath);
+    expect(definitions).toEqual([
+      expect.objectContaining({
+        id: 'weekly-summary',
+        type: 'notifications',
+        params: expect.objectContaining({
+          template: 'weekly-summary',
+          useSubscriptions: true,
+          recipients: ['direct@example.com'],
+          lookbackDays: 14,
+          outbox: path.join(tmpDir, 'mail', 'outbox'),
+        }),
+        intervalMs: 60 * 60 * 1000,
       }),
     ]);
   });
@@ -123,6 +175,47 @@ describe('schedule config', () => {
 
     expect(ingestTask.maxRuns).toBe(1);
     expect(matchTask.maxRuns).toBe(1);
+  });
+
+  it('runs notification tasks and logs recipients', async () => {
+    const outboxDir = path.join(tmpDir, 'outbox');
+    const nowDate = new Date('2025-02-09T12:00:00.000Z');
+
+    const definitions = [
+      {
+        id: 'weekly-summary',
+        type: 'notifications',
+        params: {
+          template: 'weekly-summary',
+          recipients: ['direct@example.com'],
+          useSubscriptions: false,
+          outbox: outboxDir,
+          lookbackDays: 10,
+        },
+        intervalMs: 5000,
+      },
+    ];
+
+    const logger = { info: vi.fn(), error: vi.fn() };
+    const tasks = buildScheduledTasks(definitions, { logger, now: () => nowDate });
+
+    expect(tasks).toHaveLength(1);
+    const [notificationsTask] = tasks;
+
+    const message = await notificationsTask.run();
+    notificationsTask.onSuccess?.(message, notificationsTask);
+
+    expect(sendWeeklySummaryNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: 'direct@example.com',
+        lookbackDays: 10,
+        now: nowDate,
+        outbox: outboxDir,
+      }),
+    );
+    expect(runWeeklySummaryNotifications).not.toHaveBeenCalled();
+    expect(message).toContain('Sent weekly summary to 1 recipient');
+    expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('weekly-summary'));
   });
 
   it('throws when required interval metadata is missing', async () => {
