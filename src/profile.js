@@ -65,6 +65,94 @@ export async function initProfile({ force = false } = {}) {
   return { created: true, path: resumePath };
 }
 
+function normalizeSnapshotNote(note) {
+  if (note === undefined) return undefined;
+  const value = typeof note === 'string' ? note : String(note ?? '');
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error('snapshot note cannot be empty');
+  }
+  return trimmed;
+}
+
+function slugifyNote(note) {
+  return note
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+}
+
+async function ensureUniqueSnapshotBasename(dir, base) {
+  let attempt = 0;
+  while (true) {
+    const suffix = attempt === 0 ? '' : `-${attempt + 1}`;
+    const candidate = `${base}${suffix}.json`;
+    const fullPath = path.join(dir, candidate);
+    try {
+      await fs.access(fullPath);
+    } catch (err) {
+      if (err?.code === 'ENOENT') return candidate;
+      throw err;
+    }
+    attempt += 1;
+  }
+}
+
+export async function snapshotProfile({ note } = {}) {
+  const dataDir = resolveDataDir();
+  const profileDir = path.join(dataDir, 'profile');
+  const resumePath = path.join(profileDir, 'resume.json');
+
+  let raw;
+  try {
+    raw = await fs.readFile(resumePath, 'utf8');
+  } catch (err) {
+    if (err?.code === 'ENOENT') {
+      const hint = 'Run `jobbot profile init` first.';
+      throw new Error(`Profile resume not found at ${resumePath}. ${hint}`);
+    }
+    throw new Error(
+      `Failed to read profile resume at ${resumePath}: ${err.message || err}`,
+    );
+  }
+
+  let resume;
+  try {
+    resume = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(
+      `Profile resume at ${resumePath} could not be parsed as JSON: ${err.message || err}`,
+    );
+  }
+
+  const trimmedNote = normalizeSnapshotNote(note);
+
+  const createdAt = new Date().toISOString();
+  const snapshotsDir = path.join(profileDir, 'snapshots');
+  await fs.mkdir(snapshotsDir, { recursive: true });
+
+  const timestampSlug = createdAt.replace(/:/g, '-');
+  const noteSlug = trimmedNote ? slugifyNote(trimmedNote) : '';
+  const base = noteSlug ? `${timestampSlug}-${noteSlug}` : timestampSlug;
+  const fileName = await ensureUniqueSnapshotBasename(snapshotsDir, base);
+  const targetPath = path.join(snapshotsDir, fileName);
+
+  const relativeSource = path.relative(profileDir, resumePath) || 'resume.json';
+  const snapshot = {
+    created_at: createdAt,
+    source_path: relativeSource.replace(/\\/g, '/'),
+    resume,
+  };
+  if (trimmedNote) {
+    snapshot.note = trimmedNote;
+  }
+
+  await fs.writeFile(targetPath, `${JSON.stringify(snapshot, null, 2)}\n`, 'utf8');
+
+  return { path: targetPath, snapshot };
+}
+
 function sanitizeString(value) {
   if (value == null) return undefined;
   if (typeof value === 'string') {

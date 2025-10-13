@@ -89,6 +89,41 @@ describe('jobbot CLI', () => {
     expect(resume.meta?.generator).toBe('jobbot3000');
   });
 
+  it('errors when profile snapshot runs without an existing resume', () => {
+    expect(() => runCli(['profile', 'snapshot'])).toThrow(/profile resume/i);
+  });
+
+  it('creates profile snapshots with optional notes and JSON output', () => {
+    runCli(['profile', 'init']);
+
+    const profileDir = path.join(dataDir, 'profile');
+    const resumePath = path.join(profileDir, 'resume.json');
+    const resume = JSON.parse(fs.readFileSync(resumePath, 'utf8'));
+    resume.basics.name = 'Ada Lovelace';
+    fs.writeFileSync(resumePath, `${JSON.stringify(resume, null, 2)}\n`);
+
+    const textOutput = runCli(['profile', 'snapshot', '--note', 'First draft']);
+    expect(textOutput.trim()).toMatch(/Saved profile snapshot to/);
+
+    const snapshotsDir = path.join(profileDir, 'snapshots');
+    const files = fs.readdirSync(snapshotsDir);
+    expect(files.length).toBeGreaterThan(0);
+    const snapshotPath = path.join(snapshotsDir, files[0]);
+    const snapshot = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
+    expect(snapshot).toMatchObject({
+      note: 'First draft',
+      source_path: 'resume.json',
+    });
+    expect(new Date(snapshot.created_at).toString()).not.toBe('Invalid Date');
+    expect(snapshot.resume.basics.name).toBe('Ada Lovelace');
+
+    const jsonOutput = runCli(['profile', 'snapshot', '--json']);
+    const parsed = JSON.parse(jsonOutput);
+    expect(parsed.path).toMatch(/profile[\\/]+snapshots[\\/]+/);
+    expect(parsed.snapshot.resume.basics.name).toBe('Ada Lovelace');
+    expect(parsed.snapshot.note).toBeUndefined();
+  });
+
   it('summarize from stdin', () => {
     const out = runCli(['summarize', '-'], 'First sentence. Second.');
     expect(out).toMatch(/First sentence\./);

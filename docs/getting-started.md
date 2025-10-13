@@ -35,6 +35,7 @@ Visit http://127.0.0.1:3100 and use the tabs to explore.
 - `npx jobbot init`
 - `npx jobbot summarize <file-or-url>`
 - `npx jobbot match --resume <file> --job <file>`
+- `npx jobbot profile snapshot --note "First draft"`
 - `npx jobbot shortlist ...` | `npx jobbot track ...`
 
 For deeper docs, see:

@@ -52,7 +52,7 @@ import {
   getInterviewSession,
   generateRehearsalPlan,
 } from '../src/interviews.js';
-import { initProfile, importLinkedInProfile } from '../src/profile.js';
+import { initProfile, importLinkedInProfile, snapshotProfile } from '../src/profile.js';
 import {
   recordIntakeResponse,
   getIntakeResponses,
@@ -3014,15 +3014,49 @@ async function cmdProfileInit(args) {
   await runProfileInit(force);
 }
 
+function resolveDisplayPath(targetPath) {
+  if (!targetPath) return targetPath;
+  try {
+    const relative = path.relative(process.cwd(), targetPath);
+    if (relative && !relative.startsWith('..')) {
+      return relative;
+    }
+  } catch {
+    // fall through to returning the original path
+  }
+  return targetPath;
+}
+
+async function cmdProfileSnapshot(args) {
+  assertFlagHasValue(args, '--note', 'Usage: jobbot profile snapshot [--note <message>] [--json]');
+  const note = getFlag(args, '--note');
+  const wantsJson = args.includes('--json');
+
+  try {
+    const result = await snapshotProfile({ note });
+    if (wantsJson) {
+      console.log(JSON.stringify(result));
+      return;
+    }
+    const displayPath = resolveDisplayPath(result.path);
+    console.log(`Saved profile snapshot to ${displayPath}`);
+  } catch (err) {
+    console.error(err.message || String(err));
+    process.exit(1);
+  }
+}
+
 async function cmdProfile(args) {
   const sub = args[0];
   if (sub === 'init') return cmdProfileInit(args.slice(1));
+  if (sub === 'snapshot') return cmdProfileSnapshot(args.slice(1));
   if (sub === 'import' && args[1] === 'linkedin') {
     return cmdImportLinkedIn(args.slice(2));
   }
   console.error(
     'Usage: jobbot profile init [--force]\n' +
-      '   or: jobbot profile import linkedin <file>'
+      '   or: jobbot profile import linkedin <file>\n' +
+      '   or: jobbot profile snapshot [--note <message>] [--json]'
   );
   process.exit(2);
 }
