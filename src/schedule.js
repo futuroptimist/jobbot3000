@@ -10,6 +10,10 @@ import { ingestJobUrl } from './url-ingest.js';
 import { loadResume } from './resume.js';
 import { parseJobText } from './parser.js';
 import { computeFitScore } from './scoring.js';
+import {
+  runWeeklySummaryNotifications,
+  sendWeeklySummaryNotification,
+} from './notifications.js';
 
 const DEFAULT_LOGGER = {
   info: message => console.log(message),
@@ -27,6 +31,11 @@ const INGEST_PROVIDERS = {
 
 function resolveDataDir() {
   return process.env.JOBBOT_DATA_DIR || path.resolve('data');
+}
+
+function normalizeEmailValue(value) {
+  if (typeof value !== 'string') return '';
+  return value.trim().toLowerCase();
 }
 
 function validateTasksInput(tasks) {
@@ -313,6 +322,54 @@ function normalizeMatchTask(definition, baseDir) {
   return params;
 }
 
+function normalizeNotificationsTask(definition, baseDir) {
+  const templateRaw = typeof definition.template === 'string' ? definition.template.trim() : '';
+  const template = (templateRaw || 'weekly-summary').toLowerCase();
+  if (template !== 'weekly-summary') {
+    throw new Error(`unsupported notifications template: ${templateRaw || template}`);
+  }
+
+  const params = { template };
+  if (definition.outbox) {
+    params.outbox = resolvePathRelative(definition.outbox, baseDir);
+  }
+
+  if (definition.lookbackDays != null) {
+    const value = Number(definition.lookbackDays);
+    if (!Number.isFinite(value) || value <= 0) {
+      throw new Error(`notifications task ${definition.id} lookbackDays must be > 0`);
+    }
+    params.lookbackDays = Math.round(value);
+  }
+
+  const recipientsRaw = definition.recipients;
+  if (recipientsRaw != null) {
+    const list = Array.isArray(recipientsRaw) ? recipientsRaw : [recipientsRaw];
+    const recipients = list.map(entry => {
+      if (typeof entry !== 'string') {
+        throw new Error(`notifications task ${definition.id} recipients must be strings`);
+      }
+      const trimmed = entry.trim();
+      if (!trimmed) {
+        throw new Error(`notifications task ${definition.id} recipients cannot be empty`);
+      }
+      return trimmed;
+    });
+    if (recipients.length) {
+      params.recipients = recipients;
+    }
+  }
+
+  params.useSubscriptions = definition.useSubscriptions !== false;
+  if (!params.useSubscriptions && (!params.recipients || params.recipients.length === 0)) {
+    throw new Error(
+      `notifications task ${definition.id} must enable subscriptions or provide recipients`,
+    );
+  }
+
+  return params;
+}
+
 export async function loadScheduleConfig(configPath) {
   if (!configPath || typeof configPath !== 'string') {
     throw new Error('config path is required');
@@ -374,6 +431,16 @@ export async function loadScheduleConfig(configPath) {
       definitions.push({
         id,
         type: 'match',
+        params,
+        intervalMs,
+        initialDelayMs,
+        maxRuns,
+      });
+    } else if (typeRaw === 'notifications') {
+      const params = normalizeNotificationsTask({ ...definition, id }, baseDir);
+      definitions.push({
+        id,
+        type: 'notifications',
         params,
         intervalMs,
         initialDelayMs,
@@ -510,6 +577,59 @@ async function runMatchTask(taskDef) {
   return `Fit score ${summary.score} for ${label}`;
 }
 
+async function runNotificationsTask(taskDef, nowValue) {
+  const params = taskDef.params || {};
+  const timestamp = nowValue instanceof Date ? nowValue : new Date(nowValue || Date.now());
+  if (Number.isNaN(timestamp.getTime())) {
+    throw new Error(`invalid timestamp for notifications task ${taskDef.id}`);
+  }
+
+  const delivered = new Map();
+  const addRecipient = (email, display) => {
+    const normalized = normalizeEmailValue(email);
+    if (!normalized) return;
+    if (!delivered.has(normalized)) {
+      delivered.set(normalized, display || normalized);
+    }
+  };
+
+  if (params.useSubscriptions !== false) {
+    const { results } = await runWeeklySummaryNotifications({
+      now: timestamp,
+      outbox: params.outbox,
+    });
+    for (const result of results) {
+      addRecipient(result.email, result.email);
+    }
+  }
+
+  if (Array.isArray(params.recipients) && params.recipients.length > 0) {
+    for (const recipient of params.recipients) {
+      const trimmed = typeof recipient === 'string' ? recipient.trim() : '';
+      if (!trimmed) continue;
+      const normalized = normalizeEmailValue(trimmed);
+      if (normalized && delivered.has(normalized)) {
+        continue;
+      }
+      await sendWeeklySummaryNotification({
+        email: trimmed,
+        lookbackDays: params.lookbackDays,
+        now: timestamp,
+        outbox: params.outbox,
+      });
+      addRecipient(trimmed, trimmed);
+    }
+  }
+
+  if (delivered.size === 0) {
+    return 'No weekly summary recipients';
+  }
+
+  const noun = delivered.size === 1 ? 'recipient' : 'recipients';
+  const list = Array.from(delivered.values()).join(', ');
+  return `Sent weekly summary to ${delivered.size} ${noun} (${list})`;
+}
+
 export function buildScheduledTasks(
   definitions,
   { logger = DEFAULT_LOGGER, cycles, now = () => new Date() } = {},
@@ -532,6 +652,8 @@ export function buildScheduledTasks(
       taskConfig.run = () => runIngestTask(definition);
     } else if (definition.type === 'match') {
       taskConfig.run = () => runMatchTask(definition);
+    } else if (definition.type === 'notifications') {
+      taskConfig.run = () => runNotificationsTask(definition, now());
     } else {
       throw new Error(`unsupported task type: ${definition.type}`);
     }

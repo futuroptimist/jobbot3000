@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import JSZip from 'jszip';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 let dataDir;
@@ -227,6 +228,78 @@ describe('interview session archive', () => {
 
     const disk = await readSession('job-audio', 'session-audio');
     expect(disk.audio_source).toEqual({ type: 'file', name: 'answer.wav' });
+  });
+
+  it('exports interview sessions as a zip manifest', async () => {
+    const {
+      setInterviewDataDir,
+      recordInterviewSession,
+      exportInterviewSessions,
+    } = await import('../src/interviews.js');
+
+    setInterviewDataDir(dataDir);
+
+    await recordInterviewSession('job-zip', 'session-one', {
+      transcript: 'First session',
+      stage: 'Behavioral',
+      startedAt: '2025-02-01T09:00:00Z',
+      endedAt: '2025-02-01T09:30:00Z',
+    });
+
+    await recordInterviewSession('job-zip', 'session-two', {
+      transcript: 'Second session',
+      stage: 'Onsite',
+      mode: 'Voice',
+      startedAt: '2025-02-02T17:00:00Z',
+      endedAt: '2025-02-02T18:00:00Z',
+    });
+
+    const archive = await exportInterviewSessions('job-zip');
+
+    const zip = await JSZip.loadAsync(archive);
+    const manifestRaw = await zip.file('manifest.json')?.async('string');
+    expect(manifestRaw).toBeTruthy();
+
+    const manifest = JSON.parse(manifestRaw);
+    expect(manifest).toMatchObject({
+      job_id: 'job-zip',
+      total_sessions: 2,
+    });
+    expect(Array.isArray(manifest.sessions)).toBe(true);
+    expect(manifest.sessions).toHaveLength(2);
+    expect(manifest.sessions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          session_id: 'session-two',
+          stage: 'Onsite',
+          mode: 'Voice',
+          file: 'sessions/session-two.json',
+        }),
+        expect.objectContaining({
+          session_id: 'session-one',
+          stage: 'Behavioral',
+          mode: 'Voice',
+          file: 'sessions/session-one.json',
+        }),
+      ]),
+    );
+    for (const entry of manifest.sessions) {
+      expect(typeof entry.recorded_at).toBe('string');
+    }
+
+    const storedOne = await zip.file('sessions/session-one.json')?.async('string');
+    const storedTwo = await zip.file('sessions/session-two.json')?.async('string');
+    expect(storedOne).toContain('First session');
+    expect(storedTwo).toContain('Second session');
+  });
+
+  it('throws when exporting a job without sessions', async () => {
+    const { setInterviewDataDir, exportInterviewSessions } = await import('../src/interviews.js');
+    setInterviewDataDir(dataDir);
+
+    await expect(exportInterviewSessions('job-empty')).rejects.toThrow(
+      'No interview sessions found for job-empty',
+    );
   });
 });
 

@@ -32,6 +32,8 @@ Codex CI prompt documents that CI skips Markdown- and MDX-only pull requests.
 | [docs/prompts/codex/localization.md#upgrade-prompt][localization-up]     | Upgrade Prompt                         | evergreen | yes        |
 | [docs/prompts/codex/performance.md][performance-doc]                     | Codex Performance Prompt               | evergreen | yes        |
 | [docs/prompts/codex/performance.md#upgrade-prompt][performance-up]       | Upgrade Prompt                         | evergreen | yes        |
+| [docs/prompts/codex/polish.md][polish-doc]                               | Codex Polish Prompt                    | evergreen | yes        |
+| [docs/prompts/codex/polish.md#upgrade-prompt][polish-up]                 | Upgrade Prompt                         | evergreen | yes        |
 | [docs/prompts/codex/implement.md][implement-doc]                         | Codex Implement Prompt                 | evergreen | yes        |
 | [docs/prompts/codex/implement.md#upgrade-prompt][implement-up]           | Upgrade Prompt                         | evergreen | yes        |
 | [docs/prompts/codex/refactor.md][refactor-doc]                           | Codex Refactor Prompt                  | evergreen | yes        |
@@ -67,6 +69,8 @@ Codex CI prompt documents that CI skips Markdown- and MDX-only pull requests.
 [localization-up]: prompts/codex/localization.md#upgrade-prompt
 [performance-doc]: prompts/codex/performance.md
 [performance-up]: prompts/codex/performance.md#upgrade-prompt
+[polish-doc]: prompts/codex/polish.md
+[polish-up]: prompts/codex/polish.md#upgrade-prompt
 [refactor-doc]: prompts/codex/refactor.md
 [refactor-up]: prompts/codex/refactor.md#upgrade-prompt
 [security-doc]: prompts/codex/security.md

@@ -23,8 +23,11 @@ jobbot3000.
 4. Confirm or edit the parsed sections via `jobbot profile edit <section>` or re-run `jobbot import`
    with `--merge-strategy replace|merge` to control overwrites.
 5. Persist the normalized profile to `data/profile/` and version subsequent edits with
-   `jobbot profile snapshot --note <message>` so downstream tailoring can reference specific
-   revisions.
+   `jobbot profile snapshot --note <message>`. The command writes structured JSON snapshots under
+   `data/profile/snapshots/` that include the ISO timestamp, optional note, and a copy of the
+   current `resume.json`, letting downstream tailoring reference specific revisions. Regression
+   coverage in [`test/cli.test.js`](../test/cli.test.js) exercises the happy path, JSON output, and
+   missing-resume failure case.
 
 ### Web flow
 
@@ -39,7 +42,7 @@ jobbot3000.
 4. Save to the local workspace; the UI confirms the destination path under `data/profile/` and
    surfaces a link to open the file in the preferred editor.
 5. Optionally trigger **Create Snapshot** from the toolbar, which mirrors `jobbot profile snapshot`
-   and stores timestamped revisions for later auditing.
+   and stores timestamped revisions under `data/profile/snapshots/` for later auditing.
 
 ### Unhappy paths & recovery
 
@@ -301,8 +304,10 @@ jobbot3000.
    --rating 4`.
 4. Review progress with `jobbot interviews show <job_id> --session <id> --json` to inspect metrics
    like words per minute and STAR coverage.
-5. Export sessions via `jobbot interviews export --job <job_id> --out data/interviews/<job_id>.zip`
-   for coaching feedback loops.
+5. Export sessions via
+    `jobbot interviews export --job <job_id> --out exports/interviews-<job_id>.zip` for coaching
+    feedback loops; the archive stores session JSON plus a manifest listing stage, mode, and
+    recorded timestamps.
 
 ### Web flow
 
@@ -374,7 +379,11 @@ jobbot3000.
    DOM workflow, emitted `jobbot:analytics-exported` events, and sanitized
    filenames, while [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
    ensures the adapter forwards the CLI payload without leaking secrets.
-5. Subscribe to weekly summary emails via **Notifications**, which piggyback on the scheduler.
+5. Subscribe to weekly summary emails via **Notifications**. Run
+   `jobbot notifications subscribe --email you@example.com` (optionally tuning
+   `--lookback-days`) to add yourself to the digest roster, then schedule
+   `jobbot notifications run` via the existing task scheduler so the CLI writes
+   each summary to `notifications/outbox/` for delivery.
 
 ### Unhappy paths & recovery
 

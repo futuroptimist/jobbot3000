@@ -89,6 +89,41 @@ describe('jobbot CLI', () => {
     expect(resume.meta?.generator).toBe('jobbot3000');
   });
 
+  it('errors when profile snapshot runs without an existing resume', () => {
+    expect(() => runCli(['profile', 'snapshot'])).toThrow(/profile resume/i);
+  });
+
+  it('creates profile snapshots with optional notes and JSON output', () => {
+    runCli(['profile', 'init']);
+
+    const profileDir = path.join(dataDir, 'profile');
+    const resumePath = path.join(profileDir, 'resume.json');
+    const resume = JSON.parse(fs.readFileSync(resumePath, 'utf8'));
+    resume.basics.name = 'Ada Lovelace';
+    fs.writeFileSync(resumePath, `${JSON.stringify(resume, null, 2)}\n`);
+
+    const textOutput = runCli(['profile', 'snapshot', '--note', 'First draft']);
+    expect(textOutput.trim()).toMatch(/Saved profile snapshot to/);
+
+    const snapshotsDir = path.join(profileDir, 'snapshots');
+    const files = fs.readdirSync(snapshotsDir);
+    expect(files.length).toBeGreaterThan(0);
+    const snapshotPath = path.join(snapshotsDir, files[0]);
+    const snapshot = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
+    expect(snapshot).toMatchObject({
+      note: 'First draft',
+      source_path: 'resume.json',
+    });
+    expect(new Date(snapshot.created_at).toString()).not.toBe('Invalid Date');
+    expect(snapshot.resume.basics.name).toBe('Ada Lovelace');
+
+    const jsonOutput = runCli(['profile', 'snapshot', '--json']);
+    const parsed = JSON.parse(jsonOutput);
+    expect(parsed.path).toMatch(/profile[\\/]+snapshots[\\/]+/);
+    expect(parsed.snapshot.resume.basics.name).toBe('Ada Lovelace');
+    expect(parsed.snapshot.note).toBeUndefined();
+  });
+
   it('summarize from stdin', () => {
     const out = runCli(['summarize', '-'], 'First sentence. Second.');
     expect(out).toMatch(/First sentence\./);
@@ -3377,6 +3412,49 @@ describe('jobbot CLI', () => {
     }
   });
 
+  it('exports interview sessions via interviews export command', async () => {
+    runCli([
+      'interviews',
+      'record',
+      'job-export',
+      'session-one',
+      '--transcript',
+      'First recorded session',
+      '--stage',
+      'Behavioral',
+    ]);
+
+    runCli([
+      'interviews',
+      'record',
+      'job-export',
+      'session-two',
+      '--transcript',
+      'Second recorded session',
+      '--stage',
+      'Onsite',
+    ]);
+
+    const outPath = path.join(dataDir, 'interviews-export.zip');
+    const output = runCli(['interviews', 'export', '--job', 'job-export', '--out', outPath]);
+
+    expect(output.trim()).toMatch(/Exported interviews for job-export/);
+    expect(fs.existsSync(outPath)).toBe(true);
+
+    const archive = fs.readFileSync(outPath);
+    const zip = await JSZip.loadAsync(archive);
+    const manifestRaw = await zip.file('manifest.json')?.async('string');
+    expect(manifestRaw).toBeTruthy();
+    const manifest = JSON.parse(manifestRaw);
+    expect(manifest).toMatchObject({ job_id: 'job-export', total_sessions: 2 });
+    expect(await zip.file('sessions/session-one.json')?.async('string')).toContain(
+      'First recorded session',
+    );
+    expect(await zip.file('sessions/session-two.json')?.async('string')).toContain(
+      'Second recorded session',
+    );
+  });
+
   it('generates rehearsal plans for interviews', () => {
     const output = runCli([
       'interviews',
@@ -3420,6 +3498,68 @@ describe('jobbot CLI', () => {
     expect(output).toContain('Logistics & next steps');
     expect(output).toContain('Recruiter alignment checklist');
     expect(output).toMatch(/Confirm timeline/);
+  });
+
+  it('subscribes to weekly summaries via notifications command', () => {
+    const output = runCli([
+      'notifications',
+      'subscribe',
+      '--email',
+      'ada@example.com',
+      '--lookback-days',
+      '10',
+      '--now',
+      '2025-03-07T12:00:00Z',
+    ]);
+    expect(output).toContain('Subscribed ada@example.com (10-day lookback)');
+
+    const subscriptionsPath = path.join(dataDir, 'notifications', 'subscriptions.json');
+    const raw = fs.readFileSync(subscriptionsPath, 'utf8');
+    const parsed = JSON.parse(raw);
+    expect(parsed).toEqual({
+      weeklySummary: [
+        expect.objectContaining({
+          email: 'ada@example.com',
+          lookbackDays: 10,
+          createdAt: '2025-03-07T12:00:00.000Z',
+        }),
+      ],
+    });
+  });
+
+  it('runs notifications digests and spools email payloads', () => {
+    fs.writeFileSync(
+      path.join(dataDir, 'applications.json'),
+      `${JSON.stringify({
+        'job-1': 'screening',
+        'job-2': 'offer',
+      }, null, 2)}\n`,
+    );
+    fs.writeFileSync(
+      path.join(dataDir, 'application_events.json'),
+      `${JSON.stringify({
+        'job-1': [
+          { channel: 'email', date: '2025-01-02T10:00:00.000Z' },
+          { channel: 'follow_up', date: '2025-01-05T15:30:00.000Z' },
+        ],
+        'job-2': [
+          { channel: 'email', date: '2025-01-04T09:00:00.000Z' },
+          { channel: 'offer_accepted', date: '2025-02-01T18:00:00.000Z' },
+        ],
+      }, null, 2)}\n`,
+    );
+
+    runCli(['notifications', 'subscribe', '--email', 'ada@example.com']);
+    const output = runCli(['notifications', 'run', '--now', '2025-02-08T12:00:00Z']);
+    expect(output).toContain('Sent 1 weekly summary email.');
+    expect(output).toMatch(/ada@example.com/);
+
+    const outboxDir = path.join(dataDir, 'notifications', 'outbox');
+    const files = fs.readdirSync(outboxDir);
+    expect(files).toHaveLength(1);
+    const payload = fs.readFileSync(path.join(outboxDir, files[0]), 'utf8');
+    expect(payload).toContain('To: ada@example.com');
+    expect(payload).toContain('Funnel snapshot');
   });
 
   it('speaks dialog prompts with a configured speech synthesizer', () => {
