@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import JSZip from 'jszip';
 
 let overrideDir;
 
@@ -943,4 +944,117 @@ export async function getInterviewSession(jobId, sessionId) {
   const { file } = resolveSessionPath(normalizedJobId, normalizedSessionId);
   const data = await readSessionFile(file);
   return data ? { ...data } : null;
+}
+
+function isVisibleSession(entry) {
+  if (!entry || typeof entry.name !== 'string') return false;
+  if (entry.name.startsWith('.')) return false;
+  return entry.isFile() && entry.name.toLowerCase().endsWith('.json');
+}
+
+function coerceIsoTimestamp(value) {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return undefined;
+  return parsed.toISOString();
+}
+
+export async function exportInterviewSessions(jobId) {
+  const normalizedJobId = requireId(jobId, 'job id');
+  const jobDir = path.join(resolveDataDir(), 'interviews', normalizedJobId);
+
+  let entries;
+  try {
+    entries = await fs.readdir(jobDir, { withFileTypes: true });
+  } catch (err) {
+    if (err && err.code === 'ENOENT') {
+      throw new Error(`No interview sessions found for ${normalizedJobId}`);
+    }
+    throw err;
+  }
+
+  const sessionFiles = entries.filter(isVisibleSession);
+  if (sessionFiles.length === 0) {
+    throw new Error(`No interview sessions found for ${normalizedJobId}`);
+  }
+
+  const zip = new JSZip();
+  const sessions = [];
+
+  for (const entry of sessionFiles) {
+    const filePath = path.join(jobDir, entry.name);
+    let contents;
+    try {
+      contents = await fs.readFile(filePath, 'utf8');
+    } catch (err) {
+      if (err && err.code === 'ENOENT') {
+        continue;
+      }
+      throw err;
+    }
+
+    const relativePath = `sessions/${entry.name}`;
+    zip.file(relativePath, contents);
+
+    const summary = { file: relativePath };
+    let payload;
+    try {
+      payload = JSON.parse(contents);
+    } catch {
+      payload = null;
+    }
+
+    if (payload && typeof payload === 'object') {
+      if (typeof payload.session_id === 'string' && payload.session_id.trim()) {
+        summary.session_id = payload.session_id.trim();
+      }
+      const recordedAt = coerceIsoTimestamp(payload.recorded_at);
+      const startedAt = coerceIsoTimestamp(payload.started_at);
+      if (recordedAt) {
+        summary.recorded_at = recordedAt;
+      } else if (startedAt) {
+        summary.recorded_at = startedAt;
+      }
+      if (typeof payload.stage === 'string' && payload.stage.trim()) {
+        summary.stage = payload.stage.trim();
+      }
+      if (typeof payload.mode === 'string' && payload.mode.trim()) {
+        summary.mode = payload.mode.trim();
+      }
+    }
+
+    sessions.push(summary);
+  }
+
+  if (sessions.length === 0) {
+    throw new Error(`No interview sessions found for ${normalizedJobId}`);
+  }
+
+  sessions.sort((a, b) => {
+    const aTime = a.recorded_at ? Date.parse(a.recorded_at) : NaN;
+    const bTime = b.recorded_at ? Date.parse(b.recorded_at) : NaN;
+    if (!Number.isNaN(aTime) && !Number.isNaN(bTime)) return bTime - aTime;
+    if (!Number.isNaN(aTime)) return -1;
+    if (!Number.isNaN(bTime)) return 1;
+    const aId = typeof a.session_id === 'string' ? a.session_id : '';
+    const bId = typeof b.session_id === 'string' ? b.session_id : '';
+    return aId.localeCompare(bId);
+  });
+
+  const manifest = {
+    job_id: normalizedJobId,
+    exported_at: new Date().toISOString(),
+    total_sessions: sessions.length,
+    sessions,
+  };
+
+  zip.file('manifest.json', `${JSON.stringify(manifest, null, 2)}\n`);
+
+  return zip.generateAsync({
+    type: 'nodebuffer',
+    compression: 'DEFLATE',
+    compressionOptions: { level: 9 },
+  });
 }

@@ -51,6 +51,7 @@ import {
   recordInterviewSession,
   getInterviewSession,
   generateRehearsalPlan,
+  exportInterviewSessions,
 } from '../src/interviews.js';
 import { initProfile, importLinkedInProfile } from '../src/profile.js';
 import {
@@ -78,6 +79,12 @@ import { createTaskScheduler, loadScheduleConfig, buildScheduledTasks } from '..
 import { transcribeAudio, synthesizeSpeech } from '../src/speech.js';
 import { t, DEFAULT_LOCALE } from '../src/i18n.js';
 import { createReminderCalendar } from '../src/reminders-calendar.js';
+import {
+  listWeeklySummarySubscriptions,
+  runWeeklySummaryNotifications,
+  sendWeeklySummaryNotification,
+  subscribeWeeklySummary,
+} from '../src/notifications.js';
 
 function isHttpUrl(s) {
   return /^https?:\/\//i.test(s);
@@ -132,6 +139,18 @@ function normalizeCompensation(value) {
   if (!simpleNumeric.test(trimmed)) return trimmed;
   const symbol = DEFAULT_SHORTLIST_CURRENCY || '$';
   return `${symbol}${trimmed}`;
+}
+
+function resolveLookbackDaysFlag(args, usage) {
+  assertFlagHasValue(args, '--lookback-days', usage);
+  const raw = getFlag(args, '--lookback-days');
+  if (raw == null) return undefined;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) {
+    console.error('--lookback-days must be a positive number');
+    process.exit(2);
+  }
+  return value;
 }
 
 function trimString(value) {
@@ -2567,6 +2586,160 @@ async function cmdSchedule(args) {
   process.exit(2);
 }
 
+async function cmdNotificationsSubscribe(args) {
+  const usage =
+    'Usage: jobbot notifications subscribe --email <address> [--lookback-days <days>] ' +
+    '[--now <iso>] [--json]';
+  assertFlagHasValue(args, '--email', usage);
+  assertFlagHasValue(args, '--now', usage);
+
+  const email = getFlag(args, '--email');
+  if (!email) {
+    console.error(usage);
+    process.exit(2);
+  }
+
+  const lookbackDays = resolveLookbackDaysFlag(args, usage);
+  const nowValue = getFlag(args, '--now');
+  const asJson = args.includes('--json');
+
+  try {
+    const record = await subscribeWeeklySummary(email, { lookbackDays, now: nowValue });
+    if (asJson) {
+      console.log(JSON.stringify(record, null, 2));
+      return;
+    }
+    const verb = record.updatedAt ? 'Updated' : 'Subscribed';
+    console.log(`${verb} ${record.email} (${record.lookbackDays}-day lookback)`);
+  } catch (err) {
+    console.error(err?.message || String(err));
+    process.exit(1);
+  }
+}
+
+async function cmdNotificationsList(args) {
+  const usage = 'Usage: jobbot notifications list [--json]';
+  if (args.length > 0 && !args.includes('--json')) {
+    console.error(usage);
+    process.exit(2);
+  }
+
+  let subscriptions;
+  try {
+    subscriptions = await listWeeklySummarySubscriptions();
+  } catch (err) {
+    console.error(err?.message || String(err));
+    process.exit(1);
+  }
+
+  if (args.includes('--json')) {
+    console.log(JSON.stringify({ weeklySummary: subscriptions }, null, 2));
+    return;
+  }
+
+  if (subscriptions.length === 0) {
+    console.log('No weekly summary subscriptions configured.');
+    return;
+  }
+
+  console.log('Weekly summary subscriptions:');
+  for (const subscription of subscriptions) {
+    const parts = [`- ${subscription.email}`, `${subscription.lookbackDays}-day lookback`];
+    if (subscription.createdAt) parts.push(`created ${subscription.createdAt}`);
+    if (subscription.updatedAt) parts.push(`updated ${subscription.updatedAt}`);
+    console.log(parts.join(' | '));
+  }
+}
+
+async function cmdNotificationsRun(args) {
+  const usage = 'Usage: jobbot notifications run [--outbox <dir>] [--now <iso>] [--json]';
+  assertFlagHasValue(args, '--outbox', usage);
+  assertFlagHasValue(args, '--now', usage);
+
+  const outbox = getFlag(args, '--outbox');
+  const nowValue = getFlag(args, '--now');
+  const asJson = args.includes('--json');
+
+  try {
+    const result = await runWeeklySummaryNotifications({ outbox, now: nowValue });
+    if (asJson) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    if (result.sent === 0) {
+      console.log('No weekly summary subscribers to notify.');
+      return;
+    }
+    const noun = result.sent === 1 ? 'email' : 'emails';
+    console.log(`Sent ${result.sent} weekly summary ${noun}.`);
+    for (const entry of result.results) {
+      console.log(`- ${entry.email} → ${entry.file}`);
+    }
+  } catch (err) {
+    console.error(err?.message || String(err));
+    process.exit(1);
+  }
+}
+
+async function cmdNotificationsSend(args) {
+  const usage =
+    'Usage: jobbot notifications send --email <address> ' +
+    '[--lookback-days <days>] [--outbox <dir>] [--now <iso>] [--json]';
+  assertFlagHasValue(args, '--email', usage);
+  assertFlagHasValue(args, '--outbox', usage);
+  assertFlagHasValue(args, '--now', usage);
+
+  const email = getFlag(args, '--email');
+  if (!email) {
+    console.error(usage);
+    process.exit(2);
+  }
+
+  const lookbackDays = resolveLookbackDaysFlag(args, usage);
+  const outbox = getFlag(args, '--outbox');
+  const nowValue = getFlag(args, '--now');
+  const asJson = args.includes('--json');
+  const trimmedEmail = typeof email === 'string' ? email.trim() : email;
+
+  try {
+    const delivery = await sendWeeklySummaryNotification({
+      email: trimmedEmail,
+      lookbackDays,
+      outbox,
+      now: nowValue,
+    });
+    if (asJson) {
+      console.log(
+        JSON.stringify(
+          {
+            email: trimmedEmail,
+            file: delivery.filePath,
+            subject: delivery.subject,
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+    console.log(`Sent weekly summary to ${trimmedEmail}`);
+    console.log(`Stored message at ${delivery.filePath}`);
+  } catch (err) {
+    console.error(err?.message || String(err));
+    process.exit(1);
+  }
+}
+
+async function cmdNotifications(args) {
+  const sub = args[0];
+  if (sub === 'subscribe') return cmdNotificationsSubscribe(args.slice(1));
+  if (sub === 'list') return cmdNotificationsList(args.slice(1));
+  if (sub === 'run') return cmdNotificationsRun(args.slice(1));
+  if (sub === 'send') return cmdNotificationsSend(args.slice(1));
+  console.error('Usage: jobbot notifications <subscribe|list|run|send> [options]');
+  process.exit(2);
+}
+
 async function cmdInterviewsRecord(args) {
   const jobId = args[0];
   const sessionId = args[1];
@@ -2890,12 +3063,40 @@ async function cmdInterviewsPlan(args) {
   console.log(formatRehearsalPlan(plan));
 }
 
+async function cmdInterviewsExport(args) {
+  const usage = 'Usage: jobbot interviews export --job <job_id> --out <path>';
+  assertFlagHasValue(args, '--job', usage);
+  assertFlagHasValue(args, '--out', usage);
+
+  const jobId = getFlag(args, '--job');
+  const outPath = getFlag(args, '--out');
+
+  if (!jobId || !outPath) {
+    console.error(usage);
+    process.exit(2);
+  }
+
+  let archive;
+  try {
+    archive = await exportInterviewSessions(jobId);
+  } catch (err) {
+    console.error(err?.message || String(err));
+    process.exit(1);
+  }
+
+  const resolved = path.resolve(process.cwd(), outPath);
+  await fs.promises.mkdir(path.dirname(resolved), { recursive: true });
+  await fs.promises.writeFile(resolved, archive);
+  console.log(`Exported interviews for ${jobId} to ${resolved}`);
+}
+
 async function cmdInterviews(args) {
   const sub = args[0];
   if (sub === 'record') return cmdInterviewsRecord(args.slice(1));
   if (sub === 'show') return cmdInterviewsShow(args.slice(1));
   if (sub === 'plan') return cmdInterviewsPlan(args.slice(1));
-  console.error('Usage: jobbot interviews <record|show|plan> ...');
+  if (sub === 'export') return cmdInterviewsExport(args.slice(1));
+  console.error('Usage: jobbot interviews <record|show|plan|export> ...');
   process.exit(2);
 }
 
@@ -3044,9 +3245,10 @@ async function main() {
   if (cmd === 'ingest') return cmdIngest(args);
   if (cmd === 'interviews') return cmdInterviews(args);
   if (cmd === 'schedule') return cmdSchedule(args);
+  if (cmd === 'notifications') return cmdNotifications(args);
   console.error(
     'Usage: jobbot <init|profile|import|summarize|match|track|shortlist|analytics|' +
-      'rehearse|tailor|deliverables|interviews|intake|ingest|schedule> [options]'
+      'rehearse|tailor|deliverables|interviews|intake|ingest|schedule|notifications> [options]'
   );
   process.exit(2);
 }

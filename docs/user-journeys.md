@@ -301,8 +301,10 @@ jobbot3000.
    --rating 4`.
 4. Review progress with `jobbot interviews show <job_id> --session <id> --json` to inspect metrics
    like words per minute and STAR coverage.
-5. Export sessions via `jobbot interviews export --job <job_id> --out data/interviews/<job_id>.zip`
-   for coaching feedback loops.
+5. Export sessions via
+    `jobbot interviews export --job <job_id> --out exports/interviews-<job_id>.zip` for coaching
+    feedback loops; the archive stores session JSON plus a manifest listing stage, mode, and
+    recorded timestamps.
 
 ### Web flow
 
@@ -374,7 +376,11 @@ jobbot3000.
    DOM workflow, emitted `jobbot:analytics-exported` events, and sanitized
    filenames, while [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
    ensures the adapter forwards the CLI payload without leaking secrets.
-5. Subscribe to weekly summary emails via **Notifications**, which piggyback on the scheduler.
+5. Subscribe to weekly summary emails via **Notifications**. Run
+   `jobbot notifications subscribe --email you@example.com` (optionally tuning
+   `--lookback-days`) to add yourself to the digest roster, then schedule
+   `jobbot notifications run` via the existing task scheduler so the CLI writes
+   each summary to `notifications/outbox/` for delivery.
 
 ### Unhappy paths & recovery
 
