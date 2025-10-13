@@ -878,6 +878,7 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
                 ready: container.querySelector('[data-detail-state="ready"]'),
               },
               title: container.querySelector('[data-detail-title]'),
+              status: container.querySelector('[data-detail-status]'),
               meta: container.querySelector('[data-detail-meta]'),
               tags: container.querySelector('[data-detail-tags]'),
               attachments: container.querySelector('[data-detail-attachments]'),
@@ -1116,6 +1117,10 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           function clearDetailContents() {
             if (!detailElements) return;
             if (detailElements.title) detailElements.title.textContent = '';
+            if (detailElements.status) {
+              detailElements.status.textContent = '';
+              detailElements.status.removeAttribute('data-status-label');
+            }
             if (detailElements.meta) detailElements.meta.textContent = '';
             if (detailElements.tags) detailElements.tags.textContent = '';
             if (detailElements.attachments) detailElements.attachments.textContent = '';
@@ -1318,7 +1323,7 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             pagination?.removeAttribute('hidden');
           }
 
-          async function loadDetail(jobId) {
+          async function loadDetail(jobId, options = {}) {
             if (!detailElements || !jobId) {
               return;
             }
@@ -1334,7 +1339,10 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
                 return;
               }
               renderDetail(jobId, data);
-              setDetailState('ready', { forceVisible: true });
+              setDetailState('ready', {
+                forceVisible: true,
+                preserveMessage: options.preserveActionMessage === true,
+              });
               dispatchApplicationDetailLoaded(data);
             } catch (err) {
               if (detailState.jobId !== jobId) {
@@ -1512,6 +1520,17 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             detail.events = timeline;
             detail.track = track;
             detail.shortlist = shortlist;
+
+            if (detailElements.status) {
+              const formattedStatus =
+                typeof detail.status === 'string' && detail.status.trim()
+                  ? formatStatusLabelText(detail.status)
+                  : '';
+              const statusLabel = formattedStatus || '';
+              detailElements.status.textContent =
+                'Status: ' + (statusLabel || '(unknown)');
+              detailElements.status.setAttribute('data-status-label', statusLabel);
+            }
             return detail;
           }
 
@@ -1683,6 +1702,8 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
                 note: noteValue || undefined,
                 data,
               });
+              await loadDetail(jobId, { preserveActionMessage: true });
+              setActionMessage('success', message);
               resetActionForm({ preserveMessage: true });
             } catch (err) {
               const message =
@@ -3488,6 +3509,7 @@ export function createWebApp({
               </div>
               <div class="application-detail__section" data-detail-state="ready" hidden>
                 <h3 class="application-detail__title" data-detail-title></h3>
+                <p class="application-detail__status" data-detail-status></p>
                 <dl class="application-detail__meta" data-detail-meta></dl>
                 <p class="application-detail__tags" data-detail-tags></p>
                 <p class="application-detail__attachments" data-detail-attachments></p>
