@@ -33,9 +33,14 @@ discoverable.
 1. **Access logs** – Enable structured logging by passing a logger with `info`,
    `warn`, and `error` methods to `startWebServer`. Command invocations log
    duration, status, and correlation IDs.
-2. **Health checks** – Add `run()` functions that verify downstream resources
-   (CLI availability, data directories). Failing checks flip the aggregated
-   status to `error` and return HTTP 503.
+2. **Health checks** – `/health` now executes default probes from
+   [`createDefaultHealthChecks`](../src/web/health-checks.js) that verify the
+   CLI responds to `--help` and that the data directory is writable. Extend the
+   list in [`scripts/web-server.js`](../scripts/web-server.js) when additional
+   dependencies need coverage. Failing checks flip the aggregated status to
+   `error` and return HTTP 503. Regression coverage in
+   [`test/web-health-checks.test.js`](../test/web-health-checks.test.js)
+   exercises both probes so outages surface immediately.
 3. **Audit scores** – `src/web/audits.js` exposes axe-core and performance
    audits. Schedule them in CI or cron jobs to catch regressions between
    releases.

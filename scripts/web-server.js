@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import process from 'node:process';
 import { loadWebConfig } from '../src/web/config.js';
 import { startWebServer } from '../src/web/server.js';
+import { createDefaultHealthChecks } from '../src/web/health-checks.js';
 
 function getFlag(args, name) {
   const index = args.indexOf(name);
@@ -64,11 +65,13 @@ async function main() {
     throw err;
   }
 
+  const healthChecks = createDefaultHealthChecks();
+
   const server = await startWebServer({
     host: config.host,
     port: config.port,
     info: config.info,
-    healthChecks: [],
+    healthChecks,
     rateLimit: config.rateLimit,
     csrfToken: config.csrfToken,
     csrfHeaderName: config.csrfHeaderName,
