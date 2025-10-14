@@ -46,6 +46,7 @@ const TRACK_SHOW_ALLOWED_FIELDS = new Set(['jobId', 'job_id']);
 const TRACK_RECORD_ALLOWED_FIELDS = new Set(['jobId', 'job_id', 'status', 'note']);
 const ANALYTICS_EXPORT_ALLOWED_FIELDS = new Set(['redact', 'redactCompanies', 'redact_companies']);
 const LISTINGS_ALLOWED_PROVIDERS = new Set([
+  'all',
   'greenhouse',
   'lever',
   'ashby',
@@ -286,7 +287,7 @@ function validateAnalyticsExportPayload(rawPayload) {
   return normalizeAnalyticsExportRequest(payload);
 }
 
-function coerceListingsProvider(value, commandName) {
+function coerceListingsProvider(value, commandName, { allowAggregate = false } = {}) {
   const provider = coerceString(value, { name: 'provider', required: true });
   const normalized = provider.toLowerCase();
   if (!normalized) {
@@ -296,6 +297,9 @@ function coerceListingsProvider(value, commandName) {
     const allowedProviders = Array.from(LISTINGS_ALLOWED_PROVIDERS).join(', ');
     throw new Error(`${commandName} provider must be one of: ${allowedProviders}`);
   }
+  if (normalized === 'all' && !allowAggregate) {
+    throw new Error(`${commandName} provider "all" cannot be used for this operation`);
+  }
   return normalized;
 }
 
@@ -303,7 +307,9 @@ function validateListingsFetchPayload(rawPayload) {
   const payload = ensurePlainObject(rawPayload, 'listings-fetch');
   assertAllowedFields(payload, LISTINGS_FETCH_ALLOWED_FIELDS, 'listings-fetch');
 
-  const provider = coerceListingsProvider(payload.provider, 'listings-fetch');
+  const provider = coerceListingsProvider(payload.provider, 'listings-fetch', {
+    allowAggregate: true,
+  });
   const identifier = coerceString(payload.identifier, { name: 'identifier' });
   const location = coerceString(payload.location, { name: 'location' });
   const title = coerceString(payload.title, { name: 'title' });
@@ -312,7 +318,7 @@ function validateListingsFetchPayload(rawPayload) {
   const limit = coerceInteger(payload.limit, { name: 'limit', min: 1 });
 
   const filters = { provider };
-  if (identifier) filters.identifier = identifier;
+  if (identifier && provider !== 'all') filters.identifier = identifier;
   if (location) filters.location = location;
   if (title) filters.title = title;
   if (team) filters.team = team;

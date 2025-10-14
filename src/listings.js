@@ -11,7 +11,16 @@ import { syncShortlistJob, addJobTags } from './shortlist.js';
 import { getLifecycleEntry, recordApplication } from './lifecycle.js';
 import { getDiscardedJobs, recordJobDiscard } from './discards.js';
 
-const PROVIDERS = Object.freeze({
+const AGGREGATE_PROVIDER_ID = 'all';
+const DEFAULT_AGGREGATE_SOURCES = Object.freeze([
+  { provider: 'greenhouse', identifier: 'acme-co' },
+  { provider: 'lever', identifier: 'acme' },
+  { provider: 'ashby', identifier: 'acme' },
+  { provider: 'smartrecruiters', identifier: 'acme' },
+  { provider: 'workable', identifier: 'acme' },
+]);
+
+const BASE_PROVIDERS = Object.freeze({
   greenhouse: {
     id: 'greenhouse',
     label: 'Greenhouse',
@@ -19,6 +28,7 @@ const PROVIDERS = Object.freeze({
     identifierKey: 'board',
     identifierLabel: 'Board slug',
     placeholder: 'acme-co',
+    requiresIdentifier: true,
   },
   lever: {
     id: 'lever',
@@ -27,6 +37,7 @@ const PROVIDERS = Object.freeze({
     identifierKey: 'org',
     identifierLabel: 'Org slug',
     placeholder: 'acme',
+    requiresIdentifier: true,
   },
   ashby: {
     id: 'ashby',
@@ -35,6 +46,7 @@ const PROVIDERS = Object.freeze({
     identifierKey: 'org',
     identifierLabel: 'Org slug',
     placeholder: 'acme',
+    requiresIdentifier: true,
   },
   smartrecruiters: {
     id: 'smartrecruiters',
@@ -43,6 +55,7 @@ const PROVIDERS = Object.freeze({
     identifierKey: 'company',
     identifierLabel: 'Company slug',
     placeholder: 'acme',
+    requiresIdentifier: true,
   },
   workable: {
     id: 'workable',
@@ -51,8 +64,82 @@ const PROVIDERS = Object.freeze({
     identifierKey: 'account',
     identifierLabel: 'Account slug',
     placeholder: 'acme',
+    requiresIdentifier: true,
   },
 });
+
+const AGGREGATE_PROVIDER = Object.freeze({
+  id: AGGREGATE_PROVIDER_ID,
+  label: 'All providers',
+  aggregate: true,
+  identifierKey: null,
+  identifierLabel: 'Saved sources',
+  placeholder: '',
+  requiresIdentifier: false,
+});
+
+const PROVIDERS = Object.freeze({
+  [AGGREGATE_PROVIDER_ID]: AGGREGATE_PROVIDER,
+  ...BASE_PROVIDERS,
+});
+
+function isAggregateProvider(provider) {
+  return Boolean(provider && provider.aggregate === true);
+}
+
+async function readJsonFile(filePath) {
+  try {
+    const raw = await fs.readFile(filePath, 'utf8');
+    return JSON.parse(raw);
+  } catch (error) {
+    if (error && error.code === 'ENOENT') {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function normalizeAggregateSources(rawSources) {
+  if (!Array.isArray(rawSources)) {
+    return [];
+  }
+  const normalized = [];
+  const seen = new Set();
+  for (const entry of rawSources) {
+    if (!entry || typeof entry !== 'object') continue;
+    const providerId = sanitizeString(entry.provider).toLowerCase();
+    if (!providerId || !BASE_PROVIDERS[providerId]) continue;
+    const identifier = sanitizeString(entry.identifier);
+    if (!identifier) continue;
+    const limit =
+      Number.isFinite(entry.limit) && entry.limit > 0 ? Math.trunc(entry.limit) : undefined;
+    const key = `${providerId}:${identifier}:${limit ?? ''}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push({ provider: providerId, identifier, limit });
+  }
+  return normalized;
+}
+
+async function loadAggregateSources() {
+  const overridePath = path.join(resolveDataDir(), 'listings', 'sources.json');
+  const fallbackPath = path.resolve('config', 'listings', 'sources.json');
+  const overrideSources = await readJsonFile(overridePath);
+  if (overrideSources) {
+    const normalized = normalizeAggregateSources(overrideSources);
+    if (normalized.length > 0) {
+      return normalized;
+    }
+  }
+  const fallbackSources = await readJsonFile(fallbackPath);
+  const normalizedFallback = normalizeAggregateSources(
+    fallbackSources ?? DEFAULT_AGGREGATE_SOURCES,
+  );
+  if (normalizedFallback.length > 0) {
+    return normalizedFallback;
+  }
+  return normalizeAggregateSources(DEFAULT_AGGREGATE_SOURCES);
+}
 
 function resolveDataDir() {
   return process.env.JOBBOT_DATA_DIR || path.resolve('data');
@@ -64,22 +151,27 @@ function sanitizeString(value) {
   return str.trim();
 }
 
-function ensureProvider(provider) {
+function ensureProvider(provider, { allowAggregate = false } = {}) {
   const key = sanitizeString(provider).toLowerCase();
   const entry = PROVIDERS[key];
   if (!entry) {
     throw new Error(`Unsupported listings provider: ${provider}`);
   }
+  if (isAggregateProvider(entry) && !allowAggregate) {
+    throw new Error('Aggregate listings provider cannot be used for this operation');
+  }
   return entry;
 }
 
 export function listListingProviders() {
-  return Object.values(PROVIDERS).map(provider => ({
+  const orderedProviders = [AGGREGATE_PROVIDER, ...Object.values(BASE_PROVIDERS)];
+  return orderedProviders.map(provider => ({
     id: provider.id,
     label: provider.label,
     identifierKey: provider.identifierKey,
     identifierLabel: provider.identifierLabel,
     placeholder: provider.placeholder,
+    requiresIdentifier: provider.requiresIdentifier !== false,
   }));
 }
 
@@ -274,35 +366,47 @@ async function normalizeSnapshot(adapter, job, context) {
   return adapter.normalizeJob(job, normalizedContext);
 }
 
-export async function fetchListings({
-  provider,
-  identifier,
-  location,
-  title,
-  team,
-  department,
-  remote,
-  limit,
-} = {}) {
-  const providerEntry = ensureProvider(provider);
-  const targetIdentifier = normalizeIdentifier(identifier);
-
-  // If no identifier is provided, return an empty result set without error.
-  if (!targetIdentifier) {
-    return {
-      provider: providerEntry.id,
-      identifier: '',
-      fetched_at: new Date().toISOString(),
-      total: 0,
-      listings: [],
-    };
+function coerceFilters({ location, title, team, department, remote }) {
+  const filters = {};
+  if (location !== undefined) filters.location = location;
+  if (title !== undefined) filters.title = title;
+  if (team !== undefined) {
+    filters.team = team;
+  } else if (department !== undefined) {
+    filters.team = department;
   }
+  if (remote !== undefined) filters.remote = remote;
+  return filters;
+}
 
+async function collectListingStatusSets() {
+  const [existingIds, archivedIds] = await Promise.all([
+    listExistingJobIds(),
+    listArchivedJobIds(),
+  ]);
+  return {
+    existingIds: existingIds instanceof Set ? existingIds : new Set(existingIds ?? []),
+    archivedIds: archivedIds instanceof Set ? archivedIds : new Set(archivedIds ?? []),
+  };
+}
+
+function applyListingState(listings, { existingIds, archivedIds }) {
+  const ingestedIds = existingIds ?? new Set();
+  const archived = archivedIds ?? new Set();
+  return listings.map(listing => ({
+    ...listing,
+    ingested: ingestedIds.has(listing.jobId),
+    archived: archived.has(listing.jobId),
+  }));
+}
+
+async function loadProviderSummaries(providerEntry, options = {}) {
+  const targetIdentifier = normalizeIdentifier(options.identifier);
+  if (!targetIdentifier) {
+    return { identifier: '', summaries: [] };
+  }
   const args = { [providerEntry.identifierKey]: targetIdentifier };
   const { jobs, context } = await providerEntry.adapter.listOpenings(args);
-  const existingIdsPromise = listExistingJobIds();
-  const archivedIdsPromise = listArchivedJobIds();
-
   const summaries = [];
   for (const job of Array.isArray(jobs) ? jobs : []) {
     try {
@@ -315,32 +419,145 @@ export async function fetchListings({
         context,
       });
       summary.jobId = snapshot.id;
-      summaries.push({ summary, snapshot });
+      summaries.push(summary);
     } catch {
       // Skip jobs that fail to normalize so one bad posting doesn't break the listing.
     }
   }
+  const filters = coerceFilters(options);
+  const filtered = filterListings(summaries, filters);
+  return { identifier: targetIdentifier, summaries: filtered };
+}
 
-  const filtered = filterListings(
-    summaries.map(entry => entry.summary),
-    { location, title, team: team ?? department, remote },
+function limitListings(listings, limit) {
+  if (!Number.isFinite(limit) || limit <= 0) {
+    return listings;
+  }
+  return listings.slice(0, Math.trunc(limit));
+}
+
+function toTimestamp(value) {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) return null;
+  return parsed;
+}
+
+function sortListingsByRecency(listings) {
+  return listings
+    .slice()
+    .sort((a, b) => {
+      const aTime = toTimestamp(a?.posted_at);
+      const bTime = toTimestamp(b?.posted_at);
+      if (aTime && bTime) {
+        return bTime - aTime;
+      }
+      if (aTime) return -1;
+      if (bTime) return 1;
+      const aTitle = sanitizeString(a?.title);
+      const bTitle = sanitizeString(b?.title);
+      return aTitle.localeCompare(bTitle);
+    });
+}
+
+async function buildProviderListings(providerEntry, options, statusSets) {
+  const { identifier, summaries } = await loadProviderSummaries(providerEntry, options);
+  if (!identifier) {
+    return {
+      provider: providerEntry.id,
+      identifier: '',
+      listings: [],
+      total: 0,
+      allListings: [],
+    };
+  }
+  const listingsWithState = applyListingState(summaries, statusSets);
+  const total = listingsWithState.length;
+  const limited = limitListings(listingsWithState, options.limit);
+  return {
+    provider: providerEntry.id,
+    identifier,
+    listings: limited,
+    total,
+    allListings: listingsWithState,
+  };
+}
+
+export async function fetchListings(options = {}) {
+  const providerEntry = ensureProvider(options.provider, { allowAggregate: true });
+  const limit =
+    Number.isFinite(options.limit) && options.limit > 0 ? Math.trunc(options.limit) : undefined;
+  const statusSets = await collectListingStatusSets();
+
+  if (isAggregateProvider(providerEntry)) {
+    const sources = await loadAggregateSources();
+    if (sources.length === 0) {
+      return {
+        provider: providerEntry.id,
+        identifier: '',
+        fetched_at: new Date().toISOString(),
+        total: 0,
+        listings: [],
+      };
+    }
+
+    const aggregated = [];
+    const seen = new Set();
+    for (const source of sources) {
+      try {
+        const sourceProvider = ensureProvider(source.provider);
+        const result = await buildProviderListings(
+          sourceProvider,
+          {
+            ...options,
+            provider: source.provider,
+            identifier: source.identifier,
+            limit:
+              Number.isFinite(source.limit) && source.limit > 0
+                ? Math.trunc(source.limit)
+                : undefined,
+          },
+          statusSets,
+        );
+        for (const listing of result.allListings) {
+          if (!listing || typeof listing !== 'object') continue;
+          if (!listing.jobId) continue;
+          if (seen.has(listing.jobId)) continue;
+          seen.add(listing.jobId);
+          aggregated.push(listing);
+        }
+      } catch {
+        // Skip failing sources so one misconfigured provider does not block aggregation.
+      }
+    }
+
+    const sorted = sortListingsByRecency(aggregated);
+    const limitedResults = limitListings(sorted, limit);
+    return {
+      provider: providerEntry.id,
+      identifier: '',
+      fetched_at: new Date().toISOString(),
+      total: sorted.length,
+      listings: limitedResults,
+    };
+  }
+
+  const result = await buildProviderListings(
+    providerEntry,
+    {
+      ...options,
+      identifier: options.identifier,
+      limit,
+    },
+    statusSets,
   );
-
-  const limited = Number.isFinite(limit) && limit > 0 ? filtered.slice(0, limit) : filtered;
-  const [existingIds, archivedIds] = await Promise.all([existingIdsPromise, archivedIdsPromise]);
-
-  const listings = limited.map(summary => ({
-    ...summary,
-    ingested: existingIds.has(summary.jobId),
-    archived: archivedIds.has(summary.jobId),
-  }));
 
   return {
     provider: providerEntry.id,
-    identifier: targetIdentifier,
+    identifier: result.identifier,
     fetched_at: new Date().toISOString(),
-    total: filtered.length,
-    listings,
+    total: result.total,
+    listings: result.listings,
   };
 }
 

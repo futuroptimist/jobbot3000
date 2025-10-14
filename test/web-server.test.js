@@ -437,10 +437,16 @@ describe('web server status page', () => {
   it('loads provider listings and supports ingesting and archiving roles', async () => {
     const providers = [
       {
+        id: 'all',
+        label: 'All providers',
+        requiresIdentifier: false,
+      },
+      {
         id: 'greenhouse',
         label: 'Greenhouse',
         identifierLabel: 'Greenhouse board token',
         placeholder: 'acme-co',
+        requiresIdentifier: true,
       },
     ];
     const listings = [
@@ -453,16 +459,20 @@ describe('web server status page', () => {
         remote: true,
         url: 'https://example.com/job-1',
         ingested: false,
+        provider: 'greenhouse',
+        identifier: 'acme-co',
       },
       {
         jobId: 'job-2',
-        title: 'Product Manager',
+        title: 'Product Engineer',
         company: 'Acme Co',
         location: 'New York, NY',
         team: 'Product',
         remote: false,
         url: 'https://example.com/job-2',
         ingested: false,
+        provider: 'lever',
+        identifier: 'acme',
       },
     ];
 
@@ -538,29 +548,16 @@ describe('web server status page', () => {
 
     const providerSelect = document.querySelector('[data-listings-provider]');
     const identifierInput = document.querySelector('[data-listings-identifier]');
-    const locationInput = document.querySelector('[data-listings-filter="location"]');
+    const identifierGroup = identifierInput?.closest('label');
     const titleInput = document.querySelector('[data-listings-filter="title"]');
-    const teamInput = document.querySelector('[data-listings-filter="team"]');
-    const remoteSelect = document.querySelector('[data-listings-filter="remote"]');
 
-    if (providerSelect instanceof dom.window.HTMLSelectElement) {
-      providerSelect.value = 'greenhouse';
-      providerSelect.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-    }
-    if (identifierInput instanceof dom.window.HTMLInputElement) {
-      identifierInput.value = 'acme-co';
-    }
-    if (locationInput instanceof dom.window.HTMLInputElement) {
-      locationInput.value = 'Remote';
-    }
+    const providerValue =
+      providerSelect instanceof dom.window.HTMLSelectElement ? providerSelect.value : null;
+    expect(providerValue).toBe('all');
+    expect(identifierGroup?.hasAttribute('hidden')).toBe(true);
+    expect(identifierInput?.hasAttribute('disabled')).toBe(true);
     if (titleInput instanceof dom.window.HTMLInputElement) {
-      titleInput.value = 'Staff Software Engineer';
-    }
-    if (teamInput instanceof dom.window.HTMLInputElement) {
-      teamInput.value = 'Platform';
-    }
-    if (remoteSelect instanceof dom.window.HTMLSelectElement) {
-      remoteSelect.value = 'true';
+      titleInput.value = 'Engineer';
     }
 
     const form = document.querySelector('[data-listings-form]');
@@ -573,13 +570,11 @@ describe('web server status page', () => {
     expect(commandAdapter['listings-fetch']).toHaveBeenCalledTimes(1);
     const fetchPayload = commandAdapter['listings-fetch'].mock.calls.at(-1)?.[0] ?? {};
     expect(fetchPayload).toMatchObject({
-      provider: 'greenhouse',
-      identifier: 'acme-co',
-      location: 'Remote',
-      title: 'Staff Software Engineer',
-      team: 'Platform',
+      provider: 'all',
+      title: 'Engineer',
+      limit: 10,
     });
-    expect(fetchPayload.remote).toBe(true);
+    expect(fetchPayload.identifier).toBeUndefined();
 
     const resultsContainer = document.querySelector('[data-listings-results]');
     expect(resultsContainer?.children.length).toBe(2);

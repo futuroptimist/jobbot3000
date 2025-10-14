@@ -146,13 +146,20 @@ jobbot3000.
 
 ### Web flow
 
-1. Use **Jobs ▸ Import** to select a source adapter, authenticate if required, and enter the company
+1. Open the **Listings** tab and accept the default **All providers** option. The identifier input is
+   hidden in this mode so users only tweak lightweight filters like the job title (e.g., "Software
+   Engineer") before pressing **Fetch listings**. The UI aggregates results from configured boards,
+   paginates them 10 at a time, and exposes metadata such as compensation, snippets, and remote
+   flags. Pressing **Ingest listing** persists the normalized posting under `data/jobs/`, wires it
+   into shortlist analytics, and keeps it available for downstream automations until explicitly
+   archived.
+2. Use **Jobs ▸ Import** to select a source adapter, authenticate if required, and enter the company
    slug or job URL. The web flow streams progress updates while the shared ingestion pipeline runs.
-2. Review imported postings in the **Jobs Inbox** with side-by-side raw HTML and normalized summaries.
-3. Tag or discard roles via inline controls; discards prompt for reason + tags, mirroring the CLI.
-4. Switch to the **Shortlist** tab to filter by location, level, compensation, and tags. A bulk
+3. Review imported postings in the **Jobs Inbox** with side-by-side raw HTML and normalized summaries.
+4. Tag or discard roles via inline controls; discards prompt for reason + tags, mirroring the CLI.
+5. Switch to the **Shortlist** tab to filter by location, level, compensation, and tags. A bulk
    action bar supports exporting the current view as JSON or CSV.
-5. Configure **Automations** to schedule nightly imports. The UI surfaces adapter health, retry
+6. Configure **Automations** to schedule nightly imports. The UI surfaces adapter health, retry
    counts, and last-success timestamps so QA can validate monitoring hooks.
 
 ### Unhappy paths & recovery
