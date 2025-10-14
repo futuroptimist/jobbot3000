@@ -21,7 +21,7 @@
     "web:server": "node scripts/web-server.js",
     "dev": "node scripts/web-server.js --env development",
     "web:screenshots": "node scripts/generate-web-screenshots.js",
-    "postinstall": "node scripts/install-console-font.js"
+    "postinstall": "node scripts/install-console-font.js && npx playwright install --with-deps"
   },
   "engines": {
     "node": ">=20"
