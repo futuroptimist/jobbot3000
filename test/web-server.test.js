@@ -572,8 +572,8 @@ describe('web server status page', () => {
     expect(fetchPayload).toMatchObject({
       provider: 'all',
       title: 'Engineer',
-      limit: 10,
     });
+    expect(fetchPayload.limit).toBeUndefined();
     expect(fetchPayload.identifier).toBeUndefined();
 
     const resultsContainer = document.querySelector('[data-listings-results]');
