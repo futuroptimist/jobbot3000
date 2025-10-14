@@ -2054,9 +2054,6 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             if (remoteValue === 'true' || remoteValue === 'false') {
               payload.remote = remoteValue;
             }
-            if (state.pageSize > 0) {
-              payload.limit = state.pageSize;
-            }
             return payload;
           }
 
