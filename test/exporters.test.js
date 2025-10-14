@@ -21,6 +21,12 @@ describe('exporters', () => {
     expect(result).toBe('null');
   });
 
+  it('redacts sensitive fields in JSON output', () => {
+    const result = toJson({ email: 'alice@example.com', token: 'secret-123' });
+    expect(result).toContain('al***@example.com');
+    expect(result).not.toContain('secret-123');
+  });
+
   it('formats markdown summaries', () => {
     const output = toMarkdownSummary({
       title: 'Dev',

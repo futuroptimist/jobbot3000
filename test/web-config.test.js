@@ -23,6 +23,12 @@ describe('loadWebConfig', () => {
       'JOBBOT_WEB_RATE_LIMIT_MAX',
       'JOBBOT_WEB_CSRF_HEADER',
       'JOBBOT_WEB_CSRF_TOKEN',
+      'JOBBOT_FEATURE_SCRAPING_MOCKS',
+      'JOBBOT_FEATURE_NOTIFICATIONS_WEEKLY',
+      'JOBBOT_HTTP_MAX_RETRIES',
+      'JOBBOT_HTTP_BACKOFF_MS',
+      'JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD',
+      'JOBBOT_HTTP_CIRCUIT_BREAKER_RESET_MS',
     ]);
   });
 
@@ -35,6 +41,12 @@ describe('loadWebConfig', () => {
       'JOBBOT_WEB_RATE_LIMIT_MAX',
       'JOBBOT_WEB_CSRF_HEADER',
       'JOBBOT_WEB_CSRF_TOKEN',
+      'JOBBOT_FEATURE_SCRAPING_MOCKS',
+      'JOBBOT_FEATURE_NOTIFICATIONS_WEEKLY',
+      'JOBBOT_HTTP_MAX_RETRIES',
+      'JOBBOT_HTTP_BACKOFF_MS',
+      'JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD',
+      'JOBBOT_HTTP_CIRCUIT_BREAKER_RESET_MS',
     ]);
   });
 
@@ -48,6 +60,14 @@ describe('loadWebConfig', () => {
     expect(config.rateLimit).toEqual({ windowMs: 60000, max: 30 });
     expect(config.csrfHeaderName).toBe('x-jobbot-csrf');
     expect(config.info).toMatchObject({ service: 'jobbot-web', environment: 'development' });
+    expect(config.audit.logPath).toContain('audit-log');
+    expect(config.features.httpClient.maxRetries).toBe(2);
+    expect(config.missingSecrets).toEqual([
+      'JOBBOT_GREENHOUSE_TOKEN',
+      'JOBBOT_LEVER_API_TOKEN',
+      'JOBBOT_SMARTRECRUITERS_TOKEN',
+      'JOBBOT_WORKABLE_TOKEN',
+    ]);
   });
 
   it('exposes staging and production presets', async () => {
@@ -72,6 +92,9 @@ describe('loadWebConfig', () => {
     process.env.JOBBOT_WEB_RATE_LIMIT_WINDOW_MS = '120000';
     process.env.JOBBOT_WEB_RATE_LIMIT_MAX = '9';
     process.env.JOBBOT_WEB_CSRF_HEADER = 'x-test-csrf';
+    process.env.JOBBOT_FEATURE_SCRAPING_MOCKS = 'true';
+    process.env.JOBBOT_HTTP_MAX_RETRIES = '4';
+    process.env.JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD = '6';
 
     const { loadWebConfig } = await import('../src/web/config.js');
     const config = loadWebConfig({ env: 'development', rateLimit: { max: 5 } });
@@ -80,6 +103,10 @@ describe('loadWebConfig', () => {
     expect(config.port).toBe(5123);
     expect(config.rateLimit).toEqual({ windowMs: 120000, max: 5 });
     expect(config.csrfHeaderName).toBe('x-test-csrf');
+    expect(config.features.scraping.useMocks).toBe(true);
+    expect(config.features.httpClient.maxRetries).toBe(4);
+    expect(config.features.httpClient.circuitBreakerThreshold).toBe(6);
+    expect(config.missingSecrets).toEqual([]);
 
     const overridden = loadWebConfig({
       env: 'production',
@@ -90,6 +117,12 @@ describe('loadWebConfig', () => {
     expect(overridden.host).toBe('192.168.1.2');
     expect(overridden.port).toBe(9090);
     expect(overridden.rateLimit).toEqual({ windowMs: 30000, max: 7 });
+    expect(overridden.missingSecrets).toEqual([
+      'JOBBOT_GREENHOUSE_TOKEN',
+      'JOBBOT_LEVER_API_TOKEN',
+      'JOBBOT_SMARTRECRUITERS_TOKEN',
+      'JOBBOT_WORKABLE_TOKEN',
+    ]);
   });
 
   it('throws when provided ports or rate limits are invalid', async () => {

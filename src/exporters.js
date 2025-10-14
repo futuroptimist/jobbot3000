@@ -2,9 +2,11 @@ import { Document, HeadingLevel, Packer, Paragraph, TextRun } from 'docx';
 
 import { t, DEFAULT_LOCALE } from './i18n.js';
 import { identifyBlockers } from './blockers.js';
+import { redactValue } from './shared/security/redaction.js';
 
 export function toJson(data) {
-  return JSON.stringify(data ?? null, null, 2);
+  const redacted = redactValue(data ?? null);
+  return JSON.stringify(redacted, null, 2);
 }
 
 const MARKDOWN_ESCAPE_CHARS = [

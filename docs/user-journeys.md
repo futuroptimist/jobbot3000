@@ -408,6 +408,29 @@ jobbot3000.
 - Scheduler outages notify maintainers via local notifications and mark dashboards with a warning
   banner until resolved.
 
+## Journey 5: Background ingestion to notifications
+
+**Goal:** Automate the end-to-end flow from job ingestion through scoring and notification delivery
+while preserving privacy guardrails.
+
+```mermaid
+flowchart TD
+  A[Job source schedulers] -->|scraping:jobs:fetch| B(Scraping module)
+  B -->|Snapshots| C(Enrichment pipeline)
+  C -->|Normalized resumes| D(Scoring engine)
+  D -->|Shortlist delta| E(Notifications)
+  D -->|Audit events| F[Audit log]
+  E -->|Weekly digest| G[Candidate inbox]
+```
+
+1. The scheduler emits `scraping:jobs:fetch` events via the module event bus. Scraping adapters respect
+   rate limits and provider feature flags before persisting redacted snapshots.
+2. Enrichment stages rebuild resume contexts, emit match requests, and forward normalized payloads to
+   the scoring module.
+3. Scoring updates shortlist metadata, tags blockers, and records structured audit entries for admins.
+4. Notification jobs compile weekly digests from redacted shortlist entries and queue templated emails
+   or filesystem exports depending on feature flags.
+
 ---
 
 These journeys should stay aligned with the project's safety principles: keep everything local by
