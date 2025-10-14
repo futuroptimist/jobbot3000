@@ -13,6 +13,42 @@ vi.mock('../src/greenhouse.js', () => ({
   greenhouseAdapter: greenhouseAdapterMock,
 }));
 
+const leverAdapterMock = {
+  listOpenings: vi.fn(),
+  normalizeJob: vi.fn(),
+};
+
+vi.mock('../src/lever.js', () => ({
+  leverAdapter: leverAdapterMock,
+}));
+
+const ashbyAdapterMock = {
+  listOpenings: vi.fn(),
+  normalizeJob: vi.fn(),
+};
+
+vi.mock('../src/ashby.js', () => ({
+  ashbyAdapter: ashbyAdapterMock,
+}));
+
+const smartRecruitersAdapterMock = {
+  listOpenings: vi.fn(),
+  normalizeJob: vi.fn(),
+};
+
+vi.mock('../src/smartrecruiters.js', () => ({
+  smartRecruitersAdapter: smartRecruitersAdapterMock,
+}));
+
+const workableAdapterMock = {
+  listOpenings: vi.fn(),
+  normalizeJob: vi.fn(),
+};
+
+vi.mock('../src/workable.js', () => ({
+  workableAdapter: workableAdapterMock,
+}));
+
 const shortlistMock = {
   syncShortlistJob: vi.fn(),
   addJobTags: vi.fn(),
@@ -55,6 +91,14 @@ describe('listings module', () => {
     process.env.JOBBOT_DATA_DIR = dataDir;
     greenhouseAdapterMock.listOpenings.mockReset();
     greenhouseAdapterMock.normalizeJob.mockReset();
+    leverAdapterMock.listOpenings.mockReset();
+    leverAdapterMock.normalizeJob.mockReset();
+    ashbyAdapterMock.listOpenings.mockReset();
+    ashbyAdapterMock.normalizeJob.mockReset();
+    smartRecruitersAdapterMock.listOpenings.mockReset();
+    smartRecruitersAdapterMock.normalizeJob.mockReset();
+    workableAdapterMock.listOpenings.mockReset();
+    workableAdapterMock.normalizeJob.mockReset();
     shortlistMock.syncShortlistJob.mockReset();
     shortlistMock.addJobTags.mockReset();
     jobsMock.saveJobSnapshot.mockReset();
@@ -77,9 +121,12 @@ describe('listings module', () => {
   it('lists supported providers', () => {
     const providers = listListingProviders();
     const ids = providers.map(entry => entry.id);
+    expect(providers[0]?.id).toBe('all');
+    expect(providers[0]?.requiresIdentifier).toBe(false);
     expect(ids).toContain('greenhouse');
     expect(ids).toContain('lever');
     expect(providers.find(entry => entry.id === 'greenhouse')?.identifierKey).toBe('board');
+    expect(providers.find(entry => entry.id === 'greenhouse')?.requiresIdentifier).toBe(true);
   });
 
   it('fetches listings and marks ingested and archived state', async () => {
@@ -130,6 +177,68 @@ describe('listings module', () => {
     const secondResult = await fetchListings({ provider: 'greenhouse', identifier: 'acme' });
     const archivedEntry = secondResult.listings.find(item => item.jobId === 'job-999');
     expect(archivedEntry?.archived).toBe(true);
+  });
+
+  it('aggregates listings across configured providers', async () => {
+    const configDir = path.join(dataDir, 'listings');
+    await fs.mkdir(configDir, { recursive: true });
+    await fs.writeFile(
+      path.join(configDir, 'sources.json'),
+      JSON.stringify([
+        { provider: 'greenhouse', identifier: 'acme', limit: 5 },
+        { provider: 'lever', identifier: 'acme', limit: 5 },
+      ]),
+      'utf8',
+    );
+
+    greenhouseAdapterMock.listOpenings.mockResolvedValue({
+      jobs: [{ id: 1 }],
+      context: { slug: 'acme' },
+    });
+    greenhouseAdapterMock.normalizeJob.mockImplementation(async () => ({
+      id: 'job-greenhouse',
+      raw: 'Greenhouse role',
+      parsed: {
+        title: 'Software Engineer',
+        company: 'Acme',
+        location: 'Remote',
+        requirements: ['Build systems'],
+        body: 'Greenhouse role',
+        compensation: '$100k',
+      },
+      source: { value: 'https://example.com/greenhouse' },
+      fetchedAt: '2025-01-02T00:00:00Z',
+    }));
+
+    leverAdapterMock.listOpenings.mockResolvedValue({
+      jobs: [{ id: 2 }],
+      context: { slug: 'acme' },
+    });
+    leverAdapterMock.normalizeJob.mockImplementation(async () => ({
+      id: 'job-lever',
+      raw: 'Lever role',
+      parsed: {
+        title: 'Staff Software Engineer',
+        company: 'Acme',
+        location: 'Austin',
+        requirements: ['Scale services'],
+        body: 'Lever role',
+        compensation: '$180k',
+      },
+      source: { value: 'https://example.com/lever' },
+      fetchedAt: '2025-01-03T00:00:00Z',
+    }));
+
+    const result = await fetchListings({ provider: 'all', title: 'Engineer', limit: 10 });
+
+    expect(result.provider).toBe('all');
+    expect(result.identifier).toBe('');
+    expect(result.total).toBe(2);
+    expect(result.listings).toHaveLength(2);
+    expect(result.listings.map(item => item.jobId)).toEqual(['job-lever', 'job-greenhouse']);
+    expect(result.listings.every(item => item.ingested === false)).toBe(true);
+    expect(result.listings[0].provider).toBe('lever');
+    expect(result.listings[1].provider).toBe('greenhouse');
   });
 
   it('ingests a listing and triggers tracking side effects', async () => {

@@ -1,0 +1,7 @@
+[
+  { "provider": "greenhouse", "identifier": "acme-co", "limit": 20 },
+  { "provider": "lever", "identifier": "acme", "limit": 20 },
+  { "provider": "ashby", "identifier": "acme", "limit": 20 },
+  { "provider": "smartrecruiters", "identifier": "acme", "limit": 20 },
+  { "provider": "workable", "identifier": "acme", "limit": 20 }
+]

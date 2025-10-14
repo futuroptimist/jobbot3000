@@ -1779,6 +1779,8 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           const providerSelect = form?.querySelector('[data-listings-provider]') ?? null;
           const identifierInput = form?.querySelector('[data-listings-identifier]') ?? null;
           const identifierLabel = form?.querySelector('[data-listings-identifier-label]') ?? null;
+          const identifierGroup =
+            identifierInput?.closest('label') ?? identifierLabel?.closest('label');
           const locationInput = form?.querySelector('[data-listings-filter="location"]') ?? null;
           const titleInput = form?.querySelector('[data-listings-filter="title"]') ?? null;
           const teamInput = form?.querySelector('[data-listings-filter="team"]') ?? null;
@@ -1836,8 +1838,22 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               meta && typeof meta.placeholder === 'string' && meta.placeholder.trim()
                 ? meta.placeholder.trim()
                 : 'acme-co';
+            const requiresIdentifier = meta ? meta.requiresIdentifier !== false : true;
             if (identifierInput) {
               identifierInput.placeholder = placeholder;
+              if (requiresIdentifier) {
+                identifierInput.removeAttribute('disabled');
+              } else {
+                identifierInput.value = '';
+                identifierInput.setAttribute('disabled', '');
+              }
+            }
+            if (identifierGroup) {
+              if (requiresIdentifier) {
+                identifierGroup.removeAttribute('hidden');
+              } else {
+                identifierGroup.setAttribute('hidden', '');
+              }
             }
           }
 
@@ -1856,25 +1872,33 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               if (!control) continue;
               control.disabled = disabled;
             }
+            if (!disabled) {
+              updateIdentifierCopy(providerSelect?.value ?? '');
+            }
           }
 
           function populateProviders(list) {
             if (!providerSelect) return;
             const currentValue = providerSelect.value;
             providerSelect.textContent = '';
-            const placeholderOption = document.createElement('option');
-            placeholderOption.value = '';
-            placeholderOption.textContent = 'Select a provider';
-            providerSelect.appendChild(placeholderOption);
+            let defaultValue = '';
             for (const provider of list) {
               if (!provider || typeof provider.id !== 'string') continue;
               const option = document.createElement('option');
               option.value = provider.id;
               option.textContent = provider.label || provider.id;
               providerSelect.appendChild(option);
+              if (!defaultValue) {
+                defaultValue = provider.id;
+              }
+              if (provider.id === 'all') {
+                defaultValue = provider.id;
+              }
             }
-            if (currentValue && state.providerMap.has(currentValue)) {
-              providerSelect.value = currentValue;
+            const nextValue =
+              currentValue && state.providerMap.has(currentValue) ? currentValue : defaultValue;
+            if (nextValue) {
+              providerSelect.value = nextValue;
             }
             updateIdentifierCopy(providerSelect.value);
           }
@@ -2013,7 +2037,13 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             const providerValue = providerSelect?.value?.trim() ?? '';
             const identifierValue = identifierInput?.value?.trim() ?? '';
             if (providerValue) payload.provider = providerValue;
-            if (identifierValue) payload.identifier = identifierValue;
+            const providerMeta = providerValue
+              ? state.providerMap.get(providerValue)
+              : null;
+            const requiresIdentifier = providerMeta
+              ? providerMeta.requiresIdentifier !== false
+              : true;
+            if (identifierValue && requiresIdentifier) payload.identifier = identifierValue;
             const locationValue = locationInput?.value?.trim() ?? '';
             if (locationValue) payload.location = locationValue;
             const titleValue = titleInput?.value?.trim() ?? '';
@@ -2061,11 +2091,28 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             }
 
             const providerValue = payload?.provider?.trim() || '';
+            const providerMeta = providerValue
+              ? state.providerMap.get(providerValue)
+              : null;
+            const requiresIdentifier = providerMeta
+              ? providerMeta.requiresIdentifier !== false
+              : true;
             const identifierValue = payload?.identifier?.trim() || '';
+            const requestPayload = { ...payload, provider: providerValue };
             if (!providerValue) {
               setMessage('error', 'Select a provider before fetching listings');
               return false;
             }
+            if (!requiresIdentifier) {
+              delete requestPayload.identifier;
+            } else if (!identifierValue) {
+              setMessage('error', 'Enter a company or board before fetching listings');
+              return false;
+            } else {
+              requestPayload.identifier = identifierValue;
+            }
+
+            delete requestPayload.limit;
 
             state.loading = true;
             setFormDisabled(true);
@@ -2073,7 +2120,7 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             setMessage('info', 'Fetching listings…');
 
             try {
-              const data = await postCommand('/commands/listings-fetch', payload, {
+              const data = await postCommand('/commands/listings-fetch', requestPayload, {
                 invalidResponse: 'Received invalid response while loading listings',
                 failureMessage: 'Failed to load listings',
               });
@@ -2083,7 +2130,10 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               state.fetched = true;
               state.current = {
                 provider: data.provider || providerValue,
-                identifier: data.identifier || identifierValue,
+                identifier:
+                  requiresIdentifier || data.identifier
+                    ? data.identifier || identifierValue
+                    : '',
               };
               renderListings();
               setPanelState(panelId, 'ready', { preserveMessage: true });
@@ -2108,13 +2158,16 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           }
 
           function resetForm() {
-            if (providerSelect) providerSelect.value = '';
+            if (providerSelect) {
+              const defaultId = state.providerMap.has('all') ? 'all' : state.providers[0]?.id || '';
+              providerSelect.value = defaultId || '';
+            }
             if (identifierInput) identifierInput.value = '';
             if (locationInput) locationInput.value = '';
             if (titleInput) titleInput.value = '';
             if (teamInput) teamInput.value = '';
             if (remoteSelect) remoteSelect.value = '';
-            updateIdentifierCopy('');
+            updateIdentifierCopy(providerSelect?.value ?? '');
             clearMessage();
             state.listings = [];
             state.page = 0;
@@ -2143,9 +2196,17 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             if (button) button.disabled = true;
             setMessage('info', 'Ingesting listing…');
             try {
+              const targetProvider = listing.provider || state.current.provider;
+              const targetIdentifier = listing.identifier || state.current.identifier;
+              if (!targetProvider || targetProvider === 'all') {
+                throw new Error('Listing provider metadata missing for ingestion');
+              }
+              if (!targetIdentifier) {
+                throw new Error('Listing identifier metadata missing for ingestion');
+              }
               const payload = {
-                provider: state.current.provider,
-                identifier: state.current.identifier,
+                provider: targetProvider,
+                identifier: targetIdentifier,
                 jobId,
               };
               const data = await postCommand('/commands/listings-ingest', payload, {
