@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 
-const FETCH_PATH = path.resolve('src', 'fetch.js');
+const FETCH_PATH = path.resolve('src', 'shared', 'http', 'fetch.js');
 
 function readFetchFile() {
   return fs.readFileSync(FETCH_PATH, 'utf8');

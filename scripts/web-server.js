@@ -76,6 +76,8 @@ async function main() {
     csrfToken: config.csrfToken,
     csrfHeaderName: config.csrfHeaderName,
     enableNativeCli,
+    audit: config.audit,
+    features: config.features,
   });
 
   console.log(`jobbot web server listening on ${server.url}`);
@@ -85,6 +87,10 @@ async function main() {
   );
   console.log('Treat the CSRF token as a secret.');
   console.log('Press Ctrl+C to stop.');
+
+  if (config.missingSecrets?.length) {
+    console.warn('Missing secrets:', config.missingSecrets.join(', '));
+  }
 
   await new Promise((resolve, reject) => {
     const signals = ['SIGINT', 'SIGTERM'];

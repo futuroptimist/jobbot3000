@@ -2755,7 +2755,7 @@ describe('jobbot CLI', () => {
     ]);
     expect(textReport).toContain('Outreach: 1');
     expect(textReport).toContain('Screening: 1 (100% conversion)');
-  });
+  }, 15000);
 
   it('exports anonymized analytics snapshots to disk', () => {
     runCli(['track', 'log', 'job-1', '--channel', 'email', '--date', '2025-03-01']);

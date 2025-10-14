@@ -9,6 +9,8 @@ import {
 } from './command-adapter.js';
 import { ALLOW_LISTED_COMMANDS, validateCommandPayload } from './command-registry.js';
 import { STATUSES } from '../lifecycle.js';
+import { createRedactionMiddleware, redactValue } from '../shared/security/redaction.js';
+import { createAuditLogger } from '../shared/security/audit-log.js';
 
 function createInMemoryRateLimiter(options = {}) {
   const windowMs = Number(options.windowMs ?? 60000);
@@ -3272,6 +3274,9 @@ export function createWebApp({
   rateLimit,
   logger,
   auth,
+  audit,
+  auditLogger,
+  features,
 } = {}) {
   const normalizedInfo = normalizeInfo(info);
   const normalizedChecks = normalizeHealthChecks(healthChecks);
@@ -3279,10 +3284,22 @@ export function createWebApp({
   const rateLimiter = createInMemoryRateLimiter(rateLimit);
   const authOptions = normalizeAuthOptions(auth);
   const app = express();
+  let effectiveAuditLogger = auditLogger ?? null;
+  if (!effectiveAuditLogger && audit && audit.logPath) {
+    try {
+      effectiveAuditLogger = createAuditLogger(audit);
+    } catch (error) {
+      logger?.warn?.('Failed to initialize audit logger', error);
+    }
+  }
+  const redactionMiddleware = createRedactionMiddleware({ logger });
   const availableCommands = new Set(
     ALLOW_LISTED_COMMANDS.filter(name => typeof commandAdapter?.[name] === 'function'),
   );
   const jsonParser = express.json({ limit: '1mb' });
+  if (features) {
+    app.locals.features = features;
+  }
 
   app.get('/assets/status-hub.js', (req, res) => {
     res.set('Content-Type', 'application/javascript; charset=utf-8');
@@ -3811,7 +3828,7 @@ export function createWebApp({
     res.status(statusCode).json(payload);
   });
 
-  app.post('/commands/:command', jsonParser, async (req, res) => {
+  app.post('/commands/:command', jsonParser, redactionMiddleware, async (req, res) => {
     const commandParam = typeof req.params.command === 'string' ? req.params.command.trim() : '';
     if (!availableCommands.has(commandParam)) {
       res.status(404).json({ error: `Unknown command "${commandParam}"` });
@@ -3821,6 +3838,23 @@ export function createWebApp({
     const started = performance.now();
     const clientIp = req.ip || req.socket?.remoteAddress || undefined;
     const userAgent = req.get('user-agent');
+    let authPrincipal = authOptions ? 'unauthenticated' : 'guest';
+
+    const recordAudit = async event => {
+      if (!effectiveAuditLogger) return;
+      try {
+        await effectiveAuditLogger.record({
+          type: 'command',
+          command: commandParam,
+          actor: authPrincipal,
+          ip: clientIp,
+          userAgent,
+          ...event,
+        });
+      } catch (error) {
+        logger?.warn?.('Failed to record audit event', error);
+      }
+    };
 
     const rateKey = req.ip || req.socket?.remoteAddress || 'unknown';
     const rateStatus = rateLimiter.check(rateKey);
@@ -3831,6 +3865,7 @@ export function createWebApp({
       const retryAfterSeconds = Math.max(1, Math.ceil((rateStatus.reset - Date.now()) / 1000));
       res.set('Retry-After', String(retryAfterSeconds));
       res.status(429).json({ error: 'Too many requests' });
+      await recordAudit({ status: 'rate_limited' });
       return;
     }
 
@@ -3845,6 +3880,7 @@ export function createWebApp({
       const providedAuth = req.get(authOptions.headerName);
       const headerValue = typeof providedAuth === 'string' ? providedAuth.trim() : '';
       if (!headerValue) {
+        await recordAudit({ status: 'unauthorized', reason: 'missing-token' });
         respondUnauthorized();
         return;
       }
@@ -3853,25 +3889,30 @@ export function createWebApp({
       if (authOptions.requireScheme) {
         const lowerValue = headerValue.toLowerCase();
         if (!lowerValue.startsWith(authOptions.schemePrefixLower)) {
+          await recordAudit({ status: 'unauthorized', reason: 'invalid-scheme' });
           respondUnauthorized();
           return;
         }
         tokenValue = headerValue.slice(authOptions.schemePrefixLength).trim();
         if (!tokenValue) {
+          await recordAudit({ status: 'unauthorized', reason: 'missing-token' });
           respondUnauthorized();
           return;
         }
       }
 
       if (!authOptions.tokens.has(tokenValue)) {
+        await recordAudit({ status: 'unauthorized', reason: 'unknown-token' });
         respondUnauthorized();
         return;
       }
+      authPrincipal = 'token';
     }
 
     const providedToken = req.get(csrfOptions.headerName);
     if ((providedToken ?? '').trim() !== csrfOptions.token) {
       res.status(403).json({ error: 'Invalid or missing CSRF token' });
+      await recordAudit({ status: 'forbidden', reason: 'csrf' });
       return;
     }
 
@@ -3880,9 +3921,11 @@ export function createWebApp({
       payload = validateCommandPayload(commandParam, req.body ?? {});
     } catch (err) {
       res.status(400).json({ error: err?.message ?? 'Invalid command payload' });
+      await recordAudit({ status: 'invalid', reason: 'payload', error: err?.message });
       return;
     }
 
+    const redactedPayload = req.redacted?.body ?? redactValue(payload);
     const payloadFields = Object.keys(payload ?? {}).sort();
 
     try {
@@ -3900,6 +3943,12 @@ export function createWebApp({
         result: sanitizedResult,
       });
       res.status(200).json(sanitizedResult);
+      await recordAudit({
+        status: 'success',
+        durationMs,
+        payload: redactedPayload,
+        payloadFields,
+      });
     } catch (err) {
       const response = sanitizeCommandResult({
         error: err?.message ?? 'Command execution failed',
@@ -3921,6 +3970,13 @@ export function createWebApp({
         errorMessage: response?.error,
       });
       res.status(502).json(response);
+      await recordAudit({
+        status: 'error',
+        durationMs,
+        payload: redactedPayload,
+        payloadFields,
+        error: response?.error,
+      });
     }
   });
 
