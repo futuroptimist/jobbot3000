@@ -227,6 +227,9 @@ export async function fetchWithRetry(url, options = {}, init = {}) {
         }
         recordCircuitFailure(breakerEntry, circuitOptions, clock);
       } catch (err) {
+        if (err && err.doNotRetry) {
+          throw err;
+        }
         if (attempt === retries) {
           recordCircuitFailure(breakerEntry, circuitOptions, clock);
           throw err;

@@ -1,12 +1,125 @@
-const EMAIL_RE = /([A-Z0-9._%+-]+)@([A-Z0-9.-]+\.[A-Z]{2,})/gi;
 const PHONE_RE = /(\+?\d{1,3}[\s-]?)?(\(?\d{3}\)?[\s-]?)?\d{3}[\s-]?\d{4}/g;
 const SECRET_RE = /(api|token|secret|password|key)[\s=:]+([^\s]+)/gi;
 const SENSITIVE_KEY_RE = /(token|secret|password|passcode|apiKey|apikey|key)$/i;
 
+const EMAIL_LOCAL_SYMBOLS = new Set(['.', '_', '%', '+', '-']);
+
+function isDigit(charCode) {
+  return charCode >= 48 && charCode <= 57;
+}
+
+function isUpperAlpha(charCode) {
+  return charCode >= 65 && charCode <= 90;
+}
+
+function isLowerAlpha(charCode) {
+  return charCode >= 97 && charCode <= 122;
+}
+
+function isAlphaNumericChar(char) {
+  if (!char) return false;
+  const code = char.charCodeAt(0);
+  return isDigit(code) || isUpperAlpha(code) || isLowerAlpha(code);
+}
+
+function isEmailLocalChar(char) {
+  if (!char) return false;
+  if (EMAIL_LOCAL_SYMBOLS.has(char)) return true;
+  return isAlphaNumericChar(char);
+}
+
+function isEmailDomainChar(char) {
+  if (!char) return false;
+  if (char === '.' || char === '-') return true;
+  return isAlphaNumericChar(char);
+}
+
+function isValidTopLevelDomain(segment) {
+  if (segment.length < 2) return false;
+  for (const char of segment) {
+    const code = char.charCodeAt(0);
+    if (!isUpperAlpha(code) && !isLowerAlpha(code)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isValidDomain(domain) {
+  if (!domain || !domain.includes('.')) return false;
+  const segments = domain.split('.');
+  if (segments.some(part => part.length === 0)) return false;
+  if (!isValidTopLevelDomain(segments[segments.length - 1])) return false;
+  for (const part of segments) {
+    for (let i = 0; i < part.length; i += 1) {
+      const char = part[i];
+      if (!isEmailDomainChar(char)) {
+        return false;
+      }
+      if (char === '-' && (i === 0 || i === part.length - 1)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function redactEmails(text) {
+  let cursor = 0;
+  let result = '';
+
+  while (cursor < text.length) {
+    const atIndex = text.indexOf('@', cursor);
+    if (atIndex === -1) {
+      result += text.slice(cursor);
+      break;
+    }
+
+    let localStart = atIndex - 1;
+    while (localStart >= 0 && isEmailLocalChar(text[localStart])) {
+      localStart -= 1;
+    }
+    localStart += 1;
+
+    if (localStart >= atIndex) {
+      result += text.slice(cursor, atIndex + 1);
+      cursor = atIndex + 1;
+      continue;
+    }
+
+    let domainEnd = atIndex + 1;
+    while (domainEnd < text.length && isEmailDomainChar(text[domainEnd])) {
+      domainEnd += 1;
+    }
+
+    if (domainEnd === atIndex + 1) {
+      result += text.slice(cursor, atIndex + 1);
+      cursor = atIndex + 1;
+      continue;
+    }
+
+    const localPart = text.slice(localStart, atIndex);
+    const domain = text.slice(atIndex + 1, domainEnd);
+
+    if (!isValidDomain(domain)) {
+      result += text.slice(cursor, atIndex + 1);
+      cursor = atIndex + 1;
+      continue;
+    }
+
+    const prefixLength = Math.min(2, localPart.length);
+    const maskedLocal = `${localPart.slice(0, prefixLength)}***`;
+    result += text.slice(cursor, localStart) + `${maskedLocal}@${domain}`;
+    cursor = domainEnd;
+  }
+
+  return result;
+}
+
 function redactString(value) {
   if (value == null) return value;
   let text = String(value);
-  text = text.replace(EMAIL_RE, (_, user, domain) => `${user.slice(0, 2)}***@${domain}`);
+  text = redactEmails(text);
   text = text.replace(PHONE_RE, match => {
     const digits = match.replace(/\D/g, '');
     if (digits.length < 7) return match;

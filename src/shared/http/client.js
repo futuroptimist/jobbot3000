@@ -1,3 +1,5 @@
+import fetch from 'node-fetch';
+
 import {
   DEFAULT_FETCH_HEADERS,
   fetchWithRetry,
@@ -6,6 +8,21 @@ import {
 } from '../../fetch.js';
 
 const DEFAULT_HTTP_TIMEOUT_MS = 10000;
+
+function createAbortError(reason) {
+  if (reason instanceof Error) {
+    const abortError = new Error(reason.message, { cause: reason });
+    abortError.name = reason.name || 'AbortError';
+    abortError.doNotRetry = true;
+    return abortError;
+  }
+
+  const message = reason !== undefined ? String(reason) : 'Request aborted';
+  const abortError = new Error(message, { cause: reason });
+  abortError.name = 'AbortError';
+  abortError.doNotRetry = true;
+  return abortError;
+}
 
 function mergeHeaders(base, extra) {
   if (!extra || typeof extra !== 'object') {
@@ -118,47 +135,78 @@ export function createHttpClient({
 
     const mergedHeaders = mergeHeaders(headers, extraHeaders);
     const finalTimeout = normalizeTimeoutMs(timeoutMs, defaultTimeoutMs);
-    const shouldUseController = signal || (Number.isFinite(finalTimeout) && finalTimeout > 0);
+    const shouldManageAbort =
+      Boolean(signal) || (Number.isFinite(finalTimeout) && finalTimeout > 0);
 
-    let controller;
-    let timeoutId;
-    let removeAbortListener;
+    let fetchImplForRetry = fetchImpl;
 
-    if (shouldUseController) {
-      controller = new AbortController();
+    if (shouldManageAbort) {
+      const baseFetchImpl = fetchImpl ?? fetch;
 
-      if (signal) {
-        if (signal.aborted) {
-          controller.abort(signal.reason);
-        } else {
-          const abort = () => {
-            controller.abort(signal.reason);
+      fetchImplForRetry = async (input, initWithHeaders = {}) => {
+        const attemptController = new AbortController();
+        const finalInit = {
+          ...initWithHeaders,
+          signal: attemptController.signal,
+        };
+
+        let removeAbortListener;
+        let timeoutId;
+
+        if (signal) {
+          const propagateAbort = () => {
+            const abortError = createAbortError(signal.reason);
+            if (!attemptController.signal.aborted) {
+              attemptController.abort(abortError);
+            }
           };
-          signal.addEventListener('abort', abort, { once: true });
-          removeAbortListener = () => {
-            signal.removeEventListener('abort', abort);
-          };
+
+          if (signal.aborted) {
+            propagateAbort();
+          } else {
+            signal.addEventListener('abort', propagateAbort, { once: true });
+            removeAbortListener = () => {
+              signal.removeEventListener('abort', propagateAbort);
+            };
+          }
         }
-      }
 
-      if (Number.isFinite(finalTimeout) && finalTimeout > 0) {
-        const timeoutError = new Error(`Request timed out after ${finalTimeout} ms`);
-        timeoutError.name = 'TimeoutError';
-        timeoutId = setTimeout(() => {
-          controller.abort(timeoutError);
-        }, finalTimeout);
-      }
+        if (Number.isFinite(finalTimeout) && finalTimeout > 0) {
+          timeoutId = setTimeout(() => {
+            const timeoutError = new Error(`Request timed out after ${finalTimeout} ms`);
+            timeoutError.name = 'TimeoutError';
+            if (!attemptController.signal.aborted) {
+              attemptController.abort(timeoutError);
+            }
+          }, finalTimeout);
+        }
+
+        try {
+          return await baseFetchImpl(input, finalInit);
+        } catch (error) {
+          if (attemptController.signal.aborted) {
+            const reason = attemptController.signal.reason;
+            if (reason instanceof Error) {
+              throw reason;
+            }
+            throw createAbortError(reason);
+          }
+          throw error;
+        } finally {
+          if (timeoutId) clearTimeout(timeoutId);
+          if (removeAbortListener) removeAbortListener();
+        }
+      };
     }
 
     try {
       return await fetchWithRetry(
         url,
         {
-          fetchImpl,
+          fetchImpl: fetchImplForRetry,
           retry: retry ?? defaultRetry,
           rateLimitKey,
           headers: mergedHeaders,
-          signal: controller ? controller.signal : signal,
           circuitBreaker: circuitOverride ?? defaultCircuitBreaker,
           sleep: requestSleep ?? defaultSleep,
           clock: requestClock ?? defaultClock,
@@ -166,20 +214,10 @@ export function createHttpClient({
         init,
       );
     } catch (err) {
-      if (
-        err &&
-        err.name === 'AbortError' &&
-        controller &&
-        controller.signal &&
-        controller.signal.reason &&
-        controller.signal.reason.name === 'TimeoutError'
-      ) {
-        throw controller.signal.reason;
+      if (err && err.name === 'AbortError' && err.doNotRetry) {
+        throw err;
       }
       throw err;
-    } finally {
-      if (timeoutId) clearTimeout(timeoutId);
-      if (removeAbortListener) removeAbortListener();
     }
   };
 
