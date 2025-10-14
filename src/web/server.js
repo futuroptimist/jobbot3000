@@ -2098,16 +2098,21 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               ? providerMeta.requiresIdentifier !== false
               : true;
             const identifierValue = payload?.identifier?.trim() || '';
+            const requestPayload = { ...payload, provider: providerValue };
             if (!providerValue) {
               setMessage('error', 'Select a provider before fetching listings');
               return false;
             }
             if (!requiresIdentifier) {
-              delete payload.identifier;
+              delete requestPayload.identifier;
             } else if (!identifierValue) {
               setMessage('error', 'Enter a company or board before fetching listings');
               return false;
+            } else {
+              requestPayload.identifier = identifierValue;
             }
+
+            delete requestPayload.limit;
 
             state.loading = true;
             setFormDisabled(true);
@@ -2115,7 +2120,7 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             setMessage('info', 'Fetching listings…');
 
             try {
-              const data = await postCommand('/commands/listings-fetch', payload, {
+              const data = await postCommand('/commands/listings-fetch', requestPayload, {
                 invalidResponse: 'Received invalid response while loading listings',
                 failureMessage: 'Failed to load listings',
               });
