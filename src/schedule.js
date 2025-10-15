@@ -11,6 +11,7 @@ import { loadResume } from './resume.js';
 import { parseJobText } from './parser.js';
 import { computeFitScore } from './scoring.js';
 import {
+  isWeeklySummaryNotificationsEnabled,
   runWeeklySummaryNotifications,
   sendWeeklySummaryNotification,
 } from './notifications.js';
@@ -582,6 +583,10 @@ async function runNotificationsTask(taskDef, nowValue) {
   const timestamp = nowValue instanceof Date ? nowValue : new Date(nowValue || Date.now());
   if (Number.isNaN(timestamp.getTime())) {
     throw new Error(`invalid timestamp for notifications task ${taskDef.id}`);
+  }
+
+  if (!isWeeklySummaryNotificationsEnabled()) {
+    return 'Weekly summary notifications disabled via JOBBOT_FEATURE_NOTIFICATIONS_WEEKLY.';
   }
 
   const delivered = new Map();

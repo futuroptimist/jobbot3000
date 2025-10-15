@@ -1,6 +1,6 @@
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 let dataDir;
 let restoreAnalyticsDir;
@@ -22,6 +22,7 @@ describe('notifications', () => {
   });
 
   afterEach(async () => {
+    vi.resetModules();
     if (restoreAnalyticsDir) {
       await restoreAnalyticsDir();
       restoreAnalyticsDir = undefined;
@@ -36,6 +37,7 @@ describe('notifications', () => {
       dataDir = undefined;
     }
     delete process.env.JOBBOT_DATA_DIR;
+    delete process.env.JOBBOT_FEATURE_NOTIFICATIONS_WEEKLY;
   });
 
   it('subscribes to weekly summaries and updates existing entries', async () => {
@@ -137,5 +139,25 @@ describe('notifications', () => {
     expect(payload).toContain('Funnel snapshot');
     expect(payload).toMatch(/Outreach: 4/);
     expect(payload).toContain('Health check');
+  });
+
+  it('skips weekly summary delivery when JOBBOT_FEATURE_NOTIFICATIONS_WEEKLY=false', async () => {
+    process.env.JOBBOT_FEATURE_NOTIFICATIONS_WEEKLY = 'false';
+
+    const {
+      subscribeWeeklySummary,
+      runWeeklySummaryNotifications,
+      setNotificationsDataDir,
+    } = await import('../src/notifications.js');
+
+    setNotificationsDataDir(dataDir);
+    restoreNotificationsDir = async () => setNotificationsDataDir(undefined);
+
+    await expect(
+      subscribeWeeklySummary('ada@example.com', { lookbackDays: 7 }),
+    ).rejects.toThrow(/weekly summary notifications are disabled/i);
+
+    const result = await runWeeklySummaryNotifications({ now: '2025-02-08T12:00:00.000Z' });
+    expect(result).toEqual({ sent: 0, results: [], disabled: true });
   });
 });
