@@ -404,7 +404,8 @@ jobbot3000.
   ensures percentages do not divide by zero.
 - Backdated entries (applications logged retroactively) update historical aggregates correctly.
 - Privacy mode redacts company names when exporting; CLI `--redact` flag and web **Redact company**
-  toggle must produce identical results.
+  toggle must produce identical results. [`test/web-server.test.js`](../test/web-server.test.js)
+  exercises redacted and unredacted downloads so both paths stay aligned.
 
 ### Failure modes & alerts
 
