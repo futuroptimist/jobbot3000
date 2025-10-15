@@ -529,6 +529,17 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     opacity: 0.6;
     cursor: not-allowed;
   }
+  .analytics-actions__toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.95rem;
+    color: var(--muted);
+  }
+  .analytics-actions__toggle input[type='checkbox'] {
+    margin: 0;
+    accent-color: var(--accent);
+  }
   .analytics-actions__message {
     margin: 0;
     color: var(--muted);
@@ -2363,9 +2374,20 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             csv: section.querySelector('[data-analytics-export-csv]'),
           };
           const exportMessage = section.querySelector('[data-analytics-export-message]');
+          const redactToggle = section.querySelector('[data-analytics-redact-toggle]');
 
           const state = { loading: false, loaded: false, data: null, lastError: null };
-          const exportState = { running: false };
+          const exportState = {
+            running: false,
+            redact: redactToggle ? redactToggle.checked !== false : true,
+          };
+
+          function isRedactionEnabled() {
+            if (!redactToggle) {
+              return true;
+            }
+            return redactToggle.checked !== false;
+          }
 
           function updateExportMessage(message, { variant = 'info' } = {}) {
             if (!exportMessage) {
@@ -2622,7 +2644,9 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             button.disabled = true;
             button.setAttribute('aria-busy', 'true');
             updateExportMessage('Preparing analytics export…', { variant: 'info' });
-            const payload = { redact: true };
+            const redact = isRedactionEnabled();
+            exportState.redact = redact;
+            const payload = { redact };
             try {
               const data = await postCommand(
                 '/commands/analytics-export',
@@ -2641,7 +2665,7 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               const mimeType = format === 'csv' ? 'text/csv' : 'application/json';
               downloadFile(contents, { filename, type: mimeType });
               updateExportMessage('Download ready: ' + filename, { variant: 'info' });
-              dispatchAnalyticsExported({ format, success: true, filename });
+              dispatchAnalyticsExported({ format, success: true, filename, redact });
               return true;
             } catch (error) {
               const message =
@@ -2653,6 +2677,7 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
                 format,
                 success: false,
                 error: message,
+                redact,
               });
               return false;
             } finally {
@@ -2678,6 +2703,12 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             exportButtons.csv.addEventListener('click', event => {
               event.preventDefault();
               runAnalyticsExport('csv');
+            });
+          }
+
+          if (redactToggle) {
+            redactToggle.addEventListener('change', () => {
+              exportState.redact = isRedactionEnabled();
             });
           }
 
@@ -3778,6 +3809,15 @@ export function createWebApp({
             <div class="analytics-actions">
               <button type="button" data-analytics-export-json>Download JSON</button>
               <button type="button" data-analytics-export-csv>Download CSV</button>
+              <label class="analytics-actions__toggle">
+                <input
+                  type="checkbox"
+                  name="analytics-redact"
+                  data-analytics-redact-toggle
+                  checked
+                />
+                Redact company names
+              </label>
               <p class="analytics-actions__message" data-analytics-export-message hidden></p>
             </div>
             <div class="table-container">

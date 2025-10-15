@@ -1123,7 +1123,7 @@ describe('web server status page', () => {
     expect(sankey?.textContent).toContain('drop-off edges: 1');
   });
 
-  it('downloads analytics exports as JSON and CSV', async () => {
+  it('downloads analytics exports as JSON and CSV with optional redaction', async () => {
     const funnelPayload = {
       totals: { trackedJobs: 4, withEvents: 3 },
       stages: [
@@ -1144,6 +1144,7 @@ describe('web server status page', () => {
       companies: [{ name: 'Acme', status: 'onsite' }],
     };
 
+    const exportPayloads = [];
     const commandAdapter = {
       'analytics-funnel': vi.fn(async () => ({
         command: 'analytics-funnel',
@@ -1154,7 +1155,7 @@ describe('web server status page', () => {
         data: funnelPayload,
       })),
       'analytics-export': vi.fn(async payload => {
-        expect(payload).toEqual({ redact: true });
+        exportPayloads.push(payload);
         return {
           command: 'analytics-export',
           format: 'json',
@@ -1195,16 +1196,28 @@ describe('web server status page', () => {
 
     const jsonButton = dom.window.document.querySelector('[data-analytics-export-json]');
     const csvButton = dom.window.document.querySelector('[data-analytics-export-csv]');
+    const redactToggle = dom.window.document.querySelector(
+      '[data-analytics-redact-toggle]',
+    );
     const message = dom.window.document.querySelector('[data-analytics-export-message]');
+
+    expect(redactToggle).not.toBeNull();
+    expect(redactToggle?.checked).toBe(true);
 
     const click = () =>
       new dom.window.MouseEvent('click', { bubbles: true, cancelable: true });
 
     jsonButton?.dispatchEvent(click());
 
-    await waitForEvent('jobbot:analytics-exported');
+    const jsonEvent = await waitForEvent('jobbot:analytics-exported');
 
     expect(commandAdapter['analytics-export']).toHaveBeenCalledTimes(1);
+    expect(exportPayloads).toContainEqual({ redact: true });
+    expect(jsonEvent.detail).toMatchObject({
+      format: 'json',
+      success: true,
+      redact: true,
+    });
     expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
     const jsonBlob = URL.createObjectURL.mock.calls[0]?.[0];
     expect(jsonBlob).toBeInstanceOf(dom.window.Blob);
@@ -1212,11 +1225,22 @@ describe('web server status page', () => {
     expect(jsonBlob.size).toBeGreaterThan(0);
     expect(message?.textContent).toContain('analytics-snapshot.json');
 
+    if (redactToggle) {
+      redactToggle.checked = false;
+      redactToggle.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    }
+
     csvButton?.dispatchEvent(click());
 
-    await waitForEvent('jobbot:analytics-exported');
+    const csvEvent = await waitForEvent('jobbot:analytics-exported');
 
     expect(commandAdapter['analytics-export']).toHaveBeenCalledTimes(2);
+    expect(exportPayloads).toContainEqual({ redact: false });
+    expect(csvEvent.detail).toMatchObject({
+      format: 'csv',
+      success: true,
+      redact: false,
+    });
     expect(URL.createObjectURL).toHaveBeenCalledTimes(2);
     expect(anchorClick).toHaveBeenCalledTimes(2);
     const csvBlob = URL.createObjectURL.mock.calls[1]?.[0];
