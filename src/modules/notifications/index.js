@@ -13,6 +13,8 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 let overrideRoot;
+let featureOverride;
+let configFeatureFlag;
 
 function resolveDataDir() {
   if (overrideRoot) return overrideRoot;
@@ -37,6 +39,51 @@ function resolveOutboxDir(outbox) {
 
 async function ensureDir(dir) {
   await fs.mkdir(dir, { recursive: true });
+}
+
+function coerceBoolean(value) {
+  if (value === undefined || value === null) return undefined;
+  if (value === true || value === false) return value;
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) return undefined;
+    if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+    return undefined;
+  }
+  if (typeof value === 'number') {
+    if (Number.isNaN(value)) return undefined;
+    if (value === 0) return false;
+    return true;
+  }
+  return undefined;
+}
+
+function createWeeklySummaryDisabledError() {
+  const error = new Error(
+    'Weekly summary notifications are disabled via JOBBOT_FEATURE_NOTIFICATIONS_WEEKLY.',
+  );
+  error.code = 'NOTIFICATIONS_WEEKLY_DISABLED';
+  error.disabled = true;
+  return error;
+}
+
+function isWeeklySummaryEnabled() {
+  if (featureOverride !== undefined) {
+    return Boolean(featureOverride);
+  }
+  if (configFeatureFlag !== undefined) {
+    return Boolean(configFeatureFlag);
+  }
+  const envValue = coerceBoolean(process.env.JOBBOT_FEATURE_NOTIFICATIONS_WEEKLY);
+  if (envValue === undefined) return true;
+  return envValue;
+}
+
+function assertWeeklySummaryEnabled() {
+  if (!isWeeklySummaryEnabled()) {
+    throw createWeeklySummaryDisabledError();
+  }
 }
 
 async function readSubscriptions() {
@@ -130,12 +177,25 @@ export function setNotificationsDataDir(dir) {
   overrideRoot = dir || undefined;
 }
 
+export function isWeeklySummaryNotificationsEnabled() {
+  return isWeeklySummaryEnabled();
+}
+
+export function __setNotificationsFeatureOverrideForTest(value) {
+  featureOverride = value;
+}
+
+export function __resetNotificationsFeatureOverrideForTest() {
+  featureOverride = undefined;
+}
+
 export async function listWeeklySummarySubscriptions() {
   const { weeklySummary } = await readSubscriptions();
   return weeklySummary.slice();
 }
 
 export async function subscribeWeeklySummary(email, { lookbackDays, now } = {}) {
+  assertWeeklySummaryEnabled();
   const normalizedEmail = assertValidEmail(email);
   const resolvedLookback = resolveLookbackDays(lookbackDays);
   const timestamp = resolveNow(now).toISOString();
@@ -227,6 +287,7 @@ export async function sendWeeklySummaryNotification({
   now,
   outbox,
 } = {}) {
+  assertWeeklySummaryEnabled();
   const normalizedEmail = assertValidEmail(email);
   const resolvedLookback = resolveLookbackDays(lookbackDays);
   const { subject, body } = await composeWeeklySummary({ lookbackDays: resolvedLookback, now });
@@ -234,6 +295,9 @@ export async function sendWeeklySummaryNotification({
 }
 
 export async function runWeeklySummaryNotifications({ now, outbox } = {}) {
+  if (!isWeeklySummaryEnabled()) {
+    return { sent: 0, results: [], disabled: true };
+  }
   const subscriptions = await listWeeklySummarySubscriptions();
   if (!subscriptions.length) return { sent: 0, results: [] };
   const results = [];
@@ -257,10 +321,13 @@ export default {
   runWeeklySummaryNotifications,
 };
 
-export function registerNotificationsModule({ bus } = {}) {
+export function registerNotificationsModule({ bus, config } = {}) {
   if (!bus || typeof bus.registerHandler !== 'function') {
     throw new Error('registerNotificationsModule requires a module event bus');
   }
+
+  const previousConfigFlag = configFeatureFlag;
+  configFeatureFlag = coerceBoolean(config?.features?.notifications?.enableWeeklySummary);
 
   const disposers = [
     bus.registerHandler('notifications:weekly:subscribe', async payload => {
@@ -274,5 +341,8 @@ export function registerNotificationsModule({ bus } = {}) {
     }),
   ];
 
-  return () => disposers.splice(0).forEach(dispose => dispose?.());
+  return () => {
+    configFeatureFlag = previousConfigFlag;
+    disposers.splice(0).forEach(dispose => dispose?.());
+  };
 }

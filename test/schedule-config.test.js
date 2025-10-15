@@ -19,6 +19,7 @@ vi.mock('../src/scoring.js', () => ({
 }));
 
 vi.mock('../src/notifications.js', () => ({
+  isWeeklySummaryNotificationsEnabled: vi.fn(() => true),
   runWeeklySummaryNotifications: vi.fn(async () => ({
     sent: 1,
     results: [{ email: 'ada@example.com', file: '/tmp/subscriber.eml' }],

@@ -35,7 +35,7 @@ Feature flags are parsed via the manifest and exposed to the web server:
 | Flag | Env var | Description |
 | --- | --- | --- |
 | `features.scraping.useMocks` | `JOBBOT_FEATURE_SCRAPING_MOCKS` | Swap real ATS adapters with test doubles |
-| `features.notifications.enableWeeklySummary` | `JOBBOT_FEATURE_NOTIFICATIONS_WEEKLY` | Toggle weekly digest generation |
+| `features.notifications.enableWeeklySummary` | `JOBBOT_FEATURE_NOTIFICATIONS_WEEKLY` | Toggle weekly digest generation; disabled state blocks CLI and scheduled weekly emails |
 | `features.httpClient.maxRetries` | `JOBBOT_HTTP_MAX_RETRIES` | Override global HTTP retry attempts |
 | `features.httpClient.backoffMs` | `JOBBOT_HTTP_BACKOFF_MS` | Override base backoff delay |
 | `features.httpClient.circuitBreakerThreshold` | `JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD` | Trip the circuit after _n_ consecutive failures |

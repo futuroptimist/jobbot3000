@@ -30,6 +30,7 @@ installations.
 - Enable the circuit breaker feature flags (`JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD` and
   `JOBBOT_HTTP_CIRCUIT_BREAKER_RESET_MS`) to prevent cascading adapter failures.
 - Point `JOBBOT_AUDIT_LOG` to `/var/log/jobbot/audit.log` and ship logs to your SIEM.
-- Set `JOBBOT_FEATURE_NOTIFICATIONS_WEEKLY=false` if email is handled externally.
+- Set `JOBBOT_FEATURE_NOTIFICATIONS_WEEKLY=false` if email is handled externally; CLI commands and
+  scheduled tasks report the feature as disabled instead of writing weekly summary emails.
 - Configure file permissions so only the `jobbot` user can read secrets and audit logs.
 - Rotate API tokens quarterly and document the rotation in the audit log.

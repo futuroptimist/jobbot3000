@@ -2666,6 +2666,12 @@ async function cmdNotificationsRun(args) {
       console.log(JSON.stringify(result, null, 2));
       return;
     }
+    if (result.disabled) {
+      console.log(
+        'Weekly summary notifications are disabled via JOBBOT_FEATURE_NOTIFICATIONS_WEEKLY.',
+      );
+      return;
+    }
     if (result.sent === 0) {
       console.log('No weekly summary subscribers to notify.');
       return;
