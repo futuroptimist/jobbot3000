@@ -1116,6 +1116,23 @@ function countEventChannels(events) {
   return Object.fromEntries([...counts.entries()].sort(([a], [b]) => a.localeCompare(b)));
 }
 
+export async function computeActivitySummary() {
+  const activity = await summarizeActivity();
+  const deliverables = {
+    jobs: activity?.deliverables?.jobs ?? 0,
+    runs: activity?.deliverables?.runs ?? 0,
+  };
+  const interviews = {
+    jobs: activity?.interviews?.jobs ?? 0,
+    sessions: activity?.interviews?.sessions ?? 0,
+  };
+  return {
+    generated_at: new Date().toISOString(),
+    deliverables,
+    interviews,
+  };
+}
+
 export async function exportAnalyticsSnapshot(options = {}) {
   const { redactCompanies = false } = options;
   const { statuses, interactions } = await readAnalyticsSources();
