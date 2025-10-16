@@ -123,6 +123,10 @@
 - Create reusable components (buttons, tables, timeline, status badges) adhering to the token system.
 - Provide responsive layouts using a grid/flex approach; ensure minimum touch target sizes for mobile.
 - Integrate a global keyboard navigation layer and focus outlines for accessibility.
+  _Implemented (2025-10-14):_ The status hub now listens for left/right arrow keys and Home/End
+  shortcuts, cycling the active section while keeping keyboard focus on the navigation pills. The
+  regression coverage in [`test/web-server.test.js`](../test/web-server.test.js) drives the new
+  shortcuts, including guardrails that ignore events fired from form fields so filters remain usable.
   - Offer optional light theme toggle for future parity, but prioritize dark mode for initial release.
     _Implemented (2025-10-04):_ The status page served by
   [`startWebServer`](../src/web/server.js) now exposes an accessible light/dark

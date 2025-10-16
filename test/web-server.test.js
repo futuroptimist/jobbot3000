@@ -204,6 +204,60 @@ describe('web server status page', () => {
     expect(operationsLink?.textContent).toMatch(/Operations playbook/i);
   });
 
+  it('supports keyboard navigation between status sections', async () => {
+    const server = await startServer();
+    const { dom } = await renderStatusDom(server);
+    const { document } = dom.window;
+
+    const router = document.querySelector('[data-router]');
+    expect(router?.getAttribute('data-active-route')).toBe('overview');
+
+    document.dispatchEvent(
+      new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }),
+    );
+
+    expect(router?.getAttribute('data-active-route')).toBe('applications');
+    const activeLink = document.activeElement;
+    expect(activeLink?.getAttribute('data-route-link')).toBe('applications');
+
+    document.dispatchEvent(
+      new dom.window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }),
+    );
+
+    expect(router?.getAttribute('data-active-route')).toBe('overview');
+
+    document.dispatchEvent(
+      new dom.window.KeyboardEvent('keydown', { key: 'End', bubbles: true }),
+    );
+
+    expect(router?.getAttribute('data-active-route')).toBe('audits');
+
+    document.dispatchEvent(
+      new dom.window.KeyboardEvent('keydown', { key: 'Home', bubbles: true }),
+    );
+
+    expect(router?.getAttribute('data-active-route')).toBe('overview');
+  });
+
+  it('ignores global shortcuts when focus is inside a form control', async () => {
+    const server = await startServer();
+    const { dom } = await renderStatusDom(server);
+    const { document } = dom.window;
+
+    const router = document.querySelector('[data-router]');
+    expect(router?.getAttribute('data-active-route')).toBe('overview');
+
+    const locationInput = document.querySelector('[data-shortlist-filter="location"]');
+    expect(locationInput).toBeTruthy();
+    locationInput?.focus();
+
+    locationInput?.dispatchEvent(
+      new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }),
+    );
+
+    expect(router?.getAttribute('data-active-route')).toBe('overview');
+  });
+
   it('serves the status hub script via an external asset endpoint', async () => {
     const server = await startServer();
 
