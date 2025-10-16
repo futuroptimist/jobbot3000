@@ -339,6 +339,10 @@
 
 7. **Release Prep**
    - Finalize documentation (README updates, API reference, UX guidelines).
+    _Implemented (2025-10-13):_ Added [docs/web-api-reference.md](web-api-reference.md) with
+    authenticated header guidance, command payload tables, and rate-limit expectations.
+    [README.md](../README.md) now links to the reference, and
+    [`test/web-api-doc.test.js`](../test/web-api-doc.test.js) keeps the document in sync.
    - Conduct security review and threat modeling session.
    - Perform beta testing with target users and gather feedback for iteration.
 
