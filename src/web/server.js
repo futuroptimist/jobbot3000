@@ -262,6 +262,11 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     border-color: var(--pill-border);
     color: var(--pill-text);
   }
+  .keyboard-hint {
+    margin-top: 0.5rem;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
   .grid {
     display: grid;
     gap: 1.5rem;
@@ -2797,6 +2802,121 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           return routeNames.has(trimmed) ? trimmed : null;
         }
 
+        const navRouteOrder = navLinks
+          .map(link => normalizeRoute(link.getAttribute('data-route-link')))
+          .filter(route => route);
+
+        function findNavLink(route) {
+          const normalized = normalizeRoute(route);
+          if (!normalized) {
+            return null;
+          }
+          for (const link of navLinks) {
+            const target = normalizeRoute(link.getAttribute('data-route-link'));
+            if (target === normalized) {
+              return link;
+            }
+          }
+          return null;
+        }
+
+        function focusNavLink(route) {
+          const link = findNavLink(route);
+          if (link && typeof link.focus === 'function') {
+            link.focus();
+          }
+        }
+
+        function getActiveRoute() {
+          const active = router?.getAttribute('data-active-route');
+          return normalizeRoute(active);
+        }
+
+        function applyRouteByIndex(index, options = {}) {
+          if (navRouteOrder.length === 0) {
+            return;
+          }
+          const total = navRouteOrder.length;
+          const normalizedIndex = ((index % total) + total) % total;
+          const targetRoute = navRouteOrder[normalizedIndex];
+          if (!targetRoute) {
+            return;
+          }
+          const nextOptions = { persist: true, syncHash: true, ...options };
+          applyRoute(targetRoute, nextOptions);
+          if (!nextOptions.skipFocus) {
+            focusNavLink(targetRoute);
+          }
+        }
+
+        function stepRoute(offset) {
+          if (!navRouteOrder.length) {
+            return;
+          }
+          const active = getActiveRoute();
+          const currentIndex = active ? navRouteOrder.indexOf(active) : -1;
+          const nextIndex =
+            currentIndex >= 0
+              ? currentIndex + offset
+              : offset > 0
+                ? 0
+                : navRouteOrder.length - 1;
+          applyRouteByIndex(nextIndex);
+        }
+
+        function shouldIgnoreKeyboardEvent(event) {
+          if (!event) {
+            return false;
+          }
+          if (event.metaKey || event.ctrlKey || event.altKey) {
+            return true;
+          }
+          const target = event.target;
+          if (!target || typeof target !== 'object') {
+            return false;
+          }
+          const element =
+            typeof Element !== 'undefined' && target instanceof Element ? target : null;
+          if (!element) {
+            return false;
+          }
+          if (typeof element.closest === 'function') {
+            const interactive = element.closest(
+              'input, textarea, select, button, [contenteditable], [role="textbox"]',
+            );
+            if (interactive) {
+              return true;
+            }
+          }
+          return false;
+        }
+
+        function handleGlobalKeydown(event) {
+          if (shouldIgnoreKeyboardEvent(event)) {
+            return;
+          }
+          switch (event.key) {
+            case 'ArrowRight':
+              event.preventDefault();
+              stepRoute(1);
+              break;
+            case 'ArrowLeft':
+              event.preventDefault();
+              stepRoute(-1);
+              break;
+            case 'Home':
+              event.preventDefault();
+              applyRouteByIndex(0);
+              break;
+            case 'End':
+              event.preventDefault();
+              applyRouteByIndex(navRouteOrder.length - 1);
+              break;
+            default:
+              break;
+          }
+        }
+
         function addRouteListener(route, handler) {
           const normalized = normalizeRoute(route);
           if (!normalized || typeof handler !== 'function') {
@@ -2921,6 +3041,8 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             applyRoute(targetRoute, { persist: true, syncHash: true });
           });
         }
+
+        document.addEventListener('keydown', handleGlobalKeydown, true);
 
         initializeStatusPanels();
 
@@ -3469,6 +3591,10 @@ export function createWebApp({
         <a href="#analytics" data-route-link="analytics">Analytics</a>
         <a href="#audits" data-route-link="audits">Audits</a>
       </nav>
+      <p class="keyboard-hint">
+        Use the left and right arrow keys to switch sections. Press Home or End to jump to the first
+        or last section.
+      </p>
     </header>
     <main id="main" tabindex="-1" data-router>
       <section class="view" data-route="overview" aria-labelledby="overview-heading">
