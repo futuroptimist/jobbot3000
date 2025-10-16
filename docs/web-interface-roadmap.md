@@ -347,6 +347,15 @@
 - Maintain an architecture decision record (ADR) log capturing key choices.
 - Provide onboarding docs covering project setup, CLI dependencies, and test commands.
 - Offer API and component storybooks for consistent usage.
+  _Implemented (2025-10-13):_ [`docs/web-api-reference.md`](web-api-reference.md)
+  now documents every allow-listed `/commands/:command` endpoint, required
+  headers, and rate-limit semantics, while
+  [`docs/web-component-storybook.md`](web-component-storybook.md) captures the
+  canonical markup for each status panel state (ready/loading/error). The new
+  regression suite in
+  [`test/web-documentation-storybook.test.js`](../test/web-documentation-storybook.test.js)
+  ensures future edits keep the docs aligned with the backend validators and
+  rendered components.
 - Automate linting, formatting, and type checking via pre-commit hooks and CI pipelines.
 
 ### 7. Future Enhancements
