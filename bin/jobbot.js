@@ -66,6 +66,7 @@ import { ingestSmartRecruitersBoard } from '../src/smartrecruiters.js';
 import { ingestAshbyBoard } from '../src/ashby.js';
 import {
   computeFunnel,
+  computeActivitySummary,
   exportAnalyticsSnapshot,
   formatFunnelReport,
   computeCompensationSummary,
@@ -2234,6 +2235,20 @@ async function cmdAnalyticsCompensation(args) {
   console.log(formatCompensationSummary(summary));
 }
 
+async function cmdAnalyticsActivity(args) {
+  const output = getFlag(args, '--out');
+  const summary = await computeActivitySummary();
+  const payload = `${JSON.stringify(summary, null, 2)}\n`;
+  if (output) {
+    const resolved = path.resolve(process.cwd(), output);
+    await fs.promises.mkdir(path.dirname(resolved), { recursive: true });
+    await fs.promises.writeFile(resolved, payload, 'utf8');
+    console.log(`Saved analytics activity to ${resolved}`);
+    return;
+  }
+  console.log(payload.trimEnd());
+}
+
 async function cmdAnalyticsHealth(args) {
   const asJson = args.includes('--json');
   const nowValue = getFlag(args, '--now');
@@ -2261,8 +2276,9 @@ async function cmdAnalytics(args) {
   if (sub === 'funnel') return cmdAnalyticsFunnel(args.slice(1));
   if (sub === 'export') return cmdAnalyticsExport(args.slice(1));
   if (sub === 'compensation') return cmdAnalyticsCompensation(args.slice(1));
+  if (sub === 'activity') return cmdAnalyticsActivity(args.slice(1));
   if (sub === 'health') return cmdAnalyticsHealth(args.slice(1));
-  console.error('Usage: jobbot analytics <funnel|export|compensation|health> [options]');
+  console.error('Usage: jobbot analytics <funnel|export|compensation|activity|health> [options]');
   process.exit(2);
 }
 

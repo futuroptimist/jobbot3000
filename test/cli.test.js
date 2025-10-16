@@ -2650,6 +2650,57 @@ describe('jobbot CLI', () => {
     expect(stagesByKey.acceptance.count).toBe(1);
   }, 15000);
 
+  it('exports analytics activity summaries without leaking job identifiers', () => {
+    const deliverablesRoot = path.join(dataDir, 'deliverables');
+    fs.mkdirSync(deliverablesRoot, { recursive: true });
+    const job1Run1 = path.join(deliverablesRoot, 'job-1', '2025-02-01T10-00-00Z');
+    const job1Run2 = path.join(deliverablesRoot, 'job-1', '2025-02-05T09-00-00Z');
+    const job2Dir = path.join(deliverablesRoot, 'job-2');
+    fs.mkdirSync(job1Run1, { recursive: true });
+    fs.writeFileSync(path.join(job1Run1, 'resume.pdf'), 'binary');
+    fs.mkdirSync(job1Run2, { recursive: true });
+    fs.writeFileSync(path.join(job1Run2, 'cover-letter.docx'), 'binary');
+    fs.mkdirSync(job2Dir, { recursive: true });
+    fs.writeFileSync(path.join(job2Dir, 'portfolio.pdf'), 'binary');
+
+    const interviewsRoot = path.join(dataDir, 'interviews');
+    fs.mkdirSync(interviewsRoot, { recursive: true });
+    const jobAlphaDir = path.join(interviewsRoot, 'job-alpha');
+    const jobBetaDir = path.join(interviewsRoot, 'job-beta');
+    fs.mkdirSync(jobAlphaDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(jobAlphaDir, 'session-1.json'),
+      JSON.stringify({ transcript: 'Great session' }, null, 2),
+    );
+    fs.writeFileSync(
+      path.join(jobAlphaDir, 'session-2.json'),
+      JSON.stringify({ transcript: 'Follow-up session' }, null, 2),
+    );
+    fs.mkdirSync(jobBetaDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(jobBetaDir, 'session-a.json'),
+      JSON.stringify({ transcript: 'Phone screen' }, null, 2),
+    );
+
+    const outPath = path.join(dataDir, 'analytics', 'activity.json');
+    const output = runCli(['analytics', 'activity', '--out', outPath]);
+
+    const resolvedOut = path.resolve(outPath);
+    expect(output.trim()).toContain(`Saved analytics activity to ${resolvedOut}`);
+
+    const payload = JSON.parse(fs.readFileSync(resolvedOut, 'utf8'));
+    expect(payload.deliverables).toEqual({ jobs: 2, runs: 3 });
+    expect(payload.interviews).toEqual({ jobs: 2, sessions: 3 });
+    expect(typeof payload.generated_at).toBe('string');
+    expect(payload.generated_at).toMatch(/T/);
+
+    const serialized = JSON.stringify(payload);
+    expect(serialized).not.toContain('job-1');
+    expect(serialized).not.toContain('job-2');
+    expect(serialized).not.toContain('job-alpha');
+    expect(serialized).not.toContain('job-beta');
+  });
+
   it('filters analytics funnel with timeframe and company flags', () => {
     const jobsDir = path.join(dataDir, 'jobs');
     fs.mkdirSync(jobsDir, { recursive: true });
