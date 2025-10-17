@@ -396,8 +396,7 @@
 
 ### 7. Future Enhancements
 
-> [!NOTE]
-> **Update (2025-10-16):** The plugin system enabling external automation
+> [!NOTE] > **Update (2025-10-16):** The plugin system enabling external automation
 > integrations now ships with the status hub. Plugins declare themselves via
 > `features.plugins.entries`, load as deferred scripts, and register through
 > `window.jobbotPluginHost.register()` to receive `jobbot:*` events alongside
@@ -419,6 +418,14 @@
   drives viewer/editor flows to lock the RBAC contract in place for future
   deployments.
 - Real-time collaboration via WebSocket subscriptions to CLI state changes.
+  _Implemented (2025-10-19):_ `startWebServer` now exposes a `/events`
+  WebSocket endpoint that streams sanitized command lifecycle payloads to
+  authenticated subscribers. The broadcast includes the command name, actor,
+  roles, duration, and sanitized CLI output so multiple operators can react to
+  changes in real time without polling. [`test/web-server-realtime.test.js`](../test/web-server-realtime.test.js)
+  covers successful broadcasts and enforces 401/403 responses for missing or
+  unauthorized tokens, keeping the collaboration channel aligned with the
+  existing role guardrails.
 
 ## Safe Implementation Checklist
 

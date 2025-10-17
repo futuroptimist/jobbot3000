@@ -1,5 +1,6 @@
 import express from 'express';
 import { randomBytes } from 'node:crypto';
+import { EventEmitter } from 'node:events';
 import { performance } from 'node:perf_hooks';
 
 import {
@@ -11,6 +12,7 @@ import { ALLOW_LISTED_COMMANDS, validateCommandPayload } from './command-registr
 import { STATUSES } from '../lifecycle.js';
 import { createRedactionMiddleware, redactValue } from '../shared/security/redaction.js';
 import { createAuditLogger } from '../shared/security/audit-log.js';
+import { WebSocket, WebSocketServer } from 'ws';
 
 function createInMemoryRateLimiter(options = {}) {
   const windowMs = Number(options.windowMs ?? 60000);
@@ -4214,6 +4216,7 @@ export function createWebApp({
   audit,
   auditLogger,
   features,
+  commandEvents,
 } = {}) {
   const normalizedInfo = normalizeInfo(info);
   const normalizedChecks = normalizeHealthChecks(healthChecks);
@@ -4237,6 +4240,20 @@ export function createWebApp({
   if (features) {
     app.locals.features = features;
   }
+
+  const commandEventsEmitter =
+    commandEvents && typeof commandEvents.emit === 'function' ? commandEvents : null;
+
+  const emitCommandEvent = event => {
+    if (!commandEventsEmitter) {
+      return;
+    }
+    try {
+      commandEventsEmitter.emit('command', event);
+    } catch (error) {
+      logger?.warn?.('Failed to emit command lifecycle event', error);
+    }
+  };
 
   const pluginAssets = createPluginAssets(app, features?.plugins);
 
@@ -4948,6 +4965,18 @@ export function createWebApp({
         payload: redactedPayload,
         payloadFields,
       });
+      emitCommandEvent({
+        type: 'command',
+        command: commandParam,
+        status: 'success',
+        timestamp: new Date().toISOString(),
+        durationMs,
+        payloadFields,
+        actor: authContext?.subject ?? authPrincipal ?? 'guest',
+        actorDisplayName: authContext?.displayName,
+        roles: authContext?.roles ? Array.from(authContext.roles).sort() : [],
+        result: sanitizedResult,
+      });
     } catch (err) {
       const response = sanitizeCommandResult({
         error: err?.message ?? 'Command execution failed',
@@ -4975,6 +5004,18 @@ export function createWebApp({
         payload: redactedPayload,
         payloadFields,
         error: response?.error,
+      });
+      emitCommandEvent({
+        type: 'command',
+        command: commandParam,
+        status: 'error',
+        timestamp: new Date().toISOString(),
+        durationMs,
+        payloadFields,
+        actor: authContext?.subject ?? authPrincipal ?? 'guest',
+        actorDisplayName: authContext?.displayName,
+        roles: authContext?.roles ? Array.from(authContext.roles).sort() : [],
+        result: response,
       });
     }
   });
@@ -5037,6 +5078,8 @@ export function startWebServer(options = {}) {
     }
   }
   const normalizedAuth = normalizeAuthOptions(authConfig);
+  const commandEvents = new EventEmitter();
+  const websocketPath = '/events';
   const app = createWebApp({
     ...rest,
     commandAdapter,
@@ -5044,11 +5087,140 @@ export function startWebServer(options = {}) {
     rateLimit,
     logger,
     auth: normalizedAuth,
+    commandEvents,
   });
 
+  const wss = new WebSocketServer({ noServer: true });
+  const websocketClients = new Set();
+  const broadcastCommandEvent = event => {
+    let payload;
+    try {
+      payload = JSON.stringify(event);
+    } catch (error) {
+      logger?.warn?.('Failed to serialize command event for websocket broadcast', error);
+      return;
+    }
+    for (const client of websocketClients) {
+      if (client.readyState === WebSocket.OPEN) {
+        try {
+          client.send(payload);
+        } catch (error) {
+          logger?.warn?.('Failed to send command event to websocket client', error);
+        }
+      }
+    }
+  };
+
+  commandEvents.on('command', broadcastCommandEvent);
+
+  wss.on('connection', ws => {
+    websocketClients.add(ws);
+    ws.once('close', () => {
+      websocketClients.delete(ws);
+    });
+  });
+
+  const respondUpgradeError = (socket, statusCode, message, extraHeaders = []) => {
+    const statusText =
+      statusCode === 401
+        ? 'Unauthorized'
+        : statusCode === 403
+          ? 'Forbidden'
+          : statusCode === 404
+            ? 'Not Found'
+            : 'Bad Request';
+    const body = message ?? statusText;
+    const headers = [
+      `HTTP/1.1 ${statusCode} ${statusText}`,
+      'Connection: close',
+      'Content-Type: text/plain; charset=utf-8',
+      `Content-Length: ${Buffer.byteLength(body)}`,
+      ...extraHeaders,
+      '',
+      body,
+    ];
+    try {
+      socket.write(headers.join('\r\n'));
+    } catch {
+      // ignore write errors during rejection
+    }
+    socket.destroy();
+  };
+
+  const authenticateWebSocket = request => {
+    if (!normalizedAuth) {
+      return {
+        ok: true,
+        context: {
+          subject: 'guest',
+          roles: new Set(['viewer']),
+        },
+      };
+    }
+
+    const headerNameLower = normalizedAuth.headerName.toLowerCase();
+    const providedHeader = request.headers[headerNameLower];
+    const headerValue = Array.isArray(providedHeader)
+      ? providedHeader.find(value => typeof value === 'string')
+      : providedHeader;
+    if (typeof headerValue !== 'string' || !headerValue.trim()) {
+      return {
+        ok: false,
+        statusCode: 401,
+        message: 'Missing authorization token',
+        headers: normalizedAuth.requireScheme && normalizedAuth.scheme
+          ? [`WWW-Authenticate: ${normalizedAuth.scheme} realm="jobbot-web"`]
+          : [],
+      };
+    }
+
+    let tokenValue = headerValue;
+    if (normalizedAuth.requireScheme) {
+      const lowerValue = headerValue.toLowerCase();
+      if (!lowerValue.startsWith(normalizedAuth.schemePrefixLower)) {
+        return {
+          ok: false,
+          statusCode: 401,
+          message: 'Invalid authorization scheme',
+          headers: [`WWW-Authenticate: ${normalizedAuth.scheme} realm="jobbot-web"`],
+        };
+      }
+      tokenValue = headerValue.slice(normalizedAuth.schemePrefixLength).trim();
+      if (!tokenValue) {
+        return {
+          ok: false,
+          statusCode: 401,
+          message: 'Missing authorization token',
+          headers: [`WWW-Authenticate: ${normalizedAuth.scheme} realm="jobbot-web"`],
+        };
+      }
+    }
+
+    const tokenEntry = normalizedAuth.tokens.get(tokenValue);
+    if (!tokenEntry) {
+      return {
+        ok: false,
+        statusCode: 401,
+        message: 'Unknown authorization token',
+        headers: normalizedAuth.requireScheme && normalizedAuth.scheme
+          ? [`WWW-Authenticate: ${normalizedAuth.scheme} realm="jobbot-web"`]
+          : [],
+      };
+    }
+
+    if (!hasRequiredRoles(tokenEntry.roles, COMMAND_ROLE_REQUIREMENTS.default)) {
+      return {
+        ok: false,
+        statusCode: 403,
+        message: 'Insufficient permissions for realtime events',
+      };
+    }
+
+    return { ok: true, context: tokenEntry };
+  };
+
   return new Promise((resolve, reject) => {
-    const server = app
-      .listen(port, host, () => {
+    const server = app.listen(port, host, () => {
         const address = server.address();
         const actualPort = typeof address === 'object' && address ? address.port : port;
         const descriptor = {
@@ -5056,6 +5228,8 @@ export function startWebServer(options = {}) {
           host,
           port: actualPort,
           url: `http://${host}:${actualPort}`,
+          eventsPath: websocketPath,
+          eventsUrl: `ws://${host}:${actualPort}${websocketPath}`,
           csrfToken: resolvedCsrfToken,
           csrfHeaderName: resolvedHeaderName,
           authHeaderName: normalizedAuth?.headerName ?? null,
@@ -5070,9 +5244,64 @@ export function startWebServer(options = {}) {
           },
         };
         resolve(descriptor);
-      })
-      .on('error', err => {
-        reject(err);
       });
+
+    const handleUpgrade = (request, socket, head) => {
+      let requestUrl;
+      try {
+        const hostHeader = request.headers.host || `${host}:${port}`;
+        requestUrl = new URL(request.url, `http://${hostHeader}`);
+      } catch {
+        respondUpgradeError(socket, 400, 'Invalid websocket request');
+        return;
+      }
+
+      if (requestUrl.pathname !== websocketPath) {
+        respondUpgradeError(socket, 404, 'Unknown websocket endpoint');
+        return;
+      }
+
+      const authResult = authenticateWebSocket(request);
+      if (!authResult.ok) {
+        respondUpgradeError(
+          socket,
+          authResult.statusCode ?? 401,
+          authResult.message,
+          authResult.headers ?? [],
+        );
+        return;
+      }
+
+      wss.handleUpgrade(request, socket, head, ws => {
+        ws.jobbotAuth = authResult.context;
+        wss.emit('connection', ws, request, authResult.context);
+      });
+    };
+
+    let cleanedUp = false;
+    const performCleanup = () => {
+      if (cleanedUp) {
+        return;
+      }
+      cleanedUp = true;
+      server.off('upgrade', handleUpgrade);
+      commandEvents.off('command', broadcastCommandEvent);
+      for (const client of websocketClients) {
+        try {
+          client.terminate();
+        } catch {
+          // ignore termination failures during shutdown
+        }
+      }
+      websocketClients.clear();
+      wss.close();
+    };
+
+    server.on('upgrade', handleUpgrade);
+    server.on('close', performCleanup);
+    server.on('error', err => {
+      performCleanup();
+      reject(err);
+    });
   });
 }
