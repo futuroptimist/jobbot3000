@@ -11,6 +11,7 @@ import { ALLOW_LISTED_COMMANDS, validateCommandPayload } from './command-registr
 import { STATUSES } from '../lifecycle.js';
 import { createRedactionMiddleware, redactValue } from '../shared/security/redaction.js';
 import { createAuditLogger } from '../shared/security/audit-log.js';
+import { createCollaborationHub } from './collaboration-hub.js';
 
 function createInMemoryRateLimiter(options = {}) {
   const windowMs = Number(options.windowMs ?? 60000);
@@ -883,6 +884,13 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
         const routeListeners = new Map();
         const pluginManifestElement = document.getElementById('jobbot-plugin-manifest');
         let pluginManifest = [];
+        const commandEventHistory = [];
+        const commandHistoryLimit = 50;
+        let lastCommandEvent = null;
+        let collaborationSocket = null;
+        let collaborationReconnectTimer = null;
+        let collaborationReconnectDelay = 500;
+        let collaborationAttempts = 0;
         if (pluginManifestElement) {
           try {
             const parsed = JSON.parse(pluginManifestElement.textContent || '[]');
@@ -1267,6 +1275,18 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
                 queueMicrotask(replay);
               } else {
                 setTimeout(replay, 0);
+              }
+            }
+            if (commandEventHistory.length > 0) {
+              const replayCommands = () => {
+                for (const detail of commandEventHistory) {
+                  replayCommandEvent(detail);
+                }
+              };
+              if (typeof queueMicrotask === 'function') {
+                queueMicrotask(replayCommands);
+              } else {
+                setTimeout(replayCommands, 0);
               }
             }
           } catch (error) {
@@ -3634,9 +3654,18 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           getAnalyticsState() {
             return analyticsApi ? analyticsApi.getState() : null;
           },
+          getLatestCommandEvent() {
+            return lastCommandEvent ? cloneJson(lastCommandEvent) : null;
+          },
+          getCommandEventHistory() {
+            return commandEventHistory.map(entry => cloneJson(entry));
+          },
         };
 
         window.JobbotStatusHub = jobbotStatusApi;
+
+        connectCollaborationSocket();
+        window.addEventListener('beforeunload', closeCollaborationSocket);
 
         function dispatchDocumentEvent(name, detail, options = {}) {
           const { bubbles = false, cancelable = false } = options;
@@ -3649,6 +3678,169 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               fallback.detail = detail;
             }
             document.dispatchEvent(fallback);
+          }
+        }
+
+        function cloneJson(value) {
+          if (typeof structuredClone === 'function') {
+            try {
+              return structuredClone(value);
+            } catch {
+              // Fall through to JSON fallback.
+            }
+          }
+          try {
+            return JSON.parse(JSON.stringify(value));
+          } catch {
+            return value;
+          }
+        }
+
+        function replayCommandEvent(eventDetail) {
+          if (!eventDetail || typeof eventDetail !== 'object') {
+            return;
+          }
+          const detail = cloneJson(eventDetail);
+          dispatchDocumentEvent('jobbot:command-event', detail, { bubbles: true });
+          if (detail && typeof detail.phase === 'string') {
+            const normalizedPhase = detail.phase.trim().toLowerCase();
+            if (normalizedPhase) {
+              dispatchDocumentEvent('jobbot:command-' + normalizedPhase, detail, {
+                bubbles: true,
+              });
+            }
+          }
+        }
+
+        function recordCommandEvent(eventDetail) {
+          const detail = cloneJson(eventDetail);
+          lastCommandEvent = detail;
+          commandEventHistory.push(detail);
+          if (commandEventHistory.length > commandHistoryLimit) {
+            commandEventHistory.shift();
+          }
+          replayCommandEvent(detail);
+        }
+
+        function resetCollaborationBackoff() {
+          collaborationReconnectDelay = 500;
+          collaborationAttempts = 0;
+          if (collaborationReconnectTimer) {
+            clearTimeout(collaborationReconnectTimer);
+            collaborationReconnectTimer = null;
+          }
+        }
+
+        function handleCollaborationMessage(rawData) {
+          if (rawData == null) {
+            return;
+          }
+          let payload;
+          try {
+            payload =
+              typeof rawData === 'string'
+                ? JSON.parse(rawData)
+                : JSON.parse(String(rawData));
+          } catch {
+            return;
+          }
+          if (!payload || typeof payload !== 'object') {
+            return;
+          }
+          if (payload.type === 'collaboration:connected') {
+            resetCollaborationBackoff();
+            dispatchDocumentEvent(
+              'jobbot:collaboration-ready',
+              {
+                connectionId:
+                  typeof payload.connectionId === 'string' ? payload.connectionId : null,
+                timestamp:
+                  typeof payload.timestamp === 'string' && payload.timestamp
+                    ? payload.timestamp
+                    : new Date().toISOString(),
+              },
+              { bubbles: true },
+            );
+            return;
+          }
+          if (payload.type === 'command:event') {
+            recordCommandEvent(payload);
+          }
+        }
+
+        function scheduleCollaborationReconnect() {
+          if (collaborationReconnectTimer) {
+            return;
+          }
+          const delay = Math.min(5000, Math.max(500, collaborationReconnectDelay));
+          collaborationReconnectDelay = Math.min(5000, delay * 2);
+          collaborationReconnectTimer = setTimeout(() => {
+            collaborationReconnectTimer = null;
+            connectCollaborationSocket();
+          }, delay);
+        }
+
+        function connectCollaborationSocket() {
+          if (typeof window === 'undefined' || typeof WebSocket !== 'function') {
+            return;
+          }
+          if (
+            collaborationSocket &&
+            (collaborationSocket.readyState === WebSocket.OPEN ||
+              collaborationSocket.readyState === WebSocket.CONNECTING)
+          ) {
+            return;
+          }
+          collaborationAttempts += 1;
+          const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          const url = protocol + '//' + window.location.host + '/collaboration';
+          try {
+            collaborationSocket = new WebSocket(url);
+          } catch {
+            scheduleCollaborationReconnect();
+            return;
+          }
+          collaborationSocket.addEventListener('open', () => {
+            dispatchDocumentEvent(
+              'jobbot:collaboration-open',
+              { attempts: collaborationAttempts },
+              { bubbles: true },
+            );
+          });
+          collaborationSocket.addEventListener('message', event => {
+            handleCollaborationMessage(event.data);
+          });
+          collaborationSocket.addEventListener('close', () => {
+            dispatchDocumentEvent(
+              'jobbot:collaboration-closed',
+              { attempts: collaborationAttempts },
+              { bubbles: true },
+            );
+            collaborationSocket = null;
+            scheduleCollaborationReconnect();
+          });
+          collaborationSocket.addEventListener('error', () => {
+            try {
+              collaborationSocket?.close();
+            } catch {
+              // Ignore close errors so reconnect logic can proceed.
+            }
+            collaborationSocket = null;
+          });
+        }
+
+        function closeCollaborationSocket() {
+          if (collaborationReconnectTimer) {
+            clearTimeout(collaborationReconnectTimer);
+            collaborationReconnectTimer = null;
+          }
+          if (collaborationSocket) {
+            try {
+              collaborationSocket.close();
+            } catch {
+              // Ignore shutdown errors so the page can unload cleanly.
+            }
+            collaborationSocket = null;
           }
         }
 
@@ -4214,6 +4406,7 @@ export function createWebApp({
   audit,
   auditLogger,
   features,
+  collaboration,
 } = {}) {
   const normalizedInfo = normalizeInfo(info);
   const normalizedChecks = normalizeHealthChecks(healthChecks);
@@ -4230,12 +4423,25 @@ export function createWebApp({
     }
   }
   const redactionMiddleware = createRedactionMiddleware({ logger });
+  const collaborationPublisher =
+    collaboration && typeof collaboration.publish === 'function'
+      ? payload => {
+          try {
+            collaboration.publish(payload);
+          } catch (error) {
+            logger?.warn?.('Failed to publish collaboration payload', error);
+          }
+        }
+      : null;
   const availableCommands = new Set(
     ALLOW_LISTED_COMMANDS.filter(name => typeof commandAdapter?.[name] === 'function'),
   );
   const jsonParser = express.json({ limit: '1mb' });
   if (features) {
     app.locals.features = features;
+  }
+  if (collaboration && typeof collaboration === 'object') {
+    app.locals.collaboration = collaboration;
   }
 
   const pluginAssets = createPluginAssets(app, features?.plugins);
@@ -4814,6 +5020,47 @@ export function createWebApp({
       ? { subject: 'unauthenticated', roles: new Set() }
       : { subject: 'guest', roles: new Set(['viewer']) };
     let authPrincipal = authContext.subject;
+    const requestId = randomBytes(16).toString('hex');
+
+    function snapshotActor() {
+      const roles = authContext?.roles ? Array.from(authContext.roles).sort() : [];
+      const actor = authContext?.subject ?? authPrincipal ?? 'guest';
+      const displayName =
+        authContext?.displayName && authContext.displayName !== actor
+          ? authContext.displayName
+          : null;
+      return { actor, roles, actorDisplayName: displayName };
+    }
+
+    const publishCommandEvent =
+      collaborationPublisher
+        ? (phase, detail = {}) => {
+            try {
+              const { actor, roles, actorDisplayName } = snapshotActor();
+              const eventPayload = {
+                type: 'command:event',
+                command: commandParam,
+                phase,
+                requestId,
+                actor,
+                roles,
+                ...detail,
+              };
+              if (actorDisplayName) {
+                eventPayload.actorDisplayName = actorDisplayName;
+              }
+              if (!Array.isArray(eventPayload.roles)) {
+                eventPayload.roles = roles;
+              } else if (eventPayload.roles.length > 0 || roles.length > 0) {
+                const combined = new Set(eventPayload.roles.concat(roles));
+                eventPayload.roles = Array.from(combined).sort();
+              }
+              collaborationPublisher(eventPayload);
+            } catch (error) {
+              logger?.warn?.('Failed to publish command event', error);
+            }
+          }
+        : () => {};
 
     const recordAudit = async event => {
       if (!effectiveAuditLogger) return;
@@ -4849,6 +5096,7 @@ export function createWebApp({
       const retryAfterSeconds = Math.max(1, Math.ceil((rateStatus.reset - Date.now()) / 1000));
       res.set('Retry-After', String(retryAfterSeconds));
       res.status(429).json({ error: 'Too many requests' });
+      publishCommandEvent('rate_limited', { retryAfterSeconds });
       await recordAudit({ status: 'rate_limited' });
       return;
     }
@@ -4864,6 +5112,7 @@ export function createWebApp({
       const providedAuth = req.get(authOptions.headerName);
       const headerValue = typeof providedAuth === 'string' ? providedAuth.trim() : '';
       if (!headerValue) {
+        publishCommandEvent('unauthorized', { reason: 'missing-token' });
         await recordAudit({ status: 'unauthorized', reason: 'missing-token' });
         respondUnauthorized();
         return;
@@ -4873,12 +5122,14 @@ export function createWebApp({
       if (authOptions.requireScheme) {
         const lowerValue = headerValue.toLowerCase();
         if (!lowerValue.startsWith(authOptions.schemePrefixLower)) {
+          publishCommandEvent('unauthorized', { reason: 'invalid-scheme' });
           await recordAudit({ status: 'unauthorized', reason: 'invalid-scheme' });
           respondUnauthorized();
           return;
         }
         tokenValue = headerValue.slice(authOptions.schemePrefixLength).trim();
         if (!tokenValue) {
+          publishCommandEvent('unauthorized', { reason: 'missing-token' });
           await recordAudit({ status: 'unauthorized', reason: 'missing-token' });
           respondUnauthorized();
           return;
@@ -4887,6 +5138,7 @@ export function createWebApp({
 
       const tokenEntry = authOptions.tokens.get(tokenValue);
       if (!tokenEntry) {
+        publishCommandEvent('unauthorized', { reason: 'unknown-token' });
         await recordAudit({ status: 'unauthorized', reason: 'unknown-token' });
         respondUnauthorized();
         return;
@@ -4899,6 +5151,7 @@ export function createWebApp({
         res
           .status(403)
           .json({ error: 'Insufficient permissions for this command' });
+        publishCommandEvent('forbidden', { reason: 'rbac', requiredRoles });
         await recordAudit({
           status: 'forbidden',
           reason: 'rbac',
@@ -4911,6 +5164,7 @@ export function createWebApp({
     const providedToken = req.get(csrfOptions.headerName);
     if ((providedToken ?? '').trim() !== csrfOptions.token) {
       res.status(403).json({ error: 'Invalid or missing CSRF token' });
+      publishCommandEvent('forbidden', { reason: 'csrf' });
       await recordAudit({ status: 'forbidden', reason: 'csrf' });
       return;
     }
@@ -4920,12 +5174,14 @@ export function createWebApp({
       payload = validateCommandPayload(commandParam, req.body ?? {});
     } catch (err) {
       res.status(400).json({ error: err?.message ?? 'Invalid command payload' });
+      publishCommandEvent('invalid_payload', { reason: err?.message ?? 'Invalid command payload' });
       await recordAudit({ status: 'invalid', reason: 'payload', error: err?.message });
       return;
     }
 
     const redactedPayload = req.redacted?.body ?? redactValue(payload);
     const payloadFields = Object.keys(payload ?? {}).sort();
+    publishCommandEvent('started', { payloadFields });
 
     try {
       const result = await commandAdapter[commandParam](payload);
@@ -4942,6 +5198,18 @@ export function createWebApp({
         result: sanitizedResult,
       });
       res.status(200).json(sanitizedResult);
+      const successEvent = {
+        payloadFields,
+        durationMs,
+        result: sanitizedResult,
+      };
+      if (typeof sanitizedResult?.correlationId === 'string' && sanitizedResult.correlationId) {
+        successEvent.correlationId = sanitizedResult.correlationId;
+      }
+      if (typeof sanitizedResult?.traceId === 'string' && sanitizedResult.traceId) {
+        successEvent.traceId = sanitizedResult.traceId;
+      }
+      publishCommandEvent('succeeded', successEvent);
       await recordAudit({
         status: 'success',
         durationMs,
@@ -4969,6 +5237,19 @@ export function createWebApp({
         errorMessage: response?.error,
       });
       res.status(502).json(response);
+      const failureEvent = {
+        payloadFields,
+        durationMs,
+        error: response?.error,
+        result: response,
+      };
+      if (typeof response?.correlationId === 'string' && response.correlationId) {
+        failureEvent.correlationId = response.correlationId;
+      }
+      if (typeof response?.traceId === 'string' && response.traceId) {
+        failureEvent.traceId = response.traceId;
+      }
+      publishCommandEvent('failed', failureEvent);
       await recordAudit({
         status: 'error',
         durationMs,
@@ -5009,6 +5290,9 @@ export function startWebServer(options = {}) {
     authTokens,
     authHeaderName,
     authScheme,
+    collaboration: providedCollaboration,
+    collaborationPath,
+    enableCollaboration = true,
     ...rest
   } = options;
   const commandAdapter =
@@ -5044,13 +5328,29 @@ export function startWebServer(options = {}) {
     rateLimit,
     logger,
     auth: normalizedAuth,
+    collaboration:
+      enableCollaboration === false
+        ? null
+        : providedCollaboration ?? createCollaborationHub({
+            path: collaborationPath,
+            logger,
+          }),
   });
 
   return new Promise((resolve, reject) => {
+    const collaborationHub = app.locals?.collaboration;
+    let detachCollaboration = null;
     const server = app
       .listen(port, host, () => {
         const address = server.address();
         const actualPort = typeof address === 'object' && address ? address.port : port;
+        if (collaborationHub && typeof collaborationHub.attach === 'function') {
+          try {
+            detachCollaboration = collaborationHub.attach(server);
+          } catch (error) {
+            logger?.warn?.('Failed to attach collaboration hub', error);
+          }
+        }
         const descriptor = {
           app,
           host,
@@ -5060,7 +5360,23 @@ export function startWebServer(options = {}) {
           csrfHeaderName: resolvedHeaderName,
           authHeaderName: normalizedAuth?.headerName ?? null,
           authScheme: normalizedAuth?.scheme ?? null,
+          collaboration: collaborationHub ?? null,
           async close() {
+            if (typeof detachCollaboration === 'function') {
+              try {
+                detachCollaboration();
+              } catch (error) {
+                logger?.warn?.('Failed to detach collaboration hub', error);
+              }
+              detachCollaboration = null;
+            }
+            if (collaborationHub && typeof collaborationHub.close === 'function') {
+              try {
+                await collaborationHub.close();
+              } catch (error) {
+                logger?.warn?.('Failed to close collaboration hub', error);
+              }
+            }
             await new Promise((resolveClose, rejectClose) => {
               server.close(err => {
                 if (err) rejectClose(err);

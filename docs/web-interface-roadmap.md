@@ -383,8 +383,7 @@
 
 ### 7. Future Enhancements
 
-> [!NOTE]
-> **Update (2025-10-16):** The plugin system enabling external automation
+> [!NOTE] > **Update (2025-10-16):** The plugin system enabling external automation
 > integrations now ships with the status hub. Plugins declare themselves via
 > `features.plugins.entries`, load as deferred scripts, and register through
 > `window.jobbotPluginHost.register()` to receive `jobbot:*` events alongside
@@ -406,6 +405,15 @@
   drives viewer/editor flows to lock the RBAC contract in place for future
   deployments.
 - Real-time collaboration via WebSocket subscriptions to CLI state changes.
+  _Implemented (2025-10-19):_ [`createCollaborationHub`](../src/web/collaboration-hub.js)
+  now upgrades `/collaboration` connections into a shared WebSocket, broadcasting
+  sanitized command lifecycle events to connected operators. The status hub script
+  establishes an auto-reconnecting client, dispatches `jobbot:command-*` DOM
+  events, and replays the latest history to late-loading plugins so dashboard
+  extensions stay in sync. Regression coverage in
+  [`test/web-collaboration.test.js`](../test/web-collaboration.test.js)
+  verifies successful and failing commands stream redacted telemetry without
+  leaking secrets.
 
 ## Safe Implementation Checklist
 

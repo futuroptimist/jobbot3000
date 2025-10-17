@@ -24,12 +24,12 @@ The web server listens on the host/port returned by
 
 All command responses include rate-limit headers:
 
-| Header | Description |
-| ------ | ----------- |
-| `X-RateLimit-Limit` | Maximum number of requests per window. |
-| `X-RateLimit-Remaining` | Requests left in the current window. |
-| `X-RateLimit-Reset` | UTC timestamp when the window resets. |
-| `Retry-After` | Seconds until retry (present on 429 responses). |
+| Header                  | Description                                     |
+| ----------------------- | ----------------------------------------------- |
+| `X-RateLimit-Limit`     | Maximum number of requests per window.          |
+| `X-RateLimit-Remaining` | Requests left in the current window.            |
+| `X-RateLimit-Reset`     | UTC timestamp when the window resets.           |
+| `Retry-After`           | Seconds until retry (present on 429 responses). |
 
 ## Endpoints
 
@@ -55,6 +55,19 @@ Executes an allow-listed CLI workflow. Requests must include both the CSRF heade
 validated by the corresponding schema. Successful responses return sanitized JSON payloads from the
 CLI adapter. Errors propagate sanitized error messages, status codes, and telemetry IDs for log
 correlation.
+
+### WebSocket /collaboration
+
+The status hub exposes a `/collaboration` WebSocket that streams sanitized command lifecycle
+events. Connect using the same host/port as the HTML shell; the server upgrades compatible
+`ws://`/`wss://` requests and responds with a `collaboration:connected` handshake containing a
+connection identifier. Subsequent `command:event` payloads describe each CLI invocation's phase
+(`started`, `succeeded`, `failed`, or guard-rail statuses), correlation identifiers, actor
+metadata, and sanitized results. The client script auto-connects, dispatches `jobbot:command-*`
+DOM events, and replays the latest history to late subscribers via `window.JobbotStatusHub`
+helpers. Regression coverage in
+[`test/web-collaboration.test.js`](../test/web-collaboration.test.js) verifies both successful and
+failing commands emit redacted payloads without leaking secrets.
 
 #### Allow-listed command surface
 
