@@ -4,6 +4,11 @@ import path from 'node:path';
 const DAY_MS = 24 * 60 * 60 * 1000;
 const lastRetentionRun = new Map();
 
+/**
+ * @param {string} logPath
+ * @param {number} retentionDays
+ * @returns {Promise<void>}
+ */
 async function enforceRetention(logPath, retentionDays) {
   if (!Number.isFinite(retentionDays) || retentionDays <= 0) return;
   const absolute = path.resolve(logPath);
@@ -27,7 +32,15 @@ async function enforceRetention(logPath, retentionDays) {
   }
 }
 
-export function createAuditLogger({ logPath, retentionDays = 30 } = {}) {
+/**
+ * @typedef {{ logPath: string, retentionDays?: number }} AuditLoggerOptions
+ */
+
+/**
+ * @param {AuditLoggerOptions} [options]
+ */
+export function createAuditLogger(options) {
+  const { logPath, retentionDays = 30 } = /** @type {AuditLoggerOptions} */ (options ?? {});
   if (!logPath) {
     throw new Error('audit log path is required');
   }

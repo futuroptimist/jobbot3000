@@ -2,7 +2,14 @@ import { EventEmitter } from 'node:events';
 
 const DEFAULT_MAX_LISTENERS = 50;
 
+/**
+ * @typedef {{ error?: (message: string, error: unknown) => void }} ModuleLogger
+ */
+
 export class ModuleEventBus {
+  /**
+   * @param {{ logger?: ModuleLogger }} [options]
+   */
   constructor({ logger } = {}) {
     this.#emitter = new EventEmitter({ captureRejections: true });
     this.#emitter.setMaxListeners(DEFAULT_MAX_LISTENERS);

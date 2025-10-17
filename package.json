@@ -15,6 +15,8 @@
     "dev": "node scripts/web-server.js --env development",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "format:check": "prettier --check \"**/*.{js,mjs,cjs,ts,tsx,jsx,json,md,mdx,yml,yaml}\"",
+    "format:fix": "prettier --write \"**/*.{js,mjs,cjs,ts,tsx,jsx,json,md,mdx,yml,yaml}\"",
     "test": "vitest",
     "test:ci": "npm run prepare:test && vitest run && playwright test",
     "prepare:test": "npx playwright install --with-deps",
@@ -23,6 +25,8 @@
     "chore:reminders": "node scripts/chore-reminders.js",
     "web:server": "node scripts/web-server.js",
     "web:screenshots": "node scripts/generate-web-screenshots.js",
+    "typecheck": "tsc -p tsconfig.json",
+    "prepare": "npx simple-git-hooks",
     "postinstall": "node scripts/install-console-font.js"
   },
   "engines": {
@@ -48,8 +52,18 @@
     "globals": "^16.4.0",
     "jsdom": "^25.0.1",
     "lighthouse": "^11.7.1",
+    "lint-staged": "^15.2.10",
     "prettier": "^3.3.3",
     "puppeteer": "^23.9.0",
+    "simple-git-hooks": "^2.11.0",
+    "typescript": "^5.6.3",
     "vitest": "^3.2.4"
+  },
+  "lint-staged": {
+    "*.{js,mjs,cjs,ts,tsx,jsx}": "eslint --max-warnings=0",
+    "*.{json,md,mdx,yml,yaml}": "prettier --check"
+  },
+  "simple-git-hooks": {
+    "pre-commit": "npx lint-staged && npm run typecheck"
   }
 }

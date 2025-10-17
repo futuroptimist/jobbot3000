@@ -166,6 +166,13 @@ export function redactValue(value) {
   return value;
 }
 
+/**
+ * @typedef {{ debug?: (message: string, details?: Record<string, unknown>) => void }} LoggerLike
+ */
+
+/**
+ * @param {{ logger?: LoggerLike }} [options]
+ */
 export function createRedactionMiddleware({ logger } = {}) {
   return (req, _res, next) => {
     const body = redactValue(req.body);

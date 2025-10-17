@@ -3,6 +3,40 @@ import { isIP } from 'node:net';
 import fetch, { Headers } from 'node-fetch';
 import { htmlToText } from 'html-to-text';
 
+/** @typedef {import('node-fetch').Response} FetchResponse */
+/** @typedef {import('node-fetch').RequestInit} FetchRequestInit */
+/** @typedef {import('node-fetch').HeadersInit} FetchHeadersInit */
+
+/**
+ * @typedef {Object} FetchRetryOptions
+ * @property {number} [retries]
+ * @property {number} [delayMs]
+ * @property {number} [factor]
+ * @property {number} [maxDelayMs]
+ * @property {(response: FetchResponse) => boolean} [shouldRetry]
+ */
+
+/**
+ * @typedef {Object} CircuitBreakerOptions
+ * @property {number} [threshold]
+ * @property {number} [resetMs]
+ * @property {string} [key]
+ */
+
+/** @typedef {{ now?: () => number }} Clock */
+/** @typedef {(ms: number) => Promise<void>} SleepFn */
+
+/**
+ * @typedef {FetchRequestInit & {
+ *   fetchImpl?: (url: string | URL, init?: FetchRequestInit) => Promise<FetchResponse>,
+ *   retry?: FetchRetryOptions,
+ *   rateLimitKey?: string,
+ *   sleep?: SleepFn,
+ *   circuitBreaker?: CircuitBreakerOptions,
+ *   clock?: Clock
+ * }} FetchWithRetryOptions
+ */
+
 /** Allowed URL protocols for fetchTextFromUrl. */
 const ALLOWED_PROTOCOLS = new Set(['http:', 'https:']);
 
@@ -16,6 +50,10 @@ export const DEFAULT_FETCH_HEADERS = Object.freeze({
 
 const CIRCUIT_BREAKERS = new Map();
 
+/**
+ * @param {number} ms
+ * @returns {Promise<void>}
+ */
 function sleep(ms) {
   if (!Number.isFinite(ms) || ms <= 0) {
     return Promise.resolve();
@@ -86,8 +124,15 @@ const HOST_LAST_INVOCATION = new Map();
  * @returns {Promise<T>}
  * @template T
  */
+/**
+ * @template T
+ * @param {string} key
+ * @param {() => Promise<T>} fn
+ * @returns {Promise<T>}
+ */
 async function withHostQueue(key, fn) {
   const previous = HOST_QUEUE.get(key);
+  /** @type {((value?: unknown) => void) | undefined} */
   let release;
   const current = new Promise(resolve => {
     release = resolve;
@@ -134,6 +179,11 @@ function defaultShouldRetry(response) {
   return false;
 }
 
+/**
+ * @param {number} attempt
+ * @param {{ delayMs?: number, factor?: number, maxDelayMs?: number }} [options]
+ * @returns {number}
+ */
 function computeDelay(attempt, { delayMs = 250, factor = 2, maxDelayMs } = {}) {
   const base = Number.isFinite(delayMs) ? Math.max(delayMs, 0) : 0;
   if (base === 0) return 0;
@@ -162,9 +212,16 @@ function computeDelay(attempt, { delayMs = 250, factor = 2, maxDelayMs } = {}) {
  * @param {RequestInit} [init]
  * @returns {Promise<Response>}
  */
+/**
+ * @param {string} url
+ * @param {FetchWithRetryOptions} [options]
+ * @param {FetchRequestInit} [init]
+ * @returns {Promise<FetchResponse>}
+ */
 export async function fetchWithRetry(url, options = {}, init = {}) {
   const targetUrl = new URL(url);
   const hostKey = `${targetUrl.protocol}//${targetUrl.host}`;
+  const typedOptions = /** @type {FetchWithRetryOptions} */ (options);
   const {
     fetchImpl = fetch,
     retry,
@@ -172,12 +229,12 @@ export async function fetchWithRetry(url, options = {}, init = {}) {
     sleep: sleepImpl,
     circuitBreaker,
     clock,
-    ...rest
-  } = options;
+    ...requestOverrides
+  } = typedOptions;
   const queueKey = typeof rateLimitKey === 'string' && rateLimitKey.trim()
     ? rateLimitKey
     : hostKey;
-  const mergedInit = { ...rest, ...init };
+  const mergedInit = /** @type {FetchRequestInit} */ ({ ...requestOverrides, ...init });
   const {
     retries = 2,
     delayMs = 250,
@@ -203,10 +260,14 @@ export async function fetchWithRetry(url, options = {}, init = {}) {
         ? resolveCircuitBreaker(breakerKey, circuitOptions, clock)
         : null;
 
-    if (breakerEntry && breakerEntry.openUntil && now(clock) < breakerEntry.openUntil) {
-      const error = new Error(
-        `Circuit open for ${breakerKey} until ${new Date(breakerEntry.openUntil).toISOString()}`,
-      );
+      if (breakerEntry && breakerEntry.openUntil && now(clock) < breakerEntry.openUntil) {
+        const error = /** @type {Error & { retryAt?: number }} */ (
+          new Error(
+            `Circuit open for ${breakerKey} until ${new Date(
+              breakerEntry.openUntil,
+            ).toISOString()}`,
+          )
+        );
       error.name = 'CircuitBreakerOpenError';
       error.retryAt = breakerEntry.openUntil;
       throw error;
@@ -344,6 +405,10 @@ function isPlainObject(value) {
   return proto === Object.prototype || proto === null;
 }
 
+/**
+ * @param {FetchHeadersInit | undefined} headers
+ * @returns {FetchHeadersInit}
+ */
 function buildRequestHeaders(headers) {
   const collected = [];
   let hasUserAgent = false;
@@ -360,10 +425,10 @@ function buildRequestHeaders(headers) {
 
   const source = headers;
   if (source != null) {
-    if (typeof source.forEach === 'function') {
-      source.forEach((value, key) => appendHeader(key, value));
+    if (typeof /** @type {any} */ (source).forEach === 'function') {
+      /** @type {any} */ (source).forEach((value, key) => appendHeader(key, value));
     } else if (typeof source[Symbol.iterator] === 'function') {
-      for (const entry of source) {
+      for (const entry of /** @type {Iterable<unknown>} */ (source)) {
         if (!entry) continue;
         if (Array.isArray(entry)) {
           appendHeader(entry[0], entry[1]);
@@ -388,6 +453,7 @@ function buildRequestHeaders(headers) {
   }
 
   if (source === undefined || source === null || isPlainObject(source)) {
+    /** @type {Record<string, string>} */
     const merged = {};
     for (const [key, value] of collected) {
       merged[key] = value;

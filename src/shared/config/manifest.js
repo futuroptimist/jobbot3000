@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+/** @type {['development', 'staging', 'production']} */
 const ENVIRONMENTS = ['development', 'staging', 'production'];
 
 export const DEFAULT_WEB_CONFIG = {
@@ -92,9 +93,17 @@ export const REQUIRED_SECRETS = [
   { env: 'JOBBOT_WORKABLE_TOKEN', description: 'Workable API token' },
 ];
 
+/**
+ * @param {string} value
+ * @returns {value is typeof ENVIRONMENTS[number]}
+ */
+function isEnvironment(value) {
+  return ENVIRONMENTS.some(env => env === value);
+}
+
 function resolveEnvironment(envLike) {
   const normalized = String(envLike ?? '').trim().toLowerCase();
-  if (ENVIRONMENTS.includes(normalized)) {
+  if (isEnvironment(normalized)) {
     return normalized;
   }
   return 'development';
@@ -188,23 +197,25 @@ export function loadConfig(options = {}) {
     workableToken: options.secrets?.workableToken ?? env.JOBBOT_WORKABLE_TOKEN,
   };
 
-  const parsed = ConfigSchema.parse({
-    environment: requestedEnv,
-    web: {
-      host: options.host ?? env.JOBBOT_WEB_HOST ?? baseWeb.host,
-      port: webPort,
-      rateLimit: { windowMs, max: rateLimitMax },
-      csrf: {
-        headerName: csrfHeader,
-        token: typeof csrfToken === 'string' && csrfToken.trim() ? csrfToken.trim() : undefined,
+  const parsed = /** @type {import('zod').infer<typeof ConfigSchema>} */ (
+    ConfigSchema.parse({
+      environment: requestedEnv,
+      web: {
+        host: options.host ?? env.JOBBOT_WEB_HOST ?? baseWeb.host,
+        port: webPort,
+        rateLimit: { windowMs, max: rateLimitMax },
+        csrf: {
+          headerName: csrfHeader,
+          token: typeof csrfToken === 'string' && csrfToken.trim() ? csrfToken.trim() : undefined,
+        },
       },
-    },
-    audit,
-    features,
-    overrides: options.overrides,
-    mocks: options.mocks,
-    secrets,
-  });
+      audit,
+      features,
+      overrides: options.overrides,
+      mocks: options.mocks,
+      secrets,
+    })
+  );
 
   const allowSecretSkips =
     parsed.environment === 'development' && parsed.features.scraping.useMocks;
