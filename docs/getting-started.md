@@ -20,6 +20,27 @@ The web server will be available at http://127.0.0.1:3100 with all features enab
 
 > **Note:** For running tests, you'll need to install Playwright first: `npm run prepare:test`
 
+## Connecting to Real Job Boards
+
+By default, jobbot3000 runs with `JOBBOT_FEATURE_SCRAPING_MOCKS=true`, allowing you to explore without API tokens. To connect to real job boards:
+
+1. **Copy the example environment file:**
+   ```bash
+   cp .env.example .env
+   ```
+
+2. **Get API tokens** from each provider you want to use:
+   - [Greenhouse API Token](https://developers.greenhouse.io/harvest.html#authentication)
+   - [Lever API Token](https://hire.lever.co/developer/documentation#authentication)
+   - [SmartRecruiters Token](https://developers.smartrecruiters.com/docs/getting-started)
+   - [Workable API Token](https://workable.readme.io/reference/generate-an-access-token)
+
+3. **Add tokens to `.env`** and set `JOBBOT_FEATURE_SCRAPING_MOCKS=false`
+
+4. **Restart the server:** `npm run dev`
+
+See the [README API Setup section](../README.md#api-setup-optional) for detailed instructions, or [docs/configuration-cookbook.md](configuration-cookbook.md) for advanced configuration.
+
 ## Environment overrides
 
 - `JOBBOT_WEB_ENV`: `development` | `staging` | `production`
