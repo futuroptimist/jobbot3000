@@ -293,13 +293,25 @@ function validateShortlistShowPayload(rawPayload) {
 function validateTrackShowPayload(rawPayload) {
   const payload = ensurePlainObject(rawPayload, 'track-show');
   assertAllowedFields(payload, TRACK_SHOW_ALLOWED_FIELDS, 'track-show');
-  return normalizeTrackShowRequest(payload);
+  const jobId = coerceString(payload.jobId ?? payload.job_id, {
+    name: 'jobId',
+    required: true,
+  });
+  return normalizeTrackShowRequest({ jobId });
 }
 
 function validateTrackRecordPayload(rawPayload) {
   const payload = ensurePlainObject(rawPayload, 'track-record');
   assertAllowedFields(payload, TRACK_RECORD_ALLOWED_FIELDS, 'track-record');
-  return normalizeTrackRecordRequest(payload);
+  const jobId = coerceString(payload.jobId ?? payload.job_id, {
+    name: 'jobId',
+    required: true,
+  });
+  const status = coerceString(payload.status, { name: 'status', required: true });
+  const note = coerceString(payload.note, { name: 'note' });
+  const sanitized = { jobId, status };
+  if (note) sanitized.note = note;
+  return normalizeTrackRecordRequest(sanitized);
 }
 
 function validateAnalyticsFunnelPayload(rawPayload) {
