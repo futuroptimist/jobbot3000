@@ -13,6 +13,7 @@ import {
   normalizeSummarizeRequest,
   normalizeTrackShowRequest,
   normalizeTrackRecordRequest,
+  normalizeTrackRemindersRequest,
 } from './schemas.js';
 import {
   listListingProviders,
@@ -20,6 +21,8 @@ import {
   ingestListing,
   archiveListing,
 } from '../listings.js';
+import { getApplicationReminders } from '../application-events.js';
+import { createReminderCalendar } from '../reminders-calendar.js';
 
 const SECRET_KEYS = [
   'api[-_]?key',
@@ -837,6 +840,29 @@ export function createCommandAdapter(options = {}) {
     return payload;
   }
 
+  function buildReminderSections(reminders, includePastDue) {
+    const upcoming = [];
+    const pastDue = [];
+    if (Array.isArray(reminders)) {
+      for (const reminder of reminders) {
+        if (!reminder || typeof reminder !== 'object') {
+          continue;
+        }
+        if (reminder.past_due === true) {
+          pastDue.push(reminder);
+        } else {
+          upcoming.push(reminder);
+        }
+      }
+    }
+    const sections = [];
+    if (includePastDue) {
+      sections.push({ heading: 'Past Due', reminders: pastDue });
+    }
+    sections.push({ heading: 'Upcoming', reminders: upcoming });
+    return { sections, upcoming, pastDue };
+  }
+
   async function trackRecord(options = {}) {
     const { jobId, status, note } = normalizeTrackRecordRequest(options);
     const args = [jobId, '--status', status];
@@ -870,6 +896,62 @@ export function createCommandAdapter(options = {}) {
     if (message) data.message = message;
     payload.data = sanitizeOutputValue(data, { key: 'data' });
     return payload;
+  }
+
+  async function trackReminders(options = {}) {
+    const { format, upcomingOnly, now, calendarName } = normalizeTrackRemindersRequest(options);
+    const includePastDue = !upcomingOnly;
+
+    let reminders;
+    try {
+      const reminderOptions = { includePastDue };
+      if (now) reminderOptions.now = now;
+      reminders = await getApplicationReminders(reminderOptions);
+    } catch (error) {
+      const err = new Error(error?.message || 'Failed to load reminders');
+      err.cause = error;
+      throw err;
+    }
+
+    const rawReminders = Array.isArray(reminders) ? reminders : [];
+    const sanitizedReminders = sanitizeOutputValue(rawReminders, { key: 'reminders' });
+    const { sections, upcoming } = buildReminderSections(sanitizedReminders, includePastDue);
+    const baseData = { reminders: sanitizedReminders, sections, upcomingOnly };
+    if (calendarName) baseData.calendarName = calendarName;
+
+    if (format === 'ics') {
+      let calendar;
+      try {
+        calendar = createReminderCalendar(upcoming, { now: now ?? undefined, calendarName });
+      } catch (error) {
+        const err = new Error(error?.message || 'Failed to build reminder calendar');
+        err.cause = error;
+        throw err;
+      }
+      const filename = 'jobbot-reminders.ics';
+      const payload = {
+        command: 'track-reminders',
+        format: 'ics',
+        stdout: calendar,
+        stderr: '',
+        returnValue: 0,
+      };
+      payload.data = sanitizeOutputValue(
+        { ...baseData, calendar, filename },
+        { key: 'data' },
+      );
+      return payload;
+    }
+
+    const stdout = JSON.stringify(baseData, null, 2);
+    return {
+      command: 'track-reminders',
+      format: 'json',
+      stdout,
+      stderr: '',
+      returnValue: 0,
+      data: sanitizeOutputValue(baseData, { key: 'data' }),
+    };
   }
 
   async function listingsProviders() {
@@ -934,6 +1016,7 @@ export function createCommandAdapter(options = {}) {
     analyticsFunnel,
     analyticsExport,
     trackRecord,
+    trackReminders,
     listingsProviders,
     listingsFetch: listingsFetchCommand,
     listingsIngest: listingsIngestCommand,
@@ -945,11 +1028,13 @@ export function createCommandAdapter(options = {}) {
   adapter['analytics-funnel'] = analyticsFunnel;
   adapter['analytics-export'] = analyticsExport;
   adapter['track-record'] = trackRecord;
+  adapter['track-reminders'] = trackReminders;
   adapter['listings-providers'] = listingsProviders;
   adapter['listings-fetch'] = listingsFetchCommand;
   adapter['listings-ingest'] = listingsIngestCommand;
   adapter['listings-archive'] = listingsArchiveCommand;
   adapter.trackRecord = trackRecord;
+  adapter.trackReminders = trackReminders;
   adapter.analyticsExport = analyticsExport;
   adapter.trackShow = trackShow;
   return adapter;

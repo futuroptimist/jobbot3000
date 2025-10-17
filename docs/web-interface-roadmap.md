@@ -313,6 +313,12 @@
   verifies that only upcoming entries appear in the ICS export, escape
   sequences follow the iCalendar spec (covering commas, semicolons, and
   newlines), and invalid timestamps are ignored.
+  The status hub's **Calendar Sync** button posts to
+  `/commands/track-reminders` and triggers a download through the shared
+  `downloadFile` helper. [`test/web-server.test.js`](../test/web-server.test.js)
+  drives the button, asserts the emitted
+  `jobbot:reminders-exported` event, and checks the calendar blob uses the
+  `text/calendar` MIME type so browsers treat the export correctly.
 
 5. **Testing and QA**
    - Unit tests for frontend components (Jest/Testing Library) and backend modules (Jest/Supertest).

@@ -269,7 +269,9 @@ jobbot3000.
 3. Review reminders in the **Follow-ups** sidebar, which mirrors the CLI digest (Past Due vs
    Upcoming) and supports snooze/done actions backed by `jobbot track reminders snooze <job_id>
    --until <iso>` and `jobbot track reminders done <job_id> [--at <iso>]`.
-4. Export ICS files via the **Calendar Sync** button and confirm downloads contain sanitized data.
+4. Export ICS files via the **Calendar Sync** button (backed by `POST /commands/track-reminders`) and
+   confirm downloads contain sanitized data. `test/web-server.test.js` verifies the button dispatches
+   the `jobbot:reminders-exported` event and streams a calendar download without leaking details.
 5. Open a job detail drawer to view the full history, add comments, or share updates with mentors.
 
 ### Unhappy paths & recovery
