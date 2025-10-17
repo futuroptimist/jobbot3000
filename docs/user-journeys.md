@@ -141,7 +141,9 @@ jobbot3000.
    - `jobbot shortlist sync <job_id> --location remote --compensation 220000` to refresh metadata.
 4. Filter the active list with `jobbot shortlist list --location remote --tag referral --json` and
    export curated outputs via `--out data/exports/shortlist.json`.
-5. Automate recurring pulls using `jobbot schedule run --config configs/shortlist.yml --cycles 3` to
+5. From the Applications view in the status hub, apply the same filters and use the **Download JSON**
+   or **Download CSV** buttons to grab sanitized exports for stakeholders.
+6. Automate recurring pulls using `jobbot schedule run --config configs/shortlist.yml --cycles 3` to
    confirm the scheduler respects rate limits and updates the shortlist without manual intervention.
 
 ### Web flow

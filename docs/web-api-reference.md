@@ -42,8 +42,8 @@ status code 200 when all checks pass and 503 when any check reports `status: "er
 ### GET /assets/status-hub.js
 
 Serves the client-side controller that drives status panels, navigation, and download buttons. The
-script emits events such as `jobbot:status-panels-ready`, `jobbot:analytics-ready`, and
-`jobbot:analytics-exported` for extension hooks.
+script emits events such as `jobbot:status-panels-ready`, `jobbot:analytics-ready`,
+`jobbot:analytics-exported`, and `jobbot:shortlist-exported` for extension hooks.
 
 ### POST /commands/:command
 
@@ -63,6 +63,8 @@ The following command endpoints are available. Each one maps directly to a CLI h
   matches, gaps, and highlights.
 - `POST /commands/shortlist-list` → `jobbot shortlist list`: List tracked shortlist entries with
   pagination and optional filters.
+- `POST /commands/shortlist-export` → `jobbot shortlist list`: Produce shortlist exports filtered by
+  the Applications view (JSON by default, CSV when requested).
 - `POST /commands/shortlist-show` → `jobbot shortlist show`: Fetch shortlist detail, including synced
   metadata, attachments, and discard history.
 - `POST /commands/track-show` → `jobbot track show`: Retrieve lifecycle history, notes, and

@@ -862,6 +862,44 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           return data;
         }
 
+        function formatCsvValue(value) {
+          if (value == null) {
+            return '';
+          }
+          const text = String(value);
+          if (/[",\n]/.test(text)) {
+            return '"' + text.replace(/"/g, '""') + '"';
+          }
+          return text;
+        }
+
+        function downloadFile(contents, { filename, type }) {
+          if (!window || typeof window !== 'object') {
+            throw new Error('Browser environment is required for downloads');
+          }
+          if (
+            typeof Blob !== 'function' ||
+            !window.URL ||
+            typeof window.URL.createObjectURL !== 'function'
+          ) {
+            throw new Error('Blob downloads are not supported in this browser');
+          }
+          const blob = new Blob([contents], { type });
+          const url = window.URL.createObjectURL(blob);
+          try {
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.download = filename;
+            anchor.rel = 'noopener noreferrer';
+            anchor.setAttribute('data-download', 'jobbot-export');
+            document.body.appendChild(anchor);
+            anchor.click();
+            document.body.removeChild(anchor);
+          } finally {
+            window.URL.revokeObjectURL(url);
+          }
+        }
+
         function setupShortlistView() {
           const section = document.querySelector('[data-route="applications"]');
           if (!section) {
@@ -884,6 +922,11 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           const range = section.querySelector('[data-shortlist-range]');
           const prevButton = section.querySelector('[data-shortlist-prev]');
           const nextButton = section.querySelector('[data-shortlist-next]');
+          const exportButtons = {
+            json: section.querySelector('[data-shortlist-export-json]') ?? null,
+            csv: section.querySelector('[data-shortlist-export-csv]') ?? null,
+          };
+          const exportMessage = section.querySelector('[data-shortlist-export-message]');
           const detailElements = (() => {
             const container = section.querySelector('[data-application-detail]');
             if (!container) return null;
@@ -921,12 +964,148 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             };
           })();
           const actionState = { jobId: null, submitting: false, enabled: false };
+          const exportState = { running: false };
 
           function formatStatusLabelText(value) {
             return (value || '')
               .split('_')
               .map(part => (part ? part[0].toUpperCase() + part.slice(1) : part))
               .join(' ');
+          }
+
+          function updateExportMessage(message, { variant = 'info' } = {}) {
+            if (!exportMessage) {
+              return;
+            }
+            const text = typeof message === 'string' ? message.trim() : '';
+            if (!text) {
+              exportMessage.textContent = '';
+              exportMessage.setAttribute('hidden', '');
+              exportMessage.removeAttribute('role');
+              exportMessage.removeAttribute('data-variant');
+              return;
+            }
+            exportMessage.textContent = text;
+            exportMessage.setAttribute('data-variant', variant);
+            exportMessage.setAttribute('role', variant === 'error' ? 'alert' : 'status');
+            exportMessage.removeAttribute('hidden');
+          }
+
+          function buildShortlistCsv(items) {
+            const lines = [
+              [
+                'job_id',
+                'location',
+                'level',
+                'compensation',
+                'tags',
+                'synced_at',
+                'discard_count',
+                'last_discard_reason',
+                'last_discard_at',
+                'last_discard_tags',
+              ]
+                .map(formatCsvValue)
+                .join(','),
+            ];
+
+            for (const item of Array.isArray(items) ? items : []) {
+              if (!item || typeof item !== 'object') continue;
+              const metadataRaw = item.metadata;
+              const metadata = metadataRaw && typeof metadataRaw === 'object' ? metadataRaw : {};
+              const lastDiscard =
+                item.last_discard && typeof item.last_discard === 'object' ? item.last_discard : {};
+              const tags = Array.isArray(item.tags) ? item.tags.join(', ') : '';
+              const discardTags = Array.isArray(lastDiscard.tags)
+                ? lastDiscard.tags.join(', ')
+                : '';
+              const syncedValue = metadata.synced_at ?? metadata.syncedAt ?? '';
+              lines.push(
+                [
+                  formatCsvValue(item.id ?? ''),
+                  formatCsvValue(metadata.location ?? ''),
+                  formatCsvValue(metadata.level ?? ''),
+                  formatCsvValue(metadata.compensation ?? ''),
+                  formatCsvValue(tags),
+                  formatCsvValue(syncedValue),
+                  formatCsvValue(Number.isFinite(item.discard_count) ? item.discard_count : ''),
+                  formatCsvValue(lastDiscard.reason ?? ''),
+                  formatCsvValue(lastDiscard.discarded_at ?? ''),
+                  formatCsvValue(discardTags),
+                ].join(','),
+              );
+            }
+
+            return lines.join('\n') + '\n';
+          }
+
+          async function runShortlistExport(format) {
+            if (exportState.running) {
+              return false;
+            }
+            const button = exportButtons[format];
+            if (!button) {
+              return false;
+            }
+
+            exportState.running = true;
+            button.disabled = true;
+            button.setAttribute('aria-busy', 'true');
+            updateExportMessage('Preparing shortlist export…', { variant: 'info' });
+
+            const filters = readFiltersFromInputs();
+            const payload = { format };
+            if (filters.location) payload.location = filters.location;
+            if (filters.level) payload.level = filters.level;
+            if (filters.compensation) payload.compensation = filters.compensation;
+            if (Array.isArray(filters.tags) && filters.tags.length > 0) {
+              payload.tags = filters.tags;
+            }
+
+            try {
+              const data = await postCommand('/commands/shortlist-export', payload, {
+                invalidResponse: 'Received invalid response while exporting shortlist',
+                failureMessage: 'Failed to export shortlist',
+              });
+              const items = Array.isArray(data?.items) ? data.items : [];
+              const normalizedFilters =
+                data && data.filters && typeof data.filters === 'object'
+                  ? data.filters
+                  : filters;
+              const filename = format === 'csv' ? 'shortlist-export.csv' : 'shortlist-export.json';
+              const contents =
+                format === 'csv'
+                  ? buildShortlistCsv(items)
+                  : JSON.stringify({ filters: normalizedFilters, items }, null, 2) + '\n';
+              const mimeType = format === 'csv' ? 'text/csv' : 'application/json';
+              downloadFile(contents, { filename, type: mimeType });
+              updateExportMessage('Download ready: ' + filename, { variant: 'info' });
+              dispatchShortlistExported({
+                format,
+                success: true,
+                filename,
+                filters: normalizedFilters,
+                count: items.length,
+              });
+              return true;
+            } catch (error) {
+              const message =
+                error && typeof error.message === 'string' && error.message.trim()
+                  ? error.message.trim()
+                  : 'Failed to export shortlist';
+              updateExportMessage(message, { variant: 'error' });
+              dispatchShortlistExported({
+                format,
+                success: false,
+                error: message,
+                filters,
+              });
+              return false;
+            } finally {
+              exportState.running = false;
+              button.disabled = false;
+              button.removeAttribute('aria-busy');
+            }
           }
 
           function setActionMessage(variant, text) {
@@ -1660,15 +1839,25 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             });
 
             resetButton?.addEventListener('click', () => {
-              resetFilters();
-              refresh({
-                filters: {},
-                offset: 0,
-                limit: defaultLimit,
-                useForm: false,
-                resetOffset: true,
-              });
+            resetFilters();
+            refresh({
+              filters: {},
+              offset: 0,
+              limit: defaultLimit,
+              useForm: false,
+              resetOffset: true,
             });
+          });
+
+          exportButtons.json?.addEventListener('click', event => {
+            event.preventDefault();
+            runShortlistExport('json');
+          });
+
+          exportButtons.csv?.addEventListener('click', event => {
+            event.preventDefault();
+            runShortlistExport('csv');
+          });
 
           actionElements?.clear?.addEventListener('click', () => {
             if (actionState.submitting) {
@@ -2411,17 +2600,6 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             exportMessage.removeAttribute('hidden');
           }
 
-          function formatCsvValue(value) {
-            if (value == null) {
-              return '';
-            }
-            const text = String(value);
-            if (/[",\n]/.test(text)) {
-              return '"' + text.replace(/"/g, '""') + '"';
-            }
-            return text;
-          }
-
           function buildAnalyticsCsv(data) {
             const stages = Array.isArray(data?.funnel?.stages) ? data.funnel.stages : [];
             const lines = ['stage,label,count,conversion_rate,drop_off'];
@@ -2454,35 +2632,6 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               );
             }
             return lines.join('\\n') + '\\n';
-          }
-
-          function downloadFile(contents, { filename, type }) {
-            if (!window || typeof window !== 'object') {
-              throw new Error('Browser environment is required for downloads');
-            }
-            if (
-              typeof Blob !== 'function' ||
-              !window.URL ||
-              typeof window.URL.createObjectURL !== 'function'
-            ) {
-              throw new Error('File downloads are not supported in this environment');
-            }
-            const blob = new Blob([contents], { type });
-            const url = window.URL.createObjectURL(blob);
-            try {
-              const link = document.createElement('a');
-              link.href = url;
-              link.download = filename;
-              link.style.display = 'none';
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-            } finally {
-              if (typeof window.URL.revokeObjectURL === 'function') {
-                window.URL.revokeObjectURL(url);
-              }
-            }
-            return blob;
           }
 
           function formatConversion(rate) {
@@ -3126,6 +3275,10 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           dispatchDocumentEvent('jobbot:applications-loaded', detail);
         }
 
+        function dispatchShortlistExported(detail = {}) {
+          dispatchDocumentEvent('jobbot:shortlist-exported', detail);
+        }
+
         function dispatchListingsReady(detail = {}) {
           dispatchDocumentEvent('jobbot:listings-ready', detail);
         }
@@ -3707,6 +3860,11 @@ export function createWebApp({
                 </thead>
                 <tbody data-shortlist-body></tbody>
               </table>
+            </div>
+            <div class="shortlist-actions">
+              <button type="button" data-shortlist-export-json>Download JSON</button>
+              <button type="button" data-shortlist-export-csv>Download CSV</button>
+              <p class="shortlist-actions__message" data-shortlist-export-message hidden></p>
             </div>
             <div class="pagination" data-shortlist-pagination hidden>
               <button type="button" data-shortlist-prev>Previous</button>

@@ -8,6 +8,7 @@ import {
   normalizeAnalyticsExportRequest,
   normalizeAnalyticsFunnelRequest,
   normalizeMatchRequest,
+  normalizeShortlistExportRequest,
   normalizeShortlistListRequest,
   normalizeShortlistShowRequest,
   normalizeSummarizeRequest,
@@ -641,25 +642,54 @@ export function createCommandAdapter(options = {}) {
     return payload;
   }
 
-  async function shortlistList(options = {}) {
-    const normalized = normalizeShortlistListRequest(options);
-    const { location, level, compensation, tags, offset, limit } = normalized;
-
+  function buildShortlistArgs(filters = {}) {
     const args = ['--json'];
-    if (location) {
-      args.push('--location', location);
-    }
-    if (level) {
-      args.push('--level', level);
-    }
-    if (compensation) {
-      args.push('--compensation', compensation);
-    }
+    const { location, level, compensation, tags } = filters;
+    if (location) args.push('--location', location);
+    if (level) args.push('--level', level);
+    if (compensation) args.push('--compensation', compensation);
     if (Array.isArray(tags)) {
       for (const tag of tags) {
         args.push('--tag', tag);
       }
     }
+    return args;
+  }
+
+  function buildShortlistFilters(filters = {}) {
+    const normalized = {};
+    if (filters.location) normalized.location = filters.location;
+    if (filters.level) normalized.level = filters.level;
+    if (filters.compensation) normalized.compensation = filters.compensation;
+    if (Array.isArray(filters.tags) && filters.tags.length > 0) {
+      normalized.tags = [...filters.tags];
+    }
+    return normalized;
+  }
+
+  function extractShortlistEntries(context, stdout, stderr) {
+    const parsed = parseJsonOutput(context, stdout, stderr);
+    const jobs =
+      parsed && typeof parsed === 'object' && parsed.jobs && typeof parsed.jobs === 'object'
+        ? parsed.jobs
+        : {};
+    const sanitizedJobs = sanitizeOutputValue(jobs);
+    const entries = [];
+    for (const [jobId, record] of Object.entries(sanitizedJobs)) {
+      if (record && typeof record === 'object' && !Array.isArray(record)) {
+        entries.push({ id: jobId, ...record });
+      } else {
+        entries.push({ id: jobId, record });
+      }
+    }
+    return entries;
+  }
+
+  async function shortlistList(options = {}) {
+    const normalized = normalizeShortlistListRequest(options);
+    const { offset, limit, ...filterFields } = normalized;
+
+    const args = buildShortlistArgs(filterFields);
 
     const { stdout, stderr, returnValue, correlationId, traceId } = await runCli(
       'shortlist-list',
@@ -681,43 +711,59 @@ export function createCommandAdapter(options = {}) {
       payload.traceId = traceId;
     }
 
-    const parsed = parseJsonOutput('shortlist list', payload.stdout, payload.stderr);
-    const jobs =
-      parsed && typeof parsed === 'object' && parsed.jobs && typeof parsed.jobs === 'object'
-        ? parsed.jobs
-        : {};
-    const sanitizedJobs = sanitizeOutputValue(jobs);
-    const entries = [];
-    for (const [jobId, record] of Object.entries(sanitizedJobs)) {
-      if (record && typeof record === 'object' && !Array.isArray(record)) {
-        entries.push({ id: jobId, ...record });
-      } else {
-        entries.push({ id: jobId, record });
-      }
-    }
+    const entries = extractShortlistEntries('shortlist list', payload.stdout, payload.stderr);
 
     const total = entries.length;
     const safeOffset = Math.max(0, Math.min(offset, total));
     const endIndex = Math.min(safeOffset + limit, total);
     const items = entries.slice(safeOffset, endIndex);
 
-    const filters = {};
-    if (location) filters.location = location;
-    if (level) filters.level = level;
-    if (compensation) filters.compensation = compensation;
-    if (Array.isArray(tags) && tags.length > 0) {
-      filters.tags = [...tags];
-    }
-
     payload.data = {
       total,
       offset: safeOffset,
       limit,
       items,
-      filters,
+      filters: buildShortlistFilters(filterFields),
       hasMore: endIndex < total,
     };
 
+    return payload;
+  }
+
+  async function shortlistExport(options = {}) {
+    const normalized = normalizeShortlistExportRequest(options);
+    const { format, ...filterFields } = normalized;
+
+    const args = buildShortlistArgs(filterFields);
+
+    const { stdout, stderr, returnValue, correlationId, traceId } = await runCli(
+      'shortlist-list',
+      args,
+    );
+
+    const payload = {
+      command: 'shortlist-export',
+      format: 'json',
+      stdout,
+      stderr,
+      returnValue,
+    };
+
+    if (correlationId) {
+      payload.correlationId = correlationId;
+    }
+    if (traceId) {
+      payload.traceId = traceId;
+    }
+
+    const items = extractShortlistEntries('shortlist export', payload.stdout, payload.stderr);
+    const data = {
+      format,
+      filters: buildShortlistFilters(filterFields),
+      count: items.length,
+      items,
+    };
+    payload.data = sanitizeOutputValue(data, { key: 'shortlistExport' });
     return payload;
   }
 
@@ -930,6 +976,7 @@ export function createCommandAdapter(options = {}) {
     match,
     shortlistList,
     shortlistShow,
+    shortlistExport,
     trackShow,
     analyticsFunnel,
     analyticsExport,
@@ -941,6 +988,7 @@ export function createCommandAdapter(options = {}) {
   };
   adapter['shortlist-list'] = shortlistList;
   adapter['shortlist-show'] = shortlistShow;
+  adapter['shortlist-export'] = shortlistExport;
   adapter['track-show'] = trackShow;
   adapter['analytics-funnel'] = analyticsFunnel;
   adapter['analytics-export'] = analyticsExport;
@@ -952,6 +1000,7 @@ export function createCommandAdapter(options = {}) {
   adapter.trackRecord = trackRecord;
   adapter.analyticsExport = analyticsExport;
   adapter.trackShow = trackShow;
+  adapter.shortlistExport = shortlistExport;
   return adapter;
 }
 

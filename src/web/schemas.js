@@ -234,6 +234,27 @@ export function normalizeShortlistListRequest(options) {
   return request;
 }
 
+export function normalizeShortlistExportRequest(options) {
+  assertPlainObject(options, 'shortlist export options');
+
+  const baseRequest = normalizeShortlistListRequest(options);
+  const filters = { ...baseRequest };
+  delete filters.offset;
+  delete filters.limit;
+  const rawFormat = normalizeString(options.format)?.toLowerCase();
+  const format = rawFormat === 'csv' ? 'csv' : 'json';
+
+  const exportRequest = { format };
+  if (filters.location) exportRequest.location = filters.location;
+  if (filters.level) exportRequest.level = filters.level;
+  if (filters.compensation) exportRequest.compensation = filters.compensation;
+  if (Array.isArray(filters.tags) && filters.tags.length > 0) {
+    exportRequest.tags = filters.tags;
+  }
+
+  return exportRequest;
+}
+
 export function normalizeShortlistShowRequest(options) {
   assertPlainObject(options, 'shortlist show options');
   const jobId = assertRequiredString(options.jobId ?? options.job_id, 'jobId');

@@ -281,10 +281,20 @@
      renders stage counts, conversion percentages, largest drop-offs, and
      missing-status alerts while dispatching `jobbot:analytics-ready`/
      `jobbot:analytics-loaded` events for extensions. Regression coverage in
-     [`test/web-server.test.js`](../test/web-server.test.js) drives the DOM
-     workflow and summaries, and
-     [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
-     locks the adapter's JSON parsing and sanitization.
+    [`test/web-server.test.js`](../test/web-server.test.js) drives the DOM
+    workflow and summaries, and
+    [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
+    locks the adapter's JSON parsing and sanitization.
+  - Shortlist export controls for JSON and CSV snapshots.
+    _Implemented (2025-10-13):_ The **Applications** panel exposes **Download JSON** and
+    **Download CSV** actions that POST to `/commands/shortlist-export`, reusing the
+    CLI `shortlist list --json` workflow to hydrate exports. [`src/web/server.js`](../src/web/server.js)
+    builds sanitized payloads, streams Blob downloads, and dispatches a `jobbot:shortlist-exported`
+    event for extension hooks. Regression coverage in
+    [`test/web-server.test.js`](../test/web-server.test.js) verifies filtered exports trigger
+    downloads and event payloads, while
+    [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js) confirms the adapter
+    normalizes filters, sanitizes JSON output, and returns counts for UI messaging.
   - Analytics export buttons for JSON and CSV snapshots.
      _Implemented (2025-10-12):_ The **Analytics** panel now surfaces
      "Download JSON" and "Download CSV" actions that invoke the new

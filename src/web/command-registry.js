@@ -1,6 +1,7 @@
 import {
   normalizeAnalyticsExportRequest,
   normalizeAnalyticsFunnelRequest,
+  normalizeShortlistExportRequest,
   normalizeTrackShowRequest,
   normalizeTrackRecordRequest,
 } from './schemas.js';
@@ -39,6 +40,14 @@ const SHORTLIST_LIST_ALLOWED_FIELDS = new Set([
   'tags',
   'offset',
   'limit',
+]);
+
+const SHORTLIST_EXPORT_ALLOWED_FIELDS = new Set([
+  'location',
+  'level',
+  'compensation',
+  'tags',
+  'format',
 ]);
 
 const SHORTLIST_SHOW_ALLOWED_FIELDS = new Set(['jobId', 'job_id']);
@@ -265,6 +274,12 @@ function validateShortlistShowPayload(rawPayload) {
   return { jobId };
 }
 
+function validateShortlistExportPayload(rawPayload) {
+  const payload = ensurePlainObject(rawPayload, 'shortlist-export');
+  assertAllowedFields(payload, SHORTLIST_EXPORT_ALLOWED_FIELDS, 'shortlist-export');
+  return normalizeShortlistExportRequest(payload);
+}
+
 function validateTrackShowPayload(rawPayload) {
   const payload = ensurePlainObject(rawPayload, 'track-show');
   assertAllowedFields(payload, TRACK_SHOW_ALLOWED_FIELDS, 'track-show');
@@ -360,6 +375,7 @@ const COMMAND_VALIDATORS = Object.freeze({
   match: validateMatchPayload,
   'shortlist-list': validateShortlistListPayload,
   'shortlist-show': validateShortlistShowPayload,
+  'shortlist-export': validateShortlistExportPayload,
   'track-show': validateTrackShowPayload,
   'track-record': validateTrackRecordPayload,
   'analytics-funnel': validateAnalyticsFunnelPayload,

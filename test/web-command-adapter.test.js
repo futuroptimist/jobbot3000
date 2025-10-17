@@ -458,6 +458,71 @@ describe('createCommandAdapter', () => {
     expect(result.data.items[0]).toMatchObject({ id: 'job-2' });
   });
 
+  it('exports shortlist data for downloads', async () => {
+    const cli = {
+      cmdShortlistList: vi.fn(async args => {
+        expect(args).toEqual(['--json', '--location', 'Remote', '--tag', 'remote']);
+        console.log(
+          JSON.stringify({
+            jobs: {
+              'job-remote': {
+                metadata: {
+                  location: 'Remote',
+                  level: 'Staff',
+                  compensation: '$210k',
+                  synced_at: '2025-03-10T15:00:00.000Z',
+                },
+                tags: ['remote', 'priority'],
+                discard_count: 1,
+                last_discard: {
+                  reason: 'Paused hiring',
+                  discarded_at: '2025-03-09T12:00:00.000Z',
+                  tags: ['follow_up'],
+                },
+              },
+            },
+          }),
+        );
+      }),
+    };
+
+    const adapter = createCommandAdapter({ cli });
+    const result = await adapter['shortlist-export']({
+      format: 'CSV',
+      location: 'Remote',
+      tags: ['remote'],
+    });
+
+    expect(cli.cmdShortlistList).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      command: 'shortlist-export',
+      format: 'json',
+    });
+    expect(result.data).toEqual({
+      format: 'csv',
+      filters: { location: 'Remote', tags: ['remote'] },
+      count: 1,
+      items: [
+        {
+          id: 'job-remote',
+          metadata: {
+            location: 'Remote',
+            level: 'Staff',
+            compensation: '$210k',
+            synced_at: '2025-03-10T15:00:00.000Z',
+          },
+          tags: ['remote', 'priority'],
+          discard_count: 1,
+          last_discard: {
+            reason: 'Paused hiring',
+            discarded_at: '2025-03-09T12:00:00.000Z',
+            tags: ['follow_up'],
+          },
+        },
+      ],
+    });
+  });
+
   it('loads shortlist show details with sanitized output', async () => {
     const cli = {
       cmdShortlistShow: vi.fn(async args => {

@@ -72,6 +72,13 @@ inject rows, pagination metadata, and status updates.
         </tr>
       </tbody>
     </table>
+    <div class="shortlist-actions">
+      <button type="button" data-shortlist-export-json>Download JSON</button>
+      <button type="button" data-shortlist-export-csv>Download CSV</button>
+      <p class="shortlist-actions__message" data-shortlist-export-message hidden>
+        Download ready: shortlist-export.json
+      </p>
+    </div>
     <div class="pagination" data-shortlist-pagination hidden>
       <button type="button" data-shortlist-prev>Previous</button>
       <span class="pagination-info" data-shortlist-range>Showing 1-10 of 42</span>

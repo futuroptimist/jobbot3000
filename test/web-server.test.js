@@ -1304,6 +1304,177 @@ describe('web server status page', () => {
     expect(message?.textContent).toContain('analytics-stages.csv');
   });
 
+  it('downloads shortlist exports as JSON and CSV with active filters', async () => {
+    const shortlistEntry = {
+      id: 'job-remote',
+      metadata: {
+        location: 'Remote',
+        level: 'Staff',
+        compensation: '$210k',
+        synced_at: '2025-03-10T15:00:00.000Z',
+      },
+      tags: ['remote', 'priority'],
+      discard_count: 1,
+      last_discard: {
+        reason: 'Paused hiring',
+        discarded_at: '2025-03-09T12:00:00.000Z',
+        tags: ['follow_up'],
+      },
+    };
+
+    const exportPayloads = [];
+    const commandAdapter = {
+      'shortlist-list': vi.fn(async () => ({
+        command: 'shortlist-list',
+        format: 'json',
+        stdout: '',
+        stderr: '',
+        returnValue: 0,
+        data: {
+          total: 1,
+          offset: 0,
+          limit: 20,
+          filters: {},
+          hasMore: false,
+          items: [shortlistEntry],
+        },
+      })),
+      'shortlist-export': vi.fn(async payload => {
+        exportPayloads.push(payload);
+        return {
+          command: 'shortlist-export',
+          format: 'json',
+          stdout: '',
+          stderr: '',
+          returnValue: 0,
+          data: {
+            format: payload.format,
+            filters: { location: 'Remote', tags: ['remote', 'priority'] },
+            count: 1,
+            items: [shortlistEntry],
+          },
+        };
+      }),
+    };
+
+    commandAdapter.shortlistList = commandAdapter['shortlist-list'];
+    commandAdapter.shortlistExport = commandAdapter['shortlist-export'];
+
+    const server = await startServer({ commandAdapter });
+    const { dom, boot } = await renderStatusDom(server, {
+      pretendToBeVisual: true,
+      autoBoot: false,
+    });
+
+    const waitForEvent = (name, timeout = 500) => waitForDomEvent(dom, name, timeout);
+
+    const readyPromise = waitForEvent('jobbot:applications-ready');
+    await boot();
+    await readyPromise;
+
+    const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
+    dom.window.location.hash = '#applications';
+    dom.window.dispatchEvent(new HashChange('hashchange'));
+    await waitForEvent('jobbot:applications-loaded');
+
+    const { URL } = dom.window;
+    URL.createObjectURL = vi.fn(() => 'blob:shortlist');
+    URL.revokeObjectURL = vi.fn();
+    const anchorClick = vi
+      .spyOn(dom.window.HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {});
+    const BlobCtor = dom.window.Blob;
+    const blobRecords = [];
+    class InspectableBlob extends BlobCtor {
+      constructor(parts, options) {
+        super(parts, options);
+        blobRecords.push({ parts, options });
+      }
+    }
+    dom.window.Blob = InspectableBlob;
+
+    const locationInput = dom.window.document.querySelector('[data-shortlist-filter="location"]');
+    if (locationInput) {
+      locationInput.value = 'Remote';
+    }
+    const tagsInput = dom.window.document.querySelector('[data-shortlist-filter="tags"]');
+    if (tagsInput) {
+      tagsInput.value = 'remote, priority';
+    }
+
+    const click = () =>
+      new dom.window.MouseEvent('click', { bubbles: true, cancelable: true });
+
+    const jsonButton = dom.window.document.querySelector('[data-shortlist-export-json]');
+    const csvButton = dom.window.document.querySelector('[data-shortlist-export-csv]');
+    const message = dom.window.document.querySelector('[data-shortlist-export-message]');
+
+    expect(jsonButton).not.toBeNull();
+    expect(csvButton).not.toBeNull();
+
+    jsonButton?.dispatchEvent(click());
+
+    const jsonEvent = await waitForEvent('jobbot:shortlist-exported');
+
+    expect(commandAdapter['shortlist-export']).toHaveBeenCalledTimes(1);
+    expect(exportPayloads[0]).toEqual({
+      format: 'json',
+      location: 'Remote',
+      tags: ['remote', 'priority'],
+    });
+    expect(jsonEvent.detail).toMatchObject({
+      format: 'json',
+      success: true,
+      filename: 'shortlist-export.json',
+      count: 1,
+      filters: { location: 'Remote', tags: ['remote', 'priority'] },
+    });
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+    const jsonBlob = URL.createObjectURL.mock.calls[0]?.[0];
+    expect(jsonBlob).toBeInstanceOf(dom.window.Blob);
+    expect(jsonBlob.type).toBe('application/json');
+    expect(jsonBlob.size).toBeGreaterThan(0);
+    const jsonText = String(blobRecords[0]?.parts?.[0] ?? '');
+    const parsedJson = JSON.parse(jsonText);
+    expect(parsedJson).toEqual({
+      filters: { location: 'Remote', tags: ['remote', 'priority'] },
+      items: [shortlistEntry],
+    });
+    expect(anchorClick).toHaveBeenCalledTimes(1);
+    expect(message?.textContent).toContain('shortlist-export.json');
+
+    csvButton?.dispatchEvent(click());
+
+    const csvEvent = await waitForEvent('jobbot:shortlist-exported');
+
+    expect(commandAdapter['shortlist-export']).toHaveBeenCalledTimes(2);
+    expect(exportPayloads[1]).toEqual({
+      format: 'csv',
+      location: 'Remote',
+      tags: ['remote', 'priority'],
+    });
+    expect(csvEvent.detail).toMatchObject({
+      format: 'csv',
+      success: true,
+      filename: 'shortlist-export.csv',
+      count: 1,
+      filters: { location: 'Remote', tags: ['remote', 'priority'] },
+    });
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(2);
+    const csvBlob = URL.createObjectURL.mock.calls[1]?.[0];
+    expect(csvBlob).toBeInstanceOf(dom.window.Blob);
+    expect(csvBlob.type).toBe('text/csv');
+    expect(csvBlob.size).toBeGreaterThan(0);
+    const csvText = String(blobRecords[1]?.parts?.[0] ?? '');
+    expect(csvText).toContain('job_id,location,level,compensation,tags,synced_at,discard_count');
+    expect(csvText).toContain('Paused hiring');
+    expect(csvText.trim().split('\n')).toHaveLength(2);
+    expect(anchorClick).toHaveBeenCalledTimes(2);
+    expect(message?.textContent).toContain('shortlist-export.csv');
+    expect(dom.window.URL.revokeObjectURL).toHaveBeenCalledTimes(2);
+    dom.window.Blob = BlobCtor;
+  });
+
   it('records status updates from the applications action panel', async () => {
     const shortlistEntry = {
       id: 'job-42',
