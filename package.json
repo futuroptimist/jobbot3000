@@ -11,17 +11,19 @@
     "jobbot": "bin/jobbot.js"
   },
   "scripts": {
+    "start": "node scripts/web-server.js --env development",
+    "dev": "node scripts/web-server.js --env development",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "test": "vitest",
-    "test:ci": "vitest run && playwright test",
+    "test:ci": "npm run prepare:test && vitest run && playwright test",
+    "prepare:test": "npx playwright install --with-deps",
     "summarize": "node scripts/summarize.js",
     "chore:prompts": "node scripts/chore-prompts.js",
     "chore:reminders": "node scripts/chore-reminders.js",
     "web:server": "node scripts/web-server.js",
-    "dev": "node scripts/web-server.js --env development",
     "web:screenshots": "node scripts/generate-web-screenshots.js",
-    "postinstall": "node scripts/install-console-font.js && npx playwright install --with-deps"
+    "postinstall": "node scripts/install-console-font.js"
   },
   "engines": {
     "node": ">=20"

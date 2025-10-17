@@ -7,20 +7,18 @@ This guide covers installation, development, and the experimental web interface.
 - Node.js 20+
 - macOS, Linux, WSL, or Windows 11
 
-## Install
+## Quick Start
+
+Get up and running in two steps:
 
 ```bash
-npm install
+npm install       # Install dependencies (fast - no heavy test tools)
+npm run dev       # Start the fully functional web server with backend
 ```
 
-## Run the web interface
+The web server will be available at http://127.0.0.1:3100 with all features enabled.
 
-```bash
-npm run dev
-# jobbot web server listening on http://127.0.0.1:3100
-```
-
-Visit http://127.0.0.1:3100 and use the tabs to explore.
+> **Note:** For running tests, you'll need to install Playwright first: `npm run prepare:test`
 
 ## Environment overrides
 
