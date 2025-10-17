@@ -29,6 +29,7 @@ describe('loadWebConfig', () => {
       'JOBBOT_HTTP_BACKOFF_MS',
       'JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD',
       'JOBBOT_HTTP_CIRCUIT_BREAKER_RESET_MS',
+      'JOBBOT_WEB_PLUGINS',
     ]);
   });
 
@@ -47,6 +48,7 @@ describe('loadWebConfig', () => {
       'JOBBOT_HTTP_BACKOFF_MS',
       'JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD',
       'JOBBOT_HTTP_CIRCUIT_BREAKER_RESET_MS',
+      'JOBBOT_WEB_PLUGINS',
     ]);
   });
 
@@ -137,5 +139,52 @@ describe('loadWebConfig', () => {
     expect(() => loadWebConfig({ env: 'development', rateLimit: { max: 0 } })).toThrow(
       /rate limit max must be a positive integer/i,
     );
+  });
+
+  it('parses plugin manifests from options and environment variables', async () => {
+    process.env.JOBBOT_WEB_PLUGINS = JSON.stringify([
+      {
+        id: 'env-plugin',
+        name: 'Environment Plugin',
+        source: 'window.__envPlugin = true;',
+        events: ['jobbot:status-panels-ready'],
+      },
+    ]);
+
+    const { loadWebConfig } = await import('../src/web/config.js');
+    const envConfig = loadWebConfig({ env: 'development' });
+
+    expect(Array.isArray(envConfig.features.plugins.entries)).toBe(true);
+    expect(envConfig.features.plugins.entries).toHaveLength(1);
+    expect(envConfig.features.plugins.entries[0]).toMatchObject({
+      id: 'env-plugin',
+      name: 'Environment Plugin',
+      source: 'window.__envPlugin = true;',
+      events: ['jobbot:status-panels-ready'],
+    });
+
+    const optionConfig = loadWebConfig({
+      env: 'development',
+      features: {
+        plugins: {
+          entries: [
+            {
+              id: 'option-plugin',
+              name: 'Option Plugin',
+              url: 'https://example.com/plugin.js',
+              events: ['jobbot:analytics-ready'],
+            },
+          ],
+        },
+      },
+    });
+
+    expect(optionConfig.features.plugins.entries).toHaveLength(1);
+    expect(optionConfig.features.plugins.entries[0]).toMatchObject({
+      id: 'option-plugin',
+      name: 'Option Plugin',
+      url: 'https://example.com/plugin.js',
+      events: ['jobbot:analytics-ready'],
+    });
   });
 });

@@ -35,6 +35,20 @@ const SECRET_ENV_MAP = {
   workableToken: 'JOBBOT_WORKABLE_TOKEN',
 };
 
+const PluginEntrySchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    description: z.string().optional(),
+    url: z.string().min(1).optional(),
+    source: z.string().min(1).optional(),
+    events: z.array(z.string().min(1)).default([]),
+  })
+  .refine(entry => Boolean(entry.url) || Boolean(entry.source), {
+    message: 'Plugin entries require either a url or source field',
+    path: ['url'],
+  });
+
 const ConfigSchema = z.object({
   environment: z.enum(ENVIRONMENTS).default('development'),
   web: z.object({
@@ -66,6 +80,11 @@ const ConfigSchema = z.object({
       circuitBreakerThreshold: z.number().int().min(1).default(5),
       circuitBreakerResetMs: z.number().int().positive().default(30000),
     }),
+    plugins: z
+      .object({
+        entries: z.array(PluginEntrySchema).default([]),
+      })
+      .default({ entries: [] }),
   }),
   overrides: z.object({
     scrapingProviders: z.record(z.string(), z.any()).default({}),
@@ -98,6 +117,38 @@ function resolveEnvironment(envLike) {
     return normalized;
   }
   return 'development';
+}
+
+function parsePluginEntries(value) {
+  if (!value) {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+      if (parsed && Array.isArray(parsed.entries)) {
+        return parsed.entries;
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  }
+  if (typeof value === 'object' && value !== null) {
+    if (Array.isArray(value.entries)) {
+      return value.entries;
+    }
+    if (Array.isArray(value.plugins)) {
+      return value.plugins;
+    }
+  }
+  return [];
 }
 
 export function loadConfig(options = {}) {
@@ -169,6 +220,18 @@ export function loadConfig(options = {}) {
           env.JOBBOT_HTTP_CIRCUIT_BREAKER_RESET_MS,
         30000,
       ),
+    },
+    plugins: {
+      entries: (() => {
+        const optionEntries = parsePluginEntries(
+          options.features?.plugins?.entries ?? options.features?.plugins,
+        );
+        if (optionEntries.length > 0) {
+          return optionEntries;
+        }
+        const envEntries = parsePluginEntries(env.JOBBOT_WEB_PLUGINS);
+        return envEntries;
+      })(),
     },
   };
 

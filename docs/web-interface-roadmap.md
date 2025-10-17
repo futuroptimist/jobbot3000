@@ -364,9 +364,21 @@
 
 ### 7. Future Enhancements
 
+> [!NOTE]
+> **Update (2025-10-16):** The plugin system enabling external automation
+> integrations now ships with the status hub. Plugins declare themselves via
+> `features.plugins.entries`, load as deferred scripts, and register through
+> `window.jobbotPluginHost.register()` to receive `jobbot:*` events alongside
+> helper APIs for navigation, panel state, and command invocation. Regression
+> coverage in [`test/web-plugins.test.js`](../test/web-plugins.test.js)
+> activates an inline plugin, observes the `jobbot:status-panels-ready` event,
+> and asserts the manifest bridge stays aligned with the server renderer. Late
+> plugin registrations now replay the most recent readiness payload so
+> extensions that hydrate after the initial page load still receive the panel
+> inventory; the same suite covers the replay contract.
+
 - Multi-user support with role-based access control and audit trails.
 - Real-time collaboration via WebSocket subscriptions to CLI state changes.
-- Plugin system enabling external automation integrations (e.g., calendar, CRM).
 
 ## Safe Implementation Checklist
 
