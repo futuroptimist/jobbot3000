@@ -3689,6 +3689,183 @@ function normalizeCsrfOptions(csrf = {}) {
   };
 }
 
+const DEFAULT_AUTH_ROLES = Object.freeze(['viewer', 'editor']);
+
+const ROLE_INHERITANCE = Object.freeze({
+  editor: Object.freeze(['viewer']),
+  admin: Object.freeze(['editor', 'viewer']),
+});
+
+const COMMAND_ROLE_REQUIREMENTS = Object.freeze({
+  default: Object.freeze(['viewer']),
+  'track-record': Object.freeze(['editor']),
+  'listings-ingest': Object.freeze(['editor']),
+  'listings-archive': Object.freeze(['editor']),
+});
+
+function expandRoles(roleSet) {
+  const pending = [...roleSet];
+  while (pending.length > 0) {
+    const role = pending.pop();
+    const inherited = ROLE_INHERITANCE[role];
+    if (!inherited) continue;
+    for (const child of inherited) {
+      if (!roleSet.has(child)) {
+        roleSet.add(child);
+        pending.push(child);
+      }
+    }
+  }
+  return roleSet;
+}
+
+function normalizeRoleList(value, fallbackRoles) {
+  const fallback = Array.isArray(fallbackRoles) ? fallbackRoles : [];
+  let source;
+  if (value == null) {
+    source = fallback;
+  } else if (Array.isArray(value)) {
+    source = value;
+  } else if (typeof value === 'string') {
+    source = value.split(',');
+  } else {
+    throw new Error('auth roles must be provided as a string or array');
+  }
+
+  const normalized = new Set();
+  for (const entry of source) {
+    if (entry == null) continue;
+    if (typeof entry !== 'string') {
+      throw new Error('auth roles must be strings');
+    }
+    const trimmed = entry.trim().toLowerCase();
+    if (!trimmed) continue;
+    for (const part of trimmed.split(/\s+/)) {
+      if (part) normalized.add(part);
+    }
+  }
+
+  if (normalized.size === 0 && fallback.length > 0) {
+    for (const role of fallback) {
+      normalized.add(role);
+    }
+  }
+
+  return expandRoles(normalized);
+}
+
+function parseTokenSubject(candidate, index) {
+  const source =
+    candidate.subject ??
+    candidate.user ??
+    candidate.username ??
+    candidate.id ??
+    candidate.name ??
+    candidate.displayName;
+  if (typeof source === 'string' && source.trim()) {
+    return source.trim();
+  }
+  return `token#${index + 1}`;
+}
+
+function normalizeTokenEntry(candidate, index, fallbackRoles) {
+  if (typeof candidate === 'string') {
+    const token = candidate.trim();
+    if (!token) {
+      throw new Error('auth tokens must include non-empty strings');
+    }
+    return {
+      token,
+      subject: `token#${index + 1}`,
+      roles: normalizeRoleList(null, fallbackRoles),
+    };
+  }
+
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    throw new Error('auth tokens must be strings or objects');
+  }
+
+  const rawToken =
+    (typeof candidate.token === 'string' && candidate.token.trim()) ||
+    (typeof candidate.value === 'string' && candidate.value.trim()) ||
+    (typeof candidate.secret === 'string' && candidate.secret.trim());
+  if (!rawToken) {
+    throw new Error('auth token entries must include a token string');
+  }
+
+  const roles = normalizeRoleList(candidate.roles, fallbackRoles);
+  if (roles.size === 0) {
+    throw new Error('auth token roles must include at least one role');
+  }
+
+  const entry = {
+    token: rawToken.trim(),
+    subject: parseTokenSubject(candidate, index),
+    roles,
+  };
+
+  if (typeof candidate.displayName === 'string' && candidate.displayName.trim()) {
+    entry.displayName = candidate.displayName.trim();
+  }
+
+  return entry;
+}
+
+function coerceTokenCandidates(rawTokens) {
+  if (Array.isArray(rawTokens)) {
+    return rawTokens;
+  }
+  if (rawTokens && typeof rawTokens === 'object') {
+    if (Array.isArray(rawTokens.tokens)) {
+      return rawTokens.tokens;
+    }
+    return [rawTokens];
+  }
+  if (typeof rawTokens === 'string') {
+    const trimmed = rawTokens.trim();
+    if (!trimmed) {
+      return [];
+    }
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return parsed;
+        }
+        if (parsed && typeof parsed === 'object') {
+          if (Array.isArray(parsed.tokens)) {
+            return parsed.tokens;
+          }
+          return [parsed];
+        }
+      } catch {
+        // Fall through to comma splitting when JSON parsing fails.
+      }
+    }
+    return trimmed
+      .split(',')
+      .map(token => token.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function getRequiredRoles(command) {
+  return COMMAND_ROLE_REQUIREMENTS[command] ?? COMMAND_ROLE_REQUIREMENTS.default;
+}
+
+function hasRequiredRoles(roleSet, requiredRoles) {
+  if (!roleSet || typeof roleSet.has !== 'function') {
+    return false;
+  }
+  for (const role of requiredRoles) {
+    if (!roleSet.has(role)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function normalizeAuthOptions(auth) {
   if (!auth || auth === false) {
     return null;
@@ -3698,26 +3875,21 @@ function normalizeAuthOptions(auth) {
   }
 
   const rawTokens = auth.tokens ?? auth.token;
-  let tokenCandidates = [];
-  if (Array.isArray(rawTokens)) {
-    tokenCandidates = rawTokens;
-  } else if (typeof rawTokens === 'string') {
-    tokenCandidates = rawTokens.split(',');
-  }
+  const fallbackRoles = Array.from(
+    normalizeRoleList(auth.defaultRoles ?? null, DEFAULT_AUTH_ROLES),
+  );
+  const tokenCandidates = coerceTokenCandidates(rawTokens);
 
-  const normalizedTokens = [];
-  for (const candidate of tokenCandidates) {
-    if (typeof candidate !== 'string') {
-      throw new Error('auth tokens must be provided as strings');
+  const normalizedTokens = new Map();
+  tokenCandidates.forEach((candidate, index) => {
+    const normalized = normalizeTokenEntry(candidate, index, fallbackRoles);
+    if (normalizedTokens.has(normalized.token)) {
+      throw new Error('auth tokens must be unique');
     }
-    const trimmed = candidate.trim();
-    if (!trimmed) {
-      continue;
-    }
-    normalizedTokens.push(trimmed);
-  }
+    normalizedTokens.set(normalized.token, normalized);
+  });
 
-  if (normalizedTokens.length === 0) {
+  if (normalizedTokens.size === 0) {
     throw new Error('auth.tokens must include at least one non-empty token');
   }
 
@@ -3743,7 +3915,7 @@ function normalizeAuthOptions(auth) {
     headerName,
     scheme: requireScheme ? scheme : '',
     requireScheme,
-    tokens: new Set(normalizedTokens),
+    tokens: normalizedTokens,
     schemePrefixLower: schemePrefix.toLowerCase(),
     schemePrefixLength: schemePrefix.length,
   };
@@ -4534,18 +4706,30 @@ export function createWebApp({
     const started = performance.now();
     const clientIp = req.ip || req.socket?.remoteAddress || undefined;
     const userAgent = req.get('user-agent');
-    let authPrincipal = authOptions ? 'unauthenticated' : 'guest';
+    let authContext = authOptions
+      ? { subject: 'unauthenticated', roles: new Set() }
+      : { subject: 'guest', roles: new Set(['viewer']) };
+    let authPrincipal = authContext.subject;
 
     const recordAudit = async event => {
       if (!effectiveAuditLogger) return;
       try {
-        await effectiveAuditLogger.record({
+        const roles = authContext?.roles ? Array.from(authContext.roles).sort() : [];
+        const actor = authContext?.subject ?? authPrincipal;
+        const payload = {
           type: 'command',
           command: commandParam,
-          actor: authPrincipal,
+          actor,
+          roles,
           ip: clientIp,
           userAgent,
           ...event,
+        };
+        if (authContext?.displayName && authContext.displayName !== actor) {
+          payload.actorDisplayName = authContext.displayName;
+        }
+        await effectiveAuditLogger.record({
+          ...payload,
         });
       } catch (error) {
         logger?.warn?.('Failed to record audit event', error);
@@ -4597,12 +4781,27 @@ export function createWebApp({
         }
       }
 
-      if (!authOptions.tokens.has(tokenValue)) {
+      const tokenEntry = authOptions.tokens.get(tokenValue);
+      if (!tokenEntry) {
         await recordAudit({ status: 'unauthorized', reason: 'unknown-token' });
         respondUnauthorized();
         return;
       }
-      authPrincipal = 'token';
+      authContext = tokenEntry;
+      authPrincipal = tokenEntry.subject ?? 'token';
+
+      const requiredRoles = getRequiredRoles(commandParam);
+      if (requiredRoles.length > 0 && !hasRequiredRoles(tokenEntry.roles, requiredRoles)) {
+        res
+          .status(403)
+          .json({ error: 'Insufficient permissions for this command' });
+        await recordAudit({
+          status: 'forbidden',
+          reason: 'rbac',
+          requiredRoles,
+        });
+        return;
+      }
     }
 
     const providedToken = req.get(csrfOptions.headerName);
