@@ -355,12 +355,11 @@ jobbot3000.
 ### CLI flow
 
 > [!NOTE]
-> **Future work inventory (2025-10-12):**
-> - `docs/web-interface-roadmap.md` and `docs/simplification_suggestions.md` document previously
->   shipped UX and architecture work with no remaining TODOs after review.
-> - This journey promised `jobbot analytics activity`, but the CLI lacked the subcommand despite
->   `src/analytics.js` already producing sanitized activity counts. Wiring the existing helper through
->   the CLI fits a single PR and unlocks the documented workflow immediately.
+> **Update (2025-10-13):** `jobbot analytics activity` now ships via the CLI, wiring
+> `computeActivitySummary` to the analytics surface with guardrails that require
+> `--out` values when provided. [`test/cli.test.js`](../test/cli.test.js)
+> exercises both the sanitized export and the usage error when `--out` lacks a
+> path so the workflow stays reliable.
 
 1. Run `jobbot analytics funnel --json` to compute conversion metrics and generate Sankey-ready
    structures.

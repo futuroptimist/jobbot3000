@@ -2701,6 +2701,17 @@ describe('jobbot CLI', () => {
     expect(serialized).not.toContain('job-beta');
   });
 
+  it('errors when analytics activity missing output path', () => {
+    const bin = path.resolve('bin', 'jobbot.js');
+    const result = spawnSync('node', [bin, 'analytics', 'activity', '--out'], {
+      encoding: 'utf8',
+      env: { ...process.env, JOBBOT_DATA_DIR: dataDir },
+    });
+
+    expect(result.status).toBe(2);
+    expect(result.stderr).toMatch(/Usage: jobbot analytics activity/);
+  });
+
   it('filters analytics funnel with timeframe and company flags', () => {
     const jobsDir = path.join(dataDir, 'jobs');
     fs.mkdirSync(jobsDir, { recursive: true });
