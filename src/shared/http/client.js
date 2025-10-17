@@ -7,23 +7,76 @@ import {
   setFetchRateLimit,
 } from '../../fetch.js';
 
+/** @typedef {import('node-fetch').RequestInit} FetchRequestInit */
+/** @typedef {import('node-fetch').Response} FetchResponse */
+
+/** @typedef {Error & { doNotRetry?: boolean }} AbortableError */
+/** @typedef {{ threshold?: number, resetMs?: number }} CircuitBreakerOptions */
+/** @typedef {{ key?: string, intervalMs?: number, lastInvokedAt?: number }} RateLimitOptions */
+/** @typedef {{ now?: () => number }} Clock */
+/** @typedef {(ms: number) => Promise<void>} SleepFn */
+
+/**
+ * @typedef {Object} RetryOptions
+ * @property {number} [retries]
+ * @property {number} [delayMs]
+ * @property {number} [factor]
+ * @property {number} [maxDelayMs]
+ * @property {(response: FetchResponse) => boolean} [shouldRetry]
+ */
+
+/**
+ * @typedef {Object} HttpClientOptions
+ * @property {string} [provider]
+ * @property {Record<string, string>} [defaultHeaders]
+ * @property {RetryOptions} [defaultRetry]
+ * @property {number} [defaultRateLimitMs]
+ * @property {number} [defaultTimeoutMs]
+ * @property {CircuitBreakerOptions} [defaultCircuitBreaker]
+ * @property {Clock} [defaultClock]
+ * @property {SleepFn} [defaultSleep]
+ */
+
+/**
+ * @typedef {FetchRequestInit & {
+ *   headers?: Record<string, unknown>,
+ *   rateLimit?: RateLimitOptions,
+ *   fetchImpl?: (input: string | URL, init?: FetchRequestInit) => Promise<FetchResponse>,
+ *   retry?: RetryOptions,
+ *   timeoutMs?: number,
+ *   signal?: AbortSignal,
+ *   circuitBreaker?: CircuitBreakerOptions,
+ *   sleep?: SleepFn,
+ *   clock?: Clock
+ * }} HttpRequestOptions
+ */
+
 const DEFAULT_HTTP_TIMEOUT_MS = 10000;
 
 function createAbortError(reason) {
   if (reason instanceof Error) {
-    const abortError = new Error(reason.message, { cause: reason });
+    const abortError = /** @type {AbortableError} */ (
+      new Error(reason.message, { cause: reason })
+    );
     abortError.name = reason.name || 'AbortError';
     abortError.doNotRetry = true;
     return abortError;
   }
 
   const message = reason !== undefined ? String(reason) : 'Request aborted';
-  const abortError = new Error(message, { cause: reason });
+  const abortError = /** @type {AbortableError} */ (
+    new Error(message, { cause: reason })
+  );
   abortError.name = 'AbortError';
   abortError.doNotRetry = true;
   return abortError;
 }
 
+/**
+ * @param {Record<string, string>} base
+ * @param {Record<string, unknown>} [extra]
+ * @returns {Record<string, string>}
+ */
 function mergeHeaders(base, extra) {
   if (!extra || typeof extra !== 'object') {
     return { ...base };
@@ -84,27 +137,19 @@ function normalizeTimeoutMs(timeoutMs, fallback) {
  * });
  * console.log(response.jobs.length);
  *
- * @param {{
- *   provider: string,
- *   defaultHeaders?: Record<string, string>,
- *   defaultRetry?: import('../../fetch.js').RetryOptions,
- *   defaultRateLimitMs?: number,
- *   defaultTimeoutMs?: number,
- *   defaultCircuitBreaker?: { threshold?: number, resetMs?: number },
- *   defaultClock?: { now: () => number },
- *   defaultSleep?: (ms: number) => Promise<void>,
- * }}
+ * @param {HttpClientOptions} [options]
  */
-export function createHttpClient({
-  provider,
-  defaultHeaders = {},
-  defaultRetry,
-  defaultRateLimitMs,
-  defaultTimeoutMs = DEFAULT_HTTP_TIMEOUT_MS,
-  defaultCircuitBreaker,
-  defaultClock,
-  defaultSleep,
-} = {}) {
+export function createHttpClient(options = {}) {
+  const {
+    provider,
+    defaultHeaders = {},
+    defaultRetry,
+    defaultRateLimitMs,
+    defaultTimeoutMs = DEFAULT_HTTP_TIMEOUT_MS,
+    defaultCircuitBreaker,
+    defaultClock,
+    defaultSleep,
+  } = /** @type {HttpClientOptions} */ (options);
   const providerKey = resolveProviderKey(provider);
   const headers = mergeHeaders(DEFAULT_FETCH_HEADERS, defaultHeaders);
   const normalizedDefaultRateLimit = normalizeRateLimitInterval(defaultRateLimitMs, 0);
@@ -129,7 +174,7 @@ export function createHttpClient({
       sleep: requestSleep,
       clock: requestClock,
       ...init
-    } = options;
+    } = /** @type {HttpRequestOptions} */ (options);
 
     const rateLimitKey = applyRateLimit(url, rateLimit);
 
@@ -211,7 +256,7 @@ export function createHttpClient({
           sleep: requestSleep ?? defaultSleep,
           clock: requestClock ?? defaultClock,
         },
-        init,
+        /** @type {FetchRequestInit} */ (init),
       );
     } catch (err) {
       if (err && err.name === 'AbortError' && err.doNotRetry) {

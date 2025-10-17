@@ -6,6 +6,14 @@ import { config as loadDotenv } from 'dotenv';
 const DEFAULT_ENV_ORDER = ['.env'];
 const DEFAULT_LOCAL_SUFFIXES = ['local'];
 
+/**
+ * @typedef {{ envName?: string, files?: string[] }} CandidateOptions
+ */
+
+/**
+ * @param {CandidateOptions} [options]
+ * @returns {string[]}
+ */
 function createCandidateList({ envName, files } = {}) {
   if (Array.isArray(files) && files.length > 0) {
     return files.filter(file => typeof file === 'string' && file.trim());
@@ -41,6 +49,10 @@ function loadFile(pathname) {
   }
 }
 
+/**
+ * @param {{ cwd: string, candidates: string[] }} options
+ * @returns {string[]}
+ */
 function resolveExistingFiles({ cwd, candidates }) {
   const seen = new Set();
   const existing = [];
@@ -57,8 +69,16 @@ function resolveExistingFiles({ cwd, candidates }) {
   return existing;
 }
 
+/** @type {string[] | null} */
 let cachedDefaultFiles = null;
 
+/**
+ * @typedef {{ cwd?: string, env?: string, files?: string[] }} LoadEnvironmentOptions
+ */
+
+/**
+ * @param {LoadEnvironmentOptions} [options]
+ */
 export function loadEnvironment({ cwd = process.cwd(), env, files } = {}) {
   const normalizedEnv = normalizeEnvName(env);
   const resolvedCwd = path.resolve(cwd);
@@ -72,6 +92,9 @@ export function loadEnvironment({ cwd = process.cwd(), env, files } = {}) {
   return { files: existingFiles };
 }
 
+/**
+ * @param {LoadEnvironmentOptions} [options]
+ */
 export function ensureEnvironmentLoaded(options = {}) {
   const isDefaultInvocation =
     options.cwd === undefined && options.env === undefined && options.files === undefined;
