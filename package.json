@@ -30,6 +30,7 @@
   },
   "dependencies": {
     "docx": "^9.5.1",
+    "dotenv": "^16.6.1",
     "express": "^4.21.2",
     "html-to-text": "9.0.5",
     "jszip": "^3.10.1",

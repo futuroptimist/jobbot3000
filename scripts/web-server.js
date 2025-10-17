@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import '../src/shared/config/initialize-env.js';
 import fs from 'node:fs/promises';
 import process from 'node:process';
 import { loadWebConfig } from '../src/web/config.js';
