@@ -100,6 +100,154 @@ function compactHtml(value) {
     .trim();
 }
 
+function serializeJsonForHtml(value) {
+  try {
+    return JSON.stringify(value).replace(/</g, '\\u003c');
+  } catch {
+    return '[]';
+  }
+}
+
+function normalizePluginId(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const sanitized = trimmed.toLowerCase().replace(/[^a-z0-9_-]+/g, '-');
+  const collapsed = sanitized.replace(/-+/g, '-').replace(/^-|-$/g, '');
+  return collapsed || null;
+}
+
+function isSafePluginUrl(url) {
+  if (typeof url !== 'string') {
+    return false;
+  }
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return false;
+  }
+  if (trimmed.startsWith('/')) {
+    return !trimmed.includes('..');
+  }
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith('https://') || lower.startsWith('http://')) {
+    return true;
+  }
+  return false;
+}
+
+function sanitizePluginEntry(entry) {
+  if (!entry || typeof entry !== 'object') {
+    return null;
+  }
+  const id = normalizePluginId(entry.id);
+  if (!id) {
+    return null;
+  }
+  const name =
+    typeof entry.name === 'string' && entry.name.trim() ? entry.name.trim() : id;
+  const description =
+    typeof entry.description === 'string' && entry.description.trim()
+      ? entry.description.trim()
+      : '';
+  const events = Array.isArray(entry.events)
+    ? Array.from(
+        new Set(
+          entry.events
+            .map(event => (typeof event === 'string' ? event.trim() : ''))
+            .filter(Boolean),
+        ),
+      )
+    : [];
+  const source =
+    typeof entry.source === 'string' && entry.source
+      ? entry.source
+      : '';
+  let url = typeof entry.url === 'string' ? entry.url.trim() : '';
+  if (url && !isSafePluginUrl(url)) {
+    url = '';
+  }
+  if (!url && !source) {
+    return null;
+  }
+  return { id, name, description, events, url, source };
+}
+
+function createPluginAssets(app, plugins = {}) {
+  const entries = Array.isArray(plugins?.entries) ? plugins.entries : [];
+  const manifest = [];
+  const registeredRoutes = new Set();
+  const seenIds = new Set();
+  for (const entry of entries) {
+    const sanitized = sanitizePluginEntry(entry);
+    if (!sanitized) {
+      continue;
+    }
+    if (seenIds.has(sanitized.id)) {
+      continue;
+    }
+    seenIds.add(sanitized.id);
+    let scriptUrl = sanitized.url || '';
+    if (!scriptUrl && sanitized.source) {
+      const routePath = `/assets/plugins/${sanitized.id}.js`;
+      if (!registeredRoutes.has(routePath)) {
+        registeredRoutes.add(routePath);
+        app.get(routePath, (req, res) => {
+          res.set('Content-Type', 'application/javascript; charset=utf-8');
+          res.set('Cache-Control', 'no-store');
+          res.send(sanitized.source);
+        });
+      }
+      scriptUrl = routePath;
+    }
+    manifest.push({
+      id: sanitized.id,
+      name: sanitized.name,
+      description: sanitized.description,
+      events: sanitized.events,
+      scriptUrl,
+    });
+  }
+  return {
+    manifest,
+  };
+}
+
+const PLUGIN_HOST_STUB = minifyInlineScript(String.raw`
+  (() => {
+    const global = window;
+    if (!global || typeof global !== 'object') {
+      return;
+    }
+    const existing = global.jobbotPluginHost;
+    if (existing && typeof existing === 'object') {
+      if (!Array.isArray(existing.queue)) {
+        existing.queue = [];
+      }
+      if (typeof existing.register !== 'function') {
+        existing.register = plugin => {
+          if (plugin) {
+            existing.queue.push(plugin);
+          }
+        };
+      }
+      return;
+    }
+    const queue = [];
+    global.jobbotPluginHost = {
+      queue,
+      register(plugin) {
+        if (plugin) {
+          queue.push(plugin);
+        }
+      },
+    };
+  })();
+`);
+
 const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
   :root {
     color-scheme: dark;
@@ -705,6 +853,100 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
         const csrfHeader = document.body?.dataset.csrfHeader || '';
         const csrfToken = document.body?.dataset.csrfToken || '';
         const routeListeners = new Map();
+        const pluginManifestElement = document.getElementById('jobbot-plugin-manifest');
+        let pluginManifest = [];
+        if (pluginManifestElement) {
+          try {
+            const parsed = JSON.parse(pluginManifestElement.textContent || '[]');
+            if (Array.isArray(parsed)) {
+              pluginManifest = parsed;
+            }
+          } catch {
+            pluginManifest = [];
+          }
+        }
+        pluginManifest = pluginManifest
+          .map(entry => {
+            if (!entry || typeof entry !== 'object') {
+              return null;
+            }
+            const id = typeof entry.id === 'string' ? entry.id.trim() : '';
+            if (!id) {
+              return null;
+            }
+            const name =
+              typeof entry.name === 'string' && entry.name.trim() ? entry.name.trim() : id;
+            const description =
+              typeof entry.description === 'string' && entry.description.trim()
+                ? entry.description.trim()
+                : '';
+            const events = Array.isArray(entry.events)
+              ? Array.from(
+                  new Set(
+                    entry.events
+                      .map(eventName =>
+                        typeof eventName === 'string' ? eventName.trim() : '',
+                      )
+                      .filter(Boolean),
+                  ),
+                )
+              : [];
+            const scriptUrl =
+              typeof entry.scriptUrl === 'string' && entry.scriptUrl.trim()
+                ? entry.scriptUrl.trim()
+                : '';
+            return { id, name, description, events, scriptUrl };
+          })
+          .filter(Boolean);
+        const pluginManifestById = new Map(pluginManifest.map(entry => [entry.id, entry]));
+        const pluginHost = (() => {
+          const existing = window.jobbotPluginHost;
+          if (existing && typeof existing === 'object') {
+            if (!Array.isArray(existing.queue)) {
+              existing.queue = [];
+            }
+            return existing;
+          }
+          const queue = [];
+          window.jobbotPluginHost = {
+            queue,
+            register(plugin) {
+              if (plugin) {
+                queue.push(plugin);
+              }
+            },
+          };
+          return window.jobbotPluginHost;
+        })();
+        if (!Array.isArray(pluginHost.queue)) {
+          pluginHost.queue = [];
+        }
+        const pluginQueue = pluginHost.queue;
+        const activatedPlugins = new Map();
+        const pluginReadyWaiters = [];
+        const pluginState = { ready: false };
+        let lastStatusPanelsDetail = null;
+        pluginHost.getManifest = () => pluginManifest.map(entry => ({ ...entry }));
+        pluginHost.manifest = pluginHost.getManifest();
+        pluginHost.whenReady =
+          typeof pluginHost.whenReady === 'function'
+            ? pluginHost.whenReady
+            : () =>
+                pluginState.ready
+                  ? Promise.resolve()
+                  : new Promise(resolve => {
+                      pluginReadyWaiters.push(resolve);
+                    });
+        pluginHost.register = plugin => {
+          if (!plugin || typeof plugin !== 'object') {
+            return;
+          }
+          if (pluginState.ready) {
+            activatePlugin(plugin);
+          } else {
+            pluginQueue.push(plugin);
+          }
+        };
 
         function normalizePanelId(value) {
           if (typeof value !== 'string') {
@@ -814,6 +1056,200 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           return Array.from(statusPanels.keys());
         }
 
+        function buildStatusPanelsDetail(detail) {
+          const panelsSource =
+            detail && Array.isArray(detail.panels) ? detail.panels : listStatusPanelIds();
+          const normalized = [];
+          for (const panelId of panelsSource) {
+            if (typeof panelId !== 'string') {
+              continue;
+            }
+            const trimmed = panelId.trim();
+            if (trimmed) {
+              normalized.push(trimmed);
+            }
+          }
+          return normalized;
+        }
+
+        function cloneManifestEntry(entry) {
+          return {
+            id: entry.id,
+            name: entry.name,
+            description: entry.description,
+            events: Array.isArray(entry.events) ? entry.events.slice() : [],
+            scriptUrl: entry.scriptUrl,
+          };
+        }
+
+        function createPluginLogger(entry) {
+          const prefix = '[jobbot:' + entry.id + ']';
+          return {
+            info: (...args) => console.info(prefix, ...args),
+            warn: (...args) => console.warn(prefix, ...args),
+            error: (...args) => console.error(prefix, ...args),
+          };
+        }
+
+        function createPluginContext(entry) {
+          const subscriptions = new Set();
+          const context = {
+            id: entry.id,
+            manifest: cloneManifestEntry(entry),
+            listPanels: listStatusPanelIds,
+            getPanelState,
+            setPanelState(panelId, state, options) {
+              return setPanelState(panelId, state, options);
+            },
+            on(eventName, handler) {
+              const name = typeof eventName === 'string' ? eventName.trim() : '';
+              if (!name || typeof handler !== 'function') {
+                return () => {};
+              }
+              const listener = event => {
+                handler(event.detail, event);
+              };
+              document.addEventListener(name, listener);
+              const subscription = { name, listener };
+              subscriptions.add(subscription);
+              return () => {
+                if (subscriptions.has(subscription)) {
+                  document.removeEventListener(name, listener);
+                  subscriptions.delete(subscription);
+                }
+              };
+            },
+            once(eventName, handler) {
+              const name = typeof eventName === 'string' ? eventName.trim() : '';
+              if (!name || typeof handler !== 'function') {
+                return () => {};
+              }
+              const listener = event => {
+                cleanup();
+                handler(event.detail, event);
+              };
+              const cleanup = () => {
+                document.removeEventListener(name, listener);
+              };
+              document.addEventListener(name, listener);
+              return cleanup;
+            },
+            emit(eventName, detail) {
+              dispatchDocumentEvent(eventName, detail);
+            },
+            invokeCommand(command, payload) {
+              return invokeCommand(command, payload);
+            },
+            navigate(route, options = {}) {
+              applyRoute(route, {
+                persist: options.persist !== false,
+                syncHash: options.syncHash !== false,
+              });
+            },
+            logger: createPluginLogger(entry),
+            dispose() {
+              for (const subscription of subscriptions) {
+                document.removeEventListener(subscription.name, subscription.listener);
+              }
+              subscriptions.clear();
+            },
+          };
+          return context;
+        }
+
+        function drainPluginQueue() {
+          if (!Array.isArray(pluginQueue)) {
+            return;
+          }
+          while (pluginQueue.length > 0) {
+            const registration = pluginQueue.shift();
+            activatePlugin(registration);
+          }
+        }
+
+        function resolvePluginReady() {
+          pluginState.ready = true;
+          drainPluginQueue();
+          while (pluginReadyWaiters.length > 0) {
+            const resolve = pluginReadyWaiters.shift();
+            try {
+              resolve();
+            } catch {
+              // Ignore waiter failures so plugin readiness does not break initialization.
+            }
+          }
+          dispatchDocumentEvent('jobbot:plugins-ready', {
+            manifest: pluginHost.getManifest(),
+          });
+          pluginHost.manifest = pluginHost.getManifest();
+        }
+
+        function activatePlugin(registration) {
+          if (!registration || typeof registration !== 'object') {
+            return;
+          }
+          const providedId = typeof registration.id === 'string' ? registration.id.trim() : '';
+          if (!providedId) {
+            return;
+          }
+          const manifestEntry = pluginManifestById.get(providedId);
+          if (!manifestEntry) {
+            const message =
+              '[jobbot] Plugin "' +
+              providedId +
+              '" is not declared in the manifest; skipping.';
+            console.warn(message);
+            return;
+          }
+          if (activatedPlugins.has(manifestEntry.id)) {
+            const duplicateMessage =
+              '[jobbot] Plugin "' +
+              manifestEntry.id +
+              '" already activated; skipping duplicate registration.';
+            console.warn(duplicateMessage);
+            return;
+          }
+          const activateFn =
+            typeof registration.activate === 'function'
+              ? registration.activate
+              : typeof registration.default === 'function'
+              ? registration.default
+              : null;
+          if (!activateFn) {
+            const missingActivateMessage =
+              '[jobbot] Plugin "' +
+              manifestEntry.id +
+              '" is missing an activate() function; skipping.';
+            console.warn(missingActivateMessage);
+            return;
+          }
+          try {
+            const context = createPluginContext(manifestEntry);
+            const result = activateFn(context);
+            const deactivate =
+              result && typeof result === 'object' && typeof result.deactivate === 'function'
+                ? result.deactivate
+                : null;
+            activatedPlugins.set(manifestEntry.id, { context, deactivate });
+            if (lastStatusPanelsDetail && Array.isArray(lastStatusPanelsDetail.panels)) {
+              const replay = () => {
+                dispatchStatusPanelsReady(lastStatusPanelsDetail);
+              };
+              if (typeof queueMicrotask === 'function') {
+                queueMicrotask(replay);
+              } else {
+                setTimeout(replay, 0);
+              }
+            }
+          } catch (error) {
+            const failureMessage =
+              '[jobbot] Plugin "' +
+              manifestEntry.id +
+              '" failed during activation';
+            console.error(failureMessage, error);
+          }
+        }
+
         function initializeStatusPanels() {
           statusPanels.clear();
           const panels = Array.from(document.querySelectorAll('[data-status-panel]'));
@@ -860,6 +1296,20 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             throw new Error(invalidResponse);
           }
           return data;
+        }
+
+        function invokeCommand(command, payload) {
+          if (typeof command !== 'string') {
+            throw new Error('command must be provided as a string');
+          }
+          const trimmed = command.trim();
+          if (!trimmed) {
+            throw new Error('command must be provided as a string');
+          }
+          return postCommand('/commands/' + trimmed, payload ?? {}, {
+            invalidResponse: 'Command "' + trimmed + '" returned an invalid response.',
+            failureMessage: 'Command "' + trimmed + '" failed.',
+          });
         }
 
         function setupShortlistView() {
@@ -3198,9 +3648,12 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           dispatchDocumentEvent('jobbot:router-ready');
         };
 
-        const dispatchStatusPanelsReady = () => {
-          const detail = { panels: listStatusPanelIds() };
-          dispatchDocumentEvent('jobbot:status-panels-ready', detail);
+        const dispatchStatusPanelsReady = detail => {
+          const panels = buildStatusPanelsDetail(detail);
+          lastStatusPanelsDetail = { panels: panels.slice() };
+          dispatchDocumentEvent('jobbot:status-panels-ready', {
+            panels: panels.slice(),
+          });
         };
 
         const notifyReady = () => {
@@ -3208,11 +3661,9 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           dispatchStatusPanelsReady();
         };
 
-        if (typeof queueMicrotask === 'function') {
-          queueMicrotask(notifyReady);
-        } else {
-          setTimeout(notifyReady, 0);
-        }
+        resolvePluginReady();
+
+        setTimeout(notifyReady, 0);
       })();`);
 
 
@@ -3515,6 +3966,8 @@ export function createWebApp({
     app.locals.features = features;
   }
 
+  const pluginAssets = createPluginAssets(app, features?.plugins);
+
   app.get('/assets/status-hub.js', (req, res) => {
     res.set('Content-Type', 'application/javascript; charset=utf-8');
     res.set('Cache-Control', 'no-store');
@@ -3548,6 +4001,19 @@ export function createWebApp({
     const operationsUrl = `${repoUrl}/blob/main/docs/web-operational-playbook.md`;
     const csrfHeaderAttr = escapeHtml(csrfOptions.headerName);
     const csrfTokenAttr = escapeHtml(csrfOptions.token);
+    const pluginManifestJson = serializeJsonForHtml(pluginAssets.manifest);
+    const pluginManifestScript =
+      '<script type="application/json" id="jobbot-plugin-manifest">' +
+      pluginManifestJson +
+      '</script>';
+    const pluginHostScript = `<script>${PLUGIN_HOST_STUB}</script>`;
+    const pluginScriptTags = pluginAssets.manifest
+      .map(entry => {
+        const idAttr = escapeHtml(entry.id);
+        const srcAttr = escapeHtml(entry.scriptUrl);
+        return `<script defer data-plugin-id="${idAttr}" src="${srcAttr}"></script>`;
+      })
+      .join('');
 
     res.set('Content-Type', 'text/html; charset=utf-8');
     const rawHtml = `<!doctype html>
@@ -4034,7 +4500,10 @@ export function createWebApp({
           <code>npm run lint</code> and <code>npm run test:ci</code> before shipping changes.
         </p>
     </footer>
+    ${pluginHostScript}
+    ${pluginManifestScript}
     <script src="/assets/status-hub.js" defer></script>
+    ${pluginScriptTags}
   </body>
 </html>`;
     res.send(compactHtml(rawHtml));
