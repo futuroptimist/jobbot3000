@@ -3,6 +3,14 @@ vi.mock('node:child_process', async () => {
   return { ...actual, spawn: vi.fn() };
 });
 
+vi.mock('../src/application-events.js', () => ({
+  getApplicationReminders: vi.fn(),
+}));
+
+vi.mock('../src/reminders-calendar.js', () => ({
+  createReminderCalendar: vi.fn(),
+}));
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -12,6 +20,8 @@ import { EventEmitter } from 'node:events';
 import * as childProcess from 'node:child_process';
 
 import { createCommandAdapter } from '../src/web/command-adapter.js';
+import { getApplicationReminders } from '../src/application-events.js';
+import { createReminderCalendar } from '../src/reminders-calendar.js';
 
 describe('createCommandAdapter', () => {
   let originalEnableNativeCli;
@@ -23,6 +33,8 @@ describe('createCommandAdapter', () => {
 
   afterEach(() => {
     childProcess.spawn.mockReset();
+    getApplicationReminders.mockReset();
+    createReminderCalendar.mockReset();
     if (originalEnableNativeCli === undefined) {
       delete process.env.JOBBOT_WEB_ENABLE_NATIVE_CLI;
     } else {
@@ -698,6 +710,101 @@ describe('createCommandAdapter', () => {
       },
     });
     expect(result.data.message).toContain('Recorded job-7 as offer');
+  });
+
+  it('returns reminder digests in json format with sections', async () => {
+    const reminders = [
+      {
+        job_id: 'job-1',
+        remind_at: '2025-03-01T09:00:00Z',
+        channel: 'email',
+        note: 'Follow up with recruiter',
+        contact: 'recruiter@example.com',
+      },
+      {
+        job_id: 'job-2',
+        remind_at: '2025-02-01T09:00:00Z',
+        past_due: true,
+        channel: 'phone',
+      },
+    ];
+    getApplicationReminders.mockResolvedValue(reminders);
+
+    const adapter = createCommandAdapter({ cli: {} });
+    const result = await adapter['track-reminders']({ format: 'json', upcomingOnly: true });
+
+    expect(getApplicationReminders).toHaveBeenCalledWith({ includePastDue: false });
+    expect(result).toMatchObject({
+      command: 'track-reminders',
+      format: 'json',
+    });
+    expect(result.data).toMatchObject({
+      upcomingOnly: true,
+      reminders: expect.any(Array),
+      sections: [
+        {
+          heading: 'Upcoming',
+          reminders: [
+            expect.objectContaining({
+              job_id: 'job-1',
+              channel: 'email',
+              contact: 'recruiter@example.com',
+            }),
+          ],
+        },
+      ],
+    });
+    expect(result.stdout).toContain('job-1');
+    expect(result.stdout).not.toContain('Past Due');
+  });
+
+  it('builds calendar exports for reminders when requested', async () => {
+    const reminders = [
+      {
+        job_id: 'job-1',
+        remind_at: '2025-03-01T09:00:00Z',
+      },
+      {
+        job_id: 'job-2',
+        remind_at: '2025-02-01T09:00:00Z',
+        past_due: true,
+      },
+    ];
+    getApplicationReminders.mockResolvedValue(reminders);
+    createReminderCalendar.mockReturnValue('BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n');
+
+    const adapter = createCommandAdapter({ cli: {} });
+    const result = await adapter['track-reminders']({
+      format: 'ics',
+      now: '2025-02-15T10:00:00Z',
+      calendarName: 'Follow-ups',
+    });
+
+    expect(getApplicationReminders).toHaveBeenCalledWith({
+      includePastDue: true,
+      now: '2025-02-15T10:00:00.000Z',
+    });
+    expect(createReminderCalendar).toHaveBeenCalledTimes(1);
+    const calendarArgs = createReminderCalendar.mock.calls[0];
+    expect(calendarArgs?.[0]).toEqual([expect.objectContaining({ job_id: 'job-1' })]);
+    expect(calendarArgs?.[1]).toMatchObject({
+      calendarName: 'Follow-ups',
+      now: '2025-02-15T10:00:00.000Z',
+    });
+    expect(result).toMatchObject({
+      command: 'track-reminders',
+      format: 'ics',
+      stdout: 'BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n',
+    });
+    expect(result.data).toMatchObject({
+      calendar: 'BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n',
+      filename: 'jobbot-reminders.ics',
+      calendarName: 'Follow-ups',
+      sections: [
+        expect.objectContaining({ heading: 'Past Due' }),
+        expect.objectContaining({ heading: 'Upcoming' }),
+      ],
+    });
   });
 
   it('spawns the CLI without shell interpolation when no cli module is provided', async () => {

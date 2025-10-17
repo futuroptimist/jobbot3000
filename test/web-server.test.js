@@ -488,6 +488,95 @@ describe('web server status page', () => {
     expect(range?.textContent).toContain('Showing 2-2 of 2');
   });
 
+  it('downloads reminder calendars from the applications view', async () => {
+    const commandAdapter = {
+      'shortlist-list': vi.fn(async () => ({
+        command: 'shortlist-list',
+        format: 'json',
+        stdout: '',
+        stderr: '',
+        data: {
+          total: 0,
+          offset: 0,
+          limit: 10,
+          filters: {},
+          items: [],
+          hasMore: false,
+        },
+      })),
+      'track-reminders': vi.fn(async payload => {
+        expect(payload).toMatchObject({ format: 'ics', upcomingOnly: true });
+        return {
+          command: 'track-reminders',
+          format: 'ics',
+          stdout: 'BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n',
+          stderr: '',
+          returnValue: 0,
+          data: {
+            calendar: 'BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n',
+            filename: 'jobbot-reminders.ics',
+            reminders: [],
+            sections: [
+              { heading: 'Upcoming', reminders: [] },
+            ],
+            upcomingOnly: true,
+          },
+        };
+      }),
+    };
+    commandAdapter.shortlistList = commandAdapter['shortlist-list'];
+    commandAdapter.trackReminders = commandAdapter['track-reminders'];
+
+    const server = await startServer({ commandAdapter });
+    const { dom, boot } = await renderStatusDom(server, {
+      pretendToBeVisual: true,
+      autoBoot: false,
+    });
+
+    const waitForEvent = (name, timeout = 500) => waitForDomEvent(dom, name, timeout);
+
+    const readyPromise = waitForEvent('jobbot:applications-ready');
+    await boot();
+    await readyPromise;
+
+    const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
+    dom.window.location.hash = '#applications';
+    dom.window.dispatchEvent(new HashChange('hashchange'));
+
+    await waitForEvent('jobbot:applications-loaded');
+
+    const { URL } = dom.window;
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    URL.createObjectURL = vi.fn(() => 'blob:reminders');
+    URL.revokeObjectURL = vi.fn();
+    const anchorClick = vi
+      .spyOn(dom.window.HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {});
+
+    const button = dom.window.document.querySelector('[data-reminders-export]');
+    const message = dom.window.document.querySelector('[data-reminders-message]');
+
+    button?.dispatchEvent(
+      new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }),
+    );
+
+    const exportEvent = await waitForEvent('jobbot:reminders-exported');
+
+    expect(commandAdapter['track-reminders']).toHaveBeenCalledTimes(1);
+    expect(exportEvent.detail).toMatchObject({ success: true, format: 'ics' });
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+    const blob = URL.createObjectURL.mock.calls[0]?.[0];
+    expect(blob).toBeInstanceOf(dom.window.Blob);
+    expect(blob.type).toBe('text/calendar');
+    expect(anchorClick).toHaveBeenCalledTimes(1);
+    expect(message?.textContent).toContain('jobbot-reminders.ics');
+
+    URL.createObjectURL = originalCreateObjectURL;
+    URL.revokeObjectURL = originalRevokeObjectURL;
+    anchorClick.mockRestore();
+  });
+
   it('loads provider listings and supports ingesting and archiving roles', async () => {
     const providers = [
       {

@@ -701,6 +701,34 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
   .analytics-actions__message[data-variant='error'] {
     color: var(--danger-text);
   }
+  .reminders-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 1rem 0;
+  }
+  .reminders-actions button {
+    border-radius: 999px;
+    border: 1px solid var(--pill-border);
+    background-color: var(--pill-bg);
+    color: var(--pill-text);
+    padding: 0.4rem 1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .reminders-actions button[disabled] {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  .reminders-actions__message {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+  .reminders-actions__message[data-variant='error'] {
+    color: var(--danger-text);
+  }
   .status-panel__empty {
     color: var(--muted);
   }
@@ -1267,6 +1295,35 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           return new URL(pathname, window.location.href);
         }
 
+        function downloadFile(contents, { filename, type }) {
+          if (!window || typeof window !== 'object') {
+            throw new Error('Browser environment is required for downloads');
+          }
+          if (
+            typeof Blob !== 'function' ||
+            !window.URL ||
+            typeof window.URL.createObjectURL !== 'function'
+          ) {
+            throw new Error('File downloads are not supported in this environment');
+          }
+          const blob = new Blob([contents], { type });
+          const url = window.URL.createObjectURL(blob);
+          try {
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          } finally {
+            if (typeof window.URL.revokeObjectURL === 'function') {
+              window.URL.revokeObjectURL(url);
+            }
+          }
+          return blob;
+        }
+
         async function postCommand(pathname, payload, { invalidResponse, failureMessage }) {
           if (typeof fetch !== 'function') {
             throw new Error('Fetch API is unavailable in this environment');
@@ -1327,6 +1384,8 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             limit: form?.querySelector('[data-shortlist-filter="limit"]') ?? null,
           };
           const resetButton = section.querySelector('[data-shortlist-reset]');
+          const remindersButton = section.querySelector('[data-reminders-export]');
+          const remindersMessage = section.querySelector('[data-reminders-message]');
           const table = section.querySelector('[data-shortlist-table]');
           const tbody = section.querySelector('[data-shortlist-body]');
           const emptyState = section.querySelector('[data-shortlist-empty]');
@@ -1371,6 +1430,7 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             };
           })();
           const actionState = { jobId: null, submitting: false, enabled: false };
+          const remindersState = { running: false };
 
           function formatStatusLabelText(value) {
             return (value || '')
@@ -1399,6 +1459,65 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             if (actionElements.note) actionElements.note.value = '';
             if (!options.preserveMessage) {
               setActionMessage(null);
+            }
+          }
+
+          function setRemindersMessage(variant, text) {
+            if (!remindersMessage) return;
+            const messageText = typeof text === 'string' ? text.trim() : '';
+            if (!variant || !messageText) {
+              remindersMessage.textContent = '';
+              remindersMessage.setAttribute('hidden', '');
+              remindersMessage.removeAttribute('data-variant');
+              return;
+            }
+            remindersMessage.textContent = messageText;
+            remindersMessage.setAttribute('data-variant', variant);
+            remindersMessage.removeAttribute('hidden');
+          }
+
+          async function exportRemindersCalendar() {
+            if (remindersState.running || !remindersButton) {
+              return false;
+            }
+            remindersState.running = true;
+            remindersButton.disabled = true;
+            remindersButton.setAttribute('aria-busy', 'true');
+            setRemindersMessage('info', 'Preparing reminder calendar…');
+
+            try {
+              const data = await postCommand(
+                '/commands/track-reminders',
+                { format: 'ics', upcomingOnly: true },
+                {
+                  invalidResponse: 'Received invalid response while exporting reminders',
+                  failureMessage: 'Failed to export reminders',
+                },
+              );
+              const calendar = typeof data?.calendar === 'string' ? data.calendar : '';
+              if (!calendar) {
+                throw new Error('Reminder calendar export did not include calendar data');
+              }
+              const filename =
+                typeof data?.filename === 'string' && data.filename.trim()
+                  ? data.filename.trim()
+                  : 'jobbot-reminders.ics';
+              downloadFile(calendar, { filename, type: 'text/calendar' });
+              setRemindersMessage('info', 'Download ready: ' + filename);
+              dispatchRemindersExported({ success: true, format: 'ics', filename });
+              return true;
+            } catch (error) {
+              const message =
+                error && typeof error.message === 'string'
+                  ? error.message
+                  : 'Failed to export reminders';
+              setRemindersMessage('error', message);
+              dispatchRemindersExported({ success: false, format: 'ics', error: message });
+              return false;
+            } finally {
+              remindersState.running = false;
+              remindersButton.disabled = false;
+              remindersButton.removeAttribute('aria-busy');
             }
           }
 
@@ -2118,6 +2237,11 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
                 useForm: false,
                 resetOffset: true,
               });
+            });
+
+            remindersButton?.addEventListener('click', event => {
+              event.preventDefault();
+              exportRemindersCalendar();
             });
 
           actionElements?.clear?.addEventListener('click', () => {
@@ -2906,35 +3030,6 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             return lines.join('\\n') + '\\n';
           }
 
-          function downloadFile(contents, { filename, type }) {
-            if (!window || typeof window !== 'object') {
-              throw new Error('Browser environment is required for downloads');
-            }
-            if (
-              typeof Blob !== 'function' ||
-              !window.URL ||
-              typeof window.URL.createObjectURL !== 'function'
-            ) {
-              throw new Error('File downloads are not supported in this environment');
-            }
-            const blob = new Blob([contents], { type });
-            const url = window.URL.createObjectURL(blob);
-            try {
-              const link = document.createElement('a');
-              link.href = url;
-              link.download = filename;
-              link.style.display = 'none';
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-            } finally {
-              if (typeof window.URL.revokeObjectURL === 'function') {
-                window.URL.revokeObjectURL(url);
-              }
-            }
-            return blob;
-          }
-
           function formatConversion(rate) {
             if (!Number.isFinite(rate)) {
               return 'n/a';
@@ -3618,6 +3713,10 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           dispatchDocumentEvent('jobbot:analytics-exported', detail);
         }
 
+        function dispatchRemindersExported(detail = {}) {
+          dispatchDocumentEvent('jobbot:reminders-exported', detail);
+        }
+
         function dispatchApplicationDetailLoaded(detail = {}) {
           const jobId =
             typeof detail?.job_id === 'string' && detail.job_id.trim()
@@ -4149,6 +4248,10 @@ export function createWebApp({
             <button type="button" data-shortlist-reset data-variant="ghost">Reset</button>
           </div>
         </form>
+        <div class="reminders-actions">
+          <button type="button" data-reminders-export>Calendar Sync</button>
+          <p class="reminders-actions__message" data-reminders-message hidden></p>
+        </div>
         <div
           class="status-panel"
           data-status-panel="applications"

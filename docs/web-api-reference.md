@@ -69,6 +69,8 @@ The following command endpoints are available. Each one maps directly to a CLI h
   attachments for a tracked application.
 - `POST /commands/track-record` → `jobbot track record`: Record or update an application status with
   an optional note.
+- `POST /commands/track-reminders` → `jobbot track reminders`: Retrieve reminder digests or export an
+  ICS calendar by toggling the `format` field (`json` or `ics`).
 - `POST /commands/analytics-funnel` → `jobbot analytics funnel`: Produce funnel metrics, conversion
   rates, and drop-off highlights.
 - `POST /commands/analytics-export` → `jobbot analytics export`: Generate JSON and CSV exports while
