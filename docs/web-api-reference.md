@@ -82,6 +82,12 @@ The following command endpoints are available. Each one maps directly to a CLI h
 - `POST /commands/listings-providers` → `jobbot listings providers`: Return the supported provider
   identifiers and human-friendly labels.
 
+CLI users can invoke the same workflows via `jobbot listings <providers|fetch|ingest|archive>`.
+Each subcommand supports `--json` output for automation, and text summaries mirror the web
+interface. Regression coverage in [`test/cli-listings.test.js`](../test/cli-listings.test.js)
+ensures the CLI wrappers forward filters to `src/listings.js` while producing readable summaries and
+JSON payloads for downstream tooling.
+
 ### Error responses
 
 The adapter redacts secret-like values from error payloads. Expect the following shapes:

@@ -87,6 +87,12 @@ import {
   sendWeeklySummaryNotification,
   subscribeWeeklySummary,
 } from '../src/notifications.js';
+import {
+  listListingProviders,
+  fetchListings,
+  ingestListing,
+  archiveListing,
+} from '../src/listings.js';
 
 function isHttpUrl(s) {
   return /^https?:\/\//i.test(s);
@@ -2112,6 +2118,260 @@ async function cmdShortlist(args) {
   process.exit(2);
 }
 
+function trimListingField(value) {
+  if (value == null) return '';
+  if (typeof value === 'string') return value.trim();
+  return String(value).trim();
+}
+
+function formatListingsProviders(providers) {
+  if (!Array.isArray(providers) || providers.length === 0) {
+    return 'No listings providers configured.';
+  }
+  const lines = ['Available listings providers:'];
+  for (const provider of providers) {
+    const id = trimListingField(provider?.id) || 'unknown';
+    const label = trimListingField(provider?.label);
+    lines.push(label ? `- ${id} — ${label}` : `- ${id}`);
+    const identifierLabel = trimListingField(provider?.identifierLabel);
+    const requires = provider?.requiresIdentifier === false ? 'optional' : 'required';
+    if (identifierLabel || provider?.requiresIdentifier !== undefined) {
+      const placeholder = trimListingField(provider?.placeholder);
+      const placeholderSuffix = placeholder ? ` (e.g. ${placeholder})` : '';
+      const displayLabel = identifierLabel || 'Identifier';
+      lines.push(`  Identifier: ${displayLabel} (${requires})${placeholderSuffix}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+function formatListingDetails(listing) {
+  const details = [];
+  const location = trimListingField(listing?.location);
+  if (location) details.push(location);
+  if (listing?.remote === true) details.push('Remote');
+  else if (listing?.remote === false) details.push('Onsite');
+  const compensation = trimListingField(listing?.compensation);
+  if (compensation) details.push(compensation);
+  const team = trimListingField(listing?.team);
+  if (team) details.push(team);
+  return details.length > 0 ? `Details: ${details.join(' · ')}` : '';
+}
+
+function formatListingRequirements(listing) {
+  if (!Array.isArray(listing?.requirements)) return '';
+  const requirements = listing.requirements
+    .map(entry => trimListingField(entry))
+    .filter(Boolean)
+    .slice(0, 3)
+    .join('; ');
+  return requirements ? `Requirements: ${requirements}` : '';
+}
+
+function formatListingStatusFlags(listing) {
+  const flags = [];
+  if (listing?.ingested) flags.push('ingested');
+  if (listing?.archived) flags.push('archived');
+  return flags.length > 0 ? `Status: ${flags.join(', ')}` : '';
+}
+
+function formatListingSummaryLine(listing) {
+  const jobId = trimListingField(listing?.jobId) || 'unknown';
+  const title = trimListingField(listing?.title) || 'Untitled role';
+  const company = trimListingField(listing?.company);
+  const headline = company ? `${title} @ ${company}` : title;
+  const lines = [`- ${jobId} · ${headline}`];
+  const details = formatListingDetails(listing);
+  if (details) lines.push(`  ${details}`);
+  const status = formatListingStatusFlags(listing);
+  if (status) lines.push(`  ${status}`);
+  const url = trimListingField(listing?.url);
+  if (url) lines.push(`  ${url}`);
+  const requirements = formatListingRequirements(listing);
+  if (requirements) lines.push(`  ${requirements}`);
+  return lines.join('\n');
+}
+
+function formatListingsResult(result) {
+  const provider = trimListingField(result?.provider) || 'unknown';
+  const identifier = trimListingField(result?.identifier);
+  const headerParts = [`Listings for ${provider}${identifier ? `/${identifier}` : ''}`];
+  if (Number.isFinite(result?.total)) headerParts.push(`Total: ${result.total}`);
+  const fetchedAt = trimListingField(result?.fetched_at);
+  if (fetchedAt) headerParts.push(`Fetched at ${fetchedAt}`);
+  const lines = [headerParts.join(' — ')];
+  const listings = Array.isArray(result?.listings) ? result.listings : [];
+  if (listings.length === 0) {
+    lines.push('No listings matched the provided filters.');
+    return lines.join('\n');
+  }
+  for (const listing of listings) {
+    lines.push(formatListingSummaryLine(listing));
+  }
+  return lines.join('\n');
+}
+
+function formatListingsIngestResult(result) {
+  const jobId = trimListingField(result?.jobId) || 'unknown';
+  const listing = result?.listing ?? {};
+  const title = trimListingField(listing?.title);
+  const company = trimListingField(listing?.company);
+  const provider = trimListingField(listing?.provider);
+  const identifier = trimListingField(listing?.identifier);
+  const descriptor = [title, company].filter(Boolean).join(' @ ');
+  const providerLabel = provider ? (identifier ? `${provider}/${identifier}` : provider) : '';
+  const parts = [`Ingested ${jobId}`];
+  if (descriptor) parts.push(`(${descriptor})`);
+  if (providerLabel) parts.push(`from ${providerLabel}`);
+  return parts.join(' ');
+}
+
+function formatListingsArchiveResult(result) {
+  const jobId = trimListingField(result?.jobId) || 'unknown';
+  const reason = trimListingField(result?.reason) || 'Archived listing';
+  const archivedAt = trimListingField(result?.archived_at);
+  const timestamp = archivedAt ? ` at ${archivedAt}` : '';
+  return `Archived ${jobId} (${reason})${timestamp}`;
+}
+
+export async function cmdListingsProviders(args = []) {
+  const asJson = args.includes('--json');
+  const providers = listListingProviders();
+  if (asJson) {
+    console.log(JSON.stringify({ providers }, null, 2));
+    return;
+  }
+  console.log(formatListingsProviders(providers));
+}
+
+export async function cmdListingsFetch(args = []) {
+  const usage =
+    'Usage: jobbot listings fetch --provider <id> [--identifier <value>] [--location <value>]\n' +
+    '       [--title <value>] [--team <value>] [--department <value>] [--remote <bool>]\n' +
+    '       [--limit <n>] [--json]';
+  assertFlagHasValue(args, '--provider', usage);
+  assertFlagHasValue(args, '--identifier', usage);
+  assertFlagHasValue(args, '--location', usage);
+  assertFlagHasValue(args, '--title', usage);
+  assertFlagHasValue(args, '--team', usage);
+  assertFlagHasValue(args, '--department', usage);
+  assertFlagHasValue(args, '--remote', usage);
+  assertFlagHasValue(args, '--limit', usage);
+  const asJson = args.includes('--json');
+  const filtered = args.filter(arg => arg !== '--json');
+  const provider = trimListingField(getFlag(filtered, '--provider'));
+  if (!provider) {
+    console.error(usage);
+    process.exit(2);
+  }
+  const providerKey = provider.toLowerCase();
+  const identifier = trimListingField(getFlag(filtered, '--identifier'));
+  if (!identifier && providerKey !== 'all') {
+    console.error(usage);
+    process.exit(2);
+  }
+  const options = {
+    provider,
+    identifier: identifier || undefined,
+    location: getFlag(filtered, '--location'),
+    title: getFlag(filtered, '--title'),
+    team: getFlag(filtered, '--team'),
+    department: getFlag(filtered, '--department'),
+    remote: getFlag(filtered, '--remote'),
+  };
+  const limit = getNumberFlag(filtered, '--limit');
+  if (Number.isFinite(limit) && limit > 0) options.limit = limit;
+
+  let result;
+  try {
+    result = await fetchListings(options);
+  } catch (err) {
+    console.error(err?.message || String(err));
+    process.exit(1);
+  }
+
+  if (asJson) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  console.log(formatListingsResult(result));
+}
+
+export async function cmdListingsIngest(args = []) {
+  const usage =
+    'Usage: jobbot listings ingest <job_id> --provider <id> --identifier <value> [--json]';
+  const asJson = args.includes('--json');
+  const filtered = args.filter(arg => arg !== '--json');
+  const jobId = filtered[0];
+  if (!jobId) {
+    console.error(usage);
+    process.exit(2);
+  }
+  assertFlagHasValue(filtered, '--provider', usage);
+  assertFlagHasValue(filtered, '--identifier', usage);
+  const provider = trimListingField(getFlag(filtered, '--provider'));
+  const identifier = trimListingField(getFlag(filtered, '--identifier'));
+  if (!provider || !identifier) {
+    console.error(usage);
+    process.exit(2);
+  }
+  if (provider.toLowerCase() === 'all') {
+    console.error('Aggregate provider cannot ingest listings directly. Specify a vendor provider.');
+    process.exit(2);
+  }
+
+  let result;
+  try {
+    result = await ingestListing({ provider, identifier, jobId });
+  } catch (err) {
+    console.error(err?.message || String(err));
+    process.exit(1);
+  }
+
+  if (asJson) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  console.log(formatListingsIngestResult(result));
+}
+
+export async function cmdListingsArchive(args = []) {
+  const usage = 'Usage: jobbot listings archive <job_id> [--reason <text>] [--json]';
+  const asJson = args.includes('--json');
+  const filtered = args.filter(arg => arg !== '--json');
+  const jobId = filtered[0];
+  if (!jobId) {
+    console.error(usage);
+    process.exit(2);
+  }
+  assertFlagHasValue(filtered, '--reason', usage);
+  const reason = getFlag(filtered, '--reason');
+
+  let result;
+  try {
+    result = await archiveListing({ jobId, reason });
+  } catch (err) {
+    console.error(err?.message || String(err));
+    process.exit(1);
+  }
+
+  if (asJson) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  console.log(formatListingsArchiveResult(result));
+}
+
+async function cmdListings(args) {
+  const sub = args[0];
+  if (sub === 'providers') return cmdListingsProviders(args.slice(1));
+  if (sub === 'fetch') return cmdListingsFetch(args.slice(1));
+  if (sub === 'ingest') return cmdListingsIngest(args.slice(1));
+  if (sub === 'archive') return cmdListingsArchive(args.slice(1));
+  console.error('Usage: jobbot listings <providers|fetch|ingest|archive> ...');
+  process.exit(2);
+}
+
 const NUMBER_FORMATTERS = new Map();
 
 function formatNumber(value, decimals) {
@@ -3299,13 +3559,15 @@ async function main() {
   if (cmd === 'deliverables') return cmdDeliverables(args);
   if (cmd === 'import') return cmdImport(args);
   if (cmd === 'intake') return cmdIntake(args);
+  if (cmd === 'listings') return cmdListings(args);
   if (cmd === 'ingest') return cmdIngest(args);
   if (cmd === 'interviews') return cmdInterviews(args);
   if (cmd === 'schedule') return cmdSchedule(args);
   if (cmd === 'notifications') return cmdNotifications(args);
   console.error(
     'Usage: jobbot <init|profile|import|summarize|match|track|shortlist|analytics|' +
-      'rehearse|tailor|deliverables|interviews|intake|ingest|schedule|notifications> [options]'
+      'rehearse|tailor|deliverables|interviews|intake|listings|' +
+      'ingest|schedule|notifications> [options]'
   );
   process.exit(2);
 }
