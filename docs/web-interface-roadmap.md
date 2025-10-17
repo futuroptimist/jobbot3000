@@ -332,7 +332,20 @@
   duplicate markup and styles.
 
 6. **Hardening and Packaging**
+> [!NOTE]
+> **Backlog inventory (2025-10-18):** This section's outstanding future-work items
+> included per-client input sanitization for CLI payloads alongside previously
+> shipped rate limiting and CSRF guards. Larger roadmap items—such as multi-user
+> access controls and real-time collaboration from the "Future Enhancements"
+> section—remain multi-PR efforts, so the sanitization work was prioritized here
+> as an actionable single-PR change.
+
    - Implement rate limiting, input sanitization, and CSRF tokens.
+     _Implemented (2025-10-18):_ `validateCommandPayload` now strips control
+     characters from every string field before invoking CLI adapters. The
+     regression coverage in [`test/web-server.test.js`](../test/web-server.test.js)
+     asserts that control characters are removed while preserving intentional
+     newlines, keeping the promise of input sanitization intact.
    - Add configuration for local, staging, and production environments.
      _Implemented (2025-10-02):_ [`src/web/config.js`](../src/web/config.js)
      centralizes environment presets (development/staging/production) and

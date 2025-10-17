@@ -25,6 +25,7 @@ discoverable.
 | --- | --- | --- |
 | Rate limiting | `createInMemoryRateLimiter` in [`src/web/server.js`](../src/web/server.js) | Defaults to 30 requests/min per client. Tune via `startWebServer({ rateLimit })` or `JOBBOT_WEB_RATE_LIMIT_*` env vars. |
 | CSRF protection | `normalizeCsrfOptions` in [`src/web/server.js`](../src/web/server.js) | Start the server with `csrfToken` (or env vars). Clients must send the matching header on every POST. |
+| Input sanitization | `validateCommandPayload` in [`src/web/command-registry.js`](../src/web/command-registry.js) | Control characters are stripped from string fields before invoking CLI adapters, keeping payloads safe. |
 | Authentication | `normalizeAuthOptions` in [`src/web/server.js`](../src/web/server.js) | Provide tokens or header overrides to require API keys. 401 responses include `WWW-Authenticate` when schemes are enforced. |
 | Output sanitization | [`src/web/command-adapter.js`](../src/web/command-adapter.js) | Redacts secret-like tokens from stdout/stderr/data payloads before returning to clients. |
 

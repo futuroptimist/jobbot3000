@@ -66,6 +66,30 @@ const LISTINGS_FETCH_ALLOWED_FIELDS = new Set([
 const LISTINGS_INGEST_ALLOWED_FIELDS = new Set(['provider', 'identifier', 'jobId', 'job_id']);
 const LISTINGS_ARCHIVE_ALLOWED_FIELDS = new Set(['jobId', 'job_id', 'reason']);
 
+function stripUnsafeCharacters(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  let mutated = false;
+  let sanitized = '';
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    const code = value.charCodeAt(index);
+    const isControl =
+      (code >= 0x00 && code <= 0x08) ||
+      code === 0x0b ||
+      code === 0x0c ||
+      (code >= 0x0e && code <= 0x1f) ||
+      code === 0x7f;
+    if (isControl) {
+      mutated = true;
+      continue;
+    }
+    sanitized += character;
+  }
+  return mutated ? sanitized : value;
+}
+
 function ensurePlainObject(value, commandName) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error(`${commandName} payload must be a JSON object`);
@@ -82,6 +106,15 @@ function assertAllowedFields(payload, allowedFields, commandName) {
 }
 
 function coerceString(value, { name, required = false }) {
+  const normalize = raw => {
+    const sanitized = stripUnsafeCharacters(raw);
+    const trimmed = sanitized.trim();
+    if (required && !trimmed) {
+      throw new Error(`${name} cannot be empty`);
+    }
+    return trimmed || undefined;
+  };
+
   if (value == null) {
     if (required) {
       throw new Error(`${name} is required`);
@@ -90,19 +123,11 @@ function coerceString(value, { name, required = false }) {
   }
 
   if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (required && !trimmed) {
-      throw new Error(`${name} cannot be empty`);
-    }
-    return trimmed || undefined;
+    return normalize(value);
   }
 
   if (typeof value === 'number' || typeof value === 'boolean') {
-    const str = String(value).trim();
-    if (required && !str) {
-      throw new Error(`${name} cannot be empty`);
-    }
-    return str || undefined;
+    return normalize(String(value));
   }
 
   throw new Error(`${name} must be a string`);

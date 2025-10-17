@@ -2106,6 +2106,31 @@ describe('web server command endpoint', () => {
     expect(entry.stderrLength).toBe(4);
   });
 
+  it('sanitizes command payload strings before invoking the adapter', async () => {
+    const dirtyInput = '  Senior engineer\u0000\nnotes\u0007 ';
+    const dirtyLocale = '\u0007 en-US \u0000';
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({ ok: true })),
+    };
+
+    const server = await startServer({ commandAdapter });
+
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: 'POST',
+      headers: buildCommandHeaders(server),
+      body: JSON.stringify({ input: dirtyInput, locale: dirtyLocale }),
+    });
+
+    expect(response.status).toBe(200);
+    await response.json();
+
+    expect(commandAdapter.summarize).toHaveBeenCalledTimes(1);
+    expect(commandAdapter.summarize).toHaveBeenCalledWith({
+      input: 'Senior engineer\nnotes',
+      locale: 'en-US',
+    });
+  });
+
   it('rate limits repeated command requests per client', async () => {
     const commandAdapter = {
       summarize: vi.fn(async () => ({ ok: true })),
