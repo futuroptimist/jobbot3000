@@ -17,6 +17,8 @@ npm run dev
 # Open http://127.0.0.1:3100
 ```
 
+That's it! The web server will start with all backend functionality enabled.
+
 For detailed setup, CLI usage, and environment options, see [docs/getting-started.md](docs/getting-started.md).
 
 ## HTTP client example
