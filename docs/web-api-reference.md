@@ -24,12 +24,12 @@ The web server listens on the host/port returned by
 
 All command responses include rate-limit headers:
 
-| Header | Description |
-| ------ | ----------- |
-| `X-RateLimit-Limit` | Maximum number of requests per window. |
-| `X-RateLimit-Remaining` | Requests left in the current window. |
-| `X-RateLimit-Reset` | UTC timestamp when the window resets. |
-| `Retry-After` | Seconds until retry (present on 429 responses). |
+| Header                  | Description                                     |
+| ----------------------- | ----------------------------------------------- |
+| `X-RateLimit-Limit`     | Maximum number of requests per window.          |
+| `X-RateLimit-Remaining` | Requests left in the current window.            |
+| `X-RateLimit-Reset`     | UTC timestamp when the window resets.           |
+| `Retry-After`           | Seconds until retry (present on 429 responses). |
 
 ## Endpoints
 
@@ -93,6 +93,39 @@ Each subcommand supports `--json` output for automation, and text summaries mirr
 interface. Regression coverage in [`test/cli-listings.test.js`](../test/cli-listings.test.js)
 ensures the CLI wrappers forward filters to `src/listings.js` while producing readable summaries and
 JSON payloads for downstream tooling.
+
+### GET /events (WebSocket)
+
+Establishes a WebSocket subscription that streams sanitized command lifecycle events to
+collaborating clients. The handshake reuses the same authentication header configured for HTTP
+requests. Viewer roles are required to subscribe. When tokens require a scheme (for example,
+`Authorization: Bearer <token>`), the same scheme must be supplied during the WebSocket upgrade
+request. Missing or invalid credentials receive 401 or 403 handshake responses.
+
+Each message is a JSON object with the following shape:
+
+```jsonc
+{
+  "type": "command",
+  "command": "track-show",
+  "status": "success",
+  "timestamp": "2025-10-19T04:00:00.000Z",
+  "durationMs": 152.331,
+  "payloadFields": ["jobId"],
+  "actor": "token#1",
+  "roles": ["viewer"],
+  "result": {
+    "command": "track-show",
+    "format": "json",
+    "stdout": "{\"jobId\":\"abc123\"}",
+    "data": { "jobId": "abc123", "status": "applied" },
+  },
+}
+```
+
+Error events reuse the same envelope with `status: "error"` and a sanitized `result.error` message.
+Regression coverage in [`test/web-server-realtime.test.js`](../test/web-server-realtime.test.js)
+ensures authenticated subscribers receive broadcast updates while unauthorized upgrades are rejected.
 
 ### Error responses
 
