@@ -2237,6 +2237,9 @@ async function cmdAnalyticsCompensation(args) {
 }
 
 async function cmdAnalyticsActivity(args) {
+  const usage = 'Usage: jobbot analytics activity [--out <file>]';
+  assertFlagHasValue(args, '--out', usage);
+
   const output = getFlag(args, '--out');
   const summary = await computeActivitySummary();
   const payload = `${JSON.stringify(summary, null, 2)}\n`;
