@@ -488,6 +488,95 @@ describe('web server status page', () => {
     expect(range?.textContent).toContain('Showing 2-2 of 2');
   });
 
+  it('downloads reminder calendars from the applications view', async () => {
+    const commandAdapter = {
+      'shortlist-list': vi.fn(async () => ({
+        command: 'shortlist-list',
+        format: 'json',
+        stdout: '',
+        stderr: '',
+        data: {
+          total: 0,
+          offset: 0,
+          limit: 10,
+          filters: {},
+          items: [],
+          hasMore: false,
+        },
+      })),
+      'track-reminders': vi.fn(async payload => {
+        expect(payload).toMatchObject({ format: 'ics', upcomingOnly: true });
+        return {
+          command: 'track-reminders',
+          format: 'ics',
+          stdout: 'BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n',
+          stderr: '',
+          returnValue: 0,
+          data: {
+            calendar: 'BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n',
+            filename: 'jobbot-reminders.ics',
+            reminders: [],
+            sections: [
+              { heading: 'Upcoming', reminders: [] },
+            ],
+            upcomingOnly: true,
+          },
+        };
+      }),
+    };
+    commandAdapter.shortlistList = commandAdapter['shortlist-list'];
+    commandAdapter.trackReminders = commandAdapter['track-reminders'];
+
+    const server = await startServer({ commandAdapter });
+    const { dom, boot } = await renderStatusDom(server, {
+      pretendToBeVisual: true,
+      autoBoot: false,
+    });
+
+    const waitForEvent = (name, timeout = 500) => waitForDomEvent(dom, name, timeout);
+
+    const readyPromise = waitForEvent('jobbot:applications-ready');
+    await boot();
+    await readyPromise;
+
+    const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
+    dom.window.location.hash = '#applications';
+    dom.window.dispatchEvent(new HashChange('hashchange'));
+
+    await waitForEvent('jobbot:applications-loaded');
+
+    const { URL } = dom.window;
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    URL.createObjectURL = vi.fn(() => 'blob:reminders');
+    URL.revokeObjectURL = vi.fn();
+    const anchorClick = vi
+      .spyOn(dom.window.HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {});
+
+    const button = dom.window.document.querySelector('[data-reminders-export]');
+    const message = dom.window.document.querySelector('[data-reminders-message]');
+
+    button?.dispatchEvent(
+      new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }),
+    );
+
+    const exportEvent = await waitForEvent('jobbot:reminders-exported');
+
+    expect(commandAdapter['track-reminders']).toHaveBeenCalledTimes(1);
+    expect(exportEvent.detail).toMatchObject({ success: true, format: 'ics' });
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+    const blob = URL.createObjectURL.mock.calls[0]?.[0];
+    expect(blob).toBeInstanceOf(dom.window.Blob);
+    expect(blob.type).toBe('text/calendar');
+    expect(anchorClick).toHaveBeenCalledTimes(1);
+    expect(message?.textContent).toContain('jobbot-reminders.ics');
+
+    URL.createObjectURL = originalCreateObjectURL;
+    URL.revokeObjectURL = originalRevokeObjectURL;
+    anchorClick.mockRestore();
+  });
+
   it('loads provider listings and supports ingesting and archiving roles', async () => {
     const providers = [
       {
@@ -2007,6 +2096,110 @@ describe('web server command endpoint', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
     expect(commandAdapter.summarize).toHaveBeenCalledTimes(1);
+  });
+
+  it('enforces role-based access control for configured tokens', async () => {
+    const auditEvents = [];
+    const auditLogger = {
+      record: vi.fn(async event => {
+        auditEvents.push(event);
+      }),
+    };
+    const commandAdapter = {
+      'shortlist-list': vi.fn(async () => ({
+        data: {
+          items: [],
+          page: { limit: 25, hasMore: false },
+        },
+      })),
+      'track-record': vi.fn(async () => ({ ok: true })),
+    };
+
+    const server = await startServer({
+      commandAdapter,
+      auditLogger,
+      auth: {
+        tokens: [
+          { token: 'viewer-token', subject: 'viewer@example.com', roles: ['viewer'] },
+          { token: 'editor-token', subject: 'editor@example.com', roles: ['editor'] },
+        ],
+      },
+    });
+
+    const viewerHeaders = buildCommandHeaders(server, {
+      authorization: 'Bearer viewer-token',
+    });
+    const viewerList = await fetch(`${server.url}/commands/shortlist-list`, {
+      method: 'POST',
+      headers: viewerHeaders,
+      body: JSON.stringify({}),
+    });
+    expect(viewerList.status).toBe(200);
+    await viewerList.json();
+
+    const viewerTrack = await fetch(`${server.url}/commands/track-record`, {
+      method: 'POST',
+      headers: viewerHeaders,
+      body: JSON.stringify({ jobId: 'job-123', status: 'screening' }),
+    });
+    expect(viewerTrack.status).toBe(403);
+    expect(await viewerTrack.json()).toMatchObject({
+      error: expect.stringMatching(/permission/i),
+    });
+    expect(commandAdapter['track-record']).not.toHaveBeenCalled();
+
+    const editorHeaders = buildCommandHeaders(server, {
+      authorization: 'Bearer editor-token',
+    });
+    const editorList = await fetch(`${server.url}/commands/shortlist-list`, {
+      method: 'POST',
+      headers: editorHeaders,
+      body: JSON.stringify({}),
+    });
+    expect(editorList.status).toBe(200);
+    await editorList.json();
+
+    const editorTrack = await fetch(`${server.url}/commands/track-record`, {
+      method: 'POST',
+      headers: editorHeaders,
+      body: JSON.stringify({ jobId: 'job-123', status: 'screening' }),
+    });
+    expect(editorTrack.status).toBe(200);
+    expect(await editorTrack.json()).toEqual({ ok: true });
+    expect(commandAdapter['track-record']).toHaveBeenCalledTimes(1);
+
+    expect(auditLogger.record).toHaveBeenCalled();
+    const rbacEvent = auditEvents.find(event => event.reason === 'rbac');
+    expect(rbacEvent).toMatchObject({
+      status: 'forbidden',
+      command: 'track-record',
+      requiredRoles: ['editor'],
+      actor: 'viewer@example.com',
+      roles: ['viewer'],
+    });
+    const successEvent = auditEvents.find(
+      event => event.status === 'success' && event.command === 'track-record',
+    );
+    expect(successEvent.roles).toContain('editor');
+    expect(successEvent.actor).toBe('editor@example.com');
+  });
+
+  it('rejects tokens with explicitly empty role lists', async () => {
+    await expect(
+      startServer({
+        commandAdapter: { summarize: vi.fn(async () => ({ ok: true })) },
+        auth: { tokens: [{ token: 'empty-role-token', roles: [] }] },
+      }),
+    ).rejects.toThrow(/auth token roles must include at least one role/i);
+  });
+
+  it('rejects tokens with blank role strings', async () => {
+    await expect(
+      startServer({
+        commandAdapter: { summarize: vi.fn(async () => ({ ok: true })) },
+        auth: { tokens: [{ token: 'blank-role-token', roles: '   ' }] },
+      }),
+    ).rejects.toThrow(/auth token roles must include at least one role/i);
   });
 
   it('logs telemetry when commands succeed', async () => {

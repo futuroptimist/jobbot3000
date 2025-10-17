@@ -65,6 +65,14 @@ const LISTINGS_FETCH_ALLOWED_FIELDS = new Set([
 ]);
 const LISTINGS_INGEST_ALLOWED_FIELDS = new Set(['provider', 'identifier', 'jobId', 'job_id']);
 const LISTINGS_ARCHIVE_ALLOWED_FIELDS = new Set(['jobId', 'job_id', 'reason']);
+const TRACK_REMINDERS_ALLOWED_FIELDS = new Set([
+  'format',
+  'upcomingOnly',
+  'upcoming_only',
+  'now',
+  'calendarName',
+  'calendar_name',
+]);
 
 function stripUnsafeCharacters(value) {
   if (typeof value !== 'string') {
@@ -392,6 +400,44 @@ function validateListingsArchivePayload(rawPayload) {
   return sanitized;
 }
 
+function validateTrackRemindersPayload(rawPayload) {
+  const payload = ensurePlainObject(rawPayload, 'track-reminders');
+  assertAllowedFields(payload, TRACK_REMINDERS_ALLOWED_FIELDS, 'track-reminders');
+
+  const formatValue = coerceString(payload.format, { name: 'format' });
+  let format = 'json';
+  if (formatValue) {
+    const normalized = formatValue.toLowerCase();
+    if (normalized !== 'json' && normalized !== 'ics') {
+      throw new Error('track-reminders format must be one of: json, ics');
+    }
+    format = normalized;
+  }
+
+  const upcomingOnly = coerceBoolean(payload.upcomingOnly ?? payload.upcoming_only, {
+    name: 'upcomingOnly',
+  });
+
+  const nowValue = coerceString(payload.now, { name: 'now' });
+  let normalizedNow;
+  if (nowValue) {
+    const parsed = new Date(nowValue);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new Error('track-reminders now must be a valid ISO-8601 timestamp');
+    }
+    normalizedNow = parsed.toISOString();
+  }
+
+  const calendarName = coerceString(payload.calendarName ?? payload.calendar_name, {
+    name: 'calendarName',
+  });
+
+  const sanitized = { format, upcomingOnly: upcomingOnly === true };
+  if (normalizedNow) sanitized.now = normalizedNow;
+  if (calendarName) sanitized.calendarName = calendarName;
+  return sanitized;
+}
+
 const COMMAND_VALIDATORS = Object.freeze({
   summarize: validateSummarizePayload,
   match: validateMatchPayload,
@@ -399,6 +445,7 @@ const COMMAND_VALIDATORS = Object.freeze({
   'shortlist-show': validateShortlistShowPayload,
   'track-show': validateTrackShowPayload,
   'track-record': validateTrackRecordPayload,
+  'track-reminders': validateTrackRemindersPayload,
   'analytics-funnel': validateAnalyticsFunnelPayload,
   'analytics-export': validateAnalyticsExportPayload,
   'listings-fetch': validateListingsFetchPayload,

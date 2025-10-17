@@ -313,6 +313,12 @@
   verifies that only upcoming entries appear in the ICS export, escape
   sequences follow the iCalendar spec (covering commas, semicolons, and
   newlines), and invalid timestamps are ignored.
+  The status hub's **Calendar Sync** button posts to
+  `/commands/track-reminders` and triggers a download through the shared
+  `downloadFile` helper. [`test/web-server.test.js`](../test/web-server.test.js)
+  drives the button, asserts the emitted
+  `jobbot:reminders-exported` event, and checks the calendar blob uses the
+  `text/calendar` MIME type so browsers treat the export correctly.
 
 5. **Testing and QA**
    - Unit tests for frontend components (Jest/Testing Library) and backend modules (Jest/Supertest).
@@ -404,6 +410,14 @@
 > inventory; the same suite covers the replay contract.
 
 - Multi-user support with role-based access control and audit trails.
+  _Implemented (2025-10-18):_ `startWebServer` now accepts per-user auth
+  tokens with explicit roles (`viewer`, `editor`, or `admin`). The server
+  enforces role-based access control for mutation commands such as
+  `POST /commands/track-record`, surfaces 403 responses when callers lack the
+  required role, and records the actor plus role set in the audit log. The
+  regression coverage in [`test/web-server.test.js`](../test/web-server.test.js)
+  drives viewer/editor flows to lock the RBAC contract in place for future
+  deployments.
 - Real-time collaboration via WebSocket subscriptions to CLI state changes.
 
 ## Safe Implementation Checklist

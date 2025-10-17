@@ -701,6 +701,34 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
   .analytics-actions__message[data-variant='error'] {
     color: var(--danger-text);
   }
+  .reminders-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 1rem 0;
+  }
+  .reminders-actions button {
+    border-radius: 999px;
+    border: 1px solid var(--pill-border);
+    background-color: var(--pill-bg);
+    color: var(--pill-text);
+    padding: 0.4rem 1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .reminders-actions button[disabled] {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  .reminders-actions__message {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+  .reminders-actions__message[data-variant='error'] {
+    color: var(--danger-text);
+  }
   .status-panel__empty {
     color: var(--muted);
   }
@@ -1267,6 +1295,35 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           return new URL(pathname, window.location.href);
         }
 
+        function downloadFile(contents, { filename, type }) {
+          if (!window || typeof window !== 'object') {
+            throw new Error('Browser environment is required for downloads');
+          }
+          if (
+            typeof Blob !== 'function' ||
+            !window.URL ||
+            typeof window.URL.createObjectURL !== 'function'
+          ) {
+            throw new Error('File downloads are not supported in this environment');
+          }
+          const blob = new Blob([contents], { type });
+          const url = window.URL.createObjectURL(blob);
+          try {
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          } finally {
+            if (typeof window.URL.revokeObjectURL === 'function') {
+              window.URL.revokeObjectURL(url);
+            }
+          }
+          return blob;
+        }
+
         async function postCommand(pathname, payload, { invalidResponse, failureMessage }) {
           if (typeof fetch !== 'function') {
             throw new Error('Fetch API is unavailable in this environment');
@@ -1327,6 +1384,8 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             limit: form?.querySelector('[data-shortlist-filter="limit"]') ?? null,
           };
           const resetButton = section.querySelector('[data-shortlist-reset]');
+          const remindersButton = section.querySelector('[data-reminders-export]');
+          const remindersMessage = section.querySelector('[data-reminders-message]');
           const table = section.querySelector('[data-shortlist-table]');
           const tbody = section.querySelector('[data-shortlist-body]');
           const emptyState = section.querySelector('[data-shortlist-empty]');
@@ -1371,6 +1430,7 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             };
           })();
           const actionState = { jobId: null, submitting: false, enabled: false };
+          const remindersState = { running: false };
 
           function formatStatusLabelText(value) {
             return (value || '')
@@ -1399,6 +1459,65 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             if (actionElements.note) actionElements.note.value = '';
             if (!options.preserveMessage) {
               setActionMessage(null);
+            }
+          }
+
+          function setRemindersMessage(variant, text) {
+            if (!remindersMessage) return;
+            const messageText = typeof text === 'string' ? text.trim() : '';
+            if (!variant || !messageText) {
+              remindersMessage.textContent = '';
+              remindersMessage.setAttribute('hidden', '');
+              remindersMessage.removeAttribute('data-variant');
+              return;
+            }
+            remindersMessage.textContent = messageText;
+            remindersMessage.setAttribute('data-variant', variant);
+            remindersMessage.removeAttribute('hidden');
+          }
+
+          async function exportRemindersCalendar() {
+            if (remindersState.running || !remindersButton) {
+              return false;
+            }
+            remindersState.running = true;
+            remindersButton.disabled = true;
+            remindersButton.setAttribute('aria-busy', 'true');
+            setRemindersMessage('info', 'Preparing reminder calendar…');
+
+            try {
+              const data = await postCommand(
+                '/commands/track-reminders',
+                { format: 'ics', upcomingOnly: true },
+                {
+                  invalidResponse: 'Received invalid response while exporting reminders',
+                  failureMessage: 'Failed to export reminders',
+                },
+              );
+              const calendar = typeof data?.calendar === 'string' ? data.calendar : '';
+              if (!calendar) {
+                throw new Error('Reminder calendar export did not include calendar data');
+              }
+              const filename =
+                typeof data?.filename === 'string' && data.filename.trim()
+                  ? data.filename.trim()
+                  : 'jobbot-reminders.ics';
+              downloadFile(calendar, { filename, type: 'text/calendar' });
+              setRemindersMessage('info', 'Download ready: ' + filename);
+              dispatchRemindersExported({ success: true, format: 'ics', filename });
+              return true;
+            } catch (error) {
+              const message =
+                error && typeof error.message === 'string'
+                  ? error.message
+                  : 'Failed to export reminders';
+              setRemindersMessage('error', message);
+              dispatchRemindersExported({ success: false, format: 'ics', error: message });
+              return false;
+            } finally {
+              remindersState.running = false;
+              remindersButton.disabled = false;
+              remindersButton.removeAttribute('aria-busy');
             }
           }
 
@@ -2118,6 +2237,11 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
                 useForm: false,
                 resetOffset: true,
               });
+            });
+
+            remindersButton?.addEventListener('click', event => {
+              event.preventDefault();
+              exportRemindersCalendar();
             });
 
           actionElements?.clear?.addEventListener('click', () => {
@@ -2906,35 +3030,6 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             return lines.join('\\n') + '\\n';
           }
 
-          function downloadFile(contents, { filename, type }) {
-            if (!window || typeof window !== 'object') {
-              throw new Error('Browser environment is required for downloads');
-            }
-            if (
-              typeof Blob !== 'function' ||
-              !window.URL ||
-              typeof window.URL.createObjectURL !== 'function'
-            ) {
-              throw new Error('File downloads are not supported in this environment');
-            }
-            const blob = new Blob([contents], { type });
-            const url = window.URL.createObjectURL(blob);
-            try {
-              const link = document.createElement('a');
-              link.href = url;
-              link.download = filename;
-              link.style.display = 'none';
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-            } finally {
-              if (typeof window.URL.revokeObjectURL === 'function') {
-                window.URL.revokeObjectURL(url);
-              }
-            }
-            return blob;
-          }
-
           function formatConversion(rate) {
             if (!Number.isFinite(rate)) {
               return 'n/a';
@@ -3618,6 +3713,10 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           dispatchDocumentEvent('jobbot:analytics-exported', detail);
         }
 
+        function dispatchRemindersExported(detail = {}) {
+          dispatchDocumentEvent('jobbot:reminders-exported', detail);
+        }
+
         function dispatchApplicationDetailLoaded(detail = {}) {
           const jobId =
             typeof detail?.job_id === 'string' && detail.job_id.trim()
@@ -3689,6 +3788,184 @@ function normalizeCsrfOptions(csrf = {}) {
   };
 }
 
+const DEFAULT_AUTH_ROLES = Object.freeze(['viewer', 'editor']);
+
+const ROLE_INHERITANCE = Object.freeze({
+  editor: Object.freeze(['viewer']),
+  admin: Object.freeze(['editor', 'viewer']),
+});
+
+const COMMAND_ROLE_REQUIREMENTS = Object.freeze({
+  default: Object.freeze(['viewer']),
+  'track-record': Object.freeze(['editor']),
+  'listings-ingest': Object.freeze(['editor']),
+  'listings-archive': Object.freeze(['editor']),
+});
+
+function expandRoles(roleSet) {
+  const pending = [...roleSet];
+  while (pending.length > 0) {
+    const role = pending.pop();
+    const inherited = ROLE_INHERITANCE[role];
+    if (!inherited) continue;
+    for (const child of inherited) {
+      if (!roleSet.has(child)) {
+        roleSet.add(child);
+        pending.push(child);
+      }
+    }
+  }
+  return roleSet;
+}
+
+function normalizeRoleList(value, fallbackRoles) {
+  const fallback = Array.isArray(fallbackRoles) ? fallbackRoles : [];
+  const shouldApplyFallback = value == null;
+  let source;
+  if (value == null) {
+    source = fallback;
+  } else if (Array.isArray(value)) {
+    source = value;
+  } else if (typeof value === 'string') {
+    source = value.split(',');
+  } else {
+    throw new Error('auth roles must be provided as a string or array');
+  }
+
+  const normalized = new Set();
+  for (const entry of source) {
+    if (entry == null) continue;
+    if (typeof entry !== 'string') {
+      throw new Error('auth roles must be strings');
+    }
+    const trimmed = entry.trim().toLowerCase();
+    if (!trimmed) continue;
+    for (const part of trimmed.split(/\s+/)) {
+      if (part) normalized.add(part);
+    }
+  }
+
+  if (normalized.size === 0 && shouldApplyFallback && fallback.length > 0) {
+    for (const role of fallback) {
+      normalized.add(role);
+    }
+  }
+
+  return expandRoles(normalized);
+}
+
+function parseTokenSubject(candidate, index) {
+  const source =
+    candidate.subject ??
+    candidate.user ??
+    candidate.username ??
+    candidate.id ??
+    candidate.name ??
+    candidate.displayName;
+  if (typeof source === 'string' && source.trim()) {
+    return source.trim();
+  }
+  return `token#${index + 1}`;
+}
+
+function normalizeTokenEntry(candidate, index, fallbackRoles) {
+  if (typeof candidate === 'string') {
+    const token = candidate.trim();
+    if (!token) {
+      throw new Error('auth tokens must include non-empty strings');
+    }
+    return {
+      token,
+      subject: `token#${index + 1}`,
+      roles: normalizeRoleList(null, fallbackRoles),
+    };
+  }
+
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    throw new Error('auth tokens must be strings or objects');
+  }
+
+  const rawToken =
+    (typeof candidate.token === 'string' && candidate.token.trim()) ||
+    (typeof candidate.value === 'string' && candidate.value.trim()) ||
+    (typeof candidate.secret === 'string' && candidate.secret.trim());
+  if (!rawToken) {
+    throw new Error('auth token entries must include a token string');
+  }
+
+  const roles = normalizeRoleList(candidate.roles, fallbackRoles);
+  if (roles.size === 0) {
+    throw new Error('auth token roles must include at least one role');
+  }
+
+  const entry = {
+    token: rawToken.trim(),
+    subject: parseTokenSubject(candidate, index),
+    roles,
+  };
+
+  if (typeof candidate.displayName === 'string' && candidate.displayName.trim()) {
+    entry.displayName = candidate.displayName.trim();
+  }
+
+  return entry;
+}
+
+function coerceTokenCandidates(rawTokens) {
+  if (Array.isArray(rawTokens)) {
+    return rawTokens;
+  }
+  if (rawTokens && typeof rawTokens === 'object') {
+    if (Array.isArray(rawTokens.tokens)) {
+      return rawTokens.tokens;
+    }
+    return [rawTokens];
+  }
+  if (typeof rawTokens === 'string') {
+    const trimmed = rawTokens.trim();
+    if (!trimmed) {
+      return [];
+    }
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return parsed;
+        }
+        if (parsed && typeof parsed === 'object') {
+          if (Array.isArray(parsed.tokens)) {
+            return parsed.tokens;
+          }
+          return [parsed];
+        }
+      } catch {
+        // Fall through to comma splitting when JSON parsing fails.
+      }
+    }
+    return trimmed
+      .split(',')
+      .map(token => token.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function getRequiredRoles(command) {
+  return COMMAND_ROLE_REQUIREMENTS[command] ?? COMMAND_ROLE_REQUIREMENTS.default;
+}
+
+function hasRequiredRoles(roleSet, requiredRoles) {
+  if (!roleSet || typeof roleSet.has !== 'function') {
+    return false;
+  }
+  for (const role of requiredRoles) {
+    if (!roleSet.has(role)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function normalizeAuthOptions(auth) {
   if (!auth || auth === false) {
     return null;
@@ -3698,26 +3975,21 @@ function normalizeAuthOptions(auth) {
   }
 
   const rawTokens = auth.tokens ?? auth.token;
-  let tokenCandidates = [];
-  if (Array.isArray(rawTokens)) {
-    tokenCandidates = rawTokens;
-  } else if (typeof rawTokens === 'string') {
-    tokenCandidates = rawTokens.split(',');
-  }
+  const fallbackRoles = Array.from(
+    normalizeRoleList(auth.defaultRoles ?? null, DEFAULT_AUTH_ROLES),
+  );
+  const tokenCandidates = coerceTokenCandidates(rawTokens);
 
-  const normalizedTokens = [];
-  for (const candidate of tokenCandidates) {
-    if (typeof candidate !== 'string') {
-      throw new Error('auth tokens must be provided as strings');
+  const normalizedTokens = new Map();
+  tokenCandidates.forEach((candidate, index) => {
+    const normalized = normalizeTokenEntry(candidate, index, fallbackRoles);
+    if (normalizedTokens.has(normalized.token)) {
+      throw new Error('auth tokens must be unique');
     }
-    const trimmed = candidate.trim();
-    if (!trimmed) {
-      continue;
-    }
-    normalizedTokens.push(trimmed);
-  }
+    normalizedTokens.set(normalized.token, normalized);
+  });
 
-  if (normalizedTokens.length === 0) {
+  if (normalizedTokens.size === 0) {
     throw new Error('auth.tokens must include at least one non-empty token');
   }
 
@@ -3743,7 +4015,7 @@ function normalizeAuthOptions(auth) {
     headerName,
     scheme: requireScheme ? scheme : '',
     requireScheme,
-    tokens: new Set(normalizedTokens),
+    tokens: normalizedTokens,
     schemePrefixLower: schemePrefix.toLowerCase(),
     schemePrefixLength: schemePrefix.length,
   };
@@ -4149,6 +4421,10 @@ export function createWebApp({
             <button type="button" data-shortlist-reset data-variant="ghost">Reset</button>
           </div>
         </form>
+        <div class="reminders-actions">
+          <button type="button" data-reminders-export>Calendar Sync</button>
+          <p class="reminders-actions__message" data-reminders-message hidden></p>
+        </div>
         <div
           class="status-panel"
           data-status-panel="applications"
@@ -4534,18 +4810,30 @@ export function createWebApp({
     const started = performance.now();
     const clientIp = req.ip || req.socket?.remoteAddress || undefined;
     const userAgent = req.get('user-agent');
-    let authPrincipal = authOptions ? 'unauthenticated' : 'guest';
+    let authContext = authOptions
+      ? { subject: 'unauthenticated', roles: new Set() }
+      : { subject: 'guest', roles: new Set(['viewer']) };
+    let authPrincipal = authContext.subject;
 
     const recordAudit = async event => {
       if (!effectiveAuditLogger) return;
       try {
-        await effectiveAuditLogger.record({
+        const roles = authContext?.roles ? Array.from(authContext.roles).sort() : [];
+        const actor = authContext?.subject ?? authPrincipal;
+        const payload = {
           type: 'command',
           command: commandParam,
-          actor: authPrincipal,
+          actor,
+          roles,
           ip: clientIp,
           userAgent,
           ...event,
+        };
+        if (authContext?.displayName && authContext.displayName !== actor) {
+          payload.actorDisplayName = authContext.displayName;
+        }
+        await effectiveAuditLogger.record({
+          ...payload,
         });
       } catch (error) {
         logger?.warn?.('Failed to record audit event', error);
@@ -4597,12 +4885,27 @@ export function createWebApp({
         }
       }
 
-      if (!authOptions.tokens.has(tokenValue)) {
+      const tokenEntry = authOptions.tokens.get(tokenValue);
+      if (!tokenEntry) {
         await recordAudit({ status: 'unauthorized', reason: 'unknown-token' });
         respondUnauthorized();
         return;
       }
-      authPrincipal = 'token';
+      authContext = tokenEntry;
+      authPrincipal = tokenEntry.subject ?? 'token';
+
+      const requiredRoles = getRequiredRoles(commandParam);
+      if (requiredRoles.length > 0 && !hasRequiredRoles(tokenEntry.roles, requiredRoles)) {
+        res
+          .status(403)
+          .json({ error: 'Insufficient permissions for this command' });
+        await recordAudit({
+          status: 'forbidden',
+          reason: 'rbac',
+          requiredRoles,
+        });
+        return;
+      }
     }
 
     const providedToken = req.get(csrfOptions.headerName);

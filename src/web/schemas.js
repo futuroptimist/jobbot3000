@@ -2,6 +2,14 @@ import { STATUSES } from '../lifecycle.js';
 
 const SUPPORTED_FORMATS = ['markdown', 'text', 'json'];
 const TRACK_RECORD_ALLOWED_KEYS = new Set(['jobId', 'job_id', 'status', 'note']);
+const TRACK_REMINDERS_ALLOWED_KEYS = new Set([
+  'format',
+  'upcomingOnly',
+  'upcoming_only',
+  'now',
+  'calendarName',
+  'calendar_name',
+]);
 const VALID_STATUSES = new Set(STATUSES.map(status => status.trim().toLowerCase()));
 
 function assertPlainObject(value, name) {
@@ -264,6 +272,46 @@ export function normalizeTrackRecordRequest(options) {
   const note = normalizeString(options.note);
   const request = { jobId, status: normalizedStatus };
   if (note) request.note = note;
+  return request;
+}
+
+export function normalizeTrackRemindersRequest(options) {
+  if (options == null) {
+    return { format: 'json', upcomingOnly: false };
+  }
+  assertPlainObject(options, 'track reminders options');
+  for (const key of Object.keys(options)) {
+    if (!TRACK_REMINDERS_ALLOWED_KEYS.has(key)) {
+      throw new Error(`Unexpected field "${key}" in track reminders options`);
+    }
+  }
+
+  const formatValue = normalizeString(options.format)?.toLowerCase();
+  const format = formatValue ?? 'json';
+  if (format !== 'json' && format !== 'ics') {
+    throw new Error('track reminders format must be one of: json, ics');
+  }
+
+  const upcomingOnly = normalizeBoolean(options.upcomingOnly ?? options.upcoming_only, {
+    name: 'upcomingOnly',
+    defaultValue: false,
+  });
+
+  const nowValue = normalizeString(options.now);
+  let normalizedNow;
+  if (nowValue) {
+    const parsed = new Date(nowValue);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new Error('track reminders now must be a valid ISO-8601 timestamp');
+    }
+    normalizedNow = parsed.toISOString();
+  }
+
+  const calendarName = normalizeString(options.calendarName ?? options.calendar_name);
+
+  const request = { format, upcomingOnly };
+  if (normalizedNow) request.now = normalizedNow;
+  if (calendarName) request.calendarName = calendarName;
   return request;
 }
 
