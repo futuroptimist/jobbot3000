@@ -2237,17 +2237,19 @@ async function cmdAnalyticsCompensation(args) {
 }
 
 async function cmdAnalyticsActivity(args) {
-  const output = getFlag(args, '--out');
+  const outputFlag = getFlag(args, '--out');
   const summary = await computeActivitySummary();
-  const payload = `${JSON.stringify(summary, null, 2)}\n`;
-  if (output) {
+  const payload = JSON.stringify(summary, null, 2);
+  const output = typeof outputFlag === 'string' ? outputFlag.trim() : undefined;
+  const streamToStdout = output === '-' || output === '/dev/stdout';
+  if (output && !streamToStdout) {
     const resolved = path.resolve(process.cwd(), output);
     await fs.promises.mkdir(path.dirname(resolved), { recursive: true });
-    await fs.promises.writeFile(resolved, payload, 'utf8');
+    await fs.promises.writeFile(resolved, `${payload}\n`, 'utf8');
     console.log(`Saved analytics activity to ${resolved}`);
     return;
   }
-  console.log(payload.trimEnd());
+  console.log(payload);
 }
 
 async function cmdAnalyticsHealth(args) {
