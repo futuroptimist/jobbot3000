@@ -397,6 +397,14 @@
 > inventory; the same suite covers the replay contract.
 
 - Multi-user support with role-based access control and audit trails.
+  _Implemented (2025-10-18):_ `startWebServer` now accepts per-user auth
+  tokens with explicit roles (`viewer`, `editor`, or `admin`). The server
+  enforces role-based access control for mutation commands such as
+  `POST /commands/track-record`, surfaces 403 responses when callers lack the
+  required role, and records the actor plus role set in the audit log. The
+  regression coverage in [`test/web-server.test.js`](../test/web-server.test.js)
+  drives viewer/editor flows to lock the RBAC contract in place for future
+  deployments.
 - Real-time collaboration via WebSocket subscriptions to CLI state changes.
 
 ## Safe Implementation Checklist

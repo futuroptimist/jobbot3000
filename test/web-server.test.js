@@ -2098,6 +2098,110 @@ describe('web server command endpoint', () => {
     expect(commandAdapter.summarize).toHaveBeenCalledTimes(1);
   });
 
+  it('enforces role-based access control for configured tokens', async () => {
+    const auditEvents = [];
+    const auditLogger = {
+      record: vi.fn(async event => {
+        auditEvents.push(event);
+      }),
+    };
+    const commandAdapter = {
+      'shortlist-list': vi.fn(async () => ({
+        data: {
+          items: [],
+          page: { limit: 25, hasMore: false },
+        },
+      })),
+      'track-record': vi.fn(async () => ({ ok: true })),
+    };
+
+    const server = await startServer({
+      commandAdapter,
+      auditLogger,
+      auth: {
+        tokens: [
+          { token: 'viewer-token', subject: 'viewer@example.com', roles: ['viewer'] },
+          { token: 'editor-token', subject: 'editor@example.com', roles: ['editor'] },
+        ],
+      },
+    });
+
+    const viewerHeaders = buildCommandHeaders(server, {
+      authorization: 'Bearer viewer-token',
+    });
+    const viewerList = await fetch(`${server.url}/commands/shortlist-list`, {
+      method: 'POST',
+      headers: viewerHeaders,
+      body: JSON.stringify({}),
+    });
+    expect(viewerList.status).toBe(200);
+    await viewerList.json();
+
+    const viewerTrack = await fetch(`${server.url}/commands/track-record`, {
+      method: 'POST',
+      headers: viewerHeaders,
+      body: JSON.stringify({ jobId: 'job-123', status: 'screening' }),
+    });
+    expect(viewerTrack.status).toBe(403);
+    expect(await viewerTrack.json()).toMatchObject({
+      error: expect.stringMatching(/permission/i),
+    });
+    expect(commandAdapter['track-record']).not.toHaveBeenCalled();
+
+    const editorHeaders = buildCommandHeaders(server, {
+      authorization: 'Bearer editor-token',
+    });
+    const editorList = await fetch(`${server.url}/commands/shortlist-list`, {
+      method: 'POST',
+      headers: editorHeaders,
+      body: JSON.stringify({}),
+    });
+    expect(editorList.status).toBe(200);
+    await editorList.json();
+
+    const editorTrack = await fetch(`${server.url}/commands/track-record`, {
+      method: 'POST',
+      headers: editorHeaders,
+      body: JSON.stringify({ jobId: 'job-123', status: 'screening' }),
+    });
+    expect(editorTrack.status).toBe(200);
+    expect(await editorTrack.json()).toEqual({ ok: true });
+    expect(commandAdapter['track-record']).toHaveBeenCalledTimes(1);
+
+    expect(auditLogger.record).toHaveBeenCalled();
+    const rbacEvent = auditEvents.find(event => event.reason === 'rbac');
+    expect(rbacEvent).toMatchObject({
+      status: 'forbidden',
+      command: 'track-record',
+      requiredRoles: ['editor'],
+      actor: 'viewer@example.com',
+      roles: ['viewer'],
+    });
+    const successEvent = auditEvents.find(
+      event => event.status === 'success' && event.command === 'track-record',
+    );
+    expect(successEvent.roles).toContain('editor');
+    expect(successEvent.actor).toBe('editor@example.com');
+  });
+
+  it('rejects tokens with explicitly empty role lists', async () => {
+    await expect(
+      startServer({
+        commandAdapter: { summarize: vi.fn(async () => ({ ok: true })) },
+        auth: { tokens: [{ token: 'empty-role-token', roles: [] }] },
+      }),
+    ).rejects.toThrow(/auth token roles must include at least one role/i);
+  });
+
+  it('rejects tokens with blank role strings', async () => {
+    await expect(
+      startServer({
+        commandAdapter: { summarize: vi.fn(async () => ({ ok: true })) },
+        auth: { tokens: [{ token: 'blank-role-token', roles: '   ' }] },
+      }),
+    ).rejects.toThrow(/auth token roles must include at least one role/i);
+  });
+
   it('logs telemetry when commands succeed', async () => {
     const logger = {
       info: vi.fn(),

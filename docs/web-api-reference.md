@@ -15,6 +15,10 @@ The web server listens on the host/port returned by
   (defaults to `x-jobbot-csrf`).
 - When `startWebServer` is configured with `auth`, clients must also supply the configured
   authorization header. Bearer tokens are required when `requireScheme` is enabled.
+- Tokens can include role assignments. Viewer roles unlock read-only commands while editor (or
+  admin) roles are required for mutations such as `track-record`, `listings-ingest`, and
+  `listings-archive`. Requests without the needed roles receive 403 responses and are recorded in the
+  audit log.
 - JSON payloads require `Content-Type: application/json` and must match the validator defined in
   `command-registry.js`.
 
@@ -101,5 +105,5 @@ The adapter redacts secret-like values from error payloads. Expect the following
 }
 ```
 
-Non-2xx responses also include rate-limit headers, CSRF enforcement errors, and authorization
-failures as described above.
+Non-2xx responses also include rate-limit headers, CSRF enforcement errors, authorization failures,
+and 403 role-violation payloads as described above.
