@@ -314,6 +314,14 @@ function isVisibleFile(entry) {
   return entry.isFile() && !entry.name.startsWith('.');
 }
 
+const IGNORED_DELIVERABLE_FILES = new Set(['thumbs.db', 'desktop.ini']);
+
+function isDeliverableArtifact(entry) {
+  if (!isVisibleFile(entry)) return false;
+  const lower = entry.name.toLowerCase();
+  return !IGNORED_DELIVERABLE_FILES.has(lower);
+}
+
 async function summarizeDeliverableActivity(baseDir) {
   const entries = await safeReadDir(baseDir);
   let jobs = 0;
@@ -326,7 +334,7 @@ async function summarizeDeliverableActivity(baseDir) {
     let hasFiles = false;
     for (const runEntry of runEntries) {
       if (isVisibleDirectory(runEntry)) jobRuns += 1;
-      if (isVisibleFile(runEntry)) hasFiles = true;
+      if (isDeliverableArtifact(runEntry)) hasFiles = true;
     }
     if (jobRuns === 0 && hasFiles) {
       jobRuns = 1;

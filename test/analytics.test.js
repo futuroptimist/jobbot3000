@@ -435,6 +435,30 @@ describe('analytics conversion funnel', () => {
     expect(funnel.missing.statuslessJobs.count).toBe(0);
   });
 
+  it('ignores operating system metadata files when summarizing activity', async () => {
+    const fs = await import('node:fs/promises');
+    const deliverablesRoot = path.join(dataDir, 'deliverables');
+    await fs.mkdir(path.join(deliverablesRoot, 'job-system'), { recursive: true });
+    await fs.writeFile(path.join(deliverablesRoot, 'job-system', 'THUMBS.DB'), 'binary');
+    await fs.writeFile(path.join(deliverablesRoot, 'job-system', 'desktop.ini'), 'binary');
+    await fs.mkdir(path.join(deliverablesRoot, 'job-valid', '2025-02-01T10-00-00Z'), {
+      recursive: true,
+    });
+    await fs.writeFile(
+      path.join(deliverablesRoot, 'job-valid', '2025-02-01T10-00-00Z', 'resume.pdf'),
+      'binary',
+    );
+
+    const { computeActivitySummary, setAnalyticsDataDir } = await import('../src/analytics.js');
+    setAnalyticsDataDir(dataDir);
+    restoreAnalyticsDir = async () => setAnalyticsDataDir(undefined);
+
+    const summary = await computeActivitySummary();
+    expect(summary.deliverables).toEqual({ jobs: 1, runs: 1 });
+    expect(summary.interviews).toEqual({ jobs: 0, sessions: 0 });
+    expect(typeof summary.generated_at).toBe('string');
+  });
+
   it('summarizes shortlist compensation metadata by currency', async () => {
     const { syncShortlistJob } = await import('../src/shortlist.js');
 
