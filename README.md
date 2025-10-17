@@ -61,7 +61,8 @@ JOBBOT_FEATURE_SCRAPING_MOCKS=false
 npm run dev
 ```
 
-Your server will now connect to live job boards! 🚀
+Your server will now connect to live job boards! 🚀 The development server and CLI automatically
+load your `.env` file on startup, so no additional export commands are required.
 
 > **Note:** The `.env` file is gitignored and will never be committed. Keep your tokens secure and never share them publicly.
 
