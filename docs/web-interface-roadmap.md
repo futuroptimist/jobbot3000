@@ -343,6 +343,9 @@
 
 7. **Release Prep**
    - Finalize documentation (README updates, API reference, UX guidelines).
+     _Implemented (2025-10-16):_ The README now documents the plugin registry configuration flow and
+     lists the `JOBBOT_PLUGINS` manifest hook. [`test/readme-http-docs.test.js`](../test/readme-http-docs.test.js)
+     ensures the guidance remains visible by asserting the section heading and example exports.
    - Conduct security review and threat modeling session.
    - Perform beta testing with target users and gather feedback for iteration.
 
@@ -361,12 +364,24 @@
   ensures future edits keep the docs aligned with the backend validators and
   rendered components.
 - Automate linting, formatting, and type checking via pre-commit hooks and CI pipelines.
+  _Implemented (2025-10-15):_ CI now runs `npm run typecheck` alongside linting and tests,
+  powered by a `tsc --noEmit` project configuration. [`test/tooling-typecheck.test.js`](../test/tooling-typecheck.test.js)
+  enforces the script locally, and the chore catalog lists the command so contributors keep the
+  pipeline green before pushing.
 
 ### 7. Future Enhancements
 
 - Multi-user support with role-based access control and audit trails.
 - Real-time collaboration via WebSocket subscriptions to CLI state changes.
 - Plugin system enabling external automation integrations (e.g., calendar, CRM).
+  _Implemented (2025-10-16):_ [`src/modules/plugins/index.js`](../src/modules/plugins/index.js)
+  now provides a plugin registry backed by the module event bus. Integrations register
+  via `registerPluginsModule`, surface event handlers, and publish metadata through the
+  `plugins:list` bus contract. Environment-aware configuration (including
+  `JOBBOT_PLUGINS`) lets deployments toggle plugins or pass options without code
+  changes. Regression coverage in
+  [`test/modules-plugins.test.js`](../test/modules-plugins.test.js) exercises registration,
+  configuration, metadata exports, and cleanup flows.
 
 ## Safe Implementation Checklist
 

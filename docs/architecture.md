@@ -109,6 +109,19 @@ Analytics pipelines summarize application progress and historical activity.
   funnel summaries and exports used by `jobbot analytics …` commands.
 - `src/exporters.js` handles structured exports for downstream tooling.
 
+## Plugins and automation hooks
+
+The module system bootstrapped by [`src/modules/index.js`](../src/modules/index.js) exposes a
+`ModuleEventBus` (`src/shared/events/bus.js`) so subsystems can communicate without tight coupling.
+The new [`src/modules/plugins/index.js`](../src/modules/plugins/index.js) builds on that bus to load
+automation plugins (for example, calendar syncs or CRM connectors). Plugins register handlers via
+`registerPluginsModule`, respond to bus events, and surface metadata through the `plugins:list`
+contract. Configure enabled plugins and per-plugin options through `loadConfig` (or the
+`JOBBOT_PLUGINS` environment variable) so deployments can toggle integrations without code edits.
+Regression coverage in
+[`test/modules-plugins.test.js`](../test/modules-plugins.test.js) verifies registration,
+configuration parsing, metadata exports, and cleanup logic.
+
 ## Onboarding checklist
 
 New contributors can follow this checklist to ramp up quickly:
@@ -116,7 +129,7 @@ New contributors can follow this checklist to ramp up quickly:
 1. Skim [`README.md`](../README.md) for setup commands and CLI examples.
 2. Read this architecture map to understand module boundaries.
 3. Explore `src/index.js`, `src/jobs.js`, and `src/deliverables.js` to see how flows connect.
-4. Run `npm run lint` and `npm run test:ci` before committing changes.
+4. Run `npm run lint`, `npm run typecheck`, and `npm run test:ci` before committing changes.
 5. Use the fixtures in `test/fixtures/` when writing new ingestion or resume parsing tests.
 
 _Last updated: 2025-09-24._

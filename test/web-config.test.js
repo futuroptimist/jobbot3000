@@ -29,6 +29,7 @@ describe('loadWebConfig', () => {
       'JOBBOT_HTTP_BACKOFF_MS',
       'JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD',
       'JOBBOT_HTTP_CIRCUIT_BREAKER_RESET_MS',
+      'JOBBOT_PLUGINS',
     ]);
   });
 
@@ -47,6 +48,7 @@ describe('loadWebConfig', () => {
       'JOBBOT_HTTP_BACKOFF_MS',
       'JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD',
       'JOBBOT_HTTP_CIRCUIT_BREAKER_RESET_MS',
+      'JOBBOT_PLUGINS',
     ]);
   });
 

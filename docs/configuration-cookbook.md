@@ -41,6 +41,22 @@ Feature flags are parsed via the manifest and exposed to the web server:
 | `features.httpClient.circuitBreakerThreshold` | `JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD` | Trip the circuit after _n_ consecutive failures |
 | `features.httpClient.circuitBreakerResetMs` | `JOBBOT_HTTP_CIRCUIT_BREAKER_RESET_MS` | Reset window after failures |
 
+## Plugin configuration
+
+`loadConfig` accepts a `plugins` array (or the `JOBBOT_PLUGINS` environment variable) that describes
+automation integrations to enable. Each entry includes an `id`, optional `options` hash forwarded to
+the plugin, and an `enabled` flag (default `true`). For example:
+
+```json
+[
+  { "id": "calendar-sync", "options": { "timezone": "UTC" } },
+  { "id": "crm-webhook", "enabled": false }
+]
+```
+
+The plugin registry (`src/modules/plugins/index.js`) resolves these entries at runtime and exposes
+metadata through the `plugins:list` bus contract.
+
 ## Environment templates
 
 ### Local development (`.env.local`)

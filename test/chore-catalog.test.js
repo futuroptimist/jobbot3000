@@ -9,6 +9,7 @@ describe('chore catalog documentation', () => {
     const contents = fs.readFileSync(CATALOG_PATH, 'utf8');
     expect(contents).toContain('| Task | Owner | Frequency | Commands |');
     expect(contents).toMatch(/npm run lint/);
+    expect(contents).toMatch(/npm run typecheck/);
     expect(contents).toMatch(/npm run test:ci/);
     expect(contents).toMatch(/git diff --cached \\?\| \.\/scripts\/scan-secrets\.py/);
     expect(contents).toMatch(/Prompt Docs/i);

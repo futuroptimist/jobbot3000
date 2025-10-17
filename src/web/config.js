@@ -34,6 +34,7 @@ export function loadWebConfig(options = {}) {
     features: config.features,
     audit: config.audit,
     missingSecrets: config.missingSecrets,
+    plugins: config.plugins,
   };
 }
 

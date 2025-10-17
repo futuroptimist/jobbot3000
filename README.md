@@ -85,6 +85,26 @@ console.log(await response.json());
 
 Run the snippet with `node example.js` after saving it to a file in the project root.
 
+## Plugins and automation hooks
+
+jobbot3000 ships a plugin registry so you can wire automation into the module event bus without
+forking the codebase. The `registerPluginsModule` helper (`src/modules/plugins/index.js`) loads
+built-in definitions and merges any entries from `loadConfig()`. Configure plugins through the
+`JOBBOT_PLUGINS` environment variable or the manifest's `plugins` array:
+
+```bash
+export JOBBOT_PLUGINS='[
+  { "id": "calendar-sync", "options": { "timezone": "UTC" } },
+  { "id": "crm-webhook", "enabled": false }
+]'
+```
+
+Each plugin receives `{ bus, logger, options, config, id }` when registered. Provide either a
+`register(context)` function that wires listeners and returns a disposer, or an `events` map that is
+automatically subscribed to `ModuleEventBus` topics. The registry also exposes a `plugins:list`
+contract so other modules can inspect which integrations are active, their descriptions, and the
+sanitized options passed at boot.
+
 ## Documentation
 
 - [DESIGN.md](DESIGN.md) – architecture details and roadmap

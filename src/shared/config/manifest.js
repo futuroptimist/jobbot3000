@@ -35,6 +35,12 @@ const SECRET_ENV_MAP = {
   workableToken: 'JOBBOT_WORKABLE_TOKEN',
 };
 
+const PluginConfigSchema = z.object({
+  id: z.string().min(1),
+  enabled: z.boolean().default(true),
+  options: z.record(z.any()).default({}),
+});
+
 const ConfigSchema = z.object({
   environment: z.enum(ENVIRONMENTS).default('development'),
   web: z.object({
@@ -83,6 +89,7 @@ const ConfigSchema = z.object({
       workableToken: z.string().optional(),
     })
     .default({}),
+  plugins: z.array(PluginConfigSchema).default([]),
 });
 
 export const REQUIRED_SECRETS = [
@@ -98,6 +105,29 @@ function resolveEnvironment(envLike) {
     return normalized;
   }
   return 'development';
+}
+
+function parsePluginConfigs(source) {
+  if (source === undefined || source === null) {
+    return [];
+  }
+  if (Array.isArray(source)) {
+    return source;
+  }
+  if (typeof source === 'string') {
+    const trimmed = source.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+      throw new Error('plugins configuration must be valid JSON');
+    }
+    throw new Error('plugins configuration must be an array');
+  }
+  throw new Error('plugins configuration must be an array or JSON string');
 }
 
 export function loadConfig(options = {}) {
@@ -188,6 +218,13 @@ export function loadConfig(options = {}) {
     workableToken: options.secrets?.workableToken ?? env.JOBBOT_WORKABLE_TOKEN,
   };
 
+  let pluginConfigs;
+  try {
+    pluginConfigs = parsePluginConfigs(options.plugins ?? env.JOBBOT_PLUGINS);
+  } catch (error) {
+    throw new Error(`Invalid plugin configuration: ${error.message}`);
+  }
+
   const parsed = ConfigSchema.parse({
     environment: requestedEnv,
     web: {
@@ -204,6 +241,7 @@ export function loadConfig(options = {}) {
     overrides: options.overrides,
     mocks: options.mocks,
     secrets,
+    plugins: pluginConfigs,
   });
 
   const allowSecretSkips =

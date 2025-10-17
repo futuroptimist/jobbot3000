@@ -1,6 +1,7 @@
+// @ts-ignore -- lifecycle.js is not part of the type-checking project; STATUSES is runtime data.
 import { STATUSES } from '../lifecycle.js';
 
-const SUPPORTED_FORMATS = ['markdown', 'text', 'json'];
+const SUPPORTED_FORMATS = /** @type {const} */ (['markdown', 'text', 'json']);
 const TRACK_RECORD_ALLOWED_KEYS = new Set(['jobId', 'job_id', 'status', 'note']);
 const VALID_STATUSES = new Set(STATUSES.map(status => status.trim().toLowerCase()));
 
@@ -25,6 +26,11 @@ function assertRequiredString(value, name) {
   return normalized;
 }
 
+/**
+ * @param {unknown} value
+ * @param {{ name?: string, defaultValue?: boolean }} [options]
+ * @returns {boolean}
+ */
 function normalizeBoolean(value, { name, defaultValue = false } = {}) {
   if (value == null || value === '') {
     return defaultValue;
@@ -86,12 +92,16 @@ function assertPositiveNumber(value, name) {
   return numberValue;
 }
 
+/**
+ * @param {unknown} value
+ * @returns {'markdown'|'text'|'json'}
+ */
 function normalizeFormat(value) {
   const normalized = normalizeString(value)?.toLowerCase() ?? 'markdown';
-  if (!SUPPORTED_FORMATS.includes(normalized)) {
+  if (!SUPPORTED_FORMATS.includes(/** @type {any} */ (normalized))) {
     throw new Error('format must be one of: markdown, text, json');
   }
-  return normalized;
+  return /** @type {'markdown'|'text'|'json'} */ (normalized);
 }
 
 /**
@@ -106,7 +116,7 @@ function normalizeFormat(value) {
 
 /**
  * Normalizes summarize request options and enforces supported constraints.
- * @param {unknown} options
+ * @param {Partial<SummarizeRequest> & { source?: string, timeout?: number }} options
  * @returns {SummarizeRequest}
  */
 export function normalizeSummarizeRequest(options) {
@@ -137,7 +147,7 @@ export function normalizeSummarizeRequest(options) {
 
 /**
  * Normalizes match request options and enforces supported constraints.
- * @param {unknown} options
+ * @param {Partial<MatchRequest> & { timeout?: number }} options
  * @returns {MatchRequest}
  */
 export function normalizeMatchRequest(options) {
@@ -156,6 +166,10 @@ export function normalizeMatchRequest(options) {
   return { resume, job, format, locale, role, location, profile, explain, timeoutMs, maxBytes };
 }
 
+/**
+ * @param {Record<string, never> | null | undefined} [options]
+ * @returns {{}}
+ */
 export function normalizeAnalyticsFunnelRequest(options) {
   if (options == null) {
     return {};
@@ -168,6 +182,17 @@ export function normalizeAnalyticsFunnelRequest(options) {
   return {};
 }
 
+/**
+ * @typedef {Object} AnalyticsExportOptions
+ * @property {boolean} [redact]
+ * @property {boolean} [redactCompanies]
+ * @property {boolean} [redact_companies]
+ */
+
+/**
+ * @param {AnalyticsExportOptions | null | undefined} options
+ * @returns {{ redact: boolean }}
+ */
 export function normalizeAnalyticsExportRequest(options) {
   if (options == null) {
     return { redact: true };
@@ -192,7 +217,7 @@ export function normalizeAnalyticsExportRequest(options) {
 
 /**
  * Normalizes shortlist list request options for the web command adapter.
- * @param {unknown} options
+ * @param {Partial<ShortlistListRequest> & { tags?: string | string[] }} options
  * @returns {ShortlistListRequest}
  */
 export function normalizeShortlistListRequest(options) {
@@ -234,18 +259,34 @@ export function normalizeShortlistListRequest(options) {
   return request;
 }
 
+/**
+ * @param {Partial<{ jobId: string, job_id: string }>} options
+ * @returns {{ jobId: string }}
+ */
 export function normalizeShortlistShowRequest(options) {
   assertPlainObject(options, 'shortlist show options');
   const jobId = assertRequiredString(options.jobId ?? options.job_id, 'jobId');
   return { jobId };
 }
 
+/**
+ * @param {Partial<{ jobId: string, job_id: string }>} options
+ * @returns {{ jobId: string }}
+ */
 export function normalizeTrackShowRequest(options) {
   assertPlainObject(options, 'track show options');
   const jobId = assertRequiredString(options.jobId ?? options.job_id, 'jobId');
   return { jobId };
 }
 
+/**
+ * @typedef {{ jobId: string, status: string, note?: string }} TrackRecordRequest
+ */
+
+/**
+ * @param {Partial<TrackRecordRequest> & { job_id?: string }} options
+ * @returns {TrackRecordRequest}
+ */
 export function normalizeTrackRecordRequest(options) {
   assertPlainObject(options, 'track record options');
   for (const key of Object.keys(options)) {

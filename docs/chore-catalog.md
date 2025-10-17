@@ -7,7 +7,7 @@ stays accurate.
 
 | Task | Owner | Frequency | Commands |
 |------|-------|-----------|----------|
-| Lint & test sweep | All contributors | Every pull request and before publishing a release | `npm run lint`<br>`npm run test:ci` |
+| Lint & test sweep | All contributors | Every pull request and before publishing a release | `npm run lint`<br>`npm run typecheck`<br>`npm run test:ci` |
 | Secret scan before push | All contributors | Before every commit and prior to opening a pull request | `git diff --cached \| ./scripts/scan-secrets.py` |
 | Prompt docs audit | Prompt Docs maintainers | Whenever prompt documentation changes or monthly during content reviews | `npm run chore:prompts`<br>`npm run chore:prompts --write` *(when auto-fixing formatting)* |
 

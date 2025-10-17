@@ -70,6 +70,8 @@ jobs:
         if: steps.doc_changes.outputs.doc_only != 'true'
       - run: npm run lint
         if: steps.doc_changes.outputs.doc_only != 'true'
+      - run: npm run typecheck
+        if: steps.doc_changes.outputs.doc_only != 'true'
       - run: npm run test:ci
         if: steps.doc_changes.outputs.doc_only != 'true'
 

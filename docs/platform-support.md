@@ -89,6 +89,7 @@ All platforms run the same automated checks. Before committing changes, run:
 
 ```bash
 npm run lint
+npm run typecheck
 npm run test:ci
 ```
 

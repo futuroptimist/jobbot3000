@@ -14,4 +14,11 @@ describe('README documentation', () => {
     const examplePattern = new RegExp(patternParts.join(''), 'm');
     expect(contents).toMatch(examplePattern);
   });
+
+  it('documents plugin registration and configuration knobs', () => {
+    const contents = fs.readFileSync(README_PATH, 'utf8');
+    expect(contents).toMatch(/## Plugins and automation hooks/);
+    expect(contents).toMatch(/registerPluginsModule/);
+    expect(contents).toMatch(/JOBBOT_PLUGINS/);
+  });
 });

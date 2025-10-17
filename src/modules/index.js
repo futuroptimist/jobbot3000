@@ -4,6 +4,7 @@ import { registerScrapingModule } from './scraping/index.js';
 import { registerEnrichmentModule } from './enrichment/index.js';
 import { registerScoringModule } from './scoring/index.js';
 import { registerNotificationsModule } from './notifications/index.js';
+import { registerPluginsModule } from './plugins/index.js';
 
 export function bootstrapModules(options = {}) {
   const bus = options.bus ?? createModuleEventBus({ logger: options.logger });
@@ -15,6 +16,14 @@ export function bootstrapModules(options = {}) {
   disposers.push(registerEnrichmentModule({ bus, config }));
   disposers.push(registerScoringModule({ bus, config }));
   disposers.push(registerNotificationsModule({ bus, config }));
+  disposers.push(
+    registerPluginsModule({
+      bus,
+      config,
+      plugins: options.plugins ?? [],
+      logger: options.logger,
+    }),
+  );
 
   return {
     bus,
@@ -36,3 +45,4 @@ export * from './scraping/index.js';
 export * from './enrichment/index.js';
 export * from './scoring/index.js';
 export * from './notifications/index.js';
+export * from './plugins/index.js';
