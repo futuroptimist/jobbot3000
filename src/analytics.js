@@ -2,6 +2,11 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import { STATUSES } from './lifecycle.js';
+import {
+  summarizeDeliverableRuns,
+  summarizeInterviewSessions,
+  setActivityDataDir,
+} from './activity-insights.js';
 
 let overrideDir;
 
@@ -157,6 +162,7 @@ function resolveDataDir() {
 
 export function setAnalyticsDataDir(dir) {
   overrideDir = dir || undefined;
+  setActivityDataDir(dir || undefined);
 }
 
 async function readJsonFile(file) {
@@ -310,53 +316,49 @@ function isVisibleDirectory(entry) {
   return entry.isDirectory() && !entry.name.startsWith('.');
 }
 
-function isVisibleFile(entry) {
-  return entry.isFile() && !entry.name.startsWith('.');
-}
-
 async function summarizeDeliverableActivity(baseDir) {
   const entries = await safeReadDir(baseDir);
   let jobs = 0;
   let runs = 0;
+  let latestIso;
   for (const entry of entries) {
     if (!isVisibleDirectory(entry)) continue;
-    const jobDir = path.join(baseDir, entry.name);
-    const runEntries = await safeReadDir(jobDir);
-    let jobRuns = 0;
-    let hasFiles = false;
-    for (const runEntry of runEntries) {
-      if (isVisibleDirectory(runEntry)) jobRuns += 1;
-      if (isVisibleFile(runEntry)) hasFiles = true;
-    }
-    if (jobRuns === 0 && hasFiles) {
-      jobRuns = 1;
-    }
-    if (jobRuns > 0) {
-      jobs += 1;
-      runs += jobRuns;
+    const summary = await summarizeDeliverableRuns(entry.name);
+    if (!summary) continue;
+    const jobRuns = summary.runs ?? 0;
+    if (jobRuns <= 0) continue;
+    jobs += 1;
+    runs += jobRuns;
+    if (typeof summary.last_run_at === 'string' && summary.last_run_at) {
+      if (!latestIso || summary.last_run_at > latestIso) {
+        latestIso = summary.last_run_at;
+      }
     }
   }
-  return { jobs, runs };
+  return { jobs, runs, last_run_at: latestIso ?? null };
 }
 
 async function summarizeInterviewActivity(baseDir) {
   const entries = await safeReadDir(baseDir);
   let jobs = 0;
   let sessions = 0;
+  let latestIso;
   for (const entry of entries) {
     if (!isVisibleDirectory(entry)) continue;
-    const jobDir = path.join(baseDir, entry.name);
-    const sessionEntries = await safeReadDir(jobDir);
-    let jobSessions = 0;
-    for (const sessionEntry of sessionEntries) {
-      if (isVisibleFile(sessionEntry)) jobSessions += 1;
-    }
-    if (jobSessions > 0) {
-      jobs += 1;
-      sessions += jobSessions;
+    const summary = await summarizeInterviewSessions(entry.name);
+    if (!summary) continue;
+    const jobSessions = summary.sessions ?? 0;
+    if (jobSessions <= 0) continue;
+    jobs += 1;
+    sessions += jobSessions;
+    const recordedAt = summary.last_session?.recorded_at;
+    if (typeof recordedAt === 'string' && recordedAt) {
+      if (!latestIso || recordedAt > latestIso) {
+        latestIso = recordedAt;
+      }
     }
   }
-  return { jobs, sessions };
+  return { jobs, sessions, last_session_at: latestIso ?? null };
 }
 
 async function summarizeActivity() {
@@ -1121,10 +1123,12 @@ export async function computeActivitySummary() {
   const deliverables = {
     jobs: activity?.deliverables?.jobs ?? 0,
     runs: activity?.deliverables?.runs ?? 0,
+    last_run_at: activity?.deliverables?.last_run_at ?? null,
   };
   const interviews = {
     jobs: activity?.interviews?.jobs ?? 0,
     sessions: activity?.interviews?.sessions ?? 0,
+    last_session_at: activity?.interviews?.last_session_at ?? null,
   };
   return {
     generated_at: new Date().toISOString(),

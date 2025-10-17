@@ -2655,13 +2655,13 @@ describe('jobbot CLI', () => {
     fs.mkdirSync(deliverablesRoot, { recursive: true });
     const job1Run1 = path.join(deliverablesRoot, 'job-1', '2025-02-01T10-00-00Z');
     const job1Run2 = path.join(deliverablesRoot, 'job-1', '2025-02-05T09-00-00Z');
-    const job2Dir = path.join(deliverablesRoot, 'job-2');
+    const job2Run = path.join(deliverablesRoot, 'job-2', '2025-02-08T12-00-00Z');
     fs.mkdirSync(job1Run1, { recursive: true });
     fs.writeFileSync(path.join(job1Run1, 'resume.pdf'), 'binary');
     fs.mkdirSync(job1Run2, { recursive: true });
     fs.writeFileSync(path.join(job1Run2, 'cover-letter.docx'), 'binary');
-    fs.mkdirSync(job2Dir, { recursive: true });
-    fs.writeFileSync(path.join(job2Dir, 'portfolio.pdf'), 'binary');
+    fs.mkdirSync(job2Run, { recursive: true });
+    fs.writeFileSync(path.join(job2Run, 'portfolio.pdf'), 'binary');
 
     const interviewsRoot = path.join(dataDir, 'interviews');
     fs.mkdirSync(interviewsRoot, { recursive: true });
@@ -2670,16 +2670,37 @@ describe('jobbot CLI', () => {
     fs.mkdirSync(jobAlphaDir, { recursive: true });
     fs.writeFileSync(
       path.join(jobAlphaDir, 'session-1.json'),
-      JSON.stringify({ transcript: 'Great session' }, null, 2),
+      JSON.stringify(
+        {
+          transcript: 'Great session',
+          recorded_at: '2025-03-02T09:30:00.000Z',
+        },
+        null,
+        2,
+      ),
     );
     fs.writeFileSync(
       path.join(jobAlphaDir, 'session-2.json'),
-      JSON.stringify({ transcript: 'Follow-up session' }, null, 2),
+      JSON.stringify(
+        {
+          transcript: 'Follow-up session',
+          recorded_at: '2025-03-06T14:00:00.000Z',
+        },
+        null,
+        2,
+      ),
     );
     fs.mkdirSync(jobBetaDir, { recursive: true });
     fs.writeFileSync(
       path.join(jobBetaDir, 'session-a.json'),
-      JSON.stringify({ transcript: 'Phone screen' }, null, 2),
+      JSON.stringify(
+        {
+          transcript: 'Phone screen',
+          recorded_at: '2025-03-01T16:45:00.000Z',
+        },
+        null,
+        2,
+      ),
     );
 
     const outPath = path.join(dataDir, 'analytics', 'activity.json');
@@ -2689,8 +2710,10 @@ describe('jobbot CLI', () => {
     expect(output.trim()).toContain(`Saved analytics activity to ${resolvedOut}`);
 
     const payload = JSON.parse(fs.readFileSync(resolvedOut, 'utf8'));
-    expect(payload.deliverables).toEqual({ jobs: 2, runs: 3 });
-    expect(payload.interviews).toEqual({ jobs: 2, sessions: 3 });
+    expect(payload.deliverables).toMatchObject({ jobs: 2, runs: 3 });
+    expect(payload.deliverables.last_run_at).toBe('2025-02-08T12:00:00Z');
+    expect(payload.interviews).toMatchObject({ jobs: 2, sessions: 3 });
+    expect(payload.interviews.last_session_at).toBe('2025-03-06T14:00:00.000Z');
     expect(typeof payload.generated_at).toBe('string');
     expect(payload.generated_at).toMatch(/T/);
 

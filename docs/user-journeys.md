@@ -355,19 +355,16 @@ jobbot3000.
 ### CLI flow
 
 > [!NOTE]
-> **Future work inventory (2025-10-12):**
-> - `docs/web-interface-roadmap.md` and `docs/simplification_suggestions.md` document previously
->   shipped UX and architecture work with no remaining TODOs after review.
-> - This journey promised `jobbot analytics activity`, but the CLI lacked the subcommand despite
->   `src/analytics.js` already producing sanitized activity counts. Wiring the existing helper through
->   the CLI fits a single PR and unlocks the documented workflow immediately.
+> **Update (2025-10-12):** `jobbot analytics activity` exports deliverable runs, interview sessions,
+> and latest activity timestamps without leaking job identifiers. Regression coverage in
+> [`test/cli.test.js`](../test/cli.test.js) and [`test/analytics.test.js`](../test/analytics.test.js)
+> guards the sanitized counts and recency fields so downstream recommender jobs can refresh signals
+> safely.
 
 1. Run `jobbot analytics funnel --json` to compute conversion metrics and generate Sankey-ready
    structures.
 2. Refresh recommender signals with `jobbot analytics activity --out data/analytics/activity.json`
-   summarizing deliverable runs and interview sessions. Regression coverage in
-   [`test/cli.test.js`](../test/cli.test.js) enforces the sanitized activity export so the CLI writes
-   aggregate counts without leaking job identifiers.
+   summarizing deliverable runs, interview sessions, and the most recent timestamps for each feed.
 3. Inspect gaps using `jobbot analytics health` which highlights missing data, schema drift, or stale
    snapshots.
    Regression coverage in [`test/analytics.test.js`](../test/analytics.test.js) and

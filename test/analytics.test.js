@@ -713,15 +713,15 @@ describe('analytics conversion funnel', () => {
     const job1Run1Dir = path.join(deliverablesRoot, 'job-1', '2025-02-01T10-00-00Z');
     const job1Run2Dir = path.join(deliverablesRoot, 'job-1', '2025-02-05T09-00-00Z');
     const job2RunDir = path.join(deliverablesRoot, 'job-2', '2025-03-01T08-00-00Z');
-    const job3Dir = path.join(deliverablesRoot, 'job-3');
+    const job3RunDir = path.join(deliverablesRoot, 'job-3', '2025-03-03T11-30-00Z');
     await fs.mkdir(job1Run1Dir, { recursive: true });
     await fs.writeFile(path.join(job1Run1Dir, 'resume.pdf'), 'binary');
     await fs.mkdir(job1Run2Dir, { recursive: true });
     await fs.writeFile(path.join(job1Run2Dir, 'cover-letter.docx'), 'binary');
     await fs.mkdir(job2RunDir, { recursive: true });
     await fs.writeFile(path.join(job2RunDir, 'notes.txt'), 'binary');
-    await fs.mkdir(job3Dir, { recursive: true });
-    await fs.writeFile(path.join(job3Dir, 'portfolio.pdf'), 'binary');
+    await fs.mkdir(job3RunDir, { recursive: true });
+    await fs.writeFile(path.join(job3RunDir, 'portfolio.pdf'), 'binary');
 
     const interviewsRoot = path.join(dataDir, 'interviews');
     const jobAlphaDir = path.join(interviewsRoot, 'job-alpha');
@@ -729,16 +729,37 @@ describe('analytics conversion funnel', () => {
     await fs.mkdir(jobAlphaDir, { recursive: true });
     await fs.writeFile(
       path.join(jobAlphaDir, 'session-1.json'),
-      JSON.stringify({ transcript: 'Great session' }, null, 2)
+      JSON.stringify(
+        {
+          transcript: 'Great session',
+          recorded_at: '2025-03-02T09:30:00.000Z',
+        },
+        null,
+        2,
+      )
     );
     await fs.writeFile(
       path.join(jobAlphaDir, 'session-2.json'),
-      JSON.stringify({ transcript: 'Follow-up session' }, null, 2)
+      JSON.stringify(
+        {
+          transcript: 'Follow-up session',
+          recorded_at: '2025-03-06T14:00:00.000Z',
+        },
+        null,
+        2,
+      )
     );
     await fs.mkdir(jobBetaDir, { recursive: true });
     await fs.writeFile(
       path.join(jobBetaDir, 'session-a.json'),
-      JSON.stringify({ transcript: 'Phone screen' }, null, 2)
+      JSON.stringify(
+        {
+          transcript: 'Phone screen',
+          recorded_at: '2025-03-01T16:45:00.000Z',
+        },
+        null,
+        2,
+      )
     );
 
     const { exportAnalyticsSnapshot, setAnalyticsDataDir } = await import('../src/analytics.js');
@@ -746,9 +767,15 @@ describe('analytics conversion funnel', () => {
     restoreAnalyticsDir = async () => setAnalyticsDataDir(undefined);
 
     const snapshot = await exportAnalyticsSnapshot();
-    expect(snapshot.activity).toEqual({
-      deliverables: { jobs: 3, runs: 4 },
-      interviews: { jobs: 2, sessions: 3 },
+    expect(snapshot.activity.deliverables).toMatchObject({
+      jobs: 3,
+      runs: 4,
+      last_run_at: '2025-03-03T11:30:00Z',
+    });
+    expect(snapshot.activity.interviews).toMatchObject({
+      jobs: 2,
+      sessions: 3,
+      last_session_at: '2025-03-06T14:00:00.000Z',
     });
 
     const serialized = JSON.stringify(snapshot);
