@@ -355,12 +355,13 @@ jobbot3000.
 ### CLI flow
 
 > [!NOTE]
-> **Future work inventory (2025-10-12):**
-> - `docs/web-interface-roadmap.md` and `docs/simplification_suggestions.md` document previously
->   shipped UX and architecture work with no remaining TODOs after review.
-> - This journey promised `jobbot analytics activity`, but the CLI lacked the subcommand despite
->   `src/analytics.js` already producing sanitized activity counts. Wiring the existing helper through
->   the CLI fits a single PR and unlocks the documented workflow immediately.
+> **Update (2025-10-17):**
+> - `docs/web-interface-roadmap.md` and `docs/simplification_suggestions.md` continue to capture
+>   previously shipped UX and architecture work with no remaining TODOs after review.
+> - The CLI now ships `jobbot analytics activity`, wiring the existing analytics helper to export
+>   sanitized deliverable and interview counts via `--out`. `test/cli.test.js` exercises the payload,
+>   and `test/docs-user-journeys.test.js` ensures this journey note stays aligned so we do not regress
+>   to future-work language.
 
 1. Run `jobbot analytics funnel --json` to compute conversion metrics and generate Sankey-ready
    structures.
