@@ -3721,6 +3721,7 @@ function expandRoles(roleSet) {
 
 function normalizeRoleList(value, fallbackRoles) {
   const fallback = Array.isArray(fallbackRoles) ? fallbackRoles : [];
+  const shouldApplyFallback = value == null;
   let source;
   if (value == null) {
     source = fallback;
@@ -3745,7 +3746,7 @@ function normalizeRoleList(value, fallbackRoles) {
     }
   }
 
-  if (normalized.size === 0 && fallback.length > 0) {
+  if (normalized.size === 0 && shouldApplyFallback && fallback.length > 0) {
     for (const role of fallback) {
       normalized.add(role);
     }

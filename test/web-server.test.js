@@ -2095,6 +2095,24 @@ describe('web server command endpoint', () => {
     expect(successEvent.actor).toBe('editor@example.com');
   });
 
+  it('rejects tokens with explicitly empty role lists', async () => {
+    await expect(
+      startServer({
+        commandAdapter: { summarize: vi.fn(async () => ({ ok: true })) },
+        auth: { tokens: [{ token: 'empty-role-token', roles: [] }] },
+      }),
+    ).rejects.toThrow(/auth token roles must include at least one role/i);
+  });
+
+  it('rejects tokens with blank role strings', async () => {
+    await expect(
+      startServer({
+        commandAdapter: { summarize: vi.fn(async () => ({ ok: true })) },
+        auth: { tokens: [{ token: 'blank-role-token', roles: '   ' }] },
+      }),
+    ).rejects.toThrow(/auth token roles must include at least one role/i);
+  });
+
   it('logs telemetry when commands succeed', async () => {
     const logger = {
       info: vi.fn(),
