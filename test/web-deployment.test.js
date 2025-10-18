@@ -20,6 +20,14 @@ describe('web deployment artifacts', () => {
     const compose = await readFile(composePath, 'utf8');
     expect(compose).toContain('services:');
     expect(compose).toContain('JOBBOT_WEB_ENV=production');
+    expect(compose).toContain('JOBBOT_WEB_HOST=0.0.0.0');
+    expect(compose).toContain('JOBBOT_WEB_PORT=3000');
     expect(compose).toContain('JOBBOT_DATA_DIR=/data');
+    expect(compose).toMatch(/JOBBOT_WEB_ENABLE_NATIVE_CLI=(1|true|yes)/);
+    expect(compose).toContain('ports:');
+    expect(compose).toContain('"3000:3000"');
+    expect(compose).toContain('volumes:');
+    expect(compose).toContain('./data:/data');
+    expect(compose).toContain('command:');
   });
 });

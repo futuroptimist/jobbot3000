@@ -338,13 +338,13 @@
   duplicate markup and styles.
 
 6. **Hardening and Packaging**
-> [!NOTE]
-> **Backlog inventory (2025-10-18):** This section's outstanding future-work items
-> included per-client input sanitization for CLI payloads alongside previously
-> shipped rate limiting and CSRF guards. Larger roadmap items—such as multi-user
-> access controls and real-time collaboration from the "Future Enhancements"
-> section—remain multi-PR efforts, so the sanitization work was prioritized here
-> as an actionable single-PR change.
+
+   > [!NOTE] > **Backlog inventory (2025-10-18):** This section's outstanding future-work items
+   > included per-client input sanitization for CLI payloads alongside previously
+   > shipped rate limiting and CSRF guards. Larger roadmap items—such as multi-user
+   > access controls and real-time collaboration from the "Future Enhancements"
+   > section—remain multi-PR efforts, so the sanitization work was prioritized here
+   > as an actionable single-PR change.
 
    - Implement rate limiting, input sanitization, and CSRF tokens.
      _Implemented (2025-10-18):_ `validateCommandPayload` now strips control
@@ -360,6 +360,12 @@
      [`test/web-config.test.js`](../test/web-config.test.js) locks the
      defaults and override semantics in place.
    - Provide Dockerfile and docker-compose for reproducible deployment.
+     _Implemented (2025-10-20):_ [`docker-compose.web.yml`](../docker-compose.web.yml)
+     now exports `JOBBOT_WEB_ENABLE_NATIVE_CLI=1` so the containerized web
+     server can invoke CLI commands without manual flags. Regression coverage in
+     [`test/web-deployment.test.js`](../test/web-deployment.test.js) guards the
+     compose definition, ensuring the native CLI flag stays enabled alongside
+     the documented environment defaults.
 
 - Document operational playbooks (monitoring, alerting, on-call runbooks).
   _Implemented (2025-10-05):_ [`docs/web-operational-playbook.md`](web-operational-playbook.md)
