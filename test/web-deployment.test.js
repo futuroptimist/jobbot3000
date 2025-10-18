@@ -21,5 +21,6 @@ describe('web deployment artifacts', () => {
     expect(compose).toContain('services:');
     expect(compose).toContain('JOBBOT_WEB_ENV=production');
     expect(compose).toContain('JOBBOT_DATA_DIR=/data');
+    expect(compose).toContain('JOBBOT_WEB_ENABLE_NATIVE_CLI=1');
   });
 });
