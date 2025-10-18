@@ -1,14 +1,14 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { JSDOM } from 'jsdom';
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { JSDOM } from "jsdom";
 
 let activeServers = [];
 
 async function startServer(options) {
-  const { startWebServer } = await import('../src/web/server.js');
+  const { startWebServer } = await import("../src/web/server.js");
   const server = await startWebServer({
-    host: '127.0.0.1',
+    host: "127.0.0.1",
     port: 0,
-    csrfToken: 'test-csrf-token',
+    csrfToken: "test-csrf-token",
     rateLimit: { windowMs: 1000, max: 50 },
     ...options,
   });
@@ -33,7 +33,7 @@ async function renderStatusDom(server, options = {}) {
   const { autoBoot = true, ...jsdomOptions } = options;
   const html = await fetchStatusHtml(server);
   const dom = new JSDOM(html, {
-    runScripts: 'dangerously',
+    runScripts: "dangerously",
     url: `${server.url}/`,
     ...jsdomOptions,
   });
@@ -56,10 +56,13 @@ async function renderStatusDom(server, options = {}) {
 
 function waitForDomEvent(dom, name, timeout = 500) {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${name} timed out`)), timeout);
+    const timer = setTimeout(
+      () => reject(new Error(`${name} timed out`)),
+      timeout,
+    );
     dom.window.document.addEventListener(
       name,
-      event => {
+      (event) => {
         clearTimeout(timer);
         resolve(event);
       },
@@ -69,10 +72,10 @@ function waitForDomEvent(dom, name, timeout = 500) {
 }
 
 function buildCommandHeaders(server, overrides = {}) {
-  const headerName = server?.csrfHeaderName ?? 'x-jobbot-csrf';
-  const token = server?.csrfToken ?? 'test-csrf-token';
+  const headerName = server?.csrfHeaderName ?? "x-jobbot-csrf";
+  const token = server?.csrfToken ?? "test-csrf-token";
   return {
-    'content-type': 'application/json',
+    "content-type": "application/json",
     [headerName]: token,
     ...overrides,
   };
@@ -85,15 +88,15 @@ afterEach(async () => {
   }
 });
 
-describe('web server health endpoint', () => {
-  it('reports ok status with metadata when all checks pass', async () => {
+describe("web server health endpoint", () => {
+  it("reports ok status with metadata when all checks pass", async () => {
     const server = await startServer({
-      info: { service: 'jobbot-web', version: '0.1.0-test' },
+      info: { service: "jobbot-web", version: "0.1.0-test" },
       healthChecks: [
         {
-          name: 'cli',
+          name: "cli",
           async run() {
-            return { details: { command: 'jobbot --help' } };
+            return { details: { command: "jobbot --help" } };
           },
         },
       ],
@@ -103,30 +106,30 @@ describe('web server health endpoint', () => {
     expect(response.status).toBe(200);
     const payload = await response.json();
     expect(payload).toMatchObject({
-      status: 'ok',
-      service: 'jobbot-web',
-      version: '0.1.0-test',
+      status: "ok",
+      service: "jobbot-web",
+      version: "0.1.0-test",
     });
-    expect(typeof payload.uptime).toBe('number');
+    expect(typeof payload.uptime).toBe("number");
     expect(payload.uptime).toBeGreaterThanOrEqual(0);
-    expect(new Date(payload.timestamp).toString()).not.toBe('Invalid Date');
+    expect(new Date(payload.timestamp).toString()).not.toBe("Invalid Date");
     expect(Array.isArray(payload.checks)).toBe(true);
     expect(payload.checks).toHaveLength(1);
     expect(payload.checks[0]).toMatchObject({
-      name: 'cli',
-      status: 'ok',
-      details: { command: 'jobbot --help' },
+      name: "cli",
+      status: "ok",
+      details: { command: "jobbot --help" },
     });
-    expect(typeof payload.checks[0].duration_ms).toBe('number');
+    expect(typeof payload.checks[0].duration_ms).toBe("number");
   });
 
-  it('bubbles check failures and returns a 503 status', async () => {
+  it("bubbles check failures and returns a 503 status", async () => {
     const server = await startServer({
       healthChecks: [
         {
-          name: 'resume-pipeline',
+          name: "resume-pipeline",
           async run() {
-            throw new Error('resume pipeline unavailable');
+            throw new Error("resume pipeline unavailable");
           },
         },
       ],
@@ -135,22 +138,22 @@ describe('web server health endpoint', () => {
     const response = await fetch(`${server.url}/health`);
     expect(response.status).toBe(503);
     const payload = await response.json();
-    expect(payload.status).toBe('error');
+    expect(payload.status).toBe("error");
     expect(payload.checks).toHaveLength(1);
     expect(payload.checks[0]).toMatchObject({
-      name: 'resume-pipeline',
-      status: 'error',
-      error: 'resume pipeline unavailable',
+      name: "resume-pipeline",
+      status: "error",
+      error: "resume pipeline unavailable",
     });
   });
 
-  it('surface warn statuses without failing the overall health', async () => {
+  it("surface warn statuses without failing the overall health", async () => {
     const server = await startServer({
       healthChecks: [
         {
-          name: 'queue-depth',
+          name: "queue-depth",
           async run() {
-            return { status: 'warn', details: { depth: 42 } };
+            return { status: "warn", details: { depth: 42 } };
           },
         },
       ],
@@ -159,28 +162,28 @@ describe('web server health endpoint', () => {
     const response = await fetch(`${server.url}/health`);
     expect(response.status).toBe(200);
     const payload = await response.json();
-    expect(payload.status).toBe('warn');
+    expect(payload.status).toBe("warn");
     expect(payload.checks[0]).toMatchObject({
-      name: 'queue-depth',
-      status: 'warn',
+      name: "queue-depth",
+      status: "warn",
       details: { depth: 42 },
     });
   });
 
-  it('rejects invalid health check definitions', async () => {
-    const { startWebServer } = await import('../src/web/server.js');
-    expect(() => startWebServer({ healthChecks: [{ name: 'bad-check' }] })).toThrow(
-      /health check/,
-    );
+  it("rejects invalid health check definitions", async () => {
+    const { startWebServer } = await import("../src/web/server.js");
+    expect(() =>
+      startWebServer({ healthChecks: [{ name: "bad-check" }] }),
+    ).toThrow(/health check/);
   });
 });
 
-describe('web server status page', () => {
-  it('exposes a theme toggle that persists the preferred mode', async () => {
+describe("web server status page", () => {
+  it("exposes a theme toggle that persists the preferred mode", async () => {
     const server = await startServer();
 
     const html = await fetchStatusHtml(server);
-    expect(html).toContain('data-theme-toggle');
+    expect(html).toContain("data-theme-toggle");
 
     const asset = await fetch(`${server.url}/assets/status-hub.js`);
     expect(asset.status).toBe(200);
@@ -189,7 +192,7 @@ describe('web server status page', () => {
     expect(code).toMatch(/prefers-color-scheme/);
   });
 
-  it('links to the web operations playbook for on-call guidance', async () => {
+  it("links to the web operations playbook for on-call guidance", async () => {
     const server = await startServer();
 
     const response = await fetch(`${server.url}/`);
@@ -204,88 +207,103 @@ describe('web server status page', () => {
     expect(operationsLink?.textContent).toMatch(/Operations playbook/i);
   });
 
-  it('supports keyboard navigation between status sections', async () => {
+  it("supports keyboard navigation between status sections", async () => {
     const server = await startServer();
     const { dom } = await renderStatusDom(server);
     const { document } = dom.window;
 
-    const router = document.querySelector('[data-router]');
-    expect(router?.getAttribute('data-active-route')).toBe('overview');
+    const router = document.querySelector("[data-router]");
+    expect(router?.getAttribute("data-active-route")).toBe("overview");
 
     document.dispatchEvent(
-      new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }),
+      new dom.window.KeyboardEvent("keydown", {
+        key: "ArrowRight",
+        bubbles: true,
+      }),
     );
 
-    expect(router?.getAttribute('data-active-route')).toBe('applications');
+    expect(router?.getAttribute("data-active-route")).toBe("applications");
     const activeLink = document.activeElement;
-    expect(activeLink?.getAttribute('data-route-link')).toBe('applications');
+    expect(activeLink?.getAttribute("data-route-link")).toBe("applications");
 
     document.dispatchEvent(
-      new dom.window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }),
+      new dom.window.KeyboardEvent("keydown", {
+        key: "ArrowLeft",
+        bubbles: true,
+      }),
     );
 
-    expect(router?.getAttribute('data-active-route')).toBe('overview');
+    expect(router?.getAttribute("data-active-route")).toBe("overview");
 
     document.dispatchEvent(
-      new dom.window.KeyboardEvent('keydown', { key: 'End', bubbles: true }),
+      new dom.window.KeyboardEvent("keydown", { key: "End", bubbles: true }),
     );
 
-    expect(router?.getAttribute('data-active-route')).toBe('audits');
+    expect(router?.getAttribute("data-active-route")).toBe("audits");
 
     document.dispatchEvent(
-      new dom.window.KeyboardEvent('keydown', { key: 'Home', bubbles: true }),
+      new dom.window.KeyboardEvent("keydown", { key: "Home", bubbles: true }),
     );
 
-    expect(router?.getAttribute('data-active-route')).toBe('overview');
+    expect(router?.getAttribute("data-active-route")).toBe("overview");
   });
 
-  it('ignores global shortcuts when focus is inside a form control', async () => {
+  it("ignores global shortcuts when focus is inside a form control", async () => {
     const server = await startServer();
     const { dom } = await renderStatusDom(server);
     const { document } = dom.window;
 
-    const router = document.querySelector('[data-router]');
-    expect(router?.getAttribute('data-active-route')).toBe('overview');
+    const router = document.querySelector("[data-router]");
+    expect(router?.getAttribute("data-active-route")).toBe("overview");
 
-    const locationInput = document.querySelector('[data-shortlist-filter="location"]');
+    const locationInput = document.querySelector(
+      '[data-shortlist-filter="location"]',
+    );
     expect(locationInput).toBeTruthy();
     locationInput?.focus();
 
     locationInput?.dispatchEvent(
-      new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }),
+      new dom.window.KeyboardEvent("keydown", {
+        key: "ArrowRight",
+        bubbles: true,
+      }),
     );
 
-    expect(router?.getAttribute('data-active-route')).toBe('overview');
+    expect(router?.getAttribute("data-active-route")).toBe("overview");
   });
 
-  it('serves the status hub script via an external asset endpoint', async () => {
+  it("serves the status hub script via an external asset endpoint", async () => {
     const server = await startServer();
 
     const homepage = await fetch(`${server.url}/`);
     expect(homepage.status).toBe(200);
     const html = await homepage.text();
     const dom = new JSDOM(html);
-    const scriptEl = dom.window.document.querySelector('script[src="/assets/status-hub.js"]');
+    const scriptEl = dom.window.document.querySelector(
+      'script[src="/assets/status-hub.js"]',
+    );
 
     expect(scriptEl).not.toBeNull();
-    expect(scriptEl?.getAttribute('defer')).not.toBeNull();
+    expect(scriptEl?.getAttribute("defer")).not.toBeNull();
 
     const asset = await fetch(`${server.url}/assets/status-hub.js`);
     expect(asset.status).toBe(200);
-    expect(asset.headers.get('content-type')).toBe('application/javascript; charset=utf-8');
-    expect(asset.headers.get('cache-control')).toBe('no-store');
+    expect(asset.headers.get("content-type")).toBe(
+      "application/javascript; charset=utf-8",
+    );
+    expect(asset.headers.get("cache-control")).toBe("no-store");
     const code = await asset.text();
-    expect(code.trim().startsWith('(() => {')).toBe(true);
-    expect(code).toContain('jobbot:status-panels-ready');
-    expect(code.trim().endsWith('})();')).toBe(true);
+    expect(code.trim().startsWith("(() => {")).toBe(true);
+    expect(code).toContain("jobbot:status-panels-ready");
+    expect(code.trim().endsWith("})();")).toBe(true);
   });
 
-  it('supports hash-based navigation between status sections', async () => {
+  it("supports hash-based navigation between status sections", async () => {
     const server = await startServer();
 
     const { dom, boot } = await renderStatusDom(server, { autoBoot: false });
 
-    const routerReady = waitForDomEvent(dom, 'jobbot:router-ready');
+    const routerReady = waitForDomEvent(dom, "jobbot:router-ready");
     await boot();
     await routerReady;
 
@@ -298,69 +316,75 @@ describe('web server status page', () => {
 
     expect(overview).not.toBeNull();
     expect(commands).not.toBeNull();
-    expect(overview?.hasAttribute('hidden')).toBe(false);
-    expect(commands?.hasAttribute('hidden')).toBe(true);
-    expect(overviewLink?.getAttribute('aria-current')).toBe('page');
-    expect(commandsLink?.hasAttribute('aria-current')).toBe(false);
+    expect(overview?.hasAttribute("hidden")).toBe(false);
+    expect(commands?.hasAttribute("hidden")).toBe(true);
+    expect(overviewLink?.getAttribute("aria-current")).toBe("page");
+    expect(commandsLink?.hasAttribute("aria-current")).toBe(false);
 
-    dom.window.location.hash = '#commands';
-    dom.window.dispatchEvent(new HashChange('hashchange'));
+    dom.window.location.hash = "#commands";
+    dom.window.dispatchEvent(new HashChange("hashchange"));
 
-    expect(commands?.hasAttribute('hidden')).toBe(false);
-    expect(overview?.hasAttribute('hidden')).toBe(true);
-    expect(commandsLink?.getAttribute('aria-current')).toBe('page');
-    expect(overviewLink?.hasAttribute('aria-current')).toBe(false);
+    expect(commands?.hasAttribute("hidden")).toBe(false);
+    expect(overview?.hasAttribute("hidden")).toBe(true);
+    expect(commandsLink?.getAttribute("aria-current")).toBe("page");
+    expect(overviewLink?.hasAttribute("aria-current")).toBe(false);
   });
 
-  it('exposes status panels with loading and error states', async () => {
+  it("exposes status panels with loading and error states", async () => {
     const server = await startServer();
 
     const { dom, boot } = await renderStatusDom(server, { autoBoot: false });
 
-    const panelsReady = waitForDomEvent(dom, 'jobbot:status-panels-ready');
+    const panelsReady = waitForDomEvent(dom, "jobbot:status-panels-ready");
     await boot();
     await panelsReady;
 
     const { document } = dom.window;
     const api = dom.window.JobbotStatusHub;
 
-    expect(typeof api).toBe('object');
-    expect(typeof api?.setPanelState).toBe('function');
-    expect(typeof api?.getPanelState).toBe('function');
+    expect(typeof api).toBe("object");
+    expect(typeof api?.setPanelState).toBe("function");
+    expect(typeof api?.getPanelState).toBe("function");
 
-    const commandsPanel = document.querySelector('[data-status-panel="commands"]');
+    const commandsPanel = document.querySelector(
+      '[data-status-panel="commands"]',
+    );
     expect(commandsPanel).not.toBeNull();
-    expect(commandsPanel?.getAttribute('data-state')).toBe('ready');
+    expect(commandsPanel?.getAttribute("data-state")).toBe("ready");
 
     const readySlot = commandsPanel?.querySelector('[data-state-slot="ready"]');
-    const loadingSlot = commandsPanel?.querySelector('[data-state-slot="loading"]');
+    const loadingSlot = commandsPanel?.querySelector(
+      '[data-state-slot="loading"]',
+    );
     const errorSlot = commandsPanel?.querySelector('[data-state-slot="error"]');
 
-    expect(readySlot?.hasAttribute('hidden')).toBe(false);
-    expect(loadingSlot?.hasAttribute('hidden')).toBe(true);
-    expect(errorSlot?.hasAttribute('hidden')).toBe(true);
+    expect(readySlot?.hasAttribute("hidden")).toBe(false);
+    expect(loadingSlot?.hasAttribute("hidden")).toBe(true);
+    expect(errorSlot?.hasAttribute("hidden")).toBe(true);
 
-    expect(api?.getPanelState('commands')).toBe('ready');
+    expect(api?.getPanelState("commands")).toBe("ready");
 
-    expect(api?.setPanelState('commands', 'loading')).toBe(true);
-    expect(commandsPanel?.getAttribute('data-state')).toBe('loading');
-    expect(loadingSlot?.hasAttribute('hidden')).toBe(false);
-    expect(readySlot?.hasAttribute('hidden')).toBe(true);
+    expect(api?.setPanelState("commands", "loading")).toBe(true);
+    expect(commandsPanel?.getAttribute("data-state")).toBe("loading");
+    expect(loadingSlot?.hasAttribute("hidden")).toBe(false);
+    expect(readySlot?.hasAttribute("hidden")).toBe(true);
 
-    expect(api?.setPanelState('commands', 'error', { message: 'Failed to load' })).toBe(true);
-    expect(commandsPanel?.getAttribute('data-state')).toBe('error');
-    expect(errorSlot?.hasAttribute('hidden')).toBe(false);
-    const errorMessage = errorSlot?.querySelector('[data-error-message]');
-    expect(errorMessage?.textContent).toContain('Failed to load');
+    expect(
+      api?.setPanelState("commands", "error", { message: "Failed to load" }),
+    ).toBe(true);
+    expect(commandsPanel?.getAttribute("data-state")).toBe("error");
+    expect(errorSlot?.hasAttribute("hidden")).toBe(false);
+    const errorMessage = errorSlot?.querySelector("[data-error-message]");
+    expect(errorMessage?.textContent).toContain("Failed to load");
 
-    expect(api?.setPanelState('commands', 'unknown')).toBe(true);
-    expect(commandsPanel?.getAttribute('data-state')).toBe('ready');
-    expect(readySlot?.hasAttribute('hidden')).toBe(false);
+    expect(api?.setPanelState("commands", "unknown")).toBe(true);
+    expect(commandsPanel?.getAttribute("data-state")).toBe("ready");
+    expect(readySlot?.hasAttribute("hidden")).toBe(false);
 
-    expect(api?.setPanelState('missing', 'loading')).toBe(false);
+    expect(api?.setPanelState("missing", "loading")).toBe(false);
   });
 
-  it('renders the applications view with shortlist filters and pagination markup', async () => {
+  it("renders the applications view with shortlist filters and pagination markup", async () => {
     const server = await startServer();
 
     const response = await fetch(`${server.url}/`);
@@ -368,52 +392,52 @@ describe('web server status page', () => {
     const html = await response.text();
 
     expect(html).toContain('data-route="applications"');
-    expect(html).toContain('data-shortlist-filters');
-    expect(html).toContain('data-shortlist-table');
-    expect(html).toContain('data-shortlist-pagination');
+    expect(html).toContain("data-shortlist-filters");
+    expect(html).toContain("data-shortlist-table");
+    expect(html).toContain("data-shortlist-pagination");
   });
 
-  it('loads shortlist entries and paginates the applications view with filters', async () => {
+  it("loads shortlist entries and paginates the applications view with filters", async () => {
     const jobs = [
       {
-        id: 'job-1',
+        id: "job-1",
         metadata: {
-          location: 'Remote',
-          level: 'Senior',
-          compensation: '$185k',
-          synced_at: '2025-03-06T08:00:00.000Z',
+          location: "Remote",
+          level: "Senior",
+          compensation: "$185k",
+          synced_at: "2025-03-06T08:00:00.000Z",
         },
-        tags: ['remote', 'dream'],
+        tags: ["remote", "dream"],
         discard_count: 0,
       },
       {
-        id: 'job-2',
+        id: "job-2",
         metadata: {
-          location: 'Remote',
-          level: 'Senior',
-          compensation: '$185k',
-          synced_at: '2025-03-04T09:00:00.000Z',
+          location: "Remote",
+          level: "Senior",
+          compensation: "$185k",
+          synced_at: "2025-03-04T09:00:00.000Z",
         },
-        tags: ['remote'],
+        tags: ["remote"],
         discard_count: 1,
         last_discard: {
-          reason: 'Paused hiring',
-          discarded_at: '2025-03-02T10:00:00.000Z',
-          tags: ['paused'],
+          reason: "Paused hiring",
+          discarded_at: "2025-03-02T10:00:00.000Z",
+          tags: ["paused"],
         },
       },
     ];
 
     const commandAdapter = {
-      'shortlist-list': vi.fn(async payload => {
+      "shortlist-list": vi.fn(async (payload) => {
         const offset = Number(payload.offset ?? 0);
         const limit = Number(payload.limit ?? 20);
         const slice = jobs.slice(offset, offset + limit);
         return {
-          command: 'shortlist-list',
-          format: 'json',
-          stdout: '',
-          stderr: '',
+          command: "shortlist-list",
+          format: "json",
+          stdout: "",
+          stderr: "",
           data: {
             total: jobs.length,
             offset,
@@ -425,7 +449,7 @@ describe('web server status page', () => {
         };
       }),
     };
-    commandAdapter.shortlistList = commandAdapter['shortlist-list'];
+    commandAdapter.shortlistList = commandAdapter["shortlist-list"];
 
     const server = await startServer({ commandAdapter });
     const { dom, boot } = await renderStatusDom(server, {
@@ -433,68 +457,91 @@ describe('web server status page', () => {
       autoBoot: false,
     });
 
-    const waitForEvent = (name, timeout = 500) => waitForDomEvent(dom, name, timeout);
+    const waitForEvent = (name, timeout = 500) =>
+      waitForDomEvent(dom, name, timeout);
 
-    vi.spyOn(dom.window.HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    vi.spyOn(
+      dom.window.HTMLAnchorElement.prototype,
+      "click",
+    ).mockImplementation(() => {});
 
-    const readyPromise = waitForEvent('jobbot:applications-ready');
+    const readyPromise = waitForEvent("jobbot:applications-ready");
     await boot();
     const readyEvent = await readyPromise;
     expect(readyEvent.detail).toMatchObject({ available: true });
 
     const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
-    dom.window.location.hash = '#applications';
-    dom.window.dispatchEvent(new HashChange('hashchange'));
+    dom.window.location.hash = "#applications";
+    dom.window.dispatchEvent(new HashChange("hashchange"));
 
-    await waitForEvent('jobbot:applications-loaded');
-    expect(commandAdapter['shortlist-list']).toHaveBeenCalledTimes(1);
+    await waitForEvent("jobbot:applications-loaded");
+    expect(commandAdapter["shortlist-list"]).toHaveBeenCalledTimes(1);
 
     const document = dom.window.document;
-    const tableBody = document.querySelector('[data-shortlist-body]');
+    const tableBody = document.querySelector("[data-shortlist-body]");
     expect(tableBody?.children.length).toBe(2);
-    expect(tableBody?.children[0].querySelector('td')?.textContent).toBe('job-1');
-
-    const locationInput = document.querySelector('[data-shortlist-filter="location"]');
-    const tagsInput = document.querySelector('[data-shortlist-filter="tags"]');
-    const limitInput = document.querySelector('[data-shortlist-filter="limit"]');
-    if (locationInput) locationInput.value = 'Remote';
-    if (tagsInput) tagsInput.value = 'remote';
-    if (limitInput) limitInput.value = '1';
-
-    const form = document.querySelector('[data-shortlist-filters]');
-    form?.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
-
-    await waitForEvent('jobbot:applications-loaded');
-    expect(commandAdapter['shortlist-list']).toHaveBeenCalledTimes(2);
-    const latestCall = commandAdapter['shortlist-list'].mock.calls.at(-1)?.[0] ?? {};
-    expect(latestCall).toMatchObject({ location: 'Remote', tags: ['remote'], limit: 1, offset: 0 });
-
-    expect(tableBody?.children.length).toBe(1);
-    expect(tableBody?.children[0].querySelector('td')?.textContent).toBe('job-1');
-    const range = document.querySelector('[data-shortlist-range]');
-    expect(range?.textContent).toContain('Showing 1-1 of 2');
-
-    const nextButton = document.querySelector('[data-shortlist-next]');
-    nextButton?.dispatchEvent(
-      new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }),
+    expect(tableBody?.children[0].querySelector("td")?.textContent).toBe(
+      "job-1",
     );
 
-    await waitForEvent('jobbot:applications-loaded');
-    expect(commandAdapter['shortlist-list']).toHaveBeenCalledTimes(3);
-    const nextCall = commandAdapter['shortlist-list'].mock.calls.at(-1)?.[0] ?? {};
+    const locationInput = document.querySelector(
+      '[data-shortlist-filter="location"]',
+    );
+    const tagsInput = document.querySelector('[data-shortlist-filter="tags"]');
+    const limitInput = document.querySelector(
+      '[data-shortlist-filter="limit"]',
+    );
+    if (locationInput) locationInput.value = "Remote";
+    if (tagsInput) tagsInput.value = "remote";
+    if (limitInput) limitInput.value = "1";
+
+    const form = document.querySelector("[data-shortlist-filters]");
+    form?.dispatchEvent(
+      new dom.window.Event("submit", { bubbles: true, cancelable: true }),
+    );
+
+    await waitForEvent("jobbot:applications-loaded");
+    expect(commandAdapter["shortlist-list"]).toHaveBeenCalledTimes(2);
+    const latestCall =
+      commandAdapter["shortlist-list"].mock.calls.at(-1)?.[0] ?? {};
+    expect(latestCall).toMatchObject({
+      location: "Remote",
+      tags: ["remote"],
+      limit: 1,
+      offset: 0,
+    });
+
+    expect(tableBody?.children.length).toBe(1);
+    expect(tableBody?.children[0].querySelector("td")?.textContent).toBe(
+      "job-1",
+    );
+    const range = document.querySelector("[data-shortlist-range]");
+    expect(range?.textContent).toContain("Showing 1-1 of 2");
+
+    const nextButton = document.querySelector("[data-shortlist-next]");
+    nextButton?.dispatchEvent(
+      new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
+
+    await waitForEvent("jobbot:applications-loaded");
+    expect(commandAdapter["shortlist-list"]).toHaveBeenCalledTimes(3);
+    const nextCall =
+      commandAdapter["shortlist-list"].mock.calls.at(-1)?.[0] ?? {};
     expect(nextCall).toMatchObject({ offset: 1, limit: 1 });
     expect(tableBody?.children.length).toBe(1);
-    expect(tableBody?.children[0].querySelector('td')?.textContent).toBe('job-2');
-    expect(range?.textContent).toContain('Showing 2-2 of 2');
+    expect(tableBody?.children[0].querySelector("td")?.textContent).toBe(
+      "job-2",
+    );
+    expect(range?.textContent).toContain("Showing 2-2 of 2");
   });
 
-  it('downloads reminder calendars from the applications view', async () => {
+  it("downloads reminder calendars from the applications view", async () => {
     const commandAdapter = {
-      'shortlist-list': vi.fn(async () => ({
-        command: 'shortlist-list',
-        format: 'json',
-        stdout: '',
-        stderr: '',
+      "shortlist-list": vi.fn(async () => ({
+        command: "shortlist-list",
+        format: "json",
+        stdout: "",
+        stderr: "",
         data: {
           total: 0,
           offset: 0,
@@ -504,28 +551,26 @@ describe('web server status page', () => {
           hasMore: false,
         },
       })),
-      'track-reminders': vi.fn(async payload => {
-        expect(payload).toMatchObject({ format: 'ics', upcomingOnly: true });
+      "track-reminders": vi.fn(async (payload) => {
+        expect(payload).toMatchObject({ format: "ics", upcomingOnly: true });
         return {
-          command: 'track-reminders',
-          format: 'ics',
-          stdout: 'BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n',
-          stderr: '',
+          command: "track-reminders",
+          format: "ics",
+          stdout: "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n",
+          stderr: "",
           returnValue: 0,
           data: {
-            calendar: 'BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n',
-            filename: 'jobbot-reminders.ics',
+            calendar: "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n",
+            filename: "jobbot-reminders.ics",
             reminders: [],
-            sections: [
-              { heading: 'Upcoming', reminders: [] },
-            ],
+            sections: [{ heading: "Upcoming", reminders: [] }],
             upcomingOnly: true,
           },
         };
       }),
     };
-    commandAdapter.shortlistList = commandAdapter['shortlist-list'];
-    commandAdapter.trackReminders = commandAdapter['track-reminders'];
+    commandAdapter.shortlistList = commandAdapter["shortlist-list"];
+    commandAdapter.trackReminders = commandAdapter["track-reminders"];
 
     const server = await startServer({ commandAdapter });
     const { dom, boot } = await renderStatusDom(server, {
@@ -533,132 +578,140 @@ describe('web server status page', () => {
       autoBoot: false,
     });
 
-    const waitForEvent = (name, timeout = 500) => waitForDomEvent(dom, name, timeout);
+    const waitForEvent = (name, timeout = 500) =>
+      waitForDomEvent(dom, name, timeout);
 
-    const readyPromise = waitForEvent('jobbot:applications-ready');
+    const readyPromise = waitForEvent("jobbot:applications-ready");
     await boot();
     await readyPromise;
 
     const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
-    dom.window.location.hash = '#applications';
-    dom.window.dispatchEvent(new HashChange('hashchange'));
+    dom.window.location.hash = "#applications";
+    dom.window.dispatchEvent(new HashChange("hashchange"));
 
-    await waitForEvent('jobbot:applications-loaded');
+    await waitForEvent("jobbot:applications-loaded");
 
     const { URL } = dom.window;
     const originalCreateObjectURL = URL.createObjectURL;
     const originalRevokeObjectURL = URL.revokeObjectURL;
-    URL.createObjectURL = vi.fn(() => 'blob:reminders');
+    URL.createObjectURL = vi.fn(() => "blob:reminders");
     URL.revokeObjectURL = vi.fn();
     const anchorClick = vi
-      .spyOn(dom.window.HTMLAnchorElement.prototype, 'click')
+      .spyOn(dom.window.HTMLAnchorElement.prototype, "click")
       .mockImplementation(() => {});
 
-    const button = dom.window.document.querySelector('[data-reminders-export]');
-    const message = dom.window.document.querySelector('[data-reminders-message]');
-
-    button?.dispatchEvent(
-      new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }),
+    const button = dom.window.document.querySelector("[data-reminders-export]");
+    const message = dom.window.document.querySelector(
+      "[data-reminders-message]",
     );
 
-    const exportEvent = await waitForEvent('jobbot:reminders-exported');
+    button?.dispatchEvent(
+      new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
 
-    expect(commandAdapter['track-reminders']).toHaveBeenCalledTimes(1);
-    expect(exportEvent.detail).toMatchObject({ success: true, format: 'ics' });
+    const exportEvent = await waitForEvent("jobbot:reminders-exported");
+
+    expect(commandAdapter["track-reminders"]).toHaveBeenCalledTimes(1);
+    expect(exportEvent.detail).toMatchObject({ success: true, format: "ics" });
     expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
     const blob = URL.createObjectURL.mock.calls[0]?.[0];
     expect(blob).toBeInstanceOf(dom.window.Blob);
-    expect(blob.type).toBe('text/calendar');
+    expect(blob.type).toBe("text/calendar");
     expect(anchorClick).toHaveBeenCalledTimes(1);
-    expect(message?.textContent).toContain('jobbot-reminders.ics');
+    expect(message?.textContent).toContain("jobbot-reminders.ics");
 
     URL.createObjectURL = originalCreateObjectURL;
     URL.revokeObjectURL = originalRevokeObjectURL;
     anchorClick.mockRestore();
   });
 
-  it('loads provider listings and supports ingesting and archiving roles', async () => {
+  it("loads provider listings and supports ingesting and archiving roles", async () => {
     const providers = [
       {
-        id: 'all',
-        label: 'All providers',
+        id: "all",
+        label: "All providers",
         requiresIdentifier: false,
       },
       {
-        id: 'greenhouse',
-        label: 'Greenhouse',
-        identifierLabel: 'Greenhouse board token',
-        placeholder: 'acme-co',
+        id: "greenhouse",
+        label: "Greenhouse",
+        identifierLabel: "Greenhouse board token",
+        placeholder: "acme-co",
         requiresIdentifier: true,
       },
     ];
     const listings = [
       {
-        jobId: 'job-1',
-        title: 'Staff Software Engineer',
-        company: 'Acme Co',
-        location: 'Remote',
-        team: 'Platform',
+        jobId: "job-1",
+        title: "Staff Software Engineer",
+        company: "Acme Co",
+        location: "Remote",
+        team: "Platform",
         remote: true,
-        url: 'https://example.com/job-1',
+        url: "https://example.com/job-1",
         ingested: false,
-        provider: 'greenhouse',
-        identifier: 'acme-co',
+        provider: "greenhouse",
+        identifier: "acme-co",
       },
       {
-        jobId: 'job-2',
-        title: 'Product Engineer',
-        company: 'Acme Co',
-        location: 'New York, NY',
-        team: 'Product',
+        jobId: "job-2",
+        title: "Product Engineer",
+        company: "Acme Co",
+        location: "New York, NY",
+        team: "Product",
         remote: false,
-        url: 'https://example.com/job-2',
+        url: "https://example.com/job-2",
         ingested: false,
-        provider: 'lever',
-        identifier: 'acme',
+        provider: "lever",
+        identifier: "acme",
       },
     ];
 
     const commandAdapter = {
-      'listings-providers': vi.fn(async () => ({
-        command: 'listings-providers',
-        format: 'json',
-        stdout: '',
-        stderr: '',
-        data: { providers },
+      "listings-providers": vi.fn(async () => ({
+        command: "listings-providers",
+        format: "json",
+        stdout: "",
+        stderr: "",
+        data: { providers, tokenStatus: [] },
       })),
-      'listings-fetch': vi.fn(async payload => ({
-        command: 'listings-fetch',
-        format: 'json',
-        stdout: '',
-        stderr: '',
+      "listings-fetch": vi.fn(async (payload) => ({
+        command: "listings-fetch",
+        format: "json",
+        stdout: "",
+        stderr: "",
         data: {
           provider: payload.provider,
           identifier: payload.identifier,
           listings,
         },
       })),
-      'listings-ingest': vi.fn(async payload => ({
-        command: 'listings-ingest',
-        format: 'json',
-        stdout: '',
-        stderr: '',
+      "listings-ingest": vi.fn(async (payload) => ({
+        command: "listings-ingest",
+        format: "json",
+        stdout: "",
+        stderr: "",
         data: {
-          listing: { ...listings[0], jobId: payload.jobId, ingested: true, archived: false },
+          listing: {
+            ...listings[0],
+            jobId: payload.jobId,
+            ingested: true,
+            archived: false,
+          },
         },
       })),
-      'listings-archive': vi.fn(async payload => ({
-        command: 'listings-archive',
-        format: 'json',
-        stdout: '',
-        stderr: '',
+      "listings-archive": vi.fn(async (payload) => ({
+        command: "listings-archive",
+        format: "json",
+        stdout: "",
+        stderr: "",
         data: { jobId: payload.jobId, archived: true },
       })),
     };
-    commandAdapter.listingsProviders = commandAdapter['listings-providers'];
-    commandAdapter.listingsFetch = commandAdapter['listings-fetch'];
-    commandAdapter.listingsIngest = commandAdapter['listings-ingest'];
-    commandAdapter.listingsArchive = commandAdapter['listings-archive'];
+    commandAdapter.listingsProviders = commandAdapter["listings-providers"];
+    commandAdapter.listingsFetch = commandAdapter["listings-fetch"];
+    commandAdapter.listingsIngest = commandAdapter["listings-ingest"];
+    commandAdapter.listingsArchive = commandAdapter["listings-archive"];
 
     const server = await startServer({ commandAdapter });
     const { dom, boot } = await renderStatusDom(server, {
@@ -666,85 +719,97 @@ describe('web server status page', () => {
       autoBoot: false,
     });
 
-    const waitForEvent = (name, timeout = 1000) => waitForDomEvent(dom, name, timeout);
+    const waitForEvent = (name, timeout = 1000) =>
+      waitForDomEvent(dom, name, timeout);
 
-    const readyPromise = waitForEvent('jobbot:listings-ready', 1000);
+    const readyPromise = waitForEvent("jobbot:listings-ready", 1000);
     await boot();
     const readyEvent = await readyPromise;
     expect(readyEvent.detail).toMatchObject({ available: true });
 
     await vi.waitFor(() => {
-      expect(commandAdapter['listings-providers']).toHaveBeenCalledTimes(1);
+      expect(commandAdapter["listings-providers"]).toHaveBeenCalledTimes(1);
     });
 
     const document = dom.window.document;
     const listingsSection = document.querySelector('[data-route="listings"]');
-    expect(listingsSection?.hasAttribute('hidden')).toBe(true);
+    expect(listingsSection?.hasAttribute("hidden")).toBe(true);
 
     const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
-    dom.window.location.hash = '#listings';
-    dom.window.dispatchEvent(new HashChange('hashchange'));
+    dom.window.location.hash = "#listings";
+    dom.window.dispatchEvent(new HashChange("hashchange"));
 
     await vi.waitFor(() => {
-      expect(listingsSection?.hasAttribute('hidden')).toBe(false);
+      expect(listingsSection?.hasAttribute("hidden")).toBe(false);
     });
 
-    const providerSelect = document.querySelector('[data-listings-provider]');
-    const identifierInput = document.querySelector('[data-listings-identifier]');
-    const identifierGroup = identifierInput?.closest('label');
+    const providerSelect = document.querySelector("[data-listings-provider]");
+    const identifierInput = document.querySelector(
+      "[data-listings-identifier]",
+    );
+    const identifierGroup = identifierInput?.closest("label");
     const titleInput = document.querySelector('[data-listings-filter="title"]');
 
     const providerValue =
-      providerSelect instanceof dom.window.HTMLSelectElement ? providerSelect.value : null;
-    expect(providerValue).toBe('all');
-    expect(identifierGroup?.hasAttribute('hidden')).toBe(true);
-    expect(identifierInput?.hasAttribute('disabled')).toBe(true);
+      providerSelect instanceof dom.window.HTMLSelectElement
+        ? providerSelect.value
+        : null;
+    expect(providerValue).toBe("all");
+    expect(identifierGroup?.hasAttribute("hidden")).toBe(true);
+    expect(identifierInput?.hasAttribute("disabled")).toBe(true);
     if (titleInput instanceof dom.window.HTMLInputElement) {
-      titleInput.value = 'Engineer';
+      titleInput.value = "Engineer";
     }
 
-    const form = document.querySelector('[data-listings-form]');
-    form?.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    const form = document.querySelector("[data-listings-form]");
+    form?.dispatchEvent(
+      new dom.window.Event("submit", { bubbles: true, cancelable: true }),
+    );
 
-    const loadedEvent = await waitForEvent('jobbot:listings-loaded', 1000);
+    const loadedEvent = await waitForEvent("jobbot:listings-loaded", 1000);
     expect(Array.isArray(loadedEvent.detail?.listings)).toBe(true);
     expect(loadedEvent.detail?.listings).toHaveLength(2);
 
-    expect(commandAdapter['listings-fetch']).toHaveBeenCalledTimes(1);
-    const fetchPayload = commandAdapter['listings-fetch'].mock.calls.at(-1)?.[0] ?? {};
+    expect(commandAdapter["listings-fetch"]).toHaveBeenCalledTimes(1);
+    const fetchPayload =
+      commandAdapter["listings-fetch"].mock.calls.at(-1)?.[0] ?? {};
     expect(fetchPayload).toMatchObject({
-      provider: 'all',
-      title: 'Engineer',
+      provider: "all",
+      title: "Engineer",
     });
     expect(fetchPayload.limit).toBeUndefined();
     expect(fetchPayload.identifier).toBeUndefined();
 
-    const resultsContainer = document.querySelector('[data-listings-results]');
+    const resultsContainer = document.querySelector("[data-listings-results]");
     expect(resultsContainer?.children.length).toBe(2);
-    const range = document.querySelector('[data-listings-range]');
-    expect(range?.textContent).toContain('Showing 1-2 of 2');
+    const range = document.querySelector("[data-listings-range]");
+    expect(range?.textContent).toContain("Showing 1-2 of 2");
 
-    const ingestButton = resultsContainer
-      ?.querySelector('[data-listing-id="job-1"] [data-listings-action="ingest"]');
+    const ingestButton = resultsContainer?.querySelector(
+      '[data-listing-id="job-1"] [data-listings-action="ingest"]',
+    );
     ingestButton?.dispatchEvent(
-      new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }),
+      new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }),
     );
 
     await vi.waitFor(() => {
-      expect(commandAdapter['listings-ingest']).toHaveBeenCalledTimes(1);
+      expect(commandAdapter["listings-ingest"]).toHaveBeenCalledTimes(1);
     });
-    const ingestPayload = commandAdapter['listings-ingest'].mock.calls.at(-1)?.[0] ?? {};
+    const ingestPayload =
+      commandAdapter["listings-ingest"].mock.calls.at(-1)?.[0] ?? {};
     expect(ingestPayload).toMatchObject({
-      provider: 'greenhouse',
-      identifier: 'acme-co',
-      jobId: 'job-1',
+      provider: "greenhouse",
+      identifier: "acme-co",
+      jobId: "job-1",
     });
 
     await vi.waitFor(() => {
-      const card = document.querySelector('[data-listings-results] [data-listing-id="job-1"]');
+      const card = document.querySelector(
+        '[data-listings-results] [data-listing-id="job-1"]',
+      );
       expect(card).not.toBeNull();
-      const badge = card?.querySelector('.listing-card__badge');
-      expect(badge?.textContent).toContain('Ingested');
+      const badge = card?.querySelector(".listing-card__badge");
+      expect(badge?.textContent).toContain("Ingested");
       const archive = card?.querySelector('[data-listings-action="archive"]');
       expect(archive).not.toBeNull();
     });
@@ -753,52 +818,53 @@ describe('web server status page', () => {
       '[data-listings-results] [data-listing-id="job-1"] [data-listings-action="archive"]',
     );
     archiveButton?.dispatchEvent(
-      new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }),
+      new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }),
     );
 
     await vi.waitFor(() => {
-      expect(commandAdapter['listings-archive']).toHaveBeenCalledTimes(1);
+      expect(commandAdapter["listings-archive"]).toHaveBeenCalledTimes(1);
     });
-    const archivePayload = commandAdapter['listings-archive'].mock.calls.at(-1)?.[0] ?? {};
-    expect(archivePayload).toMatchObject({ jobId: 'job-1' });
+    const archivePayload =
+      commandAdapter["listings-archive"].mock.calls.at(-1)?.[0] ?? {};
+    expect(archivePayload).toMatchObject({ jobId: "job-1" });
 
     await vi.waitFor(() => {
       const activeIds = Array.from(
-        document.querySelectorAll('[data-listings-results] [data-listing-id]'),
-      ).map(node => node.getAttribute('data-listing-id'));
-      expect(activeIds).not.toContain('job-1');
-      expect(activeIds).toContain('job-2');
+        document.querySelectorAll("[data-listings-results] [data-listing-id]"),
+      ).map((node) => node.getAttribute("data-listing-id"));
+      expect(activeIds).not.toContain("job-1");
+      expect(activeIds).toContain("job-2");
     });
 
     await vi.waitFor(() => {
-      const updatedRange = document.querySelector('[data-listings-range]');
-      expect(updatedRange?.textContent).toContain('Showing 1-1 of 1');
+      const updatedRange = document.querySelector("[data-listings-range]");
+      expect(updatedRange?.textContent).toContain("Showing 1-1 of 1");
     });
   });
 
-  it('shows application detail drawer with timeline and attachments', async () => {
+  it("shows application detail drawer with timeline and attachments", async () => {
     const shortlistEntry = {
-      id: 'job-42',
+      id: "job-42",
       metadata: {
-        location: 'Remote',
-        level: 'Staff',
-        compensation: '$200k',
-        synced_at: '2025-03-05T12:00:00.000Z',
+        location: "Remote",
+        level: "Staff",
+        compensation: "$200k",
+        synced_at: "2025-03-05T12:00:00.000Z",
       },
-      tags: ['remote', 'priority'],
+      tags: ["remote", "priority"],
       discard_count: 1,
       last_discard: {
-        reason: 'Paused hiring',
-        discarded_at: '2025-03-04T18:00:00.000Z',
+        reason: "Paused hiring",
+        discarded_at: "2025-03-04T18:00:00.000Z",
       },
     };
 
     const commandAdapter = {
-      'shortlist-list': vi.fn(async () => ({
-        command: 'shortlist-list',
-        format: 'json',
-        stdout: '',
-        stderr: '',
+      "shortlist-list": vi.fn(async () => ({
+        command: "shortlist-list",
+        format: "json",
+        stdout: "",
+        stderr: "",
         returnValue: 0,
         data: {
           total: 1,
@@ -809,65 +875,65 @@ describe('web server status page', () => {
           items: [shortlistEntry],
         },
       })),
-      'shortlist-show': vi.fn(async payload => {
-        expect(payload).toEqual({ jobId: 'job-42' });
+      "shortlist-show": vi.fn(async (payload) => {
+        expect(payload).toEqual({ jobId: "job-42" });
         return {
-          command: 'shortlist-show',
-          format: 'json',
-          stdout: '',
-          stderr: '',
+          command: "shortlist-show",
+          format: "json",
+          stdout: "",
+          stderr: "",
           returnValue: 0,
           data: {
-            job_id: 'job-42',
+            job_id: "job-42",
             metadata: {
-              location: 'Remote',
-              level: 'Staff',
-              compensation: '$200k',
-              synced_at: '2025-03-05T12:00:00.000Z',
+              location: "Remote",
+              level: "Staff",
+              compensation: "$200k",
+              synced_at: "2025-03-05T12:00:00.000Z",
             },
-            tags: ['remote', 'priority'],
+            tags: ["remote", "priority"],
             discard_count: 1,
             last_discard: {
-              reason: 'Paused hiring',
-              discarded_at: '2025-03-04T18:00:00.000Z',
+              reason: "Paused hiring",
+              discarded_at: "2025-03-04T18:00:00.000Z",
             },
             events: [
               {
-                channel: 'email',
-                contact: 'Recruiter',
-                note: 'Sent resume',
-                documents: ['resume.pdf', 'cover-letter.pdf'],
-                remind_at: '2025-03-06T15:00:00.000Z',
+                channel: "email",
+                contact: "Recruiter",
+                note: "Sent resume",
+                documents: ["resume.pdf", "cover-letter.pdf"],
+                remind_at: "2025-03-06T15:00:00.000Z",
               },
               {
-                channel: 'call',
-                note: 'Follow-up scheduled',
-                date: '2025-03-07T09:00:00.000Z',
+                channel: "call",
+                note: "Follow-up scheduled",
+                date: "2025-03-07T09:00:00.000Z",
               },
             ],
           },
         };
       }),
-      'track-show': vi.fn(async payload => {
-        expect(payload).toEqual({ jobId: 'job-42' });
+      "track-show": vi.fn(async (payload) => {
+        expect(payload).toEqual({ jobId: "job-42" });
         return {
-          command: 'track-show',
-          format: 'json',
-          stdout: '',
-          stderr: '',
+          command: "track-show",
+          format: "json",
+          stdout: "",
+          stderr: "",
           returnValue: 0,
           data: {
-            job_id: 'job-42',
+            job_id: "job-42",
             status: {
-              status: 'screening',
-              note: 'Waiting for feedback',
-              updated_at: '2025-03-05T16:00:00.000Z',
+              status: "screening",
+              note: "Waiting for feedback",
+              updated_at: "2025-03-05T16:00:00.000Z",
             },
             events: [
               {
-                channel: 'interview',
-                note: 'Scheduled technical interview',
-                date: '2025-03-06T18:00:00.000Z',
+                channel: "interview",
+                note: "Scheduled technical interview",
+                date: "2025-03-06T18:00:00.000Z",
               },
             ],
           },
@@ -875,9 +941,9 @@ describe('web server status page', () => {
       }),
     };
 
-    commandAdapter.shortlistList = commandAdapter['shortlist-list'];
-    commandAdapter.shortlistShow = commandAdapter['shortlist-show'];
-    commandAdapter.trackShow = commandAdapter['track-show'];
+    commandAdapter.shortlistList = commandAdapter["shortlist-list"];
+    commandAdapter.shortlistShow = commandAdapter["shortlist-show"];
+    commandAdapter.trackShow = commandAdapter["track-show"];
 
     const server = await startServer({ commandAdapter });
     const { dom, boot } = await renderStatusDom(server, {
@@ -885,71 +951,76 @@ describe('web server status page', () => {
       autoBoot: false,
     });
 
-    const waitForEvent = (name, timeout = 500) => waitForDomEvent(dom, name, timeout);
+    const waitForEvent = (name, timeout = 500) =>
+      waitForDomEvent(dom, name, timeout);
 
-    const readyPromise = waitForEvent('jobbot:applications-ready');
+    const readyPromise = waitForEvent("jobbot:applications-ready");
     await boot();
     await readyPromise;
     const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
-    dom.window.location.hash = '#applications';
-    dom.window.dispatchEvent(new HashChange('hashchange'));
+    dom.window.location.hash = "#applications";
+    dom.window.dispatchEvent(new HashChange("hashchange"));
 
-    await waitForEvent('jobbot:applications-loaded');
-    expect(commandAdapter['shortlist-list']).toHaveBeenCalledTimes(1);
+    await waitForEvent("jobbot:applications-loaded");
+    expect(commandAdapter["shortlist-list"]).toHaveBeenCalledTimes(1);
 
-    const detailToggle = dom.window.document.querySelector('[data-shortlist-view]');
-    expect(detailToggle?.getAttribute('data-shortlist-view')).toBe('job-42');
+    const detailToggle = dom.window.document.querySelector(
+      "[data-shortlist-view]",
+    );
+    expect(detailToggle?.getAttribute("data-shortlist-view")).toBe("job-42");
 
-    const detailLoaded = waitForEvent('jobbot:application-detail-loaded');
+    const detailLoaded = waitForEvent("jobbot:application-detail-loaded");
     detailToggle?.dispatchEvent(
-      new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }),
+      new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }),
     );
     await detailLoaded;
 
-    expect(commandAdapter['shortlist-show']).toHaveBeenCalledTimes(1);
-    expect(commandAdapter['track-show']).toHaveBeenCalledTimes(1);
+    expect(commandAdapter["shortlist-show"]).toHaveBeenCalledTimes(1);
+    expect(commandAdapter["track-show"]).toHaveBeenCalledTimes(1);
 
-    const detailPanel = dom.window.document.querySelector('[data-application-detail]');
-    expect(detailPanel?.hasAttribute('hidden')).toBe(false);
-    expect(detailPanel?.textContent).toContain('job-42');
-    expect(detailPanel?.textContent).toContain('Remote');
-    expect(detailPanel?.textContent).toContain('Sent resume');
-    expect(detailPanel?.textContent).toContain('resume.pdf');
-    expect(detailPanel?.textContent).toContain('Follow-up scheduled');
+    const detailPanel = dom.window.document.querySelector(
+      "[data-application-detail]",
+    );
+    expect(detailPanel?.hasAttribute("hidden")).toBe(false);
+    expect(detailPanel?.textContent).toContain("job-42");
+    expect(detailPanel?.textContent).toContain("Remote");
+    expect(detailPanel?.textContent).toContain("Sent resume");
+    expect(detailPanel?.textContent).toContain("resume.pdf");
+    expect(detailPanel?.textContent).toContain("Follow-up scheduled");
   });
 
-  it('merges attachments from shortlist events when track detail omits them', async () => {
+  it("merges attachments from shortlist events when track detail omits them", async () => {
     const shortlistEntry = {
-      id: 'job-77',
+      id: "job-77",
       metadata: {
-        location: 'Remote',
-        level: 'Senior',
-        compensation: '$180k',
-        synced_at: '2025-03-02T15:00:00.000Z',
+        location: "Remote",
+        level: "Senior",
+        compensation: "$180k",
+        synced_at: "2025-03-02T15:00:00.000Z",
       },
-      tags: ['priority'],
+      tags: ["priority"],
       discard_count: 0,
     };
 
     const shortlistEvents = [
       {
-        channel: 'email',
-        date: '2025-03-03T09:00:00.000Z',
-        documents: [' portfolio.pdf ', 'resume.pdf'],
+        channel: "email",
+        date: "2025-03-03T09:00:00.000Z",
+        documents: [" portfolio.pdf ", "resume.pdf"],
       },
       {
-        channel: 'call',
-        date: '2025-03-04T11:30:00.000Z',
-        documents: ['resume.pdf', 'notes.txt'],
+        channel: "call",
+        date: "2025-03-04T11:30:00.000Z",
+        documents: ["resume.pdf", "notes.txt"],
       },
     ];
 
     const commandAdapter = {
-      'shortlist-list': vi.fn(async () => ({
-        command: 'shortlist-list',
-        format: 'json',
-        stdout: '',
-        stderr: '',
+      "shortlist-list": vi.fn(async () => ({
+        command: "shortlist-list",
+        format: "json",
+        stdout: "",
+        stderr: "",
         returnValue: 0,
         data: {
           total: 1,
@@ -960,16 +1031,16 @@ describe('web server status page', () => {
           items: [shortlistEntry],
         },
       })),
-      'shortlist-show': vi.fn(async payload => {
-        expect(payload).toEqual({ jobId: 'job-77' });
+      "shortlist-show": vi.fn(async (payload) => {
+        expect(payload).toEqual({ jobId: "job-77" });
         return {
-          command: 'shortlist-show',
-          format: 'json',
-          stdout: '',
-          stderr: '',
+          command: "shortlist-show",
+          format: "json",
+          stdout: "",
+          stderr: "",
           returnValue: 0,
           data: {
-            job_id: 'job-77',
+            job_id: "job-77",
             metadata: shortlistEntry.metadata,
             tags: shortlistEntry.tags,
             discard_count: shortlistEntry.discard_count,
@@ -977,20 +1048,20 @@ describe('web server status page', () => {
           },
         };
       }),
-      'track-show': vi.fn(async payload => {
-        expect(payload).toEqual({ jobId: 'job-77' });
+      "track-show": vi.fn(async (payload) => {
+        expect(payload).toEqual({ jobId: "job-77" });
         return {
-          command: 'track-show',
-          format: 'json',
-          stdout: '',
-          stderr: '',
+          command: "track-show",
+          format: "json",
+          stdout: "",
+          stderr: "",
           returnValue: 0,
           data: {
-            job_id: 'job-77',
+            job_id: "job-77",
             status: {
-              status: 'screening',
-              note: 'Waiting for feedback',
-              updated_at: '2025-03-04T12:00:00.000Z',
+              status: "screening",
+              note: "Waiting for feedback",
+              updated_at: "2025-03-04T12:00:00.000Z",
             },
             events: [],
           },
@@ -998,9 +1069,9 @@ describe('web server status page', () => {
       }),
     };
 
-    commandAdapter.shortlistList = commandAdapter['shortlist-list'];
-    commandAdapter.shortlistShow = commandAdapter['shortlist-show'];
-    commandAdapter.trackShow = commandAdapter['track-show'];
+    commandAdapter.shortlistList = commandAdapter["shortlist-list"];
+    commandAdapter.shortlistShow = commandAdapter["shortlist-show"];
+    commandAdapter.trackShow = commandAdapter["track-show"];
 
     const server = await startServer({ commandAdapter });
     const { dom, boot } = await renderStatusDom(server, {
@@ -1008,71 +1079,80 @@ describe('web server status page', () => {
       autoBoot: false,
     });
 
-    const waitForEvent = (name, timeout = 500) => waitForDomEvent(dom, name, timeout);
+    const waitForEvent = (name, timeout = 500) =>
+      waitForDomEvent(dom, name, timeout);
 
-    const readyPromise = waitForEvent('jobbot:applications-ready');
+    const readyPromise = waitForEvent("jobbot:applications-ready");
     await boot();
     await readyPromise;
     const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
-    dom.window.location.hash = '#applications';
-    dom.window.dispatchEvent(new HashChange('hashchange'));
+    dom.window.location.hash = "#applications";
+    dom.window.dispatchEvent(new HashChange("hashchange"));
 
-    await waitForEvent('jobbot:applications-loaded');
-    expect(commandAdapter['shortlist-list']).toHaveBeenCalledTimes(1);
+    await waitForEvent("jobbot:applications-loaded");
+    expect(commandAdapter["shortlist-list"]).toHaveBeenCalledTimes(1);
 
-    const detailToggle = dom.window.document.querySelector('[data-shortlist-view]');
-    expect(detailToggle?.getAttribute('data-shortlist-view')).toBe('job-77');
+    const detailToggle = dom.window.document.querySelector(
+      "[data-shortlist-view]",
+    );
+    expect(detailToggle?.getAttribute("data-shortlist-view")).toBe("job-77");
 
-    const detailLoaded = waitForEvent('jobbot:application-detail-loaded');
-    detailToggle?.dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+    const detailLoaded = waitForEvent("jobbot:application-detail-loaded");
+    detailToggle?.dispatchEvent(
+      new dom.window.Event("click", { bubbles: true }),
+    );
     await detailLoaded;
 
-    expect(commandAdapter['shortlist-show']).toHaveBeenCalledTimes(1);
-    expect(commandAdapter['track-show']).toHaveBeenCalledTimes(1);
+    expect(commandAdapter["shortlist-show"]).toHaveBeenCalledTimes(1);
+    expect(commandAdapter["track-show"]).toHaveBeenCalledTimes(1);
 
-    const detailPanel = dom.window.document.querySelector('[data-application-detail]');
-    expect(detailPanel?.hasAttribute('hidden')).toBe(false);
-    expect(detailPanel?.textContent).toContain('Attachments: portfolio.pdf, resume.pdf, notes.txt');
+    const detailPanel = dom.window.document.querySelector(
+      "[data-application-detail]",
+    );
+    expect(detailPanel?.hasAttribute("hidden")).toBe(false);
+    expect(detailPanel?.textContent).toContain(
+      "Attachments: portfolio.pdf, resume.pdf, notes.txt",
+    );
   });
 
-  it('orders application timeline events by most recent activity first', async () => {
+  it("orders application timeline events by most recent activity first", async () => {
     const shortlistEntry = {
-      id: 'job-88',
+      id: "job-88",
       metadata: {
-        location: 'Remote',
-        level: 'Lead',
-        compensation: '$210k',
-        synced_at: '2025-03-10T08:00:00.000Z',
+        location: "Remote",
+        level: "Lead",
+        compensation: "$210k",
+        synced_at: "2025-03-10T08:00:00.000Z",
       },
     };
 
     const shortlistEvents = [
       {
-        channel: 'call',
-        note: 'Checked in with recruiter',
-        date: '2025-03-04T11:00:00.000Z',
+        channel: "call",
+        note: "Checked in with recruiter",
+        date: "2025-03-04T11:00:00.000Z",
       },
     ];
 
     const trackEvents = [
       {
-        channel: 'interview',
-        note: 'Technical interview scheduled',
-        date: '2025-03-03T16:00:00.000Z',
+        channel: "interview",
+        note: "Technical interview scheduled",
+        date: "2025-03-03T16:00:00.000Z",
       },
       {
-        channel: 'email',
-        note: 'Offer extended',
-        date: '2025-03-07T09:30:00.000Z',
+        channel: "email",
+        note: "Offer extended",
+        date: "2025-03-07T09:30:00.000Z",
       },
     ];
 
     const commandAdapter = {
-      'shortlist-list': vi.fn(async () => ({
-        command: 'shortlist-list',
-        format: 'json',
-        stdout: '',
-        stderr: '',
+      "shortlist-list": vi.fn(async () => ({
+        command: "shortlist-list",
+        format: "json",
+        stdout: "",
+        stderr: "",
         returnValue: 0,
         data: {
           total: 1,
@@ -1083,35 +1163,35 @@ describe('web server status page', () => {
           items: [shortlistEntry],
         },
       })),
-      'shortlist-show': vi.fn(async payload => {
-        expect(payload).toEqual({ jobId: 'job-88' });
+      "shortlist-show": vi.fn(async (payload) => {
+        expect(payload).toEqual({ jobId: "job-88" });
         return {
-          command: 'shortlist-show',
-          format: 'json',
-          stdout: '',
-          stderr: '',
+          command: "shortlist-show",
+          format: "json",
+          stdout: "",
+          stderr: "",
           returnValue: 0,
           data: {
-            job_id: 'job-88',
+            job_id: "job-88",
             metadata: shortlistEntry.metadata,
             events: shortlistEvents,
           },
         };
       }),
-      'track-show': vi.fn(async payload => {
-        expect(payload).toEqual({ jobId: 'job-88' });
+      "track-show": vi.fn(async (payload) => {
+        expect(payload).toEqual({ jobId: "job-88" });
         return {
-          command: 'track-show',
-          format: 'json',
-          stdout: '',
-          stderr: '',
+          command: "track-show",
+          format: "json",
+          stdout: "",
+          stderr: "",
           returnValue: 0,
           data: {
-            job_id: 'job-88',
+            job_id: "job-88",
             status: {
-              status: 'offer',
-              note: 'Pending signature',
-              updated_at: '2025-03-07T12:00:00.000Z',
+              status: "offer",
+              note: "Pending signature",
+              updated_at: "2025-03-07T12:00:00.000Z",
             },
             events: trackEvents,
           },
@@ -1119,9 +1199,9 @@ describe('web server status page', () => {
       }),
     };
 
-    commandAdapter.shortlistList = commandAdapter['shortlist-list'];
-    commandAdapter.shortlistShow = commandAdapter['shortlist-show'];
-    commandAdapter.trackShow = commandAdapter['track-show'];
+    commandAdapter.shortlistList = commandAdapter["shortlist-list"];
+    commandAdapter.shortlistShow = commandAdapter["shortlist-show"];
+    commandAdapter.trackShow = commandAdapter["track-show"];
 
     const server = await startServer({ commandAdapter });
     const { dom, boot } = await renderStatusDom(server, {
@@ -1129,76 +1209,83 @@ describe('web server status page', () => {
       autoBoot: false,
     });
 
-    const waitForEvent = (name, timeout = 500) => waitForDomEvent(dom, name, timeout);
+    const waitForEvent = (name, timeout = 500) =>
+      waitForDomEvent(dom, name, timeout);
 
-    const readyPromise = waitForEvent('jobbot:applications-ready');
+    const readyPromise = waitForEvent("jobbot:applications-ready");
     await boot();
     await readyPromise;
     const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
-    dom.window.location.hash = '#applications';
-    dom.window.dispatchEvent(new HashChange('hashchange'));
+    dom.window.location.hash = "#applications";
+    dom.window.dispatchEvent(new HashChange("hashchange"));
 
-    await waitForEvent('jobbot:applications-loaded');
-    expect(commandAdapter['shortlist-list']).toHaveBeenCalledTimes(1);
+    await waitForEvent("jobbot:applications-loaded");
+    expect(commandAdapter["shortlist-list"]).toHaveBeenCalledTimes(1);
 
-    const detailToggle = dom.window.document.querySelector('[data-shortlist-view]');
-    expect(detailToggle?.getAttribute('data-shortlist-view')).toBe('job-88');
+    const detailToggle = dom.window.document.querySelector(
+      "[data-shortlist-view]",
+    );
+    expect(detailToggle?.getAttribute("data-shortlist-view")).toBe("job-88");
 
-    const detailLoaded = waitForEvent('jobbot:application-detail-loaded');
-    detailToggle?.dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+    const detailLoaded = waitForEvent("jobbot:application-detail-loaded");
+    detailToggle?.dispatchEvent(
+      new dom.window.Event("click", { bubbles: true }),
+    );
     await detailLoaded;
 
-    const detailPanel = dom.window.document.querySelector('[data-application-detail]');
-    expect(detailPanel?.hasAttribute('hidden')).toBe(false);
+    const detailPanel = dom.window.document.querySelector(
+      "[data-application-detail]",
+    );
+    expect(detailPanel?.hasAttribute("hidden")).toBe(false);
 
     const timelineEntries = Array.from(
-      detailPanel?.querySelectorAll('.application-detail__events li') ?? [],
-    ).map(node => node.textContent ?? '');
+      detailPanel?.querySelectorAll(".application-detail__events li") ?? [],
+    ).map((node) => node.textContent ?? "");
 
-    expect(timelineEntries[0]).toContain('Offer extended');
-    expect(timelineEntries[1]).toContain('Checked in with recruiter');
-    expect(timelineEntries[2]).toContain('Technical interview scheduled');
+    expect(timelineEntries[0]).toContain("Offer extended");
+    expect(timelineEntries[1]).toContain("Checked in with recruiter");
+    expect(timelineEntries[2]).toContain("Technical interview scheduled");
   });
 
-  it('renders analytics funnel dashboard from CLI data', async () => {
+  it("renders analytics funnel dashboard from CLI data", async () => {
     const commandAdapter = {
-      'analytics-funnel': vi.fn(async () => ({
-        command: 'analytics-funnel',
-        format: 'json',
-        stdout: '',
-        stderr: '',
+      "analytics-funnel": vi.fn(async () => ({
+        command: "analytics-funnel",
+        format: "json",
+        stdout: "",
+        stderr: "",
         returnValue: 0,
         data: {
           totals: { trackedJobs: 7, withEvents: 5 },
           stages: [
-            { key: 'outreach', label: 'Outreach', count: 5, conversionRate: 1 },
+            { key: "outreach", label: "Outreach", count: 5, conversionRate: 1 },
             {
-              key: 'screening',
-              label: 'Screening',
+              key: "screening",
+              label: "Screening",
               count: 3,
               conversionRate: 0.6,
               dropOff: 2,
             },
             {
-              key: 'onsite',
-              label: 'Onsite',
+              key: "onsite",
+              label: "Onsite",
               count: 2,
               conversionRate: 0.6666666667,
               dropOff: 1,
             },
             {
-              key: 'offer',
-              label: 'Offer',
+              key: "offer",
+              label: "Offer",
               count: 1,
               conversionRate: 0.5,
               dropOff: 1,
             },
           ],
           largestDropOff: {
-            from: 'screening',
-            fromLabel: 'Screening',
-            to: 'onsite',
-            toLabel: 'Onsite',
+            from: "screening",
+            fromLabel: "Screening",
+            to: "onsite",
+            toLabel: "Onsite",
             dropOff: 1,
           },
           missing: {
@@ -1208,21 +1295,26 @@ describe('web server status page', () => {
           },
           sankey: {
             nodes: [
-              { key: 'outreach', label: 'Outreach' },
-              { key: 'screening', label: 'Screening' },
-              { key: 'onsite', label: 'Onsite' },
+              { key: "outreach", label: "Outreach" },
+              { key: "screening", label: "Screening" },
+              { key: "onsite", label: "Onsite" },
             ],
             links: [
-              { source: 'outreach', target: 'screening', value: 3 },
-              { source: 'outreach', target: 'outreach_drop', value: 2, drop: true },
-              { source: 'screening', target: 'onsite', value: 2 },
+              { source: "outreach", target: "screening", value: 3 },
+              {
+                source: "outreach",
+                target: "outreach_drop",
+                value: 2,
+                drop: true,
+              },
+              { source: "screening", target: "onsite", value: 2 },
             ],
           },
         },
       })),
     };
 
-    commandAdapter.analyticsFunnel = commandAdapter['analytics-funnel'];
+    commandAdapter.analyticsFunnel = commandAdapter["analytics-funnel"];
 
     const server = await startServer({ commandAdapter });
     const { dom, boot } = await renderStatusDom(server, {
@@ -1230,47 +1322,64 @@ describe('web server status page', () => {
       autoBoot: false,
     });
 
-    const waitForEvent = (name, timeout = 500) => waitForDomEvent(dom, name, timeout);
+    const waitForEvent = (name, timeout = 500) =>
+      waitForDomEvent(dom, name, timeout);
 
-    const readyPromise = waitForEvent('jobbot:analytics-ready');
+    const readyPromise = waitForEvent("jobbot:analytics-ready");
     await boot();
     await readyPromise;
 
     const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
-    dom.window.location.hash = '#analytics';
-    dom.window.dispatchEvent(new HashChange('hashchange'));
+    dom.window.location.hash = "#analytics";
+    dom.window.dispatchEvent(new HashChange("hashchange"));
 
-    await waitForEvent('jobbot:analytics-loaded');
+    await waitForEvent("jobbot:analytics-loaded");
 
-    expect(commandAdapter['analytics-funnel']).toHaveBeenCalledTimes(1);
+    expect(commandAdapter["analytics-funnel"]).toHaveBeenCalledTimes(1);
 
-    const navLink = dom.window.document.querySelector('[data-route-link="analytics"]');
-    expect(navLink?.textContent).toContain('Analytics');
+    const navLink = dom.window.document.querySelector(
+      '[data-route-link="analytics"]',
+    );
+    expect(navLink?.textContent).toContain("Analytics");
 
-    const summary = dom.window.document.querySelector('[data-analytics-summary]');
-    expect(summary?.textContent).toContain('Tracked jobs: 7');
-    expect(summary?.textContent).toContain('Outreach events: 5');
-    expect(summary?.textContent).toContain('Largest drop-off: Screening → Onsite (1)');
+    const summary = dom.window.document.querySelector(
+      "[data-analytics-summary]",
+    );
+    expect(summary?.textContent).toContain("Tracked jobs: 7");
+    expect(summary?.textContent).toContain("Outreach events: 5");
+    expect(summary?.textContent).toContain(
+      "Largest drop-off: Screening → Onsite (1)",
+    );
 
-    const table = dom.window.document.querySelector('[data-analytics-table]');
-    expect(table?.textContent).toContain('Outreach');
-    expect(table?.textContent).toContain('Screening');
-    expect(table?.textContent).toContain('100%');
-    expect(table?.textContent).toContain('60%');
+    const table = dom.window.document.querySelector("[data-analytics-table]");
+    expect(table?.textContent).toContain("Outreach");
+    expect(table?.textContent).toContain("Screening");
+    expect(table?.textContent).toContain("100%");
+    expect(table?.textContent).toContain("60%");
 
-    const missing = dom.window.document.querySelector('[data-analytics-missing]');
-    expect(missing?.textContent).toContain('2 jobs with outreach but no status recorded');
+    const missing = dom.window.document.querySelector(
+      "[data-analytics-missing]",
+    );
+    expect(missing?.textContent).toContain(
+      "2 jobs with outreach but no status recorded",
+    );
 
-    const sankey = dom.window.document.querySelector('[data-analytics-sankey]');
-    expect(sankey?.textContent).toContain('3 links');
-    expect(sankey?.textContent).toContain('drop-off edges: 1');
+    const sankey = dom.window.document.querySelector("[data-analytics-sankey]");
+    expect(sankey?.textContent).toContain("3 links");
+    expect(sankey?.textContent).toContain("drop-off edges: 1");
   });
 
-  it('downloads analytics exports as JSON and CSV with optional redaction', async () => {
+  it("downloads analytics exports as JSON and CSV with optional redaction", async () => {
     const funnelPayload = {
       totals: { trackedJobs: 4, withEvents: 3 },
       stages: [
-        { key: 'outreach', label: 'Outreach', count: 4, conversionRate: 1, dropOff: 0 },
+        {
+          key: "outreach",
+          label: "Outreach",
+          count: 4,
+          conversionRate: 1,
+          dropOff: 0,
+        },
       ],
       largestDropOff: null,
       missing: { statuslessJobs: { count: 0 } },
@@ -1278,40 +1387,40 @@ describe('web server status page', () => {
     };
 
     const snapshot = {
-      generated_at: '2025-03-09T09:30:00.000Z',
+      generated_at: "2025-03-09T09:30:00.000Z",
       totals: funnelPayload.totals,
       funnel: { stages: funnelPayload.stages },
       statuses: { outreach: 4 },
       channels: { email: 3 },
       activity: { interviewsScheduled: 1 },
-      companies: [{ name: 'Acme', status: 'onsite' }],
+      companies: [{ name: "Acme", status: "onsite" }],
     };
 
     const exportPayloads = [];
     const commandAdapter = {
-      'analytics-funnel': vi.fn(async () => ({
-        command: 'analytics-funnel',
-        format: 'json',
-        stdout: '',
-        stderr: '',
+      "analytics-funnel": vi.fn(async () => ({
+        command: "analytics-funnel",
+        format: "json",
+        stdout: "",
+        stderr: "",
         returnValue: 0,
         data: funnelPayload,
       })),
-      'analytics-export': vi.fn(async payload => {
+      "analytics-export": vi.fn(async (payload) => {
         exportPayloads.push(payload);
         return {
-          command: 'analytics-export',
-          format: 'json',
-          stdout: '',
-          stderr: '',
+          command: "analytics-export",
+          format: "json",
+          stdout: "",
+          stderr: "",
           returnValue: 0,
           data: snapshot,
         };
       }),
     };
 
-    commandAdapter.analyticsFunnel = commandAdapter['analytics-funnel'];
-    commandAdapter.analyticsExport = commandAdapter['analytics-export'];
+    commandAdapter.analyticsFunnel = commandAdapter["analytics-funnel"];
+    commandAdapter.analyticsExport = commandAdapter["analytics-export"];
 
     const server = await startServer({ commandAdapter });
     const { dom, boot } = await renderStatusDom(server, {
@@ -1319,68 +1428,77 @@ describe('web server status page', () => {
       autoBoot: false,
     });
 
-    const waitForEvent = (name, timeout = 500) => waitForDomEvent(dom, name, timeout);
+    const waitForEvent = (name, timeout = 500) =>
+      waitForDomEvent(dom, name, timeout);
 
-    const readyPromise = waitForEvent('jobbot:analytics-ready');
+    const readyPromise = waitForEvent("jobbot:analytics-ready");
     await boot();
     await readyPromise;
 
     const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
-    dom.window.location.hash = '#analytics';
-    dom.window.dispatchEvent(new HashChange('hashchange'));
-    await waitForEvent('jobbot:analytics-loaded');
+    dom.window.location.hash = "#analytics";
+    dom.window.dispatchEvent(new HashChange("hashchange"));
+    await waitForEvent("jobbot:analytics-loaded");
 
     const { URL } = dom.window;
-    URL.createObjectURL = vi.fn(() => 'blob:analytics');
+    URL.createObjectURL = vi.fn(() => "blob:analytics");
     URL.revokeObjectURL = vi.fn();
     const anchorClick = vi
-      .spyOn(dom.window.HTMLAnchorElement.prototype, 'click')
+      .spyOn(dom.window.HTMLAnchorElement.prototype, "click")
       .mockImplementation(() => {});
 
-    const jsonButton = dom.window.document.querySelector('[data-analytics-export-json]');
-    const csvButton = dom.window.document.querySelector('[data-analytics-export-csv]');
-    const redactToggle = dom.window.document.querySelector(
-      '[data-analytics-redact-toggle]',
+    const jsonButton = dom.window.document.querySelector(
+      "[data-analytics-export-json]",
     );
-    const message = dom.window.document.querySelector('[data-analytics-export-message]');
+    const csvButton = dom.window.document.querySelector(
+      "[data-analytics-export-csv]",
+    );
+    const redactToggle = dom.window.document.querySelector(
+      "[data-analytics-redact-toggle]",
+    );
+    const message = dom.window.document.querySelector(
+      "[data-analytics-export-message]",
+    );
 
     expect(redactToggle).not.toBeNull();
     expect(redactToggle?.checked).toBe(true);
 
     const click = () =>
-      new dom.window.MouseEvent('click', { bubbles: true, cancelable: true });
+      new dom.window.MouseEvent("click", { bubbles: true, cancelable: true });
 
     jsonButton?.dispatchEvent(click());
 
-    const jsonEvent = await waitForEvent('jobbot:analytics-exported');
+    const jsonEvent = await waitForEvent("jobbot:analytics-exported");
 
-    expect(commandAdapter['analytics-export']).toHaveBeenCalledTimes(1);
+    expect(commandAdapter["analytics-export"]).toHaveBeenCalledTimes(1);
     expect(exportPayloads).toContainEqual({ redact: true });
     expect(jsonEvent.detail).toMatchObject({
-      format: 'json',
+      format: "json",
       success: true,
       redact: true,
     });
     expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
     const jsonBlob = URL.createObjectURL.mock.calls[0]?.[0];
     expect(jsonBlob).toBeInstanceOf(dom.window.Blob);
-    expect(jsonBlob.type).toBe('application/json');
+    expect(jsonBlob.type).toBe("application/json");
     expect(jsonBlob.size).toBeGreaterThan(0);
-    expect(message?.textContent).toContain('analytics-snapshot.json');
+    expect(message?.textContent).toContain("analytics-snapshot.json");
 
     if (redactToggle) {
       redactToggle.checked = false;
-      redactToggle.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+      redactToggle.dispatchEvent(
+        new dom.window.Event("change", { bubbles: true }),
+      );
     }
 
     csvButton?.dispatchEvent(click());
 
-    const csvEvent = await waitForEvent('jobbot:analytics-exported');
+    const csvEvent = await waitForEvent("jobbot:analytics-exported");
 
-    expect(commandAdapter['analytics-export']).toHaveBeenCalledTimes(2);
+    expect(commandAdapter["analytics-export"]).toHaveBeenCalledTimes(2);
     expect(exportPayloads).toContainEqual({ redact: false });
     expect(csvEvent.detail).toMatchObject({
-      format: 'csv',
+      format: "csv",
       success: true,
       redact: false,
     });
@@ -1388,30 +1506,30 @@ describe('web server status page', () => {
     expect(anchorClick).toHaveBeenCalledTimes(2);
     const csvBlob = URL.createObjectURL.mock.calls[1]?.[0];
     expect(csvBlob).toBeInstanceOf(dom.window.Blob);
-    expect(csvBlob.type).toBe('text/csv');
+    expect(csvBlob.type).toBe("text/csv");
     expect(csvBlob.size).toBeGreaterThan(0);
-    expect(message?.textContent).toContain('analytics-stages.csv');
+    expect(message?.textContent).toContain("analytics-stages.csv");
   });
 
-  it('records status updates from the applications action panel', async () => {
+  it("records status updates from the applications action panel", async () => {
     const shortlistEntry = {
-      id: 'job-42',
+      id: "job-42",
       metadata: {
-        location: 'Remote',
-        level: 'Staff',
-        compensation: '$200k',
-        synced_at: '2025-03-05T12:00:00.000Z',
+        location: "Remote",
+        level: "Staff",
+        compensation: "$200k",
+        synced_at: "2025-03-05T12:00:00.000Z",
       },
-      tags: ['remote', 'priority'],
+      tags: ["remote", "priority"],
       discard_count: 0,
     };
 
     const commandAdapter = {
-      'shortlist-list': vi.fn(async () => ({
-        command: 'shortlist-list',
-        format: 'json',
-        stdout: '',
-        stderr: '',
+      "shortlist-list": vi.fn(async () => ({
+        command: "shortlist-list",
+        format: "json",
+        stdout: "",
+        stderr: "",
         returnValue: 0,
         data: {
           total: 1,
@@ -1422,16 +1540,16 @@ describe('web server status page', () => {
           items: [shortlistEntry],
         },
       })),
-      'shortlist-show': vi.fn(async payload => {
-        expect(payload).toEqual({ jobId: 'job-42' });
+      "shortlist-show": vi.fn(async (payload) => {
+        expect(payload).toEqual({ jobId: "job-42" });
         return {
-          command: 'shortlist-show',
-          format: 'json',
-          stdout: '',
-          stderr: '',
+          command: "shortlist-show",
+          format: "json",
+          stdout: "",
+          stderr: "",
           returnValue: 0,
           data: {
-            job_id: 'job-42',
+            job_id: "job-42",
             metadata: shortlistEntry.metadata,
             tags: shortlistEntry.tags,
             discard_count: 0,
@@ -1439,47 +1557,51 @@ describe('web server status page', () => {
           },
         };
       }),
-      'track-show': vi.fn(async payload => {
-        expect(payload).toEqual({ jobId: 'job-42' });
+      "track-show": vi.fn(async (payload) => {
+        expect(payload).toEqual({ jobId: "job-42" });
         return {
-          command: 'track-show',
-          format: 'json',
-          stdout: '',
-          stderr: '',
+          command: "track-show",
+          format: "json",
+          stdout: "",
+          stderr: "",
           returnValue: 0,
           data: {
-            job_id: 'job-42',
+            job_id: "job-42",
             status: {
-              status: 'screening',
-              note: 'Initial screening',
-              updated_at: '2025-03-05T12:30:00.000Z',
+              status: "screening",
+              note: "Initial screening",
+              updated_at: "2025-03-05T12:30:00.000Z",
             },
             events: [],
           },
         };
       }),
-      'track-record': vi.fn(async payload => {
-        expect(payload).toEqual({ jobId: 'job-42', status: 'offer', note: 'Signed offer' });
+      "track-record": vi.fn(async (payload) => {
+        expect(payload).toEqual({
+          jobId: "job-42",
+          status: "offer",
+          note: "Signed offer",
+        });
         return {
-          command: 'track-record',
-          format: 'text',
-          stdout: 'Recorded job-42 as offer\n',
-          stderr: '',
+          command: "track-record",
+          format: "text",
+          stdout: "Recorded job-42 as offer\n",
+          stderr: "",
           returnValue: 0,
           data: {
-            message: 'Recorded job-42 as offer',
-            jobId: 'job-42',
-            status: 'offer',
-            note: 'Signed offer',
+            message: "Recorded job-42 as offer",
+            jobId: "job-42",
+            status: "offer",
+            note: "Signed offer",
           },
         };
       }),
     };
 
-    commandAdapter.shortlistList = commandAdapter['shortlist-list'];
-    commandAdapter.shortlistShow = commandAdapter['shortlist-show'];
-    commandAdapter.trackShow = commandAdapter['track-show'];
-    commandAdapter.trackRecord = commandAdapter['track-record'];
+    commandAdapter.shortlistList = commandAdapter["shortlist-list"];
+    commandAdapter.shortlistShow = commandAdapter["shortlist-show"];
+    commandAdapter.trackShow = commandAdapter["track-show"];
+    commandAdapter.trackRecord = commandAdapter["track-record"];
 
     const server = await startServer({ commandAdapter });
     const { dom, boot } = await renderStatusDom(server, {
@@ -1487,154 +1609,167 @@ describe('web server status page', () => {
       autoBoot: false,
     });
 
-    const waitForEvent = (name, timeout = 500) => waitForDomEvent(dom, name, timeout);
+    const waitForEvent = (name, timeout = 500) =>
+      waitForDomEvent(dom, name, timeout);
 
-    const readyPromise = waitForEvent('jobbot:applications-ready');
+    const readyPromise = waitForEvent("jobbot:applications-ready");
     await boot();
     await readyPromise;
     const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
-    dom.window.location.hash = '#applications';
-    dom.window.dispatchEvent(new HashChange('hashchange'));
+    dom.window.location.hash = "#applications";
+    dom.window.dispatchEvent(new HashChange("hashchange"));
 
-    await waitForEvent('jobbot:applications-loaded');
-    expect(commandAdapter['shortlist-list']).toHaveBeenCalledTimes(1);
+    await waitForEvent("jobbot:applications-loaded");
+    expect(commandAdapter["shortlist-list"]).toHaveBeenCalledTimes(1);
 
-    const detailToggle = dom.window.document.querySelector('[data-shortlist-view]');
-    expect(detailToggle?.getAttribute('data-shortlist-view')).toBe('job-42');
+    const detailToggle = dom.window.document.querySelector(
+      "[data-shortlist-view]",
+    );
+    expect(detailToggle?.getAttribute("data-shortlist-view")).toBe("job-42");
 
-    const detailLoaded = waitForEvent('jobbot:application-detail-loaded');
+    const detailLoaded = waitForEvent("jobbot:application-detail-loaded");
     detailToggle?.dispatchEvent(
-      new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }),
+      new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }),
     );
     await detailLoaded;
-    expect(commandAdapter['track-show']).toHaveBeenCalledTimes(1);
+    expect(commandAdapter["track-show"]).toHaveBeenCalledTimes(1);
 
-    const statusSelect = dom.window.document.querySelector('[data-application-status]');
+    const statusSelect = dom.window.document.querySelector(
+      "[data-application-status]",
+    );
     expect(statusSelect).not.toBeNull();
-    statusSelect.value = 'offer';
-    statusSelect.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    statusSelect.value = "offer";
+    statusSelect.dispatchEvent(
+      new dom.window.Event("change", { bubbles: true }),
+    );
 
-    const noteInput = dom.window.document.querySelector('[data-application-note]');
+    const noteInput = dom.window.document.querySelector(
+      "[data-application-note]",
+    );
     expect(noteInput).not.toBeNull();
-    noteInput.value = 'Signed offer';
-    noteInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    noteInput.value = "Signed offer";
+    noteInput.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
 
-    const form = dom.window.document.querySelector('[data-application-status-form]');
+    const form = dom.window.document.querySelector(
+      "[data-application-status-form]",
+    );
     expect(form).not.toBeNull();
 
-    const statusRecorded = waitForEvent('jobbot:application-status-recorded');
-    const detailReloaded = waitForEvent('jobbot:application-detail-loaded');
-    form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    const statusRecorded = waitForEvent("jobbot:application-status-recorded");
+    const detailReloaded = waitForEvent("jobbot:application-detail-loaded");
+    form.dispatchEvent(
+      new dom.window.Event("submit", { bubbles: true, cancelable: true }),
+    );
     await statusRecorded;
     await detailReloaded;
-    await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+    await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
 
-    expect(commandAdapter['track-record']).toHaveBeenCalledTimes(1);
-    const message = dom.window.document.querySelector('[data-action-message]');
-    expect(message?.textContent).toContain('Recorded job-42 as offer');
+    expect(commandAdapter["track-record"]).toHaveBeenCalledTimes(1);
+    const message = dom.window.document.querySelector("[data-action-message]");
+    expect(message?.textContent).toContain("Recorded job-42 as offer");
   });
 
-  it('refreshes application detail after recording a status update', async () => {
+  it("refreshes application detail after recording a status update", async () => {
     const shortlistDetail = {
-      command: 'shortlist-show',
-      format: 'json',
+      command: "shortlist-show",
+      format: "json",
       stdout: JSON.stringify({
-        job_id: 'job-42',
+        job_id: "job-42",
         metadata: {
-          location: 'Remote',
-          level: 'Senior',
-          compensation: '$150k',
-          synced_at: '2025-03-05T10:00:00.000Z',
+          location: "Remote",
+          level: "Senior",
+          compensation: "$150k",
+          synced_at: "2025-03-05T10:00:00.000Z",
         },
-        tags: ['remote'],
-        attachments: ['resume.pdf'],
+        tags: ["remote"],
+        attachments: ["resume.pdf"],
         events: [],
       }),
-      stderr: '',
+      stderr: "",
       returnValue: 0,
       data: {
-        job_id: 'job-42',
+        job_id: "job-42",
         metadata: {
-          location: 'Remote',
-          level: 'Senior',
-          compensation: '$150k',
-          synced_at: '2025-03-05T10:00:00.000Z',
+          location: "Remote",
+          level: "Senior",
+          compensation: "$150k",
+          synced_at: "2025-03-05T10:00:00.000Z",
         },
-        tags: ['remote'],
-        attachments: ['resume.pdf'],
+        tags: ["remote"],
+        attachments: ["resume.pdf"],
         events: [],
       },
     };
 
     const trackShowInitial = {
-      command: 'track-show',
-      format: 'json',
+      command: "track-show",
+      format: "json",
       stdout: JSON.stringify({
-        job_id: 'job-42',
-        status: 'screening',
+        job_id: "job-42",
+        status: "screening",
         events: [],
       }),
-      stderr: '',
+      stderr: "",
       returnValue: 0,
       data: {
-        job_id: 'job-42',
-        status: 'screening',
+        job_id: "job-42",
+        status: "screening",
         events: [],
       },
     };
 
     const trackShowUpdated = {
-      command: 'track-show',
-      format: 'json',
+      command: "track-show",
+      format: "json",
       stdout: JSON.stringify({
-        job_id: 'job-42',
-        status: 'offer',
+        job_id: "job-42",
+        status: "offer",
         events: [
           {
-            channel: 'email',
-            date: '2025-03-06T09:30:00.000Z',
-            note: 'Offer signed',
+            channel: "email",
+            date: "2025-03-06T09:30:00.000Z",
+            note: "Offer signed",
           },
         ],
       }),
-      stderr: '',
+      stderr: "",
       returnValue: 0,
       data: {
-        job_id: 'job-42',
-        status: 'offer',
+        job_id: "job-42",
+        status: "offer",
         events: [
           {
-            channel: 'email',
-            date: '2025-03-06T09:30:00.000Z',
-            note: 'Offer signed',
+            channel: "email",
+            date: "2025-03-06T09:30:00.000Z",
+            note: "Offer signed",
           },
         ],
       },
     };
 
     const commandAdapter = {
-      'shortlist-list': vi.fn(async () => ({
-        command: 'shortlist-list',
-        format: 'json',
+      "shortlist-list": vi.fn(async () => ({
+        command: "shortlist-list",
+        format: "json",
         stdout: JSON.stringify({
           total: 1,
           offset: 0,
           limit: 10,
           items: [
             {
-              id: 'job-42',
+              id: "job-42",
               metadata: {
-                location: 'Remote',
-                level: 'Senior',
-                compensation: '$150k',
-                synced_at: '2025-03-05T10:00:00.000Z',
+                location: "Remote",
+                level: "Senior",
+                compensation: "$150k",
+                synced_at: "2025-03-05T10:00:00.000Z",
               },
-              tags: ['remote'],
+              tags: ["remote"],
               discard_count: 0,
             },
           ],
         }),
-        stderr: '',
+        stderr: "",
         returnValue: 0,
         data: {
           total: 1,
@@ -1642,49 +1777,53 @@ describe('web server status page', () => {
           limit: 10,
           items: [
             {
-              id: 'job-42',
+              id: "job-42",
               metadata: {
-                location: 'Remote',
-                level: 'Senior',
-                compensation: '$150k',
-                synced_at: '2025-03-05T10:00:00.000Z',
+                location: "Remote",
+                level: "Senior",
+                compensation: "$150k",
+                synced_at: "2025-03-05T10:00:00.000Z",
               },
-              tags: ['remote'],
+              tags: ["remote"],
               discard_count: 0,
             },
           ],
         },
       })),
-      'shortlist-show': vi
+      "shortlist-show": vi
         .fn()
         .mockResolvedValueOnce(shortlistDetail)
         .mockResolvedValueOnce(shortlistDetail),
-      'track-show': vi
+      "track-show": vi
         .fn()
         .mockResolvedValueOnce(trackShowInitial)
         .mockResolvedValueOnce(trackShowUpdated),
-      'track-record': vi.fn(async payload => {
-        expect(payload).toEqual({ jobId: 'job-42', status: 'offer', note: 'Signed offer' });
+      "track-record": vi.fn(async (payload) => {
+        expect(payload).toEqual({
+          jobId: "job-42",
+          status: "offer",
+          note: "Signed offer",
+        });
         return {
-          command: 'track-record',
-          format: 'text',
-          stdout: 'Recorded job-42 as offer\n',
-          stderr: '',
+          command: "track-record",
+          format: "text",
+          stdout: "Recorded job-42 as offer\n",
+          stderr: "",
           returnValue: 0,
           data: {
-            message: 'Recorded job-42 as offer',
-            jobId: 'job-42',
-            status: 'offer',
-            note: 'Signed offer',
+            message: "Recorded job-42 as offer",
+            jobId: "job-42",
+            status: "offer",
+            note: "Signed offer",
           },
         };
       }),
     };
 
-    commandAdapter.shortlistList = commandAdapter['shortlist-list'];
-    commandAdapter.shortlistShow = commandAdapter['shortlist-show'];
-    commandAdapter.trackShow = commandAdapter['track-show'];
-    commandAdapter.trackRecord = commandAdapter['track-record'];
+    commandAdapter.shortlistList = commandAdapter["shortlist-list"];
+    commandAdapter.shortlistShow = commandAdapter["shortlist-show"];
+    commandAdapter.trackShow = commandAdapter["track-show"];
+    commandAdapter.trackRecord = commandAdapter["track-record"];
 
     const server = await startServer({ commandAdapter });
     const { dom, boot } = await renderStatusDom(server, {
@@ -1692,85 +1831,102 @@ describe('web server status page', () => {
       autoBoot: false,
     });
 
-    const waitForEvent = (name, timeout = 500) => waitForDomEvent(dom, name, timeout);
+    const waitForEvent = (name, timeout = 500) =>
+      waitForDomEvent(dom, name, timeout);
 
-    const readyPromise = waitForEvent('jobbot:applications-ready');
+    const readyPromise = waitForEvent("jobbot:applications-ready");
     await boot();
     await readyPromise;
 
     const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
-    dom.window.location.hash = '#applications';
-    dom.window.dispatchEvent(new HashChange('hashchange'));
+    dom.window.location.hash = "#applications";
+    dom.window.dispatchEvent(new HashChange("hashchange"));
 
-    await waitForEvent('jobbot:applications-loaded');
-    expect(commandAdapter['shortlist-list']).toHaveBeenCalledTimes(1);
+    await waitForEvent("jobbot:applications-loaded");
+    expect(commandAdapter["shortlist-list"]).toHaveBeenCalledTimes(1);
 
-    const detailToggle = dom.window.document.querySelector('[data-shortlist-view]');
-    expect(detailToggle?.getAttribute('data-shortlist-view')).toBe('job-42');
+    const detailToggle = dom.window.document.querySelector(
+      "[data-shortlist-view]",
+    );
+    expect(detailToggle?.getAttribute("data-shortlist-view")).toBe("job-42");
 
-    const detailLoadedPromise = waitForEvent('jobbot:application-detail-loaded');
+    const detailLoadedPromise = waitForEvent(
+      "jobbot:application-detail-loaded",
+    );
     detailToggle?.dispatchEvent(
-      new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }),
+      new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }),
     );
     const firstDetailEvent = await detailLoadedPromise;
 
-    expect(commandAdapter['track-show']).toHaveBeenCalledTimes(1);
+    expect(commandAdapter["track-show"]).toHaveBeenCalledTimes(1);
 
-    expect(firstDetailEvent?.detail?.data?.status).toBe('screening');
+    expect(firstDetailEvent?.detail?.data?.status).toBe("screening");
 
-    const statusSelect = dom.window.document.querySelector('[data-application-status]');
-    statusSelect.value = 'offer';
-    statusSelect.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    const statusSelect = dom.window.document.querySelector(
+      "[data-application-status]",
+    );
+    statusSelect.value = "offer";
+    statusSelect.dispatchEvent(
+      new dom.window.Event("change", { bubbles: true }),
+    );
 
-    const noteInput = dom.window.document.querySelector('[data-application-note]');
-    noteInput.value = 'Signed offer';
-    noteInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+    const noteInput = dom.window.document.querySelector(
+      "[data-application-note]",
+    );
+    noteInput.value = "Signed offer";
+    noteInput.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
 
-    const form = dom.window.document.querySelector('[data-application-status-form]');
-    const statusRecorded = waitForEvent('jobbot:application-status-recorded');
-    const nextDetailLoadedPromise = waitForEvent('jobbot:application-detail-loaded');
-    form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    const form = dom.window.document.querySelector(
+      "[data-application-status-form]",
+    );
+    const statusRecorded = waitForEvent("jobbot:application-status-recorded");
+    const nextDetailLoadedPromise = waitForEvent(
+      "jobbot:application-detail-loaded",
+    );
+    form.dispatchEvent(
+      new dom.window.Event("submit", { bubbles: true, cancelable: true }),
+    );
     await statusRecorded;
     const secondDetailEvent = await nextDetailLoadedPromise;
 
-    expect(commandAdapter['track-record']).toHaveBeenCalledTimes(1);
-    expect(commandAdapter['track-show']).toHaveBeenCalledTimes(2);
-    expect(commandAdapter['shortlist-show']).toHaveBeenCalledTimes(2);
-    expect(secondDetailEvent?.detail?.data?.status).toBe('offer');
+    expect(commandAdapter["track-record"]).toHaveBeenCalledTimes(1);
+    expect(commandAdapter["track-show"]).toHaveBeenCalledTimes(2);
+    expect(commandAdapter["shortlist-show"]).toHaveBeenCalledTimes(2);
+    expect(secondDetailEvent?.detail?.data?.status).toBe("offer");
   });
 });
 
-describe('web server command endpoint', () => {
-  it('executes allow-listed commands with validated payloads', async () => {
+describe("web server command endpoint", () => {
+  it("executes allow-listed commands with validated payloads", async () => {
     const commandAdapter = {
-      summarize: vi.fn(async options => {
+      summarize: vi.fn(async (options) => {
         expect(options).toEqual({
-          input: 'job.txt',
-          format: 'json',
+          input: "job.txt",
+          format: "json",
           sentences: 2,
-          locale: 'en',
+          locale: "en",
           timeoutMs: 5000,
           maxBytes: 2048,
         });
         return {
-          command: 'summarize',
-          format: 'json',
+          command: "summarize",
+          format: "json",
           stdout: '{"summary":"ok"}',
-          stderr: '',
-          data: { summary: 'ok' },
+          stderr: "",
+          data: { summary: "ok" },
         };
       }),
     };
 
     const server = await startServer({ commandAdapter });
     const response = await fetch(`${server.url}/commands/summarize`, {
-      method: 'POST',
+      method: "POST",
       headers: buildCommandHeaders(server),
       body: JSON.stringify({
-        input: 'job.txt',
-        format: 'json',
-        sentences: '2',
-        locale: 'en',
+        input: "job.txt",
+        format: "json",
+        sentences: "2",
+        locale: "en",
         timeoutMs: 5000,
         maxBytes: 2048,
       }),
@@ -1779,19 +1935,19 @@ describe('web server command endpoint', () => {
     expect(response.status).toBe(200);
     const payload = await response.json();
     expect(payload).toEqual({
-      command: 'summarize',
-      format: 'json',
+      command: "summarize",
+      format: "json",
       stdout: '{"summary":"ok"}',
-      stderr: '',
-      data: { summary: 'ok' },
+      stderr: "",
+      data: { summary: "ok" },
     });
     expect(commandAdapter.summarize).toHaveBeenCalledTimes(1);
   });
 
-  it('rejects unknown commands', async () => {
+  it("rejects unknown commands", async () => {
     const server = await startServer({ commandAdapter: {} });
     const response = await fetch(`${server.url}/commands/unknown`, {
-      method: 'POST',
+      method: "POST",
       headers: buildCommandHeaders(server),
       body: JSON.stringify({}),
     });
@@ -1801,16 +1957,16 @@ describe('web server command endpoint', () => {
     expect(payload.error).toMatch(/unknown command/i);
   });
 
-  it('rejects payloads with unexpected fields', async () => {
+  it("rejects payloads with unexpected fields", async () => {
     const commandAdapter = {
       summarize: vi.fn(),
     };
 
     const server = await startServer({ commandAdapter });
     const response = await fetch(`${server.url}/commands/summarize`, {
-      method: 'POST',
+      method: "POST",
       headers: buildCommandHeaders(server),
-      body: JSON.stringify({ input: 'job.txt', unexpected: true }),
+      body: JSON.stringify({ input: "job.txt", unexpected: true }),
     });
 
     expect(response.status).toBe(400);
@@ -1819,10 +1975,10 @@ describe('web server command endpoint', () => {
     expect(commandAdapter.summarize).not.toHaveBeenCalled();
   });
 
-  it('returns a 502 status when the CLI invocation fails', async () => {
-    const error = new Error('summarize command failed: boom');
-    error.stdout = 'cli-out';
-    error.stderr = 'cli-error';
+  it("returns a 502 status when the CLI invocation fails", async () => {
+    const error = new Error("summarize command failed: boom");
+    error.stdout = "cli-out";
+    error.stderr = "cli-error";
     const commandAdapter = {
       summarize: vi.fn(async () => {
         throw error;
@@ -1831,26 +1987,26 @@ describe('web server command endpoint', () => {
 
     const server = await startServer({ commandAdapter });
     const response = await fetch(`${server.url}/commands/summarize`, {
-      method: 'POST',
+      method: "POST",
       headers: buildCommandHeaders(server),
-      body: JSON.stringify({ input: 'job.txt' }),
+      body: JSON.stringify({ input: "job.txt" }),
     });
 
     expect(response.status).toBe(502);
     const payload = await response.json();
     expect(payload).toMatchObject({
-      error: 'summarize command failed: boom',
-      stdout: 'cli-out',
-      stderr: 'cli-error',
+      error: "summarize command failed: boom",
+      stdout: "cli-out",
+      stderr: "cli-error",
     });
   });
 
-  it('includes trace identifiers in error responses when available', async () => {
-    const error = new Error('summarize command failed: sanitized');
-    error.stdout = '';
-    error.stderr = 'boom';
-    error.correlationId = 'trace-42';
-    error.traceId = 'trace-42';
+  it("includes trace identifiers in error responses when available", async () => {
+    const error = new Error("summarize command failed: sanitized");
+    error.stdout = "";
+    error.stderr = "boom";
+    error.correlationId = "trace-42";
+    error.traceId = "trace-42";
     const commandAdapter = {
       summarize: vi.fn(async () => {
         throw error;
@@ -1859,31 +2015,31 @@ describe('web server command endpoint', () => {
 
     const server = await startServer({ commandAdapter });
     const response = await fetch(`${server.url}/commands/summarize`, {
-      method: 'POST',
+      method: "POST",
       headers: buildCommandHeaders(server),
-      body: JSON.stringify({ input: 'job.txt' }),
+      body: JSON.stringify({ input: "job.txt" }),
     });
 
     expect(response.status).toBe(502);
     const payload = await response.json();
     expect(payload).toMatchObject({
-      error: 'summarize command failed: sanitized',
-      correlationId: 'trace-42',
-      traceId: 'trace-42',
-      stderr: 'boom',
+      error: "summarize command failed: sanitized",
+      correlationId: "trace-42",
+      traceId: "trace-42",
+      stderr: "boom",
     });
   });
 
-  it('rejects malformed JSON payloads before invoking the CLI', async () => {
+  it("rejects malformed JSON payloads before invoking the CLI", async () => {
     const commandAdapter = {
       summarize: vi.fn(),
     };
 
     const server = await startServer({ commandAdapter });
     const response = await fetch(`${server.url}/commands/summarize`, {
-      method: 'POST',
+      method: "POST",
       headers: buildCommandHeaders(server),
-      body: '{',
+      body: "{",
     });
 
     expect(response.status).toBe(400);
@@ -1892,50 +2048,53 @@ describe('web server command endpoint', () => {
     expect(commandAdapter.summarize).not.toHaveBeenCalled();
   });
 
-  it('redacts secret-like tokens from command responses', async () => {
+  it("redacts secret-like tokens from command responses", async () => {
     const commandAdapter = {
       summarize: vi.fn(async () => ({
-        command: 'summarize',
-        format: 'json',
-        stdout: 'API_KEY=abcd1234secret',
-        stderr: 'Bearer sk_live_1234567890',
+        command: "summarize",
+        format: "json",
+        stdout: "API_KEY=abcd1234secret",
+        stderr: "Bearer sk_live_1234567890",
         data: {
-          token: 'abcd1234secret',
-          nested: { client_secret: 'supersecret' },
+          token: "abcd1234secret",
+          nested: { client_secret: "supersecret" },
         },
       })),
     };
 
     const server = await startServer({ commandAdapter });
     const response = await fetch(`${server.url}/commands/summarize`, {
-      method: 'POST',
+      method: "POST",
       headers: buildCommandHeaders(server),
-      body: JSON.stringify({ input: 'job.txt', format: 'json' }),
+      body: JSON.stringify({ input: "job.txt", format: "json" }),
     });
 
     expect(response.status).toBe(200);
     const payload = await response.json();
-    expect(payload.stdout).toBe('API_KEY=***');
-    expect(payload.stderr).toBe('Bearer ***');
-    expect(payload.data).toEqual({ token: '***', nested: { client_secret: '***' } });
+    expect(payload.stdout).toBe("API_KEY=***");
+    expect(payload.stderr).toBe("Bearer ***");
+    expect(payload.data).toEqual({
+      token: "***",
+      nested: { client_secret: "***" },
+    });
   });
 
-  it('executes shortlist-list commands with sanitized payloads', async () => {
+  it("executes shortlist-list commands with sanitized payloads", async () => {
     const commandAdapter = {
-      'shortlist-list': vi.fn(async payload => {
+      "shortlist-list": vi.fn(async (payload) => {
         expect(payload).toEqual({
-          location: 'Remote',
-          level: 'Senior',
-          compensation: '$185k',
-          tags: ['remote', 'dream'],
+          location: "Remote",
+          level: "Senior",
+          compensation: "$185k",
+          tags: ["remote", "dream"],
           offset: 5,
           limit: 25,
         });
         return {
-          command: 'shortlist-list',
-          format: 'json',
-          stdout: '',
-          stderr: '',
+          command: "shortlist-list",
+          format: "json",
+          stdout: "",
+          stderr: "",
           data: {
             total: 1,
             offset: 5,
@@ -1943,9 +2102,13 @@ describe('web server command endpoint', () => {
             filters: payload,
             items: [
               {
-                id: 'job-remote',
-                metadata: { location: 'Remote', level: 'Senior', compensation: '$185k' },
-                tags: ['remote', 'dream'],
+                id: "job-remote",
+                metadata: {
+                  location: "Remote",
+                  level: "Senior",
+                  compensation: "$185k",
+                },
+                tags: ["remote", "dream"],
                 discard_count: 0,
               },
             ],
@@ -1954,17 +2117,17 @@ describe('web server command endpoint', () => {
         };
       }),
     };
-    commandAdapter.shortlistList = commandAdapter['shortlist-list'];
+    commandAdapter.shortlistList = commandAdapter["shortlist-list"];
 
     const server = await startServer({ commandAdapter });
     const response = await fetch(`${server.url}/commands/shortlist-list`, {
-      method: 'POST',
+      method: "POST",
       headers: buildCommandHeaders(server),
       body: JSON.stringify({
-        location: 'Remote',
-        level: 'Senior',
-        compensation: '$185k',
-        tags: ['remote', 'dream'],
+        location: "Remote",
+        level: "Senior",
+        compensation: "$185k",
+        tags: ["remote", "dream"],
         offset: 5,
         limit: 25,
       }),
@@ -1972,7 +2135,7 @@ describe('web server command endpoint', () => {
 
     expect(response.status).toBe(200);
     const payload = await response.json();
-    expect(payload.command).toBe('shortlist-list');
+    expect(payload.command).toBe("shortlist-list");
     expect(payload.data).toMatchObject({
       total: 1,
       offset: 5,
@@ -1980,37 +2143,37 @@ describe('web server command endpoint', () => {
       hasMore: false,
     });
     expect(Array.isArray(payload.data.items)).toBe(true);
-    expect(payload.data.items[0]).toMatchObject({ id: 'job-remote' });
-    expect(commandAdapter['shortlist-list']).toHaveBeenCalledTimes(1);
+    expect(payload.data.items[0]).toMatchObject({ id: "job-remote" });
+    expect(commandAdapter["shortlist-list"]).toHaveBeenCalledTimes(1);
   });
 
-  it('preserves primitive command responses while sanitizing strings', async () => {
+  it("preserves primitive command responses while sanitizing strings", async () => {
     const commandAdapter = {
-      summarize: vi.fn(async () => 'API_KEY=abcd1234secret\u0007'),
+      summarize: vi.fn(async () => "API_KEY=abcd1234secret\u0007"),
     };
 
     const server = await startServer({ commandAdapter });
     const response = await fetch(`${server.url}/commands/summarize`, {
-      method: 'POST',
+      method: "POST",
       headers: buildCommandHeaders(server),
-      body: JSON.stringify({ input: 'job.txt' }),
+      body: JSON.stringify({ input: "job.txt" }),
     });
 
     expect(response.status).toBe(200);
     const payload = await response.json();
-    expect(payload).toBe('API_KEY=***');
+    expect(payload).toBe("API_KEY=***");
   });
 
-  it('rejects command requests without a valid CSRF token', async () => {
+  it("rejects command requests without a valid CSRF token", async () => {
     const commandAdapter = {
       summarize: vi.fn(),
     };
 
     const server = await startServer({ commandAdapter });
     const response = await fetch(`${server.url}/commands/summarize`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ input: 'job.txt' }),
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ input: "job.txt" }),
     });
 
     expect(response.status).toBe(403);
@@ -2019,21 +2182,21 @@ describe('web server command endpoint', () => {
     expect(commandAdapter.summarize).not.toHaveBeenCalled();
   });
 
-  it('requires a valid authorization token when configured', async () => {
+  it("requires a valid authorization token when configured", async () => {
     const commandAdapter = {
       summarize: vi.fn(async () => ({ ok: true })),
     };
 
     const server = await startServer({
       commandAdapter,
-      auth: { tokens: ['secret-token-123'] },
+      auth: { tokens: ["secret-token-123"] },
     });
-    const body = JSON.stringify({ input: 'job.txt' });
+    const body = JSON.stringify({ input: "job.txt" });
 
     const missingAuth = await fetch(`${server.url}/commands/summarize`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'content-type': 'application/json',
+        "content-type": "application/json",
         [server.csrfHeaderName]: server.csrfToken,
       },
       body,
@@ -2045,11 +2208,11 @@ describe('web server command endpoint', () => {
     expect(commandAdapter.summarize).not.toHaveBeenCalled();
 
     const invalidAuth = await fetch(`${server.url}/commands/summarize`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'content-type': 'application/json',
+        "content-type": "application/json",
         [server.csrfHeaderName]: server.csrfToken,
-        authorization: 'Bearer nope',
+        authorization: "Bearer nope",
       },
       body,
     });
@@ -2060,11 +2223,11 @@ describe('web server command endpoint', () => {
     expect(commandAdapter.summarize).not.toHaveBeenCalled();
 
     const validAuth = await fetch(`${server.url}/commands/summarize`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'content-type': 'application/json',
+        "content-type": "application/json",
         [server.csrfHeaderName]: server.csrfToken,
-        authorization: 'Bearer secret-token-123',
+        authorization: "Bearer secret-token-123",
       },
       body,
     });
@@ -2073,24 +2236,24 @@ describe('web server command endpoint', () => {
     expect(commandAdapter.summarize).toHaveBeenCalledTimes(1);
   });
 
-  it('supports custom authorization headers without schemes', async () => {
+  it("supports custom authorization headers without schemes", async () => {
     const commandAdapter = {
       summarize: vi.fn(async () => ({ ok: true })),
     };
 
     const server = await startServer({
       commandAdapter,
-      auth: { tokens: ['magic-token'], headerName: 'x-api-key', scheme: '' },
+      auth: { tokens: ["magic-token"], headerName: "x-api-key", scheme: "" },
     });
 
     const response = await fetch(`${server.url}/commands/summarize`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'content-type': 'application/json',
+        "content-type": "application/json",
         [server.csrfHeaderName]: server.csrfToken,
-        'x-api-key': 'magic-token',
+        "x-api-key": "magic-token",
       },
-      body: JSON.stringify({ input: 'job.txt' }),
+      body: JSON.stringify({ input: "job.txt" }),
     });
 
     expect(response.status).toBe(200);
@@ -2098,21 +2261,21 @@ describe('web server command endpoint', () => {
     expect(commandAdapter.summarize).toHaveBeenCalledTimes(1);
   });
 
-  it('enforces role-based access control for configured tokens', async () => {
+  it("enforces role-based access control for configured tokens", async () => {
     const auditEvents = [];
     const auditLogger = {
-      record: vi.fn(async event => {
+      record: vi.fn(async (event) => {
         auditEvents.push(event);
       }),
     };
     const commandAdapter = {
-      'shortlist-list': vi.fn(async () => ({
+      "shortlist-list": vi.fn(async () => ({
         data: {
           items: [],
           page: { limit: 25, hasMore: false },
         },
       })),
-      'track-record': vi.fn(async () => ({ ok: true })),
+      "track-record": vi.fn(async () => ({ ok: true })),
     };
 
     const server = await startServer({
@@ -2120,17 +2283,25 @@ describe('web server command endpoint', () => {
       auditLogger,
       auth: {
         tokens: [
-          { token: 'viewer-token', subject: 'viewer@example.com', roles: ['viewer'] },
-          { token: 'editor-token', subject: 'editor@example.com', roles: ['editor'] },
+          {
+            token: "viewer-token",
+            subject: "viewer@example.com",
+            roles: ["viewer"],
+          },
+          {
+            token: "editor-token",
+            subject: "editor@example.com",
+            roles: ["editor"],
+          },
         ],
       },
     });
 
     const viewerHeaders = buildCommandHeaders(server, {
-      authorization: 'Bearer viewer-token',
+      authorization: "Bearer viewer-token",
     });
     const viewerList = await fetch(`${server.url}/commands/shortlist-list`, {
-      method: 'POST',
+      method: "POST",
       headers: viewerHeaders,
       body: JSON.stringify({}),
     });
@@ -2138,21 +2309,21 @@ describe('web server command endpoint', () => {
     await viewerList.json();
 
     const viewerTrack = await fetch(`${server.url}/commands/track-record`, {
-      method: 'POST',
+      method: "POST",
       headers: viewerHeaders,
-      body: JSON.stringify({ jobId: 'job-123', status: 'screening' }),
+      body: JSON.stringify({ jobId: "job-123", status: "screening" }),
     });
     expect(viewerTrack.status).toBe(403);
     expect(await viewerTrack.json()).toMatchObject({
       error: expect.stringMatching(/permission/i),
     });
-    expect(commandAdapter['track-record']).not.toHaveBeenCalled();
+    expect(commandAdapter["track-record"]).not.toHaveBeenCalled();
 
     const editorHeaders = buildCommandHeaders(server, {
-      authorization: 'Bearer editor-token',
+      authorization: "Bearer editor-token",
     });
     const editorList = await fetch(`${server.url}/commands/shortlist-list`, {
-      method: 'POST',
+      method: "POST",
       headers: editorHeaders,
       body: JSON.stringify({}),
     });
@@ -2160,72 +2331,72 @@ describe('web server command endpoint', () => {
     await editorList.json();
 
     const editorTrack = await fetch(`${server.url}/commands/track-record`, {
-      method: 'POST',
+      method: "POST",
       headers: editorHeaders,
-      body: JSON.stringify({ jobId: 'job-123', status: 'screening' }),
+      body: JSON.stringify({ jobId: "job-123", status: "screening" }),
     });
     expect(editorTrack.status).toBe(200);
     expect(await editorTrack.json()).toEqual({ ok: true });
-    expect(commandAdapter['track-record']).toHaveBeenCalledTimes(1);
+    expect(commandAdapter["track-record"]).toHaveBeenCalledTimes(1);
 
     expect(auditLogger.record).toHaveBeenCalled();
-    const rbacEvent = auditEvents.find(event => event.reason === 'rbac');
+    const rbacEvent = auditEvents.find((event) => event.reason === "rbac");
     expect(rbacEvent).toMatchObject({
-      status: 'forbidden',
-      command: 'track-record',
-      requiredRoles: ['editor'],
-      actor: 'viewer@example.com',
-      roles: ['viewer'],
+      status: "forbidden",
+      command: "track-record",
+      requiredRoles: ["editor"],
+      actor: "viewer@example.com",
+      roles: ["viewer"],
     });
     const successEvent = auditEvents.find(
-      event => event.status === 'success' && event.command === 'track-record',
+      (event) => event.status === "success" && event.command === "track-record",
     );
-    expect(successEvent.roles).toContain('editor');
-    expect(successEvent.actor).toBe('editor@example.com');
+    expect(successEvent.roles).toContain("editor");
+    expect(successEvent.actor).toBe("editor@example.com");
   });
 
-  it('rejects tokens with explicitly empty role lists', async () => {
+  it("rejects tokens with explicitly empty role lists", async () => {
     await expect(
       startServer({
         commandAdapter: { summarize: vi.fn(async () => ({ ok: true })) },
-        auth: { tokens: [{ token: 'empty-role-token', roles: [] }] },
+        auth: { tokens: [{ token: "empty-role-token", roles: [] }] },
       }),
     ).rejects.toThrow(/auth token roles must include at least one role/i);
   });
 
-  it('rejects tokens with blank role strings', async () => {
+  it("rejects tokens with blank role strings", async () => {
     await expect(
       startServer({
         commandAdapter: { summarize: vi.fn(async () => ({ ok: true })) },
-        auth: { tokens: [{ token: 'blank-role-token', roles: '   ' }] },
+        auth: { tokens: [{ token: "blank-role-token", roles: "   " }] },
       }),
     ).rejects.toThrow(/auth token roles must include at least one role/i);
   });
 
-  it('logs telemetry when commands succeed', async () => {
+  it("logs telemetry when commands succeed", async () => {
     const logger = {
       info: vi.fn(),
       warn: vi.fn(),
       error: vi.fn(),
     };
     const commandAdapter = {
-      summarize: vi.fn(async options => {
-        expect(options).toEqual({ input: 'job.txt' });
+      summarize: vi.fn(async (options) => {
+        expect(options).toEqual({ input: "job.txt" });
         return {
-          command: 'summarize',
-          stdout: 'ok',
-          stderr: '',
-          correlationId: 'corr-123',
-          traceId: 'corr-123',
+          command: "summarize",
+          stdout: "ok",
+          stderr: "",
+          correlationId: "corr-123",
+          traceId: "corr-123",
         };
       }),
     };
 
     const server = await startServer({ commandAdapter, logger });
     const response = await fetch(`${server.url}/commands/summarize`, {
-      method: 'POST',
+      method: "POST",
       headers: buildCommandHeaders(server),
-      body: JSON.stringify({ input: 'job.txt' }),
+      body: JSON.stringify({ input: "job.txt" }),
     });
 
     expect(response.status).toBe(200);
@@ -2237,31 +2408,31 @@ describe('web server command endpoint', () => {
 
     const entry = logger.info.mock.calls[0][0];
     expect(entry).toMatchObject({
-      event: 'web.command',
-      command: 'summarize',
-      status: 'success',
+      event: "web.command",
+      command: "summarize",
+      status: "success",
       httpStatus: 200,
-      correlationId: 'corr-123',
-      traceId: 'corr-123',
-      payloadFields: ['input'],
+      correlationId: "corr-123",
+      traceId: "corr-123",
+      payloadFields: ["input"],
     });
-    expect(typeof entry.durationMs).toBe('number');
+    expect(typeof entry.durationMs).toBe("number");
     expect(entry.durationMs).toBeGreaterThanOrEqual(0);
     expect(entry.stdoutLength).toBe(2);
     expect(entry.stderrLength).toBe(0);
   });
 
-  it('logs telemetry when commands fail', async () => {
+  it("logs telemetry when commands fail", async () => {
     const logger = {
       info: vi.fn(),
       warn: vi.fn(),
       error: vi.fn(),
     };
-    const error = new Error('summarize command failed: boom');
-    error.stdout = 'oops';
-    error.stderr = 'fail';
-    error.correlationId = 'corr-err';
-    error.traceId = 'corr-err';
+    const error = new Error("summarize command failed: boom");
+    error.stdout = "oops";
+    error.stderr = "fail";
+    error.correlationId = "corr-err";
+    error.traceId = "corr-err";
     const commandAdapter = {
       summarize: vi.fn(async () => {
         throw error;
@@ -2270,9 +2441,9 @@ describe('web server command endpoint', () => {
 
     const server = await startServer({ commandAdapter, logger });
     const response = await fetch(`${server.url}/commands/summarize`, {
-      method: 'POST',
+      method: "POST",
       headers: buildCommandHeaders(server),
-      body: JSON.stringify({ input: 'job.txt' }),
+      body: JSON.stringify({ input: "job.txt" }),
     });
 
     expect(response.status).toBe(502);
@@ -2284,24 +2455,24 @@ describe('web server command endpoint', () => {
 
     const entry = logger.error.mock.calls[0][0];
     expect(entry).toMatchObject({
-      event: 'web.command',
-      command: 'summarize',
-      status: 'error',
+      event: "web.command",
+      command: "summarize",
+      status: "error",
       httpStatus: 502,
-      correlationId: 'corr-err',
-      traceId: 'corr-err',
-      payloadFields: ['input'],
-      errorMessage: 'summarize command failed: boom',
+      correlationId: "corr-err",
+      traceId: "corr-err",
+      payloadFields: ["input"],
+      errorMessage: "summarize command failed: boom",
     });
-    expect(typeof entry.durationMs).toBe('number');
+    expect(typeof entry.durationMs).toBe("number");
     expect(entry.durationMs).toBeGreaterThanOrEqual(0);
     expect(entry.stdoutLength).toBe(4);
     expect(entry.stderrLength).toBe(4);
   });
 
-  it('sanitizes command payload strings before invoking the adapter', async () => {
-    const dirtyInput = '  Senior engineer\u0000\nnotes\u0007 ';
-    const dirtyLocale = '\u0007 en-US \u0000';
+  it("sanitizes command payload strings before invoking the adapter", async () => {
+    const dirtyInput = "  Senior engineer\u0000\nnotes\u0007 ";
+    const dirtyLocale = "\u0007 en-US \u0000";
     const commandAdapter = {
       summarize: vi.fn(async () => ({ ok: true })),
     };
@@ -2309,7 +2480,7 @@ describe('web server command endpoint', () => {
     const server = await startServer({ commandAdapter });
 
     const response = await fetch(`${server.url}/commands/summarize`, {
-      method: 'POST',
+      method: "POST",
       headers: buildCommandHeaders(server),
       body: JSON.stringify({ input: dirtyInput, locale: dirtyLocale }),
     });
@@ -2319,12 +2490,12 @@ describe('web server command endpoint', () => {
 
     expect(commandAdapter.summarize).toHaveBeenCalledTimes(1);
     expect(commandAdapter.summarize).toHaveBeenCalledWith({
-      input: 'Senior engineer\nnotes',
-      locale: 'en-US',
+      input: "Senior engineer\nnotes",
+      locale: "en-US",
     });
   });
 
-  it('rate limits repeated command requests per client', async () => {
+  it("rate limits repeated command requests per client", async () => {
     const commandAdapter = {
       summarize: vi.fn(async () => ({ ok: true })),
     };
@@ -2335,29 +2506,31 @@ describe('web server command endpoint', () => {
     });
 
     const headers = buildCommandHeaders(server);
-    const body = JSON.stringify({ input: 'job.txt' });
+    const body = JSON.stringify({ input: "job.txt" });
 
     const first = await fetch(`${server.url}/commands/summarize`, {
-      method: 'POST',
+      method: "POST",
       headers,
       body,
     });
     expect(first.status).toBe(200);
 
     const second = await fetch(`${server.url}/commands/summarize`, {
-      method: 'POST',
+      method: "POST",
       headers,
       body,
     });
     expect(second.status).toBe(200);
 
     const third = await fetch(`${server.url}/commands/summarize`, {
-      method: 'POST',
+      method: "POST",
       headers,
       body,
     });
     expect(third.status).toBe(429);
-    expect(await third.json()).toMatchObject({ error: expect.stringMatching(/too many/i) });
+    expect(await third.json()).toMatchObject({
+      error: expect.stringMatching(/too many/i),
+    });
     expect(commandAdapter.summarize).toHaveBeenCalledTimes(2);
   });
 });

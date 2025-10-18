@@ -35,12 +35,12 @@ cp .env.example .env
 
 Visit each provider's developer portal to generate API tokens:
 
-| Provider | Documentation | Where to get it |
-|----------|--------------|-----------------|
-| **Greenhouse** | [API Documentation](https://developers.greenhouse.io/harvest.html#authentication) | Your Greenhouse account → Configure → Dev Center → API Credential Management |
-| **Lever** | [API Documentation](https://hire.lever.co/developer/documentation#authentication) | Settings → Integrations → API |
-| **SmartRecruiters** | [API Documentation](https://developers.smartrecruiters.com/docs/getting-started) | Settings → API & Integrations → API Credentials |
-| **Workable** | [API Documentation](https://workable.readme.io/reference/generate-an-access-token) | Settings → Integrations → API |
+| Provider            | Documentation                                                                      | Where to get it                                                              |
+| ------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| **Greenhouse**      | [API Documentation](https://developers.greenhouse.io/harvest.html#authentication)  | Your Greenhouse account → Configure → Dev Center → API Credential Management |
+| **Lever**           | [API Documentation](https://hire.lever.co/developer/documentation#authentication)  | Settings → Integrations → API                                                |
+| **SmartRecruiters** | [API Documentation](https://developers.smartrecruiters.com/docs/getting-started)   | Settings → API & Integrations → API Credentials                              |
+| **Workable**        | [API Documentation](https://workable.readme.io/reference/generate-an-access-token) | Settings → Integrations → API                                                |
 
 ### 3. Add tokens to your `.env` file
 
@@ -54,6 +54,12 @@ JOBBOT_WORKABLE_TOKEN=your_workable_token_here
 # Disable mocks to use real APIs
 JOBBOT_FEATURE_SCRAPING_MOCKS=false
 ```
+
+### Update tokens from the web app
+
+Prefer to manage secrets in the UI? Open the **Listings** tab and use the **Provider tokens** panel
+to paste each API token. The server writes changes back to your local `.env` file, so manual edits and
+web updates stay in sync.
 
 ### 4. Restart the server
 
@@ -73,13 +79,13 @@ For advanced configuration options, see [docs/configuration-cookbook.md](docs/co
 Use the built-in HTTP client helper when integrating with external services:
 
 ```js
-import { createHttpClient } from './src/services/http.js';
+import { createHttpClient } from "./src/services/http.js";
 
 const client = createHttpClient({
-  baseUrl: 'https://api.example.com',
+  baseUrl: "https://api.example.com",
 });
 
-const response = await client.get('/status');
+const response = await client.get("/status");
 console.log(await response.json());
 ```
 
