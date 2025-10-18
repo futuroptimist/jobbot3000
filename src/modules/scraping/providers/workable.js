@@ -8,6 +8,7 @@ import {
   createSnapshot,
   resolveAdapterRateLimit,
 } from '../adapters/common.js';
+import { getListingProviderToken } from '../provider-tokens.js';
 
 const WORKABLE_BASE = 'https://www.workable.com/api/accounts';
 const WORKABLE_BASE_HEADERS = Object.freeze({
@@ -39,6 +40,8 @@ function normalizeToken(value) {
 
 function getWorkableToken(explicitToken) {
   if (explicitToken !== undefined) return normalizeToken(explicitToken);
+  const stored = getListingProviderToken('workable');
+  if (stored) return normalizeToken(stored);
   return normalizeToken(process.env.JOBBOT_WORKABLE_TOKEN);
 }
 

@@ -85,6 +85,8 @@ The following command endpoints are available. Each one maps directly to a CLI h
   shortlist store for follow-up tracking.
 - `POST /commands/listings-archive` → `jobbot listings archive`: Archive a listing (or tracked job)
   with a reason code, keeping audit history intact.
+- `POST /commands/listings-provider-token` → `jobbot listings provider-token`: Store or clear API
+  tokens for job board providers through the web UI.
 - `POST /commands/listings-providers` → `jobbot listings providers`: Return the supported provider
   identifiers and human-friendly labels.
 

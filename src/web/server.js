@@ -1,28 +1,34 @@
-import express from 'express';
-import { randomBytes } from 'node:crypto';
-import { EventEmitter } from 'node:events';
-import { performance } from 'node:perf_hooks';
+import express from "express";
+import { randomBytes } from "node:crypto";
+import { EventEmitter } from "node:events";
+import { performance } from "node:perf_hooks";
 
 import {
   createCommandAdapter,
   sanitizeOutputString,
   sanitizeOutputValue,
-} from './command-adapter.js';
-import { ALLOW_LISTED_COMMANDS, validateCommandPayload } from './command-registry.js';
-import { STATUSES } from '../lifecycle.js';
-import { createRedactionMiddleware, redactValue } from '../shared/security/redaction.js';
-import { createAuditLogger } from '../shared/security/audit-log.js';
-import { WebSocket, WebSocketServer } from 'ws';
+} from "./command-adapter.js";
+import {
+  ALLOW_LISTED_COMMANDS,
+  validateCommandPayload,
+} from "./command-registry.js";
+import { STATUSES } from "../lifecycle.js";
+import {
+  createRedactionMiddleware,
+  redactValue,
+} from "../shared/security/redaction.js";
+import { createAuditLogger } from "../shared/security/audit-log.js";
+import { WebSocket, WebSocketServer } from "ws";
 
 function createInMemoryRateLimiter(options = {}) {
   const windowMs = Number(options.windowMs ?? 60000);
   if (!Number.isFinite(windowMs) || windowMs <= 0) {
-    throw new Error('rateLimit.windowMs must be a positive number');
+    throw new Error("rateLimit.windowMs must be a positive number");
   }
   const maxRaw = options.max ?? 30;
   const max = Math.trunc(Number(maxRaw));
   if (!Number.isFinite(max) || max <= 0) {
-    throw new Error('rateLimit.max must be a positive integer');
+    throw new Error("rateLimit.max must be a positive integer");
   }
 
   const buckets = new Map();
@@ -47,19 +53,19 @@ function createInMemoryRateLimiter(options = {}) {
 }
 
 function escapeHtml(value) {
-  if (typeof value !== 'string') return '';
-  return value.replace(/[&<>"']/g, character => {
+  if (typeof value !== "string") return "";
+  return value.replace(/[&<>"']/g, (character) => {
     switch (character) {
-      case '&':
-        return '&amp;';
-      case '<':
-        return '&lt;';
-      case '>':
-        return '&gt;';
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
       case '"':
-        return '&quot;';
+        return "&quot;";
       case "'":
-        return '&#39;';
+        return "&#39;";
       default:
         return character;
     }
@@ -67,82 +73,85 @@ function escapeHtml(value) {
 }
 
 function minifyInlineCss(css) {
-  if (typeof css !== 'string') {
-    return '';
+  if (typeof css !== "string") {
+    return "";
   }
   return css
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/\s+/g, ' ')
-    .replace(/\s*([{}:;,])\s*/g, '$1')
-    .replace(/;}/g, '}')
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\s+/g, " ")
+    .replace(/\s*([{}:;,])\s*/g, "$1")
+    .replace(/;}/g, "}")
     .trim();
 }
 
 function minifyInlineScript(script) {
-  if (typeof script !== 'string') {
-    return '';
+  if (typeof script !== "string") {
+    return "";
   }
   return script
-    .split('\n')
-    .map(line => line.trimEnd())
-    .filter((line, index, lines) => line.length > 0 || (index > 0 && lines[index - 1].length > 0))
-    .join('\n')
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter(
+      (line, index, lines) =>
+        line.length > 0 || (index > 0 && lines[index - 1].length > 0),
+    )
+    .join("\n")
     .trim();
 }
 
 function compactHtml(value) {
-  if (typeof value !== 'string') {
-    return '';
+  if (typeof value !== "string") {
+    return "";
   }
   return value
-    .split('\n')
-    .map(line => line.trimStart())
-    .join('\n')
-    .replace(/\n{3,}/g, '\n\n')
+    .split("\n")
+    .map((line) => line.trimStart())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
 function serializeJsonForHtml(value) {
   try {
-    return JSON.stringify(value).replace(/</g, '\\u003c');
+    return JSON.stringify(value).replace(/</g, "\\u003c");
   } catch {
-    return '[]';
+    return "[]";
   }
 }
 
 function normalizePluginId(value) {
-  if (typeof value !== 'string') {
+  if (typeof value !== "string") {
     return null;
   }
   const trimmed = value.trim();
   if (!trimmed) {
     return null;
   }
-  const sanitized = trimmed.toLowerCase().replace(/[^a-z0-9_-]+/g, '-');
-  const collapsed = sanitized.replace(/-+/g, '-').replace(/^-|-$/g, '');
+  const sanitized = trimmed.toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
+  const collapsed = sanitized.replace(/-+/g, "-").replace(/^-|-$/g, "");
   return collapsed || null;
 }
 
 function isSafePluginUrl(url) {
-  if (typeof url !== 'string') {
+  if (typeof url !== "string") {
     return false;
   }
   const trimmed = url.trim();
   if (!trimmed) {
     return false;
   }
-  if (trimmed.startsWith('/')) {
-    return !trimmed.includes('..');
+  if (trimmed.startsWith("/")) {
+    return !trimmed.includes("..");
   }
   const lower = trimmed.toLowerCase();
-  if (lower.startsWith('https://') || lower.startsWith('http://')) {
+  if (lower.startsWith("https://") || lower.startsWith("http://")) {
     return true;
   }
   return false;
 }
 
 function sanitizePluginEntry(entry) {
-  if (!entry || typeof entry !== 'object') {
+  if (!entry || typeof entry !== "object") {
     return null;
   }
   const id = normalizePluginId(entry.id);
@@ -150,27 +159,27 @@ function sanitizePluginEntry(entry) {
     return null;
   }
   const name =
-    typeof entry.name === 'string' && entry.name.trim() ? entry.name.trim() : id;
+    typeof entry.name === "string" && entry.name.trim()
+      ? entry.name.trim()
+      : id;
   const description =
-    typeof entry.description === 'string' && entry.description.trim()
+    typeof entry.description === "string" && entry.description.trim()
       ? entry.description.trim()
-      : '';
+      : "";
   const events = Array.isArray(entry.events)
     ? Array.from(
         new Set(
           entry.events
-            .map(event => (typeof event === 'string' ? event.trim() : ''))
+            .map((event) => (typeof event === "string" ? event.trim() : ""))
             .filter(Boolean),
         ),
       )
     : [];
   const source =
-    typeof entry.source === 'string' && entry.source
-      ? entry.source
-      : '';
-  let url = typeof entry.url === 'string' ? entry.url.trim() : '';
+    typeof entry.source === "string" && entry.source ? entry.source : "";
+  let url = typeof entry.url === "string" ? entry.url.trim() : "";
   if (url && !isSafePluginUrl(url)) {
-    url = '';
+    url = "";
   }
   if (!url && !source) {
     return null;
@@ -192,14 +201,14 @@ function createPluginAssets(app, plugins = {}) {
       continue;
     }
     seenIds.add(sanitized.id);
-    let scriptUrl = sanitized.url || '';
+    let scriptUrl = sanitized.url || "";
     if (!scriptUrl && sanitized.source) {
       const routePath = `/assets/plugins/${sanitized.id}.js`;
       if (!registeredRoutes.has(routePath)) {
         registeredRoutes.add(routePath);
         app.get(routePath, (req, res) => {
-          res.set('Content-Type', 'application/javascript; charset=utf-8');
-          res.set('Cache-Control', 'no-store');
+          res.set("Content-Type", "application/javascript; charset=utf-8");
+          res.set("Cache-Control", "no-store");
           res.send(sanitized.source);
         });
       }
@@ -581,6 +590,91 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
   .listings-grid {
     display: grid;
     gap: 1rem;
+  }
+  .listings-tokens {
+    border: 1px solid var(--card-border);
+    border-radius: 1rem;
+    background-color: var(--card-surface);
+    padding: 1.25rem;
+    margin-bottom: 1.5rem;
+    display: grid;
+    gap: 1rem;
+  }
+  [data-theme='light'] .listings-tokens {
+    background-color: rgba(255, 255, 255, 0.9);
+  }
+  .listings-tokens__description {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+  .listings-token-form {
+    display: grid;
+    gap: 0.75rem;
+  }
+  .listings-token-form label {
+    display: grid;
+    gap: 0.35rem;
+    font-weight: 500;
+  }
+  .listings-token-form select,
+  .listings-token-form input {
+    width: 100%;
+    border-radius: 0.75rem;
+    border: 1px solid var(--card-border);
+    background-color: transparent;
+    color: var(--foreground);
+    padding: 0.6rem 0.75rem;
+    font: inherit;
+  }
+  [data-theme='light'] .listings-token-form select,
+  [data-theme='light'] .listings-token-form input {
+    background-color: rgba(255, 255, 255, 0.9);
+  }
+  .listings-token-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+  .listings-token-actions button {
+    border-radius: 999px;
+    border: 1px solid var(--pill-border);
+    background-color: var(--pill-bg);
+    color: var(--pill-text);
+    padding: 0.4rem 1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .listings-token-actions button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .listings-token-actions button[data-variant='ghost'] {
+    background-color: transparent;
+    border-color: var(--card-border);
+    color: var(--foreground);
+  }
+  .listings-token-table {
+    width: 100%;
+    border-collapse: collapse;
+    border-radius: 0.75rem;
+    overflow: hidden;
+    border: 1px solid var(--card-border);
+  }
+  .listings-token-table th,
+  .listings-token-table td {
+    text-align: left;
+    padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid var(--card-border);
+    font-size: 0.95rem;
+  }
+  .listings-token-table tbody tr:nth-child(even) {
+    background-color: rgba(148, 163, 184, 0.08);
+  }
+  .listings-token-empty {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.95rem;
   }
   .listing-card {
     border: 1px solid var(--card-border);
@@ -2386,6 +2480,17 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           const range = section.querySelector('[data-listings-range]');
           const prevButton = section.querySelector('[data-listings-prev]');
           const nextButton = section.querySelector('[data-listings-next]');
+          const tokenSection = section.querySelector('[data-listings-tokens]') ?? null;
+          const tokenForm = tokenSection?.querySelector('[data-listings-token-form]') ?? null;
+          const tokenProviderSelect =
+            tokenForm?.querySelector('[data-listings-token-provider]') ?? null;
+          const tokenInput = tokenForm?.querySelector('[data-listings-token-input]') ?? null;
+          const tokenSubmit = tokenForm?.querySelector('[data-listings-token-submit]') ?? null;
+          const tokenClear = tokenForm?.querySelector('[data-listings-token-clear]') ?? null;
+          const tokenMessage = tokenSection?.querySelector('[data-listings-token-message]') ?? null;
+          const tokenTable = tokenSection?.querySelector('[data-listings-token-table]') ?? null;
+          const tokenRows = tokenSection?.querySelector('[data-listings-token-rows]') ?? null;
+          const tokenEmpty = tokenSection?.querySelector('[data-listings-token-empty]') ?? null;
           const panelId = 'listings';
 
           const state = {
@@ -2393,6 +2498,8 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             fetched: false,
             providers: [],
             providerMap: new Map(),
+            tokenStatus: [],
+            tokenFormBusy: false,
             listings: [],
             current: null,
             page: 0,
@@ -2415,6 +2522,150 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
 
           function clearMessage() {
             setMessage(null);
+          }
+
+          function setTokenMessage(variant, text) {
+            if (!tokenMessage) return;
+            const messageText = typeof text === 'string' ? text.trim() : '';
+            if (!variant || !messageText) {
+              tokenMessage.textContent = '';
+              tokenMessage.setAttribute('hidden', '');
+              tokenMessage.removeAttribute('data-variant');
+              return;
+            }
+            tokenMessage.textContent = messageText;
+            tokenMessage.setAttribute('data-variant', variant);
+            tokenMessage.removeAttribute('hidden');
+          }
+
+          function clearTokenMessage() {
+            setTokenMessage(null);
+          }
+
+          function setTokenFormDisabled(disabled) {
+            const controls = [tokenProviderSelect, tokenInput, tokenSubmit, tokenClear];
+            for (const control of controls) {
+              if (!control) continue;
+              control.disabled = disabled;
+            }
+          }
+
+          function getProviderLabel(providerId) {
+            if (!providerId) return '';
+            const entry = state.providerMap.get(providerId);
+            if (entry && typeof entry.label === 'string' && entry.label.trim()) {
+              return entry.label.trim();
+            }
+            return providerId;
+          }
+
+          function populateTokenProviders(list) {
+            if (!tokenProviderSelect) return;
+            const currentValue = tokenProviderSelect.value;
+            tokenProviderSelect.textContent = '';
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = 'Select a provider';
+            tokenProviderSelect.appendChild(placeholder);
+            let defaultValue = '';
+            for (const provider of list) {
+              if (!provider || typeof provider.id !== 'string') continue;
+              if (provider.id === 'all') continue;
+              const option = document.createElement('option');
+              option.value = provider.id;
+              option.textContent = provider.label || provider.id;
+              tokenProviderSelect.appendChild(option);
+              if (!defaultValue) {
+                defaultValue = provider.id;
+              }
+            }
+            const hasCurrent = Array.from(tokenProviderSelect.options).some(
+              option => option.value === currentValue && option.value !== '',
+            );
+            if (hasCurrent) {
+              tokenProviderSelect.value = currentValue;
+            } else {
+              tokenProviderSelect.value = defaultValue || '';
+            }
+          }
+
+          function formatTokenStatus(entry) {
+            if (!entry || entry.hasToken !== true) {
+              return 'Not set';
+            }
+            const parts = ['Set'];
+            const length = Number.isFinite(entry.length) ? entry.length : Number(entry.length);
+            if (Number.isFinite(length) && length > 0) {
+              parts.push(length + ' chars');
+            }
+            if (entry.lastFour) {
+              parts.push('Ends with ' + entry.lastFour);
+            }
+            if (entry.source) {
+              const sourceLabel =
+                entry.source === 'web'
+                  ? 'Updated from web'
+                  : entry.source === 'env-file'
+                    ? 'Loaded from .env'
+                    : entry.source === 'process-env'
+                      ? 'Loaded from environment'
+                      : entry.source;
+              parts.push(sourceLabel);
+            }
+            if (entry.updatedAt) {
+              const date = new Date(entry.updatedAt);
+              if (!Number.isNaN(date.getTime())) {
+                parts.push('Updated ' + date.toLocaleString());
+              }
+            }
+            return parts.join(' • ');
+          }
+
+          function renderTokenStatus() {
+            if (!tokenTable || !tokenRows || !tokenEmpty) return;
+            const statuses = Array.isArray(state.tokenStatus) ? state.tokenStatus : [];
+            tokenRows.textContent = '';
+            if (statuses.length === 0) {
+              tokenTable.setAttribute('hidden', '');
+              tokenEmpty.removeAttribute('hidden');
+              return;
+            }
+            tokenTable.removeAttribute('hidden');
+            tokenEmpty.setAttribute('hidden', '');
+            for (const entry of statuses) {
+              if (!entry || typeof entry.provider !== 'string') continue;
+              const row = document.createElement('tr');
+              const providerCell = document.createElement('td');
+              providerCell.textContent = getProviderLabel(entry.provider);
+              const envCell = document.createElement('td');
+              envCell.textContent = entry.envKey || '';
+              const statusCell = document.createElement('td');
+              statusCell.textContent = formatTokenStatus(entry);
+              row.appendChild(providerCell);
+              row.appendChild(envCell);
+              row.appendChild(statusCell);
+              tokenRows.appendChild(row);
+            }
+          }
+
+          function updateTokenStatus(statusList) {
+            state.tokenStatus = Array.isArray(statusList)
+              ? statusList
+                  .filter(entry => entry && typeof entry.provider === 'string')
+                  .map(entry => ({ ...entry }))
+              : [];
+            renderTokenStatus();
+          }
+
+          function updateTokenFormAvailability() {
+            const hasProviders = state.providers.some(
+              provider => provider && provider.id && provider.id !== 'all',
+            );
+            const disable = !hasProviders || state.tokenFormBusy;
+            setTokenFormDisabled(disable);
+            if (!hasProviders && tokenProviderSelect) {
+              tokenProviderSelect.value = '';
+            }
           }
 
           function updateIdentifierCopy(providerId) {
@@ -2492,6 +2743,8 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             if (nextValue) {
               providerSelect.value = nextValue;
             }
+            populateTokenProviders(list);
+            updateTokenFormAvailability();
             updateIdentifierCopy(providerSelect.value);
           }
 
@@ -2659,12 +2912,14 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
                 failureMessage: 'Failed to load providers',
               });
               const providers = Array.isArray(data.providers) ? data.providers : [];
+              const tokenStatus = Array.isArray(data.tokenStatus) ? data.tokenStatus : [];
               state.providers = providers;
               state.providerMap = new Map(
                 providers
                   .filter(entry => entry && typeof entry.id === 'string')
                   .map(entry => [entry.id, entry]),
               );
+              updateTokenStatus(tokenStatus);
               populateProviders(providers);
               return providers;
             } catch (err) {
@@ -2676,6 +2931,90 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               return [];
             }
           }
+
+          tokenProviderSelect?.addEventListener('change', () => {
+            clearTokenMessage();
+          });
+
+          tokenForm?.addEventListener('submit', async event => {
+            event.preventDefault();
+            if (state.tokenFormBusy) return;
+            const providerValue = tokenProviderSelect?.value?.trim() ?? '';
+            if (!providerValue) {
+              setTokenMessage('error', 'Select a provider before saving a token');
+              return;
+            }
+            const rawToken = tokenInput?.value ?? '';
+            const tokenValue = typeof rawToken === 'string' ? rawToken.trim() : '';
+            if (!tokenValue) {
+              setTokenMessage('error', 'Enter a token before saving');
+              return;
+            }
+            state.tokenFormBusy = true;
+            setTokenFormDisabled(true);
+            try {
+              setTokenMessage('info', 'Saving token…');
+              const data = await postCommand(
+                '/commands/listings-provider-token',
+                { provider: providerValue, token: tokenValue },
+                {
+                  invalidResponse: 'Received invalid response while saving provider token',
+                  failureMessage: 'Failed to save provider token',
+                },
+              );
+              updateTokenStatus(Array.isArray(data.tokenStatus) ? data.tokenStatus : []);
+              const providerLabel = getProviderLabel(providerValue);
+              setTokenMessage('success', providerLabel + ' token saved');
+              if (tokenInput) tokenInput.value = '';
+            } catch (err) {
+              const message =
+                err && typeof err.message === 'string' && err.message.trim()
+                  ? err.message.trim()
+                  : 'Unable to save provider token';
+              setTokenMessage('error', message);
+            } finally {
+              state.tokenFormBusy = false;
+              updateTokenFormAvailability();
+            }
+          });
+
+          tokenClear?.addEventListener('click', async event => {
+            event.preventDefault();
+            if (state.tokenFormBusy) return;
+            const providerValue = tokenProviderSelect?.value?.trim() ?? '';
+            if (!providerValue) {
+              setTokenMessage('error', 'Select a provider before clearing its token');
+              return;
+            }
+            state.tokenFormBusy = true;
+            setTokenFormDisabled(true);
+            try {
+              setTokenMessage('info', 'Removing token…');
+              const data = await postCommand(
+                '/commands/listings-provider-token',
+                { provider: providerValue, action: 'clear' },
+                {
+                  invalidResponse: 'Received invalid response while clearing provider token',
+                  failureMessage: 'Failed to clear provider token',
+                },
+              );
+              updateTokenStatus(Array.isArray(data.tokenStatus) ? data.tokenStatus : []);
+              const providerLabel = getProviderLabel(providerValue);
+              setTokenMessage('success', providerLabel + ' token cleared');
+              if (tokenInput) tokenInput.value = '';
+            } catch (err) {
+              const message =
+                err && typeof err.message === 'string' && err.message.trim()
+                  ? err.message.trim()
+                  : 'Unable to clear provider token';
+              setTokenMessage('error', message);
+            } finally {
+              state.tokenFormBusy = false;
+              updateTokenFormAvailability();
+            }
+          });
+
+          updateTokenFormAvailability();
 
           async function refreshListings(payload) {
             if (state.loading) {
@@ -3767,22 +4106,21 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
         setTimeout(notifyReady, 0);
       })();`);
 
-
 function formatStatusLabel(status) {
   return status
-    .split('_')
-    .map(part => (part ? part[0].toUpperCase() + part.slice(1) : part))
-    .join(' ');
+    .split("_")
+    .map((part) => (part ? part[0].toUpperCase() + part.slice(1) : part))
+    .join(" ");
 }
 
 function normalizeCsrfOptions(csrf = {}) {
   const headerName =
-    typeof csrf.headerName === 'string' && csrf.headerName.trim()
+    typeof csrf.headerName === "string" && csrf.headerName.trim()
       ? csrf.headerName.trim()
-      : 'x-jobbot-csrf';
-  const token = typeof csrf.token === 'string' ? csrf.token.trim() : '';
+      : "x-jobbot-csrf";
+  const token = typeof csrf.token === "string" ? csrf.token.trim() : "";
   if (!token) {
-    throw new Error('csrf.token must be provided');
+    throw new Error("csrf.token must be provided");
   }
   return {
     headerName,
@@ -3790,18 +4128,18 @@ function normalizeCsrfOptions(csrf = {}) {
   };
 }
 
-const DEFAULT_AUTH_ROLES = Object.freeze(['viewer', 'editor']);
+const DEFAULT_AUTH_ROLES = Object.freeze(["viewer", "editor"]);
 
 const ROLE_INHERITANCE = Object.freeze({
-  editor: Object.freeze(['viewer']),
-  admin: Object.freeze(['editor', 'viewer']),
+  editor: Object.freeze(["viewer"]),
+  admin: Object.freeze(["editor", "viewer"]),
 });
 
 const COMMAND_ROLE_REQUIREMENTS = Object.freeze({
-  default: Object.freeze(['viewer']),
-  'track-record': Object.freeze(['editor']),
-  'listings-ingest': Object.freeze(['editor']),
-  'listings-archive': Object.freeze(['editor']),
+  default: Object.freeze(["viewer"]),
+  "track-record": Object.freeze(["editor"]),
+  "listings-ingest": Object.freeze(["editor"]),
+  "listings-archive": Object.freeze(["editor"]),
 });
 
 function expandRoles(roleSet) {
@@ -3828,17 +4166,17 @@ function normalizeRoleList(value, fallbackRoles) {
     source = fallback;
   } else if (Array.isArray(value)) {
     source = value;
-  } else if (typeof value === 'string') {
-    source = value.split(',');
+  } else if (typeof value === "string") {
+    source = value.split(",");
   } else {
-    throw new Error('auth roles must be provided as a string or array');
+    throw new Error("auth roles must be provided as a string or array");
   }
 
   const normalized = new Set();
   for (const entry of source) {
     if (entry == null) continue;
-    if (typeof entry !== 'string') {
-      throw new Error('auth roles must be strings');
+    if (typeof entry !== "string") {
+      throw new Error("auth roles must be strings");
     }
     const trimmed = entry.trim().toLowerCase();
     if (!trimmed) continue;
@@ -3864,17 +4202,17 @@ function parseTokenSubject(candidate, index) {
     candidate.id ??
     candidate.name ??
     candidate.displayName;
-  if (typeof source === 'string' && source.trim()) {
+  if (typeof source === "string" && source.trim()) {
     return source.trim();
   }
   return `token#${index + 1}`;
 }
 
 function normalizeTokenEntry(candidate, index, fallbackRoles) {
-  if (typeof candidate === 'string') {
+  if (typeof candidate === "string") {
     const token = candidate.trim();
     if (!token) {
-      throw new Error('auth tokens must include non-empty strings');
+      throw new Error("auth tokens must include non-empty strings");
     }
     return {
       token,
@@ -3883,21 +4221,21 @@ function normalizeTokenEntry(candidate, index, fallbackRoles) {
     };
   }
 
-  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
-    throw new Error('auth tokens must be strings or objects');
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+    throw new Error("auth tokens must be strings or objects");
   }
 
   const rawToken =
-    (typeof candidate.token === 'string' && candidate.token.trim()) ||
-    (typeof candidate.value === 'string' && candidate.value.trim()) ||
-    (typeof candidate.secret === 'string' && candidate.secret.trim());
+    (typeof candidate.token === "string" && candidate.token.trim()) ||
+    (typeof candidate.value === "string" && candidate.value.trim()) ||
+    (typeof candidate.secret === "string" && candidate.secret.trim());
   if (!rawToken) {
-    throw new Error('auth token entries must include a token string');
+    throw new Error("auth token entries must include a token string");
   }
 
   const roles = normalizeRoleList(candidate.roles, fallbackRoles);
   if (roles.size === 0) {
-    throw new Error('auth token roles must include at least one role');
+    throw new Error("auth token roles must include at least one role");
   }
 
   const entry = {
@@ -3906,7 +4244,10 @@ function normalizeTokenEntry(candidate, index, fallbackRoles) {
     roles,
   };
 
-  if (typeof candidate.displayName === 'string' && candidate.displayName.trim()) {
+  if (
+    typeof candidate.displayName === "string" &&
+    candidate.displayName.trim()
+  ) {
     entry.displayName = candidate.displayName.trim();
   }
 
@@ -3917,24 +4258,24 @@ function coerceTokenCandidates(rawTokens) {
   if (Array.isArray(rawTokens)) {
     return rawTokens;
   }
-  if (rawTokens && typeof rawTokens === 'object') {
+  if (rawTokens && typeof rawTokens === "object") {
     if (Array.isArray(rawTokens.tokens)) {
       return rawTokens.tokens;
     }
     return [rawTokens];
   }
-  if (typeof rawTokens === 'string') {
+  if (typeof rawTokens === "string") {
     const trimmed = rawTokens.trim();
     if (!trimmed) {
       return [];
     }
-    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
       try {
         const parsed = JSON.parse(trimmed);
         if (Array.isArray(parsed)) {
           return parsed;
         }
-        if (parsed && typeof parsed === 'object') {
+        if (parsed && typeof parsed === "object") {
           if (Array.isArray(parsed.tokens)) {
             return parsed.tokens;
           }
@@ -3945,19 +4286,21 @@ function coerceTokenCandidates(rawTokens) {
       }
     }
     return trimmed
-      .split(',')
-      .map(token => token.trim())
+      .split(",")
+      .map((token) => token.trim())
       .filter(Boolean);
   }
   return [];
 }
 
 function getRequiredRoles(command) {
-  return COMMAND_ROLE_REQUIREMENTS[command] ?? COMMAND_ROLE_REQUIREMENTS.default;
+  return (
+    COMMAND_ROLE_REQUIREMENTS[command] ?? COMMAND_ROLE_REQUIREMENTS.default
+  );
 }
 
 function hasRequiredRoles(roleSet, requiredRoles) {
-  if (!roleSet || typeof roleSet.has !== 'function') {
+  if (!roleSet || typeof roleSet.has !== "function") {
     return false;
   }
   for (const role of requiredRoles) {
@@ -3986,36 +4329,36 @@ function normalizeAuthOptions(auth) {
   tokenCandidates.forEach((candidate, index) => {
     const normalized = normalizeTokenEntry(candidate, index, fallbackRoles);
     if (normalizedTokens.has(normalized.token)) {
-      throw new Error('auth tokens must be unique');
+      throw new Error("auth tokens must be unique");
     }
     normalizedTokens.set(normalized.token, normalized);
   });
 
   if (normalizedTokens.size === 0) {
-    throw new Error('auth.tokens must include at least one non-empty token');
+    throw new Error("auth.tokens must include at least one non-empty token");
   }
 
   const headerName =
-    typeof auth.headerName === 'string' && auth.headerName.trim()
+    typeof auth.headerName === "string" && auth.headerName.trim()
       ? auth.headerName.trim()
-      : 'authorization';
+      : "authorization";
 
-  let scheme = 'Bearer';
-  if (auth.scheme === '' || auth.scheme === false || auth.scheme === null) {
-    scheme = '';
-  } else if (typeof auth.scheme === 'string') {
+  let scheme = "Bearer";
+  if (auth.scheme === "" || auth.scheme === false || auth.scheme === null) {
+    scheme = "";
+  } else if (typeof auth.scheme === "string") {
     const trimmed = auth.scheme.trim();
     scheme = trimmed;
   } else if (auth.scheme !== undefined && auth.scheme !== null) {
-    throw new Error('auth.scheme must be a string when provided');
+    throw new Error("auth.scheme must be a string when provided");
   }
 
   const requireScheme = Boolean(scheme);
-  const schemePrefix = requireScheme ? `${scheme} ` : '';
+  const schemePrefix = requireScheme ? `${scheme} ` : "";
   const normalized = {
     __normalizedAuth: true,
     headerName,
-    scheme: requireScheme ? scheme : '',
+    scheme: requireScheme ? scheme : "",
     requireScheme,
     tokens: normalizedTokens,
     schemePrefixLower: schemePrefix.toLowerCase(),
@@ -4026,12 +4369,12 @@ function normalizeAuthOptions(auth) {
 }
 
 function normalizeInfo(info) {
-  if (!info || typeof info !== 'object') return {};
+  if (!info || typeof info !== "object") return {};
   const normalized = {};
-  if (typeof info.service === 'string' && info.service.trim()) {
+  if (typeof info.service === "string" && info.service.trim()) {
     normalized.service = info.service.trim();
   }
-  if (typeof info.version === 'string' && info.version.trim()) {
+  if (typeof info.version === "string" && info.version.trim()) {
     normalized.version = info.version.trim();
   }
   return normalized;
@@ -4040,17 +4383,19 @@ function normalizeInfo(info) {
 function normalizeHealthChecks(checks) {
   if (checks == null) return [];
   if (!Array.isArray(checks)) {
-    throw new Error('health checks must be provided as an array');
+    throw new Error("health checks must be provided as an array");
   }
   return checks.map((check, index) => {
-    if (!check || typeof check !== 'object') {
+    if (!check || typeof check !== "object") {
       throw new Error(`health check at index ${index} must be an object`);
     }
     const { name, run } = check;
-    if (typeof name !== 'string' || !name.trim()) {
-      throw new Error(`health check at index ${index} requires a non-empty name`);
+    if (typeof name !== "string" || !name.trim()) {
+      throw new Error(
+        `health check at index ${index} requires a non-empty name`,
+      );
     }
-    if (typeof run !== 'function') {
+    if (typeof run !== "function") {
       throw new Error(`health check "${name}" must provide a run() function`);
     }
     return { name: name.trim(), run };
@@ -4058,14 +4403,14 @@ function normalizeHealthChecks(checks) {
 }
 
 function buildHealthResponse({ info, uptime, timestamp, checks }) {
-  let status = 'ok';
+  let status = "ok";
   for (const entry of checks) {
-    if (entry.status === 'error') {
-      status = 'error';
+    if (entry.status === "error") {
+      status = "error";
       break;
     }
-    if (status === 'ok' && entry.status === 'warn') {
-      status = 'warn';
+    if (status === "ok" && entry.status === "warn") {
+      status = "warn";
     }
   }
 
@@ -4081,7 +4426,7 @@ function buildHealthResponse({ info, uptime, timestamp, checks }) {
 }
 
 function isPlainObject(value) {
-  if (!value || typeof value !== 'object') return false;
+  if (!value || typeof value !== "object") return false;
   const prototype = Object.getPrototypeOf(value);
   return prototype === null || prototype === Object.prototype;
 }
@@ -4090,10 +4435,10 @@ function sanitizeCommandResult(result) {
   if (result == null) {
     return {};
   }
-  if (typeof result === 'string') {
+  if (typeof result === "string") {
     return sanitizeOutputString(result);
   }
-  if (typeof result !== 'object') {
+  if (typeof result !== "object") {
     return result;
   }
   if (Array.isArray(result)) {
@@ -4104,11 +4449,11 @@ function sanitizeCommandResult(result) {
   }
   const sanitized = {};
   for (const [key, value] of Object.entries(result)) {
-    if (key === 'stdout' || key === 'stderr' || key === 'error') {
+    if (key === "stdout" || key === "stderr" || key === "error") {
       sanitized[key] = sanitizeOutputString(value);
       continue;
     }
-    if (key === 'data' || key === 'returnValue') {
+    if (key === "data" || key === "returnValue") {
       sanitized[key] = sanitizeOutputValue(value, { key });
       continue;
     }
@@ -4121,28 +4466,32 @@ async function runHealthChecks(checks) {
   const results = [];
   for (const { name, run } of checks) {
     const started = performance.now();
-    const result = { name, status: 'ok' };
+    const result = { name, status: "ok" };
     try {
       const outcome = await run();
-      if (outcome && typeof outcome === 'object') {
-        if (outcome.status && typeof outcome.status === 'string') {
+      if (outcome && typeof outcome === "object") {
+        if (outcome.status && typeof outcome.status === "string") {
           const status = outcome.status.toLowerCase();
-          if (status === 'warn' || status === 'warning') {
-            result.status = 'warn';
-          } else if (status === 'error' || status === 'fail' || status === 'failed') {
-            result.status = 'error';
+          if (status === "warn" || status === "warning") {
+            result.status = "warn";
+          } else if (
+            status === "error" ||
+            status === "fail" ||
+            status === "failed"
+          ) {
+            result.status = "error";
           }
         }
         if (outcome.details !== undefined) {
           result.details = outcome.details;
         }
-        if (outcome.error && typeof outcome.error === 'string') {
+        if (outcome.error && typeof outcome.error === "string") {
           result.error = outcome.error;
-          result.status = 'error';
+          result.status = "error";
         }
       }
     } catch (err) {
-      result.status = 'error';
+      result.status = "error";
       result.error = err?.message ? String(err.message) : String(err);
     }
 
@@ -4154,7 +4503,7 @@ async function runHealthChecks(checks) {
 }
 
 function stringLength(value) {
-  return typeof value === 'string' ? value.length : 0;
+  return typeof value === "string" ? value.length : 0;
 }
 
 function roundDuration(started) {
@@ -4173,7 +4522,7 @@ function buildCommandLogEntry({
   errorMessage,
 }) {
   const entry = {
-    event: 'web.command',
+    event: "web.command",
     command,
     status,
     httpStatus,
@@ -4184,10 +4533,14 @@ function buildCommandLogEntry({
   };
   if (clientIp) entry.clientIp = clientIp;
   if (userAgent) entry.userAgent = userAgent;
-  if (result && typeof result.correlationId === 'string' && result.correlationId) {
+  if (
+    result &&
+    typeof result.correlationId === "string" &&
+    result.correlationId
+  ) {
     entry.correlationId = result.correlationId;
   }
-  if (result && typeof result.traceId === 'string' && result.traceId) {
+  if (result && typeof result.traceId === "string" && result.traceId) {
     entry.traceId = result.traceId;
   }
   if (errorMessage) entry.errorMessage = errorMessage;
@@ -4196,7 +4549,7 @@ function buildCommandLogEntry({
 
 function logCommandTelemetry(logger, level, details) {
   if (!logger) return;
-  const fn = typeof logger[level] === 'function' ? logger[level] : undefined;
+  const fn = typeof logger[level] === "function" ? logger[level] : undefined;
   if (!fn) return;
   try {
     fn(buildCommandLogEntry(details));
@@ -4229,62 +4582,68 @@ export function createWebApp({
     try {
       effectiveAuditLogger = createAuditLogger(audit);
     } catch (error) {
-      logger?.warn?.('Failed to initialize audit logger', error);
+      logger?.warn?.("Failed to initialize audit logger", error);
     }
   }
   const redactionMiddleware = createRedactionMiddleware({ logger });
   const availableCommands = new Set(
-    ALLOW_LISTED_COMMANDS.filter(name => typeof commandAdapter?.[name] === 'function'),
+    ALLOW_LISTED_COMMANDS.filter(
+      (name) => typeof commandAdapter?.[name] === "function",
+    ),
   );
-  const jsonParser = express.json({ limit: '1mb' });
+  const jsonParser = express.json({ limit: "1mb" });
   if (features) {
     app.locals.features = features;
   }
 
   const commandEventsEmitter =
-    commandEvents && typeof commandEvents.emit === 'function' ? commandEvents : null;
+    commandEvents && typeof commandEvents.emit === "function"
+      ? commandEvents
+      : null;
 
-  const emitCommandEvent = event => {
+  const emitCommandEvent = (event) => {
     if (!commandEventsEmitter) {
       return;
     }
     try {
-      commandEventsEmitter.emit('command', event);
+      commandEventsEmitter.emit("command", event);
     } catch (error) {
-      logger?.warn?.('Failed to emit command lifecycle event', error);
+      logger?.warn?.("Failed to emit command lifecycle event", error);
     }
   };
 
   const pluginAssets = createPluginAssets(app, features?.plugins);
 
-  app.get('/assets/status-hub.js', (req, res) => {
-    res.set('Content-Type', 'application/javascript; charset=utf-8');
-    res.set('Cache-Control', 'no-store');
+  app.get("/assets/status-hub.js", (req, res) => {
+    res.set("Content-Type", "application/javascript; charset=utf-8");
+    res.set("Cache-Control", "no-store");
     res.send(STATUS_PAGE_SCRIPT);
   });
 
-  app.get('/', (req, res) => {
-    const serviceName = normalizedInfo.service || 'jobbot web interface';
-    const version = normalizedInfo.version ? `Version ${normalizedInfo.version}` : 'Local build';
+  app.get("/", (req, res) => {
+    const serviceName = normalizedInfo.service || "jobbot web interface";
+    const version = normalizedInfo.version
+      ? `Version ${normalizedInfo.version}`
+      : "Local build";
     const commands = Array.from(availableCommands).sort();
     const commandList =
       commands.length === 0
-        ? '<li><em>No CLI commands have been allowed yet.</em></li>'
+        ? "<li><em>No CLI commands have been allowed yet.</em></li>"
         : commands
-            .map(name => {
+            .map((name) => {
               const escapedName = escapeHtml(name);
               return [
-                '<li><code>',
+                "<li><code>",
                 escapedName,
-                '</code> &mdash; accessible via POST /commands/',
+                "</code> &mdash; accessible via POST /commands/",
                 escapedName,
-                '</li>',
-              ].join('');
+                "</li>",
+              ].join("");
             })
-            .join('');
+            .join("");
     const skipLinkStyle =
-      'position:absolute;left:-999px;top:auto;width:1px;height:1px;overflow:hidden;';
-    const repoUrl = 'https://github.com/jobbot3000/jobbot3000';
+      "position:absolute;left:-999px;top:auto;width:1px;height:1px;overflow:hidden;";
+    const repoUrl = "https://github.com/jobbot3000/jobbot3000";
     const readmeUrl = `${repoUrl}/blob/main/README.md`;
     const roadmapUrl = `${repoUrl}/blob/main/docs/web-interface-roadmap.md`;
     const operationsUrl = `${repoUrl}/blob/main/docs/web-operational-playbook.md`;
@@ -4294,17 +4653,17 @@ export function createWebApp({
     const pluginManifestScript =
       '<script type="application/json" id="jobbot-plugin-manifest">' +
       pluginManifestJson +
-      '</script>';
+      "</script>";
     const pluginHostScript = `<script>${PLUGIN_HOST_STUB}</script>`;
     const pluginScriptTags = pluginAssets.manifest
-      .map(entry => {
+      .map((entry) => {
         const idAttr = escapeHtml(entry.id);
         const srcAttr = escapeHtml(entry.scriptUrl);
         return `<script defer data-plugin-id="${idAttr}" src="${srcAttr}"></script>`;
       })
-      .join('');
+      .join("");
 
-    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.set("Content-Type", "text/html; charset=utf-8");
     const rawHtml = `<!doctype html>
 <html lang="en" data-theme="dark">
   <head>
@@ -4518,11 +4877,11 @@ export function createWebApp({
                   <span>Status</span>
                   <select data-application-status>
                     <option value="">Select status</option>
-                    ${STATUSES.map(status => {
+                    ${STATUSES.map((status) => {
                       const optionLabel = escapeHtml(formatStatusLabel(status));
                       const value = escapeHtml(status);
                       return `<option value="${value}">${optionLabel}</option>`;
-                    }).join('')}
+                    }).join("")}
                   </select>
                 </label>
                 <label>
@@ -4561,6 +4920,58 @@ export function createWebApp({
       </section>
       <section class="view" data-route="listings" aria-labelledby="listings-heading" hidden>
         <h2 id="listings-heading">Listings</h2>
+        <section class="listings-tokens" data-listings-tokens>
+          <h3>Provider tokens</h3>
+          <p class="listings-tokens__description">
+            Store provider API tokens securely in your local <code>.env</code> file.
+            Updates made here stay in sync with manual edits.
+          </p>
+          <form class="listings-token-form" data-listings-token-form>
+            <label>
+              <span>Provider</span>
+              <select data-listings-token-provider>
+                <option value="">Select a provider</option>
+              </select>
+            </label>
+            <label>
+              <span>Token</span>
+              <input
+                type="password"
+                autocomplete="off"
+                spellcheck="false"
+                data-listings-token-input
+                placeholder="Paste API token"
+              />
+            </label>
+            <div class="listings-token-actions">
+              <button type="submit" data-listings-token-submit>Save token</button>
+              <button type="button" data-listings-token-clear data-variant="ghost">
+                Clear token
+              </button>
+            </div>
+          </form>
+          <p
+            class="listings-message"
+            data-listings-token-message
+            role="status"
+            hidden
+          ></p>
+          <div>
+            <table class="listings-token-table" data-listings-token-table hidden>
+              <thead>
+                <tr>
+                  <th scope="col">Provider</th>
+                  <th scope="col">Environment variable</th>
+                  <th scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody data-listings-token-rows></tbody>
+            </table>
+            <p class="listings-token-empty" data-listings-token-empty hidden>
+              No providers available for token management.
+            </p>
+          </div>
+        </section>
         <p>
           Preview open roles from supported providers, then ingest the ones you want to track in
           jobbot3000.
@@ -4800,10 +5211,9 @@ export function createWebApp({
   </body>
 </html>`;
     res.send(compactHtml(rawHtml));
-
   });
 
-  app.get('/health', async (req, res) => {
+  app.get("/health", async (req, res) => {
     const timestamp = new Date().toISOString();
     const uptime = process.uptime();
     const results = await runHealthChecks(normalizedChecks);
@@ -4813,216 +5223,257 @@ export function createWebApp({
       timestamp,
       checks: results,
     });
-    const statusCode = payload.status === 'error' ? 503 : 200;
+    const statusCode = payload.status === "error" ? 503 : 200;
     res.status(statusCode).json(payload);
   });
 
-  app.post('/commands/:command', jsonParser, redactionMiddleware, async (req, res) => {
-    const commandParam = typeof req.params.command === 'string' ? req.params.command.trim() : '';
-    if (!availableCommands.has(commandParam)) {
-      res.status(404).json({ error: `Unknown command "${commandParam}"` });
-      return;
-    }
-
-    const started = performance.now();
-    const clientIp = req.ip || req.socket?.remoteAddress || undefined;
-    const userAgent = req.get('user-agent');
-    let authContext = authOptions
-      ? { subject: 'unauthenticated', roles: new Set() }
-      : { subject: 'guest', roles: new Set(['viewer']) };
-    let authPrincipal = authContext.subject;
-
-    const recordAudit = async event => {
-      if (!effectiveAuditLogger) return;
-      try {
-        const roles = authContext?.roles ? Array.from(authContext.roles).sort() : [];
-        const actor = authContext?.subject ?? authPrincipal;
-        const payload = {
-          type: 'command',
-          command: commandParam,
-          actor,
-          roles,
-          ip: clientIp,
-          userAgent,
-          ...event,
-        };
-        if (authContext?.displayName && authContext.displayName !== actor) {
-          payload.actorDisplayName = authContext.displayName;
-        }
-        await effectiveAuditLogger.record({
-          ...payload,
-        });
-      } catch (error) {
-        logger?.warn?.('Failed to record audit event', error);
+  app.post(
+    "/commands/:command",
+    jsonParser,
+    redactionMiddleware,
+    async (req, res) => {
+      const commandParam =
+        typeof req.params.command === "string" ? req.params.command.trim() : "";
+      if (!availableCommands.has(commandParam)) {
+        res.status(404).json({ error: `Unknown command "${commandParam}"` });
+        return;
       }
-    };
 
-    const rateKey = req.ip || req.socket?.remoteAddress || 'unknown';
-    const rateStatus = rateLimiter.check(rateKey);
-    res.set('X-RateLimit-Limit', String(rateLimiter.limit));
-    res.set('X-RateLimit-Remaining', String(Math.max(0, rateStatus.remaining)));
-    res.set('X-RateLimit-Reset', new Date(rateStatus.reset).toISOString());
-    if (!rateStatus.allowed) {
-      const retryAfterSeconds = Math.max(1, Math.ceil((rateStatus.reset - Date.now()) / 1000));
-      res.set('Retry-After', String(retryAfterSeconds));
-      res.status(429).json({ error: 'Too many requests' });
-      await recordAudit({ status: 'rate_limited' });
-      return;
-    }
+      const started = performance.now();
+      const clientIp = req.ip || req.socket?.remoteAddress || undefined;
+      const userAgent = req.get("user-agent");
+      let authContext = authOptions
+        ? { subject: "unauthenticated", roles: new Set() }
+        : { subject: "guest", roles: new Set(["viewer"]) };
+      let authPrincipal = authContext.subject;
 
-    if (authOptions) {
-      const respondUnauthorized = () => {
-        if (authOptions.requireScheme && authOptions.scheme) {
-          res.set('WWW-Authenticate', `${authOptions.scheme} realm="jobbot-web"`);
+      const recordAudit = async (event) => {
+        if (!effectiveAuditLogger) return;
+        try {
+          const roles = authContext?.roles
+            ? Array.from(authContext.roles).sort()
+            : [];
+          const actor = authContext?.subject ?? authPrincipal;
+          const payload = {
+            type: "command",
+            command: commandParam,
+            actor,
+            roles,
+            ip: clientIp,
+            userAgent,
+            ...event,
+          };
+          if (authContext?.displayName && authContext.displayName !== actor) {
+            payload.actorDisplayName = authContext.displayName;
+          }
+          await effectiveAuditLogger.record({
+            ...payload,
+          });
+        } catch (error) {
+          logger?.warn?.("Failed to record audit event", error);
         }
-        res.status(401).json({ error: 'Invalid or missing authorization token' });
       };
 
-      const providedAuth = req.get(authOptions.headerName);
-      const headerValue = typeof providedAuth === 'string' ? providedAuth.trim() : '';
-      if (!headerValue) {
-        await recordAudit({ status: 'unauthorized', reason: 'missing-token' });
-        respondUnauthorized();
+      const rateKey = req.ip || req.socket?.remoteAddress || "unknown";
+      const rateStatus = rateLimiter.check(rateKey);
+      res.set("X-RateLimit-Limit", String(rateLimiter.limit));
+      res.set(
+        "X-RateLimit-Remaining",
+        String(Math.max(0, rateStatus.remaining)),
+      );
+      res.set("X-RateLimit-Reset", new Date(rateStatus.reset).toISOString());
+      if (!rateStatus.allowed) {
+        const retryAfterSeconds = Math.max(
+          1,
+          Math.ceil((rateStatus.reset - Date.now()) / 1000),
+        );
+        res.set("Retry-After", String(retryAfterSeconds));
+        res.status(429).json({ error: "Too many requests" });
+        await recordAudit({ status: "rate_limited" });
         return;
       }
 
-      let tokenValue = headerValue;
-      if (authOptions.requireScheme) {
-        const lowerValue = headerValue.toLowerCase();
-        if (!lowerValue.startsWith(authOptions.schemePrefixLower)) {
-          await recordAudit({ status: 'unauthorized', reason: 'invalid-scheme' });
+      if (authOptions) {
+        const respondUnauthorized = () => {
+          if (authOptions.requireScheme && authOptions.scheme) {
+            res.set(
+              "WWW-Authenticate",
+              `${authOptions.scheme} realm="jobbot-web"`,
+            );
+          }
+          res
+            .status(401)
+            .json({ error: "Invalid or missing authorization token" });
+        };
+
+        const providedAuth = req.get(authOptions.headerName);
+        const headerValue =
+          typeof providedAuth === "string" ? providedAuth.trim() : "";
+        if (!headerValue) {
+          await recordAudit({
+            status: "unauthorized",
+            reason: "missing-token",
+          });
           respondUnauthorized();
           return;
         }
-        tokenValue = headerValue.slice(authOptions.schemePrefixLength).trim();
-        if (!tokenValue) {
-          await recordAudit({ status: 'unauthorized', reason: 'missing-token' });
+
+        let tokenValue = headerValue;
+        if (authOptions.requireScheme) {
+          const lowerValue = headerValue.toLowerCase();
+          if (!lowerValue.startsWith(authOptions.schemePrefixLower)) {
+            await recordAudit({
+              status: "unauthorized",
+              reason: "invalid-scheme",
+            });
+            respondUnauthorized();
+            return;
+          }
+          tokenValue = headerValue.slice(authOptions.schemePrefixLength).trim();
+          if (!tokenValue) {
+            await recordAudit({
+              status: "unauthorized",
+              reason: "missing-token",
+            });
+            respondUnauthorized();
+            return;
+          }
+        }
+
+        const tokenEntry = authOptions.tokens.get(tokenValue);
+        if (!tokenEntry) {
+          await recordAudit({
+            status: "unauthorized",
+            reason: "unknown-token",
+          });
           respondUnauthorized();
+          return;
+        }
+        authContext = tokenEntry;
+        authPrincipal = tokenEntry.subject ?? "token";
+
+        const requiredRoles = getRequiredRoles(commandParam);
+        if (
+          requiredRoles.length > 0 &&
+          !hasRequiredRoles(tokenEntry.roles, requiredRoles)
+        ) {
+          res
+            .status(403)
+            .json({ error: "Insufficient permissions for this command" });
+          await recordAudit({
+            status: "forbidden",
+            reason: "rbac",
+            requiredRoles,
+          });
           return;
         }
       }
 
-      const tokenEntry = authOptions.tokens.get(tokenValue);
-      if (!tokenEntry) {
-        await recordAudit({ status: 'unauthorized', reason: 'unknown-token' });
-        respondUnauthorized();
+      const providedToken = req.get(csrfOptions.headerName);
+      if ((providedToken ?? "").trim() !== csrfOptions.token) {
+        res.status(403).json({ error: "Invalid or missing CSRF token" });
+        await recordAudit({ status: "forbidden", reason: "csrf" });
         return;
       }
-      authContext = tokenEntry;
-      authPrincipal = tokenEntry.subject ?? 'token';
 
-      const requiredRoles = getRequiredRoles(commandParam);
-      if (requiredRoles.length > 0 && !hasRequiredRoles(tokenEntry.roles, requiredRoles)) {
+      let payload;
+      try {
+        payload = validateCommandPayload(commandParam, req.body ?? {});
+      } catch (err) {
         res
-          .status(403)
-          .json({ error: 'Insufficient permissions for this command' });
+          .status(400)
+          .json({ error: err?.message ?? "Invalid command payload" });
         await recordAudit({
-          status: 'forbidden',
-          reason: 'rbac',
-          requiredRoles,
+          status: "invalid",
+          reason: "payload",
+          error: err?.message,
         });
         return;
       }
-    }
 
-    const providedToken = req.get(csrfOptions.headerName);
-    if ((providedToken ?? '').trim() !== csrfOptions.token) {
-      res.status(403).json({ error: 'Invalid or missing CSRF token' });
-      await recordAudit({ status: 'forbidden', reason: 'csrf' });
-      return;
-    }
+      const redactedPayload = req.redacted?.body ?? redactValue(payload);
+      const payloadFields = Object.keys(payload ?? {}).sort();
 
-    let payload;
-    try {
-      payload = validateCommandPayload(commandParam, req.body ?? {});
-    } catch (err) {
-      res.status(400).json({ error: err?.message ?? 'Invalid command payload' });
-      await recordAudit({ status: 'invalid', reason: 'payload', error: err?.message });
-      return;
-    }
-
-    const redactedPayload = req.redacted?.body ?? redactValue(payload);
-    const payloadFields = Object.keys(payload ?? {}).sort();
-
-    try {
-      const result = await commandAdapter[commandParam](payload);
-      const sanitizedResult = sanitizeCommandResult(result);
-      const durationMs = roundDuration(started);
-      logCommandTelemetry(logger, 'info', {
-        command: commandParam,
-        status: 'success',
-        httpStatus: 200,
-        durationMs,
-        payloadFields,
-        clientIp,
-        userAgent,
-        result: sanitizedResult,
-      });
-      res.status(200).json(sanitizedResult);
-      await recordAudit({
-        status: 'success',
-        durationMs,
-        payload: redactedPayload,
-        payloadFields,
-      });
-      emitCommandEvent({
-        type: 'command',
-        command: commandParam,
-        status: 'success',
-        timestamp: new Date().toISOString(),
-        durationMs,
-        payloadFields,
-        actor: authContext?.subject ?? authPrincipal ?? 'guest',
-        actorDisplayName: authContext?.displayName,
-        roles: authContext?.roles ? Array.from(authContext.roles).sort() : [],
-        result: sanitizedResult,
-      });
-    } catch (err) {
-      const response = sanitizeCommandResult({
-        error: err?.message ?? 'Command execution failed',
-        stdout: err?.stdout,
-        stderr: err?.stderr,
-        correlationId: err?.correlationId,
-        traceId: err?.traceId,
-      });
-      const durationMs = roundDuration(started);
-      logCommandTelemetry(logger, 'error', {
-        command: commandParam,
-        status: 'error',
-        httpStatus: 502,
-        durationMs,
-        payloadFields,
-        clientIp,
-        userAgent,
-        result: response,
-        errorMessage: response?.error,
-      });
-      res.status(502).json(response);
-      await recordAudit({
-        status: 'error',
-        durationMs,
-        payload: redactedPayload,
-        payloadFields,
-        error: response?.error,
-      });
-      emitCommandEvent({
-        type: 'command',
-        command: commandParam,
-        status: 'error',
-        timestamp: new Date().toISOString(),
-        durationMs,
-        payloadFields,
-        actor: authContext?.subject ?? authPrincipal ?? 'guest',
-        actorDisplayName: authContext?.displayName,
-        roles: authContext?.roles ? Array.from(authContext.roles).sort() : [],
-        result: response,
-      });
-    }
-  });
+      try {
+        const result = await commandAdapter[commandParam](payload);
+        const sanitizedResult = sanitizeCommandResult(result);
+        const durationMs = roundDuration(started);
+        logCommandTelemetry(logger, "info", {
+          command: commandParam,
+          status: "success",
+          httpStatus: 200,
+          durationMs,
+          payloadFields,
+          clientIp,
+          userAgent,
+          result: sanitizedResult,
+        });
+        res.status(200).json(sanitizedResult);
+        await recordAudit({
+          status: "success",
+          durationMs,
+          payload: redactedPayload,
+          payloadFields,
+        });
+        emitCommandEvent({
+          type: "command",
+          command: commandParam,
+          status: "success",
+          timestamp: new Date().toISOString(),
+          durationMs,
+          payloadFields,
+          actor: authContext?.subject ?? authPrincipal ?? "guest",
+          actorDisplayName: authContext?.displayName,
+          roles: authContext?.roles ? Array.from(authContext.roles).sort() : [],
+          result: sanitizedResult,
+        });
+      } catch (err) {
+        const response = sanitizeCommandResult({
+          error: err?.message ?? "Command execution failed",
+          stdout: err?.stdout,
+          stderr: err?.stderr,
+          correlationId: err?.correlationId,
+          traceId: err?.traceId,
+        });
+        const durationMs = roundDuration(started);
+        logCommandTelemetry(logger, "error", {
+          command: commandParam,
+          status: "error",
+          httpStatus: 502,
+          durationMs,
+          payloadFields,
+          clientIp,
+          userAgent,
+          result: response,
+          errorMessage: response?.error,
+        });
+        res.status(502).json(response);
+        await recordAudit({
+          status: "error",
+          durationMs,
+          payload: redactedPayload,
+          payloadFields,
+          error: response?.error,
+        });
+        emitCommandEvent({
+          type: "command",
+          command: commandParam,
+          status: "error",
+          timestamp: new Date().toISOString(),
+          durationMs,
+          payloadFields,
+          actor: authContext?.subject ?? authPrincipal ?? "guest",
+          actorDisplayName: authContext?.displayName,
+          roles: authContext?.roles ? Array.from(authContext.roles).sort() : [],
+          result: response,
+        });
+      }
+    },
+  );
 
   app.use((err, req, res, next) => {
-    if (err && err.type === 'entity.parse.failed') {
-      res.status(400).json({ error: 'Invalid JSON payload' });
+    if (err && err.type === "entity.parse.failed") {
+      res.status(400).json({ error: "Invalid JSON payload" });
       return;
     }
     next(err);
@@ -5032,11 +5483,11 @@ export function createWebApp({
 }
 
 export function startWebServer(options = {}) {
-  const { host = '127.0.0.1' } = options;
+  const { host = "127.0.0.1" } = options;
   const portValue = options.port ?? 3000;
   const port = Number(portValue);
   if (!Number.isFinite(port) || port < 0 || port > 65535) {
-    throw new Error('port must be a number between 0 and 65535');
+    throw new Error("port must be a number between 0 and 65535");
   }
   const {
     commandAdapter: providedCommandAdapter,
@@ -5054,22 +5505,31 @@ export function startWebServer(options = {}) {
   } = options;
   const commandAdapter =
     providedCommandAdapter ??
-    createCommandAdapter({ logger, enableNativeCli, ...(commandAdapterOptions ?? {}) });
+    createCommandAdapter({
+      logger,
+      enableNativeCli,
+      ...(commandAdapterOptions ?? {}),
+    });
   const resolvedCsrfToken =
-    typeof providedCsrfToken === 'string' && providedCsrfToken.trim()
+    typeof providedCsrfToken === "string" && providedCsrfToken.trim()
       ? providedCsrfToken.trim()
-      : (process.env.JOBBOT_WEB_CSRF_TOKEN || '').trim() || randomBytes(32).toString('hex');
+      : (process.env.JOBBOT_WEB_CSRF_TOKEN || "").trim() ||
+        randomBytes(32).toString("hex");
   const resolvedHeaderName =
-    typeof csrfHeaderName === 'string' && csrfHeaderName.trim()
+    typeof csrfHeaderName === "string" && csrfHeaderName.trim()
       ? csrfHeaderName.trim()
-      : 'x-jobbot-csrf';
+      : "x-jobbot-csrf";
   let authConfig = providedAuth;
   if (authConfig === undefined || authConfig === null) {
     const tokensSource =
       authTokens ??
       process.env.JOBBOT_WEB_AUTH_TOKENS ??
       process.env.JOBBOT_WEB_AUTH_TOKEN;
-    if (tokensSource !== undefined && tokensSource !== null && tokensSource !== false) {
+    if (
+      tokensSource !== undefined &&
+      tokensSource !== null &&
+      tokensSource !== false
+    ) {
       authConfig = {
         tokens: tokensSource,
         headerName: authHeaderName ?? process.env.JOBBOT_WEB_AUTH_HEADER,
@@ -5079,7 +5539,7 @@ export function startWebServer(options = {}) {
   }
   const normalizedAuth = normalizeAuthOptions(authConfig);
   const commandEvents = new EventEmitter();
-  const websocketPath = '/events';
+  const websocketPath = "/events";
   const app = createWebApp({
     ...rest,
     commandAdapter,
@@ -5092,12 +5552,15 @@ export function startWebServer(options = {}) {
 
   const wss = new WebSocketServer({ noServer: true });
   const websocketClients = new Set();
-  const broadcastCommandEvent = event => {
+  const broadcastCommandEvent = (event) => {
     let payload;
     try {
       payload = JSON.stringify(event);
     } catch (error) {
-      logger?.warn?.('Failed to serialize command event for websocket broadcast', error);
+      logger?.warn?.(
+        "Failed to serialize command event for websocket broadcast",
+        error,
+      );
       return;
     }
     for (const client of websocketClients) {
@@ -5105,55 +5568,63 @@ export function startWebServer(options = {}) {
         try {
           client.send(payload);
         } catch (error) {
-          logger?.warn?.('Failed to send command event to websocket client', error);
+          logger?.warn?.(
+            "Failed to send command event to websocket client",
+            error,
+          );
         }
       }
     }
   };
 
-  commandEvents.on('command', broadcastCommandEvent);
+  commandEvents.on("command", broadcastCommandEvent);
 
-  wss.on('connection', ws => {
+  wss.on("connection", (ws) => {
     websocketClients.add(ws);
-    ws.once('close', () => {
+    ws.once("close", () => {
       websocketClients.delete(ws);
     });
   });
 
-  const respondUpgradeError = (socket, statusCode, message, extraHeaders = []) => {
+  const respondUpgradeError = (
+    socket,
+    statusCode,
+    message,
+    extraHeaders = [],
+  ) => {
     const statusText =
       statusCode === 401
-        ? 'Unauthorized'
+        ? "Unauthorized"
         : statusCode === 403
-          ? 'Forbidden'
+          ? "Forbidden"
           : statusCode === 404
-            ? 'Not Found'
-            : 'Bad Request';
+            ? "Not Found"
+            : "Bad Request";
     const body = message ?? statusText;
     const headers = [
       `HTTP/1.1 ${statusCode} ${statusText}`,
-      'Connection: close',
-      'Content-Type: text/plain; charset=utf-8',
+      "Connection: close",
+      "Content-Type: text/plain; charset=utf-8",
       `Content-Length: ${Buffer.byteLength(body)}`,
       ...extraHeaders,
-      '',
+      "",
       body,
     ];
     try {
-      socket.write(headers.join('\r\n'));
+      socket.write(headers.join("\r\n"));
     } catch {
       // ignore write errors during rejection
     }
     socket.destroy();
   };
 
-  const authenticateWebSocket = request => {
+  const authenticateWebSocket = (request) => {
     if (!normalizedAuth) {
       return {
         ok: true,
         context: {
-          subject: 'guest',
-          roles: new Set(['viewer']),
+          subject: "guest",
+          roles: new Set(["viewer"]),
         },
       };
     }
@@ -5161,16 +5632,17 @@ export function startWebServer(options = {}) {
     const headerNameLower = normalizedAuth.headerName.toLowerCase();
     const providedHeader = request.headers[headerNameLower];
     const headerValue = Array.isArray(providedHeader)
-      ? providedHeader.find(value => typeof value === 'string')
+      ? providedHeader.find((value) => typeof value === "string")
       : providedHeader;
-    if (typeof headerValue !== 'string' || !headerValue.trim()) {
+    if (typeof headerValue !== "string" || !headerValue.trim()) {
       return {
         ok: false,
         statusCode: 401,
-        message: 'Missing authorization token',
-        headers: normalizedAuth.requireScheme && normalizedAuth.scheme
-          ? [`WWW-Authenticate: ${normalizedAuth.scheme} realm="jobbot-web"`]
-          : [],
+        message: "Missing authorization token",
+        headers:
+          normalizedAuth.requireScheme && normalizedAuth.scheme
+            ? [`WWW-Authenticate: ${normalizedAuth.scheme} realm="jobbot-web"`]
+            : [],
       };
     }
 
@@ -5181,8 +5653,10 @@ export function startWebServer(options = {}) {
         return {
           ok: false,
           statusCode: 401,
-          message: 'Invalid authorization scheme',
-          headers: [`WWW-Authenticate: ${normalizedAuth.scheme} realm="jobbot-web"`],
+          message: "Invalid authorization scheme",
+          headers: [
+            `WWW-Authenticate: ${normalizedAuth.scheme} realm="jobbot-web"`,
+          ],
         };
       }
       tokenValue = headerValue.slice(normalizedAuth.schemePrefixLength).trim();
@@ -5190,8 +5664,10 @@ export function startWebServer(options = {}) {
         return {
           ok: false,
           statusCode: 401,
-          message: 'Missing authorization token',
-          headers: [`WWW-Authenticate: ${normalizedAuth.scheme} realm="jobbot-web"`],
+          message: "Missing authorization token",
+          headers: [
+            `WWW-Authenticate: ${normalizedAuth.scheme} realm="jobbot-web"`,
+          ],
         };
       }
     }
@@ -5201,18 +5677,21 @@ export function startWebServer(options = {}) {
       return {
         ok: false,
         statusCode: 401,
-        message: 'Unknown authorization token',
-        headers: normalizedAuth.requireScheme && normalizedAuth.scheme
-          ? [`WWW-Authenticate: ${normalizedAuth.scheme} realm="jobbot-web"`]
-          : [],
+        message: "Unknown authorization token",
+        headers:
+          normalizedAuth.requireScheme && normalizedAuth.scheme
+            ? [`WWW-Authenticate: ${normalizedAuth.scheme} realm="jobbot-web"`]
+            : [],
       };
     }
 
-    if (!hasRequiredRoles(tokenEntry.roles, COMMAND_ROLE_REQUIREMENTS.default)) {
+    if (
+      !hasRequiredRoles(tokenEntry.roles, COMMAND_ROLE_REQUIREMENTS.default)
+    ) {
       return {
         ok: false,
         statusCode: 403,
-        message: 'Insufficient permissions for realtime events',
+        message: "Insufficient permissions for realtime events",
       };
     }
 
@@ -5221,30 +5700,31 @@ export function startWebServer(options = {}) {
 
   return new Promise((resolve, reject) => {
     const server = app.listen(port, host, () => {
-        const address = server.address();
-        const actualPort = typeof address === 'object' && address ? address.port : port;
-        const descriptor = {
-          app,
-          host,
-          port: actualPort,
-          url: `http://${host}:${actualPort}`,
-          eventsPath: websocketPath,
-          eventsUrl: `ws://${host}:${actualPort}${websocketPath}`,
-          csrfToken: resolvedCsrfToken,
-          csrfHeaderName: resolvedHeaderName,
-          authHeaderName: normalizedAuth?.headerName ?? null,
-          authScheme: normalizedAuth?.scheme ?? null,
-          async close() {
-            await new Promise((resolveClose, rejectClose) => {
-              server.close(err => {
-                if (err) rejectClose(err);
-                else resolveClose();
-              });
+      const address = server.address();
+      const actualPort =
+        typeof address === "object" && address ? address.port : port;
+      const descriptor = {
+        app,
+        host,
+        port: actualPort,
+        url: `http://${host}:${actualPort}`,
+        eventsPath: websocketPath,
+        eventsUrl: `ws://${host}:${actualPort}${websocketPath}`,
+        csrfToken: resolvedCsrfToken,
+        csrfHeaderName: resolvedHeaderName,
+        authHeaderName: normalizedAuth?.headerName ?? null,
+        authScheme: normalizedAuth?.scheme ?? null,
+        async close() {
+          await new Promise((resolveClose, rejectClose) => {
+            server.close((err) => {
+              if (err) rejectClose(err);
+              else resolveClose();
             });
-          },
-        };
-        resolve(descriptor);
-      });
+          });
+        },
+      };
+      resolve(descriptor);
+    });
 
     const handleUpgrade = (request, socket, head) => {
       let requestUrl;
@@ -5252,12 +5732,12 @@ export function startWebServer(options = {}) {
         const hostHeader = request.headers.host || `${host}:${port}`;
         requestUrl = new URL(request.url, `http://${hostHeader}`);
       } catch {
-        respondUpgradeError(socket, 400, 'Invalid websocket request');
+        respondUpgradeError(socket, 400, "Invalid websocket request");
         return;
       }
 
       if (requestUrl.pathname !== websocketPath) {
-        respondUpgradeError(socket, 404, 'Unknown websocket endpoint');
+        respondUpgradeError(socket, 404, "Unknown websocket endpoint");
         return;
       }
 
@@ -5272,9 +5752,9 @@ export function startWebServer(options = {}) {
         return;
       }
 
-      wss.handleUpgrade(request, socket, head, ws => {
+      wss.handleUpgrade(request, socket, head, (ws) => {
         ws.jobbotAuth = authResult.context;
-        wss.emit('connection', ws, request, authResult.context);
+        wss.emit("connection", ws, request, authResult.context);
       });
     };
 
@@ -5284,8 +5764,8 @@ export function startWebServer(options = {}) {
         return;
       }
       cleanedUp = true;
-      server.off('upgrade', handleUpgrade);
-      commandEvents.off('command', broadcastCommandEvent);
+      server.off("upgrade", handleUpgrade);
+      commandEvents.off("command", broadcastCommandEvent);
       for (const client of websocketClients) {
         try {
           client.terminate();
@@ -5297,9 +5777,9 @@ export function startWebServer(options = {}) {
       wss.close();
     };
 
-    server.on('upgrade', handleUpgrade);
-    server.on('close', performCleanup);
-    server.on('error', err => {
+    server.on("upgrade", handleUpgrade);
+    server.on("close", performCleanup);
+    server.on("error", (err) => {
       performCleanup();
       reject(err);
     });

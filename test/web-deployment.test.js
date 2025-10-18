@@ -23,4 +23,12 @@ describe('web deployment artifacts', () => {
     expect(compose).toContain('JOBBOT_DATA_DIR=/data');
     expect(compose).toContain('JOBBOT_WEB_ENABLE_NATIVE_CLI=1');
   });
+
+  it('defines a docker-compose healthcheck targeting the web server /health endpoint', async () => {
+    const composePath = path.join(repoRoot, 'docker-compose.web.yml');
+    const compose = await readFile(composePath, 'utf8');
+    expect(compose).toContain('healthcheck:');
+    expect(compose).toContain('scripts/docker-healthcheck.js');
+    expect(compose).toContain('http://127.0.0.1:3000/health');
+  });
 });
