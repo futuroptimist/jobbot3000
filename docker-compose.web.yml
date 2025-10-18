@@ -10,6 +10,7 @@ services:
       - JOBBOT_WEB_HOST=0.0.0.0
       - JOBBOT_WEB_PORT=3000
       - JOBBOT_DATA_DIR=/data
+      - JOBBOT_WEB_ENABLE_NATIVE_CLI=1
       - JOBBOT_WEB_HEALTH_URL=http://127.0.0.1:3000/health
     ports:
       - "3000:3000"

@@ -360,13 +360,16 @@
      [`test/web-config.test.js`](../test/web-config.test.js) locks the
      defaults and override semantics in place.
    - Provide Dockerfile and docker-compose for reproducible deployment.
-     _Implemented (2025-10-20):_ [`docker-compose.web.yml`](../docker-compose.web.yml)
-     now defines a health check that runs
-     [`scripts/docker-healthcheck.js`](../scripts/docker-healthcheck.js) to
-     poll `/health` inside the container. The Vitest coverage in
-     [`test/web-deployment.test.js`](../test/web-deployment.test.js) asserts
-     the health check wiring so reproducible deployments surface readiness
-     before routing traffic.
+     _Implemented (2025-10-20):_ [`Dockerfile`](../Dockerfile) now builds the web
+     server image with production defaults, and
+     [`docker-compose.web.yml`](../docker-compose.web.yml) enables native CLI
+     execution by setting `JOBBOT_WEB_ENABLE_NATIVE_CLI=1` so containerized
+     deployments can invoke real commands. It also defines a health check that runs
+     [`scripts/docker-healthcheck.js`](../scripts/docker-healthcheck.js) to poll
+     `/health` inside the container. The regression coverage in
+     [`test/web-deployment.test.js`](../test/web-deployment.test.js) asserts both
+     the health check wiring and the native CLI flag, ensuring reproducible
+     deployments surface readiness before routing traffic.
 
 - Document operational playbooks (monitoring, alerting, on-call runbooks).
   _Implemented (2025-10-05):_ [`docs/web-operational-playbook.md`](web-operational-playbook.md)

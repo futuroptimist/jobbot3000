@@ -33,7 +33,7 @@ async function main() {
   const rateMaxOverride = getFlag(args, '--rate-limit-max');
   const csrfHeaderOverride = getFlag(args, '--csrf-header');
   const csrfTokenOverride = getFlag(args, '--csrf-token');
-  const enableNativeCli = hasFlag(args, '--enable-native-cli');
+  const enableNativeCli = hasFlag(args, '--enable-native-cli') ? true : undefined;
 
   let version = 'dev';
   try {
