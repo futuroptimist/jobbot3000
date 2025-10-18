@@ -10,10 +10,20 @@ services:
       - JOBBOT_WEB_HOST=0.0.0.0
       - JOBBOT_WEB_PORT=3000
       - JOBBOT_DATA_DIR=/data
+      - JOBBOT_WEB_HEALTH_URL=http://127.0.0.1:3000/health
     ports:
       - "3000:3000"
     volumes:
       - ./data:/data
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - scripts/docker-healthcheck.js
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
     command:
       - node
       - scripts/web-server.js

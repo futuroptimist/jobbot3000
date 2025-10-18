@@ -13,6 +13,10 @@ expectations so on-call engineers can keep the CLI bridge healthy.
 - Visit `GET /` to load the status hub. The overview panel highlights rate
   limiting, CSRF, and auth guardrails. Hash-based navigation keeps the page
   static for local deployments.
+- Docker Compose deployments rely on
+  [`scripts/docker-healthcheck.js`](../scripts/docker-healthcheck.js) to poll
+  `/health` until the container reports `status: "ok"`, preventing traffic from
+  routing before the CLI bridge is ready.
 
 The status page now links directly to this playbook from the “Helpful
 references” card. [`test/web-server.test.js`](../test/web-server.test.js)
@@ -21,13 +25,13 @@ discoverable.
 
 ## Operational guardrails
 
-| Control | Location | Notes |
-| --- | --- | --- |
-| Rate limiting | `createInMemoryRateLimiter` in [`src/web/server.js`](../src/web/server.js) | Defaults to 30 requests/min per client. Tune via `startWebServer({ rateLimit })` or `JOBBOT_WEB_RATE_LIMIT_*` env vars. |
-| CSRF protection | `normalizeCsrfOptions` in [`src/web/server.js`](../src/web/server.js) | Start the server with `csrfToken` (or env vars). Clients must send the matching header on every POST. |
-| Input sanitization | `validateCommandPayload` in [`src/web/command-registry.js`](../src/web/command-registry.js) | Control characters are stripped from string fields before invoking CLI adapters, keeping payloads safe. |
-| Authentication | `normalizeAuthOptions` in [`src/web/server.js`](../src/web/server.js) | Provide tokens or header overrides to require API keys. Supports per-user JSON tokens with role lists (`viewer`, `editor`, `admin`). Returns 401 for missing tokens and issues 403 responses plus audit entries when callers lack required roles. |
-| Output sanitization | [`src/web/command-adapter.js`](../src/web/command-adapter.js) | Redacts secret-like tokens from stdout/stderr/data payloads before returning to clients. |
+| Control             | Location                                                                                    | Notes                                                                                                                                                                                                                                             |
+| ------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rate limiting       | `createInMemoryRateLimiter` in [`src/web/server.js`](../src/web/server.js)                  | Defaults to 30 requests/min per client. Tune via `startWebServer({ rateLimit })` or `JOBBOT_WEB_RATE_LIMIT_*` env vars.                                                                                                                           |
+| CSRF protection     | `normalizeCsrfOptions` in [`src/web/server.js`](../src/web/server.js)                       | Start the server with `csrfToken` (or env vars). Clients must send the matching header on every POST.                                                                                                                                             |
+| Input sanitization  | `validateCommandPayload` in [`src/web/command-registry.js`](../src/web/command-registry.js) | Control characters are stripped from string fields before invoking CLI adapters, keeping payloads safe.                                                                                                                                           |
+| Authentication      | `normalizeAuthOptions` in [`src/web/server.js`](../src/web/server.js)                       | Provide tokens or header overrides to require API keys. Supports per-user JSON tokens with role lists (`viewer`, `editor`, `admin`). Returns 401 for missing tokens and issues 403 responses plus audit entries when callers lack required roles. |
+| Output sanitization | [`src/web/command-adapter.js`](../src/web/command-adapter.js)                               | Redacts secret-like tokens from stdout/stderr/data payloads before returning to clients.                                                                                                                                                          |
 
 ## Monitoring checklist
 
