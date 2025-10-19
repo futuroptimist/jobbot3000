@@ -96,6 +96,26 @@ load your `.env` file on startup, so no additional export commands are required.
 
 For advanced configuration options, see [docs/configuration-cookbook.md](docs/configuration-cookbook.md).
 
+### Configure inference & privacy defaults
+
+Use the `settings` command to select your preferred inference provider and align privacy
+defaults:
+
+```bash
+# Switch to vLLM and choose a model preset
+jobbot settings configure --model-provider vllm --model gpt-4o-mini
+
+# Enable analytics redaction and keep interview transcripts stored locally
+jobbot settings configure --privacy-redact-analytics on --privacy-store-transcripts on
+
+# Inspect the current configuration
+jobbot settings show --json
+```
+
+Analytics exports automatically honor the redaction toggle unless you override it with
+`--no-redact`, and disabling transcript storage prevents interview sessions from persisting
+verbatim transcripts on disk.
+
 ## HTTP client example
 
 Use the built-in HTTP client helper when integrating with external services:

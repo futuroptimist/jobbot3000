@@ -1,4 +1,5 @@
 # jobbot3000 — Self-hosted Job Search Copilot
+
 **Status:** Draft v0.1 (2025-08-20)
 **Owner:** futuroptimist
 **License:** MIT
@@ -8,6 +9,7 @@
 ## 1) Vision
 
 A privacy-first, open-source, self-hosted assistant that helps an individual candidate:
+
 - build a rich skills profile,
 - ingest and match public job posts,
 - tailor ATS-friendly resumes/cover letters per listing,
@@ -15,11 +17,13 @@ A privacy-first, open-source, self-hosted assistant that helps an individual can
 - track applications end-to-end.
 
 **Non-goals**
+
 - Automating deceit (fake credentials, misrepresentation).
 - Slurping data from platforms that prohibit automation/scraping.
 - Acting as a “ghost applicant” that applies without human sign-off.
 
 **Principles**
+
 - **Local by default.** Everything runs on your box/cluster.
 - **Portable data.** Candidate profile stored in open schemas (JSON Resume).
 - **Pluggable models.** Works with local open models or external APIs.
@@ -30,18 +34,18 @@ A privacy-first, open-source, self-hosted assistant that helps an individual can
 ## 2) User stories (MVP ➜ v1.0)
 
 1. **Profile Builder**  
-   I can import my history (projects, roles, skills, metrics) and export to `resume.json` (JSON Resume).  
+   I can import my history (projects, roles, skills, metrics) and export to `resume.json` (JSON Resume).
 2. **Job Ingestion**
    I can connect public ATS feeds (Greenhouse, Lever, Ashby, Workable, SmartRecruiters) and
    pull listings for target companies or keywords.
 3. **Matching & Shortlisting**
-   The system computes a relevance score per job with an explanation (skills hit/miss, seniority, location, visa, salary if present).  
+   The system computes a relevance score per job with an explanation (skills hit/miss, seniority, location, visa, salary if present).
 4. **Resume/Cover Letter Tailoring**  
-   For any job, it renders a one-page ATS-friendly resume PDF + an optional cover letter, both editable, using my profile as the single source of truth.  
+   For any job, it renders a one-page ATS-friendly resume PDF + an optional cover letter, both editable, using my profile as the single source of truth.
 5. **Interview Rehearsal**  
-   It generates realistic question sets, lets me rehearse with voice (STT/TTS), and scores my responses with STAR hints.  
+   It generates realistic question sets, lets me rehearse with voice (STT/TTS), and scores my responses with STAR hints.
 6. **Tracker**  
-   A Kanban of opportunities → applied → interview → offer, with checklists, notes, and due reminders.  
+   A Kanban of opportunities → applied → interview → offer, with checklists, notes, and due reminders.
 
 Stretch (v1.x): portfolio site generator, role heatmap, referral finder (manual inputs only), CLI-only “headless” mode.
 Compensation tracker shipped via the CLI's `jobbot analytics compensation` summary.
@@ -68,9 +72,10 @@ _______________________________│ /Celery │
 └───────────────────┴───────────────────────────┴─────────────────────┘
 ```
 
-Integrations: Greenhouse/Lever/Ashby/Workable/SmartRecruiters job board APIs, O*NET/ESCO skills taxonomies.
+Integrations: Greenhouse/Lever/Ashby/Workable/SmartRecruiters job board APIs, O\*NET/ESCO skills taxonomies.
 
 **Deployment**
+
 - **Dev:** Docker Compose (Postgres, pgvector, Redis, FastAPI, Web).
 - **Prod:** Helm charts on k3s (node selectors for GPU if present).
 - **Secrets:** `.env` for local; Kubernetes Secrets for prod.
@@ -92,13 +97,15 @@ Integrations: Greenhouse/Lever/Ashby/Workable/SmartRecruiters job board APIs, O*
 ## 5) Integrations (public & compliant)
 
 **Preferred (official/public endpoints)**
+
 - **Greenhouse Job Board API** – lists offices, departments, and jobs, plus application submission.
-- **Lever Postings API** – `GET /postings/{org}?mode=json`.  
-- **Ashby Jobs API** – public job board JSON per tenant.  
-- **Workable API** – jobs list & details (requires tenant token).  
+- **Lever Postings API** – `GET /postings/{org}?mode=json`.
+- **Ashby Jobs API** – public job board JSON per tenant.
+- **Workable API** – jobs list & details (requires tenant token).
 - **SmartRecruiters Posting API** – public job postings snapshot.
 
-**Explicit non-goals**  
+**Explicit non-goals**
+
 - Do **not** automate LinkedIn profile scraping or login-gated sites. Respect robots.txt and site ToS.
 
 **Pluggable fetchers**  
@@ -114,13 +121,15 @@ board fetches via configurable intervals so individual tenants stay within API p
 **Inputs**: Job text (title, teams, responsibilities, requirements) + Candidate profile (skills, bullets).
 
 **Signals**
+
 1. **Semantic similarity** (embeddings cosine) between job text chunks and profile skills/bullets.
-2. **Keyword coverage** for “must-have” lists, with synonym expansion via O*NET/ESCO.
+2. **Keyword coverage** for “must-have” lists, with synonym expansion via O\*NET/ESCO.
 3. **Hard filters**: location/remote, seniority hints, clearance/visa if present.
 4. **BM25** on normalized skill tokens (fast lexical baseline).
 5. **Optional calibration**: lightweight logistic regression on features above → 0–100 score.
 
 **Outputs**
+
 - Score (0–100), plus **explanation** array:
   - `must_haves_missed`: `["Kubernetes", "Terraform"]`
   - `skills_hit`: `["SRE", "Postgres", "on-call"]` with confidence bars
@@ -133,16 +142,19 @@ board fetches via configurable intervals so individual tenants stay within API p
 **Source of truth:** `resume.json` (JSON Resume).
 
 **Templating choices (pick one or support both):**
+
 - **LaTeX** (`moderncv` / `awesome-cv`-style) compiled with **Tectonic** (zero-dep LaTeX).
 - **Typst** (fast modern typesetting) using `modern-cv`/`basic-resume` templates.
 
 **Pipeline**
+
 1. Convert JSON Resume → template context.
 2. Apply job-specific tailoring: select strongest bullets, swap keywords (never fabricate), cap to 1 page.
 3. Compile → PDF; generate plain text preview for ATS check.
 4. Emit build log + a diff view vs. base resume.
 
 **ATS-friendly defaults**
+
 - Single column, standard fonts, no text in images, consistent dates, simple bullets.
 - Export `.docx` via the built-in generator (Pandoc remains optional for alternate templates).
 
@@ -175,8 +187,8 @@ board fetches via configurable intervals so individual tenants stay within API p
 - **Orchestration**: LangGraph (deterministic state machines) or Celery for background jobs.
 - **Vector**: pgvector (preferred) or Chroma; FAISS for fast local indexes.
 - **Embeddings**: BGE-Large / e5-Large (HF) running locally or lightweight API.
-- **LLM runtime**:  
-  - **vLLM** (OpenAI-compatible server) *or* **Ollama** (local models: Llama 3.1 8B, Mistral 7B, Qwen2 7B, Phi-3 Mini).  
+- **LLM runtime**:
+  - **vLLM** (OpenAI-compatible server) _or_ **Ollama** (local models: Llama 3.1 8B, Mistral 7B, Qwen2 7B, Phi-3 Mini).
 - **Front-end**: Next.js (T3-stack vibe), Tailwind, shadcn/ui.
 - **Speech**: faster-whisper, Coqui-TTS (optional).
 - **Packaging**: Docker, docker-compose; Helm for k3s.
@@ -251,6 +263,7 @@ jobbot track add <job_id> --status applied --note "emailed hiring manager"
 ## 14) Roadmap & checklists
 
 **Phase 0 — Bootstrap (2–3 days)**
+
 - Repo scaffold (monorepo or polyrepo).
 - Helper scripts for repetitive tasks (e.g., job-description summarizer).
 - Compose stack: Postgres+pgvector, Redis, FastAPI, Web.
@@ -258,6 +271,7 @@ jobbot track add <job_id> --status applied --note "emailed hiring manager"
 - Minimal UI (profile editor, file upload).
 
 **Phase 1 — Job ingestion (1 week)**
+
 - Greenhouse Job Board fetcher + normalizer. (shipped)
 - Lever Postings fetcher + normalizer. (shipped)
 - Ashby Jobs fetcher + normalizer. (shipped)
@@ -265,31 +279,43 @@ jobbot track add <job_id> --status applied --note "emailed hiring manager"
 - UI: source connections, search & filters.
 
 **Phase 2 — Matching (1 week)**
+
 - Embeddings service (local HF) + pgvector store.
 - Keyword/BM25 baseline + cosine combo scoring.
-- O*NET/ESCO synonym expansion. (shipped)
+- O\*NET/ESCO synonym expansion. (shipped)
 - Explanations UI (hits/gaps/evidence).
 - CLI: `jobbot match --explain` (shipped).
 
 **Phase 3 — Tailoring & rendering (1 week)**
+
 - Templating (choose Typst or LaTeX first; Tectonic/Typst CLI).
 - One-page constraint, dynamic bullet swapping.
 - ATS plain text preview + warnings (tables/images detection). (shipped)
 - Cover letter template + slot-fill with job-specific context. (shipped)
 
 **Phase 4 — Interview rehearsal (1 week)**
+
 - Behavioral question packs, STAR scaffolding.
 - Whisper STT loop (optional), transcript store.
 - Feedback heuristics (brevity, structure, filler words).
 - Save Q&A bundles under each job.
 
 **Phase 5 — Tracker & polish (1 week)**
+
 - Kanban, reminders, notes, attachments.
 - Export bundles per job (zip: resume, letter, notes).
 - Settings: model selection (Ollama/vLLM), privacy toggles.
+  _Implemented (2025-10-24):_ `jobbot settings configure` now persists inference
+  provider preferences (Ollama or vLLM) alongside privacy defaults. Analytics
+  exports respect the privacy redaction toggle without additional flags, and
+  interview sessions drop stored transcripts when retention is disabled.
+  Regression coverage in [`test/cli.test.js`](test/cli.test.js) exercises the
+  settings CLI, while [`test/interviews.test.js`](test/interviews.test.js)
+  verifies transcript suppression when privacy mode is active.
 - Docs, quickstart, sample data.
 
 **Stretch / nice-to-have**
+
 - `.docx` export (shipped via CLI using the docx library; Pandoc remains optional for other flows).
 - System-design rehearsal outlines.
 - Scheduler for periodic ingestion/matching.
@@ -310,7 +336,7 @@ jobbot track add <job_id> --status applied --note "emailed hiring manager"
 ## 16) References (see repo /docs for links)
 
 - JSON Resume schema; Greenhouse/Lever/Ashby/Workable/SmartRecruiters job board APIs.
-- O*NET & ESCO skills taxonomies for synonym expansion.
+- O\*NET & ESCO skills taxonomies for synonym expansion.
 - vLLM & Ollama for local model serving (OpenAI-compatible).
 - Embeddings: BGE / e5; pgvector/Chroma/FAISS for vector search.
 - Tectonic (LaTeX) & Typst for rendering.
@@ -327,7 +353,6 @@ Resume & ATS guidance: JSON Resume schema; MIT’s ATS tips; SHRM resources (gen
 Models & local serving: vLLM OpenAI-compatible server; Ollama API docs; Llama 3.1 / Mistral / Qwen2 / Phi-3 model cards.  
 Embeddings & vector stores: BGE / e5 embeddings; pgvector; Chroma; FAISS.  
 Interview rehearsal (STAR): HBR guide; Stanford BEAM; MIT CAPD; Harvard Law sample questions.  
-Skills taxonomies: O*NET; ESCO.  
+Skills taxonomies: O\*NET; ESCO.  
 Compliance & scraping ethics: LinkedIn ToS (no scraping); robots.txt / RFC 9309.  
-Security & safety: OWASP Top-10 for LLM apps; NIST AI RMF 1.0.  
-
+Security & safety: OWASP Top-10 for LLM apps; NIST AI RMF 1.0.
