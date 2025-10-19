@@ -49,6 +49,14 @@ Serves the client-side controller that drives status panels, navigation, and dow
 script emits events such as `jobbot:status-panels-ready`, `jobbot:analytics-ready`, and
 `jobbot:analytics-exported` for extension hooks.
 
+### GET /assets/status-hub.css
+
+Delivers the stylesheet shared by the overview, applications, listings, analytics, and audits
+panels. Responses include `Cache-Control: no-store` so local development and plugin authors pick up
+style changes without stale caches. The bundle preserves shared design tokens, including
+`--jobbot-color-background`, so extensions can continue to inherit the status hub palette when the
+stylesheet moved out of the HTML template.
+
 ### POST /commands/:command
 
 Executes an allow-listed CLI workflow. Requests must include both the CSRF header and JSON payload
