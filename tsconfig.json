@@ -13,5 +13,5 @@
     "resolveJsonModule": true
   },
   "include": ["src/shared/**/*.js", "src/**/*.ts", "test/**/*.ts"],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "src/settings.js"]
 }

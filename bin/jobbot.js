@@ -100,6 +100,7 @@ import {
   loadSettings as loadUserSettings,
   updateSettings as updateUserSettings,
 } from '../src/settings.js';
+import { ensureInferenceConfig } from '../src/shared/config/inference.js';
 
 function isHttpUrl(s) {
   return /^https?:\/\//i.test(s);
@@ -505,6 +506,7 @@ export async function cmdSummarize(args) {
   if (Number.isFinite(maxBytes) && maxBytes > 0) {
     fetchOptions.maxBytes = maxBytes;
   }
+  await ensureInferenceConfig();
   const raw = fetchingRemote
     ? await fetchTextFromUrl(input, fetchOptions)
     : await readSource(input);
@@ -594,6 +596,7 @@ export async function cmdMatch(args) {
   if (Number.isFinite(maxBytes) && maxBytes > 0) {
     fetchOptions.maxBytes = maxBytes;
   }
+  await ensureInferenceConfig();
   const jobRaw = jobUrl
     ? await fetchTextFromUrl(jobUrl, fetchOptions)
     : await readSource(jobInput);
@@ -2644,6 +2647,8 @@ async function cmdTailor(args) {
 
   const dataDir = process.env.JOBBOT_DATA_DIR || path.resolve('data');
   const jobPath = path.join(dataDir, 'jobs', `${jobId}.json`);
+
+  await ensureInferenceConfig();
 
   let snapshotRaw;
   try {
