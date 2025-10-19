@@ -300,6 +300,28 @@ describe("web server status page", () => {
     expect(code.trim().endsWith("})();")).toBe(true);
   });
 
+  it("serves the status hub stylesheet via an external asset endpoint", async () => {
+    const server = await startServer();
+
+    const homepage = await fetch(`${server.url}/`);
+    expect(homepage.status).toBe(200);
+    const html = await homepage.text();
+    const dom = new JSDOM(html);
+    const stylesheet = dom.window.document.querySelector(
+      'link[rel="stylesheet"][href="/assets/status-hub.css"]',
+    );
+
+    expect(stylesheet).not.toBeNull();
+
+    const asset = await fetch(`${server.url}/assets/status-hub.css`);
+    expect(asset.status).toBe(200);
+    expect(asset.headers.get("content-type")).toBe("text/css; charset=utf-8");
+    expect(asset.headers.get("cache-control")).toBe("no-store");
+    const css = await asset.text();
+    expect(css).toContain(".status-panel");
+    expect(css).toContain("--jobbot-color-background");
+  });
+
   it("supports hash-based navigation between status sections", async () => {
     const server = await startServer();
 

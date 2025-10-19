@@ -61,6 +61,13 @@
 > documented 74 KB ceiling. [`test/web-audits.test.js`](../test/web-audits.test.js) enforces a tightened
 > 56 KB budget, and [`test/web-server.test.js`](../test/web-server.test.js) exercises the new asset
 > endpoint to ensure future refactors keep the markup lean.
+>
+> [!NOTE] > **Update (2025-10-23):** Styles now ship via
+> [`/assets/status-hub.css`](../src/web/server.js) so the HTML skeleton stays under 30 KB even as new
+> panels land. [`test/web-server.test.js`](../test/web-server.test.js) asserts the stylesheet link,
+> asset response, and the preserved `--jobbot-color-background` design token, while
+> [`test/web-audits.test.js`](../test/web-audits.test.js) continues to guard the tightened byte
+> budget.
 
 ### 1. Requirements and Domain Mapping
 

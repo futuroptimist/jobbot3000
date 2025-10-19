@@ -48,9 +48,8 @@ describe('web interface audits', () => {
     expect(response.ok).toBe(true);
     const html = await response.text();
 
-    // Future-work note (2025-10-10) committed to trimming the status hub below
-    // the 74 KB HTML budget. Enforce a stricter ceiling so regressions surface
-    // before we creep back toward the documented limit.
+    // Regression guard: keep the status hub HTML lean now that scripts and
+    // styles ship as external assets, staying well under the 74 KB budget.
     const MAX_HTML_BYTES = 56_000;
     const byteLength = Buffer.byteLength(html, 'utf8');
     expect(byteLength).toBeLessThan(MAX_HTML_BYTES);

@@ -305,6 +305,7 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
   :root {
     color-scheme: dark;
     --background: #0b0d0f;
+    --jobbot-color-background: var(--background);
     --foreground: #f1f5f9;
     --muted: #94a3b8;
     --accent: #38bdf8;
@@ -329,6 +330,7 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
   [data-theme='light'] {
     color-scheme: light;
     --background: #f8fafc;
+    --jobbot-color-background: var(--background);
     --foreground: #0f172a;
     --muted: #475569;
     --accent: #0ea5e9;
@@ -5048,6 +5050,12 @@ export function createWebApp({
     res.send(STATUS_PAGE_SCRIPT);
   });
 
+  app.get("/assets/status-hub.css", (req, res) => {
+    res.set("Content-Type", "text/css; charset=utf-8");
+    res.set("Cache-Control", "no-store");
+    res.send(STATUS_PAGE_STYLES);
+  });
+
   app.get("/", (req, res) => {
     const serviceName = normalizedInfo.service || "jobbot web interface";
     const version = normalizedInfo.version
@@ -5098,7 +5106,7 @@ export function createWebApp({
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${escapeHtml(serviceName)}</title>
-    <style>${STATUS_PAGE_STYLES}</style>
+    <link rel="stylesheet" href="/assets/status-hub.css" />
   </head>
   <body data-csrf-header="${csrfHeaderAttr}" data-csrf-token="${csrfTokenAttr}">
     <a href="#main" class="pill" style="${skipLinkStyle}">Skip to main content</a>
