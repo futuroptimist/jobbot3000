@@ -1278,10 +1278,16 @@ export async function computeOpportunitySankey() {
   const repo = new OpportunitiesRepo();
   try {
     let events = [];
+    const fallbackFile = path.join(resolveDataDir(), 'opportunities', 'events.ndjson');
     if (repo.sqlite) {
       events = collectOpportunityEventsFromRepo(repo);
+      if (events.length === 0) {
+        const fallbackEvents = await readOpportunityEventsFromFile(fallbackFile);
+        if (fallbackEvents.length > 0) {
+          events = fallbackEvents;
+        }
+      }
     } else {
-      const fallbackFile = path.join(resolveDataDir(), 'opportunities', 'events.ndjson');
       events = await readOpportunityEventsFromFile(fallbackFile);
       if (events.length === 0) {
         events = collectOpportunityEventsFromRepo(repo);
