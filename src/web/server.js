@@ -895,6 +895,123 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
   .shortlist-actions__message[data-variant='error'] {
     color: var(--danger-text);
   }
+  .recruiter-modal[hidden] {
+    display: none !important;
+  }
+  .recruiter-modal {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    z-index: 1000;
+  }
+  .recruiter-modal__backdrop {
+    position: absolute;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.6);
+    cursor: pointer;
+    z-index: 0;
+  }
+  .recruiter-modal__dialog {
+    position: relative;
+    max-width: 640px;
+    width: min(100%, 640px);
+    background-color: var(--card-surface);
+    color: var(--foreground);
+    border-radius: 1rem;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+    padding: 1.5rem;
+    display: grid;
+    gap: 1rem;
+    z-index: 1;
+  }
+  [data-theme='light'] .recruiter-modal__dialog {
+    background-color: rgba(255, 255, 255, 0.97);
+    color: #111;
+  }
+  .recruiter-modal__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .recruiter-modal__close {
+    border: none;
+    background: none;
+    color: inherit;
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0.25rem;
+  }
+  .recruiter-modal__close:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .recruiter-modal form {
+    display: grid;
+    gap: 0.75rem;
+  }
+  .recruiter-modal label {
+    display: grid;
+    gap: 0.35rem;
+    font-weight: 600;
+  }
+  .recruiter-modal textarea {
+    min-height: 10rem;
+    resize: vertical;
+    border-radius: 0.75rem;
+    border: 1px solid var(--card-border);
+    background-color: transparent;
+    color: inherit;
+    padding: 0.75rem;
+    font: inherit;
+  }
+  [data-theme='light'] .recruiter-modal textarea {
+    background-color: rgba(255, 255, 255, 0.95);
+  }
+  .recruiter-modal__actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+  .recruiter-modal__message {
+    margin: 0;
+    padding: 0.6rem 0.8rem;
+    border-radius: 0.75rem;
+    font-size: 0.95rem;
+  }
+  .recruiter-modal__message[data-variant='info'] {
+    background-color: var(--pill-bg);
+    border: 1px solid var(--pill-border);
+    color: var(--accent);
+  }
+  .recruiter-modal__message[data-variant='success'] {
+    background-color: var(--success-bg);
+    border: 1px solid var(--success-border);
+    color: var(--success-text);
+  }
+  .recruiter-modal__message[data-variant='error'] {
+    background-color: var(--danger-bg);
+    border: 1px solid var(--danger-border);
+    color: var(--danger-text);
+  }
+  .recruiter-modal__preview {
+    display: grid;
+    grid-template-columns: minmax(120px, 160px) 1fr;
+    gap: 0.5rem 1rem;
+    margin: 0;
+  }
+  .recruiter-modal__preview dt {
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .recruiter-modal__preview dd {
+    margin: 0;
+  }
   .status-panel__empty {
     color: var(--muted);
   }
@@ -1646,6 +1763,188 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           const remindersState = { running: false };
           const exportState = { running: false };
           const remindersReportState = { report: null };
+          const recruiterElements = (() => {
+            const container = section.querySelector('[data-recruiter-modal]');
+            if (!container) {
+              return null;
+            }
+            return {
+              container,
+              openButton: section.querySelector('[data-recruiter-open]'),
+              dialog: container.querySelector('[data-recruiter-dialog]'),
+              overlay: container.querySelector('[data-recruiter-overlay]'),
+              form: container.querySelector('[data-recruiter-form]'),
+              input: container.querySelector('[data-recruiter-input]'),
+              submit: container.querySelector('[data-recruiter-submit]'),
+              cancel: container.querySelector('[data-recruiter-cancel]'),
+              closeButtons: container.querySelectorAll('[data-recruiter-close]'),
+              message: container.querySelector('[data-recruiter-message]'),
+              preview: container.querySelector('[data-recruiter-preview]'),
+            };
+          })();
+          const recruiterState = { open: false, submitting: false };
+
+          function setRecruiterMessage(variant, text) {
+            if (!recruiterElements?.message) return;
+            const el = recruiterElements.message;
+            const messageText = typeof text === 'string' ? text.trim() : '';
+            if (!variant || !messageText) {
+              el.textContent = '';
+              el.setAttribute('hidden', '');
+              el.removeAttribute('data-variant');
+              el.removeAttribute('role');
+              return;
+            }
+            el.textContent = messageText;
+            el.setAttribute('data-variant', variant);
+            el.setAttribute('role', variant === 'error' ? 'alert' : 'status');
+            el.removeAttribute('hidden');
+          }
+
+          function renderRecruiterPreview(result) {
+            if (!recruiterElements?.preview) return;
+            const preview = recruiterElements.preview;
+            preview.textContent = '';
+            preview.setAttribute('hidden', '');
+            if (!result || typeof result !== 'object') {
+              return;
+            }
+            const rows = [];
+            const opportunity =
+              result && typeof result.opportunity === 'object' ? result.opportunity : {};
+            const schedule = result && typeof result.schedule === 'object' ? result.schedule : {};
+            if (opportunity.company) {
+              rows.push(['Company', String(opportunity.company)]);
+            }
+            if (opportunity.roleHint) {
+              rows.push(['Role', String(opportunity.roleHint)]);
+            }
+            if (opportunity.contactName || opportunity.contactEmail) {
+              const contactParts = [];
+              if (opportunity.contactName) contactParts.push(String(opportunity.contactName));
+              if (opportunity.contactEmail) contactParts.push(String(opportunity.contactEmail));
+              rows.push(['Contact', contactParts.join(' · ')]);
+            }
+            if (schedule.display) {
+              rows.push(['Phone screen', String(schedule.display)]);
+            }
+            if (rows.length === 0) {
+              return;
+            }
+            const fragment = document.createDocumentFragment();
+            for (const [label, value] of rows) {
+              const dt = document.createElement('dt');
+              dt.textContent = label;
+              const dd = document.createElement('dd');
+              dd.textContent = value;
+              fragment.appendChild(dt);
+              fragment.appendChild(dd);
+            }
+            preview.appendChild(fragment);
+            preview.removeAttribute('hidden');
+          }
+
+          function closeRecruiterModal(options = {}) {
+            if (!recruiterElements?.container) return;
+            recruiterState.open = false;
+            recruiterState.submitting = false;
+            recruiterElements.container.setAttribute('hidden', '');
+            recruiterElements.container.removeAttribute('data-open');
+            if (!options.preserveMessage) setRecruiterMessage(null);
+            if (!options.preservePreview) renderRecruiterPreview(null);
+            if (!options.preserveInput && recruiterElements.input) {
+              recruiterElements.input.value = '';
+            }
+            if (recruiterElements.submit) {
+              recruiterElements.submit.disabled = false;
+            }
+            document.removeEventListener('keydown', handleRecruiterKeydown);
+            if (options.restoreFocus !== false && recruiterElements.openButton) {
+              recruiterElements.openButton.focus();
+            }
+          }
+
+          function openRecruiterModal() {
+            if (!recruiterElements?.container) return;
+            recruiterState.open = true;
+            recruiterElements.container.removeAttribute('hidden');
+            recruiterElements.container.setAttribute('data-open', '');
+            setRecruiterMessage(null);
+            renderRecruiterPreview(null);
+            if (recruiterElements.input) {
+              recruiterElements.input.focus();
+              recruiterElements.input.select?.();
+            }
+            document.addEventListener('keydown', handleRecruiterKeydown);
+          }
+
+          function handleRecruiterKeydown(event) {
+            if (!recruiterState.open) return;
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              closeRecruiterModal({ preserveInput: true });
+            }
+          }
+
+          async function handleRecruiterSubmit(event) {
+            event.preventDefault();
+            if (!recruiterElements || recruiterState.submitting) return;
+            const input = recruiterElements.input;
+            const rawValue = input ? String(input.value ?? '') : '';
+            const trimmed = rawValue.trim();
+            if (!trimmed) {
+              setRecruiterMessage('error', 'Paste the recruiter email before saving.');
+              input?.focus();
+              return;
+            }
+            recruiterState.submitting = true;
+            if (recruiterElements.submit) {
+              recruiterElements.submit.disabled = true;
+            }
+            setRecruiterMessage('info', 'Recording recruiter outreach…');
+            try {
+              const result = await invokeCommand('recruiter-ingest', { raw: rawValue });
+              const parts = [];
+              if (result?.opportunity?.company) {
+                parts.push(String(result.opportunity.company));
+              }
+              if (result?.opportunity?.roleHint) {
+                parts.push(String(result.opportunity.roleHint));
+              }
+              const scheduleDisplay = result?.schedule?.display
+                ? String(result.schedule.display)
+                : '';
+              let message = 'Recruiter outreach recorded.';
+              if (parts.length > 0) {
+                message = 'Recorded outreach for ' + parts.join(' – ');
+              }
+              if (scheduleDisplay) {
+                message += ' • Phone screen: ' + scheduleDisplay;
+              }
+              setRecruiterMessage('success', message);
+              renderRecruiterPreview(result);
+              if (input) {
+                input.value = '';
+              }
+              const eventDetail = { raw: rawValue, result };
+              try {
+                await refresh({ resetOffset: true });
+              } finally {
+                dispatchDocumentEvent('jobbot:recruiter-ingested', eventDetail);
+              }
+            } catch (err) {
+              const errorMessage =
+                err && typeof err.message === 'string'
+                  ? err.message
+                  : 'Failed to record recruiter outreach.';
+              setRecruiterMessage('error', errorMessage);
+            } finally {
+              recruiterState.submitting = false;
+              if (recruiterElements.submit) {
+                recruiterElements.submit.disabled = false;
+              }
+            }
+          }
 
           if (remindersReportButton) {
             remindersReportButton.setAttribute('hidden', '');
@@ -1659,6 +1958,30 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
                 type: 'application/json',
               });
             });
+          }
+
+          if (recruiterElements?.openButton) {
+            recruiterElements.openButton.addEventListener('click', event => {
+              event.preventDefault();
+              openRecruiterModal();
+            });
+          }
+          if (recruiterElements?.overlay) {
+            recruiterElements.overlay.addEventListener('click', event => {
+              event.preventDefault();
+              closeRecruiterModal();
+            });
+          }
+          if (recruiterElements?.closeButtons) {
+            recruiterElements.closeButtons.forEach(button => {
+              button.addEventListener('click', event => {
+                event.preventDefault();
+                closeRecruiterModal();
+              });
+            });
+          }
+          if (recruiterElements?.form) {
+            recruiterElements.form.addEventListener('submit', handleRecruiterSubmit);
           }
 
           function formatStatusLabelText(value) {
@@ -5226,9 +5549,56 @@ export function createWebApp({
           </div>
         </form>
         <div class="shortlist-actions" data-shortlist-actions>
+          <button type="button" data-recruiter-open>New recruiter outreach</button>
           <button type="button" data-shortlist-export-json>Download JSON</button>
           <button type="button" data-shortlist-export-csv>Download CSV</button>
           <p class="shortlist-actions__message" data-shortlist-export-message hidden></p>
+        </div>
+        <div class="recruiter-modal" data-recruiter-modal hidden>
+          <div class="recruiter-modal__backdrop" data-recruiter-close data-recruiter-overlay></div>
+          <div
+            class="recruiter-modal__dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="recruiter-modal-title"
+            data-recruiter-dialog
+          >
+            <header class="recruiter-modal__header">
+              <h3 id="recruiter-modal-title">Record recruiter outreach</h3>
+              <button
+                type="button"
+                class="recruiter-modal__close"
+                data-recruiter-close
+                aria-label="Close recruiter outreach form"
+              >
+                &times;
+              </button>
+            </header>
+            <form data-recruiter-form>
+              <label>
+                <span>Recruiter email</span>
+                <textarea
+                  data-recruiter-input
+                  rows="12"
+                  placeholder="Paste the raw recruiter email, including headers"
+                  required
+                ></textarea>
+              </label>
+              <div class="recruiter-modal__actions">
+                <button type="submit" data-recruiter-submit>Save outreach</button>
+                <button
+                  type="button"
+                  data-recruiter-cancel
+                  data-recruiter-close
+                  data-variant="ghost"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+            <p class="recruiter-modal__message" data-recruiter-message hidden></p>
+            <dl class="recruiter-modal__preview" data-recruiter-preview hidden></dl>
+          </div>
         </div>
         <div class="reminders-actions">
           <button type="button" data-reminders-export>Calendar Sync</button>

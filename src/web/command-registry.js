@@ -92,6 +92,7 @@ const TRACK_REMINDERS_ALLOWED_FIELDS = new Set([
   "calendarName",
   "calendar_name",
 ]);
+const RECRUITER_INGEST_ALLOWED_FIELDS = new Set(["raw"]);
 
 function stripUnsafeCharacters(value) {
   if (typeof value !== "string") {
@@ -224,6 +225,13 @@ function coerceTimeout(payload, commandName) {
     return coerceNumber(timeout, { name: "timeout", min: 0 });
   }
   return undefined;
+}
+
+function validateRecruiterIngestPayload(payload) {
+  const data = ensurePlainObject(payload ?? {}, "recruiter-ingest");
+  assertAllowedFields(data, RECRUITER_INGEST_ALLOWED_FIELDS, "recruiter-ingest");
+  const raw = coerceString(data.raw, { name: "raw", required: true });
+  return { raw };
 }
 
 function coerceTagList(value, { name }) {
@@ -569,6 +577,7 @@ const COMMAND_VALIDATORS = Object.freeze({
     }
     return {};
   },
+  "recruiter-ingest": validateRecruiterIngestPayload,
 });
 
 export const ALLOW_LISTED_COMMANDS = Object.freeze(

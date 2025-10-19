@@ -767,6 +767,114 @@ describe("web server status page", () => {
     anchorClick.mockRestore();
   });
 
+  it("records recruiter outreach emails from the applications view", async () => {
+    const shortlistPayload = {
+      command: "shortlist-list",
+      format: "json",
+      stdout: JSON.stringify({ total: 0, offset: 0, limit: 10, items: [] }),
+      stderr: "",
+      returnValue: 0,
+      data: { total: 0, offset: 0, limit: 10, items: [], filters: {}, hasMore: false },
+    };
+    const recruiterData = {
+      opportunity: {
+        uid: "op-123",
+        company: "Future Works",
+        roleHint: "Solutions Engineer",
+        contactName: "Casey Recruiter",
+        contactEmail: "casey@futureworks.example",
+        lifecycleState: "phone_screen_scheduled",
+      },
+      schedule: {
+        display: "Oct 23, 2:00 PM PT",
+        iso: "2025-10-23T21:00:00.000Z",
+        timezone: "PT",
+      },
+      events: [],
+      auditEntries: [],
+    };
+    const recruiterResult = {
+      command: "recruiter-ingest",
+      format: "json",
+      stdout: JSON.stringify(recruiterData, null, 2),
+      stderr: "",
+      returnValue: 0,
+      data: recruiterData,
+    };
+
+    const commandAdapter = {
+      "shortlist-list": vi.fn(async () => shortlistPayload),
+      "recruiter-ingest": vi.fn(async () => recruiterResult),
+    };
+    commandAdapter.shortlistList = commandAdapter["shortlist-list"];
+    commandAdapter.recruiterIngest = commandAdapter["recruiter-ingest"];
+
+    const server = await startServer({ commandAdapter });
+    const { dom, boot } = await renderStatusDom(server, {
+      pretendToBeVisual: true,
+      autoBoot: false,
+    });
+
+    const waitForEvent = (name, timeout = 500) =>
+      waitForDomEvent(dom, name, timeout);
+
+    const readyPromise = waitForEvent("jobbot:applications-ready");
+    await boot();
+    await readyPromise;
+
+    const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
+    dom.window.location.hash = "#applications";
+    dom.window.dispatchEvent(new HashChange("hashchange"));
+
+    await waitForEvent("jobbot:applications-loaded");
+    expect(commandAdapter["shortlist-list"]).toHaveBeenCalledTimes(1);
+
+    const openButton = dom.window.document.querySelector("[data-recruiter-open]");
+    expect(openButton).not.toBeNull();
+    openButton?.dispatchEvent(
+      new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
+
+    const modal = dom.window.document.querySelector("[data-recruiter-modal]");
+    expect(modal).not.toBeNull();
+    expect(modal?.hasAttribute("hidden")).toBe(false);
+
+    const textarea = dom.window.document.querySelector("[data-recruiter-input]");
+    expect(textarea).not.toBeNull();
+    if (textarea) {
+      textarea.value = "Subject: Future Works recruiter outreach";
+      textarea.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    }
+
+    const form = dom.window.document.querySelector("[data-recruiter-form]");
+    expect(form).not.toBeNull();
+
+    const ingestedPromise = waitForEvent("jobbot:recruiter-ingested");
+    form?.dispatchEvent(
+      new dom.window.Event("submit", { bubbles: true, cancelable: true }),
+    );
+
+    const ingestedEvent = await ingestedPromise;
+    await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+
+    expect(commandAdapter["recruiter-ingest"]).toHaveBeenCalledTimes(1);
+    expect(commandAdapter["recruiter-ingest"]).toHaveBeenCalledWith({
+      raw: expect.stringContaining("Future Works recruiter outreach"),
+    });
+    expect(commandAdapter["shortlist-list"]).toHaveBeenCalledTimes(2);
+
+    const message = dom.window.document.querySelector("[data-recruiter-message]");
+    expect(message?.textContent).toContain("Future Works");
+
+    const preview = dom.window.document.querySelector("[data-recruiter-preview]");
+    expect(preview?.textContent).toContain("Future Works");
+    expect(preview?.textContent).toContain("Oct 23, 2:00 PM PT");
+
+    expect(ingestedEvent?.detail?.result?.opportunity?.company).toBe(
+      "Future Works",
+    );
+  });
+
   it("logs reminder export failures and surfaces a bug report download", async () => {
     const logPath = path.resolve("logs", "calendar.log");
     await fs.rm(logPath, { force: true });
