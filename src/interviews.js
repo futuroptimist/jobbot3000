@@ -2,6 +2,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import JSZip from 'jszip';
 
+import { DEFAULT_SETTINGS, loadSettings } from './settings.js';
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 let overrideDir;
@@ -990,6 +992,10 @@ export async function recordInterviewSession(jobId, sessionId, data = {}) {
   const normalizedJobId = requireId(jobId, 'job id');
   const normalizedSessionId = requireId(sessionId, 'session id');
 
+  const settings = await loadSettings();
+  const privacySettings = settings?.privacy ?? DEFAULT_SETTINGS.privacy;
+  const shouldStoreTranscript = privacySettings.storeInterviewTranscripts !== false;
+
   const transcript = normalizeTranscript(data.transcript);
   const reflections = normalizeNoteList(data.reflections, 'reflections');
   const feedback = normalizeNoteList(data.feedback, 'feedback');
@@ -1012,7 +1018,7 @@ export async function recordInterviewSession(jobId, sessionId, data = {}) {
 
   if (stage) entry.stage = stage;
   if (mode) entry.mode = mode;
-  if (transcript) entry.transcript = transcript;
+  if (transcript && shouldStoreTranscript) entry.transcript = transcript;
   if (reflections) entry.reflections = reflections;
   if (feedback) entry.feedback = feedback;
   if (notes) entry.notes = notes;

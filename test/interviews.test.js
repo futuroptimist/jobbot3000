@@ -4,6 +4,8 @@ import path from 'node:path';
 import JSZip from 'jszip';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { setSettingsDataDir, updateSettings } from '../src/settings.js';
+
 let dataDir;
 
 async function readSession(jobId, sessionId) {
@@ -22,6 +24,7 @@ describe('interview session archive', () => {
       await fs.rm(dataDir, { recursive: true, force: true });
       dataDir = undefined;
     }
+    setSettingsDataDir(undefined);
   });
 
   it('persists transcripts, reflections, and feedback per session', async () => {
@@ -212,6 +215,30 @@ describe('interview session archive', () => {
         ],
       },
     });
+  });
+
+  it('omits stored transcripts when privacy settings disable retention', async () => {
+    const {
+      setInterviewDataDir,
+      recordInterviewSession,
+      getInterviewSession,
+    } = await import('../src/interviews.js');
+
+    setInterviewDataDir(dataDir);
+    setSettingsDataDir(dataDir);
+    await updateSettings({ privacy: { storeInterviewTranscripts: false } });
+
+    const entry = await recordInterviewSession('job-privacy', 'session-keep', {
+      transcript: 'Practiced STAR response focused on impact.',
+      reflections: ['Focus on brevity'],
+    });
+
+    expect(entry).not.toHaveProperty('transcript');
+    expect(entry.heuristics).toBeDefined();
+
+    const stored = await getInterviewSession('job-privacy', 'session-keep');
+    expect(stored).not.toHaveProperty('transcript');
+    expect(stored.heuristics).toBeDefined();
   });
 
   it('stores audio source metadata when provided', async () => {

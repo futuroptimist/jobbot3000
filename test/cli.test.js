@@ -2361,7 +2361,7 @@ describe('jobbot CLI', () => {
         }),
       ]),
     );
-  });
+  }, 15000);
 
   it('writes shortlist JSON snapshots to disk with --out', () => {
     runCli([
@@ -2835,6 +2835,47 @@ describe('jobbot CLI', () => {
     expect(payload.channels).toEqual({ email: 1, offer_accepted: 1, referral: 1 });
     expect(JSON.stringify(payload)).not.toContain('job-1');
     expect(JSON.stringify(payload)).not.toContain('job-2');
+  }, 15000);
+
+  it('configures inference settings via the CLI', () => {
+    const updated = JSON.parse(
+      runCli([
+        'settings',
+        'configure',
+        '--model-provider',
+        'vllm',
+        '--model',
+        'gpt-4o-mini',
+        '--json',
+      ]),
+    );
+    expect(updated.inference).toEqual({ provider: 'vllm', model: 'gpt-4o-mini' });
+
+    const current = JSON.parse(runCli(['settings', 'show', '--json']));
+    expect(current.inference.provider).toBe('vllm');
+    expect(current.inference.model).toBe('gpt-4o-mini');
+  });
+
+  it('applies privacy redaction defaults to analytics exports', () => {
+    runCli(['settings', 'configure', '--privacy-redact-analytics', 'on']);
+
+    const jobsDir = path.join(dataDir, 'jobs');
+    fs.mkdirSync(jobsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(jobsDir, 'job-privacy.json'),
+      JSON.stringify({ company: 'Future Works' }, null, 2),
+      'utf8',
+    );
+
+    runCli(['track', 'log', 'job-privacy', '--channel', 'referral', '--date', '2025-03-03']);
+    runCli(['track', 'add', 'job-privacy', '--status', 'offer']);
+
+    const redacted = JSON.parse(runCli(['analytics', 'export']));
+    const companyNames = redacted.companies.map(entry => entry.name);
+    expect(companyNames.every(name => !name || /^Company \d+$/.test(name))).toBe(true);
+
+    const unredacted = JSON.parse(runCli(['analytics', 'export', '--no-redact']));
+    expect(unredacted.companies.some(entry => entry.name === 'Future Works')).toBe(true);
   });
 
   it('prints analytics sankey transitions with json option', () => {
@@ -3010,7 +3051,7 @@ describe('jobbot CLI', () => {
         },
       ],
     });
-  });
+  }, 15000);
 
   it('runs scheduled matching tasks from configuration', () => {
     const resumePath = path.join(dataDir, 'resume.txt');

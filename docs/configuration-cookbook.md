@@ -43,6 +43,21 @@ Feature flags are parsed via the manifest and exposed to the web server:
 | `features.httpClient.circuitBreakerThreshold` | `JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD` | Trip the circuit after _n_ consecutive failures                                        |
 | `features.httpClient.circuitBreakerResetMs`   | `JOBBOT_HTTP_CIRCUIT_BREAKER_RESET_MS`  | Reset window after failures                                                            |
 
+## User settings (`data/settings.json`)
+
+The CLI persists inference and privacy preferences to `data/settings.json`. Manage these defaults
+with the `jobbot settings` command:
+
+| Field                               | Description                                                         |
+| ----------------------------------- | ------------------------------------------------------------------- |
+| `inference.provider`                | Either `ollama` (local models) or `vllm` (OpenAI-compatible server) |
+| `inference.model`                   | Model preset associated with the selected provider                  |
+| `privacy.redactAnalyticsExports`    | When `true`, analytics exports redact company names by default      |
+| `privacy.storeInterviewTranscripts` | Controls whether interview transcripts are persisted to disk        |
+
+All settings support `on/off` toggles via `jobbot settings configure`. Override defaults temporarily
+with per-command flags such as `--no-redact` on `jobbot analytics export`.
+
 ## Environment templates
 
 ### Local development (`.env.local`)

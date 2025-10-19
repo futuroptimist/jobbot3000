@@ -96,6 +96,10 @@ import {
   ingestListing,
   archiveListing,
 } from '../src/listings.js';
+import {
+  loadSettings as loadUserSettings,
+  updateSettings as updateUserSettings,
+} from '../src/settings.js';
 
 function isHttpUrl(s) {
   return /^https?:\/\//i.test(s);
@@ -133,6 +137,16 @@ function assertFlagHasValue(args, flag, usage) {
     console.error(usage);
     process.exit(2);
   }
+}
+
+function parseToggleFlag(value, flag) {
+  if (value == null) return undefined;
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off', 'disabled'].includes(normalized)) return false;
+  console.error(`${flag} must be one of: on, off`);
+  process.exit(2);
 }
 
 const CURRENCY_SYMBOL_RE = /^\p{Sc}/u;
@@ -2476,7 +2490,21 @@ async function cmdAnalyticsFunnel(args) {
 
 async function cmdAnalyticsExport(args) {
   const output = getFlag(args, '--out');
-  const redact = args.includes('--redact');
+  const hasRedactFlag = args.includes('--redact');
+  const hasNoRedactFlag = args.includes('--no-redact');
+  if (hasRedactFlag && hasNoRedactFlag) {
+    console.error('Cannot combine --redact with --no-redact');
+    process.exit(2);
+  }
+
+  let redact = hasRedactFlag;
+  if (!hasRedactFlag && !hasNoRedactFlag) {
+    const settings = await loadUserSettings();
+    redact = settings?.privacy?.redactAnalyticsExports ?? false;
+  } else if (hasNoRedactFlag) {
+    redact = false;
+  }
+
   const snapshot = await exportAnalyticsSnapshot({ redactCompanies: redact });
   const payload = `${JSON.stringify(snapshot, null, 2)}\n`;
   if (output) {
@@ -3047,6 +3075,99 @@ async function cmdNotifications(args) {
   if (sub === 'run') return cmdNotificationsRun(args.slice(1));
   if (sub === 'send') return cmdNotificationsSend(args.slice(1));
   console.error('Usage: jobbot notifications <subscribe|list|run|send> [options]');
+  process.exit(2);
+}
+
+async function cmdSettingsShow(args) {
+  const asJson = args.includes('--json');
+  const settings = await loadUserSettings();
+  if (asJson) {
+    console.log(JSON.stringify(settings, null, 2));
+    return;
+  }
+  const redactToggle = settings.privacy.redactAnalyticsExports ? 'on' : 'off';
+  const transcriptToggle = settings.privacy.storeInterviewTranscripts ? 'on' : 'off';
+  console.log(`Inference provider: ${settings.inference.provider}`);
+  console.log(`Inference model: ${settings.inference.model}`);
+  console.log(`Privacy (redact analytics exports): ${redactToggle}`);
+  console.log(`Privacy (store interview transcripts): ${transcriptToggle}`);
+}
+
+async function cmdSettingsConfigure(args) {
+  const usage =
+    'Usage: jobbot settings configure [--model-provider <ollama|vllm>] ' +
+    '[--model <name>] [--privacy-redact-analytics <on|off>] ' +
+    '[--privacy-store-transcripts <on|off>] [--json]';
+
+  assertFlagHasValue(args, '--model-provider', usage);
+  assertFlagHasValue(args, '--model', usage);
+  assertFlagHasValue(args, '--privacy-redact-analytics', usage);
+  assertFlagHasValue(args, '--privacy-store-transcripts', usage);
+
+  const provider = getFlag(args, '--model-provider');
+  const model = getFlag(args, '--model');
+  const redactRaw = getFlag(args, '--privacy-redact-analytics');
+  const transcriptsRaw = getFlag(args, '--privacy-store-transcripts');
+  const asJson = args.includes('--json');
+
+  const patch = {};
+  if (provider || model) {
+    patch.inference = {};
+    if (provider) patch.inference.provider = provider;
+    if (model) patch.inference.model = model;
+  }
+  if (redactRaw !== undefined || transcriptsRaw !== undefined) {
+    patch.privacy = {};
+    if (redactRaw !== undefined) {
+      patch.privacy.redactAnalyticsExports = parseToggleFlag(
+        redactRaw,
+        '--privacy-redact-analytics',
+      );
+    }
+    if (transcriptsRaw !== undefined) {
+      patch.privacy.storeInterviewTranscripts = parseToggleFlag(
+        transcriptsRaw,
+        '--privacy-store-transcripts',
+      );
+    }
+  }
+
+  if (!patch.inference && !patch.privacy) {
+    console.error(usage);
+    process.exit(2);
+  }
+
+  let updated;
+  try {
+    updated = await updateUserSettings(patch);
+  } catch (err) {
+    console.error(err?.message || 'Failed to update settings');
+    process.exit(1);
+  }
+
+  if (asJson) {
+    console.log(JSON.stringify(updated, null, 2));
+    return;
+  }
+
+  const redactState = updated.privacy.redactAnalyticsExports ? 'on' : 'off';
+  const transcriptState = updated.privacy.storeInterviewTranscripts ? 'on' : 'off';
+  console.log('Updated settings:');
+  console.log(`  Inference provider: ${updated.inference.provider}`);
+  console.log(`  Inference model: ${updated.inference.model}`);
+  console.log(`  Privacy.redactAnalyticsExports: ${redactState}`);
+  console.log(`  Privacy.storeInterviewTranscripts: ${transcriptState}`);
+}
+
+async function cmdSettings(args) {
+  const sub = args[0];
+  if (sub === 'show') return cmdSettingsShow(args.slice(1));
+  if (sub === 'configure') return cmdSettingsConfigure(args.slice(1));
+  console.error(
+    'Usage: jobbot settings <show|configure> [--json] [--model-provider <provider>] ' +
+      '[--model <name>] [--privacy-redact-analytics <on|off>] ' +
+      '[--privacy-store-transcripts <on|off>]',
+  );
   process.exit(2);
 }
 
@@ -3671,10 +3792,11 @@ async function main() {
   if (cmd === 'interviews') return cmdInterviews(args);
   if (cmd === 'schedule') return cmdSchedule(args);
   if (cmd === 'notifications') return cmdNotifications(args);
+  if (cmd === 'settings') return cmdSettings(args);
   console.error(
     'Usage: jobbot <init|profile|import|summarize|match|track|shortlist|analytics|' +
       'rehearse|tailor|deliverables|interviews|intake|listings|' +
-      'ingest|schedule|notifications> [options]'
+      'ingest|schedule|notifications|settings> [options]'
   );
   process.exit(2);
 }
