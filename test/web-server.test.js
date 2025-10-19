@@ -1660,13 +1660,15 @@ describe("web server status page", () => {
     form.dispatchEvent(
       new dom.window.Event("submit", { bubbles: true, cancelable: true }),
     );
-    await statusRecorded;
+    const statusEvent = await statusRecorded;
     await detailReloaded;
     await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
 
     expect(commandAdapter["track-record"]).toHaveBeenCalledTimes(1);
     const message = dom.window.document.querySelector("[data-action-message]");
     expect(message?.textContent).toContain("Recorded job-42 as offer");
+    expect(statusEvent?.detail?.status).toBe("offer");
+    expect(statusEvent?.detail?.statusLabel).toBe("Offer");
   });
 
   it("refreshes application detail after recording a status update", async () => {
