@@ -23,9 +23,9 @@ let contactsTable;
 let eventsTable;
 try {
   const BetterSqlite3Module = require('better-sqlite3');
-  const drizzleModule = require('drizzle-orm/better-sqlite3');
-  const drizzleOrm = require('drizzle-orm');
-  const sqliteCore = require('drizzle-orm/sqlite-core');
+  const drizzleModule = await import('drizzle-orm/better-sqlite3');
+  const drizzleOrm = await import('drizzle-orm');
+  const sqliteCore = await import('drizzle-orm/sqlite-core');
   BetterSqlite3 = BetterSqlite3Module;
   ({ drizzle: drizzleBetterSqlite3 } = drizzleModule);
   ({ eq } = drizzleOrm);
