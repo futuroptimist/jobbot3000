@@ -206,8 +206,22 @@ async function readOpportunityEventsFromFile(file) {
       typeof parsed.eventUid === 'string' && parsed.eventUid.trim()
         ? parsed.eventUid.trim()
         : `${opportunityUid}:${occurredAt}:${type}:${index}`;
-    const payload =
-      parsed.payload && typeof parsed.payload === 'object' ? { ...parsed.payload } : undefined;
+    let payload;
+    if (parsed.payload && typeof parsed.payload === 'object') {
+      payload = { ...parsed.payload };
+    } else if (typeof parsed.payload === 'string') {
+      const trimmed = parsed.payload.trim();
+      if (trimmed) {
+        try {
+          const parsedPayload = JSON.parse(trimmed);
+          if (parsedPayload && typeof parsedPayload === 'object') {
+            payload = { ...parsedPayload };
+          }
+        } catch {
+          // ignore invalid payload JSON
+        }
+      }
+    }
 
     events.push({
       eventUid,
