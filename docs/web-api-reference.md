@@ -89,6 +89,9 @@ The following command endpoints are available. Each one maps directly to a CLI h
   tokens for job board providers through the web UI.
 - `POST /commands/listings-providers` → `jobbot listings providers`: Return the supported provider
   identifiers and human-friendly labels.
+- `POST /commands/recruiter-ingest` → `node bin/ingest-recruiter.ts`: Parse recruiter outreach emails,
+  persist the opportunity, append audit entries, and return a sanitized summary for the modal
+  preview.
 
 CLI users can invoke the same workflows via `jobbot listings <providers|fetch|ingest|archive>`.
 Each subcommand supports `--json` output for automation, and text summaries mirror the web

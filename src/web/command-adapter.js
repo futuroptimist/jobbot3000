@@ -28,6 +28,9 @@ import {
   refreshListingProviderTokens,
   setListingProviderToken,
 } from "../modules/scraping/provider-tokens.js";
+import { ingestRecruiterEmail } from "../ingest/recruiterEmail.js";
+import { OpportunitiesRepo } from "../services/opportunitiesRepo.js";
+import { AuditLog } from "../services/audit.js";
 
 const SECRET_KEYS = [
   "api[-_]?key",
@@ -1105,6 +1108,39 @@ export function createCommandAdapter(options = {}) {
     };
   }
 
+  async function recruiterIngestCommand(options = {}) {
+    const repo = new OpportunitiesRepo();
+    const audit = new AuditLog();
+    try {
+      const result = ingestRecruiterEmail({
+        raw: typeof options.raw === "string" ? options.raw : "",
+        repo,
+        audit,
+      });
+      const sanitized = sanitizeOutputValue(result, { key: "data" });
+      const stdout = JSON.stringify(sanitized, null, 2);
+      return {
+        command: "recruiter-ingest",
+        format: "json",
+        stdout,
+        stderr: "",
+        returnValue: 0,
+        data: sanitized,
+      };
+    } finally {
+      try {
+        repo.close?.();
+      } catch {
+        // ignore close errors
+      }
+      try {
+        audit.close?.();
+      } catch {
+        // ignore close errors
+      }
+    }
+  }
+
   const adapter = {
     summarize,
     match,
@@ -1120,6 +1156,7 @@ export function createCommandAdapter(options = {}) {
     listingsIngest: listingsIngestCommand,
     listingsArchive: listingsArchiveCommand,
     listingsProviderToken: listingsProviderTokenCommand,
+    recruiterIngest: recruiterIngestCommand,
   };
   adapter["shortlist-list"] = shortlistList;
   adapter["shortlist-show"] = shortlistShow;
@@ -1133,6 +1170,7 @@ export function createCommandAdapter(options = {}) {
   adapter["listings-ingest"] = listingsIngestCommand;
   adapter["listings-archive"] = listingsArchiveCommand;
   adapter["listings-provider-token"] = listingsProviderTokenCommand;
+  adapter["recruiter-ingest"] = recruiterIngestCommand;
   adapter.trackRecord = trackRecord;
   adapter.trackReminders = trackReminders;
   adapter.analyticsExport = analyticsExport;

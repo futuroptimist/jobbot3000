@@ -11,6 +11,22 @@ vi.mock('../src/reminders-calendar.js', () => ({
   createReminderCalendar: vi.fn(),
 }));
 
+vi.mock('../src/ingest/recruiterEmail.js', () => ({
+  ingestRecruiterEmail: vi.fn(),
+}));
+
+vi.mock('../src/services/opportunitiesRepo.js', () => ({
+  OpportunitiesRepo: vi.fn().mockImplementation(() => ({
+    close: vi.fn(),
+  })),
+}));
+
+vi.mock('../src/services/audit.js', () => ({
+  AuditLog: vi.fn().mockImplementation(() => ({
+    close: vi.fn(),
+  })),
+}));
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -22,6 +38,9 @@ import * as childProcess from 'node:child_process';
 import { createCommandAdapter } from '../src/web/command-adapter.js';
 import { getApplicationReminders } from '../src/application-events.js';
 import { createReminderCalendar } from '../src/reminders-calendar.js';
+import { ingestRecruiterEmail } from '../src/ingest/recruiterEmail.js';
+import { OpportunitiesRepo } from '../src/services/opportunitiesRepo.js';
+import { AuditLog } from '../src/services/audit.js';
 
 describe('createCommandAdapter', () => {
   let originalEnableNativeCli;
@@ -35,6 +54,11 @@ describe('createCommandAdapter', () => {
     childProcess.spawn.mockReset();
     getApplicationReminders.mockReset();
     createReminderCalendar.mockReset();
+    ingestRecruiterEmail.mockReset();
+    OpportunitiesRepo.mockReset();
+    OpportunitiesRepo.mockImplementation(() => ({ close: vi.fn() }));
+    AuditLog.mockReset();
+    AuditLog.mockImplementation(() => ({ close: vi.fn() }));
     if (originalEnableNativeCli === undefined) {
       delete process.env.JOBBOT_WEB_ENABLE_NATIVE_CLI;
     } else {
@@ -871,5 +895,63 @@ describe('createCommandAdapter', () => {
       /native cli execution is disabled/i,
     );
     expect(childProcess.spawn).not.toHaveBeenCalled();
+  });
+
+  it('ingests recruiter outreach emails and sanitizes the result', async () => {
+    const repoInstance = { close: vi.fn() };
+    const auditInstance = { close: vi.fn() };
+    OpportunitiesRepo.mockImplementation(() => repoInstance);
+    AuditLog.mockImplementation(() => auditInstance);
+
+    ingestRecruiterEmail.mockImplementation(() => ({
+      opportunity: {
+        uid: 'abc123',
+        company: 'Future Works',
+        roleHint: 'Solutions Engineer',
+        contactName: 'Casey Recruiter',
+        contactEmail: 'casey@futureworks.example',
+        lifecycleState: 'phone_screen_scheduled',
+      },
+      schedule: {
+        display: 'Oct 23, 2:00 PM PT',
+        iso: '2025-10-23T21:00:00.000Z',
+        timezone: 'PT',
+      },
+      events: [
+        {
+          type: 'recruiter_outreach_received',
+          payload: { snippet: 'api_key=supersecret' },
+        },
+      ],
+      auditEntries: [],
+    }));
+
+    const adapter = createCommandAdapter();
+    const rawEmail = 'Subject: Future Works opportunity\n\napi_key=supersecret';
+    const result = await adapter['recruiter-ingest']({ raw: rawEmail });
+
+    expect(ingestRecruiterEmail).toHaveBeenCalledTimes(1);
+    expect(ingestRecruiterEmail).toHaveBeenCalledWith({
+      raw: rawEmail,
+      repo: repoInstance,
+      audit: auditInstance,
+    });
+    expect(repoInstance.close).toHaveBeenCalledTimes(1);
+    expect(auditInstance.close).toHaveBeenCalledTimes(1);
+
+    expect(result).toMatchObject({
+      command: 'recruiter-ingest',
+      format: 'json',
+      data: {
+        opportunity: expect.objectContaining({
+          company: 'Future Works',
+          contactEmail: 'casey@futureworks.example',
+        }),
+        schedule: expect.objectContaining({ display: 'Oct 23, 2:00 PM PT' }),
+      },
+    });
+    expect(result.data.events?.[0]?.payload?.snippet).toBe('api_key=***');
+    expect(result.stdout).toContain('Future Works');
+    expect(result.stdout).toContain('Oct 23, 2:00 PM PT');
   });
 });

@@ -26,7 +26,13 @@ For detailed setup, CLI usage, and environment options, see [docs/getting-starte
 1. Save the raw email to disk, then ingest it: `node bin/ingest-recruiter.ts --source emails/recruiter.txt`.
 2. Open **Opportunities ▸ New → Recruiter outreach** to paste additional emails directly from the UI.
 3. Confirm the parsed phone screen details (`Phone screen: Thu Oct 23, 2:00 PM PT`) and advance the
-   lifecycle when the call finishes.
+   lifecycle when the call finishes. The modal previews the sanitized outreach summary and immediately
+   refreshes the applications list so the new event is visible without a page reload.
+
+Automated tests cover both halves of the flow: `test/web-command-adapter.test.js` validates the
+`recruiter-ingest` command sanitizes data and closes repositories, while
+`test/web-server.test.js` exercises the web modal end-to-end, including the shortlist refresh and
+success preview.
 
 Ingestion is idempotent: running the CLI twice for the same email will update the existing
 opportunity instead of creating duplicates.
