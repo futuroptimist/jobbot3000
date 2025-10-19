@@ -106,7 +106,7 @@ jobbot3000.
 ### Unhappy paths & recovery
 
 - Users can abandon sessions mid-question; the system stores a draft state so CLI `jobbot intake
-  resume` or the web **Resume Session** button can continue where they left off.
+resume` or the web **Resume Session** button can continue where they left off.
 - When the LLM refuses or fails to produce a plan, the flows expose a manual question builder with
   templates. QA scenarios confirm that skipping LLM generation still allows successful completion.
 
@@ -198,13 +198,13 @@ jobbot3000.
 1. Score a job with `jobbot match <job_id> --explain --json` to capture fit metrics, evidence
    snippets, and blocker rationale in a machine-readable format.
 2. Tailor deliverables using `jobbot tailor <job_id> --profile data/profile/resume.json --out
-   data/deliverables/<job_id>/` which generates resume variants, cover letters, and match reports.
+data/deliverables/<job_id>/` which generates resume variants, cover letters, and match reports.
 3. Inspect generated diffs via `jobbot deliverables diff <job_id> --timestamp latest` to confirm
    changes against the baseline profile.
 4. Apply manual edits with `jobbot deliverables edit <job_id> --file resume.md` and re-run
    `jobbot tailor` with `--regenerate` to blend manual tweaks with AI suggestions.
 5. Package artifacts for sharing via `jobbot deliverables bundle <job_id> --timestamp latest --out
-   share/<job_id>.zip`.
+share/<job_id>.zip`.
 
 ### Web flow
 
@@ -251,9 +251,9 @@ jobbot3000.
 ### CLI flow
 
 1. Log outreach with `jobbot track log <job_id> --channel email --note "Sent resume" --remind-at
-   2024-05-01T09:00:00Z` which stores the event in `data/application_events.json`.
+2024-05-01T09:00:00Z` which stores the event in `data/application_events.json`.
 2. Update status transitions via `jobbot track add <job_id> --status screening --note "Recruiter
-   call scheduled"`.
+call scheduled"`.
 3. Review the pipeline with `jobbot track board --json` to confirm jobs group correctly by stage and
    surface reminders.
 4. Inspect job history via `jobbot track history <job_id>` for audit trails.
@@ -268,7 +268,7 @@ jobbot3000.
    for optional notes.
 3. Review reminders in the **Follow-ups** sidebar, which mirrors the CLI digest (Past Due vs
    Upcoming) and supports snooze/done actions backed by `jobbot track reminders snooze <job_id>
-   --until <iso>` and `jobbot track reminders done <job_id> [--at <iso>]`.
+--until <iso>` and `jobbot track reminders done <job_id> [--at <iso>]`.
 4. Export ICS files via the **Calendar Sync** button (backed by `POST /commands/track-reminders`) and
    confirm downloads contain sanitized data. `test/web-server.test.js` verifies the button dispatches
    the `jobbot:reminders-exported` event and streams a calendar download without leaking details.
@@ -310,13 +310,13 @@ jobbot3000.
 2. Rehearse with `jobbot rehearse <job_id> --stage behavioral --audio recordings/mock.mp3` to
    transcribe practice answers via configured STT providers.
 3. Record session notes using `jobbot interviews record <job_id> --session <id> --notes <text>
-   --rating 4`.
+--rating 4`.
 4. Review progress with `jobbot interviews show <job_id> --session <id> --json` to inspect metrics
    like words per minute and STAR coverage.
 5. Export sessions via
-    `jobbot interviews export --job <job_id> --out exports/interviews-<job_id>.zip` for coaching
-    feedback loops; the archive stores session JSON plus a manifest listing stage, mode, and
-    recorded timestamps.
+   `jobbot interviews export --job <job_id> --out exports/interviews-<job_id>.zip` for coaching
+   feedback loops; the archive stores session JSON plus a manifest listing stage, mode, and
+   recorded timestamps.
 
 ### Web flow
 
@@ -330,7 +330,10 @@ jobbot3000.
 
 ### Unhappy paths & recovery
 
-- Missed sessions trigger gentle nudges via notification center and CLI `jobbot interviews remind`.
+- Missed sessions trigger gentle nudges via notification center and CLI `jobbot interviews remind`,
+  which surfaces jobs with no recorded rehearsals or stale sessions beyond the configurable
+  `--stale-after` window (`test/interviews.test.js` and `test/cli.test.js` lock the reminder digest
+  and JSON output in place).
 - Audio transcription failures prompt manual upload of text notes; flows ensure the session can still
   be completed without voice data.
 
@@ -356,8 +359,7 @@ jobbot3000.
 
 ### CLI flow
 
-> [!NOTE]
-> **Update (2025-10-13):** `jobbot analytics activity` now ships via the CLI, wiring
+> [!NOTE] > **Update (2025-10-13):** `jobbot analytics activity` now ships via the CLI, wiring
 > `computeActivitySummary` to the analytics surface with guardrails that require
 > `--out` values when provided. [`test/cli.test.js`](../test/cli.test.js)
 > exercises both the sanitized export and the usage error when `--out` lacks a

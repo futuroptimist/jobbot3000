@@ -293,13 +293,140 @@ describe('interview session archive', () => {
     expect(storedTwo).toContain('Second session');
   });
 
-  it('throws when exporting a job without sessions', async () => {
-    const { setInterviewDataDir, exportInterviewSessions } = await import('../src/interviews.js');
+it('throws when exporting a job without sessions', async () => {
+  const { setInterviewDataDir, exportInterviewSessions } = await import('../src/interviews.js');
+  setInterviewDataDir(dataDir);
+
+  await expect(exportInterviewSessions('job-empty')).rejects.toThrow(
+    'No interview sessions found for job-empty',
+  );
+});
+});
+
+describe('interview reminders', () => {
+  beforeEach(async () => {
+    dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jobbot-reminders-'));
+  });
+
+  afterEach(async () => {
+    if (dataDir) {
+      await fs.rm(dataDir, { recursive: true, force: true });
+      dataDir = undefined;
+    }
+  });
+
+  it('flags stale interview practice and empty jobs', async () => {
+    const { setInterviewDataDir, listInterviewReminders } = await import(
+      '../src/interviews.js'
+    );
+
     setInterviewDataDir(dataDir);
 
-    await expect(exportInterviewSessions('job-empty')).rejects.toThrow(
-      'No interview sessions found for job-empty',
+    const interviewsRoot = path.join(dataDir, 'interviews');
+    await fs.mkdir(interviewsRoot, { recursive: true });
+
+    const staleDir = path.join(interviewsRoot, 'job-stale');
+    await fs.mkdir(staleDir, { recursive: true });
+    await fs.writeFile(
+      path.join(staleDir, 'session-1.json'),
+      `${JSON.stringify(
+        {
+          recorded_at: '2025-02-20T10:00:00.000Z',
+          stage: 'Onsite',
+          mode: 'Voice',
+          heuristics: { critique: { tighten_this: [' tighten transitions ', ''] } },
+        },
+        null,
+        2,
+      )}\n`,
+      'utf8',
     );
+
+    const freshDir = path.join(interviewsRoot, 'job-fresh');
+    await fs.mkdir(freshDir, { recursive: true });
+    await fs.writeFile(
+      path.join(freshDir, 'session-1.json'),
+      `${JSON.stringify({ recorded_at: '2025-03-26T09:00:00.000Z' }, null, 2)}\n`,
+      'utf8',
+    );
+
+    const emptyDir = path.join(interviewsRoot, 'job-empty');
+    await fs.mkdir(emptyDir, { recursive: true });
+
+    const reminders = await listInterviewReminders({
+      now: '2025-03-30T12:00:00.000Z',
+      staleAfterDays: 7,
+    });
+
+    expect(reminders).toEqual([
+      {
+        job_id: 'job-stale',
+        reason: 'stale',
+        sessions: 1,
+        last_session_at: '2025-02-20T10:00:00.000Z',
+        stale_for_days: 38,
+        stage: 'Onsite',
+        mode: 'Voice',
+        suggestions: ['tighten transitions'],
+      },
+      {
+        job_id: 'job-empty',
+        reason: 'no_sessions',
+        sessions: 0,
+        message: 'No rehearsal sessions have been recorded yet.',
+      },
+    ]);
+  });
+
+  it('derives timestamps from started_at when recorded_at is missing', async () => {
+    const { setInterviewDataDir, listInterviewReminders } = await import(
+      '../src/interviews.js'
+    );
+
+    setInterviewDataDir(dataDir);
+
+    const jobDir = path.join(dataDir, 'interviews', 'job-started');
+    await fs.mkdir(jobDir, { recursive: true });
+    await fs.writeFile(
+      path.join(jobDir, 'session-1.json'),
+      `${JSON.stringify(
+        {
+          started_at: '2025-01-01T09:30:00.000Z',
+          heuristics: {},
+        },
+        null,
+        2,
+      )}\n`,
+      'utf8',
+    );
+
+    const reminders = await listInterviewReminders({
+      now: '2025-01-10T09:30:00.000Z',
+      staleAfterDays: 3,
+    });
+
+    expect(reminders).toEqual([
+      {
+        job_id: 'job-started',
+        reason: 'stale',
+        sessions: 1,
+        last_session_at: '2025-01-01T09:30:00.000Z',
+        stale_for_days: 9,
+      },
+    ]);
+  });
+
+  it('returns an empty list when no reminders are due', async () => {
+    const { setInterviewDataDir, listInterviewReminders } = await import(
+      '../src/interviews.js'
+    );
+
+    setInterviewDataDir(dataDir);
+    const reminders = await listInterviewReminders({
+      now: '2025-02-01T00:00:00.000Z',
+      staleAfterDays: 5,
+    });
+    expect(reminders).toEqual([]);
   });
 });
 
