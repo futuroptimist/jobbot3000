@@ -21,6 +21,16 @@ That's it! The web server will start with all backend functionality enabled.
 
 For detailed setup, CLI usage, and environment options, see [docs/getting-started.md](docs/getting-started.md).
 
+### Recruiter reach-outs
+
+1. Save the raw email to disk, then ingest it: `node bin/ingest-recruiter.ts --source emails/recruiter.txt`.
+2. Open **Opportunities ▸ New → Recruiter outreach** to paste additional emails directly from the UI.
+3. Confirm the parsed phone screen details (`Phone screen: Thu Oct 23, 2:00 PM PT`) and advance the
+   lifecycle when the call finishes.
+
+Ingestion is idempotent: running the CLI twice for the same email will update the existing
+opportunity instead of creating duplicates.
+
 ## API Setup (Optional)
 
 By default, jobbot3000 runs with mock data enabled, so you can explore the interface without API tokens. When you're ready to connect to real job boards, follow these steps:
@@ -98,6 +108,25 @@ Run the snippet with `node example.js` after saving it to a file in the project 
 - [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) – prompt reference index
 - [docs/user-journeys.md](docs/user-journeys.md) – primary user journeys and flows
 - [GitHub Actions: web-screenshots.yml](https://github.com/futuroptimist/jobbot3000/actions/workflows/web-screenshots.yml) – captures the latest UI flows for regressions
+
+### Durable data export/import
+
+All recruiter outreach, contacts, and lifecycle events live in `data/opportunities.db` (SQLite via
+Drizzle ORM). Use the bundled scripts to back up or restore records:
+
+```bash
+# Export every table as newline-delimited JSON
+node scripts/export-data.ts > backups/opportunities.ndjson
+
+# Validate and import (dry-run)
+node scripts/import-data.ts --source backups/opportunities.ndjson --dry-run
+
+# Apply the import
+node scripts/import-data.ts --source backups/opportunities.ndjson
+```
+
+Both scripts respect `JOBBOT_DATA_DIR` so you can point to alternate data directories during tests or
+migrations.
 
 ## UI screenshots
 

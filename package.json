@@ -33,8 +33,10 @@
     "node": ">=20"
   },
   "dependencies": {
+    "better-sqlite3": "^12.4.1",
     "docx": "^9.5.1",
     "dotenv": "^16.6.1",
+    "drizzle-orm": "^0.44.6",
     "express": "^4.21.2",
     "html-to-text": "9.0.5",
     "jszip": "^3.10.1",
@@ -61,7 +63,8 @@
     "vitest": "^3.2.4"
   },
   "lint-staged": {
-    "*.{js,mjs,cjs,ts,tsx,jsx}": "eslint --max-warnings=0",
+    "*.{js,mjs,cjs,jsx}": "eslint --max-warnings=0",
+    "*.{ts,tsx}": "prettier --check",
     "*.{json,md,mdx,yml,yaml}": "prettier --check"
   },
   "simple-git-hooks": {
