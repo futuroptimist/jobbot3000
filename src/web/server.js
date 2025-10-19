@@ -829,6 +829,34 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
   .reminders-actions__message[data-variant='error'] {
     color: var(--danger-text);
   }
+  .shortlist-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 1rem 0 0.5rem;
+  }
+  .shortlist-actions button {
+    border-radius: 999px;
+    border: 1px solid var(--pill-border);
+    background-color: var(--pill-bg);
+    color: var(--pill-text);
+    padding: 0.4rem 1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .shortlist-actions button[disabled] {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  .shortlist-actions__message {
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+  .shortlist-actions__message[data-variant='error'] {
+    color: var(--danger-text);
+  }
   .status-panel__empty {
     color: var(--muted);
   }
@@ -1407,6 +1435,38 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             throw new Error('File downloads are not supported in this environment');
           }
           const blob = new Blob([contents], { type });
+          if (typeof blob.text !== 'function') {
+            const serialized = (() => {
+              if (typeof contents === 'string') {
+                return contents;
+              }
+              const decode =
+                typeof TextDecoder === 'function'
+                  ? input => {
+                      try {
+                        return new TextDecoder().decode(input);
+                      } catch {
+                        return String(contents ?? '');
+                      }
+                    }
+                  : null;
+              if (contents instanceof ArrayBuffer) {
+                return decode ? decode(contents) : String(contents ?? '');
+              }
+              if (ArrayBuffer.isView(contents)) {
+                return decode ? decode(contents) : String(contents ?? '');
+              }
+              try {
+                return JSON.stringify(contents);
+              } catch {
+                return String(contents ?? '');
+              }
+            })();
+            Object.defineProperty(blob, 'text', {
+              value: async () => serialized,
+              configurable: true,
+            });
+          }
           const url = window.URL.createObjectURL(blob);
           try {
             const link = document.createElement('a');
@@ -1486,6 +1546,16 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           const resetButton = section.querySelector('[data-shortlist-reset]');
           const remindersButton = section.querySelector('[data-reminders-export]');
           const remindersMessage = section.querySelector('[data-reminders-message]');
+          const exportElements = (() => {
+            const container = section.querySelector('[data-shortlist-actions]');
+            if (!container) return null;
+            return {
+              container,
+              json: container.querySelector('[data-shortlist-export-json]'),
+              csv: container.querySelector('[data-shortlist-export-csv]'),
+              message: container.querySelector('[data-shortlist-export-message]'),
+            };
+          })();
           const table = section.querySelector('[data-shortlist-table]');
           const tbody = section.querySelector('[data-shortlist-body]');
           const emptyState = section.querySelector('[data-shortlist-empty]');
@@ -1531,6 +1601,7 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           })();
           const actionState = { jobId: null, submitting: false, enabled: false };
           const remindersState = { running: false };
+          const exportState = { running: false };
 
           function formatStatusLabelText(value) {
             return (value || '')
@@ -1574,6 +1645,189 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             remindersMessage.textContent = messageText;
             remindersMessage.setAttribute('data-variant', variant);
             remindersMessage.removeAttribute('hidden');
+          }
+
+          function setExportMessage(variant, text) {
+            if (!exportElements?.message) return;
+            const messageText = typeof text === 'string' ? text.trim() : '';
+            if (!variant || !messageText) {
+              exportElements.message.textContent = '';
+              exportElements.message.setAttribute('hidden', '');
+              exportElements.message.removeAttribute('data-variant');
+              exportElements.message.removeAttribute('role');
+              return;
+            }
+            exportElements.message.textContent = messageText;
+            exportElements.message.setAttribute('data-variant', variant);
+            exportElements.message.setAttribute(
+              'role',
+              variant === 'error' ? 'alert' : 'status',
+            );
+            exportElements.message.removeAttribute('hidden');
+          }
+
+          function cloneFiltersForExport() {
+            if (!state.filters || typeof state.filters !== 'object') {
+              return {};
+            }
+            const cloned = {};
+            for (const [key, value] of Object.entries(state.filters)) {
+              if (Array.isArray(value)) {
+                cloned[key] = value.slice();
+              } else if (value !== undefined) {
+                cloned[key] = value;
+              }
+            }
+            return cloned;
+          }
+
+          function buildShortlistExportPayload() {
+            const items = Array.isArray(state.items) ? state.items : [];
+            const total = Number.isFinite(state.total) ? state.total : items.length;
+            const offset = Number.isFinite(state.offset) ? state.offset : 0;
+            const limit = Number.isFinite(state.limit) ? state.limit : items.length;
+            return {
+              total,
+              offset,
+              limit,
+              filters: cloneFiltersForExport(),
+              items,
+            };
+          }
+
+          function formatExportCsvValue(value) {
+            if (value == null) {
+              return '';
+            }
+            const text = String(value);
+            if (/[",\n]/.test(text)) {
+              return '"' + text.replace(/"/g, '""') + '"';
+            }
+            return text;
+          }
+
+          function buildShortlistCsv(items) {
+            const lines = [
+              [
+                'job_id',
+                'location',
+                'level',
+                'compensation',
+                'tags',
+                'synced_at',
+                'discard_count',
+                'last_discard_reason',
+                'last_discard_at',
+                'last_discard_tags',
+              ].join(','),
+            ];
+            for (const item of Array.isArray(items) ? items : []) {
+              if (!item || typeof item !== 'object') continue;
+              const metadata =
+                item && typeof item.metadata === 'object' && item.metadata
+                  ? item.metadata
+                  : {};
+              const tags = Array.isArray(item.tags)
+                ? item.tags
+                    .map(tag => (typeof tag === 'string' ? tag.trim() : ''))
+                    .filter(Boolean)
+                : [];
+              const discardCount =
+                typeof item.discard_count === 'number' ? item.discard_count : 0;
+              const lastDiscard =
+                item && typeof item.last_discard === 'object' ? item.last_discard : null;
+              const discardTags = Array.isArray(lastDiscard?.tags)
+                ? lastDiscard.tags
+                    .map(tag => (typeof tag === 'string' ? tag.trim() : ''))
+                    .filter(Boolean)
+                : [];
+              const row = [
+                formatExportCsvValue(
+                  typeof item.id === 'string' && item.id.trim() ? item.id.trim() : '',
+                ),
+                formatExportCsvValue(metadata.location || ''),
+                formatExportCsvValue(metadata.level || ''),
+                formatExportCsvValue(metadata.compensation || ''),
+                formatExportCsvValue(tags.join('; ')),
+                formatExportCsvValue(metadata.synced_at || ''),
+                formatExportCsvValue(discardCount),
+                formatExportCsvValue(
+                  lastDiscard && typeof lastDiscard.reason === 'string'
+                    ? lastDiscard.reason
+                    : '',
+                ),
+                formatExportCsvValue(
+                  lastDiscard && typeof lastDiscard.discarded_at === 'string'
+                    ? lastDiscard.discarded_at
+                    : '',
+                ),
+                formatExportCsvValue(discardTags.join('; ')),
+              ];
+              lines.push(row.join(','));
+            }
+            if (lines.length === 1) {
+              lines.push(new Array(10).fill('').join(','));
+            }
+            return lines.join('\n') + '\n';
+          }
+
+          function runShortlistExport(format) {
+            if (exportState.running) {
+              return false;
+            }
+            const button = exportElements?.[format];
+            if (!button) {
+              return false;
+            }
+            if (state.loading && !state.loaded) {
+              setExportMessage('info', 'Shortlist is still loading. Try again shortly.');
+              return false;
+            }
+            exportState.running = true;
+            button.disabled = true;
+            button.setAttribute('aria-busy', 'true');
+            setExportMessage('info', 'Preparing shortlist export…');
+
+            try {
+              const payload = buildShortlistExportPayload();
+              const filename =
+                format === 'csv' ? 'shortlist-entries.csv' : 'shortlist-entries.json';
+              const contents =
+                format === 'csv'
+                  ? buildShortlistCsv(payload.items)
+                  : JSON.stringify(payload, null, 2) + '\n';
+              const type = format === 'csv' ? 'text/csv' : 'application/json';
+              downloadFile(contents, { filename, type });
+              setExportMessage('info', 'Download ready: ' + filename);
+              scheduleShortlistExported({
+                format,
+                success: true,
+                filename,
+                count: Array.isArray(payload.items) ? payload.items.length : 0,
+                total: payload.total,
+                offset: payload.offset,
+                limit: payload.limit,
+                filters: payload.filters,
+              });
+              return true;
+            } catch (error) {
+              const message =
+                error && typeof error.message === 'string'
+                  ? error.message
+                  : 'Failed to export shortlist';
+              setExportMessage('error', message);
+              scheduleShortlistExported({
+                format,
+                success: false,
+                error: message,
+                filters: cloneFiltersForExport(),
+              });
+              return false;
+            } finally {
+              exportState.running = false;
+              button.disabled = false;
+              button.removeAttribute('aria-busy');
+            }
           }
 
           async function exportRemindersCalendar() {
@@ -1693,6 +1947,7 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             total: 0,
             filters: {},
             lastError: null,
+            items: [],
           };
 
           function parseTags(value) {
@@ -1943,9 +2198,10 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           }
 
           function renderRows(items) {
+            state.items = Array.isArray(items) ? items : [];
             if (!tbody) return;
             tbody.textContent = '';
-            if (!Array.isArray(items) || items.length === 0) {
+            if (state.items.length === 0) {
               emptyState?.removeAttribute('hidden');
               table?.setAttribute('hidden', '');
               pagination?.setAttribute('hidden', '');
@@ -1956,7 +2212,7 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             table?.removeAttribute('hidden');
 
             const fragment = document.createDocumentFragment();
-            for (const item of items) {
+            for (const item of state.items) {
               const row = document.createElement('tr');
               const hasMetadata =
                 item &&
@@ -2283,19 +2539,26 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               const items = Array.isArray(data.items) ? data.items : [];
               state.loaded = true;
               state.loading = false;
-              state.filters = filters || {};
+              state.filters = {};
+              if (filters && typeof filters === 'object') {
+                for (const [key, value] of Object.entries(filters)) {
+                  state.filters[key] = Array.isArray(value) ? value.slice() : value;
+                }
+              }
               state.limit = clampLimit(data.limit ?? nextLimit);
               state.offset = Math.max(0, data.offset ?? nextOffset);
               state.total = Math.max(0, data.total ?? items.length);
               state.lastError = null;
               renderRows(items);
               updatePaginationControls(data);
+              setExportMessage(null);
               setPanelState('applications', 'ready', { preserveMessage: true });
               dispatchApplicationsLoaded(data);
               return true;
             } catch (err) {
               state.loading = false;
               state.lastError = err;
+              state.items = [];
               const message =
                 err && typeof err.message === 'string'
                   ? err.message
@@ -2314,6 +2577,7 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             state.filters = {};
             state.offset = 0;
             state.limit = defaultLimit;
+            setExportMessage(null);
           }
 
             form?.addEventListener('submit', event => {
@@ -2342,6 +2606,16 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             remindersButton?.addEventListener('click', event => {
               event.preventDefault();
               exportRemindersCalendar();
+            });
+
+            exportElements?.json?.addEventListener('click', event => {
+              event.preventDefault();
+              runShortlistExport('json');
+            });
+
+            exportElements?.csv?.addEventListener('click', event => {
+              event.preventDefault();
+              runShortlistExport('csv');
             });
 
           actionElements?.clear?.addEventListener('click', () => {
@@ -4016,6 +4290,21 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           dispatchDocumentEvent('jobbot:applications-loaded', detail);
         }
 
+        function dispatchShortlistExported(detail = {}) {
+          dispatchDocumentEvent('jobbot:shortlist-exported', detail);
+        }
+
+        function scheduleShortlistExported(detail = {}) {
+          const emit = () => {
+            dispatchShortlistExported(detail);
+          };
+          if (typeof queueMicrotask === 'function') {
+            queueMicrotask(emit);
+          } else {
+            setTimeout(emit, 0);
+          }
+        }
+
         function dispatchListingsReady(detail = {}) {
           dispatchDocumentEvent('jobbot:listings-ready', detail);
         }
@@ -4832,6 +5121,11 @@ export function createWebApp({
             <button type="button" data-shortlist-reset data-variant="ghost">Reset</button>
           </div>
         </form>
+        <div class="shortlist-actions" data-shortlist-actions>
+          <button type="button" data-shortlist-export-json>Download JSON</button>
+          <button type="button" data-shortlist-export-csv>Download CSV</button>
+          <p class="shortlist-actions__message" data-shortlist-export-message hidden></p>
+        </div>
         <div class="reminders-actions">
           <button type="button" data-reminders-export>Calendar Sync</button>
           <p class="reminders-actions__message" data-reminders-message hidden></p>
