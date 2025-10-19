@@ -420,6 +420,41 @@ call scheduled"`.
   toggle must produce identical results. [`test/web-server.test.js`](../test/web-server.test.js)
   exercises redacted and unredacted downloads so both paths stay aligned.
 
+## Journey 8: Capture Recruiter Outreach and Drive the Interview Loop
+
+**Goal:** Make cold recruiter emails durable, actionable records that feed interview prep.
+
+### CLI flow
+
+1. Save the recruiter email as plaintext and ingest it with
+   `node bin/ingest-recruiter.ts --source emails/instabase.txt`. The CLI persists contacts,
+   attachments, and lifecycle events in `data/opportunities.db`.
+2. Run `jobbot analytics sankey --json` (or use the new Sankey UI) to confirm the
+   `recruiter_outreach → phone_screen_scheduled` edge appears alongside other stages.
+3. Trigger reminders with `jobbot reminders schedule --opportunity <uid>` so follow-ups and prep
+   checklists fire relative to the scheduled phone screen.
+4. Export the durable record via `node scripts/export-data.ts > backups/opportunities.ndjson` to
+   sync across devices.
+
+### Web flow
+
+1. From **Opportunities ▸ New → Recruiter outreach**, paste the email body. The modal previews the
+   parsed contact, subject, and proposed times before saving.
+2. The opportunity detail view surfaces the phone screen schedule (`Phone screen: Thu Oct 23, 2:00 PM PT`)
+   with quick actions to confirm availability or adjust reminders.
+3. Use **Prep ▸ Interviews** to launch the automatically generated prep plan seeded from the outreach
+   metadata (company, role hint, recruiter notes).
+4. Advance the lifecycle to **Phone screen done** once the conversation finishes; the UI appends the
+   corresponding audit entry and refreshes the Sankey to show the updated edge weight.
+
+### Resilience & recovery
+
+- Duplicate ingests are idempotent; hashes keep recruiter outreach from creating duplicate records.
+- Missing or malformed timestamps fall back to the email header `Date:` value while logging a warning
+  in the audit trail.
+- Export/import flows validate schemas (via Zod) before writing so corrupted backups never clobber
+  production data.
+
 ### Failure modes & alerts
 
 - Schema version mismatches trigger migrations before analytics runs; failures halt processing and
