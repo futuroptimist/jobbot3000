@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { JSDOM } from "jsdom";
+import fs from "node:fs/promises";
+import path from "node:path";
 
 let activeServers = [];
 
@@ -450,6 +452,7 @@ describe("web server status page", () => {
       }),
     };
     commandAdapter.shortlistList = commandAdapter["shortlist-list"];
+    commandAdapter.trackReminders = commandAdapter["track-reminders"];
 
     const server = await startServer({ commandAdapter });
     const { dom, boot } = await renderStatusDom(server, {
@@ -596,6 +599,7 @@ describe("web server status page", () => {
     const originalRevokeObjectURL = URL.revokeObjectURL;
     URL.createObjectURL = vi.fn(() => "blob:reminders");
     URL.revokeObjectURL = vi.fn();
+    const BlobConstructor = dom.window.Blob;
     const anchorClick = vi
       .spyOn(dom.window.HTMLAnchorElement.prototype, "click")
       .mockImplementation(() => {});
@@ -615,13 +619,132 @@ describe("web server status page", () => {
     expect(exportEvent.detail).toMatchObject({ success: true, format: "ics" });
     expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
     const blob = URL.createObjectURL.mock.calls[0]?.[0];
-    expect(blob).toBeInstanceOf(dom.window.Blob);
+    expect(blob).toBeInstanceOf(BlobConstructor);
     expect(blob.type).toBe("text/calendar");
     expect(anchorClick).toHaveBeenCalledTimes(1);
     expect(message?.textContent).toContain("jobbot-reminders.ics");
 
     URL.createObjectURL = originalCreateObjectURL;
     URL.revokeObjectURL = originalRevokeObjectURL;
+    anchorClick.mockRestore();
+  });
+
+  it("logs reminder export failures and surfaces a bug report download", async () => {
+    const logPath = path.resolve("logs", "calendar.log");
+    await fs.rm(logPath, { force: true });
+
+    const commandAdapter = {
+      "shortlist-list": vi.fn(async () => ({
+        command: "shortlist-list",
+        format: "json",
+        stdout: "",
+        stderr: "",
+        data: {
+          total: 0,
+          offset: 0,
+          limit: 10,
+          filters: {},
+          items: [],
+          hasMore: false,
+        },
+      })),
+      "track-reminders": vi.fn(async () => {
+        const error = new Error("Calendar serialization failed");
+        error.stdout = "writing calendar";
+        error.stderr = "invalid reminder";
+        error.correlationId = "corr-test";
+        throw error;
+      }),
+    };
+    commandAdapter.shortlistList = commandAdapter["shortlist-list"];
+    
+    const server = await startServer({ commandAdapter });
+    const { dom, boot } = await renderStatusDom(server, {
+      pretendToBeVisual: true,
+      autoBoot: false,
+    });
+
+    const waitForEvent = (name, timeout = 500) =>
+      waitForDomEvent(dom, name, timeout);
+
+    const readyPromise = waitForEvent("jobbot:applications-ready");
+    await boot();
+    await readyPromise;
+
+    const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
+    dom.window.location.hash = "#applications";
+    dom.window.dispatchEvent(new HashChange("hashchange"));
+
+    await waitForEvent("jobbot:applications-loaded");
+
+    const { URL } = dom.window;
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    URL.createObjectURL = vi.fn(() => "blob:bug-report");
+    URL.revokeObjectURL = vi.fn();
+    const BlobConstructor = dom.window.Blob;
+    const blobCalls = [];
+    const blobSpy = vi
+      .spyOn(dom.window, "Blob")
+      .mockImplementation((parts = [], options) => {
+        blobCalls.push({ parts, options });
+        return new BlobConstructor(parts, options);
+      });
+    const anchorClick = vi
+      .spyOn(dom.window.HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+
+    const button = dom.window.document.querySelector("[data-reminders-export]");
+    const message = dom.window.document.querySelector(
+      "[data-reminders-message]",
+    );
+    const reportButton = dom.window.document.querySelector(
+      "[data-reminders-report]",
+    );
+
+    button?.dispatchEvent(
+      new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
+
+    const exportEvent = await waitForEvent("jobbot:reminders-exported");
+
+    expect(commandAdapter["track-reminders"]).toHaveBeenCalledTimes(1);
+    expect(exportEvent.detail).toMatchObject({ success: false, format: "ics" });
+    expect(message?.textContent).toContain("Calendar serialization failed");
+    expect(reportButton?.hasAttribute("hidden")).toBe(false);
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+
+    reportButton?.dispatchEvent(
+      new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
+
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+    const blob = URL.createObjectURL.mock.calls[0]?.[0];
+    expect(blob).toBeInstanceOf(BlobConstructor);
+    const reportRaw = blobCalls[0]?.parts?.[0];
+    expect(typeof reportRaw).toBe("string");
+    const reportContents = JSON.parse(reportRaw);
+    expect(reportContents).toMatchObject({
+      logPath: "logs/calendar.log",
+      entry: expect.objectContaining({
+        error: "Calendar serialization failed",
+        command: "track-reminders",
+      }),
+    });
+
+    const logFile = await fs.readFile(logPath, "utf8");
+    const lines = logFile.trim().split(/\r?\n/);
+    const lastEntry = JSON.parse(lines[lines.length - 1]);
+    expect(lastEntry).toMatchObject({
+      error: "Calendar serialization failed",
+      command: "track-reminders",
+    });
+
+    await fs.rm(logPath, { force: true });
+
+    URL.createObjectURL = originalCreateObjectURL;
+    URL.revokeObjectURL = originalRevokeObjectURL;
+    blobSpy.mockRestore();
     anchorClick.mockRestore();
   });
 

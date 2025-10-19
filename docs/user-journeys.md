@@ -295,8 +295,8 @@ call scheduled"`.
 
 - File-write errors emit toasts and CLI errors referencing the failing path; the system queues the
   event in memory until the issue is resolved.
-- Calendar export failures (malformed events) log to `logs/calendar.log` and surface a "Report bug"
-  action that bundles relevant context.
+- Calendar export failures (malformed events) log to `logs/calendar.log` and surface a **Report bug**
+  button that downloads a JSON bundle referencing the log entry ID for maintainers.
 - Automated tests assert that CLI and web exports stay in sync by comparing ICS fixtures.
 
 ## Journey 6: Prepare for Interviews

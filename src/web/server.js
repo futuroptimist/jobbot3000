@@ -1,7 +1,9 @@
 import express from "express";
+import fs from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { performance } from "node:perf_hooks";
+import path from "node:path";
 
 import {
   createCommandAdapter,
@@ -121,6 +123,42 @@ function serializeJsonForHtml(value) {
   } catch {
     return "[]";
   }
+}
+
+const CALENDAR_LOG_RELATIVE_PATH = path.join("logs", "calendar.log");
+const CALENDAR_LOG_PATH = path.resolve(CALENDAR_LOG_RELATIVE_PATH);
+
+async function logCalendarExportFailure(entry = {}) {
+  const record = {
+    id: entry.id ?? randomBytes(12).toString("hex"),
+    timestamp: new Date().toISOString(),
+    command: "track-reminders",
+    error:
+      typeof entry.error === "string"
+        ? entry.error
+        : "Unknown calendar export failure",
+    stdout: entry.stdout ?? "",
+    stderr: entry.stderr ?? "",
+    payload: entry.payload ?? {},
+    payloadFields: Array.isArray(entry.payloadFields)
+      ? [...entry.payloadFields]
+      : [],
+    clientIp: entry.clientIp,
+    userAgent: entry.userAgent,
+  };
+
+  try {
+    await fs.mkdir(path.dirname(CALENDAR_LOG_PATH), { recursive: true });
+    await fs.appendFile(
+      CALENDAR_LOG_PATH,
+      `${JSON.stringify(record)}\n`,
+      "utf8",
+    );
+  } catch (error) {
+    record.logWriteFailed = error?.message ?? String(error);
+  }
+
+  return record;
 }
 
 function normalizePluginId(value) {
@@ -1446,7 +1484,11 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           if (!response.ok) {
             const message =
               parsed && typeof parsed.error === 'string' ? parsed.error : failureMessage;
-            throw new Error(message);
+            const error = new Error(message);
+            if (parsed && typeof parsed.report === 'object' && parsed.report !== null) {
+              error.report = parsed.report;
+            }
+            throw error;
           }
           const data = parsed?.data;
           if (!data || typeof data !== 'object') {
@@ -1486,6 +1528,7 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           const resetButton = section.querySelector('[data-shortlist-reset]');
           const remindersButton = section.querySelector('[data-reminders-export]');
           const remindersMessage = section.querySelector('[data-reminders-message]');
+          const remindersReportButton = section.querySelector('[data-reminders-report]');
           const table = section.querySelector('[data-shortlist-table]');
           const tbody = section.querySelector('[data-shortlist-body]');
           const emptyState = section.querySelector('[data-shortlist-empty]');
@@ -1531,6 +1574,21 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           })();
           const actionState = { jobId: null, submitting: false, enabled: false };
           const remindersState = { running: false };
+          const remindersReportState = { report: null };
+
+          if (remindersReportButton) {
+            remindersReportButton.setAttribute('hidden', '');
+            remindersReportButton.addEventListener('click', event => {
+              event.preventDefault();
+              if (!remindersReportState.report) {
+                return;
+              }
+              downloadFile(remindersReportState.report.contents, {
+                filename: remindersReportState.report.filename,
+                type: 'application/json',
+              });
+            });
+          }
 
           function formatStatusLabelText(value) {
             return (value || '')
@@ -1584,6 +1642,10 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             remindersButton.disabled = true;
             remindersButton.setAttribute('aria-busy', 'true');
             setRemindersMessage('info', 'Preparing reminder calendar…');
+            remindersReportState.report = null;
+            if (remindersReportButton) {
+              remindersReportButton.setAttribute('hidden', '');
+            }
 
             try {
               const data = await postCommand(
@@ -1611,7 +1673,38 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
                 error && typeof error.message === 'string'
                   ? error.message
                   : 'Failed to export reminders';
-              setRemindersMessage('error', message);
+              if (error?.report && remindersReportButton) {
+                const reportData = {
+                  logPath:
+                    typeof error.report.logPath === 'string'
+                      ? error.report.logPath
+                      : 'logs/calendar.log',
+                  entry:
+                    error.report.entry && typeof error.report.entry === 'object'
+                      ? error.report.entry
+                      : {},
+                };
+                const reportId =
+                  typeof error.report.id === 'string' && error.report.id
+                    ? error.report.id
+                    : String(Date.now());
+                const filename = 'jobbot-calendar-error-' + reportId + '.json';
+                remindersReportState.report = {
+                  filename,
+                  contents: JSON.stringify(reportData, null, 2),
+                };
+                remindersReportButton.removeAttribute('hidden');
+                setRemindersMessage(
+                  'error',
+                  message + ' — download the bug report and share it with maintainers.',
+                );
+              } else {
+                remindersReportState.report = null;
+                if (remindersReportButton) {
+                  remindersReportButton.setAttribute('hidden', '');
+                }
+                setRemindersMessage('error', message);
+              }
               dispatchRemindersExported({ success: false, format: 'ics', error: message });
               return false;
             } finally {
@@ -4834,6 +4927,7 @@ export function createWebApp({
         </form>
         <div class="reminders-actions">
           <button type="button" data-reminders-export>Calendar Sync</button>
+          <button type="button" data-reminders-report hidden>Report bug</button>
           <p class="reminders-actions__message" data-reminders-message hidden></p>
         </div>
         <div
@@ -5492,6 +5586,39 @@ export function createWebApp({
           traceId: err?.traceId,
         });
         const durationMs = roundDuration(started);
+
+        let report;
+        if (commandParam === "track-reminders") {
+          const logEntry = await logCalendarExportFailure({
+            error: response?.error,
+            stdout: response?.stdout,
+            stderr: response?.stderr,
+            payload: redactedPayload,
+            payloadFields,
+            clientIp,
+            userAgent,
+          });
+          report = {
+            id: logEntry.id,
+            logPath: CALENDAR_LOG_RELATIVE_PATH,
+            entry: {
+              id: logEntry.id,
+              timestamp: logEntry.timestamp,
+              command: logEntry.command,
+              error: logEntry.error,
+              stdout: logEntry.stdout,
+              stderr: logEntry.stderr,
+              payload: logEntry.payload,
+              payloadFields: logEntry.payloadFields,
+            },
+          };
+          if (logEntry.logWriteFailed) {
+            report.logWriteFailed = logEntry.logWriteFailed;
+          }
+        }
+
+        const responseBody = report ? { ...response, report } : response;
+
         logCommandTelemetry(logger, "error", {
           command: commandParam,
           status: "error",
@@ -5500,10 +5627,10 @@ export function createWebApp({
           payloadFields,
           clientIp,
           userAgent,
-          result: response,
+          result: responseBody,
           errorMessage: response?.error,
         });
-        res.status(502).json(response);
+        res.status(502).json(responseBody);
         await recordAudit({
           status: "error",
           durationMs,
@@ -5521,7 +5648,7 @@ export function createWebApp({
           actor: authContext?.subject ?? authPrincipal ?? "guest",
           actorDisplayName: authContext?.displayName,
           roles: authContext?.roles ? Array.from(authContext.roles).sort() : [],
-          result: response,
+          result: responseBody,
         });
       }
     },
