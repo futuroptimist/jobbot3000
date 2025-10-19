@@ -3,8 +3,6 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 
-import { eq } from 'drizzle-orm';
-import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import { z } from 'zod';
 
 const require = createRequire(import.meta.url);
@@ -12,11 +10,30 @@ const require = createRequire(import.meta.url);
 let BetterSqlite3;
 let betterSqlite3Error;
 let drizzleBetterSqlite3;
+let eq;
+let sqliteTable;
+let integer;
+let text;
+let auditLogTable;
 try {
   const BetterSqlite3Module = require('better-sqlite3');
   const drizzleModule = require('drizzle-orm/better-sqlite3');
+  const drizzleOrm = require('drizzle-orm');
+  const sqliteCore = require('drizzle-orm/sqlite-core');
   BetterSqlite3 = BetterSqlite3Module;
   ({ drizzle: drizzleBetterSqlite3 } = drizzleModule);
+  ({ eq } = drizzleOrm);
+  ({ integer, sqliteTable, text } = sqliteCore);
+  auditLogTable = sqliteTable('audit_log', {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    eventUid: text('event_uid').notNull().unique(),
+    opportunityUid: text('opportunity_uid'),
+    actor: text('actor'),
+    action: text('action').notNull(),
+    occurredAt: text('occurred_at').notNull(),
+    payload: text('payload'),
+    createdAt: text('created_at').notNull().default(''),
+  });
 } catch (error) {
   betterSqlite3Error = error;
   BetterSqlite3 = null;
@@ -63,17 +80,6 @@ export const auditEntrySchema = z.object({
   occurredAt: z.string().datetime(),
   payload: z.record(z.any()).optional(),
   createdAt: z.string().datetime(),
-});
-
-const auditLogTable = sqliteTable('audit_log', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  eventUid: text('event_uid').notNull().unique(),
-  opportunityUid: text('opportunity_uid'),
-  actor: text('actor'),
-  action: text('action').notNull(),
-  occurredAt: text('occurred_at').notNull(),
-  payload: text('payload'),
-  createdAt: text('created_at').notNull().default(''),
 });
 
 function computeAuditUid({ eventUid, action, occurredAt }) {

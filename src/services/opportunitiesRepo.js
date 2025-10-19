@@ -3,14 +3,6 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 
-import { eq } from 'drizzle-orm';
-import {
-  integer,
-  sqliteTable,
-  text,
-  uniqueIndex,
-} from 'drizzle-orm/sqlite-core';
-
 import {
   opportunityEventSchema,
   opportunitySchema,
@@ -21,11 +13,67 @@ const require = createRequire(import.meta.url);
 let BetterSqlite3;
 let betterSqlite3Error;
 let drizzleBetterSqlite3;
+let eq;
+let sqliteTable;
+let integer;
+let text;
+let uniqueIndex;
+let opportunitiesTable;
+let contactsTable;
+let eventsTable;
 try {
   const BetterSqlite3Module = require('better-sqlite3');
   const drizzleModule = require('drizzle-orm/better-sqlite3');
+  const drizzleOrm = require('drizzle-orm');
+  const sqliteCore = require('drizzle-orm/sqlite-core');
   BetterSqlite3 = BetterSqlite3Module;
   ({ drizzle: drizzleBetterSqlite3 } = drizzleModule);
+  ({ eq } = drizzleOrm);
+  ({ integer, sqliteTable, text, uniqueIndex } = sqliteCore);
+  opportunitiesTable = sqliteTable('opportunities', {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    uid: text('uid').notNull().unique(),
+    company: text('company').notNull(),
+    roleHint: text('role_hint'),
+    contactEmail: text('contact_email'),
+    contactName: text('contact_name'),
+    lifecycleState: text('lifecycle_state').notNull(),
+    firstSeenAt: text('first_seen_at').notNull(),
+    lastEventAt: text('last_event_at'),
+    subject: text('subject'),
+    source: text('source'),
+    createdAt: text('created_at').notNull().default(''),
+    updatedAt: text('updated_at').notNull().default(''),
+  });
+
+  contactsTable = sqliteTable(
+    'contacts',
+    {
+      id: integer('id').primaryKey({ autoIncrement: true }),
+      opportunityUid: text('opportunity_uid').notNull(),
+      name: text('name'),
+      email: text('email'),
+      phone: text('phone'),
+      createdAt: text('created_at').notNull().default(''),
+      updatedAt: text('updated_at').notNull().default(''),
+    },
+    table => ({
+      opportunityEmailIdx: uniqueIndex('contacts_opportunity_email_idx').on(
+        table.opportunityUid,
+        table.email,
+      ),
+    }),
+  );
+
+  eventsTable = sqliteTable('events', {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    eventUid: text('event_uid').notNull().unique(),
+    opportunityUid: text('opportunity_uid').notNull(),
+    type: text('type').notNull(),
+    occurredAt: text('occurred_at').notNull(),
+    payload: text('payload'),
+    createdAt: text('created_at').notNull().default(''),
+  });
 } catch (error) {
   betterSqlite3Error = error;
   BetterSqlite3 = null;
@@ -33,51 +81,6 @@ try {
 }
 
 let warnedAboutRepoFallback = false;
-
-const opportunitiesTable = sqliteTable('opportunities', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  uid: text('uid').notNull().unique(),
-  company: text('company').notNull(),
-  roleHint: text('role_hint'),
-  contactEmail: text('contact_email'),
-  contactName: text('contact_name'),
-  lifecycleState: text('lifecycle_state').notNull(),
-  firstSeenAt: text('first_seen_at').notNull(),
-  lastEventAt: text('last_event_at'),
-  subject: text('subject'),
-  source: text('source'),
-  createdAt: text('created_at').notNull().default(''),
-  updatedAt: text('updated_at').notNull().default(''),
-});
-
-const contactsTable = sqliteTable(
-  'contacts',
-  {
-    id: integer('id').primaryKey({ autoIncrement: true }),
-    opportunityUid: text('opportunity_uid').notNull(),
-    name: text('name'),
-    email: text('email'),
-    phone: text('phone'),
-    createdAt: text('created_at').notNull().default(''),
-    updatedAt: text('updated_at').notNull().default(''),
-  },
-  table => ({
-    opportunityEmailIdx: uniqueIndex('contacts_opportunity_email_idx').on(
-      table.opportunityUid,
-      table.email,
-    ),
-  }),
-);
-
-const eventsTable = sqliteTable('events', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  eventUid: text('event_uid').notNull().unique(),
-  opportunityUid: text('opportunity_uid').notNull(),
-  type: text('type').notNull(),
-  occurredAt: text('occurred_at').notNull(),
-  payload: text('payload'),
-  createdAt: text('created_at').notNull().default(''),
-});
 
 function defaultDataDir() {
   return process.env.JOBBOT_DATA_DIR || path.resolve('data');
