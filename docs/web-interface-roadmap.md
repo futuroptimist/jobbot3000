@@ -2,6 +2,11 @@
 
 ## Vision Overview
 
+- ⚠️ **Local-only preview:** The web adapter is not production-ready. Run it exclusively on
+  trusted local hardware until the security milestones in
+  [`docs/web-security-roadmap.md`](./web-security-roadmap.md) are complete. Cloud or multi-user
+  deployments risk leaking secrets, PII, and other sensitive data.
+
 - Deliver a local-first web application that streamlines tracking and managing job applications while
   retaining full parity with the existing CLI workflows.
 - Maintain the CLI as the single source of truth, with the web UI orchestrating commands through a

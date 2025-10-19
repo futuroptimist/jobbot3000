@@ -125,6 +125,91 @@ function serializeJsonForHtml(value) {
   }
 }
 
+const CLIENT_SESSION_COOKIE = "jobbot_session_id";
+const CLIENT_SESSION_HEADER = "X-Jobbot-Session-Id";
+const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{16,128}$/;
+
+function normalizeSessionId(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (!SESSION_ID_PATTERN.test(trimmed)) {
+    return null;
+  }
+  return trimmed;
+}
+
+function parseCookieHeader(headerValue) {
+  if (typeof headerValue !== "string" || !headerValue.trim()) {
+    return new Map();
+  }
+  const entries = headerValue
+    .split(";")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const index = entry.indexOf("=");
+      if (index === -1) {
+        return [entry, ""];
+      }
+      const name = entry.slice(0, index).trim();
+      const value = entry.slice(index + 1).trim();
+      try {
+        return [name, decodeURIComponent(value)];
+      } catch {
+        return [name, value];
+      }
+    });
+  return new Map(entries);
+}
+
+function applySessionResponse(res, sessionId) {
+  if (!sessionId) {
+    return;
+  }
+  const cookieDirectives = [
+    `${CLIENT_SESSION_COOKIE}=${encodeURIComponent(sessionId)}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+  ];
+  res.append("Set-Cookie", cookieDirectives.join("; "));
+  res.set(CLIENT_SESSION_HEADER, sessionId);
+}
+
+function ensureClientSession(req, res, options = {}) {
+  const { createIfMissing = true } = options;
+  const headerValue = normalizeSessionId(req.get(CLIENT_SESSION_HEADER));
+  const cookies = parseCookieHeader(req.get("cookie"));
+  const cookieValue = normalizeSessionId(cookies.get(CLIENT_SESSION_COOKIE));
+
+  if (headerValue) {
+    if (headerValue !== cookieValue) {
+      applySessionResponse(res, headerValue);
+    } else {
+      res.set(CLIENT_SESSION_HEADER, headerValue);
+    }
+    return headerValue;
+  }
+
+  if (cookieValue) {
+    res.set(CLIENT_SESSION_HEADER, cookieValue);
+    return cookieValue;
+  }
+
+  if (!createIfMissing) {
+    return null;
+  }
+
+  const sessionId = randomBytes(24).toString("hex");
+  applySessionResponse(res, sessionId);
+  return sessionId;
+}
+
 const CALENDAR_LOG_RELATIVE_PATH = path.join("logs", "calendar.log");
 const CALENDAR_LOG_PATH = path.resolve(CALENDAR_LOG_RELATIVE_PATH);
 
@@ -467,6 +552,20 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     margin-top: 0.5rem;
     color: var(--muted);
     font-size: 0.9rem;
+  }
+  .environment-warning {
+    margin-top: 1.5rem;
+    border-radius: 1rem;
+    border: 2px solid var(--danger-border);
+    background-color: var(--danger-bg);
+    color: var(--danger-text);
+    padding: 1.1rem 1.35rem;
+    line-height: 1.5;
+  }
+  .environment-warning strong {
+    display: block;
+    font-size: 1.1rem;
+    margin-bottom: 0.5rem;
   }
   .grid {
     display: grid;
@@ -1046,6 +1145,8 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
         const statusPanels = new Map();
         const csrfHeader = document.body?.dataset.csrfHeader || '';
         const csrfToken = document.body?.dataset.csrfToken || '';
+        const sessionHeader = document.body?.dataset.sessionHeader || '';
+        let sessionId = document.body?.dataset.sessionId || '';
         const routeListeners = new Map();
         const pluginManifestElement = document.getElementById('jobbot-plugin-manifest');
         let pluginManifest = [];
@@ -1522,6 +1623,25 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           return blob;
         }
 
+        function rememberSessionFromResponse(response) {
+          if (!response || typeof response.headers?.get !== 'function') {
+            return;
+          }
+          if (!sessionHeader) {
+            return;
+          }
+          const nextSession = response.headers.get(sessionHeader);
+          if (typeof nextSession === 'string') {
+            const trimmed = nextSession.trim();
+            if (trimmed) {
+              sessionId = trimmed;
+              if (document?.body?.dataset) {
+                document.body.dataset.sessionId = trimmed;
+              }
+            }
+          }
+        }
+
         async function postCommand(pathname, payload, { invalidResponse, failureMessage }) {
           if (typeof fetch !== 'function') {
             throw new Error('Fetch API is unavailable in this environment');
@@ -1530,11 +1650,15 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           if (csrfHeader && csrfToken) {
             headers[csrfHeader] = csrfToken;
           }
+          if (sessionHeader && sessionId) {
+            headers[sessionHeader] = sessionId;
+          }
           const response = await fetch(buildCommandUrl(pathname), {
             method: 'POST',
             headers,
             body: JSON.stringify(payload),
           });
+          rememberSessionFromResponse(response);
           let parsed;
           try {
             parsed = await response.json();
@@ -5049,6 +5173,7 @@ export function createWebApp({
   });
 
   app.get("/", (req, res) => {
+    const sessionId = ensureClientSession(req, res);
     const serviceName = normalizedInfo.service || "jobbot web interface";
     const version = normalizedInfo.version
       ? `Version ${normalizedInfo.version}`
@@ -5075,8 +5200,17 @@ export function createWebApp({
     const readmeUrl = `${repoUrl}/blob/main/README.md`;
     const roadmapUrl = `${repoUrl}/blob/main/docs/web-interface-roadmap.md`;
     const operationsUrl = `${repoUrl}/blob/main/docs/web-operational-playbook.md`;
+    const securityRoadmapUrl = `${repoUrl}/blob/main/docs/web-security-roadmap.md`;
     const csrfHeaderAttr = escapeHtml(csrfOptions.headerName);
     const csrfTokenAttr = escapeHtml(csrfOptions.token);
+    const sessionHeaderAttr = escapeHtml(CLIENT_SESSION_HEADER);
+    const sessionIdAttr = escapeHtml(sessionId ?? "");
+    const bodyAttributes = [
+      `data-csrf-header="${csrfHeaderAttr}"`,
+      `data-csrf-token="${csrfTokenAttr}"`,
+      `data-session-header="${sessionHeaderAttr}"`,
+      `data-session-id="${sessionIdAttr}"`,
+    ].join(" ");
     const pluginManifestJson = serializeJsonForHtml(pluginAssets.manifest);
     const pluginManifestScript =
       '<script type="application/json" id="jobbot-plugin-manifest">' +
@@ -5100,7 +5234,7 @@ export function createWebApp({
     <title>${escapeHtml(serviceName)}</title>
     <style>${STATUS_PAGE_STYLES}</style>
   </head>
-  <body data-csrf-header="${csrfHeaderAttr}" data-csrf-token="${csrfTokenAttr}">
+  <body ${bodyAttributes}>
     <a href="#main" class="pill" style="${skipLinkStyle}">Skip to main content</a>
     <header>
       <div class="header-actions">
@@ -5125,6 +5259,19 @@ export function createWebApp({
           with the experimental web interface. Use the navigation below to switch between the
           overview, available commands, and automated audits.
       </p>
+      <div class="environment-warning" role="alert">
+        <strong>Local-only preview &mdash; do not deploy</strong>
+        <p>
+          The jobbot3000 web interface is an experimental prototype. Run it exclusively on
+          trusted local hardware. Production builds or any cloud hosting can leak secrets, PII,
+          and other sensitive information.
+        </p>
+        <p>
+          Review the <a href="${escapeHtml(readmeUrl)}">README</a> and the
+          <a href="${escapeHtml(securityRoadmapUrl)}">web security hardening roadmap</a>
+          before experimenting beyond local development.
+        </p>
+      </div>
       <nav class="primary-nav" aria-label="Status navigation">
         <a href="#overview" data-route-link="overview">Overview</a>
         <a href="#applications" data-route-link="applications">Applications</a>
@@ -5676,6 +5823,9 @@ export function createWebApp({
       const started = performance.now();
       const clientIp = req.ip || req.socket?.remoteAddress || undefined;
       const userAgent = req.get("user-agent");
+      const sessionId = ensureClientSession(req, res, {
+        createIfMissing: !authOptions,
+      });
       let authContext = authOptions
         ? { subject: "unauthenticated", roles: new Set() }
         : { subject: "guest", roles: new Set(["viewer"]) };
@@ -5846,6 +5996,7 @@ export function createWebApp({
         subject: authContext?.subject,
         clientIp,
         userAgent,
+        sessionId,
       });
       clientPayloadStore.record(clientIdentity, commandParam, payload);
 
@@ -5962,6 +6113,9 @@ export function createWebApp({
   app.get("/commands/payloads/recent", (req, res) => {
     const clientIp = req.ip || req.socket?.remoteAddress || undefined;
     const userAgent = req.get("user-agent");
+    const sessionId = ensureClientSession(req, res, {
+      createIfMissing: !authOptions,
+    });
 
     const ensureCsrf = () => {
       const providedToken = req.get(csrfOptions.headerName);
@@ -5980,6 +6134,7 @@ export function createWebApp({
         subject: "guest",
         clientIp,
         userAgent,
+        sessionId,
       });
       const entries = clientPayloadStore.getRecent(identity);
       res.json({ entries });
@@ -6030,6 +6185,7 @@ export function createWebApp({
       subject: tokenEntry.subject,
       clientIp,
       userAgent,
+      sessionId,
     });
     const entries = clientPayloadStore.getRecent(identity);
     res.json({ entries });
@@ -6278,6 +6434,8 @@ export function startWebServer(options = {}) {
         csrfHeaderName: resolvedHeaderName,
         authHeaderName: normalizedAuth?.headerName ?? null,
         authScheme: normalizedAuth?.scheme ?? null,
+        sessionHeaderName: CLIENT_SESSION_HEADER,
+        sessionCookieName: CLIENT_SESSION_COOKIE,
         async close() {
           await new Promise((resolveClose, rejectClose) => {
             server.close((err) => {

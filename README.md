@@ -7,6 +7,12 @@
 
 **jobbot3000** is a self-hosted, open-source job search copilot.
 
+> [!WARNING]
+> The web interface is an experimental preview for local use only. Running production builds or
+> deploying to shared or cloud infrastructure can leak secrets, PII, and other sensitive data.
+> Operate on trusted hardware while we implement hardened authentication, storage, and network
+> isolation. Track the hardening plan in [docs/web-security-roadmap.md](docs/web-security-roadmap.md).
+
 ## Quickstart
 
 Requires Node.js 20+.
