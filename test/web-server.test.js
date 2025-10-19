@@ -2465,6 +2465,7 @@ describe("web server command endpoint", () => {
       traceId: "corr-123",
       payloadFields: ["input"],
     });
+    expect(entry.payload).toEqual({ input: "job.txt" });
     expect(typeof entry.durationMs).toBe("number");
     expect(entry.durationMs).toBeGreaterThanOrEqual(0);
     expect(entry.stdoutLength).toBe(2);
@@ -2513,10 +2514,69 @@ describe("web server command endpoint", () => {
       payloadFields: ["input"],
       errorMessage: "summarize command failed: boom",
     });
+    expect(entry.payload).toEqual({ input: "job.txt" });
     expect(typeof entry.durationMs).toBe("number");
     expect(entry.durationMs).toBeGreaterThanOrEqual(0);
     expect(entry.stdoutLength).toBe(4);
     expect(entry.stderrLength).toBe(4);
+  });
+
+  it("redacts payloads before logging telemetry", async () => {
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({
+        command: "summarize",
+        stdout: "ok",
+        stderr: "",
+      })),
+    };
+
+    const server = await startServer({ commandAdapter, logger });
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: buildCommandHeaders(server),
+      body: JSON.stringify({
+        input: "token=abcd1234secret",
+        format: "json",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    await response.json();
+
+    const entry = logger.info.mock.calls[0][0];
+    expect(entry.payload).toEqual({
+      input: "token=***redacted***",
+      format: "json",
+    });
+    expect(entry.payload.input).toBe("token=***redacted***");
+  });
+
+  it("requires secure logger transport for non-loopback hosts", async () => {
+    const { startWebServer } = await import("../src/web/server.js");
+
+    expect(() =>
+      startWebServer({
+        host: "0.0.0.0",
+        port: 0,
+        csrfToken: "test-csrf-token",
+        rateLimit: { windowMs: 1000, max: 50 },
+        logger: { info() {}, warn() {}, error() {} },
+      }),
+    ).toThrow(/secureTransport/i);
+
+    const server = await startWebServer({
+      host: "0.0.0.0",
+      port: 0,
+      csrfToken: "test-csrf-token",
+      rateLimit: { windowMs: 1000, max: 50 },
+      logger: { info() {}, warn() {}, error() {}, secureTransport: true },
+    });
+    activeServers.push(server);
   });
 
   it("sanitizes command payload strings before invoking the adapter", async () => {

@@ -1,6 +1,7 @@
 import express from "express";
 import { randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
+import net from "node:net";
 import { performance } from "node:perf_hooks";
 
 import {
@@ -23,6 +24,25 @@ import {
 } from "./client-payload-store.js";
 import { createAuditLogger } from "../shared/security/audit-log.js";
 import { WebSocket, WebSocketServer } from "ws";
+
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
+
+function isLoopbackHost(host) {
+  if (!host) return true;
+  const trimmed = host.trim();
+  if (!trimmed) return true;
+  if (LOOPBACK_HOSTS.has(trimmed.toLowerCase())) return true;
+  const bracketMatch = trimmed.match(/^\[(.*)]$/);
+  const normalized = bracketMatch ? bracketMatch[1] : trimmed;
+  const ipVersion = net.isIP(normalized);
+  if (ipVersion === 4) {
+    return normalized.startsWith("127.");
+  }
+  if (ipVersion === 6) {
+    return normalized === "::1";
+  }
+  return false;
+}
 
 function createInMemoryRateLimiter(options = {}) {
   const windowMs = Number(options.windowMs ?? 60000);
@@ -4553,6 +4573,7 @@ function buildCommandLogEntry({
   clientIp,
   userAgent,
   result,
+  payload,
   errorMessage,
 }) {
   const entry = {
@@ -4578,6 +4599,9 @@ function buildCommandLogEntry({
     entry.traceId = result.traceId;
   }
   if (errorMessage) entry.errorMessage = errorMessage;
+  if (payload !== undefined) {
+    entry.payload = redactValue(payload);
+  }
   return entry;
 }
 
@@ -5463,6 +5487,7 @@ export function createWebApp({
           clientIp,
           userAgent,
           result: sanitizedResult,
+          payload: redactedPayload,
         });
         res.status(200).json(sanitizedResult);
         await recordAudit({
@@ -5501,6 +5526,7 @@ export function createWebApp({
           clientIp,
           userAgent,
           result: response,
+          payload: redactedPayload,
           errorMessage: response?.error,
         });
         res.status(502).json(response);
@@ -5596,6 +5622,7 @@ export function startWebServer(options = {}) {
   if (!Number.isFinite(port) || port < 0 || port > 65535) {
     throw new Error("port must be a number between 0 and 65535");
   }
+  const isLoopback = isLoopbackHost(host);
   const {
     commandAdapter: providedCommandAdapter,
     commandAdapterOptions,
@@ -5610,6 +5637,11 @@ export function startWebServer(options = {}) {
     authScheme,
     ...rest
   } = options;
+  if (!isLoopback && logger && logger.secureTransport !== true) {
+    throw new Error(
+      "logger.secureTransport must be true when binding to non-loopback hosts",
+    );
+  }
   const commandAdapter =
     providedCommandAdapter ??
     createCommandAdapter({

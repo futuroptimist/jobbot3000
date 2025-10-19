@@ -17,6 +17,10 @@ expectations so on-call engineers can keep the CLI bridge healthy.
   [`scripts/docker-healthcheck.js`](../scripts/docker-healthcheck.js) to poll
   `/health` until the container reports `status: "ok"`, preventing traffic from
   routing before the CLI bridge is ready.
+- When binding to anything other than `127.0.0.1`/`::1`, configure the logger
+  with `secureTransport: true` so log forwarding stays encrypted. The server now
+  refuses to boot on remote hosts without a secure log transport; see
+  [`test/web-server.test.js`](../test/web-server.test.js).
 
 The status page now links directly to this playbook from the “Helpful
 references” card. [`test/web-server.test.js`](../test/web-server.test.js)
