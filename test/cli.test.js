@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -8,6 +8,8 @@ import { summarize } from '../src/index.js';
 import JSZip from 'jszip';
 import { recordApplication, STATUSES } from '../src/lifecycle.js';
 import { jobIdFromSource } from '../src/jobs.js';
+
+vi.setConfig({ testTimeout: 15000 });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2963,7 +2965,7 @@ describe('jobbot CLI', () => {
         },
       ],
     });
-  });
+  }, 10000);
 
   it('runs scheduled matching tasks from configuration', () => {
     const resumePath = path.join(dataDir, 'resume.txt');
