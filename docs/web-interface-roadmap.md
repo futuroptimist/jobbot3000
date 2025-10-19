@@ -339,37 +339,42 @@
 
 6. **Hardening and Packaging**
 
-   > [!NOTE] > **Backlog inventory (2025-10-18):** This section's outstanding future-work items
-   > included per-client input sanitization for CLI payloads alongside previously
-   > shipped rate limiting and CSRF guards. Larger roadmap items—such as multi-user
-   > access controls and real-time collaboration from the "Future Enhancements"
-   > section—remain multi-PR efforts, so the sanitization work was prioritized here
-   > as an actionable single-PR change.
+> [!NOTE] > **Update (2025-10-21):** Per-client input sanitization for CLI payloads
+> now ships alongside the existing rate limiting and CSRF guards. Each
+> authenticated (or guest) client receives an isolated sanitized payload log
+> exposed at `GET /commands/payloads/recent`, unlocking audit-grade previews of
+> the most recent CLI invocations without leaking another client's inputs.
+> Larger roadmap items—such as multi-user access controls and real-time
+> collaboration from the "Future Enhancements" section—remain multi-PR efforts
+> while this targeted hardening work lands as a single-PR change.
 
-   - Implement rate limiting, input sanitization, and CSRF tokens.
-     _Implemented (2025-10-18):_ `validateCommandPayload` now strips control
-     characters from every string field before invoking CLI adapters. The
-     regression coverage in [`test/web-server.test.js`](../test/web-server.test.js)
-     asserts that control characters are removed while preserving intentional
-     newlines, keeping the promise of input sanitization intact.
-   - Add configuration for local, staging, and production environments.
-     _Implemented (2025-10-02):_ [`src/web/config.js`](../src/web/config.js)
-     centralizes environment presets (development/staging/production) and
-     powers `scripts/web-server.js` so the CLI picks up consistent hosts,
-     ports, and rate limits per tier. Regression coverage in
-     [`test/web-config.test.js`](../test/web-config.test.js) locks the
-     defaults and override semantics in place.
-   - Provide Dockerfile and docker-compose for reproducible deployment.
-     _Implemented (2025-10-20):_ [`Dockerfile`](../Dockerfile) now builds the web
-     server image with production defaults, and
-     [`docker-compose.web.yml`](../docker-compose.web.yml) enables native CLI
-     execution by setting `JOBBOT_WEB_ENABLE_NATIVE_CLI=1` so containerized
-     deployments can invoke real commands. It also defines a health check that runs
-     [`scripts/docker-healthcheck.js`](../scripts/docker-healthcheck.js) to poll
-     `/health` inside the container. The regression coverage in
-     [`test/web-deployment.test.js`](../test/web-deployment.test.js) asserts both
-     the health check wiring and the native CLI flag, ensuring reproducible
-     deployments surface readiness before routing traffic.
+- Implement rate limiting, input sanitization, and CSRF tokens.
+  _Implemented (2025-10-21):_ `validateCommandPayload` now strips control
+  characters from every string field before invoking CLI adapters, and
+  `createWebApp` stores the sanitized payload per client so follow-up
+  requests can inspect it via `GET /commands/payloads/recent`. Regression
+  coverage in [`test/web-server.test.js`](../test/web-server.test.js)
+  exercises dual authenticated clients, verifying their payload histories
+  remain isolated and sanitized (control characters removed, whitespace
+  trimmed) while timestamps stay unique per entry.
+- Add configuration for local, staging, and production environments.
+  _Implemented (2025-10-02):_ [`src/web/config.js`](../src/web/config.js)
+  centralizes environment presets (development/staging/production) and
+  powers `scripts/web-server.js` so the CLI picks up consistent hosts,
+  ports, and rate limits per tier. Regression coverage in
+  [`test/web-config.test.js`](../test/web-config.test.js) locks the
+  defaults and override semantics in place.
+- Provide Dockerfile and docker-compose for reproducible deployment.
+  _Implemented (2025-10-20):_ [`Dockerfile`](../Dockerfile) now builds the web
+  server image with production defaults, and
+  [`docker-compose.web.yml`](../docker-compose.web.yml) enables native CLI
+  execution by setting `JOBBOT_WEB_ENABLE_NATIVE_CLI=1` so containerized
+  deployments can invoke real commands. It also defines a health check that runs
+  [`scripts/docker-healthcheck.js`](../scripts/docker-healthcheck.js) to poll
+  `/health` inside the container. The regression coverage in
+  [`test/web-deployment.test.js`](../test/web-deployment.test.js) asserts both
+  the health check wiring and the native CLI flag, ensuring reproducible
+  deployments surface readiness before routing traffic.
 
 - Document operational playbooks (monitoring, alerting, on-call runbooks).
   _Implemented (2025-10-05):_ [`docs/web-operational-playbook.md`](web-operational-playbook.md)
@@ -426,7 +431,8 @@
   required role, and records the actor plus role set in the audit log. The
   regression coverage in [`test/web-server.test.js`](../test/web-server.test.js)
   drives viewer/editor flows to lock the RBAC contract in place for future
-  deployments.
+  deployments, and now asserts denied commands capture the actor's display
+  name alongside their normalized role list.
 - Real-time collaboration via WebSocket subscriptions to CLI state changes.
   _Implemented (2025-10-19):_ `startWebServer` now exposes a `/events`
   WebSocket endpoint that streams sanitized command lifecycle payloads to

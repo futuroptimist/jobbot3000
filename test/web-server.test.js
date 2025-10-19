@@ -2355,6 +2355,53 @@ describe("web server command endpoint", () => {
     expect(successEvent.actor).toBe("editor@example.com");
   });
 
+  it("records actor display names when role checks deny a command", async () => {
+    const auditEvents = [];
+    const auditLogger = {
+      record: vi.fn(async (event) => {
+        auditEvents.push(event);
+      }),
+    };
+    const commandAdapter = {
+      "track-record": vi.fn(async () => ({ ok: true })),
+    };
+
+    const server = await startServer({
+      commandAdapter,
+      auditLogger,
+      auth: {
+        tokens: [
+          {
+            token: "viewer-token",
+            subject: "viewer@example.com",
+            displayName: "Viewer One",
+            roles: ["viewer"],
+          },
+        ],
+      },
+    });
+
+    const response = await fetch(`${server.url}/commands/track-record`, {
+      method: "POST",
+      headers: buildCommandHeaders(server, {
+        authorization: "Bearer viewer-token",
+      }),
+      body: JSON.stringify({ jobId: "job-123", status: "screening" }),
+    });
+
+    expect(response.status).toBe(403);
+    await response.json();
+
+    const rbacEvent = auditEvents.find((event) => event.reason === "rbac");
+    expect(rbacEvent).toMatchObject({
+      status: "forbidden",
+      command: "track-record",
+      actor: "viewer@example.com",
+      actorDisplayName: "Viewer One",
+      roles: ["viewer"],
+    });
+  });
+
   it("rejects tokens with explicitly empty role lists", async () => {
     await expect(
       startServer({
@@ -2493,6 +2540,91 @@ describe("web server command endpoint", () => {
       input: "Senior engineer\nnotes",
       locale: "en-US",
     });
+  });
+
+  it("records sanitized command payload history per client", async () => {
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({ ok: true })),
+    };
+
+    const server = await startServer({
+      commandAdapter,
+      auth: {
+        tokens: [
+          { token: "viewer-token", subject: "viewer@example.com", roles: ["viewer"] },
+          { token: "editor-token", subject: "editor@example.com", roles: ["editor"] },
+        ],
+        scheme: "Bearer",
+      },
+    });
+
+    const viewerHeaders = buildCommandHeaders(server, {
+      authorization: "Bearer viewer-token",
+    });
+    const viewerPayload = {
+      input: "  Viewer resume\u0000",
+      locale: "\u0007 en-US ",
+    };
+    const viewerResponse = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: viewerHeaders,
+      body: JSON.stringify(viewerPayload),
+    });
+    expect(viewerResponse.status).toBe(200);
+    await viewerResponse.json();
+
+    const editorHeaders = buildCommandHeaders(server, {
+      authorization: "Bearer editor-token",
+    });
+    const editorPayload = {
+      input: "  Editor brief\u0008",
+      locale: "\u0007 en-GB ",
+    };
+    const editorResponse = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: editorHeaders,
+      body: JSON.stringify(editorPayload),
+    });
+    expect(editorResponse.status).toBe(200);
+    await editorResponse.json();
+
+    const viewerHistory = await fetch(`${server.url}/commands/payloads/recent`, {
+      method: "GET",
+      headers: viewerHeaders,
+    });
+    expect(viewerHistory.status).toBe(200);
+    const viewerBody = await viewerHistory.json();
+    expect(viewerBody.entries).toEqual([
+      {
+        command: "summarize",
+        payload: { input: "Viewer resume", locale: "en-US" },
+        timestamp: expect.any(String),
+      },
+    ]);
+
+    const editorHistory = await fetch(`${server.url}/commands/payloads/recent`, {
+      method: "GET",
+      headers: editorHeaders,
+    });
+    expect(editorHistory.status).toBe(200);
+    const editorBody = await editorHistory.json();
+    expect(editorBody.entries).toEqual([
+      {
+        command: "summarize",
+        payload: { input: "Editor brief", locale: "en-GB" },
+        timestamp: expect.any(String),
+      },
+    ]);
+
+    const uniqueViewerTimestamps = new Set(
+      viewerBody.entries.map((entry) => entry.timestamp),
+    );
+    expect(uniqueViewerTimestamps.size).toBe(viewerBody.entries.length);
+
+    const uniqueEditorTimestamps = new Set(
+      editorBody.entries.map((entry) => entry.timestamp),
+    );
+    expect(uniqueEditorTimestamps.size).toBe(editorBody.entries.length);
   });
 
   it("rate limits repeated command requests per client", async () => {

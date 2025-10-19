@@ -17,6 +17,10 @@ import {
   createRedactionMiddleware,
   redactValue,
 } from "../shared/security/redaction.js";
+import {
+  createClientIdentity,
+  createClientPayloadStore,
+} from "./client-payload-store.js";
 import { createAuditLogger } from "../shared/security/audit-log.js";
 import { WebSocket, WebSocketServer } from "ws";
 
@@ -4577,6 +4581,7 @@ export function createWebApp({
   const rateLimiter = createInMemoryRateLimiter(rateLimit);
   const authOptions = normalizeAuthOptions(auth);
   const app = express();
+  const clientPayloadStore = createClientPayloadStore();
   let effectiveAuditLogger = auditLogger ?? null;
   if (!effectiveAuditLogger && audit && audit.logPath) {
     try {
@@ -5357,14 +5362,29 @@ export function createWebApp({
           requiredRoles.length > 0 &&
           !hasRequiredRoles(tokenEntry.roles, requiredRoles)
         ) {
+          const actor = authPrincipal ?? tokenEntry.subject ?? "token";
+          const roleList = Array.isArray(tokenEntry.roles)
+            ? [...tokenEntry.roles]
+            : Array.from(tokenEntry.roles ?? []);
+          roleList.sort();
+          const actorDisplayName =
+            typeof tokenEntry.displayName === "string" && tokenEntry.displayName.trim()
+              ? tokenEntry.displayName.trim()
+              : undefined;
           res
             .status(403)
             .json({ error: "Insufficient permissions for this command" });
-          await recordAudit({
+          const auditPayload = {
             status: "forbidden",
             reason: "rbac",
             requiredRoles,
-          });
+            actor,
+            roles: roleList,
+          };
+          if (actorDisplayName) {
+            auditPayload.actorDisplayName = actorDisplayName;
+          }
+          await recordAudit(auditPayload);
           return;
         }
       }
@@ -5393,6 +5413,12 @@ export function createWebApp({
 
       const redactedPayload = req.redacted?.body ?? redactValue(payload);
       const payloadFields = Object.keys(payload ?? {}).sort();
+      const clientIdentity = createClientIdentity({
+        subject: authContext?.subject,
+        clientIp,
+        userAgent,
+      });
+      clientPayloadStore.record(clientIdentity, commandParam, payload);
 
       try {
         const result = await commandAdapter[commandParam](payload);
@@ -5470,6 +5496,57 @@ export function createWebApp({
       }
     },
   );
+
+  app.get("/commands/payloads/recent", (req, res) => {
+    if (!authOptions) {
+      res.status(404).json({ error: "Command payload history not available" });
+      return;
+    }
+
+    const respondUnauthorized = () => {
+      if (authOptions.requireScheme && authOptions.scheme) {
+        res.set("WWW-Authenticate", `${authOptions.scheme} realm="jobbot-web"`);
+      }
+      res
+        .status(401)
+        .json({ error: "Invalid or missing authorization token" });
+    };
+
+    const providedAuth = req.get(authOptions.headerName);
+    const headerValue = typeof providedAuth === "string" ? providedAuth.trim() : "";
+    if (!headerValue) {
+      respondUnauthorized();
+      return;
+    }
+
+    let tokenValue = headerValue;
+    if (authOptions.requireScheme) {
+      const lowerValue = headerValue.toLowerCase();
+      if (!lowerValue.startsWith(authOptions.schemePrefixLower)) {
+        respondUnauthorized();
+        return;
+      }
+      tokenValue = headerValue.slice(authOptions.schemePrefixLength).trim();
+      if (!tokenValue) {
+        respondUnauthorized();
+        return;
+      }
+    }
+
+    const tokenEntry = authOptions.tokens.get(tokenValue);
+    if (!tokenEntry) {
+      respondUnauthorized();
+      return;
+    }
+
+    const identity = createClientIdentity({
+      subject: tokenEntry.subject,
+      clientIp: req.ip || req.socket?.remoteAddress || undefined,
+      userAgent: req.get("user-agent"),
+    });
+    const entries = clientPayloadStore.getRecent(identity);
+    res.json({ entries });
+  });
 
   app.use((err, req, res, next) => {
     if (err && err.type === "entity.parse.failed") {
