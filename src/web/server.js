@@ -1711,6 +1711,16 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             return sanitized;
           }
 
+          function sanitizeListEntry(value) {
+            if (typeof value !== 'string') return '';
+            const trimmed = value.trim();
+            if (!trimmed) return '';
+            if (/^[=+\-@]/.test(trimmed)) {
+              return "'" + trimmed;
+            }
+            return trimmed;
+          }
+
           function buildShortlistCsv(items) {
             const lines = [
               [
@@ -1733,18 +1743,14 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
                   ? item.metadata
                   : {};
               const tags = Array.isArray(item.tags)
-                ? item.tags
-                    .map(tag => (typeof tag === 'string' ? tag.trim() : ''))
-                    .filter(Boolean)
+                ? item.tags.map(sanitizeListEntry).filter(Boolean)
                 : [];
               const discardCount =
                 typeof item.discard_count === 'number' ? item.discard_count : 0;
               const lastDiscard =
                 item && typeof item.last_discard === 'object' ? item.last_discard : null;
               const discardTags = Array.isArray(lastDiscard?.tags)
-                ? lastDiscard.tags
-                    .map(tag => (typeof tag === 'string' ? tag.trim() : ''))
-                    .filter(Boolean)
+                ? lastDiscard.tags.map(sanitizeListEntry).filter(Boolean)
                 : [];
               const row = [
                 formatExportCsvValue(

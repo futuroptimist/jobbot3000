@@ -669,7 +669,7 @@ describe("web server status page", () => {
     expect(csvText).toContain("job-1");
     expect(csvText).toContain("duplicate");
     expect(csvText).toContain("'=IMPORT(");
-    expect(csvText).toContain("'   @malicious");
+    expect(csvText).toContain("'@malicious");
     expect(message?.textContent).toContain("shortlist-entries.csv");
   });
 
