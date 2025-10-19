@@ -1700,10 +1700,15 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               return '';
             }
             const text = String(value);
-            if (/[",\n]/.test(text)) {
-              return '"' + text.replace(/"/g, '""') + '"';
+            let sanitized = text;
+            const trimmed = sanitized.trimStart();
+            if (/^[=+\-@]/.test(trimmed)) {
+              sanitized = "'" + sanitized;
             }
-            return text;
+            if (/[",\n]/.test(sanitized)) {
+              return '"' + sanitized.replace(/"/g, '""') + '"';
+            }
+            return sanitized;
           }
 
           function buildShortlistCsv(items) {

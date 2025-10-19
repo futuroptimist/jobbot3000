@@ -541,7 +541,7 @@ describe("web server status page", () => {
         id: "job-1",
         metadata: {
           location: "Remote",
-          level: "Senior",
+          level: "=IMPORT(\"https://evil\")",
           compensation: "$185k",
           synced_at: "2025-03-01T00:00:00.000Z",
         },
@@ -561,7 +561,7 @@ describe("web server status page", () => {
           compensation: "$210k",
           synced_at: "2025-02-25T12:00:00.000Z",
         },
-        tags: ["onsite"],
+        tags: ["onsite", "   @malicious"],
         discard_count: 0,
       },
     ];
@@ -668,6 +668,8 @@ describe("web server status page", () => {
     expect(csvText).toContain("job_id,location,level,compensation,tags");
     expect(csvText).toContain("job-1");
     expect(csvText).toContain("duplicate");
+    expect(csvText).toContain("'=IMPORT(");
+    expect(csvText).toContain("'   @malicious");
     expect(message?.textContent).toContain("shortlist-entries.csv");
   });
 
