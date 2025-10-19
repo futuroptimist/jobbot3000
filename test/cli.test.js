@@ -2837,6 +2837,53 @@ describe('jobbot CLI', () => {
     expect(JSON.stringify(payload)).not.toContain('job-2');
   });
 
+  it('prints analytics sankey transitions with json option', () => {
+    const opportunitiesDir = path.join(dataDir, 'opportunities');
+    fs.mkdirSync(opportunitiesDir, { recursive: true });
+    const eventsPath = path.join(opportunitiesDir, 'events.ndjson');
+    const events = [
+      {
+        eventUid: 'evt-001',
+        opportunityUid: 'opp-123',
+        type: 'phone_screen_scheduled',
+        occurredAt: '2025-10-22T12:00:00.000Z',
+      },
+      {
+        eventUid: 'evt-002',
+        opportunityUid: 'opp-123',
+        type: 'phone_screen_completed',
+        occurredAt: '2025-10-23T15:00:00.000Z',
+      },
+    ];
+    const payload = `${events.map(entry => JSON.stringify(entry)).join('\n')}\n`;
+    fs.writeFileSync(eventsPath, payload, 'utf8');
+
+    const output = runCli(['analytics', 'sankey', '--json']);
+    const report = JSON.parse(output);
+
+    expect(typeof report.generated_at).toBe('string');
+    expect(Array.isArray(report.edges)).toBe(true);
+    expect(report.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: 'recruiter_outreach',
+          target: 'phone_screen_scheduled',
+          count: 1,
+        }),
+        expect.objectContaining({
+          source: 'phone_screen_scheduled',
+          target: 'phone_screen_done',
+          count: 1,
+        }),
+      ]),
+    );
+  });
+
+  it('prints a friendly message when no opportunity events exist', () => {
+    const output = runCli(['analytics', 'sankey']);
+    expect(output.trim()).toBe('No opportunity events recorded');
+  });
+
   it('summarizes shortlist compensation analytics', () => {
     runCli(['shortlist', 'sync', 'job-dollar', '--compensation', '185k']);
 

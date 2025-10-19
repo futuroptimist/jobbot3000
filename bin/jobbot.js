@@ -74,6 +74,8 @@ import {
   computeCompensationSummary,
   computeAnalyticsHealth,
   formatAnalyticsHealthReport,
+  computeOpportunitySankey,
+  formatSankeyReport,
 } from '../src/analytics.js';
 import { ingestWorkableBoard } from '../src/workable.js';
 import { ingestJobUrl } from '../src/url-ingest.js';
@@ -2514,6 +2516,24 @@ async function cmdAnalyticsActivity(args) {
   console.log(payload.trimEnd());
 }
 
+async function cmdAnalyticsSankey(args) {
+  const asJson = args.includes('--json');
+  let report;
+  try {
+    report = await computeOpportunitySankey();
+  } catch (err) {
+    console.error(err?.message || String(err));
+    process.exit(1);
+  }
+
+  if (asJson) {
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+
+  console.log(formatSankeyReport(report));
+}
+
 async function cmdAnalyticsHealth(args) {
   const asJson = args.includes('--json');
   const nowValue = getFlag(args, '--now');
@@ -2542,8 +2562,11 @@ async function cmdAnalytics(args) {
   if (sub === 'export') return cmdAnalyticsExport(args.slice(1));
   if (sub === 'compensation') return cmdAnalyticsCompensation(args.slice(1));
   if (sub === 'activity') return cmdAnalyticsActivity(args.slice(1));
+  if (sub === 'sankey') return cmdAnalyticsSankey(args.slice(1));
   if (sub === 'health') return cmdAnalyticsHealth(args.slice(1));
-  console.error('Usage: jobbot analytics <funnel|export|compensation|activity|health> [options]');
+  console.error(
+    'Usage: jobbot analytics <funnel|export|compensation|activity|sankey|health> [options]',
+  );
   process.exit(2);
 }
 
