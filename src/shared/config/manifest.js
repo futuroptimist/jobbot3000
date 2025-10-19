@@ -36,6 +36,19 @@ const SECRET_ENV_MAP = {
   workableToken: 'JOBBOT_WORKABLE_TOKEN',
 };
 
+function hasInlineSecrets(secrets) {
+  if (!secrets) return false;
+  return Object.values(secrets).some(value => {
+    if (value === undefined || value === null) {
+      return false;
+    }
+    if (typeof value === 'string') {
+      return value.trim() !== '';
+    }
+    return true;
+  });
+}
+
 const PluginEntrySchema = z
   .object({
     id: z.string().min(1),
@@ -161,6 +174,11 @@ function parsePluginEntries(value) {
 }
 
 export function loadConfig(options = {}) {
+  if (hasInlineSecrets(options.secrets)) {
+    throw new Error(
+      'Provide secrets via JOBBOT_* environment variables; inline manifest overrides are blocked.',
+    );
+  }
   const env = { ...process.env, ...(options.env ?? {}) };
   const requestedEnv = resolveEnvironment(
     options.environment ?? env.JOBBOT_ENV ?? env.JOBBOT_WEB_ENV ?? env.NODE_ENV,

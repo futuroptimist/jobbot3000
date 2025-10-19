@@ -115,6 +115,11 @@
   header name and token on boot so the frontend can attach it securely.
 - Store sensitive configuration (API tokens, credentials) via environment variables managed through
   secure storage solutions.
+  _Implemented (2025-10-21):_ The typed configuration manifest now refuses inline
+  `secrets` overrides, requiring operators to inject credentials via the
+  `JOBBOT_*` environment variables backed by their chosen secrets manager. The
+  regression coverage in [`test/web-config.test.js`](../test/web-config.test.js)
+  asserts the new guardrail by expecting inline overrides to throw.
 - Log sensitive fields using redaction filters and enforce secure log transport when deployed beyond
   localhost.
 
