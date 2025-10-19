@@ -1,9 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
 
-import Database from 'better-sqlite3';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { eq } from 'drizzle-orm';
 import {
   integer,
@@ -16,6 +15,24 @@ import {
   opportunityEventSchema,
   opportunitySchema,
 } from '../domain/opportunity.js';
+
+const require = createRequire(import.meta.url);
+
+let BetterSqlite3;
+let betterSqlite3Error;
+let drizzleBetterSqlite3;
+try {
+  const BetterSqlite3Module = require('better-sqlite3');
+  const drizzleModule = require('drizzle-orm/better-sqlite3');
+  BetterSqlite3 = BetterSqlite3Module;
+  ({ drizzle: drizzleBetterSqlite3 } = drizzleModule);
+} catch (error) {
+  betterSqlite3Error = error;
+  BetterSqlite3 = null;
+  drizzleBetterSqlite3 = null;
+}
+
+let warnedAboutRepoFallback = false;
 
 const opportunitiesTable = sqliteTable('opportunities', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -120,16 +137,32 @@ export class OpportunitiesRepo {
     this.dataDir = options.dataDir ?? defaultDataDir();
     this.filename = options.filename ?? path.join(this.dataDir, 'opportunities.db');
     this.migrationsDir = options.migrationsDir ?? path.resolve('db/migrations');
-    this.#init();
+    if (BetterSqlite3) {
+      this.#initSqlite();
+    } else {
+      this.#initMemory();
+    }
   }
 
-  #init() {
+  #initSqlite() {
     fs.mkdirSync(this.dataDir, { recursive: true });
-    const sqlite = new Database(this.filename);
+    const sqlite = new BetterSqlite3(this.filename);
     sqlite.pragma('foreign_keys = ON');
     applyMigrations(sqlite, this.migrationsDir);
     this.sqlite = sqlite;
-    this.db = drizzle(sqlite);
+    this.db = drizzleBetterSqlite3(sqlite);
+  }
+
+  #initMemory() {
+    if (!warnedAboutRepoFallback) {
+      const reason = betterSqlite3Error?.message?.split('\n')[0] ?? null;
+      const message = reason
+        ? `better-sqlite3 unavailable (${reason}); using in-memory opportunities repo`
+        : 'better-sqlite3 unavailable; using in-memory opportunities repo';
+      console.warn(message);
+      warnedAboutRepoFallback = true;
+    }
+    this.memory = new MemoryOpportunitiesRepo();
   }
 
   close() {
@@ -138,9 +171,15 @@ export class OpportunitiesRepo {
       this.sqlite = null;
       this.db = null;
     }
+    if (this.memory) {
+      this.memory.close();
+    }
   }
 
   upsertOpportunity(input) {
+    if (this.memory) {
+      return this.memory.upsertOpportunity(input);
+    }
     const firstSeenAt = input.firstSeenAt ?? new Date().toISOString();
     const now = new Date().toISOString();
     const uid = computeOpportunityUid({
@@ -208,6 +247,9 @@ export class OpportunitiesRepo {
   }
 
   getOpportunityByUid(uid) {
+    if (this.memory) {
+      return this.memory.getOpportunityByUid(uid);
+    }
     const row = this.db
       .select()
       .from(opportunitiesTable)
@@ -229,6 +271,9 @@ export class OpportunitiesRepo {
   }
 
   listOpportunities() {
+    if (this.memory) {
+      return this.memory.listOpportunities();
+    }
     const rows = this.db.select().from(opportunitiesTable).all();
     return rows.map(row =>
       opportunitySchema.parse({
@@ -247,6 +292,9 @@ export class OpportunitiesRepo {
   }
 
   appendEvent(input) {
+    if (this.memory) {
+      return this.memory.appendEvent(input);
+    }
     const occurredAt = input.occurredAt ?? new Date().toISOString();
     const now = new Date().toISOString();
     const eventUid = input.eventUid ?? computeEventUid({
@@ -287,6 +335,9 @@ export class OpportunitiesRepo {
   }
 
   getEventByUid(eventUid) {
+    if (this.memory) {
+      return this.memory.getEventByUid(eventUid);
+    }
     const row = this.db
       .select()
       .from(eventsTable)
@@ -303,6 +354,9 @@ export class OpportunitiesRepo {
   }
 
   listEvents(opportunityUid) {
+    if (this.memory) {
+      return this.memory.listEvents(opportunityUid);
+    }
     const rows = this.db
       .select()
       .from(eventsTable)
@@ -322,8 +376,154 @@ export class OpportunitiesRepo {
   }
 
   clearAll() {
-    this.db.delete(eventsTable).run();
-    this.db.delete(contactsTable).run();
-    this.db.delete(opportunitiesTable).run();
+    if (this.memory) {
+      this.memory.clearAll();
+    } else {
+      this.db.delete(eventsTable).run();
+      this.db.delete(contactsTable).run();
+      this.db.delete(opportunitiesTable).run();
+    }
+  }
+}
+
+class MemoryOpportunitiesRepo {
+  constructor() {
+    this.opportunities = new Map();
+    this.events = new Map();
+    this.eventsByOpportunity = new Map();
+    this.contacts = new Map();
+  }
+
+  close() {
+    this.opportunities.clear();
+    this.events.clear();
+    this.eventsByOpportunity.clear();
+    this.contacts.clear();
+  }
+
+  upsertOpportunity(input) {
+    const now = new Date().toISOString();
+    const firstSeenAt = input.firstSeenAt ?? now;
+    const uid = computeOpportunityUid({
+      company: input.company,
+      roleHint: input.roleHint,
+      contactEmail: input.contactEmail,
+      firstSeenAt,
+    });
+
+    const existing = this.opportunities.get(uid);
+    const createdAt = existing?.createdAt ?? now;
+    const storedFirstSeenAt = existing?.firstSeenAt ?? firstSeenAt;
+
+    const opportunity = opportunitySchema.parse({
+      uid,
+      company: input.company,
+      roleHint: input.roleHint ?? undefined,
+      contactEmail: input.contactEmail ?? undefined,
+      contactName: input.contactName ?? undefined,
+      lifecycleState: input.lifecycleState,
+      firstSeenAt: storedFirstSeenAt,
+      lastEventAt: input.lastEventAt ?? undefined,
+      subject: input.subject ?? undefined,
+      source: input.source ?? undefined,
+    });
+
+    this.opportunities.set(uid, {
+      ...opportunity,
+      createdAt,
+      updatedAt: now,
+    });
+
+    if (input.contactEmail || input.contactName) {
+      const key = this.#contactKey({ opportunityUid: uid, email: input.contactEmail ?? null });
+      const previous = this.contacts.get(key);
+      const contact = {
+        opportunityUid: uid,
+        name: input.contactName ?? previous?.name ?? null,
+        email: input.contactEmail ?? null,
+        phone: input.contactPhone ?? previous?.phone ?? null,
+        createdAt: previous?.createdAt ?? now,
+        updatedAt: now,
+      };
+      this.contacts.set(key, contact);
+    }
+
+    return this.getOpportunityByUid(uid);
+  }
+
+  getOpportunityByUid(uid) {
+    const stored = this.opportunities.get(uid);
+    if (!stored) return null;
+    return opportunitySchema.parse({ ...stored });
+  }
+
+  listOpportunities() {
+    return Array.from(this.opportunities.values()).map(opportunity =>
+      opportunitySchema.parse({ ...opportunity }),
+    );
+  }
+
+  appendEvent(input) {
+    const occurredAt = input.occurredAt ?? new Date().toISOString();
+    const now = new Date().toISOString();
+    const eventUid = input.eventUid ?? computeEventUid({
+      opportunityUid: input.opportunityUid,
+      type: input.type,
+      occurredAt,
+      payload: input.payload,
+    });
+
+    const existing = this.events.get(eventUid);
+    if (existing) return this.getEventByUid(eventUid);
+
+    const event = opportunityEventSchema.parse({
+      eventUid,
+      opportunityUid: input.opportunityUid,
+      type: input.type,
+      occurredAt,
+      payload: input.payload ?? undefined,
+    });
+
+    this.events.set(eventUid, event);
+    const perOpportunity = this.eventsByOpportunity.get(event.opportunityUid) ?? [];
+    perOpportunity.push(event);
+    perOpportunity.sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+    this.eventsByOpportunity.set(event.opportunityUid, perOpportunity);
+
+    const opportunity = this.opportunities.get(event.opportunityUid);
+    if (opportunity) {
+      const lifecycleState = input.lifecycleState ?? opportunity.lifecycleState;
+      this.opportunities.set(event.opportunityUid, {
+        ...opportunity,
+        lifecycleState,
+        lastEventAt: occurredAt,
+        updatedAt: now,
+      });
+    }
+
+    return this.getEventByUid(eventUid);
+  }
+
+  getEventByUid(eventUid) {
+    const event = this.events.get(eventUid);
+    if (!event) return null;
+    return opportunityEventSchema.parse({ ...event });
+  }
+
+  listEvents(opportunityUid) {
+    return (this.eventsByOpportunity.get(opportunityUid) ?? []).map(event =>
+      opportunityEventSchema.parse({ ...event }),
+    );
+  }
+
+  clearAll() {
+    this.opportunities.clear();
+    this.events.clear();
+    this.eventsByOpportunity.clear();
+    this.contacts.clear();
+  }
+
+  #contactKey({ opportunityUid, email }) {
+    return `${opportunityUid}|${email ?? ''}`;
   }
 }

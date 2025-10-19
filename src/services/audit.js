@@ -1,12 +1,29 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
 
-import Database from 'better-sqlite3';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { eq } from 'drizzle-orm';
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import { z } from 'zod';
+
+const require = createRequire(import.meta.url);
+
+let BetterSqlite3;
+let betterSqlite3Error;
+let drizzleBetterSqlite3;
+try {
+  const BetterSqlite3Module = require('better-sqlite3');
+  const drizzleModule = require('drizzle-orm/better-sqlite3');
+  BetterSqlite3 = BetterSqlite3Module;
+  ({ drizzle: drizzleBetterSqlite3 } = drizzleModule);
+} catch (error) {
+  betterSqlite3Error = error;
+  BetterSqlite3 = null;
+  drizzleBetterSqlite3 = null;
+}
+
+let warnedAboutMemoryFallback = false;
 
 function resolveDataDir(value) {
   if (value) return value;
@@ -74,16 +91,32 @@ export class AuditLog {
     this.dataDir = resolveDataDir(options.dataDir);
     this.filename = options.filename ?? path.join(this.dataDir, 'opportunities.db');
     this.migrationsDir = options.migrationsDir ?? path.resolve('db/migrations');
-    this.#init();
+    if (BetterSqlite3) {
+      this.#initSqlite();
+    } else {
+      this.#initMemory();
+    }
   }
 
-  #init() {
+  #initSqlite() {
     fs.mkdirSync(this.dataDir, { recursive: true });
-    const sqlite = new Database(this.filename);
+    const sqlite = new BetterSqlite3(this.filename);
     sqlite.pragma('foreign_keys = ON');
     applyMigrations(sqlite, this.migrationsDir);
     this.sqlite = sqlite;
-    this.db = drizzle(sqlite);
+    this.db = drizzleBetterSqlite3(sqlite);
+  }
+
+  #initMemory() {
+    if (!warnedAboutMemoryFallback) {
+      const reason = betterSqlite3Error?.message?.split('\n')[0] ?? null;
+      const message = reason
+        ? `better-sqlite3 unavailable (${reason}); falling back to in-memory audit log`
+        : 'better-sqlite3 unavailable; falling back to in-memory audit log';
+      console.warn(message);
+      warnedAboutMemoryFallback = true;
+    }
+    this.memory = new MemoryAuditLog();
   }
 
   close() {
@@ -92,9 +125,15 @@ export class AuditLog {
       this.sqlite = null;
       this.db = null;
     }
+    if (this.memory) {
+      this.memory.close();
+    }
   }
 
   append(entry) {
+    if (this.memory) {
+      return this.memory.append(entry);
+    }
     const occurredAt = entry.occurredAt ?? new Date().toISOString();
     const eventUid = entry.eventUid ?? computeAuditUid({
       eventUid: entry.relatedEventUid ?? '',
@@ -121,6 +160,9 @@ export class AuditLog {
   }
 
   getByEventUid(eventUid) {
+    if (this.memory) {
+      return this.memory.getByEventUid(eventUid);
+    }
     const row = this.db
       .select()
       .from(auditLogTable)
@@ -139,6 +181,9 @@ export class AuditLog {
   }
 
   list({ opportunityUid } = {}) {
+    if (this.memory) {
+      return this.memory.list({ opportunityUid });
+    }
     let query = this.db.select().from(auditLogTable).orderBy(auditLogTable.occurredAt);
     if (opportunityUid) {
       query = query.where(eq(auditLogTable.opportunityUid, opportunityUid));
@@ -155,5 +200,55 @@ export class AuditLog {
         createdAt: row.createdAt,
       }),
     );
+  }
+}
+
+class MemoryAuditLog {
+  constructor() {
+    this.entriesByUid = new Map();
+  }
+
+  close() {
+    this.entriesByUid.clear();
+  }
+
+  append(entry) {
+    const occurredAt = entry.occurredAt ?? new Date().toISOString();
+    const eventUid = entry.eventUid ?? computeAuditUid({
+      eventUid: entry.relatedEventUid ?? '',
+      action: entry.action,
+      occurredAt,
+    });
+    const now = new Date().toISOString();
+
+    const candidate = auditEntrySchema.parse({
+      eventUid,
+      opportunityUid: entry.opportunityUid ?? undefined,
+      actor: entry.actor ?? undefined,
+      action: entry.action,
+      occurredAt,
+      payload: entry.payload ?? undefined,
+      createdAt: now,
+    });
+
+    const existing = this.entriesByUid.get(candidate.eventUid);
+    if (existing) return existing;
+
+    this.entriesByUid.set(candidate.eventUid, candidate);
+    return candidate;
+  }
+
+  getByEventUid(eventUid) {
+    return this.entriesByUid.get(eventUid) ?? null;
+  }
+
+  list({ opportunityUid } = {}) {
+    let entries = Array.from(this.entriesByUid.values());
+    if (opportunityUid) {
+      entries = entries.filter(entry => entry.opportunityUid === opportunityUid);
+    }
+    return entries
+      .slice()
+      .sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
   }
 }
