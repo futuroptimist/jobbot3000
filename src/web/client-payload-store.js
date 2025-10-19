@@ -1,4 +1,5 @@
 const DEFAULT_MAX_ENTRIES_PER_CLIENT = 5;
+const DEFAULT_MAX_CLIENTS = 200;
 
 const clone =
   typeof structuredClone === "function"
@@ -85,7 +86,23 @@ export function createClientPayloadStore(options = {}) {
     throw new Error("maxEntriesPerClient must be a positive number");
   }
 
+  const maxClientsRaw = options.maxClients ?? DEFAULT_MAX_CLIENTS;
+  const maxClients = Number(maxClientsRaw);
+  if (!Number.isFinite(maxClients) || maxClients <= 0) {
+    throw new Error("maxClients must be a positive number");
+  }
+
   const store = new Map();
+
+  function enforceClientCapacity() {
+    while (store.size > maxClients) {
+      const oldest = store.keys().next().value;
+      if (oldest === undefined) {
+        break;
+      }
+      store.delete(oldest);
+    }
+  }
 
   function record(clientId, command, payload) {
     const normalizedClientId = normalizeClientId(clientId);
@@ -102,14 +119,17 @@ export function createClientPayloadStore(options = {}) {
     };
 
     let entries = store.get(normalizedClientId);
-    if (!entries) {
+    if (entries) {
+      store.delete(normalizedClientId);
+    } else {
       entries = [];
-      store.set(normalizedClientId, entries);
     }
     entries.push(entry);
     if (entries.length > limit) {
       entries.splice(0, entries.length - limit);
     }
+    store.set(normalizedClientId, entries);
+    enforceClientCapacity();
     return { ...entry, payload: clone(entry.payload) };
   }
 
