@@ -2,6 +2,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import JSZip from 'jszip';
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
 let overrideDir;
 
 function resolveDataDir() {
@@ -10,6 +12,114 @@ function resolveDataDir() {
 
 export function setInterviewDataDir(dir) {
   overrideDir = dir || undefined;
+}
+
+async function safeReadDir(dir) {
+  try {
+    return await fs.readdir(dir, { withFileTypes: true });
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return [];
+    throw err;
+  }
+}
+
+function isVisibleDirectory(entry) {
+  return entry?.isDirectory?.() && !entry.name.startsWith('.');
+}
+
+function isVisibleSessionFile(entry) {
+  if (!entry?.isFile?.()) return false;
+  if (entry.name.startsWith('.')) return false;
+  return entry.name.toLowerCase().endsWith('.json');
+}
+
+function resolveRemindersNow(now) {
+  if (now instanceof Date) {
+    if (Number.isNaN(now.getTime())) {
+      throw new Error('now must be a valid Date');
+    }
+    return now;
+  }
+  if (typeof now === 'string') {
+    const parsed = new Date(now);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new Error('now must be a valid ISO-8601 timestamp');
+    }
+    return parsed;
+  }
+  if (now === undefined) {
+    return new Date();
+  }
+  throw new Error('now must be a Date or ISO-8601 string');
+}
+
+function coerceReminderNumber(value, label) {
+  if (value === undefined) return undefined;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    throw new Error(`${label} must be a positive number`);
+  }
+  return numeric;
+}
+
+function extractReminderSuggestions(payload) {
+  const tighten = payload?.heuristics?.critique?.tighten_this;
+  if (!Array.isArray(tighten)) return undefined;
+  const cleaned = tighten
+    .map(item => (typeof item === 'string' ? item.trim() : ''))
+    .filter(Boolean);
+  return cleaned.length > 0 ? cleaned : undefined;
+}
+
+async function readReminderSession(filePath) {
+  let payload;
+  try {
+    const raw = await fs.readFile(filePath, 'utf8');
+    payload = JSON.parse(raw);
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return null;
+    return null;
+  }
+  if (!payload || typeof payload !== 'object') return null;
+
+  let recordedAt = coerceIsoTimestamp(payload.recorded_at);
+  let source = recordedAt ? 'recorded_at' : undefined;
+  if (!recordedAt) {
+    const startedAt = coerceIsoTimestamp(payload.started_at ?? payload.startedAt);
+    if (startedAt) {
+      recordedAt = startedAt;
+      source = 'started_at';
+    }
+  }
+  if (!recordedAt) {
+    const endedAt = coerceIsoTimestamp(payload.ended_at ?? payload.endedAt);
+    if (endedAt) {
+      recordedAt = endedAt;
+      source = 'ended_at';
+    }
+  }
+  if (!recordedAt) {
+    try {
+      const stats = await fs.stat(filePath);
+      const mtime = stats.mtime instanceof Date ? stats.mtime : undefined;
+      if (mtime && !Number.isNaN(mtime.getTime())) {
+        recordedAt = mtime.toISOString();
+        source = 'file_mtime';
+      }
+    } catch {
+      // Ignore fallback failures.
+    }
+  }
+
+  const suggestions = extractReminderSuggestions(payload);
+
+  return {
+    recordedAt,
+    source,
+    stage: typeof payload.stage === 'string' ? payload.stage.trim() : undefined,
+    mode: typeof payload.mode === 'string' ? payload.mode.trim() : undefined,
+    suggestions,
+  };
 }
 
 function sanitizeString(value) {
@@ -944,6 +1054,96 @@ export async function getInterviewSession(jobId, sessionId) {
   const { file } = resolveSessionPath(normalizedJobId, normalizedSessionId);
   const data = await readSessionFile(file);
   return data ? { ...data } : null;
+}
+
+export async function listInterviewReminders(options = {}) {
+  const now = resolveRemindersNow(options.now);
+  const staleAfterDays = coerceReminderNumber(options.staleAfterDays, 'staleAfterDays') ?? 7;
+  const staleThresholdMs = staleAfterDays * MS_PER_DAY;
+  const root = path.join(resolveDataDir(), 'interviews');
+  const jobEntries = await safeReadDir(root);
+  const reminders = [];
+
+  for (const entry of jobEntries) {
+    if (!isVisibleDirectory(entry)) continue;
+    const jobId = entry.name;
+    const jobDir = path.join(root, jobId);
+    const sessionEntries = await safeReadDir(jobDir);
+
+    let sessionCount = 0;
+    let latest;
+
+    for (const sessionEntry of sessionEntries) {
+      if (!isVisibleSessionFile(sessionEntry)) continue;
+      const filePath = path.join(jobDir, sessionEntry.name);
+      const session = await readReminderSession(filePath);
+      if (!session) continue;
+      sessionCount += 1;
+      if (!session.recordedAt) continue;
+      const timestamp = Date.parse(session.recordedAt);
+      if (Number.isNaN(timestamp)) continue;
+      if (!latest || timestamp > latest.timestamp) {
+        latest = {
+          timestamp,
+          recordedAt: new Date(timestamp).toISOString(),
+          stage: session.stage,
+          mode: session.mode,
+          suggestions: session.suggestions,
+        };
+      }
+    }
+
+    if (sessionCount === 0) {
+      reminders.push({
+        job_id: jobId,
+        reason: 'no_sessions',
+        sessions: 0,
+        message: 'No rehearsal sessions have been recorded yet.',
+      });
+      continue;
+    }
+
+    if (!latest) {
+      reminders.push({
+        job_id: jobId,
+        reason: 'no_sessions',
+        sessions: sessionCount,
+        message: 'Existing sessions are missing timestamps. Record a fresh rehearsal.',
+      });
+      continue;
+    }
+
+    const diffMs = now.getTime() - latest.timestamp;
+    if (diffMs < staleThresholdMs) {
+      continue;
+    }
+
+    const staleDays = Math.max(0, Math.floor(diffMs / MS_PER_DAY));
+    const reminder = {
+      job_id: jobId,
+      reason: 'stale',
+      sessions: sessionCount,
+      last_session_at: latest.recordedAt,
+      stale_for_days: staleDays,
+    };
+    if (latest.stage) reminder.stage = latest.stage;
+    if (latest.mode) reminder.mode = latest.mode;
+    if (latest.suggestions) reminder.suggestions = latest.suggestions;
+    reminders.push(reminder);
+  }
+
+  reminders.sort((a, b) => {
+    const orderA = a.reason === 'stale' ? 0 : 1;
+    const orderB = b.reason === 'stale' ? 0 : 1;
+    if (orderA !== orderB) return orderA - orderB;
+    if (a.reason === 'stale' && b.reason === 'stale') {
+      const diff = (b.stale_for_days ?? 0) - (a.stale_for_days ?? 0);
+      if (diff !== 0) return diff;
+    }
+    return a.job_id.localeCompare(b.job_id);
+  });
+
+  return reminders;
 }
 
 function isVisibleSession(entry) {

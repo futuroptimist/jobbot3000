@@ -53,6 +53,7 @@ import {
   getInterviewSession,
   generateRehearsalPlan,
   exportInterviewSessions,
+  listInterviewReminders,
 } from '../src/interviews.js';
 import { initProfile, importLinkedInProfile, snapshotProfile } from '../src/profile.js';
 import {
@@ -3376,13 +3377,93 @@ async function cmdInterviewsExport(args) {
   console.log(`Exported interviews for ${jobId} to ${resolved}`);
 }
 
+async function cmdInterviewsRemind(args) {
+  const usage =
+    'Usage: jobbot interviews remind [--json] [--stale-after <days>] [--now <iso>]';
+  assertFlagHasValue(args, '--stale-after', usage);
+  assertFlagHasValue(args, '--now', usage);
+
+  const asJson = args.includes('--json');
+  const staleAfterRaw = getFlag(args, '--stale-after');
+  let staleAfter;
+  if (staleAfterRaw !== undefined) {
+    const numeric = Number(staleAfterRaw);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+      console.error('--stale-after must be a positive number');
+      process.exit(2);
+    }
+    staleAfter = numeric;
+  }
+
+  const nowValue = getFlag(args, '--now');
+  if (nowValue !== undefined) {
+    const parsed = new Date(nowValue);
+    if (Number.isNaN(parsed.getTime())) {
+      console.error('--now must be a valid ISO-8601 timestamp');
+      process.exit(2);
+    }
+  }
+
+  let reminders;
+  try {
+    reminders = await listInterviewReminders({ staleAfterDays: staleAfter, now: nowValue });
+  } catch (err) {
+    console.error(err?.message || 'Failed to load interview reminders');
+    process.exit(1);
+  }
+
+  if (asJson) {
+    console.log(JSON.stringify({ reminders }, null, 2));
+    return;
+  }
+
+  if (!reminders.length) {
+    console.log('No interview reminders. All caught up!');
+    return;
+  }
+
+  for (let index = 0; index < reminders.length; index += 1) {
+    const reminder = reminders[index];
+    console.log(reminder.job_id);
+    if (reminder.reason === 'no_sessions') {
+      const message = reminder.message || 'No rehearsal sessions have been recorded yet.';
+      console.log(`  ${message}`);
+      if (typeof reminder.sessions === 'number' && reminder.sessions > 0) {
+        console.log(`  Recorded sessions: ${reminder.sessions}`);
+      }
+    } else {
+      const days = reminder.stale_for_days ?? 0;
+      const plural = days === 1 ? '' : 's';
+      console.log(
+        `  Last session: ${reminder.last_session_at} (${days} day${plural} ago)`,
+      );
+      if (typeof reminder.sessions === 'number') {
+        console.log(`  Recorded sessions: ${reminder.sessions}`);
+      }
+      if (reminder.stage) {
+        console.log(`  Stage: ${reminder.stage}`);
+      }
+      if (reminder.mode) {
+        console.log(`  Mode: ${reminder.mode}`);
+      }
+      if (Array.isArray(reminder.suggestions) && reminder.suggestions.length > 0) {
+        console.log(`  Suggested focus: ${reminder.suggestions.join('; ')}`);
+      }
+    }
+    if (index < reminders.length - 1) {
+      console.log('');
+    }
+  }
+}
+
 async function cmdInterviews(args) {
   const sub = args[0];
   if (sub === 'record') return cmdInterviewsRecord(args.slice(1));
   if (sub === 'show') return cmdInterviewsShow(args.slice(1));
   if (sub === 'plan') return cmdInterviewsPlan(args.slice(1));
   if (sub === 'export') return cmdInterviewsExport(args.slice(1));
-  console.error('Usage: jobbot interviews <record|show|plan|export> ...');
+  if (sub === 'remind') return cmdInterviewsRemind(args.slice(1));
+  console.error('Usage: jobbot interviews <record|show|plan|export|remind> ...');
   process.exit(2);
 }
 

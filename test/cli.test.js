@@ -3562,6 +3562,80 @@ describe('jobbot CLI', () => {
     expect(output).toMatch(/Confirm timeline/);
   });
 
+  it('surfaces interview practice reminders via the CLI', () => {
+    const interviewsRoot = path.join(dataDir, 'interviews');
+    fs.mkdirSync(interviewsRoot, { recursive: true });
+
+    const staleDir = path.join(interviewsRoot, 'job-cli-stale');
+    fs.mkdirSync(staleDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(staleDir, 'session-1.json'),
+      `${JSON.stringify(
+        {
+          recorded_at: '2025-02-20T10:00:00.000Z',
+          stage: 'Onsite',
+          mode: 'Voice',
+          heuristics: { critique: { tighten_this: [' tighten transitions '] } },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+
+    const freshDir = path.join(interviewsRoot, 'job-cli-fresh');
+    fs.mkdirSync(freshDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(freshDir, 'session-1.json'),
+      `${JSON.stringify({ recorded_at: '2025-03-28T09:00:00.000Z' }, null, 2)}\n`,
+    );
+
+    const emptyDir = path.join(interviewsRoot, 'job-cli-empty');
+    fs.mkdirSync(emptyDir, { recursive: true });
+
+    const output = runCli([
+      'interviews',
+      'remind',
+      '--now',
+      '2025-03-30T12:00:00.000Z',
+      '--stale-after',
+      '7',
+    ]);
+
+    expect(output).toContain('job-cli-stale');
+    expect(output).toContain('Last session: 2025-02-20T10:00:00.000Z (38 days ago)');
+    expect(output).toContain('Suggested focus: tighten transitions');
+    expect(output).toContain('job-cli-empty');
+    expect(output).toContain('No rehearsal sessions have been recorded yet.');
+    expect(output).not.toContain('job-cli-fresh');
+
+    const jsonOutput = runCli([
+      'interviews',
+      'remind',
+      '--now',
+      '2025-03-30T12:00:00.000Z',
+      '--stale-after',
+      '7',
+      '--json',
+    ]);
+
+    const parsed = JSON.parse(jsonOutput);
+    expect(parsed.reminders).toEqual([
+      expect.objectContaining({
+        job_id: 'job-cli-stale',
+        reason: 'stale',
+        last_session_at: '2025-02-20T10:00:00.000Z',
+        stale_for_days: 38,
+        suggestions: ['tighten transitions'],
+      }),
+      {
+        job_id: 'job-cli-empty',
+        reason: 'no_sessions',
+        sessions: 0,
+        message: 'No rehearsal sessions have been recorded yet.',
+      },
+    ]);
+  });
+
   it('subscribes to weekly summaries via notifications command', () => {
     const output = runCli([
       'notifications',
