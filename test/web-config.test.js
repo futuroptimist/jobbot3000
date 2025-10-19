@@ -30,6 +30,10 @@ describe('loadWebConfig', () => {
       'JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD',
       'JOBBOT_HTTP_CIRCUIT_BREAKER_RESET_MS',
       'JOBBOT_WEB_PLUGINS',
+      'JOBBOT_GREENHOUSE_TOKEN',
+      'JOBBOT_LEVER_API_TOKEN',
+      'JOBBOT_SMARTRECRUITERS_TOKEN',
+      'JOBBOT_WORKABLE_TOKEN',
     ]);
   });
 
@@ -49,6 +53,10 @@ describe('loadWebConfig', () => {
       'JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD',
       'JOBBOT_HTTP_CIRCUIT_BREAKER_RESET_MS',
       'JOBBOT_WEB_PLUGINS',
+      'JOBBOT_GREENHOUSE_TOKEN',
+      'JOBBOT_LEVER_API_TOKEN',
+      'JOBBOT_SMARTRECRUITERS_TOKEN',
+      'JOBBOT_WORKABLE_TOKEN',
     ]);
   });
 
@@ -186,5 +194,17 @@ describe('loadWebConfig', () => {
       url: 'https://example.com/plugin.js',
       events: ['jobbot:analytics-ready'],
     });
+  });
+
+  it('rejects inline secret overrides to enforce environment storage', async () => {
+    const { loadConfig } = await import('../src/shared/config/manifest.js');
+
+    expect(() =>
+      loadConfig({
+        secrets: {
+          greenhouseToken: 'inline-secret',
+        },
+      }),
+    ).toThrow(/environment variables/i);
   });
 });
