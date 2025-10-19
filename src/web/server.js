@@ -5960,8 +5960,29 @@ export function createWebApp({
   );
 
   app.get("/commands/payloads/recent", (req, res) => {
+    const clientIp = req.ip || req.socket?.remoteAddress || undefined;
+    const userAgent = req.get("user-agent");
+
+    const ensureCsrf = () => {
+      const providedToken = req.get(csrfOptions.headerName);
+      if ((providedToken ?? "").trim() !== csrfOptions.token) {
+        res.status(403).json({ error: "Invalid or missing CSRF token" });
+        return false;
+      }
+      return true;
+    };
+
     if (!authOptions) {
-      res.status(404).json({ error: "Command payload history not available" });
+      if (!ensureCsrf()) {
+        return;
+      }
+      const identity = createClientIdentity({
+        subject: "guest",
+        clientIp,
+        userAgent,
+      });
+      const entries = clientPayloadStore.getRecent(identity);
+      res.json({ entries });
       return;
     }
 
@@ -6001,10 +6022,14 @@ export function createWebApp({
       return;
     }
 
+    if (!ensureCsrf()) {
+      return;
+    }
+
     const identity = createClientIdentity({
       subject: tokenEntry.subject,
-      clientIp: req.ip || req.socket?.remoteAddress || undefined,
-      userAgent: req.get("user-agent"),
+      clientIp,
+      userAgent,
     });
     const entries = clientPayloadStore.getRecent(identity);
     res.json({ entries });

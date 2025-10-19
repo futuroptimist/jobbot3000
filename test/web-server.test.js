@@ -2890,6 +2890,56 @@ describe("web server command endpoint", () => {
     expect(uniqueEditorTimestamps.size).toBe(editorBody.entries.length);
   });
 
+  it("allows guests to inspect their sanitized command payload history", async () => {
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({ ok: true })),
+    };
+
+    const server = await startServer({ commandAdapter });
+
+    const guestHeaders = buildCommandHeaders(server, {
+      "user-agent": "jobbot-guest-test",
+    });
+    const guestPayload = {
+      input: "  Guest resume snippet\u0000",
+      locale: "\u0007 en-US ",
+    };
+
+    const summarizeResponse = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: guestHeaders,
+      body: JSON.stringify(guestPayload),
+    });
+    expect(summarizeResponse.status).toBe(200);
+    await summarizeResponse.json();
+
+    const missingCsrfResponse = await fetch(
+      `${server.url}/commands/payloads/recent`,
+      {
+        method: "GET",
+        headers: { "user-agent": "jobbot-guest-test" },
+      },
+    );
+    expect(missingCsrfResponse.status).toBe(403);
+
+    const historyResponse = await fetch(
+      `${server.url}/commands/payloads/recent`,
+      {
+        method: "GET",
+        headers: guestHeaders,
+      },
+    );
+    expect(historyResponse.status).toBe(200);
+    const history = await historyResponse.json();
+    expect(history.entries).toEqual([
+      {
+        command: "summarize",
+        payload: { input: "Guest resume snippet", locale: "en-US" },
+        timestamp: expect.any(String),
+      },
+    ]);
+  });
+
   it("rate limits repeated command requests per client", async () => {
     const commandAdapter = {
       summarize: vi.fn(async () => ({ ok: true })),
