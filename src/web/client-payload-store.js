@@ -152,7 +152,12 @@ export function createClientPayloadStore(options = {}) {
   return { record, getRecent };
 }
 
-export function createClientIdentity({ subject, clientIp, userAgent }) {
+export function createClientIdentity({
+  subject,
+  clientIp,
+  userAgent,
+  sessionId,
+}) {
   const parts = [];
   if (typeof subject === "string" && subject.trim()) {
     parts.push(subject.trim());
@@ -160,12 +165,16 @@ export function createClientIdentity({ subject, clientIp, userAgent }) {
     parts.push("guest");
   }
 
+  if (typeof sessionId === "string" && sessionId.trim()) {
+    parts.push(`session:${sessionId.trim()}`);
+  }
+
   if (typeof clientIp === "string" && clientIp.trim()) {
-    parts.push(clientIp.trim());
+    parts.push(`ip:${clientIp.trim()}`);
   }
 
   if (typeof userAgent === "string" && userAgent.trim()) {
-    parts.push(userAgent.trim());
+    parts.push(`ua:${userAgent.trim()}`);
   }
 
   return parts.join("|");

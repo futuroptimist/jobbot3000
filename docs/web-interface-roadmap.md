@@ -2,6 +2,11 @@
 
 ## Vision Overview
 
+- ⚠️ **Local-only preview:** The web adapter is not production-ready. Run it exclusively on
+  trusted local hardware until the security milestones in
+  [`docs/web-security-roadmap.md`](./web-security-roadmap.md) are complete. Cloud or multi-user
+  deployments risk leaking secrets, PII, and other sensitive data.
+
 - Deliver a local-first web application that streamlines tracking and managing job applications while
   retaining full parity with the existing CLI workflows.
 - Maintain the CLI as the single source of truth, with the web UI orchestrating commands through a
@@ -366,6 +371,9 @@
 > authenticated (or guest) client receives an isolated sanitized payload log
 > exposed at `GET /commands/payloads/recent`, unlocking audit-grade previews of
 > the most recent CLI invocations without leaking another client's inputs.
+> Regression coverage in [`test/web-server.test.js`](../test/web-server.test.js)
+> exercises both authenticated and guest retrieval flows—including the CSRF
+> guard—so the audit preview stays scoped to the active client.
 > Larger roadmap items—such as multi-user access controls and real-time
 > collaboration from the "Future Enhancements" section—remain multi-PR efforts
 > while this targeted hardening work lands as a single-PR change.

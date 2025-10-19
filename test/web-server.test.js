@@ -3020,6 +3020,147 @@ describe("web server command endpoint", () => {
     expect(uniqueEditorTimestamps.size).toBe(editorBody.entries.length);
   });
 
+  it("allows guests to inspect their sanitized command payload history", async () => {
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({ ok: true })),
+    };
+
+    const server = await startServer({ commandAdapter });
+
+    const guestHeaders = buildCommandHeaders(server, {
+      "user-agent": "jobbot-guest-test",
+    });
+    const guestPayload = {
+      input: "  Guest resume snippet\u0000",
+      locale: "\u0007 en-US ",
+    };
+
+    const summarizeResponse = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: guestHeaders,
+      body: JSON.stringify(guestPayload),
+    });
+    expect(summarizeResponse.status).toBe(200);
+    await summarizeResponse.json();
+
+    const sessionHeader = server.sessionHeaderName ?? "x-jobbot-session-id";
+    const sessionId = summarizeResponse.headers.get(sessionHeader);
+    expect(typeof sessionId).toBe("string");
+    expect((sessionId ?? "").trim().length).toBeGreaterThanOrEqual(16);
+
+    const missingCsrfResponse = await fetch(
+      `${server.url}/commands/payloads/recent`,
+      {
+        method: "GET",
+        headers: {
+          "user-agent": "jobbot-guest-test",
+          [sessionHeader]: sessionId,
+        },
+      },
+    );
+    expect(missingCsrfResponse.status).toBe(403);
+
+    const historyResponse = await fetch(
+      `${server.url}/commands/payloads/recent`,
+      {
+        method: "GET",
+        headers: {
+          ...guestHeaders,
+          [sessionHeader]: sessionId,
+        },
+      },
+    );
+    expect(historyResponse.status).toBe(200);
+    const history = await historyResponse.json();
+    expect(history.entries).toEqual([
+      {
+        command: "summarize",
+        payload: { input: "Guest resume snippet", locale: "en-US" },
+        timestamp: expect.any(String),
+      },
+    ]);
+  });
+
+  it("isolates guest history by per-session identity", async () => {
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({ ok: true })),
+    };
+
+    const server = await startServer({ commandAdapter });
+    const sessionHeader = server.sessionHeaderName ?? "x-jobbot-session-id";
+
+    const guest1Headers = buildCommandHeaders(server, {
+      "user-agent": "shared-guest-agent",
+    });
+    const guest1Payload = {
+      input: "First guest payload",
+      locale: "en-US",
+    };
+    const guest1Response = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: guest1Headers,
+      body: JSON.stringify(guest1Payload),
+    });
+    expect(guest1Response.status).toBe(200);
+    await guest1Response.json();
+    const guest1Session = guest1Response.headers.get(sessionHeader);
+    expect(typeof guest1Session).toBe("string");
+    expect((guest1Session ?? "").trim()).not.toBe("");
+
+    const guest2Headers = buildCommandHeaders(server, {
+      "user-agent": "shared-guest-agent",
+    });
+    const guest2Payload = {
+      input: "Second guest payload",
+      locale: "en-US",
+    };
+    const guest2Response = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: guest2Headers,
+      body: JSON.stringify(guest2Payload),
+    });
+    expect(guest2Response.status).toBe(200);
+    await guest2Response.json();
+    const guest2Session = guest2Response.headers.get(sessionHeader);
+    expect(typeof guest2Session).toBe("string");
+    expect((guest2Session ?? "").trim()).not.toBe("");
+    expect(guest2Session).not.toBe(guest1Session);
+
+    const guest1History = await fetch(`${server.url}/commands/payloads/recent`, {
+      method: "GET",
+      headers: {
+        ...guest1Headers,
+        [sessionHeader]: guest1Session,
+      },
+    });
+    expect(guest1History.status).toBe(200);
+    const guest1Body = await guest1History.json();
+    expect(guest1Body.entries).toEqual([
+      {
+        command: "summarize",
+        payload: { input: "First guest payload", locale: "en-US" },
+        timestamp: expect.any(String),
+      },
+    ]);
+
+    const guest2History = await fetch(`${server.url}/commands/payloads/recent`, {
+      method: "GET",
+      headers: {
+        ...guest2Headers,
+        [sessionHeader]: guest2Session,
+      },
+    });
+    expect(guest2History.status).toBe(200);
+    const guest2Body = await guest2History.json();
+    expect(guest2Body.entries).toEqual([
+      {
+        command: "summarize",
+        payload: { input: "Second guest payload", locale: "en-US" },
+        timestamp: expect.any(String),
+      },
+    ]);
+  });
+
   it("rate limits repeated command requests per client", async () => {
     const commandAdapter = {
       summarize: vi.fn(async () => ({ ok: true })),
