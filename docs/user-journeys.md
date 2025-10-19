@@ -431,6 +431,12 @@ call scheduled"`.
    attachments, and lifecycle events in `data/opportunities.db`.
 2. Run `jobbot analytics sankey --json` (or use the new Sankey UI) to confirm the
    `recruiter_outreach → phone_screen_scheduled` edge appears alongside other stages.
+   > [!NOTE] > **Update (2025-10-22):** `jobbot analytics sankey --json` now ships from the CLI,
+   > returning opportunity edges for recruiter outreach through phone screens.
+   > When the SQLite module is unavailable the CLI reads
+   > `data/opportunities/events.ndjson`, keeping analytics functional in
+   > constrained environments. [`test/cli.test.js`](../test/cli.test.js) exercises the
+   > JSON output so the Sankey transitions stay aligned with the UI summary.
 3. Trigger reminders with `jobbot reminders schedule --opportunity <uid>` so follow-ups and prep
    checklists fire relative to the scheduled phone screen.
 4. Export the durable record via `node scripts/export-data.ts > backups/opportunities.ndjson` to

@@ -2,6 +2,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 import { STATUSES } from './lifecycle.js';
+import { OpportunitiesRepo } from './services/opportunitiesRepo.js';
+import { computeSankeyEdges } from './analytics/sankey.js';
 
 let overrideDir;
 
@@ -171,6 +173,67 @@ async function readJsonFile(file) {
     if (err && err.code === 'ENOENT') return {};
     throw err;
   }
+}
+
+async function readOpportunityEventsFromFile(file) {
+  let raw;
+  try {
+    raw = await fs.readFile(file, 'utf8');
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return [];
+    throw err;
+  }
+
+  const events = [];
+  const lines = raw.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index].trim();
+    if (!line) continue;
+    let parsed;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!parsed || typeof parsed !== 'object') continue;
+
+    const opportunityUid = typeof parsed.opportunityUid === 'string' ? parsed.opportunityUid : null;
+    const occurredAt = typeof parsed.occurredAt === 'string' ? parsed.occurredAt : null;
+    const type = typeof parsed.type === 'string' ? parsed.type : null;
+    if (!opportunityUid || !occurredAt || !type) continue;
+
+    const eventUid =
+      typeof parsed.eventUid === 'string' && parsed.eventUid.trim()
+        ? parsed.eventUid.trim()
+        : `${opportunityUid}:${occurredAt}:${type}:${index}`;
+    const payload =
+      parsed.payload && typeof parsed.payload === 'object' ? { ...parsed.payload } : undefined;
+
+    events.push({
+      eventUid,
+      opportunityUid,
+      occurredAt,
+      type,
+      payload,
+    });
+  }
+
+  return events;
+}
+
+function collectOpportunityEventsFromRepo(repo) {
+  const events = [];
+  if (!repo || typeof repo.listOpportunities !== 'function') return events;
+
+  const opportunities = repo.listOpportunities();
+  for (const opportunity of opportunities) {
+    const history = repo.listEvents?.(opportunity.uid) ?? [];
+    if (!Array.isArray(history) || history.length === 0) continue;
+    for (const event of history) {
+      events.push(event);
+    }
+  }
+  return events;
 }
 
 function getPaths() {
@@ -1195,4 +1258,59 @@ export function formatFunnelReport(funnel) {
     );
   }
   return lines.join('\n');
+}
+
+export async function computeOpportunitySankey() {
+  const repo = new OpportunitiesRepo();
+  try {
+    let events = [];
+    if (repo.sqlite) {
+      events = collectOpportunityEventsFromRepo(repo);
+    } else {
+      const fallbackFile = path.join(resolveDataDir(), 'opportunities', 'events.ndjson');
+      events = await readOpportunityEventsFromFile(fallbackFile);
+      if (events.length === 0) {
+        events = collectOpportunityEventsFromRepo(repo);
+      }
+    }
+
+    return {
+      generated_at: new Date().toISOString(),
+      edges: computeSankeyEdges(events),
+    };
+  } finally {
+    repo.close();
+  }
+}
+
+export function formatSankeyReport(report) {
+  const edges = Array.isArray(report?.edges) ? report.edges : [];
+  if (edges.length === 0) {
+    return 'No opportunity events recorded';
+  }
+
+  const sorted = edges
+    .slice()
+    .sort((a, b) => {
+      const sourceA = typeof a?.source === 'string' ? a.source : '';
+      const sourceB = typeof b?.source === 'string' ? b.source : '';
+      const sourceCompare = sourceA.localeCompare(sourceB);
+      if (sourceCompare !== 0) return sourceCompare;
+      const targetA = typeof a?.target === 'string' ? a.target : '';
+      const targetB = typeof b?.target === 'string' ? b.target : '';
+      return targetA.localeCompare(targetB);
+    });
+
+  return sorted
+    .map(edge => {
+      const source = typeof edge?.source === 'string' && edge.source.trim()
+        ? edge.source.trim()
+        : 'unknown';
+      const target = typeof edge?.target === 'string' && edge.target.trim()
+        ? edge.target.trim()
+        : 'unknown';
+      const count = Number.isFinite(edge?.count) ? edge.count : 0;
+      return `${source} → ${target}: ${count}`;
+    })
+    .join('\n');
 }
