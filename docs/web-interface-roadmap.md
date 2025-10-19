@@ -285,6 +285,15 @@
   [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
   verifies the adapter calls `cmdTrackAdd` with sanitized arguments and
   returns the status payload for the UI.
+- Bulk exports for shortlist reporting with JSON and CSV downloads.
+  _Implemented (2025-10-22):_ The Applications panel ships "Download JSON"
+  and "Download CSV" actions that serialize the current shortlist view using
+  the sanitized adapter payloads. The UI emits a
+  `jobbot:shortlist-exported` event with export metadata so browser
+  extensions can react to downloads. Regression coverage in
+  [`test/web-server.test.js`](../test/web-server.test.js) exercises both
+  export formats, inspects the generated blobs, and verifies the status
+  message updates after each download.
 - Analytics dashboard summarizing application funnels and outcomes.
   _Implemented (2025-10-10):_ The status hub now includes an **Analytics**
   view backed by `/commands/analytics-funnel`, which invokes

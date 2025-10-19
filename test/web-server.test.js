@@ -538,6 +538,144 @@ describe("web server status page", () => {
     expect(range?.textContent).toContain("Showing 2-2 of 2");
   });
 
+  it("exports shortlist views as JSON and CSV", async () => {
+    const shortlistItems = [
+      {
+        id: "job-1",
+        metadata: {
+          location: "Remote",
+          level: "=IMPORT(\"https://evil\")",
+          compensation: "$185k",
+          synced_at: "2025-03-01T00:00:00.000Z",
+        },
+        tags: ["remote", "dream"],
+        discard_count: 1,
+        last_discard: {
+          reason: "duplicate",
+          discarded_at: "2025-02-28T17:00:00.000Z",
+          tags: ["stale"],
+        },
+      },
+      {
+        id: "job-2",
+        metadata: {
+          location: "San Francisco",
+          level: "Staff",
+          compensation: "$210k",
+          synced_at: "2025-02-25T12:00:00.000Z",
+        },
+        tags: ["onsite", "   @malicious"],
+        discard_count: 0,
+      },
+    ];
+
+    const commandAdapter = {
+      "shortlist-list": vi.fn(async () => ({
+        command: "shortlist-list",
+        format: "json",
+        stdout: "",
+        stderr: "",
+        returnValue: 0,
+        data: {
+          total: shortlistItems.length,
+          offset: 0,
+          limit: 20,
+          filters: {},
+          hasMore: false,
+          items: shortlistItems,
+        },
+      })),
+    };
+    commandAdapter.shortlistList = commandAdapter["shortlist-list"];
+
+    const server = await startServer({ commandAdapter });
+    const { dom, boot } = await renderStatusDom(server, {
+      pretendToBeVisual: true,
+      autoBoot: false,
+    });
+
+    const waitForEvent = (name, timeout = 500) =>
+      waitForDomEvent(dom, name, timeout);
+
+    const readyPromise = waitForEvent("jobbot:applications-ready");
+    await boot();
+    await readyPromise;
+
+    const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
+    dom.window.location.hash = "#applications";
+    dom.window.dispatchEvent(new HashChange("hashchange"));
+
+    await waitForEvent("jobbot:applications-loaded");
+
+    const { URL } = dom.window;
+    URL.createObjectURL = vi.fn(() => "blob:shortlist");
+    URL.revokeObjectURL = vi.fn();
+    const anchorClick = vi
+      .spyOn(dom.window.HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+
+    const jsonButton = dom.window.document.querySelector(
+      "[data-shortlist-export-json]",
+    );
+    const csvButton = dom.window.document.querySelector(
+      "[data-shortlist-export-csv]",
+    );
+    const message = dom.window.document.querySelector(
+      "[data-shortlist-export-message]",
+    );
+
+    expect(jsonButton).not.toBeNull();
+    expect(csvButton).not.toBeNull();
+
+    const click = () =>
+      new dom.window.MouseEvent("click", { bubbles: true, cancelable: true });
+
+    jsonButton?.dispatchEvent(click());
+    const jsonEvent = await waitForEvent("jobbot:shortlist-exported");
+
+    expect(jsonEvent.detail).toMatchObject({
+      format: "json",
+      success: true,
+      count: shortlistItems.length,
+      offset: 0,
+      limit: 20,
+    });
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+    const jsonBlob = URL.createObjectURL.mock.calls[0]?.[0];
+    expect(jsonBlob).toBeInstanceOf(dom.window.Blob);
+    expect(jsonBlob.type).toBe("application/json");
+    const jsonText = await jsonBlob.text();
+    const parsed = JSON.parse(jsonText);
+    expect(parsed).toMatchObject({
+      total: shortlistItems.length,
+      offset: 0,
+      limit: 20,
+      items: shortlistItems,
+    });
+    expect(message?.textContent).toContain("shortlist-entries.json");
+
+    csvButton?.dispatchEvent(click());
+    const csvEvent = await waitForEvent("jobbot:shortlist-exported");
+
+    expect(csvEvent.detail).toMatchObject({
+      format: "csv",
+      success: true,
+      count: shortlistItems.length,
+    });
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(2);
+    expect(anchorClick).toHaveBeenCalledTimes(2);
+    const csvBlob = URL.createObjectURL.mock.calls[1]?.[0];
+    expect(csvBlob).toBeInstanceOf(dom.window.Blob);
+    expect(csvBlob.type).toBe("text/csv");
+    const csvText = await csvBlob.text();
+    expect(csvText).toContain("job_id,location,level,compensation,tags");
+    expect(csvText).toContain("job-1");
+    expect(csvText).toContain("duplicate");
+    expect(csvText).toContain("'=IMPORT(");
+    expect(csvText).toContain("'@malicious");
+    expect(message?.textContent).toContain("shortlist-entries.csv");
+  });
+
   it("downloads reminder calendars from the applications view", async () => {
     const commandAdapter = {
       "shortlist-list": vi.fn(async () => ({
