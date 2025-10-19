@@ -4072,9 +4072,39 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             typeof detail?.jobId === 'string' && detail.jobId.trim()
               ? detail.jobId.trim()
               : detailState.jobId;
+          const statusValue =
+            typeof detail?.status === 'string' ? detail.status.trim() : '';
+          const providedLabel =
+            typeof detail?.statusLabel === 'string' && detail.statusLabel.trim()
+              ? detail.statusLabel.trim()
+              : '';
+          const ensureStatusFormatter = () => {
+            if (typeof formatStatusLabelText === 'function') {
+              return formatStatusLabelText;
+            }
+            return value =>
+              (value || '')
+                .split('_')
+                .map(part => (part ? part[0].toUpperCase() + part.slice(1) : part))
+                .join(' ');
+          };
+          const formatStatusValue = ensureStatusFormatter();
+          let statusLabel = providedLabel;
+          if (!statusLabel) {
+            if (statusValue) {
+              statusLabel = formatStatusValue(statusValue);
+            } else {
+              const fallbackLabel =
+                detailElements?.status?.getAttribute('data-status-label');
+              if (typeof fallbackLabel === 'string' && fallbackLabel.trim()) {
+                statusLabel = fallbackLabel.trim();
+              }
+            }
+          }
           const eventDetail = {
             jobId,
-            status: typeof detail?.status === 'string' ? detail.status : undefined,
+            status: statusValue || undefined,
+            statusLabel: statusLabel || undefined,
             note:
               typeof detail?.note === 'string' && detail.note.trim()
                 ? detail.note.trim()

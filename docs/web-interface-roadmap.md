@@ -275,7 +275,8 @@
   `statusLabel` payload so extensions can react to updates without
   reimplementing label formatting. Regression coverage in
   [`test/web-server.test.js`](../test/web-server.test.js) drives the DOM
-  workflow and event contract against a mocked adapter, while
+  workflow, asserts the `statusLabel` field on the event payload, and keeps the
+  contract aligned against a mocked adapter, while
   [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
   verifies the adapter calls `cmdTrackAdd` with sanitized arguments and
   returns the status payload for the UI.
