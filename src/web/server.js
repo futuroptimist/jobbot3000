@@ -259,20 +259,6 @@ function normalizePluginId(value) {
   return collapsed || null;
 }
 
-function normalizePluginIntegrity(value) {
-  if (typeof value !== "string") {
-    return "";
-  }
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return "";
-  }
-  if (!/^sha(?:256|384|512)-[A-Za-z0-9+/=]+$/.test(trimmed)) {
-    return "";
-  }
-  return trimmed;
-}
-
 function isSafePluginUrl(url) {
   if (typeof url !== "string") {
     return false;
@@ -419,7 +405,7 @@ function createPluginAssets(app, plugins = {}) {
       description: sanitized.description,
       events: sanitized.events,
       scriptUrl,
-      integrity: sanitized.integrity,
+      integrity,
     });
   }
   return {
