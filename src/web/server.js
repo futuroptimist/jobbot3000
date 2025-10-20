@@ -1,6 +1,6 @@
 import express from "express";
 import fs from "node:fs/promises";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { performance } from "node:perf_hooks";
 import path from "node:path";
@@ -268,13 +268,36 @@ function isSafePluginUrl(url) {
     return false;
   }
   if (trimmed.startsWith("/")) {
+    if (trimmed.startsWith("//")) {
+      return false;
+    }
     return !trimmed.includes("..");
   }
   const lower = trimmed.toLowerCase();
-  if (lower.startsWith("https://") || lower.startsWith("http://")) {
+  if (lower.startsWith("https://")) {
     return true;
   }
   return false;
+}
+
+const PLUGIN_INTEGRITY_RE = /^sha(256|384|512)-[A-Za-z0-9+/=]+={0,2}$/;
+
+function normalizePluginIntegrity(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  if (!PLUGIN_INTEGRITY_RE.test(trimmed)) {
+    return "";
+  }
+  return trimmed;
+}
+
+function computePluginIntegrityFromSource(source) {
+  return `sha256-${createHash("sha256").update(source, "utf8").digest("base64")}`;
 }
 
 function sanitizePluginEntry(entry) {
@@ -308,10 +331,19 @@ function sanitizePluginEntry(entry) {
   if (url && !isSafePluginUrl(url)) {
     url = "";
   }
+  let integrity = "";
+  if (source) {
+    integrity = computePluginIntegrityFromSource(source);
+  } else {
+    integrity = normalizePluginIntegrity(entry.integrity);
+  }
   if (!url && !source) {
     return null;
   }
-  return { id, name, description, events, url, source };
+  if (url && !integrity) {
+    return null;
+  }
+  return { id, name, description, events, url, source, integrity };
 }
 
 function createPluginAssets(app, plugins = {}) {
@@ -347,6 +379,7 @@ function createPluginAssets(app, plugins = {}) {
       description: sanitized.description,
       events: sanitized.events,
       scriptUrl,
+      integrity: sanitized.integrity,
     });
   }
   return {
@@ -5591,7 +5624,16 @@ export function createWebApp({
       .map((entry) => {
         const idAttr = escapeHtml(entry.id);
         const srcAttr = escapeHtml(entry.scriptUrl);
-        return `<script defer data-plugin-id="${idAttr}" src="${srcAttr}"></script>`;
+        const attributes = [
+          "defer",
+          `data-plugin-id="${idAttr}"`,
+          `src="${srcAttr}"`,
+        ];
+        if (entry.integrity) {
+          const integrityAttr = escapeHtml(entry.integrity);
+          attributes.push(`integrity="${integrityAttr}"`, 'crossorigin="anonymous"');
+        }
+        return `<script ${attributes.join(" ")}></script>`;
       })
       .join("");
 

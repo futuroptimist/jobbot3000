@@ -209,4 +209,69 @@ describe('web plugin system', () => {
     expect(replayDetail.panels).toEqual(initialDetail.panels);
     expect(dom.window.__pluginPanelsReady).toEqual(replayDetail.panels);
   });
+
+  it('requires integrity metadata for remote plugin bundles', async () => {
+    const remoteIntegrity = 'sha256-o8jS8jZ0pniS3pS3p9DOMkMt2rt7NmBGG99nmHn7f3g=';
+    const inlineSource = 'window.inlinePluginLoaded = true;';
+    const server = await startServer({
+      features: {
+        plugins: {
+          entries: [
+            {
+              id: 'remote-missing-integrity',
+              name: 'Missing Integrity',
+              url: 'https://plugins.example.com/missing.js',
+            },
+            {
+              id: 'remote-secure-plugin',
+              name: 'Secure Remote Plugin',
+              url: 'https://plugins.example.com/secure.js',
+              integrity: remoteIntegrity,
+            },
+            {
+              id: 'inline-plugin',
+              name: 'Inline Plugin',
+              source: inlineSource,
+            },
+          ],
+        },
+      },
+    });
+
+    const homepage = await fetch(`${server.url}/`);
+    expect(homepage.status).toBe(200);
+    const html = await homepage.text();
+    const dom = new JSDOM(html);
+
+    const manifestScript = dom.window.document.getElementById('jobbot-plugin-manifest');
+    expect(manifestScript).not.toBeNull();
+    const manifestJson = manifestScript?.textContent || '[]';
+    const manifest = JSON.parse(manifestJson);
+
+    expect(Array.isArray(manifest)).toBe(true);
+    expect(manifest.some(entry => entry.id === 'remote-secure-plugin')).toBe(true);
+    expect(manifest.some(entry => entry.id === 'remote-missing-integrity')).toBe(false);
+    const secureManifestEntry = manifest.find(entry => entry.id === 'remote-secure-plugin');
+    expect(secureManifestEntry?.integrity).toBe(remoteIntegrity);
+    const inlineManifestEntry = manifest.find(entry => entry.id === 'inline-plugin');
+    expect(inlineManifestEntry?.integrity).toMatch(/^sha256-/);
+
+    const remoteScript = dom.window.document.querySelector(
+      'script[data-plugin-id="remote-secure-plugin"]',
+    );
+    expect(remoteScript).not.toBeNull();
+    expect(remoteScript?.getAttribute('integrity')).toBe(remoteIntegrity);
+    expect(remoteScript?.getAttribute('crossorigin')).toBe('anonymous');
+
+    const missingScript = dom.window.document.querySelector(
+      'script[data-plugin-id="remote-missing-integrity"]',
+    );
+    expect(missingScript).toBeNull();
+
+    const inlineScript = dom.window.document.querySelector(
+      'script[data-plugin-id="inline-plugin"]',
+    );
+    expect(inlineScript).not.toBeNull();
+    expect(inlineScript?.getAttribute('integrity')).toMatch(/^sha256-/);
+  });
 });
