@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { JSDOM } from 'jsdom';
+import { createHash } from 'node:crypto';
 
 const activeServers = [];
 
@@ -148,6 +149,59 @@ describe('web plugin system', () => {
 
     const manifest = dom.window.jobbotPluginHost.getManifest();
     expect(manifest.some(entry => entry.id === 'status-listener')).toBe(true);
+  });
+
+  it('attaches integrity metadata and skips unverifiable remote plugins', async () => {
+    const server = await startServer({
+      features: {
+        plugins: {
+          entries: [
+            {
+              id: 'status-listener',
+              name: 'Status Listener',
+              source: STATUS_LISTENER_PLUGIN_SOURCE,
+              events: ['jobbot:status-panels-ready'],
+            },
+            {
+              id: 'remote-unverified',
+              name: 'Remote (no integrity)',
+              url: 'https://plugins.invalid/jobbot.js',
+            },
+          ],
+        },
+      },
+    });
+
+    const homepage = await fetch(`${server.url}/`);
+    expect(homepage.status).toBe(200);
+    const html = await homepage.text();
+    const dom = new JSDOM(html, {
+      runScripts: 'dangerously',
+      url: `${server.url}/`,
+    });
+
+    const scripts = Array.from(dom.window.document.querySelectorAll('script[data-plugin-id]'));
+    const inlineScript = scripts.find(
+      element => element.getAttribute('data-plugin-id') === 'status-listener',
+    );
+    expect(inlineScript).toBeDefined();
+    expect(inlineScript?.getAttribute('integrity')).toBeTruthy();
+    expect(inlineScript?.getAttribute('crossorigin')).toBe('anonymous');
+
+    const src = inlineScript?.getAttribute('src');
+    expect(src).toBeDefined();
+    if (src) {
+      const response = await fetch(`${server.url}${src}`);
+      expect(response.status).toBe(200);
+      const code = await response.text();
+      const digest = createHash('sha256').update(code).digest('base64');
+      expect(inlineScript?.getAttribute('integrity')).toBe(`sha256-${digest}`);
+    }
+
+    const remoteScript = scripts.find(
+      element => element.getAttribute('data-plugin-id') === 'remote-unverified',
+    );
+    expect(remoteScript).toBeUndefined();
   });
 
   it('replays status panel readiness events to late-loading plugins', async () => {
