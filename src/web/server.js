@@ -332,10 +332,11 @@ function sanitizePluginEntry(entry) {
     url = "";
   }
   let integrity = "";
-  if (source) {
+  const normalizedIntegrity = normalizePluginIntegrity(entry.integrity);
+  if (url) {
+    integrity = normalizedIntegrity;
+  } else if (source) {
     integrity = computePluginIntegrityFromSource(source);
-  } else {
-    integrity = normalizePluginIntegrity(entry.integrity);
   }
   if (!url && !source) {
     return null;
