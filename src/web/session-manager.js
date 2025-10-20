@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 const DEFAULT_ROTATE_AFTER_MS = 15 * 60 * 1000;
 const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_ABSOLUTE_TIMEOUT_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_MAX_SESSIONS = 10_000;
 
 function resolvePositiveInteger(value, fallback) {
   const numeric = Number(value);
@@ -42,9 +43,22 @@ export function createSessionManager(options = {}) {
     options.absoluteTimeoutMs,
     DEFAULT_ABSOLUTE_TIMEOUT_MS,
   );
+  const maxSessions = resolvePositiveInteger(
+    options.maxSessions,
+    DEFAULT_MAX_SESSIONS,
+  );
   const clock = options.clock;
 
   const sessions = new Map();
+
+  function evictOldestSession() {
+    const oldest = sessions.keys().next();
+    if (oldest.done) {
+      return false;
+    }
+    sessions.delete(oldest.value);
+    return true;
+  }
 
   function cleanup(current) {
     for (const [id, session] of sessions) {
@@ -63,6 +77,14 @@ export function createSessionManager(options = {}) {
     previousId = null,
     reason = "created",
   } = {}) {
+    while (sessions.size >= maxSessions) {
+      if (!evictOldestSession()) {
+        break;
+      }
+    }
+    if (sessions.size >= maxSessions) {
+      throw new Error("Session capacity exceeded");
+    }
     const id = randomBytes(24).toString("hex");
     const absoluteExpiresAt = Math.min(
       clampDeadline(absoluteDeadline, Number.POSITIVE_INFINITY),
