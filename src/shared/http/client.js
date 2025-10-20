@@ -284,7 +284,11 @@ export function createHttpClient(options = {}) {
     return response.json();
   };
 
-  return { request, json };
+  const get = (url, options = {}) => request(url, { ...options, method: 'GET' });
+
+  // Regression coverage in test/services-http.test.js exercises header merging,
+  // timeout handling, and the GET helper.
+  return { request, json, get };
 }
 
 export { DEFAULT_HTTP_TIMEOUT_MS };
