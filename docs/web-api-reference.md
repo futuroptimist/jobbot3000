@@ -19,6 +19,10 @@ The web server listens on the host/port returned by
   admin) roles are required for mutations such as `track-record`, `listings-ingest`, and
   `listings-archive`. Requests without the needed roles receive 403 responses and are recorded in the
   audit log.
+- Operators can force secure session cookies—even when testing over plain HTTP—by
+  setting `JOBBOT_WEB_SESSION_SECURE=1` before launching the server. This guarantees
+  `Secure` cookie attributes so rotated identifiers are never transmitted over
+  cleartext connections.
 - JSON payloads require `Content-Type: application/json` and must match the validator defined in
   `command-registry.js`.
 
@@ -42,6 +46,14 @@ for accessibility and performance audits.
 
 Returns a JSON payload describing service health, uptime, and individual check states. Responses use
 status code 200 when all checks pass and 503 when any check reports `status: "error"`.
+
+### POST /sessions/revoke
+
+Invalidates the caller's active session and returns a fresh identifier. Requests must include the
+CSRF header and, when configured, the same authorization header required for command endpoints. The
+response body includes a `revoked` boolean and issues a replacement session cookie plus the
+`X-Jobbot-Session-Id` header. Clients should discard any cached identifiers and use the replacement
+cookie for subsequent requests.
 
 ### GET /assets/status-hub.js
 

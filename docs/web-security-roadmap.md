@@ -22,6 +22,12 @@
    - Replace static bearer tokens with a dedicated identity service and hashed credential storage.
    - Enforce per-user roles and scopes for every HTTP and websocket endpoint.
    - Implement secure session cookies with rotation, expiration, and revocation support.
+     _Implemented (2025-10-30):_ `createSessionManager` now rotates
+     identifiers on an in-memory schedule, expires idle sessions, and powers
+     the `/sessions/revoke` endpoint so operators can invalidate credentials
+     on demand. [`test/web-session-security.test.js`](../test/web-session-security.test.js)
+     exercises rotation, expiration, and revocation flows to keep the guardrail
+     enforced in CI.
 2. **Secrets isolation**
    - Move environment variable management out of the process and into an encrypted secrets store.
    - Ensure CLI subprocesses inherit only the minimum required configuration.
@@ -44,6 +50,10 @@
   values so future template changes keep the protections intact.
 - Harden the webpack/asset pipeline to avoid serving untrusted plugin bundles without verification.
 - Build automated security regression tests that run in CI alongside existing Vitest coverage.
+  _Implemented (2025-10-30):_ The dedicated
+  [`test/web-session-security.test.js`](../test/web-session-security.test.js)
+  suite drives the new session manager through rotation, expiration, and
+  revocation scenarios so regressions surface before shipping.
 
 ## Medium-term goals (self-hosted deployment ready)
 
