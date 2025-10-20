@@ -32,6 +32,10 @@ can be rolled out behind feature flags to minimize regressions.
 ## Phase 4 — Security and privacy hardening
 
 - Install redaction middleware for request logging and exporter output; default to masked audit trails.
+  _Implemented (2025-10-24):_ Exporters now redact secret-like values and email addresses before
+  emitting Markdown or DOCX deliverables, preventing leaked credentials in attachments. The expanded
+  regression coverage in [`test/exporters.test.js`](../../test/exporters.test.js) asserts the
+  markdown redaction plus the DOCX sanitizer so future formatter tweaks stay scrubbed.
 - Add structured audit logging with retention controls and surface audit failures via the logger.
 - Update [SECURITY.md](../../SECURITY.md) with the refreshed threat model and external references.
 

@@ -165,6 +165,21 @@ describe('exporters', () => {
     );
   });
 
+  it('redacts secrets and emails in markdown exports', () => {
+    const output = toMarkdownSummary({
+      title: 'Dev',
+      company: 'Acme',
+      summary: 'Email alice@example.com with api_key=super-secret',
+      requirements: ['Contact bob@example.com', 'token=abcd-1234'],
+    });
+
+    expect(output).not.toContain('alice@example.com');
+    expect(output).toContain('al\\*\\*\\*@example.com');
+    expect(output).toContain('api\\_key=\\*\\*\\*redacted\\*\\*\\*');
+    expect(output).not.toContain('abcd-1234');
+    expect(output).toContain('bo\\*\\*\\*@example.com');
+  });
+
   it('supports spanish locale in markdown summaries', () => {
     const output = toMarkdownSummary({
       title: 'Dev',
@@ -352,5 +367,24 @@ describe('exporters', () => {
     expect(xml).toContain('Blockers');
     const occurrences = (xml.match(/Must have active security clearance/g) || []).length;
     expect(occurrences).toBeGreaterThan(1);
+  });
+
+  it('redacts sensitive values in DOCX exports', async () => {
+    const buffer = await toDocxSummary({
+      title: 'Platform Engineer',
+      company: 'Acme',
+      summary: 'Reach out via alice@example.com and include token=abcd-1234',
+      requirements: ['api_key=super-secret', 'Contact bob@example.com'],
+    });
+
+    expect(buffer instanceof Uint8Array || Buffer.isBuffer(buffer)).toBe(true);
+    const zip = await JSZip.loadAsync(buffer);
+    const xml = await zip.file('word/document.xml').async('string');
+
+    expect(xml).not.toContain('alice@example.com');
+    expect(xml).toContain('al***@example.com');
+    expect(xml).not.toContain('abcd-1234');
+    expect(xml).toContain('token=***redacted***');
+    expect(xml).toContain('bo***@example.com');
   });
 });
