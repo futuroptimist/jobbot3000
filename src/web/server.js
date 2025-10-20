@@ -5521,14 +5521,14 @@ export function createWebApp({
     }
   };
 
-  const pluginAssets = createPluginAssets(app, features?.plugins);
-
   app.use((req, res, next) => {
     for (const [header, value] of Object.entries(SECURITY_HEADERS)) {
       res.set(header, value);
     }
     next();
   });
+
+  const pluginAssets = createPluginAssets(app, features?.plugins);
 
   app.get("/assets/status-hub.js", (req, res) => {
     res.set("Content-Type", "application/javascript; charset=utf-8");
