@@ -43,6 +43,15 @@
   in [`test/web-server.test.js`](../test/web-server.test.js) asserts the header
   values so future template changes keep the protections intact.
 - Harden the webpack/asset pipeline to avoid serving untrusted plugin bundles without verification.
+  _Implemented (2025-10-24):_ `startWebServer` now rejects plugin entries that
+  reference remote bundles without Subresource Integrity (SRI) hashes and
+  serves inline plugin sources with an automatic `sha256` integrity attribute.
+  Script tags include `crossorigin="anonymous"` to let browsers enforce the
+  integrity check, and non-local `http://` URLs are no longer accepted. The
+  regression coverage in
+  [`test/web-plugins.test.js`](../test/web-plugins.test.js) ensures inline
+  bundles publish deterministic SRI hashes and unverifiable remote plugins are
+  skipped.
 - Build automated security regression tests that run in CI alongside existing Vitest coverage.
 
 ## Medium-term goals (self-hosted deployment ready)
