@@ -83,6 +83,32 @@ function buildCommandHeaders(server, overrides = {}) {
   };
 }
 
+const EXPECTED_CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' https:",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data:",
+  "font-src 'self'",
+  "connect-src 'self'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+  "object-src 'none'",
+].join('; ');
+
+const EXPECTED_PERMISSIONS_POLICY = [
+  'accelerometer=()',
+  'autoplay=()',
+  'camera=()',
+  'geolocation=()',
+  'gyroscope=()',
+  'microphone=()',
+  'payment=()',
+  'usb=()',
+].join(', ');
+
+const EXPECTED_REFERRER_POLICY = 'strict-origin-when-cross-origin';
+
 afterEach(async () => {
   while (activeServers.length > 0) {
     const server = activeServers.pop();
@@ -320,6 +346,23 @@ describe("web server status page", () => {
     const css = await asset.text();
     expect(css).toContain(".status-panel");
     expect(css).toContain("--jobbot-color-background");
+  });
+
+  it("applies strict security headers to the status hub", async () => {
+    const server = await startServer();
+
+    const response = await fetch(`${server.url}/`);
+    expect(response.status).toBe(200);
+
+    expect(response.headers.get("content-security-policy")).toBe(
+      EXPECTED_CONTENT_SECURITY_POLICY,
+    );
+    expect(response.headers.get("permissions-policy")).toBe(
+      EXPECTED_PERMISSIONS_POLICY,
+    );
+    expect(response.headers.get("referrer-policy")).toBe(
+      EXPECTED_REFERRER_POLICY,
+    );
   });
 
   it("supports hash-based navigation between status sections", async () => {

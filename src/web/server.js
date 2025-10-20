@@ -386,6 +386,38 @@ const PLUGIN_HOST_STUB = minifyInlineScript(String.raw`
   })();
 `);
 
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' https:",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data:",
+  "font-src 'self'",
+  "connect-src 'self'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+  "object-src 'none'",
+].join('; ');
+
+const PERMISSIONS_POLICY = [
+  'accelerometer=()',
+  'autoplay=()',
+  'camera=()',
+  'geolocation=()',
+  'gyroscope=()',
+  'microphone=()',
+  'payment=()',
+  'usb=()',
+].join(', ');
+
+const REFERRER_POLICY = 'strict-origin-when-cross-origin';
+
+const SECURITY_HEADERS = Object.freeze({
+  'Content-Security-Policy': CONTENT_SECURITY_POLICY,
+  'Permissions-Policy': PERMISSIONS_POLICY,
+  'Referrer-Policy': REFERRER_POLICY,
+});
+
 const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
   :root {
     color-scheme: dark;
@@ -5488,6 +5520,13 @@ export function createWebApp({
       logger?.warn?.("Failed to emit command lifecycle event", error);
     }
   };
+
+  app.use((req, res, next) => {
+    for (const [header, value] of Object.entries(SECURITY_HEADERS)) {
+      res.set(header, value);
+    }
+    next();
+  });
 
   const pluginAssets = createPluginAssets(app, features?.plugins);
 

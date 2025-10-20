@@ -36,6 +36,12 @@
 
 - Integrate per-user API keys with scoped RBAC instead of anonymous guest workflows.
 - Add content security policy (CSP), permission policy, and strict referrer policy headers.
+  _Implemented (2025-10-24):_ `createWebApp` now applies strict security
+  headers on every response, locking down default/script/style sources,
+  disabling powerful browser features, and enforcing
+  `strict-origin-when-cross-origin` referrer behavior. The regression coverage
+  in [`test/web-server.test.js`](../test/web-server.test.js) asserts the header
+  values so future template changes keep the protections intact.
 - Harden the webpack/asset pipeline to avoid serving untrusted plugin bundles without verification.
 - Build automated security regression tests that run in CI alongside existing Vitest coverage.
 
