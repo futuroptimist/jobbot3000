@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { JSDOM } from 'jsdom';
+import { createHash } from 'node:crypto';
 
 const activeServers = [];
 
@@ -135,6 +136,19 @@ describe('web plugin system', () => {
     const readyDetail = await panelsReadyPromise;
     await new Promise(resolve => setTimeout(resolve, 10));
 
+    const pluginScript = dom.window.document.querySelector(
+      'script[data-plugin-id="status-listener"]',
+    );
+    expect(pluginScript).toBeTruthy();
+    const integrityAttr = pluginScript?.getAttribute('integrity');
+    expect(integrityAttr).toMatch(/^sha256-/);
+
+    const response = await fetch(`${server.url}${pluginScript?.getAttribute('src')}`);
+    expect(response.status).toBe(200);
+    const code = await response.text();
+    const expectedIntegrity = `sha256-${createHash('sha256').update(code).digest('base64')}`;
+    expect(integrityAttr).toBe(expectedIntegrity);
+
     expect(dom.window.__pluginManifest).toMatchObject({
       id: 'status-listener',
       name: 'Status Listener',
@@ -148,6 +162,90 @@ describe('web plugin system', () => {
 
     const manifest = dom.window.jobbotPluginHost.getManifest();
     expect(manifest.some(entry => entry.id === 'status-listener')).toBe(true);
+  });
+
+  it('requires integrity metadata for remote plugin bundles', async () => {
+    const integrity = 'sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
+    const server = await startServer({
+      features: {
+        plugins: {
+          entries: [
+            {
+              id: 'remote-plugin',
+              name: 'Remote Plugin',
+              url: 'https://cdn.example.com/jobbot/plugin.js',
+              integrity,
+            },
+          ],
+        },
+      },
+    });
+
+    const homepage = await fetch(`${server.url}/`);
+    expect(homepage.status).toBe(200);
+    const html = await homepage.text();
+    const dom = new JSDOM(html, {
+      runScripts: 'dangerously',
+      url: `${server.url}/`,
+    });
+
+    const script = dom.window.document.querySelector('script[data-plugin-id="remote-plugin"]');
+    expect(script).toBeTruthy();
+    expect(script?.getAttribute('src')).toBe('https://cdn.example.com/jobbot/plugin.js');
+    expect(script?.getAttribute('integrity')).toBe(integrity);
+    expect(script?.getAttribute('crossorigin')).toBe('anonymous');
+
+    const manifestScript = dom.window.document.getElementById('jobbot-plugin-manifest');
+    expect(manifestScript).toBeTruthy();
+    const manifest = JSON.parse(manifestScript?.textContent ?? '[]');
+    const entry = manifest.find(item => item.id === 'remote-plugin');
+    expect(entry).toMatchObject({
+      id: 'remote-plugin',
+      scriptUrl: 'https://cdn.example.com/jobbot/plugin.js',
+      integrity,
+    });
+  });
+
+  it('drops remote plugin entries that lack integrity metadata', async () => {
+    const server = await startServer({
+      features: {
+        plugins: {
+          entries: [
+            {
+              id: 'remote-no-integrity',
+              url: 'https://cdn.example.com/jobbot/without.js',
+            },
+            {
+              id: 'inline-safe',
+              source: STATUS_LISTENER_PLUGIN_SOURCE,
+            },
+          ],
+        },
+      },
+    });
+
+    const homepage = await fetch(`${server.url}/`);
+    expect(homepage.status).toBe(200);
+    const html = await homepage.text();
+    const dom = new JSDOM(html, {
+      runScripts: 'dangerously',
+      url: `${server.url}/`,
+    });
+
+    const missingScript = dom.window.document.querySelector(
+      'script[data-plugin-id="remote-no-integrity"]',
+    );
+    expect(missingScript).toBeNull();
+
+    const inlineScript = dom.window.document.querySelector('script[data-plugin-id="inline-safe"]');
+    expect(inlineScript).toBeTruthy();
+    expect(inlineScript?.getAttribute('integrity')).toMatch(/^sha256-/);
+
+    const manifestScript = dom.window.document.getElementById('jobbot-plugin-manifest');
+    expect(manifestScript).toBeTruthy();
+    const manifest = JSON.parse(manifestScript?.textContent ?? '[]');
+    expect(manifest.some(entry => entry.id === 'remote-no-integrity')).toBe(false);
+    expect(manifest.some(entry => entry.id === 'inline-safe')).toBe(true);
   });
 
   it('replays status panel readiness events to late-loading plugins', async () => {

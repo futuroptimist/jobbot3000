@@ -43,6 +43,12 @@
   in [`test/web-server.test.js`](../test/web-server.test.js) asserts the header
   values so future template changes keep the protections intact.
 - Harden the webpack/asset pipeline to avoid serving untrusted plugin bundles without verification.
+  _Implemented (2025-10-26):_ Remote plugin scripts now require HTTPS URLs and
+  Subresource Integrity (SRI) hashes, and inline bundles are served with a
+  server-computed SHA-256 hash. The HTML renderer attaches `integrity` (and
+  `crossorigin` for remote assets) to every plugin script tag, while
+  [`test/web-plugins.test.js`](../test/web-plugins.test.js) locks the SRI
+  contract and ensures entries without integrity metadata are rejected.
 - Build automated security regression tests that run in CI alongside existing Vitest coverage.
 
 ## Medium-term goals (self-hosted deployment ready)
