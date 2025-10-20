@@ -1,6 +1,6 @@
 import express from "express";
 import fs from "node:fs/promises";
-import { randomBytes, createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { performance } from "node:perf_hooks";
 import path from "node:path";
@@ -342,20 +342,6 @@ function normalizePluginId(value) {
   return collapsed || null;
 }
 
-function normalizePluginIntegrity(value) {
-  if (typeof value !== "string") {
-    return "";
-  }
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return "";
-  }
-  if (!/^sha(?:256|384|512)-[A-Za-z0-9+/=]+$/.test(trimmed)) {
-    return "";
-  }
-  return trimmed;
-}
-
 function isSafePluginUrl(url) {
   if (typeof url !== "string") {
     return false;
@@ -365,6 +351,9 @@ function isSafePluginUrl(url) {
     return false;
   }
   if (trimmed.startsWith("/")) {
+    if (trimmed.startsWith("//")) {
+      return false;
+    }
     return !trimmed.includes("..");
   }
   const lower = trimmed.toLowerCase();
@@ -383,6 +372,26 @@ function isSafePluginUrl(url) {
     return false;
   }
   return false;
+}
+
+const PLUGIN_INTEGRITY_RE = /^sha(256|384|512)-[A-Za-z0-9+/=]+={0,2}$/;
+
+function normalizePluginIntegrity(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  if (!PLUGIN_INTEGRITY_RE.test(trimmed)) {
+    return "";
+  }
+  return trimmed;
+}
+
+function computePluginIntegrityFromSource(source) {
+  return `sha256-${createHash("sha256").update(source, "utf8").digest("base64")}`;
 }
 
 function sanitizePluginEntry(entry) {
@@ -416,8 +425,17 @@ function sanitizePluginEntry(entry) {
   if (url && !isSafePluginUrl(url)) {
     url = "";
   }
-  const integrity = normalizePluginIntegrity(entry.integrity);
+  let integrity = "";
+  const normalizedIntegrity = normalizePluginIntegrity(entry.integrity);
+  if (url) {
+    integrity = normalizedIntegrity;
+  } else if (source) {
+    integrity = computePluginIntegrityFromSource(source);
+  }
   if (!url && !source) {
+    return null;
+  }
+  if (url && !integrity) {
     return null;
   }
   return { id, name, description, events, url, source, integrity };

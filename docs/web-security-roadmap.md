@@ -49,20 +49,20 @@
   in [`test/web-server.test.js`](../test/web-server.test.js) asserts the header
   values so future template changes keep the protections intact.
 - Harden the webpack/asset pipeline to avoid serving untrusted plugin bundles without verification.
-  _Implemented (2025-10-24):_ `startWebServer` now rejects plugin entries that
-  reference remote bundles without Subresource Integrity (SRI) hashes and
-  serves inline plugin sources with an automatic `sha256` integrity attribute.
-  Script tags include `crossorigin="anonymous"` to let browsers enforce the
-  integrity check, and non-local `http://` URLs are no longer accepted. The
-  regression coverage in
-  [`test/web-plugins.test.js`](../test/web-plugins.test.js) ensures inline
-  bundles publish deterministic SRI hashes and unverifiable remote plugins are
-  skipped.
+  _Implemented (2025-10-25):_ Plugin entries now require Subresource Integrity
+  metadata for external bundles, and inline sources are hashed automatically
+  before being served from `/assets/plugins/*`. The status hub only renders
+  plugin scripts that include integrity attributes, and the manifest exposes the
+  hashes for extension consumers. Regression coverage in
+  [`test/web-plugins.test.js`](../test/web-plugins.test.js) asserts that
+  unverified plugins are skipped and that trusted entries include integrity
+  metadata in both the manifest and script tags.
 - Build automated security regression tests that run in CI alongside existing Vitest coverage.
-  _Implemented (2025-10-30):_ The dedicated
-  [`test/web-session-security.test.js`](../test/web-session-security.test.js)
-  suite drives the new session manager through rotation, expiration, and
-  revocation scenarios so regressions surface before shipping.
+  _Implemented (2025-10-26):_ `test/web-security-regressions.test.js` now
+  exercises session cookie flags and the plugin asset pipeline, rejecting
+  protocol-relative bundles while verifying HTTPS-only entries retain their
+  Subresource Integrity metadata. The suite runs with Vitest to guard against
+  regressions in CI.
 
 ## Medium-term goals (self-hosted deployment ready)
 
