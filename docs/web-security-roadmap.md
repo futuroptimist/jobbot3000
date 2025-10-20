@@ -22,6 +22,12 @@
    - Replace static bearer tokens with a dedicated identity service and hashed credential storage.
    - Enforce per-user roles and scopes for every HTTP and websocket endpoint.
    - Implement secure session cookies with rotation, expiration, and revocation support.
+     _Implemented (2025-10-30):_ `createSessionManager` now rotates
+     identifiers on an in-memory schedule, expires idle sessions, and powers
+     the `/sessions/revoke` endpoint so operators can invalidate credentials
+     on demand. [`test/web-session-security.test.js`](../test/web-session-security.test.js)
+     exercises rotation, expiration, and revocation flows to keep the guardrail
+     enforced in CI.
 2. **Secrets isolation**
    - Move environment variable management out of the process and into an encrypted secrets store.
    - Ensure CLI subprocesses inherit only the minimum required configuration.

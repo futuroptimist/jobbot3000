@@ -24,6 +24,7 @@ import {
   createClientPayloadStore,
 } from "./client-payload-store.js";
 import { createAuditLogger } from "../shared/security/audit-log.js";
+import { createSessionManager } from "./session-manager.js";
 import { WebSocket, WebSocketServer } from "ws";
 
 function createInMemoryRateLimiter(options = {}) {
@@ -167,46 +168,128 @@ function parseCookieHeader(headerValue) {
   return new Map(entries);
 }
 
-function applySessionResponse(res, sessionId) {
+function applySessionResponse(res, sessionId, options = {}) {
+  const sameSite = typeof options.sameSite === "string" && options.sameSite
+    ? options.sameSite
+    : "Lax";
+  const httpOnly = options.httpOnly !== false;
+  const secure = options.secure === true;
+
   if (!sessionId) {
+    const clearDirectives = [
+      `${CLIENT_SESSION_COOKIE}=`,
+      "Path=/",
+      httpOnly ? "HttpOnly" : null,
+      `SameSite=${sameSite}`,
+      "Max-Age=0",
+      "Expires=Thu, 01 Jan 1970 00:00:00 GMT",
+      secure ? "Secure" : null,
+    ].filter(Boolean);
+    res.append("Set-Cookie", clearDirectives.join("; "));
+    res.set(CLIENT_SESSION_HEADER, "");
     return;
   }
-  const cookieDirectives = [
+
+  const directives = [
     `${CLIENT_SESSION_COOKIE}=${encodeURIComponent(sessionId)}`,
     "Path=/",
-    "HttpOnly",
-    "SameSite=Lax",
+    httpOnly ? "HttpOnly" : null,
+    `SameSite=${sameSite}`,
   ];
-  res.append("Set-Cookie", cookieDirectives.join("; "));
+
+  const maxAgeSeconds = Number(options.maxAgeSeconds);
+  if (Number.isFinite(maxAgeSeconds) && maxAgeSeconds >= 0) {
+    directives.push(`Max-Age=${Math.trunc(maxAgeSeconds)}`);
+  }
+
+  if (options.expires instanceof Date && !Number.isNaN(options.expires.valueOf())) {
+    directives.push(`Expires=${options.expires.toUTCString()}`);
+  }
+
+  if (secure) {
+    directives.push("Secure");
+  }
+
+  res.append("Set-Cookie", directives.filter(Boolean).join("; "));
   res.set(CLIENT_SESSION_HEADER, sessionId);
 }
 
+function isSecureRequest(req) {
+  if (!req || typeof req !== "object") {
+    return false;
+  }
+  if (req.secure === true) {
+    return true;
+  }
+  if (typeof req.protocol === "string" && req.protocol.toLowerCase() === "https") {
+    return true;
+  }
+  const forwardedProto =
+    typeof req.get === "function"
+      ? req.get("x-forwarded-proto")
+      : req.headers?.["x-forwarded-proto"];
+  if (typeof forwardedProto === "string") {
+    return forwardedProto
+      .split(",")
+      .map((value) => value.trim().toLowerCase())
+      .includes("https");
+  }
+  return false;
+}
+
 function ensureClientSession(req, res, options = {}) {
-  const { createIfMissing = true } = options;
+  const { createIfMissing = true, sessionManager } = options;
   const headerValue = normalizeSessionId(req.get(CLIENT_SESSION_HEADER));
   const cookies = parseCookieHeader(req.get("cookie"));
   const cookieValue = normalizeSessionId(cookies.get(CLIENT_SESSION_COOKIE));
+  const forcedSecure = process.env.JOBBOT_WEB_SESSION_SECURE === "1";
+  const secureOption =
+    options.secure === true
+      ? true
+      : options.secure === false
+        ? false
+        : isSecureRequest(req);
+  const secure = forcedSecure || secureOption;
+
+  if (sessionManager) {
+    const candidateId = headerValue || cookieValue;
+    const result = sessionManager.ensureSession(candidateId, {
+      createIfMissing,
+    });
+    if (!result || !result.session) {
+      if (candidateId) {
+        applySessionResponse(res, null, { secure });
+      }
+      return null;
+    }
+    const { session } = result;
+    const cookieMetadata = sessionManager.getCookieMetadata(session);
+    applySessionResponse(res, session.id, {
+      secure,
+      maxAgeSeconds: cookieMetadata.maxAgeSeconds,
+    });
+    return session.id;
+  }
 
   if (headerValue) {
-    if (headerValue !== cookieValue) {
-      applySessionResponse(res, headerValue);
-    } else {
-      res.set(CLIENT_SESSION_HEADER, headerValue);
-    }
+    applySessionResponse(res, headerValue, { secure });
     return headerValue;
   }
 
   if (cookieValue) {
-    res.set(CLIENT_SESSION_HEADER, cookieValue);
+    applySessionResponse(res, cookieValue, { secure });
     return cookieValue;
   }
 
   if (!createIfMissing) {
+    if (cookieValue) {
+      applySessionResponse(res, null, { secure });
+    }
     return null;
   }
 
   const sessionId = randomBytes(24).toString("hex");
-  applySessionResponse(res, sessionId);
+  applySessionResponse(res, sessionId, { secure });
   return sessionId;
 }
 
@@ -5537,6 +5620,7 @@ export function createWebApp({
   auditLogger,
   features,
   commandEvents,
+  session,
 } = {}) {
   const normalizedInfo = normalizeInfo(info);
   const normalizedChecks = normalizeHealthChecks(healthChecks);
@@ -5545,6 +5629,7 @@ export function createWebApp({
   const authOptions = normalizeAuthOptions(auth);
   const app = express();
   const clientPayloadStore = createClientPayloadStore();
+  const sessionManager = createSessionManager(session);
   let effectiveAuditLogger = auditLogger ?? null;
   if (!effectiveAuditLogger && audit && audit.logPath) {
     try {
@@ -5602,7 +5687,7 @@ export function createWebApp({
   });
 
   app.get("/", (req, res) => {
-    const sessionId = ensureClientSession(req, res);
+    const sessionId = ensureClientSession(req, res, { sessionManager });
     const serviceName = normalizedInfo.service || "jobbot web interface";
     const version = normalizedInfo.version
       ? `Version ${normalizedInfo.version}`
@@ -6293,6 +6378,80 @@ export function createWebApp({
     res.status(statusCode).json(payload);
   });
 
+  app.post("/sessions/revoke", jsonParser, (req, res) => {
+    const currentSessionId = ensureClientSession(req, res, {
+      createIfMissing: false,
+      sessionManager,
+    });
+
+    const ensureCsrf = () => {
+      const providedToken = req.get(csrfOptions.headerName);
+      if ((providedToken ?? "").trim() !== csrfOptions.token) {
+        res.status(403).json({ error: "Invalid or missing CSRF token" });
+        return false;
+      }
+      return true;
+    };
+
+    if (!ensureCsrf()) {
+      return;
+    }
+
+    if (authOptions) {
+      const respondUnauthorized = () => {
+        if (authOptions.requireScheme && authOptions.scheme) {
+          res.set(
+            "WWW-Authenticate",
+            `${authOptions.scheme} realm="jobbot-web"`,
+          );
+        }
+        res
+          .status(401)
+          .json({ error: "Invalid or missing authorization token" });
+      };
+
+      const providedAuth = req.get(authOptions.headerName);
+      const headerValue =
+        typeof providedAuth === "string" ? providedAuth.trim() : "";
+      if (!headerValue) {
+        respondUnauthorized();
+        return;
+      }
+
+      let tokenValue = headerValue;
+      if (authOptions.requireScheme) {
+        const lowerValue = headerValue.toLowerCase();
+        if (!lowerValue.startsWith(authOptions.schemePrefixLower)) {
+          respondUnauthorized();
+          return;
+        }
+        tokenValue = headerValue
+          .slice(authOptions.schemePrefixLength)
+          .trim();
+        if (!tokenValue) {
+          respondUnauthorized();
+          return;
+        }
+      }
+
+      if (!authOptions.tokens.get(tokenValue)) {
+        respondUnauthorized();
+        return;
+      }
+    }
+
+    if (currentSessionId) {
+      sessionManager.revokeSession(currentSessionId);
+    }
+
+    const replacementId = ensureClientSession(req, res, {
+      createIfMissing: true,
+      sessionManager,
+    });
+
+    res.json({ revoked: Boolean(currentSessionId), sessionId: replacementId });
+  });
+
   app.post(
     "/commands/:command",
     jsonParser,
@@ -6310,6 +6469,7 @@ export function createWebApp({
       const userAgent = req.get("user-agent");
       const sessionId = ensureClientSession(req, res, {
         createIfMissing: !authOptions,
+        sessionManager,
       });
       let authContext = authOptions
         ? { subject: "unauthenticated", roles: new Set() }
@@ -6600,6 +6760,7 @@ export function createWebApp({
     const userAgent = req.get("user-agent");
     const sessionId = ensureClientSession(req, res, {
       createIfMissing: !authOptions,
+      sessionManager,
     });
 
     const ensureCsrf = () => {
@@ -6706,6 +6867,7 @@ export function startWebServer(options = {}) {
     authTokens,
     authHeaderName,
     authScheme,
+    session: sessionOptions,
     ...rest
   } = options;
   const commandAdapter =
@@ -6752,6 +6914,7 @@ export function startWebServer(options = {}) {
     rateLimit,
     logger,
     auth: normalizedAuth,
+    session: sessionOptions,
     commandEvents,
   });
 
