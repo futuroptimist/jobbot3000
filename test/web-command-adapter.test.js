@@ -867,6 +867,51 @@ describe('createCommandAdapter', () => {
     }
   });
 
+  it('filters environment variables before spawning the CLI', async () => {
+    process.env.JOBBOT_WEB_ENABLE_NATIVE_CLI = '1';
+    const spawnMock = childProcess.spawn;
+    const envInput = {
+      JOBBOT_DATA_DIR: '/tmp/jobbot-data',
+      JOBBOT_API_TOKEN: 'secret-token',
+      PATH: '/usr/bin',
+      HOME: '/home/tester',
+      NODE_ENV: 'test',
+      TMPDIR: '/tmp',
+      HTTPS_PROXY: 'http://proxy.internal:8080',
+      AWS_SECRET_ACCESS_KEY: 'should-not-leak',
+      CUSTOM_SECRET: 'keep-out',
+    };
+    let capturedEnv;
+    spawnMock.mockImplementation((command, args, options) => {
+      capturedEnv = options?.env;
+      return createSpawnedProcess({ stdout: 'ok\n' });
+    });
+
+    const temp = createTempJobFile('Security engineer role.');
+
+    try {
+      const adapter = createCommandAdapter({ env: envInput });
+      await adapter.summarize({ input: temp.filePath });
+    } finally {
+      temp.cleanup();
+    }
+
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(capturedEnv).toBeDefined();
+    expect(capturedEnv).not.toBe(envInput);
+    expect(capturedEnv).toMatchObject({
+      JOBBOT_DATA_DIR: '/tmp/jobbot-data',
+      JOBBOT_API_TOKEN: 'secret-token',
+      PATH: '/usr/bin',
+      HOME: '/home/tester',
+      NODE_ENV: 'test',
+      TMPDIR: '/tmp',
+      HTTPS_PROXY: 'http://proxy.internal:8080',
+    });
+    expect(capturedEnv).not.toHaveProperty('AWS_SECRET_ACCESS_KEY');
+    expect(capturedEnv).not.toHaveProperty('CUSTOM_SECRET');
+  });
+
   it('propagates stderr when the spawned CLI exits with a non-zero code', async () => {
     process.env.JOBBOT_WEB_ENABLE_NATIVE_CLI = 'true';
     const spawnMock = childProcess.spawn;
