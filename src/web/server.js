@@ -1,6 +1,6 @@
 import express from "express";
 import fs from "node:fs/promises";
-import { randomBytes } from "node:crypto";
+import { randomBytes, createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { performance } from "node:perf_hooks";
 import path from "node:path";
@@ -259,6 +259,20 @@ function normalizePluginId(value) {
   return collapsed || null;
 }
 
+function normalizePluginIntegrity(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  if (!/^sha(?:256|384|512)-[A-Za-z0-9+/=]+$/.test(trimmed)) {
+    return "";
+  }
+  return trimmed;
+}
+
 function isSafePluginUrl(url) {
   if (typeof url !== "string") {
     return false;
@@ -271,8 +285,19 @@ function isSafePluginUrl(url) {
     return !trimmed.includes("..");
   }
   const lower = trimmed.toLowerCase();
-  if (lower.startsWith("https://") || lower.startsWith("http://")) {
+  if (lower.startsWith("https://")) {
     return true;
+  }
+  if (lower.startsWith("http://")) {
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") {
+        return true;
+      }
+    } catch {
+      return false;
+    }
+    return false;
   }
   return false;
 }
@@ -308,10 +333,11 @@ function sanitizePluginEntry(entry) {
   if (url && !isSafePluginUrl(url)) {
     url = "";
   }
+  const integrity = normalizePluginIntegrity(entry.integrity);
   if (!url && !source) {
     return null;
   }
-  return { id, name, description, events, url, source };
+  return { id, name, description, events, url, source, integrity };
 }
 
 function createPluginAssets(app, plugins = {}) {
@@ -328,8 +354,9 @@ function createPluginAssets(app, plugins = {}) {
       continue;
     }
     seenIds.add(sanitized.id);
-    let scriptUrl = sanitized.url || "";
-    if (!scriptUrl && sanitized.source) {
+    let scriptUrl = "";
+    let integrity = "";
+    if (sanitized.source) {
       const routePath = `/assets/plugins/${sanitized.id}.js`;
       if (!registeredRoutes.has(routePath)) {
         registeredRoutes.add(routePath);
@@ -340,6 +367,19 @@ function createPluginAssets(app, plugins = {}) {
         });
       }
       scriptUrl = routePath;
+      const hash = createHash("sha256").update(sanitized.source, "utf8").digest("base64");
+      integrity = `sha256-${hash}`;
+    } else if (sanitized.url) {
+      scriptUrl = sanitized.url;
+      integrity = sanitized.integrity || "";
+    }
+
+    if (sanitized.url && !sanitized.source && !integrity) {
+      // Refuse unverifiable remote bundles.
+      continue;
+    }
+    if (!scriptUrl) {
+      continue;
     }
     manifest.push({
       id: sanitized.id,
@@ -347,6 +387,7 @@ function createPluginAssets(app, plugins = {}) {
       description: sanitized.description,
       events: sanitized.events,
       scriptUrl,
+      integrity,
     });
   }
   return {
@@ -5591,7 +5632,16 @@ export function createWebApp({
       .map((entry) => {
         const idAttr = escapeHtml(entry.id);
         const srcAttr = escapeHtml(entry.scriptUrl);
-        return `<script defer data-plugin-id="${idAttr}" src="${srcAttr}"></script>`;
+        const attributes = [
+          "defer",
+          `data-plugin-id="${idAttr}"`,
+          `src="${srcAttr}"`,
+        ];
+        if (entry.integrity) {
+          const integrityAttr = escapeHtml(entry.integrity);
+          attributes.push(`integrity="${integrityAttr}"`, 'crossorigin="anonymous"');
+        }
+        return `<script ${attributes.join(" ")}></script>`;
       })
       .join("");
 
