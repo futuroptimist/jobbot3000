@@ -878,6 +878,9 @@ describe('createCommandAdapter', () => {
       NODE_ENV: 'test',
       TMPDIR: '/tmp',
       HTTPS_PROXY: 'http://proxy.internal:8080',
+      https_proxy: 'http://proxy-backup.internal:8081',
+      http_proxy: 'http://proxy.internal:3128',
+      no_proxy: 'localhost,127.0.0.1',
       AWS_SECRET_ACCESS_KEY: 'should-not-leak',
       CUSTOM_SECRET: 'keep-out',
     };
@@ -907,6 +910,9 @@ describe('createCommandAdapter', () => {
       NODE_ENV: 'test',
       TMPDIR: '/tmp',
       HTTPS_PROXY: 'http://proxy.internal:8080',
+      https_proxy: 'http://proxy-backup.internal:8081',
+      http_proxy: 'http://proxy.internal:3128',
+      no_proxy: 'localhost,127.0.0.1',
     });
     expect(capturedEnv).not.toHaveProperty('AWS_SECRET_ACCESS_KEY');
     expect(capturedEnv).not.toHaveProperty('CUSTOM_SECRET');
