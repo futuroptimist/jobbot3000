@@ -91,4 +91,47 @@ describe('createHttpClient', () => {
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
+
+  it('provides a get helper that issues GET requests with merged headers', async () => {
+    const fetchImpl = vi.fn(async (_url, init) => {
+      expect(init.method).toBe('GET');
+      return new Response('ok', {
+        status: 200,
+        headers: { 'content-type': 'text/plain' },
+      });
+    });
+
+    const setRateLimitSpy = vi
+      .spyOn(fetchModule, 'setFetchRateLimit')
+      .mockImplementation(() => {});
+
+    const client = createHttpClient({
+      provider: 'lever',
+      defaultHeaders: { Accept: 'application/json' },
+      defaultRateLimitMs: 500,
+    });
+
+    const response = await client.get('https://api.example.com/status', {
+      fetchImpl,
+      rateLimit: { key: 'lever:example' },
+      headers: { Authorization: 'Bearer token' },
+    });
+
+    expect(response).toBeInstanceOf(Response);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://api.example.com/status',
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.objectContaining({
+          Accept: 'application/json',
+          Authorization: 'Bearer token',
+        }),
+      }),
+    );
+    expect(setRateLimitSpy).toHaveBeenCalledWith(
+      'lever:example',
+      500,
+      expect.any(Object),
+    );
+  });
 });
