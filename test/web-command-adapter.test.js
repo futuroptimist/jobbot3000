@@ -867,6 +867,91 @@ describe('createCommandAdapter', () => {
     }
   });
 
+  it('filters process environment variables before spawning the CLI', async () => {
+    const spawnMock = childProcess.spawn;
+    spawnMock.mockImplementation(() =>
+      createSpawnedProcess({ stdout: '{"summary":"ok"}\n' }),
+    );
+
+    const previousSecret = process.env.SECRET_TOKEN;
+    const previousNodeOptions = process.env.NODE_OPTIONS;
+    const previousDataDir = process.env.JOBBOT_DATA_DIR;
+    const previousProxy = process.env.HTTP_PROXY;
+
+    process.env.SECRET_TOKEN = 'super-secret';
+    process.env.NODE_OPTIONS = '--inspect';
+    process.env.JOBBOT_DATA_DIR = '/tmp/jobbot-secure';
+    process.env.HTTP_PROXY = 'http://127.0.0.1:8080';
+
+    try {
+      const adapter = createCommandAdapter({ enableNativeCli: true });
+      const result = await adapter.summarize({ input: 'job.txt', format: 'json' });
+
+      expect(result).toMatchObject({ command: 'summarize', format: 'json' });
+      expect(spawnMock).toHaveBeenCalledTimes(1);
+      const spawnOptions = spawnMock.mock.calls[0][2];
+      expect(spawnOptions.env).toHaveProperty('PATH');
+      expect(spawnOptions.env.JOBBOT_DATA_DIR).toBe('/tmp/jobbot-secure');
+      expect(spawnOptions.env.HTTP_PROXY).toBe('http://127.0.0.1:8080');
+      expect(spawnOptions.env).not.toHaveProperty('SECRET_TOKEN');
+      expect(spawnOptions.env).not.toHaveProperty('NODE_OPTIONS');
+    } finally {
+      if (previousSecret === undefined) {
+        delete process.env.SECRET_TOKEN;
+      } else {
+        process.env.SECRET_TOKEN = previousSecret;
+      }
+      if (previousNodeOptions === undefined) {
+        delete process.env.NODE_OPTIONS;
+      } else {
+        process.env.NODE_OPTIONS = previousNodeOptions;
+      }
+      if (previousDataDir === undefined) {
+        delete process.env.JOBBOT_DATA_DIR;
+      } else {
+        process.env.JOBBOT_DATA_DIR = previousDataDir;
+      }
+      if (previousProxy === undefined) {
+        delete process.env.HTTP_PROXY;
+      } else {
+        process.env.HTTP_PROXY = previousProxy;
+      }
+    }
+  });
+
+  it('filters custom env overrides while allowing explicit passthrough keys', async () => {
+    const spawnMock = childProcess.spawn;
+    spawnMock.mockImplementation(() =>
+      createSpawnedProcess({ stdout: '{"summary":"ok"}\n' }),
+    );
+
+    const adapter = createCommandAdapter({
+      enableNativeCli: true,
+      env: {
+        JOBBOT_DATA_DIR: '/custom/data',
+        CUSTOM_API_KEY: 'abc123',
+        SECRET_TOKEN: 'should-not-pass',
+        PATH: '/opt/jobbot/bin',
+        MYAPP_TOKEN: 'prefix-allowed',
+      },
+      allowedEnvVars: ['CUSTOM_API_KEY'],
+      allowedEnvPrefixes: ['MYAPP_'],
+    });
+
+    const result = await adapter.summarize({ input: 'job.txt', format: 'json' });
+    expect(result).toMatchObject({ command: 'summarize', format: 'json' });
+
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    const spawnOptions = spawnMock.mock.calls[0][2];
+    expect(spawnOptions.env).toMatchObject({
+      JOBBOT_DATA_DIR: '/custom/data',
+      CUSTOM_API_KEY: 'abc123',
+      PATH: '/opt/jobbot/bin',
+      MYAPP_TOKEN: 'prefix-allowed',
+    });
+    expect(spawnOptions.env).not.toHaveProperty('SECRET_TOKEN');
+  });
+
   it('propagates stderr when the spawned CLI exits with a non-zero code', async () => {
     process.env.JOBBOT_WEB_ENABLE_NATIVE_CLI = 'true';
     const spawnMock = childProcess.spawn;
