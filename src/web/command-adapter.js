@@ -55,6 +55,79 @@ const SECRET_KEY_FIELD_SAFE_OVERRIDES = new Set(["tokenStatus", "hasToken"]);
 // eslint-disable-next-line no-control-regex -- intentionally strip ASCII control characters.
 const CONTROL_CHARS_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
 
+const DEFAULT_ALLOWED_ENV_KEYS = new Set([
+  "NODE_ENV",
+  "NODE_OPTIONS",
+  "NODE_PATH",
+  "NODE_EXTRA_CA_CERTS",
+  "PATH",
+  "HOME",
+  "USERPROFILE",
+  "TMP",
+  "TEMP",
+  "TMPDIR",
+  "SystemRoot",
+  "SYSTEMROOT",
+  "WINDIR",
+  "LOCALAPPDATA",
+  "APPDATA",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "LC_NUMERIC",
+  "LC_COLLATE",
+  "LC_TIME",
+  "LC_MESSAGES",
+  "SHELL",
+  "PWD",
+  "OLDPWD",
+  "LOGNAME",
+  "USERNAME",
+  "TZ",
+  "TERM",
+  "HTTPS_PROXY",
+  "HTTP_PROXY",
+  "NO_PROXY",
+  "https_proxy",
+  "http_proxy",
+  "no_proxy",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "REQUESTS_CA_BUNDLE",
+  "SSH_AUTH_SOCK",
+  "SSH_AGENT_PID",
+  "GIT_SSH_COMMAND",
+  "XDG_RUNTIME_DIR",
+  "XDG_CONFIG_HOME",
+  "XDG_DATA_HOME",
+]);
+
+const DEFAULT_ALLOWED_ENV_PREFIXES = ["JOBBOT_"];
+
+function buildSpawnEnvironment(envSource) {
+  if (!envSource || typeof envSource !== "object") {
+    return {};
+  }
+  const sanitized = {};
+  for (const [key, value] of Object.entries(envSource)) {
+    if (typeof key !== "string" || key.length === 0) {
+      continue;
+    }
+    const isAllowedKey = DEFAULT_ALLOWED_ENV_KEYS.has(key);
+    const isAllowedPrefix = DEFAULT_ALLOWED_ENV_PREFIXES.some((prefix) =>
+      key.startsWith(prefix),
+    );
+    if (!isAllowedKey && !isAllowedPrefix) {
+      continue;
+    }
+    if (value === undefined || value === null) {
+      continue;
+    }
+    sanitized[key] = typeof value === "string" ? value : String(value);
+  }
+  return sanitized;
+}
+
 function replaceSecret(match, doubleQuoted, singleQuoted, bareValue) {
   if (doubleQuoted) {
     return match.replace(doubleQuoted, "***");
@@ -358,6 +431,7 @@ export function createCommandAdapter(options = {}) {
         ? cliPath
         : DEFAULT_CLI_PATH;
     const environment = env === undefined ? process.env : env;
+    const spawnEnv = buildSpawnEnvironment(environment);
     const cliArgs = Array.isArray(commandArgs) ? commandArgs : [commandArgs];
     const label =
       commandLabel ||
@@ -376,7 +450,7 @@ export function createCommandAdapter(options = {}) {
           shell: false,
           windowsHide: true,
           stdio: ["ignore", "pipe", "pipe"],
-          env: environment,
+          env: spawnEnv,
         });
       } catch (err) {
         const spawnError = new Error(

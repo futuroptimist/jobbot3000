@@ -31,6 +31,13 @@
 2. **Secrets isolation**
    - Move environment variable management out of the process and into an encrypted secrets store.
    - Ensure CLI subprocesses inherit only the minimum required configuration.
+     _Implemented (2025-10-31):_ `createCommandAdapter` now filters the
+     environment passed to native CLI processes, keeping only `JOBBOT_*`
+     variables plus essential runtime metadata (PATH, HOME, locale, proxy
+     settings). Regression coverage in
+     [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
+     asserts secret-like keys are dropped while sanctioned values propagate to
+     the spawned process.
 3. **Transport security**
    - Require HTTPS with HSTS, modern TLS ciphers, and automatic certificate rotation.
    - Add CSRF double-submit protections and SameSite=Strict cookies across the board.
