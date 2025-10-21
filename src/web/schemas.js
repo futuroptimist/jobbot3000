@@ -1,6 +1,7 @@
 import { STATUSES } from '../lifecycle.js';
 
 const SUPPORTED_FORMATS = ['markdown', 'text', 'json'];
+const ANALYTICS_FUNNEL_ALLOWED_KEYS = new Set(['from', 'to', 'company']);
 const TRACK_RECORD_ALLOWED_KEYS = new Set(['jobId', 'job_id', 'status', 'note']);
 const TRACK_REMINDERS_ALLOWED_KEYS = new Set([
   'format',
@@ -59,6 +60,18 @@ function normalizeBoolean(value, { name, defaultValue = false } = {}) {
     }
   }
   throw new Error(`${name ?? 'value'} must be a boolean`);
+}
+
+function normalizeFunnelDate(value, name) {
+  const normalized = normalizeString(value);
+  if (!normalized) {
+    return undefined;
+  }
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`analytics funnel ${name} must be a valid ISO-8601 date`);
+  }
+  return normalized;
 }
 
 function coerceNumber(value) {
@@ -169,11 +182,21 @@ export function normalizeAnalyticsFunnelRequest(options) {
     return {};
   }
   assertPlainObject(options, 'analytics funnel options');
-  const keys = Object.keys(options);
-  if (keys.length > 0) {
-    throw new Error('analytics funnel does not accept request parameters');
+  for (const key of Object.keys(options)) {
+    if (!ANALYTICS_FUNNEL_ALLOWED_KEYS.has(key)) {
+      throw new Error(`Unexpected field "${key}" in analytics funnel options`);
+    }
   }
-  return {};
+
+  const from = normalizeFunnelDate(options.from, 'from');
+  const to = normalizeFunnelDate(options.to, 'to');
+  const company = normalizeString(options.company);
+
+  const request = {};
+  if (from) request.from = from;
+  if (to) request.to = to;
+  if (company) request.company = company;
+  return request;
 }
 
 export function normalizeAnalyticsExportRequest(options) {

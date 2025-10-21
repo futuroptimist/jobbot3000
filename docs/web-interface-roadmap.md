@@ -19,7 +19,6 @@
 ## Guiding Principles
 
 1. **Security-first integration**
-
    - Disallow direct execution of arbitrary user input; only approved CLI subcommands run via the
      backend orchestrator.
    - Enforce strict validation and sanitization for all parameters before invoking CLI processes.
@@ -27,14 +26,12 @@
      escalation.
 
 2. **CLI parity and reuse**
-
    - Expose UI features only if they map to existing CLI capabilities; extend CLI first, then surface
      via the web UI.
    - Keep CLI output as the canonical state; the web layer transforms structured output but never
      mutates data independently.
 
 3. **User experience**
-
    - Prioritize clarity: consistent typography, spacing, and contrast ratios that meet WCAG AA in dark
      mode.
    - Preserve responsiveness and fast perceived performance through optimistic UI where safe.
@@ -349,8 +346,14 @@
 
 5. **Testing and QA**
    - Unit tests for frontend components (Jest/Testing Library) and backend modules (Jest/Supertest).
-   - Contract tests ensuring backend responses align with CLI output fixtures.
-   - End-to-end tests (Playwright/Cypress) simulating user flows with mocked CLI responses.
+
+- Contract tests ensuring backend responses align with CLI output fixtures.
+  _Implemented (2025-10-31):_ `test/web-server-contracts.test.js` now boots the
+  real CLI-backed web server with analytics funnel filters, compares the JSON
+  payload against `jobbot analytics funnel --json`, and fails if the adapter
+  drifts from the CLI contract. The suite posts filter parameters to
+  `/commands/analytics-funnel` so future changes keep the filter plumbing wired.
+- End-to-end tests (Playwright/Cypress) simulating user flows with mocked CLI responses.
 
 - Accessibility audits (axe-core) and performance benchmarks (Lighthouse).
   _Implemented (2025-10-02):_ [`src/web/audits.js`](../src/web/audits.js)

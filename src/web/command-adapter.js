@@ -970,8 +970,17 @@ export function createCommandAdapter(options = {}) {
   }
 
   async function analyticsFunnel(options = {}) {
-    normalizeAnalyticsFunnelRequest(options);
+    const request = normalizeAnalyticsFunnelRequest(options);
     const args = ["--json"];
+    if (request.from) {
+      args.push("--from", request.from);
+    }
+    if (request.to) {
+      args.push("--to", request.to);
+    }
+    if (request.company) {
+      args.push("--company", request.company);
+    }
     const { stdout, stderr, returnValue, correlationId, traceId } =
       await runCli("analytics-funnel", args);
 
