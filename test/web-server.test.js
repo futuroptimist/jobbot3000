@@ -33,15 +33,49 @@ async function loadStatusHubScript(server, dom) {
 
 async function renderStatusDom(server, options = {}) {
   const { autoBoot = true, ...jsdomOptions } = options;
-  const html = await fetchStatusHtml(server);
+  const response = await fetch(`${server.url}/`);
+  expect(response.status).toBe(200);
+  const html = await response.text();
+  const cookies = response.headers.getSetCookie?.() ?? [];
   const dom = new JSDOM(html, {
     runScripts: "dangerously",
     url: `${server.url}/`,
     ...jsdomOptions,
   });
-  if (!dom.window.fetch) {
-    dom.window.fetch = (input, init) => fetch(input, init);
+  if (cookies.length > 0 && dom.window.document) {
+    for (const cookie of cookies) {
+      const [pair] = (cookie || "").split(";");
+      if (pair) {
+        dom.window.document.cookie = pair;
+      }
+    }
   }
+  dom.window.fetch = async (input, init) => {
+    const requestInit = init && typeof init === "object" ? { ...init } : {};
+    const originalHeaders = requestInit.headers;
+    const headers = new Headers();
+    if (originalHeaders instanceof Headers) {
+      originalHeaders.forEach((value, key) => {
+        headers.set(key, value);
+      });
+    } else if (Array.isArray(originalHeaders)) {
+      for (const [key, value] of originalHeaders) {
+        headers.set(key, value);
+      }
+    } else if (originalHeaders && typeof originalHeaders === "object") {
+      for (const [key, value] of Object.entries(originalHeaders)) {
+        headers.set(key, value);
+      }
+    }
+    if (!headers.has("cookie")) {
+      const cookieString = dom.window.document?.cookie || "";
+      if (cookieString) {
+        headers.set("cookie", cookieString);
+      }
+    }
+    requestInit.headers = headers;
+    return fetch(input, requestInit);
+  };
 
   const boot = async () => {
     if (dom.__jobbotBooted) return;
@@ -73,12 +107,22 @@ function waitForDomEvent(dom, name, timeout = 500) {
   });
 }
 
-function buildCommandHeaders(server, overrides = {}) {
+const DEFAULT_CSRF_COOKIE = "jobbot_csrf_token";
+
+function buildCommandHeaders(server, overrides = {}, options = {}) {
   const headerName = server?.csrfHeaderName ?? "x-jobbot-csrf";
   const token = server?.csrfToken ?? "test-csrf-token";
-  return {
+  const cookieName = server?.csrfCookieName ?? DEFAULT_CSRF_COOKIE;
+  const includeCookie = options.includeCookie !== false;
+  const headers = {
     "content-type": "application/json",
     [headerName]: token,
+  };
+  if (includeCookie && cookieName) {
+    headers.cookie = `${cookieName}=${token}`;
+  }
+  return {
+    ...headers,
     ...overrides,
   };
 }
@@ -2618,6 +2662,44 @@ describe("web server command endpoint", () => {
     expect(commandAdapter.summarize).not.toHaveBeenCalled();
   });
 
+  it("rejects command requests when the CSRF cookie is missing", async () => {
+    const commandAdapter = {
+      summarize: vi.fn(),
+    };
+
+    const server = await startServer({ commandAdapter });
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: buildCommandHeaders(server, {}, { includeCookie: false }),
+      body: JSON.stringify({ input: "job.txt" }),
+    });
+
+    expect(response.status).toBe(403);
+    const payload = await response.json();
+    expect(payload.error).toMatch(/csrf/i);
+    expect(commandAdapter.summarize).not.toHaveBeenCalled();
+  });
+
+  it("rejects command requests when the CSRF cookie mismatches the header", async () => {
+    const commandAdapter = {
+      summarize: vi.fn(),
+    };
+
+    const server = await startServer({ commandAdapter });
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: buildCommandHeaders(server, {
+        cookie: `${server.csrfCookieName ?? DEFAULT_CSRF_COOKIE}=other-token`,
+      }),
+      body: JSON.stringify({ input: "job.txt" }),
+    });
+
+    expect(response.status).toBe(403);
+    const payload = await response.json();
+    expect(payload.error).toMatch(/csrf/i);
+    expect(commandAdapter.summarize).not.toHaveBeenCalled();
+  });
+
   it("requires a valid authorization token when configured", async () => {
     const commandAdapter = {
       summarize: vi.fn(async () => ({ ok: true })),
@@ -2631,10 +2713,7 @@ describe("web server command endpoint", () => {
 
     const missingAuth = await fetch(`${server.url}/commands/summarize`, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        [server.csrfHeaderName]: server.csrfToken,
-      },
+      headers: buildCommandHeaders(server),
       body,
     });
     expect(missingAuth.status).toBe(401);
@@ -2645,11 +2724,7 @@ describe("web server command endpoint", () => {
 
     const invalidAuth = await fetch(`${server.url}/commands/summarize`, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        [server.csrfHeaderName]: server.csrfToken,
-        authorization: "Bearer nope",
-      },
+      headers: buildCommandHeaders(server, { authorization: "Bearer nope" }),
       body,
     });
     expect(invalidAuth.status).toBe(401);
@@ -2660,11 +2735,9 @@ describe("web server command endpoint", () => {
 
     const validAuth = await fetch(`${server.url}/commands/summarize`, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        [server.csrfHeaderName]: server.csrfToken,
+      headers: buildCommandHeaders(server, {
         authorization: "Bearer secret-token-123",
-      },
+      }),
       body,
     });
     expect(validAuth.status).toBe(200);
@@ -2684,11 +2757,7 @@ describe("web server command endpoint", () => {
 
     const response = await fetch(`${server.url}/commands/summarize`, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        [server.csrfHeaderName]: server.csrfToken,
-        "x-api-key": "magic-token",
-      },
+      headers: buildCommandHeaders(server, { "x-api-key": "magic-token" }),
       body: JSON.stringify({ input: "job.txt" }),
     });
 

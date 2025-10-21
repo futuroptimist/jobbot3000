@@ -28,9 +28,11 @@ async function startServer(options) {
 function buildHeaders(server, overrides = {}) {
   const headerName = server?.csrfHeaderName ?? 'x-jobbot-csrf';
   const token = server?.csrfToken ?? 'integration-csrf-token';
+  const cookieName = server?.csrfCookieName ?? 'jobbot_csrf_token';
   return {
     'content-type': 'application/json',
     [headerName]: token,
+    cookie: `${cookieName}=${token}`,
     ...overrides,
   };
 }

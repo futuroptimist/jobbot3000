@@ -148,11 +148,13 @@ describe('web server CLI contracts', () => {
 
       const server = await bootServer();
 
+      const csrfCookieName = server.csrfCookieName ?? 'jobbot_csrf_token';
       const response = await fetch(`${server.url}/commands/analytics-funnel`, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
           [server.csrfHeaderName]: server.csrfToken,
+          cookie: `${csrfCookieName}=${server.csrfToken}`,
         },
         body: JSON.stringify(filters),
       });

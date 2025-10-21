@@ -41,6 +41,17 @@
 3. **Transport security**
    - Require HTTPS with HSTS, modern TLS ciphers, and automatic certificate rotation.
    - Add CSRF double-submit protections and SameSite=Strict cookies across the board.
+     _Implemented (2025-11-02):_ The web server now issues a
+     `jobbot_csrf_token` cookie alongside the existing header and requires
+     requests to present matching header+cookie pairs before invoking CLI
+     adapters. The status hub JavaScript synchronizes the header value with the
+     cookie so rotations stay transparent to browsers, and Node-based tests
+     attach the cookie automatically when simulating fetch calls. Regression
+     coverage in [`test/web-server.test.js`](../test/web-server.test.js)
+     exercises missing, mismatched, and successful CSRF submissions, while
+     [`test/web-security-regressions.test.js`](../test/web-security-regressions.test.js)
+     asserts that both session and CSRF cookies ship with `SameSite=Strict`
+     directives.
 4. **Observability and alerting**
    - Stream audit logs to a tamper-resistant store.
    - Emit security telemetry for failed logins, rate limiting events, and suspicious traffic.

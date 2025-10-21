@@ -17,12 +17,22 @@ async function startServer(options) {
   return server;
 }
 
-function buildCommandHeaders(server, overrides = {}) {
+const DEFAULT_CSRF_COOKIE = 'jobbot_csrf_token';
+
+function buildCommandHeaders(server, overrides = {}, options = {}) {
   const headerName = server?.csrfHeaderName ?? 'x-jobbot-csrf';
   const token = server?.csrfToken ?? 'test-csrf-token';
-  return {
+  const cookieName = server?.csrfCookieName ?? DEFAULT_CSRF_COOKIE;
+  const includeCookie = options.includeCookie !== false;
+  const headers = {
     'content-type': 'application/json',
     [headerName]: token,
+  };
+  if (includeCookie && cookieName) {
+    headers.cookie = `${cookieName}=${token}`;
+  }
+  return {
+    ...headers,
     ...overrides,
   };
 }

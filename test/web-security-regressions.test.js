@@ -75,7 +75,7 @@ describe('web security regressions', () => {
     expect(secureScript?.getAttribute('crossorigin')).toBe('anonymous');
   });
 
-  it('issues HttpOnly session cookies linked to the session header', async () => {
+  it('issues Strict SameSite cookies and exposes the CSRF token cookie', async () => {
     const server = await startServer();
 
     const response = await fetch(`${server.url}/`);
@@ -90,11 +90,21 @@ describe('web security regressions', () => {
     const sessionCookie = cookies.find(cookie => cookie.startsWith('jobbot_session_id='));
     expect(sessionCookie).toBeDefined();
     expect(sessionCookie).toMatch(/HttpOnly/);
-    expect(sessionCookie).toMatch(/SameSite=Lax/);
+    expect(sessionCookie).toMatch(/SameSite=Strict/);
     expect(sessionCookie).toMatch(/Path=\//);
 
-    const cookieValue = sessionCookie?.split(';')[0]?.split('=')[1] ?? '';
-    const decodedValue = decodeURIComponent(cookieValue);
-    expect(decodedValue).toBe(headerSessionId);
+    const csrfCookie = cookies.find(cookie => cookie.startsWith('jobbot_csrf_token='));
+    expect(csrfCookie).toBeDefined();
+    expect(csrfCookie).not.toMatch(/HttpOnly/);
+    expect(csrfCookie).toMatch(/SameSite=Strict/);
+    expect(csrfCookie).toMatch(/Path=\//);
+
+    const sessionValue = sessionCookie?.split(';')[0]?.split('=')[1] ?? '';
+    const decodedSessionValue = decodeURIComponent(sessionValue);
+    expect(decodedSessionValue).toBe(headerSessionId);
+
+    const csrfValue = csrfCookie?.split(';')[0]?.split('=')[1] ?? '';
+    const decodedCsrfValue = decodeURIComponent(csrfValue);
+    expect(decodedCsrfValue).toBe('test-security-token');
   });
 });

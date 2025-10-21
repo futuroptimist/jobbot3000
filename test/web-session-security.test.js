@@ -140,13 +140,22 @@ describe("web session security", () => {
       server.sessionCookieName,
     );
     expect(initialSession).toBeTruthy();
+    const csrfCookie = extractSessionCookie(
+      firstResponse,
+      server.csrfCookieName,
+    );
+
+    const cookiePairs = [`${server.sessionCookieName}=${initialSession}`];
+    if (csrfCookie) {
+      cookiePairs.push(`${server.csrfCookieName}=${csrfCookie}`);
+    }
 
     const revokeResponse = await fetch(`${server.url}/sessions/revoke`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         [server.csrfHeaderName]: server.csrfToken,
-        cookie: `${server.sessionCookieName}=${initialSession}`,
+        cookie: cookiePairs.join("; "),
         [server.sessionHeaderName]: initialSession,
       },
       body: "{}",

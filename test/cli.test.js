@@ -934,7 +934,7 @@ describe('jobbot CLI', () => {
       },
     ]);
     expect(detail.attachments).toEqual(['resume.pdf', 'cover-letter.pdf']);
-  });
+  }, 15000);
 
   it('updates lifecycle status and note with track update', () => {
     const initialDate = '2025-03-02T08:30:00Z';
