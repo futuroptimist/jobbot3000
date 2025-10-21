@@ -55,77 +55,122 @@ const SECRET_KEY_FIELD_SAFE_OVERRIDES = new Set(["tokenStatus", "hasToken"]);
 // eslint-disable-next-line no-control-regex -- intentionally strip ASCII control characters.
 const CONTROL_CHARS_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
 
-const DEFAULT_ALLOWED_ENV_KEYS = new Set([
-  "NODE_ENV",
-  "NODE_OPTIONS",
-  "NODE_PATH",
-  "NODE_EXTRA_CA_CERTS",
-  "PATH",
-  "HOME",
-  "USERPROFILE",
-  "TMP",
-  "TEMP",
-  "TMPDIR",
-  "SystemRoot",
-  "SYSTEMROOT",
-  "WINDIR",
-  "LOCALAPPDATA",
-  "APPDATA",
-  "LANG",
-  "LC_ALL",
-  "LC_CTYPE",
-  "LC_NUMERIC",
-  "LC_COLLATE",
-  "LC_TIME",
-  "LC_MESSAGES",
-  "SHELL",
-  "PWD",
-  "OLDPWD",
-  "LOGNAME",
-  "USERNAME",
-  "TZ",
-  "TERM",
-  "HTTPS_PROXY",
-  "HTTP_PROXY",
-  "NO_PROXY",
-  "https_proxy",
-  "http_proxy",
-  "no_proxy",
-  "SSL_CERT_FILE",
-  "SSL_CERT_DIR",
-  "REQUESTS_CA_BUNDLE",
-  "SSH_AUTH_SOCK",
-  "SSH_AGENT_PID",
-  "GIT_SSH_COMMAND",
-  "XDG_RUNTIME_DIR",
-  "XDG_CONFIG_HOME",
-  "XDG_DATA_HOME",
-]);
+const DEFAULT_ALLOWED_ENVIRONMENT_KEYS = new Set(
+  [
+    "PATH",
+    "PATHEXT",
+    "HOME",
+    "HOMEPATH",
+    "HOMEDRIVE",
+    "USER",
+    "USERNAME",
+    "LOGNAME",
+    "USERPROFILE",
+    "SHELL",
+    "COMSPEC",
+    "SYSTEMROOT",
+    "SYSTEMDRIVE",
+    "WINDIR",
+    "PROGRAMDATA",
+    "PROGRAMFILES",
+    "PROGRAMFILES(X86)",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "TMP",
+    "TEMP",
+    "TMPDIR",
+    "TMPPATH",
+    "PWD",
+    "OLDPWD",
+    "TERM",
+    "COLORTERM",
+    "LANG",
+    "LANGUAGE",
+    "LC_ALL",
+    "LC_CTYPE",
+    "LC_MESSAGES",
+    "TZ",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
+    "ALL_PROXY",
+    "REQUESTS_CA_BUNDLE",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "NODE_ENV",
+    "HOSTNAME",
+    "DISPLAY",
+    "XAUTHORITY",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "XDG_RUNTIME_DIR",
+    "XDG_STATE_HOME",
+  ].map((key) => key.toUpperCase()),
+);
 
-const DEFAULT_ALLOWED_ENV_PREFIXES = ["JOBBOT_"];
+const DEFAULT_ALLOWED_ENVIRONMENT_PREFIXES = ["JOBBOT_"];
 
-function buildSpawnEnvironment(envSource) {
-  if (!envSource || typeof envSource !== "object") {
+function buildAllowedEnvironmentConfig({
+  extraAllowedKeys,
+  extraAllowedPrefixes,
+} = {}) {
+  const allowedKeys = new Set(DEFAULT_ALLOWED_ENVIRONMENT_KEYS);
+  const keyEntries = Array.isArray(extraAllowedKeys)
+    ? extraAllowedKeys
+    : extraAllowedKeys != null
+      ? [extraAllowedKeys]
+      : [];
+  for (const key of keyEntries) {
+    if (typeof key !== "string") continue;
+    const trimmed = key.trim();
+    if (!trimmed) continue;
+    allowedKeys.add(trimmed.toUpperCase());
+  }
+
+  const allowedPrefixes = [...DEFAULT_ALLOWED_ENVIRONMENT_PREFIXES];
+  const prefixEntries = Array.isArray(extraAllowedPrefixes)
+    ? extraAllowedPrefixes
+    : extraAllowedPrefixes != null
+      ? [extraAllowedPrefixes]
+      : [];
+  for (const prefix of prefixEntries) {
+    if (typeof prefix !== "string") continue;
+    const trimmed = prefix.trim();
+    if (!trimmed) continue;
+    allowedPrefixes.push(trimmed.toUpperCase());
+  }
+
+  return { allowedKeys, allowedPrefixes };
+}
+
+function filterEnvironmentVariables(environment, { allowedKeys, allowedPrefixes }) {
+  if (!environment || typeof environment !== "object") {
     return {};
   }
-  const sanitized = {};
-  for (const [key, value] of Object.entries(envSource)) {
-    if (typeof key !== "string" || key.length === 0) {
-      continue;
+
+  const filtered = {};
+  for (const [rawKey, rawValue] of Object.entries(environment)) {
+    if (rawValue === undefined || rawValue === null) continue;
+    const key = String(rawKey);
+    if (!key) continue;
+    const normalizedKey = key.toUpperCase();
+
+    let allowed = allowedKeys.has(normalizedKey);
+    if (!allowed) {
+      for (const prefix of allowedPrefixes) {
+        if (normalizedKey.startsWith(prefix)) {
+          allowed = true;
+          break;
+        }
+      }
     }
-    const isAllowedKey = DEFAULT_ALLOWED_ENV_KEYS.has(key);
-    const isAllowedPrefix = DEFAULT_ALLOWED_ENV_PREFIXES.some((prefix) =>
-      key.startsWith(prefix),
-    );
-    if (!isAllowedKey && !isAllowedPrefix) {
-      continue;
-    }
-    if (value === undefined || value === null) {
-      continue;
-    }
-    sanitized[key] = typeof value === "string" ? value : String(value);
+    if (!allowed) continue;
+
+    const value = typeof rawValue === "string" ? rawValue : String(rawValue);
+    filtered[key] = value;
   }
-  return sanitized;
+
+  return filtered;
 }
 
 function replaceSecret(match, doubleQuoted, singleQuoted, bareValue) {
@@ -378,8 +423,14 @@ export function createCommandAdapter(options = {}) {
     cliPath,
     env,
     enableNativeCli: enableNativeCliOption,
+    allowedEnvVars,
+    allowedEnvPrefixes,
   } = options;
   const enableNativeCli = resolveNativeCliFlag(enableNativeCliOption);
+  const environmentConfig = buildAllowedEnvironmentConfig({
+    extraAllowedKeys: allowedEnvVars,
+    extraAllowedPrefixes: allowedEnvPrefixes,
+  });
 
   function nextCorrelationId() {
     if (typeof generateCorrelationId === "function") {
@@ -430,8 +481,8 @@ export function createCommandAdapter(options = {}) {
       typeof cliPath === "string" && cliPath.trim()
         ? cliPath
         : DEFAULT_CLI_PATH;
-    const environment = env === undefined ? process.env : env;
-    const spawnEnv = buildSpawnEnvironment(environment);
+    const baseEnvironment = env === undefined ? process.env : env;
+    const environment = filterEnvironmentVariables(baseEnvironment, environmentConfig);
     const cliArgs = Array.isArray(commandArgs) ? commandArgs : [commandArgs];
     const label =
       commandLabel ||
@@ -450,7 +501,7 @@ export function createCommandAdapter(options = {}) {
           shell: false,
           windowsHide: true,
           stdio: ["ignore", "pipe", "pipe"],
-          env: spawnEnv,
+          env: environment,
         });
       } catch (err) {
         const spawnError = new Error(
