@@ -9,6 +9,18 @@ export function toJson(data) {
   return JSON.stringify(redacted, null, 2);
 }
 
+function sanitizeText(value) {
+  if (value === null || value === undefined) return '';
+  const normalized = typeof value === 'string' ? value : String(value);
+  const redacted = redactValue(normalized);
+  if (typeof redacted === 'string') {
+    return redacted;
+  }
+  return redacted === null || redacted === undefined
+    ? ''
+    : String(redacted);
+}
+
 const MARKDOWN_ESCAPE_CHARS = [
   '\\',
   '`',
@@ -41,16 +53,24 @@ const MARKDOWN_ESCAPE_RE = new RegExp(
   'g'
 );
 
+function escapeMarkdownString(value) {
+  return value.replace(MARKDOWN_ESCAPE_RE, '\\$&');
+}
+
 function escapeMarkdown(value) {
   if (value === null || value === undefined) return '';
-  return String(value).replace(MARKDOWN_ESCAPE_RE, '\\$&');
+  const sanitized = sanitizeText(value);
+  if (!sanitized) return '';
+  return escapeMarkdownString(sanitized);
 }
 
 function escapeMarkdownMultiline(value) {
   if (value === null || value === undefined) return '';
-  return String(value)
+  const sanitized = sanitizeText(value);
+  if (!sanitized) return '';
+  return sanitized
     .split('\n')
-    .map(escapeMarkdown)
+    .map(escapeMarkdownString)
     .join('\n');
 }
 
@@ -59,7 +79,7 @@ function normalizeRequirementList(list) {
   const normalized = [];
   for (const entry of list) {
     if (typeof entry !== 'string') continue;
-    const trimmed = entry.trim();
+    const trimmed = sanitizeText(entry).trim();
     if (trimmed) normalized.push(trimmed);
   }
   return normalized;
@@ -72,14 +92,14 @@ function ensureParagraphs(paragraphs) {
 
 function headingParagraph(text, level = HeadingLevel.HEADING_1) {
   if (!text) return null;
-  const value = String(text).trim();
+  const value = sanitizeText(text).trim();
   if (!value) return null;
   return new Paragraph({ text: value, heading: level });
 }
 
 function labelParagraph(label, value) {
   if (!label || value == null) return null;
-  const text = String(value).trim();
+  const text = sanitizeText(value).trim();
   if (!text) return null;
   return new Paragraph({
     children: [
@@ -91,7 +111,7 @@ function labelParagraph(label, value) {
 
 function appendMultilineText(paragraphs, value) {
   if (value == null) return;
-  const lines = String(value)
+  const lines = sanitizeText(value)
     .split(/\r?\n/)
     .map(line => line.trim())
     .filter(Boolean);
@@ -102,9 +122,11 @@ function appendMultilineText(paragraphs, value) {
 
 function appendBulletList(paragraphs, items) {
   for (const item of items) {
+    const sanitized = sanitizeText(item).trim();
+    if (!sanitized) continue;
     paragraphs.push(
       new Paragraph({
-        text: item,
+        text: sanitized,
         bullet: { level: 0 },
       })
     );
