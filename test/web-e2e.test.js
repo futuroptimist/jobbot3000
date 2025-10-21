@@ -67,11 +67,13 @@ describe('web command endpoint (e2e)', () => {
       commandAdapter,
     });
 
+    const csrfCookieName = activeServer.csrfCookieName ?? 'jobbot_csrf_token';
     const response = await fetch(`${activeServer.url}/commands/summarize`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         [activeServer.csrfHeaderName]: activeServer.csrfToken,
+        cookie: `${csrfCookieName}=${activeServer.csrfToken}`,
       },
       body: JSON.stringify({
         input: jobPath,

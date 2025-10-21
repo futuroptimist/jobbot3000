@@ -15,9 +15,11 @@ async function startServer(options) {
 }
 
 function buildHeaders(server) {
+  const cookieName = server?.csrfCookieName ?? 'jobbot_csrf_token';
   return {
     'content-type': 'application/json',
     [server.csrfHeaderName]: server.csrfToken,
+    cookie: `${cookieName}=${server.csrfToken}`,
   };
 }
 

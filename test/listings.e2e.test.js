@@ -151,9 +151,11 @@ describe('listings web endpoints (e2e)', () => {
       commandAdapter,
     });
 
+    const csrfCookieName = server.csrfCookieName ?? 'jobbot_csrf_token';
     const headers = {
       'content-type': 'application/json',
       [server.csrfHeaderName]: server.csrfToken,
+      cookie: `${csrfCookieName}=${server.csrfToken}`,
     };
 
     const fetchResponse = await fetch(`${server.url}/commands/listings-fetch`, {

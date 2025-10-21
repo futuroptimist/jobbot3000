@@ -128,6 +128,7 @@ function serializeJsonForHtml(value) {
 
 const CLIENT_SESSION_COOKIE = "jobbot_session_id";
 const CLIENT_SESSION_HEADER = "X-Jobbot-Session-Id";
+const CSRF_COOKIE_NAME = "jobbot_csrf_token";
 const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{16,128}$/;
 
 function normalizeSessionId(value) {
@@ -171,7 +172,7 @@ function parseCookieHeader(headerValue) {
 function applySessionResponse(res, sessionId, options = {}) {
   const sameSite = typeof options.sameSite === "string" && options.sameSite
     ? options.sameSite
-    : "Lax";
+    : "Strict";
   const httpOnly = options.httpOnly !== false;
   const secure = options.secure === true;
 
@@ -212,6 +213,56 @@ function applySessionResponse(res, sessionId, options = {}) {
 
   res.append("Set-Cookie", directives.filter(Boolean).join("; "));
   res.set(CLIENT_SESSION_HEADER, sessionId);
+}
+
+function applyCsrfCookie(res, token, options = {}) {
+  if (!res || typeof res.append !== "function") {
+    return;
+  }
+  const sameSite =
+    typeof options.sameSite === "string" && options.sameSite
+      ? options.sameSite
+      : "Strict";
+  const secure = options.secure === true;
+  const httpOnly = options.httpOnly === true;
+  if (!token) {
+    const clearDirectives = [
+      `${CSRF_COOKIE_NAME}=`,
+      "Path=/",
+      `SameSite=${sameSite}`,
+      "Max-Age=0",
+      "Expires=Thu, 01 Jan 1970 00:00:00 GMT",
+      secure ? "Secure" : null,
+      httpOnly ? "HttpOnly" : null,
+    ].filter(Boolean);
+    res.append("Set-Cookie", clearDirectives.join("; "));
+    return;
+  }
+  const directives = [
+    `${CSRF_COOKIE_NAME}=${encodeURIComponent(token)}`,
+    "Path=/",
+    `SameSite=${sameSite}`,
+  ];
+  if (secure) {
+    directives.push("Secure");
+  }
+  if (httpOnly) {
+    directives.push("HttpOnly");
+  }
+  res.append("Set-Cookie", directives.join("; "));
+}
+
+function readRequestCookie(req, name) {
+  if (!name) {
+    return "";
+  }
+  const cookies = parseCookieHeader(req.get("cookie"));
+  const value = cookies.get(name);
+  if (typeof value !== "string") {
+    return "";
+  }
+  const trimmed = value.trim();
+  return trimmed;
 }
 
 function isSecureRequest(req) {
@@ -1437,7 +1488,8 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
         const navLinks = Array.from(document.querySelectorAll('[data-route-link]'));
         const statusPanels = new Map();
         const csrfHeader = document.body?.dataset.csrfHeader || '';
-        const csrfToken = document.body?.dataset.csrfToken || '';
+        let csrfToken = document.body?.dataset.csrfToken || '';
+        const csrfCookieName = document.body?.dataset.csrfCookie || '';
         const sessionHeader = document.body?.dataset.sessionHeader || '';
         let sessionId = document.body?.dataset.sessionId || '';
         const routeListeners = new Map();
@@ -1935,10 +1987,46 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           }
         }
 
+        function readCookie(name) {
+          if (!name || typeof document?.cookie !== 'string') {
+            return '';
+          }
+          const entries = document.cookie.split(';');
+          for (const entry of entries) {
+            const trimmed = entry.trim();
+            if (!trimmed) {
+              continue;
+            }
+            if (trimmed.startsWith(name + '=')) {
+              const value = trimmed.slice(name.length + 1);
+              try {
+                return decodeURIComponent(value);
+              } catch {
+                return value;
+              }
+            }
+          }
+          return '';
+        }
+
+        function syncCsrfTokenFromCookie() {
+          if (!csrfCookieName) {
+            return;
+          }
+          const cookieToken = readCookie(csrfCookieName);
+          if (cookieToken) {
+            csrfToken = cookieToken;
+            if (document?.body?.dataset) {
+              document.body.dataset.csrfToken = cookieToken;
+            }
+          }
+        }
+
         async function postCommand(pathname, payload, { invalidResponse, failureMessage }) {
           if (typeof fetch !== 'function') {
             throw new Error('Fetch API is unavailable in this environment');
           }
+          syncCsrfTokenFromCookie();
           const headers = { 'content-type': 'application/json' };
           if (csrfHeader && csrfToken) {
             headers[csrfHeader] = csrfToken;
@@ -5654,6 +5742,18 @@ export function createWebApp({
       ? commandEvents
       : null;
 
+  const validateCsrfToken = (req) => {
+    const headerToken = (req.get(csrfOptions.headerName) ?? "").trim();
+    const cookieToken = readRequestCookie(req, CSRF_COOKIE_NAME);
+    if (!headerToken || !cookieToken) {
+      return false;
+    }
+    if (headerToken !== cookieToken) {
+      return false;
+    }
+    return headerToken === csrfOptions.token;
+  };
+
   const emitCommandEvent = (event) => {
     if (!commandEventsEmitter) {
       return;
@@ -5688,6 +5788,13 @@ export function createWebApp({
 
   app.get("/", (req, res) => {
     const sessionId = ensureClientSession(req, res, { sessionManager });
+    const forcedSecure = process.env.JOBBOT_WEB_SESSION_SECURE === "1";
+    const secureCookies = forcedSecure || isSecureRequest(req);
+    applyCsrfCookie(res, csrfOptions.token, {
+      secure: secureCookies,
+      sameSite: "Strict",
+      httpOnly: false,
+    });
     const serviceName = normalizedInfo.service || "jobbot web interface";
     const version = normalizedInfo.version
       ? `Version ${normalizedInfo.version}`
@@ -5717,11 +5824,13 @@ export function createWebApp({
     const securityRoadmapUrl = `${repoUrl}/blob/main/docs/web-security-roadmap.md`;
     const csrfHeaderAttr = escapeHtml(csrfOptions.headerName);
     const csrfTokenAttr = escapeHtml(csrfOptions.token);
+    const csrfCookieAttr = escapeHtml(CSRF_COOKIE_NAME);
     const sessionHeaderAttr = escapeHtml(CLIENT_SESSION_HEADER);
     const sessionIdAttr = escapeHtml(sessionId ?? "");
     const bodyAttributes = [
       `data-csrf-header="${csrfHeaderAttr}"`,
       `data-csrf-token="${csrfTokenAttr}"`,
+      `data-csrf-cookie="${csrfCookieAttr}"`,
       `data-session-header="${sessionHeaderAttr}"`,
       `data-session-id="${sessionIdAttr}"`,
     ].join(" ");
@@ -6384,16 +6493,8 @@ export function createWebApp({
       sessionManager,
     });
 
-    const ensureCsrf = () => {
-      const providedToken = req.get(csrfOptions.headerName);
-      if ((providedToken ?? "").trim() !== csrfOptions.token) {
-        res.status(403).json({ error: "Invalid or missing CSRF token" });
-        return false;
-      }
-      return true;
-    };
-
-    if (!ensureCsrf()) {
+    if (!validateCsrfToken(req)) {
+      res.status(403).json({ error: "Invalid or missing CSRF token" });
       return;
     }
 
@@ -6613,8 +6714,7 @@ export function createWebApp({
         }
       }
 
-      const providedToken = req.get(csrfOptions.headerName);
-      if ((providedToken ?? "").trim() !== csrfOptions.token) {
+      if (!validateCsrfToken(req)) {
         res.status(403).json({ error: "Invalid or missing CSRF token" });
         await recordAudit({ status: "forbidden", reason: "csrf" });
         return;
@@ -6763,17 +6863,9 @@ export function createWebApp({
       sessionManager,
     });
 
-    const ensureCsrf = () => {
-      const providedToken = req.get(csrfOptions.headerName);
-      if ((providedToken ?? "").trim() !== csrfOptions.token) {
-        res.status(403).json({ error: "Invalid or missing CSRF token" });
-        return false;
-      }
-      return true;
-    };
-
     if (!authOptions) {
-      if (!ensureCsrf()) {
+      if (!validateCsrfToken(req)) {
+        res.status(403).json({ error: "Invalid or missing CSRF token" });
         return;
       }
       const identity = createClientIdentity({
@@ -6823,7 +6915,8 @@ export function createWebApp({
       return;
     }
 
-    if (!ensureCsrf()) {
+    if (!validateCsrfToken(req)) {
+      res.status(403).json({ error: "Invalid or missing CSRF token" });
       return;
     }
 
@@ -7080,6 +7173,7 @@ export function startWebServer(options = {}) {
         eventsUrl: `ws://${host}:${actualPort}${websocketPath}`,
         csrfToken: resolvedCsrfToken,
         csrfHeaderName: resolvedHeaderName,
+        csrfCookieName: CSRF_COOKIE_NAME,
         authHeaderName: normalizedAuth?.headerName ?? null,
         authScheme: normalizedAuth?.scheme ?? null,
         sessionHeaderName: CLIENT_SESSION_HEADER,
