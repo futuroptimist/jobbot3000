@@ -13,6 +13,10 @@ jobbot3000 across local development, staging, and self-hosted/production environ
 | Rate limit max    | `30`                         | `20`                        | `15`                        |
 | Audit log path    | `data/audit/audit-log.jsonl` | `/var/log/jobbot/audit.log` | `/var/log/jobbot/audit.log` |
 
+CLI export commands append structured entries to the audit log, recording the
+output target (file vs. stdout), resolved file paths, and redaction flags for
+each run so operators can trace administrative actions.
+
 ## Required secrets
 
 The typed configuration manifest exposes the following secrets when real integrations are enabled:

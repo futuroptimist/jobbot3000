@@ -37,6 +37,13 @@ can be rolled out behind feature flags to minimize regressions.
   regression coverage in [`test/exporters.test.js`](../../test/exporters.test.js) asserts the
   markdown redaction plus the DOCX sanitizer so future formatter tweaks stay scrubbed.
 - Add structured audit logging with retention controls and surface audit failures via the logger.
+  _Implemented (2025-11-05):_ CLI export commands now append structured audit
+  events to the JSONL log defined by `JOBBOT_AUDIT_LOG`, including output
+  targets, file paths, and redaction flags. The regression coverage in
+  [`test/cli-audit-exports.test.js`](../../test/cli-audit-exports.test.js)
+  drives analytics, intake, and interview exports to keep the event contract
+  and timestamps intact. Failures when writing audit entries emit warnings so
+  operators can spot logger issues in real time.
 - Update [SECURITY.md](../../SECURITY.md) with the refreshed threat model and external references.
 
 ## Phase 5 — Docs and UX polish
