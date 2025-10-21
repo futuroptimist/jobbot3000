@@ -55,6 +55,15 @@
 4. **Observability and alerting**
    - Stream audit logs to a tamper-resistant store.
    - Emit security telemetry for failed logins, rate limiting events, and suspicious traffic.
+     _Implemented (2025-11-05):_ `createWebApp` now emits `web.security`
+     telemetry for authorization failures, CSRF mismatches, malformed payloads,
+     and rate limiting responses. The warn-level events include sanitized
+     metadata (client IP, session identifier, role context, and rate limit
+     window details) so operators can alert on suspicious traffic without
+     leaking credentials. Regression coverage in
+     [`test/web-server.test.js`](../test/web-server.test.js) verifies missing
+     authorization headers, 429 responses, and CSRF failures log the new
+     telemetry while keeping secret values redacted.
 
 ## Short-term hardening (local network safe)
 
