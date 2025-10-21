@@ -37,7 +37,11 @@ discoverable.
 
 1. **Access logs** – Enable structured logging by passing a logger with `info`,
    `warn`, and `error` methods to `startWebServer`. Command invocations log
-   duration, status, and correlation IDs.
+   duration, status, correlation IDs, and a redacted payload snapshot so you can
+   replay sanitized requests. When forwarding logs to a remote sink, configure
+   the `logTransport` option with an HTTPS endpoint—`startWebServer` rejects
+   insecure (`http://`) transports whenever the server binds beyond loopback
+   hosts.
 2. **Health checks** – `/health` now executes default probes from
    [`createDefaultHealthChecks`](../src/web/health-checks.js) that verify the
    CLI responds to `--help` and that the data directory is writable. Extend the

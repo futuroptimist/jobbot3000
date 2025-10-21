@@ -2967,6 +2967,7 @@ describe("web server command endpoint", () => {
       correlationId: "corr-123",
       traceId: "corr-123",
       payloadFields: ["input"],
+      payload: { input: "job.txt" },
     });
     expect(typeof entry.durationMs).toBe("number");
     expect(entry.durationMs).toBeGreaterThanOrEqual(0);
@@ -3015,11 +3016,106 @@ describe("web server command endpoint", () => {
       traceId: "corr-err",
       payloadFields: ["input"],
       errorMessage: "summarize command failed: boom",
+      payload: { input: "job.txt" },
     });
     expect(typeof entry.durationMs).toBe("number");
     expect(entry.durationMs).toBeGreaterThanOrEqual(0);
     expect(entry.stdoutLength).toBe(4);
     expect(entry.stderrLength).toBe(4);
+  });
+
+  it("redacts sensitive values in telemetry payload logs", async () => {
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+    const commandAdapter = {
+      summarize: vi.fn(async (options) => {
+        expect(options).toEqual({
+          input: "Contact casey@example.com at +1 555-123-4567 token=secret123",
+        });
+        return { ok: true };
+      }),
+    };
+
+    const server = await startServer({ commandAdapter, logger });
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: buildCommandHeaders(server),
+      body: JSON.stringify({
+        input: "Contact casey@example.com at +1 555-123-4567 token=secret123",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    await response.json();
+
+    expect(logger.info).toHaveBeenCalledTimes(1);
+    const entry = logger.info.mock.calls[0][0];
+    expect(entry.payloadFields).toEqual(["input"]);
+    expect(entry.payload).toEqual({
+      input: "Contact ca***@example.com at 15******67 token=***redacted***",
+    });
+  });
+
+  it("rejects insecure log transport when bound to non-local hosts", async () => {
+    await expect(
+      startServer({
+        host: "0.0.0.0",
+        logTransport: { url: "http://logs.example.com/ingest" },
+      }),
+    ).rejects.toThrow(/https/i);
+  });
+
+  it("sends telemetry to HTTPS log transports with redacted payloads", async () => {
+    const fetchSpy = vi.fn(async () => ({ ok: true }));
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+    const commandAdapter = {
+      summarize: vi.fn(async (options) => {
+        expect(options).toEqual({
+          input: "Contact casey@example.com at +1 555-123-4567 token=secret123",
+        });
+        return { ok: true };
+      }),
+    };
+
+    const server = await startServer({
+      commandAdapter,
+      logger,
+      logTransport: {
+        url: "https://logs.example.com/ingest",
+        fetch: fetchSpy,
+      },
+    });
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: buildCommandHeaders(server),
+      body: JSON.stringify({
+        input: "Contact casey@example.com at +1 555-123-4567 token=secret123",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    await response.json();
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe("https://logs.example.com/ingest");
+    expect(init?.method).toBe("POST");
+    expect(typeof init?.body).toBe("string");
+    const parsed = JSON.parse(init.body);
+    expect(parsed).toMatchObject({
+      event: "web.command",
+      command: "summarize",
+      payload: {
+        input: "Contact ca***@example.com at 15******67 token=***redacted***",
+      },
+    });
   });
 
   it("sanitizes command payload strings before invoking the adapter", async () => {
