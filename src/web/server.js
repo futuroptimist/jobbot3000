@@ -5735,6 +5735,18 @@ function logCommandTelemetry(logger, level, details, transport) {
   }
 }
 
+function logSecurityEvent(logger, details) {
+  if (!logger || typeof logger.warn !== "function") {
+    return;
+  }
+  const entry = { event: "web.security", ...details };
+  try {
+    logger.warn(entry);
+  } catch {
+    // Ignore logger failures so security responses remain consistent.
+  }
+}
+
 export function createWebApp({
   info,
   healthChecks,
@@ -6614,6 +6626,17 @@ export function createWebApp({
         createIfMissing: !authOptions,
         sessionManager,
       });
+      const method = req.method ?? "GET";
+      const logSecurity = (details) => {
+        logSecurityEvent(logger, {
+          command: commandParam,
+          method,
+          clientIp,
+          userAgent,
+          sessionId: sessionId ?? null,
+          ...details,
+        });
+      };
       let authContext = authOptions
         ? { subject: "unauthenticated", roles: new Set() }
         : { subject: "guest", roles: new Set(["viewer"]) };
@@ -6660,19 +6683,33 @@ export function createWebApp({
           Math.ceil((rateStatus.reset - Date.now()) / 1000),
         );
         res.set("Retry-After", String(retryAfterSeconds));
+        logSecurity({
+          category: "rate_limit",
+          reason: "rate_limit",
+          httpStatus: 429,
+          limit: rateLimiter.limit,
+          remaining: rateStatus.remaining,
+          reset: new Date(rateStatus.reset).toISOString(),
+        });
         res.status(429).json({ error: "Too many requests" });
         await recordAudit({ status: "rate_limited" });
         return;
       }
 
       if (authOptions) {
-        const respondUnauthorized = () => {
+        const respondUnauthorized = (reason, extra = {}) => {
           if (authOptions.requireScheme && authOptions.scheme) {
             res.set(
               "WWW-Authenticate",
               `${authOptions.scheme} realm="jobbot-web"`,
             );
           }
+          logSecurity({
+            category: "auth",
+            reason,
+            httpStatus: 401,
+            ...extra,
+          });
           res
             .status(401)
             .json({ error: "Invalid or missing authorization token" });
@@ -6686,7 +6723,7 @@ export function createWebApp({
             status: "unauthorized",
             reason: "missing-token",
           });
-          respondUnauthorized();
+          respondUnauthorized("missing-token");
           return;
         }
 
@@ -6698,7 +6735,10 @@ export function createWebApp({
               status: "unauthorized",
               reason: "invalid-scheme",
             });
-            respondUnauthorized();
+            const providedScheme = headerValue.split(/\s+/)[0] ?? "";
+            respondUnauthorized("invalid-scheme", {
+              providedScheme,
+            });
             return;
           }
           tokenValue = headerValue.slice(authOptions.schemePrefixLength).trim();
@@ -6707,7 +6747,7 @@ export function createWebApp({
               status: "unauthorized",
               reason: "missing-token",
             });
-            respondUnauthorized();
+            respondUnauthorized("missing-token");
             return;
           }
         }
@@ -6718,7 +6758,9 @@ export function createWebApp({
             status: "unauthorized",
             reason: "unknown-token",
           });
-          respondUnauthorized();
+          respondUnauthorized("unknown-token", {
+            tokenLength: tokenValue.length,
+          });
           return;
         }
         authContext = tokenEntry;
@@ -6752,11 +6794,34 @@ export function createWebApp({
             auditPayload.actorDisplayName = actorDisplayName;
           }
           await recordAudit(auditPayload);
+          logSecurity({
+            category: "auth",
+            reason: "rbac",
+            httpStatus: 403,
+            actor,
+            roles: roleList,
+            requiredRoles,
+          });
           return;
         }
       }
 
       if (!validateCsrfToken(req)) {
+        const csrfHeaderToken = (req.get(csrfOptions.headerName) ?? "").trim();
+        const csrfCookieToken = readRequestCookie(req, CSRF_COOKIE_NAME);
+        logSecurity({
+          category: "csrf",
+          reason: "csrf",
+          httpStatus: 403,
+          csrf: {
+            headerPresent: Boolean(csrfHeaderToken),
+            cookiePresent: Boolean(csrfCookieToken),
+            mismatch:
+              Boolean(csrfHeaderToken) &&
+              Boolean(csrfCookieToken) &&
+              csrfHeaderToken !== csrfCookieToken,
+          },
+        });
         res.status(403).json({ error: "Invalid or missing CSRF token" });
         await recordAudit({ status: "forbidden", reason: "csrf" });
         return;
@@ -6772,6 +6837,12 @@ export function createWebApp({
         await recordAudit({
           status: "invalid",
           reason: "payload",
+          error: err?.message,
+        });
+        logSecurity({
+          category: "payload",
+          reason: "payload",
+          httpStatus: 400,
           error: err?.message,
         });
         return;

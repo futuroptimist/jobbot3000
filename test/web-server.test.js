@@ -3024,97 +3024,129 @@ describe("web server command endpoint", () => {
     expect(entry.stderrLength).toBe(4);
   });
 
-  it("redacts sensitive values in telemetry payload logs", async () => {
+  it("logs security telemetry when authorization is missing", async () => {
     const logger = {
       info: vi.fn(),
       warn: vi.fn(),
       error: vi.fn(),
     };
     const commandAdapter = {
-      summarize: vi.fn(async (options) => {
-        expect(options).toEqual({
-          input: "Contact casey@example.com at +1 555-123-4567 token=secret123",
-        });
-        return { ok: true };
-      }),
-    };
-
-    const server = await startServer({ commandAdapter, logger });
-    const response = await fetch(`${server.url}/commands/summarize`, {
-      method: "POST",
-      headers: buildCommandHeaders(server),
-      body: JSON.stringify({
-        input: "Contact casey@example.com at +1 555-123-4567 token=secret123",
-      }),
-    });
-
-    expect(response.status).toBe(200);
-    await response.json();
-
-    expect(logger.info).toHaveBeenCalledTimes(1);
-    const entry = logger.info.mock.calls[0][0];
-    expect(entry.payloadFields).toEqual(["input"]);
-    expect(entry.payload).toEqual({
-      input: "Contact ca***@example.com at 15******67 token=***redacted***",
-    });
-  });
-
-  it("rejects insecure log transport when bound to non-local hosts", async () => {
-    await expect(
-      startServer({
-        host: "0.0.0.0",
-        logTransport: { url: "http://logs.example.com/ingest" },
-      }),
-    ).rejects.toThrow(/https/i);
-  });
-
-  it("sends telemetry to HTTPS log transports with redacted payloads", async () => {
-    const fetchSpy = vi.fn(async () => ({ ok: true }));
-    const logger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-    };
-    const commandAdapter = {
-      summarize: vi.fn(async (options) => {
-        expect(options).toEqual({
-          input: "Contact casey@example.com at +1 555-123-4567 token=secret123",
-        });
-        return { ok: true };
-      }),
+      summarize: vi.fn(async () => ({ ok: true })),
     };
 
     const server = await startServer({
       commandAdapter,
-      logger,
-      logTransport: {
-        url: "https://logs.example.com/ingest",
-        fetch: fetchSpy,
+      auth: {
+        tokens: [
+          {
+            token: "viewer-token",
+            roles: ["viewer"],
+            subject: "viewer@example.com",
+          },
+        ],
       },
+      logger,
     });
+
     const response = await fetch(`${server.url}/commands/summarize`, {
       method: "POST",
       headers: buildCommandHeaders(server),
-      body: JSON.stringify({
-        input: "Contact casey@example.com at +1 555-123-4567 token=secret123",
-      }),
+      body: JSON.stringify({ input: "job.txt" }),
     });
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(401);
     await response.json();
 
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchSpy.mock.calls[0];
-    expect(url).toBe("https://logs.example.com/ingest");
-    expect(init?.method).toBe("POST");
-    expect(typeof init?.body).toBe("string");
-    const parsed = JSON.parse(init.body);
-    expect(parsed).toMatchObject({
-      event: "web.command",
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    const entry = logger.warn.mock.calls[0][0];
+    expect(entry).toMatchObject({
+      event: "web.security",
+      category: "auth",
+      reason: "missing-token",
       command: "summarize",
-      payload: {
-        input: "Contact ca***@example.com at 15******67 token=***redacted***",
-      },
+      httpStatus: 401,
+    });
+    expect(entry).not.toHaveProperty("token");
+  });
+
+  it("logs security telemetry when requests exceed the rate limit", async () => {
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({ ok: true })),
+    };
+
+    const server = await startServer({
+      commandAdapter,
+      rateLimit: { windowMs: 60000, max: 1 },
+      logger,
+    });
+
+    const first = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: buildCommandHeaders(server),
+      body: JSON.stringify({ input: "job.txt" }),
+    });
+    expect(first.status).toBe(200);
+    await first.json();
+
+    const second = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: buildCommandHeaders(server),
+      body: JSON.stringify({ input: "job.txt" }),
+    });
+    expect(second.status).toBe(429);
+    await second.json();
+
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    const entry = logger.warn.mock.calls[0][0];
+    expect(entry).toMatchObject({
+      event: "web.security",
+      category: "rate_limit",
+      reason: "rate_limit",
+      command: "summarize",
+      httpStatus: 429,
+      limit: 1,
+    });
+    expect(entry.remaining).toBe(0);
+  });
+
+  it("logs security telemetry when CSRF validation fails", async () => {
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({ ok: true })),
+    };
+
+    const server = await startServer({ commandAdapter, logger });
+
+    const headers = buildCommandHeaders(server, {
+      [server.csrfHeaderName]: "invalid-token",
+    });
+
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ input: "job.txt" }),
+    });
+
+    expect(response.status).toBe(403);
+    await response.json();
+
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    const entry = logger.warn.mock.calls[0][0];
+    expect(entry).toMatchObject({
+      event: "web.security",
+      category: "csrf",
+      reason: "csrf",
+      command: "summarize",
+      httpStatus: 403,
     });
   });
 

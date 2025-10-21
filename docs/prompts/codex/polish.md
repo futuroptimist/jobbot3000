@@ -90,8 +90,10 @@ polish initiative.
 # Security & Privacy
 - Introduce redaction middleware for logs and exports so user-provided data is
   masked by default.
-- Add structured audit logging for administrative actions and data exports,
-  ensuring retention complies with policy.
+- Structured audit logging now covers administrative actions and data exports,
+  capturing output targets and redaction flags in the JSONL audit log. See
+  `test/cli-audit-exports.test.js` for regression coverage that keeps the
+  retention-aware logger contract intact.
 - Revisit the threat model (reference [SECURITY.md](../../../SECURITY.md)) and
   link to external assessments so reviewers can track open risks.
 

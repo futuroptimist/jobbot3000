@@ -101,6 +101,58 @@ import {
   updateSettings as updateUserSettings,
 } from '../src/settings.js';
 import { ensureInferenceConfig } from '../src/shared/config/inference.js';
+import { createAuditLogger } from '../src/shared/security/audit-log.js';
+
+const rawAuditLogPath =
+  typeof process.env.JOBBOT_AUDIT_LOG === 'string'
+    ? process.env.JOBBOT_AUDIT_LOG.trim()
+    : '';
+const DEFAULT_AUDIT_LOG_PATH = 'data/audit/audit-log.jsonl';
+const cliAuditLogPath = rawAuditLogPath || DEFAULT_AUDIT_LOG_PATH;
+const rawAuditRetention =
+  typeof process.env.JOBBOT_AUDIT_RETENTION_DAYS === 'string'
+    ? process.env.JOBBOT_AUDIT_RETENTION_DAYS.trim()
+    : '';
+const parsedAuditRetention = Number.parseInt(rawAuditRetention, 10);
+const cliAuditLoggerOptions = { logPath: cliAuditLogPath };
+if (Number.isFinite(parsedAuditRetention) && parsedAuditRetention > 0) {
+  cliAuditLoggerOptions.retentionDays = parsedAuditRetention;
+}
+
+let cliAuditLogger = null;
+let cliAuditLoggerFailed = false;
+
+async function recordCliAuditEvent(event) {
+  if (!cliAuditLogPath) return;
+  if (!cliAuditLogger && !cliAuditLoggerFailed) {
+    try {
+      cliAuditLogger = createAuditLogger(cliAuditLoggerOptions);
+    } catch (error) {
+      cliAuditLoggerFailed = true;
+      console.warn('Failed to initialize audit logger', error);
+      return;
+    }
+  }
+  if (!cliAuditLogger) return;
+  const entry = {
+    actor: 'cli',
+    source: 'cli',
+    ...event,
+  };
+  if (!entry.command) {
+    entry.command = 'jobbot';
+  }
+  for (const key of Object.keys(entry)) {
+    if (entry[key] === undefined) {
+      delete entry[key];
+    }
+  }
+  try {
+    await cliAuditLogger.record(entry);
+  } catch (error) {
+    console.warn('Failed to record audit event', error);
+  }
+}
 
 function isHttpUrl(s) {
   return /^https?:\/\//i.test(s);
@@ -1648,15 +1700,49 @@ async function cmdIntakeExport(args) {
   const entries = await getIntakeResponses({ redact });
   const payload = { responses: entries };
 
-  if (outPath) {
-    const resolved = path.resolve(process.cwd(), outPath);
-    await fs.promises.mkdir(path.dirname(resolved), { recursive: true });
-    await fs.promises.writeFile(resolved, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
-    console.log(`Saved intake export to ${resolved}`);
-  }
+  const outputTargets = outPath
+    ? emitJson
+      ? ['file', 'stdout']
+      : ['file']
+    : ['stdout'];
+  let resolved;
+  try {
+    if (outPath) {
+      resolved = path.resolve(process.cwd(), outPath);
+      await fs.promises.mkdir(path.dirname(resolved), { recursive: true });
+      await fs.promises.writeFile(
+        resolved,
+        `${JSON.stringify(payload, null, 2)}\n`,
+        'utf8',
+      );
+      console.log(`Saved intake export to ${resolved}`);
+    }
 
-  if (emitJson) {
-    console.log(JSON.stringify(payload, null, 2));
+    if (emitJson) {
+      console.log(JSON.stringify(payload, null, 2));
+    }
+
+    await recordCliAuditEvent({
+      action: 'intake_export',
+      command: 'intake export',
+      status: 'success',
+      outputTargets,
+      outputPath: resolved,
+      format: 'json',
+      redacted: redact,
+    });
+  } catch (error) {
+    await recordCliAuditEvent({
+      action: 'intake_export',
+      command: 'intake export',
+      status: 'error',
+      outputTargets,
+      outputPath: resolved,
+      format: 'json',
+      redacted: redact,
+      errorMessage: error?.message ?? String(error),
+    });
+    throw error;
   }
 }
 
@@ -2508,16 +2594,41 @@ async function cmdAnalyticsExport(args) {
     redact = false;
   }
 
-  const snapshot = await exportAnalyticsSnapshot({ redactCompanies: redact });
-  const payload = `${JSON.stringify(snapshot, null, 2)}\n`;
-  if (output) {
-    const resolved = path.resolve(process.cwd(), output);
-    await fs.promises.mkdir(path.dirname(resolved), { recursive: true });
-    await fs.promises.writeFile(resolved, payload, 'utf8');
-    console.log(`Saved analytics snapshot to ${resolved}`);
-    return;
+  const outputTargets = output ? ['file'] : ['stdout'];
+  let resolved;
+  try {
+    const snapshot = await exportAnalyticsSnapshot({ redactCompanies: redact });
+    const payload = `${JSON.stringify(snapshot, null, 2)}\n`;
+    if (output) {
+      resolved = path.resolve(process.cwd(), output);
+      await fs.promises.mkdir(path.dirname(resolved), { recursive: true });
+      await fs.promises.writeFile(resolved, payload, 'utf8');
+      console.log(`Saved analytics snapshot to ${resolved}`);
+    } else {
+      console.log(payload.trimEnd());
+    }
+    await recordCliAuditEvent({
+      action: 'analytics_export',
+      command: 'analytics export',
+      status: 'success',
+      outputTargets,
+      outputPath: resolved,
+      format: 'json',
+      redacted: redact,
+    });
+  } catch (error) {
+    await recordCliAuditEvent({
+      action: 'analytics_export',
+      command: 'analytics export',
+      status: 'error',
+      outputTargets,
+      outputPath: resolved,
+      format: 'json',
+      redacted: redact,
+      errorMessage: error?.message ?? String(error),
+    });
+    throw error;
   }
-  console.log(payload.trimEnd());
 }
 
 async function cmdAnalyticsCompensation(args) {
@@ -3512,18 +3623,36 @@ async function cmdInterviewsExport(args) {
     process.exit(2);
   }
 
-  let archive;
+  const outputTargets = ['file'];
+  const resolved = path.resolve(process.cwd(), outPath);
   try {
-    archive = await exportInterviewSessions(jobId);
+    const archive = await exportInterviewSessions(jobId);
+    await fs.promises.mkdir(path.dirname(resolved), { recursive: true });
+    await fs.promises.writeFile(resolved, archive);
+    console.log(`Exported interviews for ${jobId} to ${resolved}`);
+    await recordCliAuditEvent({
+      action: 'interviews_export',
+      command: 'interviews export',
+      status: 'success',
+      outputTargets,
+      outputPath: resolved,
+      format: 'zip',
+      jobId,
+    });
   } catch (err) {
+    await recordCliAuditEvent({
+      action: 'interviews_export',
+      command: 'interviews export',
+      status: 'error',
+      outputTargets,
+      outputPath: resolved,
+      format: 'zip',
+      jobId,
+      errorMessage: err?.message ?? String(err),
+    });
     console.error(err?.message || String(err));
     process.exit(1);
   }
-
-  const resolved = path.resolve(process.cwd(), outPath);
-  await fs.promises.mkdir(path.dirname(resolved), { recursive: true });
-  await fs.promises.writeFile(resolved, archive);
-  console.log(`Exported interviews for ${jobId} to ${resolved}`);
 }
 
 async function cmdInterviewsRemind(args) {
@@ -3832,3 +3961,10 @@ if (entryPath && modulePath && modulePath === entryPath) {
     process.exit(1);
   });
 }
+
+export {
+  cmdAnalyticsExport,
+  cmdIntakeExport,
+  cmdInterviewsExport,
+  recordCliAuditEvent,
+};
