@@ -3022,6 +3022,132 @@ describe("web server command endpoint", () => {
     expect(entry.stderrLength).toBe(4);
   });
 
+  it("logs security telemetry when authorization is missing", async () => {
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({ ok: true })),
+    };
+
+    const server = await startServer({
+      commandAdapter,
+      auth: {
+        tokens: [
+          {
+            token: "viewer-token",
+            roles: ["viewer"],
+            subject: "viewer@example.com",
+          },
+        ],
+      },
+      logger,
+    });
+
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: buildCommandHeaders(server),
+      body: JSON.stringify({ input: "job.txt" }),
+    });
+
+    expect(response.status).toBe(401);
+    await response.json();
+
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    const entry = logger.warn.mock.calls[0][0];
+    expect(entry).toMatchObject({
+      event: "web.security",
+      category: "auth",
+      reason: "missing-token",
+      command: "summarize",
+      httpStatus: 401,
+    });
+    expect(entry).not.toHaveProperty("token");
+  });
+
+  it("logs security telemetry when requests exceed the rate limit", async () => {
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({ ok: true })),
+    };
+
+    const server = await startServer({
+      commandAdapter,
+      rateLimit: { windowMs: 60000, max: 1 },
+      logger,
+    });
+
+    const first = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: buildCommandHeaders(server),
+      body: JSON.stringify({ input: "job.txt" }),
+    });
+    expect(first.status).toBe(200);
+    await first.json();
+
+    const second = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: buildCommandHeaders(server),
+      body: JSON.stringify({ input: "job.txt" }),
+    });
+    expect(second.status).toBe(429);
+    await second.json();
+
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    const entry = logger.warn.mock.calls[0][0];
+    expect(entry).toMatchObject({
+      event: "web.security",
+      category: "rate_limit",
+      reason: "rate_limit",
+      command: "summarize",
+      httpStatus: 429,
+      limit: 1,
+    });
+    expect(entry.remaining).toBe(0);
+  });
+
+  it("logs security telemetry when CSRF validation fails", async () => {
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({ ok: true })),
+    };
+
+    const server = await startServer({ commandAdapter, logger });
+
+    const headers = buildCommandHeaders(server, {
+      [server.csrfHeaderName]: "invalid-token",
+    });
+
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ input: "job.txt" }),
+    });
+
+    expect(response.status).toBe(403);
+    await response.json();
+
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    const entry = logger.warn.mock.calls[0][0];
+    expect(entry).toMatchObject({
+      event: "web.security",
+      category: "csrf",
+      reason: "csrf",
+      command: "summarize",
+      httpStatus: 403,
+    });
+  });
+
   it("sanitizes command payload strings before invoking the adapter", async () => {
     const dirtyInput = "  Senior engineer\u0000\nnotes\u0007 ";
     const dirtyLocale = "\u0007 en-US \u0000";
