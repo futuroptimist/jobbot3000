@@ -1,13 +1,16 @@
 # Security Policy
 
 ## Reporting a Vulnerability
+
 Please open an issue describing the problem without including sensitive details.
 We'll respond with a secure channel for disclosure.
 
 ## Secret Handling
+
 Secrets such as API keys or tokens should never be committed. Use environment variables or `.env` files which are excluded via `.gitignore`.
 
 ## Data Privacy
+
 All job search data stays on your machine. Offline or encrypted LLM inference is encouraged for protecting personal information.
 
 ## Threat model update (September 2025)
@@ -18,7 +21,8 @@ All job search data stays on your machine. Offline or encrypted LLM inference is
   - Request logs and exporters pass through redaction middleware so PII and secrets are masked by
     default.
   - Administrative actions (command execution, data exports) write structured audit events to
-    `JOBBOT_AUDIT_LOG` with retention controls.
+    `JOBBOT_AUDIT_LOG` with retention controls. CLI analytics, intake, and interview exports include
+    output targets, file paths, and redaction flags so operators can trace data handling end to end.
   - The HTTP client supports retries, exponential backoff, and circuit breakers to reduce blast radius
     when upstream APIs thrash.
 - **External references:**
