@@ -131,6 +131,12 @@
   asserts the new guardrail by expecting inline overrides to throw.
 - Log sensitive fields using redaction filters and enforce secure log transport when deployed beyond
   localhost.
+  _Implemented (2025-10-27):_ `startWebServer` now redacts command payloads before emitting
+  telemetry and exposes a `logTransport` sink that posts entries over HTTPS. The server refuses
+  insecure (`http://`) transports when bound to non-loopback hosts so remote deployments keep logs
+  encrypted in transit. Regression coverage in
+  [`test/web-server.test.js`](../test/web-server.test.js) verifies payload redaction, HTTPS
+  enforcement, and remote transport wiring.
 
 ### 4. UX and Theming Framework
 

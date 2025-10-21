@@ -2967,6 +2967,7 @@ describe("web server command endpoint", () => {
       correlationId: "corr-123",
       traceId: "corr-123",
       payloadFields: ["input"],
+      payload: { input: "job.txt" },
     });
     expect(typeof entry.durationMs).toBe("number");
     expect(entry.durationMs).toBeGreaterThanOrEqual(0);
@@ -3015,6 +3016,7 @@ describe("web server command endpoint", () => {
       traceId: "corr-err",
       payloadFields: ["input"],
       errorMessage: "summarize command failed: boom",
+      payload: { input: "job.txt" },
     });
     expect(typeof entry.durationMs).toBe("number");
     expect(entry.durationMs).toBeGreaterThanOrEqual(0);

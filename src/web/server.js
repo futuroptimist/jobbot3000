@@ -27,6 +27,25 @@ import { createAuditLogger } from "../shared/security/audit-log.js";
 import { createSessionManager } from "./session-manager.js";
 import { WebSocket, WebSocketServer } from "ws";
 
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+
+function isLoopbackHost(host) {
+  if (typeof host !== "string") {
+    return false;
+  }
+  const normalized = host.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  if (LOOPBACK_HOSTS.has(normalized)) {
+    return true;
+  }
+  if (normalized.startsWith("127.")) {
+    return true;
+  }
+  return false;
+}
+
 function createInMemoryRateLimiter(options = {}) {
   const windowMs = Number(options.windowMs ?? 60000);
   if (!Number.isFinite(windowMs) || windowMs <= 0) {
@@ -5658,6 +5677,7 @@ function buildCommandLogEntry({
   userAgent,
   result,
   errorMessage,
+  payload,
 }) {
   const entry = {
     event: "web.command",
@@ -5681,16 +5701,35 @@ function buildCommandLogEntry({
   if (result && typeof result.traceId === "string" && result.traceId) {
     entry.traceId = result.traceId;
   }
-  if (errorMessage) entry.errorMessage = errorMessage;
+  if (payload !== undefined) {
+    entry.payload = redactValue(payload);
+  }
+  if (errorMessage) {
+    entry.errorMessage = sanitizeOutputString(errorMessage);
+  }
   return entry;
 }
 
-function logCommandTelemetry(logger, level, details) {
-  if (!logger) return;
-  const fn = typeof logger[level] === "function" ? logger[level] : undefined;
-  if (!fn) return;
+function logCommandTelemetry(logger, level, details, transport) {
+  const fn = logger && typeof logger[level] === "function" ? logger[level] : undefined;
+  if (!fn && !transport) return;
   try {
-    fn(buildCommandLogEntry(details));
+    const entry = buildCommandLogEntry(details);
+    if (transport && typeof transport.send === "function") {
+      try {
+        const result = transport.send(entry);
+        if (result && typeof result.then === "function") {
+          result.catch((error) => {
+            logger?.warn?.("Failed to send telemetry to log transport", error);
+          });
+        }
+      } catch (error) {
+        logger?.warn?.("Failed to send telemetry to log transport", error);
+      }
+    }
+    if (fn) {
+      fn(entry);
+    }
   } catch {
     // Ignore logger failures so HTTP responses are unaffected.
   }
@@ -5721,6 +5760,7 @@ export function createWebApp({
   features,
   commandEvents,
   session,
+  logTransport,
 } = {}) {
   const normalizedInfo = normalizeInfo(info);
   const normalizedChecks = normalizeHealthChecks(healthChecks);
@@ -5739,6 +5779,8 @@ export function createWebApp({
     }
   }
   const redactionMiddleware = createRedactionMiddleware({ logger });
+  const logTransportSender =
+    logTransport && typeof logTransport.send === "function" ? logTransport : null;
   const availableCommands = new Set(
     ALLOW_LISTED_COMMANDS.filter(
       (name) => typeof commandAdapter?.[name] === "function",
@@ -6829,7 +6871,8 @@ export function createWebApp({
           clientIp,
           userAgent,
           result: sanitizedResult,
-        });
+          payload: redactedPayload,
+        }, logTransportSender);
         res.status(200).json(sanitizedResult);
         await recordAudit({
           status: "success",
@@ -6901,7 +6944,8 @@ export function createWebApp({
           userAgent,
           result: responseBody,
           errorMessage: response?.error,
-        });
+          payload: redactedPayload,
+        }, logTransportSender);
         res.status(502).json(responseBody);
         await recordAudit({
           status: "error",
@@ -7012,6 +7056,80 @@ export function createWebApp({
   return app;
 }
 
+function normalizeLogTransport(transport, { host }) {
+  if (!transport) {
+    return null;
+  }
+  if (typeof transport !== "object") {
+    throw new Error("logTransport must be an object");
+  }
+  if (typeof transport.send === "function") {
+    return { send: transport.send };
+  }
+  const urlValue =
+    typeof transport.url === "string" && transport.url.trim()
+      ? transport.url.trim()
+      : null;
+  if (!urlValue) {
+    throw new Error("logTransport.url must be a non-empty string");
+  }
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(urlValue);
+  } catch {
+    throw new Error("logTransport.url must be a valid URL");
+  }
+  const protocol = parsedUrl.protocol.toLowerCase();
+  if (protocol !== "https:" && protocol !== "http:") {
+    throw new Error("logTransport.url must use http or https");
+  }
+  if (protocol !== "https:" && !isLoopbackHost(host)) {
+    throw new Error(
+      "Log transport URL must use HTTPS when binding to non-localhost hosts",
+    );
+  }
+  const method =
+    typeof transport.method === "string" && transport.method.trim()
+      ? transport.method.trim().toUpperCase()
+      : "POST";
+  const headersOption =
+    transport.headers && typeof transport.headers === "object"
+      ? transport.headers
+      : {};
+  const baseHeaders = {};
+  let hasContentType = false;
+  for (const [key, value] of Object.entries(headersOption)) {
+    baseHeaders[key] = value;
+    if (key.toLowerCase() === "content-type") {
+      hasContentType = true;
+    }
+  }
+  if (!hasContentType) {
+    baseHeaders["content-type"] = "application/json";
+  }
+  const fetchImpl =
+    typeof transport.fetch === "function"
+      ? transport.fetch
+      : typeof globalThis.fetch === "function"
+        ? (input, init) => globalThis.fetch(input, init)
+        : null;
+  if (!fetchImpl) {
+    throw new Error(
+      "logTransport.fetch must be provided when global fetch is unavailable",
+    );
+  }
+  return {
+    send(entry) {
+      const headers = { ...baseHeaders };
+      return fetchImpl(parsedUrl.toString(), {
+        method,
+        headers,
+        body: JSON.stringify(entry),
+      });
+    },
+  };
+}
+
 export function startWebServer(options = {}) {
   const { host = "127.0.0.1" } = options;
   const portValue = options.port ?? 3000;
@@ -7032,6 +7150,7 @@ export function startWebServer(options = {}) {
     authHeaderName,
     authScheme,
     session: sessionOptions,
+    logTransport: providedLogTransport,
     ...rest
   } = options;
   const commandAdapter =
@@ -7070,6 +7189,9 @@ export function startWebServer(options = {}) {
   }
   const normalizedAuth = normalizeAuthOptions(authConfig);
   const commandEvents = new EventEmitter();
+  const normalizedLogTransport = normalizeLogTransport(providedLogTransport, {
+    host,
+  });
   const websocketPath = "/events";
   const app = createWebApp({
     ...rest,
@@ -7080,6 +7202,7 @@ export function startWebServer(options = {}) {
     auth: normalizedAuth,
     session: sessionOptions,
     commandEvents,
+    logTransport: normalizedLogTransport,
   });
 
   const wss = new WebSocketServer({ noServer: true });
