@@ -445,7 +445,9 @@ call scheduled"`.
 ### Web flow
 
 1. From **Opportunities ▸ New → Recruiter outreach**, paste the email body. The modal previews the
-   parsed contact, subject, and proposed times before saving.
+   parsed contact, subject, and proposed times before saving. Regression coverage in
+   [`test/web-server.test.js`](../test/web-server.test.js) keeps the preview aligned with the CLI by
+   asserting the company, subject, contact, and schedule rows render after a successful ingest.
 2. The opportunity detail view surfaces the phone screen schedule (`Phone screen: Thu Oct 23, 2:00 PM PT`)
    with quick actions to confirm availability or adjust reminders.
 3. Use **Prep ▸ Interviews** to launch the automatically generated prep plan seeded from the outreach

@@ -893,6 +893,7 @@ describe("web server status page", () => {
         contactName: "Casey Recruiter",
         contactEmail: "casey@futureworks.example",
         lifecycleState: "phone_screen_scheduled",
+        subject: "Future Works recruiter outreach",
       },
       schedule: {
         display: "Oct 23, 2:00 PM PT",
@@ -977,6 +978,8 @@ describe("web server status page", () => {
 
     const preview = dom.window.document.querySelector("[data-recruiter-preview]");
     expect(preview?.textContent).toContain("Future Works");
+    expect(preview?.textContent).toContain("Subject");
+    expect(preview?.textContent).toContain("Future Works recruiter outreach");
     expect(preview?.textContent).toContain("Oct 23, 2:00 PM PT");
 
     expect(ingestedEvent?.detail?.result?.opportunity?.company).toBe(
