@@ -83,10 +83,14 @@ async function main() {
 
   console.log(`jobbot web server listening on ${server.url}`);
   console.log(`Environment: ${config.env}`);
-  console.log(
-    `Attach ${server.csrfHeaderName}: ${server.csrfToken} to POST /commands requests.`,
-  );
-  console.log('Treat the CSRF token as a secret.');
+  if (server.csrfHeaderName) {
+    console.log(
+      `Use the ${server.csrfHeaderName} header to send the CSRF token when calling POST /commands.`,
+    );
+  } else {
+    console.log('Attach the configured CSRF token when calling POST /commands.');
+  }
+  console.log('Treat the CSRF token as a secret and do not log it.');
   console.log('Press Ctrl+C to stop.');
 
   if (config.missingSecrets?.length) {

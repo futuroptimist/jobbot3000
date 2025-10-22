@@ -330,18 +330,45 @@ function resolveNativeCliFlag(value) {
   return false;
 }
 
-function formatLogArg(arg) {
-  if (typeof arg === "string") return arg;
-  if (typeof arg === "number" || typeof arg === "boolean") {
-    return String(arg);
+function sanitizeLogValue(arg) {
+  if (typeof arg === "string") {
+    return sanitizeOutputString(arg);
+  }
+  if (typeof arg === "number" || typeof arg === "boolean" || arg === null || arg === undefined) {
+    return arg;
   }
   if (arg instanceof Error) {
-    return arg.message || String(arg);
+    const name = arg.name || "Error";
+    const message = sanitizeOutputString(arg.message || String(arg));
+    const stack = typeof arg.stack === "string" ? sanitizeOutputString(arg.stack) : "";
+    if (stack && stack !== message) {
+      return `${name}: ${message}\n${stack}`.trim();
+    }
+    return `${name}: ${message}`.trim();
   }
   try {
-    return JSON.stringify(arg);
+    return sanitizeOutputValue(arg);
   } catch {
-    return String(arg);
+    return sanitizeOutputString(String(arg));
+  }
+}
+
+function formatLogArg(arg) {
+  const sanitized = sanitizeLogValue(arg);
+  if (typeof sanitized === "string") return sanitized;
+  if (typeof sanitized === "number" || typeof sanitized === "boolean") {
+    return String(sanitized);
+  }
+  if (sanitized === undefined) return "";
+  if (sanitized === null) return "null";
+  try {
+    return JSON.stringify(sanitized);
+  } catch {
+    try {
+      return String(sanitized);
+    } catch {
+      return "";
+    }
   }
 }
 
@@ -360,7 +387,7 @@ function ensureConsoleHooks() {
     if (store) {
       store.logs.push(args.map(formatLogArg).join(" "));
     } else {
-      originalConsoleLog(...args);
+      originalConsoleLog(...args.map(sanitizeLogValue));
     }
   };
   console.error = (...args) => {
@@ -368,7 +395,7 @@ function ensureConsoleHooks() {
     if (store) {
       store.errors.push(args.map(formatLogArg).join(" "));
     } else {
-      originalConsoleError(...args);
+      originalConsoleError(...args.map(sanitizeLogValue));
     }
   };
 }
