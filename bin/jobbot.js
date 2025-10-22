@@ -79,7 +79,7 @@ import {
 } from '../src/analytics.js';
 import { ingestWorkableBoard } from '../src/workable.js';
 import { ingestJobUrl } from '../src/url-ingest.js';
-import { bundleDeliverables } from '../src/deliverables.js';
+import { bundleDeliverables, loadDeliverablesDiff } from '../src/deliverables.js';
 import { createTaskScheduler, loadScheduleConfig, buildScheduledTasks } from '../src/schedule.js';
 import { transcribeAudio, synthesizeSpeech } from '../src/speech.js';
 import { t, DEFAULT_LOCALE } from '../src/i18n.js';
@@ -378,6 +378,61 @@ function formatShortlistDetail(detail) {
       if (event.remind_at) {
         lines.push(`  Reminder: ${event.remind_at}`);
       }
+    }
+  }
+
+  return lines.join('\n');
+}
+
+function formatDiffValue(value) {
+  if (value === undefined) return 'undefined';
+  const json = JSON.stringify(value);
+  if (json !== undefined) return json;
+  return String(value);
+}
+
+function formatDeliverablesDiffReport(jobId, label, diff) {
+  const suffix = label ? ` (${label})` : '';
+  const lines = [`Resume diff for ${jobId}${suffix}`];
+  if (diff.base_resume) lines.push(`Base: ${diff.base_resume}`);
+  if (diff.tailored_resume) lines.push(`Tailored: ${diff.tailored_resume}`);
+  if (diff.generated_at) lines.push(`Generated: ${diff.generated_at}`);
+
+  const summary = diff.summary || { added: 0, removed: 0, changed: 0 };
+  lines.push(
+    `Summary: ${summary.added} added, ${summary.removed} removed, ${summary.changed} changed`,
+    ''
+  );
+
+  const addedEntries = Object.entries(diff.added ?? {});
+  lines.push('Added:');
+  if (addedEntries.length === 0) {
+    lines.push('  (none)');
+  } else {
+    for (const [pathKey, value] of addedEntries.sort(([a], [b]) => a.localeCompare(b))) {
+      lines.push(`  - ${pathKey}: ${formatDiffValue(value)}`);
+    }
+  }
+
+  lines.push('', 'Removed:');
+  const removedEntries = Object.entries(diff.removed ?? {});
+  if (removedEntries.length === 0) {
+    lines.push('  (none)');
+  } else {
+    for (const [pathKey, value] of removedEntries.sort(([a], [b]) => a.localeCompare(b))) {
+      lines.push(`  - ${pathKey}: ${formatDiffValue(value)}`);
+    }
+  }
+
+  lines.push('', 'Changed:');
+  const changedEntries = Object.entries(diff.changed ?? {});
+  if (changedEntries.length === 0) {
+    lines.push('  (none)');
+  } else {
+    for (const [pathKey, change] of changedEntries.sort(([a], [b]) => a.localeCompare(b))) {
+      const before = formatDiffValue(change?.before);
+      const after = formatDiffValue(change?.after);
+      lines.push(`  - ${pathKey}: ${before} → ${after}`);
     }
   }
 
@@ -2965,10 +3020,53 @@ async function cmdDeliverablesBundle(args) {
   console.log(`Bundled ${jobId} deliverables to ${resolved}`);
 }
 
+async function cmdDeliverablesDiff(args) {
+  const jobId = args[0];
+  const rest = args.slice(1);
+  if (!jobId) {
+    console.error(
+      'Usage: jobbot deliverables diff <job_id> [--timestamp <label>|latest] [--json]'
+    );
+    process.exit(2);
+  }
+
+  let timestamp = getFlag(rest, '--timestamp');
+  if (timestamp === undefined && hasFlag(rest, '--timestamp')) {
+    timestamp = 'latest';
+  }
+  const wantsJson = hasFlag(rest, '--json');
+
+  let diffInfo;
+  try {
+    diffInfo = await loadDeliverablesDiff(jobId, { timestamp });
+  } catch (err) {
+    console.error(err?.message || String(err));
+    process.exit(1);
+  }
+
+  const labelForDisplay =
+    diffInfo.label ??
+    (timestamp && timestamp.toLowerCase() !== 'latest' ? timestamp : undefined) ??
+    'latest';
+
+  if (!diffInfo.diff) {
+    console.log(`No resume differences found for ${jobId} (${labelForDisplay}).`);
+    return;
+  }
+
+  if (wantsJson) {
+    console.log(JSON.stringify(diffInfo.diff, null, 2));
+    return;
+  }
+
+  console.log(formatDeliverablesDiffReport(jobId, labelForDisplay, diffInfo.diff));
+}
+
 async function cmdDeliverables(args) {
   const sub = args[0];
   if (sub === 'bundle') return cmdDeliverablesBundle(args.slice(1));
-  console.error('Usage: jobbot deliverables <bundle> [options]');
+  if (sub === 'diff') return cmdDeliverablesDiff(args.slice(1));
+  console.error('Usage: jobbot deliverables <bundle|diff> [options]');
   process.exit(2);
 }
 

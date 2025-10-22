@@ -199,8 +199,10 @@ resume` or the web **Resume Session** button can continue where they left off.
    snippets, and blocker rationale in a machine-readable format.
 2. Tailor deliverables using `jobbot tailor <job_id> --profile data/profile/resume.json --out
 data/deliverables/<job_id>/` which generates resume variants, cover letters, and match reports.
-3. Inspect generated diffs via `jobbot deliverables diff <job_id> --timestamp latest` to confirm
-   changes against the baseline profile.
+3. Inspect generated diffs via
+   `jobbot deliverables diff <job_id> --timestamp latest --json` when you want machine-readable
+   output, or omit `--json` for a human summary that highlights added, removed, and changed resume
+   fields before sharing artifacts.
 4. Apply manual edits with `jobbot deliverables edit <job_id> --file resume.md` and re-run
    `jobbot tailor` with `--regenerate` to blend manual tweaks with AI suggestions.
 5. Package artifacts for sharing via `jobbot deliverables bundle <job_id> --timestamp latest --out

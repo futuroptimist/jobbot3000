@@ -99,7 +99,12 @@ Deliverable generation tailors resumes and cover letters for a given job.
 
 - `src/deliverables.js` reads the canonical profile, selects targeted bullets, and renders outputs.
 - Tailored files and logs are written to `data/deliverables/{job_id}/`.
-- `jobbot deliverables bundle` packages artifacts for external sharing.
+- `jobbot deliverables bundle` packages artifacts for external sharing, and
+  `jobbot deliverables diff` compares the tailored resume against the base
+  profile before shipping bundles. Regression coverage in
+  [`test/deliverables.test.js`](../test/deliverables.test.js) exercises the data
+  loader while [`test/cli.test.js`](../test/cli.test.js) locks the CLI JSON and
+  text formats.
 
 ## Analytics and reporting
 

@@ -4,7 +4,11 @@ import fs from 'node:fs/promises';
 import JSZip from 'jszip';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { bundleDeliverables, setDeliverablesDataDir } from '../src/deliverables.js';
+import {
+  bundleDeliverables,
+  loadDeliverablesDiff,
+  setDeliverablesDataDir,
+} from '../src/deliverables.js';
 
 let dataDir;
 
@@ -241,5 +245,76 @@ describe('deliverables bundling', () => {
     const pdfBuffer = await zip.file('resume.pdf').async('nodebuffer');
     expect(pdfBuffer.length).toBeGreaterThan(100);
     expect(pdfBuffer.subarray(0, 4).toString()).toBe('%PDF');
+  });
+
+  it('loads resume diff payloads for a deliverables run', async () => {
+    const profileDir = path.join(dataDir, 'profile');
+    await fs.mkdir(profileDir, { recursive: true });
+    await fs.writeFile(
+      path.join(profileDir, 'resume.json'),
+      JSON.stringify(
+        {
+          basics: { name: 'Ada Lovelace', email: 'ada@example.com' },
+          skills: ['Leadership'],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const runLabel = '2025-06-01T12-00-00Z';
+    const runDir = path.join(dataDir, 'deliverables', 'job-delta', runLabel);
+    await fs.mkdir(runDir, { recursive: true });
+    await fs.writeFile(
+      path.join(runDir, 'resume.json'),
+      JSON.stringify(
+        {
+          basics: {
+            name: 'Ada Byron',
+            email: 'ada@example.com',
+            summary: 'Seasoned platform leader.',
+          },
+          skills: ['Leadership', 'Node.js'],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const result = await loadDeliverablesDiff('job-delta', { timestamp: runLabel });
+    expect(result.label).toBe(runLabel);
+    expect(result.diff?.summary).toEqual({ added: 2, removed: 0, changed: 1 });
+    expect(result.diff?.added).toMatchObject({
+      'basics.summary': 'Seasoned platform leader.',
+      'skills[1]': 'Node.js',
+    });
+    expect(result.diff?.changed).toMatchObject({
+      'basics.name': { before: 'Ada Lovelace', after: 'Ada Byron' },
+    });
+  });
+
+  it('returns null diff when tailored resume matches the base profile', async () => {
+    const profileDir = path.join(dataDir, 'profile');
+    await fs.mkdir(profileDir, { recursive: true });
+    const resume = {
+      basics: { name: 'Taylor Candidate', email: 'taylor@example.com' },
+      skills: ['Analysis'],
+    };
+    await fs.writeFile(
+      path.join(profileDir, 'resume.json'),
+      JSON.stringify(resume, null, 2),
+    );
+
+    const runLabel = '2025-07-15T08-30-00Z';
+    const runDir = path.join(dataDir, 'deliverables', 'job-match', runLabel);
+    await fs.mkdir(runDir, { recursive: true });
+    await fs.writeFile(
+      path.join(runDir, 'resume.json'),
+      JSON.stringify(resume, null, 2),
+    );
+
+    const result = await loadDeliverablesDiff('job-match', { timestamp: 'latest' });
+    expect(result.label).toBe(runLabel);
+    expect(result.diff).toBeNull();
   });
 });
