@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { loadManagedSecrets } from './managed-secrets.js';
+
 /** @type {['development', 'staging', 'production']} */
 const ENVIRONMENTS = ['development', 'staging', 'production'];
 
@@ -47,6 +49,17 @@ function hasInlineSecrets(secrets) {
     }
     return true;
   });
+}
+
+function normalizeSecretCandidate(value) {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 const PluginEntrySchema = z
@@ -173,13 +186,13 @@ function parsePluginEntries(value) {
   return [];
 }
 
-export function loadConfig(options = {}) {
+function buildConfig(options, env, managedSecrets = {}) {
   if (hasInlineSecrets(options.secrets)) {
     throw new Error(
       'Provide secrets via JOBBOT_* environment variables; inline manifest overrides are blocked.',
     );
   }
-  const env = { ...process.env, ...(options.env ?? {}) };
+
   const requestedEnv = resolveEnvironment(
     options.environment ?? env.JOBBOT_ENV ?? env.JOBBOT_WEB_ENV ?? env.NODE_ENV,
   );
@@ -270,13 +283,12 @@ export function loadConfig(options = {}) {
     ),
   };
 
-  const secrets = {
-    greenhouseToken: options.secrets?.greenhouseToken ?? env.JOBBOT_GREENHOUSE_TOKEN,
-    leverToken: options.secrets?.leverToken ?? env.JOBBOT_LEVER_API_TOKEN,
-    smartRecruitersToken:
-      options.secrets?.smartRecruitersToken ?? env.JOBBOT_SMARTRECRUITERS_TOKEN,
-    workableToken: options.secrets?.workableToken ?? env.JOBBOT_WORKABLE_TOKEN,
-  };
+  const secrets = {};
+  for (const [key, envVar] of Object.entries(SECRET_ENV_MAP)) {
+    const candidate =
+      options.secrets?.[key] ?? env[envVar] ?? managedSecrets[envVar];
+    secrets[key] = normalizeSecretCandidate(candidate);
+  }
 
   const parsed = /** @type {import('zod').infer<typeof ConfigSchema>} */ (
     ConfigSchema.parse({
@@ -287,7 +299,7 @@ export function loadConfig(options = {}) {
         rateLimit: { windowMs, max: rateLimitMax },
         csrf: {
           headerName: csrfHeader,
-          token: typeof csrfToken === 'string' && csrfToken.trim() ? csrfToken.trim() : undefined,
+          token: normalizeSecretCandidate(csrfToken),
         },
       },
       audit,
@@ -309,4 +321,15 @@ export function loadConfig(options = {}) {
     ...parsed,
     missingSecrets,
   };
+}
+
+export function loadConfig(options = {}) {
+  const env = { ...process.env, ...(options.env ?? {}) };
+  return buildConfig(options, env);
+}
+
+export async function loadConfigAsync(options = {}) {
+  const env = { ...process.env, ...(options.env ?? {}) };
+  const managedSecrets = await loadManagedSecrets({ env });
+  return buildConfig(options, env, managedSecrets);
 }

@@ -34,6 +34,41 @@ absent. Inline overrides are rejected—`loadConfig` throws when callers attempt
 pass secrets directly—so the only supported path is the `JOBBOT_*` environment
 variables wired to your secrets store.
 
+## Managed secrets providers
+
+Set `JOBBOT_SECRETS_PROVIDER=1password` to load secrets from 1Password Connect before falling back to
+environment variables. Provide the following configuration alongside the provider flag:
+
+| Variable                  | Description                                                               |
+| ------------------------- | ------------------------------------------------------------------------- |
+| `JOBBOT_OP_CONNECT_HOST`  | Base URL for the Connect server (for example, `https://connect.example`). |
+| `JOBBOT_OP_CONNECT_TOKEN` | Bearer token authorized to read the vault item.                           |
+| `JOBBOT_OP_CONNECT_VAULT` | Vault identifier containing the item.                                     |
+| `JOBBOT_OP_CONNECT_ITEM`  | Item identifier with fields labeled after the `JOBBOT_*` env vars.        |
+
+Fields inside the Connect item should use the exact environment variable names (for example,
+`JOBBOT_GREENHOUSE_TOKEN`). The manifest merges fetched values with any existing overrides and still
+flags missing entries via `missingSecrets`. Regression coverage in
+[`test/web-config-secrets-provider.test.js`](../test/web-config-secrets-provider.test.js) stubs the
+Connect API to ensure successful fetches eliminate warnings while partial payloads surface the
+remaining gaps.
+
+Set `JOBBOT_SECRETS_PROVIDER=vault` to pull the same secrets from HashiCorp Vault. Configure the
+connection with:
+
+| Variable                   | Description                                                                                                 |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `JOBBOT_VAULT_ADDR`        | Base URL for the Vault cluster (for example, `https://vault.example`).                                      |
+| `JOBBOT_VAULT_TOKEN`       | Token authorized to read the target secret.                                                                 |
+| `JOBBOT_VAULT_SECRET_PATH` | API path (without the `/v1/` prefix) to the secret. KV v2 paths such as `secret/data/jobbot` are supported. |
+| `JOBBOT_VAULT_NAMESPACE`   | Optional namespace header forwarded as `X-Vault-Namespace`.                                                 |
+
+Vault payloads should expose environment variable names as keys inside `data.data` (KV v2) or `data`
+(KV v1). The manifest merges those values with environment overrides and continues to surface
+`missingSecrets` when entries are absent. The regression suite in
+[`test/web-config-secrets-provider.test.js`](../test/web-config-secrets-provider.test.js) now covers
+both the 1Password and Vault integrations, including partial-payload detection.
+
 ## Feature flags
 
 Feature flags are parsed via the manifest and exposed to the web server:

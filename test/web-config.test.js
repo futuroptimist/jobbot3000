@@ -34,6 +34,15 @@ describe('loadWebConfig', () => {
       'JOBBOT_LEVER_API_TOKEN',
       'JOBBOT_SMARTRECRUITERS_TOKEN',
       'JOBBOT_WORKABLE_TOKEN',
+      'JOBBOT_SECRETS_PROVIDER',
+      'JOBBOT_OP_CONNECT_HOST',
+      'JOBBOT_OP_CONNECT_TOKEN',
+      'JOBBOT_OP_CONNECT_VAULT',
+      'JOBBOT_OP_CONNECT_ITEM',
+      'JOBBOT_VAULT_ADDR',
+      'JOBBOT_VAULT_TOKEN',
+      'JOBBOT_VAULT_SECRET_PATH',
+      'JOBBOT_VAULT_NAMESPACE',
     ]);
   });
 
@@ -57,12 +66,21 @@ describe('loadWebConfig', () => {
       'JOBBOT_LEVER_API_TOKEN',
       'JOBBOT_SMARTRECRUITERS_TOKEN',
       'JOBBOT_WORKABLE_TOKEN',
+      'JOBBOT_SECRETS_PROVIDER',
+      'JOBBOT_OP_CONNECT_HOST',
+      'JOBBOT_OP_CONNECT_TOKEN',
+      'JOBBOT_OP_CONNECT_VAULT',
+      'JOBBOT_OP_CONNECT_ITEM',
+      'JOBBOT_VAULT_ADDR',
+      'JOBBOT_VAULT_TOKEN',
+      'JOBBOT_VAULT_SECRET_PATH',
+      'JOBBOT_VAULT_NAMESPACE',
     ]);
   });
 
   it('provides development defaults when no overrides are present', async () => {
     const { loadWebConfig } = await import('../src/web/config.js');
-    const config = loadWebConfig({ env: 'development' });
+    const config = await loadWebConfig({ env: 'development' });
 
     expect(config.env).toBe('development');
     expect(config.host).toBe('127.0.0.1');
@@ -82,8 +100,8 @@ describe('loadWebConfig', () => {
 
   it('exposes staging and production presets', async () => {
     const { loadWebConfig } = await import('../src/web/config.js');
-    const staging = loadWebConfig({ env: 'staging' });
-    const production = loadWebConfig({ env: 'production' });
+    const staging = await loadWebConfig({ env: 'staging' });
+    const production = await loadWebConfig({ env: 'production' });
 
     expect(staging.host).toBe('0.0.0.0');
     expect(staging.port).toBe(4000);
@@ -107,7 +125,7 @@ describe('loadWebConfig', () => {
     process.env.JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD = '6';
 
     const { loadWebConfig } = await import('../src/web/config.js');
-    const config = loadWebConfig({ env: 'development', rateLimit: { max: 5 } });
+    const config = await loadWebConfig({ env: 'development', rateLimit: { max: 5 } });
 
     expect(config.host).toBe('10.0.0.5');
     expect(config.port).toBe(5123);
@@ -118,7 +136,7 @@ describe('loadWebConfig', () => {
     expect(config.features.httpClient.circuitBreakerThreshold).toBe(6);
     expect(config.missingSecrets).toEqual([]);
 
-    const overridden = loadWebConfig({
+    const overridden = await loadWebConfig({
       env: 'production',
       host: '192.168.1.2',
       port: 9090,
@@ -138,15 +156,15 @@ describe('loadWebConfig', () => {
   it('throws when provided ports or rate limits are invalid', async () => {
     const { loadWebConfig } = await import('../src/web/config.js');
 
-    expect(() =>
+    await expect(
       loadWebConfig({ env: 'development', port: -1 }),
-    ).toThrow(/port must be between 0 and 65535/i);
-    expect(() => loadWebConfig({ env: 'development', rateLimit: { windowMs: 0 } })).toThrow(
-      /rate limit window must be a positive number/i,
-    );
-    expect(() => loadWebConfig({ env: 'development', rateLimit: { max: 0 } })).toThrow(
-      /rate limit max must be a positive integer/i,
-    );
+    ).rejects.toThrow(/port must be between 0 and 65535/i);
+    await expect(
+      loadWebConfig({ env: 'development', rateLimit: { windowMs: 0 } }),
+    ).rejects.toThrow(/rate limit window must be a positive number/i);
+    await expect(
+      loadWebConfig({ env: 'development', rateLimit: { max: 0 } }),
+    ).rejects.toThrow(/rate limit max must be a positive integer/i);
   });
 
   it('parses plugin manifests from options and environment variables', async () => {
@@ -160,7 +178,7 @@ describe('loadWebConfig', () => {
     ]);
 
     const { loadWebConfig } = await import('../src/web/config.js');
-    const envConfig = loadWebConfig({ env: 'development' });
+    const envConfig = await loadWebConfig({ env: 'development' });
 
     expect(Array.isArray(envConfig.features.plugins.entries)).toBe(true);
     expect(envConfig.features.plugins.entries).toHaveLength(1);
@@ -171,7 +189,7 @@ describe('loadWebConfig', () => {
       events: ['jobbot:status-panels-ready'],
     });
 
-    const optionConfig = loadWebConfig({
+    const optionConfig = await loadWebConfig({
       env: 'development',
       features: {
         plugins: {

@@ -1,7 +1,7 @@
-import { DEFAULT_WEB_CONFIG, loadConfig } from '../shared/config/manifest.js';
+import { DEFAULT_WEB_CONFIG, loadConfigAsync } from '../shared/config/manifest.js';
 
-export function loadWebConfig(options = {}) {
-  const config = loadConfig({
+export async function loadWebConfig(options = {}) {
+  const config = await loadConfigAsync({
     environment: options.env,
     host: options.host,
     port: options.port,
