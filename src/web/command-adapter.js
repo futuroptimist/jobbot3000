@@ -203,30 +203,84 @@ function sanitizeOutputString(value) {
   return redacted;
 }
 
-function sanitizeOutputValue(value, { key } = {}) {
+function looksLikeSecretValue(value) {
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  if (trimmed.length < 12) return false;
+  if (/\s/.test(trimmed)) return false;
+  if (/^https?:\/\//i.test(trimmed)) return false;
+
+  const base64ish = /^[A-Za-z0-9._\-+/=]+$/.test(trimmed);
+  if (base64ish) {
+    let categories = 0;
+    if (/[A-Z]/.test(trimmed)) categories += 1;
+    if (/[a-z]/.test(trimmed)) categories += 1;
+    if (/\d/.test(trimmed)) categories += 1;
+    if (/[_\-+=.]/.test(trimmed)) categories += 1;
+    if (categories >= 3) {
+      return true;
+    }
+  }
+
+  if (/^[0-9A-F]{32,}$/i.test(trimmed)) {
+    return true;
+  }
+
+  return false;
+}
+
+function sanitizeOutputValue(value, { key } = {}, seen) {
+  const tracking = seen ?? new WeakSet();
   const keyString = key != null ? String(key) : undefined;
+
   if (keyString === "hasToken") {
     return value === true;
   }
+
   if (keyString && SECRET_KEY_FIELD_SAFE_OVERRIDES.has(keyString)) {
-    // Fall through to sanitize nested structures without redacting them entirely.
+    // Allow nested traversal for explicitly safe keys.
   } else if (keyString && SECRET_KEY_FIELD_RE.test(keyString)) {
     return "***";
   }
+
   if (typeof value === "string") {
-    return sanitizeOutputString(value);
+    const sanitized = sanitizeOutputString(value);
+    if (looksLikeSecretValue(sanitized)) {
+      return "***";
+    }
+    return sanitized;
   }
-  if (Array.isArray(value)) {
-    return value.map((entry) => sanitizeOutputValue(entry));
-  }
-  if (!value || typeof value !== "object") {
+
+  if (value == null || typeof value !== "object") {
     return value;
   }
-  const sanitized = {};
-  for (const [entryKey, entryValue] of Object.entries(value)) {
-    sanitized[entryKey] = sanitizeOutputValue(entryValue, { key: entryKey });
+
+  if (tracking.has(value)) {
+    return "[Circular]";
   }
-  return sanitized;
+  tracking.add(value);
+
+  let sanitizedResult;
+  if (Array.isArray(value)) {
+    sanitizedResult = value.map((entry) => sanitizeOutputValue(entry, {}, tracking));
+  } else if (value instanceof Error) {
+    const name = value.name || "Error";
+    const message = sanitizeOutputString(value.message || String(value));
+    const stack = typeof value.stack === "string" ? sanitizeOutputString(value.stack) : "";
+    if (stack && stack !== message) {
+      sanitizedResult = `${name}: ${message}\n${stack}`.trim();
+    } else {
+      sanitizedResult = `${name}: ${message}`.trim();
+    }
+  } else {
+    sanitizedResult = {};
+    for (const [entryKey, entryValue] of Object.entries(value)) {
+      sanitizedResult[entryKey] = sanitizeOutputValue(entryValue, { key: entryKey }, tracking);
+    }
+  }
+
+  tracking.delete(value);
+  return sanitizedResult;
 }
 
 function sanitizeTelemetryPayload(payload) {
@@ -387,7 +441,7 @@ function ensureConsoleHooks() {
     if (store) {
       store.logs.push(args.map(formatLogArg).join(" "));
     } else {
-      originalConsoleLog(...args.map(sanitizeLogValue));
+      originalConsoleLog(...args.map(formatLogArg));
     }
   };
   console.error = (...args) => {
@@ -395,7 +449,7 @@ function ensureConsoleHooks() {
     if (store) {
       store.errors.push(args.map(formatLogArg).join(" "));
     } else {
-      originalConsoleError(...args.map(sanitizeLogValue));
+      originalConsoleError(...args.map(formatLogArg));
     }
   };
 }
