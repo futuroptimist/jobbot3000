@@ -303,3 +303,46 @@ export async function bundleDeliverables(jobId, options = {}) {
     compressionOptions: { level: 9 },
   });
 }
+
+export async function loadDeliverablesDiff(jobId, options = {}) {
+  const normalizedId = requireIdentifier(jobId, 'job id');
+  const trimmedTimestamp = sanitizeString(options.timestamp);
+  const timestamp =
+    trimmedTimestamp && trimmedTimestamp.toLowerCase() !== 'latest'
+      ? requireIdentifier(trimmedTimestamp, 'timestamp')
+      : undefined;
+
+  const selection = await resolveBundleRoot(normalizedId, timestamp);
+  const selectionLabel = selection.label ?? (timestamp ?? undefined);
+
+  const tailoredResume = await readTailoredResume(selection.root);
+  if (!tailoredResume) {
+    const label = selectionLabel ? ` (${selectionLabel})` : '';
+    throw new Error(`No tailored resume found for ${normalizedId}${label}.`);
+  }
+
+  const dataDir = resolveDataDir();
+  const basePath = path.join(dataDir, 'profile', 'resume.json');
+  let hasBaseResume = true;
+  try {
+    const stats = await fs.stat(basePath);
+    hasBaseResume = stats.isFile();
+  } catch (err) {
+    if (err && err.code === 'ENOENT') {
+      hasBaseResume = false;
+    } else {
+      throw err;
+    }
+  }
+
+  if (!hasBaseResume) {
+    throw new Error('Base profile resume not found; run `jobbot init` to create one.');
+  }
+
+  const diffPayload = await buildResumeDiffPayload(selection.root, tailoredResume);
+
+  return {
+    label: selectionLabel ?? undefined,
+    diff: diffPayload,
+  };
+}

@@ -3174,6 +3174,128 @@ describe('jobbot CLI', () => {
     await expect(zip.file('resume.pdf').async('string')).resolves.toBe('fresh resume');
   });
 
+  it('outputs deliverables resume diff as JSON', () => {
+    const profileDir = path.join(dataDir, 'profile');
+    fs.mkdirSync(profileDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(profileDir, 'resume.json'),
+      JSON.stringify(
+        {
+          basics: { name: 'Alex Original', email: 'alex@example.com' },
+          skills: ['Leadership'],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const runLabel = '2025-08-01T09-00-00Z';
+    const runDir = path.join(dataDir, 'deliverables', 'job-cli-diff', runLabel);
+    fs.mkdirSync(runDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(runDir, 'resume.json'),
+      JSON.stringify(
+        {
+          basics: {
+            name: 'Alex Tailored',
+            email: 'alex@example.com',
+            summary: 'Seasoned platform engineer.',
+          },
+          skills: ['Leadership', 'Node.js'],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const output = runCli([
+      'deliverables',
+      'diff',
+      'job-cli-diff',
+      '--timestamp',
+      runLabel,
+      '--json',
+    ]);
+    const diff = JSON.parse(output);
+    expect(diff.summary).toEqual({ added: 2, removed: 0, changed: 1 });
+    expect(diff.added).toMatchObject({
+      'basics.summary': 'Seasoned platform engineer.',
+      'skills[1]': 'Node.js',
+    });
+    expect(diff.changed).toMatchObject({
+      'basics.name': { before: 'Alex Original', after: 'Alex Tailored' },
+    });
+  });
+
+  it('prints deliverables resume diff summary', () => {
+    const profileDir = path.join(dataDir, 'profile');
+    fs.mkdirSync(profileDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(profileDir, 'resume.json'),
+      JSON.stringify(
+        {
+          basics: { name: 'Quinn Original', email: 'quinn@example.com' },
+          skills: ['Analysis'],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const runLabel = '2025-08-02T15-45-00Z';
+    const runDir = path.join(dataDir, 'deliverables', 'job-cli-text', runLabel);
+    fs.mkdirSync(runDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(runDir, 'resume.json'),
+      JSON.stringify(
+        {
+          basics: {
+            name: 'Quinn Tailored',
+            email: 'quinn@example.com',
+            summary: 'Tailored storytelling for platform leadership roles.',
+          },
+          skills: ['Analysis', 'Leadership'],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const output = runCli(['deliverables', 'diff', 'job-cli-text', '--timestamp', runLabel]);
+    expect(output).toContain('Resume diff for job-cli-text');
+    expect(output).toContain('Summary: 2 added, 0 removed, 1 changed');
+    expect(output).toContain('- basics.summary:');
+    expect(output).toContain('"Tailored storytelling for platform leadership roles."');
+    expect(output).toContain('- skills[1]: "Leadership"');
+    expect(output).toContain('- basics.name: "Quinn Original" → "Quinn Tailored"');
+  });
+
+  it('reports when no resume differences exist for a deliverables run', () => {
+    const profileDir = path.join(dataDir, 'profile');
+    fs.mkdirSync(profileDir, { recursive: true });
+    const resume = {
+      basics: { name: 'Morgan Candidate', email: 'morgan@example.com' },
+      skills: ['Strategy'],
+    };
+    fs.writeFileSync(
+      path.join(profileDir, 'resume.json'),
+      JSON.stringify(resume, null, 2),
+    );
+
+    const runLabel = '2025-08-03T11-20-00Z';
+    const runDir = path.join(dataDir, 'deliverables', 'job-cli-same', runLabel);
+    fs.mkdirSync(runDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(runDir, 'resume.json'),
+      JSON.stringify(resume, null, 2),
+    );
+
+    const output = runCli(['deliverables', 'diff', 'job-cli-same']);
+    expect(output.trim()).toBe(
+      `No resume differences found for job-cli-same (${runLabel}).`
+    );
+  });
+
   it('tailor generates deliverables with cover letter and match artifacts', () => {
     const profileDir = path.join(dataDir, 'profile');
     fs.mkdirSync(profileDir, { recursive: true });
