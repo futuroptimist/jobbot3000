@@ -2226,6 +2226,9 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             if (opportunity.roleHint) {
               rows.push(['Role', String(opportunity.roleHint)]);
             }
+            if (opportunity.subject) {
+              rows.push(['Subject', String(opportunity.subject)]);
+            }
             if (opportunity.contactName || opportunity.contactEmail) {
               const contactParts = [];
               if (opportunity.contactName) contactParts.push(String(opportunity.contactName));
