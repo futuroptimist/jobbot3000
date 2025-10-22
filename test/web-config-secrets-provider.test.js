@@ -69,6 +69,10 @@ describe('managed secrets provider integration', () => {
       }),
     );
     expect(config.missingSecrets).toEqual([]);
+    expect(process.env.JOBBOT_GREENHOUSE_TOKEN).toBe('gh-secret');
+    expect(process.env.JOBBOT_LEVER_API_TOKEN).toBe('lever-secret');
+    expect(process.env.JOBBOT_SMARTRECRUITERS_TOKEN).toBe('smart-secret');
+    expect(process.env.JOBBOT_WORKABLE_TOKEN).toBe('workable-secret');
   });
 
   it('flags missing secrets when the provider payload is incomplete', async () => {
@@ -140,6 +144,10 @@ describe('managed secrets provider integration', () => {
       }),
     );
     expect(config.missingSecrets).toEqual([]);
+    expect(process.env.JOBBOT_GREENHOUSE_TOKEN).toBe('gh-secret');
+    expect(process.env.JOBBOT_LEVER_API_TOKEN).toBe('lever-secret');
+    expect(process.env.JOBBOT_SMARTRECRUITERS_TOKEN).toBe('smart-secret');
+    expect(process.env.JOBBOT_WORKABLE_TOKEN).toBe('workable-secret');
   });
 
   it('normalizes HashiCorp Vault secret paths that include a v1 prefix', async () => {

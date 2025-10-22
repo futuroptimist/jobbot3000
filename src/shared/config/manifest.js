@@ -38,6 +38,8 @@ const SECRET_ENV_MAP = {
   workableToken: 'JOBBOT_WORKABLE_TOKEN',
 };
 
+const MANAGED_SECRET_ENV_KEYS = Object.freeze(Object.values(SECRET_ENV_MAP));
+
 function hasInlineSecrets(secrets) {
   if (!secrets) return false;
   return Object.values(secrets).some(value => {
@@ -60,6 +62,29 @@ function normalizeSecretCandidate(value) {
   }
   const trimmed = value.trim();
   return trimmed ? trimmed : undefined;
+}
+
+function persistManagedSecrets(managedSecrets, envTarget) {
+  if (!managedSecrets || typeof managedSecrets !== 'object') {
+    return;
+  }
+
+  const targets = [];
+  if (envTarget && typeof envTarget === 'object') {
+    targets.push(envTarget);
+  }
+  if (!targets.includes(process.env)) {
+    targets.push(process.env);
+  }
+
+  for (const envKey of MANAGED_SECRET_ENV_KEYS) {
+    const normalized = normalizeSecretCandidate(managedSecrets[envKey]);
+    if (!normalized) continue;
+    for (const target of targets) {
+      if (!target || typeof target !== 'object') continue;
+      target[envKey] = normalized;
+    }
+  }
 }
 
 const PluginEntrySchema = z
@@ -331,5 +356,6 @@ export function loadConfig(options = {}) {
 export async function loadConfigAsync(options = {}) {
   const env = { ...process.env, ...(options.env ?? {}) };
   const managedSecrets = await loadManagedSecrets({ env });
+  persistManagedSecrets(managedSecrets, env);
   return buildConfig(options, env, managedSecrets);
 }
