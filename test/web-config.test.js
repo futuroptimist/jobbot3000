@@ -389,4 +389,22 @@ describe('loadWebConfig', () => {
       /relative secret paths/i,
     );
   });
+
+  it('rejects Vault selectors that attempt directory traversal', async () => {
+    process.env.JOBBOT_SECRETS_PROVIDER = 'vault';
+    process.env.JOBBOT_VAULT_ADDR = 'https://vault.example';
+    process.env.JOBBOT_VAULT_TOKEN = 'vault-token';
+    process.env.JOBBOT_VAULT_SECRETS = JSON.stringify({
+      JOBBOT_GREENHOUSE_TOKEN: {
+        path: '../secret/data/jobbot',
+        field: 'greenhouse_token',
+      },
+    });
+
+    const { loadWebConfig } = await import('../src/web/config.js');
+
+    await expect(loadWebConfig({ env: 'production' })).rejects.toThrow(
+      /must not include \./i,
+    );
+  });
 });

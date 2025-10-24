@@ -81,7 +81,15 @@ function normalizeVaultPath(rawPath) {
     throw new Error('Vault selectors must be relative secret paths.');
   }
 
-  return trimmed.replace(/^\/+/, '');
+  const normalized = trimmed.replace(/^\/+/, '');
+  const segments = normalized.split('/');
+  for (const segment of segments) {
+    if (segment === '.' || segment === '..') {
+      throw new Error('Vault selectors must not include . or .. path segments.');
+    }
+  }
+
+  return normalized;
 }
 
 async function fetchOpConnectItem({ baseUrl, token, vault, itemId, fetchImpl }) {
