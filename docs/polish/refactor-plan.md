@@ -65,4 +65,9 @@ can be rolled out behind feature flags to minimize regressions.
   keeps the diagram and explanation aligned with the pipeline modules so the
   documentation stays actionable as the system evolves.
 - Document deployment paths for local vs. self-hosted environments.
+  _Implemented (2025-11-12):_ `docs/deployment-local-vs-self-hosted.md` now details enabling
+  the native CLI bridge, CSRF header/token configuration, and per-user auth tokens so
+  operators can harden rollouts without guesswork. Regression coverage in
+  [`test/docs-deployment-guide.test.js`](../../test/docs-deployment-guide.test.js) keeps the
+  checklist aligned with the guardrails.
 - Capture refreshed screenshots after the UI adopts the new redaction and audit affordances.
