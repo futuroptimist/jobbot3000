@@ -1330,26 +1330,49 @@ async function cmdTrackReminders(args) {
   console.log(lines.join('\n'));
 }
 
+const PHONE_SCREEN_REMINDER_MARKER = 'phone_screen_reminder';
+
+function normalizeReminderTags(tags) {
+  if (!Array.isArray(tags)) return undefined;
+  const normalized = [];
+  const seen = new Set();
+  for (const value of tags) {
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    normalized.push(trimmed);
+  }
+  return normalized.length > 0 ? normalized : undefined;
+}
+
 const PHONE_SCREEN_REMINDER_TEMPLATES = [
   {
     channel: 'prep',
     offsetMs: -24 * 60 * 60 * 1000,
     note: 'Deep-dive on prep checklist and recruiter outreach notes.',
+    tags: [PHONE_SCREEN_REMINDER_MARKER],
   },
   {
     channel: 'prep',
     offsetMs: -60 * 60 * 1000,
     note: 'Confirm phone screen logistics and test audio/video setup.',
+    tags: [PHONE_SCREEN_REMINDER_MARKER],
   },
   {
     channel: 'follow_up',
     offsetMs: 2 * 60 * 60 * 1000,
     note: 'Send a thank-you recap and outline next steps after the phone screen.',
+    tags: [PHONE_SCREEN_REMINDER_MARKER],
   },
 ];
 
 const PHONE_SCREEN_REMINDER_CHANNELS = new Set(
   PHONE_SCREEN_REMINDER_TEMPLATES.map(template => template.channel),
+);
+
+const PHONE_SCREEN_REMINDER_NOTES = new Set(
+  PHONE_SCREEN_REMINDER_TEMPLATES.map(template => template.note.trim()),
 );
 
 function formatOpportunityContact(opportunity) {
@@ -1403,15 +1426,18 @@ async function schedulePhoneScreenReminders(opportunityUid) {
       const remindDate = new Date(scheduledDate.getTime() + template.offsetMs);
       const remindAt = remindDate.toISOString();
       const key = `${template.channel}|${remindAt}`;
+      const tags = normalizeReminderTags(template.tags);
       desiredByKey.set(key, {
         note: template.note,
         contact,
+        tags,
       });
       return {
         key,
         channel: template.channel,
         remindAt,
         note: template.note,
+        tags,
       };
     });
 
@@ -1437,6 +1463,20 @@ async function schedulePhoneScreenReminders(opportunityUid) {
         }
         const normalizedRemindAt = remindDate.toISOString();
         const key = `${channel}|${normalizedRemindAt}`;
+        const entryTags = Array.isArray(clone.tags)
+          ? clone.tags
+              .map(tag => (typeof tag === 'string' ? tag.trim() : ''))
+              .filter(Boolean)
+          : [];
+        const hasMarkerTag = entryTags.includes(PHONE_SCREEN_REMINDER_MARKER);
+        const note = typeof clone.note === 'string' ? clone.note.trim() : '';
+        const matchesTemplateNote = PHONE_SCREEN_REMINDER_NOTES.has(note);
+        const isSchedulerEntry = hasMarkerTag || matchesTemplateNote;
+        if (!isSchedulerEntry) {
+          next.push(clone);
+          continue;
+        }
+
         const desired = desiredByKey.get(key);
         if (!desired) {
           continue;
@@ -1447,6 +1487,11 @@ async function schedulePhoneScreenReminders(opportunityUid) {
           clone.contact = desired.contact;
         } else {
           delete clone.contact;
+        }
+        if (desired.tags && desired.tags.length > 0) {
+          clone.tags = [...desired.tags];
+        } else {
+          delete clone.tags;
         }
         next.push(clone);
         existingKeys.add(key);
@@ -1466,6 +1511,9 @@ async function schedulePhoneScreenReminders(opportunityUid) {
       };
       if (contact) {
         event.contact = contact;
+      }
+      if (reminder.tags && reminder.tags.length > 0) {
+        event.tags = reminder.tags;
       }
       await logApplicationEvent(opportunityUid, event);
       existingKeys.add(reminder.key);

@@ -56,6 +56,21 @@ function normalizeDocuments(documents) {
   return normalized.length > 0 ? normalized : undefined;
 }
 
+function normalizeTags(tags) {
+  if (!tags) return undefined;
+  const source = Array.isArray(tags) ? tags : [tags];
+  const normalized = [];
+  const seen = new Set();
+  for (const value of source) {
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    normalized.push(trimmed);
+  }
+  return normalized.length > 0 ? normalized : undefined;
+}
+
 function sanitizeString(value) {
   if (value == null) return undefined;
   const trimmed = String(value).trim();
@@ -148,6 +163,7 @@ export function logApplicationEvent(jobId, event) {
   const contact = sanitizeString(event.contact);
   const note = sanitizeString(event.note);
   const documents = normalizeDocuments(event.documents);
+  const tags = normalizeTags(event.tags);
   const remindInput = event.remindAt ?? event.remind_at;
   let remindAt;
   if (remindInput !== undefined) {
@@ -163,6 +179,7 @@ export function logApplicationEvent(jobId, event) {
   if (note) entry.note = note;
   if (documents) entry.documents = documents;
   if (remindAt) entry.remind_at = remindAt;
+  if (tags) entry.tags = tags;
 
   const { dir, file } = getPaths();
 

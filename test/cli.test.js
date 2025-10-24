@@ -1458,6 +1458,42 @@ describe('jobbot CLI', () => {
     expect(events[opportunityUid]).toHaveLength(3);
   });
 
+  it('preserves unrelated follow-up reminders when scheduling phone screen reminders', async () => {
+    const opportunityUid = await ingestPhoneScreenOpportunity();
+
+    runCli([
+      'track',
+      'log',
+      opportunityUid,
+      '--channel',
+      'follow_up',
+      '--date',
+      '2025-10-20T18:00:00Z',
+      '--remind-at',
+      '2025-10-24T18:00:00Z',
+      '--note',
+      'Custom follow-up to share portfolio',
+    ]);
+
+    runCli(['reminders', 'schedule', '--opportunity', opportunityUid]);
+
+    const eventsPath = path.join(dataDir, 'application_events.json');
+    const events = JSON.parse(fs.readFileSync(eventsPath, 'utf8'));
+    const reminders = events[opportunityUid];
+    expect(reminders).toHaveLength(4);
+
+    const manualReminder = reminders.find(
+      entry => entry.note === 'Custom follow-up to share portfolio',
+    );
+    expect(manualReminder).toBeDefined();
+    expect(manualReminder.remind_at).toBe('2025-10-24T18:00:00.000Z');
+
+    const schedulerEntries = reminders.filter(
+      entry => Array.isArray(entry.tags) && entry.tags.includes('phone_screen_reminder'),
+    );
+    expect(schedulerEntries).toHaveLength(3);
+  });
+
   it('replaces existing reminders when the phone screen time changes', async () => {
     const opportunityUid = await ingestPhoneScreenOpportunity();
 

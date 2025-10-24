@@ -64,6 +64,21 @@ describe('application events', () => {
     });
   });
 
+  it('normalizes tags for logged events', async () => {
+    await logApplicationEvent('job-with-tags', {
+      channel: 'follow_up',
+      date: '2025-02-03T12:00:00Z',
+      tags: [' focus ', 'prep', 'focus', '', '  '],
+    });
+
+    const events = await getApplicationEvents('job-with-tags');
+    expect(events).toHaveLength(1);
+    expect(events[0].tags).toEqual(['focus', 'prep']);
+
+    const raw = await readEventsFile();
+    expect(raw['job-with-tags'][0].tags).toEqual(['focus', 'prep']);
+  });
+
   it('appends additional events without clobbering prior history', async () => {
     await logApplicationEvent('job-123', {
       channel: 'applied',
