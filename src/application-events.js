@@ -102,6 +102,34 @@ function cloneHistoryEntries(history) {
   });
 }
 
+export function replaceApplicationEvents(jobId, updater) {
+  if (typeof updater !== 'function') {
+    return Promise.reject(new Error('updater function is required'));
+  }
+
+  const normalizedJobId = normalizeJobId(jobId);
+  const { dir, file } = getPaths();
+
+  const run = async () => {
+    await fs.mkdir(dir, { recursive: true });
+    const data = await readEventsFile(file);
+    const current = cloneHistoryEntries(data[normalizedJobId]) ?? [];
+    const next = await updater(current);
+    if (next !== undefined && !Array.isArray(next)) {
+      throw new Error('replaceApplicationEvents updater must return an array');
+    }
+    const normalizedHistory = Array.isArray(next)
+      ? next.map(entry => (entry && typeof entry === 'object' ? { ...entry } : entry))
+      : current;
+    data[normalizedJobId] = normalizedHistory;
+    await writeJsonFile(file, data);
+    return normalizedHistory;
+  };
+
+  writeLock = writeLock.then(run, run);
+  return writeLock;
+}
+
 export function logApplicationEvent(jobId, event) {
   if (!jobId || typeof jobId !== 'string') {
     return Promise.reject(new Error('job id is required'));

@@ -440,7 +440,11 @@ call scheduled"`.
    > constrained environments. [`test/cli.test.js`](../test/cli.test.js) exercises the
    > JSON output so the Sankey transitions stay aligned with the UI summary.
 3. Trigger reminders with `jobbot reminders schedule --opportunity <uid>` so follow-ups and prep
-   checklists fire relative to the scheduled phone screen.
+   checklists fire relative to the scheduled phone screen. The CLI now writes the documented trio of
+   reminders—prep 24 hours before, logistics 1 hour before, and a thank-you follow-up 2 hours
+   after—and keeps the schedule idempotent when rerun or when the phone screen time shifts.
+   [`test/cli.test.js`](../test/cli.test.js) locks down the happy path, duplicate guardrails, and the
+   reschedule flow so reminders stay accurate.
 4. Export the durable record via `node scripts/export-data.ts > backups/opportunities.ndjson` to
    sync across devices.
 

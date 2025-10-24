@@ -14,6 +14,38 @@ const __dirname = path.dirname(__filename);
 
 let dataDir;
 
+const SAMPLE_PHONE_SCREEN_EMAIL = `From: Casey Recruiter <casey@instabase.com>\n`
+  + 'To: Candidate <you@example.com>\n'
+  + 'Subject: Instabase recruiter outreach - Phone screen for Solutions Engineer\n'
+  + 'Date: Wed, 22 Oct 2025 10:00:00 -0700\n\n'
+  + 'Hi Alex,\n\nThanks for your interest in Instabase! We\'d love to connect.\n'
+  + 'Would you be available for a phone screen on Thu Oct 23, 2:00 PM PT?\n\n'
+  + 'Best,\nCasey\nInstabase Recruiting';
+
+async function ingestPhoneScreenOpportunity() {
+  const previousDataDir = process.env.JOBBOT_DATA_DIR;
+  process.env.JOBBOT_DATA_DIR = dataDir;
+
+  const { OpportunitiesRepo } = await import('../src/services/opportunitiesRepo.js');
+  const { AuditLog } = await import('../src/services/audit.js');
+  const { ingestRecruiterEmail } = await import('../src/ingest/recruiterEmail.js');
+
+  const repo = new OpportunitiesRepo();
+  const audit = new AuditLog();
+  const result = ingestRecruiterEmail({ raw: SAMPLE_PHONE_SCREEN_EMAIL, repo, audit });
+  const opportunityUid = result.opportunity.uid;
+  repo.close();
+  audit.close();
+
+  if (previousDataDir === undefined) {
+    delete process.env.JOBBOT_DATA_DIR;
+  } else {
+    process.env.JOBBOT_DATA_DIR = previousDataDir;
+  }
+
+  return opportunityUid;
+}
+
 function runCli(args, input) {
   const bin = path.resolve('bin', 'jobbot.js');
   if (!dataDir) throw new Error('CLI data directory was not initialised');
@@ -1386,6 +1418,106 @@ describe('jobbot CLI', () => {
     expect(lines[upcomingIndex + 1]).toBe(
       'job-3 — 2025-03-07T15:00:00.000Z (call)'
     );
+  });
+
+  it('schedules phone screen reminders for an opportunity', async () => {
+    const opportunityUid = await ingestPhoneScreenOpportunity();
+
+    const output = runCli(['reminders', 'schedule', '--opportunity', opportunityUid]);
+    expect(output).toContain(`Scheduled 3 reminders for ${opportunityUid}`);
+
+    const eventsPath = path.join(dataDir, 'application_events.json');
+    const events = JSON.parse(fs.readFileSync(eventsPath, 'utf8'));
+    const reminders = events[opportunityUid];
+    expect(reminders).toBeDefined();
+    expect(reminders).toHaveLength(3);
+    const remindTimes = reminders.map(entry => entry.remind_at);
+    expect(remindTimes).toEqual([
+      '2025-10-22T21:00:00.000Z',
+      '2025-10-23T20:00:00.000Z',
+      '2025-10-23T23:00:00.000Z',
+    ]);
+    const notes = reminders.map(entry => entry.note);
+    expect(notes).toEqual([
+      expect.stringContaining('prep'),
+      expect.stringContaining('logistics'),
+      expect.stringContaining('thank-you'),
+    ]);
+  });
+
+  it('does not duplicate phone screen reminders when run repeatedly', async () => {
+    const opportunityUid = await ingestPhoneScreenOpportunity();
+
+    runCli(['reminders', 'schedule', '--opportunity', opportunityUid]);
+    const secondRun = runCli(['reminders', 'schedule', '--opportunity', opportunityUid]);
+
+    expect(secondRun).toContain(`No new reminders scheduled for ${opportunityUid}.`);
+
+    const eventsPath = path.join(dataDir, 'application_events.json');
+    const events = JSON.parse(fs.readFileSync(eventsPath, 'utf8'));
+    expect(events[opportunityUid]).toHaveLength(3);
+  });
+
+  it('replaces existing reminders when the phone screen time changes', async () => {
+    const opportunityUid = await ingestPhoneScreenOpportunity();
+
+    runCli(['reminders', 'schedule', '--opportunity', opportunityUid]);
+
+    const previousDataDir = process.env.JOBBOT_DATA_DIR;
+    process.env.JOBBOT_DATA_DIR = dataDir;
+    const { OpportunitiesRepo } = await import('../src/services/opportunitiesRepo.js');
+    const repo = new OpportunitiesRepo();
+    repo.appendEvent({
+      opportunityUid,
+      type: 'phone_screen_scheduled',
+      occurredAt: '2025-10-24T18:00:00.000Z',
+      payload: { scheduledAt: '2025-10-24T18:00:00.000Z' },
+    });
+    repo.close();
+    if (previousDataDir === undefined) {
+      delete process.env.JOBBOT_DATA_DIR;
+    } else {
+      process.env.JOBBOT_DATA_DIR = previousDataDir;
+    }
+
+    const output = runCli(['reminders', 'schedule', '--opportunity', opportunityUid]);
+    expect(output).toContain(`Scheduled 3 reminders for ${opportunityUid}`);
+
+    const eventsPath = path.join(dataDir, 'application_events.json');
+    const events = JSON.parse(fs.readFileSync(eventsPath, 'utf8'));
+    const reminders = events[opportunityUid];
+    expect(reminders).toHaveLength(3);
+    const remindTimes = reminders.map(entry => entry.remind_at);
+    expect(remindTimes).toEqual([
+      '2025-10-23T18:00:00.000Z',
+      '2025-10-24T17:00:00.000Z',
+      '2025-10-24T20:00:00.000Z',
+    ]);
+  });
+
+  it('errors when scheduling reminders without a phone screen event', async () => {
+    const previousDataDir = process.env.JOBBOT_DATA_DIR;
+    process.env.JOBBOT_DATA_DIR = dataDir;
+    const { OpportunitiesRepo } = await import('../src/services/opportunitiesRepo.js');
+    const repo = new OpportunitiesRepo();
+    const opportunity = repo.upsertOpportunity({
+      company: 'Example Corp',
+      roleHint: 'Solutions Engineer',
+      contactName: 'Sam Recruiter',
+      contactEmail: 'sam@example.com',
+      lifecycleState: 'recruiter_outreach',
+      firstSeenAt: '2025-10-20T18:00:00.000Z',
+    });
+    repo.close();
+    if (previousDataDir === undefined) {
+      delete process.env.JOBBOT_DATA_DIR;
+    } else {
+      process.env.JOBBOT_DATA_DIR = previousDataDir;
+    }
+
+    expect(() =>
+      runCli(['reminders', 'schedule', '--opportunity', opportunity.uid]),
+    ).toThrow('Opportunity does not have a scheduled phone screen.');
   });
 
   it('prints empty reminder sections when none exist', () => {
