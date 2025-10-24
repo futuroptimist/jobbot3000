@@ -47,8 +47,50 @@ function normalizeSecretValue(value) {
 const ALLOWED_PROVIDER_PROTOCOLS = new Set(['http:', 'https:']);
 const BLOCKED_LOOPBACK_HOSTNAMES = new Set(['localhost', '0.0.0.0', '::', '::1']);
 
+const PRIVATE_IPV4_RANGES = [
+  ['10.0.0.0', '10.255.255.255'],
+  ['172.16.0.0', '172.31.255.255'],
+  ['192.168.0.0', '192.168.255.255'],
+  ['169.254.0.0', '169.254.255.255'],
+];
+
+const PRIVATE_IPV6_PREFIXES = ['fc', 'fd'];
+const LINK_LOCAL_IPV6_PREFIX = 'fe80';
+
+function normalizeHostname(hostname) {
+  if (typeof hostname !== 'string') {
+    return '';
+  }
+
+  const trimmed = hostname.trim().toLowerCase();
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+function parseIPv4(address) {
+  const parts = address.split('.');
+  if (parts.length !== 4) return null;
+  let value = 0;
+  for (const part of parts) {
+    const octet = Number.parseInt(part, 10);
+    if (!Number.isInteger(octet) || octet < 0 || octet > 255) {
+      return null;
+    }
+    value = (value << 8) + octet;
+  }
+  return value >>> 0;
+}
+
+function ipv4InRange(address, start, end) {
+  const parsed = parseIPv4(address);
+  if (parsed === null) return false;
+  return parsed >= parseIPv4(start) && parsed <= parseIPv4(end);
+}
+
 function isLoopbackHostname(hostname) {
-  const normalized = typeof hostname === 'string' ? hostname.trim().toLowerCase() : '';
+  const normalized = normalizeHostname(hostname);
   if (!normalized) return true;
   if (BLOCKED_LOOPBACK_HOSTNAMES.has(normalized)) return true;
   if (normalized.endsWith('.localhost')) return true;
@@ -65,6 +107,43 @@ function isLoopbackHostname(hostname) {
       return isLoopbackHostname(mapped);
     }
   }
+  return false;
+}
+
+function isPrivateHostname(hostname) {
+  const normalized = normalizeHostname(hostname);
+  if (!normalized) return true;
+
+  const ipVersion = isIP(normalized);
+  if (ipVersion === 4) {
+    for (const [start, end] of PRIVATE_IPV4_RANGES) {
+      if (ipv4InRange(normalized, start, end)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  if (ipVersion === 6) {
+    if (normalized.startsWith('::ffff:')) {
+      const mapped = normalized.slice('::ffff:'.length);
+      return isPrivateHostname(mapped);
+    }
+
+    const withoutColons = normalized.replace(/:/g, '');
+    const prefix = withoutColons.slice(0, 4);
+    if (!prefix) return false;
+
+    if (
+      PRIVATE_IPV6_PREFIXES.some((candidate) => prefix.startsWith(candidate)) ||
+      prefix.startsWith(LINK_LOCAL_IPV6_PREFIX)
+    ) {
+      return true;
+    }
+
+    return false;
+  }
+
   return false;
 }
 
@@ -88,6 +167,10 @@ function ensureProviderUrl(rawUrl, description) {
 
   if (isLoopbackHostname(parsed.hostname)) {
     throw new Error(`${description} must not point to loopback addresses like localhost.`);
+  }
+
+  if (isPrivateHostname(parsed.hostname)) {
+    throw new Error(`${description} must not point to private or link-local addresses.`);
   }
 
   if (parsed.username || parsed.password) {
