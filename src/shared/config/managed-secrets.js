@@ -42,6 +42,48 @@ function normalizeSecretValue(value) {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+const ALLOWED_PROVIDER_PROTOCOLS = new Set(['http:', 'https:']);
+
+function ensureProviderUrl(rawUrl, description) {
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error(`${description} must be a valid URL.`);
+  }
+
+  if (!ALLOWED_PROVIDER_PROTOCOLS.has(parsed.protocol)) {
+    throw new Error(
+      `${description} must use one of the following protocols: http or https.`,
+    );
+  }
+
+  if (!parsed.hostname) {
+    throw new Error(`${description} must include a hostname.`);
+  }
+
+  if (parsed.username || parsed.password) {
+    throw new Error(`${description} must not include embedded credentials.`);
+  }
+
+  return parsed;
+}
+
+function normalizeVaultPath(rawPath) {
+  if (typeof rawPath !== 'string') {
+    return '';
+  }
+
+  const trimmed = rawPath.trim();
+  if (!trimmed) return '';
+
+  if (trimmed.includes('://')) {
+    throw new Error('Vault selectors must be relative secret paths.');
+  }
+
+  return trimmed.replace(/^\/+/, '');
+}
+
 async function fetchOpConnectItem({ baseUrl, token, vault, itemId, fetchImpl }) {
   const fetch = getFetch(fetchImpl);
   const encodedVault = encodeURIComponent(vault);
@@ -91,17 +133,19 @@ function selectOpConnectField(item, selector) {
 }
 
 async function loadFromOpConnect({ env, secretEnvMap, fetch: fetchImpl }) {
-  const baseUrl = (env.JOBBOT_OP_CONNECT_URL ?? '').trim();
+  const rawBaseUrl = (env.JOBBOT_OP_CONNECT_URL ?? '').trim();
   const token = env.JOBBOT_OP_CONNECT_TOKEN;
   const defaultVault = (env.JOBBOT_OP_CONNECT_VAULT ?? '').trim();
   const rawSpec = env.JOBBOT_OP_CONNECT_SECRETS;
 
-  if (!baseUrl) {
+  if (!rawBaseUrl) {
     throw new Error('JOBBOT_OP_CONNECT_URL must be set to use the op-connect secrets provider.');
   }
   if (!token) {
     throw new Error('JOBBOT_OP_CONNECT_TOKEN must be set to use the op-connect secrets provider.');
   }
+
+  const baseUrl = ensureProviderUrl(rawBaseUrl, 'JOBBOT_OP_CONNECT_URL');
 
   const spec = parseJson(rawSpec, 'JOBBOT_OP_CONNECT_SECRETS');
   if (!spec || typeof spec !== 'object') {
@@ -158,7 +202,11 @@ async function loadFromOpConnect({ env, secretEnvMap, fetch: fetchImpl }) {
 
 async function fetchVaultSecret({ baseUrl, token, path, fetchImpl }) {
   const fetch = getFetch(fetchImpl);
-  const url = new URL(`/v1/${path}`, baseUrl);
+  const normalizedPath = normalizeVaultPath(path);
+  if (!normalizedPath) {
+    throw new Error('Vault selectors must include a valid secret path.');
+  }
+  const url = new URL(`/v1/${normalizedPath}`, baseUrl);
   const response = await fetch(url.toString(), {
     method: 'GET',
     headers: {
@@ -187,16 +235,18 @@ function extractVaultField(payload, field) {
 }
 
 async function loadFromVault({ env, secretEnvMap, fetch: fetchImpl }) {
-  const baseUrl = (env.JOBBOT_VAULT_ADDR ?? '').trim();
+  const rawBaseUrl = (env.JOBBOT_VAULT_ADDR ?? '').trim();
   const token = env.JOBBOT_VAULT_TOKEN;
   const rawSpec = env.JOBBOT_VAULT_SECRETS;
 
-  if (!baseUrl) {
+  if (!rawBaseUrl) {
     throw new Error('JOBBOT_VAULT_ADDR must be set to use the vault secrets provider.');
   }
   if (!token) {
     throw new Error('JOBBOT_VAULT_TOKEN must be set to use the vault secrets provider.');
   }
+
+  const baseUrl = ensureProviderUrl(rawBaseUrl, 'JOBBOT_VAULT_ADDR');
 
   const spec = parseJson(rawSpec, 'JOBBOT_VAULT_SECRETS');
   if (!spec || typeof spec !== 'object') {

@@ -291,6 +291,38 @@ describe('loadWebConfig', () => {
     });
   });
 
+  it('rejects 1Password Connect URLs with unsupported protocols', async () => {
+    process.env.JOBBOT_SECRETS_PROVIDER = 'op-connect';
+    process.env.JOBBOT_OP_CONNECT_URL = 'ftp://connect.example';
+    process.env.JOBBOT_OP_CONNECT_TOKEN = 'connect-token';
+    process.env.JOBBOT_OP_CONNECT_VAULT = 'vault-1';
+    process.env.JOBBOT_OP_CONNECT_SECRETS = JSON.stringify({
+      JOBBOT_GREENHOUSE_TOKEN: { itemId: 'item-1', field: 'Greenhouse Token' },
+    });
+
+    const { loadWebConfig } = await import('../src/web/config.js');
+
+    await expect(loadWebConfig({ env: 'production' })).rejects.toThrow(
+      /JOBBOT_OP_CONNECT_URL must use one of the following protocols/i,
+    );
+  });
+
+  it('rejects 1Password Connect URLs containing credentials', async () => {
+    process.env.JOBBOT_SECRETS_PROVIDER = 'op-connect';
+    process.env.JOBBOT_OP_CONNECT_URL = 'https://user:secret@connect.example';
+    process.env.JOBBOT_OP_CONNECT_TOKEN = 'connect-token';
+    process.env.JOBBOT_OP_CONNECT_VAULT = 'vault-1';
+    process.env.JOBBOT_OP_CONNECT_SECRETS = JSON.stringify({
+      JOBBOT_GREENHOUSE_TOKEN: { itemId: 'item-1', field: 'Greenhouse Token' },
+    });
+
+    const { loadWebConfig } = await import('../src/web/config.js');
+
+    await expect(loadWebConfig({ env: 'production' })).rejects.toThrow(
+      /must not include embedded credentials/i,
+    );
+  });
+
   it('loads secrets via HashiCorp Vault when configured', async () => {
     process.env.JOBBOT_SECRETS_PROVIDER = 'vault';
     process.env.JOBBOT_VAULT_ADDR = 'https://vault.example';
@@ -323,5 +355,38 @@ describe('loadWebConfig', () => {
       'JOBBOT_WORKABLE_TOKEN',
     ]);
     expect(config.port).toBe(4000);
+  });
+
+  it('rejects Vault URLs with unsupported protocols', async () => {
+    process.env.JOBBOT_SECRETS_PROVIDER = 'vault';
+    process.env.JOBBOT_VAULT_ADDR = 'data://vault.example';
+    process.env.JOBBOT_VAULT_TOKEN = 'vault-token';
+    process.env.JOBBOT_VAULT_SECRETS = JSON.stringify({
+      JOBBOT_GREENHOUSE_TOKEN: { path: 'secret/data/jobbot', field: 'greenhouse_token' },
+    });
+
+    const { loadWebConfig } = await import('../src/web/config.js');
+
+    await expect(loadWebConfig({ env: 'production' })).rejects.toThrow(
+      /JOBBOT_VAULT_ADDR must use one of the following protocols/i,
+    );
+  });
+
+  it('rejects Vault selectors that specify absolute URLs', async () => {
+    process.env.JOBBOT_SECRETS_PROVIDER = 'vault';
+    process.env.JOBBOT_VAULT_ADDR = 'https://vault.example';
+    process.env.JOBBOT_VAULT_TOKEN = 'vault-token';
+    process.env.JOBBOT_VAULT_SECRETS = JSON.stringify({
+      JOBBOT_GREENHOUSE_TOKEN: {
+        path: 'https://evil.example/secret',
+        field: 'greenhouse_token',
+      },
+    });
+
+    const { loadWebConfig } = await import('../src/web/config.js');
+
+    await expect(loadWebConfig({ env: 'production' })).rejects.toThrow(
+      /relative secret paths/i,
+    );
   });
 });
