@@ -331,17 +331,17 @@ function resolveNativeCliFlag(value) {
 }
 
 function formatLogArg(arg) {
-  if (typeof arg === "string") return arg;
+  if (typeof arg === "string") return sanitizeOutputString(arg);
   if (typeof arg === "number" || typeof arg === "boolean") {
     return String(arg);
   }
   if (arg instanceof Error) {
-    return arg.message || String(arg);
+    return sanitizeOutputString(arg.message || String(arg));
   }
   try {
-    return JSON.stringify(arg);
+    return sanitizeOutputString(JSON.stringify(arg));
   } catch {
-    return String(arg);
+    return sanitizeOutputString(String(arg));
   }
 }
 
