@@ -481,21 +481,25 @@ while preserving privacy guardrails.
 
 ```mermaid
 flowchart TD
-  A[Job source schedulers] -->|scraping:jobs:fetch| B(Scraping module)
-  B -->|Snapshots| C(Enrichment pipeline)
-  C -->|Normalized resumes| D(Scoring engine)
-  D -->|Shortlist delta| E(Notifications)
-  D -->|Audit events| F[Audit log]
-  E -->|Weekly digest| G[Candidate inbox]
+  %% journey-ingestion-scoring-notifications
+  Ingestion["Ingestion\n(scraping adapters)"] -->|Snapshots| Enrichment["Enrichment\n(normalize + enrich)"]
+  Enrichment -->|Match requests| Scoring["Scoring\n(engine)"]
+  Scoring -->|Shortlist delta| Tracker["Tracker\n(opportunities.db)"]
+  Scoring -->|Audit events| AuditLog["Audit log"]
+  Tracker -->|Reminder jobs| Notifications["Notifications\n(digest workers)"]
+  Notifications -->|Weekly digest| Inbox["Candidate inbox"]
+  Notifications -->|CLI follow-ups| CliReminders["CLI reminders"]
 ```
 
 1. The scheduler emits `scraping:jobs:fetch` events via the module event bus. Scraping adapters respect
    rate limits and provider feature flags before persisting redacted snapshots.
 2. Enrichment stages rebuild resume contexts, emit match requests, and forward normalized payloads to
-   the scoring module.
-3. Scoring updates shortlist metadata, tags blockers, and records structured audit entries for admins.
-4. Notification jobs compile weekly digests from redacted shortlist entries and queue templated emails
-   or filesystem exports depending on feature flags.
+   the scoring engine. The diagram mirrors the shared pipeline in
+   [`src/pipeline/resume-pipeline.js`](../src/pipeline/resume-pipeline.js).
+3. Scoring updates shortlist metadata, tags blockers, and records structured audit entries for admins
+   while emitting downstream tracker updates for lifecycle history.
+4. Tracker updates power reminder jobs that the notifications worker consumes. The worker composes
+   weekly digests, CLI reminders, and audit-safe exports depending on feature flags.
 
 ---
 
