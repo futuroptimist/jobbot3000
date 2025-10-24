@@ -323,6 +323,22 @@ describe('loadWebConfig', () => {
     );
   });
 
+  it('rejects 1Password Connect URLs that target loopback addresses', async () => {
+    process.env.JOBBOT_SECRETS_PROVIDER = 'op-connect';
+    process.env.JOBBOT_OP_CONNECT_URL = 'https://localhost:8080';
+    process.env.JOBBOT_OP_CONNECT_TOKEN = 'connect-token';
+    process.env.JOBBOT_OP_CONNECT_VAULT = 'vault-1';
+    process.env.JOBBOT_OP_CONNECT_SECRETS = JSON.stringify({
+      JOBBOT_GREENHOUSE_TOKEN: { itemId: 'item-1', field: 'Greenhouse Token' },
+    });
+
+    const { loadWebConfig } = await import('../src/web/config.js');
+
+    await expect(loadWebConfig({ env: 'production' })).rejects.toThrow(
+      /must not point to loopback addresses/i,
+    );
+  });
+
   it('loads secrets via HashiCorp Vault when configured', async () => {
     process.env.JOBBOT_SECRETS_PROVIDER = 'vault';
     process.env.JOBBOT_VAULT_ADDR = 'https://vault.example';
@@ -369,6 +385,21 @@ describe('loadWebConfig', () => {
 
     await expect(loadWebConfig({ env: 'production' })).rejects.toThrow(
       /JOBBOT_VAULT_ADDR must use one of the following protocols/i,
+    );
+  });
+
+  it('rejects Vault URLs that target loopback addresses', async () => {
+    process.env.JOBBOT_SECRETS_PROVIDER = 'vault';
+    process.env.JOBBOT_VAULT_ADDR = 'https://127.0.0.1:8200';
+    process.env.JOBBOT_VAULT_TOKEN = 'vault-token';
+    process.env.JOBBOT_VAULT_SECRETS = JSON.stringify({
+      JOBBOT_GREENHOUSE_TOKEN: { path: 'secret/data/jobbot', field: 'greenhouse_token' },
+    });
+
+    const { loadWebConfig } = await import('../src/web/config.js');
+
+    await expect(loadWebConfig({ env: 'production' })).rejects.toThrow(
+      /must not point to loopback addresses/i,
     );
   });
 

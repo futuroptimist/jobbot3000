@@ -1,3 +1,5 @@
+import { isIP } from 'node:net';
+
 const SUPPORTED_OP_CONNECT_NAMES = new Set([
   'op-connect',
   '1password',
@@ -43,6 +45,28 @@ function normalizeSecretValue(value) {
 }
 
 const ALLOWED_PROVIDER_PROTOCOLS = new Set(['http:', 'https:']);
+const BLOCKED_LOOPBACK_HOSTNAMES = new Set(['localhost', '0.0.0.0', '::', '::1']);
+
+function isLoopbackHostname(hostname) {
+  const normalized = typeof hostname === 'string' ? hostname.trim().toLowerCase() : '';
+  if (!normalized) return true;
+  if (BLOCKED_LOOPBACK_HOSTNAMES.has(normalized)) return true;
+  if (normalized.endsWith('.localhost')) return true;
+
+  const ipVersion = isIP(normalized);
+  if (ipVersion === 4) {
+    if (normalized === '0.0.0.0') return true;
+    return normalized.startsWith('127.');
+  }
+  if (ipVersion === 6) {
+    if (normalized === '::1' || normalized === '::') return true;
+    if (normalized.startsWith('::ffff:')) {
+      const mapped = normalized.slice('::ffff:'.length);
+      return isLoopbackHostname(mapped);
+    }
+  }
+  return false;
+}
 
 function ensureProviderUrl(rawUrl, description) {
   let parsed;
@@ -60,6 +84,10 @@ function ensureProviderUrl(rawUrl, description) {
 
   if (!parsed.hostname) {
     throw new Error(`${description} must include a hostname.`);
+  }
+
+  if (isLoopbackHostname(parsed.hostname)) {
+    throw new Error(`${description} must not point to loopback addresses like localhost.`);
   }
 
   if (parsed.username || parsed.password) {
