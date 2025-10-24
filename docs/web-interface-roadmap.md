@@ -365,12 +365,16 @@
   payload against `jobbot analytics funnel --json`, and fails if the adapter
   drifts from the CLI contract. The suite posts filter parameters to
   `/commands/analytics-funnel` so future changes keep the filter plumbing wired.
-  - End-to-end tests (Playwright/Cypress) simulating user flows with mocked CLI responses.
-    _Implemented (2025-11-08):_ Added Playwright coverage for the
-    **Applications** workflow in
-    [`test/playwright/applications.spec.js`](../test/playwright/applications.spec.js),
-    loading shortlist data, driving the detail drawer, and recording status updates
-    through a mocked command adapter.
+
+- End-to-end tests (Playwright/Cypress) simulating user flows with mocked CLI responses.
+  _Implemented (2025-11-08):_ Added Playwright coverage for the
+  **Applications** workflow in
+  [`test/playwright/applications.spec.js`](../test/playwright/applications.spec.js),
+  loading shortlist data, driving the detail drawer, and recording status updates
+  through a mocked command adapter. This merges prior test coverage from
+  `applications-status.spec.js` (2025-11-06), ensuring the suite validates both
+  shortlist refreshes and status timeline updates end to end without invoking
+  the real CLI.
 
 - Accessibility audits (axe-core) and performance benchmarks (Lighthouse).
   _Implemented (2025-10-02):_ [`src/web/audits.js`](../src/web/audits.js)

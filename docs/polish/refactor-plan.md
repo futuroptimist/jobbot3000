@@ -45,9 +45,24 @@ can be rolled out behind feature flags to minimize regressions.
   and timestamps intact. Failures when writing audit entries emit warnings so
   operators can spot logger issues in real time.
 - Update [SECURITY.md](../../SECURITY.md) with the refreshed threat model and external references.
+  _Implemented (2025-11-07):_ The security policy now documents the
+  November 2025 threat model refresh, including CSRF double-submit
+  protections, session isolation, and plugin integrity requirements.
+  Regression coverage in
+  [`test/security-doc-threat-model.test.js`](../../test/security-doc-threat-model.test.js)
+  asserts the new section references the web security roadmap and the
+  November threat-model workshop notes so future edits keep the update
+  discoverable.
 
 ## Phase 5 — Docs and UX polish
 
 - Extend user journey diagrams with ingestion→scoring→notification flows.
+  _Implemented (2025-11-07):_ `docs/user-journeys.md` now includes a
+  mermaid diagram (`journey-ingestion-scoring-notifications`) that maps the
+  scheduler, ingestion adapters, scoring engine, tracker, and notifications
+  worker end to end. Regression coverage in
+  [`test/user-journeys-doc.test.js`](../../test/user-journeys-doc.test.js)
+  keeps the diagram and explanation aligned with the pipeline modules so the
+  documentation stays actionable as the system evolves.
 - Document deployment paths for local vs. self-hosted environments.
 - Capture refreshed screenshots after the UI adopts the new redaction and audit affordances.
