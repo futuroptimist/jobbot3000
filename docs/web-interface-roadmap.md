@@ -351,7 +351,13 @@
   `text/calendar` MIME type so browsers treat the export correctly.
 
 5. **Testing and QA**
-   - Unit tests for frontend components (Jest/Testing Library) and backend modules (Jest/Supertest).
+
+- Unit tests for frontend components (Jest/Testing Library) and backend modules (Jest/Supertest).
+  _Implemented (2025-11-09):_ Added Testing Library coverage for the status hub
+  navigation and shortlist rendering in
+  [`test/web-status-hub-frontend.test.js`](../test/web-status-hub-frontend.test.js),
+  exercising the DOM workflow against the Express adapter while the existing
+  Vitest + Supertest suites keep backend modules locked down.
 
 - Contract tests ensuring backend responses align with CLI output fixtures.
   _Implemented (2025-10-31):_ `test/web-server-contracts.test.js` now boots the
@@ -359,7 +365,12 @@
   payload against `jobbot analytics funnel --json`, and fails if the adapter
   drifts from the CLI contract. The suite posts filter parameters to
   `/commands/analytics-funnel` so future changes keep the filter plumbing wired.
-- End-to-end tests (Playwright/Cypress) simulating user flows with mocked CLI responses.
+  - End-to-end tests (Playwright/Cypress) simulating user flows with mocked CLI responses.
+    _Implemented (2025-11-08):_ Added Playwright coverage for the
+    **Applications** workflow in
+    [`test/playwright/applications.spec.js`](../test/playwright/applications.spec.js),
+    loading shortlist data, driving the detail drawer, and recording status updates
+    through a mocked command adapter.
 
 - Accessibility audits (axe-core) and performance benchmarks (Lighthouse).
   _Implemented (2025-10-02):_ [`src/web/audits.js`](../src/web/audits.js)
