@@ -360,6 +360,12 @@
   drifts from the CLI contract. The suite posts filter parameters to
   `/commands/analytics-funnel` so future changes keep the filter plumbing wired.
 - End-to-end tests (Playwright/Cypress) simulating user flows with mocked CLI responses.
+  _Implemented (2025-11-06):_ `test/playwright/applications-status.spec.js`
+  drives the shortlist status workflow end to end with a mocked command
+  adapter. The suite clicks through the Applications panel, records a status
+  update, reloads the detail drawer, and asserts the success message plus
+  timeline refresh without invoking the real CLI. This keeps the UI-to-adapter
+  bridge covered as new shortlist features land.
 
 - Accessibility audits (axe-core) and performance benchmarks (Lighthouse).
   _Implemented (2025-10-02):_ [`src/web/audits.js`](../src/web/audits.js)
