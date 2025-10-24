@@ -69,6 +69,19 @@ function normalizeHostname(hostname) {
   return trimmed;
 }
 
+function normalizePort(url) {
+  if (url.port) {
+    return url.port;
+  }
+  if (url.protocol === 'http:') {
+    return '80';
+  }
+  if (url.protocol === 'https:') {
+    return '443';
+  }
+  return '';
+}
+
 function parseIPv4(address) {
   const parts = address.split('.');
   if (parts.length !== 4) return null;
@@ -180,6 +193,22 @@ function ensureProviderUrl(rawUrl, description) {
   return parsed;
 }
 
+function resolveProviderResource(baseUrl, resourcePath, description) {
+  const resolved = new URL(resourcePath, baseUrl);
+
+  const baseHost = normalizeHostname(baseUrl.hostname);
+  const resolvedHost = normalizeHostname(resolved.hostname);
+  if (
+    baseUrl.protocol !== resolved.protocol ||
+    normalizePort(baseUrl) !== normalizePort(resolved) ||
+    baseHost !== resolvedHost
+  ) {
+    throw new Error(`${description} must not redirect requests to another host.`);
+  }
+
+  return resolved;
+}
+
 function normalizeVaultPath(rawPath) {
   if (typeof rawPath !== 'string') {
     return '';
@@ -208,7 +237,11 @@ async function fetchOpConnectItem({ baseUrl, token, vault, itemId, fetchImpl }) 
   const encodedVault = encodeURIComponent(vault);
   const encodedItem = encodeURIComponent(itemId);
   const itemPath = `/v1/vaults/${encodedVault}/items/${encodedItem}`;
-  const url = new URL(itemPath, baseUrl);
+  const url = resolveProviderResource(
+    baseUrl,
+    itemPath,
+    'JOBBOT_OP_CONNECT_URL',
+  );
   const response = await fetch(url.toString(), {
     method: 'GET',
     headers: {
@@ -325,7 +358,11 @@ async function fetchVaultSecret({ baseUrl, token, path, fetchImpl }) {
   if (!normalizedPath) {
     throw new Error('Vault selectors must include a valid secret path.');
   }
-  const url = new URL(`/v1/${normalizedPath}`, baseUrl);
+  const url = resolveProviderResource(
+    baseUrl,
+    `/v1/${normalizedPath}`,
+    'JOBBOT_VAULT_ADDR',
+  );
   const response = await fetch(url.toString(), {
     method: 'GET',
     headers: {

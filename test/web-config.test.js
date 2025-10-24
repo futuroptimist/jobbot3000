@@ -286,6 +286,14 @@ describe('loadWebConfig', () => {
       'JOBBOT_WORKABLE_TOKEN',
     ]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      'https://connect.example/v1/vaults/vault-1/items/item-1',
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.objectContaining({ Authorization: 'Bearer connect-token' }),
+      }),
+    );
     expect(config).toMatchObject({
       features: expect.any(Object),
     });
@@ -382,6 +390,13 @@ describe('loadWebConfig', () => {
     const config = await loadWebConfig({ env: 'staging', fetch: fetchMock });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://vault.example/v1/secret/data/jobbot',
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.objectContaining({ 'X-Vault-Token': 'vault-token' }),
+      }),
+    );
     expect(config.missingSecrets).toEqual([
       'JOBBOT_SMARTRECRUITERS_TOKEN',
       'JOBBOT_WORKABLE_TOKEN',
