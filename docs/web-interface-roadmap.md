@@ -142,6 +142,11 @@
 
 - Define a dark theme palette with semantic tokens (background, surface, accent, danger, text-primary
   and text-secondary) ensuring accessible contrast.
+  _Implemented (2025-11-16):_ [`src/web/server.js`](../src/web/server.js) now declares
+  `--jobbot-color-*` tokens for background, surface, accent, danger, and text colors across both
+  dark and light themes. [`test/web-server.test.js`](../test/web-server.test.js) locks the
+  stylesheet contract by asserting the exported CSS contains each semantic token and applies the
+  surface color to status panels, keeping the theme system verifiable from tests.
 - Create reusable components (buttons, tables, timeline, status badges) adhering to the token system.
 - Provide responsive layouts using a grid/flex approach; ensure minimum touch target sizes for mobile.
 - Integrate a global keyboard navigation layer and focus outlines for accessibility.

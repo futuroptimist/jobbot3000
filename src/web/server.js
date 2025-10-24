@@ -633,50 +633,66 @@ const SECURITY_HEADERS = Object.freeze({
 const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
   :root {
     color-scheme: dark;
-    --background: #0b0d0f;
-    --jobbot-color-background: var(--background);
-    --foreground: #f1f5f9;
-    --muted: #94a3b8;
-    --accent: #38bdf8;
+    --jobbot-color-background: #0b0d0f;
+    --jobbot-color-surface: #111827;
+    --jobbot-color-accent: #38bdf8;
+    --jobbot-color-danger: #f87171;
+    --jobbot-color-text-primary: #f8fafc;
+    --jobbot-color-text-secondary: #94a3b8;
+    --background: var(--jobbot-color-background);
+    --surface: var(--jobbot-color-surface);
+    --foreground: var(--jobbot-color-text-primary);
+    --muted: var(--jobbot-color-text-secondary);
+    --accent: var(--jobbot-color-accent);
+    --danger: var(--jobbot-color-danger);
     --focus: #facc15;
     --pill-bg: rgba(56, 189, 248, 0.12);
     --pill-bg-hover: rgba(56, 189, 248, 0.18);
     --pill-border: rgba(56, 189, 248, 0.35);
     --pill-text: #e2e8f0;
     --card-border: rgba(148, 163, 184, 0.25);
-    --card-surface: rgba(15, 23, 42, 0.35);
+    --card-surface: var(--jobbot-color-surface);
     --code-bg: rgba(148, 163, 184, 0.12);
-    --danger-bg: rgba(239, 68, 68, 0.16);
-    --danger-border: rgba(239, 68, 68, 0.55);
+    --danger-bg: rgba(248, 113, 113, 0.16);
+    --danger-border: rgba(248, 113, 113, 0.55);
     --danger-text: #fca5a5;
     --success-bg: rgba(34, 197, 94, 0.16);
     --success-border: rgba(34, 197, 94, 0.5);
     --success-text: #bbf7d0;
     --body-font: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    background-color: var(--background);
-    color: var(--foreground);
+    background-color: var(--jobbot-color-background);
+    color: var(--jobbot-color-text-primary);
   }
   [data-theme='light'] {
     color-scheme: light;
-    --background: #f8fafc;
-    --jobbot-color-background: var(--background);
-    --foreground: #0f172a;
-    --muted: #475569;
-    --accent: #0ea5e9;
+    --jobbot-color-background: #f8fafc;
+    --jobbot-color-surface: #ffffff;
+    --jobbot-color-accent: #0ea5e9;
+    --jobbot-color-danger: #dc2626;
+    --jobbot-color-text-primary: #0f172a;
+    --jobbot-color-text-secondary: #475569;
+    --background: var(--jobbot-color-background);
+    --surface: var(--jobbot-color-surface);
+    --foreground: var(--jobbot-color-text-primary);
+    --muted: var(--jobbot-color-text-secondary);
+    --accent: var(--jobbot-color-accent);
+    --danger: var(--jobbot-color-danger);
     --focus: #ca8a04;
     --pill-bg: rgba(14, 165, 233, 0.12);
     --pill-bg-hover: rgba(14, 165, 233, 0.2);
     --pill-border: rgba(14, 165, 233, 0.3);
     --pill-text: #0f172a;
     --card-border: rgba(148, 163, 184, 0.3);
-    --card-surface: rgba(255, 255, 255, 0.8);
+    --card-surface: var(--jobbot-color-surface);
     --code-bg: rgba(15, 23, 42, 0.08);
-    --danger-bg: rgba(239, 68, 68, 0.12);
-    --danger-border: rgba(239, 68, 68, 0.45);
+    --danger-bg: rgba(220, 38, 38, 0.12);
+    --danger-border: rgba(220, 38, 38, 0.45);
     --danger-text: #b91c1c;
     --success-bg: rgba(34, 197, 94, 0.12);
     --success-border: rgba(34, 197, 94, 0.45);
     --success-text: #166534;
+    background-color: var(--jobbot-color-background);
+    color: var(--jobbot-color-text-primary);
   }
   body {
     margin: 0;
@@ -684,8 +700,8 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     display: flex;
     flex-direction: column;
     min-height: 100vh;
-    background-color: var(--background);
-    color: var(--foreground);
+    background-color: var(--jobbot-color-background);
+    color: var(--jobbot-color-text-primary);
     font-family: var(--body-font);
   }
   header,
@@ -824,11 +840,15 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     border: 1px solid var(--card-border);
     border-radius: 1rem;
     padding: 1.5rem;
-    background-color: var(--card-surface);
+    background-color: var(--card-surface, var(--jobbot-color-surface));
   }
   .status-panel {
     position: relative;
     display: block;
+    border: 1px solid var(--card-border);
+    border-radius: 1rem;
+    padding: 1.5rem;
+    background-color: var(--card-surface, var(--jobbot-color-surface));
   }
   .status-panel [data-state-slot] {
     margin: 0;
