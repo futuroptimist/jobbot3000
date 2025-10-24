@@ -45,6 +45,14 @@ can be rolled out behind feature flags to minimize regressions.
   and timestamps intact. Failures when writing audit entries emit warnings so
   operators can spot logger issues in real time.
 - Update [SECURITY.md](../../SECURITY.md) with the refreshed threat model and external references.
+  _Implemented (2025-11-07):_ The security policy now documents the
+  November 2025 threat model refresh, including CSRF double-submit
+  protections, session isolation, and plugin integrity requirements.
+  Regression coverage in
+  [`test/security-doc-threat-model.test.js`](../../test/security-doc-threat-model.test.js)
+  asserts the new section references the web security roadmap and the
+  November threat-model workshop notes so future edits keep the update
+  discoverable.
 
 ## Phase 5 — Docs and UX polish
 
