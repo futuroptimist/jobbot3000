@@ -49,5 +49,12 @@ can be rolled out behind feature flags to minimize regressions.
 ## Phase 5 — Docs and UX polish
 
 - Extend user journey diagrams with ingestion→scoring→notification flows.
+  _Implemented (2025-11-07):_ `docs/user-journeys.md` now includes a
+  mermaid diagram (`journey-ingestion-scoring-notifications`) that maps the
+  scheduler, ingestion adapters, scoring engine, tracker, and notifications
+  worker end to end. Regression coverage in
+  [`test/user-journeys-doc.test.js`](../../test/user-journeys-doc.test.js)
+  keeps the diagram and explanation aligned with the pipeline modules so the
+  documentation stays actionable as the system evolves.
 - Document deployment paths for local vs. self-hosted environments.
 - Capture refreshed screenshots after the UI adopts the new redaction and audit affordances.
