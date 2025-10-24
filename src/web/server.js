@@ -2917,6 +2917,24 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               detailElements.title.textContent = 'Application ' + jobId;
             }
 
+            if (detailElements.status) {
+              const statusValue =
+                typeof data?.status_value === 'string' ? data.status_value.trim() : '';
+              const statusLabel =
+                typeof data?.status_label === 'string' && data.status_label.trim()
+                  ? data.status_label.trim()
+                  : statusValue
+                    ? formatStatusLabelText(statusValue)
+                    : '';
+              const labelText = statusLabel || '(not tracked)';
+              detailElements.status.textContent = 'Status: ' + labelText;
+              if (statusLabel) {
+                detailElements.status.setAttribute('data-status-label', statusLabel);
+              } else {
+                detailElements.status.removeAttribute('data-status-label');
+              }
+            }
+
             if (detailElements.meta) {
               const fragment = document.createDocumentFragment();
               const entries = [
@@ -3301,16 +3319,52 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             detail.track = track;
             detail.shortlist = shortlist;
 
-            if (detailElements.status) {
-              const formattedStatus =
-                typeof detail.status === 'string' && detail.status.trim()
-                  ? formatStatusLabelText(detail.status)
-                  : '';
-              const statusLabel = formattedStatus || '';
-              detailElements.status.textContent =
-                'Status: ' + (statusLabel || '(unknown)');
-              detailElements.status.setAttribute('data-status-label', statusLabel);
+            const statusEntry =
+              track && typeof track.status === 'object' ? track.status : null;
+            const statusValue = (() => {
+              if (statusEntry && typeof statusEntry.status === 'string') {
+                const trimmed = statusEntry.status.trim();
+                if (trimmed) return trimmed;
+              }
+              if (typeof track.status === 'string') {
+                const trimmed = track.status.trim();
+                if (trimmed) return trimmed;
+              }
+              return '';
+            })();
+
+            const statusLabel = (() => {
+              if (
+                statusEntry &&
+                typeof statusEntry.status_label === 'string' &&
+                statusEntry.status_label.trim()
+              ) {
+                return statusEntry.status_label.trim();
+              }
+              return statusValue ? formatStatusLabelText(statusValue) : '';
+            })();
+
+            if (statusValue) {
+              detail.status_value = statusValue;
             }
+            if (statusLabel) {
+              detail.status_label = statusLabel;
+            }
+            if (
+              statusEntry &&
+              typeof statusEntry.note === 'string' &&
+              statusEntry.note.trim()
+            ) {
+              detail.status_note = statusEntry.note.trim();
+            }
+            if (
+              statusEntry &&
+              typeof statusEntry.updated_at === 'string' &&
+              statusEntry.updated_at.trim()
+            ) {
+              detail.status_updated_at = statusEntry.updated_at.trim();
+            }
+
             return detail;
           }
 
