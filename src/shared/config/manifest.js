@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { loadManagedSecrets } from './managed-secrets.js';
+
 /** @type {['development', 'staging', 'production']} */
 const ENVIRONMENTS = ['development', 'staging', 'production'];
 
@@ -29,7 +31,7 @@ const numberFromEnv = (value, fallback) => {
   return parsed;
 };
 
-const SECRET_ENV_MAP = {
+export const SECRET_ENV_MAP = {
   greenhouseToken: 'JOBBOT_GREENHOUSE_TOKEN',
   leverToken: 'JOBBOT_LEVER_API_TOKEN',
   smartRecruitersToken: 'JOBBOT_SMARTRECRUITERS_TOKEN',
@@ -270,6 +272,8 @@ export function loadConfig(options = {}) {
     ),
   };
 
+  const managedSecrets = normalizeManagedSecrets(options.managedSecrets);
+
   const secrets = {
     greenhouseToken: options.secrets?.greenhouseToken ?? env.JOBBOT_GREENHOUSE_TOKEN,
     leverToken: options.secrets?.leverToken ?? env.JOBBOT_LEVER_API_TOKEN,
@@ -277,6 +281,14 @@ export function loadConfig(options = {}) {
       options.secrets?.smartRecruitersToken ?? env.JOBBOT_SMARTRECRUITERS_TOKEN,
     workableToken: options.secrets?.workableToken ?? env.JOBBOT_WORKABLE_TOKEN,
   };
+
+  if (managedSecrets) {
+    for (const [key, value] of Object.entries(managedSecrets)) {
+      if (value !== undefined) {
+        secrets[key] = value;
+      }
+    }
+  }
 
   const parsed = /** @type {import('zod').infer<typeof ConfigSchema>} */ (
     ConfigSchema.parse({
@@ -309,4 +321,47 @@ export function loadConfig(options = {}) {
     ...parsed,
     missingSecrets,
   };
+}
+
+function normalizeManagedSecrets(value) {
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+  const normalized = {};
+  for (const [key, secret] of Object.entries(value)) {
+    if (typeof secret !== 'string') {
+      if (secret === undefined || secret === null) continue;
+      normalized[key] = String(secret);
+      continue;
+    }
+    const trimmed = secret.trim();
+    if (!trimmed) continue;
+    normalized[key] = trimmed;
+  }
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+export async function loadConfigWithManagedSecrets(options = {}) {
+  if (options.managedSecrets) {
+    const { managedSecrets, ...rest } = options;
+    return loadConfig({ ...rest, managedSecrets });
+  }
+
+  const { secretsProvider, fetch, env: envOverride, ...manifestOptions } = options;
+  const envOverrides = envOverride && typeof envOverride === 'object' ? envOverride : {};
+  const env = { ...process.env, ...envOverrides };
+  const provider = secretsProvider ?? env.JOBBOT_SECRETS_PROVIDER;
+
+  if (!provider) {
+    return loadConfig(options);
+  }
+
+  const managedSecrets = await loadManagedSecrets({
+    provider,
+    env,
+    secretEnvMap: SECRET_ENV_MAP,
+    fetch,
+  });
+
+  return loadConfig({ ...manifestOptions, env: envOverrides, managedSecrets });
 }

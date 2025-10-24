@@ -1,17 +1,10 @@
-import { DEFAULT_WEB_CONFIG, loadConfig } from '../shared/config/manifest.js';
+import {
+  DEFAULT_WEB_CONFIG,
+  loadConfig,
+  loadConfigWithManagedSecrets,
+} from '../shared/config/manifest.js';
 
-export function loadWebConfig(options = {}) {
-  const config = loadConfig({
-    environment: options.env,
-    host: options.host,
-    port: options.port,
-    rateLimit: options.rateLimit,
-    csrfHeaderName: options.csrfHeaderName,
-    csrfToken: options.csrfToken,
-    audit: options.audit,
-    features: options.features,
-  });
-
+function buildWebConfig(config, options) {
   const info = {
     service: 'jobbot-web',
     environment: config.environment,
@@ -35,6 +28,35 @@ export function loadWebConfig(options = {}) {
     audit: config.audit,
     missingSecrets: config.missingSecrets,
   };
+}
+
+function toManifestOptions(options = {}) {
+  return {
+    environment: options.env,
+    host: options.host,
+    port: options.port,
+    rateLimit: options.rateLimit,
+    csrfHeaderName: options.csrfHeaderName,
+    csrfToken: options.csrfToken,
+    audit: options.audit,
+    features: options.features,
+  };
+}
+
+export async function loadWebConfig(options = {}) {
+  const manifestOptions = toManifestOptions(options);
+  const config = await loadConfigWithManagedSecrets({
+    ...manifestOptions,
+    fetch: options.fetch,
+    secretsProvider: options.secretsProvider,
+    managedSecrets: options.managedSecrets,
+  });
+  return buildWebConfig(config, options);
+}
+
+export function loadWebConfigSync(options = {}) {
+  const config = loadConfig(toManifestOptions(options));
+  return buildWebConfig(config, options);
 }
 
 export function getDefaultWebConfig(env = 'development') {

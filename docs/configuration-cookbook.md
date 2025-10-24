@@ -34,6 +34,32 @@ absent. Inline overrides are rejected—`loadConfig` throws when callers attempt
 pass secrets directly—so the only supported path is the `JOBBOT_*` environment
 variables wired to your secrets store.
 
+## Managed secrets providers
+
+Set `JOBBOT_SECRETS_PROVIDER` when secrets should be fetched from a managed
+store instead of environment variables. The manifest currently supports
+two providers:
+
+- **1Password Connect (`op-connect`)** – configure the service URL, token,
+  and vault using:
+  - `JOBBOT_OP_CONNECT_URL` (for example, `https://connect.example:8080`)
+  - `JOBBOT_OP_CONNECT_TOKEN` (service account token)
+  - `JOBBOT_OP_CONNECT_VAULT` (default vault UUID)
+  - `JOBBOT_OP_CONNECT_SECRETS` – JSON mapping of environment variable names
+    to `{ "itemId": "...", "field": "...", "vault?": "..." }`. Each mapping
+    identifies the 1Password item and field that should populate the matching
+    `JOBBOT_*` secret.
+- **HashiCorp Vault (`vault`)** – configure the base address, token, and
+  secret selectors using:
+  - `JOBBOT_VAULT_ADDR` (for example, `https://vault.example`)
+  - `JOBBOT_VAULT_TOKEN` (token with read access)
+  - `JOBBOT_VAULT_SECRETS` – JSON mapping of environment variable names to
+    `{ "path": "secret/data/jobbot", "field": "greenhouse_token" }` entries.
+
+When a managed provider is active the manifest hydrates the corresponding
+secrets before computing `missingSecrets`, ensuring the CLI and web server see
+fully populated credentials without duplicating values in `.env` files.
+
 ## Feature flags
 
 Feature flags are parsed via the manifest and exposed to the web server:

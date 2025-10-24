@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -34,6 +34,14 @@ describe('loadWebConfig', () => {
       'JOBBOT_LEVER_API_TOKEN',
       'JOBBOT_SMARTRECRUITERS_TOKEN',
       'JOBBOT_WORKABLE_TOKEN',
+      'JOBBOT_SECRETS_PROVIDER',
+      'JOBBOT_OP_CONNECT_URL',
+      'JOBBOT_OP_CONNECT_TOKEN',
+      'JOBBOT_OP_CONNECT_VAULT',
+      'JOBBOT_OP_CONNECT_SECRETS',
+      'JOBBOT_VAULT_ADDR',
+      'JOBBOT_VAULT_TOKEN',
+      'JOBBOT_VAULT_SECRETS',
     ]);
   });
 
@@ -57,12 +65,21 @@ describe('loadWebConfig', () => {
       'JOBBOT_LEVER_API_TOKEN',
       'JOBBOT_SMARTRECRUITERS_TOKEN',
       'JOBBOT_WORKABLE_TOKEN',
+      'JOBBOT_SECRETS_PROVIDER',
+      'JOBBOT_OP_CONNECT_URL',
+      'JOBBOT_OP_CONNECT_TOKEN',
+      'JOBBOT_OP_CONNECT_VAULT',
+      'JOBBOT_OP_CONNECT_SECRETS',
+      'JOBBOT_VAULT_ADDR',
+      'JOBBOT_VAULT_TOKEN',
+      'JOBBOT_VAULT_SECRETS',
     ]);
+    vi.restoreAllMocks();
   });
 
   it('provides development defaults when no overrides are present', async () => {
     const { loadWebConfig } = await import('../src/web/config.js');
-    const config = loadWebConfig({ env: 'development' });
+    const config = await loadWebConfig({ env: 'development' });
 
     expect(config.env).toBe('development');
     expect(config.host).toBe('127.0.0.1');
@@ -82,8 +99,8 @@ describe('loadWebConfig', () => {
 
   it('exposes staging and production presets', async () => {
     const { loadWebConfig } = await import('../src/web/config.js');
-    const staging = loadWebConfig({ env: 'staging' });
-    const production = loadWebConfig({ env: 'production' });
+    const staging = await loadWebConfig({ env: 'staging' });
+    const production = await loadWebConfig({ env: 'production' });
 
     expect(staging.host).toBe('0.0.0.0');
     expect(staging.port).toBe(4000);
@@ -107,7 +124,7 @@ describe('loadWebConfig', () => {
     process.env.JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD = '6';
 
     const { loadWebConfig } = await import('../src/web/config.js');
-    const config = loadWebConfig({ env: 'development', rateLimit: { max: 5 } });
+    const config = await loadWebConfig({ env: 'development', rateLimit: { max: 5 } });
 
     expect(config.host).toBe('10.0.0.5');
     expect(config.port).toBe(5123);
@@ -118,7 +135,7 @@ describe('loadWebConfig', () => {
     expect(config.features.httpClient.circuitBreakerThreshold).toBe(6);
     expect(config.missingSecrets).toEqual([]);
 
-    const overridden = loadWebConfig({
+    const overridden = await loadWebConfig({
       env: 'production',
       host: '192.168.1.2',
       port: 9090,
@@ -136,15 +153,25 @@ describe('loadWebConfig', () => {
   });
 
   it('throws when provided ports or rate limits are invalid', async () => {
-    const { loadWebConfig } = await import('../src/web/config.js');
+    const { loadWebConfig, loadWebConfigSync } = await import('../src/web/config.js');
 
-    expect(() =>
-      loadWebConfig({ env: 'development', port: -1 }),
-    ).toThrow(/port must be between 0 and 65535/i);
-    expect(() => loadWebConfig({ env: 'development', rateLimit: { windowMs: 0 } })).toThrow(
-      /rate limit window must be a positive number/i,
+    await expect(loadWebConfig({ env: 'development', port: -1 })).rejects.toThrow(
+      /port must be between 0 and 65535/i,
     );
-    expect(() => loadWebConfig({ env: 'development', rateLimit: { max: 0 } })).toThrow(
+    await expect(
+      loadWebConfig({ env: 'development', rateLimit: { windowMs: 0 } }),
+    ).rejects.toThrow(/rate limit window must be a positive number/i);
+    await expect(
+      loadWebConfig({ env: 'development', rateLimit: { max: 0 } }),
+    ).rejects.toThrow(/rate limit max must be a positive integer/i);
+
+    expect(() => loadWebConfigSync({ env: 'development', port: -1 })).toThrow(
+      /port must be between 0 and 65535/i,
+    );
+    expect(() =>
+      loadWebConfigSync({ env: 'development', rateLimit: { windowMs: 0 } }),
+    ).toThrow(/rate limit window must be a positive number/i);
+    expect(() => loadWebConfigSync({ env: 'development', rateLimit: { max: 0 } })).toThrow(
       /rate limit max must be a positive integer/i,
     );
   });
@@ -160,7 +187,7 @@ describe('loadWebConfig', () => {
     ]);
 
     const { loadWebConfig } = await import('../src/web/config.js');
-    const envConfig = loadWebConfig({ env: 'development' });
+    const envConfig = await loadWebConfig({ env: 'development' });
 
     expect(Array.isArray(envConfig.features.plugins.entries)).toBe(true);
     expect(envConfig.features.plugins.entries).toHaveLength(1);
@@ -171,7 +198,7 @@ describe('loadWebConfig', () => {
       events: ['jobbot:status-panels-ready'],
     });
 
-    const optionConfig = loadWebConfig({
+    const optionConfig = await loadWebConfig({
       env: 'development',
       features: {
         plugins: {
@@ -206,5 +233,95 @@ describe('loadWebConfig', () => {
         },
       }),
     ).toThrow(/environment variables/i);
+  });
+
+  it('exposes a synchronous loader for environments without managed providers', async () => {
+    const { loadWebConfigSync } = await import('../src/web/config.js');
+    const config = loadWebConfigSync({ env: 'development' });
+    expect(config.host).toBe('127.0.0.1');
+    expect(config.missingSecrets).toEqual([
+      'JOBBOT_GREENHOUSE_TOKEN',
+      'JOBBOT_LEVER_API_TOKEN',
+      'JOBBOT_SMARTRECRUITERS_TOKEN',
+      'JOBBOT_WORKABLE_TOKEN',
+    ]);
+  });
+
+  it('loads secrets via 1Password Connect when configured', async () => {
+    process.env.JOBBOT_SECRETS_PROVIDER = 'op-connect';
+    process.env.JOBBOT_OP_CONNECT_URL = 'https://connect.example';
+    process.env.JOBBOT_OP_CONNECT_TOKEN = 'connect-token';
+    process.env.JOBBOT_OP_CONNECT_VAULT = 'vault-1';
+    process.env.JOBBOT_OP_CONNECT_SECRETS = JSON.stringify({
+      JOBBOT_GREENHOUSE_TOKEN: { itemId: 'item-1', field: 'Greenhouse Token' },
+      JOBBOT_LEVER_API_TOKEN: { itemId: 'item-2', field: 'password', vault: 'vault-2' },
+    });
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({
+          fields: [
+            { id: 'greenhouse token', label: 'Greenhouse Token', value: 'secret-gh' },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({
+          fields: [{ id: 'password', label: 'Password', value: 'secret-lever' }],
+        }),
+      });
+
+    const { loadWebConfig } = await import('../src/web/config.js');
+    const config = await loadWebConfig({ env: 'production', fetch: fetchMock });
+
+    expect(config.missingSecrets).toEqual([
+      'JOBBOT_SMARTRECRUITERS_TOKEN',
+      'JOBBOT_WORKABLE_TOKEN',
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(config).toMatchObject({
+      features: expect.any(Object),
+    });
+  });
+
+  it('loads secrets via HashiCorp Vault when configured', async () => {
+    process.env.JOBBOT_SECRETS_PROVIDER = 'vault';
+    process.env.JOBBOT_VAULT_ADDR = 'https://vault.example';
+    process.env.JOBBOT_VAULT_TOKEN = 'vault-token';
+    process.env.JOBBOT_VAULT_SECRETS = JSON.stringify({
+      JOBBOT_GREENHOUSE_TOKEN: { path: 'secret/data/jobbot', field: 'greenhouse_token' },
+      JOBBOT_LEVER_API_TOKEN: { path: 'secret/data/jobbot', field: 'lever_token' },
+    });
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({
+        data: {
+          data: {
+            greenhouse_token: 'gh-vault',
+            lever_token: 'lever-vault',
+          },
+        },
+      }),
+    });
+
+    const { loadWebConfig } = await import('../src/web/config.js');
+    const config = await loadWebConfig({ env: 'staging', fetch: fetchMock });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(config.missingSecrets).toEqual([
+      'JOBBOT_SMARTRECRUITERS_TOKEN',
+      'JOBBOT_WORKABLE_TOKEN',
+    ]);
+    expect(config.port).toBe(4000);
   });
 });

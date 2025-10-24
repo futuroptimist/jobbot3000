@@ -49,7 +49,7 @@ async function main() {
 
   let config;
   try {
-    config = loadWebConfig({
+    config = await loadWebConfig({
       env,
       host: hostOverride,
       port: portOverride,

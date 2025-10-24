@@ -95,6 +95,14 @@
 
 - Containerize the web service with a locked-down runtime profile (seccomp, read-only root FS).
 - Add support for managed secrets providers (e.g., 1Password Connect, HashiCorp Vault).
+  _Implemented (2025-11-08):_ The configuration manifest now resolves
+  secrets from managed providers when `JOBBOT_SECRETS_PROVIDER` is set to
+  `op-connect` or `vault`. 1Password Connect integrations fetch item fields
+  using provider-specific selectors, while Vault mappings request secret paths
+  with `X-Vault-Token`. Regression coverage in
+  [`test/web-config.test.js`](../test/web-config.test.js) mocks both providers'
+  HTTP responses so CI guarantees the manifest hydrates secrets and updates the
+  `missingSecrets` list accordingly.
 - Implement structured risk assessments and threat modeling before every feature launch.
 - Provide documented backup and restore procedures for any persistent data stores.
 
