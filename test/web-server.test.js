@@ -390,6 +390,15 @@ describe("web server status page", () => {
     const css = await asset.text();
     expect(css).toContain(".status-panel");
     expect(css).toContain("--jobbot-color-background");
+    expect(css).toContain("--jobbot-color-surface");
+    expect(css).toContain("--jobbot-color-accent");
+    expect(css).toContain("--jobbot-color-danger");
+    expect(css).toContain("--jobbot-color-text-primary");
+    expect(css).toContain("--jobbot-color-text-secondary");
+    expect(css).toMatch(/body\s*\{[^}]*color:\s*var\(--jobbot-color-text-primary\)/);
+    expect(css).toMatch(
+      /\.status-panel[^{}]*\{[^}]*background-color:[^;\n]*var\([^)]*--jobbot-color-surface/,
+    );
   });
 
   it("applies strict security headers to the status hub", async () => {
