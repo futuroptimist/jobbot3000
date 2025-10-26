@@ -189,9 +189,10 @@ function parseCookieHeader(headerValue) {
 }
 
 function applySessionResponse(res, sessionId, options = {}) {
-  const sameSite = typeof options.sameSite === "string" && options.sameSite
-    ? options.sameSite
-    : "Strict";
+  const sameSite =
+    typeof options.sameSite === "string" && options.sameSite
+      ? options.sameSite
+      : "Strict";
   const httpOnly = options.httpOnly !== false;
   const secure = options.secure === true;
 
@@ -222,7 +223,10 @@ function applySessionResponse(res, sessionId, options = {}) {
     directives.push(`Max-Age=${Math.trunc(maxAgeSeconds)}`);
   }
 
-  if (options.expires instanceof Date && !Number.isNaN(options.expires.valueOf())) {
+  if (
+    options.expires instanceof Date &&
+    !Number.isNaN(options.expires.valueOf())
+  ) {
     directives.push(`Expires=${options.expires.toUTCString()}`);
   }
 
@@ -291,7 +295,10 @@ function isSecureRequest(req) {
   if (req.secure === true) {
     return true;
   }
-  if (typeof req.protocol === "string" && req.protocol.toLowerCase() === "https") {
+  if (
+    typeof req.protocol === "string" &&
+    req.protocol.toLowerCase() === "https"
+  ) {
     return true;
   }
   const forwardedProto =
@@ -538,7 +545,9 @@ function createPluginAssets(app, plugins = {}) {
         });
       }
       scriptUrl = routePath;
-      const hash = createHash("sha256").update(sanitized.source, "utf8").digest("base64");
+      const hash = createHash("sha256")
+        .update(sanitized.source, "utf8")
+        .digest("base64");
       integrity = `sha256-${hash}`;
     } else if (sanitized.url) {
       scriptUrl = sanitized.url;
@@ -609,25 +618,25 @@ const CONTENT_SECURITY_POLICY = [
   "form-action 'self'",
   "frame-ancestors 'none'",
   "object-src 'none'",
-].join('; ');
+].join("; ");
 
 const PERMISSIONS_POLICY = [
-  'accelerometer=()',
-  'autoplay=()',
-  'camera=()',
-  'geolocation=()',
-  'gyroscope=()',
-  'microphone=()',
-  'payment=()',
-  'usb=()',
-].join(', ');
+  "accelerometer=()",
+  "autoplay=()",
+  "camera=()",
+  "geolocation=()",
+  "gyroscope=()",
+  "microphone=()",
+  "payment=()",
+  "usb=()",
+].join(", ");
 
-const REFERRER_POLICY = 'strict-origin-when-cross-origin';
+const REFERRER_POLICY = "strict-origin-when-cross-origin";
 
 const SECURITY_HEADERS = Object.freeze({
-  'Content-Security-Policy': CONTENT_SECURITY_POLICY,
-  'Permissions-Policy': PERMISSIONS_POLICY,
-  'Referrer-Policy': REFERRER_POLICY,
+  "Content-Security-Policy": CONTENT_SECURITY_POLICY,
+  "Permissions-Policy": PERMISSIONS_POLICY,
+  "Referrer-Policy": REFERRER_POLICY,
 });
 
 const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
@@ -815,6 +824,120 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     color: var(--muted);
     font-size: 0.9rem;
   }
+  .hub-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 999px;
+    border: 1px solid var(--pill-border);
+    background-color: var(--pill-bg);
+    color: var(--pill-text);
+    padding: 0.5rem 1.15rem;
+    font: inherit;
+    font-weight: 600;
+    line-height: 1.2;
+    min-height: 2.75rem;
+    cursor: pointer;
+    transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+  }
+  .hub-button:hover:not(:disabled) {
+    background-color: var(--pill-bg-hover);
+  }
+  .hub-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .hub-button[data-variant='ghost'] {
+    background-color: transparent;
+    border-color: var(--card-border);
+    color: var(--foreground);
+  }
+  .hub-button[data-variant='danger'] {
+    background-color: var(--danger-bg);
+    border-color: var(--danger-border);
+    color: var(--danger-text);
+  }
+  .hub-table {
+    width: 100%;
+    border-collapse: collapse;
+    border-radius: 1rem;
+    overflow: hidden;
+    background-color: rgba(15, 23, 42, 0.3);
+  }
+  [data-theme='light'] .hub-table {
+    background-color: rgba(255, 255, 255, 0.9);
+  }
+  .hub-table th,
+  .hub-table td {
+    text-align: left;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  }
+  .hub-table tbody tr:last-child th,
+  .hub-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+  .hub-table tbody tr:nth-child(even) {
+    background-color: rgba(148, 163, 184, 0.08);
+  }
+  .hub-timeline {
+    position: relative;
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0 1.75rem;
+  }
+  .hub-timeline::before {
+    content: '';
+    position: absolute;
+    left: 0.55rem;
+    top: 0.35rem;
+    bottom: 0.35rem;
+    width: 2px;
+    background: rgba(148, 163, 184, 0.35);
+  }
+  .hub-timeline li {
+    position: relative;
+    margin: 0 0 1rem;
+    padding-left: 0.85rem;
+  }
+  .hub-timeline li:last-child {
+    margin-bottom: 0;
+  }
+  .hub-timeline li::before {
+    content: '';
+    position: absolute;
+    left: -1.4rem;
+    top: 0.35rem;
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 999px;
+    border: 2px solid var(--pill-border);
+    background-color: var(--card-surface, var(--jobbot-color-surface));
+  }
+  .hub-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 999px;
+    border: 1px solid var(--pill-border);
+    background-color: var(--pill-bg);
+    color: var(--pill-text);
+    padding: 0.25rem 0.75rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .hub-status-badge[data-variant='success'] {
+    background-color: var(--success-bg);
+    border-color: var(--success-border);
+    color: var(--success-text);
+  }
+  .hub-status-badge[data-variant='danger'] {
+    background-color: var(--danger-bg);
+    border-color: var(--danger-border);
+    color: var(--danger-text);
+  }
   .environment-warning {
     margin-top: 1.5rem;
     border-radius: 1rem;
@@ -929,24 +1052,10 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     display: flex;
     align-items: center;
     gap: 0.75rem;
+    flex-wrap: wrap;
   }
-  .filters__actions button {
-    border-radius: 999px;
-    border: 1px solid var(--pill-border);
-    background-color: var(--pill-bg);
-    color: var(--pill-text);
-    padding: 0.4rem 1rem;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  .filters__actions button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  .filters__actions button[data-variant='ghost'] {
-    background-color: transparent;
-    border-color: var(--card-border);
-    color: var(--foreground);
+  .filters__actions .hub-button {
+    justify-content: center;
   }
   .shortlist-table {
     width: 100%;
@@ -981,18 +1090,8 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     margin-top: 1rem;
     color: var(--muted);
   }
-  .pagination button { 
-    border-radius: 999px;
-    border: 1px solid var(--pill-border);
-    background-color: var(--pill-bg);
-    color: var(--pill-text);
-    padding: 0.35rem 0.85rem;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  .pagination button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+  .pagination .hub-button {
+    min-width: 7.5rem;
   }
   .listings-grid {
     display: grid;
@@ -1043,23 +1142,8 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     flex-wrap: wrap;
     gap: 0.75rem;
   }
-  .listings-token-actions button {
-    border-radius: 999px;
-    border: 1px solid var(--pill-border);
-    background-color: var(--pill-bg);
-    color: var(--pill-text);
-    padding: 0.4rem 1rem;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  .listings-token-actions button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  .listings-token-actions button[data-variant='ghost'] {
-    background-color: transparent;
-    border-color: var(--card-border);
-    color: var(--foreground);
+  .listings-token-actions .hub-button {
+    justify-content: center;
   }
   .listings-token-table {
     width: 100%;
@@ -1125,18 +1209,10 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     gap: 0.5rem;
     align-items: center;
   }
-  .listing-card__actions button,
-  .listing-card__actions a {
-    border-radius: 999px;
-    border: 1px solid var(--pill-border);
-    background-color: var(--pill-bg);
-    color: var(--pill-text);
-    padding: 0.35rem 0.85rem;
-    font-weight: 600;
-    cursor: pointer;
+  .listing-card__actions .hub-button {
     text-decoration: none;
   }
-  .listing-card__actions button[disabled] {
+  .listing-card__actions .hub-button[disabled] {
     opacity: 0.5;
     cursor: not-allowed;
   }
@@ -1144,12 +1220,6 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
-    border-radius: 999px;
-    padding: 0.2rem 0.6rem;
-    font-size: 0.85rem;
-    border: 1px solid var(--pill-border);
-    background-color: var(--pill-bg);
-    color: var(--pill-text);
   }
   .listings-message {
     margin: 0.5rem 0 1rem;
@@ -1172,16 +1242,10 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     gap: 0.75rem;
     margin: 1rem 0;
   }
-  .analytics-actions button {
-    border-radius: 999px;
-    border: 1px solid var(--pill-border);
-    background-color: var(--pill-bg);
-    color: var(--pill-text);
-    padding: 0.4rem 1rem;
-    font-weight: 600;
-    cursor: pointer;
+  .analytics-actions .hub-button {
+    justify-content: center;
   }
-  .analytics-actions button[disabled] {
+  .analytics-actions .hub-button[disabled] {
     opacity: 0.6;
     cursor: not-allowed;
   }
@@ -1211,16 +1275,10 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     gap: 0.75rem;
     margin: 1rem 0;
   }
-  .reminders-actions button {
-    border-radius: 999px;
-    border: 1px solid var(--pill-border);
-    background-color: var(--pill-bg);
-    color: var(--pill-text);
-    padding: 0.4rem 1rem;
-    font-weight: 600;
-    cursor: pointer;
+  .reminders-actions .hub-button {
+    justify-content: center;
   }
-  .reminders-actions button[disabled] {
+  .reminders-actions .hub-button[disabled] {
     opacity: 0.6;
     cursor: not-allowed;
   }
@@ -1239,16 +1297,10 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     gap: 0.75rem;
     margin: 1rem 0 0.5rem;
   }
-  .shortlist-actions button {
-    border-radius: 999px;
-    border: 1px solid var(--pill-border);
-    background-color: var(--pill-bg);
-    color: var(--pill-text);
-    padding: 0.4rem 1rem;
-    font-weight: 600;
-    cursor: pointer;
+  .shortlist-actions .hub-button {
+    justify-content: center;
   }
-  .shortlist-actions button[disabled] {
+  .shortlist-actions .hub-button[disabled] {
     opacity: 0.6;
     cursor: not-allowed;
   }
@@ -1383,19 +1435,6 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
   .references ul {
     padding-left: 1rem;
   }
-  .link-button {
-    background: none;
-    border: none;
-    color: var(--accent);
-    cursor: pointer;
-    padding: 0;
-    font: inherit;
-    text-decoration: underline;
-  }
-  .link-button:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
   .application-detail,
   .application-actions {
     margin-top: 1.5rem;
@@ -1508,6 +1547,80 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
   .application-detail__error strong {
     display: block;
     margin-bottom: 0.35rem;
+  }
+  @media (max-width: 720px) {
+    header,
+    main,
+    footer {
+      padding: 1.75rem 1rem;
+    }
+    .header-actions {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .header-actions .hub-button {
+      width: 100%;
+      justify-content: center;
+    }
+    .primary-nav {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 0.5rem;
+    }
+    .primary-nav a {
+      justify-content: center;
+    }
+    .filters {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .filters label {
+      width: 100%;
+    }
+    .filters__actions {
+      width: 100%;
+      justify-content: stretch;
+    }
+    .filters__actions .hub-button {
+      width: 100%;
+    }
+    .pagination {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.5rem;
+    }
+    .pagination .hub-button {
+      width: 100%;
+    }
+    .application-actions {
+      margin-top: 1rem;
+    }
+    .application-actions__form {
+      grid-template-columns: 1fr;
+    }
+    .listings-token-actions {
+      justify-content: stretch;
+    }
+    .listings-token-actions .hub-button {
+      width: 100%;
+    }
+    .shortlist-actions,
+    .analytics-actions,
+    .reminders-actions {
+      justify-content: stretch;
+    }
+    .shortlist-actions .hub-button,
+    .analytics-actions .hub-button,
+    .reminders-actions .hub-button {
+      width: 100%;
+    }
+    .listing-card__actions {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .listing-card__actions .hub-button {
+      width: 100%;
+    }
   }
   [hidden] {
     display: none !important;
@@ -3129,7 +3242,8 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               const actionCell = document.createElement('td');
               const viewButton = document.createElement('button');
               viewButton.type = 'button';
-              viewButton.className = 'link-button';
+              viewButton.className = 'hub-button';
+              viewButton.dataset.variant = 'ghost';
               viewButton.textContent = 'View details';
               viewButton.setAttribute('data-shortlist-view', jobId);
               actionCell.appendChild(viewButton);
@@ -3995,6 +4109,8 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               link.href = listing.url;
               link.target = '_blank';
               link.rel = 'noopener noreferrer';
+              link.className = 'hub-button';
+              link.dataset.variant = 'ghost';
               link.textContent = 'View listing';
               actions.appendChild(link);
             }
@@ -4002,18 +4118,22 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             if (!listing.ingested) {
               const ingestButton = document.createElement('button');
               ingestButton.type = 'button';
+              ingestButton.className = 'hub-button';
               ingestButton.textContent = 'Ingest listing';
               ingestButton.setAttribute('data-listings-action', 'ingest');
               ingestButton.setAttribute('data-listing-id', listing.jobId || '');
               actions.appendChild(ingestButton);
             } else {
               const badge = document.createElement('span');
-              badge.className = 'listing-card__badge';
+              badge.className = 'hub-status-badge listing-card__badge';
+              badge.dataset.variant = 'success';
               badge.textContent = 'Ingested';
               actions.appendChild(badge);
               if (!listing.archived) {
                 const archiveButton = document.createElement('button');
                 archiveButton.type = 'button';
+                archiveButton.className = 'hub-button';
+                archiveButton.dataset.variant = 'danger';
                 archiveButton.textContent = 'Archive';
                 archiveButton.setAttribute('data-listings-action', 'archive');
                 archiveButton.setAttribute('data-listing-id', listing.jobId || '');
@@ -5788,7 +5908,8 @@ function buildCommandLogEntry({
 }
 
 function logCommandTelemetry(logger, level, details, transport) {
-  const fn = logger && typeof logger[level] === "function" ? logger[level] : undefined;
+  const fn =
+    logger && typeof logger[level] === "function" ? logger[level] : undefined;
   if (!fn && !transport) return;
   try {
     const entry = buildCommandLogEntry(details);
@@ -5857,7 +5978,9 @@ export function createWebApp({
   }
   const redactionMiddleware = createRedactionMiddleware({ logger });
   const logTransportSender =
-    logTransport && typeof logTransport.send === "function" ? logTransport : null;
+    logTransport && typeof logTransport.send === "function"
+      ? logTransport
+      : null;
   const availableCommands = new Set(
     ALLOW_LISTED_COMMANDS.filter(
       (name) => typeof commandAdapter?.[name] === "function",
@@ -5982,7 +6105,10 @@ export function createWebApp({
         ];
         if (entry.integrity) {
           const integrityAttr = escapeHtml(entry.integrity);
-          attributes.push(`integrity="${integrityAttr}"`, 'crossorigin="anonymous"');
+          attributes.push(
+            `integrity="${integrityAttr}"`,
+            'crossorigin="anonymous"',
+          );
         }
         return `<script ${attributes.join(" ")}></script>`;
       })
@@ -6008,8 +6134,9 @@ export function createWebApp({
         </p>
         <button
           type="button"
-          class="theme-toggle-button"
+          class="hub-button theme-toggle-button"
           data-theme-toggle
+          data-variant="ghost"
           aria-pressed="false"
         >
           <span aria-hidden="true">🌓</span>
@@ -6131,14 +6258,27 @@ export function createWebApp({
             />
           </label>
           <div class="filters__actions">
-            <button type="submit">Apply filters</button>
-            <button type="button" data-shortlist-reset data-variant="ghost">Reset</button>
+            <button type="submit" class="hub-button">Apply filters</button>
+            <button
+              type="button"
+              class="hub-button"
+              data-shortlist-reset
+              data-variant="ghost"
+            >
+              Reset
+            </button>
           </div>
         </form>
         <div class="shortlist-actions" data-shortlist-actions>
-          <button type="button" data-recruiter-open>New recruiter outreach</button>
-          <button type="button" data-shortlist-export-json>Download JSON</button>
-          <button type="button" data-shortlist-export-csv>Download CSV</button>
+          <button type="button" class="hub-button" data-recruiter-open>
+            New recruiter outreach
+          </button>
+          <button type="button" class="hub-button" data-shortlist-export-json>
+            Download JSON
+          </button>
+          <button type="button" class="hub-button" data-shortlist-export-csv>
+            Download CSV
+          </button>
           <p class="shortlist-actions__message" data-shortlist-export-message hidden></p>
         </div>
         <div class="recruiter-modal" data-recruiter-modal hidden>
@@ -6171,25 +6311,32 @@ export function createWebApp({
                   required
                 ></textarea>
               </label>
-              <div class="recruiter-modal__actions">
-                <button type="submit" data-recruiter-submit>Save outreach</button>
+            <div class="recruiter-modal__actions">
+                <button type="submit" class="hub-button" data-recruiter-submit>
+                  Save outreach
+                </button>
                 <button
                   type="button"
+                  class="hub-button"
                   data-recruiter-cancel
                   data-recruiter-close
                   data-variant="ghost"
                 >
                   Cancel
                 </button>
-              </div>
+            </div>
             </form>
             <p class="recruiter-modal__message" data-recruiter-message hidden></p>
             <dl class="recruiter-modal__preview" data-recruiter-preview hidden></dl>
           </div>
         </div>
         <div class="reminders-actions">
-          <button type="button" data-reminders-export>Calendar Sync</button>
-          <button type="button" data-reminders-report hidden>Report bug</button>
+          <button type="button" class="hub-button" data-reminders-export>
+            Calendar Sync
+          </button>
+          <button type="button" class="hub-button" data-reminders-report hidden>
+            Report bug
+          </button>
           <p class="reminders-actions__message" data-reminders-message hidden></p>
         </div>
         <div
@@ -6201,7 +6348,7 @@ export function createWebApp({
           <div data-state-slot="ready">
             <p data-shortlist-empty hidden>No matching applications found.</p>
             <div class="table-container">
-              <table class="shortlist-table" data-shortlist-table hidden>
+              <table class="hub-table shortlist-table" data-shortlist-table hidden>
                 <thead>
                   <tr>
                     <th scope="col">Job ID</th>
@@ -6218,9 +6365,9 @@ export function createWebApp({
               </table>
             </div>
             <div class="pagination" data-shortlist-pagination hidden>
-              <button type="button" data-shortlist-prev>Previous</button>
+              <button type="button" class="hub-button" data-shortlist-prev>Previous</button>
               <span class="pagination-info" data-shortlist-range>Showing 0 of 0</span>
-              <button type="button" data-shortlist-next>Next</button>
+              <button type="button" class="hub-button" data-shortlist-next>Next</button>
             </div>
             <div class="application-detail" data-application-detail hidden>
               <div
@@ -6258,7 +6405,7 @@ export function createWebApp({
                 <p class="application-detail__tags" data-detail-tags></p>
                 <p class="application-detail__attachments" data-detail-attachments></p>
                 <div class="application-detail__section" data-detail-discard></div>
-                <ul class="application-detail__events" data-detail-events></ul>
+                <ul class="hub-timeline application-detail__events" data-detail-events></ul>
               </div>
             </div>
             <div class="application-actions" data-application-actions hidden>
@@ -6284,8 +6431,15 @@ export function createWebApp({
                   ></textarea>
                 </label>
                 <div class="filters__actions">
-                  <button type="submit">Save status</button>
-                  <button type="button" data-action-clear data-variant="ghost">Clear</button>
+                  <button type="submit" class="hub-button">Save status</button>
+                  <button
+                    type="button"
+                    class="hub-button"
+                    data-action-clear
+                    data-variant="ghost"
+                  >
+                    Clear
+                  </button>
                 </div>
                 <p class="application-actions__message" data-action-message hidden></p>
               </form>
@@ -6334,12 +6488,19 @@ export function createWebApp({
                 placeholder="Paste API token"
               />
             </label>
-            <div class="listings-token-actions">
-              <button type="submit" data-listings-token-submit>Save token</button>
-              <button type="button" data-listings-token-clear data-variant="ghost">
+          <div class="listings-token-actions">
+              <button type="submit" class="hub-button" data-listings-token-submit>
+                Save token
+              </button>
+              <button
+                type="button"
+                class="hub-button"
+                data-listings-token-clear
+                data-variant="ghost"
+              >
                 Clear token
               </button>
-            </div>
+          </div>
           </form>
           <p
             class="listings-message"
@@ -6348,7 +6509,7 @@ export function createWebApp({
             hidden
           ></p>
           <div>
-            <table class="listings-token-table" data-listings-token-table hidden>
+            <table class="hub-table listings-token-table" data-listings-token-table hidden>
               <thead>
                 <tr>
                   <th scope="col">Provider</th>
@@ -6404,8 +6565,17 @@ export function createWebApp({
             </select>
           </label>
           <div class="filters__actions">
-            <button type="submit" data-listings-submit>Fetch listings</button>
-            <button type="button" data-listings-reset data-variant="ghost">Reset</button>
+            <button type="submit" class="hub-button" data-listings-submit>
+              Fetch listings
+            </button>
+            <button
+              type="button"
+              class="hub-button"
+              data-listings-reset
+              data-variant="ghost"
+            >
+              Reset
+            </button>
           </div>
         </form>
         <p class="listings-message" data-listings-message hidden></p>
@@ -6419,9 +6589,9 @@ export function createWebApp({
             <p class="listings-empty" data-listings-empty hidden>No listings match your filters.</p>
             <div class="listings-grid" data-listings-results></div>
             <div class="pagination" data-listings-pagination hidden>
-              <button type="button" data-listings-prev>Previous</button>
+              <button type="button" class="hub-button" data-listings-prev>Previous</button>
               <span class="pagination-info" data-listings-range>Showing 0 of 0</span>
-              <button type="button" data-listings-next>Next</button>
+              <button type="button" class="hub-button" data-listings-next>Next</button>
             </div>
           </div>
           <div data-state-slot="loading" hidden>
@@ -6494,8 +6664,12 @@ export function createWebApp({
             </div>
             <p data-analytics-missing hidden></p>
             <div class="analytics-actions">
-              <button type="button" data-analytics-export-json>Download JSON</button>
-              <button type="button" data-analytics-export-csv>Download CSV</button>
+              <button type="button" class="hub-button" data-analytics-export-json>
+                Download JSON
+              </button>
+              <button type="button" class="hub-button" data-analytics-export-csv>
+                Download CSV
+              </button>
               <label class="analytics-actions__toggle">
                 <input
                   type="checkbox"
@@ -6508,7 +6682,7 @@ export function createWebApp({
               <p class="analytics-actions__message" data-analytics-export-message hidden></p>
             </div>
             <div class="table-container">
-              <table class="shortlist-table" data-analytics-table hidden>
+            <table class="hub-table shortlist-table" data-analytics-table hidden>
                 <thead>
                   <tr>
                     <th scope="col">Stage</th>
@@ -6657,9 +6831,7 @@ export function createWebApp({
           respondUnauthorized();
           return;
         }
-        tokenValue = headerValue
-          .slice(authOptions.schemePrefixLength)
-          .trim();
+        tokenValue = headerValue.slice(authOptions.schemePrefixLength).trim();
         if (!tokenValue) {
           respondUnauthorized();
           return;
@@ -6854,7 +7026,8 @@ export function createWebApp({
             : Array.from(tokenEntry.roles ?? []);
           roleList.sort();
           const actorDisplayName =
-            typeof tokenEntry.displayName === "string" && tokenEntry.displayName.trim()
+            typeof tokenEntry.displayName === "string" &&
+            tokenEntry.displayName.trim()
               ? tokenEntry.displayName.trim()
               : undefined;
           res
@@ -6939,17 +7112,22 @@ export function createWebApp({
         const result = await commandAdapter[commandParam](payload);
         const sanitizedResult = sanitizeCommandResult(result);
         const durationMs = roundDuration(started);
-        logCommandTelemetry(logger, "info", {
-          command: commandParam,
-          status: "success",
-          httpStatus: 200,
-          durationMs,
-          payloadFields,
-          clientIp,
-          userAgent,
-          result: sanitizedResult,
-          payload: redactedPayload,
-        }, logTransportSender);
+        logCommandTelemetry(
+          logger,
+          "info",
+          {
+            command: commandParam,
+            status: "success",
+            httpStatus: 200,
+            durationMs,
+            payloadFields,
+            clientIp,
+            userAgent,
+            result: sanitizedResult,
+            payload: redactedPayload,
+          },
+          logTransportSender,
+        );
         res.status(200).json(sanitizedResult);
         await recordAudit({
           status: "success",
@@ -7011,18 +7189,23 @@ export function createWebApp({
 
         const responseBody = report ? { ...response, report } : response;
 
-        logCommandTelemetry(logger, "error", {
-          command: commandParam,
-          status: "error",
-          httpStatus: 502,
-          durationMs,
-          payloadFields,
-          clientIp,
-          userAgent,
-          result: responseBody,
-          errorMessage: response?.error,
-          payload: redactedPayload,
-        }, logTransportSender);
+        logCommandTelemetry(
+          logger,
+          "error",
+          {
+            command: commandParam,
+            status: "error",
+            httpStatus: 502,
+            durationMs,
+            payloadFields,
+            clientIp,
+            userAgent,
+            result: responseBody,
+            errorMessage: response?.error,
+            payload: redactedPayload,
+          },
+          logTransportSender,
+        );
         res.status(502).json(responseBody);
         await recordAudit({
           status: "error",
@@ -7075,13 +7258,12 @@ export function createWebApp({
       if (authOptions.requireScheme && authOptions.scheme) {
         res.set("WWW-Authenticate", `${authOptions.scheme} realm="jobbot-web"`);
       }
-      res
-        .status(401)
-        .json({ error: "Invalid or missing authorization token" });
+      res.status(401).json({ error: "Invalid or missing authorization token" });
     };
 
     const providedAuth = req.get(authOptions.headerName);
-    const headerValue = typeof providedAuth === "string" ? providedAuth.trim() : "";
+    const headerValue =
+      typeof providedAuth === "string" ? providedAuth.trim() : "";
     if (!headerValue) {
       respondUnauthorized();
       return;
