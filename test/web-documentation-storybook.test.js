@@ -42,4 +42,11 @@ describe('web documentation backlog', () => {
     expect(storybookDoc).toContain('status-panel__loading');
     expect(storybookDoc).toContain('status-panel__error');
   });
+
+  it('documents the recent payload history endpoint', async () => {
+    const apiDoc = await readFile('docs/web-api-reference.md');
+    expect(apiDoc).toMatch(/GET \/commands\/payloads\/recent/);
+    expect(apiDoc).toMatch(/sanitized payload history/i);
+    expect(apiDoc).toMatch(/test\/web-documentation-storybook\.test\.js/);
+  });
 });

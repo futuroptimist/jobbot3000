@@ -55,6 +55,32 @@ response body includes a `revoked` boolean and issues a replacement session cook
 `X-Jobbot-Session-Id` header. Clients should discard any cached identifiers and use the replacement
 cookie for subsequent requests.
 
+### GET /commands/payloads/recent
+
+Returns the sanitized payload history for the current client. Entries mirror the payloads supplied to
+recent `/commands/:command` requests after control characters are stripped, keys trimmed, and empty
+values removed. The response shape is:
+
+```jsonc
+{
+  "entries": [
+    {
+      "command": "track-record",
+      "timestamp": "2025-11-05T17:02:14.331Z",
+      "payload": { "jobId": "swe-123", "status": "interview" },
+    },
+  ],
+}
+```
+
+Authentication requirements mirror `/commands/:command`: when API tokens are configured, callers must
+present the same header used for command execution. Guests must include the CSRF header/cookie pair
+issued by the server. Responses always return the requesting client's history—
+payloads submitted by other tokens or sessions are not visible.
+
+Regression coverage in [`test/web-documentation-storybook.test.js`](../test/web-documentation-storybook.test.js)
+asserts this endpoint remains documented alongside the command catalogue.
+
 ### GET /assets/status-hub.js
 
 Serves the client-side controller that drives status panels, navigation, and download buttons. The
