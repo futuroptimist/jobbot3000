@@ -7,11 +7,12 @@ installations.
 
 1. Clone the repository and run `npm ci`.
 2. Copy `.env.example` to `.env.local` (see [Configuration Cookbook](./configuration-cookbook.md)).
-3. Enable the native CLI bridge so the status hub can execute commands directly:
+3. The development server now enables the native CLI bridge automatically. Start it with
+   `npm run dev` and the status hub will invoke CLI workflows out of the box. Use the
+   new opt-out flag if you need to run without spawning the CLI (for example, when
+   demoing the UI with mocks only):
    ```bash
-   JOBBOT_WEB_ENABLE_NATIVE_CLI=1 npm run dev
-   # or
-   npm run web:server -- --enable-native-cli
+   npm run web:server -- --disable-native-cli
    ```
 4. Capture the printed CSRF header + token from the startup log. Attach the header (for example,
    `X-Jobbot-Csrf`) to every POST request alongside the token value so the adapter accepts CLI
@@ -35,6 +36,8 @@ installations.
    manager. Rotate the values after deployments or personnel changes.
 5. Configure a process manager (systemd) to run
    `node scripts/web-server.js --env production --enable-native-cli` and restart on failure.
+   The bridge remains opt-in for staging/production environments, so the explicit flag
+   (or `JOBBOT_WEB_ENABLE_NATIVE_CLI=1`) is still required outside local development.
 6. Point a reverse proxy (nginx/Caddy) at the web server port (default 8080) with HTTPS
    certificates.
 7. Mount persistent volumes for `data/` and `/var/log/jobbot/` so audit logs and job snapshots

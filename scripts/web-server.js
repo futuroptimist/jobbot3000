@@ -3,6 +3,7 @@ import '../src/shared/config/initialize-env.js';
 import fs from 'node:fs/promises';
 import process from 'node:process';
 import { loadWebConfig } from '../src/web/config.js';
+import { resolveEnableNativeCli } from '../src/web/resolve-native-cli-flag.js';
 import { startWebServer } from '../src/web/server.js';
 import { createDefaultHealthChecks } from '../src/web/health-checks.js';
 
@@ -12,15 +13,11 @@ function getFlag(args, name) {
   return args[index + 1];
 }
 
-function hasFlag(args, name) {
-  return args.includes(name);
-}
-
 function printUsage() {
   console.error(
     'Usage: node scripts/web-server.js [--env <environment>] [--host <value>] [--port <number>] ' +
       '[--rate-limit-window-ms <number>] [--rate-limit-max <number>] [--csrf-header <value>] ' +
-      '[--csrf-token <value>] [--enable-native-cli]',
+      '[--csrf-token <value>] [--enable-native-cli] [--disable-native-cli]',
   );
 }
 
@@ -33,8 +30,6 @@ async function main() {
   const rateMaxOverride = getFlag(args, '--rate-limit-max');
   const csrfHeaderOverride = getFlag(args, '--csrf-header');
   const csrfTokenOverride = getFlag(args, '--csrf-token');
-  const enableNativeCli = hasFlag(args, '--enable-native-cli') ? true : undefined;
-
   let version = 'dev';
   try {
     const packageJsonUrl = new URL('../package.json', import.meta.url);
@@ -67,6 +62,12 @@ async function main() {
   }
 
   const healthChecks = createDefaultHealthChecks();
+
+  const enableNativeCli = resolveEnableNativeCli({
+    args,
+    env: process.env,
+    configEnv: config?.env,
+  });
 
   const server = await startWebServer({
     host: config.host,
