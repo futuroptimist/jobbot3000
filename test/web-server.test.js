@@ -401,6 +401,74 @@ describe("web server status page", () => {
     );
   });
 
+  it("exposes reusable component classes for status hub interactions", async () => {
+    const server = await startServer();
+
+    const homepage = await fetch(`${server.url}/`);
+    expect(homepage.status).toBe(200);
+    const html = await homepage.text();
+    const dom = new JSDOM(html);
+    const { document } = dom.window;
+
+    const exportButton = document.querySelector(
+      'button.button[data-shortlist-export-json]',
+    );
+    expect(exportButton).not.toBeNull();
+
+    const ghostResetButton = document.querySelector(
+      'button.button[data-shortlist-reset][data-variant="ghost"]',
+    );
+    expect(ghostResetButton).not.toBeNull();
+
+    const table = document.querySelector("table.table.shortlist-table");
+    expect(table).not.toBeNull();
+
+    const timeline = document.querySelector("ul.timeline[data-detail-events]");
+    expect(timeline).not.toBeNull();
+
+    const stylesheetResponse = await fetch(`${server.url}/assets/status-hub.css`);
+    expect(stylesheetResponse.status).toBe(200);
+    const css = await stylesheetResponse.text();
+    expect(css).toContain(".button");
+    expect(css).toContain(".table");
+    expect(css).toContain(".timeline");
+    expect(css).toContain(".status-badge");
+
+    const scriptResponse = await fetch(`${server.url}/assets/status-hub.js`);
+    expect(scriptResponse.status).toBe(200);
+    const script = await scriptResponse.text();
+    expect(script).toContain("status-badge");
+  });
+
+  it("provides responsive layout styles and mobile touch targets", async () => {
+    const server = await startServer();
+
+    const response = await fetch(`${server.url}/assets/status-hub.css`);
+    expect(response.status).toBe(200);
+    const css = await response.text();
+
+    expect(css).toMatch(/\.button[^}]*min-height:\s*44px/);
+    expect(css).toMatch(/\.theme-toggle-button[^}]*min-height:\s*44px/);
+    expect(css).toMatch(
+      /\.listings-grid[^}]*grid-template-columns:[^;]*minmax\(26\dpx,\s*1fr\)/,
+    );
+    const filtersBreakpointPattern = new RegExp(
+      [
+        "@media\\s*\\(max-width:\\s*640px\\)[^{}]*\\{",
+        "[\\s\\S]*?\\.filters__actions[^}]*flex-direction:\\s*column",
+      ].join(""),
+    );
+    const analyticsBreakpointPattern = new RegExp(
+      [
+        "@media\\s*\\(max-width:\\s*640px\\)[^{}]*\\{",
+        "[\\s\\S]*?\\.analytics-actions[^}]*flex-direction:\\s*column",
+      ].join(""),
+    );
+
+    expect(css).toMatch(filtersBreakpointPattern);
+    expect(css).toMatch(analyticsBreakpointPattern);
+  });
+
   it("applies strict security headers to the status hub", async () => {
     const server = await startServer();
 

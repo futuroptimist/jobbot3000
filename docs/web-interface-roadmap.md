@@ -148,7 +148,20 @@
   stylesheet contract by asserting the exported CSS contains each semantic token and applies the
   surface color to status panels, keeping the theme system verifiable from tests.
 - Create reusable components (buttons, tables, timeline, status badges) adhering to the token system.
+  _Implemented (2025-11-17):_ The status hub now exposes shared `.button`,
+  `.table`, `.timeline`, and `.status-badge` classes wired to the palette tokens.
+  Markup across shortlist, listings, and analytics panels reuses the component
+  classes, and the listings plugin host emits badges with the shared styling.
+  Regression coverage in [`test/web-server.test.js`](../test/web-server.test.js)
+  asserts both the HTML and `/assets/status-hub.css` export the component
+  classes so future UI changes keep the reusable elements intact.
 - Provide responsive layouts using a grid/flex approach; ensure minimum touch target sizes for mobile.
+  _Implemented (2025-11-18):_ The status hub CSS now enforces responsive grids,
+  mobile-first stacking for action toolbars, and 44px touch targets across
+  navigation and form controls. Regression coverage in
+  [`test/web-server.test.js`](../test/web-server.test.js) exercises the
+  stylesheet export to confirm the responsive breakpoints and touch target rules
+  remain in place.
 - Integrate a global keyboard navigation layer and focus outlines for accessibility.
   _Implemented (2025-10-14):_ The status hub now listens for left/right arrow keys and Home/End
   shortcuts, cycling the active section while keeping keyboard focus on the navigation pills. The

@@ -768,6 +768,37 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     color: var(--pill-text);
     border: 1px solid var(--pill-border);
   }
+  .button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    border-radius: 999px;
+    border: 1px solid var(--pill-border);
+    background-color: var(--pill-bg);
+    color: var(--pill-text);
+    padding: 0.5rem 1.15rem;
+    min-height: 44px;
+    min-width: 44px;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out,
+      color 0.2s ease-in-out;
+  }
+  .button:hover {
+    background-color: var(--pill-bg-hover);
+  }
+  .button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .button[data-variant='ghost'] {
+    background-color: transparent;
+    border-color: var(--card-border);
+    color: var(--foreground);
+  }
   .theme-toggle-button {
     display: inline-flex;
     align-items: center;
@@ -777,7 +808,9 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     border-radius: 999px;
     color: var(--pill-text);
     cursor: pointer;
-    padding: 0.35rem 0.85rem;
+    padding: 0.45rem 0.95rem;
+    min-height: 44px;
+    min-width: 44px;
     font: inherit;
     transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out;
   }
@@ -797,13 +830,14 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.35rem 0.85rem;
+    padding: 0.45rem 1rem;
     border-radius: 999px;
     border: 1px solid transparent;
     color: var(--foreground);
     background-color: transparent;
     text-decoration: none;
     font-weight: 500;
+    min-height: 44px;
   }
   .primary-nav a[aria-current='page'] {
     background-color: var(--pill-bg);
@@ -890,8 +924,8 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     margin-bottom: 0.35rem;
   }
   .filters {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 1rem;
     margin: 1.5rem 0 1rem;
   }
@@ -900,7 +934,7 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     flex-direction: column;
     gap: 0.35rem;
     font-size: 0.95rem;
-    min-width: 160px;
+    min-width: 0;
     color: var(--muted);
   }
   .filters input {
@@ -930,27 +964,18 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     align-items: center;
     gap: 0.75rem;
   }
-  .filters__actions button {
-    border-radius: 999px;
-    border: 1px solid var(--pill-border);
-    background-color: var(--pill-bg);
-    color: var(--pill-text);
-    padding: 0.4rem 1rem;
-    font-weight: 600;
-    cursor: pointer;
+  .filters__actions .button {
+    gap: 0.35rem;
   }
-  .filters__actions button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  .filters__actions button[data-variant='ghost'] {
-    background-color: transparent;
-    border-color: var(--card-border);
-    color: var(--foreground);
-  }
-  .shortlist-table {
+  .table {
     width: 100%;
     border-collapse: collapse;
+  }
+  .table th,
+  .table td {
+    text-align: left;
+  }
+  .shortlist-table {
     border-radius: 1rem;
     overflow: hidden;
     background-color: rgba(15, 23, 42, 0.3);
@@ -981,22 +1006,13 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     margin-top: 1rem;
     color: var(--muted);
   }
-  .pagination button { 
-    border-radius: 999px;
-    border: 1px solid var(--pill-border);
-    background-color: var(--pill-bg);
-    color: var(--pill-text);
+  .pagination .button {
     padding: 0.35rem 0.85rem;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  .pagination button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
   .listings-grid {
     display: grid;
     gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   }
   .listings-tokens {
     border: 1px solid var(--card-border);
@@ -1043,23 +1059,8 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     flex-wrap: wrap;
     gap: 0.75rem;
   }
-  .listings-token-actions button {
-    border-radius: 999px;
-    border: 1px solid var(--pill-border);
-    background-color: var(--pill-bg);
-    color: var(--pill-text);
+  .listings-token-actions .button {
     padding: 0.4rem 1rem;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  .listings-token-actions button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  .listings-token-actions button[data-variant='ghost'] {
-    background-color: transparent;
-    border-color: var(--card-border);
-    color: var(--foreground);
   }
   .listings-token-table {
     width: 100%;
@@ -1106,6 +1107,54 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     color: var(--muted);
     font-size: 0.95rem;
   }
+  @media (max-width: 640px) {
+    header,
+    main,
+    footer {
+      padding: 1.5rem 1rem;
+    }
+    .header-actions {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.75rem;
+    }
+    .theme-toggle-button {
+      width: 100%;
+      justify-content: center;
+    }
+    .primary-nav {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .primary-nav a {
+      width: 100%;
+      justify-content: center;
+    }
+    .filters {
+      grid-template-columns: 1fr;
+    }
+    .filters__actions,
+    .analytics-actions,
+    .reminders-actions,
+    .shortlist-actions,
+    .listings-token-actions,
+    .pagination {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.65rem;
+    }
+    .filters__actions .button,
+    .analytics-actions button,
+    .reminders-actions button,
+    .shortlist-actions button,
+    .listings-token-actions .button,
+    .pagination .button {
+      width: 100%;
+    }
+    .listings-grid {
+      grid-template-columns: 1fr;
+    }
+  }
   .listing-card__snippet {
     margin: 0;
   }
@@ -1125,22 +1174,11 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     gap: 0.5rem;
     align-items: center;
   }
-  .listing-card__actions button,
-  .listing-card__actions a {
-    border-radius: 999px;
-    border: 1px solid var(--pill-border);
-    background-color: var(--pill-bg);
-    color: var(--pill-text);
+  .listing-card__actions .button {
     padding: 0.35rem 0.85rem;
-    font-weight: 600;
-    cursor: pointer;
-    text-decoration: none;
   }
-  .listing-card__actions button[disabled] {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  .listing-card__badge {
+  .listing-card__badge,
+  .status-badge {
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
@@ -1177,7 +1215,9 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     border: 1px solid var(--pill-border);
     background-color: var(--pill-bg);
     color: var(--pill-text);
-    padding: 0.4rem 1rem;
+    padding: 0.5rem 1.15rem;
+    min-height: 44px;
+    min-width: 44px;
     font-weight: 600;
     cursor: pointer;
   }
@@ -1216,7 +1256,9 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     border: 1px solid var(--pill-border);
     background-color: var(--pill-bg);
     color: var(--pill-text);
-    padding: 0.4rem 1rem;
+    padding: 0.5rem 1.15rem;
+    min-height: 44px;
+    min-width: 44px;
     font-weight: 600;
     cursor: pointer;
   }
@@ -1244,7 +1286,9 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     border: 1px solid var(--pill-border);
     background-color: var(--pill-bg);
     color: var(--pill-text);
-    padding: 0.4rem 1rem;
+    padding: 0.5rem 1.15rem;
+    min-height: 44px;
+    min-width: 44px;
     font-weight: 600;
     cursor: pointer;
   }
@@ -1481,12 +1525,29 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
   }
   .application-detail__events {
     margin: 0;
+  }
+  .timeline {
+    list-style: none;
+    margin: 0;
     padding-left: 1.25rem;
+    border-left: 2px solid var(--pill-border);
   }
-  .application-detail__events li {
+  .timeline li {
     margin-bottom: 0.75rem;
+    position: relative;
+    padding-left: 1rem;
   }
-  .application-detail__events li:last-child {
+  .timeline li::before {
+    content: '';
+    position: absolute;
+    left: -1.25rem;
+    top: 0.4rem;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background-color: var(--accent);
+  }
+  .timeline li:last-child {
     margin-bottom: 0;
   }
   .application-detail__event-header {
@@ -3995,6 +4056,7 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               link.href = listing.url;
               link.target = '_blank';
               link.rel = 'noopener noreferrer';
+              link.className = 'button';
               link.textContent = 'View listing';
               actions.appendChild(link);
             }
@@ -4002,18 +4064,20 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             if (!listing.ingested) {
               const ingestButton = document.createElement('button');
               ingestButton.type = 'button';
+              ingestButton.className = 'button';
               ingestButton.textContent = 'Ingest listing';
               ingestButton.setAttribute('data-listings-action', 'ingest');
               ingestButton.setAttribute('data-listing-id', listing.jobId || '');
               actions.appendChild(ingestButton);
             } else {
               const badge = document.createElement('span');
-              badge.className = 'listing-card__badge';
+              badge.className = 'status-badge listing-card__badge';
               badge.textContent = 'Ingested';
               actions.appendChild(badge);
               if (!listing.archived) {
                 const archiveButton = document.createElement('button');
                 archiveButton.type = 'button';
+                archiveButton.className = 'button';
                 archiveButton.textContent = 'Archive';
                 archiveButton.setAttribute('data-listings-action', 'archive');
                 archiveButton.setAttribute('data-listing-id', listing.jobId || '');
@@ -6131,14 +6195,27 @@ export function createWebApp({
             />
           </label>
           <div class="filters__actions">
-            <button type="submit">Apply filters</button>
-            <button type="button" data-shortlist-reset data-variant="ghost">Reset</button>
+            <button type="submit" class="button">Apply filters</button>
+            <button
+              type="button"
+              class="button"
+              data-shortlist-reset
+              data-variant="ghost"
+            >
+              Reset
+            </button>
           </div>
         </form>
         <div class="shortlist-actions" data-shortlist-actions>
-          <button type="button" data-recruiter-open>New recruiter outreach</button>
-          <button type="button" data-shortlist-export-json>Download JSON</button>
-          <button type="button" data-shortlist-export-csv>Download CSV</button>
+          <button type="button" class="button" data-recruiter-open>
+            New recruiter outreach
+          </button>
+          <button type="button" class="button" data-shortlist-export-json>
+            Download JSON
+          </button>
+          <button type="button" class="button" data-shortlist-export-csv>
+            Download CSV
+          </button>
           <p class="shortlist-actions__message" data-shortlist-export-message hidden></p>
         </div>
         <div class="recruiter-modal" data-recruiter-modal hidden>
@@ -6172,9 +6249,10 @@ export function createWebApp({
                 ></textarea>
               </label>
               <div class="recruiter-modal__actions">
-                <button type="submit" data-recruiter-submit>Save outreach</button>
+                <button type="submit" class="button" data-recruiter-submit>Save outreach</button>
                 <button
                   type="button"
+                  class="button"
                   data-recruiter-cancel
                   data-recruiter-close
                   data-variant="ghost"
@@ -6188,8 +6266,12 @@ export function createWebApp({
           </div>
         </div>
         <div class="reminders-actions">
-          <button type="button" data-reminders-export>Calendar Sync</button>
-          <button type="button" data-reminders-report hidden>Report bug</button>
+          <button type="button" class="button" data-reminders-export>
+            Calendar Sync
+          </button>
+          <button type="button" class="button" data-reminders-report hidden>
+            Report bug
+          </button>
           <p class="reminders-actions__message" data-reminders-message hidden></p>
         </div>
         <div
@@ -6201,7 +6283,7 @@ export function createWebApp({
           <div data-state-slot="ready">
             <p data-shortlist-empty hidden>No matching applications found.</p>
             <div class="table-container">
-              <table class="shortlist-table" data-shortlist-table hidden>
+              <table class="table shortlist-table" data-shortlist-table hidden>
                 <thead>
                   <tr>
                     <th scope="col">Job ID</th>
@@ -6218,9 +6300,9 @@ export function createWebApp({
               </table>
             </div>
             <div class="pagination" data-shortlist-pagination hidden>
-              <button type="button" data-shortlist-prev>Previous</button>
+              <button type="button" class="button" data-shortlist-prev>Previous</button>
               <span class="pagination-info" data-shortlist-range>Showing 0 of 0</span>
-              <button type="button" data-shortlist-next>Next</button>
+              <button type="button" class="button" data-shortlist-next>Next</button>
             </div>
             <div class="application-detail" data-application-detail hidden>
               <div
@@ -6258,7 +6340,7 @@ export function createWebApp({
                 <p class="application-detail__tags" data-detail-tags></p>
                 <p class="application-detail__attachments" data-detail-attachments></p>
                 <div class="application-detail__section" data-detail-discard></div>
-                <ul class="application-detail__events" data-detail-events></ul>
+                <ul class="timeline application-detail__events" data-detail-events></ul>
               </div>
             </div>
             <div class="application-actions" data-application-actions hidden>
@@ -6284,8 +6366,15 @@ export function createWebApp({
                   ></textarea>
                 </label>
                 <div class="filters__actions">
-                  <button type="submit">Save status</button>
-                  <button type="button" data-action-clear data-variant="ghost">Clear</button>
+                  <button type="submit" class="button">Save status</button>
+                  <button
+                    type="button"
+                    class="button"
+                    data-action-clear
+                    data-variant="ghost"
+                  >
+                    Clear
+                  </button>
                 </div>
                 <p class="application-actions__message" data-action-message hidden></p>
               </form>
@@ -6335,8 +6424,15 @@ export function createWebApp({
               />
             </label>
             <div class="listings-token-actions">
-              <button type="submit" data-listings-token-submit>Save token</button>
-              <button type="button" data-listings-token-clear data-variant="ghost">
+              <button type="submit" class="button" data-listings-token-submit>
+                Save token
+              </button>
+              <button
+                type="button"
+                class="button"
+                data-listings-token-clear
+                data-variant="ghost"
+              >
                 Clear token
               </button>
             </div>
@@ -6348,7 +6444,7 @@ export function createWebApp({
             hidden
           ></p>
           <div>
-            <table class="listings-token-table" data-listings-token-table hidden>
+            <table class="table listings-token-table" data-listings-token-table hidden>
               <thead>
                 <tr>
                   <th scope="col">Provider</th>
@@ -6404,8 +6500,15 @@ export function createWebApp({
             </select>
           </label>
           <div class="filters__actions">
-            <button type="submit" data-listings-submit>Fetch listings</button>
-            <button type="button" data-listings-reset data-variant="ghost">Reset</button>
+            <button type="submit" class="button" data-listings-submit>Fetch listings</button>
+            <button
+              type="button"
+              class="button"
+              data-listings-reset
+              data-variant="ghost"
+            >
+              Reset
+            </button>
           </div>
         </form>
         <p class="listings-message" data-listings-message hidden></p>
@@ -6419,9 +6522,9 @@ export function createWebApp({
             <p class="listings-empty" data-listings-empty hidden>No listings match your filters.</p>
             <div class="listings-grid" data-listings-results></div>
             <div class="pagination" data-listings-pagination hidden>
-              <button type="button" data-listings-prev>Previous</button>
+              <button type="button" class="button" data-listings-prev>Previous</button>
               <span class="pagination-info" data-listings-range>Showing 0 of 0</span>
-              <button type="button" data-listings-next>Next</button>
+              <button type="button" class="button" data-listings-next>Next</button>
             </div>
           </div>
           <div data-state-slot="loading" hidden>
@@ -6494,8 +6597,12 @@ export function createWebApp({
             </div>
             <p data-analytics-missing hidden></p>
             <div class="analytics-actions">
-              <button type="button" data-analytics-export-json>Download JSON</button>
-              <button type="button" data-analytics-export-csv>Download CSV</button>
+              <button type="button" class="button" data-analytics-export-json>
+                Download JSON
+              </button>
+              <button type="button" class="button" data-analytics-export-csv>
+                Download CSV
+              </button>
               <label class="analytics-actions__toggle">
                 <input
                   type="checkbox"
@@ -6508,7 +6615,7 @@ export function createWebApp({
               <p class="analytics-actions__message" data-analytics-export-message hidden></p>
             </div>
             <div class="table-container">
-              <table class="shortlist-table" data-analytics-table hidden>
+            <table class="table shortlist-table" data-analytics-table hidden>
                 <thead>
                   <tr>
                     <th scope="col">Stage</th>
