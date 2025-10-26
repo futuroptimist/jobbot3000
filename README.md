@@ -24,6 +24,8 @@ npm run dev
 ```
 
 That's it! The web server will start with all backend functionality enabled.
+Use `npm run web:server -- --disable-native-cli` if you want to explore the
+mock-only UI without spawning CLI subprocesses.
 
 For detailed setup, CLI usage, and environment options, see [docs/getting-started.md](docs/getting-started.md).
 
