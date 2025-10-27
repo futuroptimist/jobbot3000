@@ -29,6 +29,19 @@ mock-only UI without spawning CLI subprocesses.
 
 For detailed setup, CLI usage, and environment options, see [docs/getting-started.md](docs/getting-started.md).
 
+## Onboarding checklist
+
+New contributors can ramp up quickly by following this short checklist:
+
+1. Review the architecture map in [docs/architecture.md](docs/architecture.md) to understand how the
+   CLI, web adapter, and data stores fit together.
+2. Skim the [Configuration Cookbook](docs/configuration-cookbook.md) for required environment
+   variables and managed secret options before running commands.
+3. Run `npm ci`, `npm run lint`, and `npm run test:ci` to ensure your environment matches CI before
+   making changes.
+4. Browse the regression suites in [`test/`](test) to see how critical flows are covered and where to
+   add new scenarios.
+
 ### Recruiter reach-outs
 
 1. Save the raw email to disk, then ingest it: `node bin/ingest-recruiter.ts --source emails/recruiter.txt`.
