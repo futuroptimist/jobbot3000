@@ -22,6 +22,7 @@ function normalizeOptions(options = {}) {
     locale: options.locale,
     explanationLimit: options.explanationLimit,
     jobUrl: options.jobUrl,
+    calibration: options.calibration,
   };
 }
 
@@ -38,10 +39,18 @@ export function matchResumeToJob(resumeText, jobInput, options = {}) {
     ? parsedJob.requirements.slice()
     : [];
 
-  const { score, matched, missing, must_haves_missed, keyword_overlap, evidence } = computeFitScore(
-    resumeText,
-    requirements,
-  );
+  const normalizedOptions = normalizeOptions(options);
+  const {
+    score,
+    matched,
+    missing,
+    must_haves_missed,
+    keyword_overlap,
+    evidence,
+    calibration,
+  } = computeFitScore(resumeText, requirements, {
+    calibration: normalizedOptions.calibration,
+  });
   const blockers = Array.isArray(must_haves_missed) ? must_haves_missed.slice() : [];
 
   const payload = {
@@ -57,8 +66,6 @@ export function matchResumeToJob(resumeText, jobInput, options = {}) {
     keyword_overlap,
     evidence,
   };
-
-  const normalizedOptions = normalizeOptions(options);
   if (normalizedOptions.jobUrl) {
     payload.url = normalizedOptions.jobUrl;
   }
@@ -73,6 +80,9 @@ export function matchResumeToJob(resumeText, jobInput, options = {}) {
       locale: normalizedOptions.locale,
       limit: normalizedOptions.explanationLimit,
     });
+  }
+  if (calibration) {
+    payload.calibration = calibration;
   }
 
   return payload;

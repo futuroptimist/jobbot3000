@@ -186,6 +186,65 @@ describe('computeFitScore', () => {
     ]);
   });
 
+  it('calibrates scores via logistic regression when requested', () => {
+    const resume =
+      'Led AWS infrastructure migrations, Terraform automation, and Kubernetes SRE rotations.';
+    const requirements = [
+      'Own Amazon Web Services infrastructure',
+      'Automate Terraform workflows',
+      'Run Kubernetes site reliability rotations',
+      'Lead security clearance onboarding',
+    ];
+
+    const baseline = computeFitScore(resume, requirements);
+    const calibrated = computeFitScore(resume, requirements, { calibration: true });
+
+    expect(calibrated.score).not.toBe(baseline.score);
+    expect(calibrated.calibration).toEqual(
+      expect.objectContaining({
+        applied: true,
+        method: 'logistic',
+        baselineScore: baseline.score,
+      }),
+    );
+  });
+
+  it('allows overriding calibration weights', () => {
+    const resume = 'Broad operations and systems mentoring background.';
+    const requirements = [
+      'Hands-on distributed systems expertise',
+      'Deep Amazon Web Services experience',
+      'Must have security clearance',
+      'Mentor engineering teams',
+    ];
+
+    const custom = computeFitScore(resume, requirements, {
+      calibration: {
+        intercept: -5,
+        coverageWeight: 7.5,
+        missingWeight: -3,
+        blockerWeight: -4,
+        keywordWeight: 0.5,
+        requirementWeight: 0.1,
+      },
+    });
+
+    expect(custom.calibration).toEqual(
+      expect.objectContaining({
+        applied: true,
+        method: 'logistic',
+        weights: expect.objectContaining({
+          intercept: -5,
+          coverageWeight: 7.5,
+          missingWeight: -3,
+          blockerWeight: -4,
+          keywordWeight: 0.5,
+          requirementWeight: 0.1,
+        }),
+      }),
+    );
+  });
+
   it('reuses cached keyword overlap results across repeated evaluations', () => {
     const resume = 'Delivered SaaS products on AWS with machine learning personalization.';
     const requirements = [
