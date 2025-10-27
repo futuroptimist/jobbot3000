@@ -59,6 +59,21 @@ describe('matchResumeToJob', () => {
     expect(withExplanation.explanation).toContain('Correspond 2 sur 3 exigences');
   });
 
+  it('propagates calibration metadata when enabled', () => {
+    const result = matchResumeToJob(resumeText, jobText, {
+      calibration: true,
+    });
+
+    expect(result.calibration).toEqual(
+      expect.objectContaining({
+        applied: true,
+        method: 'logistic',
+        baselineScore: expect.any(Number),
+      }),
+    );
+    expect(result.score).toBe(result.calibration.score);
+  });
+
   it('accepts pre-parsed job objects without mutating the source', () => {
     const parsed = parseJobText(jobText);
     const originalRequirements = parsed.requirements.slice();

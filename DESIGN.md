@@ -131,9 +131,17 @@ board fetches via configurable intervals so individual tenants stay within API p
 **Outputs**
 
 - Score (0–100), plus **explanation** array:
-  - `must_haves_missed`: `["Kubernetes", "Terraform"]`
-  - `skills_hit`: `["SRE", "Postgres", "on-call"]` with confidence bars
-  - `evidence`: snippets with sources (job text spans).
+- `must_haves_missed`: `["Kubernetes", "Terraform"]`
+- `skills_hit`: `["SRE", "Postgres", "on-call"]` with confidence bars
+- `evidence`: snippets with sources (job text spans).
+
+_Implemented (2025-11-20):_ `computeFitScore` now accepts an optional
+`{ calibration: … }` parameter that runs a lightweight logistic regression over
+coverage, blocker, and overlap signals before returning the final 0–100 score.
+[`matchResumeToJob`](src/modules/enrichment/match.js) surfaces the calibration
+metadata alongside the score so downstream exports can explain adjustments, and
+`test/scoring.test.js` covers both the default logistic tuning and custom
+weight overrides.
 
 ---
 

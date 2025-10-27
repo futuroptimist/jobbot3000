@@ -3,6 +3,108 @@ import { addJobTags, discardJob, syncShortlistJob } from './shortlist.js';
 
 const TOKEN_CACHE = new Map();
 
+const DEFAULT_CALIBRATION = Object.freeze({
+  intercept: -1.45,
+  coverageWeight: 4.6,
+  missingWeight: -1.2,
+  blockerWeight: -2.3,
+  keywordWeight: 0.85,
+  requirementWeight: 0.18,
+});
+
+function toFiniteNumber(value, fallback) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeCalibrationOptions(input) {
+  if (input === false || input == null) {
+    return { enabled: false };
+  }
+
+  if (input === true) {
+    return { enabled: true, weights: { ...DEFAULT_CALIBRATION } };
+  }
+
+  if (typeof input !== 'object') {
+    return { enabled: false };
+  }
+
+  const enabled = input.enabled !== false;
+  if (!enabled) {
+    return { enabled: false };
+  }
+
+  const weights = {
+    intercept: toFiniteNumber(input.intercept, DEFAULT_CALIBRATION.intercept),
+    coverageWeight: toFiniteNumber(
+      input.coverageWeight,
+      DEFAULT_CALIBRATION.coverageWeight,
+    ),
+    missingWeight: toFiniteNumber(input.missingWeight, DEFAULT_CALIBRATION.missingWeight),
+    blockerWeight: toFiniteNumber(input.blockerWeight, DEFAULT_CALIBRATION.blockerWeight),
+    keywordWeight: toFiniteNumber(input.keywordWeight, DEFAULT_CALIBRATION.keywordWeight),
+    requirementWeight: toFiniteNumber(
+      input.requirementWeight,
+      DEFAULT_CALIBRATION.requirementWeight,
+    ),
+  };
+
+  return { enabled: true, weights };
+}
+
+function logistic(value) {
+  if (!Number.isFinite(value)) return 0;
+  if (value > 40) return 1;
+  if (value < -40) return 0;
+  return 1 / (1 + Math.exp(-value));
+}
+
+function applyLogisticCalibration(features, weights) {
+  const {
+    coverageRatio,
+    missingRatio,
+    blockerCount,
+    keywordRatio,
+    totalRequirements,
+    baselineScore,
+  } = features;
+
+  const penaltyBlockers = Math.min(Math.max(blockerCount, 0), 5);
+  const normalizedKeywordRatio = Math.max(0, Math.min(1, keywordRatio));
+  const normalizedMissing = Math.max(0, Math.min(1, missingRatio));
+  const normalizedCoverage = Math.max(0, Math.min(1, coverageRatio));
+  const requirementTerm = Math.log1p(Math.max(0, totalRequirements));
+
+  const rawLogit =
+    weights.intercept +
+    weights.coverageWeight * normalizedCoverage +
+    weights.missingWeight * normalizedMissing +
+    weights.blockerWeight * penaltyBlockers +
+    weights.keywordWeight * normalizedKeywordRatio +
+    weights.requirementWeight * requirementTerm;
+
+  const probability = logistic(rawLogit);
+  const calibratedScore = Math.round(Math.max(0, Math.min(100, probability * 100)));
+
+  return {
+    score: calibratedScore,
+    baselineScore,
+    applied: true,
+    method: 'logistic',
+    weights: { ...weights },
+    features: {
+      coverageRatio: normalizedCoverage,
+      missingRatio: normalizedMissing,
+      blockerCount: penaltyBlockers,
+      keywordRatio: normalizedKeywordRatio,
+      totalRequirements: Math.max(0, totalRequirements),
+      rawLogit,
+    },
+  };
+}
+
 // Tokenize text into a Set of lowercase alphanumeric tokens using a manual scanner.
 // Non-string inputs are stringified to avoid type errors. Avoids regex to stay consistent
 // with the documented implementation and to keep performance predictable for very large
@@ -207,15 +309,47 @@ function collectKeywordOverlap(line, resumeSet, getNormalizedResume) {
  *
  * @param {any} resumeText Non-string values are stringified.
  * @param {string[] | undefined} requirements Non-string entries are ignored.
+ * @param {{ calibration?: boolean | {
+ *   enabled?: boolean,
+ *   intercept?: number,
+ *   coverageWeight?: number,
+ *   missingWeight?: number,
+ *   blockerWeight?: number,
+ *   keywordWeight?: number,
+ *   requirementWeight?: number,
+ * } }} [options]
  * @returns {{
  *   score: number,
  *   matched: string[],
  *   missing: string[],
  *   must_haves_missed: string[],
  *   keyword_overlap: string[],
+ *   evidence: Array<{ text: string, source: string }>,
+ *   calibration?: {
+ *     score: number,
+ *     baselineScore: number,
+ *     applied: true,
+ *     method: 'logistic',
+ *     weights: {
+ *       intercept: number,
+ *       coverageWeight: number,
+ *       missingWeight: number,
+ *       blockerWeight: number,
+ *       keywordWeight: number,
+ *       requirementWeight: number,
+ *     },
+ *     features: {
+ *       coverageRatio: number,
+ *       missingRatio: number,
+ *       blockerCount: number,
+ *       keywordRatio: number,
+ *       totalRequirements: number,
+ *       rawLogit: number,
+ *     },
+ *   },
  * }}
  */
-export function computeFitScore(resumeText, requirements) {
+export function computeFitScore(resumeText, requirements, options = {}) {
   if (!Array.isArray(requirements) || requirements.length === 0) {
     return {
       score: 0,
@@ -262,7 +396,8 @@ export function computeFitScore(resumeText, requirements) {
       evidence: [],
     };
 
-  const score = Math.round((matched.length / total) * 100);
+  const coverageRatio = matched.length / total;
+  const baselineScore = Math.round(coverageRatio * 100);
   const mustHavesMissed = identifyBlockers(missing);
   const allowKeywordOverlap = resumeSet.size <= KEYWORD_OVERLAP_TOKEN_THRESHOLD;
   const requirementsForOverlap = allowKeywordOverlap
@@ -295,14 +430,39 @@ export function computeFitScore(resumeText, requirements) {
     }
   }
 
-  return {
-    score,
+  const calibration = normalizeCalibrationOptions(options.calibration);
+  let finalScore = baselineScore;
+  let calibrationDetails;
+
+  if (calibration.enabled) {
+    calibrationDetails = applyLogisticCalibration(
+      {
+        coverageRatio,
+        missingRatio: missing.length / total,
+        blockerCount: mustHavesMissed.length,
+        keywordRatio: keywordOverlapArray.length / KEYWORD_OVERLAP_TOTAL_LIMIT,
+        totalRequirements: total,
+        baselineScore,
+      },
+      calibration.weights,
+    );
+    finalScore = calibrationDetails.score;
+  }
+
+  const result = {
+    score: finalScore,
     matched,
     missing,
     must_haves_missed: mustHavesMissed,
     keyword_overlap: keywordOverlapArray,
     evidence,
   };
+
+  if (calibrationDetails) {
+    result.calibration = calibrationDetails;
+  }
+
+  return result;
 }
 
 export function __resetScoringCachesForTest() {
