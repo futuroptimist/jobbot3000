@@ -71,3 +71,8 @@ can be rolled out behind feature flags to minimize regressions.
   [`test/docs-deployment-guide.test.js`](../../test/docs-deployment-guide.test.js) keeps the
   checklist aligned with the guardrails.
 - Capture refreshed screenshots after the UI adopts the new redaction and audit affordances.
+  _Implemented (2025-11-19):_ `scripts/generate-web-screenshots.js` now refreshes the
+  analytics fixtures so the captured `docs/screenshots/*.png` set highlights the redaction toggle
+  and audit affordances. Regression coverage in
+  [`test/polish-refactor-plan-doc.test.js`](../../test/polish-refactor-plan-doc.test.js)
+  asserts the plan documents the screenshot refresh so future updates keep the catalog aligned.
