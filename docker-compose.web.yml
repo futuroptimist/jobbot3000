@@ -16,6 +16,14 @@ services:
       - "3000:3000"
     volumes:
       - ./data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./config/seccomp/jobbot-web.json
+    cap_drop:
+      - ALL
     healthcheck:
       test:
         - CMD

@@ -94,6 +94,15 @@
 ## Medium-term goals (self-hosted deployment ready)
 
 - Containerize the web service with a locked-down runtime profile (seccomp, read-only root FS).
+  _Implemented (2025-11-21):_ `docker-compose.web.yml` now mounts the web
+  container with a read-only root filesystem, drops all Linux capabilities,
+  enables `no-new-privileges`, and applies the curated
+  [`config/seccomp/jobbot-web.json`](../config/seccomp/jobbot-web.json)
+  profile. The policy keeps networking syscalls such as `accept4` available
+  while blocking newer privileged calls like `clone3`. Regression coverage in
+  [`test/web-deployment.test.js`](../test/web-deployment.test.js) asserts the
+  compose file references the hardened runtime options and parses the seccomp
+  profile so future edits preserve the lock-down.
 - Add support for managed secrets providers (e.g., 1Password Connect, HashiCorp Vault).
   _Implemented (2025-11-20):_ [`loadManagedSecrets`](../src/shared/config/managed-secrets.js)
   now pulls CLI credentials from 1Password Connect before computing the web
