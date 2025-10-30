@@ -122,7 +122,7 @@
   secret warnings without leaking other provider credentials.
 - Implement structured risk assessments and threat modeling before every feature launch.
 - Provide documented backup and restore procedures for any persistent data stores.
-  _Implemented (2025-10-29):_ [`docs/backup-restore-guide.md`](backup-restore-guide.md)
+  _Implemented (2025-10-22):_ [`docs/backup-restore-guide.md`](backup-restore-guide.md)
   now documents the archive, NDJSON export, and audit log workflow for local deployments.
   The regression coverage in
   [`test/docs-backup-restore.test.js`](../test/docs-backup-restore.test.js) keeps the
