@@ -48,3 +48,17 @@ All job search data stays on your machine. Offline or encrypted LLM inference is
   - [Web security roadmap](docs/web-security-roadmap.md)
   - [Web operational playbook](docs/web-operational-playbook.md)
   - 2025-11 threat model workshop notes (internal link: `security-reviews/2025-11-threat-model.pdf`)
+
+## Risk assessment workflow
+
+- Every launch now carries a structured risk assessment generated via
+  [`scripts/generate-risk-assessment.js`](scripts/generate-risk-assessment.js).
+- The helper exported from [`src/shared/security/risk-assessment.js`](src/shared/security/risk-assessment.js)
+  maps impact/likelihood ratings to severity buckets and recommended actions so reviews share a
+  consistent vocabulary.
+- Authoring guidance lives in
+  [`docs/security-risk-assessment-guide.md`](docs/security-risk-assessment-guide.md); reports land in
+  [`docs/security/risk-assessments/`](docs/security/risk-assessments/).
+- Regression coverage in `test/security-risk-assessment.test.js` and
+  `test/security-risk-assessment-cli.test.js` keeps the scoring logic and CLI usage aligned with the
+  documentation.
