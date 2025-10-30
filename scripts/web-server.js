@@ -2,6 +2,7 @@
 import '../src/shared/config/initialize-env.js';
 import fs from 'node:fs/promises';
 import process from 'node:process';
+import { sanitizeOutputString } from '../src/shared/logging/sanitize-output.js';
 import { loadWebConfig } from '../src/web/config.js';
 import { resolveEnableNativeCli } from '../src/web/resolve-native-cli-flag.js';
 import { startWebServer } from '../src/web/server.js';
@@ -113,6 +114,16 @@ async function main() {
 }
 
 main().catch(err => {
-  console.error(err.message || err);
+  const hasMessage = err && typeof err === 'object' && typeof err.message === 'string';
+  const message = hasMessage
+    ? err.message
+    : typeof err === 'string'
+      ? err
+      : '';
+  if (message) {
+    console.error(`Failed to start web server: ${sanitizeOutputString(message)}`);
+  } else {
+    console.error('Failed to start web server due to an unknown error.');
+  }
   process.exit(1);
 });
