@@ -78,6 +78,12 @@
 - Map UI views and interactions to CLI invocations, noting required parameters and validations.
 - Document non-functional requirements: performance targets, security constraints, accessibility
   guidelines.
+  _Implemented (2025-10-30):_ [`docs/web-non-functional-requirements.md`](web-non-functional-requirements.md)
+  now centralizes performance, security, accessibility, and reliability guardrails for the status
+  hub. Regression coverage in
+  [`test/web-non-functional-doc.test.js`](../test/web-non-functional-doc.test.js)
+  locks the documentation headers and key service-level targets (P95 page load <2s, WCAG AA, CSRF
+  enforcement) so future edits keep the non-functional contract explicit.
 
 ### 2. Architecture Blueprint
 
@@ -142,13 +148,13 @@
 
 - Define a dark theme palette with semantic tokens (background, surface, accent, danger, text-primary
   and text-secondary) ensuring accessible contrast.
-  _Implemented (2025-11-16):_ [`src/web/server.js`](../src/web/server.js) now declares
+  _Implemented (2025-10-24):_ [`src/web/server.js`](../src/web/server.js) now declares
   `--jobbot-color-*` tokens for background, surface, accent, danger, and text colors across both
   dark and light themes. [`test/web-server.test.js`](../test/web-server.test.js) locks the
   stylesheet contract by asserting the exported CSS contains each semantic token and applies the
   surface color to status panels, keeping the theme system verifiable from tests.
 - Create reusable components (buttons, tables, timeline, status badges) adhering to the token system.
-  _Implemented (2025-11-17):_ The status hub now exposes shared `.button`,
+  _Implemented (2025-10-26):_ The status hub now exposes shared `.button`,
   `.table`, `.timeline`, and `.status-badge` classes wired to the palette tokens.
   Markup across shortlist, listings, and analytics panels reuses the component
   classes, and the listings plugin host emits badges with the shared styling.
@@ -156,7 +162,7 @@
   asserts both the HTML and `/assets/status-hub.css` export the component
   classes so future UI changes keep the reusable elements intact.
 - Provide responsive layouts using a grid/flex approach; ensure minimum touch target sizes for mobile.
-  _Implemented (2025-11-18):_ The status hub CSS now enforces responsive grids,
+  _Implemented (2025-10-26):_ The status hub CSS now enforces responsive grids,
   mobile-first stacking for action toolbars, and 44px touch targets across
   navigation and form controls. Regression coverage in
   [`test/web-server.test.js`](../test/web-server.test.js) exercises the
@@ -371,26 +377,26 @@
 5. **Testing and QA**
 
 - Unit tests for frontend components (Jest/Testing Library) and backend modules (Jest/Supertest).
-  _Implemented (2025-11-09):_ Added Testing Library coverage for the status hub
+  _Implemented (2025-10-23):_ Added Testing Library coverage for the status hub
   navigation and shortlist rendering in
   [`test/web-status-hub-frontend.test.js`](../test/web-status-hub-frontend.test.js),
   exercising the DOM workflow against the Express adapter while the existing
   Vitest + Supertest suites keep backend modules locked down.
 
 - Contract tests ensuring backend responses align with CLI output fixtures.
-  _Implemented (2025-10-31):_ `test/web-server-contracts.test.js` now boots the
+  _Implemented (2025-10-20):_ `test/web-server-contracts.test.js` now boots the
   real CLI-backed web server with analytics funnel filters, compares the JSON
   payload against `jobbot analytics funnel --json`, and fails if the adapter
   drifts from the CLI contract. The suite posts filter parameters to
   `/commands/analytics-funnel` so future changes keep the filter plumbing wired.
 
 - End-to-end tests (Playwright/Cypress) simulating user flows with mocked CLI responses.
-  _Implemented (2025-11-08):_ Added Playwright coverage for the
+  _Implemented (2025-10-23):_ Added Playwright coverage for the
   **Applications** workflow in
   [`test/playwright/applications.spec.js`](../test/playwright/applications.spec.js),
   loading shortlist data, driving the detail drawer, and recording status updates
   through a mocked command adapter. This merges prior test coverage from
-  `applications-status.spec.js` (2025-11-06), ensuring the suite validates both
+  `applications-status.spec.js` (2025-10-23), ensuring the suite validates both
   shortlist refreshes and status timeline updates end to end without invoking
   the real CLI.
 

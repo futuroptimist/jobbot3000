@@ -17,7 +17,7 @@ describe('polish refactor plan documentation', () => {
     const contents = await readDoc();
     const screenshotNotePattern = new RegExp(
       'Capture refreshed screenshots after the UI adopts the new redaction and audit affordances.' +
-        '\\s+_Implemented \\(2025-11-19\\):',
+        '\\s+_Implemented \\(2025-10-26\\):',
       's',
     );
     expect(contents).toMatch(screenshotNotePattern);

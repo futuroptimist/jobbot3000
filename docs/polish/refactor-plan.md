@@ -37,7 +37,7 @@ can be rolled out behind feature flags to minimize regressions.
   regression coverage in [`test/exporters.test.js`](../../test/exporters.test.js) asserts the
   markdown redaction plus the DOCX sanitizer so future formatter tweaks stay scrubbed.
 - Add structured audit logging with retention controls and surface audit failures via the logger.
-  _Implemented (2025-11-05):_ CLI export commands now append structured audit
+  _Implemented (2025-10-20):_ CLI export commands now append structured audit
   events to the JSONL log defined by `JOBBOT_AUDIT_LOG`, including output
   targets, file paths, and redaction flags. The regression coverage in
   [`test/cli-audit-exports.test.js`](../../test/cli-audit-exports.test.js)
@@ -45,7 +45,7 @@ can be rolled out behind feature flags to minimize regressions.
   and timestamps intact. Failures when writing audit entries emit warnings so
   operators can spot logger issues in real time.
 - Update [SECURITY.md](../../SECURITY.md) with the refreshed threat model and external references.
-  _Implemented (2025-11-07):_ The security policy now documents the
+  _Implemented (2025-10-23):_ The security policy now documents the
   November 2025 threat model refresh, including CSRF double-submit
   protections, session isolation, and plugin integrity requirements.
   Regression coverage in
@@ -57,7 +57,7 @@ can be rolled out behind feature flags to minimize regressions.
 ## Phase 5 — Docs and UX polish
 
 - Extend user journey diagrams with ingestion→scoring→notification flows.
-  _Implemented (2025-11-07):_ `docs/user-journeys.md` now includes a
+  _Implemented (2025-10-23):_ `docs/user-journeys.md` now includes a
   mermaid diagram (`journey-ingestion-scoring-notifications`) that maps the
   scheduler, ingestion adapters, scoring engine, tracker, and notifications
   worker end to end. Regression coverage in
@@ -65,13 +65,13 @@ can be rolled out behind feature flags to minimize regressions.
   keeps the diagram and explanation aligned with the pipeline modules so the
   documentation stays actionable as the system evolves.
 - Document deployment paths for local vs. self-hosted environments.
-  _Implemented (2025-11-12):_ `docs/deployment-local-vs-self-hosted.md` now details enabling
+  _Implemented (2025-10-24):_ `docs/deployment-local-vs-self-hosted.md` now details enabling
   the native CLI bridge, CSRF header/token configuration, and per-user auth tokens so
   operators can harden rollouts without guesswork. Regression coverage in
   [`test/docs-deployment-guide.test.js`](../../test/docs-deployment-guide.test.js) keeps the
   checklist aligned with the guardrails.
 - Capture refreshed screenshots after the UI adopts the new redaction and audit affordances.
-  _Implemented (2025-11-19):_ `scripts/generate-web-screenshots.js` now refreshes the
+  _Implemented (2025-10-26):_ `scripts/generate-web-screenshots.js` now refreshes the
   analytics fixtures so the captured `docs/screenshots/*.png` set highlights the redaction toggle
   and audit affordances. Regression coverage in
   [`test/polish-refactor-plan-doc.test.js`](../../test/polish-refactor-plan-doc.test.js)
