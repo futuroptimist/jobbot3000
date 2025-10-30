@@ -97,6 +97,12 @@
 - Add support for managed secrets providers (e.g., 1Password Connect, HashiCorp Vault).
 - Implement structured risk assessments and threat modeling before every feature launch.
 - Provide documented backup and restore procedures for any persistent data stores.
+  _Implemented (2025-11-20):_ [`docs/backup-restore-guide.md`](backup-restore-guide.md)
+  now documents the archive, NDJSON export, and audit log workflow for local deployments.
+  The regression coverage in
+  [`test/docs-backup-restore.test.js`](../test/docs-backup-restore.test.js) keeps the
+  guidance aligned with the repository scripts by asserting the documented commands
+  match the supported backup, restore, and verification steps.
 
 ## Long-term goals (SaaS-grade production)
 

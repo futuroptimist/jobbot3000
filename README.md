@@ -154,6 +154,8 @@ Run the snippet with `node example.js` after saving it to a file in the project 
 - [SECURITY.md](SECURITY.md) – security guidelines
 - [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) – prompt reference index
 - [docs/user-journeys.md](docs/user-journeys.md) – primary user journeys and flows
+- [docs/backup-restore-guide.md](docs/backup-restore-guide.md) – backup, restore, and verification
+  steps
 - [GitHub Actions: web-screenshots.yml](https://github.com/futuroptimist/jobbot3000/actions/workflows/web-screenshots.yml) – captures the latest UI flows for regressions
 
 ### Durable data export/import
