@@ -44,7 +44,7 @@ async function main() {
 
   let config;
   try {
-    config = loadWebConfig({
+    config = await loadWebConfig({
       env,
       host: hostOverride,
       port: portOverride,
@@ -84,9 +84,8 @@ async function main() {
 
   console.log(`jobbot web server listening on ${server.url}`);
   console.log(`Environment: ${config.env}`);
-  console.log(
-    `Attach ${server.csrfHeaderName}: ${server.csrfToken} to POST /commands requests.`,
-  );
+  console.log(`Attach ${server.csrfHeaderName} to POST /commands requests.`);
+  console.log('Retrieve the CSRF token from the configured secrets store.');
   console.log('Treat the CSRF token as a secret.');
   console.log('Press Ctrl+C to stop.');
 
@@ -113,7 +112,17 @@ async function main() {
   });
 }
 
-main().catch(err => {
-  console.error(err.message || err);
+main().catch(() => {
+  const debugEnabled = process.env.JOBBOT_DEBUG === '1';
+  console.error(
+    'Failed to start web server. Sensitive diagnostics have been suppressed to protect secrets.',
+  );
+  if (debugEnabled) {
+    console.error(
+      'JOBBOT_DEBUG=1 is enabled; inspect local development logs for detailed error output.',
+    );
+  } else {
+    console.error('Run with JOBBOT_DEBUG=1 locally to print sanitized diagnostics.');
+  }
   process.exit(1);
 });

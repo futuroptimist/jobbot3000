@@ -1,23 +1,39 @@
 import { DEFAULT_WEB_CONFIG, loadConfig } from '../shared/config/manifest.js';
+import { loadManagedSecrets } from '../shared/config/managed-secrets.js';
 
-export function loadWebConfig(options = {}) {
+export async function loadWebConfig(options = {}) {
+  const {
+    fetch: fetchImpl,
+    env,
+    host,
+    port,
+    rateLimit,
+    csrfHeaderName,
+    csrfToken,
+    audit,
+    features,
+    version,
+  } = options;
+
+  await loadManagedSecrets({ fetch: fetchImpl });
+
   const config = loadConfig({
-    environment: options.env,
-    host: options.host,
-    port: options.port,
-    rateLimit: options.rateLimit,
-    csrfHeaderName: options.csrfHeaderName,
-    csrfToken: options.csrfToken,
-    audit: options.audit,
-    features: options.features,
+    environment: env,
+    host,
+    port,
+    rateLimit,
+    csrfHeaderName,
+    csrfToken,
+    audit,
+    features,
   });
 
   const info = {
     service: 'jobbot-web',
     environment: config.environment,
   };
-  if (typeof options.version === 'string' && options.version.trim()) {
-    info.version = options.version.trim();
+  if (typeof version === 'string' && version.trim()) {
+    info.version = version.trim();
   } else if (typeof process.env.JOBBOT_WEB_VERSION === 'string') {
     const version = process.env.JOBBOT_WEB_VERSION.trim();
     if (version) info.version = version;

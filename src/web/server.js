@@ -5,11 +5,11 @@ import { EventEmitter } from "node:events";
 import { performance } from "node:perf_hooks";
 import path from "node:path";
 
+import { createCommandAdapter } from "./command-adapter.js";
 import {
-  createCommandAdapter,
   sanitizeOutputString,
   sanitizeOutputValue,
-} from "./command-adapter.js";
+} from "../shared/logging/sanitize-output.js";
 import {
   ALLOW_LISTED_COMMANDS,
   validateCommandPayload,

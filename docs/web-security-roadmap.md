@@ -95,6 +95,15 @@
 
 - Containerize the web service with a locked-down runtime profile (seccomp, read-only root FS).
 - Add support for managed secrets providers (e.g., 1Password Connect, HashiCorp Vault).
+  _Implemented (2025-11-20):_ [`loadManagedSecrets`](../src/shared/config/managed-secrets.js)
+  now pulls CLI credentials from 1Password Connect before computing the web
+  manifest. Operators supply `JOBBOT_SECRETS_PROVIDER=1password-connect`, the
+  Connect service URL/token, and a JSON mapping of secret references. The
+  helper fetches each secret, injects it into `process.env`, and lets
+  [`loadWebConfig`](../src/web/config.js) reuse the existing manifest logic.
+  [`test/web-config.test.js`](../test/web-config.test.js) stubs the Connect API
+  to assert that secrets populate environment variables and clear the missing
+  secret warnings without leaking other provider credentials.
 - Implement structured risk assessments and threat modeling before every feature launch.
 - Provide documented backup and restore procedures for any persistent data stores.
   _Implemented (2025-11-20):_ [`docs/backup-restore-guide.md`](backup-restore-guide.md)
