@@ -80,6 +80,7 @@ async function main() {
     enableNativeCli,
     audit: config.audit,
     features: config.features,
+    auth: config.auth,
   });
 
   console.log(`jobbot web server listening on ${server.url}`);

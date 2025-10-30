@@ -77,6 +77,35 @@ Feature flags are parsed via the manifest and exposed to the web server:
 | `features.httpClient.circuitBreakerThreshold` | `JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD` | Trip the circuit after _n_ consecutive failures                                        |
 | `features.httpClient.circuitBreakerResetMs`   | `JOBBOT_HTTP_CIRCUIT_BREAKER_RESET_MS`  | Reset window after failures                                                            |
 
+## Authentication and RBAC
+
+`loadWebConfig` now surfaces scoped API keys so deployments can enforce role-based access control
+without hand-editing `startWebServer` invocations. Configure tokens via JSON and environment
+variables:
+
+| Setting                         | Description                                                                                                                                     |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `JOBBOT_WEB_AUTH_TOKENS`        | JSON array of token entries. Each entry may be a string token or an object with `token`, `roles`, `subject`, and optional `displayName` fields. |
+| `JOBBOT_WEB_AUTH_HEADER`        | Overrides the authorization header name (default `authorization`).                                                                              |
+| `JOBBOT_WEB_AUTH_SCHEME`        | Optional scheme prefix such as `Bearer` or `ApiKey`. Provide an empty string to disable scheme enforcement.                                     |
+| `JOBBOT_WEB_AUTH_DEFAULT_ROLES` | Comma-separated or JSON array fallback roles applied when a token omits `roles`.                                                                |
+
+Example configuration:
+
+```ini
+JOBBOT_WEB_AUTH_TOKENS=[
+  {"token":"viewer-token","roles":["viewer"],"subject":"viewer@example.com"},
+  {"token":"editor-token","roles":["editor"],"subject":"editor@example.com","displayName":"Editor"}
+]
+JOBBOT_WEB_AUTH_HEADER=x-api-key
+JOBBOT_WEB_AUTH_SCHEME=ApiKey
+JOBBOT_WEB_AUTH_DEFAULT_ROLES=viewer
+```
+
+The manifest feeds these settings into `scripts/web-server.js`, which in turn passes them to
+`startWebServer`. Regression coverage in `test/web-config.test.js` ensures the JSON payload resolves to
+scoped API keys so future edits keep the RBAC configuration discoverable.
+
 ## User settings (`data/settings.json`)
 
 The CLI persists inference and privacy preferences to `data/settings.json`. Manage these defaults

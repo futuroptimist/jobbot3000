@@ -49,6 +49,7 @@ export async function loadWebConfig(options = {}) {
     info,
     features: config.features,
     audit: config.audit,
+    auth: config.auth ?? null,
     missingSecrets: config.missingSecrets,
   };
 }
