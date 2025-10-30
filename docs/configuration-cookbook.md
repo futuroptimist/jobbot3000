@@ -34,6 +34,36 @@ absent. Inline overrides are rejected—`loadConfig` throws when callers attempt
 pass secrets directly—so the only supported path is the `JOBBOT_*` environment
 variables wired to your secrets store.
 
+### Managed secrets providers
+
+Set `JOBBOT_SECRETS_PROVIDER=1password-connect` to fetch CLI credentials from a
+1Password Connect service before the manifest loads. Provide the remaining
+configuration via environment variables:
+
+- `JOBBOT_SECRETS_OP_CONNECT_URL`: Base URL for your 1Password Connect server
+  (e.g., `https://connect.example`).
+- `JOBBOT_SECRETS_OP_CONNECT_TOKEN`: Connect access token with permission to
+  read the referenced secrets.
+- `JOBBOT_SECRETS_OP_CONNECT_SECRETS`: JSON object mapping environment variable
+  names to `vault/item/field` references or `{ vault, item, field }` objects.
+
+Example mapping:
+
+```jsonc
+{
+  "JOBBOT_GREENHOUSE_TOKEN": "vaultA/itemB/apiKey",
+  "JOBBOT_WORKABLE_TOKEN": {
+    "vault": "vaultA",
+    "item": "itemC",
+    "field": "credential",
+  },
+}
+```
+
+`loadManagedSecrets` retrieves each entry, injects it into `process.env`, and
+lets `loadWebConfig` reuse the usual manifest validation. Existing environment
+variables still take precedence when the provider returns the same key.
+
 ## Feature flags
 
 Feature flags are parsed via the manifest and exposed to the web server:
