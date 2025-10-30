@@ -121,6 +121,16 @@
   to assert that secrets populate environment variables and clear the missing
   secret warnings without leaking other provider credentials.
 - Implement structured risk assessments and threat modeling before every feature launch.
+  _Implemented (2025-11-22):_ [`src/shared/security/risk-assessment.js`](../src/shared/security/risk-assessment.js)
+  now exposes `createRiskAssessment` and `formatRiskAssessmentMarkdown`, powering the
+  `scripts/generate-risk-assessment.js` CLI. Engineers define JSON threat models and
+  render Markdown reports into [`docs/security/risk-assessments/`](security/risk-assessments/)
+  before launch. [`docs/security-risk-assessment-guide.md`](security-risk-assessment-guide.md)
+  documents the workflow, and regression coverage in
+  [`test/security-risk-assessment.test.js`](../test/security-risk-assessment.test.js),
+  [`test/security-risk-assessment-cli.test.js`](../test/security-risk-assessment-cli.test.js), and
+  [`test/docs-security-risk-assessment.test.js`](../test/docs-security-risk-assessment.test.js)
+  keeps the scoring logic, CLI, and documentation aligned.
 - Provide documented backup and restore procedures for any persistent data stores.
   _Implemented (2025-11-20):_ [`docs/backup-restore-guide.md`](backup-restore-guide.md)
   now documents the archive, NDJSON export, and audit log workflow for local deployments.

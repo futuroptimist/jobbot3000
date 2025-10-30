@@ -18,5 +18,8 @@ describe("SECURITY.md threat model", () => {
     expect(contents).toMatch(/CSRF double-submit token/);
     expect(contents).toMatch(/web-security-roadmap\.md/);
     expect(contents).toMatch(/security-reviews\/2025-11-threat-model\.pdf/);
+    expect(contents).toMatch(/## Risk assessment workflow/);
+    expect(contents).toMatch(/scripts\/generate-risk-assessment\.js/);
+    expect(contents).toMatch(/security-risk-assessment-guide\.md/);
   });
 });
