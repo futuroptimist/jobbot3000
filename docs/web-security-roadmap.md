@@ -68,6 +68,13 @@
 ## Short-term hardening (local network safe)
 
 - Integrate per-user API keys with scoped RBAC instead of anonymous guest workflows.
+  _Implemented (2025-11-21):_ `loadWebConfig` now surfaces `auth` configuration from the typed
+  manifest and environment, including per-token roles, optional display names, and custom header
+  or scheme settings. [`scripts/web-server.js`](../scripts/web-server.js) forwards the parsed
+  `auth` block to `startWebServer`, enabling RBAC without bespoke wiring in deployment scripts.
+  Regression coverage in [`test/web-config.test.js`](../test/web-config.test.js) ensures JSON-based
+  token manifests hydrate into scoped API keys so future refactors keep the RBAC configuration
+  discoverable.
 - Add content security policy (CSP), permission policy, and strict referrer policy headers.
   _Implemented (2025-10-24):_ `createWebApp` now applies strict security
   headers on every response, locking down default/script/style sources,

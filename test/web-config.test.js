@@ -23,6 +23,11 @@ describe('loadWebConfig', () => {
       'JOBBOT_WEB_RATE_LIMIT_MAX',
       'JOBBOT_WEB_CSRF_HEADER',
       'JOBBOT_WEB_CSRF_TOKEN',
+      'JOBBOT_WEB_AUTH_TOKENS',
+      'JOBBOT_WEB_AUTH_TOKEN',
+      'JOBBOT_WEB_AUTH_HEADER',
+      'JOBBOT_WEB_AUTH_SCHEME',
+      'JOBBOT_WEB_AUTH_DEFAULT_ROLES',
       'JOBBOT_FEATURE_SCRAPING_MOCKS',
       'JOBBOT_FEATURE_NOTIFICATIONS_WEEKLY',
       'JOBBOT_HTTP_MAX_RETRIES',
@@ -50,6 +55,11 @@ describe('loadWebConfig', () => {
       'JOBBOT_WEB_RATE_LIMIT_MAX',
       'JOBBOT_WEB_CSRF_HEADER',
       'JOBBOT_WEB_CSRF_TOKEN',
+      'JOBBOT_WEB_AUTH_TOKENS',
+      'JOBBOT_WEB_AUTH_TOKEN',
+      'JOBBOT_WEB_AUTH_HEADER',
+      'JOBBOT_WEB_AUTH_SCHEME',
+      'JOBBOT_WEB_AUTH_DEFAULT_ROLES',
       'JOBBOT_FEATURE_SCRAPING_MOCKS',
       'JOBBOT_FEATURE_NOTIFICATIONS_WEEKLY',
       'JOBBOT_HTTP_MAX_RETRIES',
@@ -201,6 +211,47 @@ describe('loadWebConfig', () => {
       name: 'Option Plugin',
       url: 'https://example.com/plugin.js',
       events: ['jobbot:analytics-ready'],
+    });
+  });
+
+  it('returns scoped auth tokens when configured via environment variables', async () => {
+    process.env.JOBBOT_WEB_AUTH_TOKENS = JSON.stringify([
+      {
+        token: 'viewer-token',
+        roles: ['viewer'],
+        subject: 'viewer@example.com',
+      },
+      {
+        token: 'editor-token',
+        roles: ['editor'],
+        subject: 'editor@example.com',
+        displayName: 'Editor Example',
+      },
+    ]);
+    process.env.JOBBOT_WEB_AUTH_HEADER = 'x-api-key';
+    process.env.JOBBOT_WEB_AUTH_SCHEME = 'ApiKey';
+    process.env.JOBBOT_WEB_AUTH_DEFAULT_ROLES = 'viewer';
+
+    const { loadWebConfig } = await import('../src/web/config.js');
+    const config = await loadWebConfig({ env: 'development' });
+
+    expect(config.auth).toEqual({
+      headerName: 'x-api-key',
+      scheme: 'ApiKey',
+      defaultRoles: ['viewer'],
+      tokens: [
+        {
+          token: 'viewer-token',
+          roles: ['viewer'],
+          subject: 'viewer@example.com',
+        },
+        {
+          token: 'editor-token',
+          roles: ['editor'],
+          subject: 'editor@example.com',
+          displayName: 'Editor Example',
+        },
+      ],
     });
   });
 

@@ -270,6 +270,116 @@ export function loadConfig(options = {}) {
     ),
   };
 
+  const auth = (() => {
+    const source =
+      options.auth?.tokens ??
+      options.auth?.token ??
+      env.JOBBOT_WEB_AUTH_TOKENS ??
+      env.JOBBOT_WEB_AUTH_TOKEN;
+
+    const tokens = (() => {
+      if (Array.isArray(source)) {
+        return source;
+      }
+      if (source && typeof source === 'object') {
+        if (Array.isArray(source.tokens)) {
+          return source.tokens;
+        }
+        return [source];
+      }
+      if (typeof source === 'string') {
+        const trimmed = source.trim();
+        if (!trimmed) {
+          return [];
+        }
+        if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+          try {
+            const parsed = JSON.parse(trimmed);
+            if (Array.isArray(parsed)) {
+              return parsed;
+            }
+            if (parsed && typeof parsed === 'object') {
+              if (Array.isArray(parsed.tokens)) {
+                return parsed.tokens;
+              }
+              return [parsed];
+            }
+          } catch {
+            // Fall back to comma-separated parsing when JSON fails.
+          }
+        }
+        return trimmed
+          .split(',')
+          .map(token => token.trim())
+          .filter(Boolean);
+      }
+      return [];
+    })();
+
+    if (tokens.length === 0) {
+      return null;
+    }
+
+    const headerSource =
+      options.auth?.headerName ?? env.JOBBOT_WEB_AUTH_HEADER ?? 'authorization';
+    const headerName =
+      typeof headerSource === 'string' && headerSource.trim()
+        ? headerSource.trim()
+        : 'authorization';
+
+    const schemeSource = options.auth?.scheme ?? env.JOBBOT_WEB_AUTH_SCHEME;
+    let scheme;
+    if (schemeSource === '' || schemeSource === false || schemeSource === null) {
+      scheme = '';
+    } else if (typeof schemeSource === 'string') {
+      const trimmedScheme = schemeSource.trim();
+      scheme = trimmedScheme;
+    }
+
+    const defaultRolesSource =
+      options.auth?.defaultRoles ?? env.JOBBOT_WEB_AUTH_DEFAULT_ROLES;
+    const defaultRoles = (() => {
+      if (Array.isArray(defaultRolesSource)) {
+        return defaultRolesSource
+          .map(role => (typeof role === 'string' ? role.trim() : ''))
+          .filter(Boolean);
+      }
+      if (typeof defaultRolesSource === 'string') {
+        return defaultRolesSource
+          .split(',')
+          .map(role => role.trim())
+          .filter(Boolean);
+      }
+      return [];
+    })();
+
+    const normalizedTokens = tokens.map(token => {
+      if (!token || typeof token !== 'object' || Array.isArray(token)) {
+        return token;
+      }
+      const normalized = { ...token };
+      if (typeof normalized.roles === 'string') {
+        normalized.roles = normalized.roles
+          .split(',')
+          .map(role => role.trim())
+          .filter(Boolean);
+      }
+      if (Array.isArray(normalized.roles)) {
+        normalized.roles = normalized.roles.map(role => role.trim()).filter(Boolean);
+      }
+      return normalized;
+    });
+
+    const authConfig = { headerName, tokens: normalizedTokens };
+    if (scheme !== undefined) {
+      authConfig.scheme = scheme;
+    }
+    if (defaultRoles.length > 0) {
+      authConfig.defaultRoles = defaultRoles;
+    }
+    return authConfig;
+  })();
+
   const secrets = {
     greenhouseToken: options.secrets?.greenhouseToken ?? env.JOBBOT_GREENHOUSE_TOKEN,
     leverToken: options.secrets?.leverToken ?? env.JOBBOT_LEVER_API_TOKEN,
@@ -307,6 +417,7 @@ export function loadConfig(options = {}) {
 
   return {
     ...parsed,
+    auth,
     missingSecrets,
   };
 }
