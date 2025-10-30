@@ -358,7 +358,8 @@ function ensureConsoleHooks() {
   console.log = (...args) => {
     const store = consoleCaptureStorage.getStore();
     if (store) {
-      store.logs.push(args.map(formatLogArg).join(" "));
+      const message = args.map(formatLogArg).join(" ");
+      store.logs.push(sanitizeOutputString(message));
     } else {
       originalConsoleLog(...args);
     }
@@ -366,7 +367,8 @@ function ensureConsoleHooks() {
   console.error = (...args) => {
     const store = consoleCaptureStorage.getStore();
     if (store) {
-      store.errors.push(args.map(formatLogArg).join(" "));
+      const message = args.map(formatLogArg).join(" ");
+      store.errors.push(sanitizeOutputString(message));
     } else {
       originalConsoleError(...args);
     }
