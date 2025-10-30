@@ -2,7 +2,6 @@
 import '../src/shared/config/initialize-env.js';
 import fs from 'node:fs/promises';
 import process from 'node:process';
-import { sanitizeOutputString } from '../src/shared/logging/sanitize-output.js';
 import { loadWebConfig } from '../src/web/config.js';
 import { resolveEnableNativeCli } from '../src/web/resolve-native-cli-flag.js';
 import { startWebServer } from '../src/web/server.js';
@@ -113,17 +112,17 @@ async function main() {
   });
 }
 
-main().catch(err => {
-  const hasMessage = err && typeof err === 'object' && typeof err.message === 'string';
-  const message = hasMessage
-    ? err.message
-    : typeof err === 'string'
-      ? err
-      : '';
-  if (message) {
-    console.error(`Failed to start web server: ${sanitizeOutputString(message)}`);
+main().catch(() => {
+  const debugEnabled = process.env.JOBBOT_DEBUG === '1';
+  console.error(
+    'Failed to start web server. Sensitive diagnostics have been suppressed to protect secrets.',
+  );
+  if (debugEnabled) {
+    console.error(
+      'JOBBOT_DEBUG=1 is enabled; inspect local development logs for detailed error output.',
+    );
   } else {
-    console.error('Failed to start web server due to an unknown error.');
+    console.error('Run with JOBBOT_DEBUG=1 locally to print sanitized diagnostics.');
   }
   process.exit(1);
 });
