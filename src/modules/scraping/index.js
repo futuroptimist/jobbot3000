@@ -1,15 +1,15 @@
-import { fetchAshbyJobs } from './providers/ashby.js';
-import { fetchGreenhouseJobs } from './providers/greenhouse.js';
-import { fetchLeverJobs } from './providers/lever.js';
-import { fetchSmartRecruitersJobs } from './providers/smartrecruiters.js';
-import { fetchWorkableJobs } from './providers/workable.js';
+import { ingestAshbyBoard } from './providers/ashby.js';
+import { ingestGreenhouseBoard } from './providers/greenhouse.js';
+import { ingestLeverBoard } from './providers/lever.js';
+import { ingestSmartRecruitersBoard } from './providers/smartrecruiters.js';
+import { ingestWorkableBoard } from './providers/workable.js';
 
 const PROVIDERS = {
-  ashby: fetchAshbyJobs,
-  greenhouse: fetchGreenhouseJobs,
-  lever: fetchLeverJobs,
-  smartrecruiters: fetchSmartRecruitersJobs,
-  workable: fetchWorkableJobs,
+  ashby: ingestAshbyBoard,
+  greenhouse: ingestGreenhouseBoard,
+  lever: ingestLeverBoard,
+  smartrecruiters: ingestSmartRecruitersBoard,
+  workable: ingestWorkableBoard,
 };
 
 function resolveProvider(overrides, provider) {
