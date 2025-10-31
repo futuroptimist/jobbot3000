@@ -31,7 +31,7 @@
 2. **Secrets isolation**
    - Move environment variable management out of the process and into an encrypted secrets store.
    - Ensure CLI subprocesses inherit only the minimum required configuration.
-     _Implemented (2025-10-31):_ `createCommandAdapter` now filters the
+     _Implemented (2025-10-20):_ `createCommandAdapter` now filters the
      environment to a curated allow list (plus explicit passthrough keys) before
      spawning the CLI. Regression coverage in
      [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
@@ -41,7 +41,7 @@
 3. **Transport security**
    - Require HTTPS with HSTS, modern TLS ciphers, and automatic certificate rotation.
    - Add CSRF double-submit protections and SameSite=Strict cookies across the board.
-     _Implemented (2025-11-02):_ The web server now issues a
+     _Implemented (2025-10-20):_ The web server now issues a
      `jobbot_csrf_token` cookie alongside the existing header and requires
      requests to present matching header+cookie pairs before invoking CLI
      adapters. The status hub JavaScript synchronizes the header value with the
@@ -55,7 +55,7 @@
 4. **Observability and alerting**
    - Stream audit logs to a tamper-resistant store.
    - Emit security telemetry for failed logins, rate limiting events, and suspicious traffic.
-     _Implemented (2025-11-05):_ `createWebApp` now emits `web.security`
+     _Implemented (2025-10-20):_ `createWebApp` now emits `web.security`
      telemetry for authorization failures, CSRF mismatches, malformed payloads,
      and rate limiting responses. The warn-level events include sanitized
      metadata (client IP, session identifier, role context, and rate limit
@@ -68,7 +68,7 @@
 ## Short-term hardening (local network safe)
 
 - Integrate per-user API keys with scoped RBAC instead of anonymous guest workflows.
-  _Implemented (2025-11-21):_ `loadWebConfig` now surfaces `auth` configuration from the typed
+  _Implemented (2025-10-30):_ `loadWebConfig` now surfaces `auth` configuration from the typed
   manifest and environment, including per-token roles, optional display names, and custom header
   or scheme settings. [`scripts/web-server.js`](../scripts/web-server.js) forwards the parsed
   `auth` block to `startWebServer`, enabling RBAC without bespoke wiring in deployment scripts.
@@ -101,7 +101,7 @@
 ## Medium-term goals (self-hosted deployment ready)
 
 - Containerize the web service with a locked-down runtime profile (seccomp, read-only root FS).
-  _Implemented (2025-11-21):_ `docker-compose.web.yml` now mounts the web
+  _Implemented (2025-10-30):_ `docker-compose.web.yml` now mounts the web
   container with a read-only root filesystem, drops all Linux capabilities,
   enables `no-new-privileges`, and applies the curated
   [`config/seccomp/jobbot-web.json`](../config/seccomp/jobbot-web.json)
@@ -111,7 +111,7 @@
   compose file references the hardened runtime options and parses the seccomp
   profile so future edits preserve the lock-down.
 - Add support for managed secrets providers (e.g., 1Password Connect, HashiCorp Vault).
-  _Implemented (2025-11-20):_ [`loadManagedSecrets`](../src/shared/config/managed-secrets.js)
+  _Implemented (2025-10-29):_ [`loadManagedSecrets`](../src/shared/config/managed-secrets.js)
   now pulls CLI credentials from 1Password Connect before computing the web
   manifest. Operators supply `JOBBOT_SECRETS_PROVIDER=1password-connect`, the
   Connect service URL/token, and a JSON mapping of secret references. The
@@ -132,7 +132,7 @@
   [`test/docs-security-risk-assessment.test.js`](../test/docs-security-risk-assessment.test.js)
   keeps the scoring logic, CLI, and documentation aligned.
 - Provide documented backup and restore procedures for any persistent data stores.
-  _Implemented (2025-11-20):_ [`docs/backup-restore-guide.md`](backup-restore-guide.md)
+  _Implemented (2025-10-20):_ [`docs/backup-restore-guide.md`](backup-restore-guide.md)
   now documents the archive, NDJSON export, and audit log workflow for local deployments.
   The regression coverage in
   [`test/docs-backup-restore.test.js`](../test/docs-backup-restore.test.js) keeps the
