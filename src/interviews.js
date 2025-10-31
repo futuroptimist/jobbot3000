@@ -746,6 +746,137 @@ export function generateRehearsalPlan(options = {}) {
   };
 }
 
+const SYSTEM_DESIGN_OUTLINE_TEMPLATE = {
+  duration: 75,
+  summary(role) {
+    if (role) {
+      return (
+        `System design outline tailored for a ${role} interview. ` +
+        'Use it to pace kickoff, architecture, scaling, and wrap-up segments.'
+      );
+    }
+    return 'System design outline spans kickoff, architecture, scaling, operations, and wrap-up.';
+  },
+  segments(role) {
+    const roleSuffix = role ? ` for ${role}` : '';
+    return [
+      {
+        title: 'Kickoff (0-5 min)',
+        goal: 'Align on user goals, success metrics, and explicit constraints.',
+        prompts: [
+          'Restate the scenario, primary users, and pain points to confirm understanding.',
+          'Ask about traffic expectations, latency targets, and data retention requirements.',
+        ],
+        checkpoints: [
+          'Agree on the primary workflow to optimize and the definition of success.',
+          'Capture must-haves versus nice-to-haves to guard the remaining discussion.',
+        ],
+      },
+      {
+        title: `Architecture (5-20 min)${roleSuffix ? ` — ${roleSuffix.trim()}` : ''}`,
+        goal: 'Sketch core components, data flow, and ownership boundaries.',
+        prompts: [
+          'Propose core services, queues, and data stores that satisfy the requirements.',
+          'Explain how requests flow through the system and highlight trust boundaries.',
+        ],
+        checkpoints: [
+          'Identify sources of truth, caches, and asynchronous pipelines.',
+          'Call out external dependencies, failure domains, and isolation strategies.',
+        ],
+      },
+      {
+        title: 'Scaling & reliability (20-45 min)',
+        goal: 'Stress test throughput, storage growth, and resilience strategies.',
+        prompts: [
+          'Quantify capacity assumptions (QPS, fan-out, storage growth) and revisit throughout.',
+          'Describe how you will scale hot paths (partitioning, replication, caching).',
+          'Discuss consistency and availability trade-offs plus mitigation plans.',
+        ],
+        checkpoints: [
+          'Name the first bottleneck you expect and the instrumentation that would detect it.',
+          'Detail degradation modes and fallback behavior for critical user journeys.',
+        ],
+      },
+      {
+        title: 'Operations & observability (45-70 min)',
+        goal: 'Cover deployment, telemetry, and incident response expectations.',
+        prompts: [
+          'Outline logging, metrics, and tracing signals plus alerting thresholds.',
+          'Explain deployment, rollback, and migration workflows, including data safety.',
+        ],
+        checkpoints: [
+          'List SLIs/SLOs that demonstrate the design is healthy after launch.',
+          'Describe on-call runbooks, escalation paths, and ownership hand-offs.',
+        ],
+      },
+      {
+        title: 'Wrap-up (70-75 min)',
+        goal: 'Summarize trade-offs, risks, and next steps for the debrief.',
+        prompts: [
+          'Recap strengths, weaknesses, and open questions to investigate later.',
+          'Offer trade-offs you would revisit with more time or new constraints.',
+        ],
+        checkpoints: [
+          'Confirm follow-up experiments, metrics, or artifacts you owe the team.',
+          'Frame the closing narrative that you will deliver in the interview debrief.',
+        ],
+      },
+    ];
+  },
+  checklists: [
+    {
+      title: 'Diagram essentials',
+      items: [
+        'Label data-flow arrows with protocols, latency budgets, and owners.',
+        'Mark read versus write paths plus components responsible for state changes.',
+        'Highlight external dependencies, authentication boundaries, and rate limits.',
+      ],
+    },
+    {
+      title: 'Operational readiness',
+      items: [
+        'Define rollback and recovery strategies before the design ships.',
+        'List alerts that would page on-call and the source metrics powering them.',
+        'Capture launch risks with mitigation owners for follow-up.',
+      ],
+    },
+  ],
+  followUps: [
+    'Which trade-offs would you revisit with more time or real traffic data?',
+    'How would the design evolve to handle 10x traffic or new regions?',
+    'What telemetry confirms the design is healthy after launch?',
+  ],
+};
+
+export function generateSystemDesignOutline(options = {}) {
+  const role = sanitizeString(options.role);
+  const duration = resolveDurationOverride(
+    options.durationMinutes,
+    SYSTEM_DESIGN_OUTLINE_TEMPLATE.duration,
+  );
+  const summary = SYSTEM_DESIGN_OUTLINE_TEMPLATE.summary(role);
+  const segments = SYSTEM_DESIGN_OUTLINE_TEMPLATE.segments(role).map(segment => ({
+    title: segment.title,
+    goal: segment.goal,
+    prompts: segment.prompts.slice(),
+    checkpoints: segment.checkpoints.slice(),
+  }));
+  const checklists = SYSTEM_DESIGN_OUTLINE_TEMPLATE.checklists.map(checklist => ({
+    title: checklist.title,
+    items: checklist.items.slice(),
+  }));
+
+  return {
+    stage: 'System Design',
+    role: role || undefined,
+    duration_minutes: duration,
+    summary,
+    segments,
+    checklists,
+    follow_up_questions: SYSTEM_DESIGN_OUTLINE_TEMPLATE.followUps.slice(),
+  };
+}
+
 function ensureSafeIdentifier(value, label) {
   if (path.isAbsolute(value) || value.includes('/') || value.includes('\\')) {
     throw new Error(`${label} cannot contain path separators`);

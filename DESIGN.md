@@ -326,6 +326,11 @@ jobbot track add <job_id> --status applied --note "emailed hiring manager"
 
 - `.docx` export (shipped via CLI using the docx library; Pandoc remains optional for other flows).
 - System-design rehearsal outlines.
+  _Implemented (2025-11-28):_ `jobbot interviews outline` now generates Markdown and JSON
+  outlines for the system design stage, pacing kickoff through wrap-up segments. Regression
+  coverage in [`test/cli.test.js`](test/cli.test.js) and
+  [`test/interviews.test.js`](test/interviews.test.js) locks the CLI output and structured
+  outline contract.
 - Scheduler for periodic ingestion/matching.
 - Basic analytics, all local.
 

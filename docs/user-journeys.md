@@ -309,13 +309,18 @@ call scheduled"`.
 
 1. Generate an interview plan using `jobbot interviews plan --job <job_id> --stage behavioral` to
    create targeted prompts, resources, and checklists.
-2. Rehearse with `jobbot rehearse <job_id> --stage behavioral --audio recordings/mock.mp3` to
+2. Draft a system design outline with `jobbot interviews outline --role Staff Engineer --json` when
+   preparing whiteboard sessions. The command prints Markdown by default, mirrors kickoff through
+   wrap-up segments, and supports `--json` for automation. Regression coverage in
+   [`test/cli.test.js`](../test/cli.test.js) and [`test/interviews.test.js`](../test/interviews.test.js)
+   keeps the outline structure and CLI output consistent.
+3. Rehearse with `jobbot rehearse <job_id> --stage behavioral --audio recordings/mock.mp3` to
    transcribe practice answers via configured STT providers.
-3. Record session notes using `jobbot interviews record <job_id> --session <id> --notes <text>
+4. Record session notes using `jobbot interviews record <job_id> --session <id> --notes <text>
 --rating 4`.
-4. Review progress with `jobbot interviews show <job_id> --session <id> --json` to inspect metrics
+5. Review progress with `jobbot interviews show <job_id> --session <id> --json` to inspect metrics
    like words per minute and STAR coverage.
-5. Export sessions via
+6. Export sessions via
    `jobbot interviews export --job <job_id> --out exports/interviews-<job_id>.zip` for coaching
    feedback loops; the archive stores session JSON plus a manifest listing stage, mode, and
    recorded timestamps.

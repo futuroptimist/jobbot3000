@@ -637,3 +637,48 @@ describe('generateRehearsalPlan', () => {
     );
   });
 });
+
+describe('generateSystemDesignOutline', () => {
+  it('produces a structured outline with kickoff through wrap-up segments', async () => {
+    const { generateSystemDesignOutline } = await import('../src/interviews.js');
+
+    const outline = generateSystemDesignOutline({ role: ' Staff Engineer ', durationMinutes: 90 });
+
+    expect(outline.stage).toBe('System Design');
+    expect(outline.role).toBe('Staff Engineer');
+    expect(outline.duration_minutes).toBe(90);
+    expect(Array.isArray(outline.segments)).toBe(true);
+    expect(outline.segments).toHaveLength(5);
+    expect(outline.segments[0]).toMatchObject({
+      title: expect.stringContaining('Kickoff'),
+      goal: expect.stringMatching(/success metrics/i),
+    });
+    expect(outline.segments[0].prompts).toEqual(
+      expect.arrayContaining([expect.stringMatching(/traffic expectations/i)]),
+    );
+    expect(outline.segments.find(segment => segment.title.includes('Wrap-up'))).toBeDefined();
+    expect(outline.checklists).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          title: 'Diagram essentials',
+          items: expect.arrayContaining([expect.stringMatching(/label/i)]),
+        }),
+      ]),
+    );
+    expect(outline.follow_up_questions).toEqual(
+      expect.arrayContaining([expect.stringMatching(/trade-offs/i)]),
+    );
+  });
+
+  it('defaults to a 75-minute outline when overrides are omitted', async () => {
+    const { generateSystemDesignOutline } = await import('../src/interviews.js');
+
+    const outline = generateSystemDesignOutline();
+
+    expect(outline.stage).toBe('System Design');
+    expect(outline.duration_minutes).toBe(75);
+    expect(outline.segments.some(segment => /Scaling & reliability/i.test(segment.title))).toBe(
+      true,
+    );
+  });
+});
