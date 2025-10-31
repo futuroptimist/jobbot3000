@@ -3549,8 +3549,13 @@ describe('jobbot CLI', () => {
       'match.json',
       'match.md',
       'resume.json',
+      'resume.pdf',
       'resume.txt',
     ]);
+
+    const pdfBuffer = fs.readFileSync(path.join(runDir, 'resume.pdf'));
+    expect(pdfBuffer.length).toBeGreaterThan(100);
+    expect(pdfBuffer.subarray(0, 4).toString()).toBe('%PDF');
 
     const coverLetter = fs.readFileSync(path.join(runDir, 'cover_letter.md'), 'utf8');
     expect(coverLetter).toContain('Ada Example');
@@ -3574,6 +3579,7 @@ describe('jobbot CLI', () => {
         'match.md',
         'match.json',
         'resume.json',
+        'resume.pdf',
         'resume.txt',
         'cover_letter.md',
       ]),

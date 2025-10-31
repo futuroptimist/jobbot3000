@@ -21,6 +21,7 @@ import { saveJobSnapshot, jobIdFromSource } from '../src/jobs.js';
 import { summarizeJobActivity } from '../src/activity-insights.js';
 import { generateCoverLetter } from '../src/cover-letter.js';
 import { renderResumeTextPreview } from '../src/resume-preview.js';
+import { renderResumePdf } from '../src/resume-pdf.js';
 import {
   logApplicationEvent,
   getApplicationEvents,
@@ -124,6 +125,32 @@ if (Number.isFinite(parsedAuditRetention) && parsedAuditRetention > 0) {
 
 let cliAuditLogger = null;
 let cliAuditLoggerFailed = false;
+
+export async function writeResumePdfArtifact({
+  runDir,
+  resume,
+  logDebug = Boolean(process.env.JOBBOT_DEBUG),
+  filename = 'resume.pdf',
+} = {}) {
+  if (!runDir) {
+    throw new Error('runDir is required to write resume PDF artifacts');
+  }
+  const targetPath = path.join(runDir, filename);
+  try {
+    const pdfBuffer = await renderResumePdf(resume);
+    if (!pdfBuffer || pdfBuffer.length === 0) {
+      return { wrote: false, path: targetPath, bytes: 0 };
+    }
+    await fs.promises.writeFile(targetPath, pdfBuffer);
+    return { wrote: true, path: targetPath, bytes: pdfBuffer.length };
+  } catch (error) {
+    if (logDebug) {
+      const reason = error?.message || String(error);
+      console.warn(`jobbot: failed to synthesize ${filename}: ${reason}`);
+    }
+    return { wrote: false, path: targetPath, error };
+  }
+}
 
 async function recordCliAuditEvent(event) {
   if (!cliAuditLogPath) return;
@@ -3173,6 +3200,11 @@ async function cmdTailor(args) {
   );
   await writeTextFile(path.join(runDir, 'resume.txt'), ensureTrailingNewline(resumePreview));
 
+  const resumePdfResult = await writeResumePdfArtifact({
+    runDir,
+    resume: profileResume,
+  });
+
   const toDataRelativePath = targetPath => {
     if (!targetPath) return null;
     const resolved = path.resolve(targetPath);
@@ -3208,6 +3240,17 @@ async function cmdTailor(args) {
       ? activity.interviews.sessions_after_last_deliverable
       : undefined;
 
+  const outputs = [
+    'match.md',
+    'match.json',
+    'resume.json',
+    'resume.txt',
+    'cover_letter.md',
+  ];
+  if (resumePdfResult?.wrote) {
+    outputs.splice(3, 0, 'resume.pdf');
+  }
+
   const buildLog = {
     job_id: jobId,
     run_label: runLabel,
@@ -3218,7 +3261,7 @@ async function cmdTailor(args) {
       source: snapshot.source ?? null,
     },
     profile_resume_path: toDataRelativePath(profileSourcePath),
-    outputs: ['match.md', 'match.json', 'resume.json', 'resume.txt', 'cover_letter.md'],
+    outputs,
     cover_letter_included: true,
     match_summary: matchSummary,
     prior_activity: {
