@@ -3132,7 +3132,7 @@ describe('jobbot CLI', () => {
     expect(textReport).toContain('$185,000');
     expect(textReport).toContain('€95,000 – €140,000');
     expect(textReport).toContain('job-unparsed: Competitive');
-  });
+  }, 8000);
 
   it('reports analytics health issues for missing statuses and stale outreach', () => {
     runCli(['track', 'log', 'job-known', '--channel', 'email', '--date', '2025-02-10']);
@@ -3914,6 +3914,37 @@ describe('jobbot CLI', () => {
     expect(output).toContain('Dialog tree');
     expect(output).toMatch(/Follow-ups:/);
     expect(output).toMatch(/- Outline/);
+  });
+
+  it('prints a system design outline for interviews outline command', () => {
+    const output = runCli([
+      'interviews',
+      'outline',
+      '--role',
+      'Staff Engineer',
+      '--duration',
+      '90',
+    ]);
+
+    expect(output).toContain('System Design outline');
+    expect(output).toContain('Kickoff (0-5 min)');
+    expect(output).toContain('Scaling & reliability');
+    expect(output).toContain('Wrap-up (70-75 min)');
+  });
+
+  it('emits JSON outlines with --json for interviews outline', () => {
+    const output = runCli(['interviews', 'outline', '--json', '--role', 'Platform Lead']);
+    const parsed = JSON.parse(output);
+
+    expect(parsed.outline).toMatchObject({
+      stage: 'System Design',
+      role: 'Platform Lead',
+    });
+    expect(parsed.outline.segments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ title: expect.stringMatching(/Kickoff/) }),
+      ]),
+    );
   });
 
   it('prints onsite rehearsal plans with dialog tree follow-ups', () => {

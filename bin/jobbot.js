@@ -53,6 +53,7 @@ import {
   recordInterviewSession,
   getInterviewSession,
   generateRehearsalPlan,
+  generateSystemDesignOutline,
   exportInterviewSessions,
   listInterviewReminders,
 } from '../src/interviews.js';
@@ -3798,6 +3799,67 @@ function formatRehearsalPlan(plan) {
   return lines.join('\n');
 }
 
+function formatSystemDesignOutline(outline) {
+  const lines = [];
+  const title = outline.stage ? `${outline.stage} outline` : 'System Design outline';
+  lines.push(title);
+  if (outline.role) {
+    lines.push(`Role focus: ${outline.role}`);
+  }
+  if (Number.isFinite(outline.duration_minutes)) {
+    lines.push(`Suggested duration: ${outline.duration_minutes} minutes`);
+  }
+  if (outline.summary) {
+    lines.push('');
+    lines.push(outline.summary);
+  }
+
+  if (Array.isArray(outline.segments) && outline.segments.length > 0) {
+    for (const segment of outline.segments) {
+      lines.push('');
+      lines.push(segment.title);
+      if (segment.goal) {
+        lines.push(`Goal: ${segment.goal}`);
+      }
+      if (Array.isArray(segment.prompts) && segment.prompts.length > 0) {
+        for (const prompt of segment.prompts) {
+          lines.push(`- ${prompt}`);
+        }
+      }
+      if (Array.isArray(segment.checkpoints) && segment.checkpoints.length > 0) {
+        lines.push('Checkpoints:');
+        for (const checkpoint of segment.checkpoints) {
+          lines.push(`* ${checkpoint}`);
+        }
+      }
+    }
+  }
+
+  if (Array.isArray(outline.checklists) && outline.checklists.length > 0) {
+    for (const checklist of outline.checklists) {
+      lines.push('');
+      lines.push(checklist.title);
+      for (const item of checklist.items || []) {
+        lines.push(`- ${item}`);
+      }
+    }
+  }
+
+  if (Array.isArray(outline.follow_up_questions) && outline.follow_up_questions.length > 0) {
+    lines.push('');
+    lines.push('Follow-up questions');
+    for (const question of outline.follow_up_questions) {
+      lines.push(`- ${question}`);
+    }
+  }
+
+  while (lines.length > 0 && lines[lines.length - 1] === '') {
+    lines.pop();
+  }
+
+  return lines.join('\n');
+}
+
 function collectPlanVoicePrompts(plan) {
   if (!plan || typeof plan !== 'object' || Array.isArray(plan)) {
     return [];
@@ -3949,6 +4011,21 @@ async function cmdInterviewsPlan(args) {
   console.log(formatRehearsalPlan(plan));
 }
 
+async function cmdInterviewsOutline(args) {
+  const asJson = args.includes('--json');
+  const role = getFlag(args, '--role');
+  const durationMinutes = getNumberFlag(args, '--duration');
+
+  const outline = generateSystemDesignOutline({ role, durationMinutes });
+
+  if (asJson) {
+    console.log(JSON.stringify({ outline }, null, 2));
+    return;
+  }
+
+  console.log(formatSystemDesignOutline(outline));
+}
+
 async function cmdInterviewsExport(args) {
   const usage = 'Usage: jobbot interviews export --job <job_id> --out <path>';
   assertFlagHasValue(args, '--job', usage);
@@ -4078,9 +4155,10 @@ async function cmdInterviews(args) {
   if (sub === 'record') return cmdInterviewsRecord(args.slice(1));
   if (sub === 'show') return cmdInterviewsShow(args.slice(1));
   if (sub === 'plan') return cmdInterviewsPlan(args.slice(1));
+  if (sub === 'outline') return cmdInterviewsOutline(args.slice(1));
   if (sub === 'export') return cmdInterviewsExport(args.slice(1));
   if (sub === 'remind') return cmdInterviewsRemind(args.slice(1));
-  console.error('Usage: jobbot interviews <record|show|plan|export|remind> ...');
+  console.error('Usage: jobbot interviews <record|show|plan|outline|export|remind> ...');
   process.exit(2);
 }
 
