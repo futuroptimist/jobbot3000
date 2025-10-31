@@ -43,7 +43,7 @@ loading, and error reporting. Commands fan out to domain modules that encapsulat
 - **Tracker:** `jobbot track` commands write to `data/applications.json` and
   `data/application_events.json` using helpers in `src/application-events.js` and `src/lifecycle.js`.
 - **Tailoring:** `jobbot tailor` combines the profile resume with a saved job snapshot to write
-  `match.md`, `match.json`, `resume.json`, `resume.txt`, and `cover_letter.md` under
+  `match.md`, `match.json`, `resume.json`, `resume.pdf`, `resume.txt`, and `cover_letter.md` under
   `data/deliverables/{job_id}/{timestamp}/` so bundles stay deterministic before zipping.
 - **Scheduling:** `jobbot schedule run` loads configuration and executes recurring workflows via
   `src/schedule.js`.
