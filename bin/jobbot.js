@@ -84,6 +84,8 @@ import { ingestWorkableBoard } from '../src/workable.js';
 import { ingestJobUrl } from '../src/url-ingest.js';
 import { bundleDeliverables, loadDeliverablesDiff } from '../src/deliverables.js';
 import { createTaskScheduler, loadScheduleConfig, buildScheduledTasks } from '../src/schedule.js';
+import { bootstrapModules } from '../src/modules/index.js';
+import { loadConfig } from '../src/shared/config/manifest.js';
 import { transcribeAudio, synthesizeSpeech } from '../src/speech.js';
 import { t, DEFAULT_LOCALE } from '../src/i18n.js';
 import { createReminderCalendar } from '../src/reminders-calendar.js';
@@ -3385,13 +3387,30 @@ async function cmdScheduleRun(args) {
     error: message => console.error(message),
   };
 
-  const tasks = buildScheduledTasks(definitions, {
-    logger,
-    cycles,
-    now: () => new Date(),
-  });
+  let modules;
+  try {
+    const manifestConfig = loadConfig();
+    modules = bootstrapModules({ config: manifestConfig, logger });
+  } catch (err) {
+    console.error(err?.message || String(err));
+    process.exit(1);
+  }
 
-  const scheduler = createTaskScheduler(tasks);
+  let scheduler;
+  try {
+    const tasks = buildScheduledTasks(definitions, {
+      logger,
+      cycles,
+      now: () => new Date(),
+      moduleBus: modules?.bus,
+    });
+
+    scheduler = createTaskScheduler(tasks);
+  } catch (err) {
+    modules?.shutdown?.();
+    console.error(err?.message || String(err));
+    process.exit(1);
+  }
 
   const handleSignal = () => {
     scheduler.stop();
@@ -3400,13 +3419,13 @@ async function cmdScheduleRun(args) {
   process.once('SIGINT', handleSignal);
   process.once('SIGTERM', handleSignal);
 
-  scheduler.start();
-
   try {
+    scheduler.start();
     await scheduler.whenIdle();
   } finally {
     process.off('SIGINT', handleSignal);
     process.off('SIGTERM', handleSignal);
+    modules?.shutdown?.();
   }
 }
 

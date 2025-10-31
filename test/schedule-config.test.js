@@ -34,6 +34,8 @@ import {
   runWeeklySummaryNotifications,
   sendWeeklySummaryNotification,
 } from '../src/notifications.js';
+import { createModuleEventBus } from '../src/shared/events/bus.js';
+import { registerScrapingModule } from '../src/modules/scraping/index.js';
 
 describe('schedule config', () => {
   let tmpDir;
@@ -176,6 +178,58 @@ describe('schedule config', () => {
 
     expect(ingestTask.maxRuns).toBe(1);
     expect(matchTask.maxRuns).toBe(1);
+  });
+
+  it('dispatches ingestion tasks through the module event bus when provided', async () => {
+    const bus = createModuleEventBus();
+    const mockHandler = vi.fn(async () => ({
+      saved: 2,
+      jobIds: ['job-1', 'job-2'],
+      board: 'acme',
+    }));
+
+    const dispose = registerScrapingModule({
+      bus,
+      config: {
+        features: { scraping: { useMocks: true } },
+        mocks: { scrapingProvider: mockHandler },
+      },
+    });
+
+    try {
+      const definitions = [
+        {
+          id: 'greenhouse-hourly',
+          type: 'ingest',
+          provider: 'greenhouse',
+          params: { board: 'acme' },
+          intervalMs: 1000,
+        },
+      ];
+
+      const logger = { info: vi.fn(), error: vi.fn() };
+      const tasks = buildScheduledTasks(definitions, {
+        logger,
+        moduleBus: bus,
+        cycles: 1,
+      });
+
+      expect(tasks).toHaveLength(1);
+      const [ingestTask] = tasks;
+
+      const message = await ingestTask.run();
+      ingestTask.onSuccess?.(message, ingestTask);
+
+      expect(mockHandler).toHaveBeenCalledWith({
+        provider: 'greenhouse',
+        options: { board: 'acme' },
+      });
+      expect(ingestGreenhouseBoard).not.toHaveBeenCalled();
+      expect(message).toBe('Imported 2 jobs from greenhouse acme');
+      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('greenhouse-hourly'));
+    } finally {
+      dispose();
+    }
   });
 
   it('runs notification tasks and logs recipients', async () => {

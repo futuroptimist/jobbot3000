@@ -500,8 +500,11 @@ flowchart TD
   Notifications -->|CLI follow-ups| CliReminders["CLI reminders"]
 ```
 
-1. The scheduler emits `scraping:jobs:fetch` events via the module event bus. Scraping adapters respect
-   rate limits and provider feature flags before persisting redacted snapshots.
+1. The scheduler emits `scraping:jobs:fetch` events via the module event bus.
+   Scraping adapters respect rate limits and provider feature flags before persisting redacted
+   snapshots. Regression coverage
+   in [`test/schedule-config.test.js`](../test/schedule-config.test.js) asserts scheduled ingestion
+   tasks dispatch through the bus so overrides, mocks, and logging stay aligned.
 2. Enrichment stages rebuild resume contexts, emit match requests, and forward normalized payloads to
    the scoring engine. The diagram mirrors the shared pipeline in
    [`src/pipeline/resume-pipeline.js`](../src/pipeline/resume-pipeline.js).

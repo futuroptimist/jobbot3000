@@ -462,19 +462,30 @@ function resolveMaxRuns(taskDef, cycles) {
   return fromDef ?? fromCycles;
 }
 
-async function runIngestTask(taskDef) {
-  const fn = INGEST_PROVIDERS[taskDef.provider];
-  if (typeof fn !== 'function') {
-    throw new Error(`unsupported ingest provider: ${taskDef.provider}`);
-  }
-  const result = await fn(taskDef.params);
+async function runIngestTask(taskDef, { moduleBus } = {}) {
+  const params = taskDef.params || {};
   const target =
-    taskDef.params.board ||
-    taskDef.params.org ||
-    taskDef.params.company ||
-    taskDef.params.account ||
-    taskDef.params.url ||
-    'target';
+    params.board || params.org || params.company || params.account || params.url || 'target';
+
+  let result;
+  if (moduleBus && typeof moduleBus.dispatch === 'function') {
+    result = await moduleBus.dispatch('scraping:jobs:fetch', {
+      provider: taskDef.provider,
+      options: params,
+    });
+  }
+
+  if (result === undefined) {
+    const fn = INGEST_PROVIDERS[taskDef.provider];
+    if (typeof fn !== 'function') {
+      throw new Error(`unsupported ingest provider: ${taskDef.provider}`);
+    }
+    result = await fn(params);
+  }
+
+  if (typeof result === 'string') {
+    return result;
+  }
 
   if (result && result.notModified) {
     return `No changes for ${taskDef.provider} ${target}`;
@@ -637,7 +648,7 @@ async function runNotificationsTask(taskDef, nowValue) {
 
 export function buildScheduledTasks(
   definitions,
-  { logger = DEFAULT_LOGGER, cycles, now = () => new Date() } = {},
+  { logger = DEFAULT_LOGGER, cycles, now = () => new Date(), moduleBus } = {},
 ) {
   if (!logger || typeof logger.info !== 'function' || typeof logger.error !== 'function') {
     throw new Error('logger must expose info() and error() methods');
@@ -654,7 +665,7 @@ export function buildScheduledTasks(
     };
 
     if (definition.type === 'ingest') {
-      taskConfig.run = () => runIngestTask(definition);
+      taskConfig.run = () => runIngestTask(definition, { moduleBus });
     } else if (definition.type === 'match') {
       taskConfig.run = () => runMatchTask(definition);
     } else if (definition.type === 'notifications') {
