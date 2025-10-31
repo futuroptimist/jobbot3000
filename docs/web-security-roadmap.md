@@ -121,7 +121,7 @@
   to assert that secrets populate environment variables and clear the missing
   secret warnings without leaking other provider credentials.
 - Implement structured risk assessments and threat modeling before every feature launch.
-  _Implemented (2025-11-22):_ [`src/shared/security/risk-assessment.js`](../src/shared/security/risk-assessment.js)
+  _Implemented (2025-10-30):_ [`src/shared/security/risk-assessment.js`](../src/shared/security/risk-assessment.js)
   now exposes `createRiskAssessment` and `formatRiskAssessmentMarkdown`, powering the
   `scripts/generate-risk-assessment.js` CLI. Engineers define JSON threat models and
   render Markdown reports into [`docs/security/risk-assessments/`](security/risk-assessments/)
