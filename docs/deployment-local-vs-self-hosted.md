@@ -50,6 +50,8 @@ installations.
 
 - Enable the circuit breaker feature flags (`JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD` and
   `JOBBOT_HTTP_CIRCUIT_BREAKER_RESET_MS`) to prevent cascading adapter failures.
+  `fetchWithRetry` surfaces the breaker key (`circuitKey`) and the next retry timestamp (`retryAt`)
+  when a circuit is open, making it easier to alert and recover without digging into internal state.
 - Point `JOBBOT_AUDIT_LOG` to `/var/log/jobbot/audit.log` and ship logs to your SIEM.
 - Set `JOBBOT_FEATURE_NOTIFICATIONS_WEEKLY=false` if email is handled externally; CLI commands and
   scheduled tasks report the feature as disabled instead of writing weekly summary emails.
