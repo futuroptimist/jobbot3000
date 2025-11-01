@@ -77,6 +77,12 @@ Feature flags are parsed via the manifest and exposed to the web server:
 | `features.httpClient.circuitBreakerThreshold` | `JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD` | Trip the circuit after _n_ consecutive failures                                        |
 | `features.httpClient.circuitBreakerResetMs`   | `JOBBOT_HTTP_CIRCUIT_BREAKER_RESET_MS`  | Reset window after failures                                                            |
 
+`createHttpClient` and the ATS scraping adapters now consume these values by default, so manifest
+overrides automatically adjust retry counts, base backoff delays, and circuit breaker windows for
+provider requests. Regression coverage in
+[`test/http-client-manifest.test.js`](../test/http-client-manifest.test.js) keeps the integration
+locked down.
+
 ## Authentication and RBAC
 
 `loadWebConfig` now surfaces scoped API keys so deployments can enforce role-based access control

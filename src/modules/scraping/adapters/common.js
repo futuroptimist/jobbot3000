@@ -1,5 +1,6 @@
 import { normalizeRateLimitInterval } from '../../../shared/http/fetch.js';
 import { createHttpClient } from '../../../shared/http/client.js';
+import { getHttpClientFeatureConfig } from '../../../shared/http/config.js';
 import { jobIdFromSource } from '../jobs.js';
 
 /**
@@ -44,23 +45,24 @@ export function createAdapterHttpClient({
     throw new Error('provider is required');
   }
   const normalizedRateLimit = normalizeRateLimitInterval(rateLimitMs, 0);
-  const defaultCircuitBreaker = {
-    threshold: parseNumber(
-      circuitBreaker?.threshold ?? process.env.JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD,
-      0,
-    ),
-    resetMs: parseNumber(
-      circuitBreaker?.resetMs ?? process.env.JOBBOT_HTTP_CIRCUIT_BREAKER_RESET_MS,
-      30_000,
-    ),
+  const httpDefaults = getHttpClientFeatureConfig();
+  const resolvedRetry = (() => {
+    const base = retry && typeof retry === 'object' ? { ...retry } : {};
+    base.retries = parseNumber(base.retries, httpDefaults.maxRetries);
+    base.delayMs = parseNumber(base.delayMs, httpDefaults.backoffMs);
+    return base;
+  })();
+  const resolvedCircuitBreaker = {
+    threshold: parseNumber(circuitBreaker?.threshold, httpDefaults.circuitBreakerThreshold),
+    resetMs: parseNumber(circuitBreaker?.resetMs, httpDefaults.circuitBreakerResetMs),
   };
   return createHttpClient({
     provider: provider.trim(),
     defaultHeaders: headers,
     defaultRateLimitMs: normalizedRateLimit,
-    defaultRetry: retry,
+    defaultRetry: resolvedRetry,
     defaultTimeoutMs: timeoutMs,
-    defaultCircuitBreaker,
+    defaultCircuitBreaker: resolvedCircuitBreaker,
   });
 }
 
