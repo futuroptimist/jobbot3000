@@ -9,6 +9,37 @@ async function readJson(filePath) {
   return JSON.parse(contents);
 }
 
+function tableCells(line) {
+  if (!line.includes('|')) {
+    return null;
+  }
+
+  const cells = line
+    .split('|')
+    .slice(1, -1)
+    .map(cell => cell.trim());
+
+  if (cells.length === 0) {
+    return null;
+  }
+
+  return cells;
+}
+
+function normalizeTableRow(line) {
+  const cells = tableCells(line);
+  if (!cells) {
+    return null;
+  }
+
+  return `| ${cells.join(' | ')} |`;
+}
+
+function isDividerRow(line) {
+  const cells = tableCells(line);
+  return Boolean(cells?.every(cell => /^-+$/.test(cell)));
+}
+
 describe('architecture decisions log', () => {
   it('tracks accepted ADR entries with required metadata and markdown sections', async () => {
     await expect(fs.access(ADR_DIR)).resolves.toBeUndefined();
@@ -37,5 +68,29 @@ describe('architecture decisions log', () => {
     expect(markdown).toContain('## Context');
     expect(markdown).toContain('## Decision');
     expect(markdown).toContain('## Consequences');
+  });
+
+  it('lists every ADR entry in the README index table', async () => {
+    const indexPath = path.join(ADR_DIR, 'index.json');
+    const entries = await readJson(indexPath);
+    expect(entries.length).toBeGreaterThan(0);
+
+    const readmePath = path.join(ADR_DIR, 'README.md');
+    const readme = await fs.readFile(readmePath, 'utf8');
+
+    const normalizedRows = readme
+      .split('\n')
+      .map(normalizeTableRow)
+      .filter(Boolean);
+
+    expect(normalizedRows).toContain('| ADR ID | Title | Status | Decided | Summary |');
+    expect(readme.split('\n').some(isDividerRow)).toBe(true);
+
+    for (const entry of entries) {
+      const expectedRow =
+        `| [${entry.id}](./${entry.slug}.md) | ${entry.title} | ${entry.status} | ` +
+        `${entry.decidedAt} | ${entry.summary} |`;
+      expect(normalizedRows).toContain(normalizeTableRow(expectedRow));
+    }
   });
 });
