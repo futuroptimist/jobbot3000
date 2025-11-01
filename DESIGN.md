@@ -290,6 +290,11 @@ jobbot track add <job_id> --status applied --note "emailed hiring manager"
 
 - Embeddings service (local HF) + pgvector store.
 - Keyword/BM25 baseline + cosine combo scoring.
+  _Implemented (2025-11-30):_ `computeFitScore` now returns a `scoreBreakdown`
+  that surfaces BM25 totals and cosine similarity metrics alongside the existing
+  coverage score. Regression coverage in
+  [`test/scoring.test.js`](test/scoring.test.js) exercises the breakdown shape
+  and asserts that matching resumes produce non-zero BM25 and cosine signals.
 - O\*NET/ESCO synonym expansion. (shipped)
 - Explanations UI (hits/gaps/evidence).
 - CLI: `jobbot match --explain` (shipped).
