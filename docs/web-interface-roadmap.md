@@ -477,6 +477,13 @@
   [`test/docs-adr.test.js`](../test/docs-adr.test.js) asserts new ADRs update the
   table before merges.
 - Provide onboarding docs covering project setup, CLI dependencies, and test commands.
+  _Implemented (2025-10-31):_ [`docs/getting-started.md`](../docs/getting-started.md)
+  now walks new contributors through `npm ci`, environment bootstrap, and
+  Playwright installation before surfacing the primary CLI entry points.
+  [`test/docs-getting-started.test.js`](../test/docs-getting-started.test.js)
+  locks the required headings and commands in place (`npm run lint`,
+  `npm run test:ci`, and the watch mode helper) so future edits preserve the
+  onboarding contract.
 - Offer API and component storybooks for consistent usage.
   _Implemented (2025-10-13):_ [`docs/web-api-reference.md`](web-api-reference.md)
   now documents every allow-listed `/commands/:command` endpoint, required
