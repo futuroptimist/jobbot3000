@@ -397,11 +397,12 @@ call scheduled"`.
 
 1. Navigate to **Analytics** to view funnel charts, activity dashboards, and health warnings derived
    from the same API endpoints.
-2. Filter by timeframe, role type, or company. Filters map to CLI flags (`--from`, `--to`,
-   `--company`) so automated tests can reuse fixtures. Regression coverage in
-   [`test/analytics.test.js`](../test/analytics.test.js) and
-   [`test/cli.test.js`](../test/cli.test.js) locks the date/company filters so both CLI
-   and UI views stay aligned.
+2. Filter by timeframe (`from`/`to`) or company using the form above the dashboard. Filters
+   map to CLI flags (`--from`, `--to`, `--company`) so automated tests can reuse fixtures.
+   Regression coverage in [`test/analytics.test.js`](../test/analytics.test.js),
+   [`test/cli.test.js`](../test/cli.test.js), and
+   [`test/web-server.test.js`](../test/web-server.test.js) locks the filters so CLI and UI
+   views stay aligned.
 3. Drill into anomalies via the **Health** tab which lists missing statuses or outdated deliverables
    and links back to the relevant workflows.
 4. Export dashboards as CSV/JSON via the **Download** buttons, which call the

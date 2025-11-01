@@ -2069,6 +2069,83 @@ describe("web server status page", () => {
     expect(message?.textContent).toContain("analytics-stages.csv");
   });
 
+  it("applies analytics filters via the dashboard form", async () => {
+    const funnelPayloads = [];
+    const commandAdapter = {
+      "analytics-funnel": vi.fn(async payload => {
+        funnelPayloads.push(payload ?? {});
+        return {
+          command: "analytics-funnel",
+          format: "json",
+          stdout: "",
+          stderr: "",
+          returnValue: 0,
+          data: {
+            totals: { trackedJobs: 3, withEvents: 2 },
+            stages: [
+              { key: "outreach", label: "Outreach", count: 2, conversionRate: 1 },
+              { key: "screening", label: "Screening", count: 1, conversionRate: 0.5 },
+            ],
+            largestDropOff: { fromLabel: "Outreach", toLabel: "Screening", dropOff: 1 },
+            missing: { statuslessJobs: { count: 0 } },
+            sankey: { nodes: [], links: [] },
+          },
+        };
+      }),
+    };
+
+    commandAdapter.analyticsFunnel = commandAdapter["analytics-funnel"];
+
+    const server = await startServer({ commandAdapter });
+    const { dom, boot } = await renderStatusDom(server, {
+      pretendToBeVisual: true,
+      autoBoot: false,
+    });
+
+    const waitForEvent = (name, timeout = 500) => waitForDomEvent(dom, name, timeout);
+
+    const readyPromise = waitForEvent("jobbot:analytics-ready");
+    await boot();
+    await readyPromise;
+
+    const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
+    dom.window.location.hash = "#analytics";
+    dom.window.dispatchEvent(new HashChange("hashchange"));
+    await waitForEvent("jobbot:analytics-loaded");
+
+    expect(commandAdapter["analytics-funnel"]).toHaveBeenCalledTimes(1);
+
+    const form = dom.window.document.querySelector("[data-analytics-filters]");
+    expect(form).not.toBeNull();
+
+    const fromInput = form?.querySelector("[data-analytics-filter=\"from\"]");
+    const toInput = form?.querySelector("[data-analytics-filter=\"to\"]");
+    const companyInput = form?.querySelector("[data-analytics-filter=\"company\"]");
+
+    expect(fromInput).not.toBeNull();
+    expect(toInput).not.toBeNull();
+    expect(companyInput).not.toBeNull();
+
+    if (fromInput && toInput && companyInput) {
+      fromInput.value = "2025-01-01";
+      toInput.value = "2025-01-31";
+      companyInput.value = "Acme Corp";
+    }
+
+    form?.dispatchEvent(
+      new dom.window.Event("submit", { bubbles: true, cancelable: true }),
+    );
+
+    await waitForEvent("jobbot:analytics-loaded");
+
+    expect(commandAdapter["analytics-funnel"]).toHaveBeenCalledTimes(2);
+    expect(funnelPayloads).toContainEqual({
+      from: "2025-01-01",
+      to: "2025-01-31",
+      company: "Acme Corp",
+    });
+  });
+
   it("records status updates from the applications action panel", async () => {
     const shortlistEntry = {
       id: "job-42",

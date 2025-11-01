@@ -4549,11 +4549,71 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           const exportMessage = section.querySelector('[data-analytics-export-message]');
           const redactToggle = section.querySelector('[data-analytics-redact-toggle]');
 
-          const state = { loading: false, loaded: false, data: null, lastError: null };
+          const filterForm = section.querySelector('[data-analytics-filters]');
+          const filterInputs = filterForm
+            ? {
+                from: filterForm.querySelector('[data-analytics-filter="from"]'),
+                to: filterForm.querySelector('[data-analytics-filter="to"]'),
+                company: filterForm.querySelector('[data-analytics-filter="company"]'),
+              }
+            : null;
+          const resetFiltersButton = filterForm?.querySelector(
+            '[data-analytics-filters-reset]',
+          );
+
+          function sanitizeFilters(source = {}) {
+            const sanitized = {};
+            const fromValue =
+              typeof source.from === 'string' ? source.from.trim() : '';
+            if (fromValue) sanitized.from = fromValue;
+            const toValue = typeof source.to === 'string' ? source.to.trim() : '';
+            if (toValue) sanitized.to = toValue;
+            const companyValue =
+              typeof source.company === 'string' ? source.company.trim() : '';
+            if (companyValue) sanitized.company = companyValue;
+            return sanitized;
+          }
+
+          function filtersEqual(a = {}, b = {}) {
+            const keys = ['from', 'to', 'company'];
+            for (const key of keys) {
+              if ((a[key] ?? '') !== (b[key] ?? '')) {
+                return false;
+              }
+            }
+            return true;
+          }
+
+          function readFiltersFromInputs() {
+            if (!filterInputs) return {};
+            return sanitizeFilters({
+              from: filterInputs.from?.value ?? '',
+              to: filterInputs.to?.value ?? '',
+              company: filterInputs.company?.value ?? '',
+            });
+          }
+
+          function applyFiltersToInputs(filters = {}) {
+            if (!filterInputs) return;
+            if (filterInputs.from) filterInputs.from.value = filters.from ?? '';
+            if (filterInputs.to) filterInputs.to.value = filters.to ?? '';
+            if (filterInputs.company)
+              filterInputs.company.value = filters.company ?? '';
+          }
+
+          const state = {
+            loading: false,
+            loaded: false,
+            data: null,
+            lastError: null,
+            filters: {},
+          };
           const exportState = {
             running: false,
             redact: redactToggle ? redactToggle.checked !== false : true,
           };
+
+          applyFiltersToInputs(state.filters);
 
           function isRedactionEnabled() {
             if (!redactToggle) {
@@ -4741,17 +4801,20 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             }
           }
 
-          async function refresh() {
+          async function refresh(options = {}) {
             if (state.loading) {
               return false;
             }
+            const payload = sanitizeFilters(options.filters ?? state.filters ?? {});
+            state.filters = payload;
+            applyFiltersToInputs(state.filters);
             state.loading = true;
             setPanelState('analytics', 'loading', { preserveMessage: true });
 
             try {
               const data = await postCommand(
                 '/commands/analytics-funnel',
-                {},
+                payload,
                 {
                   invalidResponse: 'Received invalid response while loading analytics',
                   failureMessage: 'Failed to load analytics',
@@ -4856,12 +4919,28 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             });
           }
 
+          filterForm?.addEventListener('submit', event => {
+            event.preventDefault();
+            const nextFilters = readFiltersFromInputs();
+            if (filtersEqual(nextFilters, state.filters)) {
+              return;
+            }
+            refresh({ filters: nextFilters });
+          });
+
+          resetFiltersButton?.addEventListener('click', () => {
+            if (filtersEqual({}, state.filters)) {
+              return;
+            }
+            refresh({ filters: {} });
+          });
+
           scheduleAnalyticsReady({ available: true });
 
           return {
             refresh,
             getState() {
-              return { ...state };
+              return { ...state, filters: { ...state.filters } };
             },
           };
         }
@@ -5222,8 +5301,8 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           getListingsState() {
             return listingsApi ? listingsApi.getState() : null;
           },
-          refreshAnalytics() {
-            return analyticsApi ? analyticsApi.refresh() : false;
+          refreshAnalytics(options) {
+            return analyticsApi ? analyticsApi.refresh(options ?? {}) : false;
           },
           getAnalyticsState() {
             return analyticsApi ? analyticsApi.getState() : null;
@@ -6591,6 +6670,44 @@ export function createWebApp({
           aria-live="polite"
         >
           <div data-state-slot="ready">
+            <form class="filters" data-analytics-filters>
+              <label>
+                <span>From</span>
+                <input
+                  type="date"
+                  name="analytics-from"
+                  data-analytics-filter="from"
+                />
+              </label>
+              <label>
+                <span>To</span>
+                <input
+                  type="date"
+                  name="analytics-to"
+                  data-analytics-filter="to"
+                />
+              </label>
+              <label>
+                <span>Company</span>
+                <input
+                  type="text"
+                  placeholder="Acme Corp"
+                  autocomplete="off"
+                  data-analytics-filter="company"
+                />
+              </label>
+              <div class="filters__actions">
+                <button type="submit" class="button">Apply filters</button>
+                <button
+                  type="button"
+                  class="button"
+                  data-variant="ghost"
+                  data-analytics-filters-reset
+                >
+                  Reset
+                </button>
+              </div>
+            </form>
             <div data-analytics-summary>
               <p data-analytics-totals>Tracked jobs: —</p>
               <p data-analytics-dropoff>Largest drop-off: none</p>
