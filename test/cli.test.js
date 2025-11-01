@@ -2005,6 +2005,19 @@ describe('jobbot CLI', () => {
     });
   });
 
+  it('returns manual templates alongside intake plan JSON output', () => {
+    runCli(['init']);
+    const output = runCli(['intake', 'plan', '--json']);
+    const payload = JSON.parse(output);
+    expect(Array.isArray(payload.manual_templates)).toBe(true);
+    expect(payload.manual_templates.length).toBeGreaterThan(0);
+    expect(
+      payload.manual_templates.some(template =>
+        template.id === 'manual_strength_story',
+      ),
+    ).toBe(true);
+  });
+
   it('redacts sensitive intake entries when requested', () => {
     runCli([
       'intake',

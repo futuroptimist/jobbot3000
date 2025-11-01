@@ -105,6 +105,28 @@ describe('intake question plan', () => {
     expect(plan).toEqual([]);
   });
 
+  it('exposes manual question templates for fallback intake flows', async () => {
+    const { loadIntakeQuestionPlan } = await import('../src/intake-plan.js');
+    const result = await loadIntakeQuestionPlan();
+
+    expect(Array.isArray(result.manualTemplates)).toBe(true);
+    expect(result.manualTemplates.length).toBeGreaterThan(0);
+
+    for (const template of result.manualTemplates) {
+      expect(template).toMatchObject({
+        id: expect.any(String),
+        category: expect.any(String),
+        prompt: expect.any(String),
+      });
+      expect(Array.isArray(template.tags)).toBe(true);
+      expect(template.tags.length).toBeGreaterThan(0);
+      if (template.starter) {
+        expect(typeof template.starter).toBe('string');
+        expect(template.starter.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
   it('still asks for measurable outcomes when resume lacks numeric signals', async () => {
     const fs = await import('node:fs/promises');
     const profileDir = path.join(dataDir, 'profile');

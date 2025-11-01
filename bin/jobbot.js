@@ -1891,11 +1891,20 @@ function formatIntakeBullets(bullets) {
   return lines.join('\n');
 }
 
-function formatIntakePlan(plan, resumePath) {
+function formatIntakePlan(plan, resumePath, { manualTemplates = [] } = {}) {
   const lines = ['Intake question plan'];
 
   if (!Array.isArray(plan) || plan.length === 0) {
     lines.push('All core intake topics are already covered.');
+    if (manualTemplates.length > 0) {
+      lines.push('Use the manual question templates to keep discovery moving:');
+      for (const template of manualTemplates) {
+        lines.push(`- ${template.category}: ${template.prompt}`);
+        if (template.starter) {
+          lines.push(`    Starter: ${template.starter}`);
+        }
+      }
+    }
     if (resumePath) {
       lines.push(`Resume: ${resumePath}`);
     }
@@ -1999,7 +2008,7 @@ async function cmdIntakePlan(args) {
     process.exit(1);
   }
 
-  const { plan, resumePath } = result;
+  const { plan, resumePath, manualTemplates } = result;
 
   if (asJson) {
     console.log(
@@ -2007,6 +2016,7 @@ async function cmdIntakePlan(args) {
         {
           plan,
           resume_path: resumePath,
+          manual_templates: manualTemplates,
         },
         null,
         2,
@@ -2015,7 +2025,9 @@ async function cmdIntakePlan(args) {
     return;
   }
 
-  console.log(formatIntakePlan(plan, resumePath));
+  console.log(
+    formatIntakePlan(plan, resumePath, { manualTemplates }),
+  );
 }
 
 async function cmdIntakeExport(args) {
