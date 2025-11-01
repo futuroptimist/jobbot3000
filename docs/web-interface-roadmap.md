@@ -469,6 +469,13 @@
 ### 6. Documentation and Developer Experience
 
 - Maintain an architecture decision record (ADR) log capturing key choices.
+  _Implemented (2025-10-31):_ [`docs/architecture-decisions/README.md`](architecture-decisions/README.md)
+  now publishes a table of accepted ADRs sourced from
+  [`docs/architecture-decisions/index.json`](architecture-decisions/index.json).
+  Each row links to the Markdown record and copies the summary so the log stays
+  browsable. Regression coverage in
+  [`test/docs-adr.test.js`](../test/docs-adr.test.js) asserts new ADRs update the
+  table before merges.
 - Provide onboarding docs covering project setup, CLI dependencies, and test commands.
 - Offer API and component storybooks for consistent usage.
   _Implemented (2025-10-13):_ [`docs/web-api-reference.md`](web-api-reference.md)

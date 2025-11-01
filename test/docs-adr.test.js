@@ -38,4 +38,23 @@ describe('architecture decisions log', () => {
     expect(markdown).toContain('## Decision');
     expect(markdown).toContain('## Consequences');
   });
+
+  it('lists every ADR entry in the README index table', async () => {
+    const indexPath = path.join(ADR_DIR, 'index.json');
+    const entries = await readJson(indexPath);
+    expect(entries.length).toBeGreaterThan(0);
+
+    const readmePath = path.join(ADR_DIR, 'README.md');
+    const readme = await fs.readFile(readmePath, 'utf8');
+
+    expect(readme).toContain('| ADR ID | Title | Status | Decided | Summary |');
+    expect(readme).toContain('| ------ | ----- | ------ | ------- | ------- |');
+
+    for (const entry of entries) {
+      const expectedRow =
+        `| [${entry.id}](./${entry.slug}.md) | ${entry.title} | ${entry.status} | ` +
+        `${entry.decidedAt} | ${entry.summary} |`;
+      expect(readme).toContain(expectedRow);
+    }
+  });
 });
