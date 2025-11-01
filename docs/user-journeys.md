@@ -78,7 +78,8 @@ jobbot3000.
 ### CLI flow
 
 1. Generate the question backlog with `jobbot intake plan --profile data/profile/resume.json`.
-   Optionally add `--json` to feed automated review tools.
+   Pass any readable resume path to `--profile` (even outside `JOBBOT_DATA_DIR`); the CLI echoes the
+   resolved location in its output. Optionally add `--json` to feed automated review tools.
 2. Iterate through prompts using `jobbot intake record --question <id>`; the command accepts
    `--answer`, `--tags`, and `--confidence` so the assistant can track certainty.
 3. Use `jobbot intake record --skip <id> --reason <text>` when the candidate defers a question.
