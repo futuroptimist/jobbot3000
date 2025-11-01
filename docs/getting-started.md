@@ -2,29 +2,59 @@
 
 This guide covers installation, development, and the experimental web interface.
 
-## Prerequisites
+## Project setup
 
-- Node.js 20+
-- macOS, Linux, WSL, or Windows 11
-
-## Quick Start
-
-Get up and running in two steps:
+Follow these steps the first time you clone the repository:
 
 ```bash
-npm install       # Install dependencies (fast - no heavy test tools)
-npm run dev       # Start the fully functional web server with backend
+npm ci                # Install exact lockfile dependencies
+cp .env.example .env  # Optional: customize environment overrides locally
+npm run dev           # Start the fully functional web server with backend
 ```
 
-The web server will be available at http://127.0.0.1:3100 with all features enabled.
+The web server will be available at http://127.0.0.1:3100 with all features enabled. Use
+`npm run web:server -- --disable-native-cli` if you want to explore the mock-only UI without
+spawning CLI subprocesses.
 
 > **Note:** For running tests, you'll need to install Playwright first: `npm run prepare:test`
 
+## CLI dependencies
+
+- Node.js 20+
+- npm (bundled with Node) for executing `npx jobbot` commands and project scripts
+- Optional: `docker` if you plan to run the hardened compose stack documented in
+  [`docs/web-operational-playbook.md`](web-operational-playbook.md)
+
+When invoking CLI workflows, prefer the bundled executables so global installs stay optional:
+
+```bash
+npx jobbot init
+npx jobbot summarize <file-or-url>
+npx jobbot match --resume <file> --job <file>
+npx jobbot profile snapshot --note "First draft"
+npx jobbot shortlist ... | npx jobbot track ...
+```
+
+## Test commands
+
+Run these commands before committing to keep trunk green and match CI:
+
+```bash
+npm run lint
+npm run test:ci
+npm run test -- --watch  # Focus on a single suite when iterating locally
+```
+
+Vitest runs in a single worker to avoid RPC timeouts. Expect `npm run test:ci` to take a few minutes on
+slower machines. Install Playwright browsers with `npm run prepare:test` before executing UI suites.
+
 ## Connecting to Real Job Boards
 
-By default, jobbot3000 runs with `JOBBOT_FEATURE_SCRAPING_MOCKS=true`, allowing you to explore without API tokens. To connect to real job boards:
+By default, jobbot3000 runs with `JOBBOT_FEATURE_SCRAPING_MOCKS=true`, allowing you to explore without API tokens. To connect to
+real job boards:
 
 1. **Copy the example environment file:**
+
    ```bash
    cp .env.example .env
    ```
@@ -58,6 +88,7 @@ See the [README API Setup section](../README.md#api-setup-optional) for detailed
 - `npx jobbot shortlist ...` | `npx jobbot track ...`
 
 For deeper docs, see:
+
 - Architecture: `docs/architecture.md`
 - Web Operations: `docs/web-operational-playbook.md`
 - Job Source Adapters: `docs/job-source-adapters-guide.md`
