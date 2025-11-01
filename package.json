@@ -21,6 +21,7 @@
     "test:ci": "npm run prepare:test && vitest run && playwright test",
     "prepare:test": "npx playwright install --with-deps",
     "summarize": "node scripts/summarize.js",
+    "summarize:jobs": "node scripts/summarize-jobs.js",
     "chore:prompts": "node scripts/chore-prompts.js",
     "chore:reminders": "node scripts/chore-reminders.js",
     "security:risk-assessment": "node scripts/generate-risk-assessment.js",

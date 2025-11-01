@@ -274,6 +274,14 @@ jobbot track add <job_id> --status applied --note "emailed hiring manager"
 
 - Repo scaffold (monorepo or polyrepo).
 - Helper scripts for repetitive tasks (e.g., job-description summarizer).
+  _Implemented (2025-11-30):_ [`scripts/summarize-jobs.js`](scripts/summarize-jobs.js)
+  now reads job snapshots from `$JOBBOT_DATA_DIR/jobs` (or `data/jobs`) and
+  emits concise summaries. Run `npm run summarize:jobs -- --json` to collect
+  multi-sentence descriptions when auditing new leads or preparing outreach
+  notes. The regression coverage in
+  [`test/scripts-summarize-jobs.test.js`](test/scripts-summarize-jobs.test.js)
+  drives JSON output, targeted job filtering, and error handling when a
+  snapshot is missing so future refactors keep the helper reliable.
 - Compose stack: Postgres+pgvector, Redis, FastAPI, Web.
 - JSON Resume schema ingestion/export.
 - Minimal UI (profile editor, file upload).
