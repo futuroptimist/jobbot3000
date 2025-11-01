@@ -1984,10 +1984,16 @@ async function cmdIntakeBullets(args) {
 
 async function cmdIntakePlan(args) {
   const asJson = args.includes('--json');
+  const profileSpecified = args.includes('--profile');
+  const profilePath = getFlag(args, '--profile');
+  if (profileSpecified && !profilePath) {
+    console.error('Usage: jobbot intake plan [--profile <resume.json>] [--json]');
+    process.exit(2);
+  }
 
   let result;
   try {
-    result = await loadIntakeQuestionPlan();
+    result = await loadIntakeQuestionPlan({ profilePath });
   } catch (err) {
     console.error(err?.message || String(err));
     process.exit(1);

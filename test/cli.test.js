@@ -2152,6 +2152,48 @@ describe('jobbot CLI', () => {
     expect(payload.plan.length).toBeGreaterThan(0);
   });
 
+  it('accepts a custom resume path for intake plans', () => {
+    runCli(['profile', 'init']);
+
+    const customDir = path.join(dataDir, 'alt-profile');
+    fs.mkdirSync(customDir, { recursive: true });
+    const customResumePath = path.join(customDir, 'resume.json');
+    const customResume = {
+      basics: {
+        summary: 'Principal engineer focused on reliability and mentoring.',
+        location: { city: 'Portland', region: 'OR', country: 'USA' },
+      },
+      work: [
+        {
+          summary: 'Scaled platform availability and led SRE guild initiatives.',
+          highlights: [
+            'Reduced incident volume by 45% year-over-year while mentoring junior engineers.',
+          ],
+        },
+      ],
+      skills: [
+        { name: 'Kubernetes' },
+        { name: 'Go' },
+        { name: 'Terraform' },
+      ],
+    };
+    fs.writeFileSync(customResumePath, `${JSON.stringify(customResume, null, 2)}\n`, 'utf8');
+
+    const output = runCli([
+      'intake',
+      'plan',
+      '--profile',
+      customResumePath,
+    ]);
+
+    expect(output).toContain(
+      'Where are you open to working and do you have relocation or remote constraints?'
+    );
+    expect(output).not.toContain('What roles are you targeting next');
+    expect(output).not.toContain('Which tools, frameworks, or platforms do you rely on');
+    expect(output).toContain(`Resume: ${customResumePath}`);
+  });
+
   it('advertises all intake subcommands in usage output', () => {
     const bin = path.resolve('bin', 'jobbot.js');
     const result = spawnSync('node', [bin, 'intake'], {

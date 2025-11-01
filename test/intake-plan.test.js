@@ -158,4 +158,42 @@ describe('intake question plan', () => {
     const { plan } = await (await import('../src/intake-plan.js')).loadIntakeQuestionPlan();
     expect(plan.map(item => item.id)).toEqual(['measurable_outcomes']);
   });
+
+  it('loads intake plans from a custom resume path', async () => {
+    const fs = await import('node:fs/promises');
+    const customDir = path.join(dataDir, 'custom-profile');
+    await fs.mkdir(customDir, { recursive: true });
+    const customResumePath = path.join(customDir, 'resume.json');
+    await fs.writeFile(
+      customResumePath,
+      JSON.stringify(
+        {
+          basics: {
+            summary: 'Staff product manager focused on metrics-driven growth.',
+            location: { city: 'Austin', region: 'TX', country: 'USA' },
+          },
+          work: [
+            {
+              summary: 'Delivered onboarding experiments that increased activation.',
+              highlights: ['Raised activation by 18% through funnel instrumentation.'],
+            },
+          ],
+          skills: [{ name: 'Product discovery' }, { name: 'Experimentation' }, { name: 'SQL' }],
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    );
+
+    const { loadIntakeQuestionPlan } = await import('../src/intake-plan.js');
+    const result = await loadIntakeQuestionPlan({ profilePath: customResumePath });
+
+    expect(result.plan.map(item => item.id)).toEqual([
+      'relocation_preferences',
+      'compensation_guardrails',
+      'visa_status',
+    ]);
+    expect(result.resumePath).toBe(customResumePath);
+  });
 });

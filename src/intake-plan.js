@@ -53,13 +53,31 @@ function hasResumeSummary(resume) {
 }
 
 function hasLocationPreference(resume) {
-  const location = resume?.basics?.location;
-  if (!location || typeof location !== 'object') return false;
-  return Boolean(
-    (typeof location.city === 'string' && location.city.trim()) ||
-      (typeof location.region === 'string' && location.region.trim()) ||
-      (typeof location.country === 'string' && location.country.trim()),
-  );
+  const preferences = resume?.preferences;
+  if (!preferences || typeof preferences !== 'object') return false;
+
+  if (typeof preferences.relocation === 'boolean') {
+    return true;
+  }
+
+  const maybeStrings = [
+    preferences.location,
+    preferences.locationPreference,
+    preferences.relocationPreference,
+  ];
+  if (maybeStrings.some(value => typeof value === 'string' && value.trim())) {
+    return true;
+  }
+
+  const locationList = preferences.locations || preferences.locationPreferences;
+  if (
+    Array.isArray(locationList) &&
+    locationList.some(entry => typeof entry === 'string' && entry.trim())
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 function resumeHasQuantifiedWork(resume) {
@@ -112,11 +130,11 @@ export function generateIntakeQuestionPlan({ resume, responses = [] } = {}) {
   }
 
   if (
-    (!hasLocationPreference(resume) ||
-      !hasAnsweredResponse(answered, {
-        tags: ['relocation', 'location', 'remote'],
-        keywords: ['relocat', 'location preference', 'remote work', 'commute'],
-      }))
+    !hasLocationPreference(resume) &&
+    !hasAnsweredResponse(answered, {
+      tags: ['relocation', 'location', 'remote'],
+      keywords: ['relocat', 'location preference', 'remote work', 'commute'],
+    })
   ) {
     plan.push({
       id: 'relocation_preferences',
@@ -199,17 +217,35 @@ export function generateIntakeQuestionPlan({ resume, responses = [] } = {}) {
   });
 }
 
-export async function loadIntakeQuestionPlan() {
+export async function loadIntakeQuestionPlan(options = {}) {
   const dataDir = resolveDataDir();
-  const { path: resumePath } = await initProfile();
+  const profilePathRaw = options.profilePath;
+  let resumePath;
   let resumeRaw;
-  try {
-    resumeRaw = await loadResumeSync(resumePath);
-  } catch (err) {
-    if (err?.code === 'ENOENT') {
-      resumeRaw = '{}';
-    } else {
-      throw err;
+
+  if (profilePathRaw) {
+    resumePath = path.resolve(profilePathRaw);
+    try {
+      resumeRaw = await loadResumeSync(resumePath);
+    } catch (err) {
+      if (err?.code === 'ENOENT') {
+        throw new Error(`profile resume not found at ${resumePath}`);
+      }
+      throw new Error(
+        `failed to read profile resume ${resumePath}: ${err?.message || err}`,
+      );
+    }
+  } else {
+    const { path: defaultResumePath } = await initProfile();
+    resumePath = defaultResumePath;
+    try {
+      resumeRaw = await loadResumeSync(defaultResumePath);
+    } catch (err) {
+      if (err?.code === 'ENOENT') {
+        resumeRaw = '{}';
+      } else {
+        throw err;
+      }
     }
   }
 
