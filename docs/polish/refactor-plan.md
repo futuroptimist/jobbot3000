@@ -26,6 +26,13 @@ can be rolled out behind feature flags to minimize regressions.
 - Extend `fetchWithRetry` with injectable timers, circuit breaker support, and deterministic testing
   hooks.
 - Plumb manifest-driven retry/backoff thresholds through `createHttpClient` and the scraping adapters.
+  _Implemented (2025-10-31):_ `createHttpClient` now sources retry attempts,
+  base backoff, and circuit breaker defaults from the manifest's
+  `features.httpClient` block, while the scraping adapters reuse those
+  defaults for provider-specific clients. Regression coverage in
+  [`test/http-client-manifest.test.js`](../../test/http-client-manifest.test.js)
+  verifies manifest overrides drive retry counts, backoff delays, and circuit
+  breaker resets end to end.
 - Add Vitest coverage (`test/http-resilience.test.js`) to guard the circuit breaker and regression
   scenarios.
 

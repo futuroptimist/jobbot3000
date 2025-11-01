@@ -6,6 +6,7 @@ import {
   normalizeRateLimitInterval,
   setFetchRateLimit,
 } from '../../fetch.js';
+import { getHttpClientFeatureConfig } from './config.js';
 
 /** @typedef {import('node-fetch').RequestInit} FetchRequestInit */
 /** @typedef {import('node-fetch').Response} FetchResponse */
@@ -153,6 +154,27 @@ export function createHttpClient(options = {}) {
   const providerKey = resolveProviderKey(provider);
   const headers = mergeHeaders(DEFAULT_FETCH_HEADERS, defaultHeaders);
   const normalizedDefaultRateLimit = normalizeRateLimitInterval(defaultRateLimitMs, 0);
+  const httpDefaults = getHttpClientFeatureConfig();
+
+  const resolvedDefaultRetry = (() => {
+    if (defaultRetry && typeof defaultRetry === 'object') {
+      return { ...defaultRetry };
+    }
+    return {
+      retries: httpDefaults.maxRetries,
+      delayMs: httpDefaults.backoffMs,
+    };
+  })();
+
+  const resolvedDefaultCircuitBreaker = (() => {
+    if (defaultCircuitBreaker && typeof defaultCircuitBreaker === 'object') {
+      return { ...defaultCircuitBreaker };
+    }
+    return {
+      threshold: httpDefaults.circuitBreakerThreshold,
+      resetMs: httpDefaults.circuitBreakerResetMs,
+    };
+  })();
 
   const applyRateLimit = (url, config = {}) => {
     const { key, intervalMs, lastInvokedAt } = config || {};
@@ -249,10 +271,10 @@ export function createHttpClient(options = {}) {
         url,
         {
           fetchImpl: fetchImplForRetry,
-          retry: retry ?? defaultRetry,
+          retry: retry ?? resolvedDefaultRetry,
           rateLimitKey,
           headers: mergedHeaders,
-          circuitBreaker: circuitOverride ?? defaultCircuitBreaker,
+          circuitBreaker: circuitOverride ?? resolvedDefaultCircuitBreaker,
           sleep: requestSleep ?? defaultSleep,
           clock: requestClock ?? defaultClock,
         },
