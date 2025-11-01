@@ -6,6 +6,45 @@ import { getIntakeResponses, setIntakeDataDir } from './intake.js';
 
 let overrideDir;
 
+const MANUAL_QUESTION_TEMPLATES = [
+  {
+    id: 'manual_strength_story',
+    category: 'Strengths & wins',
+    prompt: 'Share a recent accomplishment that made a measurable impact.',
+    tags: ['strengths', 'impact'],
+    starter: 'Outline context, the actions you took, and the before/after metrics.',
+  },
+  {
+    id: 'manual_growth_plan',
+    category: 'Growth areas',
+    prompt: 'Which skill are you actively developing and how are you improving it?',
+    tags: ['growth', 'learning'],
+    starter: 'Note the trigger, resources you are using, and what success looks like.',
+  },
+  {
+    id: 'manual_work_environment',
+    category: 'Working preferences',
+    prompt:
+      'Describe the team environment where you do your best work and the signals you look for.',
+    tags: ['environment', 'preferences'],
+    starter: 'Cover collaboration style, management support, and decision-making culture.',
+  },
+  {
+    id: 'manual_support_needs',
+    category: 'Support & blockers',
+    prompt: 'Call out obstacles that slow you down and support that keeps you effective.',
+    tags: ['support', 'blockers'],
+    starter: 'List recurring blockers and the rituals or guardrails that remove them.',
+  },
+  {
+    id: 'manual_future_goals',
+    category: 'Career goals',
+    prompt: 'What outcomes or responsibilities are you targeting in your next role?',
+    tags: ['career', 'goals'],
+    starter: 'Highlight impact areas, scope, and any industry or product constraints.',
+  },
+];
+
 function resolveDataDir() {
   return overrideDir || process.env.JOBBOT_DATA_DIR || path.resolve('data');
 }
@@ -227,7 +266,15 @@ export async function loadIntakeQuestionPlan() {
     resumePath: resumePath.startsWith(dataDir)
       ? resumePath
       : path.resolve(resumePath),
+    manualTemplates: getManualIntakeQuestionTemplates(),
   };
+}
+
+export function getManualIntakeQuestionTemplates() {
+  return MANUAL_QUESTION_TEMPLATES.map(template => ({
+    ...template,
+    tags: template.tags.slice(),
+  }));
 }
 
 export { hasAnsweredResponse };

@@ -107,8 +107,11 @@ jobbot3000.
 
 - Users can abandon sessions mid-question; the system stores a draft state so CLI `jobbot intake
 resume` or the web **Resume Session** button can continue where they left off.
-- When the LLM refuses or fails to produce a plan, the flows expose a manual question builder with
-  templates. QA scenarios confirm that skipping LLM generation still allows successful completion.
+- When the LLM refuses or fails to produce a plan, the flows expose a manual question builder backed
+  by the fallback templates returned from `jobbot intake plan`. The CLI prints the same
+  `manual_templates` payload when the automated plan is empty, letting QA verify that the chat UI
+  still offers strengths, growth, environment, support, and future-goal prompts without relying on
+  LLM output. QA scenarios confirm that skipping LLM generation still allows successful completion.
 
 ### Edge cases
 
