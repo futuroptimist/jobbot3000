@@ -3,6 +3,9 @@ import { addJobTags, discardJob, syncShortlistJob } from './shortlist.js';
 
 const TOKEN_CACHE = new Map();
 
+const BM25_K1 = 1.5;
+const BM25_B = 0.75;
+
 const DEFAULT_CALIBRATION = Object.freeze({
   intercept: -1.45,
   coverageWeight: 4.6,
@@ -150,12 +153,53 @@ function tokenize(text) {
   return tokens;
 }
 
+function tokenizeWithCounts(value) {
+  const key = typeof value === 'string' ? value : String(value || '');
+  const counts = new Map();
+  let length = 0;
+  let start = -1;
+  let needsLower = false;
+
+  for (let i = 0; i < key.length; i += 1) {
+    const code = key.charCodeAt(i);
+    const isLower = code >= 97 && code <= 122;
+    const isUpper = code >= 65 && code <= 90;
+    const isDigit = code >= 48 && code <= 57;
+
+    if (isLower || isUpper || isDigit) {
+      if (start === -1) {
+        start = i;
+        needsLower = false;
+      }
+      if (isUpper) needsLower = true;
+    } else if (start !== -1) {
+      const segment = key.slice(start, i);
+      const token = needsLower ? segment.toLowerCase() : segment;
+      length += 1;
+      counts.set(token, (counts.get(token) || 0) + 1);
+      start = -1;
+      needsLower = false;
+    }
+  }
+
+  if (start !== -1) {
+    const segment = key.slice(start);
+    const token = needsLower ? segment.toLowerCase() : segment;
+    length += 1;
+    counts.set(token, (counts.get(token) || 0) + 1);
+  }
+
+  return { counts, length };
+}
+
 // Cache tokens for the most recent resume to avoid repeated tokenization when the same resume
 // is scored against multiple job postings.
 let cachedResume = '';
 let cachedTokens = new Set();
 let cachedNormalizedResumeInput = '';
 let cachedNormalizedResumeOutput = '';
+let cachedResumeCountsInput = '';
+let cachedResumeCountsOutput = new Map();
 
 const SYNONYM_GROUPS = [
   ['aws', 'amazon web services'],
@@ -175,6 +219,7 @@ const KEYWORD_OVERLAP_TOTAL_LIMIT = 12;
 const KEYWORD_OVERLAP_TOKEN_THRESHOLD = 5000;
 // Cache keyword overlap collections for repeated resume-to-job comparisons; bounded to 32 entries.
 const KEYWORD_OVERLAP_CACHE = new Map();
+const REQUIREMENT_TOKEN_CACHE = new Map();
 
 function resumeTokens(text) {
   const normalized = typeof text === 'string' ? text : String(text || '');
@@ -182,6 +227,15 @@ function resumeTokens(text) {
   cachedTokens = tokenize(normalized);
   cachedResume = normalized;
   return cachedTokens;
+}
+
+function resumeTokenCounts(text) {
+  const normalized = typeof text === 'string' ? text : String(text || '');
+  if (normalized === cachedResumeCountsInput) return cachedResumeCountsOutput;
+  const { counts } = tokenizeWithCounts(normalized);
+  cachedResumeCountsInput = normalized;
+  cachedResumeCountsOutput = counts;
+  return counts;
 }
 
 function normalizedResumeText(text) {
@@ -304,6 +358,131 @@ function collectKeywordOverlap(line, resumeSet, getNormalizedResume) {
   return Array.from(overlaps);
 }
 
+function getRequirementTokenStats(text) {
+  if (typeof text !== 'string' || text.length === 0) {
+    return { counts: new Map(), length: 0, tokens: [] };
+  }
+
+  const cached = REQUIREMENT_TOKEN_CACHE.get(text);
+  if (cached) return cached;
+
+  const { counts, length } = tokenizeWithCounts(text);
+  const tokens = Array.from(counts.keys());
+  const result = { counts, length, tokens };
+  if (REQUIREMENT_TOKEN_CACHE.size > 4096) REQUIREMENT_TOKEN_CACHE.clear();
+  REQUIREMENT_TOKEN_CACHE.set(text, result);
+  return result;
+}
+
+function computeBm25FromProcessed(processed, resumeSet) {
+  if (!processed || processed.length === 0) {
+    return {
+      total: 0,
+      perRequirement: [],
+      parameters: { k1: BM25_K1, b: BM25_B },
+    };
+  }
+
+  let totalDocLength = 0;
+  const docFreq = new Map();
+
+  for (const item of processed) {
+    const tokens = item.tokens;
+    totalDocLength += item.length;
+    const seen = new Set();
+    for (const token of tokens) {
+      if (seen.has(token)) continue;
+      seen.add(token);
+      docFreq.set(token, (docFreq.get(token) || 0) + 1);
+    }
+  }
+
+  const avgDocLength = totalDocLength > 0 ? totalDocLength / processed.length : 0;
+  const normalizedAvgLength = avgDocLength > 0 ? avgDocLength : 1;
+
+  let totalScore = 0;
+  const perRequirement = [];
+
+  for (const item of processed) {
+    let rawScore = 0;
+    if (item.length > 0) {
+      for (const token of item.tokens) {
+        if (!resumeSet.has(token)) continue;
+        const df = docFreq.get(token) || 0;
+        const idf = Math.log(1 + (processed.length - df + 0.5) / (df + 0.5));
+        const tf = item.counts.get(token) || 0;
+        if (tf === 0) continue;
+        const denominator =
+          tf + BM25_K1 * (1 - BM25_B + (BM25_B * item.length) / normalizedAvgLength);
+        if (denominator === 0) continue;
+        rawScore += idf * ((tf * (BM25_K1 + 1)) / denominator);
+      }
+    }
+    const normalizedScore = Number(rawScore.toFixed(6));
+    perRequirement.push({ requirement: item.text, score: normalizedScore });
+    totalScore += rawScore;
+  }
+
+  return {
+    total: Number(totalScore.toFixed(6)),
+    perRequirement,
+    parameters: { k1: BM25_K1, b: BM25_B },
+  };
+}
+
+function computeCosineFromProcessed(processed, resumeCounts) {
+  const requirementCounts = new Map();
+  for (const item of processed || []) {
+    for (const [token, count] of item.counts) {
+      requirementCounts.set(token, (requirementCounts.get(token) || 0) + count);
+    }
+  }
+
+  let dotProduct = 0;
+  for (const [token, resumeCount] of resumeCounts) {
+    const requirementCount = requirementCounts.get(token);
+    if (requirementCount) {
+      dotProduct += resumeCount * requirementCount;
+    }
+  }
+
+  let resumeMagnitude = 0;
+  for (const count of resumeCounts.values()) {
+    resumeMagnitude += count * count;
+  }
+  resumeMagnitude = Math.sqrt(resumeMagnitude);
+
+  let requirementMagnitude = 0;
+  for (const count of requirementCounts.values()) {
+    requirementMagnitude += count * count;
+  }
+  requirementMagnitude = Math.sqrt(requirementMagnitude);
+
+  let similarity = 0;
+  if (resumeMagnitude > 0 && requirementMagnitude > 0) {
+    similarity = dotProduct / (resumeMagnitude * requirementMagnitude);
+  }
+
+  return {
+    similarity: Number(similarity.toFixed(6)),
+    resumeMagnitude: Number(resumeMagnitude.toFixed(6)),
+    requirementMagnitude: Number(requirementMagnitude.toFixed(6)),
+  };
+}
+
+function buildScoreBreakdown(resumeText, normalizedRequirements, resumeSet) {
+  const processed = (normalizedRequirements || []).map(text => {
+    const stats = getRequirementTokenStats(text);
+    return { text, counts: stats.counts, length: stats.length, tokens: stats.tokens };
+  });
+
+  const bm25 = computeBm25FromProcessed(processed, resumeSet);
+  const resumeCounts = resumeTokenCounts(resumeText);
+  const cosine = computeCosineFromProcessed(processed, resumeCounts);
+
+  return { bm25, cosine };
+}
+
 /**
  * Compute how well a resume matches a list of job requirements.
  *
@@ -350,17 +529,6 @@ function collectKeywordOverlap(line, resumeSet, getNormalizedResume) {
  * }}
  */
 export function computeFitScore(resumeText, requirements, options = {}) {
-  if (!Array.isArray(requirements) || requirements.length === 0) {
-    return {
-      score: 0,
-      matched: [],
-      missing: [],
-      must_haves_missed: [],
-      keyword_overlap: [],
-      evidence: [],
-    };
-  }
-
   const resumeSet = resumeTokens(resumeText);
   let normalizedResume;
   const getNormalizedResume = () => {
@@ -371,6 +539,29 @@ export function computeFitScore(resumeText, requirements, options = {}) {
   const matched = [];
   const missing = [];
   const evidence = [];
+  const normalizedRequirements = [];
+  let scoreBreakdownCache;
+  const getScoreBreakdown = () => {
+    if (scoreBreakdownCache === undefined) {
+      scoreBreakdownCache = buildScoreBreakdown(resumeText, normalizedRequirements, resumeSet);
+    }
+    return scoreBreakdownCache;
+  };
+
+  if (!Array.isArray(requirements) || requirements.length === 0) {
+    return {
+      score: 0,
+      matched: [],
+      missing: [],
+      must_haves_missed: [],
+      keyword_overlap: [],
+      evidence: [],
+      get scoreBreakdown() {
+        return getScoreBreakdown();
+      },
+    };
+  }
+
   let total = 0;
 
   for (const entry of requirements) {
@@ -378,6 +569,7 @@ export function computeFitScore(resumeText, requirements, options = {}) {
     const trimmed = entry.trim();
     if (!trimmed) continue;
     total += 1;
+    normalizedRequirements.push(trimmed);
     if (hasOverlap(trimmed, resumeSet, getNormalizedResume)) {
       matched.push(trimmed);
       evidence.push({ text: trimmed, source: 'requirements' });
@@ -386,7 +578,7 @@ export function computeFitScore(resumeText, requirements, options = {}) {
     }
   }
 
-  if (total === 0)
+  if (total === 0) {
     return {
       score: 0,
       matched: [],
@@ -394,7 +586,11 @@ export function computeFitScore(resumeText, requirements, options = {}) {
       must_haves_missed: [],
       keyword_overlap: [],
       evidence: [],
+      get scoreBreakdown() {
+        return getScoreBreakdown();
+      },
     };
+  }
 
   const coverageRatio = matched.length / total;
   const baselineScore = Math.round(coverageRatio * 100);
@@ -456,6 +652,9 @@ export function computeFitScore(resumeText, requirements, options = {}) {
     must_haves_missed: mustHavesMissed,
     keyword_overlap: keywordOverlapArray,
     evidence,
+    get scoreBreakdown() {
+      return getScoreBreakdown();
+    },
   };
 
   if (calibrationDetails) {
@@ -472,6 +671,9 @@ export function __resetScoringCachesForTest() {
   KEYWORD_OVERLAP_CACHE.clear();
   cachedNormalizedResumeInput = '';
   cachedNormalizedResumeOutput = '';
+  cachedResumeCountsInput = '';
+  cachedResumeCountsOutput = new Map();
+  REQUIREMENT_TOKEN_CACHE.clear();
 }
 
 export function registerScoringModule({ bus } = {}) {
