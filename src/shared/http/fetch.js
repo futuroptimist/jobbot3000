@@ -261,17 +261,20 @@ export async function fetchWithRetry(url, options = {}, init = {}) {
         : null;
 
       if (breakerEntry && breakerEntry.openUntil && now(clock) < breakerEntry.openUntil) {
-        const error = /** @type {Error & { retryAt?: number }} */ (
+        const error = /** @type {Error & { retryAt?: number, circuitKey?: string }} */ (
           new Error(
             `Circuit open for ${breakerKey} until ${new Date(
               breakerEntry.openUntil,
             ).toISOString()}`,
           )
         );
-      error.name = 'CircuitBreakerOpenError';
-      error.retryAt = breakerEntry.openUntil;
-      throw error;
-    }
+        error.name = 'CircuitBreakerOpenError';
+        error.retryAt = breakerEntry.openUntil;
+        if (breakerKey) {
+          error.circuitKey = breakerKey;
+        }
+        throw error;
+      }
 
     let attempt = 0;
     while (attempt <= retries) {

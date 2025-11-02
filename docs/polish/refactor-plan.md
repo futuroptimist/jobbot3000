@@ -35,6 +35,11 @@ can be rolled out behind feature flags to minimize regressions.
   breaker resets end to end.
 - Add Vitest coverage (`test/http-resilience.test.js`) to guard the circuit breaker and regression
   scenarios.
+  _Implemented (2025-11-01):_ `test/http-resilience.test.js` now asserts circuit breaker
+  failures expose the retry timestamp, shared keys, and exponential backoff sequence while skipping
+  outbound fetches whenever the breaker is open. The suite pairs with the new
+  `circuitKey` metadata returned by `fetchWithRetry` so operators and tests can correlate breaker
+  events to the provider key without inspecting internal maps.
 
 ## Phase 4 — Security and privacy hardening
 

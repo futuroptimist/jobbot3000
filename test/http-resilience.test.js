@@ -1,45 +1,111 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   fetchWithRetry,
   __resetHttpCircuitBreakersForTest,
 } from '../src/shared/http/fetch.js';
 
-describe('fetchWithRetry circuit breaker', () => {
-  afterEach(() => {
-    __resetHttpCircuitBreakersForTest();
+describe('fetchWithRetry circuit resilience', () => {
+  let now;
+  let clock;
+  let sleep;
+  let fetchImpl;
+
+  beforeEach(() => {
+    now = 0;
+    clock = { now: () => now };
+    sleep = vi.fn(async ms => {
+      now += ms;
+    });
+    fetchImpl = vi.fn();
   });
 
-  it('opens and resets the circuit breaker', async () => {
-    let now = 0;
-    const clock = { now: () => now };
-    const sleep = ms => {
-      now += ms;
-      return Promise.resolve();
-    };
-    const fetchImpl = vi.fn().mockRejectedValue(new Error('boom'));
+  afterEach(() => {
+    __resetHttpCircuitBreakersForTest();
+    vi.restoreAllMocks();
+  });
+
+  it('reports circuit metadata and skips fetch calls while the breaker is open', async () => {
+    const breakerOptions = { threshold: 2, resetMs: 60_000 };
     const options = {
       fetchImpl,
       retry: { retries: 0 },
-      circuitBreaker: { threshold: 1, resetMs: 100 },
-      sleep,
+      circuitBreaker: breakerOptions,
       clock,
+      sleep,
     };
 
-    await expect(fetchWithRetry('https://example.com', options)).rejects.toThrow('boom');
-    await expect(fetchWithRetry('https://example.com', options)).rejects.toMatchObject({
-      name: 'CircuitBreakerOpenError',
-    });
+    fetchImpl.mockRejectedValue(new Error('boom'));
 
-    now = 150;
+    await expect(fetchWithRetry('https://a.example.com', options)).rejects.toThrow('boom');
+    await expect(fetchWithRetry('https://a.example.com', options)).rejects.toThrow('boom');
+
+    const openError = await fetchWithRetry('https://a.example.com', options).catch(err => err);
+
+    expect(openError).toMatchObject({
+      name: 'CircuitBreakerOpenError',
+      circuitKey: 'https://a.example.com',
+    });
+    expect(openError.retryAt).toBe(60_000);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+
+    now = 60_000;
     const successResponse = {
       ok: true,
       status: 200,
       statusText: 'OK',
-      json: async () => ({ ok: true }),
     };
     fetchImpl.mockResolvedValueOnce(successResponse);
-    const result = await fetchWithRetry('https://example.com', options);
-    expect(result).toBe(successResponse);
+
+    const response = await fetchWithRetry('https://a.example.com', options);
+    expect(response).toBe(successResponse);
+  });
+
+  it('shares breaker state across requests with custom rate limit keys', async () => {
+    const options = {
+      fetchImpl,
+      retry: { retries: 0 },
+      circuitBreaker: { threshold: 1, resetMs: 10_000 },
+      rateLimitKey: 'provider:shared',
+      clock,
+      sleep,
+    };
+
+    fetchImpl.mockRejectedValue(new Error('timeout'));
+
+    await expect(
+      fetchWithRetry('https://slow-one.example.com', options),
+    ).rejects.toThrow('timeout');
+
+    const openError = await fetchWithRetry(
+      'https://slow-two.example.com',
+      options,
+    ).catch(err => err);
+    expect(openError.name).toBe('CircuitBreakerOpenError');
+    expect(openError.circuitKey).toBe('provider:shared');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('applies exponential backoff delays between retries', async () => {
+    const successResponse = {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+    };
+    fetchImpl
+      .mockRejectedValueOnce(new Error('reset-1'))
+      .mockRejectedValueOnce(new Error('reset-2'))
+      .mockResolvedValueOnce(successResponse);
+
+    const response = await fetchWithRetry('https://retry.example.com', {
+      fetchImpl,
+      retry: { retries: 2, delayMs: 25, factor: 2 },
+      sleep,
+      clock,
+    });
+
+    expect(response).toBe(successResponse);
+    expect(sleep).toHaveBeenCalledTimes(2);
+    expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([25, 50]);
   });
 });

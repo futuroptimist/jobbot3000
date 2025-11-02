@@ -17,7 +17,9 @@ operational playbooks so the UI keeps meeting its service-level expectations.
 - **HTTP resilience:** `fetchWithRetry` must enforce exponential backoff,
   host queues, and circuit breakers so slow providers do not cascade. Coverage
   lives in [`test/http-resilience.test.js`](../test/http-resilience.test.js) and
-  [`test/services-http.test.js`](../test/services-http.test.js).
+  [`test/services-http.test.js`](../test/services-http.test.js), which assert
+  breaker errors expose the retry timestamp and provider key metadata while
+  ensuring retries respect the exponential backoff contract.
 
 ## Security
 
