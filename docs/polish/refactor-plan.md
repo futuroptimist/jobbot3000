@@ -7,10 +7,29 @@ can be rolled out behind feature flags to minimize regressions.
 
 - Introduce `src/modules/` with `auth`, `scraping`, `enrichment`, `scoring`, and `notifications` entry
   points wired to a shared event bus.
+  _Implemented (2025-10-31):_ [`src/modules/index.js`](../../src/modules/index.js) now bootstraps
+  each module against the shared event bus exported by
+  [`src/shared/events/bus.js`](../../src/shared/events/bus.js). `bin/jobbot.js` calls
+  `bootstrapModules` during CLI startup so background schedulers reuse the same wiring.
+  Regression coverage in [`test/schedule-config.test.js`](../../test/schedule-config.test.js)
+  exercises ingestion tasks through the bus while
+  [`test/module-event-bus.test.js`](../../test/module-event-bus.test.js) guards the single-handler
+  contract.
 - Move HTTP helpers into `src/shared/http/` and expose compatibility shims to avoid breaking legacy
   imports.
+  _Implemented (2025-10-31):_ [`src/shared/http/client.js`](../../src/shared/http/client.js) now
+  centralizes the HTTP helpers with [`src/services/http.js`](../../src/services/http.js)
+  re-exporting the API for legacy callers. Manifest-driven overrides and retry policies stay aligned
+  through regression coverage in
+  [`test/http-client-manifest.test.js`](../../test/http-client-manifest.test.js) and
+  [`test/services-http.test.js`](../../test/services-http.test.js).
 - Create `src/shared/events/bus.js` so modules register handlers and emit cross-module events without
   tight coupling.
+  _Implemented (2025-10-31):_ [`src/shared/events/bus.js`](../../src/shared/events/bus.js) exposes
+  `ModuleEventBus`, enforcing one handler per event and propagating async errors to the caller.
+  [`test/module-event-bus.test.js`](../../test/module-event-bus.test.js) locks the handler contract,
+  and [`test/schedule-config.test.js`](../../test/schedule-config.test.js) verifies module-driven
+  ingestion tasks dispatch through the bus.
 
 ## Phase 2 — Typed configuration manifest
 

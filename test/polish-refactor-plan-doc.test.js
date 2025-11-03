@@ -24,4 +24,48 @@ describe('polish refactor plan documentation', () => {
     expect(contents).toContain('scripts/generate-web-screenshots.js');
     expect(contents).toContain('test/polish-refactor-plan-doc.test.js');
   });
+
+  it('records the module boundary milestone as implemented', async () => {
+    const contents = await readDoc();
+
+    const moduleBoundaryPattern = new RegExp(
+      [
+        'Introduce `src/modules/` with `auth`, `scraping`, `enrichment`, `scoring`,',
+        'and `notifications` entry',
+        'points wired to a shared event bus.',
+        '_Implemented \\(2025-10-31\\):_',
+      ].join('\\s+'),
+      's',
+    );
+    expect(contents).toMatch(moduleBoundaryPattern);
+    expect(contents).toContain('src/modules/index.js');
+    expect(contents).toContain('test/schedule-config.test.js');
+
+    const sharedHttpPattern = new RegExp(
+      [
+        'Move HTTP helpers into `src/shared/http/` and expose compatibility shims',
+        'to avoid breaking legacy',
+        'imports.',
+        '_Implemented \\(2025-10-31\\):_',
+      ].join('\\s+'),
+      's',
+    );
+    expect(contents).toMatch(sharedHttpPattern);
+    expect(contents).toContain('src/shared/http/client.js');
+    expect(contents).toContain('test/http-client-manifest.test.js');
+    expect(contents).toContain('test/services-http.test.js');
+
+    const eventBusPattern = new RegExp(
+      [
+        'Create `src/shared/events/bus.js` so modules register handlers',
+        'and emit cross-module events without',
+        'tight coupling.',
+        '_Implemented \\(2025-10-31\\):_',
+      ].join('\\s+'),
+      's',
+    );
+    expect(contents).toMatch(eventBusPattern);
+    expect(contents).toContain('src/shared/events/bus.js');
+    expect(contents).toContain('test/module-event-bus.test.js');
+  });
 });
