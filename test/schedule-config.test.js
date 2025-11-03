@@ -87,6 +87,34 @@ describe('schedule config', () => {
     ]);
   });
 
+  it('parses ingestion tasks from YAML schedule configs', async () => {
+    const configPath = path.join(tmpDir, 'shortlist.yml');
+    await fs.writeFile(
+      configPath,
+      [
+        'tasks:',
+        '  - id: shortlist-nightly',
+        '    type: ingest',
+        '    provider: greenhouse',
+        '    company: acme',
+        '    intervalMinutes: 720',
+        '    initialDelayMinutes: 30',
+      ].join('\n'),
+    );
+
+    const definitions = await loadScheduleConfig(configPath);
+    expect(definitions).toEqual([
+      expect.objectContaining({
+        id: 'shortlist-nightly',
+        type: 'ingest',
+        provider: 'greenhouse',
+        params: expect.objectContaining({ board: 'acme' }),
+        intervalMs: 720 * 60 * 1000,
+        initialDelayMs: 30 * 60 * 1000,
+      }),
+    ]);
+  });
+
   it('parses notification tasks with optional recipients and outbox overrides', async () => {
     const configPath = path.join(tmpDir, 'notifications.json');
     await fs.writeFile(

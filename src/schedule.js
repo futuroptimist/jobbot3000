@@ -1,6 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+import { parse as parseYaml } from 'yaml';
+
 import { ingestGreenhouseBoard } from './greenhouse.js';
 import { ingestLeverBoard } from './lever.js';
 import { ingestAshbyBoard } from './ashby.js';
@@ -377,11 +379,32 @@ export async function loadScheduleConfig(configPath) {
   }
   const resolvedPath = path.resolve(configPath);
   const contents = await fs.readFile(resolvedPath, 'utf8');
+  const ext = path.extname(resolvedPath).toLowerCase();
+  const isYaml = ext === '.yaml' || ext === '.yml';
+
+  const parseYamlContents = () => {
+    const parsedYaml = parseYaml(contents);
+    if (parsedYaml == null || typeof parsedYaml !== 'object') {
+      throw new Error('YAML schedule config must produce an object');
+    }
+    return parsedYaml;
+  };
+
   let parsed;
   try {
-    parsed = JSON.parse(contents);
+    parsed = isYaml ? parseYamlContents() : JSON.parse(contents);
   } catch (err) {
-    throw new Error(`failed to parse schedule config: ${err.message || err}`);
+    if (!isYaml) {
+      try {
+        parsed = parseYamlContents();
+      } catch (yamlErr) {
+        throw new Error(
+          `failed to parse schedule config: ${yamlErr.message || yamlErr || err.message || err}`,
+        );
+      }
+    } else {
+      throw new Error(`failed to parse schedule config: ${err.message || err}`);
+    }
   }
 
   if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.tasks)) {

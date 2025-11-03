@@ -147,6 +147,8 @@ resume` or the web **Resume Session** button can continue where they left off.
    export curated outputs via `--out data/exports/shortlist.json`.
 5. Automate recurring pulls using `jobbot schedule run --config configs/shortlist.yml --cycles 3` to
    confirm the scheduler respects rate limits and updates the shortlist without manual intervention.
+   Regression coverage in [`test/schedule-config.test.js`](../test/schedule-config.test.js) now
+   ensures YAML schedule files parse into runnable ingestion tasks.
 
 ### Web flow
 
@@ -388,7 +390,8 @@ call scheduled"`.
    [`test/cli.test.js`](../test/cli.test.js) keeps the missing-status, schema-drift, and
    stale-outreach warnings aligned with the CLI output.
 4. Schedule periodic exports via `jobbot schedule run --config configs/analytics.yml` to ensure
-   analytics stay current.
+   analytics stay current. The same test suite locks YAML parsing so analytics schedules follow the
+   documented configuration format.
 5. Share sanitized aggregates through `jobbot analytics export --out share/analytics.csv`.
    Include `--redact` when you need to anonymize company names in the exported `companies` summary
    before circulating metrics outside the immediate team.
