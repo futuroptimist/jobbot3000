@@ -45,8 +45,10 @@ loading, and error reporting. Commands fan out to domain modules that encapsulat
 - **Tailoring:** `jobbot tailor` combines the profile resume with a saved job snapshot to write
   `match.md`, `match.json`, `resume.json`, `resume.pdf`, `resume.txt`, and `cover_letter.md` under
   `data/deliverables/{job_id}/{timestamp}/` so bundles stay deterministic before zipping.
-- **Scheduling:** `jobbot schedule run` loads configuration and executes recurring workflows via
-  `src/schedule.js`.
+- **Scheduling:** `jobbot schedule run` loads JSON or YAML configuration and executes recurring
+  workflows via `src/schedule.js`. Regression coverage in
+  [`test/schedule-config.test.js`](test/schedule-config.test.js) now verifies both formats parse
+  into runnable tasks.
 
 ## Resume ingestion
 
