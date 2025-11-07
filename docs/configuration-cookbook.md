@@ -83,6 +83,12 @@ provider requests. Regression coverage in
 [`test/http-client-manifest.test.js`](../test/http-client-manifest.test.js) keeps the integration
 locked down.
 
+The status hub overview renders a **Configuration manifest** card that lists the
+current feature flag values, declared plugins, and any missing secrets surfaced
+by `loadWebConfig`. [`test/web-server.test.js`](../test/web-server.test.js)
+asserts the card and the embedded `jobbot-config-manifest` payload reflect the
+manifest output so operators can trust the UI when auditing deployments.
+
 ## Authentication and RBAC
 
 `loadWebConfig` now surfaces scoped API keys so deployments can enforce role-based access control
