@@ -24,6 +24,7 @@ import {
   createClientPayloadStore,
 } from "./client-payload-store.js";
 import { createAuditLogger } from "../shared/security/audit-log.js";
+import { loadWebConfig } from "./config.js";
 import { createSessionManager } from "./session-manager.js";
 import { WebSocket, WebSocketServer } from "ws";
 
@@ -143,6 +144,174 @@ function serializeJsonForHtml(value) {
   } catch {
     return "[]";
   }
+}
+
+function formatEnvironmentLabel(value) {
+  if (typeof value !== "string" || !value) {
+    return "Unknown";
+  }
+  const lower = value.toLowerCase();
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
+
+function formatTimeWindow(windowMs) {
+  const numeric = Number(windowMs);
+  if (!Number.isFinite(numeric) || numeric < 0) {
+    return "0ms";
+  }
+  if (numeric === 0) {
+    return "0ms";
+  }
+  if (numeric % 60000 === 0) {
+    const minutes = numeric / 60000;
+    return `${minutes}m`;
+  }
+  if (numeric % 1000 === 0) {
+    const seconds = numeric / 1000;
+    return `${seconds}s`;
+  }
+  if (numeric >= 1000) {
+    const seconds = Number((numeric / 1000).toFixed(1));
+    return `${seconds}s`;
+  }
+  return `${numeric}ms`;
+}
+
+function formatBooleanFlag(enabled) {
+  return enabled ? "Enabled" : "Disabled";
+}
+
+function buildConfigSummaryCard(manifest, rateLimiter) {
+  if (!manifest) {
+    return "";
+  }
+
+  const rows = [];
+  rows.push({
+    label: "Environment",
+    field: "environment",
+    value: formatEnvironmentLabel(manifest.environment),
+  });
+
+  const manifestRateLimit = manifest.rateLimit ?? null;
+  if (rateLimiter && Number.isFinite(rateLimiter.limit)) {
+    rows.push({
+      label: "Rate limit",
+      field: "rateLimit",
+      value: `${rateLimiter.limit} requests / ${formatTimeWindow(
+        rateLimiter.windowMs,
+      )} window`,
+    });
+  } else if (manifestRateLimit) {
+    rows.push({
+      label: "Rate limit",
+      field: "rateLimit",
+      value: `${manifestRateLimit.max} requests / ${formatTimeWindow(
+        manifestRateLimit.windowMs,
+      )} window`,
+    });
+  }
+
+  const features = manifest.features ?? {};
+  const scrapingEnabled = Boolean(features.scraping?.useMocks);
+  rows.push({
+    label: "Scraping mocks",
+    field: "scraping.useMocks",
+    value: formatBooleanFlag(scrapingEnabled),
+  });
+
+  const notificationsEnabled = Boolean(
+    features.notifications?.enableWeeklySummary ?? true,
+  );
+  rows.push({
+    label: "Weekly summaries",
+    field: "notifications.enableWeeklySummary",
+    value: formatBooleanFlag(notificationsEnabled),
+  });
+
+  const httpClient = features.httpClient ?? {};
+  const retries = Number.isFinite(httpClient.maxRetries) ? httpClient.maxRetries : 0;
+  const retryLabel = `${retries} ${retries === 1 ? "retry" : "retries"}`;
+  const backoffLabel = formatTimeWindow(httpClient.backoffMs ?? 0);
+  rows.push({
+    label: "HTTP retries",
+    field: "httpClient.maxRetries",
+    value: `${retryLabel} • ${backoffLabel} backoff`,
+  });
+
+  const circuitThreshold = Number.isFinite(httpClient.circuitBreakerThreshold)
+    ? httpClient.circuitBreakerThreshold
+    : 0;
+  const thresholdLabel = `${circuitThreshold} ${
+    circuitThreshold === 1 ? "failure" : "failures"
+  }`;
+  const resetLabel = formatTimeWindow(httpClient.circuitBreakerResetMs ?? 0);
+  rows.push({
+    label: "Circuit breaker",
+    field: "httpClient.circuitBreaker",
+    value: `${thresholdLabel} • ${resetLabel} reset`,
+  });
+
+  const pluginEntries = Array.isArray(features.plugins?.entries)
+    ? features.plugins.entries.length
+    : 0;
+  const pluginLabel = pluginEntries === 1 ? "1 registered" : `${pluginEntries} registered`;
+  rows.push({
+    label: "Plugin entries",
+    field: "plugins.entries",
+    value: pluginLabel,
+  });
+
+  const rowsHtml = rows
+    .map((row) => {
+      const label = escapeHtml(row.label);
+      const value = escapeHtml(row.value);
+      const field = escapeHtml(row.field);
+      return [
+        "<div><dt>",
+        label,
+        "</dt><dd data-config-field=\"",
+        field,
+        "\">",
+        value,
+        "</dd></div>",
+      ].join("");
+    })
+    .join("");
+
+  const missingSecrets = Array.isArray(manifest.missingSecrets)
+    ? manifest.missingSecrets
+    : [];
+
+  const secretsHtml = missingSecrets.length
+    ? [
+        '<div class="config-missing-secrets" data-missing-secrets-container>',
+        "<h4>Missing secrets</h4>",
+        "<ul>",
+        missingSecrets
+          .map((secret) => {
+            const escaped = escapeHtml(secret);
+            return [
+              '<li data-missing-secret="',
+              escaped,
+              '"><code>',
+              escaped,
+              "</code></li>",
+            ].join("");
+          })
+          .join("") || "",
+        "</ul>",
+        "</div>",
+      ].join("")
+    : '<p class="config-secrets-ok" data-missing-secrets>All provider tokens configured.</p>';
+
+  return [
+    '<article class="card config-summary" data-config-summary>',
+    '  <h3>Configuration manifest</h3>',
+    `  <dl>${rowsHtml}</dl>`,
+    `  ${secretsHtml}`,
+    '</article>',
+  ].join("\n");
 }
 
 const CLIENT_SESSION_COOKIE = "jobbot_session_id";
@@ -5978,6 +6147,7 @@ export function createWebApp({
   audit,
   auditLogger,
   features,
+  manifest,
   commandEvents,
   session,
   logTransport,
@@ -6010,6 +6180,7 @@ export function createWebApp({
   if (features) {
     app.locals.features = features;
   }
+  app.locals.manifest = manifest ?? null;
 
   const commandEventsEmitter =
     commandEvents && typeof commandEvents.emit === "function"
@@ -6130,6 +6301,7 @@ export function createWebApp({
         return `<script ${attributes.join(" ")}></script>`;
       })
       .join("");
+    const configSummaryCard = buildConfigSummaryCard(app.locals.manifest, rateLimiter);
 
     res.set("Content-Type", "text/html; charset=utf-8");
     const rawHtml = `<!doctype html>
@@ -6217,6 +6389,7 @@ export function createWebApp({
               center so API consumers wire headers correctly.
             </p>
           </article>
+          ${configSummaryCard}
         </div>
       </section>
       <section class="view" data-route="applications" aria-labelledby="applications-heading" hidden>
@@ -7431,19 +7604,92 @@ function normalizeLogTransport(transport, { host }) {
   };
 }
 
-export function startWebServer(options = {}) {
-  const { host = "127.0.0.1" } = options;
-  const portValue = options.port ?? 3000;
-  const port = Number(portValue);
-  if (!Number.isFinite(port) || port < 0 || port > 65535) {
-    throw new Error("port must be a number between 0 and 65535");
+function mergeRateLimitOptions(base, override) {
+  if (!base && !override) {
+    return undefined;
   }
+  const merged = {};
+  if (base && typeof base === "object") {
+    if (base.windowMs !== undefined) merged.windowMs = base.windowMs;
+    if (base.max !== undefined) merged.max = base.max;
+  }
+  if (override && typeof override === "object") {
+    if (override.windowMs !== undefined) merged.windowMs = override.windowMs;
+    if (override.max !== undefined) merged.max = override.max;
+  }
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+function mergeAuditOptions(base, override) {
+  if (!base && !override) {
+    return undefined;
+  }
+  const merged = {};
+  if (base && typeof base === "object") {
+    if (base.logPath !== undefined) merged.logPath = base.logPath;
+    if (base.retentionDays !== undefined) merged.retentionDays = base.retentionDays;
+  }
+  if (override && typeof override === "object") {
+    if (override.logPath !== undefined) merged.logPath = override.logPath;
+    if (override.retentionDays !== undefined) merged.retentionDays = override.retentionDays;
+  }
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+function mergeFeatureOptions(base, override) {
+  if (!base && !override) {
+    return undefined;
+  }
+  const result = {};
+  const applySource = (source) => {
+    if (!source || typeof source !== "object") return;
+    if (source.scraping && typeof source.scraping === "object") {
+      result.scraping = result.scraping ?? {};
+      if (source.scraping.useMocks !== undefined) {
+        result.scraping.useMocks = source.scraping.useMocks;
+      }
+    }
+    if (source.notifications && typeof source.notifications === "object") {
+      result.notifications = result.notifications ?? {};
+      if (source.notifications.enableWeeklySummary !== undefined) {
+        result.notifications.enableWeeklySummary =
+          source.notifications.enableWeeklySummary;
+      }
+    }
+    if (source.httpClient && typeof source.httpClient === "object") {
+      result.httpClient = result.httpClient ?? {};
+      for (const key of [
+        "maxRetries",
+        "backoffMs",
+        "circuitBreakerThreshold",
+        "circuitBreakerResetMs",
+      ]) {
+        if (source.httpClient[key] !== undefined) {
+          result.httpClient[key] = source.httpClient[key];
+        }
+      }
+    }
+    if (source.plugins !== undefined) {
+      if (Array.isArray(source.plugins)) {
+        result.plugins = { entries: source.plugins };
+      } else if (source.plugins && typeof source.plugins === "object") {
+        if (source.plugins.entries !== undefined) {
+          result.plugins = { entries: source.plugins.entries };
+        }
+      }
+    }
+  };
+
+  applySource(base);
+  applySource(override);
+
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+export async function startWebServer(options = {}) {
   const {
     commandAdapter: providedCommandAdapter,
     commandAdapterOptions,
-    csrfToken: providedCsrfToken,
-    csrfHeaderName,
-    rateLimit,
     logger,
     enableNativeCli,
     auth: providedAuth,
@@ -7452,8 +7698,20 @@ export function startWebServer(options = {}) {
     authScheme,
     session: sessionOptions,
     logTransport: providedLogTransport,
+    config: configOverrides = {},
+    features: featuresOverride,
+    rateLimit: rateLimitOverride,
+    csrfToken: providedCsrfToken,
+    csrfHeaderName: csrfHeaderOverride,
+    audit: auditOverride,
+    info: infoOverride,
+    env: envOverride,
+    version: versionOverride,
+    host: hostOverride,
+    port: portOverride,
     ...rest
   } = options;
+
   const commandAdapter =
     providedCommandAdapter ??
     createCommandAdapter({
@@ -7461,46 +7719,110 @@ export function startWebServer(options = {}) {
       enableNativeCli,
       ...(commandAdapterOptions ?? {}),
     });
-  const resolvedCsrfToken =
-    typeof providedCsrfToken === "string" && providedCsrfToken.trim()
-      ? providedCsrfToken.trim()
-      : (process.env.JOBBOT_WEB_CSRF_TOKEN || "").trim() ||
-        randomBytes(32).toString("hex");
+
+  const mergedRateLimit = mergeRateLimitOptions(
+    configOverrides.rateLimit,
+    rateLimitOverride,
+  );
+  const mergedAudit = mergeAuditOptions(configOverrides.audit, auditOverride);
+  const mergedFeatures = mergeFeatureOptions(
+    configOverrides.features,
+    featuresOverride,
+  );
+
+  const webConfig = await loadWebConfig({
+    env: configOverrides.env ?? envOverride,
+    host: hostOverride ?? configOverrides.host,
+    port: portOverride ?? configOverrides.port,
+    rateLimit: mergedRateLimit,
+    csrfHeaderName: csrfHeaderOverride ?? configOverrides.csrfHeaderName,
+    csrfToken: providedCsrfToken ?? configOverrides.csrfToken,
+    audit: mergedAudit,
+    features: mergedFeatures,
+    version: configOverrides.version ?? versionOverride,
+  });
+
+  const resolvedHost = webConfig.host ?? "127.0.0.1";
+  const resolvedPortValue = webConfig.port ?? 3000;
+  const port = Number(resolvedPortValue);
+  if (!Number.isFinite(port) || port < 0 || port > 65535) {
+    throw new Error("port must be a number between 0 and 65535");
+  }
+
+  let resolvedCsrfToken = webConfig.csrfToken;
+  if (typeof resolvedCsrfToken !== "string" || !resolvedCsrfToken.trim()) {
+    resolvedCsrfToken =
+      (process.env.JOBBOT_WEB_CSRF_TOKEN || "").trim() ||
+      randomBytes(32).toString("hex");
+  }
   const resolvedHeaderName =
-    typeof csrfHeaderName === "string" && csrfHeaderName.trim()
-      ? csrfHeaderName.trim()
+    typeof webConfig.csrfHeaderName === "string" && webConfig.csrfHeaderName.trim()
+      ? webConfig.csrfHeaderName.trim()
       : "x-jobbot-csrf";
+
   let authConfig = providedAuth;
   if (authConfig === undefined || authConfig === null) {
-    const tokensSource =
-      authTokens ??
-      process.env.JOBBOT_WEB_AUTH_TOKENS ??
-      process.env.JOBBOT_WEB_AUTH_TOKEN;
-    if (
-      tokensSource !== undefined &&
-      tokensSource !== null &&
-      tokensSource !== false
-    ) {
-      authConfig = {
-        tokens: tokensSource,
-        headerName: authHeaderName ?? process.env.JOBBOT_WEB_AUTH_HEADER,
-        scheme: authScheme ?? process.env.JOBBOT_WEB_AUTH_SCHEME,
-      };
+    const explicitOverride =
+      authTokens !== undefined || authHeaderName !== undefined || authScheme !== undefined;
+    if (explicitOverride) {
+      const tokensSource =
+        authTokens ??
+        process.env.JOBBOT_WEB_AUTH_TOKENS ??
+        process.env.JOBBOT_WEB_AUTH_TOKEN;
+      if (tokensSource !== undefined && tokensSource !== null && tokensSource !== false) {
+        authConfig = {
+          tokens: tokensSource,
+          headerName: authHeaderName ?? process.env.JOBBOT_WEB_AUTH_HEADER,
+          scheme: authScheme ?? process.env.JOBBOT_WEB_AUTH_SCHEME,
+        };
+      }
+    } else if (webConfig.auth) {
+      authConfig = webConfig.auth;
+    } else {
+      const tokensSource =
+        process.env.JOBBOT_WEB_AUTH_TOKENS ?? process.env.JOBBOT_WEB_AUTH_TOKEN;
+      if (tokensSource !== undefined && tokensSource !== null && tokensSource !== false) {
+        authConfig = {
+          tokens: tokensSource,
+          headerName: authHeaderName ?? process.env.JOBBOT_WEB_AUTH_HEADER,
+          scheme: authScheme ?? process.env.JOBBOT_WEB_AUTH_SCHEME,
+        };
+      }
     }
   }
   const normalizedAuth = normalizeAuthOptions(authConfig);
   const commandEvents = new EventEmitter();
   const normalizedLogTransport = normalizeLogTransport(providedLogTransport, {
-    host,
+    host: resolvedHost,
   });
+
+  const info = (() => {
+    const base = { ...(webConfig.info ?? {}) };
+    if (infoOverride && typeof infoOverride === "object") {
+      Object.assign(base, infoOverride);
+    }
+    return base;
+  })();
+
+  const manifestSummary = {
+    environment: webConfig.env,
+    rateLimit: webConfig.rateLimit,
+    features: webConfig.features,
+    missingSecrets: webConfig.missingSecrets,
+  };
+
   const websocketPath = "/events";
   const app = createWebApp({
     ...rest,
+    info,
     commandAdapter,
     csrf: { token: resolvedCsrfToken, headerName: resolvedHeaderName },
-    rateLimit,
+    rateLimit: webConfig.rateLimit,
     logger,
     auth: normalizedAuth,
+    audit: webConfig.audit,
+    features: webConfig.features,
+    manifest: manifestSummary,
     session: sessionOptions,
     commandEvents,
     logTransport: normalizedLogTransport,
@@ -7655,17 +7977,17 @@ export function startWebServer(options = {}) {
   };
 
   return new Promise((resolve, reject) => {
-    const server = app.listen(port, host, () => {
+    const server = app.listen(port, resolvedHost, () => {
       const address = server.address();
       const actualPort =
         typeof address === "object" && address ? address.port : port;
       const descriptor = {
         app,
-        host,
+        host: resolvedHost,
         port: actualPort,
-        url: `http://${host}:${actualPort}`,
+        url: `http://${resolvedHost}:${actualPort}`,
         eventsPath: websocketPath,
-        eventsUrl: `ws://${host}:${actualPort}${websocketPath}`,
+        eventsUrl: `ws://${resolvedHost}:${actualPort}${websocketPath}`,
         csrfToken: resolvedCsrfToken,
         csrfHeaderName: resolvedHeaderName,
         csrfCookieName: CSRF_COOKIE_NAME,
@@ -7673,6 +7995,7 @@ export function startWebServer(options = {}) {
         authScheme: normalizedAuth?.scheme ?? null,
         sessionHeaderName: CLIENT_SESSION_HEADER,
         sessionCookieName: CLIENT_SESSION_COOKIE,
+        config: manifestSummary,
         async close() {
           await new Promise((resolveClose, rejectClose) => {
             server.close((err) => {
@@ -7688,7 +8011,7 @@ export function startWebServer(options = {}) {
     const handleUpgrade = (request, socket, head) => {
       let requestUrl;
       try {
-        const hostHeader = request.headers.host || `${host}:${port}`;
+        const hostHeader = request.headers.host || `${resolvedHost}:${port}`;
         requestUrl = new URL(request.url, `http://${hostHeader}`);
       } catch {
         respondUpgradeError(socket, 400, "Invalid websocket request");

@@ -37,6 +37,12 @@ can be rolled out behind feature flags to minimize regressions.
   flags, and secrets.
 - Update the web server to consume manifest output, surface missing secrets, and expose flag state to
   templates.
+  _Implemented (2025-11-02):_ `startWebServer` now loads the shared configuration manifest before
+  booting Express, wiring rate limits, CSRF headers, and feature flags directly into the runtime.
+  The overview page renders a new configuration card that summarizes feature toggles and calls out
+  missing provider tokens. Regression coverage in
+  [`test/web-server.test.js`](../../test/web-server.test.js) (see the “manifest configuration summary”
+  block) keeps the HTML contract and manifest plumbing in sync with future changes.
 - Publish the [Configuration Cookbook](../configuration-cookbook.md) so operators understand default
   values and overrides.
 

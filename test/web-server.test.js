@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JSDOM } from "jsdom";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -244,9 +244,155 @@ describe("web server health endpoint", () => {
 
   it("rejects invalid health check definitions", async () => {
     const { startWebServer } = await import("../src/web/server.js");
-    expect(() =>
+    await expect(
       startWebServer({ healthChecks: [{ name: "bad-check" }] }),
-    ).toThrow(/health check/);
+    ).rejects.toThrow(/health check/i);
+  });
+});
+
+describe("manifest configuration summary", () => {
+  const SECRET_ENV_KEYS = [
+    "JOBBOT_GREENHOUSE_TOKEN",
+    "JOBBOT_LEVER_API_TOKEN",
+    "JOBBOT_SMARTRECRUITERS_TOKEN",
+    "JOBBOT_WORKABLE_TOKEN",
+  ];
+  const originalSecretValues = {};
+
+  beforeEach(() => {
+    for (const key of SECRET_ENV_KEYS) {
+      originalSecretValues[key] = process.env[key];
+      delete process.env[key];
+    }
+  });
+
+  afterEach(() => {
+    for (const key of SECRET_ENV_KEYS) {
+      const value = originalSecretValues[key];
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  });
+
+  it("renders manifest-driven configuration with missing secrets", async () => {
+    const { startWebServer } = await import("../src/web/server.js");
+    const server = await startWebServer({
+      config: {
+        env: "development",
+        host: "127.0.0.1",
+        port: 0,
+        rateLimit: { windowMs: 45000, max: 12 },
+        csrfHeaderName: "x-manifest-csrf",
+        csrfToken: "manifest-token",
+        features: {
+          scraping: { useMocks: false },
+          notifications: { enableWeeklySummary: false },
+          httpClient: {
+            maxRetries: 4,
+            backoffMs: 125,
+            circuitBreakerThreshold: 2,
+            circuitBreakerResetMs: 7500,
+          },
+          plugins: {
+            entries: [
+              {
+                id: "from-manifest",
+                name: "Manifest Plugin",
+                source: "window.__manifestPlugin = true;",
+              },
+            ],
+          },
+        },
+      },
+      info: { service: "jobbot-web", version: "manifest-test" },
+    });
+    activeServers.push(server);
+
+    expect(server.csrfHeaderName).toBe("x-manifest-csrf");
+
+    const { dom } = await renderStatusDom(server, { autoBoot: false });
+    const summary = dom.window.document.querySelector("[data-config-summary]");
+    expect(summary).not.toBeNull();
+
+    const readValue = (selector) =>
+      summary?.querySelector(selector)?.textContent?.replace(/\s+/g, " ").trim();
+
+    expect(readValue('[data-config-field="environment"]')).toMatch(/development/i);
+    expect(readValue('[data-config-field="rateLimit"]')).toMatch(/12/);
+    expect(readValue('[data-config-field="rateLimit"]')).toMatch(/45/);
+    expect(readValue('[data-config-field="scraping.useMocks"]')).toMatch(/disabled/i);
+    expect(
+      readValue('[data-config-field="notifications.enableWeeklySummary"]'),
+    ).toMatch(/disabled/i);
+    expect(readValue('[data-config-field="httpClient.maxRetries"]')).toMatch(/4/);
+    expect(readValue('[data-config-field="httpClient.circuitBreaker"]')).toMatch(/2/);
+    expect(readValue('[data-config-field="plugins.entries"]')).toMatch(/1/);
+
+    const missingSecrets = summary?.querySelectorAll("[data-missing-secret]") ?? [];
+    expect(missingSecrets.length).toBeGreaterThan(0);
+    expect(
+      Array.from(missingSecrets).some((node) =>
+        node.textContent?.includes("JOBBOT_GREENHOUSE_TOKEN"),
+      ),
+    ).toBe(true);
+  });
+
+  it("summarizes configured secrets and manifest defaults", async () => {
+    process.env.JOBBOT_GREENHOUSE_TOKEN = "set";
+    process.env.JOBBOT_LEVER_API_TOKEN = "set";
+    process.env.JOBBOT_SMARTRECRUITERS_TOKEN = "set";
+    process.env.JOBBOT_WORKABLE_TOKEN = "set";
+
+    const { startWebServer } = await import("../src/web/server.js");
+    const server = await startWebServer({
+      config: {
+        env: "production",
+        host: "127.0.0.1",
+        port: 0,
+        rateLimit: { windowMs: 30000, max: 7 },
+        csrfHeaderName: "x-prod-csrf",
+        csrfToken: "prod-token",
+        features: {
+          scraping: { useMocks: false },
+          notifications: { enableWeeklySummary: true },
+          httpClient: {
+            maxRetries: 1,
+            backoffMs: 200,
+            circuitBreakerThreshold: 3,
+            circuitBreakerResetMs: 60000,
+          },
+        },
+      },
+      info: { service: "jobbot-web", version: "manifest-prod" },
+    });
+    activeServers.push(server);
+
+    expect(server.csrfHeaderName).toBe("x-prod-csrf");
+
+    const { dom } = await renderStatusDom(server, { autoBoot: false });
+    const summary = dom.window.document.querySelector("[data-config-summary]");
+    expect(summary).not.toBeNull();
+
+    const readValue = (selector) =>
+      summary?.querySelector(selector)?.textContent?.replace(/\s+/g, " ").trim();
+
+    expect(readValue('[data-config-field="environment"]')).toMatch(/production/i);
+    expect(readValue('[data-config-field="rateLimit"]')).toMatch(/7/);
+    expect(readValue('[data-config-field="rateLimit"]')).toMatch(/30/);
+    expect(readValue('[data-config-field="scraping.useMocks"]')).toMatch(/disabled/i);
+    expect(
+      readValue('[data-config-field="notifications.enableWeeklySummary"]'),
+    ).toMatch(/enabled/i);
+    expect(readValue('[data-config-field="httpClient.maxRetries"]')).toMatch(/1/);
+    expect(readValue('[data-config-field="httpClient.circuitBreaker"]')).toMatch(/3/);
+    expect(readValue('[data-config-field="plugins.entries"]')).toMatch(/0/);
+
+    const secretsMessage = summary?.querySelector('[data-missing-secrets]');
+    expect(secretsMessage?.textContent).toMatch(/all provider tokens configured/i);
+    expect(summary?.querySelectorAll('[data-missing-secret]')?.length ?? 0).toBe(0);
   });
 });
 
