@@ -6128,29 +6128,21 @@ export function createWebApp({
       )}</li>`,
     );
     const httpClient = manifestFeatures?.httpClient ?? {};
-    manifestFeatureItems.push(
-      `<li><code>httpClient.maxRetries</code> ${escapeHtml(
-        formatNumber(httpClient.maxRetries),
-      )}</li>`,
-    );
-    manifestFeatureItems.push(
-      `<li><code>httpClient.backoffMs</code> ${escapeHtml(
-        formatNumber(httpClient.backoffMs, "ms"),
-      )}</li>`,
-    );
-    manifestFeatureItems.push(
-      `<li><code>httpClient.circuitBreakerThreshold</code> ${escapeHtml(
-        formatNumber(httpClient.circuitBreakerThreshold),
-      )}</li>`,
-    );
-    manifestFeatureItems.push(
-      `<li><code>httpClient.circuitBreakerResetMs</code> ${escapeHtml(
-        formatNumber(httpClient.circuitBreakerResetMs, "ms"),
-      )}</li>`,
-    );
+    // Helper to push httpClient property list items
+    const pushHttpClientFeature = (prop, suffix = "") => {
+      manifestFeatureItems.push(
+        `<li><code>httpClient.${prop}</code> ${escapeHtml(
+          formatNumber(httpClient[prop], suffix),
+        )}</li>`,
+      );
+    };
+    pushHttpClientFeature("maxRetries");
+    pushHttpClientFeature("backoffMs", "ms");
+    pushHttpClientFeature("circuitBreakerThreshold");
+    pushHttpClientFeature("circuitBreakerResetMs", "ms");
     const pluginEntries = Array.isArray(manifestFeatures?.plugins?.entries)
       ? manifestFeatures.plugins.entries.filter(
-          (entry) => entry && typeof entry === "object",
+          (entry) => entry !== null && typeof entry === "object",
         )
       : [];
     const pluginCountLabel =
@@ -6172,20 +6164,17 @@ export function createWebApp({
           "</ul>",
         ].join("");
       }
+      // Helper to extract and trim string properties
+      const extractTrimmedString = (obj, key) => {
+        return obj && typeof obj[key] === "string" && obj[key].trim()
+          ? obj[key].trim()
+          : "";
+      };
       const items = pluginEntries
         .map((entry) => {
-          const idValue =
-            entry && typeof entry.id === "string" && entry.id.trim()
-              ? entry.id.trim()
-              : "";
-          const nameValue =
-            entry && typeof entry.name === "string" && entry.name.trim()
-              ? entry.name.trim()
-              : "";
-          const descriptionValue =
-            entry && typeof entry.description === "string" && entry.description.trim()
-              ? entry.description.trim()
-              : "";
+          const idValue = extractTrimmedString(entry, "id");
+          const nameValue = extractTrimmedString(entry, "name");
+          const descriptionValue = extractTrimmedString(entry, "description");
           const summaryParts = [];
           if (idValue) {
             summaryParts.push(`<code>${escapeHtml(idValue)}</code>`);
