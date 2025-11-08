@@ -6142,7 +6142,7 @@ export function createWebApp({
     pushHttpClientFeature("circuitBreakerResetMs", "ms");
     const pluginEntries = Array.isArray(manifestFeatures?.plugins?.entries)
       ? manifestFeatures.plugins.entries.filter(
-          (entry) => entry !== null && typeof entry === "object",
+          (entry) => entry !== null && typeof entry === "object" && !Array.isArray(entry),
         )
       : [];
     const pluginCountLabel =
@@ -6166,9 +6166,11 @@ export function createWebApp({
       }
       // Helper to extract and trim string properties
       const extractTrimmedString = (obj, key) => {
-        return obj && typeof obj[key] === "string" && obj[key].trim()
-          ? obj[key].trim()
-          : "";
+        if (obj && typeof obj[key] === "string") {
+          const trimmed = obj[key].trim();
+          return trimmed ? trimmed : "";
+        }
+        return "";
       };
       const items = pluginEntries
         .map((entry) => {
