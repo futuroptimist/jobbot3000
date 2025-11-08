@@ -469,6 +469,77 @@ describe("web server status page", () => {
     expect(css).toMatch(analyticsBreakpointPattern);
   });
 
+  it("surfaces manifest feature flags and missing secrets on the overview", async () => {
+    const server = await startServer({
+      features: {
+        scraping: { useMocks: true },
+        notifications: { enableWeeklySummary: false },
+        httpClient: {
+          maxRetries: 5,
+          backoffMs: 750,
+          circuitBreakerThreshold: 4,
+          circuitBreakerResetMs: 120000,
+        },
+        plugins: {
+          entries: [
+            {
+              id: "analytics-inspector",
+              name: "Analytics inspector",
+              description: "Records rendered analytics panels",
+            },
+          ],
+        },
+      },
+      missingSecrets: [
+        "JOBBOT_GREENHOUSE_TOKEN",
+        "JOBBOT_LEVER_API_TOKEN",
+      ],
+    });
+
+    const { dom } = await renderStatusDom(server, { autoBoot: false });
+    const { document } = dom.window;
+
+    const featureList = document.querySelector("[data-feature-flags]");
+    expect(featureList).not.toBeNull();
+    const featureText = featureList?.textContent?.replace(/\s+/g, " ")?.trim();
+    expect(featureText).toContain("scraping.useMocks Enabled");
+    expect(featureText).toContain("notifications.enableWeeklySummary Disabled");
+    expect(featureText).toContain("httpClient.maxRetries 5");
+    expect(featureText).toContain("httpClient.backoffMs 750ms");
+    expect(featureText).toContain("plugins.entries 1 plugin declared");
+
+    const pluginList = document.querySelector("[data-plugin-entries]");
+    expect(pluginList?.textContent).toContain("analytics-inspector");
+
+    const secretsContainer = document.querySelector("[data-missing-secrets]");
+    expect(secretsContainer).not.toBeNull();
+    const secretsText = secretsContainer?.textContent?.replace(/\s+/g, " ")?.trim();
+    expect(secretsText).toContain("JOBBOT_GREENHOUSE_TOKEN");
+    expect(secretsText).toContain("JOBBOT_LEVER_API_TOKEN");
+
+    const manifestScript = document.querySelector(
+      'script#jobbot-config-manifest[type="application/json"]',
+    );
+    expect(manifestScript).not.toBeNull();
+    const parsed = JSON.parse(manifestScript?.textContent ?? "{}");
+    expect(parsed).toMatchObject({
+      missingSecrets: [
+        "JOBBOT_GREENHOUSE_TOKEN",
+        "JOBBOT_LEVER_API_TOKEN",
+      ],
+      features: {
+        scraping: { useMocks: true },
+        notifications: { enableWeeklySummary: false },
+        httpClient: {
+          maxRetries: 5,
+          backoffMs: 750,
+          circuitBreakerThreshold: 4,
+          circuitBreakerResetMs: 120000,
+        },
+      },
+    });
+  });
+
   it("applies strict security headers to the status hub", async () => {
     const server = await startServer();
 

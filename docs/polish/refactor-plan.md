@@ -37,6 +37,13 @@ can be rolled out behind feature flags to minimize regressions.
   flags, and secrets.
 - Update the web server to consume manifest output, surface missing secrets, and expose flag state to
   templates.
+  _Implemented (2025-11-05):_ `startWebServer` now forwards manifest features and
+  missing secret lists to the status hub. The overview renders a configuration
+  card that lists feature flag values, declared plugins, and any unresolved
+  secrets while embedding the raw manifest as JSON for front-end consumers.
+  Regression coverage in [`test/web-server.test.js`](../../test/web-server.test.js)
+  asserts the new card, plugin list, and `jobbot-config-manifest` payload stay
+  aligned with `loadWebConfig` output.
 - Publish the [Configuration Cookbook](../configuration-cookbook.md) so operators understand default
   values and overrides.
 

@@ -5978,6 +5978,7 @@ export function createWebApp({
   audit,
   auditLogger,
   features,
+  missingSecrets,
   commandEvents,
   session,
   logTransport,
@@ -6010,6 +6011,12 @@ export function createWebApp({
   if (features) {
     app.locals.features = features;
   }
+  const sanitizedMissingSecrets = Array.isArray(missingSecrets)
+    ? missingSecrets
+        .map((secret) => (typeof secret === "string" ? secret.trim() : ""))
+        .filter(Boolean)
+    : [];
+  app.locals.missingSecrets = sanitizedMissingSecrets;
 
   const commandEventsEmitter =
     commandEvents && typeof commandEvents.emit === "function"
@@ -6089,6 +6096,122 @@ export function createWebApp({
               ].join("");
             })
             .join("");
+    const manifestFeatures =
+      app.locals.features && typeof app.locals.features === "object"
+        ? app.locals.features
+        : null;
+    const manifestMissingSecrets = Array.isArray(app.locals.missingSecrets)
+      ? app.locals.missingSecrets
+      : [];
+    const formatBoolean = (value) => {
+      if (value === true) return "Enabled";
+      if (value === false) return "Disabled";
+      return "Not configured";
+    };
+    const formatNumber = (value, suffix = "") => {
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return `${value}${suffix}`;
+      }
+      return "Not configured";
+    };
+    const manifestFeatureItems = [];
+    const scrapingUseMocks = manifestFeatures?.scraping?.useMocks;
+    manifestFeatureItems.push(
+      `<li><code>scraping.useMocks</code> ${escapeHtml(
+        formatBoolean(scrapingUseMocks),
+      )}</li>`,
+    );
+    const weeklySummary = manifestFeatures?.notifications?.enableWeeklySummary;
+    manifestFeatureItems.push(
+      `<li><code>notifications.enableWeeklySummary</code> ${escapeHtml(
+        formatBoolean(weeklySummary),
+      )}</li>`,
+    );
+    const httpClient = manifestFeatures?.httpClient ?? {};
+    // Helper to push httpClient property list items
+    const pushHttpClientFeature = (prop, suffix = "") => {
+      manifestFeatureItems.push(
+        `<li><code>httpClient.${prop}</code> ${escapeHtml(
+          formatNumber(httpClient[prop], suffix),
+        )}</li>`,
+      );
+    };
+    pushHttpClientFeature("maxRetries");
+    pushHttpClientFeature("backoffMs", "ms");
+    pushHttpClientFeature("circuitBreakerThreshold");
+    pushHttpClientFeature("circuitBreakerResetMs", "ms");
+    const pluginEntries = Array.isArray(manifestFeatures?.plugins?.entries)
+      ? manifestFeatures.plugins.entries.filter(
+          (entry) => entry !== null && typeof entry === "object" && !Array.isArray(entry),
+        )
+      : [];
+    const pluginCountLabel =
+      pluginEntries.length === 0
+        ? "No plugins declared"
+        : `${pluginEntries.length} plugin${pluginEntries.length === 1 ? "" : "s"} declared`;
+    manifestFeatureItems.push(
+      `<li><code>plugins.entries</code> ${escapeHtml(pluginCountLabel)}</li>`,
+    );
+    const featureListHtml =
+      '<ul class="manifest-list" data-feature-flags>' +
+      manifestFeatureItems.join("") +
+      "</ul>";
+    const pluginEntriesHtml = (() => {
+      if (pluginEntries.length === 0) {
+        return [
+          '<ul class="manifest-list" data-plugin-entries>',
+          '<li><em>No plugins declared.</em></li>',
+          "</ul>",
+        ].join("");
+      }
+      // Helper to extract and trim string properties
+      const extractTrimmedString = (obj, key) => {
+        if (obj && typeof obj[key] === "string") {
+          const trimmed = obj[key].trim();
+          return trimmed ? trimmed : "";
+        }
+        return "";
+      };
+      const items = pluginEntries
+        .map((entry) => {
+          const idValue = extractTrimmedString(entry, "id");
+          const nameValue = extractTrimmedString(entry, "name");
+          const descriptionValue = extractTrimmedString(entry, "description");
+          const summaryParts = [];
+          if (idValue) {
+            summaryParts.push(`<code>${escapeHtml(idValue)}</code>`);
+          }
+          if (nameValue) {
+            summaryParts.push(escapeHtml(nameValue));
+          }
+          let summary = summaryParts.join(" — ");
+          if (!summary) {
+            summary = "<code>plugin</code>";
+          }
+          const descriptionHtml = descriptionValue
+            ? ` <small>${escapeHtml(descriptionValue)}</small>`
+            : "";
+          return `<li>${summary}${descriptionHtml}</li>`;
+        })
+        .join("");
+      return `<ul class="manifest-list" data-plugin-entries>${items}</ul>`;
+    })();
+    const missingSecretsHtml =
+      manifestMissingSecrets.length === 0
+        ? '<p data-missing-secrets><strong>All required secrets configured.</strong></p>'
+        : '<ul class="manifest-list" data-missing-secrets>' +
+          manifestMissingSecrets
+            .map((secret) => `<li><code>${escapeHtml(secret)}</code></li>`)
+            .join("") +
+          "</ul>";
+    const configManifestJson = serializeJsonForHtml({
+      features: manifestFeatures,
+      missingSecrets: manifestMissingSecrets,
+    });
+    const configManifestScript =
+      '<script type="application/json" id="jobbot-config-manifest">' +
+      configManifestJson +
+      "</script>";
     const skipLinkStyle =
       "position:absolute;left:-999px;top:auto;width:1px;height:1px;overflow:hidden;";
     const repoUrl = "https://github.com/jobbot3000/jobbot3000";
@@ -6216,6 +6339,22 @@ export function createWebApp({
               rails baked into the Express server. The status view keeps requirements front and
               center so API consumers wire headers correctly.
             </p>
+          </article>
+          <article class="card" data-manifest-card>
+            <h3>Configuration manifest</h3>
+            <p>
+              Flags, plugins, and required secrets resolved by <code>loadWebConfig</code> are
+              summarized here so local setups stay in sync with manifest defaults.
+            </p>
+            ${featureListHtml}
+            <section class="manifest-section">
+              <h4>Missing secrets</h4>
+              ${missingSecretsHtml}
+            </section>
+            <section class="manifest-section">
+              <h4>Plugin manifest</h4>
+              ${pluginEntriesHtml}
+            </section>
           </article>
         </div>
       </section>
@@ -6819,6 +6958,7 @@ export function createWebApp({
           <code>npm run lint</code> and <code>npm run test:ci</code> before shipping changes.
         </p>
     </footer>
+    ${configManifestScript}
     ${pluginHostScript}
     ${pluginManifestScript}
     <script src="/assets/status-hub.js" defer></script>
@@ -7452,6 +7592,7 @@ export function startWebServer(options = {}) {
     authScheme,
     session: sessionOptions,
     logTransport: providedLogTransport,
+    missingSecrets,
     ...rest
   } = options;
   const commandAdapter =
@@ -7504,6 +7645,7 @@ export function startWebServer(options = {}) {
     session: sessionOptions,
     commandEvents,
     logTransport: normalizedLogTransport,
+    missingSecrets,
   });
 
   const wss = new WebSocketServer({ noServer: true });
