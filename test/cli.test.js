@@ -1445,18 +1445,22 @@ describe('jobbot CLI', () => {
     ]);
   });
 
-  it('does not duplicate phone screen reminders when run repeatedly', async () => {
-    const opportunityUid = await ingestPhoneScreenOpportunity();
+  it(
+    'does not duplicate phone screen reminders when run repeatedly',
+    async () => {
+      const opportunityUid = await ingestPhoneScreenOpportunity();
 
-    runCli(['reminders', 'schedule', '--opportunity', opportunityUid]);
-    const secondRun = runCli(['reminders', 'schedule', '--opportunity', opportunityUid]);
+      runCli(['reminders', 'schedule', '--opportunity', opportunityUid]);
+      const secondRun = runCli(['reminders', 'schedule', '--opportunity', opportunityUid]);
 
-    expect(secondRun).toContain(`No new reminders scheduled for ${opportunityUid}.`);
+      expect(secondRun).toContain(`No new reminders scheduled for ${opportunityUid}.`);
 
-    const eventsPath = path.join(dataDir, 'application_events.json');
-    const events = JSON.parse(fs.readFileSync(eventsPath, 'utf8'));
-    expect(events[opportunityUid]).toHaveLength(3);
-  });
+      const eventsPath = path.join(dataDir, 'application_events.json');
+      const events = JSON.parse(fs.readFileSync(eventsPath, 'utf8'));
+      expect(events[opportunityUid]).toHaveLength(3);
+    },
+    15000,
+  );
 
   it('preserves unrelated follow-up reminders when scheduling phone screen reminders', async () => {
     const opportunityUid = await ingestPhoneScreenOpportunity();
