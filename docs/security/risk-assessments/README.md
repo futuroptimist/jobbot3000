@@ -8,3 +8,8 @@ Each report should link back to the originating feature spec and include the
 commit SHA that shipped the mitigations. The regression coverage described in
 [`docs/security-risk-assessment-guide.md`](../security-risk-assessment-guide.md)
 keeps the tooling and documentation aligned.
+
+## Catalog
+
+- [Status hub web release](web-status-hub.md) — Threat modeling session completed
+  2025-11-06 for the initial self-hosted rollout.
