@@ -1,5 +1,14 @@
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  randomBytes,
+} from "node:crypto";
+
 const DEFAULT_MAX_ENTRIES_PER_CLIENT = 5;
 const DEFAULT_MAX_CLIENTS = 200;
+const ENCRYPTION_ALGORITHM = "aes-256-gcm";
+const ENCRYPTION_IV_LENGTH = 12;
 
 const clone =
   typeof structuredClone === "function"
@@ -79,6 +88,92 @@ function normalizeCommand(value) {
   return trimmed;
 }
 
+function normalizeEncryptionKey(input) {
+  if (!input) {
+    return null;
+  }
+
+  if (typeof input === "string") {
+    const trimmed = input.trim();
+    if (!trimmed) {
+      return null;
+    }
+    return createHash("sha256").update(trimmed, "utf8").digest();
+  }
+
+  if (Buffer.isBuffer(input)) {
+    if (input.length === 32) {
+      return input;
+    }
+    return createHash("sha256").update(input).digest();
+  }
+
+  if (ArrayBuffer.isView(input)) {
+    const view = Buffer.from(
+      input.buffer,
+      input.byteOffset,
+      input.byteLength,
+    );
+    if (view.length === 32) {
+      return view;
+    }
+    return createHash("sha256").update(view).digest();
+  }
+
+  if (input instanceof ArrayBuffer) {
+    const buffer = Buffer.from(input);
+    if (buffer.length === 32) {
+      return buffer;
+    }
+    return createHash("sha256").update(buffer).digest();
+  }
+
+  return null;
+}
+
+function encryptPayload(payload, key) {
+  const iv = randomBytes(ENCRYPTION_IV_LENGTH);
+  const cipher = createCipheriv(ENCRYPTION_ALGORITHM, key, iv);
+  const serialized = JSON.stringify(payload ?? {});
+  const ciphertext = Buffer.concat([
+    cipher.update(serialized, "utf8"),
+    cipher.final(),
+  ]);
+  const tag = cipher.getAuthTag();
+  return {
+    iv: iv.toString("base64"),
+    ciphertext: ciphertext.toString("base64"),
+    tag: tag.toString("base64"),
+  };
+}
+
+function decryptPayload(encrypted, key) {
+  if (!encrypted || typeof encrypted !== "object") {
+    return null;
+  }
+
+  try {
+    const iv = Buffer.from(String(encrypted.iv ?? ""), "base64");
+    const ciphertext = Buffer.from(
+      String(encrypted.ciphertext ?? ""),
+      "base64",
+    );
+    const tag = Buffer.from(String(encrypted.tag ?? ""), "base64");
+    if (iv.length !== ENCRYPTION_IV_LENGTH || tag.length === 0) {
+      return null;
+    }
+    const decipher = createDecipheriv(ENCRYPTION_ALGORITHM, key, iv);
+    decipher.setAuthTag(tag);
+    const decrypted = Buffer.concat([
+      decipher.update(ciphertext),
+      decipher.final(),
+    ]);
+    return JSON.parse(decrypted.toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
 export function createClientPayloadStore(options = {}) {
   const limitRaw = options.maxEntriesPerClient ?? DEFAULT_MAX_ENTRIES_PER_CLIENT;
   const limit = Number(limitRaw);
@@ -93,6 +188,15 @@ export function createClientPayloadStore(options = {}) {
   }
 
   const store = new Map();
+  const encryption =
+    options.encryption && typeof options.encryption === "object"
+      ? options.encryption
+      : null;
+  const deriveKey =
+    encryption && typeof encryption.deriveKey === "function"
+      ? encryption.deriveKey
+      : null;
+  const encryptionEnabled = Boolean(deriveKey);
 
   function enforceClientCapacity() {
     while (store.size > maxClients) {
@@ -112,11 +216,29 @@ export function createClientPayloadStore(options = {}) {
     }
 
     const sanitizedPayload = sanitizeValue(payload ?? {});
+    const normalizedPayload = sanitizedPayload ?? {};
+    let encryptedPayload = null;
+
+    if (encryptionEnabled) {
+      const key = normalizeEncryptionKey(
+        deriveKey(normalizedClientId, { operation: "record" }),
+      );
+      if (!key) {
+        return null;
+      }
+      encryptedPayload = encryptPayload(normalizedPayload, key);
+    }
+
     const entry = {
       command: normalizedCommand,
-      payload: sanitizedPayload ?? {},
       timestamp: new Date().toISOString(),
     };
+
+    if (encryptedPayload) {
+      entry.encryptedPayload = encryptedPayload;
+    } else {
+      entry.payload = normalizedPayload;
+    }
 
     let entries = store.get(normalizedClientId);
     if (entries) {
@@ -130,7 +252,11 @@ export function createClientPayloadStore(options = {}) {
     }
     store.set(normalizedClientId, entries);
     enforceClientCapacity();
-    return { ...entry, payload: clone(entry.payload) };
+    return {
+      command: entry.command,
+      payload: clone(normalizedPayload),
+      timestamp: entry.timestamp,
+    };
   }
 
   function getRecent(clientId) {
@@ -142,11 +268,34 @@ export function createClientPayloadStore(options = {}) {
     if (!entries || entries.length === 0) {
       return [];
     }
-    return entries.map((entry) => ({
-      command: entry.command,
-      timestamp: entry.timestamp,
-      payload: clone(entry.payload),
-    }));
+    const key = encryptionEnabled
+      ? normalizeEncryptionKey(
+          deriveKey(normalizedClientId, { operation: "read" }),
+        )
+      : null;
+    return entries
+      .map((entry) => {
+        if (entry.encryptedPayload && encryptionEnabled) {
+          if (!key) {
+            return null;
+          }
+          const decrypted = decryptPayload(entry.encryptedPayload, key);
+          if (decrypted === null || decrypted === undefined) {
+            return null;
+          }
+          return {
+            command: entry.command,
+            timestamp: entry.timestamp,
+            payload: clone(decrypted),
+          };
+        }
+        return {
+          command: entry.command,
+          timestamp: entry.timestamp,
+          payload: clone(entry.payload ?? {}),
+        };
+      })
+      .filter(Boolean);
   }
 
   return { record, getRecent };

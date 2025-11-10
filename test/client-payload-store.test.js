@@ -46,4 +46,36 @@ describe("createClientPayloadStore", () => {
       expect.objectContaining({ command: "summarize" }),
     ]);
   });
+
+  it("encrypts payloads per client and refuses mismatched keys", () => {
+    const keys = new Map();
+    const store = createClientPayloadStore({
+      encryption: {
+        deriveKey(clientId) {
+          if (!clientId) return null;
+          if (!keys.has(clientId)) {
+            keys.set(clientId, `secret:${clientId}`);
+          }
+          return keys.get(clientId);
+        },
+      },
+    });
+
+    store.record("client-a", "summarize", {
+      value: "A1",
+      hidden: "\u0007 Details \u0000",
+    });
+
+    const decrypted = store.getRecent("client-a");
+    expect(decrypted).toEqual([
+      {
+        command: "summarize",
+        payload: { value: "A1", hidden: "Details" },
+        timestamp: expect.any(String),
+      },
+    ]);
+
+    keys.set("client-a", "different-secret");
+    expect(store.getRecent("client-a")).toEqual([]);
+  });
 });

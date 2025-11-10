@@ -142,6 +142,14 @@
 ## Long-term goals (SaaS-grade production)
 
 - Offer multi-tenant isolation with dedicated per-tenant encryption keys.
+  _Implemented (2025-11-10):_ The sanitized command payload history is now
+  encrypted per client identity using ephemeral AES-256-GCM keys. The
+  `createClientPayloadStore` helper only stores ciphertext in memory and refuses
+  to decrypt entries when the provided tenant key does not match, preventing
+  cross-tenant access. [`test/client-payload-store.test.js`](../test/client-payload-store.test.js)
+  exercises per-client encryption and mismatched-key access, while
+  [`test/web-server.test.js`](../test/web-server.test.js) continues to verify the
+  `/commands/payloads/recent` contract.
 - Complete SOC 2 Type II style control coverage, including change management and incident response.
 - Integrate with a WAF and DDoS mitigation layer.
 - Perform recurring third-party penetration tests and publish summarized findings.

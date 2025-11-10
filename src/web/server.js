@@ -28,6 +28,7 @@ import { createSessionManager } from "./session-manager.js";
 import { WebSocket, WebSocketServer } from "ws";
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
+const CLIENT_PAYLOAD_MAX_CLIENTS = 200;
 
 function isLoopbackHost(host) {
   if (typeof host !== "string") {
@@ -76,6 +77,78 @@ function createInMemoryRateLimiter(options = {}) {
       return { allowed, remaining, reset: entry.reset };
     },
   };
+}
+
+function normalizeKeyringClientId(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+}
+
+/**
+ * Maintains ephemeral encryption keys for each web client.
+ *
+ * The keyring mirrors the client payload store's capacity so that both data
+ * structures evict older clients in lockstep. This keeps ciphertext and keys
+ * aligned: once payload history is pruned, the matching encryption key is
+ * removed so there are no dangling secrets left in memory.
+ */
+function createClientKeyring(options = {}) {
+  const maxClientsRaw = options.maxClients ?? CLIENT_PAYLOAD_MAX_CLIENTS;
+  const maxClients = Number(maxClientsRaw);
+  if (!Number.isFinite(maxClients) || maxClients <= 0) {
+    throw new Error("client keyring maxClients must be a positive number");
+  }
+
+  const keys = new Map();
+
+  function enforceCapacity() {
+    while (keys.size > maxClients) {
+      const oldest = keys.keys().next();
+      if (oldest.done) {
+        break;
+      }
+      keys.delete(oldest.value);
+    }
+  }
+
+  function touch(id, key) {
+    keys.delete(id);
+    keys.set(id, key);
+  }
+
+  function getExisting(clientId) {
+    const normalized = normalizeKeyringClientId(clientId);
+    if (!normalized) {
+      return null;
+    }
+    const key = keys.get(normalized);
+    if (!key) {
+      return null;
+    }
+    touch(normalized, key);
+    return key;
+  }
+
+  function getOrCreate(clientId) {
+    const normalized = normalizeKeyringClientId(clientId);
+    if (!normalized) {
+      return null;
+    }
+    const existing = keys.get(normalized);
+    if (existing) {
+      touch(normalized, existing);
+      return existing;
+    }
+    const key = randomBytes(32);
+    keys.set(normalized, key);
+    enforceCapacity();
+    return key;
+  }
+
+  return { getExisting, getOrCreate };
 }
 
 function escapeHtml(value) {
@@ -5989,7 +6062,19 @@ export function createWebApp({
   const rateLimiter = createInMemoryRateLimiter(rateLimit);
   const authOptions = normalizeAuthOptions(auth);
   const app = express();
-  const clientPayloadStore = createClientPayloadStore();
+  const clientHistoryLimits = { maxClients: CLIENT_PAYLOAD_MAX_CLIENTS };
+  const clientKeyring = createClientKeyring(clientHistoryLimits);
+  const clientPayloadStore = createClientPayloadStore({
+    ...clientHistoryLimits,
+    encryption: {
+      deriveKey(clientId, context = {}) {
+        if (context.operation === "record") {
+          return clientKeyring.getOrCreate(clientId);
+        }
+        return clientKeyring.getExisting(clientId);
+      },
+    },
+  });
   const sessionManager = createSessionManager(session);
   let effectiveAuditLogger = auditLogger ?? null;
   if (!effectiveAuditLogger && audit && audit.logPath) {
