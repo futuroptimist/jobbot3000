@@ -463,7 +463,7 @@
 
 7. **Release Prep**
    - Finalize documentation (README updates, API reference, UX guidelines).
-     _Implemented (2025-11-30):_ [`docs/web-ux-guidelines.md`](web-ux-guidelines.md)
+     _Implemented (2025-11-09):_ [`docs/web-ux-guidelines.md`](web-ux-guidelines.md)
      now catalogs the shared layout, typography, interaction, and accessibility
      conventions enforced by the status hub. The new regression coverage in
      [`test/web-ux-guidelines-doc.test.js`](../test/web-ux-guidelines-doc.test.js)
