@@ -52,11 +52,19 @@ can be rolled out behind feature flags to minimize regressions.
   aligned with `loadWebConfig` output.
 - Publish the [Configuration Cookbook](../configuration-cookbook.md) so operators understand default
   values and overrides.
+  _Implemented (2025-11-10):_ Added secure-session guidance to the cookbook and introduced
+  `test/docs-configuration-cookbook.test.js` to keep the documentation aligned with the manifest,
+  session cookie flag, and secrets verification workflow.
 
 ## Phase 3 — Resilient HTTP client
 
 - Extend `fetchWithRetry` with injectable timers, circuit breaker support, and deterministic testing
   hooks.
+  _Implemented (2025-11-10):_ `fetchWithRetry` now routes host queue rate limit
+  waits through injected `sleep` and `clock` hooks so deterministic tests can
+  advance virtual timers without real delays. Regression coverage in
+  [`test/http-resilience.test.js`](../../test/http-resilience.test.js) asserts
+  custom clocks advance host queues and record rate-limit timestamps.
 - Plumb manifest-driven retry/backoff thresholds through `createHttpClient` and the scraping adapters.
   _Implemented (2025-10-31):_ `createHttpClient` now sources retry attempts,
   base backoff, and circuit breaker defaults from the manifest's

@@ -118,6 +118,15 @@ The manifest feeds these settings into `scripts/web-server.js`, which in turn pa
 `startWebServer`. Regression coverage in `test/web-config.test.js` ensures the JSON payload resolves to
 scoped API keys so future edits keep the RBAC configuration discoverable.
 
+### Session security
+
+When running behind an HTTP proxy, set `JOBBOT_WEB_SESSION_SECURE=1` to force the status hub to mark
+session cookies with the `Secure` cookie attribute even if the incoming request arrives over plain
+HTTP. The override keeps rotated session identifiers and CSRF tokens off cleartext channels when TLS
+terminates upstream. `startWebServer` reads the flag for both the session and CSRF cookies, pairing
+it with the usual `SameSite=Strict` defaults documented in
+[`docs/web-api-reference.md`](web-api-reference.md).
+
 ## User settings (`data/settings.json`)
 
 The CLI persists inference and privacy preferences to `data/settings.json`. Manage these defaults

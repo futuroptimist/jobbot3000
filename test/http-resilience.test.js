@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   fetchWithRetry,
   __resetHttpCircuitBreakersForTest,
+  clearFetchRateLimits,
+  setFetchRateLimit,
 } from '../src/shared/http/fetch.js';
 
 describe('fetchWithRetry circuit resilience', () => {
@@ -107,5 +109,55 @@ describe('fetchWithRetry circuit resilience', () => {
     expect(response).toBe(successResponse);
     expect(sleep).toHaveBeenCalledTimes(2);
     expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([25, 50]);
+  });
+});
+
+describe('fetchWithRetry host rate limiting', () => {
+  let now;
+  let clock;
+  let sleep;
+  let fetchImpl;
+
+  beforeEach(() => {
+    now = 0;
+    clock = { now: () => now };
+    sleep = vi.fn(async ms => {
+      now += ms;
+    });
+    fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+    });
+    clearFetchRateLimits();
+  });
+
+  afterEach(() => {
+    clearFetchRateLimits();
+    vi.restoreAllMocks();
+  });
+
+  it('uses injected clock and sleep when enforcing host rate limits', async () => {
+    setFetchRateLimit('provider:shared', 50);
+
+    await fetchWithRetry('https://one.example.com', {
+      fetchImpl,
+      rateLimitKey: 'provider:shared',
+      retry: { retries: 0 },
+      sleep,
+      clock,
+    });
+
+    await fetchWithRetry('https://two.example.com', {
+      fetchImpl,
+      rateLimitKey: 'provider:shared',
+      retry: { retries: 0 },
+      sleep,
+      clock,
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledWith(50);
+    expect(now).toBe(50);
   });
 });

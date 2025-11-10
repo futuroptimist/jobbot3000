@@ -27,6 +27,11 @@ import { htmlToText } from 'html-to-text';
 /** @typedef {(ms: number) => Promise<void>} SleepFn */
 
 /**
+ * Options supported by `fetchWithRetry`.
+ *
+ * Custom `sleep` and `clock` hooks drive both retry backoff and host rate limit scheduling so
+ * deterministic tests can advance virtual timers without waiting for real time.
+ *
  * @typedef {FetchRequestInit & {
  *   fetchImpl?: (url: string | URL, init?: FetchRequestInit) => Promise<FetchResponse>,
  *   retry?: FetchRetryOptions,
@@ -121,16 +126,11 @@ const HOST_LAST_INVOCATION = new Map();
  *
  * @param {string} key
  * @param {() => Promise<T>} fn
+ * @param {{ wait?: SleepFn, clock?: Clock }} [options]
  * @returns {Promise<T>}
  * @template T
  */
-/**
- * @template T
- * @param {string} key
- * @param {() => Promise<T>} fn
- * @returns {Promise<T>}
- */
-async function withHostQueue(key, fn) {
+async function withHostQueue(key, fn, options = {}) {
   const previous = HOST_QUEUE.get(key);
   /** @type {((value?: unknown) => void) | undefined} */
   let release;
@@ -138,6 +138,8 @@ async function withHostQueue(key, fn) {
     release = resolve;
   });
   HOST_QUEUE.set(key, current);
+  const waiter = typeof options.wait === 'function' ? options.wait : sleep;
+  const clock = options.clock;
 
   try {
     if (previous) {
@@ -147,10 +149,10 @@ async function withHostQueue(key, fn) {
     if (Number.isFinite(limit) && limit > 0) {
       const last = HOST_LAST_INVOCATION.get(key);
       if (Number.isFinite(last)) {
-        const elapsed = Date.now() - last;
+        const elapsed = now(clock) - last;
         const waitMs = limit - elapsed;
         if (waitMs > 0) {
-          await sleep(waitMs);
+          await waiter(waitMs);
         }
       }
     }
@@ -159,7 +161,7 @@ async function withHostQueue(key, fn) {
       return await fn();
     } finally {
       if (Number.isFinite(limit) && limit > 0) {
-        HOST_LAST_INVOCATION.set(key, Date.now());
+        HOST_LAST_INVOCATION.set(key, now(clock));
       }
     }
   } finally {
@@ -254,11 +256,15 @@ export async function fetchWithRetry(url, options = {}, init = {}) {
 
   const breakerKey = circuitBreaker?.key || queueKey;
 
-  return withHostQueue(queueKey, async () => {
-    const breakerEntry =
-      circuitOptions.threshold > 0
-        ? resolveCircuitBreaker(breakerKey, circuitOptions, clock)
-        : null;
+  const waiter = typeof sleepImpl === 'function' ? sleepImpl : sleep;
+
+  return withHostQueue(
+    queueKey,
+    async () => {
+      const breakerEntry =
+        circuitOptions.threshold > 0
+          ? resolveCircuitBreaker(breakerKey, circuitOptions, clock)
+          : null;
 
       if (breakerEntry && breakerEntry.openUntil && now(clock) < breakerEntry.openUntil) {
         const error = /** @type {Error & { retryAt?: number, circuitKey?: string }} */ (
@@ -276,39 +282,40 @@ export async function fetchWithRetry(url, options = {}, init = {}) {
         throw error;
       }
 
-    let attempt = 0;
-    while (attempt <= retries) {
-      try {
-        const response = await fetchImpl(url, mergedInit);
-        const wantsRetry = shouldRetry(response);
-        if (!wantsRetry) {
-          recordCircuitSuccess(breakerEntry);
-          return response;
-        }
-        if (attempt === retries) {
+      let attempt = 0;
+      while (attempt <= retries) {
+        try {
+          const response = await fetchImpl(url, mergedInit);
+          const wantsRetry = shouldRetry(response);
+          if (!wantsRetry) {
+            recordCircuitSuccess(breakerEntry);
+            return response;
+          }
+          if (attempt === retries) {
+            recordCircuitFailure(breakerEntry, circuitOptions, clock);
+            return response;
+          }
           recordCircuitFailure(breakerEntry, circuitOptions, clock);
-          return response;
-        }
-        recordCircuitFailure(breakerEntry, circuitOptions, clock);
-      } catch (err) {
-        if (err && err.doNotRetry) {
-          throw err;
-        }
-        if (attempt === retries) {
+        } catch (err) {
+          if (err && err.doNotRetry) {
+            throw err;
+          }
+          if (attempt === retries) {
+            recordCircuitFailure(breakerEntry, circuitOptions, clock);
+            throw err;
+          }
           recordCircuitFailure(breakerEntry, circuitOptions, clock);
-          throw err;
         }
-        recordCircuitFailure(breakerEntry, circuitOptions, clock);
+
+        const waitMs = computeDelay(attempt, { delayMs, factor, maxDelayMs });
+        await waiter(waitMs);
+        attempt += 1;
       }
 
-      const waitMs = computeDelay(attempt, { delayMs, factor, maxDelayMs });
-      const waiter = typeof sleepImpl === 'function' ? sleepImpl : sleep;
-      await waiter(waitMs);
-      attempt += 1;
-    }
-
-    throw new Error('fetchWithRetry exhausted retries without returning');
-  });
+      throw new Error('fetchWithRetry exhausted retries without returning');
+    },
+    { wait: waiter, clock },
+  );
 }
 
 export function __resetHttpCircuitBreakersForTest() {
