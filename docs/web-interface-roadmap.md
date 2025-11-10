@@ -463,17 +463,23 @@
 
 7. **Release Prep**
    - Finalize documentation (README updates, API reference, UX guidelines).
-
-- Conduct security review and threat modeling session.
-  _Implemented (2025-11-06):_ Completed the status hub threat modeling
-  workshop and published the resulting
-  [`docs/security/risk-assessments/web-status-hub.md`](security/risk-assessments/web-status-hub.md)
-  report outlining STRIDE scenarios, mitigations, and recommended actions.
-  Regression coverage in
-  [`test/web-release-prep-doc.test.js`](../test/web-release-prep-doc.test.js)
-  verifies the roadmap references the assessment and that the Markdown report
-  retains the expected sections.
-  - Perform beta testing with target users and gather feedback for iteration.
+     _Implemented (2025-11-09):_ [`docs/web-ux-guidelines.md`](web-ux-guidelines.md)
+     now catalogs the shared layout, typography, interaction, and accessibility
+     conventions enforced by the status hub. The new regression coverage in
+     [`test/web-ux-guidelines-doc.test.js`](../test/web-ux-guidelines-doc.test.js)
+     asserts the guide references the roadmap, storybook examples, and the
+     underlying server templates so future edits keep the UX guardrails
+     discoverable alongside the API and README updates.
+   - Conduct security review and threat modeling session.
+     _Implemented (2025-11-06):_ Completed the status hub threat modeling
+     workshop and published the resulting
+     [`docs/security/risk-assessments/web-status-hub.md`](security/risk-assessments/web-status-hub.md)
+     report outlining STRIDE scenarios, mitigations, and recommended actions.
+     Regression coverage in
+     [`test/web-release-prep-doc.test.js`](../test/web-release-prep-doc.test.js)
+     verifies the roadmap references the assessment and that the Markdown report
+     retains the expected sections.
+   - Perform beta testing with target users and gather feedback for iteration.
 
 ### 6. Documentation and Developer Experience
 
