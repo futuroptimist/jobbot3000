@@ -156,6 +156,7 @@ Run the snippet with `node example.js` after saving it to a file in the project 
 - [docs/user-journeys.md](docs/user-journeys.md) – primary user journeys and flows
 - [docs/backup-restore-guide.md](docs/backup-restore-guide.md) – backup, restore, and verification
   steps
+- [docs/web-ux-guidelines.md](docs/web-ux-guidelines.md) – layout, typography, and interaction guardrails
 - [GitHub Actions: web-screenshots.yml](https://github.com/futuroptimist/jobbot3000/actions/workflows/web-screenshots.yml) – captures the latest UI flows for regressions
 
 ### Durable data export/import
