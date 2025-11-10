@@ -144,7 +144,7 @@
 - Offer multi-tenant isolation with dedicated per-tenant encryption keys.
   _Implemented (2025-11-10):_ The sanitized command payload history is now
   encrypted per client identity using ephemeral AES-256-GCM keys. The
-  `createClientPayloadStore` helper only persists ciphertext on disk and refuses
+  `createClientPayloadStore` helper only stores ciphertext in memory and refuses
   to decrypt entries when the provided tenant key does not match, preventing
   cross-tenant access. [`test/client-payload-store.test.js`](../test/client-payload-store.test.js)
   exercises per-client encryption and mismatched-key access, while

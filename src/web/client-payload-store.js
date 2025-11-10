@@ -103,7 +103,7 @@ function normalizeEncryptionKey(input) {
 
   if (Buffer.isBuffer(input)) {
     if (input.length === 32) {
-      return Buffer.from(input);
+      return input;
     }
     return createHash("sha256").update(input).digest();
   }
@@ -115,7 +115,7 @@ function normalizeEncryptionKey(input) {
       input.byteLength,
     );
     if (view.length === 32) {
-      return Buffer.from(view);
+      return view;
     }
     return createHash("sha256").update(view).digest();
   }
