@@ -35,6 +35,12 @@ can be rolled out behind feature flags to minimize regressions.
 
 - Ship the manifest (`src/shared/config/manifest.js`) that validates host/port, rate limits, feature
   flags, and secrets.
+  _Implemented (2025-11-05):_ [`src/shared/config/manifest.js`](../../src/shared/config/manifest.js)
+  now exports `loadConfig`, `DEFAULT_WEB_CONFIG`, and `REQUIRED_SECRETS`, validating host overrides,
+  rate limit boundaries, plugin manifests, and rejecting inline secret injections. Regression
+  coverage in [`test/web-config.test.js`](../../test/web-config.test.js) and
+  [`test/http-client-manifest.test.js`](../../test/http-client-manifest.test.js) asserts manifest
+  overrides flow into the web server and HTTP clients while surfacing missing secrets for operators.
 - Update the web server to consume manifest output, surface missing secrets, and expose flag state to
   templates.
   _Implemented (2025-11-05):_ `startWebServer` now forwards manifest features and

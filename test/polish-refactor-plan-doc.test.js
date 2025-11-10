@@ -68,4 +68,23 @@ describe('polish refactor plan documentation', () => {
     expect(contents).toContain('src/shared/events/bus.js');
     expect(contents).toContain('test/module-event-bus.test.js');
   });
+
+  it('records the configuration manifest milestone as implemented', async () => {
+    const contents = await readDoc();
+
+    const manifestPattern = new RegExp(
+      [
+        'Ship the manifest \\(`src/shared/config/manifest.js`\\) that validates host/port,',
+        'rate limits, feature',
+        'flags, and secrets\\.',
+        '_Implemented \\(2025-11-05\\):_',
+      ].join('\\s+'),
+      's',
+    );
+
+    expect(contents).toMatch(manifestPattern);
+    expect(contents).toContain('src/shared/config/manifest.js');
+    expect(contents).toContain('test/web-config.test.js');
+    expect(contents).toContain('test/http-client-manifest.test.js');
+  });
 });
