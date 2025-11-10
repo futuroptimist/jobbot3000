@@ -52,6 +52,10 @@ can be rolled out behind feature flags to minimize regressions.
   aligned with `loadWebConfig` output.
 - Publish the [Configuration Cookbook](../configuration-cookbook.md) so operators understand default
   values and overrides.
+  _Implemented (2025-11-09):_ [`docs/configuration-cookbook.md`](../configuration-cookbook.md)
+  now calls out the manifest validation command, per-environment presets, and the regression
+  coverage in [`test/docs-configuration-cookbook.test.js`](../../test/docs-configuration-cookbook.test.js)
+  so future edits keep the operator guide aligned with the codebase.
 
 ## Phase 3 — Resilient HTTP client
 

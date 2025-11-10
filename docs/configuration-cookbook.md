@@ -1,7 +1,10 @@
 # Configuration Cookbook
 
 This guide summarizes the environment variables, feature flags, and secrets required to operate
-jobbot3000 across local development, staging, and self-hosted/production environments.
+jobbot3000 across local development, staging, and self-hosted/production environments. Regression
+coverage in [`test/docs-configuration-cookbook.test.js`](../test/docs-configuration-cookbook.test.js)
+keeps the overview, secrets, feature flag, and environment template sections intact while verifying
+the manifest validation command stays documented for operators.
 
 ## Overview
 
