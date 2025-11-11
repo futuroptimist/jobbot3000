@@ -123,6 +123,42 @@ describe('interview session archive', () => {
     expect(fromDisk).toEqual(recorded);
   });
 
+  it('persists numeric interview ratings when provided', async () => {
+    const { setInterviewDataDir, recordInterviewSession, getInterviewSession } = await import(
+      '../src/interviews.js'
+    );
+
+    setInterviewDataDir(dataDir);
+
+    const recorded = await recordInterviewSession('job-rating', 'session-score', {
+      transcript: 'Practiced answers with confidence.',
+      rating: 4,
+    });
+
+    expect(recorded.rating).toBe(4);
+
+    const stored = await getInterviewSession('job-rating', 'session-score');
+    expect(stored.rating).toBe(4);
+  });
+
+  it('rejects ratings outside the accepted range', async () => {
+    const { setInterviewDataDir, recordInterviewSession } = await import('../src/interviews.js');
+
+    setInterviewDataDir(dataDir);
+
+    await expect(
+      recordInterviewSession('job-rating', 'session-invalid', { rating: 7 }),
+    ).rejects.toThrow('rating must be between 1 and 5');
+
+    await expect(
+      recordInterviewSession('job-rating', 'session-low', { rating: 0 }),
+    ).rejects.toThrow('rating must be between 1 and 5');
+
+    await expect(
+      recordInterviewSession('job-rating', 'session-decimal', { rating: 3.5 }),
+    ).rejects.toThrow('rating must be an integer between 1 and 5');
+  });
+
   it('rejects identifiers that escape the interviews directory', async () => {
     const { setInterviewDataDir, recordInterviewSession, getInterviewSession } = await import(
       '../src/interviews.js'

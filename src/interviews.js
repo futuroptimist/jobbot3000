@@ -1100,6 +1100,25 @@ function normalizeNotes(input) {
   return value;
 }
 
+function normalizeRating(input) {
+  if (input == null) return undefined;
+  const value = typeof input === 'string' ? input.trim() : input;
+  if (typeof value === 'string' && value === '') {
+    throw new Error('rating cannot be empty');
+  }
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    throw new Error('rating must be between 1 and 5');
+  }
+  if (!Number.isInteger(numeric)) {
+    throw new Error('rating must be an integer between 1 and 5');
+  }
+  if (numeric < 1 || numeric > 5) {
+    throw new Error('rating must be between 1 and 5');
+  }
+  return numeric;
+}
+
 function normalizeAudioSource(input) {
   if (!input || typeof input !== 'object') return undefined;
   const type = sanitizeString(input.type) || 'file';
@@ -1131,6 +1150,7 @@ export async function recordInterviewSession(jobId, sessionId, data = {}) {
   const reflections = normalizeNoteList(data.reflections, 'reflections');
   const feedback = normalizeNoteList(data.feedback, 'feedback');
   const notes = normalizeNotes(data.notes);
+  const rating = normalizeRating(data.rating);
   const audioSource = normalizeAudioSource(data.audioSource ?? data.audio_source);
 
   const stage = sanitizeString(data.stage) || 'Behavioral';
@@ -1153,6 +1173,7 @@ export async function recordInterviewSession(jobId, sessionId, data = {}) {
   if (reflections) entry.reflections = reflections;
   if (feedback) entry.feedback = feedback;
   if (notes) entry.notes = notes;
+  if (rating !== undefined) entry.rating = rating;
   if (audioSource) entry.audio_source = audioSource;
   if (startedAt) entry.started_at = startedAt;
   if (endedAt) entry.ended_at = endedAt;
