@@ -323,7 +323,10 @@ call scheduled"`.
 3. Rehearse with `jobbot rehearse <job_id> --stage behavioral --audio recordings/mock.mp3` to
    transcribe practice answers via configured STT providers.
 4. Record session notes using `jobbot interviews record <job_id> --session <id> --notes <text>
---rating 4`.
+--rating 4`. The command now persists the numeric practice score alongside notes, mirroring the
+   `jobbot rehearse` shortcut and rejecting values outside the 1–5 range. Regression coverage in
+   [`test/interviews.test.js`](../test/interviews.test.js) and [`test/cli.test.js`](../test/cli.test.js)
+   keeps the stored rating and CLI validation aligned.
 5. Review progress with `jobbot interviews show <job_id> --session <id> --json` to inspect metrics
    like words per minute and STAR coverage.
 6. Export sessions via

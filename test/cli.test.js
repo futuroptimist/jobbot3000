@@ -3786,6 +3786,25 @@ describe('jobbot CLI', () => {
     expect(stored.mode).toBe('Voice');
   });
 
+  it('captures interview ratings via CLI flags', () => {
+    const output = runCli([
+      'interviews',
+      'record',
+      'job-456',
+      'session-rated',
+      '--rating',
+      '5',
+      '--notes',
+      'Mock panel run-through',
+    ]);
+
+    expect(output.trim()).toBe('Recorded session session-rated for job-456');
+
+    const file = path.join(dataDir, 'interviews', 'job-456', 'session-rated.json');
+    const stored = JSON.parse(fs.readFileSync(file, 'utf8'));
+    expect(stored.rating).toBe(5);
+  });
+
   it('records rehearsal sessions with stage and mode shortcuts', () => {
     const output = runCli([
       'rehearse',
@@ -3802,6 +3821,8 @@ describe('jobbot CLI', () => {
       'Strong presence',
       '--notes',
       'Send thank-you email',
+      '--rating',
+      '3',
       '--started-at',
       '2025-02-01T09:00:00Z',
       '--ended-at',
@@ -3822,10 +3843,22 @@ describe('jobbot CLI', () => {
       reflections: ['Add more quantified wins'],
       feedback: ['Strong presence'],
       notes: 'Send thank-you email',
+      rating: 3,
       started_at: '2025-02-01T09:00:00.000Z',
       ended_at: '2025-02-01T09:45:00.000Z',
     });
     expect(stored).toHaveProperty('heuristics');
+  });
+
+  it('rejects out-of-range rehearsal ratings', () => {
+    expect(() =>
+      runCli([
+        'rehearse',
+        'job-789',
+        '--rating',
+        '0',
+      ]),
+    ).toThrow(/rating must be between 1 and 5/);
   });
 
   it('defaults rehearse stage and mode when not provided', () => {

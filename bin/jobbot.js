@@ -3716,6 +3716,7 @@ async function cmdInterviewsRecord(args) {
   const reflectionsInput = readContentFromArgs(rest, '--reflections', '--reflections-file');
   const feedbackInput = readContentFromArgs(rest, '--feedback', '--feedback-file');
   const notesInput = readContentFromArgs(rest, '--notes', '--notes-file');
+  const ratingInput = getFlag(rest, '--rating');
 
   const stage = getFlag(rest, '--stage');
   const mode = getFlag(rest, '--mode');
@@ -3730,6 +3731,7 @@ async function cmdInterviewsRecord(args) {
         '[--reflections <text>|--reflections-file <path>] ' +
         '[--feedback <text>|--feedback-file <path>] ' +
         '[--notes <text>|--notes-file <path>] ' +
+        '[--rating <1-5>] ' +
         '[--started-at <iso8601>] [--ended-at <iso8601>]'
     );
     process.exit(2);
@@ -3740,6 +3742,7 @@ async function cmdInterviewsRecord(args) {
     reflections: parseMultilineList(reflectionsInput),
     feedback: parseMultilineList(feedbackInput),
     notes: notesInput,
+    rating: ratingInput,
     stage,
     mode,
     startedAt,
@@ -4256,6 +4259,7 @@ async function cmdRehearse(args) {
         '[--reflections <text>|--reflections-file <path>] ' +
         '[--feedback <text>|--feedback-file <path>] ' +
         '[--notes <text>|--notes-file <path>] ' +
+        '[--rating <1-5>] ' +
         '[--started-at <iso8601>] [--ended-at <iso8601>]'
     );
     process.exit(2);
@@ -4272,6 +4276,7 @@ async function cmdRehearse(args) {
   const mode = resolveRehearsalMode(rest) || 'Voice';
   const startedAt = getFlag(rest, '--started-at');
   const endedAt = getFlag(rest, '--ended-at');
+  const ratingInput = getFlag(rest, '--rating');
 
   if (audioInput && transcriptInput) {
     console.error('Cannot combine --audio with --transcript/--transcript-file');
@@ -4295,6 +4300,7 @@ async function cmdRehearse(args) {
     reflections: parseMultilineList(reflectionsInput),
     feedback: parseMultilineList(feedbackInput),
     notes: notesInput,
+    rating: ratingInput,
     stage,
     mode,
     startedAt,
