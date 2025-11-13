@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { normalizeMatchRequest, normalizeSummarizeRequest } from '../src/web/schemas.js';
+import {
+  normalizeIntakeListRequest,
+  normalizeIntakeRecordRequest,
+  normalizeMatchRequest,
+  normalizeSummarizeRequest,
+} from '../src/web/schemas.js';
 
 describe('web request schemas', () => {
   describe('normalizeSummarizeRequest', () => {
@@ -59,6 +64,130 @@ describe('web request schemas', () => {
     it('throws when options are not an object', () => {
       expect(() => normalizeMatchRequest(null)).toThrow('match options must be an object');
       expect(() => normalizeMatchRequest([])).toThrow('match options must be an object');
+    });
+  });
+
+  describe('normalizeIntakeListRequest', () => {
+    it('normalizes status filter and redact flag', () => {
+      const options = normalizeIntakeListRequest({
+        status: 'skipped',
+        redact: true,
+      });
+
+      expect(options).toEqual({
+        status: 'skipped',
+        redact: true,
+      });
+    });
+
+    it('defaults redact to false when omitted', () => {
+      const options = normalizeIntakeListRequest({});
+
+      expect(options).toEqual({
+        redact: false,
+      });
+    });
+
+    it('throws when options are not an object', () => {
+      expect(() => normalizeIntakeListRequest(null)).toThrow(
+        'intake list request must be an object',
+      );
+      expect(() => normalizeIntakeListRequest([])).toThrow(
+        'intake list request must be an object',
+      );
+    });
+
+    it('throws when unexpected keys are provided', () => {
+      expect(() => normalizeIntakeListRequest({ invalid: true })).toThrow(
+        'unexpected intake list keys: invalid',
+      );
+    });
+  });
+
+  describe('normalizeIntakeRecordRequest', () => {
+    it('normalizes required question and answer fields', () => {
+      const options = normalizeIntakeRecordRequest({
+        question: '  Career goals?  ',
+        answer: '  Build tools  ',
+        tags: 'career,growth',
+        notes: ' Important ',
+      });
+
+      expect(options).toEqual({
+        question: 'Career goals?',
+        answer: 'Build tools',
+        skipped: false,
+        tags: 'career,growth',
+        notes: 'Important',
+      });
+    });
+
+    it('normalizes ISO-8601 timestamps', () => {
+      const options = normalizeIntakeRecordRequest({
+        question: 'When did you start?',
+        answer: '2020',
+        askedAt: '2025-03-01T10:00:00.000Z',
+      });
+
+      expect(options).toEqual({
+        question: 'When did you start?',
+        answer: '2020',
+        skipped: false,
+        askedAt: '2025-03-01T10:00:00.000Z',
+      });
+    });
+
+    it('allows skipped prompts without an answer', () => {
+      const options = normalizeIntakeRecordRequest({
+        question: 'Compensation expectations?',
+        skipped: true,
+      });
+
+      expect(options).toEqual({
+        question: 'Compensation expectations?',
+        skipped: true,
+      });
+    });
+
+    it('throws when question is missing', () => {
+      expect(() => normalizeIntakeRecordRequest({ answer: 'Some answer' })).toThrow(
+        'question is required',
+      );
+    });
+
+    it('throws when answer is missing for non-skipped prompts', () => {
+      expect(() => normalizeIntakeRecordRequest({ question: 'Tell me' })).toThrow(
+        'answer is required',
+      );
+    });
+
+    it('throws when askedAt is not a valid timestamp', () => {
+      expect(() =>
+        normalizeIntakeRecordRequest({
+          question: 'Test',
+          answer: 'Answer',
+          askedAt: 'not-a-date',
+        }),
+      ).toThrow('askedAt must be a valid ISO-8601 timestamp');
+    });
+
+    it('throws when options are not an object', () => {
+      expect(() => normalizeIntakeRecordRequest(null)).toThrow(
+        'intake record request must be an object',
+      );
+      expect(() => normalizeIntakeRecordRequest([])).toThrow(
+        'intake record request must be an object',
+      );
+    });
+
+    it('throws when unexpected keys are provided', () => {
+      expect(() =>
+        normalizeIntakeRecordRequest({
+          question: 'Test',
+          answer: 'Answer',
+          invalid: true,
+        }),
+      ).toThrow('unexpected intake record keys: invalid');
     });
   });
 });
