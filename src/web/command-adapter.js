@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 import {
   normalizeAnalyticsExportRequest,
   normalizeAnalyticsFunnelRequest,
+  normalizeIntakeListRequest,
+  normalizeIntakeRecordRequest,
   normalizeMatchRequest,
   normalizeShortlistListRequest,
   normalizeShortlistShowRequest,
@@ -29,6 +31,7 @@ import {
   setListingProviderToken,
 } from "../modules/scraping/provider-tokens.js";
 import { ingestRecruiterEmail } from "../ingest/recruiterEmail.js";
+import { getIntakeResponses, recordIntakeResponse } from "../intake.js";
 import { OpportunitiesRepo } from "../services/opportunitiesRepo.js";
 import { AuditLog } from "../services/audit.js";
 import {
@@ -1203,6 +1206,97 @@ export function createCommandAdapter(options = {}) {
     }
   }
 
+  async function intakeListCommand(options = {}) {
+    const cli = injectedCli;
+    const { status, redact } = normalizeIntakeListRequest(options);
+
+    if (cli && typeof cli.cmdIntakeList === "function") {
+      const args = ["--json"];
+      if (status) args.push("--status", status);
+      if (redact) args.push("--redact");
+      const { result, stdout, stderr } = await captureConsole(() =>
+        cli.cmdIntakeList(args),
+      );
+      if (result !== undefined) return result;
+      const data = parseJsonOutput("intake-list", stdout, stderr);
+      const responses = Array.isArray(data.responses) ? data.responses : data;
+      return {
+        command: "intake-list",
+        format: "json",
+        stdout,
+        stderr: "",
+        returnValue: 0,
+        data: sanitizeOutputValue(responses, { key: "data" }),
+      };
+    }
+
+    const intakeOptions = {};
+    if (status) intakeOptions.status = status;
+    if (redact) intakeOptions.redact = redact;
+
+    const responses = await getIntakeResponses(intakeOptions);
+    const sanitized = sanitizeOutputValue(responses, { key: "data" });
+    const stdout = JSON.stringify(sanitized, null, 2);
+    return {
+      command: "intake-list",
+      format: "json",
+      stdout,
+      stderr: "",
+      returnValue: 0,
+      data: sanitized,
+    };
+  }
+
+  async function intakeRecordCommand(options = {}) {
+    const cli = injectedCli;
+    const { question, answer, skipped, askedAt, tags, notes } =
+      normalizeIntakeRecordRequest(options);
+
+    if (cli && typeof cli.cmdIntakeRecord === "function") {
+      const args = ["--question", question];
+      if (skipped) {
+        args.push("--skip");
+      } else if (answer) {
+        args.push("--answer", answer);
+      }
+      if (askedAt) args.push("--asked-at", askedAt);
+      if (tags) args.push("--tags", tags);
+      if (notes) args.push("--notes", notes);
+
+      const { result, stdout, stderr } = await captureConsole(() =>
+        cli.cmdIntakeRecord(args),
+      );
+      if (result !== undefined) return result;
+      const data = parseJsonOutput("intake-record", stdout, stderr);
+      return {
+        command: "intake-record",
+        format: "json",
+        stdout,
+        stderr: "",
+        returnValue: 0,
+        data: sanitizeOutputValue(data, { key: "data" }),
+      };
+    }
+
+    const payload = { question, skipped };
+    if (answer) payload.answer = answer;
+    if (askedAt) payload.askedAt = askedAt;
+    if (tags) payload.tags = tags;
+    if (notes) payload.notes = notes;
+
+    const entry = await recordIntakeResponse(payload);
+    const sanitized = sanitizeOutputValue(entry, { key: "data" });
+    const stdout = JSON.stringify(sanitized, null, 2);
+    return {
+      command: "intake-record",
+      format: "json",
+      stdout,
+      stderr: "",
+      returnValue: 0,
+      data: sanitized,
+    };
+  }
+
   const adapter = {
     summarize,
     match,
@@ -1213,6 +1307,8 @@ export function createCommandAdapter(options = {}) {
     analyticsExport,
     trackRecord,
     trackReminders,
+    intakeList: intakeListCommand,
+    intakeRecord: intakeRecordCommand,
     listingsProviders,
     listingsFetch: listingsFetchCommand,
     listingsIngest: listingsIngestCommand,
@@ -1227,6 +1323,8 @@ export function createCommandAdapter(options = {}) {
   adapter["analytics-export"] = analyticsExport;
   adapter["track-record"] = trackRecord;
   adapter["track-reminders"] = trackReminders;
+  adapter["intake-list"] = intakeListCommand;
+  adapter["intake-record"] = intakeRecordCommand;
   adapter["listings-providers"] = listingsProviders;
   adapter["listings-fetch"] = listingsFetchCommand;
   adapter["listings-ingest"] = listingsIngestCommand;

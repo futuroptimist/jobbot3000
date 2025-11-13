@@ -4,6 +4,9 @@ node_modules/
 coverage/
 dist/
 data/
+test-results/
+__pycache__/
+*.pyc
 
 # Environment files (contains secrets)
 .env

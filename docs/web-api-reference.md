@@ -138,6 +138,10 @@ The following command endpoints are available. Each one maps directly to a CLI h
 - `POST /commands/recruiter-ingest` → `node bin/ingest-recruiter.ts`: Parse recruiter outreach emails,
   persist the opportunity, append audit entries, and return a sanitized summary for the modal
   preview.
+- `POST /commands/intake-list` → `jobbot intake list`: List recorded interview responses with optional
+  status filters (`answered`, `skipped`) and redaction for sensitive compensation or visa questions.
+- `POST /commands/intake-record` → `jobbot intake record`: Record a new interview question response
+  with optional tags, notes, and timestamps, supporting both answered and skipped prompts.
 
 CLI users can invoke the same workflows via `jobbot listings <providers|fetch|ingest|archive>`.
 Each subcommand supports `--json` output for automation, and text summaries mirror the web
