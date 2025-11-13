@@ -338,4 +338,76 @@ export function normalizeTrackRemindersRequest(options) {
   return request;
 }
 
+export function normalizeIntakeListRequest(options = {}) {
+  assertPlainObject(options, 'intake list request');
+
+  const allowedKeys = new Set(['status', 'redact']);
+  const extra = Object.keys(options).filter(key => !allowedKeys.has(key));
+  if (extra.length > 0) {
+    throw new Error(`unexpected intake list keys: ${extra.join(', ')}`);
+  }
+
+  const statusValue = normalizeString(options.status);
+  const status = statusValue ? statusValue : undefined;
+
+  const redact = normalizeBoolean(options.redact, {
+    name: 'redact',
+    defaultValue: false,
+  });
+
+  const request = { redact };
+  if (status) request.status = status;
+  return request;
+}
+
+export function normalizeIntakeRecordRequest(options = {}) {
+  assertPlainObject(options, 'intake record request');
+
+  const allowedKeys = new Set([
+    'question',
+    'answer',
+    'skipped',
+    'askedAt',
+    'asked_at',
+    'tags',
+    'notes',
+  ]);
+  const extra = Object.keys(options).filter(key => !allowedKeys.has(key));
+  if (extra.length > 0) {
+    throw new Error(`unexpected intake record keys: ${extra.join(', ')}`);
+  }
+
+  const question = assertRequiredString(options.question, 'question');
+
+  const skipped = normalizeBoolean(options.skipped, {
+    name: 'skipped',
+    defaultValue: false,
+  });
+
+  let answer;
+  if (!skipped) {
+    answer = assertRequiredString(options.answer, 'answer');
+  }
+
+  const askedAtValue = normalizeString(options.askedAt ?? options.asked_at);
+  let askedAt;
+  if (askedAtValue) {
+    const parsed = new Date(askedAtValue);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new Error('askedAt must be a valid ISO-8601 timestamp');
+    }
+    askedAt = parsed.toISOString();
+  }
+
+  const tags = normalizeString(options.tags);
+  const notes = normalizeString(options.notes);
+
+  const request = { question, skipped };
+  if (answer) request.answer = answer;
+  if (askedAt) request.askedAt = askedAt;
+  if (tags) request.tags = tags;
+  if (notes) request.notes = notes;
+  return request;
+}
+
 export const WEB_SUPPORTED_FORMATS = [...SUPPORTED_FORMATS];

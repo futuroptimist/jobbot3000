@@ -1039,4 +1039,115 @@ describe('createCommandAdapter', () => {
     expect(result.stdout).toContain('Future Works');
     expect(result.stdout).toContain('Oct 23, 2:00 PM PT');
   });
+
+  it('lists intake responses with sanitized output', async () => {
+    const cli = {
+      cmdIntakeList: vi.fn(async args => {
+        expect(args).toEqual(['--json']);
+        console.log(
+          JSON.stringify([
+            {
+              id: 'intake-001',
+              question: 'What are your career goals?',
+              answer: 'Build accessible tools',
+              asked_at: '2025-03-01T10:00:00.000Z',
+              recorded_at: '2025-03-01T10:05:00.000Z',
+              status: 'answered',
+              tags: ['career', 'growth'],
+            },
+            {
+              id: 'intake-002',
+              question: 'Salary expectations?',
+              answer: '[redacted]',
+              asked_at: '2025-03-01T10:10:00.000Z',
+              recorded_at: '2025-03-01T10:15:00.000Z',
+              status: 'answered',
+              tags: ['compensation'],
+              redacted: true,
+            },
+          ]),
+        );
+      }),
+    };
+
+    const adapter = createCommandAdapter({ cli });
+    const result = await adapter['intake-list']({});
+
+    expect(cli.cmdIntakeList).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      command: 'intake-list',
+      format: 'json',
+    });
+    expect(result.data).toHaveLength(2);
+    expect(result.data[0]).toMatchObject({
+      id: 'intake-001',
+      question: 'What are your career goals?',
+      answer: 'Build accessible tools',
+      status: 'answered',
+    });
+    expect(result.data[1]).toMatchObject({
+      id: 'intake-002',
+      answer: '[redacted]',
+      redacted: true,
+    });
+  });
+
+  it('records intake responses with normalized metadata', async () => {
+    const cli = {
+      cmdIntakeRecord: vi.fn(async args => {
+        expect(args).toEqual([
+          '--question',
+          'Why this role?',
+          '--answer',
+          'Mission alignment',
+          '--tags',
+          'motivation,values',
+        ]);
+        console.log(
+          JSON.stringify({
+            id: 'intake-003',
+            question: 'Why this role?',
+            answer: 'Mission alignment',
+            asked_at: '2025-03-05T14:00:00.000Z',
+            recorded_at: '2025-03-05T14:00:00.000Z',
+            status: 'answered',
+            tags: ['motivation', 'values'],
+          }),
+        );
+      }),
+    };
+
+    const adapter = createCommandAdapter({ cli });
+    const result = await adapter['intake-record']({
+      question: 'Why this role?',
+      answer: 'Mission alignment',
+      tags: 'motivation,values',
+    });
+
+    expect(cli.cmdIntakeRecord).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      command: 'intake-record',
+      format: 'json',
+    });
+    expect(result.data).toMatchObject({
+      id: 'intake-003',
+      question: 'Why this role?',
+      answer: 'Mission alignment',
+      status: 'answered',
+      tags: ['motivation', 'values'],
+    });
+  });
+
+  it('requires question when recording intake response', async () => {
+    const cli = {
+      cmdIntakeRecord: vi.fn(),
+    };
+
+    const adapter = createCommandAdapter({ cli });
+
+    await expect(adapter['intake-record']({ answer: 'Some answer' })).rejects.toThrow(
+      'question is required',
+    );
+    expect(cli.cmdIntakeRecord).not.toHaveBeenCalled();
+  });
 });
