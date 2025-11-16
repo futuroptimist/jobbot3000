@@ -103,6 +103,11 @@ import {
   archiveListing,
 } from '../src/listings.js';
 import {
+  getListingProviderTokenStatuses,
+  refreshListingProviderTokens,
+  setListingProviderToken,
+} from '../src/modules/scraping/provider-tokens.js';
+import {
   loadSettings as loadUserSettings,
   updateSettings as updateUserSettings,
 } from '../src/settings.js';
@@ -2812,13 +2817,77 @@ export async function cmdListingsArchive(args = []) {
   console.log(formatListingsArchiveResult(result));
 }
 
+export async function cmdListingsProviderToken(args = []) {
+  const usage =
+    'Usage: jobbot listings provider-token --provider <id> (--token <value> | --clear) [--json]';
+  const asJson = args.includes('--json');
+  const filtered = args.filter(arg => arg !== '--json');
+
+  assertFlagHasValue(filtered, '--provider', usage);
+  const provider = (getFlag(filtered, '--provider') || '').trim();
+  if (!provider) {
+    console.error(usage);
+    process.exit(2);
+  }
+
+  const clear = filtered.includes('--clear');
+  const token = getFlag(filtered, '--token');
+  if (clear) {
+    if (token && token.trim()) {
+      console.error('Cannot provide --token when clearing a provider token.');
+      process.exit(2);
+    }
+  } else {
+    assertFlagHasValue(filtered, '--token', usage);
+  }
+
+  try {
+    const action = clear ? 'clear' : 'set';
+    const normalizedToken = clear ? undefined : token;
+    await refreshListingProviderTokens();
+    await setListingProviderToken(provider, normalizedToken);
+    await refreshListingProviderTokens();
+    const tokenStatus = getListingProviderTokenStatuses();
+    const payload = { provider, action, tokenStatus };
+
+    if (asJson) {
+      console.log(JSON.stringify(payload, null, 2));
+      return;
+    }
+
+    const lines = [];
+    lines.push(
+      clear
+        ? `Cleared token for listings provider ${provider}.`
+        : `Stored token for listings provider ${provider}.`,
+    );
+    lines.push('');
+    lines.push('Provider token status:');
+    for (const entry of tokenStatus) {
+      if (entry.hasToken) {
+        const lastFour = entry.lastFour ? `, last 4 = ${entry.lastFour}` : '';
+        lines.push(
+          `- ${entry.provider}: token present (${entry.length} characters${lastFour})`,
+        );
+      } else {
+        lines.push(`- ${entry.provider}: no token set`);
+      }
+    }
+    console.log(lines.join('\n'));
+  } catch (error) {
+    console.error(error?.message || String(error));
+    process.exit(1);
+  }
+}
+
 async function cmdListings(args) {
   const sub = args[0];
   if (sub === 'providers') return cmdListingsProviders(args.slice(1));
   if (sub === 'fetch') return cmdListingsFetch(args.slice(1));
   if (sub === 'ingest') return cmdListingsIngest(args.slice(1));
+  if (sub === 'provider-token') return cmdListingsProviderToken(args.slice(1));
   if (sub === 'archive') return cmdListingsArchive(args.slice(1));
-  console.error('Usage: jobbot listings <providers|fetch|ingest|archive> ...');
+  console.error('Usage: jobbot listings <providers|fetch|ingest|archive|provider-token> ...');
   process.exit(2);
 }
 

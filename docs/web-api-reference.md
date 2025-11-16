@@ -132,7 +132,9 @@ The following command endpoints are available. Each one maps directly to a CLI h
 - `POST /commands/listings-archive` → `jobbot listings archive`: Archive a listing (or tracked job)
   with a reason code, keeping audit history intact.
 - `POST /commands/listings-provider-token` → `jobbot listings provider-token`: Store or clear API
-  tokens for job board providers through the web UI.
+  tokens for job board providers. The CLI mirrors the UI by sanitizing the token, writing it to
+  the configured `.env` file, and returning a per-provider status summary with masked last-four
+  values.
 - `POST /commands/listings-providers` → `jobbot listings providers`: Return the supported provider
   identifiers and human-friendly labels.
 - `POST /commands/recruiter-ingest` → `node bin/ingest-recruiter.ts`: Parse recruiter outreach emails,
@@ -143,11 +145,13 @@ The following command endpoints are available. Each one maps directly to a CLI h
 - `POST /commands/intake-record` → `jobbot intake record`: Record a new interview question response
   with optional tags, notes, and timestamps, supporting both answered and skipped prompts.
 
-CLI users can invoke the same workflows via `jobbot listings <providers|fetch|ingest|archive>`.
-Each subcommand supports `--json` output for automation, and text summaries mirror the web
-interface. Regression coverage in [`test/cli-listings.test.js`](../test/cli-listings.test.js)
-ensures the CLI wrappers forward filters to `src/listings.js` while producing readable summaries and
-JSON payloads for downstream tooling.
+CLI users can invoke the same workflows via
+`jobbot listings <providers|fetch|ingest|archive|provider-token>`. Each subcommand supports `--json`
+output for automation, and text summaries mirror the web interface. Regression coverage in
+[`test/cli.test.js`](../test/cli.test.js) exercises listings fetch/ingest/archive plus the provider
+token management flow, keeping the CLI wrappers aligned with `src/listings.js` and
+`src/modules/scraping/provider-tokens.js` while producing readable summaries and JSON payloads for
+downstream tooling.
 
 ### GET /events (WebSocket)
 
