@@ -2128,6 +2128,69 @@ describe('jobbot CLI', () => {
     expect(payload.responses[1].redacted).toBeUndefined();
   });
 
+  it('saves and resumes intake drafts', () => {
+    const message = runCli([
+      'intake',
+      'draft',
+      '--question',
+      'Describe a recent challenge',
+      '--answer',
+      'Draft answer in progress',
+      '--notes',
+      'Needs metrics before recording',
+      '--tags',
+      'growth,mission',
+      '--asked-at',
+      '2025-02-03T10:00:00Z',
+    ]);
+
+    expect(message.trim()).toMatch(/^Saved intake draft /);
+
+    const resumeOutput = runCli(['intake', 'resume']);
+    expect(resumeOutput).toContain('Draft question: Describe a recent challenge');
+    expect(resumeOutput).toContain('Answer (draft): Draft answer in progress');
+    expect(resumeOutput).toContain('Notes: Needs metrics before recording');
+    expect(resumeOutput).toContain('Tags: growth, mission');
+    expect(resumeOutput).toContain('Asked at: 2025-02-03T10:00:00.000Z');
+
+    const resumeJson = JSON.parse(runCli(['intake', 'resume', '--json']));
+    expect(resumeJson.draft).toMatchObject({
+      question: 'Describe a recent challenge',
+      answer: 'Draft answer in progress',
+      notes: 'Needs metrics before recording',
+      tags: ['growth', 'mission'],
+      asked_at: '2025-02-03T10:00:00.000Z',
+      status: 'draft',
+    });
+    expect(typeof resumeJson.draft.saved_at).toBe('string');
+  });
+
+  it('clears intake drafts after responses are recorded', () => {
+    runCli([
+      'intake',
+      'draft',
+      '--question',
+      'Capture a follow-up prompt',
+      '--notes',
+      'Waiting on recruiter notes',
+    ]);
+
+    const beforeRecord = runCli(['intake', 'resume']);
+    expect(beforeRecord).toContain('Draft question: Capture a follow-up prompt');
+
+    runCli([
+      'intake',
+      'record',
+      '--question',
+      'Capture a follow-up prompt',
+      '--answer',
+      'Added answer after follow-up',
+    ]);
+
+    const afterRecord = runCli(['intake', 'resume']);
+    expect(afterRecord.trim()).toBe('No intake draft found');
+  });
+
   it('exports intake responses to disk and stdout', () => {
     runCli([
       'intake',
@@ -2286,7 +2349,9 @@ describe('jobbot CLI', () => {
     });
 
     expect(result.status).toBe(2);
-    expect(result.stderr).toContain('Usage: jobbot intake <record|list|bullets|plan|export> ...');
+    expect(result.stderr).toContain(
+      'Usage: jobbot intake <record|list|bullets|plan|export|draft|resume> ...'
+    );
   });
 
   it('tags shortlist entries and persists labels', () => {

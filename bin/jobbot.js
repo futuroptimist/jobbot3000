@@ -63,6 +63,8 @@ import {
   recordIntakeResponse,
   getIntakeResponses,
   getIntakeBulletOptions,
+  saveIntakeDraft,
+  getIntakeDraft,
 } from '../src/intake.js';
 import { loadIntakeQuestionPlan } from '../src/intake-plan.js';
 import { ingestGreenhouseBoard } from '../src/greenhouse.js';
@@ -1935,6 +1937,18 @@ function formatIntakePlan(plan, resumePath, { manualTemplates = [] } = {}) {
   return lines.join('\n');
 }
 
+function formatIntakeDraft(draft) {
+  const lines = [`Draft question: ${draft.question}`];
+  if (draft.answer) lines.push(`Answer (draft): ${draft.answer}`);
+  if (draft.notes) lines.push(`Notes: ${draft.notes}`);
+  if (Array.isArray(draft.tags) && draft.tags.length > 0) {
+    lines.push(`Tags: ${draft.tags.join(', ')}`);
+  }
+  if (draft.asked_at) lines.push(`Asked at: ${draft.asked_at}`);
+  if (draft.saved_at) lines.push(`Saved at: ${draft.saved_at}`);
+  return lines.join('\n');
+}
+
 async function cmdIntakeRecord(args) {
   const skip = args.includes('--skip');
   const question = readContentFromArgs(args, '--question', '--question-file');
@@ -1953,6 +1967,59 @@ async function cmdIntakeRecord(args) {
   if (!skip) payload.answer = answer;
   const entry = await recordIntakeResponse(payload);
   console.log(`Recorded intake response ${entry.id}`);
+}
+
+async function cmdIntakeDraft(args) {
+  const question = readContentFromArgs(args, '--question', '--question-file');
+  const answer = readContentFromArgs(args, '--answer', '--answer-file');
+  if (!question) {
+    console.error(
+      'Usage: jobbot intake draft --question <text> [--answer <text>|--answer-file <path>] ' +
+        '[--tags <tag1,tag2>] [--notes <text>|--notes-file <path>] [--asked-at <iso8601>]'
+    );
+    process.exit(2);
+  }
+
+  const tags = parseTagsFlag(args);
+  const notes = readContentFromArgs(args, '--notes', '--notes-file');
+  const askedAt = getFlag(args, '--asked-at');
+
+  try {
+    const draft = await saveIntakeDraft({
+      question,
+      answer,
+      tags,
+      notes,
+      askedAt,
+    });
+    console.log(`Saved intake draft ${draft.id}`);
+  } catch (err) {
+    console.error(err?.message || String(err));
+    process.exit(1);
+  }
+}
+
+async function cmdIntakeResume(args) {
+  const asJson = args.includes('--json');
+  let draft;
+  try {
+    draft = await getIntakeDraft();
+  } catch (err) {
+    console.error(err?.message || String(err));
+    process.exit(1);
+  }
+
+  if (!draft) {
+    console.log('No intake draft found');
+    return;
+  }
+
+  if (asJson) {
+    console.log(JSON.stringify({ draft }, null, 2));
+    return;
+  }
+
+  console.log(formatIntakeDraft(draft));
 }
 
 async function cmdIntakeList(args) {
@@ -2102,7 +2169,9 @@ async function cmdIntake(args) {
   if (sub === 'bullets') return cmdIntakeBullets(args.slice(1));
   if (sub === 'plan') return cmdIntakePlan(args.slice(1));
   if (sub === 'export') return cmdIntakeExport(args.slice(1));
-  console.error('Usage: jobbot intake <record|list|bullets|plan|export> ...');
+  if (sub === 'draft') return cmdIntakeDraft(args.slice(1));
+  if (sub === 'resume') return cmdIntakeResume(args.slice(1));
+  console.error('Usage: jobbot intake <record|list|bullets|plan|export|draft|resume> ...');
   process.exit(2);
 }
 
