@@ -7585,7 +7585,7 @@ export function createWebApp({
     return { clientIp, userAgent, sessionId };
   };
 
-  const authenticateFeedbackRequest = ({ req, res, clientIp, userAgent, sessionId }) => {
+  const applyFeedbackRateLimit = (req, res, next) => {
     const rateKey = req.ip || req.socket?.remoteAddress || "unknown";
     const rateStatus = rateLimiter.check(rateKey);
     res.set("X-RateLimit-Limit", String(rateLimiter.limit));
@@ -7598,9 +7598,13 @@ export function createWebApp({
       );
       res.set("Retry-After", String(retryAfterSeconds));
       res.status(429).json({ error: "Too many requests" });
-      return null;
+      return;
     }
 
+    next();
+  };
+
+  const authenticateFeedbackRequest = ({ req, res, clientIp, userAgent, sessionId }) => {
     const respondUnauthorized = () => {
       if (authOptions?.requireScheme && authOptions.scheme) {
         res.set("WWW-Authenticate", `${authOptions.scheme} realm="jobbot-web"`);
@@ -7655,26 +7659,32 @@ export function createWebApp({
     return buildIdentity(tokenEntry.subject ?? "token");
   };
 
-  app.post("/feedback", jsonParser, redactionMiddleware, (req, res) => {
-    const { clientIp, userAgent, sessionId } = buildFeedbackContext(req, res);
-    const identity = authenticateFeedbackRequest({
-      req,
-      res,
-      clientIp,
-      userAgent,
-      sessionId,
-    });
-    if (!identity) return;
+  app.post(
+    "/feedback",
+    applyFeedbackRateLimit,
+    jsonParser,
+    redactionMiddleware,
+    (req, res) => {
+      const { clientIp, userAgent, sessionId } = buildFeedbackContext(req, res);
+      const identity = authenticateFeedbackRequest({
+        req,
+        res,
+        clientIp,
+        userAgent,
+        sessionId,
+      });
+      if (!identity) return;
 
-    const entry = feedbackStore.record(identity, req.body ?? {});
-    if (!entry) {
-      res.status(400).json({ error: "Feedback message is required" });
-      return;
-    }
-    res.status(201).json({ entry });
-  });
+      const entry = feedbackStore.record(identity, req.body ?? {});
+      if (!entry) {
+        res.status(400).json({ error: "Feedback message is required" });
+        return;
+      }
+      res.status(201).json({ entry });
+    },
+  );
 
-  app.get("/feedback/recent", (req, res) => {
+  app.get("/feedback/recent", applyFeedbackRateLimit, (req, res) => {
     const { clientIp, userAgent, sessionId } = buildFeedbackContext(req, res);
     const identity = authenticateFeedbackRequest({
       req,
