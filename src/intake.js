@@ -178,7 +178,9 @@ async function readDraftFile(file) {
 
 async function writeDraftFile(file, draft) {
   const payload = { draft };
-  await fs.writeFile(file, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  const tmp = `${file}.tmp`;
+  await fs.writeFile(tmp, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+  await fs.rename(tmp, file);
 }
 
 let writeLock = Promise.resolve();
