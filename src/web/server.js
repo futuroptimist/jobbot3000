@@ -7585,7 +7585,7 @@ export function createWebApp({
     return { clientIp, userAgent, sessionId };
   };
 
-  const applyFeedbackRateLimit = (req, res) => {
+  const feedbackRateLimitMiddleware = (req, res, next) => {
     const rateKey = req.ip || req.socket?.remoteAddress || "unknown";
     const rateStatus = rateLimiter.check(rateKey);
     res.set("X-RateLimit-Limit", String(rateLimiter.limit));
@@ -7598,10 +7598,10 @@ export function createWebApp({
       );
       res.set("Retry-After", String(retryAfterSeconds));
       res.status(429).json({ error: "Too many requests" });
-      return false;
+      return;
     }
 
-    return true;
+    next();
   };
 
   const authenticateFeedbackRequest = ({ req, res, clientIp, userAgent, sessionId }) => {
@@ -7661,11 +7661,10 @@ export function createWebApp({
 
     app.post(
       "/feedback",
+      feedbackRateLimitMiddleware,
       jsonParser,
       redactionMiddleware,
       (req, res) => {
-        if (!applyFeedbackRateLimit(req, res)) return;
-
         const { clientIp, userAgent, sessionId } = buildFeedbackContext(req, res);
         const identity = authenticateFeedbackRequest({
           req,
@@ -7685,22 +7684,24 @@ export function createWebApp({
       },
     );
 
-    app.get("/feedback/recent", (req, res) => {
-      if (!applyFeedbackRateLimit(req, res)) return;
+    app.get(
+      "/feedback/recent",
+      feedbackRateLimitMiddleware,
+      (req, res) => {
+        const { clientIp, userAgent, sessionId } = buildFeedbackContext(req, res);
+        const identity = authenticateFeedbackRequest({
+          req,
+          res,
+          clientIp,
+          userAgent,
+          sessionId,
+        });
+        if (!identity) return;
 
-      const { clientIp, userAgent, sessionId } = buildFeedbackContext(req, res);
-      const identity = authenticateFeedbackRequest({
-        req,
-        res,
-        clientIp,
-        userAgent,
-        sessionId,
-      });
-      if (!identity) return;
-
-      const entries = feedbackStore.getRecent(identity);
-      res.json({ entries });
-    });
+        const entries = feedbackStore.getRecent(identity);
+        res.json({ entries });
+      },
+    );
 
   app.use((err, req, res, next) => {
     if (err && err.type === "entity.parse.failed") {
