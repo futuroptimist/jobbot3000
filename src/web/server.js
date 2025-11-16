@@ -7585,7 +7585,7 @@ export function createWebApp({
     return { clientIp, userAgent, sessionId };
   };
 
-  const applyFeedbackRateLimit = (req, res, next) => {
+  const applyFeedbackRateLimit = (req, res) => {
     const rateKey = req.ip || req.socket?.remoteAddress || "unknown";
     const rateStatus = rateLimiter.check(rateKey);
     res.set("X-RateLimit-Limit", String(rateLimiter.limit));
@@ -7598,10 +7598,10 @@ export function createWebApp({
       );
       res.set("Retry-After", String(retryAfterSeconds));
       res.status(429).json({ error: "Too many requests" });
-      return;
+      return false;
     }
 
-    next();
+    return true;
   };
 
   const authenticateFeedbackRequest = ({ req, res, clientIp, userAgent, sessionId }) => {
@@ -7659,12 +7659,35 @@ export function createWebApp({
     return buildIdentity(tokenEntry.subject ?? "token");
   };
 
-  app.post(
-    "/feedback",
-    applyFeedbackRateLimit,
-    jsonParser,
-    redactionMiddleware,
-    (req, res) => {
+    app.post(
+      "/feedback",
+      jsonParser,
+      redactionMiddleware,
+      (req, res) => {
+        if (!applyFeedbackRateLimit(req, res)) return;
+
+        const { clientIp, userAgent, sessionId } = buildFeedbackContext(req, res);
+        const identity = authenticateFeedbackRequest({
+          req,
+          res,
+          clientIp,
+          userAgent,
+          sessionId,
+        });
+        if (!identity) return;
+
+        const entry = feedbackStore.record(identity, req.body ?? {});
+        if (!entry) {
+          res.status(400).json({ error: "Feedback message is required" });
+          return;
+        }
+        res.status(201).json({ entry });
+      },
+    );
+
+    app.get("/feedback/recent", (req, res) => {
+      if (!applyFeedbackRateLimit(req, res)) return;
+
       const { clientIp, userAgent, sessionId } = buildFeedbackContext(req, res);
       const identity = authenticateFeedbackRequest({
         req,
@@ -7675,29 +7698,9 @@ export function createWebApp({
       });
       if (!identity) return;
 
-      const entry = feedbackStore.record(identity, req.body ?? {});
-      if (!entry) {
-        res.status(400).json({ error: "Feedback message is required" });
-        return;
-      }
-      res.status(201).json({ entry });
-    },
-  );
-
-  app.get("/feedback/recent", applyFeedbackRateLimit, (req, res) => {
-    const { clientIp, userAgent, sessionId } = buildFeedbackContext(req, res);
-    const identity = authenticateFeedbackRequest({
-      req,
-      res,
-      clientIp,
-      userAgent,
-      sessionId,
+      const entries = feedbackStore.getRecent(identity);
+      res.json({ entries });
     });
-    if (!identity) return;
-
-    const entries = feedbackStore.getRecent(identity);
-    res.json({ entries });
-  });
 
   app.use((err, req, res, next) => {
     if (err && err.type === "entity.parse.failed") {
