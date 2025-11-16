@@ -23,6 +23,7 @@ import {
   createClientIdentity,
   createClientPayloadStore,
 } from "./client-payload-store.js";
+import { createFeedbackStore } from "./feedback-store.js";
 import { createAuditLogger } from "../shared/security/audit-log.js";
 import { createSessionManager } from "./session-manager.js";
 import { WebSocket, WebSocketServer } from "ws";
@@ -6075,6 +6076,9 @@ export function createWebApp({
       },
     },
   });
+  const feedbackStore = createFeedbackStore({
+    maxClients: CLIENT_PAYLOAD_MAX_CLIENTS,
+  });
   const sessionManager = createSessionManager(session);
   let effectiveAuditLogger = auditLogger ?? null;
   if (!effectiveAuditLogger && audit && audit.logPath) {
@@ -7568,6 +7572,141 @@ export function createWebApp({
       sessionId,
     });
     const entries = clientPayloadStore.getRecent(identity);
+    res.json({ entries });
+  });
+
+  app.post("/feedback", jsonParser, redactionMiddleware, (req, res) => {
+    const clientIp = req.ip || req.socket?.remoteAddress || undefined;
+    const userAgent = req.get("user-agent");
+    const sessionId = ensureClientSession(req, res, {
+      createIfMissing: !authOptions,
+      sessionManager,
+    });
+
+    const respondUnauthorized = () => {
+      if (authOptions?.requireScheme && authOptions.scheme) {
+        res.set("WWW-Authenticate", `${authOptions.scheme} realm="jobbot-web"`);
+      }
+      res.status(401).json({ error: "Invalid or missing authorization token" });
+    };
+
+    const ensureCsrf = () => {
+      if (!validateCsrfToken(req)) {
+        res.status(403).json({ error: "Invalid or missing CSRF token" });
+        return false;
+      }
+      return true;
+    };
+
+    const buildIdentity = (subject) =>
+      createClientIdentity({ subject, clientIp, userAgent, sessionId });
+
+    let identity;
+    if (authOptions) {
+      const providedAuth = req.get(authOptions.headerName);
+      const headerValue = typeof providedAuth === "string" ? providedAuth.trim() : "";
+      if (!headerValue) {
+        respondUnauthorized();
+        return;
+      }
+
+      let tokenValue = headerValue;
+      if (authOptions.requireScheme) {
+        const lowerValue = headerValue.toLowerCase();
+        if (!lowerValue.startsWith(authOptions.schemePrefixLower)) {
+          respondUnauthorized();
+          return;
+        }
+        tokenValue = headerValue.slice(authOptions.schemePrefixLength).trim();
+        if (!tokenValue) {
+          respondUnauthorized();
+          return;
+        }
+      }
+
+      const tokenEntry = authOptions.tokens.get(tokenValue);
+      if (!tokenEntry) {
+        respondUnauthorized();
+        return;
+      }
+
+      if (!ensureCsrf()) return;
+      identity = buildIdentity(tokenEntry.subject ?? "token");
+    } else {
+      if (!ensureCsrf()) return;
+      identity = buildIdentity("guest");
+    }
+
+    const entry = feedbackStore.record(identity, req.body ?? {});
+    if (!entry) {
+      res.status(400).json({ error: "Feedback message is required" });
+      return;
+    }
+    res.status(201).json({ entry });
+  });
+
+  app.get("/feedback/recent", (req, res) => {
+    const clientIp = req.ip || req.socket?.remoteAddress || undefined;
+    const userAgent = req.get("user-agent");
+    const sessionId = ensureClientSession(req, res, {
+      createIfMissing: !authOptions,
+      sessionManager,
+    });
+
+    const ensureCsrf = () => {
+      if (!validateCsrfToken(req)) {
+        res.status(403).json({ error: "Invalid or missing CSRF token" });
+        return false;
+      }
+      return true;
+    };
+
+    const buildIdentity = (subject) =>
+      createClientIdentity({ subject, clientIp, userAgent, sessionId });
+
+    if (authOptions) {
+      const respondUnauthorized = () => {
+        if (authOptions.requireScheme && authOptions.scheme) {
+          res.set("WWW-Authenticate", `${authOptions.scheme} realm="jobbot-web"`);
+        }
+        res.status(401).json({ error: "Invalid or missing authorization token" });
+      };
+
+      const providedAuth = req.get(authOptions.headerName);
+      const headerValue = typeof providedAuth === "string" ? providedAuth.trim() : "";
+      if (!headerValue) {
+        respondUnauthorized();
+        return;
+      }
+
+      let tokenValue = headerValue;
+      if (authOptions.requireScheme) {
+        const lowerValue = headerValue.toLowerCase();
+        if (!lowerValue.startsWith(authOptions.schemePrefixLower)) {
+          respondUnauthorized();
+          return;
+        }
+        tokenValue = headerValue.slice(authOptions.schemePrefixLength).trim();
+        if (!tokenValue) {
+          respondUnauthorized();
+          return;
+        }
+      }
+
+      const tokenEntry = authOptions.tokens.get(tokenValue);
+      if (!tokenEntry) {
+        respondUnauthorized();
+        return;
+      }
+
+      if (!ensureCsrf()) return;
+      const entries = feedbackStore.getRecent(buildIdentity(tokenEntry.subject));
+      res.json({ entries });
+      return;
+    }
+
+    if (!ensureCsrf()) return;
+    const entries = feedbackStore.getRecent(buildIdentity("guest"));
     res.json({ entries });
   });
 

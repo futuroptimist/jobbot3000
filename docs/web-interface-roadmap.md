@@ -480,6 +480,13 @@
      verifies the roadmap references the assessment and that the Markdown report
      retains the expected sections.
    - Perform beta testing with target users and gather feedback for iteration.
+     _Implemented (2025-11-10):_ The status hub now accepts CSRF-protected
+     feedback submissions at `/feedback`, capturing sanitized comments and
+     optional contact details per client identity. Clients can query
+     `/feedback/recent` to review their latest entries without seeing other
+     sessions. Regression coverage in
+     [`test/web-feedback.test.js`](../test/web-feedback.test.js) drives guest and
+     token-authenticated flows to keep the beta loop stable.
 
 ### 6. Documentation and Developer Experience
 

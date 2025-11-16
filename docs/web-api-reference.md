@@ -81,6 +81,45 @@ payloads submitted by other tokens or sessions are not visible.
 Regression coverage in [`test/web-documentation-storybook.test.js`](../test/web-documentation-storybook.test.js)
 asserts this endpoint remains documented alongside the command catalogue.
 
+### POST /feedback
+
+Captures beta or operator feedback directly from the status hub. Requests must include the CSRF
+header/cookie pair and, when configured, the same authorization header used for `/commands` routes.
+Payload shape:
+
+```jsonc
+{
+  "message": "Great flow!",
+  "path": "/applications",
+  "contact": "user@example.com",
+  "context": { "section": "applications" },
+}
+```
+
+Control characters are removed and empty fields are dropped. Responses include the normalized entry
+with a generated `id` and `recordedAt` timestamp. Requests missing `message` receive 400 responses.
+Regression coverage in [`test/web-feedback.test.js`](../test/web-feedback.test.js) drives guest and
+authenticated submissions to keep the contract stable.
+
+### GET /feedback/recent
+
+Returns the most recent feedback entries for the current client identity (session + auth token).
+Requests mirror the CSRF and authentication requirements of `POST /feedback`. Responses are scoped to
+the requesting identity and never leak feedback submitted by other sessions or tokens:
+
+```jsonc
+{
+  "entries": [
+    {
+      "id": "fbk_123",
+      "message": "Great flow!",
+      "path": "/applications",
+      "recordedAt": "2025-11-10T10:15:00.000Z",
+    },
+  ],
+}
+```
+
 ### GET /assets/status-hub.js
 
 Serves the client-side controller that drives status panels, navigation, and download buttons. The
