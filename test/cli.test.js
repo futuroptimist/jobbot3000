@@ -424,6 +424,12 @@ describe('jobbot CLI', () => {
     expect(letter).toMatch(/Sincerely,\nAda Lovelace$/);
   });
 
+  it('requires a token when setting a listings provider token', () => {
+    expect(() =>
+      runCli(['listings', 'provider-token', '--provider', 'workable']),
+    ).toThrow(/Must provide --token/);
+  });
+
   it('manages listings provider tokens with the CLI', () => {
     const envPath = path.join(dataDir, '.env.tokens');
     const previousEnvFile = process.env.JOBBOT_ENV_FILE;
@@ -480,7 +486,7 @@ describe('jobbot CLI', () => {
       else process.env.JOBBOT_ENV_FILE = previousEnvFile;
 
       if (fs.existsSync(envPath)) {
-        fs.rmSync(envPath, { recursive: true, force: true });
+        fs.rmSync(envPath, { force: true });
       }
     }
   });

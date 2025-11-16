@@ -2831,6 +2831,7 @@ export async function cmdListingsProviderToken(args = []) {
   }
 
   const clear = filtered.includes('--clear');
+  const hasTokenFlag = filtered.includes('--token');
   const token = getFlag(filtered, '--token');
   if (clear) {
     if (token && token.trim()) {
@@ -2838,7 +2839,15 @@ export async function cmdListingsProviderToken(args = []) {
       process.exit(2);
     }
   } else {
+    if (!hasTokenFlag) {
+      console.error('Must provide --token when setting a provider token.');
+      process.exit(2);
+    }
     assertFlagHasValue(filtered, '--token', usage);
+    if (!token || !token.trim()) {
+      console.error('Provider token value cannot be empty when setting.');
+      process.exit(2);
+    }
   }
 
   try {
