@@ -61,6 +61,12 @@ can be rolled out behind feature flags to minimize regressions.
 
 - Extend `fetchWithRetry` with injectable timers, circuit breaker support, and deterministic testing
   hooks.
+  _Implemented (2025-11-16):_ `fetchWithRetry` now shares injected clock and sleep
+  implementations with the host rate-limit queue so deterministic tests can advance
+  simulated time without real delays. Regression coverage in
+  [`test/http-resilience.test.js`](../../test/http-resilience.test.js) asserts that
+  rate-limited calls honor the injected timing controls alongside the existing circuit
+  breaker hooks.
 - Plumb manifest-driven retry/backoff thresholds through `createHttpClient` and the scraping adapters.
   _Implemented (2025-10-31):_ `createHttpClient` now sources retry attempts,
   base backoff, and circuit breaker defaults from the manifest's

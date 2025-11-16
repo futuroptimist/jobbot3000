@@ -128,9 +128,11 @@ const HOST_LAST_INVOCATION = new Map();
  * @template T
  * @param {string} key
  * @param {() => Promise<T>} fn
+ * @param {{ sleep?: SleepFn, clock?: Clock }} [options]
  * @returns {Promise<T>}
  */
-async function withHostQueue(key, fn) {
+async function withHostQueue(key, fn, options = {}) {
+  const { sleep: sleepImpl, clock } = options;
   const previous = HOST_QUEUE.get(key);
   /** @type {((value?: unknown) => void) | undefined} */
   let release;
@@ -147,10 +149,12 @@ async function withHostQueue(key, fn) {
     if (Number.isFinite(limit) && limit > 0) {
       const last = HOST_LAST_INVOCATION.get(key);
       if (Number.isFinite(last)) {
-        const elapsed = Date.now() - last;
+        const nowValue = now(clock);
+        const elapsed = nowValue - last;
         const waitMs = limit - elapsed;
         if (waitMs > 0) {
-          await sleep(waitMs);
+          const waiter = typeof sleepImpl === 'function' ? sleepImpl : sleep;
+          await waiter(waitMs);
         }
       }
     }
@@ -159,7 +163,7 @@ async function withHostQueue(key, fn) {
       return await fn();
     } finally {
       if (Number.isFinite(limit) && limit > 0) {
-        HOST_LAST_INVOCATION.set(key, Date.now());
+        HOST_LAST_INVOCATION.set(key, now(clock));
       }
     }
   } finally {
@@ -308,7 +312,7 @@ export async function fetchWithRetry(url, options = {}, init = {}) {
     }
 
     throw new Error('fetchWithRetry exhausted retries without returning');
-  });
+  }, { sleep: sleepImpl, clock });
 }
 
 export function __resetHttpCircuitBreakersForTest() {
