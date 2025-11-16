@@ -104,5 +104,37 @@ describe("web feedback endpoints", () => {
       ]),
     );
   });
+
+  it("enforces rate limits for feedback endpoints", async () => {
+    const server = await startServer({
+      rateLimit: { windowMs: 10000, max: 1 },
+    });
+
+    const headers = buildCsrfHeaders(server);
+    const first = await fetch(`${server.url}/feedback`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ message: "First" }),
+    });
+    expect(first.status).toBe(201);
+
+    const second = await fetch(`${server.url}/feedback`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ message: "Second" }),
+    });
+    expect(second.status).toBe(429);
+    expect(second.headers.get("retry-after")).toBeTruthy();
+
+    const cookies = first.headers.getSetCookie?.() ?? [];
+    const sessionCookie = cookies
+      .map((cookie) => (cookie || "").split(";")[0])
+      .filter(Boolean);
+
+    const recent = await fetch(`${server.url}/feedback/recent`, {
+      headers: buildCsrfHeaders(server, {}, sessionCookie),
+    });
+    expect(recent.status).toBe(429);
+  });
 });
 

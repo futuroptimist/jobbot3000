@@ -7586,6 +7586,21 @@ export function createWebApp({
   };
 
   const authenticateFeedbackRequest = ({ req, res, clientIp, userAgent, sessionId }) => {
+    const rateKey = req.ip || req.socket?.remoteAddress || "unknown";
+    const rateStatus = rateLimiter.check(rateKey);
+    res.set("X-RateLimit-Limit", String(rateLimiter.limit));
+    res.set("X-RateLimit-Remaining", String(Math.max(0, rateStatus.remaining)));
+    res.set("X-RateLimit-Reset", new Date(rateStatus.reset).toISOString());
+    if (!rateStatus.allowed) {
+      const retryAfterSeconds = Math.max(
+        1,
+        Math.ceil((rateStatus.reset - Date.now()) / 1000),
+      );
+      res.set("Retry-After", String(retryAfterSeconds));
+      res.status(429).json({ error: "Too many requests" });
+      return null;
+    }
+
     const respondUnauthorized = () => {
       if (authOptions?.requireScheme && authOptions.scheme) {
         res.set("WWW-Authenticate", `${authOptions.scheme} realm="jobbot-web"`);
