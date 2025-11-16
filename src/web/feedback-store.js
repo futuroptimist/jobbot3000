@@ -36,10 +36,13 @@ export function createFeedbackStore({
   const entriesByClient = new Map();
 
   const rotateClientsIfNeeded = () => {
-    if (entriesByClient.size <= maxClients) return;
-    const oldestKey = entriesByClient.keys().next().value;
-    if (oldestKey) {
-      entriesByClient.delete(oldestKey);
+    while (entriesByClient.size > maxClients) {
+      const oldestKey = entriesByClient.keys().next().value;
+      if (oldestKey) {
+        entriesByClient.delete(oldestKey);
+      } else {
+        break;
+      }
     }
   };
 
@@ -61,12 +64,25 @@ export function createFeedbackStore({
     const contact = sanitizeOptional(payload?.contact);
     if (contact) entry.contact = contact;
 
-    const context =
+    const contextInput =
       payload && typeof payload.context === "object" && payload.context !== null
         ? payload.context
         : undefined;
-    if (context && Object.keys(context).length > 0) {
-      entry.context = context;
+    if (contextInput && Object.keys(contextInput).length > 0) {
+      const sanitizedContext = {};
+      for (const [key, value] of Object.entries(contextInput)) {
+        if (typeof value === "string") {
+          const sanitizedValue = sanitizeOptional(value);
+          if (sanitizedValue !== undefined) {
+            sanitizedContext[key] = sanitizedValue;
+          }
+          continue;
+        }
+        sanitizedContext[key] = value;
+      }
+      if (Object.keys(sanitizedContext).length > 0) {
+        entry.context = sanitizedContext;
+      }
     }
 
     const clientKey = typeof identity === "string" && identity.trim()

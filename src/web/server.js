@@ -7575,14 +7575,17 @@ export function createWebApp({
     res.json({ entries });
   });
 
-  app.post("/feedback", jsonParser, redactionMiddleware, (req, res) => {
+  const buildFeedbackContext = (req, res) => {
     const clientIp = req.ip || req.socket?.remoteAddress || undefined;
     const userAgent = req.get("user-agent");
     const sessionId = ensureClientSession(req, res, {
       createIfMissing: !authOptions,
       sessionManager,
     });
+    return { clientIp, userAgent, sessionId };
+  };
 
+  const authenticateFeedbackRequest = ({ req, res, clientIp, userAgent, sessionId }) => {
     const respondUnauthorized = () => {
       if (authOptions?.requireScheme && authOptions.scheme) {
         res.set("WWW-Authenticate", `${authOptions.scheme} realm="jobbot-web"`);
@@ -7601,41 +7604,52 @@ export function createWebApp({
     const buildIdentity = (subject) =>
       createClientIdentity({ subject, clientIp, userAgent, sessionId });
 
-    let identity;
-    if (authOptions) {
-      const providedAuth = req.get(authOptions.headerName);
-      const headerValue = typeof providedAuth === "string" ? providedAuth.trim() : "";
-      if (!headerValue) {
-        respondUnauthorized();
-        return;
-      }
-
-      let tokenValue = headerValue;
-      if (authOptions.requireScheme) {
-        const lowerValue = headerValue.toLowerCase();
-        if (!lowerValue.startsWith(authOptions.schemePrefixLower)) {
-          respondUnauthorized();
-          return;
-        }
-        tokenValue = headerValue.slice(authOptions.schemePrefixLength).trim();
-        if (!tokenValue) {
-          respondUnauthorized();
-          return;
-        }
-      }
-
-      const tokenEntry = authOptions.tokens.get(tokenValue);
-      if (!tokenEntry) {
-        respondUnauthorized();
-        return;
-      }
-
-      if (!ensureCsrf()) return;
-      identity = buildIdentity(tokenEntry.subject ?? "token");
-    } else {
-      if (!ensureCsrf()) return;
-      identity = buildIdentity("guest");
+    if (!authOptions) {
+      if (!ensureCsrf()) return null;
+      return buildIdentity("guest");
     }
+
+    const providedAuth = req.get(authOptions.headerName);
+    const headerValue = typeof providedAuth === "string" ? providedAuth.trim() : "";
+    if (!headerValue) {
+      respondUnauthorized();
+      return null;
+    }
+
+    let tokenValue = headerValue;
+    if (authOptions.requireScheme) {
+      const lowerValue = headerValue.toLowerCase();
+      if (!lowerValue.startsWith(authOptions.schemePrefixLower)) {
+        respondUnauthorized();
+        return null;
+      }
+      tokenValue = headerValue.slice(authOptions.schemePrefixLength).trim();
+      if (!tokenValue) {
+        respondUnauthorized();
+        return null;
+      }
+    }
+
+    const tokenEntry = authOptions.tokens.get(tokenValue);
+    if (!tokenEntry) {
+      respondUnauthorized();
+      return null;
+    }
+
+    if (!ensureCsrf()) return null;
+    return buildIdentity(tokenEntry.subject ?? "token");
+  };
+
+  app.post("/feedback", jsonParser, redactionMiddleware, (req, res) => {
+    const { clientIp, userAgent, sessionId } = buildFeedbackContext(req, res);
+    const identity = authenticateFeedbackRequest({
+      req,
+      res,
+      clientIp,
+      userAgent,
+      sessionId,
+    });
+    if (!identity) return;
 
     const entry = feedbackStore.record(identity, req.body ?? {});
     if (!entry) {
@@ -7646,67 +7660,17 @@ export function createWebApp({
   });
 
   app.get("/feedback/recent", (req, res) => {
-    const clientIp = req.ip || req.socket?.remoteAddress || undefined;
-    const userAgent = req.get("user-agent");
-    const sessionId = ensureClientSession(req, res, {
-      createIfMissing: !authOptions,
-      sessionManager,
+    const { clientIp, userAgent, sessionId } = buildFeedbackContext(req, res);
+    const identity = authenticateFeedbackRequest({
+      req,
+      res,
+      clientIp,
+      userAgent,
+      sessionId,
     });
+    if (!identity) return;
 
-    const ensureCsrf = () => {
-      if (!validateCsrfToken(req)) {
-        res.status(403).json({ error: "Invalid or missing CSRF token" });
-        return false;
-      }
-      return true;
-    };
-
-    const buildIdentity = (subject) =>
-      createClientIdentity({ subject, clientIp, userAgent, sessionId });
-
-    if (authOptions) {
-      const respondUnauthorized = () => {
-        if (authOptions.requireScheme && authOptions.scheme) {
-          res.set("WWW-Authenticate", `${authOptions.scheme} realm="jobbot-web"`);
-        }
-        res.status(401).json({ error: "Invalid or missing authorization token" });
-      };
-
-      const providedAuth = req.get(authOptions.headerName);
-      const headerValue = typeof providedAuth === "string" ? providedAuth.trim() : "";
-      if (!headerValue) {
-        respondUnauthorized();
-        return;
-      }
-
-      let tokenValue = headerValue;
-      if (authOptions.requireScheme) {
-        const lowerValue = headerValue.toLowerCase();
-        if (!lowerValue.startsWith(authOptions.schemePrefixLower)) {
-          respondUnauthorized();
-          return;
-        }
-        tokenValue = headerValue.slice(authOptions.schemePrefixLength).trim();
-        if (!tokenValue) {
-          respondUnauthorized();
-          return;
-        }
-      }
-
-      const tokenEntry = authOptions.tokens.get(tokenValue);
-      if (!tokenEntry) {
-        respondUnauthorized();
-        return;
-      }
-
-      if (!ensureCsrf()) return;
-      const entries = feedbackStore.getRecent(buildIdentity(tokenEntry.subject));
-      res.json({ entries });
-      return;
-    }
-
-    if (!ensureCsrf()) return;
-    const entries = feedbackStore.getRecent(buildIdentity("guest"));
+    const entries = feedbackStore.getRecent(identity);
     res.json({ entries });
   });
 
