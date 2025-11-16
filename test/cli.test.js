@@ -424,6 +424,73 @@ describe('jobbot CLI', () => {
     expect(letter).toMatch(/Sincerely,\nAda Lovelace$/);
   });
 
+  it('requires a token when setting a listings provider token', () => {
+    expect(() =>
+      runCli(['listings', 'provider-token', '--provider', 'workable']),
+    ).toThrow(/Must provide --token/);
+  });
+
+  it('manages listings provider tokens with the CLI', () => {
+    const envPath = path.join(dataDir, '.env.tokens');
+    const previousEnvFile = process.env.JOBBOT_ENV_FILE;
+    process.env.JOBBOT_ENV_FILE = envPath;
+
+    try {
+      const setOutput = runCli([
+        'listings',
+        'provider-token',
+        '--provider',
+        'workable',
+        '--token',
+        '  line1\nline2  ',
+        '--json',
+      ]);
+      const setResult = JSON.parse(setOutput);
+
+      expect(setResult).toMatchObject({ provider: 'workable', action: 'set' });
+      const setStatus = setResult.tokenStatus.find(
+        entry => entry.provider === 'workable',
+      );
+      expect(setStatus).toBeTruthy();
+      expect(setStatus).toMatchObject({
+        envKey: 'JOBBOT_WORKABLE_TOKEN',
+        hasToken: true,
+        length: 10,
+        lastFour: 'ine2',
+      });
+
+      const envContent = fs.readFileSync(envPath, 'utf8');
+      expect(envContent).toContain('JOBBOT_WORKABLE_TOKEN="line1line2"');
+
+      const clearOutput = runCli([
+        'listings',
+        'provider-token',
+        '--provider',
+        'workable',
+        '--clear',
+        '--json',
+      ]);
+      const clearResult = JSON.parse(clearOutput);
+      expect(clearResult).toMatchObject({ provider: 'workable', action: 'clear' });
+      const clearStatus = clearResult.tokenStatus.find(
+        entry => entry.provider === 'workable',
+      );
+      expect(clearStatus?.hasToken).toBe(false);
+
+      const clearedContent = fs.existsSync(envPath)
+        ? fs.readFileSync(envPath, 'utf8')
+        : '';
+      expect(clearedContent).not.toContain('JOBBOT_WORKABLE_TOKEN');
+    } finally {
+      if (previousEnvFile === undefined) delete process.env.JOBBOT_ENV_FILE;
+      else process.env.JOBBOT_ENV_FILE = previousEnvFile;
+
+      if (fs.existsSync(envPath)) {
+        fs.rmSync(envPath, { force: true });
+      }
+    }
+  });
+
   it('localizes match output when --locale is provided', () => {
     const job = [
       'Title: Desarrollador',
