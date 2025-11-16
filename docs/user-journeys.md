@@ -106,8 +106,9 @@ jobbot3000.
 
 ### Unhappy paths & recovery
 
-- Users can abandon sessions mid-question; the system stores a draft state so CLI `jobbot intake
-resume` or the web **Resume Session** button can continue where they left off.
+- Users can pause mid-question by saving a draft (`jobbot intake draft --question ...`);
+  `jobbot intake resume` and the web **Resume Session** button reload the saved prompt, answer,
+  tags, and notes so they can continue where they left off.
 - When the LLM refuses or fails to produce a plan, the flows expose a manual question builder backed
   by the fallback templates returned from `jobbot intake plan`. The CLI prints the same
   `manual_templates` payload when the automated plan is empty, letting QA verify that the chat UI

@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 let overrideDir;
 
 const REDACTED_PLACEHOLDER = '[redacted]';
+const DRAFT_FILE = 'intake-draft.json';
 const SENSITIVE_TAGS = new Set([
   'compensation',
   'salary',
@@ -39,6 +40,12 @@ function getPaths() {
   const baseDir = resolveDataDir();
   const profileDir = path.join(baseDir, 'profile');
   return { profileDir, file: path.join(profileDir, 'intake.json') };
+}
+
+function getDraftPaths() {
+  const baseDir = resolveDataDir();
+  const profileDir = path.join(baseDir, 'profile');
+  return { profileDir, file: path.join(profileDir, DRAFT_FILE) };
 }
 
 function sanitizeString(value) {
@@ -132,7 +139,50 @@ async function writeIntakeFile(file, responses) {
   await fs.rename(tmp, file);
 }
 
+async function readDraftFile(file) {
+  try {
+    const raw = await fs.readFile(file, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && parsed.draft) {
+      const draft = parsed.draft;
+      const question = sanitizeString(draft.question);
+      if (!question) return null;
+      const entry = {
+        id: typeof draft.id === 'string' ? draft.id : randomUUID(),
+        question,
+        status: 'draft',
+      };
+      if (typeof draft.answer === 'string' && draft.answer.trim()) {
+        entry.answer = draft.answer.trim();
+      }
+      if (Array.isArray(draft.tags)) {
+        entry.tags = draft.tags.filter(tag => typeof tag === 'string');
+      }
+      if (typeof draft.notes === 'string' && draft.notes.trim()) {
+        entry.notes = draft.notes.trim();
+      }
+      if (typeof draft.asked_at === 'string' && draft.asked_at.trim()) {
+        entry.asked_at = draft.asked_at.trim();
+      }
+      if (typeof draft.saved_at === 'string' && draft.saved_at.trim()) {
+        entry.saved_at = draft.saved_at.trim();
+      }
+      return entry;
+    }
+    return null;
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return null;
+    throw err;
+  }
+}
+
+async function writeDraftFile(file, draft) {
+  const payload = { draft };
+  await fs.writeFile(file, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+}
+
 let writeLock = Promise.resolve();
+let draftLock = Promise.resolve();
 
 export function recordIntakeResponse(data = {}) {
   let question;
@@ -182,6 +232,7 @@ export function recordIntakeResponse(data = {}) {
     const existing = await readIntakeFile(file);
     existing.push(entry);
     await writeIntakeFile(file, existing);
+    await clearIntakeDraft();
     return {
       ...entry,
       tags: entry.tags ? entry.tags.slice() : undefined,
@@ -191,6 +242,78 @@ export function recordIntakeResponse(data = {}) {
 
   writeLock = writeLock.then(run, run);
   return writeLock;
+}
+
+export function saveIntakeDraft(data = {}) {
+  let question;
+  try {
+    question = requireString(data.question, 'question');
+  } catch (err) {
+    return Promise.reject(err);
+  }
+
+  const draft = {
+    id: randomUUID(),
+    question,
+    status: 'draft',
+    saved_at: new Date().toISOString(),
+  };
+
+  const answer = sanitizeString(data.answer);
+  if (answer) draft.answer = answer;
+
+  const notes = sanitizeString(data.notes);
+  if (notes) draft.notes = notes;
+
+  const tags = normalizeTags(data.tags);
+  if (tags) draft.tags = tags;
+
+  try {
+    const askedAt = normalizeTimestamp(data.askedAt ?? data.asked_at, 'asked');
+    if (askedAt) draft.asked_at = askedAt;
+  } catch (err) {
+    return Promise.reject(err);
+  }
+
+  const { profileDir, file } = getDraftPaths();
+
+  const run = async () => {
+    await fs.mkdir(profileDir, { recursive: true });
+    await writeDraftFile(file, draft);
+    return {
+      ...draft,
+      tags: draft.tags ? draft.tags.slice() : undefined,
+      notes: draft.notes,
+    };
+  };
+
+  draftLock = draftLock.then(run, run);
+  return draftLock;
+}
+
+export async function getIntakeDraft() {
+  const { file } = getDraftPaths();
+  const draft = await readDraftFile(file);
+  if (!draft) return null;
+  return {
+    ...draft,
+    tags: draft.tags ? draft.tags.slice() : undefined,
+    notes: draft.notes,
+  };
+}
+
+export function clearIntakeDraft() {
+  const { file } = getDraftPaths();
+  const run = async () => {
+    try {
+      await fs.unlink(file);
+    } catch (err) {
+      if (!err || err.code !== 'ENOENT') throw err;
+    }
+  };
+
+  draftLock = draftLock.then(run, run);
+  return draftLock;
 }
 
 function normalizeStatusFilter(status) {
