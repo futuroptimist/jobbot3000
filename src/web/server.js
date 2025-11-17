@@ -47,6 +47,15 @@ function isLoopbackHost(host) {
   return false;
 }
 
+function parseBoolean(value) {
+  if (value === undefined || value === null) return undefined;
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return undefined;
+}
+
 function createInMemoryRateLimiter(options = {}) {
   const windowMs = Number(options.windowMs ?? 60000);
   if (!Number.isFinite(windowMs) || windowMs <= 0) {
@@ -7657,11 +7666,19 @@ function normalizeLogTransport(transport, { host }) {
 }
 
 export function startWebServer(options = {}) {
-  const { host = "127.0.0.1" } = options;
+  const { host = "127.0.0.1", allowRemoteAccess } = options;
   const portValue = options.port ?? 3000;
   const port = Number(portValue);
   if (!Number.isFinite(port) || port < 0 || port > 65535) {
     throw new Error("port must be a number between 0 and 65535");
+  }
+  const allowRemote =
+    allowRemoteAccess ?? parseBoolean(process.env.JOBBOT_WEB_ALLOW_REMOTE) ?? false;
+  if (!allowRemote && !isLoopbackHost(host)) {
+    throw new Error(
+      "The web interface is a local-only preview; set JOBBOT_WEB_ALLOW_REMOTE=1 or " +
+        "allowRemoteAccess: true to bind to non-loopback hosts.",
+    );
   }
   const {
     commandAdapter: providedCommandAdapter,
