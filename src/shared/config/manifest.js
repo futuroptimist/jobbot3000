@@ -84,6 +84,12 @@ function parseTrustProxy(value, fallback) {
     if (!trimmed) {
       return fallback;
     }
+    if (/^\d+$/.test(trimmed)) {
+      const numeric = Number(trimmed);
+      if (Number.isFinite(numeric) && numeric >= 0) {
+        return numeric;
+      }
+    }
     const bool = booleanFromEnv(trimmed);
     if (bool !== undefined) {
       return bool;

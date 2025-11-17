@@ -160,6 +160,15 @@ describe('loadWebConfig', () => {
     ]);
   });
 
+  it('parses numeric trust proxy hop counts before boolean normalization', async () => {
+    process.env.JOBBOT_WEB_TRUST_PROXY = '1';
+
+    const { loadWebConfig } = await import('../src/web/config.js');
+    const config = await loadWebConfig({ env: 'development' });
+
+    expect(config.trustProxy).toBe(1);
+  });
+
   it('throws when provided ports or rate limits are invalid', async () => {
     const { loadWebConfig } = await import('../src/web/config.js');
 

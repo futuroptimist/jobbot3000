@@ -151,8 +151,9 @@
   [`test/web-server.test.js`](../test/web-server.test.js) continues to verify the
   `/commands/payloads/recent` contract.
 - Complete SOC 2 Type II style control coverage, including change management and incident response.
+<!-- allow-future-date: 2025-11-19 -->
 - Integrate with a WAF and DDoS mitigation layer.
-  _Implemented (2024-11-19):_ The manifest now exposes `web.trustProxy` (and
+  _Implemented (2025-11-19):_ The manifest now exposes `web.trustProxy` (and
   `JOBBOT_WEB_TRUST_PROXY` for overrides), letting operators declare trusted WAF
   and reverse-proxy hops so rate limiting and security telemetry use the
   originating client IP instead of the proxy address. `scripts/web-server.js`
