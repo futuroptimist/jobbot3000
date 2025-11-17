@@ -37,7 +37,9 @@ describe('resume pipeline', () => {
       expect(context.metadata.format).toBe(testCase.expect.format);
       expect(Array.isArray(context.stages)).toBe(true);
       const stageNames = context.stages.map(stage => stage.name);
-      expect(stageNames).toEqual(expect.arrayContaining(['load', 'normalize', 'analyze']));
+      expect(stageNames).toEqual(
+        expect.arrayContaining(['load', 'normalize', 'enrich', 'analyze']),
+      );
 
       const normalizeStage = context.stages.find(stage => stage.name === 'normalize');
       expect(normalizeStage).toBeDefined();
@@ -58,6 +60,31 @@ describe('resume pipeline', () => {
       } else {
         expect(normalizeStage.output.sections.body).toEqual(
           expect.arrayContaining(['I am an engineer with JavaScript experience.']),
+        );
+      }
+
+      const enrichStage = context.stages.find(stage => stage.name === 'enrich');
+      expect(enrichStage).toBeDefined();
+      expect(context.enrichment).toEqual(enrichStage.output);
+      if (testCase.name.includes('markdown')) {
+        expect(enrichStage.output.sections.experience).toMatchObject({
+          lineCount: 3,
+          hasMetrics: false,
+          hasPlaceholders: true,
+        });
+        expect(enrichStage.output.sections.skills).toMatchObject({ hasMetrics: true });
+        expect(enrichStage.output.sections.projects).toBeUndefined();
+        expect(enrichStage.output.missingSections).toEqual(
+          expect.arrayContaining(['projects', 'education']),
+        );
+      } else {
+        expect(enrichStage.output.sections.body).toMatchObject({
+          lineCount: 1,
+          hasMetrics: false,
+          hasPlaceholders: false,
+        });
+        expect(enrichStage.output.missingSections).toEqual(
+          expect.arrayContaining(['experience', 'projects', 'education', 'skills']),
         );
       }
 

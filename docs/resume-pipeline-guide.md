@@ -11,11 +11,12 @@ Load ➜ Normalize ➜ Enrich ➜ Score
 ```
 
 Out of the box the pipeline ships a `load` stage (which delegates to `loadResume`), a `normalize`
-stage that organizes the plain-text resume into canonical sections, and an `analyze` stage that
-snapshots ambiguity heuristics, ATS warnings, and the calculated confidence score. When adding
-stages, keep the flow above in mind: normalization or enrichment logic belongs between the existing
-`load` and `analyze` steps, and any scoring/summarization stage should run after analysis so it can
-consume the derived signals.
+stage that organizes the plain-text resume into canonical sections, an `enrich` stage that surfaces
+section-level insights (metrics coverage, placeholder tokens, and missing canonical sections), and an
+`analyze` stage that snapshots ambiguity heuristics, ATS warnings, and the calculated confidence
+score. When adding stages, keep the flow above in mind: normalization or enrichment logic belongs
+between the existing `load` and `analyze` steps, and any scoring/summarization stage should run after
+analysis so it can consume the derived signals.
 
 ## Context object contract
 
@@ -29,6 +30,9 @@ Every invocation of `runResumePipeline` starts with a context shaped as follows:
   and a `body` fallback when no heading is present). The pipeline return value also exposes this
   summary as `normalized` so downstream tools can reuse the structured view without re-running the
   stage.
+- `enrichment`: populated by the `enrich` stage with section-level insights. Includes per-section
+  metrics coverage (`hasMetrics`), placeholder tokens (e.g., `XX%`, `TBD`), average words per line,
+  and the list of required sections missing from the resume snapshot.
 - `metadata`: populated by the `load` stage when `withMetadata !== false`. Contains ATS warnings,
   ambiguity hints, counts, and the combined parsing confidence score surfaced by
   [`loadResume`](../src/resume.js).
