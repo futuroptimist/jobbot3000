@@ -23,6 +23,7 @@ describe('loadWebConfig', () => {
       'JOBBOT_WEB_RATE_LIMIT_MAX',
       'JOBBOT_WEB_CSRF_HEADER',
       'JOBBOT_WEB_CSRF_TOKEN',
+      'JOBBOT_WEB_TRUST_PROXY',
       'JOBBOT_WEB_AUTH_TOKENS',
       'JOBBOT_WEB_AUTH_TOKEN',
       'JOBBOT_WEB_AUTH_HEADER',
@@ -55,6 +56,7 @@ describe('loadWebConfig', () => {
       'JOBBOT_WEB_RATE_LIMIT_MAX',
       'JOBBOT_WEB_CSRF_HEADER',
       'JOBBOT_WEB_CSRF_TOKEN',
+      'JOBBOT_WEB_TRUST_PROXY',
       'JOBBOT_WEB_AUTH_TOKENS',
       'JOBBOT_WEB_AUTH_TOKEN',
       'JOBBOT_WEB_AUTH_HEADER',
@@ -85,6 +87,7 @@ describe('loadWebConfig', () => {
     expect(config.env).toBe('development');
     expect(config.host).toBe('127.0.0.1');
     expect(config.port).toBe(3100);
+    expect(config.trustProxy).toBe(false);
     expect(config.rateLimit).toEqual({ windowMs: 60000, max: 30 });
     expect(config.csrfHeaderName).toBe('x-jobbot-csrf');
     expect(config.info).toMatchObject({ service: 'jobbot-web', environment: 'development' });
@@ -120,6 +123,7 @@ describe('loadWebConfig', () => {
     process.env.JOBBOT_WEB_RATE_LIMIT_WINDOW_MS = '120000';
     process.env.JOBBOT_WEB_RATE_LIMIT_MAX = '9';
     process.env.JOBBOT_WEB_CSRF_HEADER = 'x-test-csrf';
+    process.env.JOBBOT_WEB_TRUST_PROXY = 'true';
     process.env.JOBBOT_FEATURE_SCRAPING_MOCKS = 'true';
     process.env.JOBBOT_HTTP_MAX_RETRIES = '4';
     process.env.JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD = '6';
@@ -135,15 +139,18 @@ describe('loadWebConfig', () => {
     expect(config.features.httpClient.maxRetries).toBe(4);
     expect(config.features.httpClient.circuitBreakerThreshold).toBe(6);
     expect(config.missingSecrets).toEqual([]);
+    expect(config.trustProxy).toBe(true);
 
     const overridden = await loadWebConfig({
       env: 'production',
       host: '192.168.1.2',
       port: 9090,
       rateLimit: { windowMs: 30000, max: 7 },
+      trustProxy: '10.0.0.0/8',
     });
     expect(overridden.host).toBe('192.168.1.2');
     expect(overridden.port).toBe(9090);
+    expect(overridden.trustProxy).toBe('10.0.0.0/8');
     expect(overridden.rateLimit).toEqual({ windowMs: 30000, max: 7 });
     expect(overridden.missingSecrets).toEqual([
       'JOBBOT_GREENHOUSE_TOKEN',

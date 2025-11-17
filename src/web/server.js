@@ -6046,6 +6046,7 @@ export function createWebApp({
   commandAdapter,
   csrf,
   rateLimit,
+  trustProxy,
   logger,
   auth,
   audit,
@@ -6062,6 +6063,9 @@ export function createWebApp({
   const rateLimiter = createInMemoryRateLimiter(rateLimit);
   const authOptions = normalizeAuthOptions(auth);
   const app = express();
+  if (trustProxy !== undefined) {
+    app.set("trust proxy", trustProxy);
+  }
   const clientHistoryLimits = { maxClients: CLIENT_PAYLOAD_MAX_CLIENTS };
   const clientKeyring = createClientKeyring(clientHistoryLimits);
   const clientPayloadStore = createClientPayloadStore({
@@ -7669,6 +7673,7 @@ export function startWebServer(options = {}) {
     csrfToken: providedCsrfToken,
     csrfHeaderName,
     rateLimit,
+    trustProxy,
     logger,
     enableNativeCli,
     auth: providedAuth,
@@ -7725,6 +7730,7 @@ export function startWebServer(options = {}) {
     commandAdapter,
     csrf: { token: resolvedCsrfToken, headerName: resolvedHeaderName },
     rateLimit,
+    trustProxy,
     logger,
     auth: normalizedAuth,
     session: sessionOptions,

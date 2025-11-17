@@ -17,7 +17,7 @@ function printUsage() {
   console.error(
     'Usage: node scripts/web-server.js [--env <environment>] [--host <value>] [--port <number>] ' +
       '[--rate-limit-window-ms <number>] [--rate-limit-max <number>] [--csrf-header <value>] ' +
-      '[--csrf-token <value>] [--enable-native-cli] [--disable-native-cli]',
+      '[--csrf-token <value>] [--trust-proxy <value>] [--enable-native-cli] [--disable-native-cli]',
   );
 }
 
@@ -30,6 +30,7 @@ async function main() {
   const rateMaxOverride = getFlag(args, '--rate-limit-max');
   const csrfHeaderOverride = getFlag(args, '--csrf-header');
   const csrfTokenOverride = getFlag(args, '--csrf-token');
+  const trustProxyOverride = getFlag(args, '--trust-proxy');
   let version = 'dev';
   try {
     const packageJsonUrl = new URL('../package.json', import.meta.url);
@@ -54,6 +55,7 @@ async function main() {
       },
       csrfHeaderName: csrfHeaderOverride,
       csrfToken: csrfTokenOverride,
+      trustProxy: trustProxyOverride,
       version,
     });
   } catch (err) {
@@ -75,6 +77,7 @@ async function main() {
     info: config.info,
     healthChecks,
     rateLimit: config.rateLimit,
+    trustProxy: config.trustProxy,
     csrfToken: config.csrfToken,
     csrfHeaderName: config.csrfHeaderName,
     enableNativeCli,

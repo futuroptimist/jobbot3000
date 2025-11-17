@@ -4,9 +4,24 @@ import { z } from 'zod';
 const ENVIRONMENTS = ['development', 'staging', 'production'];
 
 export const DEFAULT_WEB_CONFIG = {
-  development: { host: '127.0.0.1', port: 3100, rateLimit: { windowMs: 60000, max: 30 } },
-  staging: { host: '0.0.0.0', port: 4000, rateLimit: { windowMs: 60000, max: 20 } },
-  production: { host: '0.0.0.0', port: 8080, rateLimit: { windowMs: 60000, max: 15 } },
+  development: {
+    host: '127.0.0.1',
+    port: 3100,
+    trustProxy: false,
+    rateLimit: { windowMs: 60000, max: 30 },
+  },
+  staging: {
+    host: '0.0.0.0',
+    port: 4000,
+    trustProxy: false,
+    rateLimit: { windowMs: 60000, max: 20 },
+  },
+  production: {
+    host: '0.0.0.0',
+    port: 8080,
+    trustProxy: false,
+    rateLimit: { windowMs: 60000, max: 15 },
+  },
 };
 
 const booleanFromEnv = value => {
@@ -49,6 +64,47 @@ function hasInlineSecrets(secrets) {
   });
 }
 
+function parseTrustProxy(value, fallback) {
+  if (value === undefined || value === null) {
+    return fallback;
+  }
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => (typeof entry === 'string' ? entry.trim() : String(entry)))
+      .filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return fallback;
+    }
+    const bool = booleanFromEnv(trimmed);
+    if (bool !== undefined) {
+      return bool;
+    }
+    if (trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return parsed
+            .map((entry) => (typeof entry === 'string' ? entry.trim() : String(entry)))
+            .filter(Boolean);
+        }
+      } catch {
+        // Ignore JSON parse failures; fall back to the raw string below.
+      }
+    }
+    return trimmed;
+  }
+  return fallback;
+}
+
 const PluginEntrySchema = z
   .object({
     id: z.string().min(1),
@@ -68,6 +124,9 @@ const ConfigSchema = z.object({
   web: z.object({
     host: z.string().min(1),
     port: z.number().int().min(0).max(65535),
+    trustProxy: z
+      .union([z.boolean(), z.string(), z.number().int().min(0), z.array(z.string())])
+      .default(false),
     rateLimit: z.object({
       windowMs: z.number().int().positive(),
       max: z.number().int().positive(),
@@ -213,6 +272,10 @@ export function loadConfig(options = {}) {
   const csrfHeaderSource = options.csrfHeaderName ?? env.JOBBOT_WEB_CSRF_HEADER ?? 'x-jobbot-csrf';
   const csrfHeader = csrfHeaderSource.toLowerCase();
   const csrfToken = options.csrfToken ?? env.JOBBOT_WEB_CSRF_TOKEN;
+  const trustProxy = parseTrustProxy(
+    options.trustProxy ?? env.JOBBOT_WEB_TRUST_PROXY,
+    baseWeb.trustProxy ?? false,
+  );
 
   const features = {
     scraping: {
@@ -394,6 +457,7 @@ export function loadConfig(options = {}) {
       web: {
         host: options.host ?? env.JOBBOT_WEB_HOST ?? baseWeb.host,
         port: webPort,
+        trustProxy,
         rateLimit: { windowMs, max: rateLimitMax },
         csrf: {
           headerName: csrfHeader,
