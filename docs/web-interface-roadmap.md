@@ -5,7 +5,9 @@
 - ⚠️ **Local-only preview:** The web adapter is not production-ready. Run it exclusively on
   trusted local hardware until the security milestones in
   [`docs/web-security-roadmap.md`](./web-security-roadmap.md) are complete. Cloud or multi-user
-  deployments risk leaking secrets, PII, and other sensitive data.
+  deployments risk leaking secrets, PII, and other sensitive data. The server now refuses
+  non-loopback host bindings unless callers explicitly set `JOBBOT_WEB_ALLOW_REMOTE=1` or pass
+  `allowRemoteAccess: true`, keeping the default experience locked to localhost.
 
 - Deliver a local-first web application that streamlines tracking and managing job applications while
   retaining full parity with the existing CLI workflows.
