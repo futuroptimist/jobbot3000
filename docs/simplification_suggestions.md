@@ -4,6 +4,7 @@ These recommendations target the most complex touchpoints in the repository. Eac
 an opportunity and breaks it into actionable next steps.
 
 ## 1. Establish a Source-of-Truth Architecture Map
+
 The CLI and supporting modules span resume ingestion, ATS integrations, scheduling, and analytics.
 New contributors must infer relationships by reading files such as
 [`src/index.js`](../src/index.js), [`src/fetch.js`](../src/fetch.js), and
@@ -19,6 +20,7 @@ to the architecture map so engineers debugging rate limits can jump from the cod
 diagram immediately.
 
 **Suggested Steps**
+
 - Draft a high-level diagram (module graph or swim lanes) that shows how summarization, ingestion,
   tracking, and exporter flows interact.
 - Embed the diagram in `README.md` or a new `docs/architecture.md`, linking to core modules and data
@@ -29,6 +31,7 @@ diagram immediately.
   to read first.
 
 ## 2. Introduce a Shared Adapter Interface for ATS Connectors
+
 Multiple files implement vendor-specific logic (`src/ashby.js`, `src/greenhouse.js`,
 `src/lever.js`, `src/smartrecruiters.js`, `src/workable.js`). Each file defines similar helpers for
 normalizing jobs, yet the calling conventions vary. A shared interface would remove repetitive
@@ -49,6 +52,7 @@ documents the `JobSourceAdapter` contract, quick-start checklist, and regression
 providers so contributors can ship connectors without spelunking through existing modules.
 
 **Suggested Steps**
+
 - Define a `JobSourceAdapter` TypeScript definition (or JSDoc typedef) capturing the expected
   methods (e.g., `listOpenings`, `normalizeJob`, `toApplicationEvent`).
 - Extract shared utilities—such as pagination, HTTP retrying, and data normalization—into
@@ -58,6 +62,7 @@ providers so contributors can ship connectors without spelunking through existin
 - Document the adapter contract in `docs/` with quick-start instructions for adding a new ATS.
 
 ## 3. Modularize Resume and Profile Processing Pipelines
+
 Resume ingestion currently lives in [`src/resume.js`](../src/resume.js) while profile enrichment and
 scoring are spread across [`src/profile.js`](../src/profile.js), [`src/scoring.js`](../src/scoring.js),
 and [`src/application-events.js`](../src/application-events.js). Splitting the pipeline into distinct
@@ -79,7 +84,12 @@ plain-text resumes into canonical sections (`experience`, `skills`, `projects`, 
 fallback), counts trimmed lines and words, and exposes the summary via
 `context.normalizedResume`/`normalized` for downstream enrichment.
 
+_Update (2025-11-22):_ The resume pipeline adds an `enrich` stage that surfaces per-section metrics
+coverage, placeholder tokens, and missing canonical sections so the "load ➜ normalize ➜ enrich ➜
+score" flow is now fully represented in code and documentation.
+
 **Suggested Steps**
+
 - Define explicit pipeline stages (load ➜ normalize ➜ enrich ➜ score) and move them into a
   `src/pipeline/` directory with one module per stage.
 - Replace implicit data passing with a typed context object so each stage documents its inputs and
@@ -90,11 +100,13 @@ fallback), counts trimmed lines and words, and exposes the summary via
   flows.
 
 ## 4. Automate Chore Work with a Task Catalog
+
 Recurring chores (lint rule updates, dependency bumps, prompt doc edits) are scattered across scripts
 and documentation, often requiring institutional knowledge. Consolidating them into a task catalog
 would cut coordination overhead.
 
 **Suggested Steps**
+
 - Keep [`docs/chore-catalog.md`](chore-catalog.md) updated with each routine chore's owner,
   frequency, and required commands (for example, `npm run lint`, `npm run test:ci`, and the secret
   scan pipeline).
@@ -118,6 +130,7 @@ would cut coordination overhead.
 - Encourage contributors to append playbook entries whenever they discover a new repetitive task.
 
 ## 5. Layer Simplified Abstractions Around Low-Level Utilities
+
 Low-level modules such as [`src/fetch.js`](../src/fetch.js) and [`src/index.js`](../src/index.js)
 expose powerful primitives (custom retry queues, sentence parsing) but require callers to understand
 intricate details. Introducing thin wrappers would preserve flexibility while providing ergonomic
@@ -139,6 +152,7 @@ JSDoc includes the same snippet so connectors can copy/paste the pattern without
 tests.
 
 **Suggested Steps**
+
 - Publish a `src/services/http.js` wrapper that configures sensible defaults (timeouts, rate limits,
   user-agent) so feature modules call a single helper instead of wiring `fetchWithRetry` manually.
 - Extract the sentence segmentation logic into a dedicated `SentenceExtractor` class with clearly

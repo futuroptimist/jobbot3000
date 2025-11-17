@@ -88,8 +88,74 @@ function buildSectionSummary(trimmedLines) {
     }
   }
 
-  const sectionOrder = order.filter((key, index) => order.indexOf(key) === index && sections[key]);
+  const sectionOrder = order.filter(
+    (key, index) => order.indexOf(key) === index && sections[key],
+  );
   return { sections, sectionOrder };
+}
+
+function collectPlaceholderTokens(line) {
+  if (!line) return [];
+  const matches = line.match(/(?:^|\s)(XX%?|YY%?|TBD|N\/A|FILL ME IN)(?=\s|$)/gi);
+  if (!matches) return [];
+  return matches.map(token => token.trim().toUpperCase());
+}
+
+function analyzeSection(name, lines) {
+  const placeholderTokens = new Set();
+  let totalWords = 0;
+  let hasMetrics = false;
+
+  for (const line of lines) {
+    if (!line) continue;
+    totalWords += countWords([line]);
+    if (/\d/.test(line)) {
+      hasMetrics = true;
+    }
+    for (const token of collectPlaceholderTokens(line)) {
+      placeholderTokens.add(token);
+    }
+  }
+
+  const lineCount = lines.length;
+  const averageWordsPerLine =
+    lineCount === 0 ? 0 : Number((totalWords / lineCount).toFixed(2));
+
+  return {
+    lineCount,
+    averageWordsPerLine,
+    hasMetrics,
+    placeholderTokens: Array.from(placeholderTokens),
+    hasPlaceholders: placeholderTokens.size > 0,
+    section: name,
+  };
+}
+
+function summarizeEnrichment(sections) {
+  const insights = {};
+  const sectionsWithMetrics = [];
+  const placeholderSections = [];
+  const REQUIRED_SECTIONS = ['experience', 'projects', 'education', 'skills'];
+
+  for (const [name, lines] of Object.entries(sections)) {
+    const details = analyzeSection(name, lines);
+    insights[name] = details;
+    if (details.hasMetrics) {
+      sectionsWithMetrics.push(name);
+    }
+    if (details.hasPlaceholders) {
+      placeholderSections.push(name);
+    }
+  }
+
+  const missingSections = REQUIRED_SECTIONS.filter(section => !sections[section]);
+
+  return {
+    sections: insights,
+    sectionsWithMetrics,
+    placeholderSections,
+    missingSections,
+  };
 }
 
 /**
@@ -142,6 +208,15 @@ const RESUME_PIPELINE_STAGES = [
     },
   },
   {
+    name: 'enrich',
+    run: context => {
+      const normalized = context.normalizedResume || { sections: {} };
+      const enrichment = summarizeEnrichment(normalized.sections || {});
+      context.enrichment = enrichment;
+      return enrichment;
+    },
+  },
+  {
     name: 'analyze',
     run: context => {
       const metadata = context.metadata || {};
@@ -187,6 +262,7 @@ export async function runResumePipeline(filePath, options = {}) {
     text: context.text,
     metadata: context.metadata,
     normalized: context.normalizedResume,
+    enrichment: context.enrichment,
     analysis: context.analysis,
     stages: context.stages.map(stage => ({ name: stage.name, output: stage.output })),
   };

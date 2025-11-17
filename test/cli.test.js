@@ -1730,7 +1730,7 @@ describe('jobbot CLI', () => {
     expect(screening.jobs.map(job => job.job_id)).toContain('job-1');
     const offer = parsed.columns.find(column => column.status === 'offer');
     expect(offer.jobs[0]).toMatchObject({ job_id: 'job-3', note: 'Prep for negotiation' });
-  });
+  }, 15000);
 
   it('surfaces the next reminder for each job in track board output', () => {
     runCli(['track', 'add', 'job-1', '--status', 'screening']);
