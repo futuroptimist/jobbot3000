@@ -3667,4 +3667,41 @@ describe("web server command endpoint", () => {
     });
     expect(commandAdapter.summarize).toHaveBeenCalledTimes(2);
   });
+
+  it("honors trusted proxy settings when rate limiting", async () => {
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({ ok: true })),
+    };
+
+    const server = await startServer({
+      commandAdapter,
+      rateLimit: { windowMs: 1000, max: 1 },
+      trustProxy: true,
+    });
+
+    const headers = buildCommandHeaders(server);
+    const body = JSON.stringify({ input: "job.txt" });
+
+    const first = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: { ...headers, "x-forwarded-for": "203.0.113.10" },
+      body,
+    });
+    expect(first.status).toBe(200);
+
+    const second = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: { ...headers, "x-forwarded-for": "198.51.100.5" },
+      body,
+    });
+    expect(second.status).toBe(200);
+
+    const third = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: { ...headers, "x-forwarded-for": "203.0.113.10" },
+      body,
+    });
+    expect(third.status).toBe(429);
+    expect(commandAdapter.summarize).toHaveBeenCalledTimes(2);
+  });
 });

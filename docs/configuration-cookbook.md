@@ -12,6 +12,7 @@ the manifest validation command stays documented for operators.
 | ----------------- | ---------------------------- | --------------------------- | --------------------------- |
 | Web host          | `127.0.0.1`                  | `0.0.0.0`                   | `0.0.0.0`                   |
 | Web port          | `3100`                       | `4000`                      | `8080`                      |
+| Trusted proxies   | `false`                      | `false`                     | `false`                     |
 | Rate limit window | `60000` ms                   | `60000` ms                  | `60000` ms                  |
 | Rate limit max    | `30`                         | `20`                        | `15`                        |
 | Audit log path    | `data/audit/audit-log.jsonl` | `/var/log/jobbot/audit.log` | `/var/log/jobbot/audit.log` |
@@ -85,6 +86,11 @@ overrides automatically adjust retry counts, base backoff delays, and circuit br
 provider requests. Regression coverage in
 [`test/http-client-manifest.test.js`](../test/http-client-manifest.test.js) keeps the integration
 locked down.
+
+Trusted proxy settings flow through `web.trustProxy` (or `JOBBOT_WEB_TRUST_PROXY`) so deployments
+behind load balancers and WAFs can preserve the originating client IP for rate limiting, audit
+entries, and security telemetry. Set the value to `true` when a single trusted hop fronts jobbot, or
+provide a comma-separated string/array of CIDR blocks to mirror your proxy fleet.
 
 The status hub overview renders a **Configuration manifest** card that lists the
 current feature flag values, declared plugins, and any missing secrets surfaced
