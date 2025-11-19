@@ -22,7 +22,9 @@ The web server listens on the host/port returned by
 - Operators can force secure session cookies—even when testing over plain HTTP—by
   setting `JOBBOT_WEB_SESSION_SECURE=1` before launching the server. This guarantees
   `Secure` cookie attributes so rotated identifiers are never transmitted over
-  cleartext connections.
+  cleartext connections. Regression coverage in
+  [`test/web-session-security.test.js`](../test/web-session-security.test.js)
+  locks the behavior in place.
 - JSON payloads require `Content-Type: application/json` and must match the validator defined in
   `command-registry.js`.
 

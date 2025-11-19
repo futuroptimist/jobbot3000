@@ -33,6 +33,17 @@ function extractSessionCookie(response, cookieName) {
   return latest;
 }
 
+function findSetCookieHeader(response, cookieName) {
+  const setCookies =
+    typeof response.headers.getSetCookie === "function"
+      ? response.headers.getSetCookie()
+      : response.headers.raw?.()["set-cookie"] ?? [];
+
+  return setCookies.find(
+    (entry) => typeof entry === "string" && entry.startsWith(`${cookieName}=`),
+  );
+}
+
 afterEach(async () => {
   while (activeServers.length > 0) {
     const server = activeServers.pop();
@@ -183,5 +194,28 @@ describe("web session security", () => {
     );
     expect(followUpSession).toBeTruthy();
     expect(followUpSession).not.toBe(initialSession);
+  });
+
+  it("forces secure session cookies when JOBBOT_WEB_SESSION_SECURE=1", async () => {
+    const originalValue = process.env.JOBBOT_WEB_SESSION_SECURE;
+    process.env.JOBBOT_WEB_SESSION_SECURE = "1";
+
+    try {
+      const server = await startServer();
+      const response = await fetch(`${server.url}/`);
+      expect(response.status).toBe(200);
+
+      const sessionHeader = response.headers.get(server.sessionHeaderName);
+      expect(sessionHeader).toMatch(/^[A-Za-z0-9_-]{16,128}$/);
+
+      const sessionSetCookie = findSetCookieHeader(
+        response,
+        server.sessionCookieName,
+      );
+      expect(sessionSetCookie).toBeTruthy();
+      expect(sessionSetCookie).toMatch(/;\s*Secure/i);
+    } finally {
+      process.env.JOBBOT_WEB_SESSION_SECURE = originalValue;
+    }
   });
 });
