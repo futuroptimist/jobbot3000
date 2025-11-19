@@ -192,7 +192,9 @@ jobbot3000.
 - Adapter crashes emit structured logs with `adapter`, `job_id`, and `request_id`; integration tests
   assert that failures do not corrupt existing shortlist files.
 - Scheduler misconfigurations (missing config file, invalid cron) trigger validation errors before
-  execution and log to `logs/scheduler.log` for postmortems.
+  execution and log to `logs/scheduler.log` for postmortems. Regression coverage in
+  [`test/schedule-config.test.js`](../test/schedule-config.test.js) keeps the scheduler log append
+  behavior in place so operators can review timestamped runs even after early exits.
 - Web socket disconnects while streaming ingestion fall back to polling; QA should verify the UI
   resumes updates without duplicating entries.
 
