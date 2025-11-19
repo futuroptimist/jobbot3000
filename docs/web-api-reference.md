@@ -16,9 +16,9 @@ The web server listens on the host/port returned by
 - When `startWebServer` is configured with `auth`, clients must also supply the configured
   authorization header. Bearer tokens are required when `requireScheme` is enabled.
 - Tokens can include role assignments. Viewer roles unlock read-only commands while editor (or
-  admin) roles are required for mutations such as `track-record`, `listings-ingest`, and
-  `listings-archive`. Requests without the needed roles receive 403 responses and are recorded in the
-  audit log.
+  admin) roles are required for mutations such as `track-record`, `listings-ingest`,
+  `listings-archive`, and `intake-record`. Requests without the needed roles receive 403 responses
+  and are recorded in the audit log.
 - Operators can force secure session cookies—even when testing over plain HTTP—by
   setting `JOBBOT_WEB_SESSION_SECURE=1` before launching the server. This guarantees
   `Secure` cookie attributes so rotated identifiers are never transmitted over
@@ -143,7 +143,8 @@ The following command endpoints are available. Each one maps directly to a CLI h
 - `POST /commands/intake-list` → `jobbot intake list`: List recorded interview responses with optional
   status filters (`answered`, `skipped`) and redaction for sensitive compensation or visa questions.
 - `POST /commands/intake-record` → `jobbot intake record`: Record a new interview question response
-  with optional tags, notes, and timestamps, supporting both answered and skipped prompts.
+  with optional tags, notes, and timestamps, supporting both answered and skipped prompts. Requires
+  tokens with the `editor` role.
 
 The intake endpoints accept compact payloads:
 

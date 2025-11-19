@@ -5599,6 +5599,7 @@ const COMMAND_ROLE_REQUIREMENTS = Object.freeze({
   "track-record": Object.freeze(["editor"]),
   "listings-ingest": Object.freeze(["editor"]),
   "listings-archive": Object.freeze(["editor"]),
+  "intake-record": Object.freeze(["editor"]),
 });
 
 function expandRoles(roleSet) {

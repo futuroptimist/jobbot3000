@@ -3009,6 +3009,7 @@ describe("web server command endpoint", () => {
         },
       })),
       "track-record": vi.fn(async () => ({ ok: true })),
+      "intake-record": vi.fn(async () => ({ ok: true })),
     };
 
     const server = await startServer({
@@ -3052,6 +3053,17 @@ describe("web server command endpoint", () => {
     });
     expect(commandAdapter["track-record"]).not.toHaveBeenCalled();
 
+    const viewerIntake = await fetch(`${server.url}/commands/intake-record`, {
+      method: "POST",
+      headers: viewerHeaders,
+      body: JSON.stringify({ question: "Role", answer: "Engineer" }),
+    });
+    expect(viewerIntake.status).toBe(403);
+    expect(await viewerIntake.json()).toMatchObject({
+      error: expect.stringMatching(/permission/i),
+    });
+    expect(commandAdapter["intake-record"]).not.toHaveBeenCalled();
+
     const editorHeaders = buildCommandHeaders(server, {
       authorization: "Bearer editor-token",
     });
@@ -3071,6 +3083,15 @@ describe("web server command endpoint", () => {
     expect(editorTrack.status).toBe(200);
     expect(await editorTrack.json()).toEqual({ ok: true });
     expect(commandAdapter["track-record"]).toHaveBeenCalledTimes(1);
+
+    const editorIntake = await fetch(`${server.url}/commands/intake-record`, {
+      method: "POST",
+      headers: editorHeaders,
+      body: JSON.stringify({ question: "Role", answer: "Engineer" }),
+    });
+    expect(editorIntake.status).toBe(200);
+    expect(await editorIntake.json()).toEqual({ ok: true });
+    expect(commandAdapter["intake-record"]).toHaveBeenCalledTimes(1);
 
     expect(auditLogger.record).toHaveBeenCalled();
     const rbacEvent = auditEvents.find((event) => event.reason === "rbac");
