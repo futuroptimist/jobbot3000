@@ -93,6 +93,16 @@ const TRACK_REMINDERS_ALLOWED_FIELDS = new Set([
   "calendar_name",
 ]);
 const RECRUITER_INGEST_ALLOWED_FIELDS = new Set(["raw"]);
+const INTAKE_LIST_ALLOWED_FIELDS = new Set(["status", "redact"]);
+const INTAKE_RECORD_ALLOWED_FIELDS = new Set([
+  "question",
+  "answer",
+  "skipped",
+  "askedAt",
+  "asked_at",
+  "tags",
+  "notes",
+]);
 
 function stripUnsafeCharacters(value) {
   if (typeof value !== "string") {
@@ -556,6 +566,55 @@ function validateTrackRemindersPayload(rawPayload) {
   return sanitized;
 }
 
+function validateIntakeListPayload(rawPayload) {
+  const payload = ensurePlainObject(rawPayload, "intake-list");
+  assertAllowedFields(payload, INTAKE_LIST_ALLOWED_FIELDS, "intake-list");
+
+  const status = coerceString(payload.status, { name: "status" });
+  const redact = coerceBoolean(payload.redact, { name: "redact" });
+
+  const sanitized = { redact: redact === true };
+  if (status) sanitized.status = status;
+  return sanitized;
+}
+
+function validateIntakeRecordPayload(rawPayload) {
+  const payload = ensurePlainObject(rawPayload, "intake-record");
+  assertAllowedFields(payload, INTAKE_RECORD_ALLOWED_FIELDS, "intake-record");
+
+  const question = coerceString(payload.question, {
+    name: "question",
+    required: true,
+  });
+  const skipped = coerceBoolean(payload.skipped, { name: "skipped" });
+  const answer = skipped
+    ? undefined
+    : coerceString(payload.answer, { name: "answer", required: true });
+
+  const askedAtValue = coerceString(payload.askedAt ?? payload.asked_at, {
+    name: "askedAt",
+  });
+  let askedAt;
+  if (askedAtValue) {
+    const parsed = new Date(askedAtValue);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new Error("askedAt must be a valid ISO-8601 timestamp");
+    }
+    askedAt = parsed.toISOString();
+  }
+
+  const tagList = coerceTagList(payload.tags, { name: "tags" });
+  const tags = tagList ? tagList.join(",") : undefined;
+  const notes = coerceString(payload.notes, { name: "notes" });
+
+  const sanitized = { question, skipped: skipped === true };
+  if (answer) sanitized.answer = answer;
+  if (askedAt) sanitized.askedAt = askedAt;
+  if (tags) sanitized.tags = tags;
+  if (notes) sanitized.notes = notes;
+  return sanitized;
+}
+
 const COMMAND_VALIDATORS = Object.freeze({
   summarize: validateSummarizePayload,
   match: validateMatchPayload,
@@ -578,6 +637,8 @@ const COMMAND_VALIDATORS = Object.freeze({
     return {};
   },
   "recruiter-ingest": validateRecruiterIngestPayload,
+  "intake-list": validateIntakeListPayload,
+  "intake-record": validateIntakeRecordPayload,
 });
 
 export const ALLOW_LISTED_COMMANDS = Object.freeze(

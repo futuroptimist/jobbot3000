@@ -169,4 +169,79 @@ describe('web server CLI contracts', () => {
     },
     15000,
   );
+
+  it('records intake responses via the API and lists redacted entries', async () => {
+    const server = await bootServer();
+    const csrfCookieName = server.csrfCookieName ?? 'jobbot_csrf_token';
+
+    const recordResponse = await fetch(`${server.url}/commands/intake-record`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        [server.csrfHeaderName]: server.csrfToken,
+        cookie: `${csrfCookieName}=${server.csrfToken}`,
+      },
+      body: JSON.stringify({
+        question: 'What compensation range keeps you engaged?',
+        answer: 'Base $220k + bonus',
+        askedAt: '2025-03-11T12:00:00Z',
+        tags: ['compensation', 'salary'],
+        notes: 'Sensitive compensation details',
+      }),
+    });
+
+    expect(recordResponse.status).toBe(200);
+    const recordPayload = await recordResponse.json();
+    expect(recordPayload.command).toBe('intake-record');
+    expect(recordPayload.data?.question).toContain('compensation range');
+    expect(recordPayload.data?.status).toBe('answered');
+
+    const listResponse = await fetch(`${server.url}/commands/intake-list`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        [server.csrfHeaderName]: server.csrfToken,
+        cookie: `${csrfCookieName}=${server.csrfToken}`,
+      },
+      body: JSON.stringify({ redact: true }),
+    });
+
+    expect(listResponse.status).toBe(200);
+    const listPayload = await listResponse.json();
+    expect(listPayload.command).toBe('intake-list');
+    expect(listPayload.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          question: 'What compensation range keeps you engaged?',
+          answer: '[redacted]',
+          redacted: true,
+          notes: '[redacted]',
+        }),
+      ]),
+    );
+    for (const entry of listPayload.data) {
+      expect(entry.answer).toBe('[redacted]');
+      expect(entry.redacted).toBe(true);
+      expect(entry.notes).toBe('[redacted]');
+    }
+  });
+
+  it('rejects intake record payloads without a question', async () => {
+    const server = await bootServer();
+    const csrfCookieName = server.csrfCookieName ?? 'jobbot_csrf_token';
+
+    const response = await fetch(`${server.url}/commands/intake-record`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        [server.csrfHeaderName]: server.csrfToken,
+        cookie: `${csrfCookieName}=${server.csrfToken}`,
+      },
+      body: JSON.stringify({ answer: 'Missing the question field' }),
+    });
+
+    expect(response.status).toBe(400);
+    const payload = await response.json();
+    expect(payload.error).toMatch(/question is required/i);
+  });
 });

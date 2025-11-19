@@ -145,6 +145,13 @@ The following command endpoints are available. Each one maps directly to a CLI h
 - `POST /commands/intake-record` → `jobbot intake record`: Record a new interview question response
   with optional tags, notes, and timestamps, supporting both answered and skipped prompts.
 
+The intake endpoints accept compact payloads:
+
+- `intake-record` requires `question` and either `answer` or `skipped: true`. Optional fields include
+  `askedAt` (ISO-8601 timestamp), `tags` (comma- or array-formatted), and freeform `notes`.
+- `intake-list` accepts an optional `status` filter plus a `redact` boolean that masks compensation-
+  or visa-related answers and notes with `[redacted]` in the response body.
+
 CLI users can invoke the same workflows via
 `jobbot listings <providers|fetch|ingest|archive|provider-token>`. Each subcommand supports `--json`
 output for automation, and text summaries mirror the web interface. Regression coverage in
