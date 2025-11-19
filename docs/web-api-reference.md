@@ -140,6 +140,9 @@ The following command endpoints are available. Each one maps directly to a CLI h
 - `POST /commands/recruiter-ingest` → `node bin/ingest-recruiter.ts`: Parse recruiter outreach emails,
   persist the opportunity, append audit entries, and return a sanitized summary for the modal
   preview.
+- `POST /commands/feedback-record` → `jobbot feedback record`: Persist beta feedback with optional
+  `source`, `contact`, and `rating` fields. Entries are sanitized, time-stamped, and written to
+  `data/feedback.json` for follow-up analysis.
 - `POST /commands/intake-list` → `jobbot intake list`: List recorded interview responses with optional
   status filters (`answered`, `skipped`) and redaction for sensitive compensation or visa questions.
 - `POST /commands/intake-record` → `jobbot intake record`: Record a new interview question response

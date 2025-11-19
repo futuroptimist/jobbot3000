@@ -2076,6 +2076,35 @@ describe('jobbot CLI', () => {
     });
   });
 
+  it('records beta feedback for release prep', () => {
+    const output = runCli([
+      'feedback',
+      'record',
+      '--message',
+      ' Great work shipping the status hub ',
+      '--source',
+      'beta-survey',
+      '--contact',
+      'casey@example.com',
+      '--rating',
+      '4',
+    ]);
+
+    expect(output.trim()).toMatch(/^Recorded feedback entry /);
+
+    const payload = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'feedback.json'), 'utf8')
+    );
+
+    expect(payload.entries).toHaveLength(1);
+    expect(payload.entries[0]).toMatchObject({
+      message: 'Great work shipping the status hub',
+      source: 'beta-survey',
+      contact: 'casey@example.com',
+      rating: 4,
+    });
+  });
+
   it('returns manual templates alongside intake plan JSON output', () => {
     runCli(['init']);
     const output = runCli(['intake', 'plan', '--json']);

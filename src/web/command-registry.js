@@ -93,6 +93,12 @@ const TRACK_REMINDERS_ALLOWED_FIELDS = new Set([
   "calendar_name",
 ]);
 const RECRUITER_INGEST_ALLOWED_FIELDS = new Set(["raw"]);
+const FEEDBACK_RECORD_ALLOWED_FIELDS = new Set([
+  "message",
+  "source",
+  "contact",
+  "rating",
+]);
 
 function stripUnsafeCharacters(value) {
   if (typeof value !== "string") {
@@ -232,6 +238,25 @@ function validateRecruiterIngestPayload(payload) {
   assertAllowedFields(data, RECRUITER_INGEST_ALLOWED_FIELDS, "recruiter-ingest");
   const raw = coerceString(data.raw, { name: "raw", required: true });
   return { raw };
+}
+
+function validateFeedbackRecordPayload(payload) {
+  const data = ensurePlainObject(payload ?? {}, "feedback-record");
+  assertAllowedFields(data, FEEDBACK_RECORD_ALLOWED_FIELDS, "feedback-record");
+
+  const message = coerceString(data.message, { name: "message", required: true });
+  const source = coerceString(data.source, { name: "source" });
+  const contact = coerceString(data.contact, { name: "contact" });
+  const rating = coerceInteger(data.rating, { name: "rating", min: 1 });
+  if (rating !== undefined && rating > 5) {
+    throw new Error("rating must be between 1 and 5");
+  }
+
+  const sanitized = { message };
+  if (source) sanitized.source = source;
+  if (contact) sanitized.contact = contact;
+  if (rating !== undefined) sanitized.rating = rating;
+  return sanitized;
 }
 
 function coerceTagList(value, { name }) {
@@ -578,6 +603,7 @@ const COMMAND_VALIDATORS = Object.freeze({
     return {};
   },
   "recruiter-ingest": validateRecruiterIngestPayload,
+  "feedback-record": validateFeedbackRecordPayload,
 });
 
 export const ALLOW_LISTED_COMMANDS = Object.freeze(

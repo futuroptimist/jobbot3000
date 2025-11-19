@@ -410,4 +410,36 @@ export function normalizeIntakeRecordRequest(options = {}) {
   return request;
 }
 
+export function normalizeFeedbackRecordRequest(options = {}) {
+  assertPlainObject(options, 'feedback record request');
+
+  const allowedKeys = new Set(['message', 'source', 'contact', 'rating']);
+  const extra = Object.keys(options).filter(key => !allowedKeys.has(key));
+  if (extra.length > 0) {
+    throw new Error(`unexpected feedback record keys: ${extra.join(', ')}`);
+  }
+
+  const message = assertRequiredString(options.message, 'message');
+  const source = normalizeString(options.source);
+  const contact = normalizeString(options.contact);
+  const ratingValue = coerceNumber(options.rating);
+  let rating;
+  if (ratingValue !== undefined) {
+    if (
+      !Number.isInteger(ratingValue) ||
+      ratingValue < 1 ||
+      ratingValue > 5
+    ) {
+      throw new Error('rating must be between 1 and 5');
+    }
+    rating = ratingValue;
+  }
+
+  const request = { message };
+  if (source) request.source = source;
+  if (contact) request.contact = contact;
+  if (rating !== undefined) request.rating = rating;
+  return request;
+}
+
 export const WEB_SUPPORTED_FORMATS = [...SUPPORTED_FORMATS];
