@@ -37,8 +37,13 @@ export function createScheduleLogger(
   const append = message => {
     const serialized = typeof message === 'string' ? message : String(message);
     pending = pending.then(async () => {
-      await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
-      await fs.appendFile(resolvedPath, `${serialized}\n`, 'utf8');
+      try {
+        await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
+        await fs.appendFile(resolvedPath, `${serialized}\n`, 'utf8');
+      } catch (err) {
+        consoleImpl?.error?.('Failed to write log message:', err) ??
+          console.error('Failed to write log message:', err);
+      }
     });
     return pending;
   };
@@ -46,10 +51,9 @@ export function createScheduleLogger(
   const emit = (method, message) => {
     const consoleLogger =
       method === 'error'
-        ? consoleImpl?.error ?? consoleImpl?.log ?? consoleImpl?.info
-        : consoleImpl?.log ?? consoleImpl?.info ?? consoleImpl?.error;
-    const safeConsoleLogger = consoleLogger ?? (() => {});
-    safeConsoleLogger(message);
+        ? consoleImpl?.error ?? console.error
+        : consoleImpl?.log ?? console.log;
+    consoleLogger(message);
     append(message).catch(() => {});
   };
 
