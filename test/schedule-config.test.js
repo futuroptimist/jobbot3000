@@ -27,7 +27,11 @@ vi.mock('../src/notifications.js', () => ({
   sendWeeklySummaryNotification: vi.fn(async () => ({ filePath: '/tmp/direct.eml' })),
 }));
 
-import { loadScheduleConfig, buildScheduledTasks } from '../src/schedule.js';
+import {
+  loadScheduleConfig,
+  buildScheduledTasks,
+  createScheduleLogger,
+} from '../src/schedule.js';
 import { ingestGreenhouseBoard } from '../src/greenhouse.js';
 import { computeFitScore } from '../src/scoring.js';
 import {
@@ -206,6 +210,40 @@ describe('schedule config', () => {
 
     expect(ingestTask.maxRuns).toBe(1);
     expect(matchTask.maxRuns).toBe(1);
+  });
+
+  it('writes scheduler activity to logs/scheduler.log for postmortems', async () => {
+    const definitions = [
+      {
+        id: 'greenhouse-hourly',
+        type: 'ingest',
+        provider: 'greenhouse',
+        params: { board: 'acme' },
+        intervalMs: 1000,
+      },
+    ];
+
+    const logFilePath = path.join(tmpDir, 'logs', 'scheduler.log');
+    const logger = createScheduleLogger(logFilePath, {
+      consoleImpl: { log: vi.fn(), error: vi.fn() },
+    });
+
+    const tasks = buildScheduledTasks(definitions, {
+      logger,
+      cycles: 1,
+      now: () => new Date('2025-01-01T00:00:00Z'),
+    });
+
+    const [ingestTask] = tasks;
+    const message = await ingestTask.run();
+    ingestTask.onSuccess?.(message, ingestTask);
+
+    await logger.flush?.();
+    const logContents = await fs.readFile(logFilePath, 'utf8');
+
+    expect(logContents).toContain(
+      '2025-01-01T00:00:00.000Z [greenhouse-hourly] Imported 3 jobs from greenhouse acme',
+    );
   });
 
   it('dispatches ingestion tasks through the module event bus when provided', async () => {

@@ -85,7 +85,12 @@ import {
 import { ingestWorkableBoard } from '../src/workable.js';
 import { ingestJobUrl } from '../src/url-ingest.js';
 import { bundleDeliverables, loadDeliverablesDiff } from '../src/deliverables.js';
-import { createTaskScheduler, loadScheduleConfig, buildScheduledTasks } from '../src/schedule.js';
+import {
+  createTaskScheduler,
+  loadScheduleConfig,
+  buildScheduledTasks,
+  createScheduleLogger,
+} from '../src/schedule.js';
 import { bootstrapModules } from '../src/modules/index.js';
 import { loadConfig } from '../src/shared/config/manifest.js';
 import { transcribeAudio, synthesizeSpeech } from '../src/speech.js';
@@ -3525,40 +3530,40 @@ async function cmdDeliverables(args) {
 async function cmdScheduleRun(args) {
   const configPath = getFlag(args, '--config');
   const cycles = getNumberFlag(args, '--cycles');
+  const logFilePath =
+    process.env.JOBBOT_SCHEDULE_LOG || path.resolve('logs', 'scheduler.log');
+  const logger = createScheduleLogger(logFilePath);
+
+  const exitWithError = async (message, code = 1) => {
+    logger.error(message);
+    await logger.flush?.();
+    process.exit(code);
+  };
+
   if (!configPath) {
-    console.error('Usage: jobbot schedule run --config <file> [--cycles <count>]');
-    process.exit(2);
+    await exitWithError('Usage: jobbot schedule run --config <file> [--cycles <count>]', 2);
   }
   if (cycles !== undefined && (!Number.isFinite(cycles) || cycles <= 0)) {
-    console.error('--cycles must be a positive number');
-    process.exit(2);
+    await exitWithError('--cycles must be a positive number', 2);
   }
 
   let definitions;
   try {
     definitions = await loadScheduleConfig(configPath);
   } catch (err) {
-    console.error(err.message || String(err));
-    process.exit(1);
+    await exitWithError(err.message || String(err));
   }
 
   if (definitions.length === 0) {
-    console.error('No scheduled tasks found in the configuration file');
-    process.exit(1);
+    await exitWithError('No scheduled tasks found in the configuration file');
   }
-
-  const logger = {
-    info: message => console.log(message),
-    error: message => console.error(message),
-  };
 
   let modules;
   try {
     const manifestConfig = loadConfig();
     modules = bootstrapModules({ config: manifestConfig, logger });
   } catch (err) {
-    console.error(err?.message || String(err));
-    process.exit(1);
+    await exitWithError(err?.message || String(err));
   }
 
   let scheduler;
@@ -3573,8 +3578,7 @@ async function cmdScheduleRun(args) {
     scheduler = createTaskScheduler(tasks);
   } catch (err) {
     modules?.shutdown?.();
-    console.error(err?.message || String(err));
-    process.exit(1);
+    await exitWithError(err?.message || String(err));
   }
 
   const handleSignal = () => {
@@ -3591,6 +3595,7 @@ async function cmdScheduleRun(args) {
     process.off('SIGINT', handleSignal);
     process.off('SIGTERM', handleSignal);
     modules?.shutdown?.();
+    await logger.flush?.();
   }
 }
 

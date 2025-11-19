@@ -23,6 +23,48 @@ const DEFAULT_LOGGER = {
   error: message => console.error(message),
 };
 
+export function createScheduleLogger(
+  logFilePath,
+  { consoleImpl = console } = {},
+) {
+  if (!logFilePath || typeof logFilePath !== 'string') {
+    throw new Error('logFilePath is required');
+  }
+
+  const resolvedPath = path.resolve(logFilePath);
+  let pending = Promise.resolve();
+
+  const append = message => {
+    const serialized = typeof message === 'string' ? message : String(message);
+    pending = pending.then(async () => {
+      try {
+        await fs.mkdir(path.dirname(resolvedPath), { recursive: true });
+        await fs.appendFile(resolvedPath, `${serialized}\n`, 'utf8');
+      } catch (err) {
+        consoleImpl?.error?.('Failed to write log message:', err) ??
+          console.error('Failed to write log message:', err);
+      }
+    });
+    return pending;
+  };
+
+  const emit = (method, message) => {
+    const consoleLogger =
+      method === 'error'
+        ? consoleImpl?.error ?? console.error
+        : consoleImpl?.log ?? console.log;
+    consoleLogger(message);
+    append(message).catch(() => {});
+  };
+
+  return {
+    info: message => emit('info', message),
+    error: message => emit('error', message),
+    logFilePath: resolvedPath,
+    flush: () => pending,
+  };
+}
+
 const INGEST_PROVIDERS = {
   greenhouse: ingestGreenhouseBoard,
   lever: ingestLeverBoard,
@@ -717,4 +759,5 @@ export default {
   createTaskScheduler,
   loadScheduleConfig,
   buildScheduledTasks,
+  createScheduleLogger,
 };
