@@ -422,10 +422,14 @@ export function normalizeFeedbackRecordRequest(options = {}) {
   const message = assertRequiredString(options.message, 'message');
   const source = normalizeString(options.source);
   const contact = normalizeString(options.contact);
-  const ratingValue = assertPositiveInteger(options.rating, 'rating');
+  const ratingValue = coerceNumber(options.rating);
   let rating;
   if (ratingValue !== undefined) {
-    if (ratingValue > 5) {
+    if (
+      !Number.isInteger(ratingValue) ||
+      ratingValue < 1 ||
+      ratingValue > 5
+    ) {
       throw new Error('rating must be between 1 and 5');
     }
     rating = ratingValue;
