@@ -39,8 +39,8 @@ function findSetCookieHeader(response, cookieName) {
       ? response.headers.getSetCookie()
       : response.headers.raw?.()["set-cookie"] ?? [];
 
-  return setCookies.find((entry) =>
-    typeof entry === "string" && entry.startsWith(`${cookieName}=`),
+  return setCookies.find(
+    (entry) => typeof entry === "string" && entry.startsWith(`${cookieName}=`),
   );
 }
 
