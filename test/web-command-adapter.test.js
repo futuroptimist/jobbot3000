@@ -1138,6 +1138,52 @@ describe('createCommandAdapter', () => {
     });
   });
 
+  it('records beta feedback with sanitization', async () => {
+    const cli = {
+      cmdFeedbackRecord: vi.fn().mockResolvedValue({
+        id: 'fb-123',
+        message: 'Love the new status hub',
+        source: 'beta-form',
+        contact: 'casey@example.com',
+        rating: 5,
+        recorded_at: '2025-11-30T00:00:00.000Z',
+      }),
+    };
+    const adapter = createCommandAdapter({ cli });
+
+    const result = await adapter['feedback-record']({
+      message: '  Love the new status hub ',
+      source: 'beta-form',
+      contact: ' casey@example.com ',
+      rating: '5',
+    });
+
+    expect(cli.cmdFeedbackRecord).toHaveBeenCalledWith([
+      '--message',
+      'Love the new status hub',
+      '--source',
+      'beta-form',
+      '--contact',
+      'casey@example.com',
+      '--rating',
+      '5',
+    ]);
+
+    expect(result).toMatchObject({
+      command: 'feedback-record',
+      format: 'json',
+      data: {
+        id: 'fb-123',
+        message: 'Love the new status hub',
+        source: 'beta-form',
+        contact: 'casey@example.com',
+        rating: 5,
+        recorded_at: '2025-11-30T00:00:00.000Z',
+      },
+    });
+    expect(result.stdout).toContain('fb-123');
+  });
+
   it('requires question when recording intake response', async () => {
     const cli = {
       cmdIntakeRecord: vi.fn(),

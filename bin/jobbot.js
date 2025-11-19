@@ -7,6 +7,7 @@ import { summarize as summarizeFirstSentence } from '../src/index.js';
 import { fetchTextFromUrl, DEFAULT_FETCH_HEADERS } from '../src/fetch.js';
 import { parseJobText } from '../src/parser.js';
 import { loadResume } from '../src/resume.js';
+import { recordFeedback } from '../src/feedback.js';
 import {
   toJson,
   toMarkdownSummary,
@@ -1969,6 +1970,31 @@ async function cmdIntakeRecord(args) {
   console.log(`Recorded intake response ${entry.id}`);
 }
 
+async function cmdFeedbackRecord(args) {
+  const message = readContentFromArgs(args, '--message', '--message-file');
+  if (!message) {
+    console.error(
+      'Usage: jobbot feedback record --message <text> [--source <label>] ' +
+        '[--contact <value>] [--rating <1-5>]',
+    );
+    process.exit(2);
+  }
+
+  const source = getFlag(args, '--source');
+  const contact = getFlag(args, '--contact');
+  const rating = getFlag(args, '--rating');
+
+  const entry = await recordFeedback({
+    message,
+    source,
+    contact,
+    rating,
+  });
+
+  console.log(`Recorded feedback entry ${entry.id}`);
+  return entry;
+}
+
 async function cmdIntakeDraft(args) {
   const question = readContentFromArgs(args, '--question', '--question-file');
   const answer = readContentFromArgs(args, '--answer', '--answer-file');
@@ -2172,6 +2198,16 @@ async function cmdIntake(args) {
   if (sub === 'draft') return cmdIntakeDraft(args.slice(1));
   if (sub === 'resume') return cmdIntakeResume(args.slice(1));
   console.error('Usage: jobbot intake <record|list|bullets|plan|export|draft|resume> ...');
+  process.exit(2);
+}
+
+async function cmdFeedback(args) {
+  const sub = args[0];
+  if (sub === 'record') return cmdFeedbackRecord(args.slice(1));
+  console.error(
+    'Usage: jobbot feedback record --message <text> [--source <label>] ' +
+      '[--contact <value>] [--rating <1-5>]',
+  );
   process.exit(2);
 }
 
@@ -4571,6 +4607,7 @@ async function main() {
   if (cmd === 'deliverables') return cmdDeliverables(args);
   if (cmd === 'import') return cmdImport(args);
   if (cmd === 'intake') return cmdIntake(args);
+  if (cmd === 'feedback') return cmdFeedback(args);
   if (cmd === 'listings') return cmdListings(args);
   if (cmd === 'ingest') return cmdIngest(args);
   if (cmd === 'interviews') return cmdInterviews(args);
@@ -4580,7 +4617,7 @@ async function main() {
   if (cmd === 'settings') return cmdSettings(args);
   console.error(
     'Usage: jobbot <init|profile|import|summarize|match|track|shortlist|analytics|' +
-      'rehearse|tailor|deliverables|interviews|intake|listings|' +
+      'rehearse|tailor|deliverables|interviews|intake|feedback|listings|' +
       'ingest|reminders|schedule|notifications|settings> [options]'
   );
   process.exit(2);
@@ -4615,6 +4652,7 @@ if (entryPath && modulePath && modulePath === entryPath) {
 
 export {
   cmdAnalyticsExport,
+  cmdFeedbackRecord,
   cmdIntakeExport,
   cmdInterviewsExport,
   recordCliAuditEvent,

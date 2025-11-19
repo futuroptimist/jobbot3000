@@ -16,6 +16,7 @@ import {
   normalizeTrackShowRequest,
   normalizeTrackRecordRequest,
   normalizeTrackRemindersRequest,
+  normalizeFeedbackRecordRequest,
 } from "./schemas.js";
 import {
   listListingProviders,
@@ -32,6 +33,7 @@ import {
 } from "../modules/scraping/provider-tokens.js";
 import { ingestRecruiterEmail } from "../ingest/recruiterEmail.js";
 import { getIntakeResponses, recordIntakeResponse } from "../intake.js";
+import { recordFeedback } from "../feedback.js";
 import { OpportunitiesRepo } from "../services/opportunitiesRepo.js";
 import { AuditLog } from "../services/audit.js";
 import {
@@ -1297,6 +1299,56 @@ export function createCommandAdapter(options = {}) {
     };
   }
 
+  async function feedbackRecordCommand(options = {}) {
+    const cli = injectedCli;
+    const { message, source, contact, rating } =
+      normalizeFeedbackRecordRequest(options);
+
+    if (cli && typeof cli.cmdFeedbackRecord === "function") {
+      const args = ["--message", message];
+      if (source) args.push("--source", source);
+      if (contact) args.push("--contact", contact);
+      if (rating !== undefined) args.push("--rating", String(rating));
+
+      const { result, stdout, stderr } = await captureConsole(() =>
+        cli.cmdFeedbackRecord(args),
+      );
+      if (result !== undefined) {
+        const sanitized = sanitizeOutputValue(result, { key: "data" });
+        return {
+          command: "feedback-record",
+          format: "json",
+          stdout: JSON.stringify(sanitized, null, 2),
+          stderr,
+          returnValue: 0,
+          data: sanitized,
+        };
+      }
+
+      const data = parseJsonOutput("feedback-record", stdout, stderr);
+      return {
+        command: "feedback-record",
+        format: "json",
+        stdout,
+        stderr: "",
+        returnValue: 0,
+        data: sanitizeOutputValue(data, { key: "data" }),
+      };
+    }
+
+    const entry = await recordFeedback({ message, source, contact, rating });
+    const sanitized = sanitizeOutputValue(entry, { key: "data" });
+    const stdout = JSON.stringify(sanitized, null, 2);
+    return {
+      command: "feedback-record",
+      format: "json",
+      stdout,
+      stderr: "",
+      returnValue: 0,
+      data: sanitized,
+    };
+  }
+
   const adapter = {
     summarize,
     match,
@@ -1307,6 +1359,7 @@ export function createCommandAdapter(options = {}) {
     analyticsExport,
     trackRecord,
     trackReminders,
+    feedbackRecord: feedbackRecordCommand,
     intakeList: intakeListCommand,
     intakeRecord: intakeRecordCommand,
     listingsProviders,
@@ -1323,6 +1376,7 @@ export function createCommandAdapter(options = {}) {
   adapter["analytics-export"] = analyticsExport;
   adapter["track-record"] = trackRecord;
   adapter["track-reminders"] = trackReminders;
+  adapter["feedback-record"] = feedbackRecordCommand;
   adapter["intake-list"] = intakeListCommand;
   adapter["intake-record"] = intakeRecordCommand;
   adapter["listings-providers"] = listingsProviders;
