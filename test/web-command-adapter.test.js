@@ -5,6 +5,8 @@ vi.mock('node:child_process', async () => {
 
 vi.mock('../src/application-events.js', () => ({
   getApplicationReminders: vi.fn(),
+  snoozeApplicationReminder: vi.fn(),
+  completeApplicationReminder: vi.fn(),
 }));
 
 vi.mock('../src/reminders-calendar.js', () => ({
@@ -36,7 +38,11 @@ import { EventEmitter } from 'node:events';
 import * as childProcess from 'node:child_process';
 
 import { createCommandAdapter } from '../src/web/command-adapter.js';
-import { getApplicationReminders } from '../src/application-events.js';
+import {
+  getApplicationReminders,
+  snoozeApplicationReminder,
+  completeApplicationReminder,
+} from '../src/application-events.js';
 import { createReminderCalendar } from '../src/reminders-calendar.js';
 import { ingestRecruiterEmail } from '../src/ingest/recruiterEmail.js';
 import { OpportunitiesRepo } from '../src/services/opportunitiesRepo.js';
@@ -53,6 +59,8 @@ describe('createCommandAdapter', () => {
   afterEach(() => {
     childProcess.spawn.mockReset();
     getApplicationReminders.mockReset();
+    snoozeApplicationReminder.mockReset();
+    completeApplicationReminder.mockReset();
     createReminderCalendar.mockReset();
     ingestRecruiterEmail.mockReset();
     OpportunitiesRepo.mockReset();
@@ -829,6 +837,58 @@ describe('createCommandAdapter', () => {
         expect.objectContaining({ heading: 'Upcoming' }),
       ],
     });
+  });
+
+  it('snoozes reminders through the command adapter', async () => {
+    snoozeApplicationReminder.mockResolvedValue({
+      job_id: 'job-9',
+      remind_at: '2025-03-04T12:00:00.000Z',
+      note: 'Follow up later',
+    });
+
+    const adapter = createCommandAdapter({ cli: {} });
+    const result = await adapter['track-reminders-snooze']({
+      jobId: 'job-9',
+      until: '2025-03-04T12:00:00Z',
+    });
+
+    expect(snoozeApplicationReminder).toHaveBeenCalledWith('job-9', {
+      until: '2025-03-04T12:00:00.000Z',
+    });
+    expect(result).toMatchObject({
+      command: 'track-reminders-snooze',
+      format: 'json',
+      data: {
+        jobId: 'job-9',
+        remindAt: '2025-03-04T12:00:00.000Z',
+      },
+    });
+    expect(result.stdout).toContain('Snoozed reminder for job-9');
+  });
+
+  it('marks reminders done through the command adapter', async () => {
+    completeApplicationReminder.mockResolvedValue({
+      reminder_completed_at: '2025-03-01T10:00:00.000Z',
+    });
+
+    const adapter = createCommandAdapter({ cli: {} });
+    const result = await adapter['track-reminders-done']({
+      jobId: 'job-11',
+      completedAt: '2025-03-01T10:00:00Z',
+    });
+
+    expect(completeApplicationReminder).toHaveBeenCalledWith('job-11', {
+      completedAt: '2025-03-01T10:00:00.000Z',
+    });
+    expect(result).toMatchObject({
+      command: 'track-reminders-done',
+      format: 'json',
+      data: {
+        jobId: 'job-11',
+        reminderCompletedAt: '2025-03-01T10:00:00.000Z',
+      },
+    });
+    expect(result.stdout).toContain('Marked reminder for job-11 as done');
   });
 
   it('spawns the CLI without shell interpolation when no cli module is provided', async () => {

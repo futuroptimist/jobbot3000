@@ -11,6 +11,23 @@ const TRACK_REMINDERS_ALLOWED_KEYS = new Set([
   'calendarName',
   'calendar_name',
 ]);
+const TRACK_REMINDERS_SNOOZE_ALLOWED_KEYS = new Set([
+  'jobId',
+  'job_id',
+  'until',
+  'remindAt',
+  'remind_at',
+  'date',
+  'at',
+]);
+const TRACK_REMINDERS_DONE_ALLOWED_KEYS = new Set([
+  'jobId',
+  'job_id',
+  'completedAt',
+  'completed_at',
+  'at',
+  'date',
+]);
 const VALID_STATUSES = new Set(STATUSES.map(status => status.trim().toLowerCase()));
 
 function assertPlainObject(value, name) {
@@ -335,6 +352,51 @@ export function normalizeTrackRemindersRequest(options) {
   const request = { format, upcomingOnly };
   if (normalizedNow) request.now = normalizedNow;
   if (calendarName) request.calendarName = calendarName;
+  return request;
+}
+
+export function normalizeTrackRemindersSnoozeRequest(options) {
+  assertPlainObject(options, 'track reminders snooze options');
+  for (const key of Object.keys(options)) {
+    if (!TRACK_REMINDERS_SNOOZE_ALLOWED_KEYS.has(key)) {
+      throw new Error(`Unexpected field "${key}" in track reminders snooze options`);
+    }
+  }
+
+  const jobId = assertRequiredString(options.jobId ?? options.job_id, 'jobId');
+  const untilInput = assertRequiredString(
+    options.until ?? options.remindAt ?? options.remind_at ?? options.date ?? options.at,
+    'until',
+  );
+  const until = new Date(untilInput);
+  if (Number.isNaN(until.getTime())) {
+    throw new Error('track reminders snooze until must be a valid ISO-8601 timestamp');
+  }
+
+  return { jobId, until: until.toISOString() };
+}
+
+export function normalizeTrackRemindersDoneRequest(options) {
+  assertPlainObject(options, 'track reminders done options');
+  for (const key of Object.keys(options)) {
+    if (!TRACK_REMINDERS_DONE_ALLOWED_KEYS.has(key)) {
+      throw new Error(`Unexpected field "${key}" in track reminders done options`);
+    }
+  }
+
+  const jobId = assertRequiredString(options.jobId ?? options.job_id, 'jobId');
+  const completedAtRaw = options.completedAt ?? options.completed_at ?? options.at ?? options.date;
+  let completedAt;
+  if (completedAtRaw !== undefined) {
+    const parsed = new Date(completedAtRaw);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new Error('track reminders done date must be a valid ISO-8601 timestamp');
+    }
+    completedAt = parsed.toISOString();
+  }
+
+  const request = { jobId };
+  if (completedAt) request.completedAt = completedAt;
   return request;
 }
 

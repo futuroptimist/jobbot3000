@@ -92,6 +92,23 @@ const TRACK_REMINDERS_ALLOWED_FIELDS = new Set([
   "calendarName",
   "calendar_name",
 ]);
+const TRACK_REMINDERS_SNOOZE_ALLOWED_FIELDS = new Set([
+  "jobId",
+  "job_id",
+  "until",
+  "remindAt",
+  "remind_at",
+  "date",
+  "at",
+]);
+const TRACK_REMINDERS_DONE_ALLOWED_FIELDS = new Set([
+  "jobId",
+  "job_id",
+  "completedAt",
+  "completed_at",
+  "at",
+  "date",
+]);
 const RECRUITER_INGEST_ALLOWED_FIELDS = new Set(["raw"]);
 const FEEDBACK_RECORD_ALLOWED_FIELDS = new Set([
   "message",
@@ -581,6 +598,73 @@ function validateTrackRemindersPayload(rawPayload) {
   return sanitized;
 }
 
+function validateTrackRemindersSnoozePayload(rawPayload) {
+  const payload = ensurePlainObject(rawPayload, "track-reminders-snooze");
+  assertAllowedFields(
+    payload,
+    TRACK_REMINDERS_SNOOZE_ALLOWED_FIELDS,
+    "track-reminders-snooze",
+  );
+
+  const jobId = coerceString(payload.jobId ?? payload.job_id, {
+    name: "jobId",
+    required: true,
+  });
+  const untilInput = coerceString(
+    payload.until ?? payload.remindAt ?? payload.remind_at ?? payload.date ?? payload.at,
+    {
+      name: "until",
+      required: true,
+    },
+  );
+
+  let until;
+  if (untilInput) {
+    const parsed = new Date(untilInput);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new Error(
+        "track-reminders-snooze until must be a valid ISO-8601 timestamp",
+      );
+    }
+    until = parsed.toISOString();
+  }
+
+  return { jobId, until };
+}
+
+function validateTrackRemindersDonePayload(rawPayload) {
+  const payload = ensurePlainObject(rawPayload, "track-reminders-done");
+  assertAllowedFields(
+    payload,
+    TRACK_REMINDERS_DONE_ALLOWED_FIELDS,
+    "track-reminders-done",
+  );
+
+  const jobId = coerceString(payload.jobId ?? payload.job_id, {
+    name: "jobId",
+    required: true,
+  });
+  const completedInput = coerceString(
+    payload.completedAt ?? payload.completed_at ?? payload.at ?? payload.date,
+    { name: "completedAt" },
+  );
+
+  let completedAt;
+  if (completedInput) {
+    const parsed = new Date(completedInput);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new Error(
+        "track-reminders-done date must be a valid ISO-8601 timestamp",
+      );
+    }
+    completedAt = parsed.toISOString();
+  }
+
+  const sanitized = { jobId };
+  if (completedAt) sanitized.completedAt = completedAt;
+  return sanitized;
+}
+
 const COMMAND_VALIDATORS = Object.freeze({
   summarize: validateSummarizePayload,
   match: validateMatchPayload,
@@ -589,6 +673,8 @@ const COMMAND_VALIDATORS = Object.freeze({
   "track-show": validateTrackShowPayload,
   "track-record": validateTrackRecordPayload,
   "track-reminders": validateTrackRemindersPayload,
+  "track-reminders-snooze": validateTrackRemindersSnoozePayload,
+  "track-reminders-done": validateTrackRemindersDonePayload,
   "analytics-funnel": validateAnalyticsFunnelPayload,
   "analytics-export": validateAnalyticsExportPayload,
   "listings-fetch": validateListingsFetchPayload,

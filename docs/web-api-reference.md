@@ -125,6 +125,10 @@ The following command endpoints are available. Each one maps directly to a CLI h
   an optional note.
 - `POST /commands/track-reminders` → `jobbot track reminders`: Retrieve reminder digests or export an
   ICS calendar by toggling the `format` field (`json` or `ics`).
+- `POST /commands/track-reminders-snooze` → `jobbot track reminders snooze`: Push a reminder to a new
+  timestamp using the `until` field.
+- `POST /commands/track-reminders-done` → `jobbot track reminders done`: Clear the reminder and stamp
+  completion metadata with an optional `completedAt` timestamp.
 - `POST /commands/analytics-funnel` → `jobbot analytics funnel`: Produce funnel metrics, conversion
   rates, and drop-off highlights.
 - `POST /commands/analytics-export` → `jobbot analytics export`: Generate JSON and CSV exports while

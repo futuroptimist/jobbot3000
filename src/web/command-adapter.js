@@ -16,6 +16,8 @@ import {
   normalizeTrackShowRequest,
   normalizeTrackRecordRequest,
   normalizeTrackRemindersRequest,
+  normalizeTrackRemindersSnoozeRequest,
+  normalizeTrackRemindersDoneRequest,
   normalizeFeedbackRecordRequest,
 } from "./schemas.js";
 import {
@@ -24,7 +26,11 @@ import {
   ingestListing,
   archiveListing,
 } from "../listings.js";
-import { getApplicationReminders } from "../application-events.js";
+import {
+  getApplicationReminders,
+  snoozeApplicationReminder,
+  completeApplicationReminder,
+} from "../application-events.js";
 import { createReminderCalendar } from "../reminders-calendar.js";
 import {
   getListingProviderTokenStatuses,
@@ -1098,6 +1104,52 @@ export function createCommandAdapter(options = {}) {
     };
   }
 
+  async function trackRemindersSnooze(options = {}) {
+    const { jobId, until } = normalizeTrackRemindersSnoozeRequest(options);
+
+    const updated = await snoozeApplicationReminder(jobId, { until });
+    const message = `Snoozed reminder for ${jobId} until ${updated.remind_at}`;
+
+    const payload = {
+      command: "track-reminders-snooze",
+      format: "json",
+      stdout: message,
+      stderr: "",
+      returnValue: 0,
+    };
+
+    const data = {
+      jobId,
+      remindAt: updated.remind_at,
+      reminder: updated,
+    };
+    payload.data = sanitizeOutputValue(data, { key: "data" });
+    return payload;
+  }
+
+  async function trackRemindersDone(options = {}) {
+    const { jobId, completedAt } = normalizeTrackRemindersDoneRequest(options);
+
+    const updated = await completeApplicationReminder(jobId, { completedAt });
+    const message = `Marked reminder for ${jobId} as done at ${updated.reminder_completed_at}`;
+
+    const payload = {
+      command: "track-reminders-done",
+      format: "json",
+      stdout: message,
+      stderr: "",
+      returnValue: 0,
+    };
+
+    const data = {
+      jobId,
+      reminderCompletedAt: updated.reminder_completed_at,
+      reminder: updated,
+    };
+    payload.data = sanitizeOutputValue(data, { key: "data" });
+    return payload;
+  }
+
   async function listingsProviders() {
     await refreshListingProviderTokens();
     const providers = listListingProviders();
@@ -1376,6 +1428,8 @@ export function createCommandAdapter(options = {}) {
   adapter["analytics-export"] = analyticsExport;
   adapter["track-record"] = trackRecord;
   adapter["track-reminders"] = trackReminders;
+  adapter["track-reminders-snooze"] = trackRemindersSnooze;
+  adapter["track-reminders-done"] = trackRemindersDone;
   adapter["feedback-record"] = feedbackRecordCommand;
   adapter["intake-list"] = intakeListCommand;
   adapter["intake-record"] = intakeRecordCommand;
