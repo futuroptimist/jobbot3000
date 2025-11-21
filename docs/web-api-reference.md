@@ -78,7 +78,9 @@ values removed. The response shape is:
 Authentication requirements mirror `/commands/:command`: when API tokens are configured, callers must
 present the same header used for command execution. Guests must include the CSRF header/cookie pair
 issued by the server. Responses always return the requesting client's history—
-payloads submitted by other tokens or sessions are not visible.
+payloads submitted by other tokens or sessions are not visible. Histories are scoped by the
+authorization token fingerprint, so even tokens that share the same subject keep their command
+payloads isolated.
 
 Regression coverage in [`test/web-documentation-storybook.test.js`](../test/web-documentation-storybook.test.js)
 asserts this endpoint remains documented alongside the command catalogue.

@@ -306,12 +306,17 @@ export function createClientIdentity({
   clientIp,
   userAgent,
   sessionId,
+  tokenFingerprint,
 }) {
   const parts = [];
   if (typeof subject === "string" && subject.trim()) {
     parts.push(subject.trim());
   } else {
     parts.push("guest");
+  }
+
+  if (typeof tokenFingerprint === "string" && tokenFingerprint.trim()) {
+    parts.push(`token:${tokenFingerprint.trim()}`);
   }
 
   if (typeof sessionId === "string" && sessionId.trim()) {

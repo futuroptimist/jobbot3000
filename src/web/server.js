@@ -5667,6 +5667,17 @@ function parseTokenSubject(candidate, index) {
   return `token#${index + 1}`;
 }
 
+function fingerprintToken(tokenValue) {
+  if (typeof tokenValue !== "string") {
+    return null;
+  }
+  const trimmed = tokenValue.trim();
+  if (!trimmed) {
+    return null;
+  }
+  return createHash("sha256").update(trimmed, "utf8").digest("hex");
+}
+
 function normalizeTokenEntry(candidate, index, fallbackRoles) {
   if (typeof candidate === "string") {
     const token = candidate.trim();
@@ -7180,6 +7191,7 @@ export function createWebApp({
         ? { subject: "unauthenticated", roles: new Set() }
         : { subject: "guest", roles: new Set(["viewer"]) };
       let authPrincipal = authContext.subject;
+      let tokenFingerprint = null;
 
       const recordAudit = async (event) => {
         if (!effectiveAuditLogger) return;
@@ -7304,6 +7316,7 @@ export function createWebApp({
         }
         authContext = tokenEntry;
         authPrincipal = tokenEntry.subject ?? "token";
+        tokenFingerprint = fingerprintToken(tokenValue);
 
         const requiredRoles = getRequiredRoles(commandParam);
         if (
@@ -7394,6 +7407,7 @@ export function createWebApp({
         clientIp,
         userAgent,
         sessionId,
+        tokenFingerprint,
       });
       clientPayloadStore.record(clientIdentity, commandParam, payload);
 
@@ -7516,6 +7530,7 @@ export function createWebApp({
       createIfMissing: !authOptions,
       sessionManager,
     });
+    let tokenFingerprint = null;
 
     if (!authOptions) {
       if (!validateCsrfToken(req)) {
@@ -7568,6 +7583,7 @@ export function createWebApp({
       respondUnauthorized();
       return;
     }
+    tokenFingerprint = fingerprintToken(tokenValue);
 
     if (!validateCsrfToken(req)) {
       res.status(403).json({ error: "Invalid or missing CSRF token" });
@@ -7579,6 +7595,7 @@ export function createWebApp({
       clientIp,
       userAgent,
       sessionId,
+      tokenFingerprint,
     });
     const entries = clientPayloadStore.getRecent(identity);
     res.json({ entries });
