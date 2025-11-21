@@ -3488,6 +3488,72 @@ describe("web server command endpoint", () => {
     expect(uniqueEditorTimestamps.size).toBe(editorBody.entries.length);
   });
 
+  it("separates payload history for tokens sharing the same subject", async () => {
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({ ok: true })),
+    };
+
+    const server = await startServer({
+      commandAdapter,
+      auth: {
+        tokens: [
+          { token: "alpha-token", subject: "shared-user", roles: ["viewer"] },
+          { token: "bravo-token", subject: "shared-user", roles: ["viewer"] },
+        ],
+        scheme: "Bearer",
+      },
+    });
+
+    const alphaHeaders = buildCommandHeaders(server, {
+      authorization: "Bearer alpha-token",
+      "user-agent": "shared-agent",
+    });
+    const bravoHeaders = buildCommandHeaders(server, {
+      authorization: "Bearer bravo-token",
+      "user-agent": "shared-agent",
+    });
+
+    await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: alphaHeaders,
+      body: JSON.stringify({ input: "Alpha payload" }),
+    });
+
+    await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: bravoHeaders,
+      body: JSON.stringify({ input: "Bravo payload" }),
+    });
+
+    const alphaHistory = await fetch(`${server.url}/commands/payloads/recent`, {
+      method: "GET",
+      headers: alphaHeaders,
+    });
+    expect(alphaHistory.status).toBe(200);
+    const alphaBody = await alphaHistory.json();
+    expect(alphaBody.entries).toEqual([
+      {
+        command: "summarize",
+        payload: { input: "Alpha payload" },
+        timestamp: expect.any(String),
+      },
+    ]);
+
+    const bravoHistory = await fetch(`${server.url}/commands/payloads/recent`, {
+      method: "GET",
+      headers: bravoHeaders,
+    });
+    expect(bravoHistory.status).toBe(200);
+    const bravoBody = await bravoHistory.json();
+    expect(bravoBody.entries).toEqual([
+      {
+        command: "summarize",
+        payload: { input: "Bravo payload" },
+        timestamp: expect.any(String),
+      },
+    ]);
+  });
+
   it("allows guests to inspect their sanitized command payload history", async () => {
     const commandAdapter = {
       summarize: vi.fn(async () => ({ ok: true })),
