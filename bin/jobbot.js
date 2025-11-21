@@ -59,7 +59,12 @@ import {
   exportInterviewSessions,
   listInterviewReminders,
 } from '../src/interviews.js';
-import { initProfile, importLinkedInProfile, snapshotProfile } from '../src/profile.js';
+import {
+  initProfile,
+  importLinkedInProfile,
+  importJsonResume,
+  snapshotProfile,
+} from '../src/profile.js';
 import {
   recordIntakeResponse,
   getIntakeResponses,
@@ -4528,6 +4533,30 @@ async function cmdImportLinkedIn(args) {
   }
 }
 
+async function cmdImportJson(args) {
+  const source = args[0];
+  if (!source) {
+    console.error(
+      'Usage: jobbot import json <file>\n' + '   or: jobbot profile import json <file>'
+    );
+    process.exit(2);
+  }
+
+  try {
+    const result = await importJsonResume(source);
+    const summaryParts = [];
+    if (result.basicsUpdated) summaryParts.push(`basics +${result.basicsUpdated}`);
+    if (result.workAdded) summaryParts.push(`work +${result.workAdded}`);
+    if (result.educationAdded) summaryParts.push(`education +${result.educationAdded}`);
+    if (result.skillsAdded) summaryParts.push(`skills +${result.skillsAdded}`);
+    const summary = summaryParts.length ? ` (${summaryParts.join(', ')})` : '';
+    console.log(`Imported JSON Resume to ${result.path}${summary}`);
+  } catch (err) {
+    console.error(err?.message || String(err));
+    process.exit(1);
+  }
+}
+
 async function runProfileInit(force) {
   const { created, path: resumePath } = await initProfile({ force });
   if (created) console.log(`Initialized profile at ${resumePath}`);
@@ -4537,7 +4566,8 @@ async function runProfileInit(force) {
 async function cmdImport(args) {
   const sub = args[0];
   if (sub === 'linkedin') return cmdImportLinkedIn(args.slice(1));
-  console.error('Usage: jobbot import <linkedin> [options]');
+  if (sub === 'json') return cmdImportJson(args.slice(1));
+  console.error('Usage: jobbot import <linkedin|json> [options]');
   process.exit(2);
 }
 
@@ -4590,9 +4620,13 @@ async function cmdProfile(args) {
   if (sub === 'import' && args[1] === 'linkedin') {
     return cmdImportLinkedIn(args.slice(2));
   }
+  if (sub === 'import' && args[1] === 'json') {
+    return cmdImportJson(args.slice(2));
+  }
   console.error(
     'Usage: jobbot profile init [--force]\n' +
       '   or: jobbot profile import linkedin <file>\n' +
+      '   or: jobbot profile import json <file>\n' +
       '   or: jobbot profile snapshot [--note <message>] [--json]'
   );
   process.exit(2);

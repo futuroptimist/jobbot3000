@@ -473,7 +473,12 @@ function mergeSkillEntries(resume, entries) {
     if (!name) continue;
     const key = name.toLowerCase();
     if (existing.has(key)) continue;
-    resume.skills.push({ name });
+    const skill = { name };
+    if (entry.level) skill.level = entry.level;
+    if (Array.isArray(entry.keywords) && entry.keywords.length) {
+      skill.keywords = [...entry.keywords];
+    }
+    resume.skills.push(skill);
     existing.add(key);
     added += 1;
   }
@@ -506,6 +511,156 @@ function mergeLinkedInIntoResume(resume, normalized) {
   const workAdded = mergeWorkEntries(resume, work);
   const educationAdded = mergeEducationEntries(resume, education);
   const skillsAdded = mergeSkillEntries(resume, skills);
+
+  return { basicsUpdated, workAdded, educationAdded, skillsAdded };
+}
+
+function stripUndefined(object) {
+  return Object.fromEntries(
+    Object.entries(object).filter(([, value]) => value !== undefined && value !== null),
+  );
+}
+
+function normalizeJsonResumeBasics(basics) {
+  if (!basics || typeof basics !== 'object') return undefined;
+  const location = basics.location && typeof basics.location === 'object'
+    ? stripUndefined({
+        city: sanitizeString(basics.location.city),
+        region: sanitizeString(basics.location.region),
+        country: sanitizeString(basics.location.country),
+      })
+    : undefined;
+
+  const normalized = stripUndefined({
+    name: sanitizeString(basics.name),
+    label: sanitizeString(basics.label),
+    email: sanitizeString(basics.email),
+    phone: sanitizeString(basics.phone),
+    website: sanitizeString(basics.website || basics.url),
+    summary: sanitizeMultiline(basics.summary),
+  });
+
+  if (location && Object.keys(location).length) {
+    normalized.location = location;
+  }
+
+  return Object.keys(normalized).length ? normalized : undefined;
+}
+
+function normalizeJsonResumeArray(entries, mapper) {
+  if (!Array.isArray(entries)) return [];
+  return entries
+    .map(entry => {
+      if (!entry || typeof entry !== 'object') return null;
+      const mapped = mapper(entry);
+      return mapped && Object.keys(mapped).length ? mapped : null;
+    })
+    .filter(Boolean);
+}
+
+function normalizeJsonWork(entries) {
+  return normalizeJsonResumeArray(entries, entry => {
+    const highlights = Array.isArray(entry.highlights)
+      ? entry.highlights.map(sanitizeMultiline).filter(Boolean)
+      : undefined;
+
+    const normalized = stripUndefined({
+      name: sanitizeString(entry.name || entry.company),
+      position: sanitizeString(entry.position || entry.title),
+      url: sanitizeString(entry.url),
+      location: sanitizeString(entry.location),
+      startDate: sanitizeString(entry.startDate),
+      endDate: sanitizeString(entry.endDate),
+      summary: sanitizeMultiline(entry.summary),
+    });
+
+    if (highlights && highlights.length) normalized.highlights = highlights;
+    return normalized;
+  });
+}
+
+function normalizeJsonEducation(entries) {
+  return normalizeJsonResumeArray(entries, entry =>
+    stripUndefined({
+      institution: sanitizeString(entry.institution),
+      studyType: sanitizeString(entry.studyType),
+      area: sanitizeString(entry.area),
+      startDate: sanitizeString(entry.startDate),
+      endDate: sanitizeString(entry.endDate),
+      score: sanitizeString(entry.score),
+    }),
+  );
+}
+
+function normalizeJsonSkills(entries) {
+  if (!Array.isArray(entries)) return [];
+
+  return entries
+    .map(entry => {
+      if (!entry || typeof entry !== 'object') return null;
+
+      const keywords = Array.isArray(entry.keywords)
+        ? entry.keywords
+            .flatMap(value => {
+              if (typeof value !== 'string') return [];
+              const trimmed = value.trim();
+              return trimmed ? [trimmed] : [];
+            })
+        : [];
+
+      const normalized = stripUndefined({
+        name: sanitizeString(entry.name),
+        level: sanitizeString(entry.level),
+      });
+
+      if (keywords.length) normalized.keywords = keywords;
+      return Object.keys(normalized).length ? normalized : null;
+    })
+    .filter(Boolean);
+}
+
+function normalizeJsonResume(data) {
+  if (!data || typeof data !== 'object') {
+    throw new Error('Invalid JSON Resume: expected an object');
+  }
+
+  const basics = normalizeJsonResumeBasics(data.basics);
+  const work = normalizeJsonWork(data.work);
+  const education = normalizeJsonEducation(data.education);
+  const skills = normalizeJsonSkills(data.skills);
+
+  return { basics, work, education, skills };
+}
+
+function mergeJsonResume(resume, normalized) {
+  const { basics, work, education, skills } = normalized;
+  ensureBasicsStructure(resume);
+
+  let basicsUpdated = 0;
+  if (basics) {
+    basicsUpdated += applyField(resume.basics, 'name', basics.name);
+    basicsUpdated += applyField(resume.basics, 'label', basics.label);
+    basicsUpdated += applyField(resume.basics, 'email', basics.email);
+    basicsUpdated += applyField(resume.basics, 'phone', basics.phone);
+    basicsUpdated += applyField(resume.basics, 'website', basics.website);
+    basicsUpdated += applyField(resume.basics, 'summary', basics.summary);
+
+    if (basics.location && typeof basics.location === 'object') {
+      const target =
+        resume.basics.location || (resume.basics.location = { city: '', region: '', country: '' });
+      basicsUpdated += applyField(target, 'city', basics.location.city);
+      basicsUpdated += applyField(target, 'region', basics.location.region);
+      basicsUpdated += applyField(target, 'country', basics.location.country);
+    }
+  }
+
+  const workAdded = mergeWorkEntries(resume, work);
+  const educationAdded = mergeEducationEntries(resume, education);
+  const skillsAdded = mergeSkillEntries(resume, skills);
+
+  if (!resume.$schema) {
+    resume.$schema = JSON_RESUME_SCHEMA_URL;
+  }
 
   return { basicsUpdated, workAdded, educationAdded, skillsAdded };
 }
@@ -555,6 +710,56 @@ export async function importLinkedInProfile(filePath) {
   const normalized = normalizeLinkedInProfile(data);
   const result = mergeLinkedInIntoResume(resume, normalized);
 
+  await fs.writeFile(resumePath, `${JSON.stringify(resume, null, 2)}\n`, 'utf8');
+  return { path: resumePath, ...result };
+}
+
+export async function importJsonResume(filePath) {
+  if (!filePath || typeof filePath !== 'string' || !filePath.trim()) {
+    throw new Error('JSON Resume path is required');
+  }
+
+  const resolved = path.resolve(process.cwd(), filePath);
+  let raw;
+  try {
+    raw = await fs.readFile(resolved, 'utf8');
+  } catch (err) {
+    if (err?.code === 'ENOENT') {
+      throw new Error(`JSON Resume not found: ${resolved}`);
+    }
+    throw err;
+  }
+
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error('Invalid JSON Resume JSON');
+  }
+
+  const normalized = normalizeJsonResume(data);
+  
+  const { path: resumePath } = await initProfile();
+
+  let resumeRaw;
+  try {
+    resumeRaw = await fs.readFile(resumePath, 'utf8');
+  } catch (err) {
+    if (err?.code === 'ENOENT') {
+      resumeRaw = JSON.stringify(createResumeSkeleton());
+    } else {
+      throw err;
+    }
+  }
+
+  let resume;
+  try {
+    resume = JSON.parse(resumeRaw);
+  } catch {
+    throw new Error('Existing resume.json could not be parsed');
+  }
+
+  const result = mergeJsonResume(resume, normalized);
   await fs.writeFile(resumePath, `${JSON.stringify(resume, null, 2)}\n`, 'utf8');
   return { path: resumePath, ...result };
 }
