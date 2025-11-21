@@ -1312,6 +1312,7 @@ describe("web server status page", () => {
       });
       expect(finalContents["job-9"][0]).not.toHaveProperty("remind_at");
     } finally {
+      await fs.rm(dataDir, { recursive: true, force: true });
       process.env.JOBBOT_DATA_DIR = originalDataDir;
     }
   });
