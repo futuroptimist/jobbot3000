@@ -1,0 +1,37 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jsonresume/resume-schema/v1.0.0/schema.json",
+  "basics": {
+    "name": "Jordan Example",
+    "label": "Senior Engineer",
+    "email": "jordan@example.com",
+    "phone": "+1 555-0100",
+    "summary": "Builds reliable systems and leads teams.",
+    "location": {
+      "city": "Denver",
+      "region": "CO",
+      "country": "USA"
+    }
+  },
+  "work": [
+    {
+      "name": "ACME Corp",
+      "position": "Senior Engineer",
+      "startDate": "2024-01",
+      "summary": "Scaled payments service",
+      "highlights": ["Reduced latency by 20%"]
+    }
+  ],
+  "education": [
+    {
+      "institution": "State University",
+      "studyType": "BSc",
+      "area": "Computer Science",
+      "startDate": "2015",
+      "endDate": "2019"
+    }
+  ],
+  "skills": [
+    { "name": "Node.js" },
+    { "name": "TypeScript", "keywords": ["Vitest", "ESLint"] }
+  ]
+}

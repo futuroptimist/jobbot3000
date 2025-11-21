@@ -259,6 +259,42 @@ describe('jobbot CLI', () => {
     ]);
   });
 
+  it('imports JSON Resume files without duplicating entries', () => {
+    const fixture = path.resolve('test', 'fixtures', 'json-resume-basic.json');
+    const firstOut = runCli(['import', 'json', fixture]);
+    expect(firstOut).toMatch(/Imported JSON Resume to/);
+    expect(firstOut).toMatch(/work \+1/);
+
+    const secondOut = runCli(['profile', 'import', 'json', fixture]);
+    expect(secondOut).toMatch(/Imported JSON Resume to/);
+    expect(secondOut).not.toMatch(/work \+2/);
+
+    const resumePath = path.join(dataDir, 'profile', 'resume.json');
+    const resume = JSON.parse(fs.readFileSync(resumePath, 'utf8'));
+
+    expect(resume.basics).toMatchObject({
+      name: 'Jordan Example',
+      email: 'jordan@example.com',
+      location: { city: 'Denver', region: 'CO', country: 'USA' },
+    });
+    expect(resume.work).toHaveLength(1);
+    expect(resume.work[0]).toMatchObject({
+      name: 'ACME Corp',
+      position: 'Senior Engineer',
+      startDate: '2024-01',
+      summary: 'Scaled payments service',
+      highlights: ['Reduced latency by 20%'],
+    });
+    expect(resume.education).toHaveLength(1);
+    expect(resume.education[0]).toMatchObject({
+      institution: 'State University',
+      studyType: 'BSc',
+      area: 'Computer Science',
+    });
+    expect(resume.skills.map(skill => skill.name)).toEqual(['Node.js', 'TypeScript']);
+    expect(resume.skills[1].keywords).toEqual(['Vitest', 'ESLint']);
+  });
+
   it('imports LinkedIn profile exports with profile import', () => {
     const fixture = path.resolve('test', 'fixtures', 'linkedin-profile.json');
     const out = runCli(['profile', 'import', 'linkedin', fixture]);
