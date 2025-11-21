@@ -19,8 +19,11 @@ describe('SOC 2 control coverage', () => {
     setComplianceDataDir(dataDir);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     setComplianceDataDir(undefined);
+    if (dataDir) {
+      await fs.rm(dataDir, { recursive: true, force: true });
+    }
   });
 
   it('records change management events with sanitized metadata', async () => {

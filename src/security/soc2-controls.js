@@ -3,6 +3,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 let overrideDir;
+const fileLocks = new Map();
 
 function resolveDataDir() {
   return overrideDir || process.env.JOBBOT_DATA_DIR || path.resolve('data');
@@ -18,6 +19,18 @@ function changeLogPath() {
 
 function incidentLogPath() {
   return path.join(resolveDataDir(), 'compliance', 'incident-reports.json');
+}
+
+function withFileLock(file, task) {
+  const previous = fileLocks.get(file) ?? Promise.resolve();
+  const next = previous.catch(() => {}).then(task);
+  const guarded = next.finally(() => {
+    if (fileLocks.get(file) === guarded) {
+      fileLocks.delete(file);
+    }
+  });
+  fileLocks.set(file, guarded);
+  return guarded;
 }
 
 async function readEntries(file, key) {
@@ -81,20 +94,22 @@ export async function recordChangeEvent(input = {}) {
   const deployedAt = sanitizeString(input.deployedAt);
 
   const file = changeLogPath();
-  const entries = await readEntries(file, 'changes');
-  const entry = {
-    id: randomUUID(),
-    title,
-    description,
-    approver,
-    ticket,
-    deployed_by: deployedBy,
-    deployed_at: deployedAt,
-    recorded_at: new Date().toISOString(),
-  };
-  entries.push(entry);
-  await writeEntries(file, 'changes', entries);
-  return entry;
+  return withFileLock(file, async () => {
+    const entries = await readEntries(file, 'changes');
+    const entry = {
+      id: randomUUID(),
+      title,
+      description,
+      approver,
+      ticket,
+      deployed_by: deployedBy,
+      deployed_at: deployedAt,
+      recorded_at: new Date().toISOString(),
+    };
+    entries.push(entry);
+    await writeEntries(file, 'changes', entries);
+    return entry;
+  });
 }
 
 const SEVERITY = ['low', 'medium', 'high', 'critical'];
@@ -124,19 +139,21 @@ export async function recordIncidentReport(input = {}) {
   const resolvedAt = sanitizeString(input.resolvedAt);
 
   const file = incidentLogPath();
-  const entries = await readEntries(file, 'incidents');
-  const entry = {
-    id: randomUUID(),
-    title: sanitizeString(input.title),
-    summary: sanitizeString(input.summary),
-    severity,
-    impacted_systems: impactedSystems,
-    responder,
-    detected_at: detectedAt,
-    resolved_at: resolvedAt,
-    recorded_at: new Date().toISOString(),
-  };
-  entries.push(entry);
-  await writeEntries(file, 'incidents', entries);
-  return entry;
+  return withFileLock(file, async () => {
+    const entries = await readEntries(file, 'incidents');
+    const entry = {
+      id: randomUUID(),
+      title: sanitizeString(input.title),
+      summary: sanitizeString(input.summary),
+      severity,
+      impacted_systems: impactedSystems,
+      responder,
+      detected_at: detectedAt,
+      resolved_at: resolvedAt,
+      recorded_at: new Date().toISOString(),
+    };
+    entries.push(entry);
+    await writeEntries(file, 'incidents', entries);
+    return entry;
+  });
 }
