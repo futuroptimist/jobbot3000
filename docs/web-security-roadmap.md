@@ -153,21 +153,24 @@
 - Complete SOC 2 Type II style control coverage, including change management and incident response.
 <!-- allow-future-date: 2025-11-19 -->
 - Integrate with a WAF and DDoS mitigation layer.
-  _Implemented (2025-11-19):_ The manifest now exposes `web.trustProxy` (and
-  `JOBBOT_WEB_TRUST_PROXY` for overrides), letting operators declare trusted WAF
-  and reverse-proxy hops so rate limiting and security telemetry use the
-  originating client IP instead of the proxy address. `scripts/web-server.js`
-  forwards the value to `startWebServer`, which enables Express proxy trust and
-  keeps rate limiting keyed to the forwarded client. Regression coverage in
-  [`test/web-config.test.js`](../test/web-config.test.js) verifies manifest
-  parsing, while [`test/web-server.test.js`](../test/web-server.test.js)
-  asserts forwarded addresses stay within per-client rate limits when the proxy
-  hop is trusted.
+_Implemented (2025-11-19):_ The manifest now exposes `web.trustProxy` (and
+`JOBBOT_WEB_TRUST_PROXY` for overrides), letting operators declare trusted WAF
+and reverse-proxy hops so rate limiting and security telemetry use the
+originating client IP instead of the proxy address. `scripts/web-server.js`
+forwards the value to `startWebServer`, which enables Express proxy trust and
+keeps rate limiting keyed to the forwarded client. Regression coverage in
+[`test/web-config.test.js`](../test/web-config.test.js) verifies manifest
+parsing, while [`test/web-server.test.js`](../test/web-server.test.js)
+asserts forwarded addresses stay within per-client rate limits when the proxy
+hop is trusted.
+<!-- allow-future-date: 2025-11-22 -->
 - Perform recurring third-party penetration tests and publish summarized findings.
   _Implemented (2025-11-22):_ The first internal dry-run pentest is
   summarized in [`docs/security/pentest-summary.md`](security/pentest-summary.md).
-  The report captures scope, findings, mitigations, and verification steps so
-  future assessments stay comparable and auditable. Regression coverage in
+  This internal assessment serves as a precursor to future third-party penetration tests,
+  which remain a planned goal for ongoing security assurance. The report captures scope,
+  findings, mitigations, and verification steps so future assessments stay comparable and
+  auditable. Regression coverage in
   [`test/web-security-roadmap-doc.test.js`](../test/web-security-roadmap-doc.test.js)
   ensures the roadmap continues to reference the report and that the summary
   retains its required sections.
