@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import process from 'node:process';
 import { loadWebConfig } from '../src/web/config.js';
 import { resolveEnableNativeCli } from '../src/web/resolve-native-cli-flag.js';
+import { resolveAllowRemoteAccess } from '../src/web/resolve-allow-remote-access.js';
 import { startWebServer } from '../src/web/server.js';
 import { createDefaultHealthChecks } from '../src/web/health-checks.js';
 
@@ -15,9 +16,10 @@ function getFlag(args, name) {
 
 function printUsage() {
   console.error(
-    'Usage: node scripts/web-server.js [--env <environment>] [--host <value>] [--port <number>] ' +
-      '[--rate-limit-window-ms <number>] [--rate-limit-max <number>] [--csrf-header <value>] ' +
-      '[--csrf-token <value>] [--trust-proxy <value>] [--enable-native-cli] [--disable-native-cli]',
+    'Usage: node scripts/web-server.js [--env <environment>] [--host <value>] [--port <number>]\n' +
+      '  [--rate-limit-window-ms <number>] [--rate-limit-max <number>] [--csrf-header <value>]\n' +
+      '  [--csrf-token <value>] [--trust-proxy <value>] [--enable-native-cli]\n' +
+      '  [--disable-native-cli] [--allow-remote-access] [--deny-remote-access]',
   );
 }
 
@@ -31,6 +33,7 @@ async function main() {
   const csrfHeaderOverride = getFlag(args, '--csrf-header');
   const csrfTokenOverride = getFlag(args, '--csrf-token');
   const trustProxyOverride = getFlag(args, '--trust-proxy');
+  const allowRemoteAccess = resolveAllowRemoteAccess({ args, env: process.env });
   let version = 'dev';
   try {
     const packageJsonUrl = new URL('../package.json', import.meta.url);
@@ -80,6 +83,7 @@ async function main() {
     trustProxy: config.trustProxy,
     csrfToken: config.csrfToken,
     csrfHeaderName: config.csrfHeaderName,
+    allowRemoteAccess,
     enableNativeCli,
     audit: config.audit,
     features: config.features,
