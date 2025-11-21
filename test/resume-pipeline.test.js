@@ -38,7 +38,7 @@ describe('resume pipeline', () => {
       expect(Array.isArray(context.stages)).toBe(true);
       const stageNames = context.stages.map(stage => stage.name);
       expect(stageNames).toEqual(
-        expect.arrayContaining(['load', 'normalize', 'enrich', 'analyze']),
+        expect.arrayContaining(['load', 'normalize', 'enrich', 'analyze', 'score']),
       );
 
       const normalizeStage = context.stages.find(stage => stage.name === 'normalize');
@@ -95,6 +95,18 @@ describe('resume pipeline', () => {
       for (const type of testCase.expect.requiredAmbiguityTypes) {
         expect(ambiguityTypes).toContain(type);
       }
+
+      const scoreStage = context.stages.find(stage => stage.name === 'score');
+      expect(scoreStage).toBeDefined();
+      expect(context.score).toEqual(scoreStage.output);
+      expect(scoreStage.output).toMatchObject({
+        totalSections: expect.any(Number),
+        metricsCoverageRatio: expect.any(Number),
+        placeholderRatio: expect.any(Number),
+        warningCount: expect.any(Number),
+      });
+      expect(scoreStage.output.metricsCoverageRatio).toBeGreaterThanOrEqual(0);
+      expect(scoreStage.output.metricsCoverageRatio).toBeLessThanOrEqual(1);
     });
   }
 
