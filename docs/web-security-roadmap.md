@@ -164,6 +164,13 @@
   asserts forwarded addresses stay within per-client rate limits when the proxy
   hop is trusted.
 - Perform recurring third-party penetration tests and publish summarized findings.
+  _Implemented (2025-11-22):_ The first internal dry-run pentest is
+  summarized in [`docs/security/pentest-summary.md`](security/pentest-summary.md).
+  The report captures scope, findings, mitigations, and verification steps so
+  future assessments stay comparable and auditable. Regression coverage in
+  [`test/web-security-roadmap-doc.test.js`](../test/web-security-roadmap-doc.test.js)
+  ensures the roadmap continues to reference the report and that the summary
+  retains its required sections.
 
 ## How to contribute
 
