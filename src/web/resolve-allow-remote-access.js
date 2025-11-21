@@ -1,5 +1,5 @@
-const TRUTHY_VALUES = new Set(['1', 'true', 'yes', 'on']);
-const FALSY_VALUES = new Set(['0', 'false', 'no', 'off']);
+const TRUTHY_VALUES = new Set(['1', 'true', 'yes', 'on', 'enabled']);
+const FALSY_VALUES = new Set(['0', 'false', 'no', 'off', 'disabled']);
 
 function normalize(value) {
   return typeof value === 'string' ? value.trim().toLowerCase() : undefined;
@@ -7,10 +7,18 @@ function normalize(value) {
 
 export function resolveAllowRemoteAccess({ args = [], env = {} } = {}) {
   const argv = Array.isArray(args) ? args : [];
-  if (argv.includes('--allow-remote-access')) {
+
+  const hasAllowFlag = argv.includes('--allow-remote-access');
+  const hasDenyFlag = argv.includes('--deny-remote-access');
+
+  if (hasAllowFlag && hasDenyFlag) {
+    throw new Error('Provide only one of --allow-remote-access or --deny-remote-access');
+  }
+
+  if (hasAllowFlag) {
     return true;
   }
-  if (argv.includes('--deny-remote-access')) {
+  if (hasDenyFlag) {
     return false;
   }
 
