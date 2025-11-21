@@ -7,16 +7,17 @@ context object, mutates it with new data, and returns a serializable payload tha
 final `stages` list returned by `runResumePipeline`.
 
 ```
-Load ➜ Normalize ➜ Enrich ➜ Score
+Load ➜ Normalize ➜ Enrich ➜ Analyze ➜ Score
 ```
 
 Out of the box the pipeline ships a `load` stage (which delegates to `loadResume`), a `normalize`
 stage that organizes the plain-text resume into canonical sections, an `enrich` stage that surfaces
-section-level insights (metrics coverage, placeholder tokens, and missing canonical sections), and an
+section-level insights (metrics coverage, placeholder tokens, and missing canonical sections), an
 `analyze` stage that snapshots ambiguity heuristics, ATS warnings, and the calculated confidence
-score. When adding stages, keep the flow above in mind: normalization or enrichment logic belongs
-between the existing `load` and `analyze` steps, and any scoring/summarization stage should run after
-analysis so it can consume the derived signals.
+score, and a `score` stage that rolls those signals into ratios downstream consumers can compare.
+When adding stages, keep the flow above in mind: normalization or enrichment logic belongs between
+the existing `load` and `analyze` steps, and scoring/summarization stages should run after analysis
+so they can consume the derived signals.
 
 ## Context object contract
 
@@ -39,12 +40,15 @@ Every invocation of `runResumePipeline` starts with a context shaped as follows:
 - `analysis`: populated by the `analyze` stage. Includes cloned `warnings`, `ambiguities`, and a
   normalized `confidence` object so consumers can mutate the results without affecting cached
   metadata.
+- `score`: populated by the `score` stage. Summarizes the pipeline run with section counts, ratios
+  for metrics/placeholder coverage, warning and ambiguity totals, and the confidence score. This is
+  designed for quick comparisons across resumes without re-running the earlier stages.
 - `stages`: an array of `{ name, output }` snapshots returned by each stage. This keeps fixtures and
   diagnostics stable when new stages are inserted.
 
 When introducing a new stage you may attach additional fields to `context` (for example
-`context.normalizedResume`), but be explicit about their purpose and document them in this file so
-future contributors understand the typed surface.
+`context.normalizedResume` or `context.score`), but be explicit about their purpose and document
+them in this file so future contributors understand the typed surface.
 
 ## Adding a new enrichment stage
 

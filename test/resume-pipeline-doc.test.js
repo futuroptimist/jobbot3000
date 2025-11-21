@@ -11,7 +11,9 @@ describe('resume pipeline developer guide', () => {
     const contents = readFileSync(GUIDE_PATH, 'utf8');
 
     expect(contents).toMatch(/# Resume pipeline developer guide/i);
-    expect(contents).toMatch(/Load\s*(?:➜|->)\s*Normalize\s*(?:➜|->)\s*Enrich\s*(?:➜|->)\s*Score/i);
+    expect(contents).toMatch(
+      /Load\s*(?:➜|->)\s*Normalize\s*(?:➜|->)\s*Enrich\s*(?:➜|->)\s*Analyze\s*(?:➜|->)\s*Score/i,
+    );
     expect(contents).toMatch(/src\/pipeline\/resume-pipeline\.js/);
     expect(contents).toMatch(/context object/i);
     expect(contents).toMatch(/test\/resume-pipeline\.test\.js/);

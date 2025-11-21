@@ -238,6 +238,46 @@ const RESUME_PIPELINE_STAGES = [
       return analysis;
     },
   },
+  {
+    name: 'score',
+    run: context => {
+      const enrichment = context.enrichment || {
+        sectionsWithMetrics: [],
+        placeholderSections: [],
+        missingSections: [],
+        sections: {},
+      };
+      const analysis = context.analysis || {
+        warningCount: 0,
+        ambiguityCount: 0,
+        confidence: { score: undefined },
+      };
+      const normalized = context.normalizedResume || { sections: {}, lineCount: 0 };
+
+      const totalSections = Object.keys(enrichment.sections || {}).length;
+      const sectionsWithMetrics = enrichment.sectionsWithMetrics || [];
+      const placeholderSections = enrichment.placeholderSections || [];
+      const missingSections = enrichment.missingSections || [];
+
+      const score = {
+        totalSections,
+        metricsCoverageRatio:
+          totalSections === 0 ? 0 : Number((sectionsWithMetrics.length / totalSections).toFixed(2)),
+        placeholderRatio:
+          totalSections === 0
+            ? 0
+            : Number((placeholderSections.length / totalSections).toFixed(2)),
+        missingSections,
+        warningCount: analysis.warningCount ?? 0,
+        ambiguityCount: analysis.ambiguityCount ?? 0,
+        confidenceScore: analysis.confidence?.score,
+        totalLines: normalized.lineCount || 0,
+      };
+
+      context.score = score;
+      return score;
+    },
+  },
 ];
 
 export async function runResumePipeline(filePath, options = {}) {
@@ -264,6 +304,7 @@ export async function runResumePipeline(filePath, options = {}) {
     normalized: context.normalizedResume,
     enrichment: context.enrichment,
     analysis: context.analysis,
+    score: context.score,
     stages: context.stages.map(stage => ({ name: stage.name, output: stage.output })),
   };
 }
