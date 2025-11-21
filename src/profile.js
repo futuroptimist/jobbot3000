@@ -738,7 +738,6 @@ export async function importJsonResume(filePath) {
   }
 
   const normalized = normalizeJsonResume(data);
-  
   const { path: resumePath } = await initProfile();
 
   let resumeRaw;
