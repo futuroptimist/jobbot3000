@@ -66,3 +66,10 @@ export {
   getExperimentAnalysisHistory,
 } from './lifecycle-experiments.js';
 export { generateCoverLetter } from './cover-letter.js';
+export {
+  recordChangeEvent,
+  listChangeEvents,
+  recordIncidentReport,
+  listIncidentReports,
+  setComplianceDataDir,
+} from './security/soc2-controls.js';

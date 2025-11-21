@@ -151,7 +151,12 @@
   [`test/web-server.test.js`](../test/web-server.test.js) continues to verify the
   `/commands/payloads/recent` contract.
 - Complete SOC 2 Type II style control coverage, including change management and incident response.
-<!-- allow-future-date: 2025-11-19 -->
+  _Implemented (2025-02-15):_ Change management and incident response controls now ship in
+  [`src/security/soc2-controls.js`](../src/security/soc2-controls.js), with
+  documentation in
+  [`docs/security/soc2-control-coverage.md`](security/soc2-control-coverage.md).
+  Regression coverage in [`test/soc2-controls.test.js`](../test/soc2-controls.test.js)
+  locks the change log and incident report helpers so auditors can replay evidence.
 - Integrate with a WAF and DDoS mitigation layer.
   _Implemented (2025-11-19):_ The manifest now exposes `web.trustProxy` (and
   `JOBBOT_WEB_TRUST_PROXY` for overrides), letting operators declare trusted WAF
