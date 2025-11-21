@@ -1254,6 +1254,69 @@ describe("web server status page", () => {
     anchorClick.mockRestore();
   });
 
+  it("snoozes and completes reminders through command endpoints", async () => {
+    const dataDir = await fs.mkdtemp(path.join(process.cwd(), "tmp-reminders-"));
+    const eventsPath = path.join(dataDir, "application_events.json");
+    await fs.writeFile(
+      eventsPath,
+      JSON.stringify(
+        {
+          "job-9": [
+            {
+              channel: "email",
+              remind_at: "2025-03-01T12:00:00.000Z",
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const originalDataDir = process.env.JOBBOT_DATA_DIR;
+    process.env.JOBBOT_DATA_DIR = dataDir;
+
+    const server = await startServer();
+    const headers = buildCommandHeaders(server);
+
+    try {
+      const snoozeResponse = await fetch(`${server.url}/commands/track-reminders-snooze`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ jobId: "job-9", until: "2025-03-04T09:30:00Z" }),
+      });
+
+      expect(snoozeResponse.status).toBe(200);
+      const snoozePayload = await snoozeResponse.json();
+      expect(snoozePayload?.data).toMatchObject({
+        remindAt: "2025-03-04T09:30:00.000Z",
+        jobId: "job-9",
+      });
+
+      const doneResponse = await fetch(`${server.url}/commands/track-reminders-done`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ jobId: "job-9", completedAt: "2025-03-05T08:00:00Z" }),
+      });
+
+      expect(doneResponse.status).toBe(200);
+      const donePayload = await doneResponse.json();
+      expect(donePayload?.data).toMatchObject({
+        jobId: "job-9",
+        reminderCompletedAt: "2025-03-05T08:00:00.000Z",
+      });
+
+      const finalContents = JSON.parse(await fs.readFile(eventsPath, "utf8"));
+      expect(finalContents["job-9"][0]).toMatchObject({
+        reminder_completed_at: "2025-03-05T08:00:00.000Z",
+      });
+      expect(finalContents["job-9"][0]).not.toHaveProperty("remind_at");
+    } finally {
+      await fs.rm(dataDir, { recursive: true, force: true });
+      process.env.JOBBOT_DATA_DIR = originalDataDir;
+    }
+  });
+
   it("loads provider listings and supports ingesting and archiving roles", async () => {
     const providers = [
       {
