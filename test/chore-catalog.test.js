@@ -22,7 +22,7 @@ describe('chore catalog documentation', () => {
     expect(contents).toMatch(/npm run chore:prepush/);
 
     const packageJson = JSON.parse(fs.readFileSync(PACKAGE_JSON_PATH, 'utf8'));
-    const secretScanPattern = /git diff --cached \| \.\/scripts\/scan-secrets\.py/;
+    const secretScanPattern = /git diff origin\/main\.\.\.HEAD \| \.\/scripts\/scan-secrets\.py/;
     expect(packageJson.scripts['chore:prepush']).toMatch(/npm run lint/);
     expect(packageJson.scripts['chore:prepush']).toMatch(/npm run test:ci/);
     expect(packageJson.scripts['chore:prepush']).toMatch(secretScanPattern);

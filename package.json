@@ -24,7 +24,7 @@
     "summarize:jobs": "node scripts/summarize-jobs.js",
     "chore:prompts": "node scripts/chore-prompts.js",
     "chore:reminders": "node scripts/chore-reminders.js",
-    "chore:prepush": "npm run lint && npm run test:ci && git diff --cached | ./scripts/scan-secrets.py",
+    "chore:prepush": "npm run lint && npm run test:ci && git diff origin/main...HEAD | ./scripts/scan-secrets.py",
     "security:risk-assessment": "node scripts/generate-risk-assessment.js",
     "web:server": "node scripts/web-server.js",
     "web:screenshots": "node scripts/generate-web-screenshots.js",
