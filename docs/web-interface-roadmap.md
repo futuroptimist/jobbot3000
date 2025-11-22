@@ -8,7 +8,9 @@
   deployments risk leaking secrets, PII, and other sensitive data. The server now refuses
   non-loopback host bindings unless callers explicitly set `JOBBOT_WEB_ALLOW_REMOTE=1`, pass
   `allowRemoteAccess: true`, or start the helper script with `--allow-remote-access`, keeping the
-  default experience locked to localhost.
+  default experience locked to localhost. Regression coverage in
+  [`test/web-server-remote-access.test.js`](../test/web-server-remote-access.test.js) locks the
+  host-binding guard so future refactors keep the local-only default intact.
 
 - Deliver a local-first web application that streamlines tracking and managing job applications while
   retaining full parity with the existing CLI workflows.
