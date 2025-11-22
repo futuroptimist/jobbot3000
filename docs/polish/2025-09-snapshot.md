@@ -35,6 +35,7 @@ graph TD
 ```
 
 ### HTTP Resilience
+
 - `src/services/http.js` wraps the shared `fetchWithRetry` helper and wires provider-specific rate
   limiting via `setFetchRateLimit`. Requests support abort signals and per-call timeout overrides.
 - `src/fetch.js` provides sequential host queues, retry policies (default 2 retries, exponential
@@ -45,6 +46,7 @@ graph TD
   scoring stack through `src/jobs.js` and `src/match.js`.
 
 ### Resume Pipeline
+
 - `src/pipeline/resume-pipeline.js` sequences three stages:
   1. `load`: resolves file paths and calls `loadResume` for text + metadata extraction.
   2. `normalize`: splits lines, derives sections using regex heuristics, and produces section order.
@@ -53,15 +55,15 @@ graph TD
 
 ## UI Surface Inventory
 
-| Area | Modules | Notes |
-| --- | --- | --- |
-| Web server | `src/web/server.js`, `src/web/health-checks.js`, `src/web/config.js` | Express-like HTTP server that mounts command endpoints and health checks. |
-| Command registry | `src/web/command-registry.js` | Maps command slugs to handler modules and metadata for the CLI and UI. |
-| Command adapter | `src/web/command-adapter.js` | Normalizes command requests/responses, including error translation for HTTP clients. |
-| Audits dashboard | `src/web/audits.js` | Provides audit trail rendering for web UI consumers. |
-| Schemas | `src/web/schemas.js` | Zod schemas describing inbound/outbound payloads. |
-| Client config | `src/web/config.js` | Exposes environment-derived flags; currently no feature flag layer. |
-| CSS & assets | `docs/screenshots/*.png` | Bespoke styling is limited to inline CSS within `src/web/server.js` templates. No client-side feature flagging is present. |
+| Area             | Modules                                                              | Notes                                                                                                                      |
+| ---------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Web server       | `src/web/server.js`, `src/web/health-checks.js`, `src/web/config.js` | Express-like HTTP server that mounts command endpoints and health checks.                                                  |
+| Command registry | `src/web/command-registry.js`                                        | Maps command slugs to handler modules and metadata for the CLI and UI.                                                     |
+| Command adapter  | `src/web/command-adapter.js`                                         | Normalizes command requests/responses, including error translation for HTTP clients.                                       |
+| Audits dashboard | `src/web/audits.js`                                                  | Provides audit trail rendering for web UI consumers.                                                                       |
+| Schemas          | `src/web/schemas.js`                                                 | Zod schemas describing inbound/outbound payloads.                                                                          |
+| Client config    | `src/web/config.js`                                                  | Exposes environment-derived flags; `JOBBOT_WEB_FEATURE_FLAGS` toggles gate UI experiments.                                 |
+| CSS & assets     | `docs/screenshots/*.png`                                             | Bespoke styling is limited to inline CSS within `src/web/server.js` templates. No client-side feature flagging is present. |
 
 HTTP responses map into HTML templates assembled in `src/web/server.js` and the command adapter.
 The command registry feeds the UI navigation, while schema validation gates the request payloads.
@@ -69,6 +71,7 @@ The command registry feeds the UI navigation, while schema validation gates the 
 ## Testing Coverage
 
 Vitest suites covering critical surfaces:
+
 - **Services & Fetch**: `test/services-http.test.js`, `test/fetch.test.js`, `test/fetch-docs-link.test.js`.
 - **Scoring**: `test/scoring.test.js`, `test/scoring.perf.test.js`, `test/scoring.large.perf.test.js`,
   `test/scoring.requirements.perf.test.js`, `test/scoring.resume.perf.test.js`,
@@ -78,9 +81,11 @@ Vitest suites covering critical surfaces:
   `test/web-audits.test.js`, `test/web-e2e.test.js`, `test/web-deployment.test.js`.
 
 Current UX references are stored under `docs/screenshots/`:
+
 - `analytics.png`, `applications.png`, `audits.png`, `commands.png`, `overview.png`.
 
 ## Security & Privacy References
+
 - [SECURITY.md](../../SECURITY.md) outlines disclosure process, secret handling guidance, and data
   privacy expectations (local storage, offline inference recommendation).
 - [docs/web-operational-playbook.md](../web-operational-playbook.md) documents TLS termination,

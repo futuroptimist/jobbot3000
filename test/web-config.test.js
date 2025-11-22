@@ -35,6 +35,7 @@ describe('loadWebConfig', () => {
       'JOBBOT_HTTP_BACKOFF_MS',
       'JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD',
       'JOBBOT_HTTP_CIRCUIT_BREAKER_RESET_MS',
+      'JOBBOT_WEB_FEATURE_FLAGS',
       'JOBBOT_WEB_PLUGINS',
       'JOBBOT_GREENHOUSE_TOKEN',
       'JOBBOT_LEVER_API_TOKEN',
@@ -68,6 +69,7 @@ describe('loadWebConfig', () => {
       'JOBBOT_HTTP_BACKOFF_MS',
       'JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD',
       'JOBBOT_HTTP_CIRCUIT_BREAKER_RESET_MS',
+      'JOBBOT_WEB_FEATURE_FLAGS',
       'JOBBOT_WEB_PLUGINS',
       'JOBBOT_GREENHOUSE_TOKEN',
       'JOBBOT_LEVER_API_TOKEN',
@@ -93,6 +95,7 @@ describe('loadWebConfig', () => {
     expect(config.info).toMatchObject({ service: 'jobbot-web', environment: 'development' });
     expect(config.audit.logPath).toContain('audit-log');
     expect(config.features.httpClient.maxRetries).toBe(2);
+    expect(config.features.flags).toEqual([]);
     expect(config.missingSecrets).toEqual([
       'JOBBOT_GREENHOUSE_TOKEN',
       'JOBBOT_LEVER_API_TOKEN',
@@ -127,6 +130,7 @@ describe('loadWebConfig', () => {
     process.env.JOBBOT_FEATURE_SCRAPING_MOCKS = 'true';
     process.env.JOBBOT_HTTP_MAX_RETRIES = '4';
     process.env.JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD = '6';
+    process.env.JOBBOT_WEB_FEATURE_FLAGS = 'beta-ui, insights-panel';
 
     const { loadWebConfig } = await import('../src/web/config.js');
     const config = await loadWebConfig({ env: 'development', rateLimit: { max: 5 } });
@@ -138,6 +142,7 @@ describe('loadWebConfig', () => {
     expect(config.features.scraping.useMocks).toBe(true);
     expect(config.features.httpClient.maxRetries).toBe(4);
     expect(config.features.httpClient.circuitBreakerThreshold).toBe(6);
+    expect(config.features.flags).toEqual(['beta-ui', 'insights-panel']);
     expect(config.missingSecrets).toEqual([]);
     expect(config.trustProxy).toBe(true);
 
@@ -228,6 +233,22 @@ describe('loadWebConfig', () => {
       url: 'https://example.com/plugin.js',
       events: ['jobbot:analytics-ready'],
     });
+  });
+
+  it('parses feature flags from options and environment variables', async () => {
+    process.env.JOBBOT_WEB_FEATURE_FLAGS = 'beta-ui, env-flag';
+
+    const { loadWebConfig } = await import('../src/web/config.js');
+    const envConfig = await loadWebConfig({ env: 'development' });
+
+    expect(envConfig.features.flags).toEqual(['beta-ui', 'env-flag']);
+
+    const optionConfig = await loadWebConfig({
+      env: 'development',
+      features: { flags: ['option-flag', 'opt-second'] },
+    });
+
+    expect(optionConfig.features.flags).toEqual(['option-flag', 'opt-second']);
   });
 
   it('returns scoped auth tokens when configured via environment variables', async () => {

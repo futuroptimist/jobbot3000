@@ -153,6 +153,7 @@ const ConfigSchema = z.object({
     notifications: z.object({
       enableWeeklySummary: z.boolean().default(true),
     }),
+    flags: z.array(z.string().min(1)).default([]),
     httpClient: z.object({
       maxRetries: z.number().int().min(0).max(5).default(2),
       backoffMs: z.number().int().min(0).default(250),
@@ -238,6 +239,41 @@ function parsePluginEntries(value) {
   return [];
 }
 
+function parseFeatureFlags(value) {
+  if (!value) {
+    return [];
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map(entry => (typeof entry === 'string' ? entry.trim() : ''))
+      .filter(Boolean);
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return [];
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.map(flag => (typeof flag === 'string' ? flag.trim() : '')).filter(Boolean);
+      }
+    } catch {
+      // Fall through to comma-separated parsing.
+    }
+
+    return trimmed
+      .split(',')
+      .map(flag => flag.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
 export function loadConfig(options = {}) {
   if (hasInlineSecrets(options.secrets)) {
     throw new Error(
@@ -297,6 +333,13 @@ export function loadConfig(options = {}) {
             env.JOBBOT_FEATURE_NOTIFICATIONS_WEEKLY,
         ) ?? true,
     },
+    flags: (() => {
+      const optionFlags = parseFeatureFlags(options.features?.flags);
+      if (optionFlags.length > 0) {
+        return optionFlags;
+      }
+      return parseFeatureFlags(env.JOBBOT_WEB_FEATURE_FLAGS);
+    })(),
     httpClient: {
       maxRetries: numberFromEnv(
         options.features?.httpClient?.maxRetries ?? env.JOBBOT_HTTP_MAX_RETRIES,
