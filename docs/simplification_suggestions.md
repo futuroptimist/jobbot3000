@@ -123,6 +123,9 @@ would cut coordination overhead.
 - _Update (2025-09-26):_ The prompts chore now enforces Prettier formatting for changed prompt docs
   (pass `--write`/`--fix` and `--all` to auto-format the entire catalog) so headings, lists, and
   tables stay consistent across the catalog.
+- _Update (2025-11-22):_ `npm run chore:prepush` bundles the lint sweep, CI test run, and secret scan
+  into a single pre-push command. [`docs/chore-catalog.md`](chore-catalog.md) documents the workflow,
+  and [`test/chore-catalog.test.js`](../test/chore-catalog.test.js) guards the scripts table.
 - `npm run chore:reminders` prints the catalog as either a human-readable digest or JSON (pass
   `--json`), giving CI jobs a reliable summary to surface before merges. Coverage in
   `test/chore-reminders.test.js` exercises the JSON output and keeps the parser aligned with the
