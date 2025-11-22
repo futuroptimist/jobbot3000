@@ -20,10 +20,15 @@ describe('web server remote access guard', () => {
     }
   });
 
-  it('rejects non-loopback hosts unless remote access is enabled', () => {
-    expect(() => startWebServer({ host: '0.0.0.0', port: 0 })).toThrow(
-      /local-only preview/i,
-    );
+  it('rejects non-loopback hosts unless remote access is enabled', async () => {
+    expect(() =>
+      startWebServer({
+        host: '0.0.0.0',
+        port: 0,
+        csrfToken: 'remote-guard-csrf',
+        commandAdapter: {},
+      }),
+    ).toThrow(/local-only preview/i);
   });
 
   it('permits non-loopback hosts when explicitly enabled', async () => {
@@ -33,6 +38,7 @@ describe('web server remote access guard', () => {
       port: 0,
       allowRemoteAccess: true,
       audit: { logPath: path.join(tempDir, 'audit.jsonl') },
+      csrfToken: 'remote-guard-csrf',
       commandAdapter: {},
     });
 
