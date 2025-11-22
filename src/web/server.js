@@ -47,12 +47,15 @@ function isLoopbackHost(host) {
   return false;
 }
 
+const TRUTHY_BOOLEAN_STRINGS = new Set(["1", "true", "yes", "on", "enabled"]);
+const FALSY_BOOLEAN_STRINGS = new Set(["0", "false", "no", "off", "disabled"]);
+
 function parseBoolean(value) {
   if (value === undefined || value === null) return undefined;
   const normalized = String(value).trim().toLowerCase();
   if (!normalized) return undefined;
-  if (["1", "true", "yes", "on"].includes(normalized)) return true;
-  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  if (TRUTHY_BOOLEAN_STRINGS.has(normalized)) return true;
+  if (FALSY_BOOLEAN_STRINGS.has(normalized)) return false;
   return undefined;
 }
 
