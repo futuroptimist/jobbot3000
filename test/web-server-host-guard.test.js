@@ -36,4 +36,28 @@ describe('web server host guard', () => {
     activeServers.push(server);
     expect(server.url).toMatch(/http:\/\/0.0.0.0:\d+/);
   });
+
+  it('accepts truthy environment values for remote access', async () => {
+    process.env.JOBBOT_WEB_ALLOW_REMOTE = 'enabled';
+    const server = await startWebServer({
+      host: '0.0.0.0',
+      port: 0,
+      csrfToken: 'host-guard-csrf',
+      commandAdapter: {},
+    });
+    activeServers.push(server);
+    expect(server.url).toMatch(/http:\/\/0.0.0.0:\d+/);
+  });
+
+  it('treats falsy environment values as an explicit deny', () => {
+    process.env.JOBBOT_WEB_ALLOW_REMOTE = 'disabled';
+    expect(() =>
+      startWebServer({
+        host: '0.0.0.0',
+        port: 0,
+        csrfToken: 'host-guard-csrf',
+        commandAdapter: {},
+      }),
+    ).toThrow(/local-only preview/i);
+  });
 });
