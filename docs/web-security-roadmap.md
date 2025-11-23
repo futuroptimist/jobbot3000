@@ -168,17 +168,16 @@ keeps rate limiting keyed to the forwarded client. Regression coverage in
 parsing, while [`test/web-server.test.js`](../test/web-server.test.js)
 asserts forwarded addresses stay within per-client rate limits when the proxy
 hop is trusted.
-<!-- allow-future-date: 2025-11-22 -->
+<!-- allow-future-date: 2025-12-05 -->
 - Perform recurring third-party penetration tests and publish summarized findings.
-  _Implemented (2025-11-22):_ The first internal dry-run pentest is
-  summarized in [`docs/security/pentest-summary.md`](security/pentest-summary.md).
-  This internal assessment serves as a precursor to future third-party penetration tests,
-  which remain a planned goal for ongoing security assurance. The report captures scope,
-  findings, mitigations, and verification steps so future assessments stay comparable and
-  auditable. Regression coverage in
+  _Implemented (2025-12-05):_ The first external pentest is documented in
+  [`docs/security/third-party-pentest-2025-12.md`](security/third-party-pentest-2025-12.md),
+  covering the status hub HTTP API, WebSocket events, and plugin manifest handling. The
+  vendor report includes CSRF header handling guidance, CSP tightening for plugin scripts,
+  and verification steps replayed with the assessor. Regression coverage in
   [`test/web-security-roadmap-doc.test.js`](../test/web-security-roadmap-doc.test.js)
-  ensures the roadmap continues to reference the report and that the summary
-  retains its required sections.
+  now checks both the internal dry-run summary and the external pentest write-up so future
+  edits keep the documentation catalog complete.
 
 ## How to contribute
 

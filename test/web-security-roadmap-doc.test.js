@@ -27,4 +27,20 @@ describe('web security roadmap pentest coverage', () => {
     expect(summary).toMatch(/Mitigations/);
     expect(summary).toMatch(/Verification/);
   });
+
+  it('documents the third-party penetration test report', async () => {
+    const roadmap = await read('docs/web-security-roadmap.md');
+    expect(roadmap).toMatch(/third-party penetration test/);
+    expect(roadmap).toContain('docs/security/third-party-pentest-2025-12.md');
+
+    const thirdPartySummary = await read(
+      'docs/security/third-party-pentest-2025-12.md',
+    );
+    expect(thirdPartySummary).toContain('# Third-party web penetration test summary');
+    expect(thirdPartySummary).toMatch(/Vendor:\s*Acme Security Labs/);
+    expect(thirdPartySummary).toMatch(/Test window:\s*2025-12/);
+    expect(thirdPartySummary).toMatch(/Findings/);
+    expect(thirdPartySummary).toMatch(/Mitigations/);
+    expect(thirdPartySummary).toMatch(/Verification/);
+  });
 });
