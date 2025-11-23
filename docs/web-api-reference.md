@@ -61,7 +61,8 @@ cookie for subsequent requests.
 
 Returns the sanitized payload history for the current client. Entries mirror the payloads supplied to
 recent `/commands/:command` requests after control characters are stripped, keys trimmed, and empty
-values removed. The response shape is:
+values removed. Timestamps include up to 750ms of forward or backward jitter to reduce
+correlation value in the unlikely event encrypted history is exposed. The response shape is:
 
 ```jsonc
 {

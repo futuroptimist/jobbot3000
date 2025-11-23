@@ -78,4 +78,28 @@ describe("createClientPayloadStore", () => {
     keys.set("client-a", "different-secret");
     expect(store.getRecent("client-a")).toEqual([]);
   });
+
+  it("jitters payload timestamps before encryption", () => {
+    const fixedNow = Date.UTC(2025, 0, 1, 0, 0, 0);
+    const store = createClientPayloadStore({
+      now: () => fixedNow,
+      jitter: () => 420,
+      encryption: {
+        deriveKey(clientId) {
+          return `secret-${clientId}`;
+        },
+      },
+    });
+
+    const entry = store.record("client-a", "summarize", { value: "A1" });
+
+    expect(entry?.timestamp).toBe("2025-01-01T00:00:00.420Z");
+    expect(store.getRecent("client-a")).toEqual([
+      {
+        command: "summarize",
+        payload: { value: "A1" },
+        timestamp: "2025-01-01T00:00:00.420Z",
+      },
+    ]);
+  });
 });
