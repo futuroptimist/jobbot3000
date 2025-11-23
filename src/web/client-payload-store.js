@@ -203,7 +203,7 @@ export function createClientPayloadStore(options = {}) {
   const jitter =
     options.jitter && typeof options.jitter === "function"
       ? options.jitter
-      : () => Math.round(Math.random() * DEFAULT_MAX_JITTER_MS);
+      : () => Math.round((Math.random() - 0.5) * 2 * DEFAULT_MAX_JITTER_MS);
 
   function enforceClientCapacity() {
     while (store.size > maxClients) {
