@@ -158,19 +158,18 @@
   Regression coverage in [`test/soc2-controls.test.js`](../test/soc2-controls.test.js)
   locks the change log and incident report helpers so auditors can replay evidence.
 - Integrate with a WAF and DDoS mitigation layer.
-_Implemented (2025-11-19):_ The manifest now exposes `web.trustProxy` (and
-`JOBBOT_WEB_TRUST_PROXY` for overrides), letting operators declare trusted WAF
-and reverse-proxy hops so rate limiting and security telemetry use the
-originating client IP instead of the proxy address. `scripts/web-server.js`
-forwards the value to `startWebServer`, which enables Express proxy trust and
-keeps rate limiting keyed to the forwarded client. Regression coverage in
-[`test/web-config.test.js`](../test/web-config.test.js) verifies manifest
-parsing, while [`test/web-server.test.js`](../test/web-server.test.js)
-asserts forwarded addresses stay within per-client rate limits when the proxy
-hop is trusted.
-<!-- allow-future-date: 2025-12-05 -->
+  _Implemented (2025-11-19):_ The manifest now exposes `web.trustProxy` (and
+  `JOBBOT_WEB_TRUST_PROXY` for overrides), letting operators declare trusted WAF
+  and reverse-proxy hops so rate limiting and security telemetry use the
+  originating client IP instead of the proxy address. `scripts/web-server.js`
+  forwards the value to `startWebServer`, which enables Express proxy trust and
+  keeps rate limiting keyed to the forwarded client. Regression coverage in
+  [`test/web-config.test.js`](../test/web-config.test.js) verifies manifest
+  parsing, while [`test/web-server.test.js`](../test/web-server.test.js)
+  asserts forwarded addresses stay within per-client rate limits when the proxy
+  hop is trusted.
 - Perform recurring third-party penetration tests and publish summarized findings.
-  _Implemented (2025-12-05):_ The first external pentest is documented in
+  _Implemented (2025-11-05):_ The first external pentest is documented in
   [`docs/security/third-party-pentest-2025-12.md`](security/third-party-pentest-2025-12.md),
   covering the status hub HTTP API, WebSocket events, and plugin manifest handling. The
   vendor report includes CSRF header handling guidance, CSP tightening for plugin scripts,
