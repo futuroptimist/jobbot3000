@@ -20,7 +20,7 @@ export function resolveEnableNativeCli({ args = [], env = {}, configEnv } = {}) 
 
   const envValue = toLowerCaseString(env?.JOBBOT_WEB_ENABLE_NATIVE_CLI);
   if (envValue && (TRUTHY_VALUES.has(envValue) || FALSY_VALUES.has(envValue))) {
-    return undefined;
+    return TRUTHY_VALUES.has(envValue);
   }
 
   const normalizedConfigEnv = toLowerCaseString(configEnv);

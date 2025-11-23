@@ -40,7 +40,7 @@ describe('resolveEnableNativeCli', () => {
       configEnv: 'development',
     });
 
-    expect(result).toBeUndefined();
+    expect(result).toBe(false);
   });
 
   it('leaves production runs disabled by default', () => {
@@ -51,5 +51,15 @@ describe('resolveEnableNativeCli', () => {
     });
 
     expect(result).toBeUndefined();
+  });
+
+  it('enables native CLI execution when the environment variable is truthy', () => {
+    const result = resolveEnableNativeCli({
+      args: [],
+      env: { JOBBOT_WEB_ENABLE_NATIVE_CLI: 'yes' },
+      configEnv: 'production',
+    });
+
+    expect(result).toBe(true);
   });
 });
