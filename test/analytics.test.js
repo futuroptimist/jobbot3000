@@ -277,6 +277,29 @@ describe('analytics conversion funnel', () => {
     expect(csv.trim().split('\n')[0]).toBe('stage,label,count,conversion_rate,drop_off');
   });
 
+  it('escapes CSV values containing newlines', async () => {
+    const { formatAnalyticsCsv } = await import('../src/analytics.js');
+
+    const csv = formatAnalyticsCsv({
+      funnel: {
+        stages: [
+          {
+            key: 'stage1',
+            label: 'Line\nBreak',
+            count: 5,
+            conversionRate: 0.5,
+            dropOff: 0.1,
+          },
+        ],
+      },
+    });
+
+    expect(csv).toBe(
+      ['stage,label,count,conversion_rate,drop_off', 'stage1,"Line\nBreak",5,0.5,0.1'].join('\n') +
+        '\n',
+    );
+  });
+
   it('summarizes companies and redacts names when requested', async () => {
     const fs = await import('node:fs/promises');
     await fs.writeFile(

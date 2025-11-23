@@ -1274,7 +1274,12 @@ export function formatAnalyticsCsv(snapshot) {
 
 function formatCsvValue(value) {
   const asString = value === null || value === undefined ? "" : String(value);
-  if (asString.includes(",") || asString.includes("\"")) {
+  if (
+    asString.includes(",") ||
+    asString.includes("\"") ||
+    asString.includes("\n") ||
+    asString.includes("\r")
+  ) {
     return '"' + asString.replace(/"/g, '""') + '"';
   }
   return asString;
