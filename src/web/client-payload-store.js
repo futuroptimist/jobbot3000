@@ -9,6 +9,7 @@ const DEFAULT_MAX_ENTRIES_PER_CLIENT = 5;
 const DEFAULT_MAX_CLIENTS = 200;
 const ENCRYPTION_ALGORITHM = "aes-256-gcm";
 const ENCRYPTION_IV_LENGTH = 12;
+const DEFAULT_MAX_JITTER_MS = 750;
 
 const clone =
   typeof structuredClone === "function"
@@ -197,6 +198,12 @@ export function createClientPayloadStore(options = {}) {
       ? encryption.deriveKey
       : null;
   const encryptionEnabled = Boolean(deriveKey);
+  const now =
+    options.now && typeof options.now === "function" ? options.now : () => Date.now();
+  const jitter =
+    options.jitter && typeof options.jitter === "function"
+      ? options.jitter
+      : () => Math.round((Math.random() - 0.5) * 2 * DEFAULT_MAX_JITTER_MS);
 
   function enforceClientCapacity() {
     while (store.size > maxClients) {
@@ -219,6 +226,15 @@ export function createClientPayloadStore(options = {}) {
     const normalizedPayload = sanitizedPayload ?? {};
     let encryptedPayload = null;
 
+    const baseTimestampMs = Number(now());
+    const jitterMsRaw = Number(
+      jitter({ clientId: normalizedClientId, command: normalizedCommand }),
+    );
+    const jitterMs = Number.isFinite(jitterMsRaw)
+      ? Math.max(-DEFAULT_MAX_JITTER_MS, Math.min(DEFAULT_MAX_JITTER_MS, jitterMsRaw))
+      : 0;
+    const timestamp = new Date(baseTimestampMs + jitterMs).toISOString();
+
     if (encryptionEnabled) {
       const key = normalizeEncryptionKey(
         deriveKey(normalizedClientId, { operation: "record" }),
@@ -231,7 +247,7 @@ export function createClientPayloadStore(options = {}) {
 
     const entry = {
       command: normalizedCommand,
-      timestamp: new Date().toISOString(),
+      timestamp,
     };
 
     if (encryptedPayload) {
