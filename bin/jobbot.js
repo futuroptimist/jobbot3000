@@ -81,6 +81,7 @@ import {
   computeFunnel,
   computeActivitySummary,
   exportAnalyticsSnapshot,
+  formatAnalyticsCsv,
   formatFunnelReport,
   computeCompensationSummary,
   computeAnalyticsHealth,
@@ -3116,6 +3117,7 @@ async function cmdAnalyticsFunnel(args) {
 
 async function cmdAnalyticsExport(args) {
   const output = getFlag(args, '--out');
+  const wantsCsv = args.includes('--csv');
   const hasRedactFlag = args.includes('--redact');
   const hasNoRedactFlag = args.includes('--no-redact');
   if (hasRedactFlag && hasNoRedactFlag) {
@@ -3132,10 +3134,14 @@ async function cmdAnalyticsExport(args) {
   }
 
   const outputTargets = output ? ['file'] : ['stdout'];
+  const format = wantsCsv ? 'csv' : 'json';
   let resolved;
   try {
     const snapshot = await exportAnalyticsSnapshot({ redactCompanies: redact });
-    const payload = `${JSON.stringify(snapshot, null, 2)}\n`;
+    const payload =
+      format === 'csv'
+        ? formatAnalyticsCsv(snapshot)
+        : `${JSON.stringify(snapshot, null, 2)}\n`;
     if (output) {
       resolved = path.resolve(process.cwd(), output);
       await fs.promises.mkdir(path.dirname(resolved), { recursive: true });
@@ -3150,7 +3156,7 @@ async function cmdAnalyticsExport(args) {
       status: 'success',
       outputTargets,
       outputPath: resolved,
-      format: 'json',
+      format,
       redacted: redact,
     });
   } catch (error) {
@@ -3160,7 +3166,7 @@ async function cmdAnalyticsExport(args) {
       status: 'error',
       outputTargets,
       outputPath: resolved,
-      format: 'json',
+      format,
       redacted: redact,
       errorMessage: error?.message ?? String(error),
     });

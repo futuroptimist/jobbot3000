@@ -3302,6 +3302,23 @@ describe('jobbot CLI', () => {
     expect(unredacted.companies.some(entry => entry.name === 'Future Works')).toBe(true);
   });
 
+  it('emits analytics exports as CSV when requested', () => {
+    const jobsDir = path.join(dataDir, 'jobs');
+    fs.mkdirSync(jobsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(jobsDir, 'job-csv.json'),
+      JSON.stringify({ company: 'Example Labs' }, null, 2),
+      'utf8',
+    );
+
+    runCli(['track', 'log', 'job-csv', '--channel', 'email', '--date', '2025-03-03']);
+    runCli(['track', 'add', 'job-csv', '--status', 'screening']);
+
+    const csv = runCli(['analytics', 'export', '--csv']);
+    expect(csv.trim().split('\n')[0]).toBe('stage,label,count,conversion_rate,drop_off');
+    expect(csv).toContain('screening,Screening,1,1,0');
+  });
+
   it('prints analytics sankey transitions with json option', () => {
     const opportunitiesDir = path.join(dataDir, 'opportunities');
     fs.mkdirSync(opportunitiesDir, { recursive: true });

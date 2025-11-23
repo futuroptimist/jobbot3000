@@ -1246,6 +1246,40 @@ export async function exportAnalyticsSnapshot(options = {}) {
   };
 }
 
+export function formatAnalyticsCsv(snapshot) {
+  const stages = Array.isArray(snapshot?.funnel?.stages) ? snapshot.funnel.stages : [];
+  const lines = ['stage,label,count,conversion_rate,drop_off'];
+  for (const stage of stages) {
+    const rawKey = typeof stage?.key === "string" ? stage.key.trim() : "";
+    const rawLabel = typeof stage?.label === "string" ? stage.label.trim() : "";
+    const label = rawLabel || rawKey || "Stage";
+    const countValue = Number(stage?.count);
+    const conversionValue = Number(stage?.conversionRate);
+    const dropValue = Number(stage?.dropOff);
+    lines.push(
+      [
+        formatCsvValue(rawKey || label),
+        formatCsvValue(label),
+        formatCsvValue(Number.isFinite(countValue) ? countValue : ""),
+        formatCsvValue(Number.isFinite(conversionValue) ? conversionValue : ""),
+        formatCsvValue(Number.isFinite(dropValue) ? dropValue : ""),
+      ].join(","),
+    );
+  }
+  if (lines.length === 1) {
+    lines.push(["", "", "", "", ""].map(value => formatCsvValue(value)).join(","));
+  }
+  return lines.join("\n") + "\n";
+}
+
+function formatCsvValue(value) {
+  const asString = value === null || value === undefined ? "" : String(value);
+  if (asString.includes(",") || asString.includes("\"")) {
+    return '"' + asString.replace(/"/g, '""') + '"';
+  }
+  return asString;
+}
+
 export function formatFunnelReport(funnel) {
   if (!funnel || !Array.isArray(funnel.stages) || funnel.stages.length === 0) {
     return 'No analytics data available';

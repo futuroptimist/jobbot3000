@@ -265,6 +265,18 @@ describe('analytics conversion funnel', () => {
     expect(Array.isArray(snapshot.companies)).toBe(true);
   });
 
+  it('formats analytics snapshots as CSV', async () => {
+    const { exportAnalyticsSnapshot, formatAnalyticsCsv, setAnalyticsDataDir } = await import(
+      '../src/analytics.js'
+    );
+    setAnalyticsDataDir(dataDir);
+    restoreAnalyticsDir = async () => setAnalyticsDataDir(undefined);
+
+    const snapshot = await exportAnalyticsSnapshot();
+    const csv = formatAnalyticsCsv(snapshot);
+    expect(csv.trim().split('\n')[0]).toBe('stage,label,count,conversion_rate,drop_off');
+  });
+
   it('summarizes companies and redacts names when requested', async () => {
     const fs = await import('node:fs/promises');
     await fs.writeFile(
