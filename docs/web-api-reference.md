@@ -132,7 +132,8 @@ The following command endpoints are available. Each one maps directly to a CLI h
 - `POST /commands/analytics-funnel` → `jobbot analytics funnel`: Produce funnel metrics, conversion
   rates, and drop-off highlights.
 - `POST /commands/analytics-export` → `jobbot analytics export`: Generate JSON and CSV exports while
-  honoring the `--redact` flags supplied by the UI.
+  honoring the `--redact` flags supplied by the UI. Supply `--csv` to emit the stage metrics as a
+  CSV document instead of JSON.
 - `POST /commands/listings-fetch` → `jobbot listings fetch`: Retrieve provider listings based on the
   provider, board identifier, and optional filters.
 - `POST /commands/listings-ingest` → `jobbot listings ingest`: Persist a fetched listing into the
