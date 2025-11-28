@@ -15,6 +15,9 @@ The web server listens on the host/port returned by
   (defaults to `x-jobbot-csrf`).
 - When `startWebServer` is configured with `auth`, clients must also supply the configured
   authorization header. Bearer tokens are required when `requireScheme` is enabled.
+- `POST /commands/:command` requires `Content-Type: application/json` (or another `*/json`
+  media type). Requests with other content types receive 415 responses so validators run against
+  normalized JSON payloads.
 - Tokens can include role assignments. Viewer roles unlock read-only commands while editor (or
   admin) roles are required for mutations such as `track-record`, `listings-ingest`, and
   `listings-archive`. Requests without the needed roles receive 403 responses and are recorded in the
