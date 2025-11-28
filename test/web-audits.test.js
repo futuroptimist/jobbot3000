@@ -42,6 +42,23 @@ describe('web interface audits', () => {
     expect(performanceReport.metrics.transferSize).toBeLessThan(MAX_TRANSFER_SIZE);
   });
 
+  it('sends a hardened CSP without allowing blob script sources', async () => {
+    const homepageUrl = `${server.url}/`;
+    const response = await fetch(homepageUrl);
+    expect(response.ok).toBe(true);
+
+    const csp = response.headers.get('content-security-policy');
+    expect(csp).toBeTruthy();
+    expect(csp).toContain("default-src 'self'");
+    expect(csp).toContain("script-src 'self' 'unsafe-inline' https:");
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp).not.toMatch(/script-src[^;]*blob:/);
+
+    const assetResponse = await fetch(`${server.url}/assets/status-hub.js`);
+    expect(assetResponse.ok).toBe(true);
+    expect(assetResponse.headers.get('content-security-policy')).toBe(csp);
+  });
+
   it('serves HTML under the transfer budget', async () => {
     const homepageUrl = `${server.url}/`;
     const response = await fetch(homepageUrl);
