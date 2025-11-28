@@ -181,7 +181,8 @@
 ## How to contribute
 
 - Pick a milestone above and open an RFC in `docs/architecture-decisions/` describing the approach.
-- Add implementation tasks to `docs/chore-catalog.md` so the roadmap stays discoverable.
+- Keep the `docs/chore-catalog.md` entry for the web security roadmap up to date so the
+  recurring sync remains discoverable.
 - Keep `docs/web-interface-roadmap.md` and this file in sync as features ship or priorities change.
 
 Until these items are finished the web UI must **not** be exposed to the public internet. Treat every

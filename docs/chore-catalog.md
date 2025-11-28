@@ -12,6 +12,7 @@ stays accurate.
 | Pre-push sweep (lint, tests, secret scan) | All contributors | Before pushing branches or opening a pull request | `npm run chore:prepush` |
 | Secret scan before push | All contributors | Before every commit and prior to opening a pull request | `git diff --cached \| ./scripts/scan-secrets.py` |
 | Prompt docs audit | Prompt Docs maintainers | Whenever prompt documentation changes or monthly during content reviews | `npm run chore:prompts`<br>`npm run chore:prompts --write` _(when auto-fixing formatting)_ |
+| Web security roadmap sync | Security leads | Monthly | Review [docs/web-security-roadmap.md](docs/web-security-roadmap.md)<br>`npm run security:risk-assessment`<br>`npx vitest run test/web-security-roadmap-doc.test.js` |
 
 ## How to use this catalog
 
