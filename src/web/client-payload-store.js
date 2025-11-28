@@ -52,6 +52,9 @@ function sanitizeValue(value) {
     const entries = value
       .map((entry) => sanitizeValue(entry))
       .filter((entry) => entry !== undefined);
+    if (entries.length === 0) {
+      return undefined;
+    }
     return entries;
   }
   if (typeof value === "number" || typeof value === "boolean") {
@@ -65,6 +68,9 @@ function sanitizeValue(value) {
       const sanitizedEntry = sanitizeValue(value[key]);
       if (sanitizedEntry === undefined) continue;
       sanitized[normalizedKey] = sanitizedEntry;
+    }
+    if (Object.keys(sanitized).length === 0) {
+      return undefined;
     }
     return sanitized;
   }

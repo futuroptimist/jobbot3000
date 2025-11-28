@@ -60,9 +60,10 @@ cookie for subsequent requests.
 ### GET /commands/payloads/recent
 
 Returns the sanitized payload history for the current client. Entries mirror the payloads supplied to
-recent `/commands/:command` requests after control characters are stripped, keys trimmed, and empty
-values removed. Timestamps include up to 750ms of forward or backward jitter to reduce
-correlation value in the unlikely event encrypted history is exposed. The response shape is:
+recent `/commands/:command` requests after control characters are stripped, keys trimmed, empty
+collections removed, and blank fields discarded. Timestamps include up to 750ms of forward or
+backward jitter to reduce correlation value in the unlikely event encrypted history is exposed. The
+response shape is:
 
 ```jsonc
 {
