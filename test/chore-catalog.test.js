@@ -27,4 +27,12 @@ describe('chore catalog documentation', () => {
     expect(packageJson.scripts['chore:prepush']).toMatch(/npm run test:ci/);
     expect(packageJson.scripts['chore:prepush']).toMatch(secretScanPattern);
   });
+
+  it('surfaces the web security roadmap upkeep routine', () => {
+    const contents = fs.readFileSync(CATALOG_PATH, 'utf8');
+    expect(contents).toMatch(/Web security roadmap/i);
+    expect(contents).toContain('docs/web-security-roadmap.md');
+    expect(contents).toMatch(/test\/web-security-roadmap-doc\.test\.js/);
+    expect(contents).toMatch(/npm run security:risk-assessment/);
+  });
 });
