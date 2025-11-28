@@ -2935,6 +2935,24 @@ describe("web server command endpoint", () => {
     expect(payload).toBe("API_KEY=***");
   });
 
+  it("rejects command requests without an application/json content type", async () => {
+    const commandAdapter = {
+      summarize: vi.fn(),
+    };
+
+    const server = await startServer({ commandAdapter });
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: buildCommandHeaders(server, { "content-type": "text/plain" }),
+      body: JSON.stringify({ input: "job.txt" }),
+    });
+
+    expect(response.status).toBe(415);
+    const payload = await response.json();
+    expect(payload.error).toMatch(/content-type must be application\/json/i);
+    expect(commandAdapter.summarize).not.toHaveBeenCalled();
+  });
+
   it("rejects command requests without a valid CSRF token", async () => {
     const commandAdapter = {
       summarize: vi.fn(),

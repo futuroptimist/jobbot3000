@@ -7172,6 +7172,13 @@ export function createWebApp({
         return;
       }
 
+      if (!req.is(["application/json", "*/json"])) {
+        res
+          .status(415)
+          .json({ error: "Content-Type must be application/json" });
+        return;
+      }
+
       const started = performance.now();
       const clientIp = req.ip || req.socket?.remoteAddress || undefined;
       const userAgent = req.get("user-agent");
