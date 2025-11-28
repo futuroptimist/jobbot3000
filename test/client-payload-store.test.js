@@ -102,4 +102,42 @@ describe("createClientPayloadStore", () => {
       },
     ]);
   });
+
+  it("drops empty collections and whitespace-only keys when sanitizing payloads", () => {
+    const store = createClientPayloadStore();
+
+    const entry = store.record("client-a", "summarize", {
+      " input ": "  Candidate summary  ",
+      notes: [],
+      tags: ["priority", "  ", "\u0000"],
+      meta: {
+        " label ": "  Keep me  ",
+        " \t ": "ignored",
+        blank: "   ",
+        nestedEmpty: {},
+      },
+    });
+
+    expect(entry).toEqual({
+      command: "summarize",
+      payload: {
+        input: "Candidate summary",
+        tags: ["priority"],
+        meta: { label: "Keep me" },
+      },
+      timestamp: expect.any(String),
+    });
+
+    expect(store.getRecent("client-a")).toEqual([
+      {
+        command: "summarize",
+        payload: {
+          input: "Candidate summary",
+          tags: ["priority"],
+          meta: { label: "Keep me" },
+        },
+        timestamp: entry?.timestamp,
+      },
+    ]);
+  });
 });
