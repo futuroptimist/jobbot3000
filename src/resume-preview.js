@@ -109,6 +109,35 @@ function appendSection(lines, title, sectionLines) {
   lines.push(...sectionLines);
 }
 
+const ONE_PAGE_MAX_LINES = 60;
+
+function clampPreviewLines(lines) {
+  if (!Array.isArray(lines)) return [];
+  if (lines.length <= ONE_PAGE_MAX_LINES) {
+    const result = [...lines];
+    if (result.length === 0 || result[result.length - 1] !== '') {
+      result.push('');
+    }
+    return result;
+  }
+
+  const limited = lines.slice(0, ONE_PAGE_MAX_LINES - 1);
+  let lastContentIndex = -1;
+  for (let i = limited.length - 1; i >= 0; i -= 1) {
+    if (limited[i] !== '') {
+      lastContentIndex = i;
+      break;
+    }
+  }
+
+  if (lastContentIndex >= 0 && lastContentIndex < limited.length - 1) {
+    limited.length = lastContentIndex + 1;
+  }
+
+  limited.push('… (truncated for one-page preview)');
+  return limited;
+}
+
 export function renderResumeTextPreview(resume) {
   if (!resume || typeof resume !== 'object') return '';
   const lines = [];
@@ -147,9 +176,5 @@ export function renderResumeTextPreview(resume) {
   appendSection(lines, 'Volunteer:', formatTimelineEntries(resume.volunteer));
   appendSection(lines, 'Skills:', formatSkills(resume.skills));
 
-  if (lines.length === 0 || lines[lines.length - 1] !== '') {
-    lines.push('');
-  }
-
-  return lines.join('\n');
+  return clampPreviewLines(lines).join('\n');
 }
