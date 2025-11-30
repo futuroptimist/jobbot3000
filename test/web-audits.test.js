@@ -1,10 +1,35 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import http from 'node:http';
+
 import { startWebServer } from '../src/web/server.js';
 import { runAccessibilityAudit, runPerformanceAudit } from '../src/web/audits.js';
 
 describe('web interface audits', () => {
   let server;
+
+  async function fetchRawAsset(pathname) {
+    const url = new URL(server.url);
+    const options = {
+      host: url.hostname,
+      port: url.port,
+      path: pathname,
+      method: 'GET',
+      headers: { 'accept-encoding': 'gzip' },
+    };
+
+    return new Promise((resolve, reject) => {
+      const request = http.request(options, response => {
+        const chunks = [];
+        response.on('data', chunk => chunks.push(chunk));
+        response.on('end', () => {
+          resolve({ headers: response.headers, body: Buffer.concat(chunks) });
+        });
+      });
+      request.on('error', reject);
+      request.end();
+    });
+  }
 
   beforeAll(async () => {
     server = await startWebServer({
@@ -70,6 +95,18 @@ describe('web interface audits', () => {
     const MAX_HTML_BYTES = 56_000;
     const byteLength = Buffer.byteLength(html, 'utf8');
     expect(byteLength).toBeLessThan(MAX_HTML_BYTES);
+  });
+
+  it('compresses status hub assets under transfer budgets', async () => {
+    const scriptAsset = await fetchRawAsset('/assets/status-hub.js');
+    expect(scriptAsset.headers['content-encoding']).toBe('gzip');
+    const MAX_SCRIPT_BYTES = 80_000;
+    expect(scriptAsset.body.byteLength).toBeLessThan(MAX_SCRIPT_BYTES);
+
+    const styleAsset = await fetchRawAsset('/assets/status-hub.css');
+    expect(styleAsset.headers['content-encoding']).toBe('gzip');
+    const MAX_STYLE_BYTES = 12_000;
+    expect(styleAsset.body.byteLength).toBeLessThan(MAX_STYLE_BYTES);
   });
 
   it('does not execute page scripts during the accessibility audit', async () => {

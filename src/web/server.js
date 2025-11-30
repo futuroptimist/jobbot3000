@@ -4,6 +4,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { performance } from "node:perf_hooks";
 import path from "node:path";
+import { gzipSync } from "node:zlib";
 
 import { createCommandAdapter } from "./command-adapter.js";
 import {
@@ -220,6 +221,28 @@ function compactHtml(value) {
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+function acceptsGzip(req) {
+  const header = req?.headers?.["accept-encoding"];
+  if (typeof header !== "string") return false;
+  return header
+    .split(",")
+    .map((part) => part.trim().toLowerCase())
+    .some((encoding) => encoding === "gzip");
+}
+
+function sendCompressedAsset(req, res, { contentType, rawBuffer, gzipBuffer }) {
+  res.set("Content-Type", `${contentType}; charset=utf-8`);
+  res.set("Cache-Control", "no-store");
+  if (gzipBuffer && acceptsGzip(req)) {
+    res.set("Content-Encoding", "gzip");
+    res.set("Content-Length", String(gzipBuffer.byteLength));
+    res.send(gzipBuffer);
+    return;
+  }
+  res.set("Content-Length", String(rawBuffer.byteLength));
+  res.send(rawBuffer);
 }
 
 function serializeJsonForHtml(value) {
@@ -6085,6 +6108,10 @@ export function createWebApp({
   const csrfOptions = normalizeCsrfOptions(csrf);
   const rateLimiter = createInMemoryRateLimiter(rateLimit);
   const authOptions = normalizeAuthOptions(auth);
+  const statusHubScriptBuffer = Buffer.from(STATUS_PAGE_SCRIPT, "utf8");
+  const statusHubScriptGzip = gzipSync(statusHubScriptBuffer);
+  const statusHubStylesBuffer = Buffer.from(STATUS_PAGE_STYLES, "utf8");
+  const statusHubStylesGzip = gzipSync(statusHubStylesBuffer);
   const app = express();
   if (trustProxy !== undefined) {
     app.set("trust proxy", trustProxy);
@@ -6168,15 +6195,19 @@ export function createWebApp({
   const pluginAssets = createPluginAssets(app, features?.plugins);
 
   app.get("/assets/status-hub.js", (req, res) => {
-    res.set("Content-Type", "application/javascript; charset=utf-8");
-    res.set("Cache-Control", "no-store");
-    res.send(STATUS_PAGE_SCRIPT);
+    sendCompressedAsset(req, res, {
+      contentType: "application/javascript",
+      rawBuffer: statusHubScriptBuffer,
+      gzipBuffer: statusHubScriptGzip,
+    });
   });
 
   app.get("/assets/status-hub.css", (req, res) => {
-    res.set("Content-Type", "text/css; charset=utf-8");
-    res.set("Cache-Control", "no-store");
-    res.send(STATUS_PAGE_STYLES);
+    sendCompressedAsset(req, res, {
+      contentType: "text/css",
+      rawBuffer: statusHubStylesBuffer,
+      gzipBuffer: statusHubStylesGzip,
+    });
   });
 
   app.get("/", (req, res) => {

@@ -10,6 +10,10 @@ operational playbooks so the UI keeps meeting its service-level expectations.
   sustain a P95 page load <2s on mid-tier hardware. [`test/web-audits.test.js`](../test/web-audits.test.js)
   enforces the byte budget while [`test/web-status-hub-frontend.test.js`](../test/web-status-hub-frontend.test.js)
   and [`test/web-e2e.test.js`](../test/web-e2e.test.js) cover realistic navigation flows.
+- **Asset transfer budgets:** Serve `status-hub.js` and `status-hub.css` with gzip compression and keep
+  the compressed responses under 80 KB and 12 KB respectively. The new regression in
+  [`test/web-audits.test.js`](../test/web-audits.test.js) locks the content-encoding header and byte
+  caps so bundle growth is visible before release.
 - **Backend latency:** Command invocations routed through `startWebServer`
   should remain <500ms median when the CLI responds within its documented
   thresholds. [`test/web-server.test.js`](../test/web-server.test.js) captures
