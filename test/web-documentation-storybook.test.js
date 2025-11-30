@@ -22,6 +22,19 @@ describe('web documentation backlog', () => {
     }
   });
 
+  it('does not document web commands that lack validators', async () => {
+    const apiDoc = await readFile('docs/web-api-reference.md');
+    const documentedCommands = new Set(
+      [...apiDoc.matchAll(/POST\s+\/commands\/([a-z0-9-]+)/gi)].map(match => match[1]),
+    );
+
+    expect(documentedCommands.size).toBeGreaterThan(0);
+
+    for (const command of documentedCommands) {
+      expect(ALLOW_LISTED_COMMANDS).toContain(command);
+    }
+  });
+
   it('includes storybook markup for each status panel state', async () => {
     const storybookDoc = await readFile('docs/web-component-storybook.md');
     expect(storybookDoc).toContain('# Status hub component storybook');

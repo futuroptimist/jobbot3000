@@ -3,6 +3,8 @@ import {
   normalizeAnalyticsFunnelRequest,
   normalizeTrackShowRequest,
   normalizeTrackRecordRequest,
+  normalizeIntakeListRequest,
+  normalizeIntakeRecordRequest,
 } from "./schemas.js";
 
 const SUMMARIZE_ALLOWED_FIELDS = new Set([
@@ -665,6 +667,14 @@ function validateTrackRemindersDonePayload(rawPayload) {
   return sanitized;
 }
 
+function validateIntakeListPayload(payload) {
+  return normalizeIntakeListRequest(ensurePlainObject(payload ?? {}, "intake-list"));
+}
+
+function validateIntakeRecordPayload(payload) {
+  return normalizeIntakeRecordRequest(ensurePlainObject(payload ?? {}, "intake-record"));
+}
+
 const COMMAND_VALIDATORS = Object.freeze({
   summarize: validateSummarizePayload,
   match: validateMatchPayload,
@@ -690,6 +700,8 @@ const COMMAND_VALIDATORS = Object.freeze({
   },
   "recruiter-ingest": validateRecruiterIngestPayload,
   "feedback-record": validateFeedbackRecordPayload,
+  "intake-list": validateIntakeListPayload,
+  "intake-record": validateIntakeRecordPayload,
 });
 
 export const ALLOW_LISTED_COMMANDS = Object.freeze(
