@@ -3616,6 +3616,7 @@ describe("web server command endpoint", () => {
       {
         command: "summarize",
         payload: { input: "Alpha payload" },
+        result: { ok: true },
         timestamp: expect.any(String),
       },
     ]);
@@ -3630,6 +3631,7 @@ describe("web server command endpoint", () => {
       {
         command: "summarize",
         payload: { input: "Bravo payload" },
+        result: { ok: true },
         timestamp: expect.any(String),
       },
     ]);
@@ -3697,6 +3699,68 @@ describe("web server command endpoint", () => {
     ]);
   });
 
+  it("stores sanitized command errors for payload cache rehydration", async () => {
+    const commandAdapter = {
+      summarize: vi.fn(async () => {
+        const error = new Error("  Failed to summarize\u0000");
+        error.stdout = "token=abcd-1234\nPayload";
+        error.stderr = "Warning \u0007 details";
+        throw error;
+      }),
+    };
+
+    const server = await startServer({
+      commandAdapter,
+      auth: {
+        tokens: [
+          { token: "error-token", subject: "cache-user", roles: ["viewer"] },
+        ],
+        scheme: "Bearer",
+      },
+    });
+
+    const headers = buildCommandHeaders(server, {
+      authorization: "Bearer error-token",
+      "user-agent": "cache-rehydration-agent",
+    });
+
+    const payload = {
+      input: "  Resume snippet\u0000",
+      locale: " en-CA ",
+    };
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+    });
+    expect(response.status).toBe(502);
+    const body = await response.json();
+    expect(body).toEqual({
+      error: "  Failed to summarize",
+      stdout: "token=***\nPayload",
+      stderr: "Warning  details",
+    });
+
+    const history = await fetch(`${server.url}/commands/payloads/recent`, {
+      method: "GET",
+      headers,
+    });
+    expect(history.status).toBe(200);
+    const historyBody = await history.json();
+    expect(historyBody.entries).toEqual([
+      {
+        command: "summarize",
+        payload: { input: "Resume snippet", locale: "en-CA" },
+        result: {
+          error: "Failed to summarize",
+          stdout: "token=***\nPayload",
+          stderr: "Warning  details",
+        },
+        timestamp: expect.any(String),
+      },
+    ]);
+  });
+
   it("allows guests to inspect their sanitized command payload history", async () => {
     const commandAdapter = {
       summarize: vi.fn(async () => ({ ok: true })),
@@ -3753,6 +3817,7 @@ describe("web server command endpoint", () => {
       {
         command: "summarize",
         payload: { input: "Guest resume snippet", locale: "en-US" },
+        result: { ok: true },
         timestamp: expect.any(String),
       },
     ]);
@@ -3816,6 +3881,7 @@ describe("web server command endpoint", () => {
       {
         command: "summarize",
         payload: { input: "First guest payload", locale: "en-US" },
+        result: { ok: true },
         timestamp: expect.any(String),
       },
     ]);
@@ -3833,6 +3899,7 @@ describe("web server command endpoint", () => {
       {
         command: "summarize",
         payload: { input: "Second guest payload", locale: "en-US" },
+        result: { ok: true },
         timestamp: expect.any(String),
       },
     ]);

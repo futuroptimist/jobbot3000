@@ -230,8 +230,7 @@ export function createClientPayloadStore(options = {}) {
 
     const sanitizedPayload = sanitizeValue(payload ?? {});
     const normalizedPayload = sanitizedPayload ?? {};
-    const sanitizedResult = sanitizeValue(result);
-    const normalizedResult = sanitizedResult === undefined ? undefined : sanitizedResult;
+    const normalizedResult = sanitizeValue(result);
     let encryptedPayload = null;
 
     const baseTimestampMs = Number(now());
@@ -286,12 +285,17 @@ export function createClientPayloadStore(options = {}) {
     }
     store.set(normalizedClientId, entries);
     enforceClientCapacity();
-    return {
+    const returnValue = {
       command: entry.command,
       payload: clone(normalizedPayload),
-      result: clone(normalizedResult),
       timestamp: entry.timestamp,
     };
+
+    if (normalizedResult !== undefined) {
+      returnValue.result = clone(normalizedResult);
+    }
+
+    return returnValue;
   }
 
   function getRecent(clientId) {
@@ -318,19 +322,29 @@ export function createClientPayloadStore(options = {}) {
           if (decrypted === null || decrypted === undefined) {
             return null;
           }
-          return {
+          const returnValue = {
             command: entry.command,
             timestamp: entry.timestamp,
             payload: clone(decrypted.payload ?? {}),
-            result: clone(decrypted.result),
           };
+
+          if (decrypted.result !== undefined) {
+            returnValue.result = clone(decrypted.result);
+          }
+
+          return returnValue;
         }
-        return {
+        const returnValue = {
           command: entry.command,
           timestamp: entry.timestamp,
           payload: clone(entry.payload ?? {}),
-          result: clone(entry.result),
         };
+
+        if (entry.result !== undefined) {
+          returnValue.result = clone(entry.result);
+        }
+
+        return returnValue;
       })
       .filter(Boolean);
   }
