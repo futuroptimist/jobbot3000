@@ -5930,7 +5930,7 @@ function sanitizeCommandResult(result) {
       sanitized[key] = sanitizeOutputValue(value, { key });
       continue;
     }
-    sanitized[key] = value;
+    sanitized[key] = sanitizeOutputValue(value, { key });
   }
   return sanitized;
 }

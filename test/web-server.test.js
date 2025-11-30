@@ -3540,6 +3540,7 @@ describe("web server command endpoint", () => {
       {
         command: "summarize",
         payload: { input: "Viewer resume", locale: "en-US" },
+        result: { ok: true },
         timestamp: expect.any(String),
       },
     ]);
@@ -3554,6 +3555,7 @@ describe("web server command endpoint", () => {
       {
         command: "summarize",
         payload: { input: "Editor brief", locale: "en-GB" },
+        result: { ok: true },
         timestamp: expect.any(String),
       },
     ]);
