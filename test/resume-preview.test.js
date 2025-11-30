@@ -40,6 +40,7 @@ describe('renderResumeTextPreview', () => {
     const lines = preview.split('\n');
 
     expect(lines).toContain('Alex Applicant');
+    expect(preview).not.toContain('… (truncated for one-page preview)');
     expect(lines.at(-1)).toBe('');
   });
 });

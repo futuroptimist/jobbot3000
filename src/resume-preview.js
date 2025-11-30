@@ -114,10 +114,11 @@ const ONE_PAGE_MAX_LINES = 60;
 function clampPreviewLines(lines) {
   if (!Array.isArray(lines)) return [];
   if (lines.length <= ONE_PAGE_MAX_LINES) {
-    if (lines.length === 0 || lines[lines.length - 1] !== '') {
-      lines.push('');
+    const result = [...lines];
+    if (result.length === 0 || result[result.length - 1] !== '') {
+      result.push('');
     }
-    return lines;
+    return result;
   }
 
   const limited = lines.slice(0, ONE_PAGE_MAX_LINES - 1);
