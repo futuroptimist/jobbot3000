@@ -421,9 +421,12 @@
 > authenticated (or guest) client receives an isolated sanitized payload log
 > exposed at `GET /commands/payloads/recent`, unlocking audit-grade previews of
 > the most recent CLI invocations without leaking another client's inputs.
-> Regression coverage in [`test/web-server.test.js`](../test/web-server.test.js)
-> exercises both authenticated and guest retrieval flows—including the CSRF
-> guard—so the audit preview stays scoped to the active client.
+> Each entry now carries the sanitized command result as well, allowing the
+> frontend to rehydrate cached queries without replaying the CLI. Regression
+> coverage in [`test/web-server.test.js`](../test/web-server.test.js) exercises
+> both authenticated and guest retrieval flows—including the CSRF guard—and
+> asserts result snapshots stay trimmed and redacted alongside payload inputs
+> so the audit preview stays scoped to the active client.
 > Larger roadmap items—such as multi-user access controls and real-time
 > collaboration from the "Future Enhancements" section—remain multi-PR efforts
 > while this targeted hardening work lands as a single-PR change.
