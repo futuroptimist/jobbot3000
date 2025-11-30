@@ -311,6 +311,10 @@ jobbot track add <job_id> --status applied --note "emailed hiring manager"
 
 - Templating (choose Typst or LaTeX first; Tectonic/Typst CLI).
 - One-page constraint, dynamic bullet swapping.
+  _Implemented (2025-01-15):_ Resume previews now clamp to a single-page text snapshot (60 lines)
+  and append a truncation marker when longer histories appear. Regression coverage in
+  [`test/resume-preview.test.js`](test/resume-preview.test.js) keeps the one-page contract intact
+  so bundles and PDF generation stay concise by default.
 - ATS plain text preview + warnings (tables/images detection). (shipped)
 - Cover letter template + slot-fill with job-specific context. (shipped)
 
