@@ -7419,12 +7419,17 @@ export function createWebApp({
         sessionId,
         tokenFingerprint,
       });
-      clientPayloadStore.record(clientIdentity, commandParam, payload);
 
       try {
         const result = await commandAdapter[commandParam](payload);
         const sanitizedResult = sanitizeCommandResult(result);
         const durationMs = roundDuration(started);
+        clientPayloadStore.record(
+          clientIdentity,
+          commandParam,
+          payload,
+          sanitizedResult,
+        );
         logCommandTelemetry(logger, "info", {
           command: commandParam,
           status: "success",
@@ -7464,6 +7469,7 @@ export function createWebApp({
           traceId: err?.traceId,
         });
         const durationMs = roundDuration(started);
+        clientPayloadStore.record(clientIdentity, commandParam, payload, response);
 
         let report;
         if (commandParam === "track-reminders") {

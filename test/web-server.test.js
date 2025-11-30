@@ -3635,6 +3635,68 @@ describe("web server command endpoint", () => {
     ]);
   });
 
+  it("stores sanitized command results for payload cache rehydration", async () => {
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({
+        message: "  Summary ready\u0000",
+        details: {
+          notes: ["  Keep whitespace ", "\u0007"],
+          hasToken: true,
+          secretToken: "abcd-1234",
+        },
+      })),
+    };
+
+    const server = await startServer({
+      commandAdapter,
+      auth: {
+        tokens: [
+          { token: "cache-token", subject: "cache-user", roles: ["viewer"] },
+        ],
+        scheme: "Bearer",
+      },
+    });
+
+    const headers = buildCommandHeaders(server, {
+      authorization: "Bearer cache-token",
+      "user-agent": "cache-rehydration-agent",
+    });
+
+    const payload = {
+      input: "  Resume snippet\u0000",
+      locale: " en-CA ",
+    };
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+    });
+    expect(response.status).toBe(200);
+    await response.json();
+
+    const history = await fetch(`${server.url}/commands/payloads/recent`, {
+      method: "GET",
+      headers,
+    });
+    expect(history.status).toBe(200);
+    const body = await history.json();
+    expect(body.entries).toEqual([
+      {
+        command: "summarize",
+        payload: { input: "Resume snippet", locale: "en-CA" },
+        result: {
+          message: "Summary ready",
+          details: {
+            notes: ["Keep whitespace"],
+            hasToken: true,
+            secretToken: "***",
+          },
+        },
+        timestamp: expect.any(String),
+      },
+    ]);
+  });
+
   it("allows guests to inspect their sanitized command payload history", async () => {
     const commandAdapter = {
       summarize: vi.fn(async () => ({ ok: true })),

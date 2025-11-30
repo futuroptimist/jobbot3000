@@ -221,7 +221,7 @@ export function createClientPayloadStore(options = {}) {
     }
   }
 
-  function record(clientId, command, payload) {
+  function record(clientId, command, payload, result) {
     const normalizedClientId = normalizeClientId(clientId);
     const normalizedCommand = normalizeCommand(command);
     if (!normalizedClientId || !normalizedCommand) {
@@ -230,6 +230,8 @@ export function createClientPayloadStore(options = {}) {
 
     const sanitizedPayload = sanitizeValue(payload ?? {});
     const normalizedPayload = sanitizedPayload ?? {};
+    const sanitizedResult = sanitizeValue(result);
+    const normalizedResult = sanitizedResult === undefined ? undefined : sanitizedResult;
     let encryptedPayload = null;
 
     const baseTimestampMs = Number(now());
@@ -241,6 +243,13 @@ export function createClientPayloadStore(options = {}) {
       : 0;
     const timestamp = new Date(baseTimestampMs + jitterMs).toISOString();
 
+    const entryPayload = {
+      payload: normalizedPayload,
+    };
+    if (normalizedResult !== undefined) {
+      entryPayload.result = normalizedResult;
+    }
+
     if (encryptionEnabled) {
       const key = normalizeEncryptionKey(
         deriveKey(normalizedClientId, { operation: "record" }),
@@ -248,7 +257,7 @@ export function createClientPayloadStore(options = {}) {
       if (!key) {
         return null;
       }
-      encryptedPayload = encryptPayload(normalizedPayload, key);
+      encryptedPayload = encryptPayload(entryPayload, key);
     }
 
     const entry = {
@@ -259,7 +268,10 @@ export function createClientPayloadStore(options = {}) {
     if (encryptedPayload) {
       entry.encryptedPayload = encryptedPayload;
     } else {
-      entry.payload = normalizedPayload;
+      entry.payload = entryPayload.payload;
+      if ("result" in entryPayload) {
+        entry.result = entryPayload.result;
+      }
     }
 
     let entries = store.get(normalizedClientId);
@@ -277,6 +289,7 @@ export function createClientPayloadStore(options = {}) {
     return {
       command: entry.command,
       payload: clone(normalizedPayload),
+      result: clone(normalizedResult),
       timestamp: entry.timestamp,
     };
   }
@@ -308,13 +321,15 @@ export function createClientPayloadStore(options = {}) {
           return {
             command: entry.command,
             timestamp: entry.timestamp,
-            payload: clone(decrypted),
+            payload: clone(decrypted.payload ?? {}),
+            result: clone(decrypted.result),
           };
         }
         return {
           command: entry.command,
           timestamp: entry.timestamp,
           payload: clone(entry.payload ?? {}),
+          result: clone(entry.result),
         };
       })
       .filter(Boolean);
