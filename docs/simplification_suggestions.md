@@ -153,6 +153,9 @@ extraction, iterator resets, and decimal-number safety.
 _Update (2025-09-24):_ The README now ships a runnable `createHttpClient` example, and the helper's
 JSDoc includes the same snippet so connectors can copy/paste the pattern without spelunking through
 tests.
+_Update (2025-11-23):_ The status hub serves its JavaScript and CSS assets with gzip compression, and
+[`test/web-audits.test.js`](../test/web-audits.test.js) now enforces transfer-size budgets for both
+files so future UI changes keep the bundles lean.
 
 **Suggested Steps**
 
