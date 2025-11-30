@@ -229,7 +229,14 @@ function acceptsGzip(req) {
   return header
     .split(",")
     .map((part) => part.trim().toLowerCase())
-    .some((encoding) => encoding === "gzip");
+    .some((encoding) => {
+      const [name, ...params] = encoding.split(";");
+      if (name.trim() !== "gzip") return false;
+      const qParam = params.find((param) => param.trim().startsWith("q="));
+      if (!qParam) return true;
+      const q = parseFloat(qParam.trim().slice(2));
+      return Number.isFinite(q) && q > 0;
+    });
 }
 
 function sendCompressedAsset(req, res, { contentType, rawBuffer, gzipBuffer }) {

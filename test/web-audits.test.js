@@ -20,6 +20,15 @@ describe('web interface audits', () => {
 
     return new Promise((resolve, reject) => {
       const request = http.request(options, response => {
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          response.resume();
+          reject(
+            new Error(
+              `HTTP ${response.statusCode}: ${response.statusMessage ?? 'Unknown status'}`,
+            ),
+          );
+          return;
+        }
         const chunks = [];
         response.on('data', chunk => chunks.push(chunk));
         response.on('end', () => {
