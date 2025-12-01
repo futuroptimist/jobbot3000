@@ -1198,6 +1198,40 @@ describe('createCommandAdapter', () => {
     });
   });
 
+  it('resumes intake drafts and sanitizes control characters', async () => {
+    const cli = {
+      cmdIntakeResume: vi.fn(async args => {
+        expect(args).toEqual(['--json']);
+        console.log(
+          JSON.stringify({
+            draft: {
+              id: 'draft-123',
+              question: 'Why this team?\u0007',
+              answer: 'Because of the mission',
+              notes: 'Inline\u0007 notes',
+            },
+          }),
+        );
+      }),
+    };
+
+    const adapter = createCommandAdapter({ cli });
+    const result = await adapter['intake-resume']({});
+
+    expect(result).toMatchObject({
+      command: 'intake-resume',
+      format: 'json',
+    });
+    expect(result.data).toEqual({
+      draft: {
+        id: 'draft-123',
+        question: 'Why this team?',
+        answer: 'Because of the mission',
+        notes: 'Inline notes',
+      },
+    });
+  });
+
   it('records beta feedback with sanitization', async () => {
     const cli = {
       cmdFeedbackRecord: vi.fn().mockResolvedValue({

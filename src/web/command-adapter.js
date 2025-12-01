@@ -9,6 +9,7 @@ import {
   normalizeAnalyticsFunnelRequest,
   normalizeIntakeListRequest,
   normalizeIntakeRecordRequest,
+  normalizeIntakeResumeRequest,
   normalizeMatchRequest,
   normalizeShortlistListRequest,
   normalizeShortlistShowRequest,
@@ -38,7 +39,11 @@ import {
   setListingProviderToken,
 } from "../modules/scraping/provider-tokens.js";
 import { ingestRecruiterEmail } from "../ingest/recruiterEmail.js";
-import { getIntakeResponses, recordIntakeResponse } from "../intake.js";
+import {
+  getIntakeDraft,
+  getIntakeResponses,
+  recordIntakeResponse,
+} from "../intake.js";
 import { recordFeedback } from "../feedback.js";
 import { OpportunitiesRepo } from "../services/opportunitiesRepo.js";
 import { AuditLog } from "../services/audit.js";
@@ -1351,6 +1356,41 @@ export function createCommandAdapter(options = {}) {
     };
   }
 
+  async function intakeResumeCommand(options = {}) {
+    const cli = injectedCli;
+    normalizeIntakeResumeRequest(options);
+
+    if (cli && typeof cli.cmdIntakeResume === "function") {
+      const { result, stdout, stderr } = await captureConsole(() =>
+        cli.cmdIntakeResume(["--json"]),
+      );
+      if (result !== undefined) return result;
+      const data = parseJsonOutput("intake-resume", stdout, stderr);
+      const draft = data.draft ?? null;
+      const sanitized = sanitizeOutputValue({ draft }, { key: "data" });
+      return {
+        command: "intake-resume",
+        format: "json",
+        stdout,
+        stderr: "",
+        returnValue: 0,
+        data: sanitized,
+      };
+    }
+
+    const draft = await getIntakeDraft();
+    const sanitized = sanitizeOutputValue({ draft }, { key: "data" });
+    const stdout = JSON.stringify(sanitized, null, 2);
+    return {
+      command: "intake-resume",
+      format: "json",
+      stdout,
+      stderr: "",
+      returnValue: 0,
+      data: sanitized,
+    };
+  }
+
   async function feedbackRecordCommand(options = {}) {
     const cli = injectedCli;
     const { message, source, contact, rating } =
@@ -1414,6 +1454,7 @@ export function createCommandAdapter(options = {}) {
     feedbackRecord: feedbackRecordCommand,
     intakeList: intakeListCommand,
     intakeRecord: intakeRecordCommand,
+    intakeResume: intakeResumeCommand,
     listingsProviders,
     listingsFetch: listingsFetchCommand,
     listingsIngest: listingsIngestCommand,
@@ -1433,6 +1474,7 @@ export function createCommandAdapter(options = {}) {
   adapter["feedback-record"] = feedbackRecordCommand;
   adapter["intake-list"] = intakeListCommand;
   adapter["intake-record"] = intakeRecordCommand;
+  adapter["intake-resume"] = intakeResumeCommand;
   adapter["listings-providers"] = listingsProviders;
   adapter["listings-fetch"] = listingsFetchCommand;
   adapter["listings-ingest"] = listingsIngestCommand;

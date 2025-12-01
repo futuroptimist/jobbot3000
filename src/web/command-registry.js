@@ -5,6 +5,7 @@ import {
   normalizeTrackRecordRequest,
   normalizeIntakeListRequest,
   normalizeIntakeRecordRequest,
+  normalizeIntakeResumeRequest,
 } from "./schemas.js";
 
 const SUMMARIZE_ALLOWED_FIELDS = new Set([
@@ -675,6 +676,12 @@ function validateIntakeRecordPayload(payload) {
   return normalizeIntakeRecordRequest(ensurePlainObject(payload ?? {}, "intake-record"));
 }
 
+function validateIntakeResumePayload(payload) {
+  return normalizeIntakeResumeRequest(
+    ensurePlainObject(payload ?? {}, "intake-resume"),
+  );
+}
+
 const COMMAND_VALIDATORS = Object.freeze({
   summarize: validateSummarizePayload,
   match: validateMatchPayload,
@@ -702,6 +709,7 @@ const COMMAND_VALIDATORS = Object.freeze({
   "feedback-record": validateFeedbackRecordPayload,
   "intake-list": validateIntakeListPayload,
   "intake-record": validateIntakeRecordPayload,
+  "intake-resume": validateIntakeResumePayload,
 });
 
 export const ALLOW_LISTED_COMMANDS = Object.freeze(

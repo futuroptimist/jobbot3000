@@ -161,6 +161,10 @@ The following command endpoints are available. Each one maps directly to a CLI h
   status filters (`answered`, `skipped`) and redaction for sensitive compensation or visa questions.
 - `POST /commands/intake-record` → `jobbot intake record`: Record a new interview question response
   with optional tags, notes, and timestamps, supporting both answered and skipped prompts.
+- `POST /commands/intake-resume` → `jobbot intake resume`: Retrieve the most recent intake draft for
+  the active client, including the saved question, answer, notes, tags, and timestamps with control
+  characters stripped. Responses return `{ "draft": null }` when no draft is present so callers can
+  conditionally render the **Resume Session** UI.
 
 CLI users can invoke the same workflows via
 `jobbot listings <providers|fetch|ingest|archive|provider-token>`. Each subcommand supports `--json`
