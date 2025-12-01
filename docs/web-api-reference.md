@@ -206,6 +206,10 @@ Each message is a JSON object with the following shape:
 }
 ```
 
+Regression coverage in [`test/web-server.test.js`](../test/web-server.test.js)
+asserts WebSocket upgrades reject missing or unauthorized tokens and that
+authorized viewers receive sanitized command events with payload field metadata.
+
 Error events reuse the same envelope with `status: "error"` and a sanitized `result.error` message.
 Regression coverage in [`test/web-server-realtime.test.js`](../test/web-server-realtime.test.js)
 ensures authenticated subscribers receive broadcast updates while unauthorized upgrades are rejected.
