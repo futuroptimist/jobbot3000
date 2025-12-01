@@ -472,6 +472,17 @@ export function normalizeIntakeRecordRequest(options = {}) {
   return request;
 }
 
+export function normalizeIntakeResumeRequest(options = {}) {
+  assertPlainObject(options, 'intake resume request');
+
+  const extra = Object.keys(options);
+  if (extra.length > 0) {
+    throw new Error(`unexpected intake resume keys: ${extra.join(', ')}`);
+  }
+
+  return {};
+}
+
 export function normalizeFeedbackRecordRequest(options = {}) {
   assertPlainObject(options, 'feedback record request');
 

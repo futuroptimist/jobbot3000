@@ -47,6 +47,7 @@ import { createReminderCalendar } from '../src/reminders-calendar.js';
 import { ingestRecruiterEmail } from '../src/ingest/recruiterEmail.js';
 import { OpportunitiesRepo } from '../src/services/opportunitiesRepo.js';
 import { AuditLog } from '../src/services/audit.js';
+import * as intake from '../src/intake.js';
 
 describe('createCommandAdapter', () => {
   let originalEnableNativeCli;
@@ -72,6 +73,8 @@ describe('createCommandAdapter', () => {
     } else {
       process.env.JOBBOT_WEB_ENABLE_NATIVE_CLI = originalEnableNativeCli;
     }
+
+    vi.restoreAllMocks();
   });
 
   function createTempJobFile(contents = 'Role: Example Engineer') {
@@ -1196,6 +1199,57 @@ describe('createCommandAdapter', () => {
       status: 'answered',
       tags: ['motivation', 'values'],
     });
+  });
+
+  it('resumes intake drafts and sanitizes control characters', async () => {
+    const cli = {
+      cmdIntakeResume: vi.fn(async args => {
+        expect(args).toEqual(['--json']);
+        console.log(
+          JSON.stringify({
+            draft: {
+              id: 'draft-123',
+              question: 'Why this team?\u0007',
+              answer: 'Because of the mission',
+              notes: 'Inline\u0007 notes',
+            },
+          }),
+        );
+      }),
+    };
+
+    const adapter = createCommandAdapter({ cli });
+    const result = await adapter['intake-resume']({});
+
+    expect(result).toMatchObject({
+      command: 'intake-resume',
+      format: 'json',
+    });
+    expect(result.data).toEqual({
+      draft: {
+        id: 'draft-123',
+        question: 'Why this team?',
+        answer: 'Because of the mission',
+        notes: 'Inline notes',
+      },
+    });
+  });
+
+  it('returns null draft when no intake draft exists', async () => {
+    const getIntakeDraftSpy = vi
+      .spyOn(intake, 'getIntakeDraft')
+      .mockResolvedValue(null);
+
+    const adapter = createCommandAdapter();
+    const result = await adapter['intake-resume']({});
+
+    expect(getIntakeDraftSpy).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      command: 'intake-resume',
+      format: 'json',
+    });
+    expect(result.data).toEqual({ draft: null });
+    expect(result.stdout?.trim()).toBe('{\n  "draft": null\n}');
   });
 
   it('records beta feedback with sanitization', async () => {

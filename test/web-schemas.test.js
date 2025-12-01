@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   normalizeIntakeListRequest,
   normalizeIntakeRecordRequest,
+  normalizeIntakeResumeRequest,
   normalizeMatchRequest,
   normalizeSummarizeRequest,
 } from '../src/web/schemas.js';
@@ -188,6 +189,27 @@ describe('web request schemas', () => {
           invalid: true,
         }),
       ).toThrow('unexpected intake record keys: invalid');
+    });
+  });
+
+  describe('normalizeIntakeResumeRequest', () => {
+    it('returns an empty object when no fields are supplied', () => {
+      expect(normalizeIntakeResumeRequest({})).toEqual({});
+    });
+
+    it('throws when unexpected keys are provided', () => {
+      expect(() => normalizeIntakeResumeRequest({ draft: true })).toThrow(
+        'unexpected intake resume keys: draft',
+      );
+    });
+
+    it('throws when payload is not an object', () => {
+      expect(() => normalizeIntakeResumeRequest(null)).toThrow(
+        'intake resume request must be an object',
+      );
+      expect(() => normalizeIntakeResumeRequest([])).toThrow(
+        'intake resume request must be an object',
+      );
     });
   });
 });
