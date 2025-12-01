@@ -6,6 +6,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 let activeServers = [];
+let activeSockets = [];
 
 async function startServer(options) {
   const { startWebServer } = await import("../src/web/server.js");
@@ -156,6 +157,24 @@ const EXPECTED_PERMISSIONS_POLICY = [
 const EXPECTED_REFERRER_POLICY = 'strict-origin-when-cross-origin';
 
 afterEach(async () => {
+  for (const socket of activeSockets.splice(0)) {
+    if (socket.readyState === WebSocket.CLOSED) {
+      continue;
+    }
+    try {
+      await new Promise((resolve) => {
+        socket.once("error", resolve);
+        socket.once("close", resolve);
+        socket.terminate();
+        if (socket.readyState === WebSocket.CLOSED) {
+          resolve();
+        }
+      });
+    } catch {
+      // ignore cleanup failures
+    }
+  }
+
   while (activeServers.length > 0) {
     const server = activeServers.pop();
     await server.close();
@@ -176,6 +195,7 @@ describe("websocket event stream", () => {
     await expect(
       new Promise((resolve, reject) => {
         const ws = new WebSocket(server.eventsUrl);
+        activeSockets.push(ws);
         ws.once("open", () => reject(new Error("unexpected websocket success")));
         ws.once("error", (error) => resolve(error));
       }),
@@ -186,6 +206,7 @@ describe("websocket event stream", () => {
         const ws = new WebSocket(server.eventsUrl, {
           headers: { authorization: "Bearer auditor-token" },
         });
+        activeSockets.push(ws);
         ws.once("open", () => reject(new Error("unexpected websocket success")));
         ws.once("error", (error) => resolve(error));
       }),
@@ -209,6 +230,7 @@ describe("websocket event stream", () => {
       const ws = new WebSocket(server.eventsUrl, {
         headers: { authorization: "Bearer viewer-token" },
       });
+      activeSockets.push(ws);
       ws.once("open", () => resolve(ws));
       ws.once("error", reject);
     });
