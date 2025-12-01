@@ -62,4 +62,11 @@ describe('web documentation backlog', () => {
     expect(apiDoc).toMatch(/sanitized payload history/i);
     expect(apiDoc).toMatch(/test\/web-documentation-storybook\.test\.js/);
   });
+
+  it('documents sanitized command results in payload history entries', async () => {
+    const apiDoc = await readFile('docs/web-api-reference.md');
+
+    expect(apiDoc).toMatch(/sanitized command results?/i);
+    expect(apiDoc).toMatch(/"result"\s*:\s*\{/);
+  });
 });

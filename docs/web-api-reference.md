@@ -62,9 +62,12 @@ cookie for subsequent requests.
 
 ### GET /commands/payloads/recent
 
-Returns the sanitized payload history for the current client. Entries mirror the payloads supplied to
-recent `/commands/:command` requests after control characters are stripped, keys trimmed, empty
-collections removed, and blank fields discarded. Timestamps include up to 750ms of forward or
+Returns the sanitized payload history for the current client, including sanitized command results.
+Entries mirror the payloads supplied to recent `/commands/:command` requests after control
+characters are stripped, keys trimmed, empty collections removed, and blank fields discarded. Command
+results are captured with the same sanitization pipeline (redacted stdout/stderr/error messages,
+trimmed objects) so the UI can
+rehydrate recent responses without replaying CLI calls. Timestamps include up to 750ms of forward or
 backward jitter to reduce correlation value in the unlikely event encrypted history is exposed. The
 response shape is:
 
@@ -75,6 +78,10 @@ response shape is:
       "command": "track-record",
       "timestamp": "2025-11-05T17:02:14.331Z",
       "payload": { "jobId": "swe-123", "status": "interview" },
+      "result": {
+        "status": "success",
+        "stdout": "Status updated",
+      },
     },
   ],
 }
