@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { once } from "node:events";
+import { WebSocket } from "ws";
 import { JSDOM } from "jsdom";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -158,6 +160,93 @@ afterEach(async () => {
     const server = activeServers.pop();
     await server.close();
   }
+});
+
+describe("websocket event stream", () => {
+  it("requires viewer-capable tokens before upgrading", async () => {
+    const server = await startServer({
+      auth: {
+        tokens: [
+          { token: "viewer-token", roles: ["viewer"] },
+          { token: "auditor-token", roles: ["auditor"] },
+        ],
+      },
+    });
+
+    await expect(
+      new Promise((resolve, reject) => {
+        const ws = new WebSocket(server.eventsUrl);
+        ws.once("open", () => reject(new Error("unexpected websocket success")));
+        ws.once("error", (error) => resolve(error));
+      }),
+    ).resolves.toBeInstanceOf(Error);
+
+    await expect(
+      new Promise((resolve, reject) => {
+        const ws = new WebSocket(server.eventsUrl, {
+          headers: { authorization: "Bearer auditor-token" },
+        });
+        ws.once("open", () => reject(new Error("unexpected websocket success")));
+        ws.once("error", (error) => resolve(error));
+      }),
+    ).resolves.toBeInstanceOf(Error);
+  });
+
+  it("streams sanitized command events to authorized viewers", async () => {
+    const commandAdapter = {
+      summarize: vi.fn().mockResolvedValue({
+        stdout: "{\"ok\":true}",
+        data: { ok: true },
+      }),
+    };
+
+    const server = await startServer({
+      auth: { tokens: [{ token: "viewer-token", roles: ["viewer"] }] },
+      commandAdapter,
+    });
+
+    const socket = await new Promise((resolve, reject) => {
+      const ws = new WebSocket(server.eventsUrl, {
+        headers: { authorization: "Bearer viewer-token" },
+      });
+      ws.once("open", () => resolve(ws));
+      ws.once("error", reject);
+    });
+
+    const headers = buildCommandHeaders(server, {
+      authorization: "Bearer viewer-token",
+    });
+
+    const body = JSON.stringify({
+      input: "job.txt",
+      format: "json",
+      sentences: 1,
+    });
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers,
+      body,
+    });
+    expect(response.status).toBe(200);
+
+    const [rawMessage] = await once(socket, "message");
+    socket.close();
+
+    const event = JSON.parse(rawMessage.toString());
+    expect(event).toMatchObject({
+      type: "command",
+      command: "summarize",
+      status: "success",
+      actor: "token#1",
+      roles: ["viewer"],
+      payloadFields: ["format", "input", "sentences"],
+    });
+    expect(event.timestamp).toMatch(/Z$/);
+    expect(event.result).toEqual({
+      stdout: "{\"ok\":true}",
+      data: { ok: true },
+    });
+  });
 });
 
 describe("web server health endpoint", () => {
