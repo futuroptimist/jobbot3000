@@ -5938,8 +5938,30 @@ function sanitizeCommandResult(result) {
   if (result == null) {
     return {};
   }
-  if (typeof result === "string") {
-    return sanitizeOutputString(result);
+
+  const normalizeOutputText = (value) => {
+    if (typeof value === "string") {
+      return value;
+    }
+    if (Buffer.isBuffer(value)) {
+      return value.toString("utf8");
+    }
+    if (ArrayBuffer.isView(value)) {
+      return Buffer.from(value.buffer, value.byteOffset, value.byteLength).toString("utf8");
+    }
+    if (value instanceof ArrayBuffer) {
+      return Buffer.from(value).toString("utf8");
+    }
+    return value;
+  };
+
+  if (
+    typeof result === "string" ||
+    Buffer.isBuffer(result) ||
+    ArrayBuffer.isView(result) ||
+    result instanceof ArrayBuffer
+  ) {
+    return sanitizeOutputString(normalizeOutputText(result));
   }
   if (typeof result !== "object") {
     return result;
@@ -5953,7 +5975,7 @@ function sanitizeCommandResult(result) {
   const sanitized = {};
   for (const [key, value] of Object.entries(result)) {
     if (key === "stdout" || key === "stderr" || key === "error") {
-      sanitized[key] = sanitizeOutputString(value);
+      sanitized[key] = sanitizeOutputString(normalizeOutputText(value));
       continue;
     }
     if (key === "data" || key === "returnValue") {
