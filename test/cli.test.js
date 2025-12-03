@@ -3243,6 +3243,70 @@ describe('jobbot CLI', () => {
     expect(textReport).toContain('Screening: 1 (100% conversion)');
   }, 15000);
 
+  it('summarizes shortlist compensation via the analytics command', () => {
+    const shortlistPath = path.join(dataDir, 'shortlist.json');
+    fs.mkdirSync(path.dirname(shortlistPath), { recursive: true });
+    fs.writeFileSync(
+      shortlistPath,
+      JSON.stringify(
+        {
+          jobs: {
+            'job-usd-fixed': {
+              metadata: { compensation: '$185k' },
+            },
+            'job-euro-range': {
+              metadata: { compensation: '€95 – 140k' },
+            },
+            'job-euro-single': {
+              metadata: { compensation: '€95k' },
+            },
+            'job-unparsed': {
+              metadata: { compensation: 'Competitive' },
+            },
+          },
+        },
+        null,
+        2,
+      ) + '\n',
+      'utf8',
+    );
+
+    const textReport = runCli(['analytics', 'compensation']);
+    expect(textReport).toContain('Compensation summary (3 parsed of 4 entries; 1 unparsed)');
+    expect(textReport).toContain('$ — 1 job');
+    expect(textReport).toContain('€ — 2 jobs (1 range)');
+    expect(textReport).toContain('Range: $185,000 – $185,000');
+    expect(textReport).toContain('Range: €95,000 – €140,000');
+    expect(textReport).toContain('Median midpoint: €106,250');
+    expect(textReport).toContain('Unparsed entries:');
+    expect(textReport).toContain('job-unparsed: Competitive');
+
+    const jsonReport = runCli(['analytics', 'compensation', '--json']);
+    const parsed = JSON.parse(jsonReport);
+    expect(parsed.totals).toEqual({
+      shortlisted_jobs: 4,
+      with_compensation: 4,
+      parsed: 3,
+      unparsed: 1,
+    });
+    expect(parsed.issues).toEqual([
+      { job_id: 'job-unparsed', value: 'Competitive' },
+    ]);
+    const currencies = Object.fromEntries(parsed.currencies.map(entry => [entry.currency, entry]));
+    expect(currencies.$.stats).toMatchObject({
+      count: 1,
+      range: 0,
+      minimum: 185000,
+      maximum: 185000,
+    });
+    expect(currencies['€'].stats).toMatchObject({
+      count: 2,
+      range: 1,
+      minimum: 95000,
+      maximum: 140000,
+    });
+  });
+
   it('exports anonymized analytics snapshots to disk', () => {
     runCli(['track', 'log', 'job-1', '--channel', 'email', '--date', '2025-03-01']);
     runCli(['track', 'add', 'job-1', '--status', 'screening']);

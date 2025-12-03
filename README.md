@@ -178,6 +178,17 @@ node scripts/import-data.ts --source backups/opportunities.ndjson
 Both scripts respect `JOBBOT_DATA_DIR` so you can point to alternate data directories during tests or
 migrations.
 
+### Analytics compensation summary
+
+Use the CLI to review parsed compensation ranges stored in the shortlist. The text output highlights
+currency breakdowns, ranges, and median midpoints, while `--json` emits the structured snapshot for
+automation:
+
+```bash
+jobbot analytics compensation
+jobbot analytics compensation --json
+```
+
 ## UI screenshots
 
 ![Overview screen](docs/screenshots/overview.png "Overview screen")
