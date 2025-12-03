@@ -143,8 +143,8 @@
   telemetry and exposes a `logTransport` sink that posts entries over HTTPS. The server refuses
   insecure (`http://`) transports when bound to non-loopback hosts so remote deployments keep logs
   encrypted in transit. Regression coverage in
-  [`test/web-server.test.js`](../test/web-server.test.js) verifies payload redaction, HTTPS
-  enforcement, and remote transport wiring.
+  [`test/web-log-transport.test.js`](../test/web-log-transport.test.js) verifies payload redaction,
+  HTTPS enforcement, and remote transport wiring.
 
 ### 4. UX and Theming Framework
 
