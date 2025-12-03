@@ -46,5 +46,63 @@ describe("createClientPayloadStore", () => {
     expect(deriveKey).toHaveBeenCalledWith(expect.stringContaining("client-b"), {
       operation: "record",
     });
+    expect(deriveKey).toHaveBeenCalledWith(expect.stringContaining("client-b"), {
+      operation: "read",
+    });
+  });
+
+  it("evicts oldest entries per client while preserving newest writes", () => {
+    const store = createClientPayloadStore({
+      maxEntriesPerClient: 2,
+      now: () => 0,
+      jitter: () => 0,
+    });
+
+    store.record("client-c", "cmd-1", { a: 1 });
+    store.record("client-c", "cmd-2", { a: 2 });
+    store.record("client-c", "cmd-3", { a: 3 });
+
+    const history = store.getRecent("client-c");
+    expect(history.map((entry) => entry.command)).toEqual(["cmd-2", "cmd-3"]);
+  });
+
+  it("drops entries that cannot be decrypted because a read key is missing", () => {
+    const deriveKey = vi
+      .fn()
+      .mockReturnValueOnce(Buffer.alloc(32, 2))
+      .mockReturnValueOnce(null);
+
+    const store = createClientPayloadStore({
+      encryption: { deriveKey },
+      now: fixedNow,
+      jitter: () => 0,
+    });
+
+    store.record("client-d", "cmd-1", { a: "b" });
+    expect(store.getRecent("client-d")).toEqual([]);
+  });
+
+  it("removes empty or control-only fields during sanitization", () => {
+    const store = createClientPayloadStore({
+      now: () => 0,
+      jitter: () => 0,
+    });
+
+    const entry = store.record(
+      "client-e",
+      "cmd-4",
+      {
+        "\u0007invalid": "\u0000\u0001",
+        nested: { ok: " yes ", empty: "  " },
+      },
+      undefined,
+    );
+
+    expect(entry).toEqual({
+      command: "cmd-4",
+      payload: { nested: { ok: "yes" } },
+      timestamp: "1970-01-01T00:00:00.000Z",
+    });
+    expect(store.getRecent("client-e")).toEqual([entry]);
   });
 });
