@@ -4128,7 +4128,7 @@ describe("web server command endpoint", () => {
     expect(first.headers.get("x-ratelimit-limit")).toBe("2");
     expect(first.headers.get("x-ratelimit-remaining")).toBe("1");
     expect(new Date(first.headers.get("x-ratelimit-reset") ?? "").getTime()).toBeGreaterThan(
-      Date.now() - 1000,
+      Date.now(),
     );
 
     const second = await fetch(`${server.url}/commands/summarize`, {
