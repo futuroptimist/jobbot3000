@@ -270,11 +270,11 @@ describe('interview session archive', () => {
     });
 
     expect(entry).not.toHaveProperty('transcript');
-    expect(entry.heuristics).toBeDefined();
+    expect(entry).not.toHaveProperty('heuristics');
 
     const stored = await getInterviewSession('job-privacy', 'session-keep');
     expect(stored).not.toHaveProperty('transcript');
-    expect(stored.heuristics).toBeDefined();
+    expect(stored).not.toHaveProperty('heuristics');
   });
 
   it('stores audio source metadata when provided', async () => {

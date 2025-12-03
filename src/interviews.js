@@ -1178,7 +1178,7 @@ export async function recordInterviewSession(jobId, sessionId, data = {}) {
   if (startedAt) entry.started_at = startedAt;
   if (endedAt) entry.ended_at = endedAt;
 
-  if (transcript) {
+  if (transcript && shouldStoreTranscript) {
     const heuristics = buildTranscriptHeuristics({
       transcript,
       startedAt,
