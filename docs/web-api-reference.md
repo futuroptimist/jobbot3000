@@ -68,8 +68,9 @@ characters are stripped, keys trimmed, empty collections removed, and blank fiel
 results are captured with the same sanitization pipeline (redacted stdout/stderr/error messages,
 trimmed objects) so the UI can
 rehydrate recent responses without replaying CLI calls. Timestamps include up to 750ms of forward or
-backward jitter to reduce correlation value in the unlikely event encrypted history is exposed. The
-response shape is:
+backward jitter to reduce correlation value in the unlikely event encrypted history is exposed
+(`test/client-payload-store.test.js` covers both the jitter cap and encrypted history round-trip).
+The response shape is:
 
 ```jsonc
 {
