@@ -129,7 +129,7 @@ jobbot settings show --json
 
 Analytics exports automatically honor the redaction toggle unless you override it with
 `--no-redact`, and disabling transcript storage prevents interview sessions from persisting
-verbatim transcripts on disk.
+verbatim transcripts or transcript-derived heuristics on disk.
 
 ## HTTP client example
 
