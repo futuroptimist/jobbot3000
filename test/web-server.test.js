@@ -3682,15 +3682,7 @@ describe("web server command endpoint", () => {
     expect(uniqueEditorTimestamps.size).toBe(editorBody.entries.length);
   });
 
-  it("redacts command results in payload history when adapters return buffers", async () => {
-    const commandAdapter = {
-      summarize: vi.fn(async () => ({
-        stdout: Buffer.from("api_key=supersecret"),
-        stderr: Buffer.from("Bearer secondsecret"),
-        ok: true,
-      })),
-    };
-
+  const expectRedactedBinaryPayloadHistory = async (commandAdapter) => {
     const server = await startServer({ commandAdapter });
 
     const statusResponse = await fetch(`${server.url}/`);
@@ -3738,6 +3730,44 @@ describe("web server command endpoint", () => {
         timestamp: expect.any(String),
       },
     ]);
+  };
+
+  it("redacts command results in payload history when adapters return buffers", async () => {
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({
+        stdout: Buffer.from("api_key=supersecret"),
+        stderr: Buffer.from("Bearer secondsecret"),
+        ok: true,
+      })),
+    };
+
+    await expectRedactedBinaryPayloadHistory(commandAdapter);
+  });
+
+  it("redacts command results in payload history when adapters return typed arrays", async () => {
+    const encoder = new TextEncoder();
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({
+        stdout: encoder.encode("api_key=supersecret"),
+        stderr: encoder.encode("Bearer secondsecret"),
+        ok: true,
+      })),
+    };
+
+    await expectRedactedBinaryPayloadHistory(commandAdapter);
+  });
+
+  it("redacts command results in payload history when adapters return array buffers", async () => {
+    const encoder = new TextEncoder();
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({
+        stdout: encoder.encode("api_key=supersecret").buffer,
+        stderr: encoder.encode("Bearer secondsecret").buffer,
+        ok: true,
+      })),
+    };
+
+    await expectRedactedBinaryPayloadHistory(commandAdapter);
   });
 
   it("separates payload history for tokens sharing the same subject", async () => {

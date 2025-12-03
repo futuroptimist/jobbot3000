@@ -5955,10 +5955,12 @@ function sanitizeCommandResult(result) {
     return value;
   };
 
-  if (typeof result === "string" || Buffer.isBuffer(result) || ArrayBuffer.isView(result)) {
-    return sanitizeOutputString(normalizeOutputText(result));
-  }
-  if (result instanceof ArrayBuffer) {
+  if (
+    typeof result === "string" ||
+    Buffer.isBuffer(result) ||
+    ArrayBuffer.isView(result) ||
+    result instanceof ArrayBuffer
+  ) {
     return sanitizeOutputString(normalizeOutputText(result));
   }
   if (typeof result !== "object") {
