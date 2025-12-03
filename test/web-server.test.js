@@ -3682,6 +3682,64 @@ describe("web server command endpoint", () => {
     expect(uniqueEditorTimestamps.size).toBe(editorBody.entries.length);
   });
 
+  it("redacts command results in payload history when adapters return buffers", async () => {
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({
+        stdout: Buffer.from("api_key=supersecret"),
+        stderr: Buffer.from("Bearer secondsecret"),
+        ok: true,
+      })),
+    };
+
+    const server = await startServer({ commandAdapter });
+
+    const statusResponse = await fetch(`${server.url}/`);
+    const bootstrapCookies = statusResponse.headers.getSetCookie?.() ?? [];
+    const csrfToken = server.csrfToken ?? "test-csrf-token";
+    const bootstrapCookieHeader = bootstrapCookies.map((entry) => entry.split(";")[0]).join("; ");
+    const commandHeaders = {
+      ...buildCommandHeaders(server, {}, { includeCookie: false }),
+      cookie: bootstrapCookieHeader,
+      [server.csrfHeaderName ?? "x-jobbot-csrf"]: csrfToken,
+    };
+
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: commandHeaders,
+      body: JSON.stringify({ input: "buffered" }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toEqual({
+      ok: true,
+      stdout: "api_key=***",
+      stderr: "Bearer ***",
+    });
+
+    const cookies = response.headers.getSetCookie?.() ?? [];
+    const cookieHeader = cookies.map((entry) => entry.split(";")[0]).join("; ");
+
+    const history = await fetch(`${server.url}/commands/payloads/recent`, {
+      method: "GET",
+      headers: {
+        ...commandHeaders,
+        cookie: [commandHeaders.cookie, cookieHeader].filter(Boolean).join("; "),
+      },
+    });
+
+    expect(history.status).toBe(200);
+    const historyBody = await history.json();
+    expect(historyBody.entries).toEqual([
+      {
+        command: "summarize",
+        payload: { input: "buffered" },
+        result: { ok: true, stdout: "api_key=***", stderr: "Bearer ***" },
+        timestamp: expect.any(String),
+      },
+    ]);
+  });
+
   it("separates payload history for tokens sharing the same subject", async () => {
     const commandAdapter = {
       summarize: vi.fn(async () => ({ ok: true })),
