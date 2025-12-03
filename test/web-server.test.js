@@ -4125,6 +4125,11 @@ describe("web server command endpoint", () => {
       body,
     });
     expect(first.status).toBe(200);
+    expect(first.headers.get("x-ratelimit-limit")).toBe("2");
+    expect(first.headers.get("x-ratelimit-remaining")).toBe("1");
+    expect(new Date(first.headers.get("x-ratelimit-reset") ?? "").getTime()).toBeGreaterThan(
+      Date.now() - 1000,
+    );
 
     const second = await fetch(`${server.url}/commands/summarize`, {
       method: "POST",
@@ -4142,6 +4147,13 @@ describe("web server command endpoint", () => {
     expect(await third.json()).toMatchObject({
       error: expect.stringMatching(/too many/i),
     });
+    expect(third.headers.get("x-ratelimit-limit")).toBe("2");
+    expect(third.headers.get("x-ratelimit-remaining")).toBe("0");
+    const retryAfter = Number(third.headers.get("retry-after"));
+    expect(retryAfter).toBeGreaterThanOrEqual(1);
+    expect(new Date(third.headers.get("x-ratelimit-reset") ?? "").getTime()).toBeGreaterThan(
+      Date.now(),
+    );
     expect(commandAdapter.summarize).toHaveBeenCalledTimes(2);
   });
 

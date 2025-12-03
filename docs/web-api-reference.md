@@ -40,6 +40,10 @@ All command responses include rate-limit headers:
 | `X-RateLimit-Reset`     | UTC timestamp when the window resets.           |
 | `Retry-After`           | Seconds until retry (present on 429 responses). |
 
+[`test/web-server.test.js`](../test/web-server.test.js) exercises both the
+success and 429 paths to keep the rate-limit header contract stable as the
+backend evolves.
+
 ## Endpoints
 
 ### GET /
