@@ -196,6 +196,52 @@ describe("web session security", () => {
     expect(followUpSession).not.toBe(initialSession);
   });
 
+  it("requires valid auth tokens when revoking sessions on protected servers", async () => {
+    const server = await startServer({
+      auth: { tokens: [{ token: "secure-token", roles: ["viewer"] }] },
+    });
+
+    const landingResponse = await fetch(`${server.url}/`);
+    expect(landingResponse.status).toBe(200);
+    const sessionId = extractSessionCookie(landingResponse, server.sessionCookieName);
+    const csrfCookie = extractSessionCookie(landingResponse, server.csrfCookieName);
+    expect(sessionId).toBeTruthy();
+    expect(csrfCookie).toBeTruthy();
+
+    const cookieHeader = [`${server.sessionCookieName}=${sessionId}`];
+    if (csrfCookie) {
+      cookieHeader.push(`${server.csrfCookieName}=${csrfCookie}`);
+    }
+
+    const missingAuth = await fetch(`${server.url}/sessions/revoke`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        [server.csrfHeaderName]: server.csrfToken,
+        [server.sessionHeaderName]: sessionId,
+        cookie: cookieHeader.join("; "),
+      },
+      body: "{}",
+    });
+    expect(missingAuth.status).toBe(401);
+    expect(missingAuth.headers.get("www-authenticate")).toMatch(/realm="jobbot-web"/i);
+
+    const authorizedResponse = await fetch(`${server.url}/sessions/revoke`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: "Bearer secure-token",
+        [server.csrfHeaderName]: server.csrfToken,
+        [server.sessionHeaderName]: sessionId,
+        cookie: cookieHeader.join("; "),
+      },
+      body: "{}",
+    });
+    expect(authorizedResponse.status).toBe(200);
+    const payload = await authorizedResponse.json();
+    expect(payload.revoked).toBe(true);
+  });
+
   it("forces secure session cookies when JOBBOT_WEB_SESSION_SECURE=1", async () => {
     const originalValue = process.env.JOBBOT_WEB_SESSION_SECURE;
     process.env.JOBBOT_WEB_SESSION_SECURE = "1";

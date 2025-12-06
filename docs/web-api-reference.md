@@ -59,10 +59,13 @@ status code 200 when all checks pass and 503 when any check reports `status: "er
 ### POST /sessions/revoke
 
 Invalidates the caller's active session and returns a fresh identifier. Requests must include the
-CSRF header and, when configured, the same authorization header required for command endpoints. The
-response body includes a `revoked` boolean and issues a replacement session cookie plus the
-`X-Jobbot-Session-Id` header. Clients should discard any cached identifiers and use the replacement
-cookie for subsequent requests.
+CSRF header and, when configured, the same authorization header required for command endpoints.
+Protected servers return `401 Unauthorized` with `WWW-Authenticate: Bearer realm="jobbot-web"` when
+the authorization header is missing so callers can prompt for credentials. Regression coverage in
+[`test/web-session-security.test.js`](../test/web-session-security.test.js) keeps the authentication
+guard and header contract stable. The response body includes a `revoked` boolean and issues a
+replacement session cookie plus the `X-Jobbot-Session-Id` header. Clients should discard any cached
+identifiers and use the replacement cookie for subsequent requests.
 
 ### GET /commands/payloads/recent
 
