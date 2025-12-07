@@ -8,6 +8,7 @@ import { startWebServer } from '../src/web/server.js';
 describe('web server remote access guard', () => {
   let server;
   let tempDir;
+  const originalAllowRemote = process.env.JOBBOT_WEB_ALLOW_REMOTE;
 
   afterEach(async () => {
     if (server) {
@@ -17,6 +18,11 @@ describe('web server remote access guard', () => {
     if (tempDir) {
       await fs.rm(tempDir, { recursive: true, force: true });
       tempDir = null;
+    }
+    if (originalAllowRemote === undefined) {
+      delete process.env.JOBBOT_WEB_ALLOW_REMOTE;
+    } else {
+      process.env.JOBBOT_WEB_ALLOW_REMOTE = originalAllowRemote;
     }
   });
 
@@ -37,6 +43,35 @@ describe('web server remote access guard', () => {
         host: '0.0.0.0',
         port: 0,
         allowRemoteAccess: 'false',
+        csrfToken: 'remote-guard-csrf',
+        commandAdapter: {},
+      }),
+    ).toThrow(/local-only preview/i);
+  });
+
+  it('honors a truthy environment flag for remote bindings', async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jobbot-remote-'));
+    process.env.JOBBOT_WEB_ALLOW_REMOTE = 'yes';
+
+    server = await startWebServer({
+      host: '0.0.0.0',
+      port: 0,
+      audit: { logPath: path.join(tempDir, 'audit.jsonl') },
+      csrfToken: 'remote-guard-csrf',
+      commandAdapter: {},
+    });
+
+    expect(server.host).toBe('0.0.0.0');
+    expect(server.url).toMatch(/^http:\/\/0\.0\.0\.0:\d+/);
+  });
+
+  it('treats a falsy environment flag as disabled', () => {
+    process.env.JOBBOT_WEB_ALLOW_REMOTE = 'false';
+
+    expect(() =>
+      startWebServer({
+        host: '0.0.0.0',
+        port: 0,
         csrfToken: 'remote-guard-csrf',
         commandAdapter: {},
       }),
