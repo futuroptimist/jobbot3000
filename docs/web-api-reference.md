@@ -175,6 +175,10 @@ The following command endpoints are available. Each one maps directly to a CLI h
   `data/feedback.json` for follow-up analysis.
 - `POST /commands/intake-list` → `jobbot intake list`: List recorded interview responses with optional
   status filters (`answered`, `skipped`) and redaction for sensitive compensation or visa questions.
+- `POST /commands/intake-export` → `jobbot intake export`: Download a sanitized transcript of intake
+  responses using the same serializer as the CLI `--json` export. The endpoint always returns JSON
+  with `{ "responses": [...] }` so clients can download the payload directly or render the export
+  inline. Set `redact: true` to mask compensation, visa, and other sensitive answers before export.
 - `POST /commands/intake-record` → `jobbot intake record`: Record a new interview question response
   with optional tags, notes, and timestamps, supporting both answered and skipped prompts.
 - `POST /commands/intake-resume` → `jobbot intake resume`: Retrieve the most recent intake draft for

@@ -422,6 +422,23 @@ export function normalizeIntakeListRequest(options = {}) {
   return request;
 }
 
+export function normalizeIntakeExportRequest(options = {}) {
+  assertPlainObject(options, 'intake export request');
+
+  const allowedKeys = new Set(['redact']);
+  const extra = Object.keys(options).filter(key => !allowedKeys.has(key));
+  if (extra.length > 0) {
+    throw new Error(`unexpected intake export keys: ${extra.join(', ')}`);
+  }
+
+  const redact = normalizeBoolean(options.redact, {
+    name: 'redact',
+    defaultValue: false,
+  });
+
+  return { redact };
+}
+
 export function normalizeIntakeRecordRequest(options = {}) {
   assertPlainObject(options, 'intake record request');
 

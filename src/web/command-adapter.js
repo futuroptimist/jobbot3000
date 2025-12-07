@@ -8,6 +8,7 @@ import {
   normalizeAnalyticsExportRequest,
   normalizeAnalyticsFunnelRequest,
   normalizeIntakeListRequest,
+  normalizeIntakeExportRequest,
   normalizeIntakeRecordRequest,
   normalizeIntakeResumeRequest,
   normalizeMatchRequest,
@@ -288,33 +289,45 @@ function formatLogArg(arg) {
 }
 
 const consoleCaptureStorage = new AsyncLocalStorage();
-let consoleHooksInstalled = false;
 let originalConsoleLog = console.log.bind(console);
 let originalConsoleError = console.error.bind(console);
+let patchedConsoleLog;
+let patchedConsoleError;
 
 function ensureConsoleHooks() {
-  if (consoleHooksInstalled) return;
-  consoleHooksInstalled = true;
-  originalConsoleLog = console.log.bind(console);
-  originalConsoleError = console.error.bind(console);
-  console.log = (...args) => {
-    const store = consoleCaptureStorage.getStore();
-    if (store) {
-      const message = args.map(formatLogArg).join(" ");
-      store.logs.push(sanitizeOutputString(message));
-    } else {
-      originalConsoleLog(...args);
-    }
-  };
-  console.error = (...args) => {
-    const store = consoleCaptureStorage.getStore();
-    if (store) {
-      const message = args.map(formatLogArg).join(" ");
-      store.errors.push(sanitizeOutputString(message));
-    } else {
-      originalConsoleError(...args);
-    }
-  };
+  if (!patchedConsoleLog || !patchedConsoleError) {
+    patchedConsoleLog = (...args) => {
+      const store = consoleCaptureStorage.getStore();
+      if (store) {
+        const message = args.map(formatLogArg).join(" ");
+        store.logs.push(sanitizeOutputString(message));
+      } else {
+        originalConsoleLog(...args);
+      }
+    };
+    patchedConsoleError = (...args) => {
+      const store = consoleCaptureStorage.getStore();
+      if (store) {
+        const message = args.map(formatLogArg).join(" ");
+        store.errors.push(sanitizeOutputString(message));
+      } else {
+        originalConsoleError(...args);
+      }
+    };
+  }
+
+  const logChanged = console.log !== patchedConsoleLog;
+  const errorChanged = console.error !== patchedConsoleError;
+  if (!logChanged && !errorChanged) return;
+
+  if (logChanged) {
+    originalConsoleLog = console.log.bind(console);
+    console.log = patchedConsoleLog;
+  }
+  if (errorChanged) {
+    originalConsoleError = console.error.bind(console);
+    console.error = patchedConsoleError;
+  }
 }
 
 async function captureConsole(fn) {
@@ -1265,6 +1278,48 @@ export function createCommandAdapter(options = {}) {
     }
   }
 
+  const sanitizeIntakeResponses = (responses) => {
+    if (!Array.isArray(responses)) return [];
+    return responses.map((entry) => {
+      const sanitized = sanitizeOutputValue(entry, { key: "data" }) ?? {};
+      const normalized = { ...sanitized };
+
+      for (const field of [
+        "id",
+        "question",
+        "answer",
+        "notes",
+        "status",
+        "asked_at",
+        "askedAt",
+        "recorded_at",
+        "recordedAt",
+      ]) {
+        if (typeof normalized[field] === "string") {
+          const trimmed = sanitizeOutputString(normalized[field]).trim();
+          if (trimmed) {
+            normalized[field] = trimmed;
+          } else {
+            delete normalized[field];
+          }
+        }
+      }
+
+      if (Array.isArray(normalized.tags)) {
+        const tags = normalized.tags
+          .map((tag) => (typeof tag === "string" ? sanitizeOutputString(tag).trim() : ""))
+          .filter(Boolean);
+        if (tags.length) {
+          normalized.tags = tags;
+        } else {
+          delete normalized.tags;
+        }
+      }
+
+      return normalized;
+    });
+  };
+
   async function intakeListCommand(options = {}) {
     const cli = injectedCli;
     const { status, redact } = normalizeIntakeListRequest(options);
@@ -1278,14 +1333,16 @@ export function createCommandAdapter(options = {}) {
       );
       if (result !== undefined) return result;
       const data = parseJsonOutput("intake-list", stdout, stderr);
-      const responses = Array.isArray(data.responses) ? data.responses : data;
+      const responses = sanitizeIntakeResponses(
+        Array.isArray(data.responses) ? data.responses : data,
+      );
       return {
         command: "intake-list",
         format: "json",
         stdout,
         stderr: "",
         returnValue: 0,
-        data: sanitizeOutputValue(responses, { key: "data" }),
+        data: responses,
       };
     }
 
@@ -1293,11 +1350,51 @@ export function createCommandAdapter(options = {}) {
     if (status) intakeOptions.status = status;
     if (redact) intakeOptions.redact = redact;
 
-    const responses = await getIntakeResponses(intakeOptions);
-    const sanitized = sanitizeOutputValue(responses, { key: "data" });
-    const stdout = JSON.stringify(sanitized, null, 2);
+    const responses = sanitizeIntakeResponses(
+      await getIntakeResponses(intakeOptions),
+    );
+    const stdout = JSON.stringify(responses, null, 2);
     return {
       command: "intake-list",
+      format: "json",
+      stdout,
+      stderr: "",
+      returnValue: 0,
+      data: responses,
+    };
+  }
+
+  async function intakeExportCommand(options = {}) {
+    const cli = injectedCli;
+    const { redact } = normalizeIntakeExportRequest(options);
+
+    if (cli && typeof cli.cmdIntakeExport === "function") {
+      const args = ["--json"];
+      if (redact) args.push("--redact");
+      const { result, stdout, stderr } = await captureConsole(() =>
+        cli.cmdIntakeExport(args),
+      );
+      if (result !== undefined) return result;
+      const data = parseJsonOutput("intake-export", stdout, stderr);
+      const responses = sanitizeIntakeResponses(
+        Array.isArray(data.responses) ? data.responses : data,
+      );
+      const sanitized = { responses };
+      return {
+        command: "intake-export",
+        format: "json",
+        stdout,
+        stderr: "",
+        returnValue: 0,
+        data: sanitized,
+      };
+    }
+
+    const responses = sanitizeIntakeResponses(await getIntakeResponses({ redact }));
+    const sanitized = { responses };
+    const stdout = JSON.stringify(sanitized, null, 2);
+    return {
+      command: "intake-export",
       format: "json",
       stdout,
       stderr: "",
@@ -1453,6 +1550,7 @@ export function createCommandAdapter(options = {}) {
     trackReminders,
     feedbackRecord: feedbackRecordCommand,
     intakeList: intakeListCommand,
+    intakeExport: intakeExportCommand,
     intakeRecord: intakeRecordCommand,
     intakeResume: intakeResumeCommand,
     listingsProviders,
@@ -1473,6 +1571,7 @@ export function createCommandAdapter(options = {}) {
   adapter["track-reminders-done"] = trackRemindersDone;
   adapter["feedback-record"] = feedbackRecordCommand;
   adapter["intake-list"] = intakeListCommand;
+  adapter["intake-export"] = intakeExportCommand;
   adapter["intake-record"] = intakeRecordCommand;
   adapter["intake-resume"] = intakeResumeCommand;
   adapter["listings-providers"] = listingsProviders;
