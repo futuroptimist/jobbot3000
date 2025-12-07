@@ -7770,7 +7770,7 @@ export function startWebServer(options = {}) {
     throw new Error("port must be a number between 0 and 65535");
   }
   const allowRemote =
-    allowRemoteAccess ?? parseBoolean(process.env.JOBBOT_WEB_ALLOW_REMOTE) ?? false;
+    parseBoolean(allowRemoteAccess) ?? parseBoolean(process.env.JOBBOT_WEB_ALLOW_REMOTE) ?? false;
   if (!allowRemote && !isLoopbackHost(host)) {
     throw new Error(
       "The web interface is a local-only preview; set JOBBOT_WEB_ALLOW_REMOTE=1 or " +
