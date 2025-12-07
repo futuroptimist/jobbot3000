@@ -87,12 +87,9 @@ function normalizeClientId(value) {
 }
 
 function normalizeCommand(value) {
-  if (typeof value !== "string") {
-    return null;
-  }
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  return trimmed;
+  const sanitized = sanitizeString(value);
+  if (!sanitized) return null;
+  return sanitized;
 }
 
 function normalizeEncryptionKey(input) {

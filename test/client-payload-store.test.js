@@ -51,6 +51,24 @@ describe("createClientPayloadStore", () => {
     });
   });
 
+  it("sanitizes command identifiers before recording history", () => {
+    const store = createClientPayloadStore({ jitter: () => 0 });
+
+    store.record("client-b", " summarize\u0007 ", { input: "text" }, { ok: true });
+
+    const entries = store.getRecent("client-b");
+
+    expect(entries).toEqual([
+      {
+        command: "summarize",
+        payload: { input: "text" },
+        result: { ok: true },
+        timestamp: entries[0].timestamp,
+      },
+    ]);
+    expect(entries[0].timestamp).toMatch(/Z$/);
+  });
+
   it("evicts oldest entries per client while preserving newest writes", () => {
     const store = createClientPayloadStore({
       maxEntriesPerClient: 2,
