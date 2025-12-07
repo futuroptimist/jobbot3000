@@ -29,6 +29,16 @@ describe('resolveAllowRemoteAccess', () => {
     ).toBe(false);
   });
 
+  it('ignores empty allow flags that use = syntax instead of enabling remote access', () => {
+    expect(resolveAllowRemoteAccess({ args: ['--allow-remote-access='] })).toBeUndefined();
+  });
+
+  it('ignores invalid = syntax without consuming the next arg', () => {
+    expect(
+      resolveAllowRemoteAccess({ args: ['--allow-remote-access=invalid', 'true'] }),
+    ).toBeUndefined();
+  });
+
   it('parses truthy and falsy environment values when no flags are set', () => {
     expect(resolveAllowRemoteAccess({ env: { JOBBOT_WEB_ALLOW_REMOTE: 'yes' } })).toBe(true);
     expect(resolveAllowRemoteAccess({ env: { JOBBOT_WEB_ALLOW_REMOTE: 'enabled' } })).toBe(true);
