@@ -72,8 +72,9 @@ identifiers and use the replacement cookie for subsequent requests.
 Returns the sanitized payload history for the current client, including sanitized command results.
 Entries mirror the payloads supplied to recent `/commands/:command` requests after control
 characters are stripped, keys trimmed, empty collections removed, and blank fields discarded. Command
-results are captured with the same sanitization pipeline (redacted stdout/stderr/error messages,
-trimmed objects) so the UI can
+names are normalized the same way, removing control characters and surrounding whitespace before
+they are persisted. Command results are captured with the same sanitization pipeline (redacted
+stdout/stderr/error messages, trimmed objects) so the UI can
 rehydrate recent responses without replaying CLI calls. Timestamps include up to 750ms of forward or
 backward jitter to reduce correlation value in the unlikely event encrypted history is exposed
 (`test/client-payload-store.test.js` covers both the jitter cap and encrypted history round-trip).
