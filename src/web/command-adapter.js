@@ -321,11 +321,9 @@ function ensureConsoleHooks() {
   if (!logChanged && !errorChanged) return;
 
   if (logChanged) {
-    originalConsoleLog = console.log.bind(console);
     console.log = patchedConsoleLog;
   }
   if (errorChanged) {
-    originalConsoleError = console.error.bind(console);
     console.error = patchedConsoleError;
   }
 }
