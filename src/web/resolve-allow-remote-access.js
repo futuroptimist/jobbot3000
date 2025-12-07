@@ -8,7 +8,9 @@ function normalize(value) {
 export function resolveAllowRemoteAccess({ args = [], env = {} } = {}) {
   const argv = Array.isArray(args) ? args : [];
 
-  const hasAllowFlag = argv.includes('--allow-remote-access');
+  const hasAllowFlag = argv.some(
+    arg => arg === '--allow-remote-access' || arg.startsWith('--allow-remote-access='),
+  );
   const hasDenyFlag = argv.includes('--deny-remote-access');
 
   if (hasAllowFlag && hasDenyFlag) {
@@ -16,6 +18,19 @@ export function resolveAllowRemoteAccess({ args = [], env = {} } = {}) {
   }
 
   if (hasAllowFlag) {
+    const flagIndex = argv.findIndex(
+      arg => arg === '--allow-remote-access' || arg.startsWith('--allow-remote-access='),
+    );
+    const rawValue = argv[flagIndex];
+    if (rawValue && rawValue.includes('=')) {
+      const [, value] = rawValue.split('=', 2);
+      const parsed = normalize(value);
+      if (parsed && TRUTHY_VALUES.has(parsed)) return true;
+      if (parsed && FALSY_VALUES.has(parsed)) return false;
+    }
+    const nextValue = normalize(argv[flagIndex + 1]);
+    if (nextValue && TRUTHY_VALUES.has(nextValue)) return true;
+    if (nextValue && FALSY_VALUES.has(nextValue)) return false;
     return true;
   }
   if (hasDenyFlag) {

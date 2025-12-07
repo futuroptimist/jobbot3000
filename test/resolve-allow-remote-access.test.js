@@ -22,6 +22,13 @@ describe('resolveAllowRemoteAccess', () => {
     expect(resolveAllowRemoteAccess({ args: ['--allow-remote-access'], env })).toBe(true);
   });
 
+  it('treats explicit false CLI values as a deny override', () => {
+    const env = { JOBBOT_WEB_ALLOW_REMOTE: '1' };
+    expect(
+      resolveAllowRemoteAccess({ args: ['--allow-remote-access=false'], env }),
+    ).toBe(false);
+  });
+
   it('parses truthy and falsy environment values when no flags are set', () => {
     expect(resolveAllowRemoteAccess({ env: { JOBBOT_WEB_ALLOW_REMOTE: 'yes' } })).toBe(true);
     expect(resolveAllowRemoteAccess({ env: { JOBBOT_WEB_ALLOW_REMOTE: 'enabled' } })).toBe(true);

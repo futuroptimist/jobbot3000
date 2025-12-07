@@ -13,6 +13,10 @@
   retaining full parity with the existing CLI workflows.
 - Harden the local-only default by treating string `"false"` remote-access flags as disabled so
   argument parsing quirks cannot accidentally expose the server beyond localhost.
+- The helper script now treats `--allow-remote-access=false` as an explicit deny, overriding truthy
+  environment variables so remote bindings stay opt-in. Regression coverage in
+  [`test/resolve-allow-remote-access.test.js`](../test/resolve-allow-remote-access.test.js) locks
+  the guardrail.
 - Maintain the CLI as the single source of truth, with the web UI orchestrating commands through a
   secure backend adapter layer.
 - Provide a cohesive, accessible dark theme that is visually consistent across desktop and mobile
