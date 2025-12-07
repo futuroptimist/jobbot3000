@@ -31,6 +31,18 @@ describe('web server remote access guard', () => {
     ).toThrow(/local-only preview/i);
   });
 
+  it('treats string "false" flags as disabled to avoid accidental exposure', async () => {
+    expect(() =>
+      startWebServer({
+        host: '0.0.0.0',
+        port: 0,
+        allowRemoteAccess: 'false',
+        csrfToken: 'remote-guard-csrf',
+        commandAdapter: {},
+      }),
+    ).toThrow(/local-only preview/i);
+  });
+
   it('permits non-loopback hosts when explicitly enabled', async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jobbot-remote-'));
     server = await startWebServer({

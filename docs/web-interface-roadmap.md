@@ -11,6 +11,8 @@
   script with `--allow-remote-access`, keeping the default experience locked to localhost.
 - Deliver a local-first web application that streamlines tracking and managing job applications while
   retaining full parity with the existing CLI workflows.
+- Harden the local-only default by treating string `"false"` remote-access flags as disabled so
+  argument parsing quirks cannot accidentally expose the server beyond localhost.
 - Maintain the CLI as the single source of truth, with the web UI orchestrating commands through a
   secure backend adapter layer.
 - Provide a cohesive, accessible dark theme that is visually consistent across desktop and mobile
