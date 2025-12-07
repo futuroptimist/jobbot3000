@@ -4,6 +4,7 @@ import {
   normalizeTrackShowRequest,
   normalizeTrackRecordRequest,
   normalizeIntakeListRequest,
+  normalizeIntakeExportRequest,
   normalizeIntakeRecordRequest,
   normalizeIntakeResumeRequest,
 } from "./schemas.js";
@@ -672,6 +673,12 @@ function validateIntakeListPayload(payload) {
   return normalizeIntakeListRequest(ensurePlainObject(payload ?? {}, "intake-list"));
 }
 
+function validateIntakeExportPayload(payload) {
+  return normalizeIntakeExportRequest(
+    ensurePlainObject(payload ?? {}, "intake-export"),
+  );
+}
+
 function validateIntakeRecordPayload(payload) {
   return normalizeIntakeRecordRequest(ensurePlainObject(payload ?? {}, "intake-record"));
 }
@@ -708,6 +715,7 @@ const COMMAND_VALIDATORS = Object.freeze({
   "recruiter-ingest": validateRecruiterIngestPayload,
   "feedback-record": validateFeedbackRecordPayload,
   "intake-list": validateIntakeListPayload,
+  "intake-export": validateIntakeExportPayload,
   "intake-record": validateIntakeRecordPayload,
   "intake-resume": validateIntakeResumePayload,
 });

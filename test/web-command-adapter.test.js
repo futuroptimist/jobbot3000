@@ -1252,6 +1252,79 @@ describe('createCommandAdapter', () => {
     expect(result.stdout?.trim()).toBe('{\n  "draft": null\n}');
   });
 
+  it('exports intake responses through the CLI bridge', async () => {
+    const cli = {
+      cmdIntakeExport: vi.fn(async args => {
+        expect(args).toEqual(['--json', '--redact']);
+        console.log(
+          JSON.stringify({
+            responses: [
+              {
+                id: 'intake-201',
+                question: 'What did you learn?\u0007',
+                answer: 'Systems thinking  ',
+                tags: ['growth', ''],
+                notes: '  Trim me  ',
+              },
+            ],
+          }),
+        );
+      }),
+    };
+
+    const adapter = createCommandAdapter({ cli });
+    const result = await adapter['intake-export']({ redact: true });
+
+    expect(result).toMatchObject({
+      command: 'intake-export',
+      format: 'json',
+    });
+    expect(result.data).toEqual({
+      responses: [
+        {
+          id: 'intake-201',
+          question: 'What did you learn?',
+          answer: 'Systems thinking',
+          tags: ['growth'],
+          notes: 'Trim me',
+        },
+      ],
+    });
+  });
+
+  it('exports intake responses without CLI injection', async () => {
+    const getResponsesSpy = vi
+      .spyOn(intake, 'getIntakeResponses')
+      .mockResolvedValue([
+        {
+          id: 'intake-202',
+          question: 'What changed?',
+          answer: 'Better onboarding',
+          notes: 'Include retrospectives',
+        },
+      ]);
+
+    const adapter = createCommandAdapter();
+    const result = await adapter['intake-export']({ redact: true });
+
+    expect(getResponsesSpy).toHaveBeenCalledWith({ redact: true });
+    expect(result).toMatchObject({
+      command: 'intake-export',
+      format: 'json',
+    });
+    expect(result.data).toEqual({
+      responses: [
+        {
+          id: 'intake-202',
+          question: 'What changed?',
+          answer: 'Better onboarding',
+          notes: 'Include retrospectives',
+        },
+      ],
+    });
+    expect(result.stdout?.trim()).toContain('intake-202');
+  });
+
   it('records beta feedback with sanitization', async () => {
     const cli = {
       cmdFeedbackRecord: vi.fn().mockResolvedValue({

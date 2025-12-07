@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   normalizeIntakeListRequest,
+  normalizeIntakeExportRequest,
   normalizeIntakeRecordRequest,
   normalizeIntakeResumeRequest,
   normalizeMatchRequest,
@@ -101,6 +102,35 @@ describe('web request schemas', () => {
     it('throws when unexpected keys are provided', () => {
       expect(() => normalizeIntakeListRequest({ invalid: true })).toThrow(
         'unexpected intake list keys: invalid',
+      );
+    });
+  });
+
+  describe('normalizeIntakeExportRequest', () => {
+    it('normalizes the redact flag', () => {
+      const options = normalizeIntakeExportRequest({ redact: true });
+
+      expect(options).toEqual({ redact: true });
+    });
+
+    it('defaults redact to false when omitted', () => {
+      const options = normalizeIntakeExportRequest({});
+
+      expect(options).toEqual({ redact: false });
+    });
+
+    it('throws when options are not an object', () => {
+      expect(() => normalizeIntakeExportRequest(null)).toThrow(
+        'intake export request must be an object',
+      );
+      expect(() => normalizeIntakeExportRequest([])).toThrow(
+        'intake export request must be an object',
+      );
+    });
+
+    it('throws when unexpected keys are provided', () => {
+      expect(() => normalizeIntakeExportRequest({ format: 'csv' })).toThrow(
+        'unexpected intake export keys: format',
       );
     });
   });
