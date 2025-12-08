@@ -6001,7 +6001,7 @@ function decorateResultStatus(result, status) {
     return { ...base, ...result };
   }
 
-  return { ...base, value: result };
+  return { ...base, result };
 }
 
 async function runHealthChecks(checks) {
