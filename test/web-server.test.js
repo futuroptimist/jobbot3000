@@ -3651,7 +3651,7 @@ describe("web server command endpoint", () => {
       {
         command: "summarize",
         payload: { input: "Viewer resume", locale: "en-US" },
-        result: { ok: true },
+        result: { status: "success", ok: true },
         timestamp: expect.any(String),
       },
     ]);
@@ -3666,7 +3666,7 @@ describe("web server command endpoint", () => {
       {
         command: "summarize",
         payload: { input: "Editor brief", locale: "en-GB" },
-        result: { ok: true },
+        result: { status: "success", ok: true },
         timestamp: expect.any(String),
       },
     ]);
@@ -3680,6 +3680,55 @@ describe("web server command endpoint", () => {
       editorBody.entries.map((entry) => entry.timestamp),
     );
     expect(uniqueEditorTimestamps.size).toBe(editorBody.entries.length);
+  });
+
+  it("records array command results with explicit status metadata", async () => {
+    const commandAdapter = {
+      summarize: vi.fn(async () => ["alpha", { ok: true }]),
+    };
+
+    const server = await startServer({ commandAdapter });
+
+    const statusResponse = await fetch(`${server.url}/`);
+    const bootstrapCookies = statusResponse.headers.getSetCookie?.() ?? [];
+    const bootstrapCookieHeader = bootstrapCookies
+      .map((entry) => entry.split(";")[0])
+      .join("; ");
+    const commandHeaders = buildCommandHeaders(server, { cookie: bootstrapCookieHeader });
+
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: commandHeaders,
+      body: JSON.stringify({ input: "summary" }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toEqual(["alpha", { ok: true }]);
+
+    const cookies = response.headers.getSetCookie?.() ?? [];
+    const cookieHeader = [
+      commandHeaders.cookie,
+      ...cookies.map((entry) => entry.split(";")[0]),
+    ]
+      .filter(Boolean)
+      .join("; ");
+
+    const history = await fetch(`${server.url}/commands/payloads/recent`, {
+      method: "GET",
+      headers: buildCommandHeaders(server, { cookie: cookieHeader }),
+    });
+
+    expect(history.status).toBe(200);
+    const historyBody = await history.json();
+    expect(historyBody.entries).toEqual([
+      {
+        command: "summarize",
+        payload: { input: "summary" },
+        result: { status: "success", result: ["alpha", { ok: true }] },
+        timestamp: expect.any(String),
+      },
+    ]);
   });
 
   const expectRedactedBinaryPayloadHistory = async (commandAdapter) => {
@@ -3726,7 +3775,12 @@ describe("web server command endpoint", () => {
       {
         command: "summarize",
         payload: { input: "buffered" },
-        result: { ok: true, stdout: "api_key=***", stderr: "Bearer ***" },
+        result: {
+          status: "success",
+          ok: true,
+          stdout: "api_key=***",
+          stderr: "Bearer ***",
+        },
         timestamp: expect.any(String),
       },
     ]);
@@ -3817,7 +3871,7 @@ describe("web server command endpoint", () => {
       {
         command: "summarize",
         payload: { input: "Alpha payload" },
-        result: { ok: true },
+        result: { status: "success", ok: true },
         timestamp: expect.any(String),
       },
     ]);
@@ -3832,7 +3886,7 @@ describe("web server command endpoint", () => {
       {
         command: "summarize",
         payload: { input: "Bravo payload" },
-        result: { ok: true },
+        result: { status: "success", ok: true },
         timestamp: expect.any(String),
       },
     ]);
@@ -3888,6 +3942,7 @@ describe("web server command endpoint", () => {
         command: "summarize",
         payload: { input: "Resume snippet", locale: "en-CA" },
         result: {
+          status: "success",
           message: "Summary ready",
           details: {
             notes: ["Keep whitespace"],
@@ -3953,6 +4008,7 @@ describe("web server command endpoint", () => {
         command: "summarize",
         payload: { input: "Resume snippet", locale: "en-CA" },
         result: {
+          status: "error",
           error: "Failed to summarize",
           stdout: "token=***\nPayload",
           stderr: "Warning  details",
@@ -4018,7 +4074,7 @@ describe("web server command endpoint", () => {
       {
         command: "summarize",
         payload: { input: "Guest resume snippet", locale: "en-US" },
-        result: { ok: true },
+        result: { status: "success", ok: true },
         timestamp: expect.any(String),
       },
     ]);
@@ -4082,7 +4138,7 @@ describe("web server command endpoint", () => {
       {
         command: "summarize",
         payload: { input: "First guest payload", locale: "en-US" },
-        result: { ok: true },
+        result: { status: "success", ok: true },
         timestamp: expect.any(String),
       },
     ]);
@@ -4100,7 +4156,7 @@ describe("web server command endpoint", () => {
       {
         command: "summarize",
         payload: { input: "Second guest payload", locale: "en-US" },
-        result: { ok: true },
+        result: { status: "success", ok: true },
         timestamp: expect.any(String),
       },
     ]);

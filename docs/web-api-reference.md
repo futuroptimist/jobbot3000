@@ -74,7 +74,8 @@ Entries mirror the payloads supplied to recent `/commands/:command` requests aft
 characters are stripped, keys trimmed, empty collections removed, and blank fields discarded. Command
 names are normalized the same way, removing control characters and surrounding whitespace before
 they are persisted. Command results are captured with the same sanitization pipeline (redacted
-stdout/stderr/error messages, trimmed objects) so the UI can
+stdout/stderr/error messages, trimmed objects) and annotated with a `status` of `success` or `error`
+so the UI can
 rehydrate recent responses without replaying CLI calls. Timestamps include up to 750ms of forward or
 backward jitter to reduce correlation value in the unlikely event encrypted history is exposed
 (`test/client-payload-store.test.js` covers both the jitter cap and encrypted history round-trip).
