@@ -17,7 +17,9 @@
 - The helper script now treats `--allow-remote-access=false` as an explicit deny, overriding truthy
   environment variables so remote bindings stay opt-in. Regression coverage in
   [`test/resolve-allow-remote-access.test.js`](../test/resolve-allow-remote-access.test.js) locks
-  the guardrail.
+  the guardrail. [`test/web-server-remote-access.test.js`](../test/web-server-remote-access.test.js)
+  now exercises the same toggle when remote access is enabled or disabled purely via
+  `JOBBOT_WEB_ALLOW_REMOTE` so environment-only deployments stay scoped to loopback by default.
 - Maintain the CLI as the single source of truth, with the web UI orchestrating commands through a
   secure backend adapter layer.
 - Provide a cohesive, accessible dark theme that is visually consistent across desktop and mobile
