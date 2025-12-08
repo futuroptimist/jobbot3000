@@ -32,8 +32,8 @@ Every invocation of `runResumePipeline` starts with a context shaped as follows:
   summary as `normalized` so downstream tools can reuse the structured view without re-running the
   stage.
 - `enrichment`: populated by the `enrich` stage with section-level insights. Includes per-section
-  metrics coverage (`hasMetrics`), placeholder tokens (e.g., `XX%`, `TBD`), average words per line,
-  and the list of required sections missing from the resume snapshot.
+  metrics coverage (`hasMetrics`), placeholder tokens (e.g., `XX%`, `??%`, `TBD`), average words per
+  line, and the list of required sections missing from the resume snapshot.
 - `metadata`: populated by the `load` stage when `withMetadata !== false`. Contains ATS warnings,
   ambiguity hints, counts, and the combined parsing confidence score surfaced by
   [`loadResume`](../src/resume.js).

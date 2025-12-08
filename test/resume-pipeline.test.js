@@ -119,4 +119,14 @@ describe('resume pipeline', () => {
     expect(analysis.confidence.score).toBeGreaterThan(0);
     expect(analysis.confidence.signals.length).toBeGreaterThan(0);
   });
+
+  it('flags question-mark placeholder tokens for enrichment consumers', async () => {
+    const filePath = path.join(FIXTURE_DIR, 'resume-placeholder-questions.txt');
+    const { enrichment } = await runResumePipeline(filePath);
+
+    expect(enrichment.sections.experience).toMatchObject({
+      hasPlaceholders: true,
+      placeholderTokens: expect.arrayContaining(['??%']),
+    });
+  });
 });
