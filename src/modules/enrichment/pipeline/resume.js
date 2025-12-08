@@ -96,7 +96,9 @@ function buildSectionSummary(trimmedLines) {
 
 function collectPlaceholderTokens(line) {
   if (!line) return [];
-  const matches = line.match(/(?:^|\s)(XX%?|YY%?|TBD|N\/A|FILL ME IN)(?=\s|$)/gi);
+  const matches = line.match(
+    /(?:^|\s)(XX%?|YY%?|\?\?%?|TBD|N\/A|FILL ME IN)(?=\s|$|[.,;:!?])/gi,
+  );
   if (!matches) return [];
   return matches.map(token => token.trim().toUpperCase());
 }
