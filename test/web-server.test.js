@@ -3651,7 +3651,7 @@ describe("web server command endpoint", () => {
       {
         command: "summarize",
         payload: { input: "Viewer resume", locale: "en-US" },
-        result: { ok: true },
+        result: { status: "success", ok: true },
         timestamp: expect.any(String),
       },
     ]);
@@ -3666,7 +3666,7 @@ describe("web server command endpoint", () => {
       {
         command: "summarize",
         payload: { input: "Editor brief", locale: "en-GB" },
-        result: { ok: true },
+        result: { status: "success", ok: true },
         timestamp: expect.any(String),
       },
     ]);
@@ -3726,7 +3726,12 @@ describe("web server command endpoint", () => {
       {
         command: "summarize",
         payload: { input: "buffered" },
-        result: { ok: true, stdout: "api_key=***", stderr: "Bearer ***" },
+        result: {
+          status: "success",
+          ok: true,
+          stdout: "api_key=***",
+          stderr: "Bearer ***",
+        },
         timestamp: expect.any(String),
       },
     ]);
@@ -3817,7 +3822,7 @@ describe("web server command endpoint", () => {
       {
         command: "summarize",
         payload: { input: "Alpha payload" },
-        result: { ok: true },
+        result: { status: "success", ok: true },
         timestamp: expect.any(String),
       },
     ]);
@@ -3832,7 +3837,7 @@ describe("web server command endpoint", () => {
       {
         command: "summarize",
         payload: { input: "Bravo payload" },
-        result: { ok: true },
+        result: { status: "success", ok: true },
         timestamp: expect.any(String),
       },
     ]);
@@ -3888,6 +3893,7 @@ describe("web server command endpoint", () => {
         command: "summarize",
         payload: { input: "Resume snippet", locale: "en-CA" },
         result: {
+          status: "success",
           message: "Summary ready",
           details: {
             notes: ["Keep whitespace"],
@@ -3953,6 +3959,7 @@ describe("web server command endpoint", () => {
         command: "summarize",
         payload: { input: "Resume snippet", locale: "en-CA" },
         result: {
+          status: "error",
           error: "Failed to summarize",
           stdout: "token=***\nPayload",
           stderr: "Warning  details",
@@ -4018,7 +4025,7 @@ describe("web server command endpoint", () => {
       {
         command: "summarize",
         payload: { input: "Guest resume snippet", locale: "en-US" },
-        result: { ok: true },
+        result: { status: "success", ok: true },
         timestamp: expect.any(String),
       },
     ]);
@@ -4082,7 +4089,7 @@ describe("web server command endpoint", () => {
       {
         command: "summarize",
         payload: { input: "First guest payload", locale: "en-US" },
-        result: { ok: true },
+        result: { status: "success", ok: true },
         timestamp: expect.any(String),
       },
     ]);
@@ -4100,7 +4107,7 @@ describe("web server command endpoint", () => {
       {
         command: "summarize",
         payload: { input: "Second guest payload", locale: "en-US" },
-        result: { ok: true },
+        result: { status: "success", ok: true },
         timestamp: expect.any(String),
       },
     ]);

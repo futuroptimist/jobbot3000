@@ -5987,6 +5987,23 @@ function sanitizeCommandResult(result) {
   return sanitized;
 }
 
+function decorateResultStatus(result, status) {
+  const base = {};
+  if (status === "success" || status === "error") {
+    base.status = status;
+  }
+
+  if (result == null) {
+    return base;
+  }
+
+  if (typeof result === "object" && !Array.isArray(result)) {
+    return { ...base, ...result };
+  }
+
+  return { ...base, value: result };
+}
+
 async function runHealthChecks(checks) {
   const results = [];
   for (const { name, run } of checks) {
@@ -7484,11 +7501,12 @@ export function createWebApp({
         const result = await commandAdapter[commandParam](payload);
         const sanitizedResult = sanitizeCommandResult(result);
         const durationMs = roundDuration(started);
+        const historyResult = decorateResultStatus(sanitizedResult, "success");
         clientPayloadStore.record(
           clientIdentity,
           commandParam,
           payload,
-          sanitizedResult,
+          historyResult,
         );
         logCommandTelemetry(logger, "info", {
           command: commandParam,
@@ -7529,7 +7547,13 @@ export function createWebApp({
           traceId: err?.traceId,
         });
         const durationMs = roundDuration(started);
-        clientPayloadStore.record(clientIdentity, commandParam, payload, response);
+        const historyResult = decorateResultStatus(response, "error");
+        clientPayloadStore.record(
+          clientIdentity,
+          commandParam,
+          payload,
+          historyResult,
+        );
 
         let report;
         if (commandParam === "track-reminders") {
