@@ -604,9 +604,9 @@ function scanPluginEntryForExfiltration({ id, source, scriptUrl }) {
   if (normalizedScriptUrl.startsWith("http://") || normalizedScriptUrl.startsWith("https://")) {
     try {
       const parsed = new URL(normalizedScriptUrl);
-      const host = parsed.host;
-      if (host && host !== "localhost" && host !== "127.0.0.1") {
-        warnings.push(`Remote plugin host ${host} should be vetted for exfiltration risks.`);
+      const hostname = parsed.hostname;
+      if (hostname && !LOOPBACK_HOSTS.has(hostname)) {
+        warnings.push(`Remote plugin host ${hostname} should be vetted for exfiltration risks.`);
       }
     } catch {
       warnings.push("Plugin script URL could not be parsed for risk scanning.");
@@ -6437,10 +6437,11 @@ export function createWebApp({
           const idValue = extractTrimmedString(entry, "id");
           const nameValue = extractTrimmedString(entry, "name");
           const descriptionValue = extractTrimmedString(entry, "description");
-          const warnings = Array.isArray(pluginWarningsById.get(idValue))
-            ? pluginWarningsById
-                .get(idValue)
-                .filter((warning) => typeof warning === "string" && warning.trim())
+          const warningsArray = pluginWarningsById.get(idValue);
+          const warnings = Array.isArray(warningsArray)
+            ? warningsArray.filter(
+                (warning) => typeof warning === "string" && warning.trim(),
+              )
             : [];
           const summaryParts = [];
           if (idValue) {
