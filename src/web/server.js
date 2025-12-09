@@ -7244,11 +7244,18 @@ export function createWebApp({
     async (req, res) => {
       const commandParam =
         typeof req.params.command === "string" ? req.params.command.trim() : "";
-      if (!availableCommands.has(commandParam)) {
-        res.status(404).json({ error: `Unknown command "${commandParam}"` });
-        return;
-      }
+      const clientIp = req.ip || req.socket?.remoteAddress || undefined;
+      const userAgent = req.get("user-agent");
+      const method = req.method ?? "GET";
 
+      const rateKey = clientIp || req.socket?.remoteAddress || "unknown";
+      const rateStatus = rateLimiter.check(rateKey);
+      res.set("X-RateLimit-Limit", String(rateLimiter.limit));
+      res.set(
+        "X-RateLimit-Remaining",
+        String(Math.max(0, rateStatus.remaining)),
+      );
+      res.set("X-RateLimit-Reset", new Date(rateStatus.reset).toISOString());
       if (!req.is(["application/json", "*/json"])) {
         res
           .status(415)
@@ -7257,13 +7264,10 @@ export function createWebApp({
       }
 
       const started = performance.now();
-      const clientIp = req.ip || req.socket?.remoteAddress || undefined;
-      const userAgent = req.get("user-agent");
       const sessionId = ensureClientSession(req, res, {
         createIfMissing: !authOptions,
         sessionManager,
       });
-      const method = req.method ?? "GET";
       const logSecurity = (details) => {
         logSecurityEvent(logger, {
           command: commandParam,
@@ -7307,14 +7311,6 @@ export function createWebApp({
         }
       };
 
-      const rateKey = req.ip || req.socket?.remoteAddress || "unknown";
-      const rateStatus = rateLimiter.check(rateKey);
-      res.set("X-RateLimit-Limit", String(rateLimiter.limit));
-      res.set(
-        "X-RateLimit-Remaining",
-        String(Math.max(0, rateStatus.remaining)),
-      );
-      res.set("X-RateLimit-Reset", new Date(rateStatus.reset).toISOString());
       if (!rateStatus.allowed) {
         const retryAfterSeconds = Math.max(
           1,
@@ -7331,6 +7327,11 @@ export function createWebApp({
         });
         res.status(429).json({ error: "Too many requests" });
         await recordAudit({ status: "rate_limited" });
+        return;
+      }
+
+      if (!availableCommands.has(commandParam)) {
+        res.status(404).json({ error: `Unknown command "${commandParam}"` });
         return;
       }
 
