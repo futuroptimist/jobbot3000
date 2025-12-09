@@ -115,7 +115,9 @@ jobbot3000.
   by the fallback templates returned from `jobbot intake plan`. The CLI prints the same
   `manual_templates` payload when the automated plan is empty, letting QA verify that the chat UI
   still offers strengths, growth, environment, support, and future-goal prompts without relying on
-  LLM output. QA scenarios confirm that skipping LLM generation still allows successful completion.
+  LLM output. The CLI output also surfaces the template tags so manual fallback runs can keep topic
+  filters aligned with the web UI. QA scenarios confirm that skipping LLM generation still allows
+  successful completion.
 
 ### Edge cases
 
