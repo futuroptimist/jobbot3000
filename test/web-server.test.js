@@ -2885,6 +2885,11 @@ describe("web server command endpoint", () => {
     });
 
     expect(response.status).toBe(404);
+    const limitHeader = response.headers.get("x-ratelimit-limit");
+    expect(limitHeader).toBeTruthy();
+    expect(Number(limitHeader)).toBeGreaterThan(0);
+    expect(response.headers.get("x-ratelimit-remaining")).toBeDefined();
+    expect(response.headers.get("x-ratelimit-reset")).toMatch(/Z$/);
     const payload = await response.json();
     expect(payload.error).toMatch(/unknown command/i);
   });
