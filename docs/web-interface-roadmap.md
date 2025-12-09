@@ -501,7 +501,8 @@
      [`test/cli.test.js`](../test/cli.test.js), and
      [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
      locks the validation, CLI bridge, and adapter plumbing so release feedback remains
-     actionable.
+     actionable, while [`test/web-server.test.js`](../test/web-server.test.js)
+     exercises the `/commands/feedback-record` web endpoint and payload history contract.
 
 ### 6. Documentation and Developer Experience
 
