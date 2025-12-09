@@ -363,6 +363,20 @@ describe("web server health endpoint", () => {
       startWebServer({ healthChecks: [{ name: "bad-check" }] }),
     ).toThrow(/health check/);
   });
+
+  it("refuses non-loopback hosts without an explicit remote-access opt-in", async () => {
+    const { startWebServer } = await import("../src/web/server.js");
+    const originalEnv = process.env.JOBBOT_WEB_ALLOW_REMOTE;
+    process.env.JOBBOT_WEB_ALLOW_REMOTE = "";
+
+    try {
+      expect(() => startWebServer({ host: "0.0.0.0" })).toThrow(
+        /--allow-remote-access|JOBBOT_WEB_ALLOW_REMOTE=1|allowRemoteAccess: true/,
+      );
+    } finally {
+      process.env.JOBBOT_WEB_ALLOW_REMOTE = originalEnv;
+    }
+  });
 });
 
 describe("web server status page", () => {

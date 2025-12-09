@@ -7882,8 +7882,9 @@ export function startWebServer(options = {}) {
     parseBoolean(allowRemoteAccess) ?? parseBoolean(process.env.JOBBOT_WEB_ALLOW_REMOTE) ?? false;
   if (!allowRemote && !isLoopbackHost(host)) {
     throw new Error(
-      "The web interface is a local-only preview; set JOBBOT_WEB_ALLOW_REMOTE=1 or " +
-        "allowRemoteAccess: true to bind to non-loopback hosts.",
+      "The web interface is a local-only preview; set JOBBOT_WEB_ALLOW_REMOTE=1, " +
+        "pass allowRemoteAccess: true, or run scripts/web-server.js with --allow-remote-access " +
+        "to bind to non-loopback hosts.",
     );
   }
   const {
