@@ -559,6 +559,63 @@ function isSafePluginUrl(url) {
   return false;
 }
 
+const PLUGIN_EXFIL_HEURISTICS = [
+  { pattern: /\bfetch\s*\(/i, message: "Uses fetch() which may transmit data off-site." },
+  {
+    pattern: /\bsendBeacon\s*\(/i,
+    message: "Uses navigator.sendBeacon(), review payload sources.",
+  },
+  {
+    pattern: /\bXMLHttpRequest\b/i,
+    message: "Uses XMLHttpRequest which can exfiltrate data.",
+  },
+  { pattern: /\bWebSocket\b/i, message: "Opens a WebSocket connection." },
+  { pattern: /\bEventSource\b/i, message: "Opens a server-sent events stream." },
+  {
+    pattern: /\blocalStorage\b/i,
+    message: "Touches localStorage; ensure sensitive data is not persisted.",
+  },
+  {
+    pattern: /\bsessionStorage\b/i,
+    message: "Touches sessionStorage; ensure only non-sensitive values are stored.",
+  },
+  {
+    pattern: /document\.cookie/i,
+    message: "Reads document.cookie which may leak session identifiers.",
+  },
+  {
+    pattern: /navigator\.clipboard\.read/i,
+    message: "Accesses clipboard read APIs.",
+  },
+];
+
+function scanPluginEntryForExfiltration({ id, source, scriptUrl }) {
+  const warnings = [];
+  const normalizedSource = typeof source === "string" ? source : "";
+  if (normalizedSource.trim()) {
+    for (const heuristic of PLUGIN_EXFIL_HEURISTICS) {
+      if (heuristic.pattern.test(normalizedSource)) {
+        warnings.push(`Plugin ${id} ${heuristic.message}`);
+      }
+    }
+  }
+
+  const normalizedScriptUrl = typeof scriptUrl === "string" ? scriptUrl.trim() : "";
+  if (normalizedScriptUrl.startsWith("http://") || normalizedScriptUrl.startsWith("https://")) {
+    try {
+      const parsed = new URL(normalizedScriptUrl);
+      const host = parsed.host;
+      if (host && host !== "localhost" && host !== "127.0.0.1") {
+        warnings.push(`Remote plugin host ${host} should be vetted for exfiltration risks.`);
+      }
+    } catch {
+      warnings.push("Plugin script URL could not be parsed for risk scanning.");
+    }
+  }
+
+  return warnings;
+}
+
 const PLUGIN_INTEGRITY_RE = /^sha(256|384|512)-[A-Za-z0-9+/=]+={0,2}$/;
 
 function normalizePluginIntegrity(value) {
@@ -667,6 +724,11 @@ function createPluginAssets(app, plugins = {}) {
     if (!scriptUrl) {
       continue;
     }
+    const scanWarnings = scanPluginEntryForExfiltration({
+      id: sanitized.id,
+      source: sanitized.source,
+      scriptUrl,
+    });
     manifest.push({
       id: sanitized.id,
       name: sanitized.name,
@@ -674,6 +736,7 @@ function createPluginAssets(app, plugins = {}) {
       events: sanitized.events,
       scriptUrl,
       integrity,
+      scanWarnings,
     });
   }
   return {
@@ -6329,15 +6392,23 @@ export function createWebApp({
     pushHttpClientFeature("backoffMs", "ms");
     pushHttpClientFeature("circuitBreakerThreshold");
     pushHttpClientFeature("circuitBreakerResetMs", "ms");
-    const pluginEntries = Array.isArray(manifestFeatures?.plugins?.entries)
+    const declaredPluginEntries = Array.isArray(manifestFeatures?.plugins?.entries)
       ? manifestFeatures.plugins.entries.filter(
           (entry) => entry !== null && typeof entry === "object" && !Array.isArray(entry),
         )
       : [];
+    const pluginManifestEntries = Array.isArray(pluginAssets?.manifest)
+      ? pluginAssets.manifest
+      : [];
+    const pluginWarningsById = new Map(
+      pluginManifestEntries.map((entry) => [entry.id, entry.scanWarnings ?? []]),
+    );
     const pluginCountLabel =
-      pluginEntries.length === 0
+      declaredPluginEntries.length === 0
         ? "No plugins declared"
-        : `${pluginEntries.length} plugin${pluginEntries.length === 1 ? "" : "s"} declared`;
+        : `${declaredPluginEntries.length} plugin${
+            declaredPluginEntries.length === 1 ? "" : "s"
+          } declared`;
     manifestFeatureItems.push(
       `<li><code>plugins.entries</code> ${escapeHtml(pluginCountLabel)}</li>`,
     );
@@ -6346,7 +6417,7 @@ export function createWebApp({
       manifestFeatureItems.join("") +
       "</ul>";
     const pluginEntriesHtml = (() => {
-      if (pluginEntries.length === 0) {
+      if (declaredPluginEntries.length === 0) {
         return [
           '<ul class="manifest-list" data-plugin-entries>',
           '<li><em>No plugins declared.</em></li>',
@@ -6361,11 +6432,16 @@ export function createWebApp({
         }
         return "";
       };
-      const items = pluginEntries
+      const items = declaredPluginEntries
         .map((entry) => {
           const idValue = extractTrimmedString(entry, "id");
           const nameValue = extractTrimmedString(entry, "name");
           const descriptionValue = extractTrimmedString(entry, "description");
+          const warnings = Array.isArray(pluginWarningsById.get(idValue))
+            ? pluginWarningsById
+                .get(idValue)
+                .filter((warning) => typeof warning === "string" && warning.trim())
+            : [];
           const summaryParts = [];
           if (idValue) {
             summaryParts.push(`<code>${escapeHtml(idValue)}</code>`);
@@ -6380,7 +6456,14 @@ export function createWebApp({
           const descriptionHtml = descriptionValue
             ? ` <small>${escapeHtml(descriptionValue)}</small>`
             : "";
-          return `<li>${summary}${descriptionHtml}</li>`;
+          const warningsHtml = warnings.length
+            ? [
+                '<ul class="manifest-list" data-plugin-scan-warnings>',
+                warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join(""),
+                "</ul>",
+              ].join("")
+            : "";
+          return `<li data-plugin-entry>${summary}${descriptionHtml}${warningsHtml}</li>`;
         })
         .join("");
       return `<ul class="manifest-list" data-plugin-entries>${items}</ul>`;

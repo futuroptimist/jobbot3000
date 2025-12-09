@@ -56,8 +56,13 @@ confirm mitigations cover the CLI bridge and stored secrets.
 
 ### Residual risk
 
-Operators must vet plugin manifests for data exfiltration attempts until automated scanning is added
-to the publish workflow.
+Plugin manifests now run through automated exfiltration scanning during publish.
+The scanner flags network primitives (fetch/XMLHttpRequest/sendBeacon), cookie or
+storage access, and remote hosts so operators can block risky bundles before they
+ship.
+
+Regression coverage in [`test/web-plugins.test.js`](../../test/web-plugins.test.js)
+asserts the warnings surface on the status hub and flow through the manifest JSON.
 
 ### References
 
