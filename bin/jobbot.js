@@ -1919,6 +1919,9 @@ function formatIntakePlan(plan, resumePath, { manualTemplates = [] } = {}) {
       lines.push('Use the manual question templates to keep discovery moving:');
       for (const template of manualTemplates) {
         lines.push(`- ${template.category}: ${template.prompt}`);
+        if (Array.isArray(template.tags) && template.tags.length > 0) {
+          lines.push(`    Tags: ${template.tags.join(', ')}`);
+        }
         if (template.starter) {
           lines.push(`    Starter: ${template.starter}`);
         }

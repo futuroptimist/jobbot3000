@@ -2154,6 +2154,72 @@ describe('jobbot CLI', () => {
     ).toBe(true);
   });
 
+  it('prints manual template tags when intake plan coverage is complete', () => {
+    runCli(['init']);
+
+    const profileDir = path.join(dataDir, 'profile');
+    const resumePath = path.join(profileDir, 'resume.json');
+    fs.writeFileSync(
+      resumePath,
+      JSON.stringify(
+        {
+          basics: {
+            summary:
+              'Senior platform engineer focused on resilient systems with quantified wins.',
+            preferences: {
+              locationPreference: 'Remote-first across US time zones',
+            },
+          },
+          work: [
+            {
+              summary: 'Raised availability to 99.97% by automating failover drills.',
+              highlights: ['Cut MTTR by 45% and reduced incident volume by 30%.'],
+            },
+          ],
+          skills: [{ name: 'Go' }, { name: 'Kubernetes' }, { name: 'Terraform' }],
+        },
+        null,
+        2,
+      ),
+    );
+
+    runCli([
+      'intake',
+      'record',
+      '--question',
+      'Where are you willing to work?',
+      '--answer',
+      'Remote across US-friendly time zones.',
+      '--tags',
+      'relocation',
+    ]);
+    runCli([
+      'intake',
+      'record',
+      '--question',
+      'Share your compensation range.',
+      '--answer',
+      'Comfortable from $195k base with flexibility for equity.',
+      '--tags',
+      'compensation',
+    ]);
+    runCli([
+      'intake',
+      'record',
+      '--question',
+      'Any visa considerations?',
+      '--answer',
+      'US citizen, no sponsorship required.',
+      '--tags',
+      'visa',
+    ]);
+
+    const output = runCli(['intake', 'plan']);
+    expect(output).toContain('Use the manual question templates to keep discovery moving');
+    expect(output).toContain('Tags: career, goals');
+    expect(output).toContain('Tags: support, blockers');
+  });
+
   it('redacts sensitive intake entries when requested', () => {
     runCli([
       'intake',
