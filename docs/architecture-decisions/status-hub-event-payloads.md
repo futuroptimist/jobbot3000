@@ -19,12 +19,17 @@ Include the formatted `statusLabel` field in every dispatched
 `jobbot:application-status-recorded` event. Hoist the existing
 `formatStatusLabelText` helper so both the HTML renderer and event dispatcher
 reuse the same label formatting. Trim user-provided notes before emitting the
-payload so downstream consumers do not need to reimplement sanitization.
+payload so downstream consumers do not need to reimplement sanitization, and
+strip control characters from notes so plugin authors never ingest unprintable
+values from the DOM bridge.
 
 ## Consequences
 
 - UI integrations receive ready-to-render status labels alongside raw CLI data.
 - Tests in `test/web-server.test.js` exercise the DOM workflow and lock the
   event payload contract.
+- Notes on recorded status events are sanitized (trimmed and cleared of control
+  characters) before dispatch, and regression coverage asserts the cleaned
+  payload.
 - The ADR catalog (`test/docs-adr.test.js`) now ensures the decision stays
   documented and linked to regression coverage.
