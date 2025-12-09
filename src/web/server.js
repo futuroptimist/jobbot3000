@@ -7246,9 +7246,9 @@ export function createWebApp({
         typeof req.params.command === "string" ? req.params.command.trim() : "";
       const clientIp = req.ip || req.socket?.remoteAddress || undefined;
       const userAgent = req.get("user-agent");
-      const method = req.method ?? "GET";
+      const method = req.method ?? "POST";
 
-      const rateKey = clientIp || req.socket?.remoteAddress || "unknown";
+      const rateKey = clientIp || "unknown";
       const rateStatus = rateLimiter.check(rateKey);
       res.set("X-RateLimit-Limit", String(rateLimiter.limit));
       res.set(
