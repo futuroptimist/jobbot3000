@@ -3793,10 +3793,7 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               setActionMessage('error', 'Select a status before saving');
               return;
             }
-            const noteValue =
-              typeof actionElements.note?.value === 'string'
-                ? actionElements.note.value.trim()
-                : '';
+            const noteValue = sanitizeNoteText(actionElements.note?.value);
             try {
               updateActionControls({ submitting: true });
               setActionMessage('info', 'Saving status…');
@@ -5592,6 +5589,12 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           dispatchDocumentEvent('jobbot:application-detail-loaded', eventDetail);
         }
 
+        function sanitizeNoteText(value) {
+          if (typeof value !== 'string') return '';
+          const stripped = value.replace(/[\u0000-\u001f\u007f]/g, '');
+          return stripped.trim();
+        }
+
         function dispatchApplicationStatusRecorded(detail = {}) {
           const jobId =
             typeof detail?.jobId === 'string' && detail.jobId.trim()
@@ -5626,14 +5629,12 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               }
             }
           }
+          const sanitizedNote = sanitizeNoteText(detail?.note);
           const eventDetail = {
             jobId,
             status: statusValue || undefined,
             statusLabel: statusLabel || undefined,
-            note:
-              typeof detail?.note === 'string' && detail.note.trim()
-                ? detail.note.trim()
-                : undefined,
+            note: sanitizedNote || undefined,
             data: detail?.data,
           };
           dispatchDocumentEvent('jobbot:application-status-recorded', eventDetail);

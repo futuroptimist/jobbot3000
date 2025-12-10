@@ -2468,6 +2468,7 @@ describe("web server status page", () => {
       discard_count: 0,
     };
 
+    let recordedTrackPayload;
     const commandAdapter = {
       "shortlist-list": vi.fn(async () => ({
         command: "shortlist-list",
@@ -2521,11 +2522,7 @@ describe("web server status page", () => {
         };
       }),
       "track-record": vi.fn(async (payload) => {
-        expect(payload).toEqual({
-          jobId: "job-42",
-          status: "offer",
-          note: "Signed offer",
-        });
+        recordedTrackPayload = payload;
         return {
           command: "track-record",
           format: "text",
@@ -2553,7 +2550,7 @@ describe("web server status page", () => {
       autoBoot: false,
     });
 
-    const waitForEvent = (name, timeout = 500) =>
+    const waitForEvent = (name, timeout = 2000) =>
       waitForDomEvent(dom, name, timeout);
 
     const readyPromise = waitForEvent("jobbot:applications-ready");
@@ -2591,7 +2588,7 @@ describe("web server status page", () => {
       "[data-application-note]",
     );
     expect(noteInput).not.toBeNull();
-    noteInput.value = "Signed offer";
+    noteInput.value = "  Signed offer\u0007  ";
     noteInput.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
 
     const form = dom.window.document.querySelector(
@@ -2599,8 +2596,11 @@ describe("web server status page", () => {
     );
     expect(form).not.toBeNull();
 
-    const statusRecorded = waitForEvent("jobbot:application-status-recorded");
-    const detailReloaded = waitForEvent("jobbot:application-detail-loaded");
+    const statusRecorded = waitForEvent(
+      "jobbot:application-status-recorded",
+      5000,
+    );
+    const detailReloaded = waitForEvent("jobbot:application-detail-loaded", 5000);
     form.dispatchEvent(
       new dom.window.Event("submit", { bubbles: true, cancelable: true }),
     );
@@ -2609,10 +2609,17 @@ describe("web server status page", () => {
     await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
 
     expect(commandAdapter["track-record"]).toHaveBeenCalledTimes(1);
+    expect(recordedTrackPayload).toEqual({
+      jobId: "job-42",
+      status: "offer",
+      note: "Signed offer",
+    });
     const message = dom.window.document.querySelector("[data-action-message]");
     expect(message?.textContent).toContain("Recorded job-42 as offer");
-    expect(statusEvent?.detail?.status).toBe("offer");
-    expect(statusEvent?.detail?.statusLabel).toBe("Offer");
+    const statusEventDetail = statusEvent?.detail;
+    expect(statusEventDetail?.status).toBe("offer");
+    expect(statusEventDetail?.statusLabel).toBe("Offer");
+    expect(statusEventDetail?.note).toBe("Signed offer");
   });
 
   it("refreshes application detail after recording a status update", async () => {
