@@ -7591,7 +7591,7 @@ export function createWebApp({
         clientPayloadStore.record(
           clientIdentity,
           commandParam,
-          payload,
+          redactedPayload,
           historyResult,
         );
         logCommandTelemetry(logger, "info", {
@@ -7637,7 +7637,7 @@ export function createWebApp({
         clientPayloadStore.record(
           clientIdentity,
           commandParam,
-          payload,
+          redactedPayload,
           historyResult,
         );
 

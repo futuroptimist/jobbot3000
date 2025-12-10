@@ -435,7 +435,11 @@
 > coverage in [`test/web-server.test.js`](../test/web-server.test.js) exercises
 > both authenticated and guest retrieval flows—including the CSRF guard—and
 > asserts result snapshots stay trimmed and redacted alongside payload inputs
-> so the audit preview stays scoped to the active client.
+> so the audit preview stays scoped to the active client. The payload log now
+> reuses the same secret-redaction pipeline applied to telemetry, and the
+> regression suite inspects `payloads/recent` responses to ensure sensitive
+> keys (e.g., `apiKey`, `token`, nested `password` fields) arrive redacted for
+> the requesting client.
 > Larger roadmap items—such as multi-user access controls and real-time
 > collaboration from the "Future Enhancements" section—remain multi-PR efforts
 > while this targeted hardening work lands as a single-PR change.
