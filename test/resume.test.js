@@ -251,4 +251,24 @@ describe('loadResume', () => {
       }),
     );
   });
+
+  it('warns but does not fail when telemetry recording errors', async () => {
+    const warn = vi.fn();
+    const logger = { warn };
+    const telemetry = {
+      record: vi.fn(() => {
+        throw new Error('telemetry service down');
+      }),
+    };
+    const missingFile = path.join(os.tmpdir(), 'does-not-exist', 'resume.txt');
+
+    await expect(
+      loadResume(missingFile, { withMetadata: true, telemetry, logger }),
+    ).rejects.toThrow();
+
+    expect(warn).toHaveBeenCalledWith(
+      'Failed to record resume-import telemetry',
+      expect.any(Error),
+    );
+  });
 });
