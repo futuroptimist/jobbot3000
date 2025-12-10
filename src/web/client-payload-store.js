@@ -239,9 +239,17 @@ export function createClientPayloadStore(options = {}) {
       : 0;
     const timestamp = new Date(baseTimestampMs + jitterMs).toISOString();
 
-    const entryPayload = {
-      payload: normalizedPayload,
-    };
+    if (
+      (normalizedPayload == null ||
+        (typeof normalizedPayload === "object" &&
+          !Array.isArray(normalizedPayload) &&
+          Object.keys(normalizedPayload).length === 0)) &&
+      normalizedResult === undefined
+    ) {
+      return null;
+    }
+
+    const entryPayload = { payload: normalizedPayload };
     if (normalizedResult !== undefined) {
       entryPayload.result = normalizedResult;
     }
