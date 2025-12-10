@@ -5629,14 +5629,12 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               }
             }
           }
+          const sanitizedNote = sanitizeNoteText(detail?.note);
           const eventDetail = {
             jobId,
             status: statusValue || undefined,
             statusLabel: statusLabel || undefined,
-            note:
-              typeof detail?.note === 'string' && sanitizeNoteText(detail.note)
-                ? sanitizeNoteText(detail.note)
-                : undefined,
+            note: sanitizedNote || undefined,
             data: detail?.data,
           };
           dispatchDocumentEvent('jobbot:application-status-recorded', eventDetail);
