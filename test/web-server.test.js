@@ -3823,6 +3823,58 @@ describe("web server command endpoint", () => {
     ]);
   });
 
+  it("redacts secrets before storing payload history entries", async () => {
+    const commandAdapter = {
+      "feedback-record": vi.fn(async () => ({ ok: true })),
+    };
+
+    const server = await startServer({ commandAdapter });
+    const headers = buildCommandHeaders(server);
+
+    const response = await fetch(`${server.url}/commands/feedback-record`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        message: "Found api_key=supersecret in logs",
+        contact: "secret@example.com",
+        source: "survey",
+        rating: 4,
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    await response.json();
+
+    const cookies = response.headers.getSetCookie?.() ?? [];
+    const cookieHeader = [headers.cookie, ...cookies.map((entry) => entry.split(";")[0])]
+      .filter(Boolean)
+      .join("; ");
+
+    const history = await fetch(`${server.url}/commands/payloads/recent`, {
+      method: "GET",
+      headers: {
+        ...headers,
+        cookie: cookieHeader,
+      },
+    });
+
+    expect(history.status).toBe(200);
+    const historyBody = await history.json();
+    expect(historyBody.entries).toEqual([
+      {
+        command: "feedback-record",
+        payload: {
+          contact: "se***@example.com",
+          message: "Found api_key=***redacted*** in logs",
+          rating: 4,
+          source: "survey",
+        },
+        result: { ok: true, status: "success" },
+        timestamp: expect.any(String),
+      },
+    ]);
+  });
+
   const expectRedactedBinaryPayloadHistory = async (commandAdapter) => {
     const server = await startServer({ commandAdapter });
 
@@ -3964,7 +4016,7 @@ describe("web server command endpoint", () => {
       {
         command: "feedback-record",
         payload: {
-          contact: "casey@example.com",
+          contact: "ca***@example.com",
           message: "Loved the beta",
           rating: 5,
           source: "survey",

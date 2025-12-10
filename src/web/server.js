@@ -7573,7 +7573,7 @@ export function createWebApp({
         return;
       }
 
-      const redactedPayload = req.redacted?.body ?? redactValue(payload);
+      const redactedPayload = redactValue(payload);
       const payloadFields = Object.keys(payload ?? {}).sort();
       const clientIdentity = createClientIdentity({
         subject: authContext?.subject,
@@ -7591,7 +7591,7 @@ export function createWebApp({
         clientPayloadStore.record(
           clientIdentity,
           commandParam,
-          payload,
+          redactedPayload,
           historyResult,
         );
         logCommandTelemetry(logger, "info", {
@@ -7637,7 +7637,7 @@ export function createWebApp({
         clientPayloadStore.record(
           clientIdentity,
           commandParam,
-          payload,
+          redactedPayload,
           historyResult,
         );
 
