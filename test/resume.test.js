@@ -231,4 +231,44 @@ describe('loadResume', () => {
       { type: 'title', value: 'Your Title Here', line: 5 },
     ]);
   });
+
+  it('emits resume-import telemetry when loading fails', async () => {
+    const record = vi.fn();
+    const telemetry = { record };
+    const missingFile = path.join(os.tmpdir(), 'does-not-exist', 'resume.txt');
+
+    await expect(
+      loadResume(missingFile, { withMetadata: true, telemetry }),
+    ).rejects.toThrow();
+
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'resume-import',
+        status: 'error',
+        filePath: path.resolve(missingFile),
+        message: expect.stringMatching(/ENOENT|no such file/i),
+      }),
+    );
+  });
+
+  it('warns but does not fail when telemetry recording errors', async () => {
+    const warn = vi.fn();
+    const logger = { warn };
+    const telemetry = {
+      record: vi.fn(() => {
+        throw new Error('telemetry service down');
+      }),
+    };
+    const missingFile = path.join(os.tmpdir(), 'does-not-exist', 'resume.txt');
+
+    await expect(
+      loadResume(missingFile, { withMetadata: true, telemetry, logger }),
+    ).rejects.toThrow();
+
+    expect(warn).toHaveBeenCalledWith(
+      'Failed to record resume-import telemetry',
+      expect.any(Error),
+    );
+  });
 });

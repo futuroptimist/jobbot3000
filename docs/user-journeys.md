@@ -69,7 +69,9 @@ jobbot3000.
 
 - Disk-write failures (e.g., read-only directories) produce explicit alerts and keep the in-memory
   profile so the user can retry after fixing permissions.
-- Resume loader crashes emit telemetry events tagged `resume-import` so QA can trace regressions.
+- Resume loader crashes emit telemetry events tagged `resume-import` so QA can trace regressions;
+  `test/resume.test.js` now asserts the telemetry payload records the file path and error details
+  when imports fail.
 - Validation mismatches between CLI and web responses surface as contract test failures where shared
   fixtures assert identical normalized JSON payloads.
 

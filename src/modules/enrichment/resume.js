@@ -439,97 +439,119 @@ function toPlainText(raw, format) {
  * } }>}
  */
 export async function loadResume(filePath, options = {}) {
-  const extension = path.extname(filePath).toLowerCase();
-  const format = detectFormat(extension);
-  const raw = await readRawContent(filePath, format);
-  const text = toPlainText(raw, format);
+  const telemetry = options?.telemetry;
+  const logger = options?.logger ?? console;
 
-  if (!options.withMetadata) {
-    return text;
-  }
-
-  const stats = await fs.stat(filePath);
-  const metadata = {
-    extension: extension || '',
-    format,
-    bytes: stats.size,
-    characters: text.length,
-    lineCount: countLines(text),
-    wordCount: countWords(text),
+  const recordTelemetry = (error) => {
+    if (!telemetry || typeof telemetry.record !== 'function') {
+      return;
+    }
+    try {
+      telemetry.record({
+        event: 'resume-import',
+        status: 'error',
+        filePath: typeof filePath === 'string' ? path.resolve(filePath) : undefined,
+        code: error?.code,
+        message: error?.message ?? String(error),
+      });
+    } catch (telemetryError) {
+      logger?.warn?.('Failed to record resume-import telemetry', telemetryError);
+    }
   };
+  try {
+    const extension = path.extname(filePath).toLowerCase();
+    const format = detectFormat(extension);
+    const raw = await readRawContent(filePath, format);
+    const text = toPlainText(raw, format);
 
-  const warnings = detectAtsWarnings(raw, format);
-  const resumeAmbiguities = detectResumeAmbiguities(text);
-  const aggregateAmbiguities = detectAmbiguities(text);
-
-  if (resumeAmbiguities.length > 0) {
-    const firstByType = new Map();
-    for (const entry of resumeAmbiguities) {
-      if (!firstByType.has(entry.type) && entry.location) {
-        firstByType.set(entry.type, entry.location);
-      }
+    if (!options.withMetadata) {
+      return text;
     }
 
-    const ensureAggregateHint = (aggregateType, placeholderType, message) => {
-      if (!firstByType.has(placeholderType)) return;
-      const existing = aggregateAmbiguities.find(item => item.type === aggregateType);
-      if (existing) {
-        if (!existing.location) {
-          existing.location = firstByType.get(placeholderType);
-        }
-        return;
-      }
-      aggregateAmbiguities.push({
-        type: aggregateType,
-        message,
-        location: firstByType.get(placeholderType),
-      });
+    const stats = await fs.stat(filePath);
+    const metadata = {
+      extension: extension || '',
+      format,
+      bytes: stats.size,
+      characters: text.length,
+      lineCount: countLines(text),
+      wordCount: countWords(text),
     };
 
-    ensureAggregateHint(
-      'dates',
-      'date',
-      'Detected month references without four-digit years; confirm date ranges are clear.',
-    );
-    ensureAggregateHint(
-      'metrics',
-      'metric',
-      'No numeric metrics detected; consider adding quantified achievements.',
-    );
-    ensureAggregateHint(
-      'titles',
-      'title',
-      'No common role titles detected; ensure positions are clearly labeled.',
-    );
-  }
+    const warnings = detectAtsWarnings(raw, format);
+    const resumeAmbiguities = detectResumeAmbiguities(text);
+    const aggregateAmbiguities = detectAmbiguities(text);
 
-  if (warnings.length > 0) {
-    metadata.warnings = warnings;
-  }
-  if (aggregateAmbiguities.length > 0) {
-    metadata.ambiguities = aggregateAmbiguities;
-  }
-
-  const baseConfidenceScore = computeConfidenceScore(warnings, aggregateAmbiguities);
-  const parsingConfidence = estimateParsingConfidence(text, warnings);
-
-  const combinedConfidence = parsingConfidence
-    ? {
-        ...parsingConfidence,
-        score: Math.max(baseConfidenceScore, parsingConfidence.score ?? 0),
+    if (resumeAmbiguities.length > 0) {
+      const firstByType = new Map();
+      for (const entry of resumeAmbiguities) {
+        if (!firstByType.has(entry.type) && entry.location) {
+          firstByType.set(entry.type, entry.location);
+        }
       }
-    : { score: baseConfidenceScore, signals: [] };
 
-  metadata.confidence = combinedConfidence;
+      const ensureAggregateHint = (aggregateType, placeholderType, message) => {
+        if (!firstByType.has(placeholderType)) return;
+        const existing = aggregateAmbiguities.find(item => item.type === aggregateType);
+        if (existing) {
+          if (!existing.location) {
+            existing.location = firstByType.get(placeholderType);
+          }
+          return;
+        }
+        aggregateAmbiguities.push({
+          type: aggregateType,
+          message,
+          location: firstByType.get(placeholderType),
+        });
+      };
 
-  if (resumeAmbiguities.length > 0) {
-    metadata.ambiguities = [
-      ...(metadata.ambiguities ?? []),
-      ...resumeAmbiguities,
-    ];
+      ensureAggregateHint(
+        'dates',
+        'date',
+        'Detected month references without four-digit years; confirm date ranges are clear.',
+      );
+      ensureAggregateHint(
+        'metrics',
+        'metric',
+        'No numeric metrics detected; consider adding quantified achievements.',
+      );
+      ensureAggregateHint(
+        'titles',
+        'title',
+        'No common role titles detected; ensure positions are clearly labeled.',
+      );
+    }
+
+    if (warnings.length > 0) {
+      metadata.warnings = warnings;
+    }
+    if (aggregateAmbiguities.length > 0) {
+      metadata.ambiguities = aggregateAmbiguities;
+    }
+
+    const baseConfidenceScore = computeConfidenceScore(warnings, aggregateAmbiguities);
+    const parsingConfidence = estimateParsingConfidence(text, warnings);
+
+    const combinedConfidence = parsingConfidence
+      ? {
+          ...parsingConfidence,
+          score: Math.max(baseConfidenceScore, parsingConfidence.score ?? 0),
+        }
+      : { score: baseConfidenceScore, signals: [] };
+
+    metadata.confidence = combinedConfidence;
+
+    if (resumeAmbiguities.length > 0) {
+      metadata.ambiguities = [
+        ...(metadata.ambiguities ?? []),
+        ...resumeAmbiguities,
+      ];
+    }
+
+    return { text, metadata };
+  } catch (error) {
+    recordTelemetry(error);
+    throw error;
   }
-
-  return { text, metadata };
 }
-
-
