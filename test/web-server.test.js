@@ -4018,7 +4018,7 @@ describe("web server command endpoint", () => {
         payload: {
           contact: "ca***@example.com",
           message: "Loved the beta",
-          rating: "5",
+          rating: 5,
           source: "survey",
         },
         result: {
