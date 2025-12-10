@@ -7573,7 +7573,7 @@ export function createWebApp({
         return;
       }
 
-      const redactedPayload = req.redacted?.body ?? redactValue(payload);
+      const redactedPayload = redactValue(payload);
       const payloadFields = Object.keys(payload ?? {}).sort();
       const clientIdentity = createClientIdentity({
         subject: authContext?.subject,
