@@ -11,4 +11,13 @@ describe('client payload store', () => {
     expect(recorded).toBeNull();
     expect(store.getRecent('client-1')).toEqual([]);
   });
+
+  it('keeps history entries when payload is empty but result is present', () => {
+    const store = createClientPayloadStore({ maxEntriesPerClient: 3 });
+
+    const recorded = store.record('client-1', 'summarize', { note: '   ' }, { status: 'success' });
+
+    expect(recorded).not.toBeNull();
+    expect(store.getRecent('client-1')).toHaveLength(1);
+  });
 });

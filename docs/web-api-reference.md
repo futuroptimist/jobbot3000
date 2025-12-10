@@ -81,7 +81,7 @@ whitespace before they are persisted. Command results are captured with the same
 pipeline (redacted stdout/stderr/error messages, trimmed objects) and annotated with a `status` of
 `success` or `error` so the UI can rehydrate recent responses without replaying CLI calls.
 Timestamps include up to 750ms of forward or backward jitter to reduce correlation value in the
-unlikely event encrypted history is exposed (`test/web-client-payload-store.test.js` covers both the
+unlikely event encrypted history is exposed (`test/client-payload-store.test.js` covers both the
 jitter cap and encrypted history round-trip).
 The response shape is:
 
