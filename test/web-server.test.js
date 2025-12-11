@@ -3772,6 +3772,40 @@ describe("web server command endpoint", () => {
     expect(uniqueEditorTimestamps.size).toBe(editorBody.entries.length);
   });
 
+  it("requires authentication before returning payload history for protected servers", async () => {
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({ ok: true })),
+    };
+
+    const server = await startServer({
+      auth: { tokens: ["example-token"] },
+      commandAdapter,
+    });
+    const headers = buildCommandHeaders(server);
+
+    const response = await fetch(`${server.url}/commands/payloads/recent`, {
+      method: "GET",
+      headers,
+    });
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get("www-authenticate")).toMatch(
+      /^Bearer\s+realm="jobbot-web"$/,
+    );
+
+    const authorizedResponse = await fetch(`${server.url}/commands/payloads/recent`, {
+      method: "GET",
+      headers: {
+        ...headers,
+        authorization: "Bearer example-token",
+      },
+    });
+
+    expect(authorizedResponse.status).toBe(200);
+    const body = await authorizedResponse.json();
+    expect(body.entries).toEqual([]);
+  });
+
   it("records array command results with explicit status metadata", async () => {
     const commandAdapter = {
       summarize: vi.fn(async () => ["alpha", { ok: true }]),
