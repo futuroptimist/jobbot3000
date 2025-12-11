@@ -507,6 +507,9 @@
      locks the validation, CLI bridge, and adapter plumbing so release feedback remains
      actionable, while [`test/web-server.test.js`](../test/web-server.test.js)
      exercises the `/commands/feedback-record` web endpoint and payload history contract.
+     The CLI now exposes `jobbot feedback list [--json]` for downstream analysis;
+     regression coverage in [`test/cli.test.js`](../test/cli.test.js) verifies the
+     formatted and JSON output stays aligned with the stored entries.
 
 ### 6. Documentation and Developer Experience
 
