@@ -7,7 +7,7 @@ import { summarize as summarizeFirstSentence } from '../src/index.js';
 import { fetchTextFromUrl, DEFAULT_FETCH_HEADERS } from '../src/fetch.js';
 import { parseJobText } from '../src/parser.js';
 import { loadResume } from '../src/resume.js';
-import { recordFeedback } from '../src/feedback.js';
+import { listFeedback, recordFeedback } from '../src/feedback.js';
 import {
   toJson,
   toMarkdownSummary,
@@ -2009,6 +2009,36 @@ async function cmdFeedbackRecord(args) {
   return entry;
 }
 
+function formatFeedback(entries) {
+  return entries
+    .map((entry) => {
+      const parts = [`- ${entry.message}`];
+      if (entry.rating != null) parts.push(`rating: ${entry.rating}`);
+      if (entry.source) parts.push(`source: ${entry.source}`);
+      if (entry.contact) parts.push(`contact: ${entry.contact}`);
+      parts.push(`recorded: ${entry.recorded_at}`);
+      return parts.join(' | ');
+    })
+    .join('\n');
+}
+
+async function cmdFeedbackList(args) {
+  const asJson = args.includes('--json');
+  const entries = await listFeedback();
+
+  if (asJson) {
+    console.log(JSON.stringify({ feedback: entries }, null, 2));
+    return;
+  }
+
+  if (!entries.length) {
+    console.log('No feedback entries found');
+    return;
+  }
+
+  console.log(formatFeedback(entries));
+}
+
 async function cmdIntakeDraft(args) {
   const question = readContentFromArgs(args, '--question', '--question-file');
   const answer = readContentFromArgs(args, '--answer', '--answer-file');
@@ -2218,9 +2248,11 @@ async function cmdIntake(args) {
 async function cmdFeedback(args) {
   const sub = args[0];
   if (sub === 'record') return cmdFeedbackRecord(args.slice(1));
+  if (sub === 'list') return cmdFeedbackList(args.slice(1));
   console.error(
-    'Usage: jobbot feedback record --message <text> [--source <label>] ' +
-      '[--contact <value>] [--rating <1-5>]',
+    'Usage: jobbot feedback <record|list> [options]\n' +
+      '  record --message <text> [--source <label>] [--contact <value>] [--rating <1-5>]\n' +
+      '  list [--json]',
   );
   process.exit(2);
 }

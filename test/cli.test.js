@@ -2141,6 +2141,37 @@ describe('jobbot CLI', () => {
     });
   });
 
+  it('lists recorded feedback entries with optional JSON output', () => {
+    runCli([
+      'feedback',
+      'record',
+      '--message',
+      ' Loved the new application drawer ',
+      '--source',
+      'survey',
+      '--contact',
+      'analyst@example.com',
+      '--rating',
+      '5',
+    ]);
+
+    const output = runCli(['feedback', 'list']);
+    expect(output).toContain('- Loved the new application drawer');
+    expect(output).toContain('rating: 5');
+    expect(output).toContain('source: survey');
+    expect(output).toContain('contact: analyst@example.com');
+    expect(output).toMatch(/recorded: \d{4}-/);
+
+    const json = JSON.parse(runCli(['feedback', 'list', '--json']));
+    expect(json.feedback).toHaveLength(1);
+    expect(json.feedback[0]).toMatchObject({
+      message: 'Loved the new application drawer',
+      source: 'survey',
+      contact: 'analyst@example.com',
+      rating: 5,
+    });
+  });
+
   it('returns manual templates alongside intake plan JSON output', () => {
     runCli(['init']);
     const output = runCli(['intake', 'plan', '--json']);
