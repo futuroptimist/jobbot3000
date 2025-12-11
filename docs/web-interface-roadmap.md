@@ -12,8 +12,9 @@
 - Deliver a local-first web application that streamlines tracking and managing job applications while
   retaining full parity with the existing CLI workflows.
 - Harden the local-only default by treating string `"false"` remote-access flags as disabled and
-  ignoring empty or malformed `--allow-remote-access=` values so argument parsing quirks cannot
-  accidentally expose the server beyond localhost.
+  treating empty or malformed `--allow-remote-access=` values as explicit deny signals, overriding
+  truthy environment variables so argument parsing quirks cannot accidentally expose the server
+  beyond localhost.
 - The helper script now treats `--allow-remote-access=false` as an explicit deny, overriding truthy
   environment variables so remote bindings stay opt-in. Regression coverage in
   [`test/resolve-allow-remote-access.test.js`](../test/resolve-allow-remote-access.test.js) locks
