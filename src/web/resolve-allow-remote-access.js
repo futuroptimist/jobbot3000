@@ -29,11 +29,12 @@ export function resolveAllowRemoteAccess({ args = [], env = {} } = {}) {
       const parsed = normalize(value);
       if (parsed && TRUTHY_VALUES.has(parsed)) return true;
       if (parsed && FALSY_VALUES.has(parsed)) return false;
-      return undefined;
+      return false;
     }
     const nextValue = normalize(argv[flagIndex + 1]);
     if (nextValue && TRUTHY_VALUES.has(nextValue)) return true;
     if (nextValue && FALSY_VALUES.has(nextValue)) return false;
+    if (nextValue !== undefined) return false;
     return true;
   }
   if (hasDenyFlag) {

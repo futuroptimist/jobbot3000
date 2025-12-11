@@ -29,14 +29,24 @@ describe('resolveAllowRemoteAccess', () => {
     ).toBe(false);
   });
 
-  it('ignores empty allow flags that use = syntax instead of enabling remote access', () => {
-    expect(resolveAllowRemoteAccess({ args: ['--allow-remote-access='] })).toBeUndefined();
+  it('treats empty allow flags as a deny even when the environment enables remote', () => {
+    const env = { JOBBOT_WEB_ALLOW_REMOTE: '1' };
+    expect(
+      resolveAllowRemoteAccess({
+        args: ['--allow-remote-access='],
+        env,
+      }),
+    ).toBe(false);
   });
 
-  it('ignores invalid = syntax without consuming the next arg', () => {
+  it('treats invalid = syntax as a deny without consuming the next arg', () => {
+    const env = { JOBBOT_WEB_ALLOW_REMOTE: 'yes' };
     expect(
-      resolveAllowRemoteAccess({ args: ['--allow-remote-access=invalid', 'true'] }),
-    ).toBeUndefined();
+      resolveAllowRemoteAccess({
+        args: ['--allow-remote-access=invalid', 'true'],
+        env,
+      }),
+    ).toBe(false);
   });
 
   it('parses truthy and falsy environment values when no flags are set', () => {
