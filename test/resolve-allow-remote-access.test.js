@@ -49,6 +49,16 @@ describe('resolveAllowRemoteAccess', () => {
     ).toBe(false);
   });
 
+  it('treats a bare allow flag as truthy even when followed by another option flag', () => {
+    const env = { JOBBOT_WEB_ALLOW_REMOTE: '0' };
+    expect(
+      resolveAllowRemoteAccess({
+        args: ['--allow-remote-access', '--host', '0.0.0.0', '--port', '3000'],
+        env,
+      }),
+    ).toBe(true);
+  });
+
   it('parses truthy and falsy environment values when no flags are set', () => {
     expect(resolveAllowRemoteAccess({ env: { JOBBOT_WEB_ALLOW_REMOTE: 'yes' } })).toBe(true);
     expect(resolveAllowRemoteAccess({ env: { JOBBOT_WEB_ALLOW_REMOTE: 'enabled' } })).toBe(true);
