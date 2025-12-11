@@ -7552,10 +7552,29 @@ export function createWebApp({
         return;
       }
 
+      const clientIdentity = createClientIdentity({
+        subject: authContext?.subject,
+        clientIp,
+        userAgent,
+        sessionId,
+        tokenFingerprint,
+      });
+
+      const requestPayload = req.body ?? {};
       let payload;
       try {
-        payload = validateCommandPayload(commandParam, req.body ?? {});
+        payload = validateCommandPayload(commandParam, requestPayload);
       } catch (err) {
+        const redactedRequestPayload = redactValue(requestPayload);
+        clientPayloadStore.record(
+          clientIdentity,
+          commandParam,
+          redactedRequestPayload,
+          decorateResultStatus(
+            { error: sanitizeOutputString(err?.message ?? "Invalid command payload") },
+            "error",
+          ),
+        );
         res
           .status(400)
           .json({ error: err?.message ?? "Invalid command payload" });
@@ -7575,13 +7594,6 @@ export function createWebApp({
 
       const redactedPayload = redactValue(payload);
       const payloadFields = Object.keys(payload ?? {}).sort();
-      const clientIdentity = createClientIdentity({
-        subject: authContext?.subject,
-        clientIp,
-        userAgent,
-        sessionId,
-        tokenFingerprint,
-      });
 
       try {
         const result = await commandAdapter[commandParam](payload);
