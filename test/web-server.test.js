@@ -3792,6 +3792,22 @@ describe("web server command endpoint", () => {
     expect(response.headers.get("www-authenticate")).toMatch(
       /^Bearer\s+realm="jobbot-web"$/,
     );
+    expect(await response.json()).toMatchObject({
+      error: expect.stringMatching(/authorization/i),
+    });
+
+    const invalidAuth = await fetch(`${server.url}/commands/payloads/recent`, {
+      method: "GET",
+      headers: {
+        ...headers,
+        authorization: "Bearer nope",
+      },
+    });
+
+    expect(invalidAuth.status).toBe(401);
+    expect(await invalidAuth.json()).toMatchObject({
+      error: expect.stringMatching(/authorization/i),
+    });
 
     const authorizedResponse = await fetch(`${server.url}/commands/payloads/recent`, {
       method: "GET",
