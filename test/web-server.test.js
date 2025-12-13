@@ -3818,7 +3818,7 @@ describe("web server command endpoint", () => {
     ]);
   });
 
-  it("scopes payload history to the token fingerprint across sessions", async () => {
+  it("scopes payload history to the token fingerprint across different sessions", async () => {
     const commandAdapter = {
       summarize: vi.fn(async ({ input }) => ({ ok: true, echo: input })),
     };
@@ -3828,15 +3828,28 @@ describe("web server command endpoint", () => {
       auth: { tokens: [{ token: "shared-token", roles: ["editor"] }] },
     });
 
-    const baseHeaders = buildCommandHeaders(
+    const headerName = server?.csrfHeaderName ?? "x-jobbot-csrf";
+    const cookieName = server?.csrfCookieName ?? DEFAULT_CSRF_COOKIE;
+
+    const firstSessionHeaders = buildCommandHeaders(
       server,
       { authorization: "Bearer shared-token" },
       { includeCookie: true },
     );
 
+    const secondSessionHeaders = {
+      ...buildCommandHeaders(
+        server,
+        { authorization: "Bearer shared-token" },
+        { includeCookie: true },
+      ),
+      cookie: `${cookieName}=${server.csrfToken}; jobbot_session_id=second-session`,
+      [headerName]: server.csrfToken,
+    };
+
     const firstResponse = await fetch(`${server.url}/commands/summarize`, {
       method: "POST",
-      headers: baseHeaders,
+      headers: firstSessionHeaders,
       body: JSON.stringify({ input: "first" }),
     });
     expect(firstResponse.status).toBe(200);
@@ -3844,7 +3857,7 @@ describe("web server command endpoint", () => {
 
     const secondResponse = await fetch(`${server.url}/commands/summarize`, {
       method: "POST",
-      headers: baseHeaders,
+      headers: secondSessionHeaders,
       body: JSON.stringify({ input: "second" }),
     });
     expect(secondResponse.status).toBe(200);
@@ -3854,8 +3867,8 @@ describe("web server command endpoint", () => {
     const historyResponse = await fetch(`${server.url}/commands/payloads/recent`, {
       method: "GET",
       headers: {
-        ...baseHeaders,
-        cookie: [baseHeaders.cookie, sessionCookie].filter(Boolean).join("; "),
+        ...secondSessionHeaders,
+        cookie: [secondSessionHeaders.cookie, sessionCookie].filter(Boolean).join("; "),
       },
     });
 
