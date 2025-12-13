@@ -120,6 +120,27 @@ describe('resume pipeline', () => {
     expect(analysis.confidence.signals.length).toBeGreaterThan(0);
   });
 
+  it('rolls average words per line into the score summary', async () => {
+    const filePath = path.join(FIXTURE_DIR, 'resume-pipeline.md');
+    const { enrichment, score } = await runResumePipeline(filePath);
+
+    const sections = Object.values(enrichment.sections || {});
+    const totals = sections.reduce(
+      (acc, section) => {
+        const lines = section.lineCount ?? 0;
+        const words = lines * (section.averageWordsPerLine ?? 0);
+        return { lines: acc.lines + lines, words: acc.words + words };
+      },
+      { lines: 0, words: 0 },
+    );
+
+    const expectedAverage = totals.lines
+      ? Number((totals.words / totals.lines).toFixed(2))
+      : 0;
+
+    expect(score.averageWordsPerLine).toBe(expectedAverage);
+  });
+
   it('flags question-mark placeholder tokens for enrichment consumers', async () => {
     const filePath = path.join(FIXTURE_DIR, 'resume-placeholder-questions.txt');
     const { enrichment } = await runResumePipeline(filePath);

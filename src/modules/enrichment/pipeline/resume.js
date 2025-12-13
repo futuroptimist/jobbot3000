@@ -256,6 +256,21 @@ const RESUME_PIPELINE_STAGES = [
       };
       const normalized = context.normalizedResume || { sections: {}, lineCount: 0 };
 
+      const sectionAverages = Object.values(enrichment.sections || {}).reduce(
+        (acc, section) => {
+          const lines = section?.lineCount ?? 0;
+          const avg = section?.averageWordsPerLine ?? 0;
+          return {
+            lines: acc.lines + lines,
+            words: acc.words + lines * avg,
+          };
+        },
+        { lines: 0, words: 0 },
+      );
+      const averageWordsPerLine = sectionAverages.lines
+        ? Number((sectionAverages.words / sectionAverages.lines).toFixed(2))
+        : 0;
+
       const totalSections = Object.keys(enrichment.sections || {}).length;
       const sectionsWithMetrics = enrichment.sectionsWithMetrics || [];
       const placeholderSections = enrichment.placeholderSections || [];
@@ -274,6 +289,7 @@ const RESUME_PIPELINE_STAGES = [
         ambiguityCount: analysis.ambiguityCount ?? 0,
         confidenceScore: analysis.confidence?.score,
         totalLines: normalized.lineCount || 0,
+        averageWordsPerLine,
       };
 
       context.score = score;
