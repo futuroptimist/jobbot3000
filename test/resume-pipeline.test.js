@@ -120,6 +120,14 @@ describe('resume pipeline', () => {
     expect(analysis.confidence.signals.length).toBeGreaterThan(0);
   });
 
+  it('rolls average words per line into the score summary', async () => {
+    const filePath = path.join(FIXTURE_DIR, 'resume-pipeline.md');
+    const { score } = await runResumePipeline(filePath);
+
+    expect(typeof score.averageWordsPerLine).toBe('number');
+    expect(score.averageWordsPerLine).toBeGreaterThan(0);
+  });
+
   it('flags question-mark placeholder tokens for enrichment consumers', async () => {
     const filePath = path.join(FIXTURE_DIR, 'resume-placeholder-questions.txt');
     const { enrichment } = await runResumePipeline(filePath);

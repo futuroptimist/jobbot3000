@@ -41,8 +41,9 @@ Every invocation of `runResumePipeline` starts with a context shaped as follows:
   normalized `confidence` object so consumers can mutate the results without affecting cached
   metadata.
 - `score`: populated by the `score` stage. Summarizes the pipeline run with section counts, ratios
-  for metrics/placeholder coverage, warning and ambiguity totals, and the confidence score. This is
-  designed for quick comparisons across resumes without re-running the earlier stages.
+  for metrics/placeholder coverage, warning and ambiguity totals, the average words per line across
+  all detected sections, and the confidence score. This is designed for quick comparisons across
+  resumes without re-running the earlier stages.
 - `stages`: an array of `{ name, output }` snapshots returned by each stage. This keeps fixtures and
   diagnostics stable when new stages are inserted.
 
