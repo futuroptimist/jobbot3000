@@ -242,6 +242,7 @@ function acceptsGzip(req) {
 function sendCompressedAsset(req, res, { contentType, rawBuffer, gzipBuffer }) {
   res.set("Content-Type", `${contentType}; charset=utf-8`);
   res.set("Cache-Control", "no-store");
+  res.set("Vary", "Accept-Encoding");
   if (gzipBuffer && acceptsGzip(req)) {
     res.set("Content-Encoding", "gzip");
     res.set("Content-Length", String(gzipBuffer.byteLength));
