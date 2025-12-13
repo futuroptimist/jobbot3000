@@ -80,6 +80,9 @@ requests. Command names are normalized the same way, removing control characters
 whitespace before they are persisted. Command results are captured with the same sanitization
 pipeline (redacted stdout/stderr/error messages, trimmed objects) and annotated with a `status` of
 `success` or `error` so the UI can rehydrate recent responses without replaying CLI calls.
+Histories follow the authorization token fingerprint, so repeated requests using the same token share
+a single timeline even when the caller cycles session cookies or user agents between calls
+(`test/web-server.test.js` covers the fingerprint scoping contract).
 Timestamps include up to 750ms of forward or backward jitter to reduce correlation value in the
 unlikely event encrypted history is exposed (`test/client-payload-store.test.js` covers both the
 jitter cap and encrypted history round-trip).

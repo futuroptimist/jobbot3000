@@ -3818,6 +3818,65 @@ describe("web server command endpoint", () => {
     ]);
   });
 
+  it("scopes payload history to the token fingerprint across sessions", async () => {
+    const commandAdapter = {
+      summarize: vi.fn(async ({ input }) => ({ ok: true, echo: input })),
+    };
+
+    const server = await startServer({
+      commandAdapter,
+      auth: { tokens: [{ token: "shared-token", roles: ["editor"] }] },
+    });
+
+    const baseHeaders = buildCommandHeaders(
+      server,
+      { authorization: "Bearer shared-token" },
+      { includeCookie: true },
+    );
+
+    const firstResponse = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: baseHeaders,
+      body: JSON.stringify({ input: "first" }),
+    });
+    expect(firstResponse.status).toBe(200);
+    await firstResponse.json();
+
+    const secondResponse = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: baseHeaders,
+      body: JSON.stringify({ input: "second" }),
+    });
+    expect(secondResponse.status).toBe(200);
+    const setCookies = secondResponse.headers.getSetCookie?.() ?? [];
+    const sessionCookie = setCookies.map((entry) => entry.split(";")[0]).join("; ");
+
+    const historyResponse = await fetch(`${server.url}/commands/payloads/recent`, {
+      method: "GET",
+      headers: {
+        ...baseHeaders,
+        cookie: [baseHeaders.cookie, sessionCookie].filter(Boolean).join("; "),
+      },
+    });
+
+    expect(historyResponse.status).toBe(200);
+    const historyBody = await historyResponse.json();
+    expect(historyBody.entries).toEqual([
+      {
+        command: "summarize",
+        payload: { input: "first" },
+        result: { ok: true, echo: "first", status: "success" },
+        timestamp: expect.any(String),
+      },
+      {
+        command: "summarize",
+        payload: { input: "second" },
+        result: { ok: true, echo: "second", status: "success" },
+        timestamp: expect.any(String),
+      },
+    ]);
+  });
+
   it("records array command results with explicit status metadata", async () => {
     const commandAdapter = {
       summarize: vi.fn(async () => ["alpha", { ok: true }]),

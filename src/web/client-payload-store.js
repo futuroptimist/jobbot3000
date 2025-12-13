@@ -365,14 +365,18 @@ export function createClientIdentity({
   tokenFingerprint,
 }) {
   const parts = [];
-  if (typeof subject === "string" && subject.trim()) {
-    parts.push(subject.trim());
-  } else {
-    parts.push("guest");
-  }
+  const normalizedSubject =
+    typeof subject === "string" && subject.trim() ? subject.trim() : "guest";
+  parts.push(normalizedSubject);
 
-  if (typeof tokenFingerprint === "string" && tokenFingerprint.trim()) {
-    parts.push(`token:${tokenFingerprint.trim()}`);
+  const normalizedTokenFingerprint =
+    typeof tokenFingerprint === "string" && tokenFingerprint.trim()
+      ? tokenFingerprint.trim()
+      : null;
+
+  if (normalizedTokenFingerprint) {
+    parts.push(`token:${normalizedTokenFingerprint}`);
+    return parts.join("|");
   }
 
   if (typeof sessionId === "string" && sessionId.trim()) {
