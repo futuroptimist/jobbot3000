@@ -282,7 +282,10 @@ call scheduled"`.
 1. Visit **Pipeline** and use **Log Event** to add outreach notes, attach documents, and schedule
    reminders; the UI writes to the same local JSON files through shared APIs.
 2. Drag-and-drop jobs between columns to update status; the system records transitions and prompts
-   for optional notes.
+   for optional notes. The Applications view now exposes a drag-and-drop status board that posts
+   `track-record` updates and refreshes the shortlist; regression coverage in
+   [`test/web-status-hub-frontend.test.js`](../test/web-status-hub-frontend.test.js) keeps the
+   board wired to the backend.
 3. Review reminders in the **Follow-ups** sidebar, which mirrors the CLI digest (Past Due vs
    Upcoming) and supports snooze/done actions backed by `jobbot track reminders snooze <job_id>
 --until <iso>` and `jobbot track reminders done <job_id> [--at <iso>]`. The web backend now exposes

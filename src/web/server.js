@@ -1483,6 +1483,60 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
   .shortlist-actions__message[data-variant='error'] {
     color: var(--danger-text);
   }
+  .shortlist-board {
+    margin: 1rem 0 1.5rem;
+    border: 1px solid var(--jobbot-color-surface-border, #3a3f51);
+    border-radius: 12px;
+    padding: 1rem;
+    background: var(--jobbot-color-surface, #161925);
+  }
+  .shortlist-board h3 {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+  }
+  .shortlist-board__message {
+    margin: 0 0 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 8px;
+    background: var(--jobbot-color-surface-muted, #1f2230);
+  }
+  .shortlist-board__message[data-variant='error'] {
+    color: var(--jobbot-color-danger);
+  }
+  .shortlist-board__message[data-variant='success'] {
+    color: var(--jobbot-color-text-primary);
+  }
+  .shortlist-board__columns {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0.75rem;
+  }
+  .shortlist-board__column {
+    padding: 0.75rem;
+    border: 1px dashed var(--jobbot-color-surface-border, #3a3f51);
+    border-radius: 10px;
+    min-height: 80px;
+    background: var(--jobbot-color-surface-muted, #1b1f2d);
+    transition: border-color 0.12s ease, background 0.12s ease;
+  }
+  .shortlist-board__column:hover,
+  .shortlist-board__column:focus-within {
+    border-color: var(--jobbot-color-accent, #7dc3ff);
+    outline: none;
+  }
+  .shortlist-board__column[data-dropping='true'] {
+    border-color: var(--jobbot-color-accent, #7dc3ff);
+    background: var(--jobbot-color-surface, #161925);
+  }
+  .shortlist-board__column h4 {
+    margin: 0 0 0.5rem;
+    font-size: 0.95rem;
+  }
+  .shortlist-board__column p {
+    margin: 0;
+    color: var(--jobbot-color-text-secondary);
+    font-size: 0.9rem;
+  }
   .recruiter-modal[hidden] {
     display: none !important;
   }
@@ -2390,6 +2444,11 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           const range = section.querySelector('[data-shortlist-range]');
           const prevButton = section.querySelector('[data-shortlist-prev]');
           const nextButton = section.querySelector('[data-shortlist-next]');
+          const boardElements = {
+            container: section.querySelector('[data-shortlist-board]'),
+            columns: section.querySelector('[data-shortlist-board-columns]'),
+            message: section.querySelector('[data-shortlist-board-message]'),
+          };
           const detailElements = (() => {
             const container = section.querySelector('[data-application-detail]');
             if (!container) return null;
@@ -2430,6 +2489,8 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           const remindersState = { running: false };
           const exportState = { running: false };
           const remindersReportState = { report: null };
+          const dragStatuses = ${JSON.stringify(STATUSES)};
+          const dragState = { jobId: null };
           const recruiterElements = (() => {
             const container = section.querySelector('[data-recruiter-modal]');
             if (!container) {
@@ -2660,6 +2721,166 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               .map(part => (part ? part[0].toUpperCase() + part.slice(1) : part))
               .join(' ');
           }
+
+          function setBoardMessage(variant, text) {
+            if (!boardElements?.message) return;
+            const messageText = typeof text === 'string' ? text.trim() : '';
+            const el = boardElements.message;
+            if (!variant || !messageText) {
+              el.textContent = '';
+              el.setAttribute('hidden', '');
+              el.removeAttribute('data-variant');
+              return;
+            }
+            el.textContent = messageText;
+            el.setAttribute('data-variant', variant);
+            el.removeAttribute('hidden');
+          }
+
+          function getDraggedJobId(event) {
+            const value =
+              event?.dataTransfer?.getData?.('text/plain') ||
+              event?.dataTransfer?.getData?.('text');
+            if (value && typeof value === 'string' && value.trim()) {
+              return value.trim();
+            }
+            if (dragState.jobId && typeof dragState.jobId === 'string') {
+              return dragState.jobId;
+            }
+            return null;
+          }
+
+          function setDropState(column, dropping) {
+            if (!column) return;
+            if (dropping) {
+              column.setAttribute('data-dropping', 'true');
+            } else {
+              column.removeAttribute('data-dropping');
+            }
+          }
+
+          async function handleStatusDrop(jobId, status) {
+            if (!jobId || !status) return;
+            const statusLabel = formatStatusLabelText(status) || status;
+            try {
+              setBoardMessage(
+                'success',
+                'Updating ' + jobId + ' to ' + statusLabel + '…',
+              );
+              const result = await recordApplicationStatus(jobId, status);
+              const recordedLabel =
+                result && typeof result.statusLabel === 'string' && result.statusLabel.trim()
+                  ? result.statusLabel.trim()
+                  : statusLabel;
+              dispatchApplicationStatusRecorded({
+                jobId,
+                status,
+                statusLabel: recordedLabel,
+                source: 'drag-and-drop',
+              });
+              setBoardMessage('success', 'Updated ' + jobId + ' to ' + recordedLabel);
+              await refresh({
+                preserveActionMessage: true,
+                preserveBoardMessage: true,
+              });
+            } catch (err) {
+              const message =
+                err && typeof err.message === 'string'
+                  ? err.message
+                  : 'Unable to update application status';
+              setBoardMessage('error', message);
+            } finally {
+              dragState.jobId = null;
+            }
+          }
+
+          function attachDragHandlers(row, jobId) {
+            if (!row || !jobId) return;
+            row.setAttribute('draggable', 'true');
+            row.addEventListener('dragstart', event => {
+              dragState.jobId = jobId;
+              if (event?.dataTransfer?.setData) {
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', jobId);
+              }
+            });
+            row.addEventListener('dragend', () => {
+              dragState.jobId = null;
+            });
+          }
+
+          function createStatusColumn(status) {
+            if (!status) return null;
+            const label = formatStatusLabelText(status) || status;
+            const column = document.createElement('div');
+            column.className = 'shortlist-board__column';
+            column.setAttribute('data-shortlist-drop-target', status);
+            column.setAttribute('role', 'button');
+            column.setAttribute('tabindex', '0');
+            column.setAttribute('aria-label', 'Move application to ' + label);
+
+            const heading = document.createElement('h4');
+            heading.textContent = label;
+            const helper = document.createElement('p');
+            helper.textContent = 'Drag a row here to update status';
+            column.appendChild(heading);
+            column.appendChild(helper);
+
+            column.addEventListener('dragover', event => {
+              event.preventDefault();
+              setDropState(column, true);
+            });
+            column.addEventListener('dragleave', event => {
+              if (!event.relatedTarget || !column.contains(event.relatedTarget)) {
+                setDropState(column, false);
+              }
+            });
+            column.addEventListener('drop', event => {
+              event.preventDefault();
+              const jobId = getDraggedJobId(event);
+              setDropState(column, false);
+              if (jobId) {
+                handleStatusDrop(jobId, status);
+                dragState.jobId = null;
+              }
+            });
+
+            column.addEventListener('click', () => {
+              if (dragState.jobId) {
+                handleStatusDrop(dragState.jobId, status);
+                dragState.jobId = null;
+              }
+            });
+
+            column.addEventListener('keydown', event => {
+              if (
+                (event.key === 'Enter' || event.key === ' ') &&
+                dragState.jobId
+              ) {
+                event.preventDefault();
+                handleStatusDrop(dragState.jobId, status);
+                dragState.jobId = null;
+              }
+            });
+
+            return column;
+          }
+
+          function buildStatusBoard() {
+            if (!boardElements?.columns || !Array.isArray(dragStatuses)) return;
+            boardElements.columns.textContent = '';
+            for (const status of dragStatuses) {
+              const column = createStatusColumn(status);
+              if (column) {
+                boardElements.columns.appendChild(column);
+              }
+            }
+            if (boardElements.container) {
+              boardElements.container.removeAttribute('hidden');
+            }
+          }
+
+          buildStatusBoard();
 
           function setActionMessage(variant, text) {
             if (!actionElements?.message) return;
@@ -3359,6 +3580,7 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               ];
 
               row.setAttribute('data-job-id', jobId);
+              attachDragHandlers(row, jobId);
 
               for (const value of cells) {
                 const cell = document.createElement('td');
@@ -3663,6 +3885,10 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           async function refresh(options = {}) {
             if (state.loading) {
               return false;
+            }
+
+            if (!options.preserveBoardMessage) {
+              setBoardMessage(null);
             }
 
             const useForm = options.useForm === true;
@@ -6640,6 +6866,11 @@ export function createWebApp({
             <code>jobbot shortlist list</code> flags so the web view stays aligned
             with scripted flows.
           </p>
+        <div class="shortlist-board" data-shortlist-board>
+          <h3>Update status by dragging applications into a new column</h3>
+          <p class="shortlist-board__message" data-shortlist-board-message hidden></p>
+          <div class="shortlist-board__columns" data-shortlist-board-columns></div>
+        </div>
         <form class="filters" data-shortlist-filters>
           <label>
             <span>Location</span>
