@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, within } from "@testing-library/dom";
+import { fireEvent, waitFor, within } from "@testing-library/dom";
 import { JSDOM } from "jsdom";
 
 const activeServers = [];
@@ -181,5 +181,73 @@ describe("status hub frontend", () => {
     expect(row.textContent).toContain("JOB-123");
     expect(row.textContent).toContain("Remote");
     expect(row.textContent).toContain("$120k");
+  });
+
+  it("updates status via drag-and-drop board", async () => {
+    const shortlistList = vi.fn(async () => ({
+      data: {
+        items: [
+          {
+            id: "JOB-123",
+            metadata: { location: "Remote" },
+          },
+        ],
+        offset: 0,
+        limit: 10,
+        total: 1,
+      },
+    }));
+    const trackRecord = vi.fn(async () => ({ statusLabel: "Screening" }));
+    const listingsProviders = vi.fn(async () => ({
+      data: {
+        providers: [],
+        tokenStatus: [],
+      },
+    }));
+
+    const server = await startServer({
+      commandAdapter: {
+        "shortlist-list": shortlistList,
+        "track-record": trackRecord,
+        "listings-providers": listingsProviders,
+      },
+    });
+
+    const { dom } = await renderStatusDom(server);
+    await waitForDocumentEvent(dom, "jobbot:status-panels-ready");
+
+    const nav = dom.window.document.querySelector(
+      'nav[aria-label="Status navigation"]',
+    );
+    const navQueries = within(nav);
+    const applicationsLink = navQueries.getByRole("link", { name: /Applications/i });
+
+    fireEvent.click(applicationsLink);
+    await waitForDocumentEvent(dom, "jobbot:applications-loaded");
+
+    const row = dom.window.document.querySelector('[data-job-id="JOB-123"]');
+    const dropTarget = dom.window.document.querySelector(
+      '[data-shortlist-drop-target="screening"]',
+    );
+
+    const dataTransfer = {
+      data: {},
+      setData(key, value) {
+        this.data[key] = value;
+      },
+      getData(key) {
+        return this.data[key];
+      },
+      effectAllowed: null,
+    };
+
+    fireEvent.dragStart(row, { dataTransfer });
+    fireEvent.dragOver(dropTarget, { dataTransfer });
+    fireEvent.drop(dropTarget, { dataTransfer });
+
+    await waitFor(() =>
+      expect(trackRecord).toHaveBeenCalledWith({ jobId: "JOB-123", status: "screening" }),
+    );
+    await waitFor(() => expect(shortlistList).toHaveBeenCalledTimes(2));
   });
 });
