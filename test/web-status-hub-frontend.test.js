@@ -197,7 +197,7 @@ describe("status hub frontend", () => {
         total: 1,
       },
     }));
-    const trackRecord = vi.fn(async () => ({ statusLabel: "Screening" }));
+    const trackRecord = vi.fn(async () => ({ data: { statusLabel: "Screening" } }));
     const listingsProviders = vi.fn(async () => ({
       data: {
         providers: [],
@@ -229,6 +229,90 @@ describe("status hub frontend", () => {
     const dropTarget = dom.window.document.querySelector(
       '[data-shortlist-drop-target="screening"]',
     );
+    const boardMessage = dom.window.document.querySelector(
+      '[data-shortlist-board-message]',
+    );
+
+    const dataTransfer = {
+      data: {},
+      setData(key, value) {
+        this.data[key] = value;
+      },
+      getData(key) {
+        return this.data[key];
+      },
+      effectAllowed: null,
+    };
+
+    fireEvent.dragStart(row, { dataTransfer });
+    fireEvent.dragOver(dropTarget, { dataTransfer });
+    expect(dropTarget.getAttribute("data-dropping")).toBe("true");
+    fireEvent.drop(dropTarget, { dataTransfer });
+    expect(dropTarget.getAttribute("data-dropping")).toBeNull();
+
+    await waitFor(
+      () =>
+        expect(trackRecord).toHaveBeenCalledWith({ jobId: "JOB-123", status: "screening" }),
+      { container: dom.window.document },
+    );
+    await waitFor(() => expect(shortlistList).toHaveBeenCalledTimes(2), {
+      container: dom.window.document,
+    });
+    expect(boardMessage?.textContent).toBe("Updated JOB-123 to Screening");
+    expect(boardMessage?.getAttribute("data-variant")).toBe("success");
+  });
+
+  it("shows an error message when drag-and-drop update fails", async () => {
+    const shortlistList = vi.fn(async () => ({
+      data: {
+        items: [
+          {
+            id: "JOB-123",
+            metadata: { location: "Remote" },
+          },
+        ],
+        offset: 0,
+        limit: 10,
+        total: 1,
+      },
+    }));
+    const trackRecord = vi.fn(async () => {
+      throw new Error("Track update failed");
+    });
+    const listingsProviders = vi.fn(async () => ({
+      data: {
+        providers: [],
+        tokenStatus: [],
+      },
+    }));
+
+    const server = await startServer({
+      commandAdapter: {
+        "shortlist-list": shortlistList,
+        "track-record": trackRecord,
+        "listings-providers": listingsProviders,
+      },
+    });
+
+    const { dom } = await renderStatusDom(server);
+    await waitForDocumentEvent(dom, "jobbot:status-panels-ready");
+
+    const nav = dom.window.document.querySelector(
+      'nav[aria-label="Status navigation"]',
+    );
+    const navQueries = within(nav);
+    const applicationsLink = navQueries.getByRole("link", { name: /Applications/i });
+
+    fireEvent.click(applicationsLink);
+    await waitForDocumentEvent(dom, "jobbot:applications-loaded");
+
+    const row = dom.window.document.querySelector('[data-job-id="JOB-123"]');
+    const dropTarget = dom.window.document.querySelector(
+      '[data-shortlist-drop-target="screening"]',
+    );
+    const boardMessage = dom.window.document.querySelector(
+      '[data-shortlist-board-message]',
+    );
 
     const dataTransfer = {
       data: {},
@@ -245,9 +329,15 @@ describe("status hub frontend", () => {
     fireEvent.dragOver(dropTarget, { dataTransfer });
     fireEvent.drop(dropTarget, { dataTransfer });
 
-    await waitFor(() =>
-      expect(trackRecord).toHaveBeenCalledWith({ jobId: "JOB-123", status: "screening" }),
+    await waitFor(
+      () =>
+        expect(trackRecord).toHaveBeenCalledWith({ jobId: "JOB-123", status: "screening" }),
+      { container: dom.window.document },
     );
-    await waitFor(() => expect(shortlistList).toHaveBeenCalledTimes(2));
+    expect(shortlistList).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(boardMessage?.textContent).toBe("Track update failed"), {
+      container: dom.window.document,
+    });
+    expect(boardMessage?.getAttribute("data-variant")).toBe("error");
   });
 });

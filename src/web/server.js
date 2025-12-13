@@ -2778,13 +2778,18 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
                 source: 'drag-and-drop',
               });
               setBoardMessage('success', 'Updated ' + jobId + ' to ' + recordedLabel);
-              await refresh({ preserveActionMessage: true });
+              await refresh({
+                preserveActionMessage: true,
+                preserveBoardMessage: true,
+              });
             } catch (err) {
               const message =
                 err && typeof err.message === 'string'
                   ? err.message
                   : 'Unable to update application status';
               setBoardMessage('error', message);
+            } finally {
+              dragState.jobId = null;
             }
           }
 
@@ -2824,19 +2829,36 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               event.preventDefault();
               setDropState(column, true);
             });
-            column.addEventListener('dragleave', () => setDropState(column, false));
+            column.addEventListener('dragleave', event => {
+              if (!event.relatedTarget || !column.contains(event.relatedTarget)) {
+                setDropState(column, false);
+              }
+            });
             column.addEventListener('drop', event => {
               event.preventDefault();
               const jobId = getDraggedJobId(event);
               setDropState(column, false);
               if (jobId) {
                 handleStatusDrop(jobId, status);
+                dragState.jobId = null;
               }
             });
 
             column.addEventListener('click', () => {
               if (dragState.jobId) {
                 handleStatusDrop(dragState.jobId, status);
+                dragState.jobId = null;
+              }
+            });
+
+            column.addEventListener('keydown', event => {
+              if (
+                (event.key === 'Enter' || event.key === ' ') &&
+                dragState.jobId
+              ) {
+                event.preventDefault();
+                handleStatusDrop(dragState.jobId, status);
+                dragState.jobId = null;
               }
             });
 
@@ -3862,6 +3884,10 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           async function refresh(options = {}) {
             if (state.loading) {
               return false;
+            }
+
+            if (!options.preserveBoardMessage) {
+              setBoardMessage(null);
             }
 
             const useForm = options.useForm === true;
