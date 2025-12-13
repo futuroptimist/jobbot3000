@@ -532,6 +532,31 @@ describe("web server status page", () => {
     );
   });
 
+  it("compresses status hub assets for clients that accept gzip", async () => {
+    const server = await startServer();
+
+    const scriptResponse = await fetch(`${server.url}/assets/status-hub.js`, {
+      headers: { "accept-encoding": "gzip" },
+    });
+    expect(scriptResponse.status).toBe(200);
+    expect(scriptResponse.headers.get("content-encoding")).toBe("gzip");
+    expect(scriptResponse.headers.get("vary")).toMatch(/accept-encoding/i);
+
+    const stylesheetResponse = await fetch(`${server.url}/assets/status-hub.css`, {
+      headers: { "accept-encoding": "gzip" },
+    });
+    expect(stylesheetResponse.status).toBe(200);
+    expect(stylesheetResponse.headers.get("content-encoding")).toBe("gzip");
+    expect(stylesheetResponse.headers.get("vary")).toMatch(/accept-encoding/i);
+
+    const uncompressedResponse = await fetch(`${server.url}/assets/status-hub.js`, {
+      headers: { "accept-encoding": "identity" },
+    });
+    expect(uncompressedResponse.status).toBe(200);
+    expect(uncompressedResponse.headers.get("content-encoding")).toBeNull();
+    expect(uncompressedResponse.headers.get("vary")).toMatch(/accept-encoding/i);
+  });
+
   it("exposes reusable component classes for status hub interactions", async () => {
     const server = await startServer();
 

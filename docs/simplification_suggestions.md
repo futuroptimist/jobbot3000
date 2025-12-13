@@ -155,7 +155,10 @@ JSDoc includes the same snippet so connectors can copy/paste the pattern without
 tests.
 _Update (2025-11-23):_ The status hub serves its JavaScript and CSS assets with gzip compression, and
 [`test/web-audits.test.js`](../test/web-audits.test.js) now enforces transfer-size budgets for both
-files so future UI changes keep the bundles lean.
+files so future UI changes keep the bundles lean. Regression coverage in
+[`test/web-server.test.js`](../test/web-server.test.js) now verifies gzip negotiation and `Vary:
+Accept-Encoding` headers on both assets so caches differentiate compressed and uncompressed
+responses.
 
 **Suggested Steps**
 
