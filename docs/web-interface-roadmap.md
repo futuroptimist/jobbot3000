@@ -14,7 +14,9 @@
 - Harden the local-only default by treating string `"false"` remote-access flags as disabled and
   treating empty or malformed `--allow-remote-access=` values as explicit deny signals, overriding
   truthy environment variables so argument parsing quirks cannot accidentally expose the server
-  beyond localhost.
+  beyond localhost. [`test/web-server-remote-access.test.js`](../test/web-server-remote-access.test.js)
+  exercises both the CLI-flag and API options to ensure malformed or empty overrides keep bindings
+  locked to loopback even when the environment opts into remote access.
 - The helper script now treats `--allow-remote-access=false` as an explicit deny, overriding truthy
   environment variables so remote bindings stay opt-in. Regression coverage in
   [`test/resolve-allow-remote-access.test.js`](../test/resolve-allow-remote-access.test.js) locks
