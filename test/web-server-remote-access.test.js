@@ -65,6 +65,30 @@ describe('web server remote access guard', () => {
     expect(server.url).toMatch(/^http:\/\/0\.0\.0\.0:\d+/);
   });
 
+  it('rejects malformed or empty flags even when the environment opts in', async () => {
+    process.env.JOBBOT_WEB_ALLOW_REMOTE = 'yes';
+
+    expect(() =>
+      startWebServer({
+        host: '0.0.0.0',
+        port: 0,
+        allowRemoteAccess: '',
+        csrfToken: 'remote-guard-csrf',
+        commandAdapter: {},
+      }),
+    ).toThrow(/local-only preview/i);
+
+    expect(() =>
+      startWebServer({
+        host: '0.0.0.0',
+        port: 0,
+        allowRemoteAccess: 'maybe',
+        csrfToken: 'remote-guard-csrf',
+        commandAdapter: {},
+      }),
+    ).toThrow(/local-only preview/i);
+  });
+
   it('permits non-loopback hosts when the environment explicitly opts in', async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jobbot-remote-env-'));
     process.env.JOBBOT_WEB_ALLOW_REMOTE = 'yes';

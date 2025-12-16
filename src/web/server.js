@@ -8123,8 +8123,13 @@ export function startWebServer(options = {}) {
   if (!Number.isFinite(port) || port < 0 || port > 65535) {
     throw new Error("port must be a number between 0 and 65535");
   }
+  const hasAllowRemoteOverride = Object.prototype.hasOwnProperty.call(
+    options,
+    "allowRemoteAccess",
+  );
   const allowRemote =
-    parseBoolean(allowRemoteAccess) ?? parseBoolean(process.env.JOBBOT_WEB_ALLOW_REMOTE) ?? false;
+    parseBoolean(allowRemoteAccess) ??
+    (hasAllowRemoteOverride ? false : parseBoolean(process.env.JOBBOT_WEB_ALLOW_REMOTE) ?? false);
   if (!allowRemote && !isLoopbackHost(host)) {
     throw new Error(
       "The web interface is a local-only preview; set JOBBOT_WEB_ALLOW_REMOTE=1, " +
