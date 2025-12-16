@@ -311,6 +311,12 @@ describe('jobbot CLI', () => {
     expect(exported).toEqual(canonical);
   });
 
+  it('errors when exporting a profile resume that does not exist', () => {
+    expect(() => runCli(['profile', 'export', '--out', 'exported.json'])).toThrow(
+      /profile resume not found/i,
+    );
+  });
+
   it('prints JSON resume content for profile export --json', () => {
     runCli(['init']);
 
