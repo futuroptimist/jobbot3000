@@ -295,6 +295,34 @@ describe('jobbot CLI', () => {
     expect(resume.skills[1].keywords).toEqual(['Vitest', 'ESLint']);
   });
 
+  it('exports the canonical profile resume to a target path', () => {
+    runCli(['init']);
+
+    const exportPath = path.join(dataDir, 'exports', 'resume.json');
+    const out = runCli(['profile', 'export', '--out', exportPath]);
+
+    expect(out.trim()).toMatch(/Exported profile resume to/);
+
+    const exported = JSON.parse(fs.readFileSync(exportPath, 'utf8'));
+    const canonical = JSON.parse(
+      fs.readFileSync(path.join(dataDir, 'profile', 'resume.json'), 'utf8'),
+    );
+
+    expect(exported).toEqual(canonical);
+  });
+
+  it('prints JSON resume content for profile export --json', () => {
+    runCli(['init']);
+
+    const out = runCli(['profile', 'export', '--json']);
+    const resume = JSON.parse(out);
+
+    expect(resume).toMatchObject({
+      $schema: 'https://raw.githubusercontent.com/jsonresume/resume-schema/v1.0.0/schema.json',
+      basics: expect.any(Object),
+    });
+  });
+
   it('imports LinkedIn profile exports with profile import', () => {
     const fixture = path.resolve('test', 'fixtures', 'linkedin-profile.json');
     const out = runCli(['profile', 'import', 'linkedin', fixture]);

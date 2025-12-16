@@ -763,6 +763,43 @@ export async function importJsonResume(filePath) {
   return { path: resumePath, ...result };
 }
 
+export async function exportProfileResume({ outPath } = {}) {
+  const dataDir = resolveDataDir();
+  const profileDir = path.join(dataDir, 'profile');
+  const resumePath = path.join(profileDir, 'resume.json');
+
+  let raw;
+  try {
+    raw = await fs.readFile(resumePath, 'utf8');
+  } catch (err) {
+    if (err?.code === 'ENOENT') {
+      const hint = 'Run `jobbot profile init` first.';
+      throw new Error(`Profile resume not found at ${resumePath}. ${hint}`);
+    }
+    throw new Error(
+      `Failed to read profile resume at ${resumePath}: ${err.message || err}`,
+    );
+  }
+
+  let resume;
+  try {
+    resume = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(
+      `Profile resume at ${resumePath} could not be parsed as JSON: ${err.message || err}`,
+    );
+  }
+
+  if (outPath) {
+    const resolved = path.resolve(process.cwd(), outPath);
+    await fs.mkdir(path.dirname(resolved), { recursive: true });
+    await fs.writeFile(resolved, `${JSON.stringify(resume, null, 2)}\n`, 'utf8');
+    return { path: resumePath, exportedPath: resolved, resume };
+  }
+
+  return { path: resumePath, exportedPath: undefined, resume };
+}
+
 export const PROFILE_SCHEMA_URL = JSON_RESUME_SCHEMA_URL;
 
 export {

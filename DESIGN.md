@@ -284,6 +284,10 @@ jobbot track add <job_id> --status applied --note "emailed hiring manager"
   snapshot is missing so future refactors keep the helper reliable.
 - Compose stack: Postgres+pgvector, Redis, FastAPI, Web.
 - JSON Resume schema ingestion/export.
+  _Implemented (2025-12-05):_ `jobbot profile export` writes the canonical profile resume
+  to a chosen path (and optionally stdout) so external tools can consume JSON Resume without
+  mutating the workspace. Regression coverage in [`test/cli.test.js`](test/cli.test.js)
+  exercises both the file export and `--json` streaming output.
 - Minimal UI (profile editor, file upload).
 
 **Phase 1 — Job ingestion (1 week)**
