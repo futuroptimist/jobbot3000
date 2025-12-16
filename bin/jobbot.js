@@ -63,6 +63,7 @@ import {
   initProfile,
   importLinkedInProfile,
   importJsonResume,
+  exportProfileResume,
   snapshotProfile,
 } from '../src/profile.js';
 import {
@@ -4654,10 +4655,38 @@ async function cmdProfileSnapshot(args) {
   }
 }
 
+async function cmdProfileExport(args) {
+  const wantsOut = args.includes('--out');
+  const wantsJson = args.includes('--json');
+
+  if (!wantsOut && !wantsJson) {
+    console.error('Usage: jobbot profile export [--out <path>] [--json]');
+    process.exit(2);
+  }
+
+  assertFlagHasValue(args, '--out', 'Usage: jobbot profile export [--out <path>] [--json]');
+  const outPath = getFlag(args, '--out');
+
+  try {
+    const result = await exportProfileResume({ outPath });
+
+    if (wantsJson) {
+      console.log(JSON.stringify(result.resume));
+    } else if (result.exportedPath) {
+      const displayPath = resolveDisplayPath(result.exportedPath);
+      console.log(`Exported profile resume to ${displayPath}`);
+    }
+  } catch (err) {
+    console.error(err?.message || String(err));
+    process.exit(1);
+  }
+}
+
 async function cmdProfile(args) {
   const sub = args[0];
   if (sub === 'init') return cmdProfileInit(args.slice(1));
   if (sub === 'snapshot') return cmdProfileSnapshot(args.slice(1));
+  if (sub === 'export') return cmdProfileExport(args.slice(1));
   if (sub === 'import' && args[1] === 'linkedin') {
     return cmdImportLinkedIn(args.slice(2));
   }
@@ -4668,6 +4697,7 @@ async function cmdProfile(args) {
     'Usage: jobbot profile init [--force]\n' +
       '   or: jobbot profile import linkedin <file>\n' +
       '   or: jobbot profile import json <file>\n' +
+      '   or: jobbot profile export [--out <path>] [--json]\n' +
       '   or: jobbot profile snapshot [--note <message>] [--json]'
   );
   process.exit(2);

@@ -19,6 +19,8 @@ jobbot3000.
    - `jobbot import json <resume.json>` when migrating from another JSON Resume implementation.
      JSON imports merge into the canonical profile and dedupe work/education history on subsequent
      runs so rerunning the command does not create duplicates.
+   - `jobbot profile export --out data/exports/resume.json` to produce a shareable JSON Resume copy
+     (or pass `--json` to stream it) without mutating the workspace profile.
 3. Invoke `jobbot profile inspect --with-metrics` to extract clean text, metadata, and parsing
    confidence so the candidate can review detected format, word counts, and missing sections before
    normalization.
