@@ -83,6 +83,10 @@ pipeline (redacted stdout/stderr/error messages, trimmed objects) and annotated 
 Histories follow the authorization token fingerprint, so repeated requests using the same token share
 a single timeline even when the caller cycles session cookies or user agents between calls
 (`test/web-server.test.js` covers the fingerprint scoping contract).
+Payloads and results are scrubbed with the telemetry redaction pipeline, masking secret-like keys and
+contact details before entries are persisted. Regression coverage in
+[`test/web-server.test.js`](../test/web-server.test.js) exercises the stored-result redaction
+contract alongside the broader payload history guarantees.
 Timestamps include up to 750ms of forward or backward jitter to reduce correlation value in the
 unlikely event encrypted history is exposed (`test/client-payload-store.test.js` covers both the
 jitter cap and encrypted history round-trip).
