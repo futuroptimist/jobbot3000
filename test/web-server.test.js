@@ -4018,6 +4018,65 @@ describe("web server command endpoint", () => {
     ]);
   });
 
+  it("redacts stored command results with the telemetry scrubber", async () => {
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({
+        token: "super-secret-token",
+        contact: "dev@example.com",
+        nested: {
+          notes: "Call me at +1 415-867-5309",
+        },
+        message: "ok",
+      })),
+    };
+
+    const server = await startServer({ commandAdapter });
+    const headers = buildCommandHeaders(server, {
+      "user-agent": "history-redaction",
+    });
+
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ input: "payload" }),
+    });
+
+    expect(response.status).toBe(200);
+    await response.json();
+
+    const cookies = response.headers.getSetCookie?.() ?? [];
+    const cookieHeader = [headers.cookie, ...cookies.map((entry) => entry.split(";")[0])]
+      .filter(Boolean)
+      .join("; ");
+
+    const historyResponse = await fetch(`${server.url}/commands/payloads/recent`, {
+      method: "GET",
+      headers: {
+        ...headers,
+        cookie: cookieHeader,
+      },
+    });
+
+    expect(historyResponse.status).toBe(200);
+    const historyBody = await historyResponse.json();
+    expect(historyBody.entries).toEqual([
+      {
+        command: "summarize",
+        payload: { input: "payload" },
+        result: {
+          status: "success",
+          token: "***redacted***",
+          contact: "de***@example.com",
+          nested: {
+            notes: "14******09",
+          },
+          message: "ok",
+        },
+        timestamp: expect.any(String),
+      },
+    ]);
+  });
+
   const expectRedactedBinaryPayloadHistory = async (commandAdapter) => {
     const server = await startServer({ commandAdapter });
 

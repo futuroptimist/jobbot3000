@@ -7798,14 +7798,17 @@ export function createWebApp({
         payload = validateCommandPayload(commandParam, requestPayload);
       } catch (err) {
         const redactedRequestPayload = redactValue(requestPayload);
-        clientPayloadStore.record(
-          clientIdentity,
-          commandParam,
-          redactedRequestPayload,
+        const redactedHistoryResult = redactValue(
           decorateResultStatus(
             { error: sanitizeOutputString(err?.message ?? "Invalid command payload") },
             "error",
           ),
+        );
+        clientPayloadStore.record(
+          clientIdentity,
+          commandParam,
+          redactedRequestPayload,
+          redactedHistoryResult,
         );
         res
           .status(400)
@@ -7831,7 +7834,9 @@ export function createWebApp({
         const result = await commandAdapter[commandParam](payload);
         const sanitizedResult = sanitizeCommandResult(result);
         const durationMs = roundDuration(started);
-        const historyResult = decorateResultStatus(sanitizedResult, "success");
+        const historyResult = redactValue(
+          decorateResultStatus(sanitizedResult, "success"),
+        );
         clientPayloadStore.record(
           clientIdentity,
           commandParam,
@@ -7877,7 +7882,9 @@ export function createWebApp({
           traceId: err?.traceId,
         });
         const durationMs = roundDuration(started);
-        const historyResult = decorateResultStatus(response, "error");
+        const historyResult = redactValue(
+          decorateResultStatus(response, "error"),
+        );
         clientPayloadStore.record(
           clientIdentity,
           commandParam,
