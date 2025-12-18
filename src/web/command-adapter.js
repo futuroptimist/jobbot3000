@@ -17,6 +17,7 @@ import {
   normalizeSummarizeRequest,
   normalizeTrackShowRequest,
   normalizeTrackRecordRequest,
+  normalizeTrackLogRequest,
   normalizeTrackRemindersRequest,
   normalizeTrackRemindersSnoozeRequest,
   normalizeTrackRemindersDoneRequest,
@@ -226,6 +227,12 @@ const COMMANDS = Object.freeze({
     cliCommand: ["track", "add"],
     name: "track-record",
     errorLabel: "track add",
+  },
+  "track-log": {
+    method: "cmdTrackLog",
+    cliCommand: ["track", "log"],
+    name: "track-log",
+    errorLabel: "track log",
   },
   "analytics-funnel": {
     method: "cmdAnalyticsFunnel",
@@ -1053,6 +1060,74 @@ export function createCommandAdapter(options = {}) {
     return payload;
   }
 
+  async function trackLog(options = {}) {
+    const { jobId, channel, contact, note, documents, date, remindAt } =
+      normalizeTrackLogRequest(options);
+    const args = [jobId, "--channel", channel];
+    if (date) {
+      args.push("--date", date);
+    }
+    if (contact) {
+      args.push("--contact", contact);
+    }
+    if (Array.isArray(documents) && documents.length > 0) {
+      args.push("--documents", documents.join(","));
+    }
+    if (note) {
+      args.push("--note", note);
+    }
+    if (remindAt) {
+      args.push("--remind-at", remindAt);
+    }
+
+    const { stdout, stderr, returnValue, correlationId, traceId } = await runCli(
+      "track-log",
+      args,
+    );
+
+    const payload = {
+      command: "track-log",
+      format: "text",
+      stdout,
+      stderr,
+      returnValue,
+    };
+
+    if (correlationId) {
+      payload.correlationId = correlationId;
+    }
+    if (traceId) {
+      payload.traceId = traceId;
+    }
+
+    const message = sanitizeOutputString(stdout).trim();
+    const data = { jobId, channel };
+    if (contact) data.contact = contact;
+    if (note) data.note = note;
+    if (Array.isArray(documents) && documents.length > 0) {
+      data.documents = documents;
+    }
+    if (date) data.date = date;
+    if (remindAt) data.remindAt = remindAt;
+    if (message) data.message = message;
+
+    const event = {};
+    if (channel) event.channel = channel;
+    if (date) event.date = date;
+    if (contact) event.contact = contact;
+    if (note) event.note = note;
+    if (Array.isArray(documents) && documents.length > 0) {
+      event.documents = documents;
+    }
+    if (remindAt) event.remind_at = remindAt;
+    if (Object.keys(event).length > 0) {
+      data.event = event;
+    }
+
+    payload.data = sanitizeOutputValue(data, { key: "data" });
+    return payload;
+  }
+
   async function trackReminders(options = {}) {
     const { format, upcomingOnly, now, calendarName } =
       normalizeTrackRemindersRequest(options);
@@ -1545,6 +1620,7 @@ export function createCommandAdapter(options = {}) {
     analyticsFunnel,
     analyticsExport,
     trackRecord,
+    trackLog,
     trackReminders,
     feedbackRecord: feedbackRecordCommand,
     intakeList: intakeListCommand,
@@ -1564,6 +1640,7 @@ export function createCommandAdapter(options = {}) {
   adapter["analytics-funnel"] = analyticsFunnel;
   adapter["analytics-export"] = analyticsExport;
   adapter["track-record"] = trackRecord;
+  adapter["track-log"] = trackLog;
   adapter["track-reminders"] = trackReminders;
   adapter["track-reminders-snooze"] = trackRemindersSnooze;
   adapter["track-reminders-done"] = trackRemindersDone;
@@ -1579,9 +1656,9 @@ export function createCommandAdapter(options = {}) {
   adapter["listings-provider-token"] = listingsProviderTokenCommand;
   adapter["recruiter-ingest"] = recruiterIngestCommand;
   adapter.trackRecord = trackRecord;
+  adapter.trackLog = trackLog;
   adapter.trackReminders = trackReminders;
   adapter.analyticsExport = analyticsExport;
   adapter.trackShow = trackShow;
   return adapter;
 }
-

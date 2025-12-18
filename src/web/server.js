@@ -2475,6 +2475,7 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             const container = section.querySelector('[data-application-actions]');
             if (!container) return null;
             const form = container.querySelector('[data-application-status-form]');
+            const logForm = container.querySelector('[data-application-log-form]');
             return {
               container,
               form,
@@ -2483,9 +2484,24 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               clear: container.querySelector('[data-action-clear]'),
               message: container.querySelector('[data-action-message]'),
               submit: form?.querySelector('button[type="submit"]') ?? null,
+              logForm,
+              logChannel: container.querySelector('[data-application-log-channel]'),
+              logContact: container.querySelector('[data-application-log-contact]'),
+              logDate: container.querySelector('[data-application-log-date]'),
+              logNote: container.querySelector('[data-application-log-note]'),
+              logDocuments: container.querySelector('[data-application-log-documents]'),
+              logRemindAt: container.querySelector('[data-application-log-remind-at]'),
+              logMessage: container.querySelector('[data-log-message]'),
+              logClear: container.querySelector('[data-log-clear]'),
+              logSubmit: logForm?.querySelector('button[type="submit"]') ?? null,
             };
           })();
-          const actionState = { jobId: null, submitting: false, enabled: false };
+          const actionState = {
+            jobId: null,
+            submitting: false,
+            logSubmitting: false,
+            enabled: false,
+          };
           const remindersState = { running: false };
           const exportState = { running: false };
           const remindersReportState = { report: null };
@@ -2896,12 +2912,39 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             actionElements.message.removeAttribute('hidden');
           }
 
+          function setLogMessage(variant, text) {
+            if (!actionElements?.logMessage) return;
+            const messageText = typeof text === 'string' ? text.trim() : '';
+            if (!variant || !messageText) {
+              actionElements.logMessage.textContent = '';
+              actionElements.logMessage.setAttribute('hidden', '');
+              actionElements.logMessage.removeAttribute('data-variant');
+              return;
+            }
+            actionElements.logMessage.textContent = messageText;
+            actionElements.logMessage.setAttribute('data-variant', variant);
+            actionElements.logMessage.removeAttribute('hidden');
+          }
+
           function resetActionForm(options = {}) {
             if (!actionElements) return;
             if (actionElements.status) actionElements.status.value = '';
             if (actionElements.note) actionElements.note.value = '';
             if (!options.preserveMessage) {
               setActionMessage(null);
+            }
+          }
+
+          function resetLogForm(options = {}) {
+            if (!actionElements) return;
+            if (actionElements.logChannel) actionElements.logChannel.value = '';
+            if (actionElements.logContact) actionElements.logContact.value = '';
+            if (actionElements.logDate) actionElements.logDate.value = '';
+            if (actionElements.logNote) actionElements.logNote.value = '';
+            if (actionElements.logDocuments) actionElements.logDocuments.value = '';
+            if (actionElements.logRemindAt) actionElements.logRemindAt.value = '';
+            if (!options.preserveMessage) {
+              setLogMessage(null);
             }
           }
 
@@ -3201,16 +3244,37 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             if (typeof options.submitting === 'boolean') {
               actionState.submitting = options.submitting;
             }
-            const disabled = !actionState.enabled || actionState.submitting;
-            const controls = [
+            if (typeof options.logSubmitting === 'boolean') {
+              actionState.logSubmitting = options.logSubmitting;
+            }
+            const statusDisabled = !actionState.enabled || actionState.submitting;
+            const logDisabled = !actionState.enabled || actionState.logSubmitting;
+
+            const statusControls = [
               actionElements.status,
               actionElements.note,
               actionElements.submit,
               actionElements.clear,
             ];
-            for (const control of controls) {
+            for (const control of statusControls) {
               if (control) {
-                control.disabled = disabled;
+                control.disabled = statusDisabled;
+              }
+            }
+
+            const logControls = [
+              actionElements.logChannel,
+              actionElements.logContact,
+              actionElements.logDate,
+              actionElements.logNote,
+              actionElements.logDocuments,
+              actionElements.logRemindAt,
+              actionElements.logSubmit,
+              actionElements.logClear,
+            ];
+            for (const control of logControls) {
+              if (control) {
+                control.disabled = logDisabled;
               }
             }
           }
@@ -3229,12 +3293,22 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             actionState.jobId = jobId;
             if (!jobId) {
               resetActionForm({ preserveMessage: false });
-              updateActionControls({ enabled: false, submitting: false });
+              resetLogForm({ preserveMessage: false });
+              updateActionControls({
+                enabled: false,
+                submitting: false,
+                logSubmitting: false,
+              });
               updateActionVisibility(false);
               return;
             }
             resetActionForm({ preserveMessage });
-            updateActionControls({ enabled: true, submitting: false });
+            resetLogForm({ preserveMessage });
+            updateActionControls({
+              enabled: true,
+              submitting: false,
+              logSubmitting: false,
+            });
             updateActionVisibility(true);
           }
 
@@ -3274,6 +3348,18 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               .split(',')
               .map(entry => entry.trim())
               .filter(entry => entry.length > 0);
+          }
+
+          function parseDocuments(value) {
+            const list = parseTags(value);
+            const documents = [];
+            const seen = new Set();
+            for (const entry of list) {
+              if (seen.has(entry)) continue;
+              seen.add(entry);
+              documents.push(entry);
+            }
+            return documents;
           }
 
           function readFiltersFromInputs() {
@@ -3338,6 +3424,7 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             const blocks = detailElements.blocks || {};
             const target = blocks[state] ? state : 'empty';
             const forceVisible = options.forceVisible === true;
+            const preserveAction = options.preserveMessage === true && !!detailState.jobId;
             if (target === 'empty' && !forceVisible) {
               toggleDetailVisibility(false);
             } else {
@@ -3368,7 +3455,7 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             if (actionElements) {
               if (target === 'ready' && detailState.jobId) {
                 prepareActionPanel(detailState.jobId, { preserveMessage: options.preserveMessage });
-              } else if (target !== 'ready') {
+              } else if (target !== 'ready' && !preserveAction) {
                 prepareActionPanel(null);
               }
             }
@@ -3612,7 +3699,10 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             }
             detailState.loading = true;
             detailState.jobId = jobId;
-            setDetailState('loading', { forceVisible: true });
+            setDetailState('loading', {
+              forceVisible: true,
+              preserveMessage: options.preserveActionMessage === true,
+            });
             try {
               const data = await fetchApplicationDetail(jobId);
               if (detailState.jobId !== jobId) {
@@ -3882,6 +3972,29 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             });
           }
 
+          async function recordApplicationEvent(jobId, payload) {
+            if (!jobId) {
+              throw new Error('Job ID is required');
+            }
+            const channel =
+              typeof payload?.channel === 'string' ? payload.channel.trim() : '';
+            if (!channel) {
+              throw new Error('Channel is required');
+            }
+            const request = { jobId, channel };
+            if (payload.contact) request.contact = payload.contact;
+            if (payload.date) request.date = payload.date;
+            if (payload.note) request.note = payload.note;
+            if (Array.isArray(payload.documents) && payload.documents.length > 0) {
+              request.documents = payload.documents;
+            }
+            if (payload.remindAt) request.remindAt = payload.remindAt;
+            return postCommand('/commands/track-log', request, {
+              invalidResponse: 'Received invalid response while logging application event',
+              failureMessage: 'Failed to log application event',
+            });
+          }
+
           async function refresh(options = {}) {
             if (state.loading) {
               return false;
@@ -3990,10 +4103,10 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               runShortlistExport('json');
             });
 
-            exportElements?.csv?.addEventListener('click', event => {
-              event.preventDefault();
-              runShortlistExport('csv');
-            });
+          exportElements?.csv?.addEventListener('click', event => {
+            event.preventDefault();
+            runShortlistExport('csv');
+          });
 
           actionElements?.clear?.addEventListener('click', () => {
             if (actionState.submitting) {
@@ -4053,6 +4166,79 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               setActionMessage('error', message);
             } finally {
               updateActionControls({ submitting: false });
+            }
+          });
+
+          actionElements?.logClear?.addEventListener('click', () => {
+            if (actionState.logSubmitting) {
+              return;
+            }
+            resetLogForm();
+          });
+
+          actionElements?.logForm?.addEventListener('submit', async event => {
+            event.preventDefault();
+            if (actionState.logSubmitting) {
+              return;
+            }
+            const jobId = actionState.jobId;
+            if (!jobId) {
+              setLogMessage('error', 'Select an application before logging an event');
+              return;
+            }
+            const channelValue =
+              typeof actionElements.logChannel?.value === 'string'
+                ? actionElements.logChannel.value.replace(/[\u0000-\u001f\u007f]/g, '').trim()
+                : '';
+            if (!channelValue) {
+              setLogMessage('error', 'Add a channel before logging the event');
+              return;
+            }
+            const contactValue =
+              typeof actionElements.logContact?.value === 'string'
+                ? actionElements.logContact.value.replace(/[\u0000-\u001f\u007f]/g, '').trim()
+                : '';
+            const dateValue =
+              typeof actionElements.logDate?.value === 'string'
+                ? actionElements.logDate.value.replace(/[\u0000-\u001f\u007f]/g, '').trim()
+                : '';
+            const noteValue = sanitizeNoteText(actionElements.logNote?.value);
+            const documents = parseDocuments(actionElements.logDocuments?.value ?? '');
+            const remindValue =
+              typeof actionElements.logRemindAt?.value === 'string'
+                ? actionElements.logRemindAt.value.replace(/[\u0000-\u001f\u007f]/g, '').trim()
+                : '';
+
+            const payload = { channel: channelValue };
+            if (contactValue) payload.contact = contactValue;
+            if (dateValue) payload.date = dateValue;
+            if (noteValue) payload.note = noteValue;
+            if (documents.length > 0) payload.documents = documents;
+            if (remindValue) payload.remindAt = remindValue;
+
+            try {
+              updateActionControls({ logSubmitting: true });
+              setLogMessage('info', 'Logging event…');
+              const data = await recordApplicationEvent(jobId, payload);
+              const fallbackMessage = 'Logged ' + jobId + ' event ' + channelValue;
+              const message =
+                data && typeof data.message === 'string' && data.message.trim()
+                  ? data.message.trim()
+                  : fallbackMessage;
+              const eventDetail =
+                data && data.event && typeof data.event === 'object' ? data.event : payload;
+              dispatchApplicationEventLogged({ jobId, event: eventDetail, data });
+              setLogMessage('success', message);
+              await loadDetail(jobId, { preserveActionMessage: true });
+              resetLogForm({ preserveMessage: true });
+            } catch (err) {
+              const message =
+                err && typeof err.message === 'string' && err.message.trim()
+                  ? err.message.trim()
+                  : 'Unable to log application event';
+              setLogMessage('error', message);
+            } finally {
+              updateActionControls({ logSubmitting: false });
             }
           });
 
@@ -5822,6 +6008,27 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           return stripped.trim();
         }
 
+        function dispatchApplicationEventLogged(detail = {}) {
+          const jobId =
+            typeof detail?.jobId === 'string' && detail.jobId.trim()
+              ? detail.jobId.trim()
+              : detailState.jobId;
+          const eventData =
+            detail && detail.event && typeof detail.event === 'object'
+              ? { ...detail.event }
+              : undefined;
+          if (eventData && typeof eventData.note === 'string') {
+            const sanitizedNote = sanitizeNoteText(eventData.note);
+            if (sanitizedNote) {
+              eventData.note = sanitizedNote;
+            } else {
+              delete eventData.note;
+            }
+          }
+          const eventDetail = { jobId, event: eventData, data: detail?.data };
+          dispatchDocumentEvent('jobbot:application-event-logged', eventDetail);
+        }
+
         function dispatchApplicationStatusRecorded(detail = {}) {
           const jobId =
             typeof detail?.jobId === 'string' && detail.jobId.trim()
@@ -5921,6 +6128,7 @@ const ROLE_INHERITANCE = Object.freeze({
 const COMMAND_ROLE_REQUIREMENTS = Object.freeze({
   default: Object.freeze(["viewer"]),
   "track-record": Object.freeze(["editor"]),
+  "track-log": Object.freeze(["editor"]),
   "listings-ingest": Object.freeze(["editor"]),
   "listings-archive": Object.freeze(["editor"]),
 });
@@ -7101,6 +7309,69 @@ export function createWebApp({
                   </button>
                 </div>
                 <p class="application-actions__message" data-action-message hidden></p>
+              </form>
+              <h3 class="application-actions__title">Log outreach event</h3>
+              <form class="application-actions__form" data-application-log-form>
+                <label>
+                  <span>Channel</span>
+                  <input
+                    type="text"
+                    data-application-log-channel
+                    placeholder="email, phone, onsite"
+                  />
+                </label>
+                <label>
+                  <span>Contact (optional)</span>
+                  <input
+                    type="text"
+                    data-application-log-contact
+                    placeholder="Casey Recruiter"
+                  />
+                </label>
+                <label>
+                  <span>Date (optional)</span>
+                  <input
+                    type="text"
+                    data-application-log-date
+                    placeholder="2025-03-06T10:30:00Z"
+                  />
+                </label>
+                <label>
+                  <span>Note (optional)</span>
+                  <textarea
+                    rows="2"
+                    data-application-log-note
+                    placeholder="Offer sent and awaiting signature"
+                  ></textarea>
+                </label>
+                <label>
+                  <span>Documents (comma separated)</span>
+                  <input
+                    type="text"
+                    data-application-log-documents
+                    placeholder="resume.pdf,cover_letter.pdf"
+                  />
+                </label>
+                <label>
+                  <span>Remind at (optional)</span>
+                  <input
+                    type="text"
+                    data-application-log-remind-at
+                    placeholder="2025-03-07T09:00:00Z"
+                  />
+                </label>
+                <div class="filters__actions">
+                  <button type="submit" class="button">Log event</button>
+                  <button
+                    type="button"
+                    class="button"
+                    data-log-clear
+                    data-variant="ghost"
+                  >
+                    Clear
+                  </button>
+                </div>
+                <p class="application-actions__message" data-log-message hidden></p>
               </form>
             </div>
           </div>

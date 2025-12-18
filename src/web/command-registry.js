@@ -3,6 +3,7 @@ import {
   normalizeAnalyticsFunnelRequest,
   normalizeTrackShowRequest,
   normalizeTrackRecordRequest,
+  normalizeTrackLogRequest,
   normalizeIntakeListRequest,
   normalizeIntakeExportRequest,
   normalizeIntakeRecordRequest,
@@ -52,6 +53,17 @@ const TRACK_RECORD_ALLOWED_FIELDS = new Set([
   "job_id",
   "status",
   "note",
+]);
+const TRACK_LOG_ALLOWED_FIELDS = new Set([
+  "jobId",
+  "job_id",
+  "channel",
+  "date",
+  "contact",
+  "note",
+  "documents",
+  "remindAt",
+  "remind_at",
 ]);
 const ANALYTICS_EXPORT_ALLOWED_FIELDS = new Set([
   "redact",
@@ -416,6 +428,55 @@ function validateTrackRecordPayload(rawPayload) {
   return normalizeTrackRecordRequest(sanitized);
 }
 
+function validateTrackLogPayload(rawPayload) {
+  const payload = ensurePlainObject(rawPayload, "track-log");
+  assertAllowedFields(payload, TRACK_LOG_ALLOWED_FIELDS, "track-log");
+  const jobId = coerceString(payload.jobId ?? payload.job_id, {
+    name: "jobId",
+    required: true,
+  });
+  const channel = coerceString(payload.channel, {
+    name: "channel",
+    required: true,
+  });
+  const contact = coerceString(payload.contact, { name: "contact" });
+  const date = coerceString(payload.date, { name: "date" });
+  const note = coerceString(payload.note, { name: "note" });
+  const remindAt = coerceString(payload.remindAt ?? payload.remind_at, {
+    name: "remindAt",
+  });
+
+  let documents;
+  if (payload.documents !== undefined) {
+    const rawDocuments = Array.isArray(payload.documents)
+      ? payload.documents
+      : [payload.documents];
+    const normalized = [];
+    for (const entry of rawDocuments) {
+      const value = coerceString(entry, { name: "documents" });
+      if (!value) continue;
+      const parts = value.split(",").map((part) => part.trim());
+      for (const part of parts) {
+        if (!part) continue;
+        if (normalized.includes(part)) continue;
+        normalized.push(part);
+      }
+    }
+    documents = normalized;
+  }
+
+  const sanitized = { jobId, channel };
+  if (contact) sanitized.contact = contact;
+  if (date) sanitized.date = date;
+  if (note) sanitized.note = note;
+  if (remindAt) sanitized.remindAt = remindAt;
+  if (documents && documents.length > 0) {
+    sanitized.documents = documents;
+  }
+
+  return normalizeTrackLogRequest(sanitized);
+}
+
 function validateAnalyticsFunnelPayload(rawPayload) {
   return normalizeAnalyticsFunnelRequest(rawPayload ?? {});
 }
@@ -696,6 +757,7 @@ const COMMAND_VALIDATORS = Object.freeze({
   "shortlist-show": validateShortlistShowPayload,
   "track-show": validateTrackShowPayload,
   "track-record": validateTrackRecordPayload,
+  "track-log": validateTrackLogPayload,
   "track-reminders": validateTrackRemindersPayload,
   "track-reminders-snooze": validateTrackRemindersSnoozePayload,
   "track-reminders-done": validateTrackRemindersDonePayload,

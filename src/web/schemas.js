@@ -3,6 +3,17 @@ import { STATUSES } from '../lifecycle.js';
 const SUPPORTED_FORMATS = ['markdown', 'text', 'json'];
 const ANALYTICS_FUNNEL_ALLOWED_KEYS = new Set(['from', 'to', 'company']);
 const TRACK_RECORD_ALLOWED_KEYS = new Set(['jobId', 'job_id', 'status', 'note']);
+const TRACK_LOG_ALLOWED_KEYS = new Set([
+  'jobId',
+  'job_id',
+  'channel',
+  'date',
+  'contact',
+  'note',
+  'documents',
+  'remindAt',
+  'remind_at',
+]);
 const TRACK_REMINDERS_ALLOWED_KEYS = new Set([
   'format',
   'upcomingOnly',
@@ -89,6 +100,36 @@ function normalizeFunnelDate(value, name) {
     throw new Error(`analytics funnel ${name} must be a valid ISO-8601 date`);
   }
   return normalized;
+}
+
+function normalizeIsoTimestamp(value, name) {
+  const normalized = normalizeString(value);
+  if (!normalized) {
+    return undefined;
+  }
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`${name} must be a valid ISO-8601 timestamp`);
+  }
+  return parsed.toISOString();
+}
+
+function normalizeDocumentsList(value, name) {
+  if (value === undefined || value === null) return undefined;
+  const entries = Array.isArray(value) ? value : String(value).split(',');
+  const documents = [];
+  const seen = new Set();
+  for (const entry of entries) {
+    const document = normalizeString(entry);
+    if (!document) continue;
+    if (seen.has(document)) continue;
+    seen.add(document);
+    documents.push(document);
+  }
+  if (documents.length === 0) {
+    throw new Error(`${name} must include at least one document when provided`);
+  }
+  return documents;
 }
 
 function coerceNumber(value) {
@@ -312,6 +353,34 @@ export function normalizeTrackRecordRequest(options) {
   const note = normalizeString(options.note);
   const request = { jobId, status: normalizedStatus };
   if (note) request.note = note;
+  return request;
+}
+
+export function normalizeTrackLogRequest(options) {
+  assertPlainObject(options, 'track log options');
+  for (const key of Object.keys(options)) {
+    if (!TRACK_LOG_ALLOWED_KEYS.has(key)) {
+      throw new Error(`Unexpected field "${key}" in track log options`);
+    }
+  }
+
+  const jobId = assertRequiredString(options.jobId ?? options.job_id, 'jobId');
+  const channel = assertRequiredString(options.channel, 'channel');
+  const contact = normalizeString(options.contact);
+  const note = normalizeString(options.note);
+  const date = normalizeIsoTimestamp(options.date, 'track log date');
+  const remindAt = normalizeIsoTimestamp(
+    options.remindAt ?? options.remind_at,
+    'track log remindAt',
+  );
+  const documents = normalizeDocumentsList(options.documents, 'documents');
+
+  const request = { jobId, channel };
+  if (contact) request.contact = contact;
+  if (note) request.note = note;
+  if (documents) request.documents = documents;
+  if (date) request.date = date;
+  if (remindAt) request.remindAt = remindAt;
   return request;
 }
 

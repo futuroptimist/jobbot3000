@@ -282,7 +282,10 @@ call scheduled"`.
 ### Web flow
 
 1. Visit **Pipeline** and use **Log Event** to add outreach notes, attach documents, and schedule
-   reminders; the UI writes to the same local JSON files through shared APIs.
+   reminders; the UI writes to the same local JSON files through shared APIs. Regression coverage in
+   [`test/web-server.test.js`](../test/web-server.test.js) drives the **Log outreach event** form and
+   asserts `/commands/track-log` receives channels, contacts, documents, reminders, and notes
+   without leaking control characters.
 2. Drag-and-drop jobs between columns to update status; the system records transitions and prompts
    for optional notes. The Applications view now exposes a drag-and-drop status board that posts
    `track-record` updates and refreshes the shortlist; regression coverage in

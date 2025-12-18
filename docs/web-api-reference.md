@@ -152,6 +152,8 @@ The following command endpoints are available. Each one maps directly to a CLI h
   attachments for a tracked application.
 - `POST /commands/track-record` → `jobbot track record`: Record or update an application status with
   an optional note.
+- `POST /commands/track-log` → `jobbot track log`: Log outreach events with optional contacts,
+  documents, timestamps, and reminders that sync with the CLI history.
 - `POST /commands/track-reminders` → `jobbot track reminders`: Retrieve reminder digests or export an
   ICS calendar by toggling the `format` field (`json` or `ics`).
 - `POST /commands/track-reminders-snooze` → `jobbot track reminders snooze`: Push a reminder to a new
@@ -201,6 +203,32 @@ output for automation, and text summaries mirror the web interface. Regression c
 token management flow, keeping the CLI wrappers aligned with `src/listings.js` and
 `src/modules/scraping/provider-tokens.js` while producing readable summaries and JSON payloads for
 downstream tooling.
+
+#### Track log payload
+
+`POST /commands/track-log` accepts the following JSON payload:
+
+```json
+{
+  "jobId": "job-42",
+  "channel": "email",
+  "contact": "Casey Recruiter",
+  "date": "2025-03-06T10:30:00.000Z",
+  "documents": ["resume.pdf", "cover_letter.pdf"],
+  "note": "Offer sent",
+  "remindAt": "2025-03-07T09:00:00.000Z"
+}
+```
+
+The endpoint rejects empty channel values, strips control characters, and normalizes ISO-8601
+timestamps before invoking `jobbot track log`. Responses include a sanitized `event` echo so
+frontends can optimistically append the outreach entry to the timeline without re-parsing CLI
+text. The Applications drawer posts this payload through the **Log outreach event** form and
+dispatches `jobbot:application-event-logged` after successful submissions. Regression coverage in
+[`test/web-server.test.js`](../test/web-server.test.js),
+[`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js), and
+[`test/web-command-registry.test.js`](../test/web-command-registry.test.js) keeps the payload
+contract, CLI arguments, and sanitizer in sync.
 
 ### GET /events (WebSocket)
 

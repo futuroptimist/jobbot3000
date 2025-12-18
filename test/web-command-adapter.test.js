@@ -747,6 +747,56 @@ describe('createCommandAdapter', () => {
     expect(result.data.message).toContain('Recorded job-7 as offer');
   });
 
+  it('logs outreach events via the track-log command', async () => {
+    const cli = {
+      cmdTrackLog: vi.fn(async args => {
+        expect(args).toEqual([
+          'job-9',
+          '--channel',
+          'email',
+          '--date',
+          '2025-03-06T10:30:00.000Z',
+          '--contact',
+          'Casey Recruiter',
+          '--documents',
+          'resume.pdf,cover_letter.pdf',
+          '--note',
+          'Offer sent',
+          '--remind-at',
+          '2025-03-07T09:00:00.000Z',
+        ]);
+        console.log('Logged job-9 event email');
+      }),
+    };
+
+    const adapter = createCommandAdapter({ cli });
+    const result = await adapter['track-log']({
+      jobId: ' job-9 ',
+      channel: ' email ',
+      date: '2025-03-06T10:30:00Z',
+      contact: ' Casey Recruiter ',
+      documents: [' resume.pdf ', 'cover_letter.pdf '],
+      note: ' Offer sent ',
+      remindAt: '2025-03-07T09:00:00Z',
+    });
+
+    expect(cli.cmdTrackLog).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      command: 'track-log',
+      format: 'text',
+    });
+    expect(result.data).toMatchObject({
+      jobId: 'job-9',
+      channel: 'email',
+      contact: 'Casey Recruiter',
+      documents: ['resume.pdf', 'cover_letter.pdf'],
+      note: 'Offer sent',
+      date: '2025-03-06T10:30:00.000Z',
+      remindAt: '2025-03-07T09:00:00.000Z',
+    });
+    expect(result.data.message).toContain('Logged job-9 event email');
+  });
+
   it('returns reminder digests in json format with sections', async () => {
     const reminders = [
       {

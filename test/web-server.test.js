@@ -2872,6 +2872,244 @@ describe("web server status page", () => {
     expect(commandAdapter["shortlist-show"]).toHaveBeenCalledTimes(2);
     expect(secondDetailEvent?.detail?.data?.status).toBe("offer");
   });
+
+  it("logs application events from the detail drawer", async () => {
+    const shortlistDetail = {
+      command: "shortlist-show",
+      format: "json",
+      stdout: JSON.stringify({
+        job_id: "job-42",
+        metadata: {
+          location: "Remote",
+          level: "Senior",
+          compensation: "$150k",
+          synced_at: "2025-03-05T10:00:00.000Z",
+        },
+        tags: ["remote"],
+        attachments: ["resume.pdf"],
+        events: [],
+      }),
+      stderr: "",
+      returnValue: 0,
+      data: {
+        job_id: "job-42",
+        metadata: {
+          location: "Remote",
+          level: "Senior",
+          compensation: "$150k",
+          synced_at: "2025-03-05T10:00:00.000Z",
+        },
+        tags: ["remote"],
+        attachments: ["resume.pdf"],
+        events: [],
+      },
+    };
+
+    const trackShowInitial = {
+      command: "track-show",
+      format: "json",
+      stdout: JSON.stringify({
+        job_id: "job-42",
+        status: "screening",
+        events: [],
+      }),
+      stderr: "",
+      returnValue: 0,
+      data: {
+        job_id: "job-42",
+        status: "screening",
+        events: [],
+      },
+    };
+
+    const loggedEvent = {
+      channel: "email",
+      date: "2025-03-06T10:30:00.000Z",
+      contact: "Casey Recruiter",
+      note: "Offer sent",
+      documents: ["resume.pdf", "cover_letter.pdf"],
+      remind_at: "2025-03-07T09:00:00.000Z",
+    };
+
+    const trackShowUpdated = {
+      command: "track-show",
+      format: "json",
+      stdout: JSON.stringify({
+        job_id: "job-42",
+        status: "screening",
+        events: [loggedEvent],
+      }),
+      stderr: "",
+      returnValue: 0,
+      data: {
+        job_id: "job-42",
+        status: "screening",
+        events: [loggedEvent],
+      },
+    };
+
+    const commandAdapter = {
+      "shortlist-list": vi.fn(async () => ({
+        command: "shortlist-list",
+        format: "json",
+        stdout: JSON.stringify({
+          total: 1,
+          offset: 0,
+          limit: 10,
+          items: [
+            {
+              id: "job-42",
+              metadata: {
+                location: "Remote",
+                level: "Senior",
+                compensation: "$150k",
+                synced_at: "2025-03-05T10:00:00.000Z",
+              },
+              tags: ["remote"],
+              discard_count: 0,
+            },
+          ],
+        }),
+        stderr: "",
+        returnValue: 0,
+        data: {
+          total: 1,
+          offset: 0,
+          limit: 10,
+          items: [
+            {
+              id: "job-42",
+              metadata: {
+                location: "Remote",
+                level: "Senior",
+                compensation: "$150k",
+                synced_at: "2025-03-05T10:00:00.000Z",
+              },
+              tags: ["remote"],
+              discard_count: 0,
+            },
+          ],
+        },
+      })),
+      "shortlist-show": vi
+        .fn()
+        .mockResolvedValueOnce(shortlistDetail)
+        .mockResolvedValueOnce(shortlistDetail),
+      "track-show": vi
+        .fn()
+        .mockResolvedValueOnce(trackShowInitial)
+        .mockResolvedValueOnce(trackShowUpdated),
+      "track-log": vi.fn(async (payload) => {
+        expect(payload).toEqual({
+          jobId: "job-42",
+          channel: "email",
+          contact: "Casey Recruiter",
+          date: "2025-03-06T10:30:00.000Z",
+          documents: ["resume.pdf", "cover_letter.pdf"],
+          note: "Offer sent",
+          remindAt: "2025-03-07T09:00:00.000Z",
+        });
+        return {
+          command: "track-log",
+          format: "text",
+          stdout: "Logged job-42 event email\n",
+          stderr: "",
+          returnValue: 0,
+          data: {
+            message: "Logged job-42 event email",
+            event: loggedEvent,
+          },
+        };
+      }),
+    };
+
+    commandAdapter.shortlistList = commandAdapter["shortlist-list"];
+    commandAdapter.shortlistShow = commandAdapter["shortlist-show"];
+    commandAdapter.trackShow = commandAdapter["track-show"];
+    commandAdapter.trackLog = commandAdapter["track-log"];
+
+    const server = await startServer({ commandAdapter });
+    const { dom, boot } = await renderStatusDom(server, {
+      pretendToBeVisual: true,
+      autoBoot: false,
+    });
+
+    const waitForEvent = (name, timeout = 500) =>
+      waitForDomEvent(dom, name, timeout);
+
+    const readyPromise = waitForEvent("jobbot:applications-ready");
+    await boot();
+    await readyPromise;
+
+    const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
+    dom.window.location.hash = "#applications";
+    dom.window.dispatchEvent(new HashChange("hashchange"));
+
+    await waitForEvent("jobbot:applications-loaded");
+
+    const detailToggle = dom.window.document.querySelector(
+      "[data-shortlist-view]",
+    );
+    const detailLoaded = waitForEvent("jobbot:application-detail-loaded");
+    detailToggle?.dispatchEvent(
+      new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
+    await detailLoaded;
+
+    const channelInput = dom.window.document.querySelector(
+      "[data-application-log-channel]",
+    );
+    const contactInput = dom.window.document.querySelector(
+      "[data-application-log-contact]",
+    );
+    const dateInput = dom.window.document.querySelector(
+      "[data-application-log-date]",
+    );
+    const noteInput = dom.window.document.querySelector(
+      "[data-application-log-note]",
+    );
+    const documentsInput = dom.window.document.querySelector(
+      "[data-application-log-documents]",
+    );
+    const remindInput = dom.window.document.querySelector(
+      "[data-application-log-remind-at]",
+    );
+
+    expect(channelInput).not.toBeNull();
+    channelInput.value = " email ";
+    contactInput.value = " Casey Recruiter ";
+    dateInput.value = "2025-03-06T10:30:00Z";
+    noteInput.value = " Offer sent ";
+    documentsInput.value = " resume.pdf , cover_letter.pdf ";
+    remindInput.value = "2025-03-07T09:00:00Z";
+
+    const logForm = dom.window.document.querySelector(
+      "[data-application-log-form]",
+    );
+    expect(logForm).not.toBeNull();
+
+    const logged = waitForEvent("jobbot:application-event-logged", 5000);
+    const detailReloaded = waitForEvent("jobbot:application-detail-loaded", 5000);
+
+    logForm?.dispatchEvent(
+      new dom.window.Event("submit", { bubbles: true, cancelable: true }),
+    );
+
+    const logEvent = await logged;
+    await detailReloaded;
+
+    expect(commandAdapter["track-log"]).toHaveBeenCalledTimes(1);
+    expect(logEvent?.detail?.jobId).toBe("job-42");
+    expect(logEvent?.detail?.event?.channel).toBe("email");
+
+    const timeline = dom.window.document.querySelector(
+      "[data-detail-events]",
+    );
+    expect(timeline?.textContent).toContain("Offer sent");
+
+    const logMessage = dom.window.document.querySelector("[data-log-message]");
+    expect(logMessage?.textContent).toContain("Logged job-42 event email");
+  });
 });
 
 describe("web server command endpoint", () => {
