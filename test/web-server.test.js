@@ -4536,6 +4536,78 @@ describe("web server command endpoint", () => {
     ]);
   });
 
+  it("includes rate limit headers when JSON parsing fails", async () => {
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({ ok: true })),
+    };
+
+    const server = await startServer({
+      commandAdapter,
+      rateLimit: { windowMs: 5000, max: 2 },
+    });
+
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: buildCommandHeaders(server),
+      body: "{ not-json",
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Invalid JSON payload" });
+    expect(response.headers.get("x-ratelimit-limit")).toBe("2");
+    expect(response.headers.get("x-ratelimit-remaining")).toBe("1");
+    expect(
+      new Date(response.headers.get("x-ratelimit-reset") ?? "").getTime(),
+    ).toBeGreaterThan(Date.now());
+  });
+
+  it("rate limits repeated malformed JSON requests", async () => {
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({ ok: true })),
+    };
+
+    const server = await startServer({
+      commandAdapter,
+      rateLimit: { windowMs: 5000, max: 2 },
+    });
+
+    const headers = buildCommandHeaders(server);
+
+    const first = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers,
+      body: "{ not-json",
+    });
+    expect(first.status).toBe(400);
+    expect(first.headers.get("x-ratelimit-limit")).toBe("2");
+    expect(first.headers.get("x-ratelimit-remaining")).toBe("1");
+
+    const second = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers,
+      body: "{ not-json",
+    });
+    expect(second.status).toBe(400);
+    expect(second.headers.get("x-ratelimit-limit")).toBe("2");
+    expect(second.headers.get("x-ratelimit-remaining")).toBe("0");
+
+    const third = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers,
+      body: "{ not-json",
+    });
+    expect(third.status).toBe(429);
+    expect(await third.json()).toEqual({ error: "Too many requests" });
+    expect(third.headers.get("x-ratelimit-limit")).toBe("2");
+    expect(third.headers.get("x-ratelimit-remaining")).toBe("0");
+    const retryAfter = Number(third.headers.get("retry-after"));
+    expect(retryAfter).toBeGreaterThanOrEqual(1);
+    expect(
+      new Date(third.headers.get("x-ratelimit-reset") ?? "").getTime(),
+    ).toBeGreaterThan(Date.now());
+    expect(commandAdapter.summarize).not.toHaveBeenCalled();
+  });
+
   it("rate limits repeated command requests per client", async () => {
     const commandAdapter = {
       summarize: vi.fn(async () => ({ ok: true })),
