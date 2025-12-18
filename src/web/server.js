@@ -8031,10 +8031,16 @@ export function createWebApp({
     res.json({ entries });
   });
 
-  app.use((err, req, res, next) => {
+  app.use(async (err, req, res, next) => {
     if (err && err.type === "entity.parse.failed") {
       if (req?.path?.startsWith?.("/commands/")) {
         const clientIp = req.ip || req.socket?.remoteAddress || undefined;
+        const commandParam =
+          typeof req.params?.command === "string"
+            ? req.params.command.trim()
+            : "";
+        const userAgent = req.get("user-agent");
+        const method = req.method ?? "POST";
         const rateKey = clientIp || "unknown";
         const rateStatus = rateLimiter.check(rateKey);
         res.set("X-RateLimit-Limit", String(rateLimiter.limit));
@@ -8049,6 +8055,34 @@ export function createWebApp({
             Math.ceil((rateStatus.reset - Date.now()) / 1000),
           );
           res.set("Retry-After", String(retryAfterSeconds));
+          logSecurityEvent(logger, {
+            category: "rate_limit",
+            reason: "rate_limit",
+            httpStatus: 429,
+            limit: rateLimiter.limit,
+            remaining: rateStatus.remaining,
+            reset: new Date(rateStatus.reset).toISOString(),
+            command: commandParam,
+            method,
+            clientIp,
+            userAgent,
+            sessionId: null,
+          });
+          if (effectiveAuditLogger) {
+            effectiveAuditLogger
+              .record({
+                type: "command",
+                command: commandParam,
+                actor: "unauthenticated",
+                roles: [],
+                ip: clientIp,
+                userAgent,
+                status: "rate_limited",
+              })
+              .catch((error) => {
+                logger?.warn?.("Failed to record audit event", error);
+              });
+          }
           res.status(429).json({ error: "Too many requests" });
           return;
         }
