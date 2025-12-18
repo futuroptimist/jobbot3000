@@ -4068,7 +4068,7 @@ describe("web server command endpoint", () => {
           token: "***redacted***",
           contact: "de***@example.com",
           nested: {
-            notes: "14******09",
+            notes: "Call me at 14******09",
           },
           message: "ok",
         },
@@ -4242,7 +4242,7 @@ describe("web server command endpoint", () => {
         result: {
           status: "success",
           ok: true,
-          stdout: "api_key=***",
+          stdout: "api_key=***redacted***",
           stderr: "Bearer ***",
         },
         timestamp: expect.any(String),
@@ -4341,7 +4341,7 @@ describe("web server command endpoint", () => {
           ok: true,
           status: "success",
           stored: {
-            contact: "casey@example.com",
+            contact: "ca***@example.com",
             message: "Loved the beta",
             rating: 5,
             source: "survey",
@@ -4487,8 +4487,8 @@ describe("web server command endpoint", () => {
           message: "Summary ready",
           details: {
             notes: ["Keep whitespace"],
-            hasToken: true,
-            secretToken: "***",
+            hasToken: "***redacted***",
+            secretToken: "***redacted***",
           },
         },
         timestamp: expect.any(String),
@@ -4551,7 +4551,7 @@ describe("web server command endpoint", () => {
         result: {
           status: "error",
           error: "Failed to summarize",
-          stdout: "token=***\nPayload",
+          stdout: "token=***redacted***\nPayload",
           stderr: "Warning  details",
         },
         timestamp: expect.any(String),
