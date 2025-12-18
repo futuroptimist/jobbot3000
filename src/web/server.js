@@ -8033,6 +8033,26 @@ export function createWebApp({
 
   app.use((err, req, res, next) => {
     if (err && err.type === "entity.parse.failed") {
+      if (req?.path?.startsWith?.("/commands/")) {
+        const clientIp = req.ip || req.socket?.remoteAddress || undefined;
+        const rateKey = clientIp || "unknown";
+        const rateStatus = rateLimiter.check(rateKey);
+        res.set("X-RateLimit-Limit", String(rateLimiter.limit));
+        res.set(
+          "X-RateLimit-Remaining",
+          String(Math.max(0, rateStatus.remaining)),
+        );
+        res.set("X-RateLimit-Reset", new Date(rateStatus.reset).toISOString());
+        if (!rateStatus.allowed) {
+          const retryAfterSeconds = Math.max(
+            1,
+            Math.ceil((rateStatus.reset - Date.now()) / 1000),
+          );
+          res.set("Retry-After", String(retryAfterSeconds));
+          res.status(429).json({ error: "Too many requests" });
+          return;
+        }
+      }
       res.status(400).json({ error: "Invalid JSON payload" });
       return;
     }

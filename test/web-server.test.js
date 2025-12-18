@@ -4536,6 +4536,31 @@ describe("web server command endpoint", () => {
     ]);
   });
 
+  it("includes rate limit headers when JSON parsing fails", async () => {
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({ ok: true })),
+    };
+
+    const server = await startServer({
+      commandAdapter,
+      rateLimit: { windowMs: 5000, max: 2 },
+    });
+
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: buildCommandHeaders(server),
+      body: "{ not-json",
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Invalid JSON payload" });
+    expect(response.headers.get("x-ratelimit-limit")).toBe("2");
+    expect(response.headers.get("x-ratelimit-remaining")).toBe("1");
+    expect(
+      new Date(response.headers.get("x-ratelimit-reset") ?? "").getTime(),
+    ).toBeGreaterThan(Date.now());
+  });
+
   it("rate limits repeated command requests per client", async () => {
     const commandAdapter = {
       summarize: vi.fn(async () => ({ ok: true })),

@@ -44,8 +44,8 @@ Unknown or malformed command requests still include rate-limit headers so operat
 throttling even when validation fails.
 
 [`test/web-server.test.js`](../test/web-server.test.js) exercises both the
-success and 429 paths to keep the rate-limit header contract stable as the
-backend evolves.
+success and 429 paths—and malformed JSON bodies—to keep the rate-limit header
+contract stable as the backend evolves.
 
 ## Endpoints
 
