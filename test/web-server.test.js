@@ -4077,6 +4077,120 @@ describe("web server command endpoint", () => {
     ]);
   });
 
+  it("redacts stored command results when payload validation fails", async () => {
+    const commandRegistry = await import("../src/web/command-registry.js");
+    const validateSpy = vi
+      .spyOn(commandRegistry, "validateCommandPayload")
+      .mockImplementation(() => {
+        throw new Error(
+          "token=super-secret-token belongs to dev@example.com",
+        );
+      });
+
+    const commandAdapter = { summarize: vi.fn(async () => ({ ok: true })) };
+    const server = await startServer({ commandAdapter });
+    const headers = buildCommandHeaders(server);
+
+    try {
+      const response = await fetch(`${server.url}/commands/summarize`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          input: "payload",
+          token: "super-secret-token",
+          contact: "dev@example.com",
+        }),
+      });
+
+      expect(response.status).toBe(400);
+      const cookies = response.headers.getSetCookie?.() ?? [];
+      const cookieHeader = [headers.cookie, ...cookies.map((entry) => entry.split(";")[0])]
+        .filter(Boolean)
+        .join("; ");
+
+      const history = await fetch(`${server.url}/commands/payloads/recent`, {
+        method: "GET",
+        headers: {
+          ...headers,
+          cookie: cookieHeader,
+        },
+      });
+
+      expect(history.status).toBe(200);
+      const historyBody = await history.json();
+      expect(historyBody.entries).toEqual([
+        {
+          command: "summarize",
+          payload: {
+            contact: "de***@example.com",
+            input: "payload",
+            token: "***redacted***",
+          },
+          result: {
+            error: "token=***redacted*** belongs to de***@example.com",
+            status: "error",
+          },
+          timestamp: expect.any(String),
+        },
+      ]);
+    } finally {
+      validateSpy.mockRestore();
+    }
+  });
+
+  it("redacts stored command results when command execution errors include secrets", async () => {
+    const commandAdapter = {
+      summarize: vi.fn(async () => {
+        const error = new Error(
+          "token=super-secret-token failed for dev@example.com",
+        );
+        error.stdout = "api_key=top-secret-key";
+        error.stderr = "Call me at +1 415-867-5309";
+        throw error;
+      }),
+    };
+
+    const server = await startServer({ commandAdapter });
+    const headers = buildCommandHeaders(server);
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ input: "payload" }),
+    });
+
+    expect(response.status).toBe(502);
+    await response.json();
+
+    const cookies = response.headers.getSetCookie?.() ?? [];
+    const cookieHeader = [headers.cookie, ...cookies.map((entry) => entry.split(";")[0])]
+      .filter(Boolean)
+      .join("; ");
+
+    const history = await fetch(`${server.url}/commands/payloads/recent`, {
+      method: "GET",
+      headers: {
+        ...headers,
+        cookie: cookieHeader,
+      },
+    });
+
+    expect(history.status).toBe(200);
+    const historyBody = await history.json();
+    expect(historyBody.entries).toEqual([
+      {
+        command: "summarize",
+        payload: { input: "payload" },
+        result: {
+          error: "token=***redacted*** failed for de***@example.com",
+          status: "error",
+          stdout: "api_key=***redacted***",
+          stderr: "Call me at 14******09",
+        },
+        timestamp: expect.any(String),
+      },
+    ]);
+  });
+
   const expectRedactedBinaryPayloadHistory = async (commandAdapter) => {
     const server = await startServer({ commandAdapter });
 
