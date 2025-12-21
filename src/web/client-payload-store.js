@@ -5,6 +5,8 @@ import {
   randomBytes,
 } from "node:crypto";
 
+import { redactValue } from "../shared/security/redaction.js";
+
 const DEFAULT_MAX_ENTRIES_PER_CLIENT = 5;
 const DEFAULT_MAX_CLIENTS = 200;
 const ENCRYPTION_ALGORITHM = "aes-256-gcm";
@@ -225,9 +227,9 @@ export function createClientPayloadStore(options = {}) {
       return null;
     }
 
-    const sanitizedPayload = sanitizeValue(payload ?? {});
+    const sanitizedPayload = sanitizeValue(redactValue(payload ?? {}));
     const normalizedPayload = sanitizedPayload ?? {};
-    const normalizedResult = sanitizeValue(result);
+    const normalizedResult = sanitizeValue(redactValue(result));
     let encryptedPayload = null;
 
     const baseTimestampMs = Number(now());

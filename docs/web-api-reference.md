@@ -86,7 +86,11 @@ the request lifecycle. Histories follow the authorization token fingerprint, so 
 using the same token share a single timeline even when the caller cycles session cookies or user
 agents between calls (`test/web-server.test.js` covers the fingerprint scoping contract).
 Payloads and results are scrubbed with the telemetry redaction pipeline, masking secret-like keys and
-contact details before entries are persisted. Regression coverage in
+contact details before entries are persisted. The payload store now performs an additional
+redaction pass so callers cannot accidentally persist sensitive fields even if they forget to
+sanitize inputs upstream; regression coverage in
+[`test/client-payload-store.test.js`](../test/client-payload-store.test.js) keeps the store-level
+guardrail aligned with the server documentation while
 [`test/web-server.test.js`](../test/web-server.test.js) exercises the stored-result redaction
 contract alongside the broader payload history guarantees.
 Timestamps include up to 750ms of forward or backward jitter to reduce correlation value in the
