@@ -4546,6 +4546,105 @@ describe("web server command endpoint", () => {
     ]);
   });
 
+  it("does not duplicate adapter status when it matches lifecycle status", async () => {
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({
+        status: "success",
+        detail: "processed",
+      })),
+    };
+
+    const server = await startServer({ commandAdapter });
+
+    const statusResponse = await fetch(`${server.url}/`);
+    const bootstrapCookies = statusResponse.headers.getSetCookie?.() ?? [];
+    const bootstrapCookieHeader = bootstrapCookies
+      .map((entry) => entry.split(";")[0])
+      .join("; ");
+    const commandHeaders = buildCommandHeaders(server, {
+      cookie: bootstrapCookieHeader,
+    });
+
+    const payload = { input: "status-annotated" };
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: commandHeaders,
+      body: JSON.stringify(payload),
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toEqual({ status: "success", detail: "processed" });
+
+    const history = await fetch(`${server.url}/commands/payloads/recent`, {
+      method: "GET",
+      headers: commandHeaders,
+    });
+
+    expect(history.status).toBe(200);
+    const historyBody = await history.json();
+    expect(historyBody.entries).toEqual([
+      {
+        command: "summarize",
+        payload: { input: "status-annotated" },
+        result: {
+          status: "success",
+          detail: "processed",
+        },
+        timestamp: expect.any(String),
+      },
+    ]);
+  });
+
+  it("preserves adapter error status on successful lifecycle annotation", async () => {
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({
+        status: "error",
+        detail: "transient",
+      })),
+    };
+
+    const server = await startServer({ commandAdapter });
+
+    const statusResponse = await fetch(`${server.url}/`);
+    const bootstrapCookies = statusResponse.headers.getSetCookie?.() ?? [];
+    const bootstrapCookieHeader = bootstrapCookies
+      .map((entry) => entry.split(";")[0])
+      .join("; ");
+    const commandHeaders = buildCommandHeaders(server, {
+      cookie: bootstrapCookieHeader,
+    });
+
+    const payload = { input: "status-annotated" };
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: commandHeaders,
+      body: JSON.stringify(payload),
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toEqual({ status: "error", detail: "transient" });
+
+    const history = await fetch(`${server.url}/commands/payloads/recent`, {
+      method: "GET",
+      headers: commandHeaders,
+    });
+
+    expect(history.status).toBe(200);
+    const historyBody = await history.json();
+    expect(historyBody.entries).toEqual([
+      {
+        command: "summarize",
+        payload: { input: "status-annotated" },
+        result: {
+          status: "success",
+          resultStatus: "error",
+          detail: "transient",
+        },
+        timestamp: expect.any(String),
+      },
+    ]);
+  });
+
   it("stores sanitized command errors for payload cache rehydration", async () => {
     const commandAdapter = {
       summarize: vi.fn(async () => {

@@ -6287,8 +6287,13 @@ function decorateResultStatus(result, status) {
   }
 
   if (typeof result === "object" && !Array.isArray(result)) {
+    const hasMeaningfulStatus =
+      typeof result.status === "string" && result.status.trim() !== "";
+
     const preservedStatus =
-      "status" in result && result.status !== annotatedStatus.status
+      "status" in result &&
+      hasMeaningfulStatus &&
+      result.status !== annotatedStatus.status
         ? { resultStatus: result.status }
         : {};
 
