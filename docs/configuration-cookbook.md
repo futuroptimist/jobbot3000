@@ -19,7 +19,9 @@ the manifest validation command stays documented for operators.
 
 CLI export commands append structured entries to the audit log, recording the
 output target (file vs. stdout), resolved file paths, and redaction flags for
-each run so operators can trace administrative actions.
+each run so operators can trace administrative actions. Regression coverage in
+`test/cli.test.js` verifies analytics exports emit the expected audit payloads
+when writing snapshots to disk.
 
 ## Required secrets
 
