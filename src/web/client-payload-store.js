@@ -43,7 +43,7 @@ function sanitizeString(value) {
 }
 
 function sanitizeValue(value) {
-  if (value == null) return value;
+  if (value == null) return undefined;
   if (typeof value === "string") {
     const sanitized = sanitizeString(value);
     return sanitized === "" ? undefined : sanitized;

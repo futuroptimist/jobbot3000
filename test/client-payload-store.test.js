@@ -123,4 +123,27 @@ describe("createClientPayloadStore", () => {
     });
     expect(store.getRecent("client-e")).toEqual([entry]);
   });
+
+  it("drops null fields from payloads and results", () => {
+    const store = createClientPayloadStore({
+      now: () => 0,
+      jitter: () => 0,
+    });
+
+    const entry = store.record(
+      "client-f",
+      "cmd-5",
+      { note: null, nested: { ok: "yes", remove: null } },
+      { stdout: null, stderr: "all good" },
+    );
+
+    expect(entry).toEqual({
+      command: "cmd-5",
+      payload: { nested: { ok: "yes" } },
+      result: { stderr: "all good" },
+      timestamp: "1970-01-01T00:00:00.000Z",
+    });
+
+    expect(store.getRecent("client-f")).toEqual([entry]);
+  });
 });
