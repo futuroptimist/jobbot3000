@@ -6279,20 +6279,27 @@ function sanitizeCommandResult(result) {
 }
 
 function decorateResultStatus(result, status) {
-  const base = {};
-  if (status === "success" || status === "error") {
-    base.status = status;
-  }
+  const annotatedStatus =
+    status === "success" || status === "error" ? { status } : {};
 
   if (result == null) {
-    return base;
+    return annotatedStatus;
   }
 
   if (typeof result === "object" && !Array.isArray(result)) {
-    return { ...base, ...result };
+    const preservedStatus =
+      "status" in result && result.status !== annotatedStatus.status
+        ? { resultStatus: result.status }
+        : {};
+
+    const normalizedResult = Object.fromEntries(
+      Object.entries(result).filter(([key]) => key !== "status"),
+    );
+
+    return { ...annotatedStatus, ...preservedStatus, ...normalizedResult };
   }
 
-  return { ...base, result };
+  return { ...annotatedStatus, result };
 }
 
 async function runHealthChecks(checks) {

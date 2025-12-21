@@ -79,10 +79,12 @@ payloads that sanitize down to nothing are ignored so the history only captures 
 requests. Command names are normalized the same way, removing control characters and surrounding
 whitespace before they are persisted. Command results are captured with the same sanitization
 pipeline (redacted stdout/stderr/error messages, trimmed objects) and annotated with a `status` of
-`success` or `error` so the UI can rehydrate recent responses without replaying CLI calls.
-Histories follow the authorization token fingerprint, so repeated requests using the same token share
-a single timeline even when the caller cycles session cookies or user agents between calls
-(`test/web-server.test.js` covers the fingerprint scoping contract).
+`success` or `error` so the UI can rehydrate recent responses without replaying CLI calls. If an
+adapter returns its own `status` field (for example, `"processing"` while work is queued), the
+payload history preserves it under `resultStatus` while still applying the `status` annotation for
+the request lifecycle. Histories follow the authorization token fingerprint, so repeated requests
+using the same token share a single timeline even when the caller cycles session cookies or user
+agents between calls (`test/web-server.test.js` covers the fingerprint scoping contract).
 Payloads and results are scrubbed with the telemetry redaction pipeline, masking secret-like keys and
 contact details before entries are persisted. Regression coverage in
 [`test/web-server.test.js`](../test/web-server.test.js) exercises the stored-result redaction
