@@ -3497,6 +3497,55 @@ describe('jobbot CLI', () => {
     expect(unredacted.companies.some(entry => entry.name === 'Future Works')).toBe(true);
   });
 
+  it('records analytics export audit metadata', () => {
+    const previousAuditPath = process.env.JOBBOT_AUDIT_LOG;
+    const auditPath = path.join(dataDir, 'audit', 'cli-audit.log');
+    process.env.JOBBOT_AUDIT_LOG = auditPath;
+
+    try {
+      const jobsDir = path.join(dataDir, 'jobs');
+      fs.mkdirSync(jobsDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(jobsDir, 'job-audit.json'),
+        JSON.stringify({ company: 'Audit Labs' }, null, 2),
+        'utf8',
+      );
+
+      runCli(['track', 'log', 'job-audit', '--channel', 'email', '--date', '2025-03-03']);
+      runCli(['track', 'add', 'job-audit', '--status', 'screening']);
+
+      const outPath = path.join(dataDir, 'exports', 'analytics.json');
+      const message = runCli(['analytics', 'export', '--out', outPath]);
+      expect(message.trim()).toBe(`Saved analytics snapshot to ${outPath}`);
+
+      const entries = fs
+        .readFileSync(auditPath, 'utf8')
+        .trim()
+        .split('\n')
+        .map(line => JSON.parse(line));
+      const last = entries.at(-1);
+
+      expect(last).toMatchObject({
+        action: 'analytics_export',
+        command: 'analytics export',
+        status: 'success',
+        outputTargets: ['file'],
+        outputPath: outPath,
+        format: 'json',
+        redacted: false,
+        actor: 'cli',
+        source: 'cli',
+      });
+      expect(typeof last.timestamp).toBe('string');
+    } finally {
+      if (previousAuditPath === undefined) {
+        delete process.env.JOBBOT_AUDIT_LOG;
+      } else {
+        process.env.JOBBOT_AUDIT_LOG = previousAuditPath;
+      }
+    }
+  });
+
   it('emits analytics exports as CSV when requested', () => {
     const jobsDir = path.join(dataDir, 'jobs');
     fs.mkdirSync(jobsDir, { recursive: true });
