@@ -123,4 +123,42 @@ describe("createClientPayloadStore", () => {
     });
     expect(store.getRecent("client-e")).toEqual([entry]);
   });
+
+  it("redacts sensitive payload and result fields before storing history", () => {
+    const store = createClientPayloadStore({
+      now: () => 0,
+      jitter: () => 0,
+    });
+
+    const entry = store.record(
+      "client-f",
+      "cmd-5",
+      {
+        apiKey: "sk-live-123456789",
+        contact: "alice@example.com",
+        note: "call me at 555-123-4567",
+      },
+      {
+        status: "processing",
+        token: "abcd-efgh",
+        detail: "pending",
+      },
+    );
+
+    expect(entry).toEqual({
+      command: "cmd-5",
+      payload: {
+        apiKey: "***redacted***",
+        contact: "al***@example.com",
+        note: "call me at 55******67",
+      },
+      result: {
+        status: "processing",
+        token: "***redacted***",
+        detail: "pending",
+      },
+      timestamp: "1970-01-01T00:00:00.000Z",
+    });
+    expect(store.getRecent("client-f")).toEqual([entry]);
+  });
 });
