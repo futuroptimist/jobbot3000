@@ -9,6 +9,8 @@
   non-loopback host bindings unless callers explicitly set `JOBBOT_WEB_ALLOW_REMOTE` to a truthy
   value (`1`, `true`, `yes`, `on`, `enabled`), pass `allowRemoteAccess: true`, or start the helper
   script with `--allow-remote-access`, keeping the default experience locked to localhost.
+  Conflicting `--allow-remote-access` values now fail fast to avoid argument parsing quirks that
+  could accidentally expose the server when operators mix truthy and falsy flags.
 - Deliver a local-first web application that streamlines tracking and managing job applications while
   retaining full parity with the existing CLI workflows.
 - Harden the local-only default by treating string `"false"` remote-access flags as disabled and
