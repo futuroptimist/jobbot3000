@@ -638,14 +638,32 @@ export function extractTextFromHtml(html) {
  * Supports only `http:` and `https:` protocols.
  *
  * @param {string} url
- * @param {{ timeoutMs?: number, headers?: Record<string, string>, maxBytes?: number }} [opts]
+ * @param {{
+ *   timeoutMs?: number,
+ *   headers?: Record<string, string>,
+ *   maxBytes?: number,
+ *   fetchImpl?: typeof fetch,
+ * }} [opts]
  *   Invalid timeout values fall back to DEFAULT_TIMEOUT_MS.
  * @returns {Promise<string>}
  */
 export async function fetchTextFromUrl(
   url,
-  { timeoutMs = DEFAULT_TIMEOUT_MS, headers, maxBytes = 1024 * 1024 } = {}
+  { timeoutMs = DEFAULT_TIMEOUT_MS, headers, maxBytes = 1024 * 1024, fetchImpl } = {}
 ) {
+  const offline = String(process.env.JOBBOT_OFFLINE || '').trim().toLowerCase();
+  if (
+    offline === '1' ||
+    offline === 'true' ||
+    offline === 'yes' ||
+    offline === 'on' ||
+    offline === 'enabled'
+  ) {
+    throw new Error(
+      'Offline mode enabled via JOBBOT_OFFLINE; clear the variable to resume network fetches.',
+    );
+  }
+
   const targetUrl = new URL(url);
   const { protocol, hostname } = targetUrl;
   if (!ALLOWED_PROTOCOLS.has(protocol)) {
@@ -678,7 +696,7 @@ export async function fetchTextFromUrl(
           ? reason
           : new Error(reason ? String(reason) : 'Request aborted');
       }
-      const response = await fetch(url, {
+      const response = await (fetchImpl || fetch)(url, {
         redirect: 'follow',
         signal: controller.signal,
         headers: buildRequestHeaders(headers),

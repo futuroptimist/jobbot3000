@@ -207,6 +207,55 @@ describe('fetchTextFromUrl', () => {
     fetch.mockReset();
     dns.lookup.mockClear();
     clearFetchRateLimits();
+    delete process.env.JOBBOT_OFFLINE;
+  });
+
+  it('rejects network requests when JOBBOT_OFFLINE is set', async () => {
+    process.env.JOBBOT_OFFLINE = '1';
+    const fetchImpl = vi.fn();
+
+    await expect(
+      fetchTextFromUrl('http://example.com', { fetchImpl }),
+    ).rejects.toThrow('Offline mode enabled');
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(dns.lookup).not.toHaveBeenCalled();
+  });
+
+  it('rejects network requests for additional truthy JOBBOT_OFFLINE values', async () => {
+    const truthyValues = ['true', 'yes', 'on', 'enabled'];
+
+    for (const value of truthyValues) {
+      process.env.JOBBOT_OFFLINE = value;
+      const fetchImpl = vi.fn();
+
+      await expect(
+        fetchTextFromUrl('http://example.com', { fetchImpl }),
+      ).rejects.toThrow('Offline mode enabled');
+
+      expect(fetchImpl).not.toHaveBeenCalled();
+      expect(dns.lookup).not.toHaveBeenCalled();
+      delete process.env.JOBBOT_OFFLINE;
+    }
+  });
+
+  it('allows network requests for falsy JOBBOT_OFFLINE values', async () => {
+    const falsyValues = ['0', 'false', 'off', 'disabled', ''];
+
+    fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/plain' },
+      text: () => Promise.resolve('ok'),
+    });
+
+    for (const value of falsyValues) {
+      process.env.JOBBOT_OFFLINE = value;
+      await expect(fetchTextFromUrl('http://example.com')).resolves.toBe('ok');
+      expect(fetch).toHaveBeenCalled();
+      fetch.mockClear();
+    }
   });
   it('returns extracted text for HTML responses', async () => {
     fetch.mockResolvedValue({
@@ -718,4 +767,3 @@ describe('fetchWithRetry', () => {
     expect(response.status).toBe(404);
   });
 });
-

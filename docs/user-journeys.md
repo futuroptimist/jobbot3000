@@ -136,7 +136,8 @@ jobbot3000.
 - Intake writes failing because of schema drift emit contract test failures that compare against the
   JSON Schema stored under `schema/intake.schema.json`.
 - Network outages in the web flow fall back to offline mode with local persistence and retry queues;
-  CLI captures similar failures and suggests `--offline` to skip LLM calls.
+  set `JOBBOT_OFFLINE=1` to force the CLI into the same "skip network fetches" behaviour so tests
+  can confirm we avoid LLM calls while surfacing a clear retry hint.
 
 ## Journey 3: Source and Stage Job Postings
 
