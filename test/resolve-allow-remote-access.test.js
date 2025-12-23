@@ -37,6 +37,43 @@ describe('resolveAllowRemoteAccess', () => {
     ).toThrow(/allow-remote-access/i);
   });
 
+  it('rejects conflicting allow flags when mixing bare and explicit falsy values', () => {
+    expect(() =>
+      resolveAllowRemoteAccess({
+        args: ['--allow-remote-access', '--allow-remote-access=false'],
+      }),
+    ).toThrow(/allow-remote-access/i);
+  });
+
+  it('rejects conflicting allow flags when using space-separated values', () => {
+    expect(() =>
+      resolveAllowRemoteAccess({
+        args: ['--allow-remote-access', 'true', '--allow-remote-access', 'false'],
+      }),
+    ).toThrow(/allow-remote-access/i);
+  });
+
+  it('accepts repeated consistent truthy allow flags', () => {
+    expect(
+      resolveAllowRemoteAccess({
+        args: ['--allow-remote-access', '--allow-remote-access=yes', '--allow-remote-access', '1'],
+      }),
+    ).toBe(true);
+  });
+
+  it('accepts repeated consistent falsy allow flags', () => {
+    expect(
+      resolveAllowRemoteAccess({
+        args: [
+          '--allow-remote-access=false',
+          '--allow-remote-access',
+          'no',
+          '--allow-remote-access=0',
+        ],
+      }),
+    ).toBe(false);
+  });
+
   it('treats empty allow flags as a deny even when the environment enables remote', () => {
     const env = { JOBBOT_WEB_ALLOW_REMOTE: '1' };
     expect(

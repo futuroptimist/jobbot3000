@@ -21,6 +21,7 @@ export function resolveAllowRemoteAccess({ args = [], env = {} } = {}) {
           allowFlagValues.push(null);
         } else {
           allowFlagValues.push(normalize(nextArg));
+          index += 1;
         }
       }
     }
@@ -51,13 +52,15 @@ export function resolveAllowRemoteAccess({ args = [], env = {} } = {}) {
         sawTruthy = true;
         continue;
       }
+      // Default-deny: treat any non-null, unrecognized, or empty value as falsy to avoid
+      // accidentally enabling remote access when the flag value is malformed.
       sawFalsy = true;
     }
 
     if (sawTruthy && sawFalsy) {
       throw new Error(
-        'Provide only one --allow-remote-access flag with a consistent value to avoid remote '
-          + 'exposure',
+        'Conflicting --allow-remote-access values detected; all --allow-remote-access flags '
+          + 'must have consistent values to avoid remote exposure',
       );
     }
 
