@@ -92,7 +92,9 @@ sanitize inputs upstream; regression coverage in
 [`test/client-payload-store.test.js`](../test/client-payload-store.test.js) keeps the store-level
 guardrail aligned with the server documentation while
 [`test/web-server.test.js`](../test/web-server.test.js) exercises the stored-result redaction
-contract alongside the broader payload history guarantees.
+contract alongside the broader payload history guarantees. Entries are sorted from newest to oldest
+by timestamp so the freshest command responses appear first; requests separated by more than the
+750ms jitter window retain their recency ordering even when random jitter is applied.
 Timestamps include up to 750ms of forward or backward jitter to reduce correlation value in the
 unlikely event encrypted history is exposed (`test/client-payload-store.test.js` covers both the
 jitter cap and encrypted history round-trip).

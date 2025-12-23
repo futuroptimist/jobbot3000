@@ -69,6 +69,31 @@ describe("createClientPayloadStore", () => {
     expect(entries[0].timestamp).toMatch(/Z$/);
   });
 
+  it("returns history sorted newest-first by timestamp even with jitter", () => {
+    let callCount = 0;
+    const store = createClientPayloadStore({
+      now: () => Date.UTC(2025, 10, 24, 12, 0, 0, 0) + callCount++ * 2000,
+      jitter: ({ command }) => (command === "cmd-old" ? 700 : -700),
+    });
+
+    store.record("client-b", "cmd-old", { note: "first" });
+    store.record("client-b", "cmd-new", { note: "second" });
+
+    const entries = store.getRecent("client-b");
+    expect(entries).toEqual([
+      {
+        command: "cmd-new",
+        payload: { note: "second" },
+        timestamp: "2025-11-24T12:00:01.300Z",
+      },
+      {
+        command: "cmd-old",
+        payload: { note: "first" },
+        timestamp: "2025-11-24T12:00:00.700Z",
+      },
+    ]);
+  });
+
   it("evicts oldest entries per client while preserving newest writes", () => {
     const store = createClientPayloadStore({
       maxEntriesPerClient: 2,
