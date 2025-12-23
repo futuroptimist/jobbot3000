@@ -207,6 +207,19 @@ describe('fetchTextFromUrl', () => {
     fetch.mockReset();
     dns.lookup.mockClear();
     clearFetchRateLimits();
+    delete process.env.JOBBOT_OFFLINE;
+  });
+
+  it('rejects network requests when JOBBOT_OFFLINE is set', async () => {
+    process.env.JOBBOT_OFFLINE = '1';
+    const fetchImpl = vi.fn();
+
+    await expect(
+      fetchTextFromUrl('http://example.com', { fetchImpl }),
+    ).rejects.toThrow('Offline mode enabled');
+
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(dns.lookup).not.toHaveBeenCalled();
   });
   it('returns extracted text for HTML responses', async () => {
     fetch.mockResolvedValue({
