@@ -652,7 +652,13 @@ export async function fetchTextFromUrl(
   { timeoutMs = DEFAULT_TIMEOUT_MS, headers, maxBytes = 1024 * 1024, fetchImpl } = {}
 ) {
   const offline = String(process.env.JOBBOT_OFFLINE || '').trim().toLowerCase();
-  if (offline === '1' || offline === 'true' || offline === 'yes') {
+  if (
+    offline === '1' ||
+    offline === 'true' ||
+    offline === 'yes' ||
+    offline === 'on' ||
+    offline === 'enabled'
+  ) {
     throw new Error(
       'Offline mode enabled via JOBBOT_OFFLINE; clear the variable to resume network fetches.',
     );
