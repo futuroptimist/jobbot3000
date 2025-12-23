@@ -66,4 +66,25 @@ describe('feedback collection', () => {
     expect(entries).toHaveLength(1);
     expect(entries[0].message).toBe('First entry');
   });
+
+  it('strips control characters and collapses whitespace before persisting', async () => {
+    const entry = await recordFeedback({
+      message: 'Great\u0007\nwork!  Keep it up\t',
+      source: ' survey\r\n',
+      contact: '\tcasey@example.com\u0000',
+    });
+
+    expect(entry).toMatchObject({
+      message: 'Great work! Keep it up',
+      source: 'survey',
+      contact: 'casey@example.com',
+    });
+
+    const entries = await listFeedback();
+    expect(entries[0]).toMatchObject({
+      message: 'Great work! Keep it up',
+      source: 'survey',
+      contact: 'casey@example.com',
+    });
+  });
 });

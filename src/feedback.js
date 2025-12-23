@@ -3,6 +3,9 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 let overrideDir;
+// Keep this pattern aligned with src/shared/logging/sanitize-output.js.
+// eslint-disable-next-line no-control-regex -- intentionally strip ASCII control characters.
+const CONTROL_CHARS_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
 
 function resolveDataDir() {
   return overrideDir || process.env.JOBBOT_DATA_DIR || path.resolve('data');
@@ -19,8 +22,9 @@ function getFilePath() {
 function sanitizeString(value) {
   if (value == null) return undefined;
   const str = typeof value === 'string' ? value : String(value);
-  const trimmed = str.trim();
-  return trimmed ? trimmed : undefined;
+  const withoutControl = str.replace(CONTROL_CHARS_RE, ' ');
+  const collapsed = withoutControl.replace(/\s+/g, ' ').trim();
+  return collapsed ? collapsed : undefined;
 }
 
 async function readFeedbackFile(file) {
