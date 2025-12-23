@@ -69,10 +69,11 @@ describe("createClientPayloadStore", () => {
     expect(entries[0].timestamp).toMatch(/Z$/);
   });
 
-  it("returns history sorted newest-first even when jitter reorders timestamps", () => {
+  it("returns history sorted newest-first by timestamp even with jitter", () => {
+    let callCount = 0;
     const store = createClientPayloadStore({
-      now: () => Date.UTC(2025, 10, 24, 12, 0, 0, 0),
-      jitter: ({ command }) => (command === "cmd-new" ? -500 : 500),
+      now: () => Date.UTC(2025, 10, 24, 12, 0, 0, 0) + callCount++ * 2000,
+      jitter: ({ command }) => (command === "cmd-old" ? 700 : -700),
     });
 
     store.record("client-b", "cmd-old", { note: "first" });
@@ -83,12 +84,12 @@ describe("createClientPayloadStore", () => {
       {
         command: "cmd-new",
         payload: { note: "second" },
-        timestamp: "2025-11-24T11:59:59.500Z",
+        timestamp: "2025-11-24T12:00:01.300Z",
       },
       {
         command: "cmd-old",
         payload: { note: "first" },
-        timestamp: "2025-11-24T12:00:00.500Z",
+        timestamp: "2025-11-24T12:00:00.700Z",
       },
     ]);
   });
