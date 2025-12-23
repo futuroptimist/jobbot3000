@@ -29,6 +29,14 @@ describe('resolveAllowRemoteAccess', () => {
     ).toBe(false);
   });
 
+  it('rejects conflicting allow-remote-access flag values to avoid accidental exposure', () => {
+    expect(() =>
+      resolveAllowRemoteAccess({
+        args: ['--allow-remote-access=true', '--allow-remote-access=false'],
+      }),
+    ).toThrow(/allow-remote-access/i);
+  });
+
   it('treats empty allow flags as a deny even when the environment enables remote', () => {
     const env = { JOBBOT_WEB_ALLOW_REMOTE: '1' };
     expect(
