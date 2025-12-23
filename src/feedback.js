@@ -3,8 +3,9 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 
 let overrideDir;
+// Keep this pattern aligned with src/shared/logging/sanitize-output.js.
 // eslint-disable-next-line no-control-regex -- intentionally strip ASCII control characters.
-const CONTROL_CHARS_RE = /[\u0000-\u0008\u000B-\u001F\u007F]/g;
+const CONTROL_CHARS_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
 
 function resolveDataDir() {
   return overrideDir || process.env.JOBBOT_DATA_DIR || path.resolve('data');
