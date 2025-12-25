@@ -31,7 +31,7 @@ const TRACK_REMINDERS_DONE_ALLOWED_KEYS = new Set([
 const VALID_STATUSES = new Set(STATUSES.map(status => status.trim().toLowerCase()));
 
 function stripControlCharacters(value) {
-  if (!value) return value;
+  if (value == null) return value;
   let sanitized = '';
   for (let index = 0; index < value.length; index += 1) {
     const code = value.charCodeAt(index);
