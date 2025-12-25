@@ -3563,6 +3563,36 @@ describe('jobbot CLI', () => {
     expect(csv).toContain('screening,Screening,1,1,0');
   });
 
+  it('retries analytics exports when the output file is temporarily locked', () => {
+    const jobsDir = path.join(dataDir, 'jobs');
+    fs.mkdirSync(jobsDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(jobsDir, 'job-locked.json'),
+      JSON.stringify({ company: 'Retry Labs' }, null, 2),
+      'utf8',
+    );
+
+    runCli(['track', 'log', 'job-locked', '--channel', 'email', '--date', '2025-03-03']);
+    runCli(['track', 'add', 'job-locked', '--status', 'screening']);
+
+    const outPath = path.join(dataDir, 'exports', 'analytics-locked.json');
+    const bin = path.resolve('bin', 'jobbot.js');
+    const result = spawnSync('node', [bin, 'analytics', 'export', '--out', outPath], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        JOBBOT_DATA_DIR: dataDir,
+        NODE_OPTIONS: `--require ${path.join(__dirname, 'fixtures', 'fs-write-failure-once.cjs')}`,
+      },
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe(`Saved analytics snapshot to ${outPath}`);
+    expect(result.stderr).toMatch(/close external editors/i);
+    const payload = JSON.parse(fs.readFileSync(outPath, 'utf8'));
+    expect(payload.statuses).toMatchObject({ screening: 1 });
+  });
+
   it('prints analytics sankey transitions with json option', () => {
     const opportunitiesDir = path.join(dataDir, 'opportunities');
     fs.mkdirSync(opportunitiesDir, { recursive: true });

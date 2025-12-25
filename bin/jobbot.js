@@ -127,6 +127,7 @@ import {
   updateSettings as updateUserSettings,
 } from '../src/settings.js';
 import { ensureInferenceConfig } from '../src/shared/config/inference.js';
+import { writeFileWithRetries } from '../src/shared/fs/write-file-with-retries.js';
 import { createAuditLogger } from '../src/shared/security/audit-log.js';
 
 const rawAuditLogPath =
@@ -3181,7 +3182,15 @@ async function cmdAnalyticsExport(args) {
     if (output) {
       resolved = path.resolve(process.cwd(), output);
       await fs.promises.mkdir(path.dirname(resolved), { recursive: true });
-      await fs.promises.writeFile(resolved, payload, 'utf8');
+      await writeFileWithRetries(resolved, payload, {
+        onRetry: ({ remaining, code }) => {
+          const retries = remaining === 1 ? '1 retry' : `${remaining} retries`;
+          const reason = code ? ` (${code})` : '';
+          console.error(
+            `Output file locked${reason}; close external editors and retrying (${retries} left).`,
+          );
+        },
+      });
       console.log(`Saved analytics snapshot to ${resolved}`);
     } else {
       console.log(payload.trimEnd());
