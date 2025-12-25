@@ -444,7 +444,9 @@ call scheduled"`.
 
 - When analytics detects missing status updates, both CLI and UI display actionable tasks to backfill
   data before recomputing metrics.
-- Failed exports due to locked files queue retries and prompt the user to close external editors.
+- Analytics exports retry temporarily locked output files (EBUSY/EPERM/EACCES) up to three times,
+  printing a stderr prompt to close external editors before the next attempt; see
+  [`test/cli.test.js`](../test/cli.test.js) for coverage.
 
 ### Edge cases
 
