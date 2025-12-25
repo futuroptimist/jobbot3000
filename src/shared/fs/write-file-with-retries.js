@@ -13,6 +13,7 @@ const RETRIABLE_CODES = new Set(['EBUSY', 'EPERM', 'EACCES']);
  *   data: string | Buffer,
  *   options?: any
  * ) => Promise<void>} [writer]
+ * @property {import('node:fs').WriteFileOptions | NodeJS.BufferEncoding} [writerOptions]
  * @property {(details: {
  *   attempt: number;
  *   remaining: number;
@@ -38,6 +39,7 @@ export async function writeFileWithRetries(
     attempts = DEFAULT_MAX_ATTEMPTS,
     retryDelayMs = DEFAULT_RETRY_DELAY_MS,
     writer = fs.writeFile,
+    writerOptions = 'utf8',
     onRetry,
   } = {},
 ) {
@@ -47,7 +49,7 @@ export async function writeFileWithRetries(
 
   while (attempt < maxAttempts) {
     try {
-      await writer(filePath, contents, 'utf8');
+      await writer(filePath, contents, writerOptions);
       return;
     } catch (error) {
       lastError = error;
