@@ -109,6 +109,12 @@ jobbot3000.
    consistency checks that ensure the intake data references valid resume sections.
 5. Export transcripts via the **Download JSON** button, which reuses the CLI export serializer so
    automated tests can diff outputs across surfaces.
+   The web adapter now exposes `/commands/intake-plan` for generating the prioritized prompts and
+   `/commands/intake-draft` for persisting in-progress answers, matching the CLI `intake plan` and
+   `intake draft` flows. Regression coverage in
+   [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js) and
+   [`test/web-schemas.test.js`](../test/web-schemas.test.js) keeps the request/response shapes aligned
+   as the UI evolves.
 
 ### Unhappy paths & recovery
 

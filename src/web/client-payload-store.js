@@ -353,15 +353,7 @@ export function createClientPayloadStore(options = {}) {
 
         return returnValue;
       })
-      .filter(Boolean)
-      .sort((left, right) => {
-        const leftTime = Date.parse(left.timestamp || "");
-        const rightTime = Date.parse(right.timestamp || "");
-        if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) {
-          return rightTime - leftTime;
-        }
-        return 0;
-      });
+      .filter(Boolean);
   }
 
   return { record, getRecent };
@@ -403,4 +395,3 @@ export function createClientIdentity({
 
   return parts.join("|");
 }
-

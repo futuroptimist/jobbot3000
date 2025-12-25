@@ -30,6 +30,24 @@ const TRACK_REMINDERS_DONE_ALLOWED_KEYS = new Set([
 ]);
 const VALID_STATUSES = new Set(STATUSES.map(status => status.trim().toLowerCase()));
 
+function stripControlCharacters(value) {
+  if (value == null) return value;
+  let sanitized = '';
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    const isControl =
+      (code >= 0 && code <= 8) ||
+      code === 11 ||
+      code === 12 ||
+      (code >= 14 && code <= 31) ||
+      code === 127;
+    if (!isControl) {
+      sanitized += value[index];
+    }
+  }
+  return sanitized;
+}
+
 function assertPlainObject(value, name) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error(`${name} must be an object`);
@@ -39,7 +57,9 @@ function assertPlainObject(value, name) {
 function normalizeString(value) {
   if (value == null) return undefined;
   const str = typeof value === 'string' ? value : String(value);
-  const trimmed = str.trim();
+  const cleaned = stripControlCharacters(str);
+  if (!cleaned) return undefined;
+  const trimmed = cleaned.trim();
   return trimmed ? trimmed : undefined;
 }
 
@@ -439,6 +459,21 @@ export function normalizeIntakeExportRequest(options = {}) {
   return { redact };
 }
 
+export function normalizeIntakePlanRequest(options = {}) {
+  assertPlainObject(options, 'intake plan request');
+
+  const allowedKeys = new Set(['profilePath', 'profile_path']);
+  const extra = Object.keys(options).filter(key => !allowedKeys.has(key));
+  if (extra.length > 0) {
+    throw new Error(`unexpected intake plan keys: ${extra.join(', ')}`);
+  }
+
+  const profilePath = normalizeString(options.profilePath ?? options.profile_path);
+  const request = {};
+  if (profilePath) request.profilePath = profilePath;
+  return request;
+}
+
 export function normalizeIntakeRecordRequest(options = {}) {
   assertPlainObject(options, 'intake record request');
 
@@ -486,6 +521,38 @@ export function normalizeIntakeRecordRequest(options = {}) {
   if (askedAt) request.askedAt = askedAt;
   if (tags) request.tags = tags;
   if (notes) request.notes = notes;
+  return request;
+}
+
+export function normalizeIntakeDraftRequest(options = {}) {
+  assertPlainObject(options, 'intake draft request');
+
+  const allowedKeys = new Set(['question', 'answer', 'tags', 'notes', 'askedAt', 'asked_at']);
+  const extra = Object.keys(options).filter(key => !allowedKeys.has(key));
+  if (extra.length > 0) {
+    throw new Error(`unexpected intake draft keys: ${extra.join(', ')}`);
+  }
+
+  const question = assertRequiredString(options.question, 'question');
+  const answer = normalizeString(options.answer);
+  const tags = normalizeString(options.tags);
+  const notes = normalizeString(options.notes);
+  const askedAtValue = normalizeString(options.askedAt ?? options.asked_at);
+
+  let askedAt;
+  if (askedAtValue) {
+    const parsed = new Date(askedAtValue);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new Error('askedAt must be a valid ISO-8601 timestamp');
+    }
+    askedAt = parsed.toISOString();
+  }
+
+  const request = { question };
+  if (answer) request.answer = answer;
+  if (tags) request.tags = tags;
+  if (notes) request.notes = notes;
+  if (askedAt) request.askedAt = askedAt;
   return request;
 }
 

@@ -5,7 +5,9 @@ import {
   normalizeTrackRecordRequest,
   normalizeIntakeListRequest,
   normalizeIntakeExportRequest,
+  normalizeIntakePlanRequest,
   normalizeIntakeRecordRequest,
+  normalizeIntakeDraftRequest,
   normalizeIntakeResumeRequest,
 } from "./schemas.js";
 
@@ -679,8 +681,20 @@ function validateIntakeExportPayload(payload) {
   );
 }
 
+function validateIntakePlanPayload(payload) {
+  return normalizeIntakePlanRequest(
+    ensurePlainObject(payload ?? {}, "intake-plan"),
+  );
+}
+
 function validateIntakeRecordPayload(payload) {
   return normalizeIntakeRecordRequest(ensurePlainObject(payload ?? {}, "intake-record"));
+}
+
+function validateIntakeDraftPayload(payload) {
+  return normalizeIntakeDraftRequest(
+    ensurePlainObject(payload ?? {}, "intake-draft"),
+  );
 }
 
 function validateIntakeResumePayload(payload) {
@@ -714,9 +728,11 @@ const COMMAND_VALIDATORS = Object.freeze({
   },
   "recruiter-ingest": validateRecruiterIngestPayload,
   "feedback-record": validateFeedbackRecordPayload,
+  "intake-plan": validateIntakePlanPayload,
   "intake-list": validateIntakeListPayload,
   "intake-export": validateIntakeExportPayload,
   "intake-record": validateIntakeRecordPayload,
+  "intake-draft": validateIntakeDraftPayload,
   "intake-resume": validateIntakeResumePayload,
 });
 

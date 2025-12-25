@@ -92,12 +92,11 @@ sanitize inputs upstream; regression coverage in
 [`test/client-payload-store.test.js`](../test/client-payload-store.test.js) keeps the store-level
 guardrail aligned with the server documentation while
 [`test/web-server.test.js`](../test/web-server.test.js) exercises the stored-result redaction
-contract alongside the broader payload history guarantees. Entries are sorted from newest to oldest
-by timestamp so the freshest command responses appear first; requests separated by more than the
-750ms jitter window retain their recency ordering even when random jitter is applied.
-Timestamps include up to 750ms of forward or backward jitter to reduce correlation value in the
-unlikely event encrypted history is exposed (`test/client-payload-store.test.js` covers both the
-jitter cap and encrypted history round-trip).
+contract alongside the broader payload history guarantees. Entries retain their original insertion
+order so callers can replay request timelines without re-sorting results. Timestamps include up to
+750ms of forward or backward jitter to reduce correlation value in the unlikely event encrypted
+history is exposed (`test/client-payload-store.test.js` covers both the jitter cap and encrypted
+history round-trip).
 The response shape is:
 
 ```jsonc
@@ -193,12 +192,20 @@ The following command endpoints are available. Each one maps directly to a CLI h
 - `POST /commands/feedback-record` → `jobbot feedback record`: Persist beta feedback with optional
   `source`, `contact`, and `rating` fields. Entries are sanitized (control characters removed,
   whitespace collapsed), time-stamped, and written to `data/feedback.json` for follow-up analysis.
+- `POST /commands/intake-plan` → `jobbot intake plan`: Build a prioritized intake question plan using
+  the stored resume, optionally overriding the resume path via `profilePath`. Responses mirror the
+  CLI `--json` output with `plan`, `resume_path`, and `manual_templates` fields so the web UI can
+  render structured prompts without invoking the CLI directly.
 - `POST /commands/intake-list` → `jobbot intake list`: List recorded interview responses with optional
   status filters (`answered`, `skipped`) and redaction for sensitive compensation or visa questions.
 - `POST /commands/intake-export` → `jobbot intake export`: Download a sanitized transcript of intake
   responses using the same serializer as the CLI `--json` export. The endpoint always returns JSON
   with `{ "responses": [...] }` so clients can download the payload directly or render the export
   inline. Set `redact: true` to mask compensation, visa, and other sensitive answers before export.
+- `POST /commands/intake-draft` → `jobbot intake draft`: Save an in-progress intake response with
+  optional `answer`, `notes`, `tags`, and `askedAt` metadata for later resumption via
+  `intake-resume`. Responses return `{ "draft": { ... } }` so the UI can immediately reflect the
+  persisted draft contents.
 - `POST /commands/intake-record` → `jobbot intake record`: Record a new interview question response
   with optional tags, notes, and timestamps, supporting both answered and skipped prompts.
 - `POST /commands/intake-resume` → `jobbot intake resume`: Retrieve the most recent intake draft for

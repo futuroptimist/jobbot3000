@@ -9,7 +9,9 @@ import {
   normalizeAnalyticsFunnelRequest,
   normalizeIntakeListRequest,
   normalizeIntakeExportRequest,
+  normalizeIntakePlanRequest,
   normalizeIntakeRecordRequest,
+  normalizeIntakeDraftRequest,
   normalizeIntakeResumeRequest,
   normalizeMatchRequest,
   normalizeShortlistListRequest,
@@ -44,7 +46,9 @@ import {
   getIntakeDraft,
   getIntakeResponses,
   recordIntakeResponse,
+  saveIntakeDraft,
 } from "../intake.js";
+import { loadIntakeQuestionPlan } from "../intake-plan.js";
 import { recordFeedback } from "../feedback.js";
 import { OpportunitiesRepo } from "../services/opportunitiesRepo.js";
 import { AuditLog } from "../services/audit.js";
@@ -1318,6 +1322,84 @@ export function createCommandAdapter(options = {}) {
     });
   };
 
+  const sanitizeIntakePlanEntries = (entries) => {
+    if (!Array.isArray(entries)) return [];
+    const sanitized = [];
+    for (const entry of entries) {
+      if (!entry || typeof entry !== "object") continue;
+      const prompt = sanitizeOutputString(String(entry.prompt ?? "")).trim();
+      if (!prompt) continue;
+      const normalized = { prompt };
+      const reason = sanitizeOutputString(String(entry.reason ?? "")).trim();
+      if (reason) normalized.reason = reason;
+      if (Array.isArray(entry.tags)) {
+        const tags = entry.tags
+          .map((tag) => sanitizeOutputString(String(tag ?? "")).trim())
+          .filter(Boolean);
+        if (tags.length) normalized.tags = tags;
+      }
+      sanitized.push(normalized);
+    }
+    return sanitized;
+  };
+
+  const sanitizeManualTemplates = (entries) => {
+    if (!Array.isArray(entries)) return [];
+    const sanitized = [];
+    for (const entry of entries) {
+      if (!entry || typeof entry !== "object") continue;
+      const prompt = sanitizeOutputString(String(entry.prompt ?? "")).trim();
+      if (!prompt) continue;
+      const normalized = { prompt };
+      const category = sanitizeOutputString(String(entry.category ?? "")).trim();
+      if (category) normalized.category = category;
+      const starter = sanitizeOutputString(String(entry.starter ?? "")).trim();
+      if (starter) normalized.starter = starter;
+      if (Array.isArray(entry.tags)) {
+        const tags = entry.tags
+          .map((tag) => sanitizeOutputString(String(tag ?? "")).trim())
+          .filter(Boolean);
+        if (tags.length) normalized.tags = tags;
+      }
+      sanitized.push(normalized);
+    }
+    return sanitized;
+  };
+
+  const sanitizeIntakeDraft = (draft) => {
+    if (!draft || typeof draft !== "object") return null;
+    const question = sanitizeOutputString(String(draft.question ?? "")).trim();
+    if (!question) return null;
+    const normalized = { question };
+    const id = sanitizeOutputString(String(draft.id ?? "")).trim();
+    if (id) normalized.id = id;
+    const answer = sanitizeOutputString(String(draft.answer ?? "")).trim();
+    if (answer) normalized.answer = answer;
+    const notes = sanitizeOutputString(String(draft.notes ?? "")).trim();
+    if (notes) normalized.notes = notes;
+    const status = sanitizeOutputString(String(draft.status ?? "")).trim();
+    if (status) normalized.status = status;
+    if (Array.isArray(draft.tags)) {
+      const tags = draft.tags
+        .map((tag) => sanitizeOutputString(String(tag ?? "")).trim())
+        .filter(Boolean);
+      if (tags.length) normalized.tags = tags;
+    }
+    const askedAt =
+      typeof draft.asked_at === "string"
+        ? sanitizeOutputString(draft.asked_at).trim()
+        : typeof draft.askedAt === "string"
+          ? sanitizeOutputString(draft.askedAt).trim()
+          : "";
+    if (askedAt) normalized.asked_at = askedAt;
+    const recordedAt =
+      typeof draft.saved_at === "string"
+        ? sanitizeOutputString(draft.saved_at).trim()
+        : "";
+    if (recordedAt) normalized.saved_at = recordedAt;
+    return normalized;
+  };
+
   async function intakeListCommand(options = {}) {
     const cli = injectedCli;
     const { status, redact } = normalizeIntakeListRequest(options);
@@ -1401,6 +1483,78 @@ export function createCommandAdapter(options = {}) {
     };
   }
 
+  async function intakePlanCommand(options = {}) {
+    const cli = injectedCli;
+    const { profilePath } = normalizeIntakePlanRequest(options);
+
+    const buildResponse = (raw) => {
+      const resumePathRaw =
+        typeof raw?.resume_path === "string"
+          ? raw.resume_path
+          : typeof raw?.resumePath === "string"
+            ? raw.resumePath
+            : undefined;
+      const resumePath = resumePathRaw
+        ? sanitizeOutputString(String(resumePathRaw)).trim()
+        : undefined;
+      const plan = sanitizeIntakePlanEntries(
+        Array.isArray(raw?.plan) ? raw.plan : [],
+      );
+      const manualTemplates = sanitizeManualTemplates(
+        Array.isArray(raw?.manual_templates)
+          ? raw.manual_templates
+          : Array.isArray(raw?.manualTemplates)
+            ? raw.manualTemplates
+            : [],
+      );
+      const payload = {
+        plan,
+        manual_templates: manualTemplates,
+      };
+      if (resumePath) {
+        payload.resume_path = resumePath;
+      }
+      const sanitized = sanitizeOutputValue(payload, { key: "data" }) ?? {};
+      const stdout = JSON.stringify(sanitized, null, 2);
+      return { sanitized, stdout };
+    };
+
+    if (cli && typeof cli.cmdIntakePlan === "function") {
+      const args = ["--json"];
+      if (profilePath) args.push("--profile", profilePath);
+      const { result, stdout, stderr } = await captureConsole(() =>
+        cli.cmdIntakePlan(args),
+      );
+      if (result !== undefined) return result;
+      const data = parseJsonOutput("intake-plan", stdout, stderr);
+      const response = buildResponse(data);
+      return {
+        command: "intake-plan",
+        format: "json",
+        stdout: response.stdout,
+        stderr: "",
+        returnValue: 0,
+        data: response.sanitized,
+      };
+    }
+
+    const planResult = await loadIntakeQuestionPlan({ profilePath });
+    const response = buildResponse({
+      plan: planResult?.plan,
+      resume_path: planResult?.resumePath,
+      manual_templates: planResult?.manualTemplates,
+    });
+
+    return {
+      command: "intake-plan",
+      format: "json",
+      stdout: response.stdout,
+      stderr: "",
+      returnValue: 0,
+      data: response.sanitized,
+    };
+  }
+
   async function intakeRecordCommand(options = {}) {
     const cli = injectedCli;
     const { question, answer, skipped, askedAt, tags, notes } =
@@ -1451,6 +1605,60 @@ export function createCommandAdapter(options = {}) {
     };
   }
 
+  async function intakeDraftCommand(options = {}) {
+    const cli = injectedCli;
+    const { question, answer, tags, notes, askedAt } =
+      normalizeIntakeDraftRequest(options);
+
+    const payload = { question };
+    if (answer) payload.answer = answer;
+    if (tags) payload.tags = tags;
+    if (notes) payload.notes = notes;
+    if (askedAt) payload.askedAt = askedAt;
+
+    const buildResponse = (draft) => {
+      const normalized = sanitizeIntakeDraft(draft);
+      const payloadDraft = normalized ?? null;
+      const sanitized = sanitizeOutputValue({ draft: payloadDraft }, { key: "data" });
+      const stdout = JSON.stringify(sanitized, null, 2);
+      return { sanitized, stdout };
+    };
+
+    if (cli && typeof cli.cmdIntakeDraft === "function") {
+      const args = ["--question", question];
+      if (answer) args.push("--answer", answer);
+      if (tags) args.push("--tags", tags);
+      if (notes) args.push("--notes", notes);
+      if (askedAt) args.push("--asked-at", askedAt);
+
+      const { result, stdout, stderr } = await captureConsole(() =>
+        cli.cmdIntakeDraft(args),
+      );
+      if (result !== undefined) return result;
+      const draft = await getIntakeDraft();
+      const response = buildResponse(draft);
+      return {
+        command: "intake-draft",
+        format: "json",
+        stdout: response.stdout || sanitizeOutputString(stdout),
+        stderr: sanitizeOutputString(stderr),
+        returnValue: 0,
+        data: response.sanitized,
+      };
+    }
+
+    const draft = await saveIntakeDraft(payload);
+    const response = buildResponse(draft);
+    return {
+      command: "intake-draft",
+      format: "json",
+      stdout: response.stdout,
+      stderr: "",
+      returnValue: 0,
+      data: response.sanitized,
+    };
+  }
+
   async function intakeResumeCommand(options = {}) {
     const cli = injectedCli;
     normalizeIntakeResumeRequest(options);
@@ -1461,8 +1669,8 @@ export function createCommandAdapter(options = {}) {
       );
       if (result !== undefined) return result;
       const data = parseJsonOutput("intake-resume", stdout, stderr);
-      const draft = data.draft ?? null;
-      const sanitized = sanitizeOutputValue({ draft }, { key: "data" });
+      const draft = sanitizeIntakeDraft(data.draft);
+      const sanitized = sanitizeOutputValue({ draft: draft ?? null }, { key: "data" });
       return {
         command: "intake-resume",
         format: "json",
@@ -1473,8 +1681,8 @@ export function createCommandAdapter(options = {}) {
       };
     }
 
-    const draft = await getIntakeDraft();
-    const sanitized = sanitizeOutputValue({ draft }, { key: "data" });
+    const draft = sanitizeIntakeDraft(await getIntakeDraft());
+    const sanitized = sanitizeOutputValue({ draft: draft ?? null }, { key: "data" });
     const stdout = JSON.stringify(sanitized, null, 2);
     return {
       command: "intake-resume",
@@ -1547,9 +1755,11 @@ export function createCommandAdapter(options = {}) {
     trackRecord,
     trackReminders,
     feedbackRecord: feedbackRecordCommand,
+    intakePlan: intakePlanCommand,
     intakeList: intakeListCommand,
     intakeExport: intakeExportCommand,
     intakeRecord: intakeRecordCommand,
+    intakeDraft: intakeDraftCommand,
     intakeResume: intakeResumeCommand,
     listingsProviders,
     listingsFetch: listingsFetchCommand,
@@ -1568,9 +1778,11 @@ export function createCommandAdapter(options = {}) {
   adapter["track-reminders-snooze"] = trackRemindersSnooze;
   adapter["track-reminders-done"] = trackRemindersDone;
   adapter["feedback-record"] = feedbackRecordCommand;
+  adapter["intake-plan"] = intakePlanCommand;
   adapter["intake-list"] = intakeListCommand;
   adapter["intake-export"] = intakeExportCommand;
   adapter["intake-record"] = intakeRecordCommand;
+  adapter["intake-draft"] = intakeDraftCommand;
   adapter["intake-resume"] = intakeResumeCommand;
   adapter["listings-providers"] = listingsProviders;
   adapter["listings-fetch"] = listingsFetchCommand;
@@ -1584,4 +1796,3 @@ export function createCommandAdapter(options = {}) {
   adapter.trackShow = trackShow;
   return adapter;
 }
-

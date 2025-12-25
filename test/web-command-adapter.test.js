@@ -48,6 +48,7 @@ import { ingestRecruiterEmail } from '../src/ingest/recruiterEmail.js';
 import { OpportunitiesRepo } from '../src/services/opportunitiesRepo.js';
 import { AuditLog } from '../src/services/audit.js';
 import * as intake from '../src/intake.js';
+import * as intakePlan from '../src/intake-plan.js';
 
 describe('createCommandAdapter', () => {
   let originalEnableNativeCli;
@@ -1323,6 +1324,115 @@ describe('createCommandAdapter', () => {
       ],
     });
     expect(result.stdout?.trim()).toContain('intake-202');
+  });
+
+  it('loads intake plans without CLI injection', async () => {
+    const loadPlanSpy = vi
+      .spyOn(intakePlan, 'loadIntakeQuestionPlan')
+      .mockResolvedValue({
+        plan: [
+          { prompt: 'Growth areas?\u0007', reason: 'focus ' },
+          { prompt: 'Team fit', tags: ['collaboration', ''] },
+        ],
+        resumePath: ' data/profile/resume.json ',
+        manualTemplates: [
+          { category: 'strengths', prompt: 'Share a recent win' },
+        ],
+      });
+
+    const adapter = createCommandAdapter();
+    const result = await adapter['intake-plan']({
+      profilePath: ' data/profile/resume.json ',
+    });
+
+    expect(loadPlanSpy).toHaveBeenCalledWith({
+      profilePath: 'data/profile/resume.json',
+    });
+    expect(result).toMatchObject({
+      command: 'intake-plan',
+      format: 'json',
+    });
+    expect(result.data).toEqual({
+      plan: [
+        { prompt: 'Growth areas?', reason: 'focus' },
+        { prompt: 'Team fit', tags: ['collaboration'] },
+      ],
+      resume_path: 'data/profile/resume.json',
+      manual_templates: [
+        { category: 'strengths', prompt: 'Share a recent win' },
+      ],
+    });
+  });
+
+  it('bridges intake plans through the CLI when available', async () => {
+    const cli = {
+      cmdIntakePlan: vi.fn(async args => {
+        expect(args).toEqual(['--json', '--profile', '/tmp/resume.json']);
+        console.log(
+          JSON.stringify({
+            plan: [{ prompt: 'How do you work with PMs?' }],
+            resume_path: '/tmp/resume.json',
+            manual_templates: [],
+          }),
+        );
+      }),
+    };
+
+    const adapter = createCommandAdapter({ cli });
+    const result = await adapter['intake-plan']({
+      profilePath: '/tmp/resume.json',
+    });
+
+    expect(cli.cmdIntakePlan).toHaveBeenCalledTimes(1);
+    expect(result.data).toEqual({
+      plan: [{ prompt: 'How do you work with PMs?' }],
+      resume_path: '/tmp/resume.json',
+      manual_templates: [],
+    });
+  });
+
+  it('saves intake drafts with sanitized metadata', async () => {
+    const saveDraftSpy = vi.spyOn(intake, 'saveIntakeDraft').mockResolvedValue({
+      id: 'draft-900',
+      question: 'Why this team?',
+      answer: 'Mission focus',
+      notes: 'values forward',
+      tags: ['values', ''],
+      status: 'draft',
+      asked_at: '2025-03-01T10:00:00.000Z',
+    });
+
+    const adapter = createCommandAdapter();
+    const result = await adapter['intake-draft']({
+      question: '  Why this team?\u0007 ',
+      answer: ' Mission focus ',
+      notes: ' values forward ',
+      tags: 'values,',
+      askedAt: '2025-03-01T10:00:00.000Z',
+    });
+
+    expect(saveDraftSpy).toHaveBeenCalledWith({
+      question: 'Why this team?',
+      answer: 'Mission focus',
+      notes: 'values forward',
+      tags: 'values,',
+      askedAt: '2025-03-01T10:00:00.000Z',
+    });
+    expect(result).toMatchObject({
+      command: 'intake-draft',
+      format: 'json',
+    });
+    expect(result.data).toEqual({
+      draft: {
+        id: 'draft-900',
+        question: 'Why this team?',
+        answer: 'Mission focus',
+        notes: 'values forward',
+        tags: ['values'],
+        status: 'draft',
+        asked_at: '2025-03-01T10:00:00.000Z',
+      },
+    });
   });
 
   it('records beta feedback with sanitization', async () => {
