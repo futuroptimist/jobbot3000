@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   normalizeIntakeListRequest,
   normalizeIntakeExportRequest,
+  normalizeIntakePlanRequest,
+  normalizeIntakeDraftRequest,
   normalizeIntakeRecordRequest,
   normalizeIntakeResumeRequest,
   normalizeMatchRequest,
@@ -132,6 +134,76 @@ describe('web request schemas', () => {
       expect(() => normalizeIntakeExportRequest({ format: 'csv' })).toThrow(
         'unexpected intake export keys: format',
       );
+    });
+  });
+
+  describe('normalizeIntakePlanRequest', () => {
+    it('normalizes profile path', () => {
+      const options = normalizeIntakePlanRequest({
+        profilePath: ' data/profile/resume.json ',
+      });
+
+      expect(options).toEqual({
+        profilePath: 'data/profile/resume.json',
+      });
+    });
+
+    it('allows empty payloads', () => {
+      expect(normalizeIntakePlanRequest({})).toEqual({});
+    });
+
+    it('throws when options are not an object', () => {
+      expect(() => normalizeIntakePlanRequest(null)).toThrow(
+        'intake plan request must be an object',
+      );
+      expect(() => normalizeIntakePlanRequest([])).toThrow(
+        'intake plan request must be an object',
+      );
+    });
+
+    it('throws when unexpected keys are provided', () => {
+      expect(() => normalizeIntakePlanRequest({ profile: 'resume.json' })).toThrow(
+        'unexpected intake plan keys: profile',
+      );
+    });
+  });
+
+  describe('normalizeIntakeDraftRequest', () => {
+    it('normalizes required question and optional metadata', () => {
+      const options = normalizeIntakeDraftRequest({
+        question: '  Why this company?\u0007 ',
+        answer: ' Mission ',
+        notes: '  values  ',
+        tags: 'mission,values',
+        askedAt: '2025-03-01T10:00:00.000Z',
+      });
+
+      expect(options).toEqual({
+        question: 'Why this company?',
+        answer: 'Mission',
+        notes: 'values',
+        tags: 'mission,values',
+        askedAt: '2025-03-01T10:00:00.000Z',
+      });
+    });
+
+    it('throws when question is missing', () => {
+      expect(() => normalizeIntakeDraftRequest({})).toThrow('question is required');
+    });
+
+    it('throws when timestamps are invalid', () => {
+      expect(() =>
+        normalizeIntakeDraftRequest({
+          question: 'Why this company?',
+          askedAt: 'invalid',
+        }),
+      ).toThrow('askedAt must be a valid ISO-8601 timestamp');
+    });
+
+    it('throws when unexpected keys are provided', () => {
+      expect(() =>
+        normalizeIntakeDraftRequest({ question: 'Why this company?', invalid: true }),
+      ).toThrow('unexpected intake draft keys: invalid');
     });
   });
 
