@@ -4077,7 +4077,7 @@ describe("web server command endpoint", () => {
     ]);
   });
 
-  it("redacts nested password fields in payload history entries", async () => {
+  it("redacts nested password objects in payload history entries", async () => {
     const PASSWORD_KEY = "password";
     const commandAdapter = {
       summarize: vi.fn(async () => ({
