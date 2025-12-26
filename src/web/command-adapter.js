@@ -1557,13 +1557,16 @@ export function createCommandAdapter(options = {}) {
 
   async function intakeRecordCommand(options = {}) {
     const cli = injectedCli;
-    const { question, answer, skipped, askedAt, tags, notes } =
+    const { question, answer, skipped, askedAt, tags, notes, skipReason } =
       normalizeIntakeRecordRequest(options);
 
     if (cli && typeof cli.cmdIntakeRecord === "function") {
       const args = ["--question", question];
       if (skipped) {
         args.push("--skip");
+        if (skipReason) {
+          args.push("--reason", skipReason);
+        }
       } else if (answer) {
         args.push("--answer", answer);
       }
@@ -1591,6 +1594,7 @@ export function createCommandAdapter(options = {}) {
     if (askedAt) payload.askedAt = askedAt;
     if (tags) payload.tags = tags;
     if (notes) payload.notes = notes;
+    if (skipReason) payload.skipReason = skipReason;
 
     const entry = await recordIntakeResponse(payload);
     const sanitized = sanitizeOutputValue(entry, { key: "data" });

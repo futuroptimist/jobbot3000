@@ -244,11 +244,13 @@ describe('web request schemas', () => {
       const options = normalizeIntakeRecordRequest({
         question: 'Compensation expectations?',
         skipped: true,
+        reason: 'Waiting for manager input',
       });
 
       expect(options).toEqual({
         question: 'Compensation expectations?',
         skipped: true,
+        skipReason: 'Waiting for manager input',
       });
     });
 
@@ -272,6 +274,16 @@ describe('web request schemas', () => {
           askedAt: 'not-a-date',
         }),
       ).toThrow('askedAt must be a valid ISO-8601 timestamp');
+    });
+
+    it('throws when reason is provided without skipping', () => {
+      expect(() =>
+        normalizeIntakeRecordRequest({
+          question: 'What is your stack?',
+          answer: 'Node and React',
+          reason: 'Waiting for new template',
+        }),
+      ).toThrow('reason requires skipped: true');
     });
 
     it('throws when options are not an object', () => {

@@ -1202,6 +1202,70 @@ describe('createCommandAdapter', () => {
     });
   });
 
+  it('records intake skip reasons without a CLI injection', async () => {
+    const recordSpy = vi.spyOn(intake, 'recordIntakeResponse').mockResolvedValue({
+      id: 'intake-010',
+      question: 'Revisit comp later',
+      status: 'skipped',
+      skip_reason: 'Waiting on recruiter guidance',
+    });
+
+    const adapter = createCommandAdapter();
+    const result = await adapter['intake-record']({
+      question: 'Revisit comp later',
+      skipped: true,
+      reason: 'Waiting on recruiter guidance',
+    });
+
+    expect(recordSpy).toHaveBeenCalledWith({
+      question: 'Revisit comp later',
+      skipped: true,
+      skipReason: 'Waiting on recruiter guidance',
+    });
+    expect(result.data).toMatchObject({
+      id: 'intake-010',
+      status: 'skipped',
+      skip_reason: 'Waiting on recruiter guidance',
+    });
+  });
+
+  it('records intake skip reasons through the CLI bridge', async () => {
+    const cli = {
+      cmdIntakeRecord: vi.fn(async args => {
+        expect(args).toEqual([
+          '--question',
+          'Need more context',
+          '--skip',
+          '--reason',
+          'Waiting on manager approval',
+        ]);
+        console.log(
+          JSON.stringify({
+            id: 'intake-004',
+            question: 'Need more context',
+            status: 'skipped',
+            skip_reason: 'Waiting on manager approval',
+          }),
+        );
+      }),
+    };
+
+    const adapter = createCommandAdapter({ cli });
+    const result = await adapter['intake-record']({
+      question: ' Need more context ',
+      skipped: true,
+      reason: ' Waiting on manager approval ',
+    });
+
+    expect(cli.cmdIntakeRecord).toHaveBeenCalledTimes(1);
+    expect(result.data).toMatchObject({
+      id: 'intake-004',
+      status: 'skipped',
+      skip_reason: 'Waiting on manager approval',
+    });
+    expect(result.stdout).toContain('Waiting on manager approval');
+  });
+
   it('resumes intake drafts and sanitizes control characters', async () => {
     const cli = {
       cmdIntakeResume: vi.fn(async args => {

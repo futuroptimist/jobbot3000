@@ -1840,6 +1840,9 @@ function formatIntakeList(entries) {
     if (status === 'skipped') {
       lines.push('  Status: Skipped');
       lines.push('  Answer: (skipped)');
+      if (entry.skip_reason) {
+        lines.push(`  Reason: ${entry.skip_reason}`);
+      }
     } else {
       lines.push(`  Answer: ${entry.answer}`);
     }
@@ -1973,15 +1976,31 @@ async function cmdIntakeRecord(args) {
   if (!question || (!skip && !answer)) {
     console.error(
       'Usage: jobbot intake record --question <text> [--answer <text>|--answer-file <path>] ' +
-        '[--skip] [--tags <tag1,tag2>] [--notes <text>|--notes-file <path>] [--asked-at <iso8601>]'
+        '[--skip] [--reason <text>] [--tags <tag1,tag2>] [--notes <text>|--notes-file <path>] ' +
+        '[--asked-at <iso8601>]'
     );
     process.exit(2);
   }
   const tags = parseTagsFlag(args);
   const notes = readContentFromArgs(args, '--notes', '--notes-file');
   const askedAt = getFlag(args, '--asked-at');
+  const reasonSpecified = args.includes('--reason');
+  const skipReason = getFlag(args, '--reason');
+  if (reasonSpecified && !skipReason) {
+    console.error(
+      'Usage: jobbot intake record --question <text> [--answer <text>|--answer-file <path>] ' +
+        '[--skip] [--reason <text>] [--tags <tag1,tag2>] [--notes <text>|--notes-file <path>] ' +
+        '[--asked-at <iso8601>]'
+    );
+    process.exit(2);
+  }
+  if (!skip && skipReason) {
+    console.error('--reason can only be used with --skip');
+    process.exit(2);
+  }
   const payload = { question, tags, notes, askedAt, skipped: skip };
   if (!skip) payload.answer = answer;
+  if (skipReason) payload.skipReason = skipReason;
   const entry = await recordIntakeResponse(payload);
   console.log(`Recorded intake response ${entry.id}`);
 }

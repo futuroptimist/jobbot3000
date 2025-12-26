@@ -116,6 +116,8 @@ async function readIntakeFile(file) {
             notes: typeof entry.notes === 'string' ? entry.notes : undefined,
             status,
           };
+          const skipReason = sanitizeString(entry.skip_reason ?? entry.reason);
+          if (skipReason) base.skip_reason = skipReason;
           return base;
         })
         .filter(entry => entry.question && (entry.status === 'skipped' || entry.answer));
@@ -214,6 +216,15 @@ export function recordIntakeResponse(data = {}) {
 
   const tags = normalizeTags(data.tags);
   const notes = sanitizeString(data.notes);
+  const skipReason = sanitizeString(
+    data.skipReason ?? data.skip_reason ?? data.reason,
+  );
+  if (skipReason && !skipped) {
+    return Promise.reject(
+      new Error('skipReason is only supported for skipped intake responses'),
+    );
+  }
+
   const recordedAt = new Date().toISOString();
   const effectiveAskedAt = askedAt || recordedAt;
   const entry = {
@@ -226,6 +237,7 @@ export function recordIntakeResponse(data = {}) {
   };
   if (tags) entry.tags = tags;
   if (notes) entry.notes = notes;
+  if (skipReason) entry.skip_reason = skipReason;
 
   const { profileDir, file } = getPaths();
 
@@ -346,6 +358,7 @@ function hasSensitiveKeyword(entry) {
   if (typeof entry.question === 'string') fields.push(entry.question);
   if (typeof entry.answer === 'string') fields.push(entry.answer);
   if (typeof entry.notes === 'string') fields.push(entry.notes);
+  if (typeof entry.skip_reason === 'string') fields.push(entry.skip_reason);
   for (const field of fields) {
     const value = field.toLowerCase();
     if (SENSITIVE_KEYWORDS.some(keyword => value.includes(keyword))) {
@@ -365,6 +378,9 @@ function redactEntry(entry) {
   }
   if (typeof clone.notes === 'string' && clone.notes) {
     clone.notes = REDACTED_PLACEHOLDER;
+  }
+  if (typeof clone.skip_reason === 'string' && clone.skip_reason) {
+    clone.skip_reason = REDACTED_PLACEHOLDER;
   }
   return clone;
 }

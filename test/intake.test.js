@@ -101,12 +101,14 @@ describe('intake responses', () => {
       notes: 'Revisit after comparing offers',
       tags: ['benefits'],
       askedAt: '2025-02-02T08:00:00Z',
+      skipReason: 'Waiting on manager feedback',
     });
 
     expect(entry.question).toBe('Which benefits matter most to you?');
     expect(entry.status).toBe('skipped');
     expect(entry.answer).toBe('');
     expect(entry.notes).toBe('Revisit after comparing offers');
+    expect(entry.skip_reason).toBe('Waiting on manager feedback');
     expect(entry.tags).toEqual(['benefits']);
 
     const responses = await getIntakeResponses();
@@ -117,7 +119,20 @@ describe('intake responses', () => {
       answer: '',
       notes: 'Revisit after comparing offers',
       asked_at: '2025-02-02T08:00:00.000Z',
+      skip_reason: 'Waiting on manager feedback',
     });
+  });
+
+  it('rejects skip reasons for answered prompts', async () => {
+    const { recordIntakeResponse } = await import('../src/intake.js');
+
+    await expect(
+      recordIntakeResponse({
+        question: 'Share a challenge',
+        answer: 'Handled outage calmly',
+        skipReason: 'Waiting on draft',
+      }),
+    ).rejects.toThrow('skipReason is only supported for skipped intake responses');
   });
 
   it('synthesizes bullet options from answered responses', async () => {
@@ -205,6 +220,13 @@ describe('intake responses', () => {
       tags: ['Leadership'],
     });
 
+    const skipped = await recordIntakeResponse({
+      question: 'Share salary expectations later',
+      skipped: true,
+      tags: ['compensation'],
+      skipReason: 'Need salary band guidance',
+    });
+
     const normal = await getIntakeResponses();
     const baseline = normal.find(entry => entry.id === compensation.id);
     expect(baseline).toMatchObject({
@@ -212,12 +234,20 @@ describe('intake responses', () => {
       notes: 'Open to equity-heavy packages',
     });
     expect(baseline.redacted).toBeUndefined();
+    const skippedBaseline = normal.find(entry => entry.id === skipped.id);
+    expect(skippedBaseline.skip_reason).toBe('Need salary band guidance');
+    expect(skippedBaseline.redacted).toBeUndefined();
 
     const redacted = await getIntakeResponses({ redact: true });
     const sensitive = redacted.find(entry => entry.id === compensation.id);
     expect(sensitive).toMatchObject({
       answer: '[redacted]',
       notes: '[redacted]',
+      redacted: true,
+    });
+    const skippedRedacted = redacted.find(entry => entry.id === skipped.id);
+    expect(skippedRedacted).toMatchObject({
+      skip_reason: '[redacted]',
       redacted: true,
     });
 
