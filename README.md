@@ -166,13 +166,13 @@ Drizzle ORM). Use the bundled scripts to back up or restore records:
 
 ```bash
 # Export every table as newline-delimited JSON
-node scripts/export-data.ts > backups/opportunities.ndjson
+node scripts/export-data.js > backups/opportunities.ndjson
 
 # Validate and import (dry-run)
-node scripts/import-data.ts --source backups/opportunities.ndjson --dry-run
+node scripts/import-data.js --source backups/opportunities.ndjson --dry-run
 
 # Apply the import
-node scripts/import-data.ts --source backups/opportunities.ndjson
+node scripts/import-data.js --source backups/opportunities.ndjson
 ```
 
 Both scripts respect `JOBBOT_DATA_DIR` so you can point to alternate data directories during tests or

@@ -486,7 +486,7 @@ call scheduled"`.
    after—and keeps the schedule idempotent when rerun or when the phone screen time shifts.
    [`test/cli.test.js`](../test/cli.test.js) locks down the happy path, duplicate guardrails, and the
    reschedule flow so reminders stay accurate.
-4. Export the durable record via `node scripts/export-data.ts > backups/opportunities.ndjson` to
+4. Export the durable record via `node scripts/export-data.js > backups/opportunities.ndjson` to
    sync across devices.
 
 ### Web flow
