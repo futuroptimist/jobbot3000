@@ -152,8 +152,6 @@ export function redactValue(value) {
       if (SENSITIVE_KEY_RE.test(key)) {
         if (entry === null || entry === undefined) {
           result[key] = entry;
-        } else if (typeof entry === 'object') {
-          result[key] = redactValue(entry);
         } else {
           result[key] = '***redacted***';
         }
