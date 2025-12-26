@@ -28,7 +28,6 @@ const dryRun = args.includes('--dry-run');
 if (!sourcePath) {
   printUsage();
   process.exitCode = 1;
-  process.exit(1);
 }
 
 const absoluteSource = path.resolve(sourcePath);
@@ -216,5 +215,11 @@ try {
       console.error('Failed to close AuditLog', err);
     }
   }
-  db.close();
+  try {
+    db.close();
+  } catch (err) {
+    if (process.env.JOBBOT_DEBUG) {
+      console.error('Failed to close database', err);
+    }
+  }
 }
