@@ -262,6 +262,11 @@ jobbot track add <job_id> --status applied --note "emailed hiring manager"
 
 - **Unit**: parsers, normalizers, scorers, renderers.
 - **Golden datasets**: small curated set of job posts ↔ expected matches and STAR outlines.
+- _Implemented (2025-12-26):_ The curated match dataset in
+  [`config/golden/match-dataset.json`](config/golden/match-dataset.json) now feeds
+  an automated regression check in [`test/golden-matches.test.js`](test/golden-matches.test.js),
+  validating that `matchResumeToJob` keeps returning the expected scores, hits, and gaps for the
+  documented scenarios.
 - **RAG eval** (for explanations): Ragas or custom assertion checks.
 - **Security**: OWASP LLM Top-10 style prompt-injection suite; rate-limit fuzzer.
 - **ATS checks**: text extract from produced PDF and verify keyword presence + structure.
