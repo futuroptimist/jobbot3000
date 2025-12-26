@@ -10,12 +10,13 @@ export const DEFAULT_GOLDEN_MATCH_DATASET = path.resolve(
   '../../config/golden/match-dataset.json',
 );
 
-function asArray(value) {
+function asArray(value, label) {
   if (Array.isArray(value)) {
-    return value
-      .filter(entry => typeof entry === 'string')
-      .map(entry => entry.trim())
-      .filter(Boolean);
+    const invalid = value.filter(entry => typeof entry !== 'string');
+    if (invalid.length > 0) {
+      throw new Error(`${label} entries must be strings`);
+    }
+    return value.map(entry => entry.trim()).filter(Boolean);
   }
   return [];
 }
@@ -35,14 +36,15 @@ function normalizeEntry(raw) {
   }
 
   const job = raw.job && typeof raw.job === 'object' ? { ...raw.job } : {};
-  const requirements = asArray(job.requirements);
+  // Preserve any additional job metadata while normalizing the required fields.
+  const requirements = asArray(job.requirements, `job requirements for "${id}"`);
   if (requirements.length === 0) {
     throw new Error(`golden match entry "${id}" is missing job requirements`);
   }
 
   const expected = raw.expected && typeof raw.expected === 'object' ? { ...raw.expected } : {};
-  const expectedMatched = asArray(expected.matched);
-  const expectedMissing = asArray(expected.missing);
+  const expectedMatched = asArray(expected.matched, `expected.matched for "${id}"`);
+  const expectedMissing = asArray(expected.missing, `expected.missing for "${id}"`);
 
   return {
     id,
@@ -58,9 +60,20 @@ function normalizeEntry(raw) {
 }
 
 export async function loadGoldenMatchDataset(datasetPath = DEFAULT_GOLDEN_MATCH_DATASET) {
+  // Note: `datasetPath` is expected to be a trusted, internal path.
+  // Do not pass user-controlled or unvalidated input to this function.
   const resolved = path.resolve(datasetPath);
   const raw = await fs.readFile(resolved, 'utf8');
-  const parsed = JSON.parse(raw);
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(
+      `Failed to parse golden match dataset from "${resolved}": ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
   if (!Array.isArray(parsed)) {
     throw new Error('golden match dataset must be an array');
   }
@@ -81,9 +94,11 @@ export function evaluateGoldenMatches(entries, options = {}) {
   }
 
   const toleranceRaw = options.scoreTolerance ?? 0;
-  const scoreTolerance = Number.isFinite(Number(toleranceRaw))
-    ? Math.max(0, Number(toleranceRaw))
-    : 0;
+  const tolerance = Number(toleranceRaw);
+  if (!Number.isFinite(tolerance) || tolerance < 0) {
+    throw new Error('scoreTolerance must be a non-negative number');
+  }
+  const scoreTolerance = Math.max(0, tolerance);
 
   const results = entries.map(entry => {
     const { expected } = entry;
@@ -95,9 +110,10 @@ export function evaluateGoldenMatches(entries, options = {}) {
     const failures = [];
     if (expected.score !== undefined) {
       const diff = Math.abs(Number(actual.score) - expected.score);
-      if (!Number.isFinite(diff) || diff > scoreTolerance) {
+      if (Number.isNaN(diff) || diff > scoreTolerance) {
         failures.push(
-          `score expected ${expected.score}, received ${actual.score}`,
+          `score expected ${expected.score}, received ${actual.score} ` +
+            `(diff: ${diff}, tolerance: ${scoreTolerance})`,
         );
       }
     }
@@ -118,12 +134,12 @@ export function evaluateGoldenMatches(entries, options = {}) {
     if (missingComparison.missing.length || missingComparison.unexpected.length) {
       if (missingComparison.missing.length) {
         failures.push(
-          `missing gaps: ${missingComparison.missing.join(', ')}`,
+          `missing expected missing requirements: ${missingComparison.missing.join(', ')}`,
         );
       }
       if (missingComparison.unexpected.length) {
         failures.push(
-          `unexpected gaps: ${missingComparison.unexpected.join(', ')}`,
+          `unexpected missing requirements: ${missingComparison.unexpected.join(', ')}`,
         );
       }
     }
