@@ -9,7 +9,7 @@ describe('backup and restore guide', () => {
     expect(contents).toContain('## Backup');
     expect(contents).toContain('JOBBOT_DATA_DIR');
     expect(contents).toContain('JOBBOT_AUDIT_LOG');
-    expect(contents).toMatch(/node scripts\/export-data\.ts/);
+    expect(contents).toMatch(/node scripts\/export-data\.js/);
     expect(contents).toMatch(/tar -czf .*jobbot-backup\.tgz/);
     expect(contents).toMatch(/Compress-Archive/);
   });
@@ -18,7 +18,7 @@ describe('backup and restore guide', () => {
     const contents = readFileSync(guidePath, 'utf8');
     expect(contents).toContain('## Restore');
     expect(contents).toMatch(/tar -xzf .*jobbot-backup\.tgz/);
-    expect(contents).toMatch(/node scripts\/import-data\.ts --source/);
+    expect(contents).toMatch(/node scripts\/import-data\.js --source/);
     expect(contents).toMatch(/--dry-run/);
   });
 
@@ -26,6 +26,6 @@ describe('backup and restore guide', () => {
     const contents = readFileSync(guidePath, 'utf8');
     expect(contents).toContain('## Verify');
     expect(contents).toMatch(/jobbot analytics health --json/);
-    expect(contents).toMatch(/node scripts\/export-data\.ts > \/tmp\/restore-check\.ndjson/);
+    expect(contents).toMatch(/node scripts\/export-data\.js > \/tmp\/restore-check\.ndjson/);
   });
 });

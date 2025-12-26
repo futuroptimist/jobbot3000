@@ -27,7 +27,7 @@ processes to avoid writes mid-archive.
 2. Export the SQLite contents as newline-delimited JSON so you can diff or replay
    entries later:
    ```bash
-   node scripts/export-data.ts > backups/opportunities.ndjson
+   node scripts/export-data.js > backups/opportunities.ndjson
    ```
 3. Archive the entire data directory, including attachments and deliverables:
    ```bash
@@ -67,11 +67,11 @@ processes to avoid writes mid-archive.
    ```
 4. Replay the structured export with a dry-run first:
    ```bash
-   node scripts/import-data.ts --source backups/opportunities.ndjson --dry-run
+   node scripts/import-data.js --source backups/opportunities.ndjson --dry-run
    ```
    When the validation succeeds, apply the import:
    ```bash
-   node scripts/import-data.ts --source backups/opportunities.ndjson
+   node scripts/import-data.js --source backups/opportunities.ndjson
    ```
 5. Restart any background schedulers or the web server after the restore completes.
 
@@ -85,7 +85,7 @@ Run a quick checklist before resuming normal operations:
   ```
 - Export a temporary snapshot to ensure SQLite reads succeed:
   ```bash
-  node scripts/export-data.ts > /tmp/restore-check.ndjson
+  node scripts/export-data.js > /tmp/restore-check.ndjson
   ```
 - Inspect the audit log tail for recent entries and permissions issues:
   ```bash
