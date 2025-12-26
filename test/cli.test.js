@@ -2285,6 +2285,31 @@ describe('jobbot CLI', () => {
     expect(output).toContain('Tags: support, blockers');
   });
 
+  it('records skip reasons for intake responses', () => {
+    const message = runCli([
+      'intake',
+      'record',
+      '--question',
+      'Share an example later',
+      '--skip',
+      '--reason',
+      ' Waiting on manager approval ',
+    ]);
+
+    expect(message.trim()).toMatch(/^Recorded intake response /);
+
+    const list = runCli(['intake', 'list', '--skipped-only']);
+    expect(list).toContain('Share an example later');
+    expect(list).toContain('Reason: Waiting on manager approval');
+
+    const payload = JSON.parse(runCli(['intake', 'list', '--json', '--skipped-only']));
+    expect(payload.responses[0]).toMatchObject({
+      question: 'Share an example later',
+      status: 'skipped',
+      skip_reason: 'Waiting on manager approval',
+    });
+  });
+
   it('redacts sensitive intake entries when requested', () => {
     runCli([
       'intake',

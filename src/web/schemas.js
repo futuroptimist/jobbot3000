@@ -485,6 +485,7 @@ export function normalizeIntakeRecordRequest(options = {}) {
     'asked_at',
     'tags',
     'notes',
+    'reason',
   ]);
   const extra = Object.keys(options).filter(key => !allowedKeys.has(key));
   if (extra.length > 0) {
@@ -521,6 +522,11 @@ export function normalizeIntakeRecordRequest(options = {}) {
   if (askedAt) request.askedAt = askedAt;
   if (tags) request.tags = tags;
   if (notes) request.notes = notes;
+  const reason = normalizeString(options.reason);
+  if (reason && !skipped) {
+    throw new Error('reason requires skipped: true');
+  }
+  if (reason) request.skipReason = reason;
   return request;
 }
 

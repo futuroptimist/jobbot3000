@@ -89,7 +89,9 @@ jobbot3000.
 2. Iterate through prompts using `jobbot intake record --question <id>`; the command accepts
    `--answer`, `--tags`, and `--confidence` so the assistant can track certainty.
 3. Use `jobbot intake record --skip <id> --reason <text>` when the candidate defers a question.
-   Skipped entries are automatically re-queued for later sessions.
+   Skip reasons persist in `jobbot intake list` output (including `--json` exports) so follow-up
+   runs know why a prompt was deferred. Redaction with `--redact` masks skip reasons containing
+   sensitive topics. Skipped entries are automatically re-queued for later sessions.
 4. Summarize collected insights with `jobbot intake bullets --tag strengths --json` and merge them
    into the profile via `jobbot profile merge intake` once the candidate confirms accuracy.
 5. Export the session transcript with `jobbot intake export --out data/profile/intake-<date>.json`
