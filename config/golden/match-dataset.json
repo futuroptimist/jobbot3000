@@ -1,0 +1,47 @@
+[
+  {
+    "id": "backend_full_coverage",
+    "resume": "Experienced backend engineer with Node.js, PostgreSQL, Kubernetes, and AWS. Built REST APIs and microservices at scale.",
+    "job": {
+      "title": "Backend Engineer",
+      "requirements": [
+        "Node.js experience building APIs",
+        "PostgreSQL proficiency",
+        "Familiarity with Kubernetes",
+        "Experience with AWS"
+      ]
+    },
+    "expected": {
+      "score": 100,
+      "matched": [
+        "Node.js experience building APIs",
+        "PostgreSQL proficiency",
+        "Familiarity with Kubernetes",
+        "Experience with AWS"
+      ],
+      "missing": []
+    }
+  },
+  {
+    "id": "frontend_missing_backend",
+    "resume": "Frontend engineer with React and TypeScript, built design systems and accessibility features. Strong GraphQL and testing expertise.",
+    "job": {
+      "title": "Frontend Engineer",
+      "requirements": [
+        "React proficiency",
+        "Experience with TypeScript",
+        "GraphQL API consumption",
+        "Node.js backend services"
+      ]
+    },
+    "expected": {
+      "score": 75,
+      "matched": [
+        "React proficiency",
+        "Experience with TypeScript",
+        "GraphQL API consumption"
+      ],
+      "missing": ["Node.js backend services"]
+    }
+  }
+]
