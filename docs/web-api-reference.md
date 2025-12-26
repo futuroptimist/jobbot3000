@@ -123,7 +123,11 @@ authorization token fingerprint, so even tokens that share the same subject keep
 payloads isolated.
 
 Regression coverage in [`test/web-documentation-storybook.test.js`](../test/web-documentation-storybook.test.js)
-asserts this endpoint remains documented alongside the command catalogue.
+asserts this endpoint remains documented alongside the command catalogue. Nested objects keyed like
+`password`, `token`, `secret`, or `apiKey` are collapsed to `"***redacted***"` inside both payloads
+and results so even structured secrets cannot leak through the history API; coverage in
+[`test/web-server.test.js`](../test/web-server.test.js) exercises the nested-password redaction
+path.
 
 ### GET /assets/status-hub.js
 

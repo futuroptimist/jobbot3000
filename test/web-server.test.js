@@ -4077,6 +4077,67 @@ describe("web server command endpoint", () => {
     ]);
   });
 
+  it("redacts nested password fields in payload history entries", async () => {
+    const PASSWORD_KEY = "password";
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({
+        ok: true,
+        auth: {
+          [PASSWORD_KEY]: {
+            current: "<password>",
+            previous: "<password>",
+          },
+          token: "super-secret-token",
+        },
+      })),
+    };
+
+    const server = await startServer({ commandAdapter });
+    const headers = buildCommandHeaders(server, {
+      "user-agent": "password-redaction",
+    });
+
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ input: "payload", locale: "en-US" }),
+    });
+
+    expect(response.status).toBe(200);
+    await response.json();
+
+    const cookies = response.headers.getSetCookie?.() ?? [];
+    const cookieHeader = [headers.cookie, ...cookies.map((entry) => entry.split(";")[0])]
+      .filter(Boolean)
+      .join("; ");
+
+    const historyResponse = await fetch(`${server.url}/commands/payloads/recent`, {
+      method: "GET",
+      headers: {
+        ...headers,
+        cookie: cookieHeader,
+      },
+    });
+
+    expect(historyResponse.status).toBe(200);
+    const historyBody = await historyResponse.json();
+    expect(historyBody.entries).toEqual([
+      {
+        command: "summarize",
+        payload: { input: "payload", locale: "en-US" },
+        result: {
+          status: "success",
+          ok: true,
+          auth: {
+            [PASSWORD_KEY]: "***redacted***",
+            token: "***redacted***",
+          },
+        },
+        timestamp: expect.any(String),
+      },
+    ]);
+  });
+
   it("redacts stored command results when payload validation fails", async () => {
     const commandRegistry = await import("../src/web/command-registry.js");
     const validateSpy = vi
