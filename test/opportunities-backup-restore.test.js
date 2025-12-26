@@ -39,7 +39,7 @@ describe('opportunities backup and restore scripts', () => {
       company: 'Future Works',
       roleHint: 'Platform Engineer',
       contactEmail: 'casey@futureworks.example',
-      lifecycleState: 'applied',
+      lifecycleState: 'recruiter_outreach',
       subject: 'Platform Engineer, Core Systems',
       source: 'recruiter_email',
       firstSeenAt: '2025-01-02T03:04:05.000Z',
@@ -47,7 +47,7 @@ describe('opportunities backup and restore scripts', () => {
 
     const event = repo.appendEvent({
       opportunityUid: opportunity.uid,
-      type: 'applied',
+      type: 'recruiter_outreach_received',
       occurredAt: '2025-01-03T04:05:06.000Z',
       payload: { note: 'Resume sent via recruiter portal' },
     });
@@ -105,7 +105,7 @@ describe('opportunities backup and restore scripts', () => {
       company: 'Future Works',
       roleHint: 'Platform Engineer',
       contactEmail: 'casey@futureworks.example',
-      lifecycleState: 'applied',
+      lifecycleState: 'recruiter_outreach',
       subject: 'Platform Engineer, Core Systems',
       source: 'recruiter_email',
       firstSeenAt: '2025-01-02T03:04:05.000Z',
@@ -116,7 +116,7 @@ describe('opportunities backup and restore scripts', () => {
     expect(restoredEvents).toHaveLength(1);
     expect(restoredEvents[0]).toMatchObject({
       opportunityUid: restoredOpportunity.uid,
-      type: 'applied',
+      type: 'recruiter_outreach_received',
       payload: { note: 'Resume sent via recruiter portal' },
       occurredAt: '2025-01-03T04:05:06.000Z',
     });
@@ -138,6 +138,11 @@ describe('opportunities backup and restore scripts', () => {
     dbRestored.close();
 
     expect(contacts).toEqual([
+      {
+        name: null,
+        email: 'casey@futureworks.example',
+        phone: null,
+      },
       {
         name: 'Pat Recruiter',
         email: 'pat.recruiter@example.com',

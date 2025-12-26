@@ -39,16 +39,16 @@ const lines = raw
 
 const contactSchema = z.object({
   opportunity_uid: z.string().min(1),
-  name: z.string().optional(),
-  email: z.string().optional(),
-  phone: z.string().optional(),
+  name: z.string().nullable().optional(),
+  email: z.string().nullable().optional(),
+  phone: z.string().nullable().optional(),
 });
 
 const attachmentSchema = z.object({
   opportunity_uid: z.string().min(1),
   name: z.string().min(1),
-  mime_type: z.string().optional(),
-  uri: z.string().optional(),
+  mime_type: z.string().nullable().optional(),
+  uri: z.string().nullable().optional(),
 });
 
 const dataDir = process.env.JOBBOT_DATA_DIR || path.resolve('data');
