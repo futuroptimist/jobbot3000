@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { runResumePipeline } from './pipeline/resume-pipeline.js';
 
 const JSON_RESUME_SCHEMA_URL =
   'https://raw.githubusercontent.com/jsonresume/resume-schema/v1.0.0/schema.json';
@@ -798,6 +799,29 @@ export async function exportProfileResume({ outPath } = {}) {
   }
 
   return { path: resumePath, exportedPath: undefined, resume };
+}
+
+export async function inspectResumeFile(filePath, options = {}) {
+  if (!filePath || typeof filePath !== 'string' || !filePath.trim()) {
+    throw new Error('resume path is required');
+  }
+
+  const resolvedPath = path.resolve(process.cwd(), filePath.trim());
+  const pipeline = await runResumePipeline(resolvedPath, options);
+
+  const result = {
+    path: resolvedPath,
+    text: pipeline.text,
+    metadata: pipeline.metadata ?? {},
+  };
+
+  if (options.withMetrics) {
+    result.analysis = pipeline.analysis ?? null;
+    result.enrichment = pipeline.enrichment ?? null;
+    result.score = pipeline.score ?? null;
+  }
+
+  return result;
 }
 
 export const PROFILE_SCHEMA_URL = JSON_RESUME_SCHEMA_URL;
