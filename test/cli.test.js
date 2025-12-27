@@ -3502,7 +3502,6 @@ describe('jobbot CLI', () => {
     expect(textReport).toMatch(/Lead\s+\|\s+0\s+\|\s+0\s+\|\s+0\s+\|\s+1/);
     expect(textReport).toMatch(/Mid\s+\|\s+0\s+\|\s+0\s+\|\s+1\s+\|\s+1/);
     expect(textReport).toMatch(/Senior\s+\|\s+1\s+\|\s+0\s+\|\s+1\s+\|\s+2/);
-    expect(textReport).toMatch(/Totals\s+\|\s+1\s+\|\s+1\s+\|\s+2\s+\|\s+4/);
     expect(textReport).toContain('Missing level metadata: job-hybrid-missing-level');
     expect(textReport).toContain('Missing location metadata: job-lead-missing-location');
 
@@ -3526,6 +3525,10 @@ describe('jobbot CLI', () => {
       total: 2,
     });
     expect(parsed.location_totals).toEqual({ Berlin: 1, Hybrid: 1, Remote: 2 });
+    const totalsLinePattern = new RegExp(
+      `Totals\\s+\\|\\s+1\\s+\\|\\s+1\\s+\\|\\s+2\\s+\\|\\s+${parsed.totals.with_location}`,
+    );
+    expect(textReport).toMatch(totalsLinePattern);
   });
 
   it('exports anonymized analytics snapshots to disk', () => {

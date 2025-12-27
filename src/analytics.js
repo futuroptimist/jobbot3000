@@ -1491,7 +1491,7 @@ export function formatRoleHeatmap(heatmap) {
     });
     widths[widths.length - 1] = Math.max(
       widths[widths.length - 1],
-      String(withLevel).length,
+      String(withLocation).length,
     );
 
     lines.push(columns.map((column, index) => padColumn(column, widths[index])).join(' | '));
@@ -1518,7 +1518,7 @@ export function formatRoleHeatmap(heatmap) {
       ...locations.map((location, index) =>
         padColumn(locationTotals?.[location] ?? 0, widths[index + 1]),
       ),
-      padColumn(withLevel, widths[widths.length - 1]),
+      padColumn(withLocation, widths[widths.length - 1]),
     ];
     lines.push(totalsRow.join(' | '));
   }
