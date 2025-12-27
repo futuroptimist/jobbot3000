@@ -3492,6 +3492,74 @@ describe('jobbot CLI', () => {
     });
   });
 
+  it('renders the role/location heatmap via analytics', () => {
+    const shortlistPath = path.join(dataDir, 'shortlist.json');
+    fs.mkdirSync(path.dirname(shortlistPath), { recursive: true });
+    fs.writeFileSync(
+      shortlistPath,
+      JSON.stringify(
+        {
+          jobs: {
+            'job-remote-senior': {
+              metadata: { level: 'Senior', location: 'Remote' },
+            },
+            'job-remote-mid': {
+              metadata: { level: 'Mid', location: 'Remote' },
+            },
+            'job-berlin-senior': {
+              metadata: { level: 'Senior', location: 'Berlin' },
+            },
+            'job-hybrid-missing-level': {
+              metadata: { location: 'Hybrid' },
+            },
+            'job-lead-missing-location': {
+              metadata: { level: 'Lead' },
+            },
+          },
+        },
+        null,
+        2,
+      ) + '\n',
+      'utf8',
+    );
+
+    const textReport = runCli(['analytics', 'heatmap']);
+    expect(textReport).toContain(
+      'Role/location heatmap (5 shortlisted; 4 with level; 4 with location; 3 with both)',
+    );
+    expect(textReport).toContain('Level/Location | Berlin | Hybrid | Remote | Total');
+    expect(textReport).toMatch(/Lead\s+\|\s+0\s+\|\s+0\s+\|\s+0\s+\|\s+1/);
+    expect(textReport).toMatch(/Mid\s+\|\s+0\s+\|\s+0\s+\|\s+1\s+\|\s+1/);
+    expect(textReport).toMatch(/Senior\s+\|\s+1\s+\|\s+0\s+\|\s+1\s+\|\s+2/);
+    expect(textReport).toContain('Missing level metadata: job-hybrid-missing-level');
+    expect(textReport).toContain('Missing location metadata: job-lead-missing-location');
+
+    const jsonReport = runCli(['analytics', 'heatmap', '--json']);
+    const parsed = JSON.parse(jsonReport);
+    expect(parsed.totals).toEqual({
+      shortlisted_jobs: 5,
+      with_level: 4,
+      with_location: 4,
+      with_both: 3,
+    });
+    expect(parsed.locations).toEqual(['Berlin', 'Hybrid', 'Remote']);
+    expect(parsed.levels).toEqual(['Lead', 'Mid', 'Senior']);
+    const matrix = Object.fromEntries(parsed.matrix.map(row => [row.level, row]));
+    expect(matrix.Lead).toMatchObject({
+      counts: { Berlin: 0, Hybrid: 0, Remote: 0 },
+      total: 1,
+    });
+    expect(matrix.Senior).toMatchObject({
+      counts: { Berlin: 1, Hybrid: 0, Remote: 1 },
+      total: 2,
+    });
+    expect(parsed.location_totals).toEqual({ Berlin: 1, Hybrid: 1, Remote: 2 });
+    const totalsLinePattern = new RegExp(
+      `Totals\\s+\\|\\s+1\\s+\\|\\s+1\\s+\\|\\s+2\\s+\\|\\s+${parsed.totals.with_location}`,
+    );
+    expect(textReport).toMatch(totalsLinePattern);
+  });
+
   it('exports anonymized analytics snapshots to disk', () => {
     runCli(['track', 'log', 'job-1', '--channel', 'email', '--date', '2025-03-01']);
     runCli(['track', 'add', 'job-1', '--status', 'screening']);

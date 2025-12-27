@@ -137,6 +137,25 @@ function uniqueSortedJobs(jobIds) {
   return [...set].sort((a, b) => a.localeCompare(b));
 }
 
+function normalizeHeatmapValue(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed;
+}
+
+function canonicalizeLabel(label, cache) {
+  const normalized = label.toLowerCase();
+  const existing = cache.get(normalized);
+  if (existing) return existing;
+  cache.set(normalized, label);
+  return label;
+}
+
+function sortCaseInsensitive(values) {
+  return values.slice().sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+}
+
 function findLatestEventDate(history) {
   if (!Array.isArray(history)) return undefined;
   let latest;
@@ -1042,6 +1061,115 @@ function summarizeCurrencyEntries(currency, entries) {
   return { currency, stats, jobs: sorted };
 }
 
+export async function computeRoleHeatmap() {
+  const { getShortlist, setShortlistDataDir, getShortlistDataDir } = await import(
+    './shortlist.js'
+  );
+
+  const analyticsOverride = overrideDir;
+  let previousShortlistOverride;
+  let snapshot;
+
+  if (analyticsOverride !== undefined) {
+    if (typeof getShortlistDataDir === 'function') {
+      previousShortlistOverride = getShortlistDataDir();
+    }
+    if (typeof setShortlistDataDir === 'function') {
+      setShortlistDataDir(analyticsOverride);
+    }
+    try {
+      snapshot = await getShortlist();
+    } finally {
+      if (typeof setShortlistDataDir === 'function') {
+        setShortlistDataDir(previousShortlistOverride);
+      }
+    }
+  } else {
+    snapshot = await getShortlist();
+  }
+
+  const jobs = snapshot && typeof snapshot === 'object' ? snapshot.jobs : undefined;
+  const entries = jobs && typeof jobs === 'object' ? Object.entries(jobs) : [];
+  const totals = {
+    shortlisted_jobs: entries.length,
+    with_level: 0,
+    with_location: 0,
+    with_both: 0,
+  };
+  const missing = { without_level: [], without_location: [] };
+  const levelLabels = new Map();
+  const locationLabels = new Map();
+  const levelTotals = new Map();
+  const locationTotals = new Map();
+  const rows = new Map();
+
+  for (const [jobId, record] of entries) {
+    const levelValue = normalizeHeatmapValue(record?.metadata?.level);
+    const locationValue = normalizeHeatmapValue(record?.metadata?.location);
+    const hasLevel = Boolean(levelValue);
+    const hasLocation = Boolean(locationValue);
+
+    if (hasLevel) totals.with_level += 1;
+    else missing.without_level.push(jobId);
+
+    if (hasLocation) totals.with_location += 1;
+    else missing.without_location.push(jobId);
+
+    if (!hasLevel && !hasLocation) continue;
+
+    const level = hasLevel ? canonicalizeLabel(levelValue, levelLabels) : null;
+    const location = hasLocation
+      ? canonicalizeLabel(locationValue, locationLabels)
+      : null;
+
+    if (level && !rows.has(level)) {
+      rows.set(level, new Map());
+    }
+    if (level) {
+      levelTotals.set(level, (levelTotals.get(level) ?? 0) + 1);
+    }
+    if (location) {
+      locationTotals.set(location, (locationTotals.get(location) ?? 0) + 1);
+    }
+    if (level && location) {
+      totals.with_both += 1;
+      const row = rows.get(level);
+      row.set(location, (row.get(location) ?? 0) + 1);
+    }
+  }
+
+  const sortedLevels = sortCaseInsensitive([...rows.keys()]);
+  const sortedLocations = sortCaseInsensitive([...locationLabels.values()]);
+  const matrix = sortedLevels.map(level => {
+    const rowCounts = rows.get(level) ?? new Map();
+    const counts = Object.fromEntries(
+      sortedLocations.map(location => [location, rowCounts.get(location) ?? 0]),
+    );
+    return {
+      level,
+      counts,
+      total: levelTotals.get(level) ?? 0,
+    };
+  });
+
+  const locationTotalsRecord = Object.fromEntries(
+    sortedLocations.map(location => [location, locationTotals.get(location) ?? 0]),
+  );
+
+  return {
+    generated_at: new Date().toISOString(),
+    totals,
+    levels: sortedLevels,
+    locations: sortedLocations,
+    matrix,
+    location_totals: locationTotalsRecord,
+    missing: {
+      without_level: missing.without_level.sort(),
+      without_location: missing.without_location.sort(),
+    },
+  };
+}
+
 export async function computeCompensationSummary() {
   const { getShortlist, setShortlistDataDir, getShortlistDataDir } = await import(
     './shortlist.js'
@@ -1310,6 +1438,102 @@ export function formatFunnelReport(funnel) {
       `Missing data: ${missing.count} ${noun} with outreach but no status recorded${suffix}`,
     );
   }
+  return lines.join('\n');
+}
+
+function padColumn(value, width) {
+  const str = String(value);
+  if (str.length >= width) return str;
+  return str + ' '.repeat(width - str.length);
+}
+
+export function formatRoleHeatmap(heatmap) {
+  const totals = heatmap?.totals ?? {};
+  const shortlisted = totals.shortlisted_jobs ?? 0;
+  const withLevel = totals.with_level ?? 0;
+  const withLocation = totals.with_location ?? 0;
+  const withBoth = totals.with_both ?? 0;
+  const summaryLine =
+    `Role/location heatmap (${shortlisted} shortlisted; ${withLevel} with level; ` +
+    `${withLocation} with location; ${withBoth} with both)`;
+
+  const levels = Array.isArray(heatmap?.levels) ? heatmap.levels : [];
+  const locations = Array.isArray(heatmap?.locations) ? heatmap.locations : [];
+  const matrix = Array.isArray(heatmap?.matrix) ? heatmap.matrix : [];
+  const locationTotals = heatmap?.location_totals ?? {};
+  const lines = [summaryLine];
+
+  if (levels.length === 0 || locations.length === 0 || matrix.length === 0) {
+    lines.push('No level or location metadata recorded in the shortlist.');
+  } else {
+    const columns = ['Level/Location', ...locations, 'Total'];
+    const widths = columns.map(col => col.length);
+
+    for (const row of matrix) {
+      const level = typeof row?.level === 'string' ? row.level : 'Unknown';
+      widths[0] = Math.max(widths[0], level.length);
+      const counts = row?.counts ?? {};
+      locations.forEach((location, index) => {
+        const value = counts[location] ?? 0;
+        widths[index + 1] = Math.max(widths[index + 1], String(value).length);
+      });
+      widths[widths.length - 1] = Math.max(
+        widths[widths.length - 1],
+        String(row?.total ?? 0).length,
+      );
+    }
+
+    locations.forEach((location, index) => {
+      widths[index + 1] = Math.max(
+        widths[index + 1],
+        String(locationTotals?.[location] ?? 0).length,
+      );
+    });
+    widths[widths.length - 1] = Math.max(
+      widths[widths.length - 1],
+      String(withLocation).length,
+    );
+
+    lines.push(columns.map((column, index) => padColumn(column, widths[index])).join(' | '));
+    lines.push(
+      widths
+        .map(width => padColumn('-'.repeat(Math.min(width, 40)), width))
+        .join('-+-'),
+    );
+
+    for (const row of matrix) {
+      const counts = row?.counts ?? {};
+      const cells = [
+        padColumn(row?.level ?? 'Unknown', widths[0]),
+        ...locations.map((location, index) =>
+          padColumn(counts[location] ?? 0, widths[index + 1]),
+        ),
+        padColumn(row?.total ?? 0, widths[widths.length - 1]),
+      ];
+      lines.push(cells.join(' | '));
+    }
+
+    const totalsRow = [
+      padColumn('Totals', widths[0]),
+      ...locations.map((location, index) =>
+        padColumn(locationTotals?.[location] ?? 0, widths[index + 1]),
+      ),
+      padColumn(withLocation, widths[widths.length - 1]),
+    ];
+    lines.push(totalsRow.join(' | '));
+  }
+
+  const missing = heatmap?.missing ?? {};
+  if (Array.isArray(missing.without_level) && missing.without_level.length > 0) {
+    lines.push(`Missing level metadata: ${missing.without_level.join(', ')}`);
+  }
+  if (
+    Array.isArray(missing.without_location) &&
+    missing.without_location.length > 0
+  ) {
+    lines.push(`Missing location metadata: ${missing.without_location.join(', ')}`);
+  }
+
   return lines.join('\n');
 }
 

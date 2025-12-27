@@ -566,6 +566,72 @@ describe('analytics conversion funnel', () => {
     ]);
   });
 
+  it('builds a role/location heatmap from shortlist metadata', async () => {
+    const { syncShortlistJob } = await import('../src/shortlist.js');
+
+    await syncShortlistJob('job-remote-senior', {
+      location: 'Remote',
+      level: 'Senior',
+    });
+    await syncShortlistJob('job-remote-mid', {
+      location: 'Remote',
+      level: 'Mid',
+    });
+    await syncShortlistJob('job-berlin-senior', {
+      location: 'Berlin',
+      level: 'Senior',
+    });
+    await syncShortlistJob('job-hybrid-missing-level', {
+      location: 'Hybrid',
+    });
+    await syncShortlistJob('job-lead-missing-location', {
+      level: 'Lead',
+    });
+
+    const { computeRoleHeatmap, setAnalyticsDataDir } = await import(
+      '../src/analytics.js'
+    );
+    setAnalyticsDataDir(dataDir);
+    restoreAnalyticsDir = async () => setAnalyticsDataDir(undefined);
+
+    const heatmap = await computeRoleHeatmap();
+
+    expect(heatmap.totals).toEqual({
+      shortlisted_jobs: 5,
+      with_level: 4,
+      with_location: 4,
+      with_both: 3,
+    });
+    expect(heatmap.levels).toEqual(['Lead', 'Mid', 'Senior']);
+    expect(heatmap.locations).toEqual(['Berlin', 'Hybrid', 'Remote']);
+    expect(heatmap.matrix).toEqual([
+      {
+        level: 'Lead',
+        total: 1,
+        counts: { Berlin: 0, Hybrid: 0, Remote: 0 },
+      },
+      {
+        level: 'Mid',
+        total: 1,
+        counts: { Berlin: 0, Hybrid: 0, Remote: 1 },
+      },
+      {
+        level: 'Senior',
+        total: 2,
+        counts: { Berlin: 1, Hybrid: 0, Remote: 1 },
+      },
+    ]);
+    expect(heatmap.location_totals).toEqual({
+      Berlin: 1,
+      Hybrid: 1,
+      Remote: 2,
+    });
+    expect(heatmap.missing).toEqual({
+      without_level: ['job-hybrid-missing-level'],
+      without_location: ['job-lead-missing-location'],
+    });
+  });
+
   it('highlights missing data, schema drift, and stale analytics snapshots', async () => {
     const fs = await import('node:fs/promises');
 

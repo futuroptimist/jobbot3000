@@ -189,6 +189,16 @@ jobbot analytics compensation
 jobbot analytics compensation --json
 ```
 
+### Role/location heatmap
+
+Surface which levels and locations dominate your shortlist so you can rebalance outreach. The report
+outputs a pivoted grid for quick scanning or JSON for downstream automation:
+
+```bash
+jobbot analytics heatmap
+jobbot analytics heatmap --json
+```
+
 ## UI screenshots
 
 ![Overview screen](docs/screenshots/overview.png "Overview screen")

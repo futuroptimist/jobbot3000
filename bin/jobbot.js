@@ -86,10 +86,12 @@ import {
   formatAnalyticsCsv,
   formatFunnelReport,
   computeCompensationSummary,
+  computeRoleHeatmap,
   computeAnalyticsHealth,
   formatAnalyticsHealthReport,
   computeOpportunitySankey,
   formatSankeyReport,
+  formatRoleHeatmap,
 } from '../src/analytics.js';
 import { ingestWorkableBoard } from '../src/workable.js';
 import { ingestJobUrl } from '../src/url-ingest.js';
@@ -3254,6 +3256,16 @@ async function cmdAnalyticsCompensation(args) {
   console.log(formatCompensationSummary(summary));
 }
 
+async function cmdAnalyticsHeatmap(args) {
+  const asJson = args.includes('--json');
+  const heatmap = await computeRoleHeatmap();
+  if (asJson) {
+    console.log(JSON.stringify(heatmap, null, 2));
+    return;
+  }
+  console.log(formatRoleHeatmap(heatmap));
+}
+
 async function cmdAnalyticsActivity(args) {
   const usage = 'Usage: jobbot analytics activity [--out <file>]';
   assertFlagHasValue(args, '--out', usage);
@@ -3316,11 +3328,12 @@ async function cmdAnalytics(args) {
   if (sub === 'funnel') return cmdAnalyticsFunnel(args.slice(1));
   if (sub === 'export') return cmdAnalyticsExport(args.slice(1));
   if (sub === 'compensation') return cmdAnalyticsCompensation(args.slice(1));
+  if (sub === 'heatmap') return cmdAnalyticsHeatmap(args.slice(1));
   if (sub === 'activity') return cmdAnalyticsActivity(args.slice(1));
   if (sub === 'sankey') return cmdAnalyticsSankey(args.slice(1));
   if (sub === 'health') return cmdAnalyticsHealth(args.slice(1));
   console.error(
-    'Usage: jobbot analytics <funnel|export|compensation|activity|sankey|health> [options]',
+    'Usage: jobbot analytics <funnel|export|compensation|heatmap|activity|sankey|health> [options]',
   );
   process.exit(2);
 }
