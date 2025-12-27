@@ -40,6 +40,12 @@
      the subprocess.
 3. **Transport security**
    - Require HTTPS with HSTS, modern TLS ciphers, and automatic certificate rotation.
+     _Implemented (2025-12-27):_ The Express adapter now emits a
+     `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`
+     header on HTTPS (or forwarded-HTTPS) requests so browsers pin the status
+     hub to TLS and avoid protocol downgrades. Regression coverage in
+     [`test/web-server.test.js`](../test/web-server.test.js) exercises secure
+     and insecure requests to keep the header scoped to encrypted traffic.
    - Add CSRF double-submit protections and SameSite=Strict cookies across the board.
      _Implemented (2025-10-20):_ The web server now issues a
      `jobbot_csrf_token` cookie alongside the existing header and requires
