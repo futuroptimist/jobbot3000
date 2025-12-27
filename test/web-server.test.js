@@ -2386,6 +2386,43 @@ describe("web server status page", () => {
     expect(message?.textContent).toContain("analytics-stages.csv");
   });
 
+  it("accepts csv analytics export requests", async () => {
+    const csv = "stage,label,count\napplied,Applied,3\n";
+    const commandAdapter = {
+      "analytics-export": vi.fn(async (payload) => {
+        expect(payload).toEqual({ redact: false, format: "csv" });
+        return {
+          command: "analytics-export",
+          format: "csv",
+          stdout: csv,
+          stderr: "",
+          returnValue: 0,
+          data: { csv },
+        };
+      }),
+    };
+    commandAdapter.analyticsExport = commandAdapter["analytics-export"];
+
+    const server = await startServer({ commandAdapter });
+
+    const response = await fetch(`${server.url}/commands/analytics-export`, {
+      method: "POST",
+      headers: {
+        ...buildCommandHeaders(server),
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ format: "csv", redact: false }),
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      command: "analytics-export",
+      format: "csv",
+      data: { csv },
+    });
+  });
+
   it("applies analytics filters via the dashboard form", async () => {
     const funnelPayloads = [];
     const commandAdapter = {

@@ -236,16 +236,48 @@ export function normalizeAnalyticsFunnelRequest(options) {
   return request;
 }
 
+const ANALYTICS_EXPORT_ALLOWED_KEYS = new Set([
+  'redact',
+  'redactCompanies',
+  'redact_companies',
+  'format',
+  'csv',
+]);
+
 export function normalizeAnalyticsExportRequest(options) {
   if (options == null) {
-    return { redact: true };
+    return { redact: true, format: 'json' };
   }
   assertPlainObject(options, 'analytics export options');
+  for (const key of Object.keys(options)) {
+    if (!ANALYTICS_EXPORT_ALLOWED_KEYS.has(key)) {
+      throw new Error(`Unexpected field "${key}" in analytics export options`);
+    }
+  }
+
   const redact = normalizeBoolean(
     options.redact ?? options.redactCompanies ?? options.redact_companies,
     { name: 'redact', defaultValue: true },
   );
-  return { redact };
+
+  const rawFormat =
+    typeof options.format === 'string' && options.format
+      ? options.format.trim().toLowerCase()
+      : null;
+  if (rawFormat && rawFormat !== 'json' && rawFormat !== 'csv') {
+    throw new Error('analytics export format must be one of: json, csv');
+  }
+
+  const csvFlag = normalizeBoolean(options.csv, { name: 'csv' });
+  let format = rawFormat;
+  if (!format && csvFlag !== undefined) {
+    format = csvFlag ? 'csv' : 'json';
+  }
+  if (!format) {
+    format = 'json';
+  }
+
+  return { redact, format };
 }
 
 /**

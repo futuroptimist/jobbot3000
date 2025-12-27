@@ -59,6 +59,8 @@ const ANALYTICS_EXPORT_ALLOWED_FIELDS = new Set([
   "redact",
   "redactCompanies",
   "redact_companies",
+  "format",
+  "csv",
 ]);
 const LISTINGS_ALLOWED_PROVIDERS = new Set([
   "all",
@@ -429,7 +431,12 @@ function validateAnalyticsExportPayload(rawPayload) {
     ANALYTICS_EXPORT_ALLOWED_FIELDS,
     "analytics-export",
   );
-  return normalizeAnalyticsExportRequest(payload);
+  const { redact, format } = normalizeAnalyticsExportRequest(payload);
+  const normalized = { redact };
+  if (format) {
+    normalized.format = format;
+  }
+  return normalized;
 }
 
 function coerceListingsProvider(
