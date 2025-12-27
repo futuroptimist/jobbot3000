@@ -74,14 +74,15 @@ variables still take precedence when the provider returns the same key.
 
 Feature flags are parsed via the manifest and exposed to the web server:
 
-| Flag                                          | Env var                                 | Description                                                                            |
-| --------------------------------------------- | --------------------------------------- | -------------------------------------------------------------------------------------- |
-| `features.scraping.useMocks`                  | `JOBBOT_FEATURE_SCRAPING_MOCKS`         | Swap real ATS adapters with test doubles                                               |
-| `features.notifications.enableWeeklySummary`  | `JOBBOT_FEATURE_NOTIFICATIONS_WEEKLY`   | Toggle weekly digest generation; disabled state blocks CLI and scheduled weekly emails |
-| `features.httpClient.maxRetries`              | `JOBBOT_HTTP_MAX_RETRIES`               | Override global HTTP retry attempts                                                    |
-| `features.httpClient.backoffMs`               | `JOBBOT_HTTP_BACKOFF_MS`                | Override base backoff delay                                                            |
-| `features.httpClient.circuitBreakerThreshold` | `JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD` | Trip the circuit after _n_ consecutive failures                                        |
-| `features.httpClient.circuitBreakerResetMs`   | `JOBBOT_HTTP_CIRCUIT_BREAKER_RESET_MS`  | Reset window after failures                                                            |
+| Flag                                           | Env var                                  | Description                                                                            |
+| ---------------------------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------- |
+| `features.scraping.useMocks`                   | `JOBBOT_FEATURE_SCRAPING_MOCKS`          | Swap real ATS adapters with test doubles                                               |
+| `features.notifications.enableWeeklySummary`   | `JOBBOT_FEATURE_NOTIFICATIONS_WEEKLY`    | Toggle weekly digest generation; disabled state blocks CLI and scheduled weekly emails |
+| `features.notifications.includeReminderDigest` | `JOBBOT_FEATURE_NOTIFICATIONS_REMINDERS` | Include reminder summaries and ICS attachments in weekly digests                       |
+| `features.httpClient.maxRetries`               | `JOBBOT_HTTP_MAX_RETRIES`                | Override global HTTP retry attempts                                                    |
+| `features.httpClient.backoffMs`                | `JOBBOT_HTTP_BACKOFF_MS`                 | Override base backoff delay                                                            |
+| `features.httpClient.circuitBreakerThreshold`  | `JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD`  | Trip the circuit after _n_ consecutive failures                                        |
+| `features.httpClient.circuitBreakerResetMs`    | `JOBBOT_HTTP_CIRCUIT_BREAKER_RESET_MS`   | Reset window after failures                                                            |
 
 `createHttpClient` and the ATS scraping adapters now consume these values by default, so manifest
 overrides automatically adjust retry counts, base backoff delays, and circuit breaker windows for
@@ -163,6 +164,7 @@ JOBBOT_WEB_ENV=staging
 JOBBOT_WEB_HOST=0.0.0.0
 JOBBOT_WEB_PORT=4000
 JOBBOT_FEATURE_NOTIFICATIONS_WEEKLY=true
+JOBBOT_FEATURE_NOTIFICATIONS_REMINDERS=true
 JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD=5
 JOBBOT_AUDIT_LOG=/var/log/jobbot/audit.log
 ```
@@ -174,6 +176,7 @@ JOBBOT_WEB_ENV=production
 JOBBOT_WEB_HOST=0.0.0.0
 JOBBOT_WEB_PORT=8080
 JOBBOT_FEATURE_NOTIFICATIONS_WEEKLY=true
+JOBBOT_FEATURE_NOTIFICATIONS_REMINDERS=true
 JOBBOT_FEATURE_SCRAPING_MOCKS=false
 JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD=5
 JOBBOT_HTTP_CIRCUIT_BREAKER_RESET_MS=60000

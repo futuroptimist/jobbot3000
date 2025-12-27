@@ -38,6 +38,7 @@ describe('notifications', () => {
     }
     delete process.env.JOBBOT_DATA_DIR;
     delete process.env.JOBBOT_FEATURE_NOTIFICATIONS_WEEKLY;
+    delete process.env.JOBBOT_FEATURE_NOTIFICATIONS_REMINDERS;
   });
 
   it('subscribes to weekly summaries and updates existing entries', async () => {
@@ -139,6 +140,74 @@ describe('notifications', () => {
     expect(payload).toContain('Funnel snapshot');
     expect(payload).toMatch(/Outreach: 4/);
     expect(payload).toContain('Health check');
+  });
+
+  it('spools reminder digests with calendar attachments when enabled', async () => {
+    const fs = await import('node:fs/promises');
+
+    await writeJson(path.join(dataDir, 'applications.json'), {
+      'job-1': 'applied',
+      'job-2': 'interview',
+    });
+
+    await writeJson(path.join(dataDir, 'application_events.json'), {
+      'job-1': [
+        { channel: 'email', date: '2025-02-01T10:00:00.000Z', remind_at: '2025-02-09T08:30:00Z' },
+      ],
+      'job-2': [
+        {
+          channel: 'referral',
+          date: '2025-02-02T12:00:00.000Z',
+          remind_at: '2025-02-06T09:00:00Z',
+          note: 'Waiting on hiring manager',
+        },
+      ],
+    });
+
+    process.env.JOBBOT_FEATURE_NOTIFICATIONS_REMINDERS = 'true';
+
+    const {
+      subscribeWeeklySummary,
+      runWeeklySummaryNotifications,
+      setNotificationsDataDir,
+    } = await import('../src/notifications.js');
+    const { setAnalyticsDataDir } = await import('../src/analytics.js');
+
+    setAnalyticsDataDir(dataDir);
+    setNotificationsDataDir(dataDir);
+    restoreAnalyticsDir = async () => setAnalyticsDataDir(undefined);
+    restoreNotificationsDir = async () => setNotificationsDataDir(undefined);
+
+    await subscribeWeeklySummary('ada@example.com', { lookbackDays: 14 });
+
+    const result = await runWeeklySummaryNotifications({ now: '2025-02-08T12:00:00.000Z' });
+    expect(result.results[0]).toEqual(
+      expect.objectContaining({
+        remindersFile: expect.stringContaining(path.join('notifications', 'outbox')),
+      }),
+    );
+
+    const outboxDir = path.join(dataDir, 'notifications', 'outbox');
+    const outboxFiles = await fs.readdir(outboxDir);
+    expect(outboxFiles.some(file => file.endsWith('.ics'))).toBe(true);
+    const emailFile = outboxFiles.find(file => file.endsWith('.eml'));
+    expect(emailFile).toBeDefined();
+
+    const emailPath = path.join(outboxDir, emailFile);
+    const payload = await fs.readFile(emailPath, 'utf8');
+    expect(payload).toContain('Reminders');
+    expect(payload).toMatch(/job-1/i);
+    expect(payload).toMatch(/job-2/i);
+    expect(payload).toMatch(/past due/i);
+    expect(payload).toContain('Reminder calendar');
+
+    const calendarFile = outboxFiles.find(file => file.endsWith('.ics'));
+    const calendar = await fs.readFile(path.join(outboxDir, calendarFile), 'utf8');
+    expect(calendar).toContain('BEGIN:VEVENT');
+    expect(calendar).toContain('SUMMARY:job-1');
+    expect(calendar).toContain('SUMMARY:job-2');
+    const collapsedCalendar = calendar.replace(/\s+/g, '');
+    expect(collapsedCalendar).toContain('Waitingonhiringmanager');
   });
 
   it('skips weekly summary delivery when JOBBOT_FEATURE_NOTIFICATIONS_WEEKLY=false', async () => {

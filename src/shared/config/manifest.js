@@ -152,6 +152,7 @@ const ConfigSchema = z.object({
     }),
     notifications: z.object({
       enableWeeklySummary: z.boolean().default(true),
+      includeReminderDigest: z.boolean().default(true),
     }),
     httpClient: z.object({
       maxRetries: z.number().int().min(0).max(5).default(2),
@@ -295,6 +296,11 @@ export function loadConfig(options = {}) {
         booleanFromEnv(
           options.features?.notifications?.enableWeeklySummary ??
             env.JOBBOT_FEATURE_NOTIFICATIONS_WEEKLY,
+        ) ?? true,
+      includeReminderDigest:
+        booleanFromEnv(
+          options.features?.notifications?.includeReminderDigest ??
+            env.JOBBOT_FEATURE_NOTIFICATIONS_REMINDERS,
         ) ?? true,
     },
     httpClient: {

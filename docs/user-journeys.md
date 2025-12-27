@@ -550,8 +550,11 @@ flowchart TD
    [`src/pipeline/resume-pipeline.js`](../src/pipeline/resume-pipeline.js).
 3. Scoring updates shortlist metadata, tags blockers, and records structured audit entries for admins
    while emitting downstream tracker updates for lifecycle history.
-4. Tracker updates power reminder jobs that the notifications worker consumes. The worker composes
-   weekly digests, CLI reminders, and audit-safe exports depending on feature flags.
+4. Tracker updates power reminder jobs that the notifications worker consumes. The worker now adds
+   upcoming and past-due reminders to weekly digests—plus an attached `.ics` calendar—whenever
+   `features.notifications.includeReminderDigest` (or `JOBBOT_FEATURE_NOTIFICATIONS_REMINDERS`) is
+   enabled. Regression coverage in [`test/notifications.test.js`](../test/notifications.test.js)
+   locks the reminder summary and calendar attachment so the digest matches the documented flow.
 
 ---
 

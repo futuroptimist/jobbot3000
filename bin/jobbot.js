@@ -3829,7 +3829,10 @@ async function cmdNotificationsRun(args) {
     const noun = result.sent === 1 ? 'email' : 'emails';
     console.log(`Sent ${result.sent} weekly summary ${noun}.`);
     for (const entry of result.results) {
-      console.log(`- ${entry.email} → ${entry.file}`);
+      const reminderAttachment = entry.remindersFile
+        ? ` (reminders: ${entry.remindersFile})`
+        : '';
+      console.log(`- ${entry.email} → ${entry.file}${reminderAttachment}`);
     }
   } catch (err) {
     console.error(err?.message || String(err));
@@ -3871,6 +3874,7 @@ async function cmdNotificationsSend(args) {
             email: trimmedEmail,
             file: delivery.filePath,
             subject: delivery.subject,
+            remindersFile: delivery.remindersFile,
           },
           null,
           2,
@@ -3878,8 +3882,11 @@ async function cmdNotificationsSend(args) {
       );
       return;
     }
+    const reminderAttachment = delivery.remindersFile
+      ? ` (reminders: ${delivery.remindersFile})`
+      : '';
     console.log(`Sent weekly summary to ${trimmedEmail}`);
-    console.log(`Stored message at ${delivery.filePath}`);
+    console.log(`Stored message at ${delivery.filePath}${reminderAttachment}`);
   } catch (err) {
     console.error(err?.message || String(err));
     process.exit(1);

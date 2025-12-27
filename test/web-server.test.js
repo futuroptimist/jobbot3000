@@ -631,7 +631,7 @@ describe("web server status page", () => {
     const server = await startServer({
       features: {
         scraping: { useMocks: true },
-        notifications: { enableWeeklySummary: false },
+        notifications: { enableWeeklySummary: false, includeReminderDigest: true },
         httpClient: {
           maxRetries: 5,
           backoffMs: 750,
@@ -659,6 +659,7 @@ describe("web server status page", () => {
     const featureText = featureList?.textContent?.replace(/\s+/g, " ")?.trim();
     expect(featureText).toContain("scraping.useMocks Enabled");
     expect(featureText).toContain("notifications.enableWeeklySummary Disabled");
+    expect(featureText).toContain("notifications.includeReminderDigest Enabled");
     expect(featureText).toContain("httpClient.maxRetries 5");
     expect(featureText).toContain("httpClient.backoffMs 750ms");
     expect(featureText).toContain("plugins.entries 1 plugin declared");
@@ -683,7 +684,7 @@ describe("web server status page", () => {
       missingSecrets: ["JOBBOT_GREENHOUSE_TOKEN", "JOBBOT_LEVER_API_TOKEN"],
       features: {
         scraping: { useMocks: true },
-        notifications: { enableWeeklySummary: false },
+        notifications: { enableWeeklySummary: false, includeReminderDigest: true },
         httpClient: {
           maxRetries: 5,
           backoffMs: 750,
