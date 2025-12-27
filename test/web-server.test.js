@@ -156,6 +156,9 @@ const EXPECTED_PERMISSIONS_POLICY = [
 
 const EXPECTED_REFERRER_POLICY = "strict-origin-when-cross-origin";
 
+const EXPECTED_STRICT_TRANSPORT_SECURITY =
+  "max-age=63072000; includeSubDomains; preload";
+
 afterEach(async () => {
   for (const socket of activeSockets.splice(0)) {
     if (socket.readyState === WebSocket.CLOSED) {
@@ -708,6 +711,21 @@ describe("web server status page", () => {
     );
     expect(response.headers.get("referrer-policy")).toBe(
       EXPECTED_REFERRER_POLICY,
+    );
+  });
+
+  it("sends HSTS headers for secure requests only", async () => {
+    const server = await startServer();
+
+    const insecureResponse = await fetch(`${server.url}/`);
+    expect(insecureResponse.headers.has("strict-transport-security")).toBe(false);
+
+    const secureResponse = await fetch(`${server.url}/`, {
+      headers: { "x-forwarded-proto": "https" },
+    });
+
+    expect(secureResponse.headers.get("strict-transport-security")).toBe(
+      EXPECTED_STRICT_TRANSPORT_SECURITY,
     );
   });
 

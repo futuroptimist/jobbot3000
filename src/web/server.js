@@ -802,6 +802,8 @@ const PERMISSIONS_POLICY = [
 ].join(', ');
 
 const REFERRER_POLICY = 'strict-origin-when-cross-origin';
+const STRICT_TRANSPORT_SECURITY =
+  'max-age=63072000; includeSubDomains; preload';
 
 const SECURITY_HEADERS = Object.freeze({
   'Content-Security-Policy': CONTENT_SECURITY_POLICY,
@@ -6537,6 +6539,9 @@ export function createWebApp({
   app.use((req, res, next) => {
     for (const [header, value] of Object.entries(SECURITY_HEADERS)) {
       res.set(header, value);
+    }
+    if (isSecureRequest(req)) {
+      res.set("Strict-Transport-Security", STRICT_TRANSPORT_SECURITY);
     }
     next();
   });
