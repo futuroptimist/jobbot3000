@@ -22,8 +22,10 @@ jobbot3000.
    - `jobbot profile export --out data/exports/resume.json` to produce a shareable JSON Resume copy
      (or pass `--json` to stream it) without mutating the workspace profile.
 3. Invoke `jobbot profile inspect --with-metrics` to extract clean text, metadata, and parsing
-   confidence so the candidate can review detected format, word counts, and missing sections before
-   normalization.
+   confidence so the candidate can review detected format, word counts, and missing sections
+   before normalization. Regression coverage in [`test/cli.test.js`](../test/cli.test.js) inspects
+   both a fixture resume path and the default profile `resume.json`, asserting that the CLI returns
+   sanitized metadata, confidence scores, and enrichment metrics in JSON output.
 4. Confirm or edit the parsed sections via `jobbot profile edit <section>` or re-run `jobbot import`
    with `--merge-strategy replace|merge` to control overwrites.
 5. Persist the normalized profile to `data/profile/` and version subsequent edits with

@@ -65,6 +65,7 @@ import {
   importJsonResume,
   exportProfileResume,
   snapshotProfile,
+  inspectResumeFile,
 } from '../src/profile.js';
 import {
   recordIntakeResponse,
@@ -217,6 +218,11 @@ async function readSource(input) {
     return fs.readFileSync(0, 'utf-8');
   }
   return fs.readFileSync(path.resolve(process.cwd(), input), 'utf-8');
+}
+
+function resolveProfileResumePath() {
+  const dataDir = process.env.JOBBOT_DATA_DIR || path.resolve('data');
+  return path.join(dataDir, 'profile', 'resume.json');
 }
 
 function getFlag(args, name, fallback) {
@@ -4710,6 +4716,46 @@ async function cmdProfileExport(args) {
   }
 }
 
+async function cmdProfileInspect(args) {
+  const wantsJson = args.includes('--json');
+  const withMetrics = args.includes('--with-metrics');
+  const targetArg = args.find(arg => !arg.startsWith('--'));
+  const targetPath = targetArg || resolveProfileResumePath();
+
+  try {
+    const result = await inspectResumeFile(targetPath, { withMetrics });
+    if (wantsJson) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    const { metadata = {}, analysis } = result;
+    const lines = [
+      `Path: ${result.path}`,
+      `Format: ${metadata.format || 'unknown'}`,
+      `Bytes: ${metadata.bytes ?? 'unknown'}`,
+      `Lines: ${metadata.lineCount ?? 'unknown'}`,
+      `Words: ${metadata.wordCount ?? 'unknown'}`,
+    ];
+
+    if (metadata.confidence?.score !== undefined) {
+      lines.push(`Confidence: ${metadata.confidence.score}`);
+    }
+
+    if (withMetrics && analysis) {
+      lines.push(
+        `Warnings: ${analysis.warningCount ?? 0}`,
+        `Ambiguities: ${analysis.ambiguityCount ?? 0}`,
+      );
+    }
+
+    console.log(lines.join('\n'));
+  } catch (err) {
+    console.error(err?.message || String(err));
+    process.exit(1);
+  }
+}
+
 async function cmdProfile(args) {
   const sub = args[0];
   if (sub === 'init') return cmdProfileInit(args.slice(1));
@@ -4721,12 +4767,14 @@ async function cmdProfile(args) {
   if (sub === 'import' && args[1] === 'json') {
     return cmdImportJson(args.slice(2));
   }
+  if (sub === 'inspect') return cmdProfileInspect(args.slice(1));
   console.error(
     'Usage: jobbot profile init [--force]\n' +
       '   or: jobbot profile import linkedin <file>\n' +
       '   or: jobbot profile import json <file>\n' +
       '   or: jobbot profile export [--out <path>] [--json]\n' +
-      '   or: jobbot profile snapshot [--note <message>] [--json]'
+      '   or: jobbot profile snapshot [--note <message>] [--json]\n' +
+      '   or: jobbot profile inspect [<file>] [--with-metrics] [--json]'
   );
   process.exit(2);
 }

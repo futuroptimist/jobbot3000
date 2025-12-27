@@ -121,6 +121,35 @@ describe('jobbot CLI', () => {
     expect(resume.meta?.generator).toBe('jobbot3000');
   });
 
+  it('inspects a resume file with metrics and JSON output', () => {
+    const fixture = path.resolve('test', 'fixtures', 'resume-pipeline.md');
+    const output = runCli([
+      'profile',
+      'inspect',
+      fixture,
+      '--with-metrics',
+      '--json',
+    ]);
+    const report = JSON.parse(output);
+
+    expect(report.path).toBe(fixture);
+    expect(report.metadata).toMatchObject({ format: 'markdown' });
+    expect(report.metadata.wordCount).toBeGreaterThan(0);
+    expect(report.analysis?.confidence?.score).toBeGreaterThan(0);
+    expect(report.score?.totalSections).toBeGreaterThan(0);
+  });
+
+  it('inspects the default profile resume when no path is provided', () => {
+    runCli(['profile', 'init']);
+    const defaultPath = path.join(dataDir, 'profile', 'resume.json');
+    const output = runCli(['profile', 'inspect', '--json']);
+    const report = JSON.parse(output);
+
+    expect(report.path).toBe(defaultPath);
+    expect(report.metadata?.format).toBe('text');
+    expect(report.metadata?.wordCount).toBeGreaterThanOrEqual(0);
+  });
+
   it('errors when profile snapshot runs without an existing resume', () => {
     expect(() => runCli(['profile', 'snapshot'])).toThrow(/profile resume/i);
   });
