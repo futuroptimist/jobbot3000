@@ -431,7 +431,9 @@ function validateAnalyticsExportPayload(rawPayload) {
     ANALYTICS_EXPORT_ALLOWED_FIELDS,
     "analytics-export",
   );
-  const { redact, format } = normalizeAnalyticsExportRequest(payload);
+  const { redact, format } = normalizeAnalyticsExportRequest(payload, {
+    defaultFormat: false,
+  });
   const normalized = { redact };
   if (format) {
     normalized.format = format;

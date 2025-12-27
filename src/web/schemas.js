@@ -71,7 +71,11 @@ function assertRequiredString(value, name) {
   return normalized;
 }
 
-function normalizeBoolean(value, { name, defaultValue = false } = {}) {
+function normalizeBoolean(value, options = {}) {
+  const { name } = options;
+  const defaultValue = Object.prototype.hasOwnProperty.call(options, 'defaultValue')
+    ? options.defaultValue
+    : false;
   if (value == null || value === '') {
     return defaultValue;
   }
@@ -244,9 +248,20 @@ const ANALYTICS_EXPORT_ALLOWED_KEYS = new Set([
   'csv',
 ]);
 
-export function normalizeAnalyticsExportRequest(options) {
+const ANALYTICS_EXPORT_CONFLICT_MESSAGE =
+  'analytics export format and csv flags must not conflict ' +
+  '(csv: true -> format: csv; csv: false -> format: json)';
+
+export function normalizeAnalyticsExportRequest(
+  options,
+  { defaultFormat = true } = {},
+) {
   if (options == null) {
-    return { redact: true, format: 'json' };
+    const normalized = { redact: true };
+    if (defaultFormat) {
+      normalized.format = 'json';
+    }
+    return normalized;
   }
   assertPlainObject(options, 'analytics export options');
   for (const key of Object.keys(options)) {
@@ -268,16 +283,31 @@ export function normalizeAnalyticsExportRequest(options) {
     throw new Error('analytics export format must be one of: json, csv');
   }
 
-  const csvFlag = normalizeBoolean(options.csv, { name: 'csv' });
+  const csvFlag = normalizeBoolean(options.csv, {
+    name: 'csv',
+    defaultValue: undefined,
+  });
   let format = rawFormat;
+
+  if (rawFormat && csvFlag !== undefined) {
+    const csvFormat = csvFlag ? 'csv' : 'json';
+    if (csvFormat !== rawFormat) {
+      throw new Error(ANALYTICS_EXPORT_CONFLICT_MESSAGE);
+    }
+  }
+
   if (!format && csvFlag !== undefined) {
     format = csvFlag ? 'csv' : 'json';
   }
-  if (!format) {
+  if (!format && defaultFormat) {
     format = 'json';
   }
 
-  return { redact, format };
+  const normalized = { redact };
+  if (format) {
+    normalized.format = format;
+  }
+  return normalized;
 }
 
 /**

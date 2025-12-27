@@ -973,8 +973,7 @@ export function createCommandAdapter(options = {}) {
     if (redact) {
       args.push("--redact");
     }
-    const normalizedFormat = format === "csv" ? "csv" : "json";
-    if (normalizedFormat === "csv") {
+    if (format === "csv") {
       args.push("--csv");
     }
 
@@ -983,7 +982,7 @@ export function createCommandAdapter(options = {}) {
 
     const payload = {
       command: "analytics-export",
-      format: normalizedFormat,
+      format,
       stdout,
       stderr,
       returnValue,
@@ -996,7 +995,7 @@ export function createCommandAdapter(options = {}) {
       payload.traceId = traceId;
     }
 
-    if (normalizedFormat === "csv") {
+    if (format === "csv") {
       const csv = sanitizeOutputString(stdout);
       payload.data = sanitizeOutputValue({ csv }, { key: "data" });
       return payload;

@@ -741,6 +741,26 @@ describe('createCommandAdapter', () => {
     expect(result.data).toMatchObject({ csv: csvOutput });
   });
 
+  it('treats csv flag as a csv analytics export request', async () => {
+    const csvOutput = 'stage,label,count\napplied,Applied,3\n';
+    const cli = {
+      cmdAnalyticsExport: vi.fn(async args => {
+        expect(args).toEqual(['--csv']);
+        console.log(csvOutput);
+      }),
+    };
+
+    const adapter = createCommandAdapter({ cli });
+    const result = await adapter['analytics-export']({ csv: true, redact: false });
+
+    expect(cli.cmdAnalyticsExport).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      command: 'analytics-export',
+      format: 'csv',
+    });
+    expect(result.data).toMatchObject({ csv: csvOutput });
+  });
+
   it('records application status updates via track-record command', async () => {
     const cli = {
       cmdTrackAdd: vi.fn(async args => {
