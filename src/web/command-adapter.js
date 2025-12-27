@@ -968,10 +968,13 @@ export function createCommandAdapter(options = {}) {
   }
 
   async function analyticsExport(options = {}) {
-    const { redact } = normalizeAnalyticsExportRequest(options);
+    const { redact, format } = normalizeAnalyticsExportRequest(options);
     const args = [];
     if (redact) {
       args.push("--redact");
+    }
+    if (format === "csv") {
+      args.push("--csv");
     }
 
     const { stdout, stderr, returnValue, correlationId, traceId } =
@@ -979,7 +982,7 @@ export function createCommandAdapter(options = {}) {
 
     const payload = {
       command: "analytics-export",
-      format: "json",
+      format,
       stdout,
       stderr,
       returnValue,
@@ -990,6 +993,12 @@ export function createCommandAdapter(options = {}) {
     }
     if (traceId) {
       payload.traceId = traceId;
+    }
+
+    if (format === "csv") {
+      const csv = sanitizeOutputString(stdout);
+      payload.data = sanitizeOutputValue({ csv }, { key: "data" });
+      return payload;
     }
 
     const parsed = parseJsonOutput(

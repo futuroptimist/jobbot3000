@@ -71,7 +71,11 @@ function assertRequiredString(value, name) {
   return normalized;
 }
 
-function normalizeBoolean(value, { name, defaultValue = false } = {}) {
+function normalizeBoolean(value, options = {}) {
+  const { name } = options;
+  const defaultValue = Object.prototype.hasOwnProperty.call(options, 'defaultValue')
+    ? options.defaultValue
+    : false;
   if (value == null || value === '') {
     return defaultValue;
   }
@@ -236,16 +240,74 @@ export function normalizeAnalyticsFunnelRequest(options) {
   return request;
 }
 
-export function normalizeAnalyticsExportRequest(options) {
+const ANALYTICS_EXPORT_ALLOWED_KEYS = new Set([
+  'redact',
+  'redactCompanies',
+  'redact_companies',
+  'format',
+  'csv',
+]);
+
+const ANALYTICS_EXPORT_CONFLICT_MESSAGE =
+  'analytics export format and csv flags must not conflict ' +
+  '(csv: true -> format: csv; csv: false -> format: json)';
+
+export function normalizeAnalyticsExportRequest(
+  options,
+  { defaultFormat = true } = {},
+) {
   if (options == null) {
-    return { redact: true };
+    const normalized = { redact: true };
+    if (defaultFormat) {
+      normalized.format = 'json';
+    }
+    return normalized;
   }
   assertPlainObject(options, 'analytics export options');
+  for (const key of Object.keys(options)) {
+    if (!ANALYTICS_EXPORT_ALLOWED_KEYS.has(key)) {
+      throw new Error(`Unexpected field "${key}" in analytics export options`);
+    }
+  }
+
   const redact = normalizeBoolean(
     options.redact ?? options.redactCompanies ?? options.redact_companies,
     { name: 'redact', defaultValue: true },
   );
-  return { redact };
+
+  const rawFormat =
+    typeof options.format === 'string' && options.format
+      ? options.format.trim().toLowerCase()
+      : null;
+  if (rawFormat && rawFormat !== 'json' && rawFormat !== 'csv') {
+    throw new Error('analytics export format must be one of: json, csv');
+  }
+
+  const csvFlag = normalizeBoolean(options.csv, {
+    name: 'csv',
+    defaultValue: undefined,
+  });
+  let format = rawFormat;
+
+  if (rawFormat && csvFlag !== undefined) {
+    const csvFormat = csvFlag ? 'csv' : 'json';
+    if (csvFormat !== rawFormat) {
+      throw new Error(ANALYTICS_EXPORT_CONFLICT_MESSAGE);
+    }
+  }
+
+  if (!format && csvFlag !== undefined) {
+    format = csvFlag ? 'csv' : 'json';
+  }
+  if (!format && defaultFormat) {
+    format = 'json';
+  }
+
+  const normalized = { redact };
+  if (format) {
+    normalized.format = format;
+  }
+  return normalized;
 }
 
 /**

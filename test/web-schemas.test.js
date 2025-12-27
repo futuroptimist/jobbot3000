@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  normalizeAnalyticsExportRequest,
   normalizeIntakeListRequest,
   normalizeIntakeExportRequest,
   normalizeIntakePlanRequest,
@@ -10,6 +11,10 @@ import {
   normalizeMatchRequest,
   normalizeSummarizeRequest,
 } from '../src/web/schemas.js';
+
+const ANALYTICS_EXPORT_CONFLICT_MESSAGE =
+  'analytics export format and csv flags must not conflict ' +
+  '(csv: true -> format: csv; csv: false -> format: json)';
 
 describe('web request schemas', () => {
   describe('normalizeSummarizeRequest', () => {
@@ -68,6 +73,45 @@ describe('web request schemas', () => {
     it('throws when options are not an object', () => {
       expect(() => normalizeMatchRequest(null)).toThrow('match options must be an object');
       expect(() => normalizeMatchRequest([])).toThrow('match options must be an object');
+    });
+  });
+
+  describe('normalizeAnalyticsExportRequest', () => {
+    it('defaults redact to true and format to json when none are provided', () => {
+      expect(normalizeAnalyticsExportRequest()).toEqual({ redact: true, format: 'json' });
+      expect(normalizeAnalyticsExportRequest({})).toEqual({ redact: true, format: 'json' });
+    });
+
+    it('omits default format when requested', () => {
+      expect(
+        normalizeAnalyticsExportRequest({}, { defaultFormat: false }),
+      ).toEqual({ redact: true });
+    });
+
+    it('accepts csv format via format or csv flag', () => {
+      expect(normalizeAnalyticsExportRequest({ format: 'csv', redact: false })).toEqual({
+        redact: false,
+        format: 'csv',
+      });
+      expect(normalizeAnalyticsExportRequest({ csv: true, redact: false })).toEqual({
+        redact: false,
+        format: 'csv',
+      });
+    });
+
+    it('maps an explicit csv flag of false to json format', () => {
+      expect(
+        normalizeAnalyticsExportRequest({ csv: false, redact: false }, { defaultFormat: false }),
+      ).toEqual({ redact: false, format: 'json' });
+    });
+
+    it('throws when format is invalid or conflicts with csv flag', () => {
+      expect(() => normalizeAnalyticsExportRequest({ format: 'xml' })).toThrow(
+        'analytics export format must be one of: json, csv',
+      );
+      expect(() =>
+        normalizeAnalyticsExportRequest({ format: 'json', csv: true }),
+      ).toThrow(ANALYTICS_EXPORT_CONFLICT_MESSAGE);
     });
   });
 
