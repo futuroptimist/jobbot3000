@@ -303,7 +303,9 @@ call scheduled"`.
    Upcoming) and supports snooze/done actions backed by `jobbot track reminders snooze <job_id>
 --until <iso>` and `jobbot track reminders done <job_id> [--at <iso>]`. The web backend now exposes
    `/commands/track-reminders-snooze` and `/commands/track-reminders-done` so the sidebar mirrors the
-   CLI update path.
+   CLI update path. The reminders sidebar renders in the Applications view with snooze/done controls;
+   regression coverage in [`test/web-server.test.js`](../test/web-server.test.js) drives the UI
+   actions against the `/commands/track-reminders*` endpoints.
 4. Export ICS files via the **Calendar Sync** button (backed by `POST /commands/track-reminders`) and
    confirm downloads contain sanitized data. `test/web-server.test.js` verifies the button dispatches
    the `jobbot:reminders-exported` event and streams a calendar download without leaking details.

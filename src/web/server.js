@@ -1453,6 +1453,71 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
   .reminders-actions__message[data-variant='error'] {
     color: var(--danger-text);
   }
+  .reminders-panel {
+    display: grid;
+    gap: 1rem;
+    margin-top: 0.5rem;
+  }
+  .reminders-panel__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .reminders-panel__sections {
+    display: grid;
+    gap: 1rem;
+  }
+  .reminders-panel__section {
+    border: 1px solid var(--card-border);
+    border-radius: 0.85rem;
+    padding: 1rem 1.25rem;
+    background-color: var(--card-surface, var(--jobbot-color-surface));
+  }
+  .reminders-panel__section h4 {
+    margin: 0 0 0.5rem 0;
+  }
+  .reminders-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.75rem;
+  }
+  .reminder-entry {
+    border: 1px solid var(--card-border);
+    border-radius: 0.75rem;
+    padding: 0.85rem 1rem;
+    display: grid;
+    gap: 0.35rem;
+  }
+  .reminder-entry__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+  .reminder-entry__meta {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    color: var(--muted);
+    font-size: 0.95rem;
+  }
+  .reminder-entry__note {
+    margin: 0;
+  }
+  .reminder-entry__actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .reminder-entry__input {
+    max-width: 220px;
+  }
   .shortlist-actions {
     display: flex;
     flex-wrap: wrap;
@@ -2437,6 +2502,16 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             };
           })();
           const remindersReportButton = section.querySelector('[data-reminders-report]');
+          const remindersPanelElements = (() => {
+            const panel = section.querySelector('[data-status-panel="reminders"]');
+            if (!panel) return null;
+            return {
+              panel,
+              sections: panel.querySelector('[data-reminders-sections]'),
+              empty: panel.querySelector('[data-reminders-empty]'),
+              refresh: panel.querySelector('[data-reminders-refresh]'),
+            };
+          })();
           const table = section.querySelector('[data-shortlist-table]');
           const tbody = section.querySelector('[data-shortlist-body]');
           const emptyState = section.querySelector('[data-shortlist-empty]');
@@ -2487,6 +2562,7 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           })();
           const actionState = { jobId: null, submitting: false, enabled: false };
           const remindersState = { running: false };
+          const remindersListState = { loading: false };
           const exportState = { running: false };
           const remindersReportState = { report: null };
           const dragStatuses = ${JSON.stringify(STATUSES)};
@@ -2688,6 +2764,13 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
                 filename: remindersReportState.report.filename,
                 type: 'application/json',
               });
+            });
+          }
+
+          if (remindersPanelElements?.refresh) {
+            remindersPanelElements.refresh.addEventListener('click', event => {
+              event.preventDefault();
+              loadReminders({ preserveMessage: true });
             });
           }
 
@@ -2917,6 +3000,271 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             remindersMessage.textContent = messageText;
             remindersMessage.setAttribute('data-variant', variant);
             remindersMessage.removeAttribute('hidden');
+          }
+
+          function formatReminderTimestamp(value) {
+            if (!value) return '';
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return String(value);
+            try {
+              return date.toLocaleString();
+            } catch {
+              return date.toISOString();
+            }
+          }
+
+          function toLocalDateTimeInput(value) {
+            if (!value) return '';
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return '';
+            const pad = number => String(number).padStart(2, '0');
+            return (
+              date.getFullYear() +
+              '-' +
+              pad(date.getMonth() + 1) +
+              '-' +
+              pad(date.getDate()) +
+              'T' +
+              pad(date.getHours()) +
+              ':' +
+              pad(date.getMinutes())
+            );
+          }
+
+          async function handleReminderDone(jobId) {
+            if (!jobId) return;
+            try {
+              setRemindersMessage('info', 'Marking reminder as done…');
+              await postCommand(
+                '/commands/track-reminders-done',
+                { jobId, completedAt: new Date().toISOString() },
+                {
+                  invalidResponse: 'Received invalid response while completing reminder',
+                  failureMessage: 'Failed to complete reminder',
+                },
+              );
+              setRemindersMessage('success', 'Marked reminder as done for ' + jobId);
+              await loadReminders({ preserveMessage: true });
+            } catch (error) {
+              const message =
+                error && typeof error.message === 'string'
+                  ? error.message
+                  : 'Unable to complete reminder';
+              setRemindersMessage('error', message);
+            }
+          }
+
+          async function handleReminderSnooze(jobId, input) {
+            if (!jobId) return;
+            const rawValue =
+              typeof input?.value === 'string' && input.value.trim() ? input.value.trim() : '';
+            if (!rawValue) {
+              setRemindersMessage('error', 'Enter a new reminder time before snoozing.');
+              input?.focus();
+              return;
+            }
+            const parsed = new Date(rawValue);
+            if (Number.isNaN(parsed.getTime())) {
+              setRemindersMessage('error', 'Use a valid date and time before snoozing.');
+              input?.focus();
+              return;
+            }
+            const until = parsed.toISOString();
+            try {
+              setRemindersMessage('info', 'Snoozing reminder for ' + jobId + '…');
+              await postCommand(
+                '/commands/track-reminders-snooze',
+                { jobId, until },
+                {
+                  invalidResponse: 'Received invalid response while snoozing reminder',
+                  failureMessage: 'Failed to snooze reminder',
+                },
+              );
+              setRemindersMessage('success', 'Snoozed reminder for ' + jobId);
+              await loadReminders({ preserveMessage: true });
+            } catch (error) {
+              const message =
+                error && typeof error.message === 'string'
+                  ? error.message
+                  : 'Unable to snooze reminder';
+              setRemindersMessage('error', message);
+            }
+          }
+
+          function renderReminders(reminderSections) {
+            if (!remindersPanelElements?.sections) return;
+            const container = remindersPanelElements.sections;
+            container.textContent = '';
+            const sections = Array.isArray(reminderSections) ? reminderSections : [];
+            let hasReminders = false;
+
+            for (const section of sections) {
+              const reminderList = Array.isArray(section?.reminders) ? section.reminders : [];
+              const heading =
+                typeof section?.heading === 'string' && section.heading.trim()
+                  ? section.heading.trim()
+                  : 'Reminders';
+
+              const sectionEl = document.createElement('article');
+              sectionEl.className = 'reminders-panel__section';
+              sectionEl.setAttribute(
+                'data-reminders-section',
+                heading.toLowerCase().replace(/\\s+/g, '-'),
+              );
+
+              const title = document.createElement('h4');
+              title.textContent = heading;
+              sectionEl.appendChild(title);
+
+              const list = document.createElement('ul');
+              list.className = 'reminders-list';
+
+              for (const reminder of reminderList) {
+                if (!reminder || typeof reminder !== 'object') continue;
+                const jobId =
+                  typeof reminder.job_id === 'string' && reminder.job_id.trim()
+                    ? reminder.job_id.trim()
+                    : '';
+                const item = document.createElement('li');
+                item.className = 'reminder-entry';
+                if (jobId) {
+                  item.setAttribute('data-reminder-entry', jobId);
+                }
+
+                const header = document.createElement('div');
+                header.className = 'reminder-entry__header';
+                const idLabel = document.createElement('strong');
+                idLabel.textContent = jobId || 'Reminder';
+                header.appendChild(idLabel);
+
+                const meta = document.createElement('div');
+                meta.className = 'reminder-entry__meta';
+                const when = reminder.remind_at || reminder.reminder_completed_at || '';
+                if (when) {
+                  const time = document.createElement('span');
+                  time.textContent = formatReminderTimestamp(when);
+                  meta.appendChild(time);
+                }
+                if (reminder.channel) {
+                  const channel = document.createElement('span');
+                  channel.textContent = String(reminder.channel);
+                  meta.appendChild(channel);
+                }
+                if (reminder.contact) {
+                  const contact = document.createElement('span');
+                  contact.textContent = String(reminder.contact);
+                  meta.appendChild(contact);
+                }
+                header.appendChild(meta);
+                item.appendChild(header);
+
+                if (reminder.note) {
+                  const note = document.createElement('p');
+                  note.className = 'reminder-entry__note';
+                  note.textContent = String(reminder.note);
+                  item.appendChild(note);
+                }
+
+                const actions = document.createElement('div');
+                actions.className = 'reminder-entry__actions';
+
+                const snoozeInput = document.createElement('input');
+                snoozeInput.type = 'datetime-local';
+                snoozeInput.className = 'reminder-entry__input';
+                snoozeInput.value = toLocalDateTimeInput(reminder.remind_at) || '';
+                snoozeInput.setAttribute(
+                  'aria-label',
+                  'Snooze reminder for ' + (jobId || 'selected job'),
+                );
+                actions.appendChild(snoozeInput);
+
+                const snoozeButton = document.createElement('button');
+                snoozeButton.type = 'button';
+                snoozeButton.className = 'button';
+                snoozeButton.textContent = 'Snooze';
+                snoozeButton.setAttribute('data-reminder-action', 'snooze');
+                if (jobId) {
+                  snoozeButton.setAttribute('data-reminder-id', jobId);
+                }
+                snoozeButton.addEventListener('click', () =>
+                  handleReminderSnooze(jobId, snoozeInput),
+                );
+                actions.appendChild(snoozeButton);
+
+                const doneButton = document.createElement('button');
+                doneButton.type = 'button';
+                doneButton.className = 'button';
+                doneButton.textContent = 'Done';
+                doneButton.setAttribute('data-reminder-action', 'done');
+                if (jobId) {
+                  doneButton.setAttribute('data-reminder-id', jobId);
+                }
+                doneButton.addEventListener('click', () => handleReminderDone(jobId));
+                actions.appendChild(doneButton);
+
+                item.appendChild(actions);
+                list.appendChild(item);
+              }
+
+              if (list.childElementCount === 0) {
+                const empty = document.createElement('p');
+                empty.className = 'muted';
+                empty.textContent = 'No reminders in this section.';
+                sectionEl.appendChild(empty);
+              } else {
+                sectionEl.appendChild(list);
+                hasReminders = true;
+              }
+
+              container.appendChild(sectionEl);
+            }
+
+            if (remindersPanelElements?.empty) {
+              if (hasReminders) {
+                remindersPanelElements.empty.setAttribute('hidden', '');
+              } else {
+                remindersPanelElements.empty.removeAttribute('hidden');
+              }
+            }
+          }
+
+          async function loadReminders(options = {}) {
+            if (!remindersPanelElements) return false;
+            if (remindersListState.loading) {
+              return false;
+            }
+            remindersListState.loading = true;
+            setPanelState('reminders', 'loading', {
+              preserveMessage: options.preserveMessage === true,
+            });
+            try {
+              const data = await postCommand(
+                '/commands/track-reminders',
+                { format: 'json', upcomingOnly: false },
+                {
+                  invalidResponse: 'Received invalid response while loading reminders',
+                  failureMessage: 'Failed to load reminders',
+                },
+              );
+              const sections = Array.isArray(data?.sections) ? data.sections : [];
+              renderReminders(sections);
+              setPanelState('reminders', 'ready', { preserveMessage: true });
+              dispatchRemindersLoaded({
+                reminders: Array.isArray(data?.reminders) ? data.reminders : [],
+                sections,
+                upcomingOnly: data?.upcomingOnly === true,
+              });
+              return true;
+            } catch (error) {
+              const message =
+                error && typeof error.message === 'string'
+                  ? error.message
+                  : 'Unable to load reminders';
+              setPanelState('reminders', 'error', { message });
+              return false;
+            } finally {
+              remindersListState.loading = false;
+            }
           }
 
           function setExportMessage(variant, text) {
@@ -3931,6 +4279,7 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               setExportMessage(null);
               setPanelState('applications', 'ready', { preserveMessage: true });
               dispatchApplicationsLoaded(data);
+              await loadReminders({ preserveMessage: true });
               return true;
             } catch (err) {
               state.loading = false;
@@ -4090,6 +4439,8 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               const filters = readFiltersFromInputs();
               state.filters = filters;
               refresh({ filters, offset: 0, limit: inputs.limit?.value, resetOffset: true });
+            } else {
+              loadReminders({ preserveMessage: true });
             }
           });
 
@@ -5807,6 +6158,10 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           dispatchDocumentEvent('jobbot:reminders-exported', detail);
         }
 
+        function dispatchRemindersLoaded(detail = {}) {
+          dispatchDocumentEvent('jobbot:reminders-loaded', detail);
+        }
+
         function dispatchApplicationDetailLoaded(detail = {}) {
           const jobId =
             typeof detail?.job_id === 'string' && detail.job_id.trim()
@@ -7009,6 +7364,43 @@ export function createWebApp({
             Report bug
           </button>
           <p class="reminders-actions__message" data-reminders-message hidden></p>
+        </div>
+        <div
+          class="status-panel"
+          data-status-panel="reminders"
+          data-state="loading"
+          aria-live="polite"
+        >
+          <div data-state-slot="ready">
+            <div class="reminders-panel">
+              <div class="reminders-panel__header">
+                <div>
+                  <h3>Follow-ups</h3>
+                  <p class="muted">
+                    Track past-due and upcoming reminders without leaving the shortlist.
+                  </p>
+                </div>
+                <div class="reminder-entry__actions">
+                  <button type="button" class="button" data-reminders-refresh>
+                    Refresh follow-ups
+                  </button>
+                </div>
+              </div>
+              <div class="reminders-panel__sections" data-reminders-sections></div>
+              <p class="muted" data-reminders-empty hidden>No reminders queued.</p>
+            </div>
+          </div>
+          <div data-state-slot="loading" hidden>
+            <p class="status-panel__loading" role="status" aria-live="polite">
+              Loading reminders…
+            </p>
+          </div>
+          <div data-state-slot="error" hidden>
+            <div class="status-panel__error" role="alert">
+              <strong>Unable to load reminders</strong>
+              <p data-error-message>Check the server logs and retry shortly.</p>
+            </div>
+          </div>
         </div>
         <div
           class="status-panel"
