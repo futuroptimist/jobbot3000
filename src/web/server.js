@@ -60,7 +60,7 @@ function parseBoolean(value) {
   return undefined;
 }
 
-function createInMemoryRateLimiter(options = {}) {
+export function createInMemoryRateLimiter(options = {}) {
   const windowMs = Number(options.windowMs ?? 60000);
   if (!Number.isFinite(windowMs) || windowMs <= 0) {
     throw new Error("rateLimit.windowMs must be a positive number");
