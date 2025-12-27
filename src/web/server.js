@@ -7585,12 +7585,6 @@ export function createWebApp({
         String(Math.max(0, rateStatus.remaining)),
       );
       res.set("X-RateLimit-Reset", new Date(rateStatus.reset).toISOString());
-      if (!req.is(["application/json", "*/json"])) {
-        res
-          .status(415)
-          .json({ error: "Content-Type must be application/json" });
-        return;
-      }
 
       const started = performance.now();
       const sessionId = ensureClientSession(req, res, {
@@ -7656,6 +7650,13 @@ export function createWebApp({
         });
         res.status(429).json({ error: "Too many requests" });
         await recordAudit({ status: "rate_limited" });
+        return;
+      }
+
+      if (!req.is(["application/json", "*/json"])) {
+        res
+          .status(415)
+          .json({ error: "Content-Type must be application/json" });
         return;
       }
 

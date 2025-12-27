@@ -43,6 +43,10 @@ All command responses include rate-limit headers:
 Unknown or malformed command requests still include rate-limit headers so operators can trace
 throttling even when validation fails.
 
+Requests with non-JSON `Content-Type` headers still count toward the caller's
+rate-limit budget; once exhausted they return 429 responses with `Retry-After`
+set alongside the standard rate-limit headers.
+
 [`test/web-server.test.js`](../test/web-server.test.js) exercises both the
 success and 429 paths—and malformed JSON bodies—to keep the rate-limit header
 contract stable as the backend evolves.

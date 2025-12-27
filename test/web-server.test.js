@@ -4991,6 +4991,56 @@ describe("web server command endpoint", () => {
     expect(commandAdapter.summarize).not.toHaveBeenCalled();
   });
 
+  it("rate limits invalid content type requests", async () => {
+    const commandAdapter = {
+      summarize: vi.fn(async () => ({ ok: true })),
+    };
+
+    const server = await startServer({
+      commandAdapter,
+      rateLimit: { windowMs: 5000, max: 2 },
+    });
+
+    const headers = {
+      ...buildCommandHeaders(server),
+      "content-type": "text/plain",
+    };
+
+    const first = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers,
+      body: "not-json",
+    });
+    expect(first.status).toBe(415);
+    expect(first.headers.get("x-ratelimit-limit")).toBe("2");
+    expect(first.headers.get("x-ratelimit-remaining")).toBe("1");
+
+    const second = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers,
+      body: "still-not-json",
+    });
+    expect(second.status).toBe(415);
+    expect(second.headers.get("x-ratelimit-limit")).toBe("2");
+    expect(second.headers.get("x-ratelimit-remaining")).toBe("0");
+
+    const third = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers,
+      body: "nope",
+    });
+    expect(third.status).toBe(429);
+    expect(await third.json()).toEqual({ error: "Too many requests" });
+    expect(third.headers.get("x-ratelimit-limit")).toBe("2");
+    expect(third.headers.get("x-ratelimit-remaining")).toBe("0");
+    const retryAfter = Number(third.headers.get("retry-after"));
+    expect(retryAfter).toBeGreaterThanOrEqual(1);
+    expect(
+      new Date(third.headers.get("x-ratelimit-reset") ?? "").getTime(),
+    ).toBeGreaterThan(Date.now());
+    expect(commandAdapter.summarize).not.toHaveBeenCalled();
+  });
+
   it("rate limits repeated command requests per client", async () => {
     const commandAdapter = {
       summarize: vi.fn(async () => ({ ok: true })),
