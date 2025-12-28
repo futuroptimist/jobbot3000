@@ -23,6 +23,7 @@ import {
   normalizeTrackRemindersSnoozeRequest,
   normalizeTrackRemindersDoneRequest,
   normalizeFeedbackRecordRequest,
+  normalizeFeedbackListRequest,
 } from "./schemas.js";
 import {
   listListingProviders,
@@ -49,7 +50,7 @@ import {
   saveIntakeDraft,
 } from "../intake.js";
 import { loadIntakeQuestionPlan } from "../intake-plan.js";
-import { recordFeedback } from "../feedback.js";
+import { listFeedback, recordFeedback } from "../feedback.js";
 import { OpportunitiesRepo } from "../services/opportunitiesRepo.js";
 import { AuditLog } from "../services/audit.js";
 import {
@@ -57,6 +58,7 @@ import {
   sanitizeOutputString,
   sanitizeOutputValue,
 } from "../shared/logging/sanitize-output.js";
+import { sanitizeFeedbackResponse } from "../feedback-sanitize.js";
 
 const DEFAULT_ALLOWED_ENVIRONMENT_KEYS = new Set(
   [
@@ -1707,6 +1709,37 @@ export function createCommandAdapter(options = {}) {
     };
   }
 
+  async function feedbackListCommand(options = {}) {
+    normalizeFeedbackListRequest(options);
+    const cli = injectedCli;
+
+    const buildResponse = (raw, stderr = "") => {
+      const sanitized = sanitizeFeedbackResponse(raw ?? {});
+      return {
+        command: "feedback-list",
+        format: "json",
+        stdout: JSON.stringify(sanitized, null, 2),
+        stderr,
+        returnValue: 0,
+        data: sanitized,
+      };
+    };
+
+    if (cli && typeof cli.cmdFeedbackList === "function") {
+      const { result, stdout, stderr } = await captureConsole(() =>
+        cli.cmdFeedbackList(["--json"]),
+      );
+      if (result !== undefined) {
+        return buildResponse(result, stderr);
+      }
+      const data = parseJsonOutput("feedback-list", stdout, stderr);
+      return buildResponse(data, "");
+    }
+
+    const feedback = await listFeedback();
+    return buildResponse({ feedback });
+  }
+
   async function feedbackRecordCommand(options = {}) {
     const cli = injectedCli;
     const { message, source, contact, rating } =
@@ -1767,6 +1800,7 @@ export function createCommandAdapter(options = {}) {
     analyticsExport,
     trackRecord,
     trackReminders,
+    feedbackList: feedbackListCommand,
     feedbackRecord: feedbackRecordCommand,
     intakePlan: intakePlanCommand,
     intakeList: intakeListCommand,
@@ -1790,6 +1824,7 @@ export function createCommandAdapter(options = {}) {
   adapter["track-reminders"] = trackReminders;
   adapter["track-reminders-snooze"] = trackRemindersSnooze;
   adapter["track-reminders-done"] = trackRemindersDone;
+  adapter["feedback-list"] = feedbackListCommand;
   adapter["feedback-record"] = feedbackRecordCommand;
   adapter["intake-plan"] = intakePlanCommand;
   adapter["intake-list"] = intakeListCommand;

@@ -511,7 +511,10 @@
      [`test/web-command-adapter.test.js`](../test/web-command-adapter.test.js)
      locks the validation, CLI bridge, and adapter plumbing so release feedback remains
      actionable, while [`test/web-server.test.js`](../test/web-server.test.js)
-     exercises the `/commands/feedback-record` web endpoint and payload history contract.
+     exercises the `/commands/feedback-record` web endpoint and payload history contract. The web
+     adapter now exposes `/commands/feedback-list` for redacted retrieval of recorded feedback, and
+     the corresponding adapter/server tests verify contacts and secret-like values are masked before
+     being returned to browsers or stored in payload history.
      The CLI now exposes `jobbot feedback list [--json]` for downstream analysis;
      regression coverage in [`test/cli.test.js`](../test/cli.test.js) verifies the
      formatted and JSON output stays aligned with the stored entries.
