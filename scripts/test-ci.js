@@ -41,21 +41,37 @@ async function mirrorDownloadAndInstall() {
   }
 
   const revision = chromium.revision;
-  const downloadUrl =
-    "https://playwright.download.prss.microsoft.com/dbazure/download/playwright/builds" +
-    `/chromium/${revision}/chromium-linux.zip`;
-  const archivePath = path.join(os.tmpdir(), `playwright-chromium-${revision}.zip`);
-  const chromiumDir = path.join(browsersCache, `chromium-${revision}`);
+  const artifacts = [
+    {
+      id: "chromium",
+      archive: `chromium-${revision}.zip`,
+      remotePath: `chromium/${revision}/chromium-linux.zip`,
+      targetDir: path.join(browsersCache, `chromium-${revision}`),
+    },
+    {
+      id: "chromium-headless-shell",
+      archive: `chromium-headless-shell-${revision}.zip`,
+      remotePath: `chromium/${revision}/chromium-headless-shell-linux.zip`,
+      targetDir: path.join(browsersCache, `chromium_headless_shell-${revision}`),
+    },
+  ];
 
-  if (!existsSync(chromiumDir)) {
-    if (!existsSync(archivePath)) {
-      mkdirSync(path.dirname(archivePath), { recursive: true });
-      runStep("download chromium archive", "curl", ["-fL", "-o", archivePath, downloadUrl]);
+  for (const { id, archive, remotePath, targetDir } of artifacts) {
+    const archivePath = path.join(os.tmpdir(), `playwright-${archive}`);
+    const downloadUrl =
+      "https://playwright.download.prss.microsoft.com/dbazure/download/playwright/builds" +
+      `/${remotePath}`;
+
+    if (!existsSync(targetDir)) {
+      if (!existsSync(archivePath)) {
+        mkdirSync(path.dirname(archivePath), { recursive: true });
+        runStep(`download ${id} archive`, "curl", ["-fL", "-o", archivePath, downloadUrl]);
+      }
+
+      rmSync(targetDir, { recursive: true, force: true });
+      mkdirSync(targetDir, { recursive: true });
+      runStep(`extract ${id}`, "unzip", ["-q", archivePath, "-d", targetDir]);
     }
-
-    rmSync(chromiumDir, { recursive: true, force: true });
-    mkdirSync(chromiumDir, { recursive: true });
-    runStep("extract chromium", "unzip", ["-q", archivePath, "-d", chromiumDir]);
   }
 
   runStep("playwright install-deps", "npx", ["playwright", "install-deps", "chromium"]);
