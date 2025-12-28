@@ -1235,7 +1235,7 @@ describe("web server status page", () => {
       "track-reminders-snooze": vi.fn(async (payload) => {
         expect(payload).toMatchObject({
           jobId: "job-2",
-          until: new Date("2025-03-06T12:00:00Z").toISOString(),
+          until: new Date("2025-03-06T12:00").toISOString(),
         });
         remindersPayload = {
           ...remindersPayload,

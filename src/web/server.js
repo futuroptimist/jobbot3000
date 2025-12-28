@@ -1465,6 +1465,12 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     gap: 0.75rem;
     flex-wrap: wrap;
   }
+  .reminders-panel__actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
   .reminders-panel__sections {
     display: grid;
     gap: 1rem;
@@ -3109,7 +3115,7 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               sectionEl.className = 'reminders-panel__section';
               sectionEl.setAttribute(
                 'data-reminders-section',
-                heading.toLowerCase().replace(/\\s+/g, '-'),
+                heading.toLowerCase().replace(/\s+/g, '-'),
               );
 
               const title = document.createElement('h4');
@@ -7380,7 +7386,7 @@ export function createWebApp({
                     Track past-due and upcoming reminders without leaving the shortlist.
                   </p>
                 </div>
-                <div class="reminder-entry__actions">
+                <div class="reminders-panel__actions">
                   <button type="button" class="button" data-reminders-refresh>
                     Refresh follow-ups
                   </button>
