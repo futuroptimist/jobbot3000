@@ -8,13 +8,17 @@ import {
   formatAnalyticsHealthReport,
   formatFunnelReport,
 } from '../../analytics.js';
+import { createReminderCalendar } from './reminders-calendar.js';
+import { getApplicationReminders } from '../../application-events.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 let overrideRoot;
 let featureOverride;
+let remindersFeatureOverride;
 let configFeatureFlag;
+let configRemindersFlag;
 
 function resolveDataDir() {
   if (overrideRoot) return overrideRoot;
@@ -84,6 +88,18 @@ function assertWeeklySummaryEnabled() {
   if (!isWeeklySummaryEnabled()) {
     throw createWeeklySummaryDisabledError();
   }
+}
+
+function isReminderDigestEnabled() {
+  if (remindersFeatureOverride !== undefined) {
+    return Boolean(remindersFeatureOverride);
+  }
+  if (configRemindersFlag !== undefined) {
+    return Boolean(configRemindersFlag);
+  }
+  const envValue = coerceBoolean(process.env.JOBBOT_FEATURE_NOTIFICATIONS_REMINDERS);
+  if (envValue === undefined) return true;
+  return envValue;
 }
 
 async function readSubscriptions() {
@@ -164,6 +180,11 @@ function createFileName(now, email) {
   return `${timestamp}-${suffix}.eml`;
 }
 
+function createReminderFileName(now) {
+  const timestamp = resolveNow(now).toISOString().replace(/[:.]/g, '-');
+  return `${timestamp}-reminders.ics`;
+}
+
 function resolveLookbackDays(value) {
   if (value == null) return 7;
   const num = Number(value);
@@ -187,6 +208,14 @@ export function __setNotificationsFeatureOverrideForTest(value) {
 
 export function __resetNotificationsFeatureOverrideForTest() {
   featureOverride = undefined;
+}
+
+export function __setRemindersFeatureOverrideForTest(value) {
+  remindersFeatureOverride = value;
+}
+
+export function __resetRemindersFeatureOverrideForTest() {
+  remindersFeatureOverride = undefined;
 }
 
 export async function listWeeklySummarySubscriptions() {
@@ -228,7 +257,7 @@ export async function subscribeWeeklySummary(email, { lookbackDays, now } = {}) 
   return record;
 }
 
-async function composeWeeklySummary({ lookbackDays, now }) {
+async function composeWeeklySummary({ lookbackDays, now, reminders }) {
   const timestamp = resolveNow(now);
   const endDate = new Date(timestamp.getTime());
   const startDate = new Date(endDate.getTime() - lookbackDays * MS_PER_DAY);
@@ -257,10 +286,65 @@ async function composeWeeklySummary({ lookbackDays, now }) {
     '-----------',
     healthReport.trim(),
     '',
+    ...(reminders?.lines ? [...reminders.lines, ''] : []),
     `Sent at ${endDate.toISOString()}`,
   ];
 
   return { subject, body: sections.join('\n') };
+}
+
+function formatReminderLine(reminder) {
+  const parts = [];
+  const jobId = reminder?.job_id ? String(reminder.job_id) : 'Unknown job';
+  parts.push(jobId);
+  if (reminder?.channel) {
+    parts.push(`(${reminder.channel})`);
+  }
+  if (reminder?.remind_at) {
+    parts.push(`→ ${reminder.remind_at}`);
+  }
+  if (reminder?.past_due) {
+    parts.push('[past due]');
+  }
+  if (reminder?.note) {
+    parts.push(`— ${reminder.note}`);
+  }
+  return `- ${parts.join(' ')}`.trim();
+}
+
+async function buildReminderDigest({ lookbackDays, now }) {
+  if (!isReminderDigestEnabled()) return null;
+
+  const reference = resolveNow(now);
+  const lookbackWindowMs = resolveLookbackDays(lookbackDays) * MS_PER_DAY;
+  const lowerBound = new Date(reference.getTime() - lookbackWindowMs);
+  const upperBound = new Date(reference.getTime() + lookbackWindowMs);
+
+  const reminders = await getApplicationReminders({ now: reference, includePastDue: true });
+  const windowed = reminders.filter(entry => {
+    if (!entry?.remind_at) return false;
+    const date = new Date(entry.remind_at);
+    if (Number.isNaN(date.getTime())) return false;
+    const time = date.getTime();
+    return time >= lowerBound.getTime() && time <= upperBound.getTime();
+  });
+
+  if (!windowed.length) return null;
+
+  const lines = ['Reminders', '---------', ...windowed.map(formatReminderLine)];
+  lines.push(`Reminder calendar: ${createReminderFileName(reference)}`);
+  return { lines, reminders: windowed, reference };
+}
+
+async function writeReminderCalendarAttachment(reminders, { now, outbox }) {
+  if (!reminders?.length) return undefined;
+  const outboxDir = resolveOutboxDir(outbox);
+  await ensureDir(outboxDir);
+  const fileName = createReminderFileName(now);
+  const filePath = path.join(outboxDir, fileName);
+  const calendar = createReminderCalendar(reminders, { now });
+  await fs.writeFile(filePath, calendar, 'utf8');
+  return filePath;
 }
 
 async function deliverEmail({ to, subject, body, now, outbox }) {
@@ -288,10 +372,27 @@ export async function sendWeeklySummaryNotification({
   outbox,
 } = {}) {
   assertWeeklySummaryEnabled();
+  const resolvedNow = resolveNow(now);
+  const reminderDigest = await buildReminderDigest({ lookbackDays, now: resolvedNow });
   const normalizedEmail = assertValidEmail(email);
   const resolvedLookback = resolveLookbackDays(lookbackDays);
-  const { subject, body } = await composeWeeklySummary({ lookbackDays: resolvedLookback, now });
-  return deliverEmail({ to: normalizedEmail, subject, body, now, outbox });
+  const { subject, body } = await composeWeeklySummary({
+    lookbackDays: resolvedLookback,
+    now: resolvedNow,
+    reminders: reminderDigest,
+  });
+  const delivery = await deliverEmail({
+    to: normalizedEmail,
+    subject,
+    body,
+    now: resolvedNow,
+    outbox,
+  });
+  const remindersFile = await writeReminderCalendarAttachment(reminderDigest?.reminders, {
+    now: resolvedNow,
+    outbox,
+  });
+  return { ...delivery, remindersFile };
 }
 
 export async function runWeeklySummaryNotifications({ now, outbox } = {}) {
@@ -308,7 +409,11 @@ export async function runWeeklySummaryNotifications({ now, outbox } = {}) {
       now,
       outbox,
     });
-    results.push({ email: subscription.email, file: delivery.filePath });
+    results.push({
+      email: subscription.email,
+      file: delivery.filePath,
+      remindersFile: delivery.remindersFile,
+    });
   }
   return { sent: results.length, results };
 }
@@ -328,6 +433,8 @@ export function registerNotificationsModule({ bus, config } = {}) {
 
   const previousConfigFlag = configFeatureFlag;
   configFeatureFlag = coerceBoolean(config?.features?.notifications?.enableWeeklySummary);
+  const previousRemindersFlag = configRemindersFlag;
+  configRemindersFlag = coerceBoolean(config?.features?.notifications?.includeReminderDigest);
 
   const disposers = [
     bus.registerHandler('notifications:weekly:subscribe', async payload => {
@@ -343,6 +450,7 @@ export function registerNotificationsModule({ bus, config } = {}) {
 
   return () => {
     configFeatureFlag = previousConfigFlag;
+    configRemindersFlag = previousRemindersFlag;
     disposers.splice(0).forEach(dispose => dispose?.());
   };
 }

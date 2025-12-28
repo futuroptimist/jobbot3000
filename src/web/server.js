@@ -6624,6 +6624,12 @@ export function createWebApp({
         formatBoolean(weeklySummary),
       )}</li>`,
     );
+    const reminderDigest = manifestFeatures?.notifications?.includeReminderDigest;
+    manifestFeatureItems.push(
+      `<li><code>notifications.includeReminderDigest</code> ${escapeHtml(
+        formatBoolean(reminderDigest),
+      )}</li>`,
+    );
     const httpClient = manifestFeatures?.httpClient ?? {};
     // Helper to push httpClient property list items
     const pushHttpClientFeature = (prop, suffix = "") => {
