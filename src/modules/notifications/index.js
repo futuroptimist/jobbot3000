@@ -210,6 +210,14 @@ export function __resetNotificationsFeatureOverrideForTest() {
   featureOverride = undefined;
 }
 
+export function __setRemindersFeatureOverrideForTest(value) {
+  remindersFeatureOverride = value;
+}
+
+export function __resetRemindersFeatureOverrideForTest() {
+  remindersFeatureOverride = undefined;
+}
+
 export async function listWeeklySummarySubscriptions() {
   const { weeklySummary } = await readSubscriptions();
   return weeklySummary.slice();
@@ -364,17 +372,24 @@ export async function sendWeeklySummaryNotification({
   outbox,
 } = {}) {
   assertWeeklySummaryEnabled();
-  const reminderDigest = await buildReminderDigest({ lookbackDays, now });
+  const resolvedNow = resolveNow(now);
+  const reminderDigest = await buildReminderDigest({ lookbackDays, now: resolvedNow });
   const normalizedEmail = assertValidEmail(email);
   const resolvedLookback = resolveLookbackDays(lookbackDays);
   const { subject, body } = await composeWeeklySummary({
     lookbackDays: resolvedLookback,
-    now,
+    now: resolvedNow,
     reminders: reminderDigest,
   });
-  const delivery = await deliverEmail({ to: normalizedEmail, subject, body, now, outbox });
+  const delivery = await deliverEmail({
+    to: normalizedEmail,
+    subject,
+    body,
+    now: resolvedNow,
+    outbox,
+  });
   const remindersFile = await writeReminderCalendarAttachment(reminderDigest?.reminders, {
-    now,
+    now: resolvedNow,
     outbox,
   });
   return { ...delivery, remindersFile };

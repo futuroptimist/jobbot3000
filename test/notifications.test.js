@@ -210,6 +210,63 @@ describe('notifications', () => {
     expect(collapsedCalendar).toContain('Waitingonhiringmanager');
   });
 
+  it('omits reminder digests when reminder feature is disabled', async () => {
+    const fs = await import('node:fs/promises');
+
+    await writeJson(path.join(dataDir, 'applications.json'), {
+      'job-1': 'applied',
+      'job-2': 'interview',
+    });
+
+    await writeJson(path.join(dataDir, 'application_events.json'), {
+      'job-1': [
+        { channel: 'email', date: '2025-02-01T10:00:00.000Z', remind_at: '2025-02-09T08:30:00Z' },
+      ],
+      'job-2': [
+        {
+          channel: 'referral',
+          date: '2025-02-02T12:00:00.000Z',
+          remind_at: '2025-02-06T09:00:00Z',
+          note: 'Waiting on hiring manager',
+        },
+      ],
+    });
+
+    process.env.JOBBOT_FEATURE_NOTIFICATIONS_REMINDERS = 'false';
+
+    const {
+      subscribeWeeklySummary,
+      runWeeklySummaryNotifications,
+      setNotificationsDataDir,
+    } = await import('../src/notifications.js');
+    const { setAnalyticsDataDir } = await import('../src/analytics.js');
+
+    setAnalyticsDataDir(dataDir);
+    setNotificationsDataDir(dataDir);
+    restoreAnalyticsDir = async () => setAnalyticsDataDir(undefined);
+    restoreNotificationsDir = async () => setNotificationsDataDir(undefined);
+
+    await subscribeWeeklySummary('ada@example.com', { lookbackDays: 14 });
+
+    const result = await runWeeklySummaryNotifications({ now: '2025-02-08T12:00:00.000Z' });
+    expect(result.results[0]).toEqual(
+      expect.objectContaining({
+        remindersFile: undefined,
+      }),
+    );
+
+    const outboxDir = path.join(dataDir, 'notifications', 'outbox');
+    const outboxFiles = await fs.readdir(outboxDir);
+    expect(outboxFiles).toHaveLength(1);
+    expect(outboxFiles.some(file => file.endsWith('.ics'))).toBe(false);
+
+    const [emailFile] = outboxFiles;
+    const emailPath = path.join(outboxDir, emailFile);
+    const payload = await fs.readFile(emailPath, 'utf8');
+    expect(payload).not.toContain('Reminders');
+    expect(payload).not.toContain('Reminder calendar');
+  });
+
   it('skips weekly summary delivery when JOBBOT_FEATURE_NOTIFICATIONS_WEEKLY=false', async () => {
     process.env.JOBBOT_FEATURE_NOTIFICATIONS_WEEKLY = 'false';
 
