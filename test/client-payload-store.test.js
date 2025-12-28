@@ -149,6 +149,38 @@ describe("createClientPayloadStore", () => {
     expect(store.getRecent("client-e")).toEqual([entry]);
   });
 
+  it("drops null payload and result fields before storing history", () => {
+    const store = createClientPayloadStore({
+      now: () => 0,
+      jitter: () => 0,
+    });
+
+    const entry = store.record(
+      "client-null",
+      "cmd-4",
+      {
+        optional: null,
+        nested: { keep: "value", discard: null },
+      },
+      {
+        status: "success",
+        message: null,
+        nested: { ok: true, omit: null },
+      },
+    );
+
+    expect(entry).toEqual({
+      command: "cmd-4",
+      payload: { nested: { keep: "value" } },
+      result: {
+        status: "success",
+        nested: { ok: true },
+      },
+      timestamp: "1970-01-01T00:00:00.000Z",
+    });
+    expect(store.getRecent("client-null")).toEqual([entry]);
+  });
+
   it("redacts sensitive payload and result fields before storing history", () => {
     const store = createClientPayloadStore({
       now: () => 0,
