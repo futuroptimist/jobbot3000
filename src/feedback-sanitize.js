@@ -1,7 +1,7 @@
 import { redactValue } from './shared/security/redaction.js';
 
 // eslint-disable-next-line no-control-regex -- strip ASCII control characters from feedback entries
-const FEEDBACK_CONTROL_CHARS_RE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g;
+const FEEDBACK_CONTROL_CHARS_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
 
 export function sanitizeFeedbackEntries(entries, { redact = true } = {}) {
   if (!Array.isArray(entries)) return [];
@@ -18,8 +18,10 @@ export function sanitizeFeedbackEntries(entries, { redact = true } = {}) {
       for (const [key, value] of Object.entries(normalizedEntry)) {
         if (value === undefined || value === null) continue;
         if (typeof value === 'string') {
-          const cleaned = value.replace(FEEDBACK_CONTROL_CHARS_RE, '').trim();
-          if (!cleaned) continue;
+          const cleaned = value
+            .replace(FEEDBACK_CONTROL_CHARS_RE, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
           sanitized[key] = cleaned;
           continue;
         }
@@ -32,6 +34,19 @@ export function sanitizeFeedbackEntries(entries, { redact = true } = {}) {
 }
 
 export function sanitizeFeedbackResponse(raw, options) {
-  const feedbackEntries = Array.isArray(raw?.feedback) ? raw.feedback : raw ?? [];
+  let feedbackEntries;
+
+  if (Array.isArray(raw?.feedback)) {
+    feedbackEntries = raw.feedback;
+  } else if (Array.isArray(raw?.data?.feedback)) {
+    feedbackEntries = raw.data.feedback;
+  } else if (Array.isArray(raw?.data)) {
+    feedbackEntries = raw.data;
+  } else if (Array.isArray(raw)) {
+    feedbackEntries = raw;
+  } else {
+    feedbackEntries = [];
+  }
+
   return { feedback: sanitizeFeedbackEntries(feedbackEntries, options) };
 }

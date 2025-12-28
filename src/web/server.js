@@ -11,12 +11,12 @@ import {
   sanitizeOutputString,
   sanitizeOutputValue,
 } from "../shared/logging/sanitize-output.js";
+import { sanitizeFeedbackResponse } from "../feedback-sanitize.js";
 import {
   ALLOW_LISTED_COMMANDS,
   validateCommandPayload,
 } from "./command-registry.js";
 import { STATUSES } from "../lifecycle.js";
-import { sanitizeFeedbackResponse } from "../feedback-sanitize.js";
 import {
   createRedactionMiddleware,
   redactValue,
@@ -8321,10 +8321,21 @@ export function createWebApp({
 
       try {
         const result = await commandAdapter[commandParam](payload);
-        const sanitizedResult =
-          commandParam === "feedback-list"
-            ? sanitizeFeedbackResponse(result)
-            : sanitizeCommandResult(result);
+        const sanitizedResult = sanitizeCommandResult(result);
+        if (commandParam === "feedback-list" && typeof sanitizedResult === "object") {
+          const sanitizedData = sanitizeFeedbackResponse(
+            result && typeof result === "object" && "data" in result
+              ? result.data
+              : result,
+          );
+          sanitizedResult.data = sanitizedData;
+          if (typeof sanitizedResult.stdout === "string") {
+            sanitizedResult.stdout = JSON.stringify(sanitizedData, null, 2);
+          }
+          if (!("stderr" in sanitizedResult)) {
+            sanitizedResult.stderr = "";
+          }
+        }
         const durationMs = roundDuration(started);
         const historyResult = redactValue(
           decorateResultStatus(sanitizedResult, "success"),

@@ -4,6 +4,7 @@ import { WebSocket } from "ws";
 import { JSDOM } from "jsdom";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { sanitizeFeedbackResponse } from "../src/feedback-sanitize.js";
 
 let activeServers = [];
 let activeSockets = [];
@@ -4661,22 +4662,33 @@ describe("web server command endpoint", () => {
 
   it("lists feedback entries and records sanitized history", async () => {
     const commandAdapter = {
-      "feedback-list": vi.fn(async () => ({
-        feedback: [
-          {
-            id: "fb-1",
-            message: "  Loved the launch ",
-            contact: "casey@example.com",
-            rating: 5,
-            recorded_at: "2025-11-30T00:00:00.000Z",
-          },
-          {
-            id: "fb-2",
-            message: "apiKey=supersecret",
-            contact: "apiKey=supersecret",
-          },
-        ],
-      })),
+      "feedback-list": vi.fn(async () => {
+        const raw = {
+          feedback: [
+            {
+              id: "fb-1",
+              message: "  Loved the launch ",
+              contact: "casey@example.com",
+              rating: 5,
+              recorded_at: "2025-11-30T00:00:00.000Z",
+            },
+            {
+              id: "fb-2",
+              message: "apiKey=supersecret",
+              contact: "apiKey=supersecret",
+            },
+          ],
+        };
+        const sanitized = sanitizeFeedbackResponse(raw);
+        return {
+          command: "feedback-list",
+          format: "json",
+          stdout: JSON.stringify(sanitized, null, 2),
+          stderr: "",
+          returnValue: 0,
+          data: sanitized,
+        };
+      }),
     };
 
     const server = await startServer({ commandAdapter });
@@ -4692,20 +4704,27 @@ describe("web server command endpoint", () => {
     const body = await response.json();
     expect(commandAdapter["feedback-list"]).toHaveBeenCalledWith({});
     expect(body).toEqual({
-      feedback: [
-        {
-          id: "fb-1",
-          message: "Loved the launch",
-          contact: "ca***@example.com",
-          rating: 5,
-          recorded_at: "2025-11-30T00:00:00.000Z",
-        },
-        {
-          id: "fb-2",
-          message: "apiKey=***redacted***",
-          contact: "apiKey=***redacted***",
-        },
-      ],
+      command: "feedback-list",
+      format: "json",
+      stdout: expect.any(String),
+      stderr: "",
+      returnValue: 0,
+      data: {
+        feedback: [
+          {
+            id: "fb-1",
+            message: "Loved the launch",
+            contact: "ca***@example.com",
+            rating: 5,
+            recorded_at: "2025-11-30T00:00:00.000Z",
+          },
+          {
+            id: "fb-2",
+            message: "apiKey=***redacted***",
+            contact: "apiKey=***redacted***",
+          },
+        ],
+      },
     });
 
     const cookies = response.headers.getSetCookie?.() ?? [];
@@ -4726,21 +4745,27 @@ describe("web server command endpoint", () => {
         command: "feedback-list",
         payload: {},
         result: {
-          feedback: [
-            {
-              id: "fb-1",
-              message: "Loved the launch",
-              contact: "ca***@example.com",
-              rating: 5,
-              recorded_at: "2025-11-30T00:00:00.000Z",
-            },
-            {
-              id: "fb-2",
-              message: "apiKey=***redacted***",
-              contact: "apiKey=***redacted***",
-            },
-          ],
           status: "success",
+          command: "feedback-list",
+          format: "json",
+          stdout: expect.any(String),
+          returnValue: 0,
+          data: {
+            feedback: [
+              {
+                id: "fb-1",
+                message: "Loved the launch",
+                contact: "ca***@example.com",
+                rating: 5,
+                recorded_at: "2025-11-30T00:00:00.000Z",
+              },
+              {
+                id: "fb-2",
+                message: "apiKey=***redacted***",
+                contact: "apiKey=***redacted***",
+              },
+            ],
+          },
         },
         timestamp: expect.any(String),
       },
