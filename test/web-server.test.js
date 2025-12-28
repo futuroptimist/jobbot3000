@@ -1197,6 +1197,196 @@ describe("web server status page", () => {
     anchorClick.mockRestore();
   });
 
+  it("renders and updates follow-up reminders from the applications view", async () => {
+    const shortlistPayload = {
+      command: "shortlist-list",
+      format: "json",
+      stdout: "",
+      stderr: "",
+      data: {
+        total: 0,
+        offset: 0,
+        limit: 10,
+        filters: {},
+        items: [],
+        hasMore: false,
+      },
+    };
+
+    let remindersPayload = {
+      reminders: [
+        {
+          job_id: "job-1",
+          remind_at: "2025-03-02T15:00:00.000Z",
+          past_due: true,
+          note: "Send follow-up email",
+        },
+        {
+          job_id: "job-2",
+          remind_at: "2025-03-03T18:30:00.000Z",
+          contact: "Hiring Manager",
+          channel: "call",
+          past_due: false,
+        },
+      ],
+    };
+    remindersPayload.sections = [
+      {
+        heading: "Past Due",
+        reminders: remindersPayload.reminders.filter((reminder) => reminder.past_due),
+      },
+      {
+        heading: "Upcoming",
+        reminders: remindersPayload.reminders.filter((reminder) => !reminder.past_due),
+      },
+    ];
+
+    const commandAdapter = {
+      "shortlist-list": vi.fn(async () => shortlistPayload),
+      "track-reminders": vi.fn(async () => ({
+        command: "track-reminders",
+        format: "json",
+        stdout: JSON.stringify(remindersPayload, null, 2),
+        stderr: "",
+        returnValue: 0,
+        data: remindersPayload,
+      })),
+      "track-reminders-snooze": vi.fn(async (payload) => {
+        expect(payload).toMatchObject({
+          jobId: "job-2",
+          until: new Date("2025-03-06T12:00").toISOString(),
+        });
+        remindersPayload = {
+          ...remindersPayload,
+          reminders: remindersPayload.reminders.map((reminder) =>
+            reminder.job_id === "job-2"
+              ? { ...reminder, remind_at: "2025-03-06T12:00:00.000Z" }
+              : reminder,
+          ),
+        };
+        remindersPayload.sections = [
+          {
+            heading: "Past Due",
+            reminders: remindersPayload.reminders.filter((reminder) => reminder.past_due),
+          },
+          {
+            heading: "Upcoming",
+            reminders: remindersPayload.reminders.filter((reminder) => !reminder.past_due),
+          },
+        ];
+        return {
+          command: "track-reminders-snooze",
+          format: "json",
+          stdout: "",
+          stderr: "",
+          returnValue: 0,
+          data: {
+            jobId: payload.jobId,
+            remindAt: "2025-03-06T12:00:00.000Z",
+            reminder: { remind_at: "2025-03-06T12:00:00.000Z" },
+          },
+        };
+      }),
+      "track-reminders-done": vi.fn(async (payload) => {
+        expect(payload).toMatchObject({ jobId: "job-1" });
+        remindersPayload = {
+          ...remindersPayload,
+          reminders: remindersPayload.reminders.filter(
+            (reminder) => reminder.job_id !== payload.jobId,
+          ),
+        };
+        remindersPayload.sections = [
+          {
+            heading: "Past Due",
+            reminders: remindersPayload.reminders.filter((reminder) => reminder.past_due),
+          },
+          {
+            heading: "Upcoming",
+            reminders: remindersPayload.reminders.filter((reminder) => !reminder.past_due),
+          },
+        ];
+        return {
+          command: "track-reminders-done",
+          format: "json",
+          stdout: "",
+          stderr: "",
+          returnValue: 0,
+          data: {
+            jobId: payload.jobId,
+            reminderCompletedAt: "2025-03-05T08:00:00.000Z",
+            reminder: { reminder_completed_at: "2025-03-05T08:00:00.000Z" },
+          },
+        };
+      }),
+    };
+    commandAdapter.shortlistList = commandAdapter["shortlist-list"];
+    commandAdapter.trackReminders = commandAdapter["track-reminders"];
+    commandAdapter.trackRemindersSnooze = commandAdapter["track-reminders-snooze"];
+    commandAdapter.trackRemindersDone = commandAdapter["track-reminders-done"];
+
+    const server = await startServer({ commandAdapter });
+    const { dom, boot } = await renderStatusDom(server, {
+      pretendToBeVisual: true,
+      autoBoot: false,
+    });
+
+    const waitForEvent = (name, timeout = 500) => waitForDomEvent(dom, name, timeout);
+
+    const readyPromise = waitForEvent("jobbot:applications-ready");
+    await boot();
+    await readyPromise;
+
+    const HashChange = dom.window.HashChangeEvent ?? dom.window.Event;
+    dom.window.location.hash = "#applications";
+    dom.window.dispatchEvent(new HashChange("hashchange"));
+
+    await waitForEvent("jobbot:applications-loaded");
+    await waitForEvent("jobbot:reminders-loaded");
+
+    const remindersPanel = dom.window.document.querySelector(
+      '[data-status-panel="reminders"]',
+    );
+    expect(remindersPanel).toBeTruthy();
+    const reminderEntries = remindersPanel?.querySelectorAll("[data-reminder-entry]");
+    expect(reminderEntries?.length).toBe(2);
+    expect(
+      remindersPanel
+        ?.querySelector('[data-reminders-section="past-due"]')
+        ?.textContent?.toLowerCase(),
+    ).toContain("job-1");
+
+    const snoozeInput = remindersPanel?.querySelector(
+      '[data-reminder-entry="job-2"] input[type="datetime-local"]',
+    );
+    const snoozeButton = remindersPanel?.querySelector(
+      '[data-reminder-action="snooze"][data-reminder-id="job-2"]',
+    );
+    expect(snoozeInput).toBeTruthy();
+    snoozeInput.value = "2025-03-06T12:00";
+
+    snoozeButton?.dispatchEvent(
+      new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
+    await waitForEvent("jobbot:reminders-loaded");
+
+    expect(commandAdapter["track-reminders-snooze"]).toHaveBeenCalledTimes(1);
+
+    const doneButton = remindersPanel?.querySelector(
+      '[data-reminder-action="done"][data-reminder-id="job-1"]',
+    );
+    doneButton?.dispatchEvent(
+      new dom.window.MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
+    await waitForEvent("jobbot:reminders-loaded");
+
+    expect(commandAdapter["track-reminders-done"]).toHaveBeenCalledTimes(1);
+
+    const finalEntries = remindersPanel?.querySelectorAll("[data-reminder-entry]");
+    expect(finalEntries?.length).toBe(1);
+    expect(finalEntries?.[0]?.getAttribute("data-reminder-entry")).toBe("job-2");
+    expect(commandAdapter["track-reminders"]).toHaveBeenCalledTimes(3);
+  });
+
   it("records recruiter outreach emails from the applications view", async () => {
     const shortlistPayload = {
       command: "shortlist-list",
