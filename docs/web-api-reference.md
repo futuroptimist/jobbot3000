@@ -78,8 +78,8 @@ identifiers and use the replacement cookie for subsequent requests.
 
 Returns the sanitized payload history for the current client, including sanitized command results.
 Entries mirror the payloads supplied to recent `/commands/:command` requests after control
-characters are stripped, keys trimmed, empty collections removed, and blank fields discarded. Empty
-payloads that sanitize down to nothing are ignored so the history only captures meaningful
+characters are stripped, keys trimmed, empty collections removed, and blank/null fields discarded.
+Empty payloads that sanitize down to nothing are ignored so the history only captures meaningful
 requests. Command names are normalized the same way, removing control characters and surrounding
 whitespace before they are persisted. Command results are captured with the same sanitization
 pipeline (redacted stdout/stderr/error messages, trimmed objects) and annotated with a `status` of
