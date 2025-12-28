@@ -16,6 +16,7 @@ import {
   validateCommandPayload,
 } from "./command-registry.js";
 import { STATUSES } from "../lifecycle.js";
+import { sanitizeFeedbackResponse } from "../feedback-sanitize.js";
 import {
   createRedactionMiddleware,
   redactValue,
@@ -8320,7 +8321,10 @@ export function createWebApp({
 
       try {
         const result = await commandAdapter[commandParam](payload);
-        const sanitizedResult = sanitizeCommandResult(result);
+        const sanitizedResult =
+          commandParam === "feedback-list"
+            ? sanitizeFeedbackResponse(result)
+            : sanitizeCommandResult(result);
         const durationMs = roundDuration(started);
         const historyResult = redactValue(
           decorateResultStatus(sanitizedResult, "success"),

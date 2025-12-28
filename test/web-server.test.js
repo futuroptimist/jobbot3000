@@ -4659,6 +4659,94 @@ describe("web server command endpoint", () => {
     ]);
   });
 
+  it("lists feedback entries and records sanitized history", async () => {
+    const commandAdapter = {
+      "feedback-list": vi.fn(async () => ({
+        feedback: [
+          {
+            id: "fb-1",
+            message: "  Loved the launch ",
+            contact: "casey@example.com",
+            rating: 5,
+            recorded_at: "2025-11-30T00:00:00.000Z",
+          },
+          {
+            id: "fb-2",
+            message: "apiKey=supersecret",
+            contact: "apiKey=supersecret",
+          },
+        ],
+      })),
+    };
+
+    const server = await startServer({ commandAdapter });
+    const headers = buildCommandHeaders(server);
+
+    const response = await fetch(`${server.url}/commands/feedback-list`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({}),
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(commandAdapter["feedback-list"]).toHaveBeenCalledWith({});
+    expect(body).toEqual({
+      feedback: [
+        {
+          id: "fb-1",
+          message: "Loved the launch",
+          contact: "ca***@example.com",
+          rating: 5,
+          recorded_at: "2025-11-30T00:00:00.000Z",
+        },
+        {
+          id: "fb-2",
+          message: "apiKey=***redacted***",
+          contact: "apiKey=***redacted***",
+        },
+      ],
+    });
+
+    const cookies = response.headers.getSetCookie?.() ?? [];
+    const cookieHeader = cookies.map((entry) => entry.split(";")[0]).join("; ");
+
+    const history = await fetch(`${server.url}/commands/payloads/recent`, {
+      method: "GET",
+      headers: {
+        ...headers,
+        cookie: [headers.cookie, cookieHeader].filter(Boolean).join("; "),
+      },
+    });
+
+    expect(history.status).toBe(200);
+    const historyBody = await history.json();
+    expect(historyBody.entries).toEqual([
+      {
+        command: "feedback-list",
+        payload: {},
+        result: {
+          feedback: [
+            {
+              id: "fb-1",
+              message: "Loved the launch",
+              contact: "ca***@example.com",
+              rating: 5,
+              recorded_at: "2025-11-30T00:00:00.000Z",
+            },
+            {
+              id: "fb-2",
+              message: "apiKey=***redacted***",
+              contact: "apiKey=***redacted***",
+            },
+          ],
+          status: "success",
+        },
+        timestamp: expect.any(String),
+      },
+    ]);
+  });
+
   it("redacts command results in payload history when adapters return array buffers", async () => {
     const encoder = new TextEncoder();
     const commandAdapter = {

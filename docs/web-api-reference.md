@@ -201,6 +201,10 @@ The following command endpoints are available. Each one maps directly to a CLI h
 - `POST /commands/feedback-record` → `jobbot feedback record`: Persist beta feedback with optional
   `source`, `contact`, and `rating` fields. Entries are sanitized (control characters removed,
   whitespace collapsed), time-stamped, and written to `data/feedback.json` for follow-up analysis.
+- `POST /commands/feedback-list` → `jobbot feedback list --json`: Return recorded beta feedback with
+  contacts and secret-like values redacted for safe UI display. Responses mirror the CLI JSON shape
+  `{ "feedback": [...] }` and feed the payload history log so browsers can rehydrate cached entries
+  without reissuing CLI calls.
 - `POST /commands/intake-plan` → `jobbot intake plan`: Build a prioritized intake question plan using
   the stored resume, optionally overriding the resume path via `profilePath`. Responses mirror the
   CLI `--json` output with `plan`, `resume_path`, and `manual_templates` fields so the web UI can

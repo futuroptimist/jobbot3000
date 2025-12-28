@@ -1585,6 +1585,60 @@ describe('createCommandAdapter', () => {
     expect(result.stdout).toContain('fb-123');
   });
 
+  it('lists feedback entries through the CLI with sanitized output', async () => {
+    const cli = {
+      cmdFeedbackList: vi.fn(async (args) => {
+        expect(args).toEqual(['--json']);
+        console.log(
+          JSON.stringify({
+            feedback: [
+              {
+                id: 'fb-901',
+                message: '  Great launch\u0007 ',
+                source: ' beta-form ',
+                contact: 'casey@example.com',
+                rating: 5,
+                recorded_at: '2025-11-30T00:00:00.000Z',
+              },
+              {
+                id: 'fb-902',
+                message: 'Need keyboard shortcuts',
+                contact: 'api_key=supersecret',
+              },
+            ],
+          }),
+        );
+      }),
+    };
+
+    const adapter = createCommandAdapter({ cli });
+    const result = await adapter['feedback-list']({});
+
+    expect(cli.cmdFeedbackList).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      command: 'feedback-list',
+      format: 'json',
+    });
+    expect(result.data).toEqual({
+      feedback: [
+        {
+          id: 'fb-901',
+          message: 'Great launch',
+          source: 'beta-form',
+          contact: 'ca***@example.com',
+          rating: 5,
+          recorded_at: '2025-11-30T00:00:00.000Z',
+        },
+        {
+          id: 'fb-902',
+          message: 'Need keyboard shortcuts',
+          contact: 'api_key=***redacted***',
+        },
+      ],
+    });
+    expect(result.stdout).toContain('"feedback"');
+  });
+
   it('requires question when recording intake response', async () => {
     const cli = {
       cmdIntakeRecord: vi.fn(),

@@ -284,6 +284,12 @@ function validateFeedbackRecordPayload(payload) {
   return sanitized;
 }
 
+function validateFeedbackListPayload(payload) {
+  const data = ensurePlainObject(payload ?? {}, "feedback-list");
+  assertAllowedFields(data, [], "feedback-list");
+  return {};
+}
+
 function coerceTagList(value, { name }) {
   if (value == null) return undefined;
   const list = Array.isArray(value) ? value : [value];
@@ -736,6 +742,7 @@ const COMMAND_VALIDATORS = Object.freeze({
     return {};
   },
   "recruiter-ingest": validateRecruiterIngestPayload,
+  "feedback-list": validateFeedbackListPayload,
   "feedback-record": validateFeedbackRecordPayload,
   "intake-plan": validateIntakePlanPayload,
   "intake-list": validateIntakeListPayload,

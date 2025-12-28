@@ -667,4 +667,15 @@ export function normalizeFeedbackRecordRequest(options = {}) {
   return request;
 }
 
+export function normalizeFeedbackListRequest(options = {}) {
+  assertPlainObject(options, 'feedback list request');
+
+  const extra = Object.keys(options);
+  if (extra.length > 0) {
+    throw new Error(`unexpected feedback list keys: ${extra.join(', ')}`);
+  }
+
+  return {};
+}
+
 export const WEB_SUPPORTED_FORMATS = [...SUPPORTED_FORMATS];
