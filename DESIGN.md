@@ -271,6 +271,10 @@ jobbot track add <job_id> --status applied --note "emailed hiring manager"
   documented scenarios.
 - **RAG eval** (for explanations): Ragas or custom assertion checks.
 - **Security**: OWASP LLM Top-10 style prompt-injection suite; rate-limit fuzzer.
+  _Implemented (2025-12-30):_ `test/web-rate-limit-fuzzer.test.js` now fuzzes the
+  in-memory rate limiter with deterministic bursts, ensuring per-client windows never exceed their
+  caps and reset safely across jittered timestamps. Extend the suite with prompt-injection checks
+  next.
 - **ATS checks**: text extract from produced PDF and verify keyword presence + structure.
 
 ---
