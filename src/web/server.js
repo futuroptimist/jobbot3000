@@ -2568,7 +2568,12 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
           })();
           const actionState = { jobId: null, submitting: false, enabled: false };
           const remindersState = { running: false };
-          const remindersListState = { loading: false };
+          const remindersListState = {
+            loading: false,
+            lastData: null,
+            lastError: null,
+            loadingPromise: null,
+          };
           const exportState = { running: false };
           const remindersReportState = { report: null };
           const dragStatuses = ${JSON.stringify(STATUSES)};
@@ -3244,32 +3249,45 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
               preserveMessage: options.preserveMessage === true,
             });
             try {
-              const data = await postCommand(
-                '/commands/track-reminders',
-                { format: 'json', upcomingOnly: false },
-                {
-                  invalidResponse: 'Received invalid response while loading reminders',
-                  failureMessage: 'Failed to load reminders',
-                },
-              );
-              const sections = Array.isArray(data?.sections) ? data.sections : [];
-              renderReminders(sections);
-              setPanelState('reminders', 'ready', { preserveMessage: true });
-              dispatchRemindersLoaded({
-                reminders: Array.isArray(data?.reminders) ? data.reminders : [],
-                sections,
-                upcomingOnly: data?.upcomingOnly === true,
-              });
+              const runLoad = async () => {
+                const data = await postCommand(
+                  '/commands/track-reminders',
+                  { format: 'ics', upcomingOnly: true },
+                  {
+                    invalidResponse: 'Received invalid response while loading reminders',
+                    failureMessage: 'Failed to load reminders',
+                  },
+                );
+                remindersListState.lastData = data || null;
+                remindersListState.lastError = null;
+                const sections = Array.isArray(data?.sections) ? data.sections : [];
+                renderReminders(sections);
+                setPanelState('reminders', 'ready', { preserveMessage: true });
+                dispatchRemindersLoaded({
+                  reminders: Array.isArray(data?.reminders) ? data.reminders : [],
+                  sections,
+                  upcomingOnly: data?.upcomingOnly === true,
+                });
+                return data;
+              };
+              remindersListState.loadingPromise = runLoad();
+              await remindersListState.loadingPromise;
               return true;
             } catch (error) {
               const message =
                 error && typeof error.message === 'string'
                   ? error.message
                   : 'Unable to load reminders';
+              remindersListState.lastData = null;
+              remindersListState.lastError = {
+                message,
+                report: error && typeof error.report === 'object' ? error.report : null,
+              };
               setPanelState('reminders', 'error', { message });
               return false;
             } finally {
               remindersListState.loading = false;
+              remindersListState.loadingPromise = null;
             }
           }
 
@@ -3467,6 +3485,68 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             }
           }
 
+          function completeRemindersExport(payload) {
+            remindersReportState.report = null;
+            if (remindersReportButton) {
+              remindersReportButton.setAttribute('hidden', '');
+            }
+            remindersListState.lastData = payload || null;
+            remindersListState.lastError = null;
+            const calendar =
+              payload && typeof payload.calendar === 'string' ? payload.calendar : '';
+            if (!calendar) {
+              throw new Error('Reminder calendar export did not include calendar data');
+            }
+            const filename =
+              payload && typeof payload.filename === 'string' && payload.filename.trim()
+                ? payload.filename.trim()
+                : 'jobbot-reminders.ics';
+            downloadFile(calendar, { filename, type: 'text/calendar' });
+            setRemindersMessage('info', 'Download ready: ' + filename);
+            dispatchRemindersExported({ success: true, format: 'ics', filename });
+            return true;
+          }
+
+          function failRemindersExport(error) {
+            const message =
+              error && typeof error.message === 'string'
+                ? error.message
+                : 'Failed to export reminders';
+            const report =
+              error && typeof error.report === 'object' && error.report !== null
+                ? error.report
+                : null;
+            remindersListState.lastData = null;
+            remindersListState.lastError = { message, report };
+            if (report && remindersReportButton) {
+              const reportData = {
+                logPath:
+                  typeof report.logPath === 'string' ? report.logPath : 'logs/calendar.log',
+                entry: report.entry && typeof report.entry === 'object' ? report.entry : {},
+              };
+              const reportId =
+                typeof report.id === 'string' && report.id ? report.id : String(Date.now());
+              const filename = 'jobbot-calendar-error-' + reportId + '.json';
+              remindersReportState.report = {
+                filename,
+                contents: JSON.stringify(reportData, null, 2),
+              };
+              remindersReportButton.removeAttribute('hidden');
+              setRemindersMessage(
+                'error',
+                message + ' — download the bug report and share it with maintainers.',
+              );
+            } else {
+              remindersReportState.report = null;
+              if (remindersReportButton) {
+                remindersReportButton.setAttribute('hidden', '');
+              }
+              setRemindersMessage('error', message);
+            }
+            dispatchRemindersExported({ success: false, format: 'ics', error: message });
+            return false;
+          }
+
           async function exportRemindersCalendar() {
             if (remindersState.running || !remindersButton) {
               return false;
@@ -3481,6 +3561,40 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
             }
 
             try {
+              const pendingLoad = remindersListState.loadingPromise;
+              if (pendingLoad) {
+                try {
+                  const pendingData = await pendingLoad;
+                  if (pendingData) {
+                    remindersListState.lastData = pendingData;
+                    remindersListState.lastError = null;
+                  }
+                  if (pendingData?.calendar) {
+                    return completeRemindersExport(pendingData);
+                  }
+                } catch (pendingError) {
+                  const fallbackError =
+                    pendingError && typeof pendingError.message === 'string'
+                      ? {
+                          message: pendingError.message,
+                          report:
+                            pendingError && typeof pendingError.report === 'object'
+                              ? pendingError.report
+                              : null,
+                        }
+                      : null;
+                  if (fallbackError) {
+                    remindersListState.lastError = fallbackError;
+                    return failRemindersExport(fallbackError);
+                  }
+                }
+              }
+              if (remindersListState.lastData?.calendar) {
+                return completeRemindersExport(remindersListState.lastData);
+              }
+              if (remindersListState.lastError) {
+                return failRemindersExport(remindersListState.lastError);
+              }
               const data = await postCommand(
                 '/commands/track-reminders',
                 { format: 'ics', upcomingOnly: true },
@@ -3489,57 +3603,9 @@ const STATUS_PAGE_SCRIPT = minifyInlineScript(String.raw`      (() => {
                   failureMessage: 'Failed to export reminders',
                 },
               );
-              const calendar = typeof data?.calendar === 'string' ? data.calendar : '';
-              if (!calendar) {
-                throw new Error('Reminder calendar export did not include calendar data');
-              }
-              const filename =
-                typeof data?.filename === 'string' && data.filename.trim()
-                  ? data.filename.trim()
-                  : 'jobbot-reminders.ics';
-              downloadFile(calendar, { filename, type: 'text/calendar' });
-              setRemindersMessage('info', 'Download ready: ' + filename);
-              dispatchRemindersExported({ success: true, format: 'ics', filename });
-              return true;
+              return completeRemindersExport(data);
             } catch (error) {
-              const message =
-                error && typeof error.message === 'string'
-                  ? error.message
-                  : 'Failed to export reminders';
-              if (error?.report && remindersReportButton) {
-                const reportData = {
-                  logPath:
-                    typeof error.report.logPath === 'string'
-                      ? error.report.logPath
-                      : 'logs/calendar.log',
-                  entry:
-                    error.report.entry && typeof error.report.entry === 'object'
-                      ? error.report.entry
-                      : {},
-                };
-                const reportId =
-                  typeof error.report.id === 'string' && error.report.id
-                    ? error.report.id
-                    : String(Date.now());
-                const filename = 'jobbot-calendar-error-' + reportId + '.json';
-                remindersReportState.report = {
-                  filename,
-                  contents: JSON.stringify(reportData, null, 2),
-                };
-                remindersReportButton.removeAttribute('hidden');
-                setRemindersMessage(
-                  'error',
-                  message + ' — download the bug report and share it with maintainers.',
-                );
-              } else {
-                remindersReportState.report = null;
-                if (remindersReportButton) {
-                  remindersReportButton.setAttribute('hidden', '');
-                }
-                setRemindersMessage('error', message);
-              }
-              dispatchRemindersExported({ success: false, format: 'ics', error: message });
-              return false;
+              return failRemindersExport(error);
             } finally {
               remindersState.running = false;
               remindersButton.disabled = false;
