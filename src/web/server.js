@@ -93,6 +93,23 @@ export function createInMemoryRateLimiter(options = {}) {
   };
 }
 
+function createRateLimitMiddleware(rateLimiter) {
+  return function rateLimitMiddleware(req, res, next) {
+    const clientIp = req.ip || req.socket?.remoteAddress || undefined;
+    const rateKey = clientIp || "unknown";
+    const rateStatus = rateLimiter.check(rateKey);
+    req.rateLimitStatus = rateStatus;
+    req.rateLimitContext = { rateKey, clientIp };
+    res.set("X-RateLimit-Limit", String(rateLimiter.limit));
+    res.set(
+      "X-RateLimit-Remaining",
+      String(Math.max(0, rateStatus.remaining)),
+    );
+    res.set("X-RateLimit-Reset", new Date(rateStatus.reset).toISOString());
+    next();
+  };
+}
+
 function normalizeKeyringClientId(value) {
   if (typeof value !== "string") {
     return null;
@@ -6959,6 +6976,7 @@ export function createWebApp({
   const normalizedChecks = normalizeHealthChecks(healthChecks);
   const csrfOptions = normalizeCsrfOptions(csrf);
   const rateLimiter = createInMemoryRateLimiter(rateLimit);
+  const rateLimitMiddleware = createRateLimitMiddleware(rateLimiter);
   const authOptions = normalizeAuthOptions(auth);
   const statusHubScriptBuffer = Buffer.from(STATUS_PAGE_SCRIPT, "utf8");
   const statusHubScriptGzip = gzipSync(statusHubScriptBuffer);
@@ -8115,25 +8133,44 @@ export function createWebApp({
     res.json({ revoked: Boolean(currentSessionId), sessionId: replacementId });
   });
 
+  const commandContextMiddleware = (req, res, next) => {
+    const requestPath =
+      typeof req.path === "string"
+        ? req.path
+        : typeof req.originalUrl === "string"
+          ? req.originalUrl
+          : "";
+    const commandParam =
+      (typeof req.params?.command === "string" && req.params.command.trim()) ||
+      (requestPath.startsWith("/commands/")
+        ? requestPath.split("/")[2]?.split("?")[0]?.trim()
+        : "");
+    const clientIp = req.ip || req.socket?.remoteAddress || undefined;
+    const userAgent = req.get("user-agent");
+    const method = req.method ?? "POST";
+    req.commandContext = { commandParam, clientIp, userAgent, method };
+    next();
+  };
+
   app.post(
     "/commands/:command",
+    commandContextMiddleware,
+    rateLimitMiddleware,
     jsonParser,
     redactionMiddleware,
     async (req, res) => {
-      const commandParam =
-        typeof req.params.command === "string" ? req.params.command.trim() : "";
-      const clientIp = req.ip || req.socket?.remoteAddress || undefined;
-      const userAgent = req.get("user-agent");
-      const method = req.method ?? "POST";
-
-      const rateKey = clientIp || "unknown";
-      const rateStatus = rateLimiter.check(rateKey);
-      res.set("X-RateLimit-Limit", String(rateLimiter.limit));
-      res.set(
-        "X-RateLimit-Remaining",
-        String(Math.max(0, rateStatus.remaining)),
-      );
-      res.set("X-RateLimit-Reset", new Date(rateStatus.reset).toISOString());
+      const {
+        commandParam = "",
+        clientIp,
+        userAgent,
+        method = "POST",
+      } = req.commandContext ?? {};
+      const rateContext = req.rateLimitContext ?? {
+        rateKey: clientIp || "unknown",
+        clientIp,
+      };
+      const rateStatus =
+        req.rateLimitStatus ?? rateLimiter.check(rateContext.rateKey);
 
       const started = performance.now();
       const sessionId = ensureClientSession(req, res, {
@@ -8616,20 +8653,18 @@ export function createWebApp({
             : "";
 
       if (requestPath.startsWith("/commands/")) {
-        const clientIp = req.ip || req.socket?.remoteAddress || undefined;
-        const commandParam =
-          (typeof req.params?.command === "string" && req.params.command.trim()) ||
-          requestPath.split("/")[2]?.trim();
-        const userAgent = req.get("user-agent");
-        const method = req.method ?? "POST";
-        const rateKey = clientIp || "unknown";
-        const rateStatus = rateLimiter.check(rateKey);
-        res.set("X-RateLimit-Limit", String(rateLimiter.limit));
-        res.set(
-          "X-RateLimit-Remaining",
-          String(Math.max(0, rateStatus.remaining)),
-        );
-        res.set("X-RateLimit-Reset", new Date(rateStatus.reset).toISOString());
+        const {
+          commandParam = "",
+          clientIp,
+          userAgent,
+          method = "POST",
+        } = req.commandContext ?? {};
+        const rateContext = req.rateLimitContext ?? {
+          rateKey: clientIp || "unknown",
+          clientIp,
+        };
+        const rateStatus =
+          req.rateLimitStatus ?? rateLimiter.check(rateContext.rateKey);
         if (!rateStatus.allowed) {
           const retryAfterSeconds = Math.max(
             1,
