@@ -8152,10 +8152,18 @@ export function createWebApp({
     next();
   };
 
+  const commandEnvelopeMiddleware = (req, res, next) => {
+    if (req.params?.command === "payloads") {
+      next();
+      return;
+    }
+    commandContextMiddleware(req, res, () => rateLimitMiddleware(req, res, next));
+  };
+
+  app.use("/commands/:command", commandEnvelopeMiddleware);
+
   app.post(
     "/commands/:command",
-    commandContextMiddleware,
-    rateLimitMiddleware,
     jsonParser,
     redactionMiddleware,
     async (req, res) => {
