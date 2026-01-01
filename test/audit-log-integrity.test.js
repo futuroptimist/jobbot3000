@@ -92,6 +92,14 @@ describe('tamper-resistant audit log', () => {
     await expect(logger.verify()).rejects.toThrow(/integrityKey/i);
   });
 
+  it('rejects verification with an incorrect integrity key', async () => {
+    const logger = createAuditLogger({ logPath, integrityKey: 'secret-key' });
+    await logger.record({ action: 'first', actor: 'cli' });
+
+    const verifier = createAuditLogger({ logPath, integrityKey: 'other-key' });
+    await expect(verifier.verify()).rejects.toThrow(/integrity/i);
+  });
+
   it('fails verification when history has been tampered', async () => {
     const logger = createAuditLogger({ logPath, integrityKey: 'secret-key' });
     await logger.record({ action: 'first', actor: 'cli' });

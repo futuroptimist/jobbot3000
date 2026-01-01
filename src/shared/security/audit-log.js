@@ -55,10 +55,12 @@ async function verifyExistingLog(logPath, integrityKey) {
   let previousHash = null;
   let lineNumber = 0;
   let mtimeMs = null;
+  let size = 0;
 
   try {
     const [raw, stats] = await Promise.all([fs.readFile(logPath, 'utf8'), fs.stat(logPath)]);
     mtimeMs = stats.mtimeMs;
+    size = stats.size;
     const lines = raw
       .split('\n')
       .map(line => line.trim())
@@ -98,18 +100,17 @@ async function verifyExistingLog(logPath, integrityKey) {
     }
   } catch (error) {
     if (error && error.code === 'ENOENT') {
-      return { lastHash: null, lines: 0, mtimeMs: null };
+      return { lastHash: null, lines: 0, mtimeMs: null, size: 0 };
     }
     throw error;
   }
 
-  return { lastHash: previousHash, lines: lineNumber, mtimeMs };
+  return { lastHash: previousHash, lines: lineNumber, mtimeMs, size };
 }
 
-async function getMtimeMs(filePath) {
+async function getFileStat(filePath) {
   try {
-    const stats = await fs.stat(filePath);
-    return stats.mtimeMs;
+    return await fs.stat(filePath);
   } catch (error) {
     if (error && error.code === 'ENOENT') {
       return null;
@@ -136,6 +137,7 @@ export function createAuditLogger(options) {
     typeof integrityKey === 'string' && integrityKey.trim() ? integrityKey.trim() : null;
   let chainHead = null;
   let lastObservedMtime = null;
+  let lastObservedSize = null;
   /** @type {Promise<unknown>} */
   let writeChain = Promise.resolve();
 
@@ -157,11 +159,22 @@ export function createAuditLogger(options) {
         }
         let currentMtimeMs = null;
         if (trimmedIntegrityKey) {
-          currentMtimeMs = await getMtimeMs(absolute);
-          if (chainHead === null || rotated || currentMtimeMs !== lastObservedMtime) {
-            const { lastHash, mtimeMs } = await verifyExistingLog(absolute, trimmedIntegrityKey);
+          const stats = await getFileStat(absolute);
+          currentMtimeMs = stats?.mtimeMs ?? null;
+          const currentSize = stats?.size ?? null;
+          const shouldVerifyLog =
+            chainHead === null ||
+            rotated ||
+            currentMtimeMs !== lastObservedMtime ||
+            currentSize !== lastObservedSize;
+          if (shouldVerifyLog) {
+            const { lastHash, mtimeMs, size } = await verifyExistingLog(
+              absolute,
+              trimmedIntegrityKey,
+            );
             chainHead = lastHash;
             lastObservedMtime = mtimeMs;
+            lastObservedSize = size;
           }
         }
 
@@ -184,7 +197,9 @@ export function createAuditLogger(options) {
         await fs.mkdir(path.dirname(absolute), { recursive: true });
         await fs.appendFile(absolute, `${JSON.stringify(entryToPersist)}\n`, 'utf8');
         if (trimmedIntegrityKey) {
-          lastObservedMtime = await getMtimeMs(absolute);
+          const updatedStats = await getFileStat(absolute);
+          lastObservedMtime = updatedStats?.mtimeMs ?? null;
+          lastObservedSize = updatedStats?.size ?? null;
         }
         return entryToPersist;
       };

@@ -340,10 +340,11 @@ export function loadConfig(options = {}) {
 
   const normalizedIntegrityKey = (() => {
     const rawIntegrityKey = options.audit?.integrityKey ?? env.JOBBOT_AUDIT_INTEGRITY_KEY;
-    if (rawIntegrityKey == null) return '';
+    if (rawIntegrityKey == null) return null;
     const stringValue =
       typeof rawIntegrityKey === 'string' ? rawIntegrityKey : rawIntegrityKey.toString();
-    return stringValue.trim();
+    const trimmed = stringValue.trim();
+    return trimmed ? trimmed : null;
   })();
 
   const audit = {
@@ -352,7 +353,7 @@ export function loadConfig(options = {}) {
       options.audit?.retentionDays ?? env.JOBBOT_AUDIT_RETENTION_DAYS,
       30,
     ),
-    ...(normalizedIntegrityKey ? { integrityKey: normalizedIntegrityKey } : {}),
+    ...(normalizedIntegrityKey !== null ? { integrityKey: normalizedIntegrityKey } : {}),
   };
 
   const auth = (() => {

@@ -164,6 +164,15 @@ describe('loadWebConfig', () => {
     ]);
   });
 
+  it('ignores empty or whitespace-only audit integrity keys', async () => {
+    process.env.JOBBOT_AUDIT_INTEGRITY_KEY = '   ';
+
+    const { loadWebConfig } = await import('../src/web/config.js');
+    const config = await loadWebConfig({ env: 'development' });
+
+    expect(config.audit.integrityKey).toBeUndefined();
+  });
+
   it('parses numeric trust proxy hop counts before boolean normalization', async () => {
     process.env.JOBBOT_WEB_TRUST_PROXY = '1';
 
