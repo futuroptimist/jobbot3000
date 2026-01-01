@@ -6535,6 +6535,79 @@ function hasRequiredRoles(roleSet, requiredRoles) {
   return true;
 }
 
+function resolveAuthFromRequest(req, authOptions) {
+  const baseContext = authOptions
+    ? { subject: "unauthenticated", roles: new Set() }
+    : { subject: "guest", roles: new Set(["viewer"]) };
+  if (!authOptions) {
+    return {
+      authContext: baseContext,
+      authHeader: "",
+      hasAuthHeader: false,
+      providedScheme: "",
+      schemeValid: true,
+      tokenEntry: null,
+      tokenFingerprint: null,
+      tokenValue: null,
+    };
+  }
+
+  const providedAuth = req.get(authOptions.headerName);
+  const authHeader = typeof providedAuth === "string" ? providedAuth.trim() : "";
+  const hasAuthHeader = Boolean(authHeader);
+  let tokenValue = authHeader;
+  let schemeValid = true;
+  let providedScheme = "";
+  if (authOptions.requireScheme) {
+    const lowerValue = authHeader.toLowerCase();
+    if (!lowerValue.startsWith(authOptions.schemePrefixLower)) {
+      schemeValid = false;
+      providedScheme = authHeader.split(/\s+/)[0] ?? "";
+      tokenValue = "";
+    } else {
+      tokenValue = authHeader.slice(authOptions.schemePrefixLength).trim();
+    }
+  }
+
+  if (!tokenValue) {
+    return {
+      authContext: baseContext,
+      authHeader,
+      hasAuthHeader,
+      providedScheme,
+      schemeValid,
+      tokenEntry: null,
+      tokenFingerprint: null,
+      tokenValue,
+    };
+  }
+
+  const tokenEntry = authOptions.tokens.get(tokenValue) ?? null;
+  if (!tokenEntry) {
+    return {
+      authContext: baseContext,
+      authHeader,
+      hasAuthHeader,
+      providedScheme,
+      schemeValid,
+      tokenEntry: null,
+      tokenFingerprint: null,
+      tokenValue,
+    };
+  }
+
+  return {
+    authContext: tokenEntry,
+    authHeader,
+    hasAuthHeader,
+    providedScheme,
+    schemeValid,
+    tokenEntry,
+    tokenFingerprint: fingerprintToken(tokenValue),
+    tokenValue,
+  };
+}
+
 function normalizeAuthOptions(auth) {
   if (!auth || auth === false) {
     return null;
@@ -8077,11 +8150,10 @@ export function createWebApp({
           ...details,
         });
       };
-      let authContext = authOptions
-        ? { subject: "unauthenticated", roles: new Set() }
-        : { subject: "guest", roles: new Set(["viewer"]) };
+      const authResolution = resolveAuthFromRequest(req, authOptions);
+      let authContext = authResolution.authContext;
       let authPrincipal = authContext.subject;
-      let tokenFingerprint = null;
+      let tokenFingerprint = authResolution.tokenFingerprint;
 
       const recordAudit = async (event) => {
         if (!effectiveAuditLogger) return;
@@ -8160,10 +8232,7 @@ export function createWebApp({
             .json({ error: "Invalid or missing authorization token" });
         };
 
-        const providedAuth = req.get(authOptions.headerName);
-        const headerValue =
-          typeof providedAuth === "string" ? providedAuth.trim() : "";
-        if (!headerValue) {
+        if (!authResolution.hasAuthHeader) {
           await recordAudit({
             status: "unauthorized",
             reason: "missing-token",
@@ -8172,45 +8241,40 @@ export function createWebApp({
           return;
         }
 
-        let tokenValue = headerValue;
-        if (authOptions.requireScheme) {
-          const lowerValue = headerValue.toLowerCase();
-          if (!lowerValue.startsWith(authOptions.schemePrefixLower)) {
-            await recordAudit({
-              status: "unauthorized",
-              reason: "invalid-scheme",
-            });
-            const providedScheme = headerValue.split(/\s+/)[0] ?? "";
-            respondUnauthorized("invalid-scheme", {
-              providedScheme,
-            });
-            return;
-          }
-          tokenValue = headerValue.slice(authOptions.schemePrefixLength).trim();
-          if (!tokenValue) {
-            await recordAudit({
-              status: "unauthorized",
-              reason: "missing-token",
-            });
-            respondUnauthorized("missing-token");
-            return;
-          }
+        if (!authResolution.schemeValid) {
+          await recordAudit({
+            status: "unauthorized",
+            reason: "invalid-scheme",
+          });
+          respondUnauthorized("invalid-scheme", {
+            providedScheme: authResolution.providedScheme,
+          });
+          return;
         }
 
-        const tokenEntry = authOptions.tokens.get(tokenValue);
+        if (!authResolution.tokenValue) {
+          await recordAudit({
+            status: "unauthorized",
+            reason: "missing-token",
+          });
+          respondUnauthorized("missing-token");
+          return;
+        }
+
+        const tokenEntry = authResolution.tokenEntry;
         if (!tokenEntry) {
           await recordAudit({
             status: "unauthorized",
             reason: "unknown-token",
           });
           respondUnauthorized("unknown-token", {
-            tokenLength: tokenValue.length,
+            tokenLength: authResolution.tokenValue.length,
           });
           return;
         }
         authContext = tokenEntry;
         authPrincipal = tokenEntry.subject ?? "token";
-        tokenFingerprint = fingerprintToken(tokenValue);
+        tokenFingerprint = authResolution.tokenFingerprint;
 
         const requiredRoles = getRequiredRoles(commandParam);
         if (
@@ -8555,7 +8619,7 @@ export function createWebApp({
         const clientIp = req.ip || req.socket?.remoteAddress || undefined;
         const commandParam =
           (typeof req.params?.command === "string" && req.params.command.trim()) ||
-          requestPath.replace(/^\/commands\//, "").trim();
+          requestPath.split("/")[2]?.trim();
         const userAgent = req.get("user-agent");
         const method = req.method ?? "POST";
         const rateKey = clientIp || "unknown";
@@ -8604,35 +8668,9 @@ export function createWebApp({
           return;
         }
 
-        let authContext = authOptions
-          ? { subject: "unauthenticated", roles: new Set() }
-          : { subject: "guest", roles: new Set(["viewer"]) };
-        let tokenFingerprint = null;
-        if (authOptions) {
-          const providedAuth = req.get(authOptions.headerName);
-          let headerValue =
-            typeof providedAuth === "string" ? providedAuth.trim() : "";
-          if (headerValue) {
-            if (authOptions.requireScheme) {
-              const lowerValue = headerValue.toLowerCase();
-              if (!lowerValue.startsWith(authOptions.schemePrefixLower)) {
-                headerValue = "";
-              } else {
-                headerValue = headerValue
-                  .slice(authOptions.schemePrefixLength)
-                  .trim();
-              }
-            }
-            if (headerValue) {
-              const tokenEntry = authOptions.tokens.get(headerValue);
-              if (tokenEntry) {
-                authContext = tokenEntry;
-                tokenFingerprint = fingerprintToken(headerValue);
-              }
-            }
-          }
-        }
-
+        const authResolution = resolveAuthFromRequest(req, authOptions);
+        const authContext = authResolution.authContext;
+        const tokenFingerprint = authResolution.tokenFingerprint;
         const sessionId = ensureClientSession(req, res, {
           createIfMissing: !authOptions,
           sessionManager,
@@ -8652,10 +8690,14 @@ export function createWebApp({
             "error",
           ),
         );
+        const payload =
+          req && typeof req.body === "object" && req.body !== null
+            ? req.body
+            : {};
         clientPayloadStore.record(
           clientIdentity,
           commandParam,
-          req.body,
+          payload,
           historyResult,
         );
       }
