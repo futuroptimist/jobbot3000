@@ -27,6 +27,7 @@ import {
 } from "./client-payload-store.js";
 import { createAuditLogger } from "../shared/security/audit-log.js";
 import { createSessionManager } from "./session-manager.js";
+import { createSecurityAlertDispatcher } from "./security-alerts.js";
 import { WebSocket, WebSocketServer } from "ws";
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
@@ -6853,13 +6854,22 @@ function logCommandTelemetry(logger, level, details, transport) {
   }
 }
 
-function logSecurityEvent(logger, details) {
-  if (!logger || typeof logger.warn !== "function") {
-    return;
-  }
+function logSecurityEvent(logger, details, dispatchAlert) {
   const entry = { event: "web.security", ...details };
+  if (dispatchAlert) {
+    try {
+      const result = dispatchAlert(entry);
+      if (result && typeof result.then === "function") {
+        result.catch((error) => {
+          logger?.warn?.("Failed to deliver security alert", error);
+        });
+      }
+    } catch (error) {
+      logger?.warn?.("Failed to deliver security alert", error);
+    }
+  }
   try {
-    logger.warn(entry);
+    logger?.warn?.(entry);
   } catch {
     // Ignore logger failures so security responses remain consistent.
   }
@@ -6881,12 +6891,17 @@ export function createWebApp({
   commandEvents,
   session,
   logTransport,
+  securityAlerts,
 } = {}) {
   const normalizedInfo = normalizeInfo(info);
   const normalizedChecks = normalizeHealthChecks(healthChecks);
   const csrfOptions = normalizeCsrfOptions(csrf);
   const rateLimiter = createInMemoryRateLimiter(rateLimit);
   const authOptions = normalizeAuthOptions(auth);
+  const securityAlertDispatcher = createSecurityAlertDispatcher({
+    ...(securityAlerts ?? {}),
+    logger,
+  });
   const statusHubScriptBuffer = Buffer.from(STATUS_PAGE_SCRIPT, "utf8");
   const statusHubScriptGzip = gzipSync(statusHubScriptBuffer);
   const statusHubStylesBuffer = Buffer.from(STATUS_PAGE_STYLES, "utf8");
@@ -8068,14 +8083,18 @@ export function createWebApp({
         sessionManager,
       });
       const logSecurity = (details) => {
-        logSecurityEvent(logger, {
-          command: commandParam,
-          method,
-          clientIp,
-          userAgent,
-          sessionId: sessionId ?? null,
-          ...details,
-        });
+        logSecurityEvent(
+          logger,
+          {
+            command: commandParam,
+            method,
+            clientIp,
+            userAgent,
+            sessionId: sessionId ?? null,
+            ...details,
+          },
+          securityAlertDispatcher,
+        );
       };
       let authContext = authOptions
         ? { subject: "unauthenticated", roles: new Set() }
@@ -8577,7 +8596,7 @@ export function createWebApp({
             clientIp,
             userAgent,
             sessionId: null,
-          });
+          }, securityAlertDispatcher);
           if (effectiveAuditLogger) {
             effectiveAuditLogger
               .record({
@@ -8717,6 +8736,7 @@ export function startWebServer(options = {}) {
     session: sessionOptions,
     logTransport: providedLogTransport,
     missingSecrets,
+    securityAlerts: providedSecurityAlerts,
     ...rest
   } = options;
   const commandAdapter =
@@ -8758,6 +8778,18 @@ export function startWebServer(options = {}) {
   const normalizedLogTransport = normalizeLogTransport(providedLogTransport, {
     host,
   });
+  let securityAlerts;
+  if (providedSecurityAlerts === false) {
+    securityAlerts = null;
+  } else {
+    securityAlerts = { ...(providedSecurityAlerts ?? {}) };
+  }
+  if (securityAlerts && !securityAlerts.rotation && process.env.JOBBOT_WEB_ONCALL_EMAILS) {
+    securityAlerts.rotation = process.env.JOBBOT_WEB_ONCALL_EMAILS;
+  }
+  if (securityAlerts && !securityAlerts.outbox && process.env.JOBBOT_WEB_ALERT_OUTBOX) {
+    securityAlerts.outbox = process.env.JOBBOT_WEB_ALERT_OUTBOX;
+  }
   const websocketPath = "/events";
   const app = createWebApp({
     ...rest,
@@ -8771,6 +8803,7 @@ export function startWebServer(options = {}) {
     commandEvents,
     logTransport: normalizedLogTransport,
     missingSecrets,
+    securityAlerts,
   });
 
   const wss = new WebSocketServer({ noServer: true });
