@@ -21,22 +21,22 @@ const SECRET_KEY_FIELD_SAFE_OVERRIDES = new Set(["tokenStatus", "hasToken"]);
 // eslint-disable-next-line no-control-regex -- intentionally strip ASCII control characters.
 const CONTROL_CHARS_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
 const PROMPT_INJECTION_PATTERNS = [
-  /ignore\s+previous\s+instructions?/gi,
-  /disregard\s+all\s+prior\s+instructions?/gi,
-  /\b(system|developer)\s+prompt\b/gi,
-  /\breset\s+the\s+system\b/gi,
-  /<<\s*sys\s*>>/gi,
-  /\[\/?inst]/gi,
+  /ignore\s+previous\s+instructions?/,
+  /disregard\s+all\s+prior\s+instructions?/,
+  /\b(system|developer)\s+prompt\b/,
+  /\breset\s+the\s+system\b/,
+  /<<\s*sys\s*>>/,
+  /\[\/?\s*inst\s*]/,
 ];
+const PROMPT_INJECTION_RE = new RegExp(
+  PROMPT_INJECTION_PATTERNS.map((re) => re.source).join("|"),
+  "gi",
+);
 const PROMPT_INJECTION_PLACEHOLDER = "[prompt injection removed]";
 
 function scrubPromptInjection(value) {
   if (typeof value !== "string" || !value) return value;
-  let sanitized = value;
-  for (const pattern of PROMPT_INJECTION_PATTERNS) {
-    sanitized = sanitized.replace(pattern, PROMPT_INJECTION_PLACEHOLDER);
-  }
-  return sanitized;
+  return value.replace(PROMPT_INJECTION_RE, PROMPT_INJECTION_PLACEHOLDER);
 }
 
 function replaceSecret(match, doubleQuoted, singleQuoted, bareValue) {
