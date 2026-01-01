@@ -338,19 +338,21 @@ export function loadConfig(options = {}) {
     },
   };
 
+  const normalizedIntegrityKey = (() => {
+    const rawIntegrityKey = options.audit?.integrityKey ?? env.JOBBOT_AUDIT_INTEGRITY_KEY;
+    if (rawIntegrityKey == null) return '';
+    const stringValue =
+      typeof rawIntegrityKey === 'string' ? rawIntegrityKey : rawIntegrityKey.toString();
+    return stringValue.trim();
+  })();
+
   const audit = {
     logPath: options.audit?.logPath ?? env.JOBBOT_AUDIT_LOG ?? 'data/audit/audit-log.jsonl',
     retentionDays: numberFromEnv(
       options.audit?.retentionDays ?? env.JOBBOT_AUDIT_RETENTION_DAYS,
       30,
     ),
-    ...(options.audit?.integrityKey || env.JOBBOT_AUDIT_INTEGRITY_KEY
-      ? {
-          integrityKey:
-            (options.audit?.integrityKey ?? env.JOBBOT_AUDIT_INTEGRITY_KEY)?.toString().trim() ||
-            undefined,
-        }
-      : {}),
+    ...(normalizedIntegrityKey ? { integrityKey: normalizedIntegrityKey } : {}),
   };
 
   const auth = (() => {

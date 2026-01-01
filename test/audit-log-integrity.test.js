@@ -71,4 +71,36 @@ describe('tamper-resistant audit log', () => {
       logger.record({ action: 'next', actor: 'cli' }),
     ).rejects.toThrow(/integrity/i);
   });
+
+  it('verifies integrity on demand with the configured key', async () => {
+    const logger = createAuditLogger({ logPath, integrityKey: 'secret-key' });
+    await logger.record({ action: 'first', actor: 'cli' });
+    await logger.record({ action: 'second', actor: 'cli' });
+
+    const verifier = createAuditLogger({ logPath, integrityKey: 'secret-key' });
+    const result = await verifier.verify();
+
+    expect(result).toMatchObject({
+      lastHash: expect.any(String),
+      lines: 2,
+      mtimeMs: expect.any(Number),
+    });
+  });
+
+  it('throws when verifying without an integrity key', async () => {
+    const logger = createAuditLogger({ logPath });
+    await expect(logger.verify()).rejects.toThrow(/integrityKey/i);
+  });
+
+  it('fails verification when history has been tampered', async () => {
+    const logger = createAuditLogger({ logPath, integrityKey: 'secret-key' });
+    await logger.record({ action: 'first', actor: 'cli' });
+
+    const [entry] = await readAuditEntries(logPath);
+    const modified = { ...entry, hash: '0000' };
+    await fs.writeFile(logPath, `${JSON.stringify(modified)}\n`, 'utf8');
+
+    const verifier = createAuditLogger({ logPath, integrityKey: 'secret-key' });
+    await expect(verifier.verify()).rejects.toThrow(/integrity/i);
+  });
 });

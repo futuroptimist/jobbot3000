@@ -54,9 +54,11 @@ function computeIntegrityHash(entry, integrityKey) {
 async function verifyExistingLog(logPath, integrityKey) {
   let previousHash = null;
   let lineNumber = 0;
+  let mtimeMs = null;
 
   try {
-    const raw = await fs.readFile(logPath, 'utf8');
+    const [raw, stats] = await Promise.all([fs.readFile(logPath, 'utf8'), fs.stat(logPath)]);
+    mtimeMs = stats.mtimeMs;
     const lines = raw
       .split('\n')
       .map(line => line.trim())
@@ -96,12 +98,24 @@ async function verifyExistingLog(logPath, integrityKey) {
     }
   } catch (error) {
     if (error && error.code === 'ENOENT') {
-      return { lastHash: null, lines: 0 };
+      return { lastHash: null, lines: 0, mtimeMs: null };
     }
     throw error;
   }
 
-  return { lastHash: previousHash, lines: lineNumber };
+  return { lastHash: previousHash, lines: lineNumber, mtimeMs };
+}
+
+async function getMtimeMs(filePath) {
+  try {
+    const stats = await fs.stat(filePath);
+    return stats.mtimeMs;
+  } catch (error) {
+    if (error && error.code === 'ENOENT') {
+      return null;
+    }
+    throw error;
+  }
 }
 
 /**
@@ -121,6 +135,7 @@ export function createAuditLogger(options) {
   const trimmedIntegrityKey =
     typeof integrityKey === 'string' && integrityKey.trim() ? integrityKey.trim() : null;
   let chainHead = null;
+  let lastObservedMtime = null;
   /** @type {Promise<unknown>} */
   let writeChain = Promise.resolve();
 
@@ -138,10 +153,16 @@ export function createAuditLogger(options) {
         const rotated = await enforceRetention(absolute, retentionDays);
         if (rotated) {
           chainHead = null;
+          lastObservedMtime = null;
         }
+        let currentMtimeMs = null;
         if (trimmedIntegrityKey) {
-          const { lastHash } = await verifyExistingLog(absolute, trimmedIntegrityKey);
-          chainHead = lastHash;
+          currentMtimeMs = await getMtimeMs(absolute);
+          if (chainHead === null || rotated || currentMtimeMs !== lastObservedMtime) {
+            const { lastHash, mtimeMs } = await verifyExistingLog(absolute, trimmedIntegrityKey);
+            chainHead = lastHash;
+            lastObservedMtime = mtimeMs;
+          }
         }
 
         const baseEntry = Object.fromEntries(
@@ -162,6 +183,9 @@ export function createAuditLogger(options) {
 
         await fs.mkdir(path.dirname(absolute), { recursive: true });
         await fs.appendFile(absolute, `${JSON.stringify(entryToPersist)}\n`, 'utf8');
+        if (trimmedIntegrityKey) {
+          lastObservedMtime = await getMtimeMs(absolute);
+        }
         return entryToPersist;
       };
 
