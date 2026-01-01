@@ -5504,6 +5504,47 @@ describe("web server command endpoint", () => {
     expect(commandAdapter.summarize).toHaveBeenCalledTimes(2);
   });
 
+  it("rate limits payload history requests", async () => {
+    const server = await startServer({
+      rateLimit: { windowMs: 5000, max: 2 },
+    });
+
+    const headers = buildCommandHeaders(server);
+
+    const first = await fetch(`${server.url}/commands/payloads/recent`, {
+      method: "GET",
+      headers,
+    });
+    expect(first.status).toBe(200);
+    expect(first.headers.get("x-ratelimit-limit")).toBe("2");
+    expect(first.headers.get("x-ratelimit-remaining")).toBe("1");
+    expect(
+      new Date(first.headers.get("x-ratelimit-reset") ?? "").getTime(),
+    ).toBeGreaterThan(Date.now());
+
+    const second = await fetch(`${server.url}/commands/payloads/recent`, {
+      method: "GET",
+      headers,
+    });
+    expect(second.status).toBe(200);
+    expect(second.headers.get("x-ratelimit-limit")).toBe("2");
+    expect(second.headers.get("x-ratelimit-remaining")).toBe("0");
+
+    const third = await fetch(`${server.url}/commands/payloads/recent`, {
+      method: "GET",
+      headers,
+    });
+    expect(third.status).toBe(429);
+    expect(await third.json()).toEqual({ error: "Too many requests" });
+    expect(third.headers.get("x-ratelimit-limit")).toBe("2");
+    expect(third.headers.get("x-ratelimit-remaining")).toBe("0");
+    const retryAfter = Number(third.headers.get("retry-after"));
+    expect(retryAfter).toBeGreaterThanOrEqual(1);
+    expect(
+      new Date(third.headers.get("x-ratelimit-reset") ?? "").getTime(),
+    ).toBeGreaterThan(Date.now());
+  });
+
   it("honors trusted proxy settings when rate limiting", async () => {
     const commandAdapter = {
       summarize: vi.fn(async () => ({ ok: true })),

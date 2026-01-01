@@ -8564,9 +8564,37 @@ export function createWebApp({
     },
   );
 
-  app.get("/commands/payloads/recent", (req, res) => {
+  app.get("/commands/payloads/recent", rateLimitMiddleware, (req, res) => {
     const clientIp = req.ip || req.socket?.remoteAddress || undefined;
     const userAgent = req.get("user-agent");
+    const rateContext = req.rateLimitContext ?? {
+      rateKey: clientIp || "unknown",
+      clientIp,
+    };
+    const rateStatus =
+      req.rateLimitStatus ?? rateLimiter.check(rateContext.rateKey);
+    if (!rateStatus.allowed) {
+      const retryAfterSeconds = Math.max(
+        1,
+        Math.ceil((rateStatus.reset - Date.now()) / 1000),
+      );
+      res.set("Retry-After", String(retryAfterSeconds));
+      logSecurityEvent(logger, {
+        category: "rate_limit",
+        reason: "rate_limit",
+        httpStatus: 429,
+        limit: rateLimiter.limit,
+        remaining: rateStatus.remaining,
+        reset: new Date(rateStatus.reset).toISOString(),
+        command: "payload-history",
+        method: "GET",
+        clientIp,
+        userAgent,
+        sessionId: null,
+      });
+      res.status(429).json({ error: "Too many requests" });
+      return;
+    }
     const sessionId = ensureClientSession(req, res, {
       createIfMissing: !authOptions,
       sessionManager,
