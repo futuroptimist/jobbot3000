@@ -17,19 +17,7 @@ const DEFAULT_PLAYBOOK_URL =
 
 function sanitizeString(value) {
   if (typeof value !== "string") return "";
-  let sanitized = "";
-  for (let index = 0; index < value.length; index += 1) {
-    const code = value.charCodeAt(index);
-    const isControl =
-      (code >= 0x00 && code <= 0x08) ||
-      code === 0x0b ||
-      code === 0x0c ||
-      (code >= 0x0e && code <= 0x1f) ||
-      code === 0x7f;
-    if (isControl) continue;
-    sanitized += value[index];
-  }
-  return sanitizeOutputString(sanitized.trim());
+  return sanitizeOutputString(value.trim());
 }
 
 function sanitizeValue(value) {
