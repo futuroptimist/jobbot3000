@@ -8543,12 +8543,19 @@ export function createWebApp({
 
   app.use(async (err, req, res, next) => {
     if (err && err.type === "entity.parse.failed") {
-      if (req?.path?.startsWith?.("/commands/")) {
+      const errorMessage = "Invalid JSON payload";
+      const requestPath =
+        typeof req.path === "string"
+          ? req.path
+          : typeof req.originalUrl === "string"
+            ? req.originalUrl
+            : "";
+
+      if (requestPath.startsWith("/commands/")) {
         const clientIp = req.ip || req.socket?.remoteAddress || undefined;
         const commandParam =
-          typeof req.params?.command === "string"
-            ? req.params.command.trim()
-            : "";
+          (typeof req.params?.command === "string" && req.params.command.trim()) ||
+          requestPath.replace(/^\/commands\//, "").trim();
         const userAgent = req.get("user-agent");
         const method = req.method ?? "POST";
         const rateKey = clientIp || "unknown";
@@ -8596,8 +8603,63 @@ export function createWebApp({
           res.status(429).json({ error: "Too many requests" });
           return;
         }
+
+        let authContext = authOptions
+          ? { subject: "unauthenticated", roles: new Set() }
+          : { subject: "guest", roles: new Set(["viewer"]) };
+        let tokenFingerprint = null;
+        if (authOptions) {
+          const providedAuth = req.get(authOptions.headerName);
+          let headerValue =
+            typeof providedAuth === "string" ? providedAuth.trim() : "";
+          if (headerValue) {
+            if (authOptions.requireScheme) {
+              const lowerValue = headerValue.toLowerCase();
+              if (!lowerValue.startsWith(authOptions.schemePrefixLower)) {
+                headerValue = "";
+              } else {
+                headerValue = headerValue
+                  .slice(authOptions.schemePrefixLength)
+                  .trim();
+              }
+            }
+            if (headerValue) {
+              const tokenEntry = authOptions.tokens.get(headerValue);
+              if (tokenEntry) {
+                authContext = tokenEntry;
+                tokenFingerprint = fingerprintToken(headerValue);
+              }
+            }
+          }
+        }
+
+        const sessionId = ensureClientSession(req, res, {
+          createIfMissing: !authOptions,
+          sessionManager,
+        });
+        const clientIdentity = createClientIdentity({
+          subject: authContext?.subject,
+          clientIp,
+          userAgent,
+          sessionId,
+          tokenFingerprint,
+        });
+        const historyResult = redactValue(
+          decorateResultStatus(
+            {
+              error: errorMessage,
+            },
+            "error",
+          ),
+        );
+        clientPayloadStore.record(
+          clientIdentity,
+          commandParam,
+          req.body,
+          historyResult,
+        );
       }
-      res.status(400).json({ error: "Invalid JSON payload" });
+      res.status(400).json({ error: errorMessage });
       return;
     }
     next(err);

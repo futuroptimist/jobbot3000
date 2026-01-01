@@ -4324,6 +4324,43 @@ describe("web server command endpoint", () => {
     ]);
   });
 
+  it("records payload history for malformed JSON bodies", async () => {
+    const server = await startServer();
+    const headers = buildCommandHeaders(server);
+
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers,
+      body: '{"input":"resume"',
+    });
+
+    expect(response.status).toBe(400);
+
+    const cookies = response.headers.getSetCookie?.() ?? [];
+    const cookieHeader = [headers.cookie, ...cookies.map((entry) => entry.split(";")[0])]
+      .filter(Boolean)
+      .join("; ");
+
+    const historyResponse = await fetch(`${server.url}/commands/payloads/recent`, {
+      method: "GET",
+      headers: buildCommandHeaders(server, { cookie: cookieHeader }),
+    });
+
+    expect(historyResponse.status).toBe(200);
+    const historyBody = await historyResponse.json();
+    expect(historyBody.entries).toEqual([
+      {
+        command: "summarize",
+        payload: {},
+        result: {
+          status: "error",
+          error: "Invalid JSON payload",
+        },
+        timestamp: expect.any(String),
+      },
+    ]);
+  });
+
   it("redacts nested password objects in payload history entries", async () => {
     const PASSWORD_KEY = "password";
     const commandAdapter = {
