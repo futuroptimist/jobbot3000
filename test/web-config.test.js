@@ -36,6 +36,7 @@ describe('loadWebConfig', () => {
       'JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD',
       'JOBBOT_HTTP_CIRCUIT_BREAKER_RESET_MS',
       'JOBBOT_WEB_PLUGINS',
+      'JOBBOT_AUDIT_INTEGRITY_KEY',
       'JOBBOT_GREENHOUSE_TOKEN',
       'JOBBOT_LEVER_API_TOKEN',
       'JOBBOT_SMARTRECRUITERS_TOKEN',
@@ -69,6 +70,7 @@ describe('loadWebConfig', () => {
       'JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD',
       'JOBBOT_HTTP_CIRCUIT_BREAKER_RESET_MS',
       'JOBBOT_WEB_PLUGINS',
+      'JOBBOT_AUDIT_INTEGRITY_KEY',
       'JOBBOT_GREENHOUSE_TOKEN',
       'JOBBOT_LEVER_API_TOKEN',
       'JOBBOT_SMARTRECRUITERS_TOKEN',
@@ -127,6 +129,7 @@ describe('loadWebConfig', () => {
     process.env.JOBBOT_FEATURE_SCRAPING_MOCKS = 'true';
     process.env.JOBBOT_HTTP_MAX_RETRIES = '4';
     process.env.JOBBOT_HTTP_CIRCUIT_BREAKER_THRESHOLD = '6';
+    process.env.JOBBOT_AUDIT_INTEGRITY_KEY = 'audit-secret';
 
     const { loadWebConfig } = await import('../src/web/config.js');
     const config = await loadWebConfig({ env: 'development', rateLimit: { max: 5 } });
@@ -138,6 +141,7 @@ describe('loadWebConfig', () => {
     expect(config.features.scraping.useMocks).toBe(true);
     expect(config.features.httpClient.maxRetries).toBe(4);
     expect(config.features.httpClient.circuitBreakerThreshold).toBe(6);
+    expect(config.audit.integrityKey).toBe('audit-secret');
     expect(config.missingSecrets).toEqual([]);
     expect(config.trustProxy).toBe(true);
 
@@ -158,6 +162,15 @@ describe('loadWebConfig', () => {
       'JOBBOT_SMARTRECRUITERS_TOKEN',
       'JOBBOT_WORKABLE_TOKEN',
     ]);
+  });
+
+  it('ignores empty or whitespace-only audit integrity keys', async () => {
+    process.env.JOBBOT_AUDIT_INTEGRITY_KEY = '   ';
+
+    const { loadWebConfig } = await import('../src/web/config.js');
+    const config = await loadWebConfig({ env: 'development' });
+
+    expect(config.audit.integrityKey).toBeUndefined();
   });
 
   it('parses numeric trust proxy hop counts before boolean normalization', async () => {

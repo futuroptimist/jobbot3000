@@ -145,6 +145,7 @@ const ConfigSchema = z.object({
   audit: z.object({
     logPath: z.string().min(1).default('data/audit/audit-log.jsonl'),
     retentionDays: z.number().int().positive().default(30),
+    integrityKey: z.string().min(1).optional(),
   }),
   features: z.object({
     scraping: z.object({
@@ -337,12 +338,22 @@ export function loadConfig(options = {}) {
     },
   };
 
+  const normalizedIntegrityKey = (() => {
+    const rawIntegrityKey = options.audit?.integrityKey ?? env.JOBBOT_AUDIT_INTEGRITY_KEY;
+    if (rawIntegrityKey == null) return null;
+    const stringValue =
+      typeof rawIntegrityKey === 'string' ? rawIntegrityKey : rawIntegrityKey.toString();
+    const trimmed = stringValue.trim();
+    return trimmed ? trimmed : null;
+  })();
+
   const audit = {
     logPath: options.audit?.logPath ?? env.JOBBOT_AUDIT_LOG ?? 'data/audit/audit-log.jsonl',
     retentionDays: numberFromEnv(
       options.audit?.retentionDays ?? env.JOBBOT_AUDIT_RETENTION_DAYS,
       30,
     ),
+    ...(normalizedIntegrityKey !== null ? { integrityKey: normalizedIntegrityKey } : {}),
   };
 
   const auth = (() => {
