@@ -54,6 +54,19 @@ discoverable.
    audits. Schedule them in CI or cron jobs to catch regressions between
    releases.
 
+## On-call alerts
+
+- Configure the on-call rotation with `JOBBOT_WEB_ONCALL_EMAILS` or by passing
+  `securityAlerts: { rotation: [...] }` to `startWebServer`. When configured,
+  the adapter writes `.eml` notifications to `data/alerts/` (override with
+  `JOBBOT_WEB_ALERT_OUTBOX`) whenever CSRF, auth, or rate-limit guardrails are
+  tripped.
+- Each alert links back to this playbook for escalation steps and runbook
+  context. Regression coverage in
+  [`test/web-security-alerts.test.js`](../test/web-security-alerts.test.js)
+  drives a CSRF failure to ensure on-call notifications are emitted and routed
+  through the configured outbox.
+
 ## Incident response
 
 1. Capture the failing request (command name, correlation ID, payload summary).
