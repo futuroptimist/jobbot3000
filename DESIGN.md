@@ -273,8 +273,10 @@ jobbot track add <job_id> --status applied --note "emailed hiring manager"
 - **Security**: OWASP LLM Top-10 style prompt-injection suite; rate-limit fuzzer.
   _Implemented (2025-12-30):_ `test/web-rate-limit-fuzzer.test.js` now fuzzes the
   in-memory rate limiter with deterministic bursts, ensuring per-client windows never exceed their
-  caps and reset safely across jittered timestamps. Extend the suite with prompt-injection checks
-  next.
+  caps and reset safely across jittered timestamps.
+  _Implemented (2026-01-05):_ `test/prompt-injection.test.js` now scrubs prompt-injection phrases
+  from sanitized command output and payload history, ensuring logs and web responses cannot replay
+  "ignore previous instructions" or system-prompt overrides back to operators or downstream agents.
 - **ATS checks**: text extract from produced PDF and verify keyword presence + structure.
 
 ---
