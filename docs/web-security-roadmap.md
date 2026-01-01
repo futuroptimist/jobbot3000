@@ -60,6 +60,12 @@
      directives.
 4. **Observability and alerting**
    - Stream audit logs to a tamper-resistant store.
+     _Implemented (2025-12-01):_ The shared audit logger now chains entries with HMAC
+     signatures derived from `JOBBOT_AUDIT_INTEGRITY_KEY` and refuses to append when history
+     has been modified. Both the CLI and web server reuse the integrity key plumbing so
+     operators can enable tamper-evident audit storage across deployments. Regression coverage
+     in [`test/audit-log-integrity.test.js`](../test/audit-log-integrity.test.js) verifies the
+     hash-chain metadata and the failure path when log entries are altered.
    - Emit security telemetry for failed logins, rate limiting events, and suspicious traffic.
      _Implemented (2025-10-20):_ `createWebApp` now emits `web.security`
      telemetry for authorization failures, CSRF mismatches, malformed payloads,

@@ -144,9 +144,16 @@ const rawAuditRetention =
     ? process.env.JOBBOT_AUDIT_RETENTION_DAYS.trim()
     : '';
 const parsedAuditRetention = Number.parseInt(rawAuditRetention, 10);
+const rawAuditIntegrityKey =
+  typeof process.env.JOBBOT_AUDIT_INTEGRITY_KEY === 'string'
+    ? process.env.JOBBOT_AUDIT_INTEGRITY_KEY.trim()
+    : '';
 const cliAuditLoggerOptions = { logPath: cliAuditLogPath };
 if (Number.isFinite(parsedAuditRetention) && parsedAuditRetention > 0) {
   cliAuditLoggerOptions.retentionDays = parsedAuditRetention;
+}
+if (rawAuditIntegrityKey) {
+  cliAuditLoggerOptions.integrityKey = rawAuditIntegrityKey;
 }
 
 let cliAuditLogger = null;

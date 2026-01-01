@@ -47,6 +47,7 @@ async function readAuditEntries(logPath) {
 
 const originalAuditLogPath = process.env.JOBBOT_AUDIT_LOG;
 const originalAuditRetention = process.env.JOBBOT_AUDIT_RETENTION_DAYS;
+const originalAuditIntegrityKey = process.env.JOBBOT_AUDIT_INTEGRITY_KEY;
 let tmpDir;
 
 beforeEach(async () => {
@@ -60,6 +61,7 @@ beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'jobbot-cli-audit-'));
   process.env.JOBBOT_AUDIT_LOG = path.join(tmpDir, 'audit.log');
   delete process.env.JOBBOT_AUDIT_RETENTION_DAYS;
+  delete process.env.JOBBOT_AUDIT_INTEGRITY_KEY;
 });
 
 afterEach(async () => {
@@ -76,6 +78,11 @@ afterEach(async () => {
     delete process.env.JOBBOT_AUDIT_RETENTION_DAYS;
   } else {
     process.env.JOBBOT_AUDIT_RETENTION_DAYS = originalAuditRetention;
+  }
+  if (originalAuditIntegrityKey === undefined) {
+    delete process.env.JOBBOT_AUDIT_INTEGRITY_KEY;
+  } else {
+    process.env.JOBBOT_AUDIT_INTEGRITY_KEY = originalAuditIntegrityKey;
   }
 });
 
