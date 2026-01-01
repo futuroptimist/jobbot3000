@@ -4361,6 +4361,22 @@ describe("web server command endpoint", () => {
     ]);
   });
 
+  it("requires CSRF tokens when JSON parsing fails", async () => {
+    const server = await startServer();
+    const response = await fetch(`${server.url}/commands/summarize`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: "{ broken-json",
+    });
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      error: "Invalid or missing CSRF token",
+    });
+  });
+
   it("redacts nested password objects in payload history entries", async () => {
     const PASSWORD_KEY = "password";
     const commandAdapter = {

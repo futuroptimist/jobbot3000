@@ -8706,6 +8706,52 @@ export function createWebApp({
         const authResolution = resolveAuthFromRequest(req, authOptions);
         const authContext = authResolution.authContext;
         const tokenFingerprint = authResolution.tokenFingerprint;
+
+        if (!validateCsrfToken(req)) {
+          const csrfHeaderToken = (req.get(csrfOptions.headerName) ?? "").trim();
+          const csrfCookieToken = readRequestCookie(req, CSRF_COOKIE_NAME);
+          logSecurityEvent(logger, {
+            category: "csrf",
+            reason: "csrf",
+            httpStatus: 403,
+            command: commandParam,
+            method,
+            clientIp,
+            userAgent,
+            sessionId: null,
+            csrf: {
+              headerPresent: Boolean(csrfHeaderToken),
+              cookiePresent: Boolean(csrfCookieToken),
+              mismatch:
+                Boolean(csrfHeaderToken) &&
+                Boolean(csrfCookieToken) &&
+                csrfHeaderToken !== csrfCookieToken,
+            },
+          });
+          if (effectiveAuditLogger) {
+            const roles = authContext?.roles
+              ? Array.from(authContext.roles).sort()
+              : [];
+            const actor = authContext?.subject ?? "unauthenticated";
+            await effectiveAuditLogger
+              .record({
+                type: "command",
+                command: commandParam,
+                actor,
+                roles,
+                ip: clientIp,
+                userAgent,
+                status: "forbidden",
+                reason: "csrf",
+              })
+              .catch((error) => {
+                logger?.warn?.("Failed to record audit event", error);
+              });
+          }
+          res.status(403).json({ error: "Invalid or missing CSRF token" });
+          return;
+        }
+
         const sessionId = ensureClientSession(req, res, {
           createIfMissing: !authOptions,
           sessionManager,
@@ -8732,7 +8778,7 @@ export function createWebApp({
         clientPayloadStore.record(
           clientIdentity,
           commandParam,
-          payload,
+          redactValue(payload),
           historyResult,
         );
       }
