@@ -1568,7 +1568,7 @@ export function createCommandAdapter(options = {}) {
 
   async function intakeRecordCommand(options = {}) {
     const cli = injectedCli;
-    const { question, answer, skipped, askedAt, tags, notes, skipReason } =
+    const { question, answer, skipped, askedAt, tags, notes, skipReason, confidence } =
       normalizeIntakeRecordRequest(options);
 
     if (cli && typeof cli.cmdIntakeRecord === "function") {
@@ -1584,6 +1584,7 @@ export function createCommandAdapter(options = {}) {
       if (askedAt) args.push("--asked-at", askedAt);
       if (tags) args.push("--tags", tags);
       if (notes) args.push("--notes", notes);
+      if (confidence !== undefined) args.push("--confidence", String(confidence));
 
       const { result, stdout, stderr } = await captureConsole(() =>
         cli.cmdIntakeRecord(args),
@@ -1606,6 +1607,7 @@ export function createCommandAdapter(options = {}) {
     if (tags) payload.tags = tags;
     if (notes) payload.notes = notes;
     if (skipReason) payload.skipReason = skipReason;
+    if (confidence !== undefined) payload.confidence = confidence;
 
     const entry = await recordIntakeResponse(payload);
     const sanitized = sanitizeOutputValue(entry, { key: "data" });

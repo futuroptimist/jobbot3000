@@ -148,6 +148,15 @@ function assertPositiveNumber(value, name) {
   return numberValue;
 }
 
+function assertConfidence(value) {
+  const numberValue = coerceNumber(value);
+  if (numberValue === undefined) return undefined;
+  if (numberValue < 0 || numberValue > 1) {
+    throw new Error('confidence must be between 0 and 1');
+  }
+  return Number(numberValue.toFixed(4));
+}
+
 function normalizeFormat(value) {
   const normalized = normalizeString(value)?.toLowerCase() ?? 'markdown';
   if (!SUPPORTED_FORMATS.includes(normalized)) {
@@ -548,6 +557,7 @@ export function normalizeIntakeRecordRequest(options = {}) {
     'tags',
     'notes',
     'reason',
+    'confidence',
   ]);
   const extra = Object.keys(options).filter(key => !allowedKeys.has(key));
   if (extra.length > 0) {
@@ -578,12 +588,14 @@ export function normalizeIntakeRecordRequest(options = {}) {
 
   const tags = normalizeString(options.tags);
   const notes = normalizeString(options.notes);
+  const confidence = assertConfidence(options.confidence);
 
   const request = { question, skipped };
   if (answer) request.answer = answer;
   if (askedAt) request.askedAt = askedAt;
   if (tags) request.tags = tags;
   if (notes) request.notes = notes;
+  if (confidence !== undefined) request.confidence = confidence;
   const reason = normalizeString(options.reason);
   if (reason && !skipped) {
     throw new Error('reason requires skipped: true');

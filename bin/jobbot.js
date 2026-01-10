@@ -1867,6 +1867,9 @@ function formatIntakeList(entries) {
     if (entry.notes) {
       lines.push(`  Notes: ${entry.notes}`);
     }
+    if (entry.confidence !== undefined) {
+      lines.push(`  Confidence: ${entry.confidence}`);
+    }
     if (entry.asked_at) {
       lines.push(`  Asked At: ${entry.asked_at}`);
     }
@@ -1991,8 +1994,8 @@ async function cmdIntakeRecord(args) {
   if (!question || (!skip && !answer)) {
     console.error(
       'Usage: jobbot intake record --question <text> [--answer <text>|--answer-file <path>] ' +
-        '[--skip] [--reason <text>] [--tags <tag1,tag2>] [--notes <text>|--notes-file <path>] ' +
-        '[--asked-at <iso8601>]'
+        '[--skip] [--reason <text>] [--confidence <0-1>] [--tags <tag1,tag2>] ' +
+        '[--notes <text>|--notes-file <path>] [--asked-at <iso8601>]'
     );
     process.exit(2);
   }
@@ -2001,11 +2004,21 @@ async function cmdIntakeRecord(args) {
   const askedAt = getFlag(args, '--asked-at');
   const reasonSpecified = args.includes('--reason');
   const skipReason = getFlag(args, '--reason');
+  const confidenceSpecified = args.includes('--confidence');
+  const confidenceRaw = getFlag(args, '--confidence');
   if (reasonSpecified && !skipReason) {
     console.error(
       'Usage: jobbot intake record --question <text> [--answer <text>|--answer-file <path>] ' +
-        '[--skip] [--reason <text>] [--tags <tag1,tag2>] [--notes <text>|--notes-file <path>] ' +
-        '[--asked-at <iso8601>]'
+        '[--skip] [--reason <text>] [--confidence <0-1>] [--tags <tag1,tag2>] ' +
+        '[--notes <text>|--notes-file <path>] [--asked-at <iso8601>]'
+    );
+    process.exit(2);
+  }
+  if (confidenceSpecified && !confidenceRaw) {
+    console.error(
+      'Usage: jobbot intake record --question <text> [--answer <text>|--answer-file <path>] ' +
+        '[--skip] [--reason <text>] [--confidence <0-1>] [--tags <tag1,tag2>] ' +
+        '[--notes <text>|--notes-file <path>] [--asked-at <iso8601>]'
     );
     process.exit(2);
   }
@@ -2013,9 +2026,23 @@ async function cmdIntakeRecord(args) {
     console.error('--reason can only be used with --skip');
     process.exit(2);
   }
+  if (skip && confidenceSpecified) {
+    console.error('--confidence can only be used for answered intake responses');
+    process.exit(2);
+  }
+  let confidence;
+  if (confidenceRaw !== undefined) {
+    const numeric = Number(confidenceRaw);
+    if (!Number.isFinite(numeric) || numeric < 0 || numeric > 1) {
+      console.error('--confidence must be between 0 and 1');
+      process.exit(2);
+    }
+    confidence = Number(numeric.toFixed(4));
+  }
   const payload = { question, tags, notes, askedAt, skipped: skip };
   if (!skip) payload.answer = answer;
   if (skipReason) payload.skipReason = skipReason;
+  if (confidence !== undefined) payload.confidence = confidence;
   const entry = await recordIntakeResponse(payload);
   console.log(`Recorded intake response ${entry.id}`);
 }

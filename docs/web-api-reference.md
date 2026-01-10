@@ -220,9 +220,9 @@ The following command endpoints are available. Each one maps directly to a CLI h
   `intake-resume`. Responses return `{ "draft": { ... } }` so the UI can immediately reflect the
   persisted draft contents.
 - `POST /commands/intake-record` → `jobbot intake record`: Record a new interview question response
-  with optional tags, notes, and timestamps, supporting both answered and skipped prompts. Skipped
-  prompts may include a `reason` that is stored and returned as `skip_reason` for downstream list
-  and export responses; sensitive reasons are sanitized alongside answers and notes.
+  with optional tags, notes, confidence (0–1), and timestamps, supporting both answered and skipped
+  prompts. Skipped prompts may include a `reason` that is stored and returned as `skip_reason` for
+  downstream list and export responses; sensitive reasons are sanitized alongside answers and notes.
 - `POST /commands/intake-resume` → `jobbot intake resume`: Retrieve the most recent intake draft for
   the active client, including the saved question, answer, notes, tags, and timestamps with control
   characters stripped. Responses return `{ "draft": null }` when no draft is present so callers can

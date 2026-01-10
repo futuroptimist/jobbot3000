@@ -2107,6 +2107,26 @@ describe('jobbot CLI', () => {
     });
   });
 
+  it('captures intake confidence scores when recording responses', () => {
+    const output = runCli([
+      'intake',
+      'record',
+      '--question',
+      'How confident are you in your onboarding story?',
+      '--answer',
+      'Confident after recent role.',
+      '--confidence',
+      '0.82',
+    ]);
+    expect(output.trim()).toMatch(/^Recorded intake response /);
+
+    const list = runCli(['intake', 'list']);
+    expect(list).toContain('Confidence: 0.82');
+
+    const payload = JSON.parse(runCli(['intake', 'list', '--json']));
+    expect(payload.responses[0].confidence).toBe(0.82);
+  });
+
   it('records skipped intake prompts for later follow-up', () => {
     const output = runCli([
       'intake',

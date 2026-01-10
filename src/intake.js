@@ -92,6 +92,24 @@ function normalizeTags(input) {
   return normalized.length > 0 ? normalized : undefined;
 }
 
+function normalizeConfidence(value, { strict = false } = {}) {
+  if (value == null || value === '') return undefined;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    if (strict) {
+      throw new Error('confidence must be a number between 0 and 1');
+    }
+    return undefined;
+  }
+  if (numeric < 0 || numeric > 1) {
+    if (strict) {
+      throw new Error('confidence must be between 0 and 1');
+    }
+    return undefined;
+  }
+  return Number(numeric.toFixed(4));
+}
+
 async function readIntakeFile(file) {
   try {
     const raw = await fs.readFile(file, 'utf8');
@@ -116,6 +134,8 @@ async function readIntakeFile(file) {
             notes: typeof entry.notes === 'string' ? entry.notes : undefined,
             status,
           };
+          const confidence = normalizeConfidence(entry.confidence);
+          if (confidence !== undefined) base.confidence = confidence;
           const skipReason = sanitizeString(entry.skip_reason ?? entry.reason);
           if (skipReason) base.skip_reason = skipReason;
           return base;
@@ -216,6 +236,17 @@ export function recordIntakeResponse(data = {}) {
 
   const tags = normalizeTags(data.tags);
   const notes = sanitizeString(data.notes);
+  let confidence;
+  try {
+    confidence = normalizeConfidence(data.confidence, { strict: true });
+  } catch (err) {
+    return Promise.reject(err);
+  }
+  if (confidence !== undefined && skipped) {
+    return Promise.reject(
+      new Error('confidence is only supported for answered intake responses'),
+    );
+  }
   const skipReason = sanitizeString(
     data.skipReason ?? data.skip_reason ?? data.reason,
   );
@@ -237,6 +268,7 @@ export function recordIntakeResponse(data = {}) {
   };
   if (tags) entry.tags = tags;
   if (notes) entry.notes = notes;
+  if (confidence !== undefined) entry.confidence = confidence;
   if (skipReason) entry.skip_reason = skipReason;
 
   const { profileDir, file } = getPaths();
