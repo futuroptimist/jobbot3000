@@ -8,18 +8,22 @@ const greenhouseAdapterMock = {
   listOpenings: vi.fn(),
   normalizeJob: vi.fn(),
 };
+const ingestGreenhouseBoardMock = vi.fn();
 
 vi.mock('../src/greenhouse.js', () => ({
   greenhouseAdapter: greenhouseAdapterMock,
+  ingestGreenhouseBoard: ingestGreenhouseBoardMock,
 }));
 
 const leverAdapterMock = {
   listOpenings: vi.fn(),
   normalizeJob: vi.fn(),
 };
+const ingestLeverBoardMock = vi.fn();
 
 vi.mock('../src/lever.js', () => ({
   leverAdapter: leverAdapterMock,
+  ingestLeverBoard: ingestLeverBoardMock,
 }));
 
 const shortlistMock = {

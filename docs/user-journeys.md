@@ -531,6 +531,12 @@ call scheduled"`.
   tables when the chart generator crashes.
 - Scheduler outages notify maintainers via local notifications and mark dashboards with a warning
   banner until resolved.
+  _Implemented (2026-01-09):_ `buildScheduledTasks` now records scheduler status snapshots and
+  writes `.eml` notifications to the local outbox whenever a task fails. The status hub reads the
+  snapshot and renders a warning banner until the next successful run clears the outage state.
+  Regression coverage in [`test/schedule-config.test.js`](../test/schedule-config.test.js) and
+  [`test/web-scheduler-status.test.js`](../test/web-scheduler-status.test.js) keeps the CLI
+  notifier and dashboard banner aligned.
 
 ## Journey 5: Background ingestion to notifications
 

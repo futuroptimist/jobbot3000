@@ -246,6 +246,76 @@ describe('schedule config', () => {
     );
   });
 
+  it('records scheduler outages and local notifications until resolved', async () => {
+    const definitions = [
+      {
+        id: 'greenhouse-hourly',
+        type: 'ingest',
+        provider: 'greenhouse',
+        params: { board: 'acme' },
+        intervalMs: 1000,
+      },
+    ];
+
+    const originalDataDir = process.env.JOBBOT_DATA_DIR;
+    process.env.JOBBOT_DATA_DIR = tmpDir;
+
+    let nowValue = new Date('2025-02-01T00:00:00.000Z');
+    const now = () => nowValue;
+
+    try {
+      ingestGreenhouseBoard.mockRejectedValueOnce(new Error('Greenhouse offline'));
+
+      const logger = { info: vi.fn(), error: vi.fn() };
+      const tasks = buildScheduledTasks(definitions, { logger, now, cycles: 1 });
+      const [ingestTask] = tasks;
+
+      let failure;
+      try {
+        await ingestTask.run();
+      } catch (err) {
+        failure = err;
+      }
+
+      await ingestTask.onError?.(failure);
+
+      const statusPath = path.join(tmpDir, 'scheduler', 'status.json');
+      const status = JSON.parse(await fs.readFile(statusPath, 'utf8'));
+
+      expect(status.status).toBe('error');
+      expect(status.lastErrorTask).toBe('greenhouse-hourly');
+      expect(status.lastErrorAt).toBe(nowValue.toISOString());
+      expect(status.lastErrorMessage).toContain('Greenhouse offline');
+
+      const outboxDir = path.join(tmpDir, 'notifications', 'outbox');
+      const outboxFiles = await fs.readdir(outboxDir);
+      expect(outboxFiles).toHaveLength(1);
+
+      const outboxContents = await fs.readFile(
+        path.join(outboxDir, outboxFiles[0]),
+        'utf8',
+      );
+      expect(outboxContents).toContain('Subject: Jobbot scheduler outage');
+      expect(outboxContents).toContain('Greenhouse offline');
+
+      nowValue = new Date('2025-02-01T01:00:00.000Z');
+      ingestGreenhouseBoard.mockResolvedValueOnce({ saved: 1 });
+
+      const successMessage = await ingestTask.run();
+      await ingestTask.onSuccess?.(successMessage);
+
+      const resolvedStatus = JSON.parse(await fs.readFile(statusPath, 'utf8'));
+      expect(resolvedStatus.status).toBe('ok');
+      expect(resolvedStatus.lastSuccessAt).toBe(nowValue.toISOString());
+    } finally {
+      if (originalDataDir === undefined) {
+        delete process.env.JOBBOT_DATA_DIR;
+      } else {
+        process.env.JOBBOT_DATA_DIR = originalDataDir;
+      }
+    }
+  });
+
   it('dispatches ingestion tasks through the module event bus when provided', async () => {
     const bus = createModuleEventBus();
     const mockHandler = vi.fn(async () => ({
