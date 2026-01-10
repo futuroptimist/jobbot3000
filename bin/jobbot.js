@@ -249,6 +249,7 @@ function shellEscape(value) {
 }
 
 function runProfileEditor(editorCommand, filePath) {
+  ensureProfileEditorBlocks(editorCommand);
   const command = `${editorCommand} ${shellEscape(filePath)}`;
   const result = spawnSync(command, { shell: true, stdio: 'inherit' });
   if (result.error) {
@@ -257,6 +258,42 @@ function runProfileEditor(editorCommand, filePath) {
   if (result.status !== 0) {
     throw new Error(`Editor exited with status ${result.status}`);
   }
+}
+
+const NON_BLOCKING_EDITORS = new Set([
+  'atom',
+  'code',
+  'code-insiders',
+  'codium',
+  'mate',
+  'subl',
+  'sublime_text',
+]);
+
+function getEditorExecutable(editorCommand) {
+  const trimmed = String(editorCommand || '').trim();
+  if (!trimmed) return '';
+  const quote = trimmed[0];
+  if (quote === '"' || quote === "'") {
+    const endIndex = trimmed.indexOf(quote, 1);
+    if (endIndex > 1) return trimmed.slice(1, endIndex);
+  }
+  return trimmed.split(/\s+/)[0];
+}
+
+function ensureProfileEditorBlocks(editorCommand) {
+  const executable = getEditorExecutable(editorCommand);
+  if (!executable) return;
+  const base = path.basename(executable).toLowerCase();
+  if (!NON_BLOCKING_EDITORS.has(base)) return;
+
+  const hasWaitFlag = /(^|\s)(--wait|--block|-w)(\s|$)/.test(editorCommand);
+  if (hasWaitFlag) return;
+
+  throw new Error(
+    `Editor "${editorCommand}" must block until the file is closed. ` +
+      'Configure JOBBOT_PROFILE_EDITOR with a wait flag, e.g. "code --wait".',
+  );
 }
 
 function getFlag(args, name, fallback) {
@@ -4815,6 +4852,17 @@ function listEditableProfileSections(resume) {
   return Object.keys(resume).filter(section => section !== '$schema');
 }
 
+function ensureSafeProfileSection(section) {
+  if (path.isAbsolute(section) || section.includes('/') || section.includes('\\')) {
+    console.error('Profile section name cannot contain path separators');
+    process.exit(2);
+  }
+  if (section === '.' || section === '..') {
+    console.error('Profile section name cannot reference parent directories');
+    process.exit(2);
+  }
+}
+
 async function cmdProfileEdit(args) {
   const section = args.find(arg => !arg.startsWith('--'));
   if (!section) {
@@ -4860,6 +4908,8 @@ async function cmdProfileEdit(args) {
     );
     process.exit(2);
   }
+
+  ensureSafeProfileSection(section);
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jobbot-profile-edit-'));
   const tmpPath = path.join(tmpDir, `${section}.json`);
