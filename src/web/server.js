@@ -28,6 +28,7 @@ import {
 import { createAuditLogger } from "../shared/security/audit-log.js";
 import { createSessionManager } from "./session-manager.js";
 import { createSecurityAlertDispatcher } from "./security-alerts.js";
+import { readSchedulerStatus } from "../schedule.js";
 import { WebSocket, WebSocketServer } from "ws";
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
@@ -1045,6 +1046,9 @@ const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
     display: block;
     font-size: 1.1rem;
     margin-bottom: 0.5rem;
+  }
+  .scheduler-warning {
+    margin-top: 1rem;
   }
   .grid {
     display: grid;
@@ -7007,7 +7011,7 @@ export function createWebApp({
     });
   });
 
-  app.get("/", (req, res) => {
+  app.get("/", async (req, res) => {
     const sessionId = ensureClientSession(req, res, { sessionManager });
     const forcedSecure = process.env.JOBBOT_WEB_SESSION_SECURE === "1";
     const secureCookies = forcedSecure || isSecureRequest(req);
@@ -7054,6 +7058,57 @@ export function createWebApp({
       }
       return "Not configured";
     };
+    let schedulerStatus = null;
+    try {
+      schedulerStatus = await readSchedulerStatus();
+    } catch (error) {
+      logger?.warn?.("Failed to read scheduler status", error);
+    }
+    const schedulerWarningHtml =
+      schedulerStatus && schedulerStatus.status === "error"
+        ? [
+            '<div class="environment-warning scheduler-warning" role="alert">',
+            "<strong>Scheduler outage detected</strong>",
+            "<p>",
+            "A scheduled task reported an outage. Resolve the underlying issue and rerun the",
+            "scheduler to clear this warning.",
+            "</p>",
+            "<p>",
+            "Task: <code>",
+            escapeHtml(
+              schedulerStatus.lastErrorTask
+                ? String(schedulerStatus.lastErrorTask)
+                : "unknown",
+            ),
+            "</code>",
+            "</p>",
+            "<p>",
+            "Last error: ",
+            escapeHtml(
+              schedulerStatus.lastErrorAt
+                ? String(schedulerStatus.lastErrorAt)
+                : "unknown",
+            ),
+            "</p>",
+            schedulerStatus.lastErrorMessage
+              ? [
+                  "<p>",
+                  "Details: ",
+                  escapeHtml(String(schedulerStatus.lastErrorMessage)),
+                  "</p>",
+                ].join("")
+              : "",
+            schedulerStatus.lastSuccessAt
+              ? [
+                  "<p>",
+                  "Last success: ",
+                  escapeHtml(String(schedulerStatus.lastSuccessAt)),
+                  "</p>",
+                ].join("")
+              : "",
+            "</div>",
+          ].join("")
+        : "";
     const manifestFeatureItems = [];
     const scrapingUseMocks = manifestFeatures?.scraping?.useMocks;
     manifestFeatureItems.push(
@@ -7268,6 +7323,7 @@ export function createWebApp({
           before experimenting beyond local development.
         </p>
       </div>
+      ${schedulerWarningHtml}
       <nav class="primary-nav" aria-label="Status navigation">
         <a href="#overview" data-route-link="overview">Overview</a>
         <a href="#applications" data-route-link="applications">Applications</a>

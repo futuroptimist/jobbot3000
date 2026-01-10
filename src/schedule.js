@@ -78,6 +78,20 @@ function resolveDataDir() {
   return process.env.JOBBOT_DATA_DIR || path.resolve('data');
 }
 
+function resolveSchedulerRoot(dataDir) {
+  const resolvedDataDir = dataDir ? path.resolve(dataDir) : resolveDataDir();
+  return path.join(resolvedDataDir, 'scheduler');
+}
+
+function resolveSchedulerStatusPath(dataDir) {
+  return path.join(resolveSchedulerRoot(dataDir), 'status.json');
+}
+
+function resolveSchedulerOutboxDir(dataDir) {
+  const resolvedDataDir = dataDir ? path.resolve(dataDir) : resolveDataDir();
+  return path.join(resolvedDataDir, 'notifications', 'outbox');
+}
+
 function normalizeEmailValue(value) {
   if (typeof value !== 'string') return '';
   return value.trim().toLowerCase();
@@ -121,6 +135,118 @@ function validateTasksInput(tasks) {
 function formatTimestamp(nowFn) {
   const value = nowFn ? nowFn() : new Date();
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+function sanitizeSchedulerMessage(message) {
+  if (typeof message !== 'string') return 'Unknown error';
+  const normalized = message.replace(/[\r\n]+/g, ' ').trim();
+  return normalized || 'Unknown error';
+}
+
+async function readSchedulerStatusFile(filePath) {
+  try {
+    const raw = await fs.readFile(filePath, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') {
+      return null;
+    }
+    return parsed;
+  } catch (err) {
+    if (err && err.code === 'ENOENT') {
+      return null;
+    }
+    throw err;
+  }
+}
+
+async function writeSchedulerStatusFile(filePath, status) {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, `${JSON.stringify(status, null, 2)}\n`, 'utf8');
+}
+
+async function writeSchedulerOutageNotification({
+  dataDir,
+  timestamp,
+  taskId,
+  message,
+}) {
+  const outboxDir = resolveSchedulerOutboxDir(dataDir);
+  await fs.mkdir(outboxDir, { recursive: true });
+  const safeTaskId = sanitizeSchedulerMessage(taskId);
+  const safeMessage = sanitizeSchedulerMessage(message);
+  const fileName = `${timestamp.replace(/[:.]/g, '-')}-scheduler-outage.eml`;
+  const contents = [
+    'Subject: Jobbot scheduler outage',
+    `Date: ${new Date(timestamp).toUTCString()}`,
+    '',
+    `A scheduled task reported an outage.`,
+    '',
+    `Task: ${safeTaskId || 'unknown'}`,
+    `Error: ${safeMessage}`,
+    `Recorded at: ${timestamp}`,
+    '',
+  ].join('\n');
+  const filePath = path.join(outboxDir, fileName);
+  await fs.writeFile(filePath, contents, 'utf8');
+  return filePath;
+}
+
+function createSchedulerStatusReporter({ dataDir, logger } = {}) {
+  const statusPath = resolveSchedulerStatusPath(dataDir);
+  let pending = Promise.resolve();
+
+  const enqueue = action => {
+    pending = pending.then(action).catch(err => {
+      logger?.error?.(
+        `Failed to record scheduler status: ${err?.message || err}`,
+      );
+    });
+    return pending;
+  };
+
+  return {
+    reportSuccess({ timestamp, taskId, message }) {
+      return enqueue(async () => {
+        const previous = await readSchedulerStatusFile(statusPath);
+        const next = {
+          ...(previous || {}),
+          status: 'ok',
+          lastSuccessAt: timestamp,
+          lastSuccessTask: taskId,
+          lastSuccessMessage: sanitizeSchedulerMessage(message),
+        };
+        await writeSchedulerStatusFile(statusPath, next);
+      });
+    },
+    reportError({ timestamp, taskId, message, dataDirOverride }) {
+      return enqueue(async () => {
+        const previous = await readSchedulerStatusFile(statusPath);
+        const safeMessage = sanitizeSchedulerMessage(message);
+        const next = {
+          ...(previous || {}),
+          status: 'error',
+          lastErrorAt: timestamp,
+          lastErrorTask: taskId,
+          lastErrorMessage: safeMessage,
+        };
+        await writeSchedulerStatusFile(statusPath, next);
+        await writeSchedulerOutageNotification({
+          dataDir: dataDirOverride ?? dataDir,
+          timestamp,
+          taskId,
+          message: safeMessage,
+        });
+      });
+    },
+    flush() {
+      return pending;
+    },
+  };
+}
+
+export async function readSchedulerStatus({ dataDir } = {}) {
+  const statusPath = resolveSchedulerStatusPath(dataDir);
+  return readSchedulerStatusFile(statusPath);
 }
 
 export function createTaskScheduler(
@@ -719,6 +845,7 @@ export function buildScheduledTasks(
     throw new Error('logger must expose info() and error() methods');
   }
 
+  const statusReporter = createSchedulerStatusReporter({ logger });
   const tasks = [];
   for (const definition of definitions) {
     const maxRuns = resolveMaxRuns(definition, cycles);
@@ -742,11 +869,21 @@ export function buildScheduledTasks(
     taskConfig.onSuccess = message => {
       const timestamp = formatTimestamp(now);
       logger.info(`${timestamp} [${definition.id}] ${message}`);
+      return statusReporter.reportSuccess({
+        timestamp,
+        taskId: definition.id,
+        message,
+      });
     };
     taskConfig.onError = err => {
       const timestamp = formatTimestamp(now);
       const errorMessage = err && err.message ? err.message : String(err);
       logger.error(`${timestamp} [${definition.id}] ${errorMessage}`);
+      return statusReporter.reportError({
+        timestamp,
+        taskId: definition.id,
+        message: errorMessage,
+      });
     };
 
     tasks.push(taskConfig);
@@ -760,4 +897,5 @@ export default {
   loadScheduleConfig,
   buildScheduledTasks,
   createScheduleLogger,
+  readSchedulerStatus,
 };
