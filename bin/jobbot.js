@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import '../src/shared/config/initialize-env.js';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { summarize as summarizeFirstSentence } from '../src/index.js';
 import { fetchTextFromUrl, DEFAULT_FETCH_HEADERS } from '../src/fetch.js';
@@ -232,6 +234,66 @@ async function readSource(input) {
 function resolveProfileResumePath() {
   const dataDir = process.env.JOBBOT_DATA_DIR || path.resolve('data');
   return path.join(dataDir, 'profile', 'resume.json');
+}
+
+function resolveProfileEditorCommand() {
+  return (
+    process.env.JOBBOT_PROFILE_EDITOR ||
+    process.env.EDITOR ||
+    process.env.VISUAL
+  );
+}
+
+function shellEscape(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function runProfileEditor(editorCommand, filePath) {
+  ensureProfileEditorBlocks(editorCommand);
+  const command = `${editorCommand} ${shellEscape(filePath)}`;
+  const result = spawnSync(command, { shell: true, stdio: 'inherit' });
+  if (result.error) {
+    throw result.error;
+  }
+  if (result.status !== 0) {
+    throw new Error(`Editor exited with status ${result.status}`);
+  }
+}
+
+const NON_BLOCKING_EDITORS = new Set([
+  'atom',
+  'code',
+  'code-insiders',
+  'codium',
+  'mate',
+  'subl',
+  'sublime_text',
+]);
+
+function getEditorExecutable(editorCommand) {
+  const trimmed = String(editorCommand || '').trim();
+  if (!trimmed) return '';
+  const quote = trimmed[0];
+  if (quote === '"' || quote === "'") {
+    const endIndex = trimmed.indexOf(quote, 1);
+    if (endIndex > 1) return trimmed.slice(1, endIndex);
+  }
+  return trimmed.split(/\s+/)[0];
+}
+
+function ensureProfileEditorBlocks(editorCommand) {
+  const executable = getEditorExecutable(editorCommand);
+  if (!executable) return;
+  const base = path.basename(executable).toLowerCase();
+  if (!NON_BLOCKING_EDITORS.has(base)) return;
+
+  const hasWaitFlag = /(^|\s)(--wait|--block|-w)(\s|$)/.test(editorCommand);
+  if (hasWaitFlag) return;
+
+  throw new Error(
+    `Editor "${editorCommand}" must block until the file is closed. ` +
+      'Configure JOBBOT_PROFILE_EDITOR with a wait flag, e.g. "code --wait".',
+  );
 }
 
 function getFlag(args, name, fallback) {
@@ -4783,6 +4845,115 @@ async function cmdProfileInspect(args) {
   }
 }
 
+function listEditableProfileSections(resume) {
+  if (!resume || typeof resume !== 'object' || Array.isArray(resume)) {
+    return [];
+  }
+  return Object.keys(resume).filter(section => section !== '$schema');
+}
+
+function ensureSafeProfileSection(section) {
+  if (path.isAbsolute(section) || section.includes('/') || section.includes('\\')) {
+    console.error('Profile section name cannot contain path separators');
+    process.exit(2);
+  }
+  if (section === '.' || section === '..') {
+    console.error('Profile section name cannot reference parent directories');
+    process.exit(2);
+  }
+}
+
+async function cmdProfileEdit(args) {
+  const section = args.find(arg => !arg.startsWith('--'));
+  if (!section) {
+    console.error(
+      'Usage: jobbot profile edit <section> (set JOBBOT_PROFILE_EDITOR or EDITOR)',
+    );
+    process.exit(2);
+  }
+
+  const editorCommand = resolveProfileEditorCommand();
+  if (!editorCommand) {
+    console.error('Set JOBBOT_PROFILE_EDITOR or EDITOR to edit profile sections.');
+    process.exit(2);
+  }
+
+  const resumePath = resolveProfileResumePath();
+  let resumeRaw;
+  try {
+    resumeRaw = fs.readFileSync(resumePath, 'utf8');
+  } catch (err) {
+    if (err?.code === 'ENOENT') {
+      console.error(`Profile resume not found at ${resumePath}. Run jobbot profile init.`);
+      process.exit(1);
+    }
+    console.error(`Failed to read profile resume: ${err?.message || err}`);
+    process.exit(1);
+  }
+
+  let resume;
+  try {
+    resume = JSON.parse(resumeRaw);
+  } catch (err) {
+    console.error(
+      `Profile resume at ${resumePath} could not be parsed as JSON: ${err?.message || err}`,
+    );
+    process.exit(1);
+  }
+
+  const sections = listEditableProfileSections(resume);
+  if (!sections.includes(section)) {
+    console.error(
+      `Unknown profile section "${section}". Available sections: ${sections.join(', ')}`,
+    );
+    process.exit(2);
+  }
+
+  ensureSafeProfileSection(section);
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'jobbot-profile-edit-'));
+  const tmpPath = path.join(tmpDir, `${section}.json`);
+  const cleanup = () => {
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      // best-effort cleanup
+    }
+  };
+
+  try {
+    const sectionValue = resume[section];
+    fs.writeFileSync(
+      tmpPath,
+      `${JSON.stringify(sectionValue ?? null, null, 2)}\n`,
+      'utf8',
+    );
+
+    runProfileEditor(editorCommand, tmpPath);
+
+    const updatedRaw = fs.readFileSync(tmpPath, 'utf8');
+    let updated;
+    try {
+      updated = JSON.parse(updatedRaw);
+    } catch (err) {
+      console.error(
+        `Edited JSON for ${section} could not be parsed: ${err?.message || err}`,
+      );
+      process.exit(1);
+    }
+
+    resume[section] = updated;
+    fs.writeFileSync(resumePath, `${JSON.stringify(resume, null, 2)}\n`, 'utf8');
+  } catch (err) {
+    console.error(err?.message || String(err));
+    process.exit(1);
+  } finally {
+    cleanup();
+  }
+
+  console.log(`Updated profile section ${section}`);
+}
+
 async function cmdProfile(args) {
   const sub = args[0];
   if (sub === 'init') return cmdProfileInit(args.slice(1));
@@ -4795,13 +4966,15 @@ async function cmdProfile(args) {
     return cmdImportJson(args.slice(2));
   }
   if (sub === 'inspect') return cmdProfileInspect(args.slice(1));
+  if (sub === 'edit') return cmdProfileEdit(args.slice(1));
   console.error(
     'Usage: jobbot profile init [--force]\n' +
       '   or: jobbot profile import linkedin <file>\n' +
       '   or: jobbot profile import json <file>\n' +
       '   or: jobbot profile export [--out <path>] [--json]\n' +
       '   or: jobbot profile snapshot [--note <message>] [--json]\n' +
-      '   or: jobbot profile inspect [<file>] [--with-metrics] [--json]'
+      '   or: jobbot profile inspect [<file>] [--with-metrics] [--json]\n' +
+      '   or: jobbot profile edit <section>'
   );
   process.exit(2);
 }
