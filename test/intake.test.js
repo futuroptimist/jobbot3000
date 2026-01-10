@@ -99,6 +99,18 @@ describe('intake responses', () => {
     expect(raw.responses[0].confidence).toBe(0.72);
   });
 
+  it('rejects confidence when skipping a response', async () => {
+    const { recordIntakeResponse } = await import('../src/intake.js');
+
+    await expect(
+      recordIntakeResponse({
+        question: 'What is your salary range?',
+        skipped: true,
+        confidence: 0.3,
+      }),
+    ).rejects.toThrow('confidence is only supported for answered intake responses');
+  });
+
   it('returns intake history in insertion order', async () => {
     const { recordIntakeResponse, getIntakeResponses } = await import('../src/intake.js');
 

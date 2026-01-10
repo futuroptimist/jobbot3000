@@ -595,7 +595,12 @@ export function normalizeIntakeRecordRequest(options = {}) {
   if (askedAt) request.askedAt = askedAt;
   if (tags) request.tags = tags;
   if (notes) request.notes = notes;
-  if (confidence !== undefined) request.confidence = confidence;
+  if (confidence !== undefined) {
+    if (skipped) {
+      throw new Error('confidence is only supported for answered intake responses');
+    }
+    request.confidence = confidence;
+  }
   const reason = normalizeString(options.reason);
   if (reason && !skipped) {
     throw new Error('reason requires skipped: true');

@@ -345,6 +345,16 @@ describe('web request schemas', () => {
       ).toThrow('confidence must be between 0 and 1');
     });
 
+    it('throws when confidence is provided for a skipped prompt', () => {
+      expect(() =>
+        normalizeIntakeRecordRequest({
+          question: 'Tell me about your manager',
+          skipped: true,
+          confidence: 0.4,
+        }),
+      ).toThrow('confidence is only supported for answered intake responses');
+    });
+
     it('throws when reason is provided without skipping', () => {
       expect(() =>
         normalizeIntakeRecordRequest({
