@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 
 import { parse as parseYaml } from 'yaml';
 
@@ -172,16 +173,22 @@ async function writeSchedulerOutageNotification({
 }) {
   const outboxDir = resolveSchedulerOutboxDir(dataDir);
   await fs.mkdir(outboxDir, { recursive: true });
-  const safeTaskId = sanitizeSchedulerMessage(taskId);
+  const taskLabel = taskId == null ? 'unknown' : String(taskId);
+  const taskIdSlug = taskLabel
+    .replace(/[^a-z0-9_-]+/gi, '-')
+    .replace(/^-+|-+$/g, '') || 'unknown';
   const safeMessage = sanitizeSchedulerMessage(message);
-  const fileName = `${timestamp.replace(/[:.]/g, '-')}-scheduler-outage.eml`;
+  const fileName = `${timestamp.replace(
+    /[:.]/g,
+    '-',
+  )}-${taskIdSlug}-${randomUUID()}-scheduler-outage.eml`;
   const contents = [
     'Subject: Jobbot scheduler outage',
     `Date: ${new Date(timestamp).toUTCString()}`,
     '',
     `A scheduled task reported an outage.`,
     '',
-    `Task: ${safeTaskId || 'unknown'}`,
+    `Task: ${taskLabel}`,
     `Error: ${safeMessage}`,
     `Recorded at: ${timestamp}`,
     '',
@@ -218,7 +225,7 @@ function createSchedulerStatusReporter({ dataDir, logger } = {}) {
         await writeSchedulerStatusFile(statusPath, next);
       });
     },
-    reportError({ timestamp, taskId, message, dataDirOverride }) {
+    reportError({ timestamp, taskId, message }) {
       return enqueue(async () => {
         const previous = await readSchedulerStatusFile(statusPath);
         const safeMessage = sanitizeSchedulerMessage(message);
@@ -231,7 +238,7 @@ function createSchedulerStatusReporter({ dataDir, logger } = {}) {
         };
         await writeSchedulerStatusFile(statusPath, next);
         await writeSchedulerOutageNotification({
-          dataDir: dataDirOverride ?? dataDir,
+          dataDir,
           timestamp,
           taskId,
           message: safeMessage,
@@ -306,9 +313,9 @@ export function createTaskScheduler(
     const runPromise = (async () => {
       try {
         const result = await state.task.run();
-        state.task.onSuccess?.(result, state.task);
+        await state.task.onSuccess?.(result, state.task);
       } catch (err) {
-        state.task.onError?.(err, state.task);
+        await state.task.onError?.(err, state.task);
       } finally {
         state.runCount += 1;
         state.running = false;
