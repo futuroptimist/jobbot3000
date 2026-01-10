@@ -383,6 +383,26 @@ describe("web server health endpoint", () => {
   });
 });
 
+describe("web server readiness endpoint", () => {
+  it("reports ready status with uptime metadata", async () => {
+    const server = await startServer({
+      info: { service: "jobbot-web", version: "0.1.0-test" },
+    });
+
+    const response = await fetch(`${server.url}/ready`);
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload).toMatchObject({
+      status: "ready",
+      service: "jobbot-web",
+      version: "0.1.0-test",
+    });
+    expect(typeof payload.uptime).toBe("number");
+    expect(payload.uptime).toBeGreaterThanOrEqual(0);
+    expect(new Date(payload.timestamp).toString()).not.toBe("Invalid Date");
+  });
+});
+
 describe("web server status page", () => {
   it("exposes a theme toggle that persists the preferred mode", async () => {
     const server = await startServer();

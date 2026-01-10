@@ -63,6 +63,12 @@ for accessibility and performance audits.
 Returns a JSON payload describing service health, uptime, and individual check states. Responses use
 status code 200 when all checks pass and 503 when any check reports `status: "error"`.
 
+### GET /ready
+
+Returns a lightweight readiness payload with `status: "ready"`, uptime, and timestamp metadata so
+load balancers can confirm the server is accepting requests. Regression coverage in
+[`test/web-server.test.js`](../test/web-server.test.js) validates the response contract.
+
 ### POST /sessions/revoke
 
 Invalidates the caller's active session and returns a fresh identifier. Requests must include the
