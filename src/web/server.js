@@ -6650,6 +6650,17 @@ function buildHealthResponse({ info, uptime, timestamp, checks }) {
   return payload;
 }
 
+function buildReadyResponse({ info, uptime, timestamp }) {
+  const payload = {
+    status: "ready",
+    uptime,
+    timestamp,
+  };
+  if (info.service) payload.service = info.service;
+  if (info.version) payload.version = info.version;
+  return payload;
+}
+
 function isPlainObject(value) {
   if (!value || typeof value !== "object") return false;
   const prototype = Object.getPrototypeOf(value);
@@ -7989,6 +8000,17 @@ export function createWebApp({
     });
     const statusCode = payload.status === "error" ? 503 : 200;
     res.status(statusCode).json(payload);
+  });
+
+  app.get("/ready", (req, res) => {
+    const timestamp = new Date().toISOString();
+    const uptime = process.uptime();
+    const payload = buildReadyResponse({
+      info: normalizedInfo,
+      uptime,
+      timestamp,
+    });
+    res.status(200).json(payload);
   });
 
   app.post("/sessions/revoke", jsonParser, (req, res) => {

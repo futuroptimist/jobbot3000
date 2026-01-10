@@ -10,6 +10,8 @@ expectations so on-call engineers can keep the CLI bridge healthy.
   address, CSRF header, token, and any configured auth scheme on boot.
 - Confirm `/health` returns `status: "ok"` before routing traffic. The endpoint
   aggregates custom checks passed to `startWebServer({ healthChecks })`.
+- Use `/ready` for lightweight load-balancer readiness checks; it returns
+  `status: "ready"` once the server is accepting requests.
 - Visit `GET /` to load the status hub. The overview panel highlights rate
   limiting, CSRF, and auth guardrails. Hash-based navigation keeps the page
   static for local deployments.
@@ -50,7 +52,12 @@ discoverable.
    `error` and return HTTP 503. Regression coverage in
    [`test/web-health-checks.test.js`](../test/web-health-checks.test.js)
    exercises both probes so outages surface immediately.
-3. **Audit scores** – `src/web/audits.js` exposes axe-core and performance
+3. **Readiness checks** – `/ready` offers a lightweight probe that reports
+   `status: "ready"` with uptime metadata. Use it for load balancers that need a
+   fast signal without running the heavier `/health` checks. Coverage in
+   [`test/web-server.test.js`](../test/web-server.test.js) locks the response
+   shape.
+4. **Audit scores** – `src/web/audits.js` exposes axe-core and performance
    audits. Schedule them in CI or cron jobs to catch regressions between
    releases.
 
