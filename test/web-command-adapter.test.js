@@ -1206,6 +1206,8 @@ describe('createCommandAdapter', () => {
           'Mission alignment',
           '--tags',
           'motivation,values',
+          '--confidence',
+          '0.64',
         ]);
         console.log(
           JSON.stringify({
@@ -1216,6 +1218,7 @@ describe('createCommandAdapter', () => {
             recorded_at: '2025-03-05T14:00:00.000Z',
             status: 'answered',
             tags: ['motivation', 'values'],
+            confidence: 0.64,
           }),
         );
       }),
@@ -1226,6 +1229,7 @@ describe('createCommandAdapter', () => {
       question: 'Why this role?',
       answer: 'Mission alignment',
       tags: 'motivation,values',
+      confidence: 0.64,
     });
 
     expect(cli.cmdIntakeRecord).toHaveBeenCalledTimes(1);
@@ -1239,6 +1243,7 @@ describe('createCommandAdapter', () => {
       answer: 'Mission alignment',
       status: 'answered',
       tags: ['motivation', 'values'],
+      confidence: 0.64,
     });
   });
 

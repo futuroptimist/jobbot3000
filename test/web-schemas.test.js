@@ -284,6 +284,21 @@ describe('web request schemas', () => {
       });
     });
 
+    it('accepts confidence scores between 0 and 1', () => {
+      const options = normalizeIntakeRecordRequest({
+        question: 'How confident are you?',
+        answer: 'High confidence',
+        confidence: 0.85,
+      });
+
+      expect(options).toEqual({
+        question: 'How confident are you?',
+        answer: 'High confidence',
+        skipped: false,
+        confidence: 0.85,
+      });
+    });
+
     it('allows skipped prompts without an answer', () => {
       const options = normalizeIntakeRecordRequest({
         question: 'Compensation expectations?',
@@ -318,6 +333,26 @@ describe('web request schemas', () => {
           askedAt: 'not-a-date',
         }),
       ).toThrow('askedAt must be a valid ISO-8601 timestamp');
+    });
+
+    it('throws when confidence is outside the 0-1 range', () => {
+      expect(() =>
+        normalizeIntakeRecordRequest({
+          question: 'Test',
+          answer: 'Answer',
+          confidence: 1.2,
+        }),
+      ).toThrow('confidence must be between 0 and 1');
+    });
+
+    it('throws when confidence is provided for a skipped prompt', () => {
+      expect(() =>
+        normalizeIntakeRecordRequest({
+          question: 'Tell me about your manager',
+          skipped: true,
+          confidence: 0.4,
+        }),
+      ).toThrow('confidence is only supported for answered intake responses');
     });
 
     it('throws when reason is provided without skipping', () => {

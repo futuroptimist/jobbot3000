@@ -93,7 +93,10 @@ jobbot3000.
    Pass any readable resume path to `--profile` (even outside `JOBBOT_DATA_DIR`); the CLI echoes the
    resolved location in its output. Optionally add `--json` to feed automated review tools.
 2. Iterate through prompts using `jobbot intake record --question <text>`; the command accepts
-   `--answer`, `--tags`, and `--confidence` so the assistant can track certainty.
+   `--answer`, `--tags`, and `--confidence <0-1>` so the assistant can track certainty.
+   Regression coverage in [`test/cli.test.js`](../test/cli.test.js) and
+   [`test/intake.test.js`](../test/intake.test.js) verifies confidence values are persisted and
+   surfaced in list output.
 3. Use `jobbot intake record --question <text> --skip --reason <text>` when the candidate defers a question.
    Skip reasons persist in `jobbot intake list` output (including `--json` exports) so follow-up
    runs know why a prompt was deferred. Redaction with `--redact` masks skip reasons containing
