@@ -28,6 +28,10 @@ jobbot3000.
    sanitized metadata, confidence scores, and enrichment metrics in JSON output.
 4. Confirm or edit the parsed sections via `jobbot profile edit <section>` or re-run `jobbot import`
    with `--merge-strategy replace|merge` to control overwrites.
+   `jobbot profile edit` opens a JSON snippet in the editor defined by
+   `JOBBOT_PROFILE_EDITOR`, `EDITOR`, or `VISUAL`, then persists the updated section back to
+   `data/profile/resume.json`. Regression coverage in [`test/cli.test.js`](../test/cli.test.js)
+   uses a scripted editor to confirm the CLI updates the profile section as expected.
 5. Persist the normalized profile to `data/profile/` and version subsequent edits with
    `jobbot profile snapshot --note <message>`. The command writes structured JSON snapshots under
    `data/profile/snapshots/` that include the ISO timestamp, optional note, and a copy of the

@@ -150,6 +150,41 @@ describe('jobbot CLI', () => {
     expect(report.metadata?.wordCount).toBeGreaterThanOrEqual(0);
   });
 
+  it('edits a profile section using the configured editor', () => {
+    runCli(['profile', 'init']);
+
+    const editorScript = path.join(dataDir, 'profile-editor.js');
+    fs.writeFileSync(
+      editorScript,
+      [
+        "const fs = require('fs');",
+        'const target = process.argv[2];',
+        "const data = JSON.parse(fs.readFileSync(target, 'utf8'));",
+        "data.name = 'Ada Lovelace';",
+        "fs.writeFileSync(target, JSON.stringify(data, null, 2));",
+      ].join('\n'),
+      'utf8',
+    );
+
+    const previousEditor = process.env.JOBBOT_PROFILE_EDITOR;
+    process.env.JOBBOT_PROFILE_EDITOR = `node ${editorScript}`;
+
+    try {
+      const output = runCli(['profile', 'edit', 'basics']);
+      expect(output.trim()).toBe('Updated profile section basics');
+    } finally {
+      if (previousEditor === undefined) {
+        delete process.env.JOBBOT_PROFILE_EDITOR;
+      } else {
+        process.env.JOBBOT_PROFILE_EDITOR = previousEditor;
+      }
+    }
+
+    const resumePath = path.join(dataDir, 'profile', 'resume.json');
+    const resume = JSON.parse(fs.readFileSync(resumePath, 'utf8'));
+    expect(resume.basics.name).toBe('Ada Lovelace');
+  });
+
   it('errors when profile snapshot runs without an existing resume', () => {
     expect(() => runCli(['profile', 'snapshot'])).toThrow(/profile resume/i);
   });
