@@ -381,6 +381,46 @@ describe("web server health endpoint", () => {
       process.env.JOBBOT_WEB_ALLOW_REMOTE = originalEnv;
     }
   });
+
+  it("requires auth when remote-access mode is enabled", async () => {
+    const { startWebServer } = await import("../src/web/server.js");
+    const originalAuthTokens = process.env.JOBBOT_WEB_AUTH_TOKENS;
+    const originalAuthToken = process.env.JOBBOT_WEB_AUTH_TOKEN;
+
+    delete process.env.JOBBOT_WEB_AUTH_TOKENS;
+    delete process.env.JOBBOT_WEB_AUTH_TOKEN;
+
+    try {
+      expect(() =>
+        startWebServer({ host: "0.0.0.0", allowRemoteAccess: true }),
+      ).toThrow(/requires authentication/i);
+    } finally {
+      if (originalAuthTokens === undefined) {
+        delete process.env.JOBBOT_WEB_AUTH_TOKENS;
+      } else {
+        process.env.JOBBOT_WEB_AUTH_TOKENS = originalAuthTokens;
+      }
+
+      if (originalAuthToken === undefined) {
+        delete process.env.JOBBOT_WEB_AUTH_TOKEN;
+      } else {
+        process.env.JOBBOT_WEB_AUTH_TOKEN = originalAuthToken;
+      }
+    }
+  });
+
+  it("allows remote-access mode when auth tokens are configured", async () => {
+    const { startWebServer } = await import("../src/web/server.js");
+    const server = await startWebServer({
+      host: "0.0.0.0",
+      port: 0,
+      allowRemoteAccess: true,
+      csrfToken: "test-csrf-token",
+      auth: { tokens: ["remote-token"] },
+    });
+    activeServers.push(server);
+    expect(server.url).toMatch(/^http:\/\/0\.0\.0\.0:/);
+  });
 });
 
 describe("web server readiness endpoint", () => {
