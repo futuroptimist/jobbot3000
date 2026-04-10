@@ -23,6 +23,7 @@ describe('web server log transport', () => {
         host: '0.0.0.0',
         port: 0,
         allowRemoteAccess: true,
+        auth: { tokens: ['log-transport-token'] },
         csrfToken: 'log-transport-csrf',
         commandAdapter: {},
         logTransport,

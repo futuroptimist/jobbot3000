@@ -30,6 +30,7 @@ describe('web server host guard', () => {
     const server = await startWebServer({
       host: '0.0.0.0',
       port: 0,
+      auth: { tokens: ['host-guard-token'] },
       csrfToken: 'host-guard-csrf',
       commandAdapter: {},
     });
@@ -42,6 +43,7 @@ describe('web server host guard', () => {
     const server = await startWebServer({
       host: '0.0.0.0',
       port: 0,
+      auth: { tokens: ['host-guard-env-token'] },
       csrfToken: 'host-guard-csrf',
       commandAdapter: {},
     });

@@ -56,6 +56,7 @@ describe('web server remote access guard', () => {
       host: '0.0.0.0',
       port: 0,
       allowRemoteAccess: true,
+      auth: { tokens: ['remote-guard-token'] },
       audit: { logPath: path.join(tempDir, 'audit.jsonl') },
       csrfToken: 'remote-guard-csrf',
       commandAdapter: {},
@@ -96,6 +97,7 @@ describe('web server remote access guard', () => {
     server = await startWebServer({
       host: '0.0.0.0',
       port: 0,
+      auth: { tokens: ['remote-env-token'] },
       audit: { logPath: path.join(tempDir, 'audit.jsonl') },
       csrfToken: 'remote-guard-csrf',
       commandAdapter: {},
