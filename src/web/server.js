@@ -8855,7 +8855,7 @@ export function startWebServer(options = {}) {
   if (allowRemote && !isLoopbackHost(host) && !normalizedAuth) {
     throw new Error(
       "Remote web command access requires authentication; configure JOBBOT_WEB_AUTH_TOKENS " +
-        "or pass auth tokens when allowRemoteAccess is enabled.",
+        "or JOBBOT_WEB_AUTH_TOKEN, or pass auth tokens when allowRemoteAccess is enabled.",
     );
   }
   const commandEvents = new EventEmitter();

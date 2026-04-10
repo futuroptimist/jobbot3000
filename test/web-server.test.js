@@ -384,10 +384,29 @@ describe("web server health endpoint", () => {
 
   it("requires auth when remote-access mode is enabled", async () => {
     const { startWebServer } = await import("../src/web/server.js");
+    const originalAuthTokens = process.env.JOBBOT_WEB_AUTH_TOKENS;
+    const originalAuthToken = process.env.JOBBOT_WEB_AUTH_TOKEN;
 
-    expect(() =>
-      startWebServer({ host: "0.0.0.0", allowRemoteAccess: true }),
-    ).toThrow(/requires authentication/i);
+    delete process.env.JOBBOT_WEB_AUTH_TOKENS;
+    delete process.env.JOBBOT_WEB_AUTH_TOKEN;
+
+    try {
+      expect(() =>
+        startWebServer({ host: "0.0.0.0", allowRemoteAccess: true }),
+      ).toThrow(/requires authentication/i);
+    } finally {
+      if (originalAuthTokens === undefined) {
+        delete process.env.JOBBOT_WEB_AUTH_TOKENS;
+      } else {
+        process.env.JOBBOT_WEB_AUTH_TOKENS = originalAuthTokens;
+      }
+
+      if (originalAuthToken === undefined) {
+        delete process.env.JOBBOT_WEB_AUTH_TOKEN;
+      } else {
+        process.env.JOBBOT_WEB_AUTH_TOKEN = originalAuthToken;
+      }
+    }
   });
 
   it("allows remote-access mode when auth tokens are configured", async () => {
