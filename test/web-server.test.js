@@ -381,6 +381,27 @@ describe("web server health endpoint", () => {
       process.env.JOBBOT_WEB_ALLOW_REMOTE = originalEnv;
     }
   });
+
+  it("requires auth when remote-access mode is enabled", async () => {
+    const { startWebServer } = await import("../src/web/server.js");
+
+    expect(() =>
+      startWebServer({ host: "0.0.0.0", allowRemoteAccess: true }),
+    ).toThrow(/requires authentication/i);
+  });
+
+  it("allows remote-access mode when auth tokens are configured", async () => {
+    const { startWebServer } = await import("../src/web/server.js");
+    const server = await startWebServer({
+      host: "0.0.0.0",
+      port: 0,
+      allowRemoteAccess: true,
+      csrfToken: "test-csrf-token",
+      auth: { tokens: ["remote-token"] },
+    });
+    activeServers.push(server);
+    expect(server.url).toMatch(/^http:\/\/0\.0\.0\.0:/);
+  });
 });
 
 describe("web server readiness endpoint", () => {
