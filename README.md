@@ -7,6 +7,8 @@
 
 **jobbot3000** is a self-hosted, open-source job search copilot.
 
+The production web direction is browser-first: private application tracking data should live in user-owned IndexedDB, while the deployed server/container serves static assets and health endpoints. This is a planned architecture rather than a completed implementation; see [docs/browser-first-architecture.md](docs/browser-first-architecture.md) for the data contract and migration path.
+
 > [!WARNING]
 > The web interface is an experimental preview for local use only. Running production builds or
 > deploying to shared or cloud infrastructure can leak secrets, PII, and other sensitive data.
@@ -154,6 +156,7 @@ Run the snippet with `node example.js` after saving it to a file in the project 
 - [SECURITY.md](SECURITY.md) – security guidelines
 - [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) – prompt reference index
 - [docs/user-journeys.md](docs/user-journeys.md) – primary user journeys and flows
+- [docs/browser-first-architecture.md](docs/browser-first-architecture.md) – planned IndexedDB-first production web architecture and browser data contract
 - [docs/backup-restore-guide.md](docs/backup-restore-guide.md) – backup, restore, and verification
   steps
 - [docs/web-ux-guidelines.md](docs/web-ux-guidelines.md) – layout, typography, and interaction guardrails
@@ -161,8 +164,7 @@ Run the snippet with `node example.js` after saving it to a file in the project 
 
 ### Durable data export/import
 
-All recruiter outreach, contacts, and lifecycle events live in `data/opportunities.db` (SQLite via
-Drizzle ORM). Use the bundled scripts to back up or restore records:
+The current CLI/recruiter-ingest preview stores recruiter outreach, contacts, and lifecycle events in `data/opportunities.db` (SQLite via Drizzle ORM). The planned production web tracker will instead store private application data in browser-owned IndexedDB and use explicit JSON/NDJSON/CSV backup files; see [docs/browser-first-architecture.md](docs/browser-first-architecture.md). Use the bundled scripts to back up or restore the current CLI opportunity records:
 
 ```bash
 # Export every table as newline-delimited JSON
