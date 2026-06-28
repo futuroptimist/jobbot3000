@@ -119,6 +119,7 @@ describe("IndexedDB repository", () => {
 
     const tx = db.transaction([
       "applications",
+      "contacts",
       "lifecycleEvents",
       "outreachMessages",
       "artifacts",
@@ -129,6 +130,9 @@ describe("IndexedDB repository", () => {
       "by_followUpDate",
       "by_status",
     ]);
+    expect(Array.from(tx.objectStore("contacts").indexNames)).toContain(
+      "by_applicationId",
+    );
     expect(Array.from(tx.objectStore("lifecycleEvents").indexNames)).toContain(
       "by_applicationId_occurredAt",
     );
@@ -197,6 +201,63 @@ describe("IndexedDB repository", () => {
       repo.importAllData(exported, { dryRun: true }),
     ).rejects.toMatchObject({
       code: "import_conflict",
+    });
+
+    repo.close();
+  });
+
+  it("rejects duplicate application creates and dangling child references", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+
+    await repo.createApplication(application);
+    await expect(repo.createApplication(application)).rejects.toMatchObject({
+      code: "operation_failed",
+    });
+    await expect(
+      repo.upsertContact({ ...contact, applicationId: "missing_app" }),
+    ).rejects.toMatchObject({
+      code: "schema_validation_failed",
+      details: { applicationId: "missing_app" },
+    });
+    await expect(repo.upsertInterview(interview)).rejects.toMatchObject({
+      code: "schema_validation_failed",
+      details: { contactIds: [contact.id] },
+    });
+
+    repo.close();
+  });
+
+  it("requires overwrite permission before full-replace imports", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+
+    await repo.createApplication(application);
+    const exported = await repo.exportAllData();
+    const replacement = {
+      ...exported,
+      applications: [
+        {
+          ...application,
+          id: "app_fake_002",
+          company: "Replacement Robotics",
+        },
+      ],
+    };
+
+    await expect(repo.importAllData(replacement)).rejects.toMatchObject({
+      code: "import_conflict",
+      details: { hasExistingData: true, conflicts: [] },
+    });
+
+    const dryRun = await repo.importAllData(replacement, {
+      dryRun: true,
+      allowOverwrite: true,
+    });
+    expect(dryRun.conflicts).toEqual([]);
+
+    await repo.importAllData(replacement, { allowOverwrite: true });
+    expect(await repo.getApplication(application.id)).toBeNull();
+    expect(await repo.getApplication("app_fake_002")).toMatchObject({
+      company: "Replacement Robotics",
     });
 
     repo.close();

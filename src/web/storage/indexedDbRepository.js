@@ -114,7 +114,10 @@ export const migrations = {
       ensureIndex(applications, "by_followUpDate", "followUpDate");
     }
 
-    createStore(db, "contacts");
+    const contacts = createStore(db, "contacts");
+    if (contacts) {
+      ensureIndex(contacts, "by_applicationId", "applicationId");
+    }
 
     const outreachMessages = createStore(db, "outreachMessages");
     if (outreachMessages) {
@@ -162,10 +165,10 @@ export const openJobbotDatabase = ({
   const idb = getIndexedDb(indexedDb);
   return new Promise((resolve, reject) => {
     const request = idb.open(databaseName, version);
-    request.onupgradeneeded = () => {
+    request.onupgradeneeded = (event) => {
       const db = request.result;
       for (
-        let currentVersion = (request.oldVersion ?? 0) + 1;
+        let currentVersion = event.oldVersion + 1;
         currentVersion <= version;
         currentVersion += 1
       ) {
@@ -199,6 +202,15 @@ const getAll = async (db, storeName) => {
   return records;
 };
 
+const addRecord = async (db, storeName, record) => {
+  const parsed = parseRecord(storeName, record);
+  const tx = db.transaction(storeName, "readwrite");
+  const done = transactionDone(tx);
+  tx.objectStore(storeName).add(parsed);
+  await done;
+  return parsed;
+};
+
 const putRecord = async (db, storeName, record) => {
   const parsed = parseRecord(storeName, record);
   const tx = db.transaction(storeName, "readwrite");
@@ -208,18 +220,76 @@ const putRecord = async (db, storeName, record) => {
   return parsed;
 };
 
+const assertReferencesExist = async (db, record) => {
+  const stores = ["applications"];
+  const contactIds = [record.contactId, ...(record.contactIds ?? [])].filter(
+    Boolean,
+  );
+  if (contactIds.length > 0) stores.push("contacts");
+
+  const tx = db.transaction(stores, "readonly");
+  const done = transactionDone(tx);
+  const application = await requestToPromise(
+    tx.objectStore("applications").get(record.applicationId),
+  );
+  const contacts = await Promise.all(
+    contactIds.map((contactId) =>
+      requestToPromise(tx.objectStore("contacts").get(contactId)),
+    ),
+  );
+  await done;
+
+  if (!application) {
+    throw new IndexedDbRepositoryError(
+      "schema_validation_failed",
+      "Referenced application does not exist.",
+      { details: { applicationId: record.applicationId } },
+    );
+  }
+
+  const missingContactIds = contactIds.filter((_, index) => !contacts[index]);
+  if (missingContactIds.length > 0) {
+    throw new IndexedDbRepositoryError(
+      "schema_validation_failed",
+      "Referenced contact does not exist.",
+      { details: { contactIds: missingContactIds } },
+    );
+  }
+};
+
+const putChildRecord = async (db, storeName, record) => {
+  const parsed = parseRecord(storeName, record);
+  await assertReferencesExist(db, parsed);
+  return putRecord(db, storeName, parsed);
+};
+
 const deleteFromIndex = async (db, storeName, indexName, value) => {
-  const records = await getAll(db, storeName);
   const tx = db.transaction(storeName, "readwrite");
   const done = transactionDone(tx);
   const store = tx.objectStore(storeName);
-  records
-    .filter((record) => record[indexName] === value)
-    .forEach((record) => store.delete(record.id));
+  const source = store.indexNames.contains(`by_${indexName}`)
+    ? store.index(`by_${indexName}`)
+    : store;
+
+  await new Promise((resolve, reject) => {
+    const request = source.openCursor(source === store ? undefined : value);
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) {
+        resolve();
+        return;
+      }
+      if (source !== store || cursor.value[indexName] === value) {
+        cursor.delete();
+      }
+      cursor.continue();
+    };
+    request.onerror = () => reject(request.error);
+  });
   await done;
 };
 
-const validateImport = (data, { allowOverwrite }) => {
+const validateImport = (data) => {
   const result = browserApplicationExportSchema.safeParse(data);
   if (!result.success) {
     throw new IndexedDbRepositoryError(
@@ -228,7 +298,7 @@ const validateImport = (data, { allowOverwrite }) => {
       { details: result.error.flatten() },
     );
   }
-  return { parsed: result.data, allowOverwrite };
+  return { parsed: result.data };
 };
 
 export const createIndexedDbRepository = async (options = {}) => {
@@ -256,7 +326,7 @@ export const createIndexedDbRepository = async (options = {}) => {
       db.close();
     },
     createApplication(application) {
-      return safe(() => putRecord(db, "applications", application));
+      return safe(() => addRecord(db, "applications", application));
     },
     updateApplication(application) {
       return safe(() => putRecord(db, "applications", application));
@@ -305,22 +375,22 @@ export const createIndexedDbRepository = async (options = {}) => {
       });
     },
     upsertContact(record) {
-      return safe(() => putRecord(db, "contacts", record));
+      return safe(() => putChildRecord(db, "contacts", record));
     },
     addOutreachMessage(record) {
-      return safe(() => putRecord(db, "outreachMessages", record));
+      return safe(() => putChildRecord(db, "outreachMessages", record));
     },
     addLifecycleEvent(record) {
-      return safe(() => putRecord(db, "lifecycleEvents", record));
+      return safe(() => putChildRecord(db, "lifecycleEvents", record));
     },
     upsertInterview(record) {
-      return safe(() => putRecord(db, "interviews", record));
+      return safe(() => putChildRecord(db, "interviews", record));
     },
     upsertOffer(record) {
-      return safe(() => putRecord(db, "offers", record));
+      return safe(() => putChildRecord(db, "offers", record));
     },
     upsertArtifact(record) {
-      return safe(() => putRecord(db, "artifacts", record));
+      return safe(() => putChildRecord(db, "artifacts", record));
     },
     async listDueFollowUps(now = new Date().toISOString()) {
       return safe(async () =>
@@ -331,8 +401,8 @@ export const createIndexedDbRepository = async (options = {}) => {
       );
     },
     async exportAllData() {
-      return safe(async () =>
-        browserApplicationExportSchema.parse({
+      return safe(async () => {
+        const result = browserApplicationExportSchema.safeParse({
           schemaVersion: DATABASE_VERSION,
           exportedAt: new Date().toISOString(),
           applications: await getAll(db, "applications"),
@@ -344,32 +414,44 @@ export const createIndexedDbRepository = async (options = {}) => {
           artifacts: await getAll(db, "artifacts"),
           reminders: await getAll(db, "reminders"),
           settings: (await getAll(db, "settings"))[0],
-        }),
-      );
+        });
+        if (!result.success) {
+          throw new IndexedDbRepositoryError(
+            "schema_validation_failed",
+            "Export data does not match the browser application export schema.",
+            { details: result.error.flatten() },
+          );
+        }
+        return result.data;
+      });
     },
     async importAllData(data, { dryRun = false, allowOverwrite = false } = {}) {
       return safe(async () => {
-        const { parsed } = validateImport(data, { allowOverwrite });
-        const existingIds = new Set(
-          (
-            await Promise.all(
-              STORE_NAMES.filter((name) => name !== "settings").map((name) =>
-                getAll(db, name),
-              ),
-            )
-          )
-            .flat()
-            .map(({ id }) => id),
+        const { parsed } = validateImport(data);
+        const existingRecords = Object.fromEntries(
+          await Promise.all(
+            STORE_NAMES.map(async (name) => [name, await getAll(db, name)]),
+          ),
         );
-        const incomingIds = STORE_NAMES.filter(
-          (name) => name !== "settings",
-        ).flatMap((name) => parsed[name].map(({ id }) => id));
-        const conflicts = incomingIds.filter((id) => existingIds.has(id));
-        if (conflicts.length > 0 && !allowOverwrite) {
+        const existingKeys = new Set(
+          STORE_NAMES.flatMap((name) =>
+            existingRecords[name].map(({ id }) => `${name}:${id}`),
+          ),
+        );
+        const incomingKeys = STORE_NAMES.flatMap((name) => {
+          if (name === "settings")
+            return parsed.settings ? ["settings:local"] : [];
+          return parsed[name].map(({ id }) => `${name}:${id}`);
+        });
+        const conflicts = incomingKeys.filter((key) => existingKeys.has(key));
+        const hasExistingData = STORE_NAMES.some(
+          (name) => existingRecords[name].length > 0,
+        );
+        if (hasExistingData && !allowOverwrite) {
           throw new IndexedDbRepositoryError(
             "import_conflict",
-            "Import would overwrite existing records.",
-            { details: { conflicts } },
+            "Import would replace existing IndexedDB records.",
+            { details: { conflicts, hasExistingData } },
           );
         }
         if (dryRun)
