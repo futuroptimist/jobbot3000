@@ -272,7 +272,11 @@ const putChildRecord = async (db, storeName, record) => {
 const deleteFromIndex = async (db, storeName, indexName, value) => {
   const tx = db.transaction(storeName, "readwrite");
   const done = transactionDone(tx);
-  const store = tx.objectStore(storeName);
+  await deleteMatchingFromStore(tx.objectStore(storeName), indexName, value);
+  await done;
+};
+
+const deleteMatchingFromStore = async (store, indexName, value) => {
   const source = store.indexNames.contains(`by_${indexName}`)
     ? store.index(`by_${indexName}`)
     : store;
@@ -292,7 +296,6 @@ const deleteFromIndex = async (db, storeName, indexName, value) => {
     };
     request.onerror = () => reject(request.error);
   });
-  await done;
 };
 
 const validateImport = (data) => {
@@ -339,23 +342,18 @@ export const createIndexedDbRepository = async (options = {}) => {
     },
     async deleteApplication(id) {
       return safe(async () => {
-        const relatedRecords = await Promise.all(
-          APPLICATION_CASCADE_STORES.map(async (storeName) => [
-            storeName,
-            (await getAll(db, storeName)).filter(
-              (record) => record.applicationId === id,
-            ),
-          ]),
-        );
         const tx = db.transaction(
           ["applications", ...APPLICATION_CASCADE_STORES],
           "readwrite",
         );
         const done = transactionDone(tx);
         tx.objectStore("applications").delete(id);
-        for (const [storeName, records] of relatedRecords) {
-          const store = tx.objectStore(storeName);
-          records.forEach((record) => store.delete(record.id));
+        for (const storeName of APPLICATION_CASCADE_STORES) {
+          await deleteMatchingFromStore(
+            tx.objectStore(storeName),
+            "applicationId",
+            id,
+          );
         }
         await done;
       });
@@ -408,18 +406,37 @@ export const createIndexedDbRepository = async (options = {}) => {
     },
     async exportAllData() {
       return safe(async () => {
+        const tx = db.transaction(STORE_NAMES, "readonly");
+        const done = transactionDone(tx);
+        const storeResults = await Promise.all(
+          STORE_NAMES.map((storeName) =>
+            requestToPromise(tx.objectStore(storeName).getAll()),
+          ),
+        );
+        await done;
+        const [
+          applications,
+          contacts,
+          outreachMessages,
+          lifecycleEvents,
+          interviews,
+          offers,
+          artifacts,
+          reminders,
+          settingsAll,
+        ] = storeResults;
         const result = browserApplicationExportSchema.safeParse({
           schemaVersion: DATABASE_VERSION,
           exportedAt: new Date().toISOString(),
-          applications: await getAll(db, "applications"),
-          contacts: await getAll(db, "contacts"),
-          outreachMessages: await getAll(db, "outreachMessages"),
-          lifecycleEvents: await getAll(db, "lifecycleEvents"),
-          interviews: await getAll(db, "interviews"),
-          offers: await getAll(db, "offers"),
-          artifacts: await getAll(db, "artifacts"),
-          reminders: await getAll(db, "reminders"),
-          settings: (await getAll(db, "settings"))[0],
+          applications,
+          contacts,
+          outreachMessages,
+          lifecycleEvents,
+          interviews,
+          offers,
+          artifacts,
+          reminders,
+          settings: settingsAll[0],
         });
         if (!result.success) {
           throw new IndexedDbRepositoryError(
