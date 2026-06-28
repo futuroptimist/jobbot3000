@@ -257,6 +257,12 @@ const assertReferencesExist = async (db, record) => {
   }
 };
 
+const addChildRecord = async (db, storeName, record) => {
+  const parsed = parseRecord(storeName, record);
+  await assertReferencesExist(db, parsed);
+  return addRecord(db, storeName, parsed);
+};
+
 const putChildRecord = async (db, storeName, record) => {
   const parsed = parseRecord(storeName, record);
   await assertReferencesExist(db, parsed);
@@ -378,10 +384,10 @@ export const createIndexedDbRepository = async (options = {}) => {
       return safe(() => putChildRecord(db, "contacts", record));
     },
     addOutreachMessage(record) {
-      return safe(() => putChildRecord(db, "outreachMessages", record));
+      return safe(() => addChildRecord(db, "outreachMessages", record));
     },
     addLifecycleEvent(record) {
-      return safe(() => putChildRecord(db, "lifecycleEvents", record));
+      return safe(() => addChildRecord(db, "lifecycleEvents", record));
     },
     upsertInterview(record) {
       return safe(() => putChildRecord(db, "interviews", record));
@@ -434,26 +440,23 @@ export const createIndexedDbRepository = async (options = {}) => {
           ),
         );
         const existingKeys = new Set(
-          STORE_NAMES.flatMap((name) =>
-            existingRecords[name].map(({ id }) => `${name}:${id}`),
+          STORE_NAMES.flatMap((storeName) =>
+            existingRecords[storeName].map(({ id }) => `${storeName}:${id}`),
           ),
         );
-        const incomingKeys = STORE_NAMES.flatMap((name) => {
-          if (name === "settings")
-            return parsed.settings ? ["settings:local"] : [];
-          return parsed[name].map(({ id }) => `${name}:${id}`);
+        const incomingRecords = STORE_NAMES.flatMap((storeName) => {
+          if (storeName === "settings")
+            return parsed.settings
+              ? [{ storeName, id: parsed.settings.id }]
+              : [];
+          return parsed[storeName].map(({ id }) => ({ storeName, id }));
         });
-        const conflicts = incomingKeys.filter((key) => existingKeys.has(key));
+        const conflicts = incomingRecords.filter(({ storeName, id }) =>
+          existingKeys.has(`${storeName}:${id}`),
+        );
         const hasExistingData = STORE_NAMES.some(
           (name) => existingRecords[name].length > 0,
         );
-        if (hasExistingData && !allowOverwrite) {
-          throw new IndexedDbRepositoryError(
-            "import_conflict",
-            "Import would replace existing IndexedDB records.",
-            { details: { conflicts, hasExistingData } },
-          );
-        }
         if (dryRun)
           return {
             imported: false,
@@ -466,7 +469,15 @@ export const createIndexedDbRepository = async (options = {}) => {
               ]),
             ),
             conflicts,
+            hasExistingData,
           };
+        if (hasExistingData && !allowOverwrite) {
+          throw new IndexedDbRepositoryError(
+            "import_conflict",
+            "Import would replace existing IndexedDB records.",
+            { details: { conflicts, hasExistingData } },
+          );
+        }
         const tx = db.transaction(STORE_NAMES, "readwrite");
         const done = transactionDone(tx);
         for (const storeName of STORE_NAMES) tx.objectStore(storeName).clear();

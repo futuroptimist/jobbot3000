@@ -197,10 +197,11 @@ describe("IndexedDB repository", () => {
 
     await repo.createApplication(application);
     const exported = await repo.exportAllData();
-    await expect(
-      repo.importAllData(exported, { dryRun: true }),
-    ).rejects.toMatchObject({
-      code: "import_conflict",
+    const dryRun = await repo.importAllData(exported, { dryRun: true });
+    expect(dryRun).toMatchObject({
+      imported: false,
+      conflicts: [{ storeName: "applications", id: application.id }],
+      hasExistingData: true,
     });
 
     repo.close();
@@ -227,6 +228,80 @@ describe("IndexedDB repository", () => {
     repo.close();
   });
 
+  it("updates an existing application", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+
+    await repo.createApplication(application);
+    await repo.updateApplication({
+      ...application,
+      role: "Principal Software Engineer",
+      status: "recruiter_screen",
+      updatedAt: later,
+    });
+
+    await expect(repo.getApplication(application.id)).resolves.toMatchObject({
+      role: "Principal Software Engineer",
+      status: "recruiter_screen",
+      updatedAt: later,
+    });
+
+    repo.close();
+  });
+
+  it("deletes an application and cascades application-scoped records", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+
+    await repo.createApplication(application);
+    await repo.upsertContact(contact);
+    await repo.addOutreachMessage(outreachMessage);
+    await repo.addLifecycleEvent(lifecycleEvent);
+    await repo.upsertInterview(interview);
+    await repo.upsertOffer(offer);
+    await repo.upsertArtifact(artifact);
+
+    await repo.deleteApplication(application.id);
+
+    expect(await repo.getApplication(application.id)).toBeNull();
+    const exported = await repo.exportAllData();
+    expect(exported.applications).toHaveLength(0);
+    expect(exported.contacts).toHaveLength(0);
+    expect(exported.outreachMessages).toHaveLength(0);
+    expect(exported.lifecycleEvents).toHaveLength(0);
+    expect(exported.interviews).toHaveLength(0);
+    expect(exported.offers).toHaveLength(0);
+    expect(exported.artifacts).toHaveLength(0);
+
+    repo.close();
+  });
+
+  it("rejects duplicate outreach messages and lifecycle events", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+
+    await repo.createApplication(application);
+    await repo.upsertContact(contact);
+    await repo.addOutreachMessage(outreachMessage);
+    await repo.addLifecycleEvent(lifecycleEvent);
+
+    await expect(
+      repo.addOutreachMessage({
+        ...outreachMessage,
+        subject: "Overwritten subject",
+      }),
+    ).rejects.toMatchObject({ code: "operation_failed" });
+    await expect(
+      repo.addLifecycleEvent({
+        ...lifecycleEvent,
+        status: "recruiter_screen",
+      }),
+    ).rejects.toMatchObject({ code: "operation_failed" });
+
+    const exported = await repo.exportAllData();
+    expect(exported.outreachMessages).toEqual([outreachMessage]);
+    expect(exported.lifecycleEvents).toEqual([lifecycleEvent]);
+
+    repo.close();
+  });
+
   it("requires overwrite permission before full-replace imports", async () => {
     const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
 
@@ -243,9 +318,24 @@ describe("IndexedDB repository", () => {
       ],
     };
 
+    const dryRunWithoutOverwrite = await repo.importAllData(replacement, {
+      dryRun: true,
+    });
+    expect(dryRunWithoutOverwrite).toMatchObject({
+      imported: false,
+      conflicts: [],
+      hasExistingData: true,
+    });
+    expect(await repo.getApplication(application.id)).toMatchObject({
+      company: "Example Robotics",
+    });
+
     await expect(repo.importAllData(replacement)).rejects.toMatchObject({
       code: "import_conflict",
       details: { hasExistingData: true, conflicts: [] },
+    });
+    expect(await repo.getApplication(application.id)).toMatchObject({
+      company: "Example Robotics",
     });
 
     const dryRun = await repo.importAllData(replacement, {
@@ -258,6 +348,43 @@ describe("IndexedDB repository", () => {
     expect(await repo.getApplication(application.id)).toBeNull();
     expect(await repo.getApplication("app_fake_002")).toMatchObject({
       company: "Replacement Robotics",
+    });
+
+    repo.close();
+  });
+
+  it("scopes import conflicts to each object store", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    const sharedId = "shared_id";
+    const importedApplication = {
+      ...application,
+      id: "imported_app",
+      company: "Imported Robotics",
+    };
+
+    await repo.createApplication({ ...application, id: sharedId });
+
+    const dryRun = await repo.importAllData(
+      {
+        schemaVersion: DATABASE_VERSION,
+        exportedAt: now,
+        applications: [importedApplication],
+        contacts: [
+          { ...contact, id: sharedId, applicationId: importedApplication.id },
+        ],
+        outreachMessages: [],
+        lifecycleEvents: [],
+        interviews: [],
+        offers: [],
+        artifacts: [],
+        reminders: [],
+      },
+      { dryRun: true },
+    );
+
+    expect(dryRun.conflicts).toEqual([]);
+    expect(await repo.getApplication(sharedId)).toMatchObject({
+      company: "Example Robotics",
     });
 
     repo.close();
