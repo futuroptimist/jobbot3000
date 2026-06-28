@@ -14,8 +14,9 @@ export const browserApplicationLifecycleStatusSchema = z.enum([
 ]);
 
 const isoDateTimeSchema = z.string().datetime();
-const optionalTrimmedStringSchema = z.string().trim().min(1).optional();
-const idSchema = z.string().trim().min(1);
+const requiredStringSchema = z.string().trim().min(1);
+const optionalTrimmedStringSchema = requiredStringSchema.optional();
+const idSchema = requiredStringSchema;
 
 export const browserApplicationContactSchema = z.object({
   id: idSchema,
@@ -83,27 +84,38 @@ export const browserApplicationInterviewSchema = z.object({
   updatedAt: isoDateTimeSchema,
 });
 
-export const browserApplicationOfferSchema = z.object({
-  id: idSchema,
-  applicationId: idSchema,
-  status: z.enum([
-    "draft",
-    "received",
-    "negotiating",
-    "accepted",
-    "declined",
-    "expired",
-  ]),
-  baseSalaryMin: z.number().nonnegative().optional(),
-  baseSalaryMax: z.number().nonnegative().optional(),
-  currency: z.string().trim().length(3).optional(),
-  equity: optionalTrimmedStringSchema,
-  bonus: optionalTrimmedStringSchema,
-  deadlineAt: isoDateTimeSchema.optional(),
-  notes: optionalTrimmedStringSchema,
-  createdAt: isoDateTimeSchema,
-  updatedAt: isoDateTimeSchema,
-});
+export const browserApplicationOfferSchema = z
+  .object({
+    id: idSchema,
+    applicationId: idSchema,
+    status: z.enum([
+      "draft",
+      "received",
+      "negotiating",
+      "accepted",
+      "declined",
+      "expired",
+    ]),
+    baseSalaryMin: z.number().nonnegative().optional(),
+    baseSalaryMax: z.number().nonnegative().optional(),
+    currency: z.string().trim().length(3).optional(),
+    equity: optionalTrimmedStringSchema,
+    bonus: optionalTrimmedStringSchema,
+    deadlineAt: isoDateTimeSchema.optional(),
+    notes: optionalTrimmedStringSchema,
+    createdAt: isoDateTimeSchema,
+    updatedAt: isoDateTimeSchema,
+  })
+  .refine(
+    ({ baseSalaryMin, baseSalaryMax }) =>
+      baseSalaryMin === undefined ||
+      baseSalaryMax === undefined ||
+      baseSalaryMin <= baseSalaryMax,
+    {
+      message: "baseSalaryMin must be less than or equal to baseSalaryMax",
+      path: ["baseSalaryMin"],
+    },
+  );
 
 export const browserApplicationArtifactSchema = z.object({
   id: idSchema,
@@ -117,7 +129,7 @@ export const browserApplicationArtifactSchema = z.object({
     "link",
     "other",
   ]),
-  name: idSchema,
+  name: requiredStringSchema,
   url: z.string().url().optional(),
   blobKey: optionalTrimmedStringSchema,
   mimeType: optionalTrimmedStringSchema,
@@ -132,7 +144,7 @@ export const browserApplicationReminderSchema = z.object({
   contactId: idSchema.optional(),
   dueAt: isoDateTimeSchema,
   completedAt: isoDateTimeSchema.optional(),
-  summary: idSchema,
+  summary: requiredStringSchema,
   notes: optionalTrimmedStringSchema,
   createdAt: isoDateTimeSchema,
   updatedAt: isoDateTimeSchema,
@@ -140,7 +152,7 @@ export const browserApplicationReminderSchema = z.object({
 
 export const browserApplicationSettingsSchema = z.object({
   id: z.literal("local"),
-  schemaVersion: z.number().int().positive(),
+  schemaVersion: z.literal(1),
   locale: optionalTrimmedStringSchema,
   timezone: optionalTrimmedStringSchema,
   defaultExportFormat: z.enum(["json", "ndjson", "csv"]).default("json"),
@@ -150,8 +162,8 @@ export const browserApplicationSettingsSchema = z.object({
 
 export const browserApplicationSchema = z.object({
   id: idSchema,
-  company: idSchema,
-  role: idSchema,
+  company: requiredStringSchema,
+  role: requiredStringSchema,
   status: browserApplicationLifecycleStatusSchema,
   source: optionalTrimmedStringSchema,
   postingUrl: z.string().url().optional(),
@@ -165,18 +177,130 @@ export const browserApplicationSchema = z.object({
   updatedAt: isoDateTimeSchema,
 });
 
-export const browserApplicationExportSchema = z.object({
-  schemaVersion: z.literal(1),
-  exportedAt: isoDateTimeSchema,
-  applications: z.array(browserApplicationSchema),
-  contacts: z.array(browserApplicationContactSchema).default([]),
-  outreachMessages: z
-    .array(browserApplicationOutreachMessageSchema)
-    .default([]),
-  lifecycleEvents: z.array(browserApplicationLifecycleEventSchema).default([]),
-  interviews: z.array(browserApplicationInterviewSchema).default([]),
-  offers: z.array(browserApplicationOfferSchema).default([]),
-  artifacts: z.array(browserApplicationArtifactSchema).default([]),
-  reminders: z.array(browserApplicationReminderSchema).default([]),
-  settings: browserApplicationSettingsSchema.optional(),
-});
+const addDuplicateIdIssues = (ctx, storeName, records) => {
+  const seen = new Set();
+
+  records.forEach(({ id }, index) => {
+    if (seen.has(id)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Duplicate ${storeName} id: ${id}`,
+        path: [storeName, index, "id"],
+      });
+      return;
+    }
+
+    seen.add(id);
+  });
+};
+
+const addApplicationReferenceIssues = (
+  ctx,
+  storeName,
+  records,
+  applicationIds,
+) => {
+  records.forEach(({ applicationId }, index) => {
+    if (!applicationIds.has(applicationId)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Unknown applicationId: ${applicationId}`,
+        path: [storeName, index, "applicationId"],
+      });
+    }
+  });
+};
+
+const addContactReferenceIssues = (ctx, storeName, records, contactIds) => {
+  records.forEach(({ contactId }, index) => {
+    if (contactId !== undefined && !contactIds.has(contactId)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Unknown contactId: ${contactId}`,
+        path: [storeName, index, "contactId"],
+      });
+    }
+  });
+};
+
+export const browserApplicationExportSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    exportedAt: isoDateTimeSchema,
+    applications: z.array(browserApplicationSchema),
+    contacts: z.array(browserApplicationContactSchema).default([]),
+    outreachMessages: z
+      .array(browserApplicationOutreachMessageSchema)
+      .default([]),
+    lifecycleEvents: z
+      .array(browserApplicationLifecycleEventSchema)
+      .default([]),
+    interviews: z.array(browserApplicationInterviewSchema).default([]),
+    offers: z.array(browserApplicationOfferSchema).default([]),
+    artifacts: z.array(browserApplicationArtifactSchema).default([]),
+    reminders: z.array(browserApplicationReminderSchema).default([]),
+    settings: browserApplicationSettingsSchema.optional(),
+  })
+  .superRefine((exportData, ctx) => {
+    const keyedStores = [
+      ["applications", exportData.applications],
+      ["contacts", exportData.contacts],
+      ["outreachMessages", exportData.outreachMessages],
+      ["lifecycleEvents", exportData.lifecycleEvents],
+      ["interviews", exportData.interviews],
+      ["offers", exportData.offers],
+      ["artifacts", exportData.artifacts],
+      ["reminders", exportData.reminders],
+    ];
+
+    keyedStores.forEach(([storeName, records]) => {
+      addDuplicateIdIssues(ctx, storeName, records);
+    });
+
+    const applicationIds = new Set(
+      exportData.applications.map((application) => application.id),
+    );
+    const contactIds = new Set(
+      exportData.contacts.map((contact) => contact.id),
+    );
+    const applicationScopedStores = [
+      ["contacts", exportData.contacts],
+      ["outreachMessages", exportData.outreachMessages],
+      ["lifecycleEvents", exportData.lifecycleEvents],
+      ["interviews", exportData.interviews],
+      ["offers", exportData.offers],
+      ["artifacts", exportData.artifacts],
+      ["reminders", exportData.reminders],
+    ];
+
+    applicationScopedStores.forEach(([storeName, records]) => {
+      addApplicationReferenceIssues(ctx, storeName, records, applicationIds);
+    });
+
+    addContactReferenceIssues(
+      ctx,
+      "outreachMessages",
+      exportData.outreachMessages,
+      contactIds,
+    );
+    addContactReferenceIssues(
+      ctx,
+      "reminders",
+      exportData.reminders,
+      contactIds,
+    );
+
+    exportData.interviews.forEach(
+      ({ contactIds: interviewContactIds }, index) => {
+        interviewContactIds.forEach((contactId, contactIndex) => {
+          if (!contactIds.has(contactId)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: `Unknown contactId: ${contactId}`,
+              path: ["interviews", index, "contactIds", contactIndex],
+            });
+          }
+        });
+      },
+    );
+  });
