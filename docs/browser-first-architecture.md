@@ -141,3 +141,23 @@ control.
 3. Add JSON, NDJSON, and CSV import/export around the browser model.
 4. Move UI tracker screens to the IndexedDB repository.
 5. Harden service worker, static deployment, health checks, Docker, Helm, and Sugarkube integration.
+
+## IndexedDB repository implementation
+
+The browser repository in `src/web/storage/indexedDbRepository.js` is the durable source of truth for production web tracker data. It opens a versioned `jobbot3000` IndexedDB database and creates v1 object stores for applications, contacts, outreach messages, lifecycle events, interviews, offers, artifacts, reminders, and settings. Application data is never persisted through server endpoints by this repository, and application records are not mirrored to `localStorage`.
+
+The v1 schema indexes the tracker fields the UI needs for common views: company, status, applied date, and follow-up date on applications; application ownership on outreach and artifacts; and `(applicationId, occurredAt)` on lifecycle events. Migrations are centralized in the repository so future database version bumps can add stores or indexes without rewriting the open path.
+
+Artifacts intentionally store metadata and URLs first. File and Blob bodies are not written to IndexedDB in this implementation, which keeps backups smaller and avoids surprising quota usage until binary artifact storage has a dedicated design and tests.
+
+### Backup and restore
+
+Users should create regular backups with the repository export flow. `exportAllData()` returns a JSON document validated by the browser application export schema, including all application-owned stores plus local settings. To restore, pass that document to `importAllData()`. Use `{ dryRun: true }` before applying a restore to validate schema shape, dangling references, duplicate ids, and conflicts without changing the browser database.
+
+Import conflicts are reported when an incoming record uses an existing id with different contents. The default behavior fails fast so users do not accidentally overwrite local work; explicit restore flows may choose a replace strategy after warning the user and confirming that a backup exists.
+
+### Browser storage and quota caveats
+
+IndexedDB lives inside the user's browser profile for the current origin. Clearing site data, using private browsing sessions, changing browser profiles, or uninstalling the browser can remove the database. Browser quota policies also vary by browser, available disk space, and device settings. If quota is exceeded, the repository raises a quota-specific error so the UI can ask the user to export a backup, remove unneeded records, or retry on a device with more storage.
+
+Because the data is local-first and browser-owned, users are responsible for keeping backup files somewhere durable, such as an encrypted external drive or a trusted cloud folder. Backup files may contain job-search history, contacts, compensation notes, interview details, and other sensitive personal data, so they should be handled as private records.
