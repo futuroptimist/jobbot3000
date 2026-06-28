@@ -8,10 +8,11 @@
 **jobbot3000** is a self-hosted, open-source job search copilot.
 
 > [!WARNING]
-> The web interface is an experimental preview for local use only. Running production builds or
-> deploying to shared or cloud infrastructure can leak secrets, PII, and other sensitive data.
-> Operate on trusted hardware while we implement hardened authentication, storage, and network
-> isolation. Track the hardening plan in [docs/web-security-roadmap.md](docs/web-security-roadmap.md).
+> The current web interface is an experimental preview for local use only. Running this preview on
+> shared or cloud infrastructure can leak secrets, PII, and other sensitive data. The production
+> direction is a browser-first static app where private tracker data lives in IndexedDB rather than
+> server-side SQLite; see [docs/browser-first-architecture.md](docs/browser-first-architecture.md).
+> Track remaining preview hardening in [docs/web-security-roadmap.md](docs/web-security-roadmap.md).
 
 ## Quickstart
 
@@ -154,6 +155,8 @@ Run the snippet with `node example.js` after saving it to a file in the project 
 - [SECURITY.md](SECURITY.md) – security guidelines
 - [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) – prompt reference index
 - [docs/user-journeys.md](docs/user-journeys.md) – primary user journeys and flows
+- [docs/browser-first-architecture.md](docs/browser-first-architecture.md) – production web direction
+  for IndexedDB-first, browser-local application tracking
 - [docs/backup-restore-guide.md](docs/backup-restore-guide.md) – backup, restore, and verification
   steps
 - [docs/web-ux-guidelines.md](docs/web-ux-guidelines.md) – layout, typography, and interaction guardrails
@@ -161,8 +164,11 @@ Run the snippet with `node example.js` after saving it to a file in the project 
 
 ### Durable data export/import
 
-All recruiter outreach, contacts, and lifecycle events live in `data/opportunities.db` (SQLite via
-Drizzle ORM). Use the bundled scripts to back up or restore records:
+Today, the CLI-oriented opportunity preview stores recruiter outreach, contacts, and lifecycle events
+in `data/opportunities.db` (SQLite via Drizzle ORM). The intended production web app will instead keep
+private tracker data browser-local in IndexedDB; see the browser-first architecture document for the
+planned data contract and migration path. Until that replacement ships, use the bundled scripts to back
+up or restore CLI opportunity records:
 
 ```bash
 # Export every table as newline-delimited JSON
