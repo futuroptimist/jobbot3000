@@ -171,6 +171,7 @@ export const browserApplicationSchema = z.object({
   remote: z.boolean().optional(),
   compensationText: optionalTrimmedStringSchema,
   appliedAt: isoDateTimeSchema.optional(),
+  followUpDate: isoDateTimeSchema.optional(),
   closedAt: isoDateTimeSchema.optional(),
   notes: optionalTrimmedStringSchema,
   createdAt: isoDateTimeSchema,

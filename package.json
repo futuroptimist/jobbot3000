@@ -57,6 +57,7 @@
     "axe-core": "^4.10.0",
     "cspell": "^8.15.4",
     "eslint": "^9.36.0",
+    "fake-indexeddb": "^6.2.5",
     "globals": "^16.4.0",
     "jsdom": "^27.0.1",
     "lighthouse": "^11.7.1",
