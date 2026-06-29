@@ -641,8 +641,18 @@ async function previewImport() {
     `Dry-run OK: ${bundle.applications.length} applications, ${bundle.outreachMessages.length} outreach messages, ${bundle.interviews.length} interviews.`;
   $("[data-import-apply]").disabled = false;
 }
+function resetImportPreview() {
+  state.preview = null;
+  $("[data-import-apply]").disabled = true;
+  $("[data-import-result]").textContent =
+    "Select Preview/dry-run to validate the selected file before applying.";
+}
 async function applyImport() {
-  await batchPut(state.preview || {});
+  if (!state.preview) {
+    resetImportPreview();
+    return;
+  }
+  await batchPut(state.preview);
   $("[data-import-result]").textContent = "Import applied.";
   $("[data-import-apply]").disabled = true;
   await refresh();
@@ -727,6 +737,7 @@ function init() {
   );
   $("[data-new-application]").onclick = newApplication;
   $("[data-back-to-list]").onclick = () => route("applications");
+  $("[data-import-file]").oninput = resetImportPreview;
   $("[data-import-preview]").onclick = previewImport;
   $("[data-import-apply]").onclick = applyImport;
   $$("[data-export]").forEach(

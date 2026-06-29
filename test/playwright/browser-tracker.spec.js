@@ -127,6 +127,54 @@ test.describe("browser application tracker", () => {
     ).toHaveCount(0);
   });
 
+  test("clears stale import previews when selecting a different CSV", async ({
+    page,
+  }) => {
+    const replacementCsvFixture = [
+      "application_id,company,role_title,status,applied_at,posting_url,notes",
+      "fake_app_3,Replacement LLC,Backend Engineer,applied,2026-02-03," +
+        "https://example.test/jobs/backend,replacement file",
+    ].join("\n");
+
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await page.setInputFiles("[data-import-file]", {
+      name: "first-applications.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(csvFixture),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await expect(page.locator("[data-import-result]")).toContainText(
+      "Dry-run OK: 1 applications",
+    );
+    await expect(
+      page.getByRole("button", { name: "Apply import" }),
+    ).toBeEnabled();
+
+    await page.setInputFiles("[data-import-file]", {
+      name: "replacement-applications.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(replacementCsvFixture),
+    });
+    await expect(
+      page.getByRole("button", { name: "Apply import" }),
+    ).toBeDisabled();
+    await expect(page.locator("[data-import-result]")).toContainText(
+      "validate the selected file",
+    );
+
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await page.getByRole("button", { name: "Apply import" }).click();
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await expect(page.locator("[data-applications-table]")).toContainText(
+      "Replacement LLC",
+    );
+    await expect(page.locator("[data-applications-table]")).not.toContainText(
+      "Example Labs",
+    );
+  });
+
   test("creates a new application and exports backups", async ({ page }) => {
     await page
       .getByRole("button", { name: "Applications", exact: true })
