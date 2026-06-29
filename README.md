@@ -158,6 +158,7 @@ Run the snippet with `node example.js` after saving it to a file in the project 
 - [docs/user-journeys.md](docs/user-journeys.md) – primary user journeys and flows
 - [docs/browser-first-architecture.md](docs/browser-first-architecture.md) – planned IndexedDB-first production web architecture and browser data contract
 - [docs/indexeddb-persistence.md](docs/indexeddb-persistence.md) – browser IndexedDB persistence, backup/restore, and quota caveats
+- [docs/spreadsheet-replacement.md](docs/spreadsheet-replacement.md) – CSV import/export steps for replacing the legacy spreadsheet
 - [docs/backup-restore-guide.md](docs/backup-restore-guide.md) – backup, restore, and verification
   steps
 - [docs/web-ux-guidelines.md](docs/web-ux-guidelines.md) – layout, typography, and interaction guardrails
