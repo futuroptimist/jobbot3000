@@ -7022,6 +7022,33 @@ export function createWebApp({
     });
   });
 
+  app.get("/tracker", async (_req, res) => {
+    const html = await fs.readFile(
+      new URL("./tracker/index.html", import.meta.url),
+    );
+    res.set("Content-Type", "text/html; charset=utf-8");
+    res.set("Cache-Control", "no-store");
+    res.send(html);
+  });
+
+  app.get("/tracker/app.js", async (_req, res) => {
+    const script = await fs.readFile(
+      new URL("./tracker/app.js", import.meta.url),
+    );
+    res.set("Content-Type", "application/javascript; charset=utf-8");
+    res.set("Cache-Control", "no-store");
+    res.send(script);
+  });
+
+  app.get("/tracker/app.css", async (_req, res) => {
+    const stylesheet = await fs.readFile(
+      new URL("./tracker/app.css", import.meta.url),
+    );
+    res.set("Content-Type", "text/css; charset=utf-8");
+    res.set("Cache-Control", "no-store");
+    res.send(stylesheet);
+  });
+
   app.get("/", async (req, res) => {
     const sessionId = ensureClientSession(req, res, { sessionManager });
     const forcedSecure = process.env.JOBBOT_WEB_SESSION_SECURE === "1";

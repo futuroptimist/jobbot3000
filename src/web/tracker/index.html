@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>jobbot3000 application tracker</title>
+    <link rel="stylesheet" href="/tracker/app.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to main content</a>
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">
+          Browser-only • IndexedDB-first • No login required
+        </p>
+        <h1>jobbot3000 application tracker</h1>
+        <p class="lede">
+          Replace the spreadsheet with a private, local-first tracker for
+          applications, outreach, interviews, offers, and outcomes.
+        </p>
+      </div>
+      <button
+        class="button button--secondary"
+        type="button"
+        data-action="new-application"
+      >
+        New application
+      </button>
+    </header>
+    <nav class="tabs" aria-label="Tracker sections">
+      <a href="#dashboard">Dashboard</a>
+      <a href="#applications">Applications</a>
+      <a href="#follow-ups">Follow-ups</a>
+      <a href="#outreach">Contacts/Outreach</a>
+      <a href="#import-export">Import/Export</a>
+      <a href="#settings">Settings</a>
+    </nav>
+    <main id="main" tabindex="-1">
+      <section id="dashboard" class="panel">
+        <h2>Dashboard</h2>
+        <div class="metrics" data-metrics></div>
+        <div class="weekly" data-weekly></div>
+      </section>
+      <section id="applications" class="panel">
+        <div class="section-heading">
+          <div>
+            <h2>Applications</h2>
+            <p>Sort, filter, edit, and open lifecycle details.</p>
+          </div>
+          <button class="button" type="button" data-action="new-application">
+            New application
+          </button>
+        </div>
+        <form class="filters" data-filter-form>
+          <label
+            >Search<input
+              name="search"
+              type="search"
+              placeholder="Company, role, status" /></label
+          ><label
+            >Status<select name="status">
+              <option value="">Any status</option>
+            </select></label
+          ><label
+            >Sort<select name="sort">
+              <option value="appliedAt:desc">Applied newest</option>
+              <option value="company:asc">Company A-Z</option>
+              <option value="followUpDate:asc">Follow-up soonest</option>
+              <option value="fit:desc">Fit score</option>
+            </select></label
+          >
+        </form>
+        <p class="empty" data-empty hidden>
+          No applications yet. Import a CSV or create a new application.
+        </p>
+        <div class="table-wrap">
+          <table data-applications-table>
+            <thead>
+              <tr>
+                <th>Company</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Applied</th>
+                <th>Follow-up</th>
+                <th>Outreach</th>
+                <th>Interview</th>
+                <th>Outcome</th>
+                <th>Fit</th>
+                <th>Links</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+      <section id="follow-ups" class="panel">
+        <h2>Follow-ups</h2>
+        <div class="followups" data-followups></div>
+      </section>
+      <section id="outreach" class="panel">
+        <h2>Contacts/Outreach</h2>
+        <p class="muted">Outreach messages are stored only in this browser.</p>
+        <div data-outreach-list></div>
+      </section>
+      <section id="import-export" class="panel">
+        <h2>Import/Export</h2>
+        <div class="grid">
+          <form data-import-form>
+            <h3>Import compact CSV</h3>
+            <label
+              >CSV file<input
+                name="file"
+                type="file"
+                accept=".csv,text/csv" /></label
+            ><textarea
+              name="csv"
+              rows="7"
+              placeholder="Paste compact CSV here"
+            ></textarea>
+            <div class="actions">
+              <button class="button" type="button" data-action="preview-import">
+                Preview / dry-run</button
+              ><button class="button button--secondary" type="submit">
+                Apply import
+              </button>
+            </div>
+            <pre data-import-preview aria-live="polite"></pre>
+          </form>
+          <div>
+            <h3>Export backups</h3>
+            <p>Downloads are generated locally from IndexedDB.</p>
+            <div class="actions">
+              <button class="button" type="button" data-export="csv">
+                Export CSV</button
+              ><button class="button" type="button" data-export="json">
+                Export JSON backup</button
+              ><button class="button" type="button" data-export="ndjson">
+                Export NDJSON
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section id="settings" class="panel">
+        <h2>Settings</h2>
+        <p>
+          No API tokens, login, or backend are required for the tracker. Data is
+          saved in this browser's IndexedDB database.
+        </p>
+        <button
+          class="button button--danger"
+          type="button"
+          data-action="clear-data"
+        >
+          Clear local tracker data
+        </button>
+      </section>
+    </main>
+    <dialog data-detail-dialog>
+      <form method="dialog" class="detail">
+        <button class="icon-button" value="close" aria-label="Close">×</button>
+        <div data-detail></div>
+      </form>
+    </dialog>
+    <script type="module" src="/tracker/app.js"></script>
+  </body>
+</html>
