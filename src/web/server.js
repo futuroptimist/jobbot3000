@@ -7053,7 +7053,7 @@ export function createWebApp({
 
   app.get("/tracker", (req, res) => {
     sendCompressedAsset(req, res, {
-      contentType: "text/html; charset=utf-8",
+      contentType: "text/html",
       rawBuffer: trackerHtmlBuffer,
       gzipBuffer: trackerHtmlGzip,
     });

@@ -12,6 +12,12 @@ const csvFixture = [
     "Following up on my application,recruiter_screen,,fit_score_100: 82",
 ].join("\n");
 
+const dangerousCsvFixture = [
+  "application_id,company,role_title,status,applied_at,posting_url,notes",
+  "fake_app_2,Evil Corp,Security Engineer,applied,not-a-date," +
+    'javascript:alert(1),"He said ""hello"""',
+].join("\n");
+
 test.describe("browser application tracker", () => {
   let server;
 
@@ -24,27 +30,18 @@ test.describe("browser application tracker", () => {
   });
 
   test.beforeEach(async ({ page }) => {
-    await page.goto(`${server.url}/tracker`);
+    await page.goto(server.url);
     await page.evaluate(
       () =>
         new Promise((resolve, reject) => {
-          const request = indexedDB.open("jobbot3000", 1);
-          request.onsuccess = () => {
-            const db = request.result;
-            const storeNames = Array.from(db.objectStoreNames);
-            const tx = db.transaction(storeNames, "readwrite");
-            for (const storeName of storeNames)
-              tx.objectStore(storeName).clear();
-            tx.oncomplete = () => {
-              db.close();
-              resolve();
-            };
-            tx.onerror = () => reject(tx.error);
-          };
+          const request = indexedDB.deleteDatabase("jobbot3000");
+          request.onsuccess = () => resolve();
           request.onerror = () => reject(request.error);
+          request.onblocked = () =>
+            reject(new Error("IndexedDB delete blocked"));
         }),
     );
-    await page.reload();
+    await page.goto(`${server.url}/tracker`);
   });
 
   test("shows the empty state", async ({ page }) => {
@@ -101,6 +98,33 @@ test.describe("browser application tracker", () => {
     await expect(page.locator("[data-followups]")).toContainText(
       "Example Labs",
     );
+  });
+
+  test("sanitizes imported artifact URLs and preserves CSV quotes", async ({
+    page,
+  }) => {
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await page.setInputFiles("[data-import-file]", {
+      name: "dangerous-applications.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(dangerousCsvFixture),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await page.getByRole("button", { name: "Apply import" }).click();
+
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await expect(
+      page.locator('[data-applications-table] a[href^="javascript:"]'),
+    ).toHaveCount(0);
+    await page.getByRole("button", { name: "Evil Corp" }).click();
+    await expect(page.locator('[name="notes"]').first()).toHaveValue(
+      'He said "hello"',
+    );
+    await expect(
+      page.locator('[data-detail] a[href^="javascript:"]'),
+    ).toHaveCount(0);
   });
 
   test("creates a new application and exports backups", async ({ page }) => {

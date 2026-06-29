@@ -41,19 +41,39 @@ const esc = (v) =>
   );
 const id = (p = "id") =>
   `${p}_${Date.now().toString(36)}_${crypto.getRandomValues(new Uint32Array(1))[0].toString(36)}`;
+function ensureIndex(store, name, keyPath) {
+  if (!store.indexNames.contains(name)) store.createIndex(name, keyPath);
+}
+function runMigrationV1(db) {
+  const getStore = (name) =>
+    db.objectStoreNames.contains(name)
+      ? null
+      : db.createObjectStore(name, { keyPath: "id" });
+  const applications = getStore("applications");
+  if (applications) {
+    ensureIndex(applications, "by_company", "company");
+    ensureIndex(applications, "by_status", "status");
+    ensureIndex(applications, "by_appliedAt", "appliedAt");
+    ensureIndex(applications, "by_followUpDate", "followUpDate");
+  }
+  for (const n of STORES.filter(
+    (name) => !["applications", "settings"].includes(name),
+  )) {
+    const store = getStore(n);
+    if (!store) continue;
+    ensureIndex(store, "by_applicationId", "applicationId");
+    if (n === "lifecycleEvents")
+      ensureIndex(store, "by_applicationId_occurredAt", [
+        "applicationId",
+        "occurredAt",
+      ]);
+  }
+  getStore("settings");
+}
 function openDb() {
   return new Promise((res, rej) => {
     const r = indexedDB.open("jobbot3000", 1);
-    r.onupgradeneeded = () => {
-      const db = r.result;
-      for (const n of STORES) {
-        if (!db.objectStoreNames.contains(n)) {
-          const s = db.createObjectStore(n, { keyPath: "id" });
-          if (n !== "applications" && n !== "settings")
-            s.createIndex("by_applicationId", "applicationId");
-        }
-      }
-    };
+    r.onupgradeneeded = () => runMigrationV1(r.result);
     r.onsuccess = () => res(r.result);
     r.onerror = () => rej(r.error);
   });
@@ -65,6 +85,31 @@ async function tx(store, mode, fn) {
       const t = db.transaction(store, mode);
       const out = fn(t.objectStore(store), t);
       t.oncomplete = () => res(out);
+      t.onerror = () => rej(t.error);
+      t.onabort = () => rej(t.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+async function batchPut(recordsByStore) {
+  const db = await openDb();
+  const storeNames = Object.entries(recordsByStore)
+    .filter(([, rows]) => rows.length)
+    .map(([storeName]) => storeName);
+  if (!storeNames.length) {
+    db.close();
+    return;
+  }
+  try {
+    await new Promise((res, rej) => {
+      const t = db.transaction(storeNames, "readwrite");
+      for (const [storeName, rows] of Object.entries(recordsByStore)) {
+        if (!rows.length) continue;
+        const store = t.objectStore(storeName);
+        for (const row of rows) store.put(row);
+      }
+      t.oncomplete = res;
       t.onerror = () => rej(t.error);
       t.onabort = () => rej(t.error);
     });
@@ -119,9 +164,14 @@ function parseCsv(text) {
   let row = [],
     field = "",
     q = false;
-  for (const ch of String(text).replace(/^\uFEFF/, "")) {
+  const input = String(text).replace(/^\uFEFF/, "");
+  for (let i = 0; i < input.length; i += 1) {
+    const ch = input[i];
     if (q) {
-      if (ch === '"') q = false;
+      if (ch === '"' && input[i + 1] === '"') {
+        field += '"';
+        i += 1;
+      } else if (ch === '"') q = false;
       else field += ch;
     } else if (ch === '"') q = true;
     else if (ch === ",") {
@@ -148,6 +198,32 @@ function csv(rows) {
       : String(v ?? "");
   return rows.map((r) => r.map(e).join(",")).join("\n") + "\n";
 }
+function safeIsoDate(value, fallback) {
+  if (!value) return fallback;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? fallback : date.toISOString();
+}
+function safeHref(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  try {
+    const url = new URL(raw, document.baseURI);
+    if (["http:", "https:"].includes(url.protocol)) return raw;
+    if (!/^[a-z][a-z0-9+.-]*:/i.test(raw)) return raw;
+  } catch {
+    if (/^(?:[./#?]|[^:]*$)/.test(raw)) return raw;
+  }
+  return "";
+}
+function linkForArtifact(artifact) {
+  const href = safeHref(artifact.url);
+  return href
+    ? `<a href="${esc(href)}" rel="noopener noreferrer">${esc(artifact.name)}</a>`
+    : esc(artifact.name);
+}
+function fitScore(notes) {
+  return String(notes || "").match(/fit_score_100[":\s]+([\d.]+)/)?.[1] || "";
+}
 function rowToRecords(r) {
   const ts = now(),
     appId = r.application_id || id("app");
@@ -158,10 +234,8 @@ function rowToRecords(r) {
     status: STATUSES.includes(r.status) ? r.status : "applied",
     source: r.application_channel || undefined,
     postingUrl: r.posting_url || undefined,
-    appliedAt: r.applied_at ? new Date(r.applied_at).toISOString() : ts,
-    followUpDate: r.follow_up_date
-      ? new Date(r.follow_up_date).toISOString()
-      : undefined,
+    appliedAt: safeIsoDate(r.applied_at, ts),
+    followUpDate: safeIsoDate(r.follow_up_date, undefined),
     notes: r.notes || undefined,
     createdAt: ts,
     updatedAt: ts,
@@ -203,9 +277,7 @@ function rowToRecords(r) {
       direction: "outbound",
       channel: r.outreach_channel || "other",
       body: r.outreach_message_text,
-      sentAt: r.outreach_sent_at
-        ? new Date(r.outreach_sent_at).toISOString()
-        : ts,
+      sentAt: safeIsoDate(r.outreach_sent_at, ts),
       createdAt: ts,
       updatedAt: ts,
     });
@@ -334,7 +406,7 @@ function renderList() {
   $("[data-applications-table] tbody").innerHTML = rows
     .map((a) => {
       const m = appMeta(a);
-      return `<tr><td><button class="button" data-open="${esc(a.id)}">${esc(a.company)}</button></td><td>${esc(a.role)}</td><td>${esc(a.status)}</td><td>${day(a.appliedAt)}</td><td>${day(a.followUpDate)}</td><td>${m.outreach.length ? "sent" : "none"}</td><td>${esc(m.interviews.at(-1)?.stage || "")}</td><td>${OUTCOMES.has(a.status) ? esc(a.status) : esc(m.offers.at(-1)?.status || "")}</td><td>${esc((a.notes || "").match(/fit_score_100":"?([\d.]+)/)?.[1] || "")}</td><td>${m.artifacts.map((x) => (x.url ? `<a href="${esc(x.url)}">${esc(x.name)}</a>` : esc(x.name))).join(", ")}</td></tr>`;
+      return `<tr><td><button class="button" data-open="${esc(a.id)}">${esc(a.company)}</button></td><td>${esc(a.role)}</td><td>${esc(a.status)}</td><td>${day(a.appliedAt)}</td><td>${day(a.followUpDate)}</td><td>${m.outreach.length ? "sent" : "none"}</td><td>${esc(m.interviews.at(-1)?.stage || "")}</td><td>${OUTCOMES.has(a.status) ? esc(a.status) : esc(m.offers.at(-1)?.status || "")}</td><td>${esc(fitScore(a.notes))}</td><td>${m.artifacts.map(linkForArtifact).join(", ")}</td></tr>`;
     })
     .join("");
   $$("[data-open]").forEach(
@@ -401,7 +473,7 @@ function detailForm(app) {
           `<li>${day(e.occurredAt)} ${esc(e.status)} ${esc(e.note || "")}</li>`,
       )
       .join("") || "<li>No events yet.</li>"
-  }</ul></article><article class="card"><h3>Links/artifacts</h3><form class="tracker-form" data-artifact-form>${input("name", "", true)}${input("url", "")}<button class="button">Add link/artifact</button></form><ul>${m.artifacts.map((a) => `<li>${a.url ? `<a href="${esc(a.url)}">${esc(a.name)}</a>` : esc(a.name)}</li>`).join("")}</ul></article><article class="card"><h3>Outreach messages</h3><form class="tracker-form" data-outreach-form><label>Channel<select name="channel"><option>email</option><option>linkedin</option><option>phone</option><option>sms</option><option>other</option></select></label><label>Message<textarea name="body" required></textarea></label><button class="button">Add outreach</button></form><ul>${m.outreach.map((o) => `<li>${day(o.sentAt)} ${esc(o.channel)} ${esc(o.body)}</li>`).join("")}</ul></article><article class="card"><h3>Interviews</h3><form class="tracker-form" data-interview-form><label>Stage<select name="stage"><option>recruiter_screen</option><option>technical_screen</option><option>onsite_loop</option><option>other</option></select></label>${input("startsAt", day(now()), "date")}<button class="button">Log interview</button></form><ul>${m.interviews.map((i) => `<li>${day(i.startsAt)} ${esc(i.stage)} ${esc(i.outcome)}</li>`).join("")}</ul></article><article class="card"><h3>Offers</h3><form class="tracker-form" data-offer-form><label>Status<select name="status"><option>received</option><option>negotiating</option><option>accepted</option><option>declined</option></select></label>${input("notes", "")}<button class="button">Log offer</button></form><ul>${m.offers.map((o) => `<li>${esc(o.status)} ${esc(o.notes || "")}</li>`).join("")}</ul></article></div>`;
+  }</ul></article><article class="card"><h3>Links/artifacts</h3><form class="tracker-form" data-artifact-form>${input("name", "", true)}${input("url", "")}<button class="button">Add link/artifact</button></form><ul>${m.artifacts.map((a) => `<li>${linkForArtifact(a)}</li>`).join("")}</ul></article><article class="card"><h3>Outreach messages</h3><form class="tracker-form" data-outreach-form><label>Channel<select name="channel"><option>email</option><option>linkedin</option><option>phone</option><option>sms</option><option>other</option></select></label><label>Message<textarea name="body" required></textarea></label><button class="button">Add outreach</button></form><ul>${m.outreach.map((o) => `<li>${day(o.sentAt)} ${esc(o.channel)} ${esc(o.body)}</li>`).join("")}</ul></article><article class="card"><h3>Interviews</h3><form class="tracker-form" data-interview-form><label>Stage<select name="stage"><option>recruiter_screen</option><option>technical_screen</option><option>onsite_loop</option><option>other</option></select></label>${input("startsAt", day(now()), "date")}<button class="button">Log interview</button></form><ul>${m.interviews.map((i) => `<li>${day(i.startsAt)} ${esc(i.stage)} ${esc(i.outcome)}</li>`).join("")}</ul></article><article class="card"><h3>Offers</h3><form class="tracker-form" data-offer-form><label>Status<select name="status"><option>received</option><option>negotiating</option><option>accepted</option><option>declined</option></select></label>${input("notes", "")}<button class="button">Log offer</button></form><ul>${m.offers.map((o) => `<li>${esc(o.status)} ${esc(o.notes || "")}</li>`).join("")}</ul></article></div>`;
 }
 function input(n, v = "", type = "text") {
   const req = type === true ? "required" : "";
@@ -570,8 +642,7 @@ async function previewImport() {
   $("[data-import-apply]").disabled = false;
 }
 async function applyImport() {
-  for (const [s, rows] of Object.entries(state.preview || {}))
-    for (const r of rows) await repo.put(s, r);
+  await batchPut(state.preview || {});
   $("[data-import-result]").textContent = "Import applied.";
   $("[data-import-apply]").disabled = true;
   await refresh();
@@ -581,7 +652,7 @@ function download(name, type, text) {
   a.href = URL.createObjectURL(new Blob([text], { type }));
   a.download = name;
   a.click();
-  URL.revokeObjectURL(a.href);
+  setTimeout(() => URL.revokeObjectURL(a.href), 0);
 }
 function exportData(fmt) {
   const b = state.bundle;
