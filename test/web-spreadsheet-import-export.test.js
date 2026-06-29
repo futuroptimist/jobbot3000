@@ -64,6 +64,11 @@ describe("spreadsheet import/export", () => {
       company: "Example Robotics",
       role_title: "Staff Platform Engineer",
       posting_url: "https://jobs.example.test/example-robotics/staff-platform",
+      interview_stage: "recruiter_screen",
+    });
+    expect(rows[1]).toMatchObject({
+      company: "Sample Systems",
+      outcome: "offer",
     });
 
     repo.close();
@@ -170,6 +175,54 @@ describe("spreadsheet import/export", () => {
     expect(row.outcome).toBe("offer");
   });
 
+  it("exports stage and offer outcome from lifecycle and offer records", () => {
+    const rows = parseCsv(
+      exportCompactCsv({
+        schemaVersion: 1,
+        exportedAt: "2026-03-01T00:00:00.000Z",
+        applications: [
+          {
+            id: "app_structured",
+            company: "Structured Example",
+            role: "Engineer",
+            status: "offer",
+            createdAt: "2026-03-01T00:00:00.000Z",
+            updatedAt: "2026-03-01T00:00:00.000Z",
+          },
+        ],
+        contacts: [],
+        outreachMessages: [],
+        lifecycleEvents: [
+          {
+            id: "event_structured_stage",
+            applicationId: "app_structured",
+            status: "onsite_loop",
+            occurredAt: "2026-03-02T00:00:00.000Z",
+            source: "manual",
+            createdAt: "2026-03-02T00:00:00.000Z",
+          },
+        ],
+        interviews: [],
+        offers: [
+          {
+            id: "offer_structured",
+            applicationId: "app_structured",
+            status: "received",
+            createdAt: "2026-03-03T00:00:00.000Z",
+            updatedAt: "2026-03-03T00:00:00.000Z",
+          },
+        ],
+        artifacts: [],
+        reminders: [],
+      }),
+    );
+
+    expect(rows[0]).toMatchObject({
+      interview_stage: "onsite_loop",
+      outcome: "offer",
+    });
+  });
+
   it("reports compensation range errors without undercounting rows", async () => {
     const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
     const csv = serializeCsv([
@@ -217,7 +270,13 @@ describe("spreadsheet import/export", () => {
           exportedAt: "2026-03-01T00:00:00.000Z",
         })}\n${JSON.stringify({ type: "futureStore", record: {} })}\n`,
       ),
-    ).toThrow("Unknown NDJSON record type: futureStore");
+    ).toThrow("Unknown or malformed NDJSON record type: futureStore");
+  });
+
+  it("throws an explicit error for malformed NDJSON entries", () => {
+    expect(() => importNdjsonBackup("null\n")).toThrow(
+      "Unknown or malformed NDJSON record type: missing type",
+    );
   });
 
   it("merges applications by posting URL when incoming ids differ", async () => {

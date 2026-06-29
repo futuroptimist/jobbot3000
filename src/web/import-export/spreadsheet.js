@@ -81,6 +81,17 @@ const ARTIFACT_DEFS = [
   ["link", undefined, "linkedin_snapshot_pdf_url", "LinkedIn snapshot PDF"],
 ];
 const CSV_METADATA_PREFIX = "Spreadsheet metadata:";
+const ARRAY_STORES = [
+  "applications",
+  "contacts",
+  "outreachMessages",
+  "lifecycleEvents",
+  "interviews",
+  "offers",
+  "artifacts",
+  "reminders",
+];
+const ARRAY_STORE_SET = new Set(ARRAY_STORES);
 
 const blankRow = () =>
   Object.fromEntries(COMPACT_CSV_COLUMNS.map((key) => [key, ""]));
@@ -540,14 +551,25 @@ export const browserApplicationExportToRows = (bundle) => {
         parsed.outreachMessages,
         (message) => message.applicationId === application.id,
       );
-      const interview = firstBy(
-        parsed.interviews,
-        (record) => record.applicationId === application.id,
+      const interview =
+        firstBy(
+          parsed.interviews,
+          (record) => record.applicationId === application.id,
+        ) ?? {};
+      const interviewStageEvent = firstBy(
+        parsed.lifecycleEvents,
+        (event) =>
+          event.applicationId === application.id &&
+          INTERVIEW_STAGES.has(event.status),
       );
-      const outcome = firstBy(
+      const outcomeEvent = firstBy(
         parsed.lifecycleEvents,
         (event) =>
           event.applicationId === application.id && OUTCOMES.has(event.status),
+      );
+      const offer = firstBy(
+        parsed.offers,
+        (record) => record.applicationId === application.id,
       );
       const contact = outreach.contactId
         ? firstBy(parsed.contacts, ({ id }) => id === outreach.contactId)
@@ -595,8 +617,16 @@ export const browserApplicationExportToRows = (bundle) => {
         outreach_channel: outreach.channel ?? metadata.outreach_channel ?? "",
         outreach_sent_at: dateTime(outreach.sentAt),
         outreach_message_text: outreach.body ?? "",
-        interview_stage: interview.stage ?? metadata.interview_stage ?? "",
-        outcome: outcome.status ?? metadata.outcome ?? "",
+        interview_stage:
+          interview.stage ??
+          interviewStageEvent.status ??
+          metadata.interview_stage ??
+          "",
+        outcome:
+          outcomeEvent.status ??
+          (offer.status === "received" ? "offer" : offer.status) ??
+          metadata.outcome ??
+          "",
       });
       return row;
     });
@@ -607,16 +637,7 @@ export const exportJsonBackup = (bundle) =>
   `${JSON.stringify(browserApplicationExportSchema.parse(bundle), null, 2)}\n`;
 export const exportNdjsonBackup = (bundle) => {
   const parsed = browserApplicationExportSchema.parse(bundle);
-  const stores = [
-    "applications",
-    "contacts",
-    "outreachMessages",
-    "lifecycleEvents",
-    "interviews",
-    "offers",
-    "artifacts",
-    "reminders",
-  ];
+  const stores = ARRAY_STORES;
   return (
     [
       JSON.stringify({
@@ -655,15 +676,22 @@ export const importNdjsonBackup = (text) => {
     .filter(Boolean)
     .forEach((line) => {
       const entry = JSON.parse(line);
+      if (!entry || typeof entry !== "object" || typeof entry.type !== "string")
+        throw new Error(
+          "Unknown or malformed NDJSON record type: missing type",
+        );
       if (entry.type === "meta")
         Object.assign(bundle, {
           schemaVersion: entry.schemaVersion,
           exportedAt: entry.exportedAt,
         });
       else if (entry.type === "settings") bundle.settings = entry.record;
-      else if (Array.isArray(bundle[entry.type]))
+      else if (ARRAY_STORE_SET.has(entry.type))
         bundle[entry.type].push(entry.record);
-      else throw new Error(`Unknown NDJSON record type: ${entry.type}`);
+      else
+        throw new Error(
+          `Unknown or malformed NDJSON record type: ${String(entry.type)}`,
+        );
     });
   return browserApplicationExportSchema.parse(bundle);
 };
