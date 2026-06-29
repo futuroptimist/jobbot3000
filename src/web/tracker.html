@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>jobbot3000 Tracker</title>
+    <link rel="stylesheet" href="/assets/tracker.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to main content</a>
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">Browser-only tracker</p>
+        <h1>jobbot3000 application tracker</h1>
+        <p>
+          Local-first IndexedDB workspace for applications, outreach,
+          interviews, offers, and outcomes.
+        </p>
+      </div>
+      <a class="button ghost" href="/">Status hub</a>
+    </header>
+    <nav class="tabs" aria-label="Tracker sections">
+      <a href="#dashboard">Dashboard</a><a href="#applications">Applications</a
+      ><a href="#followups">Follow-ups</a
+      ><a href="#contacts">Contacts/Outreach</a
+      ><a href="#import-export">Import/Export</a
+      ><a href="#settings">Settings</a>
+    </nav>
+    <main id="main" tabindex="-1">
+      <section id="dashboard" class="view">
+        <h2>Dashboard</h2>
+        <div class="metrics" data-metrics></div>
+        <section class="card">
+          <h3>Weekly applications</h3>
+          <div class="weekly" data-weekly></div>
+        </section>
+      </section>
+      <section id="applications" class="view" hidden>
+        <div class="section-head">
+          <div>
+            <h2>Applications</h2>
+            <p>Sort, filter, edit, and review lifecycle details.</p>
+          </div>
+          <button class="button" data-new-application>New application</button>
+        </div>
+        <form class="filters" data-app-filters>
+          <label>Search <input data-filter="search" autocomplete="off" /></label
+          ><label
+            >Status
+            <select data-filter="status">
+              <option value="">Any</option>
+            </select></label
+          ><label
+            >Sort
+            <select data-filter="sort">
+              <option value="appliedAt">Applied date</option>
+              <option value="company">Company</option>
+              <option value="status">Status</option>
+              <option value="fitScore">Fit score</option>
+            </select></label
+          >
+        </form>
+        <p data-empty-apps class="empty"></p>
+        <div class="table-wrap">
+          <table data-app-table>
+            <thead>
+              <tr>
+                <th>Company</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Applied</th>
+                <th>Follow-up</th>
+                <th>Outreach</th>
+                <th>Interview</th>
+                <th>Outcome</th>
+                <th>Fit</th>
+                <th>Links</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <article class="card detail" data-detail></article>
+      </section>
+      <section id="followups" class="view" hidden>
+        <h2>Follow-ups</h2>
+        <div data-followups></div>
+      </section>
+      <section id="contacts" class="view" hidden>
+        <h2>Contacts/Outreach</h2>
+        <p>
+          Outreach messages are stored locally with their application records.
+        </p>
+        <div data-outreach-list></div>
+      </section>
+      <section id="import-export" class="view" hidden>
+        <h2>Import/Export</h2>
+        <div class="grid">
+          <section class="card">
+            <h3>Import compact CSV</h3>
+            <label
+              >CSV file <input type="file" accept=".csv,text/csv" data-csv-file
+            /></label>
+            <div class="actions">
+              <button class="button" data-preview-import>Preview/dry-run</button
+              ><button class="button" data-apply-import disabled>
+                Apply import
+              </button>
+            </div>
+            <pre data-import-preview></pre>
+          </section>
+          <section class="card">
+            <h3>Export backups</h3>
+            <div class="actions">
+              <button class="button" data-export="csv">Export CSV</button
+              ><button class="button" data-export="json">
+                Export JSON backup</button
+              ><button class="button" data-export="ndjson">
+                Export NDJSON
+              </button>
+            </div>
+            <p class="muted">
+              Downloads are generated in-browser. Private data is never sent to
+              a server.
+            </p>
+          </section>
+        </div>
+      </section>
+      <section id="settings" class="view" hidden>
+        <h2>Settings</h2>
+        <section class="card">
+          <h3>Privacy</h3>
+          <p>
+            Core tracking works without login, API tokens, or a backend beyond
+            static asset serving.
+          </p>
+          <button class="button danger" data-clear-data>
+            Clear local tracker data
+          </button>
+        </section>
+      </section>
+    </main>
+    <dialog data-dialog>
+      <form method="dialog" data-app-form>
+        <h2 data-form-title>New application</h2>
+        <input type="hidden" name="id" />
+        <div class="form-grid">
+          <label>Company *<input name="company" required /></label
+          ><label>Role title *<input name="role" required /></label
+          ><label
+            >Posting URL *<input name="postingUrl" type="url" required /></label
+          ><label>Application channel *<input name="source" required /></label
+          ><label>Status *<select name="status" required></select></label
+          ><label
+            >Applied date *<input
+              name="appliedAt"
+              type="date"
+              required /></label
+          ><label>Follow-up date<input name="followUpDate" type="date" /></label
+          ><label>Outreach status<input name="outreachStatus" /></label
+          ><label>Interview stage<input name="interviewStage" /></label
+          ><label>Outcome<input name="outcome" /></label
+          ><label
+            >Fit score<input
+              name="fitScore"
+              type="number"
+              min="0"
+              max="100" /></label
+          ><label
+            >Application URL<input name="applicationUrl" type="url"
+          /></label>
+        </div>
+        <label>Notes<textarea name="notes"></textarea></label>
+        <div class="actions">
+          <button class="button" value="save">Save</button
+          ><button class="button ghost" value="cancel">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+    <script type="module" src="/assets/tracker.js"></script>
+  </body>
+</html>

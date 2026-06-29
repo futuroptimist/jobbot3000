@@ -6921,6 +6921,7 @@ export function createWebApp({
   const statusHubScriptGzip = gzipSync(statusHubScriptBuffer);
   const statusHubStylesBuffer = Buffer.from(STATUS_PAGE_STYLES, "utf8");
   const statusHubStylesGzip = gzipSync(statusHubStylesBuffer);
+  const trackerRoot = path.dirname(new URL(import.meta.url).pathname);
   const app = express();
   if (trustProxy !== undefined) {
     app.set("trust proxy", trustProxy);
@@ -7020,6 +7021,36 @@ export function createWebApp({
       rawBuffer: statusHubStylesBuffer,
       gzipBuffer: statusHubStylesGzip,
     });
+  });
+
+  app.get("/assets/tracker.css", async (req, res, next) => {
+    try {
+      res.set("Content-Type", "text/css; charset=utf-8");
+      res.set("Cache-Control", "no-store");
+      res.send(await fs.readFile(path.join(trackerRoot, "tracker.css"), "utf8"));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/assets/tracker.js", async (req, res, next) => {
+    try {
+      res.set("Content-Type", "application/javascript; charset=utf-8");
+      res.set("Cache-Control", "no-store");
+      res.send(await fs.readFile(path.join(trackerRoot, "tracker.js"), "utf8"));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/tracker", async (req, res, next) => {
+    try {
+      res.set("Content-Type", "text/html; charset=utf-8");
+      res.set("Cache-Control", "no-store");
+      res.send(await fs.readFile(path.join(trackerRoot, "tracker.html"), "utf8"));
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.get("/", async (req, res) => {
@@ -7338,6 +7369,7 @@ export function createWebApp({
       <nav class="primary-nav" aria-label="Status navigation">
         <a href="#overview" data-route-link="overview">Overview</a>
         <a href="#applications" data-route-link="applications">Applications</a>
+        <a href="/tracker">Tracker UI</a>
         <a href="#listings" data-route-link="listings">Listings</a>
         <a href="#commands" data-route-link="commands">Commands</a>
         <a href="#analytics" data-route-link="analytics">Analytics</a>
