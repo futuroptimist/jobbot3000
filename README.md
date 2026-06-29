@@ -160,6 +160,8 @@ Run the snippet with `node example.js` after saving it to a file in the project 
 - [docs/indexeddb-persistence.md](docs/indexeddb-persistence.md) – browser IndexedDB persistence, backup/restore, and quota caveats
 - [docs/backup-restore-guide.md](docs/backup-restore-guide.md) – backup, restore, and verification
   steps
+- [docs/spreadsheet-replacement.md](docs/spreadsheet-replacement.md) – replace the compact Google
+  Sheets workflow with browser-side CSV, JSON, and NDJSON import/export
 - [docs/web-ux-guidelines.md](docs/web-ux-guidelines.md) – layout, typography, and interaction guardrails
 - [GitHub Actions: web-screenshots.yml](https://github.com/futuroptimist/jobbot3000/actions/workflows/web-screenshots.yml) – captures the latest UI flows for regressions
 
