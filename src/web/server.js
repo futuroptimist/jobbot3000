@@ -7006,6 +7006,15 @@ export function createWebApp({
 
   const pluginAssets = createPluginAssets(app, features?.plugins);
 
+  app.use(
+    "/tracker",
+    express.static(path.resolve(process.cwd(), "public", "tracker"), {
+      etag: false,
+      index: "index.html",
+      maxAge: 0,
+    }),
+  );
+
   app.get("/assets/status-hub.js", (req, res) => {
     sendCompressedAsset(req, res, {
       contentType: "application/javascript",

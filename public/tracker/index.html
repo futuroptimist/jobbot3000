@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>jobbot3000 Application Tracker</title>
+    <link rel="stylesheet" href="/tracker/tracker.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">Browser-only · IndexedDB-first</p>
+        <h1>Application tracker</h1>
+        <p class="lede">
+          Track applications, outreach, interviews, offers, follow-ups, and
+          outcomes without sending private job-search data to a server.
+        </p>
+      </div>
+      <button id="new-application-button" class="button primary" type="button">
+        New application
+      </button>
+    </header>
+    <nav class="tabs" aria-label="Tracker sections">
+      <button type="button" data-section-tab="dashboard">Dashboard</button>
+      <button type="button" data-section-tab="applications">
+        Applications
+      </button>
+      <button type="button" data-section-tab="followups">Follow-ups</button>
+      <button type="button" data-section-tab="outreach">
+        Contacts/Outreach
+      </button>
+      <button type="button" data-section-tab="importExport">
+        Import/Export
+      </button>
+      <button type="button" data-section-tab="settings">Settings</button>
+    </nav>
+    <main>
+      <section id="dashboard" class="panel" tabindex="-1">
+        <h2>Dashboard</h2>
+        <div id="analytics" class="metric-grid"></div>
+        <div class="card">
+          <h3>Weekly application count</h3>
+          <div id="weekly-counts"></div>
+        </div>
+      </section>
+      <section id="applications" class="panel" tabindex="-1" hidden>
+        <div class="section-heading">
+          <h2>Applications</h2>
+          <div class="filters">
+            <label
+              >Filter
+              <input
+                id="application-filter"
+                type="search"
+                placeholder="Company, role, status" /></label
+            ><label
+              >Sort
+              <select id="application-sort">
+                <option value="appliedAt">Applied date</option>
+                <option value="company">Company</option>
+                <option value="status">Status</option>
+                <option value="followUpDate">Follow-up date</option>
+                <option value="fitScore">Fit score</option>
+              </select></label
+            >
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table id="applications-table">
+            <thead>
+              <tr>
+                <th>Company</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Applied</th>
+                <th>Follow-up</th>
+                <th>Outreach</th>
+                <th>Interview</th>
+                <th>Outcome</th>
+                <th>Fit</th>
+                <th>Links</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p id="applications-empty" class="empty">
+          No applications yet. Import a CSV or create a new application.
+        </p>
+      </section>
+      <section id="followups" class="panel" tabindex="-1" hidden>
+        <h2>Follow-ups</h2>
+        <div class="columns">
+          <div>
+            <h3>Overdue</h3>
+            <div id="followups-overdue"></div>
+          </div>
+          <div>
+            <h3>Due today</h3>
+            <div id="followups-today"></div>
+          </div>
+          <div>
+            <h3>Upcoming</h3>
+            <div id="followups-upcoming"></div>
+          </div>
+        </div>
+      </section>
+      <section id="outreach" class="panel" tabindex="-1" hidden>
+        <h2>Contacts/Outreach</h2>
+        <div id="outreach-list" class="stack"></div>
+      </section>
+      <section id="importExport" class="panel" tabindex="-1" hidden>
+        <h2>Import/Export</h2>
+        <div class="card">
+          <label
+            >Compact CSV import
+            <input id="csv-file" type="file" accept=".csv,text/csv"
+          /></label>
+          <div class="actions">
+            <button id="preview-import" class="button" type="button">
+              Preview/dry-run</button
+            ><button
+              id="apply-import"
+              class="button primary"
+              type="button"
+              disabled
+            >
+              Apply import
+            </button>
+          </div>
+          <pre id="import-preview" aria-live="polite"></pre>
+        </div>
+        <div class="card actions">
+          <button id="export-csv" class="button" type="button">
+            Export CSV</button
+          ><button id="export-json" class="button" type="button">
+            Export JSON backup</button
+          ><button id="export-ndjson" class="button" type="button">
+            Export NDJSON
+          </button>
+        </div>
+      </section>
+      <section id="settings" class="panel" tabindex="-1" hidden>
+        <h2>Settings</h2>
+        <div class="card">
+          <p>
+            All tracker data is stored locally in this browser's IndexedDB
+            database. No login, API token, or backend is required for the core
+            tracker.
+          </p>
+          <button id="reset-demo" class="button danger" type="button">
+            Clear local tracker data
+          </button>
+        </div>
+      </section>
+    </main>
+    <dialog id="application-dialog">
+      <form id="application-form" method="dialog">
+        <h2 id="dialog-title">New application</h2>
+        <input type="hidden" name="id" />
+        <div class="form-grid">
+          <label>Company *<input name="company" required /></label
+          ><label>Role title *<input name="role" required /></label
+          ><label
+            >Posting URL *<input name="postingUrl" type="url" required /></label
+          ><label>Application channel *<input name="source" required /></label
+          ><label>Status *<select name="status" required></select></label
+          ><label
+            >Applied at *<input name="appliedAt" type="date" required /></label
+          ><label>Follow-up date<input name="followUpDate" type="date" /></label
+          ><label
+            >Fit score<input
+              name="fitScore"
+              type="number"
+              min="0"
+              max="100" /></label
+          ><label>Outcome<input name="outcome" /></label
+          ><label>Interview stage<input name="interviewStage" /></label
+          ><label class="wide"
+            >Notes<textarea name="notes" rows="4"></textarea>
+          </label>
+        </div>
+        <h3>Links/artifacts</h3>
+        <div id="artifact-fields" class="stack"></div>
+        <button id="add-artifact" type="button" class="button">
+          Add link/artifact
+        </button>
+        <h3>Log activity</h3>
+        <div class="form-grid">
+          <label
+            >Outreach message<textarea name="outreachBody"></textarea></label
+          ><label
+            >Interview notes<textarea name="interviewNotes"></textarea></label
+          ><label>Offer notes<textarea name="offerNotes"></textarea></label>
+        </div>
+        <h3>Lifecycle timeline</h3>
+        <ol id="timeline"></ol>
+        <menu>
+          <button
+            value="cancel"
+            class="button"
+            type="button"
+            id="cancel-dialog"
+          >
+            Cancel</button
+          ><button class="button primary" value="default">
+            Save application
+          </button>
+        </menu>
+      </form>
+    </dialog>
+    <script type="module" src="/tracker/tracker.js"></script>
+  </body>
+</html>

@@ -1,0 +1,245 @@
+:root {
+  color-scheme: dark;
+  --bg: #0b0d0f;
+  --surface: #111827;
+  --card: #172033;
+  --text: #f8fafc;
+  --muted: #94a3b8;
+  --accent: #38bdf8;
+  --border: rgba(148, 163, 184, 0.28);
+  --danger: #f87171;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font:
+    15px/1.5 Inter,
+    system-ui,
+    sans-serif;
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+button:focus,
+input:focus,
+select:focus,
+textarea:focus,
+a:focus {
+  outline: 3px solid #facc15;
+  outline-offset: 2px;
+}
+.app-header,
+main,
+.tabs {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: start;
+}
+.eyebrow {
+  color: var(--accent);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.lede {
+  max-width: 72ch;
+  color: var(--muted);
+}
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.tabs button,
+.button {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.12);
+  color: var(--text);
+  min-height: 44px;
+  padding: 0.55rem 1rem;
+  cursor: pointer;
+}
+.tabs button[aria-current="page"],
+.button.primary {
+  background: var(--accent);
+  color: #071019;
+  border-color: var(--accent);
+  font-weight: 700;
+}
+.button.danger {
+  background: rgba(248, 113, 113, 0.14);
+  border-color: rgba(248, 113, 113, 0.55);
+  color: #fecaca;
+}
+.panel {
+  display: grid;
+  gap: 1rem;
+}
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: end;
+  flex-wrap: wrap;
+}
+.filters,
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.filters label,
+label {
+  display: grid;
+  gap: 0.3rem;
+  color: var(--muted);
+}
+input,
+select,
+textarea {
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  background: #0f172a;
+  color: var(--text);
+  padding: 0.55rem 0.7rem;
+}
+textarea {
+  min-width: 18rem;
+}
+.card {
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--surface);
+  padding: 1rem;
+}
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1rem;
+}
+.metric {
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--card);
+  padding: 1rem;
+}
+.metric strong {
+  display: block;
+  font-size: 1.8rem;
+}
+.table-wrap {
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+}
+th,
+td {
+  text-align: left;
+  padding: 0.7rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+th {
+  color: var(--muted);
+}
+tr:last-child td {
+  border-bottom: 0;
+}
+.empty {
+  color: var(--muted);
+}
+.columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+}
+.stack {
+  display: grid;
+  gap: 0.75rem;
+}
+.follow-card {
+  border: 1px solid var(--border);
+  border-radius: 0.85rem;
+  background: var(--surface);
+  padding: 0.85rem;
+}
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+.wide {
+  grid-column: 1/-1;
+}
+dialog {
+  width: min(940px, calc(100% - 2rem));
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--surface);
+  color: var(--text);
+}
+dialog::backdrop {
+  background: rgba(0, 0, 0, 0.65);
+}
+menu {
+  display: flex;
+  justify-content: end;
+  gap: 0.75rem;
+  padding: 0;
+}
+pre {
+  white-space: pre-wrap;
+  color: #bbf7d0;
+}
+#weekly-counts {
+  display: flex;
+  gap: 0.5rem;
+  align-items: end;
+  min-height: 7rem;
+}
+.bar {
+  display: grid;
+  align-content: end;
+  gap: 0.25rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.bar span {
+  display: block;
+  width: 2rem;
+  background: var(--accent);
+  border-radius: 0.35rem 0.35rem 0 0;
+}
+@media (max-width: 640px) {
+  .app-header {
+    display: grid;
+  }
+  .filters,
+  .actions,
+  menu {
+    display: grid;
+  }
+  .button,
+  .tabs button {
+    width: 100%;
+  }
+}
