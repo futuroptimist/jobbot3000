@@ -108,6 +108,64 @@ const slug = (value) =>
 const stableId = (...parts) => parts.map(slug).join("_");
 const nowIso = () => new Date().toISOString();
 
+const normalizeDeterministicApplicationId = (
+  id,
+  sourceApplicationId,
+  targetApplicationId,
+) => {
+  const text = compact(id);
+  if (!text) return id;
+  for (const prefix of [
+    "artifact",
+    "contact",
+    "message",
+    "event",
+    "interview",
+    "offer",
+    "reminder",
+  ]) {
+    const sourcePrefix = stableId(prefix, sourceApplicationId);
+    if (text === sourcePrefix || text.startsWith(`${sourcePrefix}_`))
+      return `${stableId(prefix, targetApplicationId)}${text.slice(
+        sourcePrefix.length,
+      )}`;
+  }
+  return id;
+};
+
+const remapApplicationScopedRecord = (
+  store,
+  record,
+  sourceApplicationId,
+  targetApplicationId,
+) => {
+  if (store === "applications") return { ...record, id: targetApplicationId };
+  const remapped = {
+    ...record,
+    id: normalizeDeterministicApplicationId(
+      record.id,
+      sourceApplicationId,
+      targetApplicationId,
+    ),
+    applicationId: targetApplicationId,
+  };
+  if ("contactId" in remapped)
+    remapped.contactId = normalizeDeterministicApplicationId(
+      remapped.contactId,
+      sourceApplicationId,
+      targetApplicationId,
+    );
+  if (Array.isArray(remapped.contactIds))
+    remapped.contactIds = remapped.contactIds.map((contactId) =>
+      normalizeDeterministicApplicationId(
+        contactId,
+        sourceApplicationId,
+        targetApplicationId,
+      ),
+    );
+  return remapped;
+};
+
 export const parseCsv = (text) => {
   const rows = [];
   let row = [];
@@ -813,10 +871,15 @@ export const importCompactCsv = async (
     const incoming = preview.bundle[store]
       .filter((record) => incomingIds.has(record.applicationId ?? record.id))
       .map((record) => {
-        const applicationId = idRemaps.get(record.applicationId ?? record.id);
+        const sourceApplicationId = record.applicationId ?? record.id;
+        const applicationId = idRemaps.get(sourceApplicationId);
         if (!applicationId) return record;
-        if (store === "applications") return { ...record, id: applicationId };
-        return { ...record, applicationId };
+        return remapApplicationScopedRecord(
+          store,
+          record,
+          sourceApplicationId,
+          applicationId,
+        );
       });
     merged[store] =
       mode === "merge"

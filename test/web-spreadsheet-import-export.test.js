@@ -289,6 +289,14 @@ describe("spreadsheet import/export", () => {
         status: "applied",
         applied_at: "2026-01-01",
         posting_url: "https://jobs.example.test/merge",
+        resume_artifact: "Original resume",
+        resume_url: "https://files.example.test/original-resume.pdf",
+        outreach_status: "sent",
+        outreach_target_name: "Existing Recruiter",
+        outreach_channel: "email",
+        outreach_sent_at: "2026-01-01T15:30:00.000Z",
+        outreach_message_text: "Original hello",
+        interview_stage: "recruiter_screen",
         schema_version: "1",
       },
     ]);
@@ -302,6 +310,17 @@ describe("spreadsheet import/export", () => {
         status: "recruiter_screen",
         applied_at: "2026-01-02",
         posting_url: "https://jobs.example.test/merge",
+        resume_artifact: "Updated resume",
+        resume_url: "https://files.example.test/updated-resume.pdf",
+        outreach_status: "sent",
+        outreach_target_name: "Incoming Recruiter",
+        outreach_channel: "email",
+        outreach_sent_at: "2026-01-02T16:45:00.000Z",
+        outreach_message_text: "Updated hello",
+        interview_stage: "technical_screen",
+        outcome: "offer",
+        compensation_min_usd: "150000",
+        compensation_max_usd: "175000",
         schema_version: "1",
       },
     ]);
@@ -315,6 +334,43 @@ describe("spreadsheet import/export", () => {
       role: "Updated Engineer",
       status: "recruiter_screen",
     });
+    const childStores = [
+      "artifacts",
+      "contacts",
+      "outreachMessages",
+      "lifecycleEvents",
+      "interviews",
+      "offers",
+    ];
+    for (const store of childStores) {
+      for (const record of exported[store]) {
+        expect(record.id).not.toContain("app_regenerated");
+        expect(record.applicationId).toBe("app_existing");
+      }
+    }
+    expect(exported.outreachMessages[0].contactId).not.toContain(
+      "app_regenerated",
+    );
+    expect(exported.interviews[0].contactIds).toEqual(
+      expect.not.arrayContaining([
+        expect.stringContaining("app_regenerated"),
+      ]),
+    );
+    const childCounts = Object.fromEntries(
+      childStores.map((store) => [store, exported[store].length]),
+    );
+
+    const secondResult = await importCompactCsv(incomingCsv, repo, {
+      mode: "merge",
+    });
+    expect(secondResult.imported).toBe(true);
+    const exportedAgain = await repo.exportAllData();
+    expect(exportedAgain.applications).toHaveLength(1);
+    expect(
+      Object.fromEntries(
+        childStores.map((store) => [store, exportedAgain[store].length]),
+      ),
+    ).toEqual(childCounts);
 
     repo.close();
   });
