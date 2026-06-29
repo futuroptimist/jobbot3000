@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { indexedDB } from "fake-indexeddb";
 
 import {
@@ -7,6 +7,7 @@ import {
   IndexedDbRepositoryError,
   createIndexedDbRepository,
   openJobbotDatabase,
+  migrations,
 } from "../src/web/storage/indexedDbRepository.js";
 
 const now = "2026-01-02T03:04:05.000Z";
@@ -122,7 +123,10 @@ describe("IndexedDB repository", () => {
       "contacts",
       "lifecycleEvents",
       "outreachMessages",
+      "interviews",
+      "offers",
       "artifacts",
+      "reminders",
     ]);
     expect(Array.from(tx.objectStore("applications").indexNames)).toEqual([
       "by_appliedAt",
@@ -139,10 +143,46 @@ describe("IndexedDB repository", () => {
     expect(Array.from(tx.objectStore("outreachMessages").indexNames)).toContain(
       "by_applicationId",
     );
+    expect(Array.from(tx.objectStore("interviews").indexNames)).toContain(
+      "by_applicationId",
+    );
+    expect(Array.from(tx.objectStore("offers").indexNames)).toContain(
+      "by_applicationId",
+    );
     expect(Array.from(tx.objectStore("artifacts").indexNames)).toContain(
       "by_applicationId",
     );
+    expect(Array.from(tx.objectStore("reminders").indexNames)).toContain(
+      "by_applicationId",
+    );
     db.close();
+  });
+
+  it("starts future migrations from the IndexedDB upgrade event oldVersion", async () => {
+    const originalV1 = migrations[1];
+    const originalV2 = migrations[2];
+    const v1Spy = vi.fn(originalV1);
+    const v2Spy = vi.fn();
+
+    const db = await openJobbotDatabase({ indexedDb: indexedDB, version: 1 });
+    db.close();
+
+    migrations[1] = v1Spy;
+    migrations[2] = v2Spy;
+    try {
+      const upgraded = await openJobbotDatabase({
+        indexedDb: indexedDB,
+        version: 2,
+      });
+      upgraded.close();
+    } finally {
+      migrations[1] = originalV1;
+      if (originalV2) migrations[2] = originalV2;
+      else delete migrations[2];
+    }
+
+    expect(v1Spy).not.toHaveBeenCalled();
+    expect(v2Spy).toHaveBeenCalledTimes(1);
   });
 
   it("writes, reads, exports, clears, and restores application tracker data", async () => {
@@ -223,6 +263,98 @@ describe("IndexedDB repository", () => {
     await expect(repo.upsertInterview(interview)).rejects.toMatchObject({
       code: "schema_validation_failed",
       details: { contactIds: [contact.id] },
+    });
+
+    repo.close();
+  });
+
+  it("validates child record parents before committing writes", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+
+    await repo.createApplication(application);
+    await repo.upsertContact(contact);
+
+    await expect(
+      repo.addOutreachMessage({
+        ...outreachMessage,
+        id: "message_missing_app",
+        applicationId: "missing_app",
+      }),
+    ).rejects.toMatchObject({
+      code: "schema_validation_failed",
+      details: { applicationId: "missing_app" },
+    });
+    await expect(
+      repo.addLifecycleEvent({
+        ...lifecycleEvent,
+        id: "event_missing_app",
+        applicationId: "missing_app",
+      }),
+    ).rejects.toMatchObject({ code: "schema_validation_failed" });
+    await expect(
+      repo.upsertOffer({
+        ...offer,
+        id: "offer_missing_app",
+        applicationId: "missing_app",
+      }),
+    ).rejects.toMatchObject({ code: "schema_validation_failed" });
+    await expect(
+      repo.upsertArtifact({
+        ...artifact,
+        id: "artifact_missing_app",
+        applicationId: "missing_app",
+      }),
+    ).rejects.toMatchObject({ code: "schema_validation_failed" });
+    await expect(
+      repo.upsertInterview({
+        ...interview,
+        id: "interview_missing_contact",
+        contactIds: ["missing_contact"],
+      }),
+    ).rejects.toMatchObject({
+      code: "schema_validation_failed",
+      details: { contactIds: ["missing_contact"] },
+    });
+    await expect(
+      repo.addOutreachMessage({
+        ...outreachMessage,
+        id: "message_missing_contact",
+        contactId: "missing_contact",
+      }),
+    ).rejects.toMatchObject({
+      code: "schema_validation_failed",
+      details: { contactIds: ["missing_contact"] },
+    });
+
+    const exported = await repo.exportAllData();
+    expect(exported.outreachMessages).toHaveLength(0);
+    expect(exported.lifecycleEvents).toHaveLength(0);
+    expect(exported.interviews).toHaveLength(0);
+    expect(exported.offers).toHaveLength(0);
+    expect(exported.artifacts).toHaveLength(0);
+
+    repo.close();
+  });
+
+  it("returns structured schema validation details for invalid exports", async () => {
+    const db = await openJobbotDatabase({ indexedDb: indexedDB });
+    const tx = db.transaction(["contacts"], "readwrite");
+    const done = new Promise((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onabort = () => reject(tx.error);
+      tx.onerror = () => reject(tx.error);
+    });
+    tx.objectStore("contacts").put({
+      ...contact,
+      applicationId: "missing_app",
+    });
+    await done;
+    db.close();
+
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    await expect(repo.exportAllData()).rejects.toMatchObject({
+      code: "schema_validation_failed",
+      details: expect.objectContaining({ fieldErrors: expect.any(Object) }),
     });
 
     repo.close();

@@ -133,15 +133,25 @@ export const migrations = {
       ]);
     }
 
-    createStore(db, "interviews");
-    createStore(db, "offers");
+    const interviews = createStore(db, "interviews");
+    if (interviews) {
+      ensureIndex(interviews, "by_applicationId", "applicationId");
+    }
+
+    const offers = createStore(db, "offers");
+    if (offers) {
+      ensureIndex(offers, "by_applicationId", "applicationId");
+    }
 
     const artifacts = createStore(db, "artifacts");
     if (artifacts) {
       ensureIndex(artifacts, "by_applicationId", "applicationId");
     }
 
-    createStore(db, "reminders");
+    const reminders = createStore(db, "reminders");
+    if (reminders) {
+      ensureIndex(reminders, "by_applicationId", "applicationId");
+    }
     createStore(db, "settings");
   },
 };
@@ -448,6 +458,8 @@ export const createIndexedDbRepository = async (options = {}) => {
         return result.data;
       });
     },
+    // Full-restore operation: non-dry-run imports replace every store.
+    // Callers should dry-run first and set allowOverwrite when existing data may be cleared.
     async importAllData(data, { dryRun = false, allowOverwrite = false } = {}) {
       return safe(async () => {
         const { parsed } = validateImport(data);
