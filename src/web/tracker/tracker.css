@@ -1,0 +1,105 @@
+.tracker-shell {
+  display: grid;
+  gap: 1rem;
+}
+.tracker-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.tracker-nav button,
+.button {
+  border: 1px solid var(--pill-border, #64748b);
+  border-radius: 999px;
+  background: var(--pill-bg, #1e293b);
+  color: var(--pill-text, #e2e8f0);
+  padding: 0.55rem 0.9rem;
+  min-height: 44px;
+  cursor: pointer;
+}
+.tracker-nav button[aria-current="page"] {
+  outline: 3px solid var(--accent, #38bdf8);
+}
+.tracker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 1rem;
+}
+.metric {
+  border: 1px solid var(--card-border, #334155);
+  border-radius: 1rem;
+  padding: 1rem;
+  background: var(--card-surface, #111827);
+}
+.metric strong {
+  display: block;
+  font-size: 1.6rem;
+}
+.tracker-form {
+  display: grid;
+  gap: 0.75rem;
+}
+.tracker-form label {
+  display: grid;
+  gap: 0.3rem;
+}
+.tracker-form input,
+.tracker-form select,
+.tracker-form textarea,
+.tracker-form output {
+  border: 1px solid var(--card-border, #334155);
+  border-radius: 0.65rem;
+  padding: 0.55rem;
+  background: transparent;
+  color: var(--foreground, #e5e7eb);
+  font: inherit;
+}
+.tracker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.tracker-table th button {
+  all: unset;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.tracker-table th,
+.tracker-table td {
+  padding: 0.65rem;
+  border-bottom: 1px solid var(--card-border, #334155);
+  vertical-align: top;
+}
+.tracker-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.tracker-view[hidden],
+.hidden {
+  display: none !important;
+}
+.tracker-detail {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(260px, 1fr);
+  gap: 1rem;
+}
+.timeline {
+  display: grid;
+  gap: 0.5rem;
+  padding-left: 1.25rem;
+}
+.muted {
+  color: var(--muted, #94a3b8);
+}
+.danger {
+  color: var(--danger-text, #fecaca);
+}
+.success {
+  color: var(--success-text, #bbf7d0);
+}
+@media (max-width: 760px) {
+  .tracker-detail {
+    grid-template-columns: 1fr;
+  }
+}

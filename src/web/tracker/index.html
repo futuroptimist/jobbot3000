@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>jobbot3000 Application Tracker</title>
+    <link rel="stylesheet" href="/assets/status-hub.css" />
+    <link rel="stylesheet" href="/assets/tracker.css" />
+  </head>
+  <body>
+    <a href="#tracker-main" class="pill">Skip to tracker</a>
+    <header>
+      <p class="pill">
+        <strong>jobbot3000</strong><span aria-hidden="true"> • </span
+        ><span>Browser-only tracker</span>
+      </p>
+      <h1>Application tracker</h1>
+      <p>
+        Local-first job search tracking. Application data is stored in this
+        browser's IndexedDB and is not sent to a server.
+      </p>
+      <nav class="primary-nav" aria-label="Site navigation">
+        <a href="/">Status hub</a>
+      </nav>
+    </header>
+    <main id="tracker-main" class="tracker-shell">
+      <nav class="tracker-nav" aria-label="Tracker sections"></nav>
+      <section class="tracker-view" data-view="dashboard">
+        <h2>Dashboard</h2>
+        <div class="tracker-grid" data-metrics></div>
+        <article class="card">
+          <h3>Weekly applications</h3>
+          <p data-weekly-counts class="muted">No application data yet.</p>
+        </article>
+      </section>
+      <section class="tracker-view" data-view="applications" hidden>
+        <div class="tracker-actions">
+          <h2>Applications</h2>
+          <button class="button" data-new-application>New application</button>
+        </div>
+        <form class="filters" data-list-filters>
+          <label
+            ><span>Search</span
+            ><input
+              data-filter="query"
+              autocomplete="off"
+              placeholder="Company, role, status" /></label
+          ><label
+            ><span>Status</span
+            ><select data-filter="status">
+              <option value="">All statuses</option>
+            </select></label
+          ><label
+            ><span>Outcome</span
+            ><select data-filter="outcome">
+              <option value="">All outcomes</option>
+              <option>offer</option>
+              <option>accepted</option>
+              <option>rejected</option>
+              <option>withdrawn</option>
+              <option>closed_archived</option>
+            </select></label
+          >
+        </form>
+        <p data-empty-state class="muted">
+          No applications yet. Create one or import a CSV backup.
+        </p>
+        <div class="table-container">
+          <table class="tracker-table" data-applications-table hidden>
+            <thead>
+              <tr>
+                <th><button data-sort="company">Company</button></th>
+                <th><button data-sort="role">Role</button></th>
+                <th><button data-sort="status">Status</button></th>
+                <th><button data-sort="appliedAt">Applied date</button></th>
+                <th>
+                  <button data-sort="followUpDate">Follow-up date</button>
+                </th>
+                <th>Outreach</th>
+                <th>Interview</th>
+                <th>Outcome</th>
+                <th>Fit score</th>
+                <th>Links</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+      <section class="tracker-view" data-view="follow-ups" hidden>
+        <h2>Follow-ups</h2>
+        <div class="tracker-grid" data-followups></div>
+      </section>
+      <section class="tracker-view" data-view="contacts" hidden>
+        <h2>Contacts/Outreach</h2>
+        <div data-outreach-list class="tracker-grid"></div>
+      </section>
+      <section class="tracker-view" data-view="import-export" hidden>
+        <h2>Import/Export</h2>
+        <div class="grid two-column">
+          <article class="card">
+            <h3>Import compact CSV</h3>
+            <label class="tracker-form"
+              ><span>CSV file</span
+              ><input type="file" accept=".csv,text/csv" data-import-file
+            /></label>
+            <div class="tracker-actions">
+              <button class="button" data-import-preview>Preview/dry-run</button
+              ><button class="button" data-import-apply disabled>
+                Apply import
+              </button>
+            </div>
+            <pre data-import-result class="muted"></pre>
+          </article>
+          <article class="card">
+            <h3>Export backups</h3>
+            <div class="tracker-actions">
+              <button class="button" data-export="csv">Export CSV</button
+              ><button class="button" data-export="json">
+                Export JSON backup</button
+              ><button class="button" data-export="ndjson">
+                Export NDJSON
+              </button>
+            </div>
+            <p class="muted">Exports are generated entirely in the browser.</p>
+          </article>
+        </div>
+      </section>
+      <section class="tracker-view" data-view="settings" hidden>
+        <h2>Settings</h2>
+        <p class="muted">
+          This static tracker needs no login, API tokens, or backend beyond
+          asset serving.
+        </p>
+        <button class="button" data-clear-data>Clear local tracker data</button>
+      </section>
+      <section class="tracker-view" data-view="detail" hidden>
+        <button class="button" data-back-to-list>← Back to applications</button>
+        <div data-detail></div>
+      </section>
+    </main>
+    <script type="module" src="/assets/tracker.js"></script>
+  </body>
+</html>
