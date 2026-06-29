@@ -137,4 +137,126 @@ describe("spreadsheet import/export", () => {
 
     repo.close();
   });
+
+  it("preserves CSV timestamp, stage, and outcome exports", async () => {
+    const csv = serializeCsv([
+      {
+        application_id: "app_roundtrip",
+        company: "Example Roundtrip",
+        role_title: "Engineer",
+        status: "offer",
+        applied_at: "2026-01-01",
+        posting_url: "https://jobs.example.test/roundtrip",
+        outreach_status: "sent",
+        outreach_channel: "email",
+        outreach_sent_at: "2026-01-03T15:30:00.000Z",
+        outreach_message_text: "Hello from a test fixture",
+        interview_stage: "technical_screen",
+        outcome: "offer",
+        compensation_min_usd: "200000",
+        compensation_max_usd: "220000",
+        schema_version: "1",
+      },
+    ]);
+    const { bundle, errors } = csvToBrowserApplicationExport(csv, {
+      exportedAt: "2026-03-01T00:00:00.000Z",
+    });
+    expect(errors).toEqual([]);
+
+    const [row] = parseCsv(exportCompactCsv(bundle));
+
+    expect(row.outreach_sent_at).toBe("2026-01-03T15:30:00.000Z");
+    expect(row.interview_stage).toBe("technical_screen");
+    expect(row.outcome).toBe("offer");
+  });
+
+  it("reports compensation range errors without undercounting rows", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    const csv = serializeCsv([
+      {
+        application_id: "app_bad_range",
+        company: "Example Bad Range",
+        role_title: "Engineer",
+        status: "offer",
+        applied_at: "2026-01-01",
+        posting_url: "https://jobs.example.test/bad-range",
+        outcome: "offer",
+        compensation_min_usd: "220000",
+        compensation_max_usd: "200000",
+        schema_version: "1",
+      },
+    ]);
+
+    const preview = await previewCompactCsvImport(csv, repo);
+
+    expect(preview.validRowCount).toBe(0);
+    expect(preview.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          rowNumber: 2,
+          field: "compensation_min_usd",
+          code: "invalid_range",
+        }),
+        expect.objectContaining({
+          rowNumber: null,
+          field: "bundle",
+          code: "schema_validation_failed",
+        }),
+      ]),
+    );
+
+    repo.close();
+  });
+
+  it("throws an explicit error for unknown NDJSON record types", () => {
+    expect(() =>
+      importNdjsonBackup(
+        `${JSON.stringify({
+          type: "meta",
+          schemaVersion: 1,
+          exportedAt: "2026-03-01T00:00:00.000Z",
+        })}\n${JSON.stringify({ type: "futureStore", record: {} })}\n`,
+      ),
+    ).toThrow("Unknown NDJSON record type: futureStore");
+  });
+
+  it("merges applications by posting URL when incoming ids differ", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    const originalCsv = serializeCsv([
+      {
+        application_id: "app_existing",
+        company: "Example Merge",
+        role_title: "Original Engineer",
+        status: "applied",
+        applied_at: "2026-01-01",
+        posting_url: "https://jobs.example.test/merge",
+        schema_version: "1",
+      },
+    ]);
+    await importCompactCsv(originalCsv, repo, { mode: "replace" });
+
+    const incomingCsv = serializeCsv([
+      {
+        application_id: "app_regenerated",
+        company: "Example Merge",
+        role_title: "Updated Engineer",
+        status: "recruiter_screen",
+        applied_at: "2026-01-02",
+        posting_url: "https://jobs.example.test/merge",
+        schema_version: "1",
+      },
+    ]);
+    const result = await importCompactCsv(incomingCsv, repo, { mode: "merge" });
+    expect(result.imported).toBe(true);
+
+    const exported = await repo.exportAllData();
+    expect(exported.applications).toHaveLength(1);
+    expect(exported.applications[0]).toMatchObject({
+      id: "app_existing",
+      role: "Updated Engineer",
+      status: "recruiter_screen",
+    });
+
+    repo.close();
+  });
 });

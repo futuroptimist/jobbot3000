@@ -339,12 +339,26 @@ export const rowsToBrowserApplicationExport = (
       rowNumber,
       errors,
     );
-    const timestamp = appliedAt ?? exportedAt;
-    const compensationText = [compensationMin, compensationMax].every(
-      (value) => value !== undefined,
+    if (
+      compensationMin !== undefined &&
+      compensationMax !== undefined &&
+      compensationMin > compensationMax
     )
-      ? `$${compensationMin}-$${compensationMax} USD`
-      : undefined;
+      errors.push({
+        rowNumber,
+        field: "compensation_min_usd",
+        code: "invalid_range",
+        value: row.compensation_min_usd,
+        message:
+          "compensation_min_usd must be less than or equal to compensation_max_usd",
+      });
+    const timestamp = appliedAt ?? exportedAt;
+    const compensationText =
+      compensationMin !== undefined &&
+      compensationMax !== undefined &&
+      compensationMin <= compensationMax
+        ? `$${compensationMin}-$${compensationMax} USD`
+        : undefined;
     const metadata = metadataFromRow({
       ...row,
       fit_score_100: fitScore ?? row.fit_score_100,
@@ -510,6 +524,7 @@ export const csvToBrowserApplicationExport = (csvText, options) =>
   rowsToBrowserApplicationExport(parseCsv(csvText), options);
 
 const dateOnly = (value) => (value ? String(value).slice(0, 10) : "");
+const dateTime = (value) => (value ? String(value) : "");
 const firstBy = (records, predicate) => records.find(predicate) ?? {};
 export const browserApplicationExportToRows = (bundle) => {
   const parsed = browserApplicationExportSchema.parse(bundle);
@@ -524,6 +539,15 @@ export const browserApplicationExportToRows = (bundle) => {
       const outreach = firstBy(
         parsed.outreachMessages,
         (message) => message.applicationId === application.id,
+      );
+      const interview = firstBy(
+        parsed.interviews,
+        (record) => record.applicationId === application.id,
+      );
+      const outcome = firstBy(
+        parsed.lifecycleEvents,
+        (event) =>
+          event.applicationId === application.id && OUTCOMES.has(event.status),
       );
       const contact = outreach.contactId
         ? firstBy(parsed.contacts, ({ id }) => id === outreach.contactId)
@@ -569,8 +593,10 @@ export const browserApplicationExportToRows = (bundle) => {
         linkedin_snapshot_pdf_url: pdf.url ?? "",
         outreach_target_name: contact.name ?? "",
         outreach_channel: outreach.channel ?? metadata.outreach_channel ?? "",
-        outreach_sent_at: dateOnly(outreach.sentAt),
+        outreach_sent_at: dateTime(outreach.sentAt),
         outreach_message_text: outreach.body ?? "",
+        interview_stage: interview.stage ?? metadata.interview_stage ?? "",
+        outcome: outcome.status ?? metadata.outcome ?? "",
       });
       return row;
     });
@@ -635,7 +661,9 @@ export const importNdjsonBackup = (text) => {
           exportedAt: entry.exportedAt,
         });
       else if (entry.type === "settings") bundle.settings = entry.record;
-      else bundle[entry.type].push(entry.record);
+      else if (Array.isArray(bundle[entry.type]))
+        bundle[entry.type].push(entry.record);
+      else throw new Error(`Unknown NDJSON record type: ${entry.type}`);
     });
   return browserApplicationExportSchema.parse(bundle);
 };
@@ -689,7 +717,12 @@ export const previewCompactCsvImport = async (csvText, repository) => {
     rowCount: rows.length,
     validRowCount: Math.max(
       0,
-      rows.length - new Set(errors.map((error) => error.rowNumber)).size,
+      rows.length -
+        new Set(
+          errors
+            .map((error) => error.rowNumber)
+            .filter((rowNumber) => Number.isInteger(rowNumber)),
+        ).size,
     ),
     errors,
     conflicts,
@@ -716,13 +749,28 @@ export const importCompactCsv = async (
   const existingUrls = new Set(
     existing.applications.map(({ postingUrl }) => postingUrl).filter(Boolean),
   );
-  const keep = (application) =>
-    mode === "merge" ||
-    (!existingIds.has(application.id) &&
-      !existingUrls.has(application.postingUrl));
-  const incomingIds = new Set(
-    preview.bundle.applications.filter(keep).map(({ id }) => id),
+  const existingIdByPostingUrl = new Map(
+    existing.applications
+      .filter(({ postingUrl }) => postingUrl)
+      .map(({ id, postingUrl }) => [postingUrl, id]),
   );
+  const idRemaps = new Map();
+  const keep = (application) => {
+    if (mode === "merge") {
+      const existingId = application.postingUrl
+        ? existingIdByPostingUrl.get(application.postingUrl)
+        : undefined;
+      if (existingId && existingId !== application.id)
+        idRemaps.set(application.id, existingId);
+      return true;
+    }
+    return (
+      !existingIds.has(application.id) &&
+      !existingUrls.has(application.postingUrl)
+    );
+  };
+  const keptApplications = preview.bundle.applications.filter(keep);
+  const incomingIds = new Set(keptApplications.map(({ id }) => id));
   const merged = { ...existing, exportedAt: nowIso() };
   for (const store of [
     "applications",
@@ -734,9 +782,14 @@ export const importCompactCsv = async (
     "artifacts",
     "reminders",
   ]) {
-    const incoming = preview.bundle[store].filter((record) =>
-      incomingIds.has(record.applicationId ?? record.id),
-    );
+    const incoming = preview.bundle[store]
+      .filter((record) => incomingIds.has(record.applicationId ?? record.id))
+      .map((record) => {
+        const applicationId = idRemaps.get(record.applicationId ?? record.id);
+        if (!applicationId) return record;
+        if (store === "applications") return { ...record, id: applicationId };
+        return { ...record, applicationId };
+      });
     merged[store] =
       mode === "merge"
         ? [
