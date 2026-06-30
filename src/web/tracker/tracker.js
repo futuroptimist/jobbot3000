@@ -34,6 +34,7 @@ const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 const now = () => new Date().toISOString();
 const day = (v) => (v ? String(v).slice(0, 10) : "");
+const STATUS_RANK = Object.fromEntries(STATUSES.map((s, i) => [s, i]));
 const esc = (v) =>
   String(v ?? "").replace(
     /[&<>"]/g,
@@ -203,6 +204,15 @@ function safeIsoDate(value, fallback) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? fallback : date.toISOString();
 }
+function weekBucket(value) {
+  const d = day(value);
+  if (!d) return "";
+  const date = new Date(`${d}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return "";
+  const dayOfWeek = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() - dayOfWeek + 1);
+  return date.toISOString().slice(0, 10);
+}
 function safeHref(value) {
   const raw = String(value ?? "").trim();
   if (!raw) return "";
@@ -364,11 +374,12 @@ function renderDashboard() {
     .join("");
   const weeks = {};
   for (const a of b.applications) {
-    const d = day(a.appliedAt);
-    if (d) weeks[d.slice(0, 8) + "01"] = (weeks[d.slice(0, 8) + "01"] || 0) + 1;
+    const bucket = weekBucket(a.appliedAt);
+    if (bucket) weeks[bucket] = (weeks[bucket] || 0) + 1;
   }
   $("[data-weekly-counts]").textContent =
     Object.entries(weeks)
+      .sort(([a], [b]) => a.localeCompare(b))
       .map(([k, v]) => `${k}: ${v}`)
       .join(" • ") || "No application data yet.";
 }
@@ -465,7 +476,7 @@ function renderAll() {
 }
 function detailForm(app) {
   const m = appMeta(app);
-  return `<div class="tracker-detail"><article class="card"><h2>${esc(app.company)} — ${esc(app.role)}</h2><form class="tracker-form" data-core-form>${input("company", app.company, true)}${input("role", app.role, true)}${input("postingUrl", app.postingUrl)}<label>Status<select name="status">${STATUSES.map((s) => `<option ${app.status === s ? "selected" : ""}>${s}</option>`).join("")}</select></label>${input("source", app.source)}${input("appliedAt", day(app.appliedAt), "date")}${input("followUpDate", day(app.followUpDate), "date")}<label>Notes<textarea name="notes">${esc(app.notes)}</textarea></label><button class="button">Save application</button></form></article><article class="card"><h3>Lifecycle timeline</h3><ul class="timeline">${
+  return `<div class="tracker-detail"><article class="card"><h2>${esc(app.company || "New application")} — ${esc(app.role || "Unsaved")}</h2><form class="tracker-form" data-core-form>${input("company", app.company, true)}${input("role", app.role, true)}${input("postingUrl", app.postingUrl, "url", true)}<label>Status<select name="status" required>${STATUSES.map((s) => `<option ${app.status === s ? "selected" : ""}>${s}</option>`).join("")}</select></label>${input("source", app.source, "text", true)}${input("appliedAt", day(app.appliedAt), "date", true)}${input("followUpDate", day(app.followUpDate), "date")}<label>Notes<textarea name="notes">${esc(app.notes)}</textarea></label><button class="button">Save application</button></form></article><article class="card"><h3>Lifecycle timeline</h3><ul class="timeline">${
     state.bundle.lifecycleEvents
       .filter((e) => e.applicationId === app.id)
       .map(
@@ -475,8 +486,8 @@ function detailForm(app) {
       .join("") || "<li>No events yet.</li>"
   }</ul></article><article class="card"><h3>Links/artifacts</h3><form class="tracker-form" data-artifact-form>${input("name", "", true)}${input("url", "")}<button class="button">Add link/artifact</button></form><ul>${m.artifacts.map((a) => `<li>${linkForArtifact(a)}</li>`).join("")}</ul></article><article class="card"><h3>Outreach messages</h3><form class="tracker-form" data-outreach-form><label>Channel<select name="channel"><option>email</option><option>linkedin</option><option>phone</option><option>sms</option><option>other</option></select></label><label>Message<textarea name="body" required></textarea></label><button class="button">Add outreach</button></form><ul>${m.outreach.map((o) => `<li>${day(o.sentAt)} ${esc(o.channel)} ${esc(o.body)}</li>`).join("")}</ul></article><article class="card"><h3>Interviews</h3><form class="tracker-form" data-interview-form><label>Stage<select name="stage"><option>recruiter_screen</option><option>technical_screen</option><option>onsite_loop</option><option>other</option></select></label>${input("startsAt", day(now()), "date")}<button class="button">Log interview</button></form><ul>${m.interviews.map((i) => `<li>${day(i.startsAt)} ${esc(i.stage)} ${esc(i.outcome)}</li>`).join("")}</ul></article><article class="card"><h3>Offers</h3><form class="tracker-form" data-offer-form><label>Status<select name="status"><option>received</option><option>negotiating</option><option>accepted</option><option>declined</option></select></label>${input("notes", "")}<button class="button">Log offer</button></form><ul>${m.offers.map((o) => `<li>${esc(o.status)} ${esc(o.notes || "")}</li>`).join("")}</ul></article></div>`;
 }
-function input(n, v = "", type = "text") {
-  const req = type === true ? "required" : "";
+function input(n, v = "", type = "text", required = false) {
+  const req = type === true || required ? "required" : "";
   type = type === true ? "text" : type;
   return `<label>${n}<input name="${n}" type="${type}" value="${esc(v)}" ${req}></label>`;
 }
@@ -490,28 +501,38 @@ function openDetail(appId) {
   route("detail");
   bindDetail(app);
 }
+function openUnsavedDetail(app) {
+  state.current = app.id;
+  $("[data-detail]").innerHTML = detailForm(app);
+  route("detail");
+  bindDetail(app);
+}
 function isoDate(v) {
   return v ? new Date(v).toISOString() : undefined;
 }
 function bindDetail(app) {
+  const persisted = !app.unsaved;
   $("[data-core-form]").onsubmit = async (e) => {
     e.preventDefault();
     const v = values(e.target);
-    await repo.put("applications", {
+    const saved = {
       ...app,
       ...v,
       appliedAt: isoDate(v.appliedAt),
       followUpDate: isoDate(v.followUpDate),
       updatedAt: now(),
-    });
-    await repo.add("lifecycleEvents", {
-      id: id("event"),
-      applicationId: app.id,
-      status: v.status,
-      occurredAt: now(),
-      source: "manual",
-      createdAt: now(),
-    });
+    };
+    delete saved.unsaved;
+    await repo.put("applications", saved);
+    if (!persisted || v.status !== app.status)
+      await repo.add("lifecycleEvents", {
+        id: id("event"),
+        applicationId: app.id,
+        status: v.status,
+        occurredAt: now(),
+        source: "manual",
+        createdAt: now(),
+      });
     await refresh();
     openDetail(app.id);
   };
@@ -544,9 +565,13 @@ function bindDetail(app) {
       createdAt: now(),
       updatedAt: now(),
     });
+    const nextStatus =
+      STATUS_RANK[app.status] >= STATUS_RANK.outreach_sent
+        ? app.status
+        : "outreach_sent";
     await repo.put("applications", {
       ...app,
-      status: "outreach_sent",
+      status: nextStatus,
       updatedAt: now(),
     });
     await refresh();
@@ -597,26 +622,17 @@ async function newApplication() {
   const ts = now();
   const app = {
     id: id("app"),
-    company: "New company",
-    role: "New role",
+    company: "",
+    role: "",
     status: "applied",
-    source: "direct",
-    postingUrl: "https://example.test/job",
-    appliedAt: ts,
+    source: "",
+    postingUrl: "",
+    appliedAt: day(ts),
     createdAt: ts,
     updatedAt: ts,
+    unsaved: true,
   };
-  await repo.add("applications", app);
-  await repo.add("lifecycleEvents", {
-    id: id("event"),
-    applicationId: app.id,
-    status: "applied",
-    occurredAt: ts,
-    source: "manual",
-    createdAt: ts,
-  });
-  await refresh();
-  openDetail(app.id);
+  openUnsavedDetail(app);
 }
 async function previewImport() {
   const file = $("[data-import-file]").files[0];

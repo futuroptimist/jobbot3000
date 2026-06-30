@@ -18,6 +18,13 @@ const dangerousCsvFixture = [
     'javascript:alert(1),"He said ""hello"""',
 ].join("\n");
 
+const weeklyCsvFixture = [
+  "application_id,company,role_title,status,applied_at,posting_url,application_channel",
+  "week_app_1,Week One A,Engineer,applied,2026-01-05,https://example.test/a,direct",
+  "week_app_2,Week One B,Engineer,applied,2026-01-11,https://example.test/b,direct",
+  "week_app_3,Week Two,Engineer,applied,2026-01-12,https://example.test/c,direct",
+].join("\n");
+
 test.describe("browser application tracker", () => {
   let server;
 
@@ -175,10 +182,74 @@ test.describe("browser application tracker", () => {
     );
   });
 
+  test("uses deterministic weekly application buckets", async ({ page }) => {
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await page.setInputFiles("[data-import-file]", {
+      name: "weekly-applications.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(weeklyCsvFixture),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await page.getByRole("button", { name: "Apply import" }).click();
+
+    await page.getByRole("button", { name: "Dashboard" }).click();
+    await expect(
+      page.getByRole("heading", { name: "Weekly applications" }),
+    ).toBeVisible();
+    await expect(page.locator("[data-weekly-counts]")).toHaveText(
+      "2026-01-05: 2 • 2026-01-12: 1",
+    );
+  });
+
+  test("does not duplicate lifecycle events or downgrade advanced outreach", async ({
+    page,
+  }) => {
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await page.setInputFiles("[data-import-file]", {
+      name: "fake-applications.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(csvFixture),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await page.getByRole("button", { name: "Apply import" }).click();
+
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Example Labs" }).click();
+    await page.locator('[name="company"]').fill("Example Labs Updated");
+    await page.getByRole("button", { name: "Save application" }).click();
+    await expect(page.locator('[name="company"]')).toHaveValue(
+      "Example Labs Updated",
+    );
+    await expect(page.locator(".timeline li")).toHaveCount(1);
+
+    await page
+      .locator('[name="status"]')
+      .first()
+      .selectOption("technical_screen");
+    await page.getByRole("button", { name: "Save application" }).click();
+    await expect(page.locator('[name="status"]').first()).toHaveValue(
+      "technical_screen",
+    );
+    await page.locator('[name="body"]').fill("Checking in after screen");
+    await page.getByRole("button", { name: "Add outreach" }).click();
+    await expect(page.locator('[name="status"]').first()).toHaveValue(
+      "technical_screen",
+    );
+  });
+
   test("creates a new application and exports backups", async ({ page }) => {
     await page
       .getByRole("button", { name: "Applications", exact: true })
       .click();
+    await page.getByRole("button", { name: "New application" }).click();
+    await page.getByRole("button", { name: "Save application" }).click();
+    await expect(page.locator('[name="company"]')).toBeFocused();
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await expect(page.getByText("No applications yet")).toBeVisible();
     await page.getByRole("button", { name: "New application" }).click();
     await page.locator('[name="company"]').fill("Fictional Systems");
     await page.locator('[name="role"]').fill("Platform Engineer");
@@ -192,6 +263,9 @@ test.describe("browser application tracker", () => {
       .click();
     await expect(page.locator("[data-applications-table]")).toContainText(
       "Fictional Systems",
+    );
+    await expect(page.locator("[data-applications-table]")).not.toContainText(
+      "New company",
     );
 
     await page.getByRole("button", { name: "Import/Export" }).click();
