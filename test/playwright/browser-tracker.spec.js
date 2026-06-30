@@ -292,11 +292,19 @@ test.describe("browser application tracker", () => {
     await page
       .getByRole("button", { name: "Applications", exact: true })
       .click();
-    await page.locator('[data-filter="status"]').selectOption("recruiter_screen");
+    await page
+      .locator('[data-filter="status"]')
+      .selectOption("recruiter_screen");
     await page.locator('[data-filter="outcome"]').selectOption("accepted");
     await expect(page.locator("[data-applications-table]")).toContainText(
       "Example Labs",
     );
+    await expect(page.getByText("No applications yet")).toBeHidden();
+
+    await page.locator('[data-filter="outcome"]').selectOption("rejected");
+    await expect(
+      page.getByText("No applications match the current filters."),
+    ).toBeVisible();
     await expect(page.getByText("No applications yet")).toBeHidden();
   });
 

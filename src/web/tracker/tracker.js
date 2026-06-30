@@ -400,27 +400,30 @@ function renderList() {
   const q = $('[data-filter="query"]').value.toLowerCase(),
     st = $('[data-filter="status"]').value,
     out = $('[data-filter="outcome"]').value;
-  let rows = state.apps.filter(
-    (a) => {
-      const m = appMeta(a);
-      return (
-        (!q ||
-          [a.company, a.role, a.status, a.notes].some((x) =>
-            String(x || "")
-              .toLowerCase()
-              .includes(q),
-          )) &&
-        (!st || a.status === st) &&
-        (!out || outcomeForApp(a, m) === out)
-      );
-    },
-  );
+  const hasActiveFilters = Boolean(q || st || out);
+  let rows = state.apps.filter((a) => {
+    const m = appMeta(a);
+    return (
+      (!q ||
+        [a.company, a.role, a.status, a.notes].some((x) =>
+          String(x || "")
+            .toLowerCase()
+            .includes(q),
+        )) &&
+      (!st || a.status === st) &&
+      (!out || outcomeForApp(a, m) === out)
+    );
+  });
   rows.sort(
     (a, b) =>
       String(a[state.sort] || "").localeCompare(String(b[state.sort] || "")) *
       state.dir,
   );
-  $("[data-empty-state]").hidden = rows.length > 0;
+  const emptyState = $("[data-empty-state]");
+  emptyState.textContent = hasActiveFilters
+    ? "No applications match the current filters."
+    : "No applications yet. Create one or import a CSV backup.";
+  emptyState.hidden = rows.length > 0;
   $("[data-applications-table]").hidden = rows.length === 0;
   $("[data-applications-table] tbody").innerHTML = rows
     .map((a) => {
