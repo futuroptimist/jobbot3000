@@ -239,6 +239,67 @@ test.describe("browser application tracker", () => {
     );
   });
 
+  test("combines status and outcome filters against distinct fields", async ({
+    page,
+  }) => {
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await page.setInputFiles("[data-import-file]", {
+      name: "fake-applications.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(csvFixture),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await page.getByRole("button", { name: "Apply import" }).click();
+
+    await page.evaluate(
+      () =>
+        new Promise((resolve, reject) => {
+          const request = indexedDB.open("jobbot3000", 1);
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => {
+            const db = request.result;
+            const tx = db.transaction(["applications", "offers"], "readwrite");
+            tx.objectStore("applications").put({
+              id: "fake_app_1",
+              company: "Example Labs",
+              role: "Frontend Engineer",
+              status: "recruiter_screen",
+              source: "direct",
+              postingUrl: "https://example.test/jobs/frontend",
+              appliedAt: "2026-01-02",
+              followUpDate: "2026-01-09",
+              notes: "fit_score_100: 82",
+              createdAt: "2026-01-02T00:00:00.000Z",
+              updatedAt: "2026-01-03T00:00:00.000Z",
+            });
+            tx.objectStore("offers").put({
+              id: "offer_filter_test",
+              applicationId: "fake_app_1",
+              status: "accepted",
+              createdAt: "2026-01-03T00:00:00.000Z",
+              updatedAt: "2026-01-03T00:00:00.000Z",
+            });
+            tx.oncomplete = () => {
+              db.close();
+              resolve();
+            };
+            tx.onerror = () => reject(tx.error);
+          };
+        }),
+    );
+    await page.reload();
+
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.locator('[data-filter="status"]').selectOption("recruiter_screen");
+    await page.locator('[data-filter="outcome"]').selectOption("accepted");
+    await expect(page.locator("[data-applications-table]")).toContainText(
+      "Example Labs",
+    );
+    await expect(page.getByText("No applications yet")).toBeHidden();
+  });
+
   test("creates a new application and exports backups", async ({ page }) => {
     await page
       .getByRole("button", { name: "Applications", exact: true })

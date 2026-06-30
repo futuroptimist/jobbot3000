@@ -392,20 +392,28 @@ function appMeta(app) {
     artifacts: b.artifacts.filter((x) => x.applicationId === app.id),
   };
 }
+function outcomeForApp(app, meta = appMeta(app)) {
+  if (OUTCOMES.has(app.status)) return app.status;
+  return meta.offers.at(-1)?.status || "";
+}
 function renderList() {
   const q = $('[data-filter="query"]').value.toLowerCase(),
     st = $('[data-filter="status"]').value,
     out = $('[data-filter="outcome"]').value;
   let rows = state.apps.filter(
-    (a) =>
-      (!q ||
-        [a.company, a.role, a.status, a.notes].some((x) =>
-          String(x || "")
-            .toLowerCase()
-            .includes(q),
-        )) &&
-      (!st || a.status === st) &&
-      (!out || a.status === out),
+    (a) => {
+      const m = appMeta(a);
+      return (
+        (!q ||
+          [a.company, a.role, a.status, a.notes].some((x) =>
+            String(x || "")
+              .toLowerCase()
+              .includes(q),
+          )) &&
+        (!st || a.status === st) &&
+        (!out || outcomeForApp(a, m) === out)
+      );
+    },
   );
   rows.sort(
     (a, b) =>
@@ -417,7 +425,7 @@ function renderList() {
   $("[data-applications-table] tbody").innerHTML = rows
     .map((a) => {
       const m = appMeta(a);
-      return `<tr><td><button class="button" data-open="${esc(a.id)}">${esc(a.company)}</button></td><td>${esc(a.role)}</td><td>${esc(a.status)}</td><td>${day(a.appliedAt)}</td><td>${day(a.followUpDate)}</td><td>${m.outreach.length ? "sent" : "none"}</td><td>${esc(m.interviews.at(-1)?.stage || "")}</td><td>${OUTCOMES.has(a.status) ? esc(a.status) : esc(m.offers.at(-1)?.status || "")}</td><td>${esc(fitScore(a.notes))}</td><td>${m.artifacts.map(linkForArtifact).join(", ")}</td></tr>`;
+      return `<tr><td><button class="button" data-open="${esc(a.id)}">${esc(a.company)}</button></td><td>${esc(a.role)}</td><td>${esc(a.status)}</td><td>${day(a.appliedAt)}</td><td>${day(a.followUpDate)}</td><td>${m.outreach.length ? "sent" : "none"}</td><td>${esc(m.interviews.at(-1)?.stage || "")}</td><td>${esc(outcomeForApp(a, m))}</td><td>${esc(fitScore(a.notes))}</td><td>${m.artifacts.map(linkForArtifact).join(", ")}</td></tr>`;
     })
     .join("");
   $$("[data-open]").forEach(
