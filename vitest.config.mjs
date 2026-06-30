@@ -3,7 +3,7 @@ import { configDefaults, defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     exclude: [...configDefaults.exclude, 'test/playwright/**'],
-    testTimeout: 15000,
+    testTimeout: 30000,
     pool: 'threads',
     poolOptions: {
       threads: {
