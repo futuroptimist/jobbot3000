@@ -523,11 +523,13 @@ function isoDate(v) {
 }
 function bindDetail(app) {
   const persisted = !app.unsaved;
+  const latestApp = () => state.apps.find((a) => a.id === app.id) || app;
   $("[data-core-form]").onsubmit = async (e) => {
     e.preventDefault();
     const v = values(e.target);
+    const current = latestApp();
     const saved = {
-      ...app,
+      ...current,
       ...v,
       appliedAt: isoDate(v.appliedAt),
       followUpDate: isoDate(v.followUpDate),
@@ -535,7 +537,7 @@ function bindDetail(app) {
     };
     delete saved.unsaved;
     await repo.put("applications", saved);
-    if (!persisted || v.status !== app.status)
+    if (!persisted || v.status !== current.status)
       await repo.add("lifecycleEvents", {
         id: id("event"),
         applicationId: app.id,
@@ -566,6 +568,7 @@ function bindDetail(app) {
   $("[data-outreach-form]").onsubmit = async (e) => {
     e.preventDefault();
     const v = values(e.target);
+    const current = latestApp();
     await repo.add("outreachMessages", {
       id: id("msg"),
       applicationId: app.id,
@@ -577,11 +580,11 @@ function bindDetail(app) {
       updatedAt: now(),
     });
     const nextStatus =
-      STATUS_RANK[app.status] >= STATUS_RANK.outreach_sent
-        ? app.status
+      STATUS_RANK[current.status] >= STATUS_RANK.outreach_sent
+        ? current.status
         : "outreach_sent";
     await repo.put("applications", {
-      ...app,
+      ...current,
       status: nextStatus,
       updatedAt: now(),
     });
