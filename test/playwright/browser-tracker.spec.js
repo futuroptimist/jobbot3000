@@ -131,6 +131,11 @@ test.describe("browser application tracker", () => {
     await expect(
       page.locator('[data-detail] a[href^="javascript:"]'),
     ).toHaveCount(0);
+    await expect(page.locator('[name="source"]')).toHaveValue("");
+    await expect(page.locator('[name="source"]')).not.toHaveAttribute(
+      "required",
+      "",
+    );
   });
 
   test("clears stale import previews when selecting a different CSV", async ({
@@ -320,7 +325,6 @@ test.describe("browser application tracker", () => {
     await page.getByRole("button", { name: "New application" }).click();
     await page.locator('[name="company"]').fill("Fictional Systems");
     await page.locator('[name="role"]').fill("Platform Engineer");
-    await page.locator('[name="source"]').fill("referral");
     await page.getByRole("button", { name: "Save application" }).click();
     await page
       .getByRole("button", { name: "Applications", exact: true })
@@ -330,6 +334,7 @@ test.describe("browser application tracker", () => {
     );
     await page.getByRole("button", { name: "Fictional Systems" }).click();
     await expect(page.locator('[name="postingUrl"]')).toHaveValue("");
+    await expect(page.locator('[name="source"]')).toHaveValue("");
     await page
       .getByRole("button", { name: "Applications", exact: true })
       .click();
