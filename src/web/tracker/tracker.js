@@ -594,6 +594,7 @@ function bindDetail(app) {
   $("[data-interview-form]").onsubmit = async (e) => {
     e.preventDefault();
     const v = values(e.target);
+    const current = latestApp();
     await repo.add("interviews", {
       id: id("interview"),
       applicationId: app.id,
@@ -605,8 +606,8 @@ function bindDetail(app) {
       updatedAt: now(),
     });
     await repo.put("applications", {
-      ...app,
-      status: v.stage === "other" ? app.status : v.stage,
+      ...current,
+      status: v.stage === "other" ? current.status : v.stage,
       updatedAt: now(),
     });
     await refresh();
@@ -615,6 +616,7 @@ function bindDetail(app) {
   $("[data-offer-form]").onsubmit = async (e) => {
     e.preventDefault();
     const v = values(e.target);
+    const current = latestApp();
     await repo.add("offers", {
       id: id("offer"),
       applicationId: app.id,
@@ -624,7 +626,7 @@ function bindDetail(app) {
       updatedAt: now(),
     });
     await repo.put("applications", {
-      ...app,
+      ...current,
       status: v.status === "accepted" ? "accepted" : "offer",
       updatedAt: now(),
     });
