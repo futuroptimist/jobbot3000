@@ -88,12 +88,11 @@ test.describe("browser application tracker", () => {
     ).toBeVisible();
 
     await page
-      .locator('[name="status"]')
-      .first()
+      .locator('[data-core-form] [name="status"]')
       .selectOption("technical_screen");
     await page.locator('[name="followUpDate"]').fill("2026-01-15");
     await page.getByRole("button", { name: "Save application" }).click();
-    await expect(page.locator('[name="status"]').first()).toHaveValue(
+    await expect(page.locator('[data-core-form] [name="status"]')).toHaveValue(
       "technical_screen",
     );
 
@@ -225,16 +224,15 @@ test.describe("browser application tracker", () => {
     await expect(page.locator(".timeline li")).toHaveCount(1);
 
     await page
-      .locator('[name="status"]')
-      .first()
+      .locator('[data-core-form] [name="status"]')
       .selectOption("technical_screen");
     await page.getByRole("button", { name: "Save application" }).click();
-    await expect(page.locator('[name="status"]').first()).toHaveValue(
+    await expect(page.locator('[data-core-form] [name="status"]')).toHaveValue(
       "technical_screen",
     );
     await page.locator('[name="body"]').fill("Checking in after screen");
     await page.getByRole("button", { name: "Add outreach" }).click();
-    await expect(page.locator('[name="status"]').first()).toHaveValue(
+    await expect(page.locator('[data-core-form] [name="status"]')).toHaveValue(
       "technical_screen",
     );
   });
@@ -322,9 +320,6 @@ test.describe("browser application tracker", () => {
     await page.getByRole("button", { name: "New application" }).click();
     await page.locator('[name="company"]').fill("Fictional Systems");
     await page.locator('[name="role"]').fill("Platform Engineer");
-    await page
-      .locator('[name="postingUrl"]')
-      .fill("https://example.test/platform");
     await page.locator('[name="source"]').fill("referral");
     await page.getByRole("button", { name: "Save application" }).click();
     await page
@@ -333,6 +328,11 @@ test.describe("browser application tracker", () => {
     await expect(page.locator("[data-applications-table]")).toContainText(
       "Fictional Systems",
     );
+    await page.getByRole("button", { name: "Fictional Systems" }).click();
+    await expect(page.locator('[name="postingUrl"]')).toHaveValue("");
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
     await expect(page.locator("[data-applications-table]")).not.toContainText(
       "New company",
     );
