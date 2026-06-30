@@ -4,16 +4,30 @@ import path from "node:path";
 
 import { expect, test } from "@playwright/test";
 
+const PROVIDER_ENV_KEYS = [
+  "JOBBOT_GREENHOUSE_TOKEN",
+  "JOBBOT_LEVER_API_TOKEN",
+  "JOBBOT_SMARTRECRUITERS_TOKEN",
+  "JOBBOT_WORKABLE_TOKEN",
+];
+
 test.describe("Listings provider tokens", () => {
   let server;
   let envDir;
   let envPath;
   let previousEnvFile;
+  let previousProviderEnv;
 
   test.beforeAll(async () => {
     envDir = await fs.mkdtemp(path.join(os.tmpdir(), "jobbot-web-env-"));
     envPath = path.join(envDir, ".env");
     previousEnvFile = process.env.JOBBOT_ENV_FILE;
+    previousProviderEnv = new Map(
+      PROVIDER_ENV_KEYS.map((key) => [key, process.env[key]]),
+    );
+    for (const key of PROVIDER_ENV_KEYS) {
+      delete process.env[key];
+    }
     process.env.JOBBOT_ENV_FILE = envPath;
     const { startWebServer } = await import("../../src/web/server.js");
     server = await startWebServer({
@@ -33,6 +47,15 @@ test.describe("Listings provider tokens", () => {
     } else {
       process.env.JOBBOT_ENV_FILE = previousEnvFile;
     }
+    for (const key of PROVIDER_ENV_KEYS) {
+      const previous = previousProviderEnv?.get(key);
+      if (previous === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = previous;
+      }
+    }
+    previousProviderEnv = undefined;
     if (envDir) {
       await fs.rm(envDir, { recursive: true, force: true });
       envDir = undefined;
