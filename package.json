@@ -32,7 +32,8 @@
     "prepare": "npx simple-git-hooks",
     "postinstall": "node scripts/install-console-font.js",
     "build": "node scripts/build-static.js",
-    "start:static": "node scripts/static-server.js"
+    "start:static": "node scripts/static-server.js",
+    "smoke:container": "docker build -t jobbot3000:smoke . && docker run --rm -d --name jobbot3000-smoke -p 127.0.0.1:8080:8080 jobbot3000:smoke && (for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8080/ >/dev/null && curl -fsS http://127.0.0.1:8080/healthz >/dev/null && curl -fsS http://127.0.0.1:8080/livez >/dev/null && break || sleep 1; done; curl -fsS http://127.0.0.1:8080/ >/dev/null; curl -fsS http://127.0.0.1:8080/healthz >/dev/null; curl -fsS http://127.0.0.1:8080/livez >/dev/null); status=$?; docker logs jobbot3000-smoke || true; docker rm -f jobbot3000-smoke >/dev/null 2>&1 || true; exit $status"
   },
   "engines": {
     "node": ">=20"
