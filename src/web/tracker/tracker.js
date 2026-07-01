@@ -623,9 +623,13 @@ function bindDetail(app) {
       createdAt: now(),
       updatedAt: now(),
     });
+    const nextStatus =
+      v.stage !== "other" && STATUS_RANK[v.stage] > STATUS_RANK[current.status]
+        ? v.stage
+        : current.status;
     await repo.put("applications", {
       ...current,
-      status: v.stage === "other" ? current.status : v.stage,
+      status: nextStatus,
       updatedAt: now(),
     });
     await refresh();

@@ -240,6 +240,14 @@ test.describe("browser application tracker", () => {
     await expect(page.locator('[data-core-form] [name="status"]')).toHaveValue(
       "technical_screen",
     );
+
+    await page
+      .locator('[data-interview-form] [name="stage"]')
+      .selectOption("recruiter_screen");
+    await page.getByRole("button", { name: "Log interview" }).click();
+    await expect(page.locator('[data-core-form] [name="status"]')).toHaveValue(
+      "technical_screen",
+    );
   });
 
   test("combines status and outcome filters against distinct fields", async ({
