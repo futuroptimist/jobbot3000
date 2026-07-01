@@ -400,6 +400,9 @@ test.describe("browser application tracker", () => {
     });
     await page.getByRole("button", { name: "Preview/dry-run" }).click();
     await page.getByRole("button", { name: "Apply import" }).click();
+    await expect(page.locator("[data-import-result]")).toContainText(
+      "Import applied",
+    );
 
     await page.reload();
     await page
