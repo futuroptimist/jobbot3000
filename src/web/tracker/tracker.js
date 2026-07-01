@@ -526,6 +526,7 @@ function bindDetail(app) {
   const latestApp = () => state.apps.find((a) => a.id === app.id) || app;
   $("[data-core-form]").onsubmit = async (e) => {
     e.preventDefault();
+    if (e.submitter) e.submitter.disabled = true;
     const v = values(e.target);
     const current = latestApp();
     const saved = {
