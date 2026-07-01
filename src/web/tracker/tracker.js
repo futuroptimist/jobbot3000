@@ -159,6 +159,7 @@ const state = {
   sort: "appliedAt",
   dir: -1,
   current: null,
+  detailSave: Promise.resolve(),
 };
 function parseCsv(text) {
   const rows = [];
@@ -526,29 +527,33 @@ function bindDetail(app) {
   const latestApp = () => state.apps.find((a) => a.id === app.id) || app;
   $("[data-core-form]").onsubmit = async (e) => {
     e.preventDefault();
-    if (e.submitter) e.submitter.disabled = true;
     const v = values(e.target);
-    const current = latestApp();
-    const saved = {
-      ...current,
-      ...v,
-      appliedAt: isoDate(v.appliedAt),
-      followUpDate: isoDate(v.followUpDate),
-      updatedAt: now(),
-    };
-    delete saved.unsaved;
-    await repo.put("applications", saved);
-    if (!persisted || v.status !== current.status)
-      await repo.add("lifecycleEvents", {
-        id: id("event"),
-        applicationId: app.id,
-        status: v.status,
-        occurredAt: now(),
-        source: "manual",
-        createdAt: now(),
+    state.detailSave = state.detailSave
+      .catch(() => {})
+      .then(async () => {
+        const current = latestApp();
+        const saved = {
+          ...current,
+          ...v,
+          appliedAt: isoDate(v.appliedAt),
+          followUpDate: isoDate(v.followUpDate),
+          updatedAt: now(),
+        };
+        delete saved.unsaved;
+        await repo.put("applications", saved);
+        if (!persisted || v.status !== current.status)
+          await repo.add("lifecycleEvents", {
+            id: id("event"),
+            applicationId: app.id,
+            status: v.status,
+            occurredAt: now(),
+            source: "manual",
+            createdAt: now(),
+          });
+        await refresh();
+        openDetail(app.id);
       });
-    await refresh();
-    openDetail(app.id);
+    await state.detailSave;
   };
   $("[data-artifact-form]").onsubmit = async (e) => {
     e.preventDefault();
