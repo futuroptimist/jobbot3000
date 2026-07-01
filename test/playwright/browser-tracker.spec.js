@@ -1,4 +1,4 @@
-/* global indexedDB */
+/* global IDBDatabase, indexedDB */
 import { expect, test } from "@playwright/test";
 
 import { startWebServer } from "../../src/web/server.js";
@@ -136,6 +136,37 @@ test.describe("browser application tracker", () => {
       "required",
       "",
     );
+  });
+
+  test("shows import failures when IndexedDB writes fail", async ({ page }) => {
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await page.setInputFiles("[data-import-file]", {
+      name: "fake-applications.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(csvFixture),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await expect(page.locator("[data-import-result]")).toContainText(
+      "Dry-run OK: 1 applications",
+    );
+
+    await page.evaluate(() => {
+      const originalTransaction = IDBDatabase.prototype.transaction;
+      IDBDatabase.prototype.transaction = function transaction(...args) {
+        if (args[1] === "readwrite") {
+          throw new Error("simulated quota exceeded");
+        }
+        return originalTransaction.apply(this, args);
+      };
+    });
+
+    await page.getByRole("button", { name: "Apply import" }).click();
+    await expect(page.locator("[data-import-result]")).toContainText(
+      "Import failed: simulated quota exceeded",
+    );
+    await expect(
+      page.getByRole("button", { name: "Apply import" }),
+    ).toBeEnabled();
   });
 
   test("clears stale import previews when selecting a different CSV", async ({

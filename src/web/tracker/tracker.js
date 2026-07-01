@@ -706,7 +706,13 @@ async function applyImport() {
     resetImportPreview();
     return;
   }
-  await batchPut(state.preview);
+  try {
+    await batchPut(state.preview);
+  } catch (err) {
+    $("[data-import-result]").textContent =
+      `Import failed: ${err?.message ?? err}`;
+    return;
+  }
   $("[data-import-result]").textContent = "Import applied.";
   $("[data-import-apply]").disabled = true;
   await refresh();
