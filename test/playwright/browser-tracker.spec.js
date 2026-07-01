@@ -350,6 +350,39 @@ test.describe("browser application tracker", () => {
     await expect(page.getByText("No applications yet")).toBeHidden();
   });
 
+  test("retains IndexedDB data across reloads and clears it from settings", async ({
+    page,
+  }) => {
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.getByRole("button", { name: "New application" }).click();
+    await page.locator('[name="company"]').fill("Reloadable Systems");
+    await page.locator('[name="role"]').fill("Offline Engineer");
+    await page.getByRole("button", { name: "Save application" }).click();
+    await expect(page.locator('[name="company"]')).toHaveValue(
+      "Reloadable Systems",
+    );
+
+    await page.reload();
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await expect(page.locator("[data-applications-table]")).toContainText(
+      "Reloadable Systems",
+    );
+
+    page.on("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page
+      .getByRole("button", { name: "Clear local tracker data" })
+      .click();
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await expect(page.getByText("No applications yet")).toBeVisible();
+  });
+
   test("creates a new application and exports backups", async ({ page }) => {
     await page
       .getByRole("button", { name: "Applications", exact: true })
@@ -379,6 +412,13 @@ test.describe("browser application tracker", () => {
       .click();
     await expect(page.locator("[data-applications-table]")).not.toContainText(
       "New company",
+    );
+
+    await page.getByRole("button", { name: "Settings" }).click();
+    const backupDownload = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Backup now" }).click();
+    await expect((await backupDownload).suggestedFilename()).toBe(
+      "jobbot3000-backup.json",
     );
 
     await page.getByRole("button", { name: "Import/Export" }).click();

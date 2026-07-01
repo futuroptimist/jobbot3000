@@ -7,13 +7,13 @@
 
 **jobbot3000** is a self-hosted, open-source job search copilot.
 
-The production web direction is browser-first: private application tracking data should live in user-owned IndexedDB, while the deployed server/container serves static assets and health endpoints. This is a planned architecture rather than a completed implementation; see [docs/browser-first-architecture.md](docs/browser-first-architecture.md) for the data contract and migration path.
+The production tracker is browser-first: private application tracking data lives in user-owned IndexedDB, while the deployed server/container serves static assets and health endpoints. See [docs/privacy-and-local-data.md](docs/privacy-and-local-data.md) and [docs/browser-first-architecture.md](docs/browser-first-architecture.md) for the data contract and deployment boundaries.
 
 > [!WARNING]
-> The web interface is an experimental preview for local use only. Running production builds or
-> deploying to shared or cloud infrastructure can leak secrets, PII, and other sensitive data.
-> Operate on trusted hardware while we implement hardened authentication, storage, and network
-> isolation. Track the hardening plan in [docs/web-security-roadmap.md](docs/web-security-roadmap.md).
+> CLI/server command mode remains local-only and token-bearing. It can read/write `.env`, logs,
+> local files, and SQLite under `JOBBOT_DATA_DIR`, so run it only on trusted hardware. The static
+> IndexedDB tracker mode is safe to expose as static assets because private tracker records do not
+> leave the browser unless the user explicitly downloads or imports backup files.
 
 ## Quickstart
 
@@ -158,6 +158,7 @@ Run the snippet with `node example.js` after saving it to a file in the project 
 - [docs/user-journeys.md](docs/user-journeys.md) – primary user journeys and flows
 - [docs/browser-first-architecture.md](docs/browser-first-architecture.md) – planned IndexedDB-first production web architecture and browser data contract
 - [docs/indexeddb-persistence.md](docs/indexeddb-persistence.md) – browser IndexedDB persistence, backup/restore, and quota caveats
+- [docs/privacy-and-local-data.md](docs/privacy-and-local-data.md) – production tracker privacy model and local-data operations
 - [docs/spreadsheet-replacement.md](docs/spreadsheet-replacement.md) – CSV/JSON/NDJSON import-export workflow for replacing the current spreadsheet
 - [docs/backup-restore-guide.md](docs/backup-restore-guide.md) – backup, restore, and verification
   steps

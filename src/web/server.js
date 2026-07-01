@@ -8082,7 +8082,7 @@ export function createWebApp({
     res.send(compactHtml(rawHtml));
   });
 
-  app.get("/health", async (req, res) => {
+  const healthHandler = async (req, res) => {
     const timestamp = new Date().toISOString();
     const uptime = process.uptime();
     const results = await runHealthChecks(normalizedChecks);
@@ -8094,9 +8094,12 @@ export function createWebApp({
     });
     const statusCode = payload.status === "error" ? 503 : 200;
     res.status(statusCode).json(payload);
-  });
+  };
 
-  app.get("/ready", (req, res) => {
+  app.get("/health", healthHandler);
+  app.get("/healthz", healthHandler);
+
+  const readyHandler = (req, res) => {
     const timestamp = new Date().toISOString();
     const uptime = process.uptime();
     const payload = buildReadyResponse({
@@ -8105,7 +8108,10 @@ export function createWebApp({
       timestamp,
     });
     res.status(200).json(payload);
-  });
+  };
+
+  app.get("/ready", readyHandler);
+  app.get("/livez", readyHandler);
 
   app.post("/sessions/revoke", jsonParser, (req, res) => {
     const currentSessionId = ensureClientSession(req, res, {
