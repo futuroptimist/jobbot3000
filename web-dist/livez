@@ -1,0 +1,5 @@
+{
+  "status": "ok",
+  "service": "jobbot3000-static",
+  "mode": "browser-only"
+}

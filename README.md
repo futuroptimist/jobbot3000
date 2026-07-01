@@ -7,13 +7,14 @@
 
 **jobbot3000** is a self-hosted, open-source job search copilot.
 
-The production web direction is browser-first: private application tracking data should live in user-owned IndexedDB, while the deployed server/container serves static assets and health endpoints. This is a planned architecture rather than a completed implementation; see [docs/browser-first-architecture.md](docs/browser-first-architecture.md) for the data contract and migration path.
+The production tracker is browser-first: private application tracking data lives in user-owned IndexedDB, while the deployed server/container serves static assets and health endpoints. See [docs/privacy-and-static-tracker.md](docs/privacy-and-static-tracker.md) and [docs/browser-first-architecture.md](docs/browser-first-architecture.md) for the data contract and privacy boundary.
 
 > [!WARNING]
-> The web interface is an experimental preview for local use only. Running production builds or
-> deploying to shared or cloud infrastructure can leak secrets, PII, and other sensitive data.
-> Operate on trusted hardware while we implement hardened authentication, storage, and network
-> isolation. Track the hardening plan in [docs/web-security-roadmap.md](docs/web-security-roadmap.md).
+> The CLI/server command hub remains a local automation surface that can use API tokens, write `.env`,
+> store command payload history, and persist local SQLite/files. Keep that mode on trusted hardware,
+> enable remote access only with explicit authentication, and do not treat it as a multi-user SaaS.
+> The static IndexedDB tracker at `/tracker` and `npm run build` output is the safe deployment path for
+> browser-only application tracking.
 
 ## Quickstart
 
@@ -23,9 +24,10 @@ Requires Node.js 20+.
 npm install
 npm run dev
 # Open http://127.0.0.1:3100
+# Browser-only tracker: http://127.0.0.1:3100/tracker
 ```
 
-That's it! The web server will start with all backend functionality enabled.
+That's it! The development command hub starts with backend functionality enabled for local automation.
 Use `npm run web:server -- --disable-native-cli` if you want to explore the
 mock-only UI without spawning CLI subprocesses.
 
@@ -59,6 +61,16 @@ success preview.
 
 Ingestion is idempotent: running the CLI twice for the same email will update the existing
 opportunity instead of creating duplicates.
+
+### Static production tracker
+
+Build the browser-only tracker with:
+
+```bash
+npm run build
+```
+
+The generated `web-dist/` directory contains static assets plus `/healthz` and `/livez` files for static hosts. It does not include server handlers that accept private application data. If you run the Node web container instead, `/healthz` and `/livez` are also available and the server emits CSP/security headers for the static tracker assets.
 
 ## API Setup (Optional)
 
@@ -156,7 +168,8 @@ Run the snippet with `node example.js` after saving it to a file in the project 
 - [SECURITY.md](SECURITY.md) – security guidelines
 - [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) – prompt reference index
 - [docs/user-journeys.md](docs/user-journeys.md) – primary user journeys and flows
-- [docs/browser-first-architecture.md](docs/browser-first-architecture.md) – planned IndexedDB-first production web architecture and browser data contract
+- [docs/browser-first-architecture.md](docs/browser-first-architecture.md) – IndexedDB-first production web architecture and browser data contract
+- [docs/privacy-and-static-tracker.md](docs/privacy-and-static-tracker.md) – static tracker privacy model, backups, clearing data, quota caveats, and deployment headers
 - [docs/indexeddb-persistence.md](docs/indexeddb-persistence.md) – browser IndexedDB persistence, backup/restore, and quota caveats
 - [docs/spreadsheet-replacement.md](docs/spreadsheet-replacement.md) – CSV/JSON/NDJSON import-export workflow for replacing the current spreadsheet
 - [docs/backup-restore-guide.md](docs/backup-restore-guide.md) – backup, restore, and verification

@@ -8096,6 +8096,31 @@ export function createWebApp({
     res.status(statusCode).json(payload);
   });
 
+  app.get("/healthz", async (req, res) => {
+    const timestamp = new Date().toISOString();
+    const uptime = process.uptime();
+    const results = await runHealthChecks(normalizedChecks);
+    const payload = buildHealthResponse({
+      info: normalizedInfo,
+      uptime,
+      timestamp,
+      checks: results,
+    });
+    const statusCode = payload.status === "error" ? 503 : 200;
+    res.status(statusCode).json(payload);
+  });
+
+  app.get("/livez", (req, res) => {
+    const timestamp = new Date().toISOString();
+    const uptime = process.uptime();
+    const payload = buildReadyResponse({
+      info: normalizedInfo,
+      uptime,
+      timestamp,
+    });
+    res.status(200).json(payload);
+  });
+
   app.get("/ready", (req, res) => {
     const timestamp = new Date().toISOString();
     const uptime = process.uptime();

@@ -30,7 +30,8 @@
     "web:screenshots": "node scripts/generate-web-screenshots.js",
     "typecheck": "tsc -p tsconfig.json",
     "prepare": "npx simple-git-hooks",
-    "postinstall": "node scripts/install-console-font.js"
+    "postinstall": "node scripts/install-console-font.js",
+    "build": "node scripts/build-web.js"
   },
   "engines": {
     "node": ">=20"
