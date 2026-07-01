@@ -115,14 +115,19 @@
           <article class="card">
             <h3>Export backups</h3>
             <div class="tracker-actions">
-              <button class="button" data-export="csv">Export CSV</button
-              ><button class="button" data-export="json">
-                Export JSON backup</button
-              ><button class="button" data-export="ndjson">
-                Export NDJSON
+              <button class="button" data-export="json" data-backup-now>
+                Backup now
               </button>
+              <button class="button" data-export="csv">Export CSV</button>
+              <button class="button" data-export="json">
+                Export JSON backup
+              </button>
+              <button class="button" data-export="ndjson">Export NDJSON</button>
             </div>
-            <p class="muted">Exports are generated entirely in the browser.</p>
+            <p class="muted">
+              Exports are generated entirely in the browser. Use Backup now
+              before clearing browser data or moving devices.
+            </p>
           </article>
         </div>
       </section>
@@ -132,7 +137,8 @@
           This static tracker needs no login, API tokens, or backend beyond
           asset serving.
         </p>
-        <button class="button" data-clear-data>Clear local tracker data</button>
+        <button class="button" data-clear-data>Clear local data</button>
+        <p class="muted" data-settings-message role="status"></p>
       </section>
       <section class="tracker-view" data-view="detail" hidden>
         <button class="button" data-back-to-list>← Back to applications</button>

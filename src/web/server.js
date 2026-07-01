@@ -309,9 +309,10 @@ function parseCookieHeader(headerValue) {
 }
 
 function applySessionResponse(res, sessionId, options = {}) {
-  const sameSite = typeof options.sameSite === "string" && options.sameSite
-    ? options.sameSite
-    : "Strict";
+  const sameSite =
+    typeof options.sameSite === "string" && options.sameSite
+      ? options.sameSite
+      : "Strict";
   const httpOnly = options.httpOnly !== false;
   const secure = options.secure === true;
 
@@ -342,7 +343,10 @@ function applySessionResponse(res, sessionId, options = {}) {
     directives.push(`Max-Age=${Math.trunc(maxAgeSeconds)}`);
   }
 
-  if (options.expires instanceof Date && !Number.isNaN(options.expires.valueOf())) {
+  if (
+    options.expires instanceof Date &&
+    !Number.isNaN(options.expires.valueOf())
+  ) {
     directives.push(`Expires=${options.expires.toUTCString()}`);
   }
 
@@ -411,7 +415,10 @@ function isSecureRequest(req) {
   if (req.secure === true) {
     return true;
   }
-  if (typeof req.protocol === "string" && req.protocol.toLowerCase() === "https") {
+  if (
+    typeof req.protocol === "string" &&
+    req.protocol.toLowerCase() === "https"
+  ) {
     return true;
   }
   const forwardedProto =
@@ -565,7 +572,10 @@ function isSafePluginUrl(url) {
 }
 
 const PLUGIN_EXFIL_HEURISTICS = [
-  { pattern: /\bfetch\s*\(/i, message: "Uses fetch() which may transmit data off-site." },
+  {
+    pattern: /\bfetch\s*\(/i,
+    message: "Uses fetch() which may transmit data off-site.",
+  },
   {
     pattern: /\bsendBeacon\s*\(/i,
     message: "Uses navigator.sendBeacon(), review payload sources.",
@@ -575,14 +585,18 @@ const PLUGIN_EXFIL_HEURISTICS = [
     message: "Uses XMLHttpRequest which can exfiltrate data.",
   },
   { pattern: /\bWebSocket\b/i, message: "Opens a WebSocket connection." },
-  { pattern: /\bEventSource\b/i, message: "Opens a server-sent events stream." },
+  {
+    pattern: /\bEventSource\b/i,
+    message: "Opens a server-sent events stream.",
+  },
   {
     pattern: /\blocalStorage\b/i,
     message: "Touches localStorage; ensure sensitive data is not persisted.",
   },
   {
     pattern: /\bsessionStorage\b/i,
-    message: "Touches sessionStorage; ensure only non-sensitive values are stored.",
+    message:
+      "Touches sessionStorage; ensure only non-sensitive values are stored.",
   },
   {
     pattern: /document\.cookie/i,
@@ -605,13 +619,19 @@ function scanPluginEntryForExfiltration({ id, source, scriptUrl }) {
     }
   }
 
-  const normalizedScriptUrl = typeof scriptUrl === "string" ? scriptUrl.trim() : "";
-  if (normalizedScriptUrl.startsWith("http://") || normalizedScriptUrl.startsWith("https://")) {
+  const normalizedScriptUrl =
+    typeof scriptUrl === "string" ? scriptUrl.trim() : "";
+  if (
+    normalizedScriptUrl.startsWith("http://") ||
+    normalizedScriptUrl.startsWith("https://")
+  ) {
     try {
       const parsed = new URL(normalizedScriptUrl);
       const hostname = parsed.hostname;
       if (hostname && !LOOPBACK_HOSTS.has(hostname)) {
-        warnings.push(`Remote plugin host ${hostname} should be vetted for exfiltration risks.`);
+        warnings.push(
+          `Remote plugin host ${hostname} should be vetted for exfiltration risks.`,
+        );
       }
     } catch {
       warnings.push("Plugin script URL could not be parsed for risk scanning.");
@@ -715,7 +735,9 @@ function createPluginAssets(app, plugins = {}) {
         });
       }
       scriptUrl = routePath;
-      const hash = createHash("sha256").update(sanitized.source, "utf8").digest("base64");
+      const hash = createHash("sha256")
+        .update(sanitized.source, "utf8")
+        .digest("base64");
       integrity = `sha256-${hash}`;
     } else if (sanitized.url) {
       scriptUrl = sanitized.url;
@@ -792,27 +814,27 @@ const CONTENT_SECURITY_POLICY = [
   "form-action 'self'",
   "frame-ancestors 'none'",
   "object-src 'none'",
-].join('; ');
+].join("; ");
 
 const PERMISSIONS_POLICY = [
-  'accelerometer=()',
-  'autoplay=()',
-  'camera=()',
-  'geolocation=()',
-  'gyroscope=()',
-  'microphone=()',
-  'payment=()',
-  'usb=()',
-].join(', ');
+  "accelerometer=()",
+  "autoplay=()",
+  "camera=()",
+  "geolocation=()",
+  "gyroscope=()",
+  "microphone=()",
+  "payment=()",
+  "usb=()",
+].join(", ");
 
-const REFERRER_POLICY = 'strict-origin-when-cross-origin';
+const REFERRER_POLICY = "strict-origin-when-cross-origin";
 const STRICT_TRANSPORT_SECURITY =
-  'max-age=63072000; includeSubDomains; preload';
+  "max-age=63072000; includeSubDomains; preload";
 
 const SECURITY_HEADERS = Object.freeze({
-  'Content-Security-Policy': CONTENT_SECURITY_POLICY,
-  'Permissions-Policy': PERMISSIONS_POLICY,
-  'Referrer-Policy': REFERRER_POLICY,
+  "Content-Security-Policy": CONTENT_SECURITY_POLICY,
+  "Permissions-Policy": PERMISSIONS_POLICY,
+  "Referrer-Policy": REFERRER_POLICY,
 });
 
 const STATUS_PAGE_STYLES = minifyInlineCss(String.raw`
@@ -6685,7 +6707,11 @@ function sanitizeCommandResult(result) {
       return value.toString("utf8");
     }
     if (ArrayBuffer.isView(value)) {
-      return Buffer.from(value.buffer, value.byteOffset, value.byteLength).toString("utf8");
+      return Buffer.from(
+        value.buffer,
+        value.byteOffset,
+        value.byteLength,
+      ).toString("utf8");
     }
     if (value instanceof ArrayBuffer) {
       return Buffer.from(value).toString("utf8");
@@ -6846,7 +6872,8 @@ function buildCommandLogEntry({
 }
 
 function logCommandTelemetry(logger, level, details, transport) {
-  const fn = logger && typeof logger[level] === "function" ? logger[level] : undefined;
+  const fn =
+    logger && typeof logger[level] === "function" ? logger[level] : undefined;
   if (!fn && !transport) return;
   try {
     const entry = buildCommandLogEntry(details);
@@ -6962,7 +6989,9 @@ export function createWebApp({
   }
   const redactionMiddleware = createRedactionMiddleware({ logger });
   const logTransportSender =
-    logTransport && typeof logTransport.send === "function" ? logTransport : null;
+    logTransport && typeof logTransport.send === "function"
+      ? logTransport
+      : null;
   const availableCommands = new Set(
     ALLOW_LISTED_COMMANDS.filter(
       (name) => typeof commandAdapter?.[name] === "function",
@@ -7170,7 +7199,8 @@ export function createWebApp({
         formatBoolean(weeklySummary),
       )}</li>`,
     );
-    const reminderDigest = manifestFeatures?.notifications?.includeReminderDigest;
+    const reminderDigest =
+      manifestFeatures?.notifications?.includeReminderDigest;
     manifestFeatureItems.push(
       `<li><code>notifications.includeReminderDigest</code> ${escapeHtml(
         formatBoolean(reminderDigest),
@@ -7189,16 +7219,24 @@ export function createWebApp({
     pushHttpClientFeature("backoffMs", "ms");
     pushHttpClientFeature("circuitBreakerThreshold");
     pushHttpClientFeature("circuitBreakerResetMs", "ms");
-    const declaredPluginEntries = Array.isArray(manifestFeatures?.plugins?.entries)
+    const declaredPluginEntries = Array.isArray(
+      manifestFeatures?.plugins?.entries,
+    )
       ? manifestFeatures.plugins.entries.filter(
-          (entry) => entry !== null && typeof entry === "object" && !Array.isArray(entry),
+          (entry) =>
+            entry !== null &&
+            typeof entry === "object" &&
+            !Array.isArray(entry),
         )
       : [];
     const pluginManifestEntries = Array.isArray(pluginAssets?.manifest)
       ? pluginAssets.manifest
       : [];
     const pluginWarningsById = new Map(
-      pluginManifestEntries.map((entry) => [entry.id, entry.scanWarnings ?? []]),
+      pluginManifestEntries.map((entry) => [
+        entry.id,
+        entry.scanWarnings ?? [],
+      ]),
     );
     const pluginCountLabel =
       declaredPluginEntries.length === 0
@@ -7217,7 +7255,7 @@ export function createWebApp({
       if (declaredPluginEntries.length === 0) {
         return [
           '<ul class="manifest-list" data-plugin-entries>',
-          '<li><em>No plugins declared.</em></li>',
+          "<li><em>No plugins declared.</em></li>",
           "</ul>",
         ].join("");
       }
@@ -7257,7 +7295,9 @@ export function createWebApp({
           const warningsHtml = warnings.length
             ? [
                 '<ul class="manifest-list" data-plugin-scan-warnings>',
-                warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join(""),
+                warnings
+                  .map((warning) => `<li>${escapeHtml(warning)}</li>`)
+                  .join(""),
                 "</ul>",
               ].join("")
             : "";
@@ -7268,7 +7308,7 @@ export function createWebApp({
     })();
     const missingSecretsHtml =
       manifestMissingSecrets.length === 0
-        ? '<p data-missing-secrets><strong>All required secrets configured.</strong></p>'
+        ? "<p data-missing-secrets><strong>All required secrets configured.</strong></p>"
         : '<ul class="manifest-list" data-missing-secrets>' +
           manifestMissingSecrets
             .map((secret) => `<li><code>${escapeHtml(secret)}</code></li>`)
@@ -7318,7 +7358,10 @@ export function createWebApp({
         ];
         if (entry.integrity) {
           const integrityAttr = escapeHtml(entry.integrity);
-          attributes.push(`integrity="${integrityAttr}"`, 'crossorigin="anonymous"');
+          attributes.push(
+            `integrity="${integrityAttr}"`,
+            'crossorigin="anonymous"',
+          );
         }
         return `<script ${attributes.join(" ")}></script>`;
       })
@@ -8082,7 +8125,7 @@ export function createWebApp({
     res.send(compactHtml(rawHtml));
   });
 
-  app.get("/health", async (req, res) => {
+  const sendHealthResponse = async (req, res) => {
     const timestamp = new Date().toISOString();
     const uptime = process.uptime();
     const results = await runHealthChecks(normalizedChecks);
@@ -8094,9 +8137,9 @@ export function createWebApp({
     });
     const statusCode = payload.status === "error" ? 503 : 200;
     res.status(statusCode).json(payload);
-  });
+  };
 
-  app.get("/ready", (req, res) => {
+  const sendLiveResponse = (req, res) => {
     const timestamp = new Date().toISOString();
     const uptime = process.uptime();
     const payload = buildReadyResponse({
@@ -8105,7 +8148,12 @@ export function createWebApp({
       timestamp,
     });
     res.status(200).json(payload);
-  });
+  };
+
+  app.get("/health", sendHealthResponse);
+  app.get("/healthz", sendHealthResponse);
+  app.get("/ready", sendLiveResponse);
+  app.get("/livez", sendLiveResponse);
 
   app.post("/sessions/revoke", jsonParser, (req, res) => {
     const currentSessionId = ensureClientSession(req, res, {
@@ -8146,9 +8194,7 @@ export function createWebApp({
           respondUnauthorized();
           return;
         }
-        tokenValue = headerValue
-          .slice(authOptions.schemePrefixLength)
-          .trim();
+        tokenValue = headerValue.slice(authOptions.schemePrefixLength).trim();
         if (!tokenValue) {
           respondUnauthorized();
           return;
@@ -8358,7 +8404,8 @@ export function createWebApp({
             : Array.from(tokenEntry.roles ?? []);
           roleList.sort();
           const actorDisplayName =
-            typeof tokenEntry.displayName === "string" && tokenEntry.displayName.trim()
+            typeof tokenEntry.displayName === "string" &&
+            tokenEntry.displayName.trim()
               ? tokenEntry.displayName.trim()
               : undefined;
           res
@@ -8424,7 +8471,11 @@ export function createWebApp({
         const redactedRequestPayload = redactValue(requestPayload);
         const redactedHistoryResult = redactValue(
           decorateResultStatus(
-            { error: sanitizeOutputString(err?.message ?? "Invalid command payload") },
+            {
+              error: sanitizeOutputString(
+                err?.message ?? "Invalid command payload",
+              ),
+            },
             "error",
           ),
         );
@@ -8457,7 +8508,10 @@ export function createWebApp({
       try {
         const result = await commandAdapter[commandParam](payload);
         const sanitizedResult = sanitizeCommandResult(result);
-        if (commandParam === "feedback-list" && typeof sanitizedResult === "object") {
+        if (
+          commandParam === "feedback-list" &&
+          typeof sanitizedResult === "object"
+        ) {
           const sanitizedData = sanitizeFeedbackResponse(
             result && typeof result === "object" && "data" in result
               ? result.data
@@ -8481,17 +8535,22 @@ export function createWebApp({
           redactedPayload,
           historyResult,
         );
-        logCommandTelemetry(logger, "info", {
-          command: commandParam,
-          status: "success",
-          httpStatus: 200,
-          durationMs,
-          payloadFields,
-          clientIp,
-          userAgent,
-          result: sanitizedResult,
-          payload: redactedPayload,
-        }, logTransportSender);
+        logCommandTelemetry(
+          logger,
+          "info",
+          {
+            command: commandParam,
+            status: "success",
+            httpStatus: 200,
+            durationMs,
+            payloadFields,
+            clientIp,
+            userAgent,
+            result: sanitizedResult,
+            payload: redactedPayload,
+          },
+          logTransportSender,
+        );
         res.status(200).json(sanitizedResult);
         await recordAudit({
           status: "success",
@@ -8562,18 +8621,23 @@ export function createWebApp({
 
         const responseBody = report ? { ...response, report } : response;
 
-        logCommandTelemetry(logger, "error", {
-          command: commandParam,
-          status: "error",
-          httpStatus: 502,
-          durationMs,
-          payloadFields,
-          clientIp,
-          userAgent,
-          result: responseBody,
-          errorMessage: response?.error,
-          payload: redactedPayload,
-        }, logTransportSender);
+        logCommandTelemetry(
+          logger,
+          "error",
+          {
+            command: commandParam,
+            status: "error",
+            httpStatus: 502,
+            durationMs,
+            payloadFields,
+            clientIp,
+            userAgent,
+            result: responseBody,
+            errorMessage: response?.error,
+            payload: redactedPayload,
+          },
+          logTransportSender,
+        );
         res.status(502).json(responseBody);
         await recordAudit({
           status: "error",
@@ -8627,13 +8691,12 @@ export function createWebApp({
       if (authOptions.requireScheme && authOptions.scheme) {
         res.set("WWW-Authenticate", `${authOptions.scheme} realm="jobbot-web"`);
       }
-      res
-        .status(401)
-        .json({ error: "Invalid or missing authorization token" });
+      res.status(401).json({ error: "Invalid or missing authorization token" });
     };
 
     const providedAuth = req.get(authOptions.headerName);
-    const headerValue = typeof providedAuth === "string" ? providedAuth.trim() : "";
+    const headerValue =
+      typeof providedAuth === "string" ? providedAuth.trim() : "";
     if (!headerValue) {
       respondUnauthorized();
       return;
@@ -8700,19 +8763,23 @@ export function createWebApp({
             Math.ceil((rateStatus.reset - Date.now()) / 1000),
           );
           res.set("Retry-After", String(retryAfterSeconds));
-          logSecurityEvent(logger, {
-            category: "rate_limit",
-            reason: "rate_limit",
-            httpStatus: 429,
-            limit: rateLimiter.limit,
-            remaining: rateStatus.remaining,
-            reset: new Date(rateStatus.reset).toISOString(),
-            command: commandParam,
-            method,
-            clientIp,
-            userAgent,
-            sessionId: null,
-          }, securityAlertDispatcher);
+          logSecurityEvent(
+            logger,
+            {
+              category: "rate_limit",
+              reason: "rate_limit",
+              httpStatus: 429,
+              limit: rateLimiter.limit,
+              remaining: rateStatus.remaining,
+              reset: new Date(rateStatus.reset).toISOString(),
+              command: commandParam,
+              method,
+              clientIp,
+              userAgent,
+              sessionId: null,
+            },
+            securityAlertDispatcher,
+          );
           if (effectiveAuditLogger) {
             effectiveAuditLogger
               .record({
@@ -8828,7 +8895,9 @@ export function startWebServer(options = {}) {
   );
   const allowRemote =
     parseBoolean(allowRemoteAccess) ??
-    (hasAllowRemoteOverride ? false : parseBoolean(process.env.JOBBOT_WEB_ALLOW_REMOTE) ?? false);
+    (hasAllowRemoteOverride
+      ? false
+      : (parseBoolean(process.env.JOBBOT_WEB_ALLOW_REMOTE) ?? false));
   if (!allowRemote && !isLoopbackHost(host)) {
     throw new Error(
       "The web interface is a local-only preview; set JOBBOT_WEB_ALLOW_REMOTE=1, " +
@@ -8906,10 +8975,18 @@ export function startWebServer(options = {}) {
   } else {
     securityAlerts = { ...(providedSecurityAlerts ?? {}) };
   }
-  if (securityAlerts && !securityAlerts.rotation && process.env.JOBBOT_WEB_ONCALL_EMAILS) {
+  if (
+    securityAlerts &&
+    !securityAlerts.rotation &&
+    process.env.JOBBOT_WEB_ONCALL_EMAILS
+  ) {
     securityAlerts.rotation = process.env.JOBBOT_WEB_ONCALL_EMAILS;
   }
-  if (securityAlerts && !securityAlerts.outbox && process.env.JOBBOT_WEB_ALERT_OUTBOX) {
+  if (
+    securityAlerts &&
+    !securityAlerts.outbox &&
+    process.env.JOBBOT_WEB_ALERT_OUTBOX
+  ) {
     securityAlerts.outbox = process.env.JOBBOT_WEB_ALERT_OUTBOX;
   }
   const websocketPath = "/events";

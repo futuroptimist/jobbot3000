@@ -804,9 +804,16 @@ function init() {
     (b) => (b.onclick = () => exportData(b.dataset.export)),
   );
   $("[data-clear-data]").onclick = async () => {
-    if (confirm("Clear all local tracker data?")) {
+    if (
+      confirm(
+        "Clear all local jobbot3000 tracker data from this browser? This cannot be undone unless you have a backup.",
+      )
+    ) {
       await repo.clear();
-      refresh();
+      await refresh();
+      const message = $("[data-settings-message]");
+      if (message)
+        message.textContent = "Local tracker data cleared from IndexedDB.";
     }
   };
   refresh();

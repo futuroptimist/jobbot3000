@@ -7,13 +7,10 @@
 
 **jobbot3000** is a self-hosted, open-source job search copilot.
 
-The production web direction is browser-first: private application tracking data should live in user-owned IndexedDB, while the deployed server/container serves static assets and health endpoints. This is a planned architecture rather than a completed implementation; see [docs/browser-first-architecture.md](docs/browser-first-architecture.md) for the data contract and migration path.
+The production tracker is browser-first: private application tracking data lives in user-owned IndexedDB, while the deployed server/container serves static assets and health endpoints. See [docs/browser-first-architecture.md](docs/browser-first-architecture.md) for the data contract and [docs/browser-tracker-privacy.md](docs/browser-tracker-privacy.md) for the privacy model.
 
 > [!WARNING]
-> The web interface is an experimental preview for local use only. Running production builds or
-> deploying to shared or cloud infrastructure can leak secrets, PII, and other sensitive data.
-> Operate on trusted hardware while we implement hardened authentication, storage, and network
-> isolation. Track the hardening plan in [docs/web-security-roadmap.md](docs/web-security-roadmap.md).
+> The static IndexedDB tracker is safe to deploy as browser-only static assets, but the CLI/status-hub command mode remains local-only unless you add your own network, auth, and secret-management controls. Token-backed provider workflows can write to local `.env`, SQLite, and log files.
 
 ## Quickstart
 
@@ -23,6 +20,9 @@ Requires Node.js 20+.
 npm install
 npm run dev
 # Open http://127.0.0.1:3100
+
+# Build browser-only static tracker assets in dist/
+npm run build
 ```
 
 That's it! The web server will start with all backend functionality enabled.
@@ -157,6 +157,7 @@ Run the snippet with `node example.js` after saving it to a file in the project 
 - [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) – prompt reference index
 - [docs/user-journeys.md](docs/user-journeys.md) – primary user journeys and flows
 - [docs/browser-first-architecture.md](docs/browser-first-architecture.md) – planned IndexedDB-first production web architecture and browser data contract
+- [docs/browser-tracker-privacy.md](docs/browser-tracker-privacy.md) – production browser-only tracker privacy, backup, clear-data, quota, and static header notes
 - [docs/indexeddb-persistence.md](docs/indexeddb-persistence.md) – browser IndexedDB persistence, backup/restore, and quota caveats
 - [docs/spreadsheet-replacement.md](docs/spreadsheet-replacement.md) – CSV/JSON/NDJSON import-export workflow for replacing the current spreadsheet
 - [docs/backup-restore-guide.md](docs/backup-restore-guide.md) – backup, restore, and verification
