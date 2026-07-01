@@ -1,10 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const ORIGINAL_ENV = { ...process.env };
+const FORCE_EMPTY_ENV_KEYS = new Set([
+  'JOBBOT_GREENHOUSE_TOKEN',
+  'JOBBOT_LEVER_API_TOKEN',
+  'JOBBOT_SMARTRECRUITERS_TOKEN',
+  'JOBBOT_WORKABLE_TOKEN',
+]);
 
 function clearEnv(keys) {
   for (const key of keys) {
-    if (ORIGINAL_ENV[key] === undefined) {
+    if (FORCE_EMPTY_ENV_KEYS.has(key) || ORIGINAL_ENV[key] === undefined) {
       delete process.env[key];
     } else {
       process.env[key] = ORIGINAL_ENV[key];

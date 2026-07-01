@@ -50,8 +50,20 @@ function maskLastFour(token) {
 }
 
 function ensureInitialized() {
-  if (initialized) return;
-  envFilePath = resolveEnvFilePath();
+  const resolvedEnvFilePath = resolveEnvFilePath();
+  if (initialized && envFilePath === resolvedEnvFilePath) return;
+  if (initialized) {
+    for (const { envKey } of PROVIDER_DEFINITIONS) {
+      if (tokenMeta.get(envKey)?.source !== 'process-env') {
+        delete process.env[envKey];
+      }
+    }
+  }
+  envFilePath = resolvedEnvFilePath;
+  tokenCache.clear();
+  tokenMeta.clear();
+  lastStatCheck = 0;
+  lastKnownMtimeMs = 0;
   loadFromProcessEnv();
   if (envFilePath && fs.existsSync(envFilePath)) {
     try {

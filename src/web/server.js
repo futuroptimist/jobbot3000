@@ -1,5 +1,6 @@
 import express from "express";
 import fs from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { performance } from "node:perf_hooks";
@@ -6918,7 +6919,19 @@ export function createWebApp({
     logger,
   });
   const statusHubScriptBuffer = Buffer.from(STATUS_PAGE_SCRIPT, "utf8");
+  const trackerHtmlBuffer = readFileSync(
+    new URL("./tracker/index.html", import.meta.url),
+  );
+  const trackerScriptBuffer = readFileSync(
+    new URL("./tracker/tracker.js", import.meta.url),
+  );
+  const trackerStylesBuffer = readFileSync(
+    new URL("./tracker/tracker.css", import.meta.url),
+  );
   const statusHubScriptGzip = gzipSync(statusHubScriptBuffer);
+  const trackerHtmlGzip = gzipSync(trackerHtmlBuffer);
+  const trackerScriptGzip = gzipSync(trackerScriptBuffer);
+  const trackerStylesGzip = gzipSync(trackerStylesBuffer);
   const statusHubStylesBuffer = Buffer.from(STATUS_PAGE_STYLES, "utf8");
   const statusHubStylesGzip = gzipSync(statusHubStylesBuffer);
   const app = express();
@@ -7019,6 +7032,30 @@ export function createWebApp({
       contentType: "text/css",
       rawBuffer: statusHubStylesBuffer,
       gzipBuffer: statusHubStylesGzip,
+    });
+  });
+
+  app.get("/assets/tracker.js", (req, res) => {
+    sendCompressedAsset(req, res, {
+      contentType: "application/javascript",
+      rawBuffer: trackerScriptBuffer,
+      gzipBuffer: trackerScriptGzip,
+    });
+  });
+
+  app.get("/assets/tracker.css", (req, res) => {
+    sendCompressedAsset(req, res, {
+      contentType: "text/css",
+      rawBuffer: trackerStylesBuffer,
+      gzipBuffer: trackerStylesGzip,
+    });
+  });
+
+  app.get("/tracker", (req, res) => {
+    sendCompressedAsset(req, res, {
+      contentType: "text/html",
+      rawBuffer: trackerHtmlBuffer,
+      gzipBuffer: trackerHtmlGzip,
     });
   });
 
@@ -7338,6 +7375,7 @@ export function createWebApp({
       <nav class="primary-nav" aria-label="Status navigation">
         <a href="#overview" data-route-link="overview">Overview</a>
         <a href="#applications" data-route-link="applications">Applications</a>
+        <a href="/tracker">Tracker UI</a>
         <a href="#listings" data-route-link="listings">Listings</a>
         <a href="#commands" data-route-link="commands">Commands</a>
         <a href="#analytics" data-route-link="analytics">Analytics</a>
