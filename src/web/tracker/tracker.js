@@ -506,6 +506,11 @@ function input(n, v = "", type = "text", required = false) {
 function values(form) {
   return Object.fromEntries(new FormData(form).entries());
 }
+function setFormDisabled(form, disabled) {
+  $$("button, input, select, textarea", form).forEach((control) => {
+    control.disabled = disabled;
+  });
+}
 function openDetail(appId) {
   state.current = appId;
   const app = state.apps.find((a) => a.id === appId);
@@ -527,7 +532,9 @@ function bindDetail(app) {
   const latestApp = () => state.apps.find((a) => a.id === app.id) || app;
   $("[data-core-form]").onsubmit = async (e) => {
     e.preventDefault();
-    const v = values(e.target);
+    const form = e.target;
+    const v = values(form);
+    setFormDisabled(form, true);
     state.detailSave = state.detailSave
       .catch(() => {})
       .then(async () => {
@@ -553,7 +560,12 @@ function bindDetail(app) {
         await refresh();
         openDetail(app.id);
       });
-    await state.detailSave;
+    try {
+      await state.detailSave;
+    } catch (error) {
+      setFormDisabled(form, false);
+      throw error;
+    }
   };
   $("[data-artifact-form]").onsubmit = async (e) => {
     e.preventDefault();
