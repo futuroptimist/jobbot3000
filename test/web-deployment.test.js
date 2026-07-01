@@ -28,7 +28,7 @@ describe("web deployment artifacts", () => {
     expect(compose).toContain("services:");
     expect(compose).toContain("JOBBOT_WEB_ENV=production");
     expect(compose).toContain(
-      "JOBBOT_WEB_HEALTH_URL=http://127.0.0.1:3000/healthz",
+      "JOBBOT_WEB_HEALTH_URL=http://127.0.0.1:8080/healthz",
     );
     expect(compose).not.toContain("JOBBOT_DATA_DIR");
     expect(compose).not.toContain("JOBBOT_WEB_ENABLE_NATIVE_CLI");
@@ -41,9 +41,9 @@ describe("web deployment artifacts", () => {
     const composePath = path.join(repoRoot, "docker-compose.web.yml");
     const compose = await readFile(composePath, "utf8");
     expect(compose).toContain("healthcheck:");
-    expect(compose).toContain("http://127.0.0.1:3000/healthz");
+    expect(compose).toContain("http://127.0.0.1:8080/healthz");
     expect(compose).not.toContain("scripts/docker-healthcheck.js");
-    expect(compose).not.toMatch(/http:\/\/127\.0\.0\.1:3000\/health(?!z)/);
+    expect(compose).not.toMatch(/http:\/\/127\.0\.0\.1:8080\/health(?!z)/);
   });
 
   it("locks the runtime profile with read-only rootfs and a custom seccomp policy", async () => {
@@ -83,6 +83,9 @@ describe("web deployment artifacts", () => {
     expect(packageJson.scripts["start:static"]).toBe(
       "node scripts/static-server.js",
     );
+    expect(packageJson.scripts["smoke:container"]).toBe(
+      "bash scripts/smoke-container.sh",
+    );
 
     const staticServer = await readFile(
       path.join(repoRoot, "scripts", "static-server.js"),
@@ -107,6 +110,40 @@ describe("web deployment artifacts", () => {
     expect(staticServer).not.toContain("/commands");
     expect(staticServer).not.toContain("better-sqlite3");
     expect(staticServer).not.toMatch(/writeFile|appendFile|createWriteStream/);
+  });
+
+  it("keeps GHCR image workflow aligned with the static container contract", async () => {
+    const workflow = await readFile(
+      path.join(repoRoot, ".github", "workflows", "ci-image.yml"),
+      "utf8",
+    );
+    const dockerfile = await readFile(
+      path.join(repoRoot, "Dockerfile"),
+      "utf8",
+    );
+    const smokeScript = await readFile(
+      path.join(repoRoot, "scripts", "smoke-container.sh"),
+      "utf8",
+    );
+
+    expect(dockerfile).toContain("JOBBOT_WEB_PORT=8080");
+    expect(dockerfile).toContain("EXPOSE 8080");
+    expect(workflow).toContain("pull_request:");
+    expect(workflow).toContain(`branches:
+      - main`);
+    expect(workflow).toContain("ghcr.io/futuroptimist/jobbot3000");
+    expect(workflow).toContain("main-${short_sha}");
+    expect(workflow).toContain("main-latest");
+    expect(workflow).toContain("sha-${short_sha}");
+    expect(workflow).toContain("platforms: linux/amd64,linux/arm64");
+    expect(workflow).toContain("org.opencontainers.image.source");
+    expect(workflow).toContain("org.opencontainers.image.revision");
+    expect(workflow).toContain("org.opencontainers.image.created");
+    expect(workflow).toContain("org.opencontainers.image.licenses=MIT");
+    expect(workflow).toContain("Sugarkube deploy tag");
+    expect(smokeScript).toContain("JOBBOT_SMOKE_PORT:-8080");
+    expect(smokeScript).toContain("/healthz");
+    expect(smokeScript).toContain("/livez");
   });
 
   it("documents static privacy boundaries and IndexedDB backup guidance", async () => {
