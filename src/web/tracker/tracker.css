@@ -103,3 +103,8 @@
     grid-template-columns: 1fr;
   }
 }
+.danger-button {
+  border-color: rgba(248, 113, 113, 0.65);
+  background: rgba(127, 29, 29, 0.35);
+  color: #fecaca;
+}

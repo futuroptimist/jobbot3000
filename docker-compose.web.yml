@@ -9,13 +9,9 @@ services:
       - JOBBOT_WEB_ENV=production
       - JOBBOT_WEB_HOST=0.0.0.0
       - JOBBOT_WEB_PORT=3000
-      - JOBBOT_DATA_DIR=/data
-      - JOBBOT_WEB_ENABLE_NATIVE_CLI=1
-      - JOBBOT_WEB_HEALTH_URL=http://127.0.0.1:3000/health
+      - JOBBOT_WEB_HEALTH_URL=http://127.0.0.1:3000/healthz
     ports:
       - "3000:3000"
-    volumes:
-      - ./data:/data
     read_only: true
     tmpfs:
       - /tmp
@@ -26,17 +22,10 @@ services:
       - ALL
     healthcheck:
       test:
-        - CMD
-        - node
-        - scripts/docker-healthcheck.js
+        - CMD-SHELL
+        - >-
+          node -e "fetch(process.env.JOBBOT_WEB_HEALTH_URL || 'http://127.0.0.1:3000/healthz').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 5s
-    command:
-      - node
-      - scripts/web-server.js
-      - --env
-      - production
-      - --host
-      - 0.0.0.0

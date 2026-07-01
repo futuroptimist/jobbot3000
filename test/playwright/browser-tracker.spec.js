@@ -383,9 +383,50 @@ test.describe("browser application tracker", () => {
 
     await page.getByRole("button", { name: "Import/Export" }).click();
     const download = page.waitForEvent("download");
-    await page.getByRole("button", { name: "Export JSON backup" }).click();
+    await page.getByRole("button", { name: "Backup now" }).click();
     await expect((await download).suggestedFilename()).toBe(
       "jobbot3000-backup.json",
     );
+  });
+
+  test("retains IndexedDB data across reload, exports backup, and clears local data", async ({
+    page,
+  }) => {
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await page.setInputFiles("[data-import-file]", {
+      name: "fake-applications.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(csvFixture),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await page.getByRole("button", { name: "Apply import" }).click();
+    await expect(page.locator("[data-import-result]")).toContainText(
+      "Import applied",
+    );
+
+    await page.reload();
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await expect(page.locator("[data-applications-table]")).toContainText(
+      "Example Labs",
+    );
+
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Backup now" }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toBe("jobbot3000-backup.json");
+
+    page.on("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByRole("button", { name: "Clear local data" }).click();
+    await expect(page.locator("[data-settings-result]")).toContainText(
+      "Local IndexedDB tracker data cleared.",
+    );
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await expect(page.getByText("No applications yet")).toBeVisible();
   });
 });

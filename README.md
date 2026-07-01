@@ -7,13 +7,10 @@
 
 **jobbot3000** is a self-hosted, open-source job search copilot.
 
-The production web direction is browser-first: private application tracking data should live in user-owned IndexedDB, while the deployed server/container serves static assets and health endpoints. This is a planned architecture rather than a completed implementation; see [docs/browser-first-architecture.md](docs/browser-first-architecture.md) for the data contract and migration path.
+The production web tracker is browser-first: private application tracking data lives in user-owned IndexedDB, while the deployed server/container serves static assets and health endpoints. See [docs/browser-first-architecture.md](docs/browser-first-architecture.md) for the data contract and [docs/privacy-and-security.md](docs/privacy-and-security.md) for operating boundaries.
 
 > [!WARNING]
-> The web interface is an experimental preview for local use only. Running production builds or
-> deploying to shared or cloud infrastructure can leak secrets, PII, and other sensitive data.
-> Operate on trusted hardware while we implement hardened authentication, storage, and network
-> isolation. Track the hardening plan in [docs/web-security-roadmap.md](docs/web-security-roadmap.md).
+> The static IndexedDB tracker can be deployed as a browser-only app because private tracker data is not posted back to the server. The CLI/development server mode remains sensitive: command endpoints, provider-token management, local files, and SQLite-backed workflows are intended for trusted local or explicitly secured environments only.
 
 ## Quickstart
 
@@ -25,7 +22,9 @@ npm run dev
 # Open http://127.0.0.1:3100
 ```
 
-That's it! The web server will start with all backend functionality enabled.
+For production static tracker builds, run `npm run build` and serve `dist/` with `npm run start:static`; `/healthz` and `/livez` are available for container probes.
+
+The development web server starts with backend functionality enabled.
 Use `npm run web:server -- --disable-native-cli` if you want to explore the
 mock-only UI without spawning CLI subprocesses.
 
@@ -157,6 +156,7 @@ Run the snippet with `node example.js` after saving it to a file in the project 
 - [docs/prompt-docs-summary.md](docs/prompt-docs-summary.md) – prompt reference index
 - [docs/user-journeys.md](docs/user-journeys.md) – primary user journeys and flows
 - [docs/browser-first-architecture.md](docs/browser-first-architecture.md) – planned IndexedDB-first production web architecture and browser data contract
+- [docs/privacy-and-security.md](docs/privacy-and-security.md) – browser-only production privacy model, backups, clearing data, quota caveats, and static security headers
 - [docs/indexeddb-persistence.md](docs/indexeddb-persistence.md) – browser IndexedDB persistence, backup/restore, and quota caveats
 - [docs/spreadsheet-replacement.md](docs/spreadsheet-replacement.md) – CSV/JSON/NDJSON import-export workflow for replacing the current spreadsheet
 - [docs/backup-restore-guide.md](docs/backup-restore-guide.md) – backup, restore, and verification
