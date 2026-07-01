@@ -12,14 +12,16 @@ describe("web deployment artifacts", () => {
     const dockerfile = await readFile(dockerfilePath, "utf8");
     expect(dockerfile).toContain("FROM node:20-slim AS deps");
     expect(dockerfile).toContain("npm run build");
-    expect(dockerfile).toContain("COPY --from=build /app/dist ./dist");
+    expect(dockerfile).toContain("FROM nginx:1.27-alpine AS runtime");
     expect(dockerfile).toContain(
-      "COPY --from=build /app/scripts/static-server.js ./scripts/static-server.js",
+      "COPY --from=build /app/dist /usr/share/nginx/html",
     );
-    expect(dockerfile).toContain('CMD ["node", "scripts/static-server.js"]');
+    expect(dockerfile).toContain("listen 8080");
+    expect(dockerfile).toContain("EXPOSE 8080");
     const runtimeStage = dockerfile.slice(dockerfile.indexOf("AS runtime"));
     expect(runtimeStage).not.toContain("COPY src ./src");
     expect(runtimeStage).not.toContain("scripts/web-server.js");
+    expect(runtimeStage).not.toContain("node_modules");
   });
 
   it("provides a docker-compose definition with static-only production defaults", async () => {
