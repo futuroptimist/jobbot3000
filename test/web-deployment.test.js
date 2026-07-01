@@ -12,24 +12,38 @@ describe("web deployment artifacts", () => {
     const dockerfile = await readFile(dockerfilePath, "utf8");
     expect(dockerfile).toContain("FROM node:20-slim AS deps");
     expect(dockerfile).toContain("npm run build");
+    expect(dockerfile).toContain("COPY --from=build /app/dist ./dist");
+    expect(dockerfile).toContain(
+      "COPY --from=build /app/scripts/static-server.js ./scripts/static-server.js",
+    );
     expect(dockerfile).toContain('CMD ["node", "scripts/static-server.js"]');
+    const runtimeStage = dockerfile.slice(dockerfile.indexOf("AS runtime"));
+    expect(runtimeStage).not.toContain("COPY src ./src");
+    expect(runtimeStage).not.toContain("scripts/web-server.js");
   });
 
-  it("provides a docker-compose definition wiring the web server defaults", async () => {
+  it("provides a docker-compose definition with static-only production defaults", async () => {
     const composePath = path.join(repoRoot, "docker-compose.web.yml");
     const compose = await readFile(composePath, "utf8");
     expect(compose).toContain("services:");
     expect(compose).toContain("JOBBOT_WEB_ENV=production");
-    expect(compose).toContain("JOBBOT_DATA_DIR=/data");
-    expect(compose).toContain("JOBBOT_WEB_ENABLE_NATIVE_CLI=1");
+    expect(compose).toContain(
+      "JOBBOT_WEB_HEALTH_URL=http://127.0.0.1:3000/healthz",
+    );
+    expect(compose).not.toContain("JOBBOT_DATA_DIR");
+    expect(compose).not.toContain("JOBBOT_WEB_ENABLE_NATIVE_CLI");
+    expect(compose).not.toContain("./data:/data");
+    expect(compose).not.toContain("scripts/web-server.js");
+    expect(compose).not.toMatch(/^\s*command:/m);
   });
 
-  it("defines a docker-compose healthcheck targeting the web server /health endpoint", async () => {
+  it("defines a docker-compose healthcheck targeting the static /healthz endpoint", async () => {
     const composePath = path.join(repoRoot, "docker-compose.web.yml");
     const compose = await readFile(composePath, "utf8");
     expect(compose).toContain("healthcheck:");
-    expect(compose).toContain("scripts/docker-healthcheck.js");
-    expect(compose).toContain("http://127.0.0.1:3000/health");
+    expect(compose).toContain("http://127.0.0.1:3000/healthz");
+    expect(compose).not.toContain("scripts/docker-healthcheck.js");
+    expect(compose).not.toMatch(/http:\/\/127\.0\.0\.1:3000\/health(?!z)/);
   });
 
   it("locks the runtime profile with read-only rootfs and a custom seccomp policy", async () => {
@@ -76,6 +90,19 @@ describe("web deployment artifacts", () => {
     );
     expect(staticServer).toContain('app.get("/healthz"');
     expect(staticServer).toContain('app.get("/livez"');
+    expect(staticServer).toContain(
+      'app.get(["/", "/index.html"], sendNoStoreFile("index.html"))',
+    );
+    expect(staticServer).toContain(
+      'app.get(["/tracker", "/tracker.html"], sendNoStoreFile("tracker.html"))',
+    );
+    expect(staticServer).toContain(
+      'app.get("/manifest.webmanifest", sendNoStoreFile("manifest.webmanifest"))',
+    );
+    expect(staticServer).toContain(
+      'res.setHeader("Cache-Control", "no-store")',
+    );
+    expect(staticServer).not.toContain("immutable");
     expect(staticServer).toContain("Content-Security-Policy");
     expect(staticServer).not.toContain("/commands");
     expect(staticServer).not.toContain("better-sqlite3");

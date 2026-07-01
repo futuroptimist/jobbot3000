@@ -17,8 +17,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
-COPY src ./src
-COPY scripts ./scripts
+COPY --from=build /app/scripts/static-server.js ./scripts/static-server.js
 RUN npm cache clean --force
 EXPOSE 3000
 USER node

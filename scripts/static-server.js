@@ -69,18 +69,14 @@ app.get("/healthz", health);
 app.get("/livez", health);
 app.get("/health", health);
 app.get("/ready", health);
-const noCache = (_req, res, next) => {
+const sendNoStoreFile = (fileName) => (_req, res) => {
   res.setHeader("Cache-Control", "no-store");
-  next();
+  res.sendFile(path.join(distDir, fileName));
 };
 
-app.get("/tracker", noCache, (_req, res) =>
-  res.sendFile(path.join(distDir, "tracker.html")),
-);
-app.get(
-  ["/", "/index.html", "/tracker.html", "/manifest.webmanifest"],
-  noCache,
-);
+app.get(["/", "/index.html"], sendNoStoreFile("index.html"));
+app.get(["/tracker", "/tracker.html"], sendNoStoreFile("tracker.html"));
+app.get("/manifest.webmanifest", sendNoStoreFile("manifest.webmanifest"));
 app.use(
   express.static(distDir, {
     index: "index.html",
