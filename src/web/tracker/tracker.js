@@ -804,9 +804,14 @@ function init() {
     (b) => (b.onclick = () => exportData(b.dataset.export)),
   );
   $("[data-clear-data]").onclick = async () => {
-    if (confirm("Clear all local tracker data?")) {
+    const ok = confirm(
+      "Clear all local tracker data from this browser? This cannot be undone unless you have a backup.",
+    );
+    if (ok) {
       await repo.clear();
-      refresh();
+      const result = $("[data-settings-result]");
+      if (result) result.textContent = "Local IndexedDB tracker data cleared.";
+      await refresh();
     }
   };
   refresh();

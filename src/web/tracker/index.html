@@ -6,6 +6,7 @@
     <title>jobbot3000 Application Tracker</title>
     <link rel="stylesheet" href="/assets/status-hub.css" />
     <link rel="stylesheet" href="/assets/tracker.css" />
+    <link rel="manifest" href="/manifest.webmanifest" />
   </head>
   <body>
     <a href="#tracker-main" class="pill">Skip to tracker</a>
@@ -114,8 +115,13 @@
           </article>
           <article class="card">
             <h3>Export backups</h3>
+            <p>
+              Use <strong>Backup now</strong> to download a JSON backup of
+              everything currently stored in IndexedDB.
+            </p>
             <div class="tracker-actions">
-              <button class="button" data-export="csv">Export CSV</button
+              <button class="button" data-export="json">Backup now</button
+              ><button class="button" data-export="csv">Export CSV</button
               ><button class="button" data-export="json">
                 Export JSON backup</button
               ><button class="button" data-export="ndjson">
@@ -130,9 +136,15 @@
         <h2>Settings</h2>
         <p class="muted">
           This static tracker needs no login, API tokens, or backend beyond
-          asset serving.
+          asset serving. Back up before clearing data.
         </p>
-        <button class="button" data-clear-data>Clear local tracker data</button>
+        <div class="tracker-actions">
+          <button class="button" data-export="json">Backup now</button
+          ><button class="button danger-button" data-clear-data>
+            Clear local data
+          </button>
+        </div>
+        <p class="muted" data-settings-result></p>
       </section>
       <section class="tracker-view" data-view="detail" hidden>
         <button class="button" data-back-to-list>← Back to applications</button>

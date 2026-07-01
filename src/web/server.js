@@ -6928,10 +6928,22 @@ export function createWebApp({
   const trackerStylesBuffer = readFileSync(
     new URL("./tracker/tracker.css", import.meta.url),
   );
+  const trackerManifestBuffer = Buffer.from(
+    `${JSON.stringify({
+      name: "jobbot3000 Application Tracker",
+      short_name: "jobbot3000",
+      start_url: "/tracker",
+      display: "standalone",
+      background_color: "#0b0d0f",
+      theme_color: "#38bdf8",
+    })}\n`,
+    "utf8",
+  );
   const statusHubScriptGzip = gzipSync(statusHubScriptBuffer);
   const trackerHtmlGzip = gzipSync(trackerHtmlBuffer);
   const trackerScriptGzip = gzipSync(trackerScriptBuffer);
   const trackerStylesGzip = gzipSync(trackerStylesBuffer);
+  const trackerManifestGzip = gzipSync(trackerManifestBuffer);
   const statusHubStylesBuffer = Buffer.from(STATUS_PAGE_STYLES, "utf8");
   const statusHubStylesGzip = gzipSync(statusHubStylesBuffer);
   const app = express();
@@ -7056,6 +7068,14 @@ export function createWebApp({
       contentType: "text/html",
       rawBuffer: trackerHtmlBuffer,
       gzipBuffer: trackerHtmlGzip,
+    });
+  });
+
+  app.get("/manifest.webmanifest", (req, res) => {
+    sendCompressedAsset(req, res, {
+      contentType: "application/manifest+json",
+      rawBuffer: trackerManifestBuffer,
+      gzipBuffer: trackerManifestGzip,
     });
   });
 
