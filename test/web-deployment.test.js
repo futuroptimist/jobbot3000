@@ -11,11 +11,15 @@ describe("web deployment artifacts", () => {
     const dockerfilePath = path.join(repoRoot, "Dockerfile");
     const dockerfile = await readFile(dockerfilePath, "utf8");
     expect(dockerfile).toContain("FROM node:20-slim AS deps");
-    expect(dockerfile).toContain("npm run build");
+    expect(dockerfile).toContain(
+      "npm run typecheck && npm run test:ci && npm run build",
+    );
     expect(dockerfile).toContain("COPY --from=build /app/dist ./dist");
     expect(dockerfile).toContain(
       "COPY --from=build /app/scripts/static-server.js ./scripts/static-server.js",
     );
+    expect(dockerfile).toContain("EXPOSE 8080");
+    expect(dockerfile).toContain("JOBBOT_WEB_PORT=8080");
     expect(dockerfile).toContain('CMD ["node", "scripts/static-server.js"]');
     const runtimeStage = dockerfile.slice(dockerfile.indexOf("AS runtime"));
     expect(runtimeStage).not.toContain("COPY src ./src");
@@ -28,7 +32,7 @@ describe("web deployment artifacts", () => {
     expect(compose).toContain("services:");
     expect(compose).toContain("JOBBOT_WEB_ENV=production");
     expect(compose).toContain(
-      "JOBBOT_WEB_HEALTH_URL=http://127.0.0.1:3000/healthz",
+      "JOBBOT_WEB_HEALTH_URL=http://127.0.0.1:8080/healthz",
     );
     expect(compose).not.toContain("JOBBOT_DATA_DIR");
     expect(compose).not.toContain("JOBBOT_WEB_ENABLE_NATIVE_CLI");
@@ -41,7 +45,7 @@ describe("web deployment artifacts", () => {
     const composePath = path.join(repoRoot, "docker-compose.web.yml");
     const compose = await readFile(composePath, "utf8");
     expect(compose).toContain("healthcheck:");
-    expect(compose).toContain("http://127.0.0.1:3000/healthz");
+    expect(compose).toContain("http://127.0.0.1:8080/healthz");
     expect(compose).not.toContain("scripts/docker-healthcheck.js");
     expect(compose).not.toMatch(/http:\/\/127\.0\.0\.1:3000\/health(?!z)/);
   });
@@ -83,6 +87,9 @@ describe("web deployment artifacts", () => {
     expect(packageJson.scripts["start:static"]).toBe(
       "node scripts/static-server.js",
     );
+    expect(packageJson.scripts["smoke:container"]).toBe(
+      "bash scripts/smoke-container.sh",
+    );
 
     const staticServer = await readFile(
       path.join(repoRoot, "scripts", "static-server.js"),
@@ -118,5 +125,48 @@ describe("web deployment artifacts", () => {
     expect(doc).toContain("are not posted to jobbot3000 server APIs");
     expect(doc).toContain("Clear local data");
     expect(doc).toContain("Browser quota caveats");
+  });
+});
+
+describe("GHCR image workflow", () => {
+  it("builds and publishes the static image with Sugarkube-safe tags", async () => {
+    const workflow = await readFile(
+      path.join(repoRoot, ".github", "workflows", "ci-image.yml"),
+      "utf8",
+    );
+    expect(workflow).toContain("pull_request:");
+    expect(workflow).toContain("branches: [main]");
+    expect(workflow).toContain("push:");
+    expect(workflow).toContain("workflow_dispatch:");
+    expect(workflow).toContain("ghcr.io/futuroptimist/jobbot3000");
+    expect(workflow).toContain(
+      "main-${{ needs.build-and-smoke.outputs.short_sha }}",
+    );
+    expect(workflow).toContain("main-latest");
+    expect(workflow).toContain(
+      "sha-${{ needs.build-and-smoke.outputs.short_sha }}",
+    );
+    expect(workflow).toContain("platforms: linux/amd64,linux/arm64");
+    expect(workflow).toContain("docker/login-action@v3");
+    expect(workflow).toContain("secrets.GITHUB_TOKEN");
+    expect(workflow).toContain("org.opencontainers.image.source");
+    expect(workflow).toContain("org.opencontainers.image.revision");
+    expect(workflow).toContain("org.opencontainers.image.created");
+    expect(workflow).toContain("org.opencontainers.image.licenses=MIT");
+    expect(workflow).toContain("npm run smoke:container -- jobbot3000:smoke");
+    expect(workflow).toContain("Sugarkube deploy tag");
+  });
+
+  it("documents GHCR release and Sugarkube deployment guidance", async () => {
+    const doc = await readFile(
+      path.join(repoRoot, "docs", "release-ghcr.md"),
+      "utf8",
+    );
+    expect(doc).toContain("ghcr.io/futuroptimist/jobbot3000");
+    expect(doc).toContain("main-SHORTSHA");
+    expect(doc).toContain("Sugarkube deploy tag");
+    expect(doc).toContain("Avoid `main-latest` in production");
+    expect(doc).toContain("/healthz");
+    expect(doc).toContain("/livez");
   });
 });
