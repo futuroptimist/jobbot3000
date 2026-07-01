@@ -9,7 +9,15 @@ const distDir = path.resolve(
   process.env.JOBBOT_STATIC_DIR ?? path.join(repoRoot, "dist"),
 );
 const host = process.env.HOST ?? process.env.JOBBOT_WEB_HOST ?? "0.0.0.0";
-const port = Number(process.env.PORT ?? process.env.JOBBOT_WEB_PORT ?? 3000);
+const rawPort = process.env.PORT ?? process.env.JOBBOT_WEB_PORT ?? "3000";
+const port = Number.parseInt(rawPort, 10);
+if (!/^[1-9]\d*$/.test(rawPort) || !Number.isInteger(port) || port > 65535) {
+  console.error(
+    `Invalid static server port "${rawPort}". ` +
+      "Set PORT or JOBBOT_WEB_PORT to an integer from 1 to 65535.",
+  );
+  process.exit(1);
+}
 
 const securityHeaders = Object.freeze({
   "Content-Security-Policy": [
@@ -61,13 +69,21 @@ app.get("/healthz", health);
 app.get("/livez", health);
 app.get("/health", health);
 app.get("/ready", health);
-app.get("/tracker", (_req, res) =>
+const noCache = (_req, res, next) => {
+  res.setHeader("Cache-Control", "no-store");
+  next();
+};
+
+app.get("/tracker", noCache, (_req, res) =>
   res.sendFile(path.join(distDir, "tracker.html")),
+);
+app.get(
+  ["/", "/index.html", "/tracker.html", "/manifest.webmanifest"],
+  noCache,
 );
 app.use(
   express.static(distDir, {
     index: "index.html",
-    immutable: true,
     maxAge: "1h",
   }),
 );

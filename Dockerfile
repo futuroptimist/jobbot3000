@@ -2,7 +2,7 @@
 FROM node:20-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --omit=dev --ignore-scripts
 
 FROM deps AS build
 COPY src ./src
@@ -15,9 +15,11 @@ ENV NODE_ENV=production \
     JOBBOT_WEB_PORT=3000
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
-COPY scripts/static-server.js ./scripts/static-server.js
+COPY src ./src
+COPY scripts ./scripts
+RUN npm cache clean --force
 EXPOSE 3000
 USER node
 CMD ["node", "scripts/static-server.js"]

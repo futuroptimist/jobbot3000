@@ -383,7 +383,7 @@ test.describe("browser application tracker", () => {
 
     await page.getByRole("button", { name: "Import/Export" }).click();
     const download = page.waitForEvent("download");
-    await page.getByRole("button", { name: "Export JSON backup" }).click();
+    await page.getByRole("button", { name: "Backup now" }).click();
     await expect((await download).suggestedFilename()).toBe(
       "jobbot3000-backup.json",
     );
