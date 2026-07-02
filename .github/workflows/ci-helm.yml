@@ -48,7 +48,7 @@ jobs:
             if [[ "${GITHUB_REF}" == refs/tags/v*.*.* ]]; then
               publish="true"
             elif [ "${GITHUB_REF}" = "refs/heads/main" ]; then
-              changed_files="$(git diff-tree --no-commit-id --name-only -r "${GITHUB_SHA}")"
+              changed_files="$(git diff-tree --no-commit-id --name-only -r -m "${GITHUB_SHA}")"
               if grep -Eq '^(charts/jobbot3000/|scripts/validate-helm\.sh$|\.github/workflows/ci-helm\.yml$)' <<< "${changed_files}"; then
                 publish="true"
               fi
@@ -107,9 +107,15 @@ jobs:
           chart_version="${{ needs.validate.outputs.chart_version }}"
           mkdir -p /tmp/jobbot3000-existing-chart
           if helm pull "${chart_ref}" --version "${chart_version}" --destination /tmp/jobbot3000-existing-chart >/dev/null 2>&1; then
-            echo "Chart ${chart_ref}:${chart_version} already exists; skipping publish. Bump charts/jobbot3000/Chart.yaml version before publishing chart changes." >&2
+            echo "Chart ${chart_ref}:${chart_version} already exists; refusing to republish. Bump charts/jobbot3000/Chart.yaml version before publishing chart changes." >&2
+            {
+              echo "## jobbot3000 Helm chart publish refused"
+              echo ""
+              echo "Chart already exists: \`${chart_ref}:${chart_version}\`"
+              echo "Bump \`charts/jobbot3000/Chart.yaml\` version before publishing chart changes."
+            } >> "${GITHUB_STEP_SUMMARY}"
             echo "exists=true" >> "${GITHUB_OUTPUT}"
-            exit 0
+            exit 1
           fi
           echo "exists=false" >> "${GITHUB_OUTPUT}"
 
@@ -140,17 +146,4 @@ jobs:
             echo "Published immutable chart: \`${chart_ref}:${chart_version}\`"
             echo "Sugarkube pin instructions: set the jobbot3000 chart repository to \`${chart_ref}\` and chart version to \`${chart_version}\`."
             echo "Deploy with an immutable app image tag such as \`main-<short-sha>\`; chart versions and image tags are intentionally bumped independently."
-          } >> "${GITHUB_STEP_SUMMARY}"
-
-      - name: Summarize skipped chart publish
-        if: steps.existing-chart.outputs.exists == 'true'
-        shell: bash
-        run: |
-          chart_ref="${{ needs.validate.outputs.chart_ref }}"
-          chart_version="${{ needs.validate.outputs.chart_version }}"
-          {
-            echo "## jobbot3000 Helm chart publish skipped"
-            echo ""
-            echo "Chart already exists: \`${chart_ref}:${chart_version}\`"
-            echo "Bump \`charts/jobbot3000/Chart.yaml\` version before publishing chart changes."
           } >> "${GITHUB_STEP_SUMMARY}"
