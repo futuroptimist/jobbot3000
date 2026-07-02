@@ -10,13 +10,15 @@ describe("web deployment artifacts", () => {
   it("ships a Dockerfile for the web server", async () => {
     const dockerfilePath = path.join(repoRoot, "Dockerfile");
     const dockerfile = await readFile(dockerfilePath, "utf8");
-    expect(dockerfile).toContain("FROM node:20-slim AS deps");
+    expect(dockerfile).toContain("FROM node:24-slim AS deps");
     expect(dockerfile).toContain(
-      "apt-get install -y --no-install-recommends curl unzip",
+      "apt-get install -y --no-install-recommends ca-certificates curl unzip",
     );
     expect(dockerfile).toContain(
       "npm run typecheck && npm run test:ci && npm run build",
     );
+    expect(dockerfile).toContain("FROM node:24-slim AS prod-deps");
+    expect(dockerfile).toContain("FROM node:24-slim AS runtime");
     expect(dockerfile).toContain("COPY --from=build /app/dist ./dist");
     expect(dockerfile).toContain(
       "COPY --from=build /app/scripts/static-server.js ./scripts/static-server.js",
