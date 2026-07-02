@@ -32,7 +32,8 @@
     "prepare": "npx simple-git-hooks",
     "postinstall": "node scripts/install-console-font.js",
     "build": "node scripts/build-static.js",
-    "start:static": "node scripts/static-server.js"
+    "start:static": "node scripts/static-server.js",
+    "smoke:container": "bash scripts/smoke-container.sh"
   },
   "engines": {
     "node": ">=20"

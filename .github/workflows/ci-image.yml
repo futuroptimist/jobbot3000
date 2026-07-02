@@ -1,0 +1,218 @@
+name: Build and publish GHCR image
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref (branch, tag, or SHA) to build
+        required: false
+        default: main
+
+jobs:
+  build-and-smoke:
+    name: Build and smoke-test static image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      full_sha: ${{ steps.meta.outputs.full_sha }}
+      short_sha: ${{ steps.meta.outputs.short_sha }}
+      created: ${{ steps.meta.outputs.created }}
+      publish: ${{ steps.meta.outputs.publish }}
+      repository: ${{ steps.meta.outputs.repository }}
+    steps:
+      - name: Checkout triggering commit
+        if: github.event_name != 'workflow_dispatch'
+        uses: actions/checkout@v5
+
+      - name: Checkout selected ref
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || 'main' }}
+
+      - name: Compute image metadata
+        id: meta
+        shell: bash
+        env:
+          SELECTED_REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+
+          full_sha="$(git rev-parse HEAD)"
+          short_sha="$(git rev-parse --short=12 HEAD)"
+          created="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          repository="ghcr.io/futuroptimist/jobbot3000"
+          publish="false"
+          selected_ref="${SELECTED_REF:-main}"
+
+          if [ "${GITHUB_EVENT_NAME}" = "push" ] && [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+            publish="true"
+          fi
+
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            case "${selected_ref}" in
+              ""|main|refs/heads/main)
+                publish="true"
+                ;;
+            esac
+          fi
+
+          {
+            echo "full_sha=${full_sha}"
+            echo "short_sha=${short_sha}"
+            echo "created=${created}"
+            echo "repository=${repository}"
+            echo "publish=${publish}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run CI tests
+        run: npm run test:ci
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build local smoke-test image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: false
+          load: true
+          provenance: false
+          tags: jobbot3000:smoke
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.meta.outputs.full_sha }}
+            org.opencontainers.image.created=${{ steps.meta.outputs.created }}
+            org.opencontainers.image.licenses=MIT
+          cache-from: type=gha,scope=jobbot3000-image
+          cache-to: type=gha,mode=max,scope=jobbot3000-image
+
+      - name: Smoke test local image
+        run: npm run smoke:container -- jobbot3000:smoke
+
+      - name: Summarize image build contract
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          image_tag="main-${{ steps.meta.outputs.short_sha }}"
+          image_ref="${{ steps.meta.outputs.repository }}:${image_tag}"
+
+          {
+            echo "## jobbot3000 image validation"
+            echo ""
+            echo "Image tag candidate: \`${image_ref}\`"
+            echo "Sugarkube deploy tag candidate: \`${image_tag}\`"
+            echo "Smoke endpoints: \`/\`, \`/healthz\`, \`/livez\`"
+            echo ""
+            if [ "${{ steps.meta.outputs.publish }}" = "true" ]; then
+              echo "Publishing will be handled by the publish job."
+              echo "Tags after publish: \`main-${{ steps.meta.outputs.short_sha }}\`, \`main-latest\`, \`sha-${{ steps.meta.outputs.short_sha }}\`."
+            else
+              echo "Pushed: false"
+              echo "This run builds and smoke-tests only; no GHCR tags are published."
+            fi
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  publish:
+    name: Publish static image
+    runs-on: ubuntu-latest
+    needs: build-and-smoke
+    if: needs.build-and-smoke.outputs.publish == 'true'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout triggering commit
+        if: github.event_name != 'workflow_dispatch'
+        uses: actions/checkout@v5
+
+      - name: Checkout selected ref
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || 'main' }}
+
+      # Publish intentionally rebuilds from the verified smoke-tested source SHA:
+      # the PR smoke image is a local single-arch image, while GHCR publish
+      # must produce a multi-arch manifest; the SHA guard below prevents
+      # publishing a different source revision.
+      - name: Verify publish checkout matches smoke-tested commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          checked_out_sha="$(git rev-parse HEAD)"
+          expected_sha="${{ needs.build-and-smoke.outputs.full_sha }}"
+          if [ "${checked_out_sha}" != "${expected_sha}" ]; then
+            printf 'Publish checkout mismatch: expected %s, got %s\n' "${expected_sha}" "${checked_out_sha}" >&2
+            exit 1
+          fi
+
+      - name: Set up QEMU for multi-arch publish
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+
+      - name: Build and push multi-arch image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          tags: |
+            ${{ needs.build-and-smoke.outputs.repository }}:main-${{ needs.build-and-smoke.outputs.short_sha }}
+            ${{ needs.build-and-smoke.outputs.repository }}:main-latest
+            ${{ needs.build-and-smoke.outputs.repository }}:sha-${{ needs.build-and-smoke.outputs.short_sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ needs.build-and-smoke.outputs.full_sha }}
+            org.opencontainers.image.created=${{ needs.build-and-smoke.outputs.created }}
+            org.opencontainers.image.licenses=MIT
+          cache-from: type=gha,scope=jobbot3000-image
+          cache-to: type=gha,mode=max,scope=jobbot3000-image
+
+      - name: Summarize published immutable tag
+        shell: bash
+        run: |
+          image_tag="main-${{ needs.build-and-smoke.outputs.short_sha }}"
+          image_ref="${{ needs.build-and-smoke.outputs.repository }}:${image_tag}"
+          {
+            echo "## jobbot3000 image tags"
+            echo ""
+            echo "Published immutable image tag: \`${image_ref}\`"
+            echo "Sugarkube deploy tag: \`${image_tag}\`"
+            echo "Mutable tag: \`${{ needs.build-and-smoke.outputs.repository }}:main-latest\`"
+            echo "SHA tag: \`${{ needs.build-and-smoke.outputs.repository }}:sha-${{ needs.build-and-smoke.outputs.short_sha }}\`"
+            echo ""
+            echo "Pushed: true"
+          } >> "${GITHUB_STEP_SUMMARY}"
