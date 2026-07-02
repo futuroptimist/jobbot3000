@@ -1,0 +1,132 @@
+name: Validate and publish Helm chart
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "charts/jobbot3000/**"
+      - "scripts/validate-helm.sh"
+      - ".github/workflows/ci-helm.yml"
+  push:
+    branches: [main]
+    tags:
+      - "v*.*.*"
+    paths:
+      - "charts/jobbot3000/**"
+      - "scripts/validate-helm.sh"
+      - ".github/workflows/ci-helm.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Helm lint and template
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      chart_version: ${{ steps.chart.outputs.chart_version }}
+      chart_ref: ${{ steps.chart.outputs.chart_ref }}
+      publish: ${{ steps.chart.outputs.publish }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Read chart metadata
+        id: chart
+        shell: bash
+        run: |
+          set -euo pipefail
+          chart_version="$(helm show chart charts/jobbot3000 | awk -F': ' '$1 == "version" { print $2; exit }')"
+          chart_ref="oci://ghcr.io/futuroptimist/charts/jobbot3000"
+          publish="false"
+          if { [ "${GITHUB_EVENT_NAME}" = "push" ] && { [ "${GITHUB_REF}" = "refs/heads/main" ] || [[ "${GITHUB_REF}" == refs/tags/v*.*.* ]]; }; } || [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            publish="true"
+          fi
+          {
+            echo "chart_version=${chart_version}"
+            echo "chart_ref=${chart_ref}"
+            echo "publish=${publish}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Validate Helm chart
+        run: scripts/validate-helm.sh charts/jobbot3000
+
+      - name: Summarize Helm validation
+        shell: bash
+        run: |
+          {
+            echo "## jobbot3000 Helm chart validation"
+            echo ""
+            echo "Chart: \`${{ steps.chart.outputs.chart_ref }}\`"
+            echo "Version: \`${{ steps.chart.outputs.chart_version }}\`"
+            echo "Validated: \`helm lint\`, default template render, staging render, and production render."
+            echo "Publish candidate: \`${{ steps.chart.outputs.publish }}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  publish:
+    name: Publish OCI chart
+    runs-on: ubuntu-latest
+    needs: validate
+    if: needs.validate.outputs.publish == 'true'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Log in to GHCR
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s' "${GHCR_TOKEN}" | helm registry login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+
+      - name: Refuse to republish existing chart version
+        shell: bash
+        run: |
+          set -euo pipefail
+          chart_ref="${{ needs.validate.outputs.chart_ref }}"
+          chart_version="${{ needs.validate.outputs.chart_version }}"
+          mkdir -p /tmp/jobbot3000-existing-chart
+          if helm pull "${chart_ref}" --version "${chart_version}" --destination /tmp/jobbot3000-existing-chart >/dev/null 2>&1; then
+            echo "Chart ${chart_ref}:${chart_version} already exists; bump charts/jobbot3000/Chart.yaml version before publishing." >&2
+            exit 1
+          fi
+
+      - name: Package chart
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .helm-dist
+          helm package charts/jobbot3000 --destination .helm-dist
+
+      - name: Push chart to GHCR
+        shell: bash
+        run: |
+          set -euo pipefail
+          helm push ".helm-dist/jobbot3000-${{ needs.validate.outputs.chart_version }}.tgz" oci://ghcr.io/futuroptimist/charts
+
+      - name: Summarize published chart
+        shell: bash
+        run: |
+          chart_ref="${{ needs.validate.outputs.chart_ref }}"
+          chart_version="${{ needs.validate.outputs.chart_version }}"
+          {
+            echo "## jobbot3000 Helm chart published"
+            echo ""
+            echo "Published immutable chart: \`${chart_ref}:${chart_version}\`"
+            echo "Sugarkube pin instructions: set the jobbot3000 chart repository to \`${chart_ref}\` and chart version to \`${chart_version}\`."
+            echo "Deploy with an immutable app image tag such as \`main-<short-sha>\`; chart versions and image tags are intentionally bumped independently."
+          } >> "${GITHUB_STEP_SUMMARY}"

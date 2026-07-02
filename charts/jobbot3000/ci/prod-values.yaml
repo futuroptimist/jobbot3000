@@ -1,0 +1,19 @@
+image:
+  tag: main-PRODUCTION_SHA
+
+ingress:
+  enabled: true
+  host: jobbot3000.example.test
+  className: nginx
+  tls:
+    - secretName: jobbot3000-prod-tls-example
+      hosts:
+        - jobbot3000.example.test
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 128Mi

@@ -149,6 +149,16 @@ console.log(await response.json());
 
 Run the snippet with `node example.js` after saving it to a file in the project root.
 
+## Release and deployment
+
+Production deployments use the static, browser-local web build. The container serves static assets and `/healthz` and `/livez`; it does not own private tracker data, Secrets, or application data volumes.
+
+- [docs/release-ghcr.md](docs/release-ghcr.md) explains the GHCR image workflow and immutable image tags such as `ghcr.io/futuroptimist/jobbot3000:main-<short-sha>`.
+- [docs/release-helm.md](docs/release-helm.md) explains the app-owned Helm chart, OCI publishing workflow, and Sugarkube chart pin for `oci://ghcr.io/futuroptimist/charts/jobbot3000`.
+- [charts/jobbot3000/ci](charts/jobbot3000/ci) contains placeholder dev, staging, and production values examples for Sugarkube-owned environment configuration.
+
+Image tags and chart versions are intentionally separate: bump the image tag for a new static app build, and bump `charts/jobbot3000/Chart.yaml` `version` for Kubernetes packaging or default-value changes.
+
 ## Documentation
 
 - [DESIGN.md](DESIGN.md) – architecture details and roadmap
