@@ -1,0 +1,136 @@
+name: Validate and publish Helm chart
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "charts/jobbot3000/**"
+      - "scripts/validate-helm.sh"
+      - ".github/workflows/ci-helm.yml"
+      - "docs/release-helm.md"
+      - "README.md"
+  push:
+    branches: [main]
+    tags:
+      - "v*.*.*"
+    paths:
+      - "charts/jobbot3000/**"
+      - "scripts/validate-helm.sh"
+      - ".github/workflows/ci-helm.yml"
+      - "docs/release-helm.md"
+      - "README.md"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CHART_DIR: charts/jobbot3000
+  CHART_REPOSITORY: oci://ghcr.io/futuroptimist/charts
+
+jobs:
+  validate:
+    name: Lint and template Helm chart
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      chart_version: ${{ steps.meta.outputs.chart_version }}
+      publish: ${{ steps.meta.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Validate Helm chart
+        run: ./scripts/validate-helm.sh "${CHART_DIR}"
+
+      - name: Compute chart metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          chart_version="$(helm show chart "${CHART_DIR}" | awk -F': ' '$1 == "version" { print $2; exit }')"
+          publish=false
+
+          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            case "${GITHUB_REF}" in
+              refs/heads/main|refs/tags/v[0-9]*.[0-9]*.[0-9]*)
+                publish=true
+                ;;
+            esac
+          fi
+
+          {
+            echo "chart_version=${chart_version}"
+            echo "publish=${publish}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Summarize validation
+        shell: bash
+        run: |
+          {
+            echo "## jobbot3000 Helm chart validation"
+            echo ""
+            echo "Chart: \`${CHART_DIR}\`"
+            echo "Version: \`${{ steps.meta.outputs.chart_version }}\`"
+            echo "Publish eligible: \`${{ steps.meta.outputs.publish }}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  publish:
+    name: Publish OCI Helm chart
+    runs-on: ubuntu-latest
+    needs: validate
+    if: needs.validate.outputs.publish == 'true'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Log in to GHCR for Helm OCI
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "${GHCR_TOKEN}" | helm registry login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+
+      - name: Refuse to republish existing chart version
+        shell: bash
+        run: |
+          set -euo pipefail
+          chart_ref="${CHART_REPOSITORY}/jobbot3000"
+          chart_version="${{ needs.validate.outputs.chart_version }}"
+
+          if helm show chart "${chart_ref}" --version "${chart_version}" >/tmp/existing-jobbot3000-chart.yaml 2>/tmp/existing-jobbot3000-chart.err; then
+            echo "Chart ${chart_ref}:${chart_version} already exists; bump ${CHART_DIR}/Chart.yaml version before publishing." >&2
+            exit 1
+          fi
+
+      - name: Package Helm chart
+        run: helm package "${CHART_DIR}" --destination /tmp/jobbot3000-chart
+
+      - name: Push Helm chart to GHCR OCI registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          chart_package="/tmp/jobbot3000-chart/jobbot3000-${{ needs.validate.outputs.chart_version }}.tgz"
+          helm push "${chart_package}" "${CHART_REPOSITORY}"
+
+      - name: Summarize published chart
+        shell: bash
+        run: |
+          chart_version="${{ needs.validate.outputs.chart_version }}"
+          chart_ref="${CHART_REPOSITORY}/jobbot3000"
+          {
+            echo "## jobbot3000 Helm chart published"
+            echo ""
+            echo "Published chart: \`${chart_ref}:${chart_version}\`"
+            echo "Sugarkube chart repository: \`${chart_ref}\`"
+            echo "Sugarkube chart version pin: \`${chart_version}\`"
+            echo ""
+            echo "Update Sugarkube to pin \`${chart_ref}\` at version \`${chart_version}\` and set \`image.tag\` to the desired immutable image tag, for example \`main-<short-sha>\`."
+          } >> "${GITHUB_STEP_SUMMARY}"

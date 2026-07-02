@@ -1,0 +1,14 @@
+image:
+  tag: main-latest
+
+ingress:
+  enabled: false
+  host: jobbot3000-dev.example.invalid
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 32Mi
+  limits:
+    cpu: 100m
+    memory: 128Mi

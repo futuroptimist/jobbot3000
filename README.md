@@ -22,7 +22,7 @@ npm run dev
 # Open http://127.0.0.1:3100
 ```
 
-For production static tracker builds, run `npm run build` and serve `dist/` with `npm run start:static`; `/healthz` and `/livez` are available for container probes.
+For production static tracker builds, run `npm run build` and serve `dist/` with `npm run start:static`; `/healthz` and `/livez` are available for container probes. The production image is published to `ghcr.io/futuroptimist/jobbot3000`, and the Sugarkube-ready Helm chart is published to `oci://ghcr.io/futuroptimist/charts/jobbot3000`; see [docs/release-ghcr.md](docs/release-ghcr.md) and [docs/release-helm.md](docs/release-helm.md) for release and deployment details.
 
 The development web server starts with backend functionality enabled.
 Use `npm run web:server -- --disable-native-cli` if you want to explore the
@@ -158,6 +158,8 @@ Run the snippet with `node example.js` after saving it to a file in the project 
 - [docs/browser-first-architecture.md](docs/browser-first-architecture.md) – planned IndexedDB-first production web architecture and browser data contract
 - [docs/privacy-and-security.md](docs/privacy-and-security.md) – browser-only production privacy model, backups, clearing data, quota caveats, and static security headers
 - [docs/indexeddb-persistence.md](docs/indexeddb-persistence.md) – browser IndexedDB persistence, backup/restore, and quota caveats
+- [docs/release-ghcr.md](docs/release-ghcr.md) – GHCR static image release workflow
+- [docs/release-helm.md](docs/release-helm.md) – Helm chart validation, OCI publishing, and Sugarkube chart pin workflow
 - [docs/spreadsheet-replacement.md](docs/spreadsheet-replacement.md) – CSV/JSON/NDJSON import-export workflow for replacing the current spreadsheet
 - [docs/backup-restore-guide.md](docs/backup-restore-guide.md) – backup, restore, and verification
   steps

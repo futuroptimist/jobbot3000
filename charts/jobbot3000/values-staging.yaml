@@ -1,0 +1,16 @@
+image:
+  tag: main-TESTSHA
+
+ingress:
+  enabled: true
+  host: jobbot3000-staging.example.invalid
+  className: nginx
+  tls: []
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 32Mi
+  limits:
+    cpu: 250m
+    memory: 128Mi
