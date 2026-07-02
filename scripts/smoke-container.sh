@@ -6,8 +6,12 @@ port="${JOBBOT_SMOKE_PORT:-8080}"
 container_name="jobbot3000-smoke-${RANDOM}-${RANDOM}"
 
 cleanup() {
-  docker logs "${container_name}" || true
+  exit_code=$?
+  if [ "${exit_code}" -ne 0 ]; then
+    docker logs "${container_name}" || true
+  fi
   docker rm -f "${container_name}" >/dev/null 2>&1 || true
+  exit "${exit_code}"
 }
 trap cleanup EXIT
 

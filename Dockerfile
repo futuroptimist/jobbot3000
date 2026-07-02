@@ -5,6 +5,9 @@ COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
 
 FROM deps AS build
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl unzip \
+    && rm -rf /var/lib/apt/lists/*
 COPY . .
 RUN npm run typecheck && npm run test:ci && npm run build
 
@@ -18,7 +21,7 @@ ENV NODE_ENV=production \
     JOBBOT_STATIC_DIR=/app/dist \
     JOBBOT_WEB_PORT=8080
 WORKDIR /app
-COPY package.json package-lock.json ./
+COPY package.json ./
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/scripts/static-server.js ./scripts/static-server.js
