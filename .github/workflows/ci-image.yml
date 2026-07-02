@@ -152,6 +152,10 @@ jobs:
         with:
           ref: ${{ inputs.ref || 'main' }}
 
+      # Publish intentionally rebuilds from the verified smoke-tested source SHA:
+      # the PR smoke image is a local single-arch image, while GHCR publish
+      # must produce a multi-arch manifest; the SHA guard below prevents
+      # publishing a different source revision.
       - name: Verify publish checkout matches smoke-tested commit
         shell: bash
         run: |

@@ -10,7 +10,7 @@ describe("web deployment artifacts", () => {
   it("ships a Dockerfile for the web server", async () => {
     const dockerfilePath = path.join(repoRoot, "Dockerfile");
     const dockerfile = await readFile(dockerfilePath, "utf8");
-    expect(dockerfile).toContain("FROM node:24-slim AS deps");
+    expect(dockerfile).toContain("FROM node:20-slim AS deps");
     expect(dockerfile).toContain("RUN npm ci --ignore-scripts");
     expect(dockerfile).toContain("COPY tsconfig.json ./");
     expect(dockerfile).toContain(
@@ -21,8 +21,8 @@ describe("web deployment artifacts", () => {
     expect(dockerfile).toContain("npm run typecheck && npm run build");
     expect(dockerfile).not.toContain("npm run test:ci");
     expect(dockerfile).not.toContain("apt-get install");
-    expect(dockerfile).toContain("FROM node:24-slim AS prod-deps");
-    expect(dockerfile).toContain("FROM node:24-slim AS runtime");
+    expect(dockerfile).toContain("FROM node:20-slim AS prod-deps");
+    expect(dockerfile).toContain("FROM node:20-slim AS runtime");
     expect(dockerfile).toContain("COPY --from=build /app/dist ./dist");
     expect(dockerfile).toContain(
       "COPY scripts/static-server.js ./scripts/static-server.js",
