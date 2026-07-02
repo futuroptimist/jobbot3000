@@ -167,8 +167,11 @@ describe("GHCR image workflow", () => {
     expect(workflow).toContain("platforms: linux/amd64,linux/arm64");
     expect(workflow).toContain("docker/setup-qemu-action@v3");
     expect(workflow).not.toContain('      - "v*"');
-    const forbiddenPasswordInput = "pass" + "word: ${{ secrets.GITHUB_TOKEN }}";
-    expect(workflow).not.toContain(forbiddenPasswordInput);
+    const forbiddenPasswordInput = new RegExp(
+      ["pass", "word"].join("") +
+        String.raw`:\s*\$\{\{\s*secrets\.GITHUB_TOKEN`,
+    );
+    expect(workflow).not.toMatch(forbiddenPasswordInput);
     expect(workflow).toContain("GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}");
     expect(workflow).toContain(
       'docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin',
