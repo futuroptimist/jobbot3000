@@ -1,0 +1,19 @@
+image:
+  tag: main-REPLACE_WITH_SHORT_SHA
+
+podLabels:
+  sugarkube.io/environment: staging
+
+ingress:
+  enabled: true
+  host: jobbot3000-staging.example.invalid
+  className: sugarkube
+  tls: []
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+  limits:
+    cpu: 500m
+    memory: 384Mi

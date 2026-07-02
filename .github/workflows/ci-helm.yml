@@ -1,0 +1,142 @@
+name: Validate and publish Helm chart
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "charts/jobbot3000/**"
+      - "scripts/validate-helm-chart.sh"
+      - ".github/workflows/ci-helm.yml"
+      - "docs/release-helm.md"
+  push:
+    branches: [main]
+    tags:
+      - "v*.*.*"
+      - "jobbot3000-chart-v*.*.*"
+    paths:
+      - "charts/jobbot3000/**"
+      - "scripts/validate-helm-chart.sh"
+      - ".github/workflows/ci-helm.yml"
+      - "docs/release-helm.md"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CHART_DIR: charts/jobbot3000
+  OCI_REGISTRY: ghcr.io
+  OCI_NAMESPACE: futuroptimist/charts
+
+jobs:
+  validate:
+    name: Helm lint and render
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      chart_version: ${{ steps.chart.outputs.version }}
+      publish: ${{ steps.meta.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Read chart version
+        id: chart
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(helm show chart "${CHART_DIR}" | awk '/^version:/ {print $2}')"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Decide publish eligibility
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          publish=false
+          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            case "${GITHUB_REF}" in
+              refs/heads/main|refs/tags/v[0-9]*.[0-9]*.[0-9]*|refs/tags/jobbot3000-chart-v[0-9]*.[0-9]*.[0-9]*)
+                publish=true
+                ;;
+            esac
+          fi
+          echo "publish=${publish}" >> "${GITHUB_OUTPUT}"
+
+      - name: Validate chart
+        run: scripts/validate-helm-chart.sh "${CHART_DIR}"
+
+      - name: Summarize validation
+        shell: bash
+        run: |
+          {
+            echo "## jobbot3000 Helm chart validation"
+            echo ""
+            echo "Chart version: \`${{ steps.chart.outputs.version }}\`"
+            echo "Chart ref after publish: \`oci://ghcr.io/futuroptimist/charts/jobbot3000 --version ${{ steps.chart.outputs.version }}\`"
+            echo "Publish eligible: \`${{ steps.meta.outputs.publish }}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  publish:
+    name: Publish OCI chart
+    runs-on: ubuntu-latest
+    needs: validate
+    if: needs.validate.outputs.publish == 'true'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Log in to GHCR
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s' "${GHCR_TOKEN}" | helm registry login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+
+      - name: Refuse to republish existing chart version
+        shell: bash
+        run: |
+          set -euo pipefail
+          chart_version="${{ needs.validate.outputs.chart_version }}"
+          if helm pull "oci://${OCI_REGISTRY}/${OCI_NAMESPACE}/jobbot3000" --version "${chart_version}" --destination /tmp >/dev/null 2>&1; then
+            echo "Chart version ${chart_version} already exists in oci://${OCI_REGISTRY}/${OCI_NAMESPACE}/jobbot3000; bump charts/jobbot3000/Chart.yaml version before publishing." >&2
+            exit 1
+          fi
+
+      - name: Package chart
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/charts
+          helm package "${CHART_DIR}" --destination dist/charts
+
+      - name: Push chart to GHCR OCI registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          chart_version="${{ needs.validate.outputs.chart_version }}"
+          helm push "dist/charts/jobbot3000-${chart_version}.tgz" "oci://${OCI_REGISTRY}/${OCI_NAMESPACE}"
+
+      - name: Summarize published chart
+        shell: bash
+        run: |
+          chart_version="${{ needs.validate.outputs.chart_version }}"
+          chart_ref="oci://${OCI_REGISTRY}/${OCI_NAMESPACE}/jobbot3000"
+          {
+            echo "## jobbot3000 Helm chart published"
+            echo ""
+            echo "Published chart version: \`${chart_version}\`"
+            echo "Chart ref: \`${chart_ref}\`"
+            echo "Sugarkube pin instructions: set the app chart repository to \`${chart_ref}\` and chart version to \`${chart_version}\`."
+            echo "Example render: \`helm template jobbot3000 ${chart_ref} --version ${chart_version} --set image.tag=main-SHORTSHA\`"
+          } >> "${GITHUB_STEP_SUMMARY}"

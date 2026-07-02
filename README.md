@@ -149,6 +149,13 @@ console.log(await response.json());
 
 Run the snippet with `node example.js` after saving it to a file in the project root.
 
+## Release and deployment
+
+The production deployment artifact is a static, browser-local web app: the container serves built assets plus `/healthz` and `/livez`, while private tracker data stays in user-owned IndexedDB.
+
+- [GHCR image release workflow](docs/release-ghcr.md) explains immutable image tags such as `ghcr.io/futuroptimist/jobbot3000:main-SHORTSHA` and why Sugarkube should avoid mutable production tags.
+- [Helm chart release workflow](docs/release-helm.md) explains the app-owned chart at `oci://ghcr.io/futuroptimist/charts/jobbot3000`, when to bump `charts/jobbot3000/Chart.yaml`, and how Sugarkube should pin chart versions separately from image tags.
+
 ## Documentation
 
 - [DESIGN.md](DESIGN.md) – architecture details and roadmap

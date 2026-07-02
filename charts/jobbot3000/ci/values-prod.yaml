@@ -1,0 +1,11 @@
+image:
+  tag: main-TESTSHA
+
+ingress:
+  enabled: true
+  host: jobbot3000.example.invalid
+  className: sugarkube
+  tls:
+    - secretName: jobbot3000-tls-example
+      hosts:
+        - jobbot3000.example.invalid

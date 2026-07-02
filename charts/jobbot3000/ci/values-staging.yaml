@@ -1,0 +1,7 @@
+image:
+  tag: main-TESTSHA
+
+ingress:
+  enabled: true
+  host: jobbot3000-staging.example.invalid
+  className: sugarkube

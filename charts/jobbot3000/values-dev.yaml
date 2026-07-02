@@ -1,0 +1,13 @@
+image:
+  tag: main-latest
+
+podLabels:
+  sugarkube.io/environment: dev
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
