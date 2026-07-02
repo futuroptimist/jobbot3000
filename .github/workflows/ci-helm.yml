@@ -11,15 +11,11 @@ on:
     branches: [main]
     tags:
       - "v*.*.*"
-    paths:
-      - "charts/jobbot3000/**"
-      - "scripts/validate-helm.sh"
-      - ".github/workflows/ci-helm.yml"
   workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   validate:

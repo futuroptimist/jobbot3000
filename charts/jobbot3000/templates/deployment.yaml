@@ -3,32 +3,37 @@ kind: Deployment
 metadata:
   name: {{ include "jobbot3000.fullname" . }}
   labels:
-    {{ include "jobbot3000.labels" . | nindent 4 }}
+{{- include "jobbot3000.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{ include "jobbot3000.selectorLabels" . | nindent 6 }}
+{{- include "jobbot3000.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{ include "jobbot3000.selectorLabels" . | nindent 8 }}
+{{- include "jobbot3000.selectorLabels" . | nindent 8 }}
         {{- with .Values.podLabels }}
-        {{ toYaml . | nindent 8 }}
+{{- toYaml . | nindent 8 }}
         {{- end }}
       {{- with .Values.podAnnotations }}
       annotations:
-        {{ toYaml . | nindent 8 }}
+{{- toYaml . | nindent 8 }}
       {{- end }}
     spec:
       securityContext:
-        {{ toYaml .Values.securityContext | nindent 8 }}
+{{- toYaml .Values.securityContext | nindent 8 }}
       containers:
         - name: {{ include "jobbot3000.name" . }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
-            {{ toYaml .Values.containerSecurityContext | nindent 12 }}
+{{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          env:
+            - name: PORT
+              value: {{ .Values.containerPort | quote }}
+            - name: JOBBOT_WEB_PORT
+              value: {{ .Values.containerPort | quote }}
           ports:
             - name: http
               containerPort: {{ .Values.containerPort }}
@@ -51,5 +56,11 @@ spec:
             failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
           {{- with .Values.resources }}
           resources:
-            {{ toYaml . | nindent 12 }}
+{{- toYaml . | nindent 12 }}
           {{- end }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

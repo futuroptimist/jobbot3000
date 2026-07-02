@@ -4,10 +4,10 @@ kind: Ingress
 metadata:
   name: {{ include "jobbot3000.fullname" . }}
   labels:
-    {{ include "jobbot3000.labels" . | nindent 4 }}
+{{- include "jobbot3000.labels" . | nindent 4 }}
   {{- with .Values.ingress.annotations }}
   annotations:
-    {{ toYaml . | nindent 4 }}
+{{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
   {{- with .Values.ingress.className }}
@@ -15,7 +15,7 @@ spec:
   {{- end }}
   {{- with .Values.ingress.tls }}
   tls:
-    {{ toYaml . | nindent 4 }}
+{{- toYaml . | nindent 4 }}
   {{- end }}
   rules:
     - host: {{ .Values.ingress.host | quote }}
