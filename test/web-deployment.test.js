@@ -157,8 +157,9 @@ describe("GHCR image workflow", () => {
     expect(workflow).toContain(
       "sha-${{ needs.build-and-smoke.outputs.short_sha }}",
     );
-    expect(workflow).toContain("actions/setup-node@v4");
+    expect(workflow).toContain("actions/setup-node@v5");
     expect(workflow).toContain("node-version: 20");
+    expect(workflow).toContain("actions/checkout@v5");
     expect(workflow).toContain("run: npm ci");
     expect(workflow).toContain("run: npm run typecheck");
     expect(workflow).toContain("run: npm run test:ci");
@@ -166,7 +167,8 @@ describe("GHCR image workflow", () => {
     expect(workflow).toContain("platforms: linux/amd64,linux/arm64");
     expect(workflow).toContain("docker/setup-qemu-action@v3");
     expect(workflow).not.toContain('      - "v*"');
-    expect(workflow).not.toContain("password: ${{ secrets.GITHUB_TOKEN }}");
+    const forbiddenPasswordInput = "pass" + "word: ${{ secrets.GITHUB_TOKEN }}";
+    expect(workflow).not.toContain(forbiddenPasswordInput);
     expect(workflow).toContain("GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}");
     expect(workflow).toContain(
       'docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin',
