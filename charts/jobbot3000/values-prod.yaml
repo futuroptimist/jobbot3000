@@ -1,0 +1,18 @@
+image:
+  tag: main-REPLACE_WITH_SHA
+
+ingress:
+  enabled: true
+  host: jobbot3000.example.test
+  className: nginx
+  tls:
+    - secretName: jobbot3000-tls
+      hosts:
+        - jobbot3000.example.test
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 128Mi

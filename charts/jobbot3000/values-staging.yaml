@@ -1,0 +1,15 @@
+image:
+  tag: main-REPLACE_WITH_SHA
+
+ingress:
+  enabled: true
+  host: jobbot3000-staging.example.test
+  className: nginx
+  tls: []
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 128Mi

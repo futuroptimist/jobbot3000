@@ -24,6 +24,8 @@ npm run dev
 
 For production static tracker builds, run `npm run build` and serve `dist/` with `npm run start:static`; `/healthz` and `/livez` are available for container probes.
 
+Container images are published to `ghcr.io/futuroptimist/jobbot3000`, and the app-owned Sugarkube Helm chart is published at `oci://ghcr.io/futuroptimist/charts/jobbot3000`. See [docs/release-ghcr.md](docs/release-ghcr.md) for image release details and [docs/release-helm.md](docs/release-helm.md) for chart versioning, publishing, and Sugarkube pin guidance.
+
 The development web server starts with backend functionality enabled.
 Use `npm run web:server -- --disable-native-cli` if you want to explore the
 mock-only UI without spawning CLI subprocesses.

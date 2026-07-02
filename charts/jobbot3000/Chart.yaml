@@ -1,0 +1,11 @@
+apiVersion: v2
+name: jobbot3000
+description: Browser-first static jobbot3000 web app for Sugarkube generic app deployments.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/futuroptimist/jobbot3000
+sources:
+  - https://github.com/futuroptimist/jobbot3000
+maintainers:
+  - name: futuroptimist
