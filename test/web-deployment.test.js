@@ -11,17 +11,21 @@ describe("web deployment artifacts", () => {
     const dockerfilePath = path.join(repoRoot, "Dockerfile");
     const dockerfile = await readFile(dockerfilePath, "utf8");
     expect(dockerfile).toContain("FROM node:24-slim AS deps");
+    expect(dockerfile).toContain("RUN npm ci --ignore-scripts");
+    expect(dockerfile).toContain("COPY tsconfig.json ./");
     expect(dockerfile).toContain(
-      "apt-get install -y --no-install-recommends ca-certificates curl unzip",
+      "COPY scripts/build-static.js ./scripts/build-static.js",
     );
-    expect(dockerfile).toContain(
-      "npm run typecheck && npm run test:ci && npm run build",
-    );
+    expect(dockerfile).toContain("COPY src ./src");
+    expect(dockerfile).toContain("COPY test ./test");
+    expect(dockerfile).toContain("npm run typecheck && npm run build");
+    expect(dockerfile).not.toContain("npm run test:ci");
+    expect(dockerfile).not.toContain("apt-get install");
     expect(dockerfile).toContain("FROM node:24-slim AS prod-deps");
     expect(dockerfile).toContain("FROM node:24-slim AS runtime");
     expect(dockerfile).toContain("COPY --from=build /app/dist ./dist");
     expect(dockerfile).toContain(
-      "COPY --from=build /app/scripts/static-server.js ./scripts/static-server.js",
+      "COPY scripts/static-server.js ./scripts/static-server.js",
     );
     expect(dockerfile).toContain("EXPOSE 8080");
     expect(dockerfile).toContain("JOBBOT_WEB_PORT=8080");
@@ -153,11 +157,20 @@ describe("GHCR image workflow", () => {
     expect(workflow).toContain(
       "sha-${{ needs.build-and-smoke.outputs.short_sha }}",
     );
+    expect(workflow).toContain("actions/setup-node@v4");
+    expect(workflow).toContain("node-version: 20");
+    expect(workflow).toContain("run: npm ci");
+    expect(workflow).toContain("run: npm run typecheck");
+    expect(workflow).toContain("run: npm run test:ci");
     expect(workflow).toContain("platforms: linux/amd64");
-    expect(workflow).not.toContain("linux/arm64");
+    expect(workflow).toContain("platforms: linux/amd64,linux/arm64");
+    expect(workflow).toContain("docker/setup-qemu-action@v3");
     expect(workflow).not.toContain('      - "v*"');
-    expect(workflow).toContain("docker/login-action@v3");
-    expect(workflow).toContain("secrets.GITHUB_TOKEN");
+    expect(workflow).not.toContain("password: ${{ secrets.GITHUB_TOKEN }}");
+    expect(workflow).toContain("GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}");
+    expect(workflow).toContain(
+      'docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin',
+    );
     expect(workflow).toContain("org.opencontainers.image.source");
     expect(workflow).toContain("org.opencontainers.image.revision");
     expect(workflow).toContain("org.opencontainers.image.created");
@@ -176,7 +189,10 @@ describe("GHCR image workflow", () => {
     expect(doc).toContain("Sugarkube deploy tag");
     expect(doc).toContain("Avoid `main-latest` in production");
     expect(doc).toContain("linux/amd64");
-    expect(doc).toContain("until the Playwright");
+    expect(doc).toContain("linux/arm64");
+    expect(doc).toContain(
+      "multi-arch publish does not depend on test-runner browser downloads",
+    );
     expect(doc).toContain("/healthz");
     expect(doc).toContain("/livez");
   });

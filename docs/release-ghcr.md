@@ -14,9 +14,9 @@ The `Build and publish GHCR image` workflow has two phases:
    `/healthz`, and `/livez` on port `8080`.
 2. `Publish static image` runs only when the metadata step marks the run as
    publishable, normally a push to `main` or a manual dispatch of `main`. It logs
-   in to GHCR with `GITHUB_TOKEN` and pushes a `linux/amd64` image. The
-   workflow intentionally leaves `linux/arm64` disabled until the Playwright
-   browser mirror used by `npm run test:ci` is platform-aware.
+   in to GHCR with `GITHUB_TOKEN` and pushes a multi-arch image for
+   `linux/amd64` and `linux/arm64`. Validation runs in CI before the Docker
+   build so the multi-arch publish does not depend on test-runner browser downloads.
 
 Open the GitHub Actions run summary and look for:
 
