@@ -1,0 +1,7 @@
+image:
+  tag: main-latest
+
+ingress:
+  enabled: true
+  host: jobbot3000.dev.example.test
+  className: nginx
