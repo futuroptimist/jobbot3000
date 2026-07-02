@@ -24,7 +24,7 @@ Pull requests run Helm validation only:
 scripts/validate-helm.sh charts/jobbot3000
 ```
 
-Pushes to `main`, semver tags such as `v1.2.3`, and manual workflow dispatches publish the OCI chart after validation. The publish job logs in to GHCR with `GITHUB_TOKEN`, refuses an existing chart version, packages the chart, pushes it to `oci://ghcr.io/futuroptimist/charts`, and writes the published version to the GitHub Actions summary.
+Pushes to `main` and semver tags such as `v1.2.3` publish the OCI chart after validation. Manual workflow dispatches run validation only and do not publish. The publish job logs in to GHCR with `GITHUB_TOKEN`, refuses an existing chart version, packages the chart, pushes it to `oci://ghcr.io/futuroptimist/charts`, and writes the published version to the GitHub Actions summary.
 
 ## Sugarkube chart pin after publish
 

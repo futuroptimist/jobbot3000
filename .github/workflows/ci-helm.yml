@@ -42,7 +42,7 @@ jobs:
           chart_version="$(helm show chart charts/jobbot3000 | awk -F': ' '$1 == "version" { print $2; exit }')"
           chart_ref="oci://ghcr.io/futuroptimist/charts/jobbot3000"
           publish="false"
-          if { [ "${GITHUB_EVENT_NAME}" = "push" ] && { [ "${GITHUB_REF}" = "refs/heads/main" ] || [[ "${GITHUB_REF}" == refs/tags/v*.*.* ]]; }; } || [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+          if [ "${GITHUB_EVENT_NAME}" = "push" ] && { [ "${GITHUB_REF}" = "refs/heads/main" ] || [[ "${GITHUB_REF}" == refs/tags/v*.*.* ]]; }; then
             publish="true"
           fi
           {
