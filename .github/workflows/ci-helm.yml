@@ -30,6 +30,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
 
       - name: Set up Helm
         uses: azure/setup-helm@v4
@@ -42,8 +44,15 @@ jobs:
           chart_version="$(helm show chart charts/jobbot3000 | awk -F': ' '$1 == "version" { print $2; exit }')"
           chart_ref="oci://ghcr.io/futuroptimist/charts/jobbot3000"
           publish="false"
-          if [ "${GITHUB_EVENT_NAME}" = "push" ] && { [ "${GITHUB_REF}" = "refs/heads/main" ] || [[ "${GITHUB_REF}" == refs/tags/v*.*.* ]]; }; then
-            publish="true"
+          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            if [[ "${GITHUB_REF}" == refs/tags/v*.*.* ]]; then
+              publish="true"
+            elif [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+              changed_files="$(git diff-tree --no-commit-id --name-only -r "${GITHUB_SHA}")"
+              if grep -Eq '^(charts/jobbot3000/|scripts/validate-helm\.sh$|\.github/workflows/ci-helm\.yml$)' <<< "${changed_files}"; then
+                publish="true"
+              fi
+            fi
           fi
           {
             echo "chart_version=${chart_version}"
