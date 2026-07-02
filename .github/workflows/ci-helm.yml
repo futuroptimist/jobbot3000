@@ -98,7 +98,8 @@ jobs:
           set -euo pipefail
           printf '%s' "${GHCR_TOKEN}" | helm registry login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
 
-      - name: Refuse to republish existing chart version
+      - name: Check for existing chart version
+        id: existing-chart
         shell: bash
         run: |
           set -euo pipefail
@@ -106,11 +107,14 @@ jobs:
           chart_version="${{ needs.validate.outputs.chart_version }}"
           mkdir -p /tmp/jobbot3000-existing-chart
           if helm pull "${chart_ref}" --version "${chart_version}" --destination /tmp/jobbot3000-existing-chart >/dev/null 2>&1; then
-            echo "Chart ${chart_ref}:${chart_version} already exists; bump charts/jobbot3000/Chart.yaml version before publishing." >&2
-            exit 1
+            echo "Chart ${chart_ref}:${chart_version} already exists; skipping publish. Bump charts/jobbot3000/Chart.yaml version before publishing chart changes." >&2
+            echo "exists=true" >> "${GITHUB_OUTPUT}"
+            exit 0
           fi
+          echo "exists=false" >> "${GITHUB_OUTPUT}"
 
       - name: Package chart
+        if: steps.existing-chart.outputs.exists == 'false'
         shell: bash
         run: |
           set -euo pipefail
@@ -118,12 +122,14 @@ jobs:
           helm package charts/jobbot3000 --destination .helm-dist
 
       - name: Push chart to GHCR
+        if: steps.existing-chart.outputs.exists == 'false'
         shell: bash
         run: |
           set -euo pipefail
           helm push ".helm-dist/jobbot3000-${{ needs.validate.outputs.chart_version }}.tgz" oci://ghcr.io/futuroptimist/charts
 
       - name: Summarize published chart
+        if: steps.existing-chart.outputs.exists == 'false'
         shell: bash
         run: |
           chart_ref="${{ needs.validate.outputs.chart_ref }}"
@@ -134,4 +140,17 @@ jobs:
             echo "Published immutable chart: \`${chart_ref}:${chart_version}\`"
             echo "Sugarkube pin instructions: set the jobbot3000 chart repository to \`${chart_ref}\` and chart version to \`${chart_version}\`."
             echo "Deploy with an immutable app image tag such as \`main-<short-sha>\`; chart versions and image tags are intentionally bumped independently."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Summarize skipped chart publish
+        if: steps.existing-chart.outputs.exists == 'true'
+        shell: bash
+        run: |
+          chart_ref="${{ needs.validate.outputs.chart_ref }}"
+          chart_version="${{ needs.validate.outputs.chart_version }}"
+          {
+            echo "## jobbot3000 Helm chart publish skipped"
+            echo ""
+            echo "Chart already exists: \`${chart_ref}:${chart_version}\`"
+            echo "Bump \`charts/jobbot3000/Chart.yaml\` version before publishing chart changes."
           } >> "${GITHUB_STEP_SUMMARY}"
