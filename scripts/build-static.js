@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs/promises";
 import path from "node:path";
+import esbuild from "esbuild";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -39,10 +40,13 @@ await fs.writeFile(
   ),
   "utf8",
 );
-await fs.copyFile(
-  path.join(repoRoot, "src/web/tracker/tracker.js"),
-  path.join(assetsDir, "tracker.js"),
-);
+await esbuild.build({
+  entryPoints: [path.join(repoRoot, "src/web/tracker/tracker.js")],
+  bundle: true,
+  format: "esm",
+  platform: "browser",
+  outfile: path.join(assetsDir, "tracker.js"),
+});
 await fs.copyFile(
   path.join(repoRoot, "src/web/tracker/tracker.css"),
   path.join(assetsDir, "tracker.css"),

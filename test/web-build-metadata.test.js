@@ -30,6 +30,7 @@ describe("static tracker build metadata", () => {
     expect(js).toContain("function renderBuildMetadata()");
     expect(js).toContain('gitSha: "unavailable"');
     expect(build).toContain("packageJson.version");
+    expect(build).toContain("esbuild.build");
     expect(build).toContain("GITHUB_SHA");
     expect(build).toContain("Number.isFinite(sourceDateEpochSeconds)");
     expect(build).toContain("static/browser-only");

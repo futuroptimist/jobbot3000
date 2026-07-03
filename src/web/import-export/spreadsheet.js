@@ -691,8 +691,11 @@ export const browserApplicationExportToRows = (bundle) => {
 };
 export const exportCompactCsv = (bundle) =>
   serializeCsv(browserApplicationExportToRows(bundle));
-const compareCodePoints = (left, right) =>
-  left < right ? -1 : left > right ? 1 : 0;
+const compareCodePoints = (left, right) => {
+  const leftText = String(left);
+  const rightText = String(right);
+  return leftText < rightText ? -1 : leftText > rightText ? 1 : 0;
+};
 
 const canonicalizeBackupBundle = (bundle) => {
   const parsed = browserApplicationExportSchema.parse(bundle);

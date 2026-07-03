@@ -205,6 +205,71 @@ describe("spreadsheet import/export", () => {
       COMPACT_CSV_COLUMNS.join(","),
     );
   });
+
+  it("routes tracker UI exports through canonical backup helpers", async () => {
+    const tracker = await readFile("src/web/tracker/tracker.js", "utf8");
+    expect(tracker).toContain("exportCompactCsv");
+    expect(tracker).toContain("exportJsonBackup");
+    expect(tracker).toContain("exportNdjsonBackup");
+    const legacyHeader = [
+      "application_id",
+      "company",
+      "role_title",
+      "status",
+      "applied_at",
+      "posting_url",
+      "application_channel",
+      "follow_up_date",
+      "outcome",
+      "notes",
+    ].join('",\n      "');
+    expect(tracker).not.toContain(`"${legacyHeader}"`);
+  });
+
+  it("orders JSON and NDJSON backup records without default-locale collation", () => {
+    const exportedAt = "2026-03-01T00:00:00.000Z";
+    const bundle = {
+      schemaVersion: 1,
+      exportedAt,
+      applications: [
+        {
+          id: "app_a",
+          company: "Example A",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+        {
+          id: "app_Z",
+          company: "Example Z",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+      contacts: [],
+      outreachMessages: [],
+      lifecycleEvents: [],
+      interviews: [],
+      offers: [],
+      artifacts: [],
+      reminders: [],
+    };
+
+    expect(
+      JSON.parse(exportJsonBackup(bundle)).applications.map(({ id }) => id),
+    ).toEqual(["app_Z", "app_a"]);
+    expect(
+      exportNdjsonBackup(bundle)
+        .trim()
+        .split("\n")
+        .slice(1)
+        .map((line) => JSON.parse(line).record.id),
+    ).toEqual(["app_Z", "app_a"]);
+  });
+
   it("imports the fake compact CSV fixture into IndexedDB and exports stable CSV", async () => {
     const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
     const csv = await fixture();

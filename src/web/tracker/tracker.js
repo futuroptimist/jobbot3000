@@ -1,5 +1,50 @@
 /* global document, indexedDB, confirm */
 /* eslint-disable max-len */
+const COMPACT_CSV_COLUMNS = [
+  "application_id",
+  "company",
+  "role_title",
+  "status",
+  "applied_at",
+  "posting_url",
+  "application_url",
+  "posting_id",
+  "application_channel",
+  "work_model",
+  "location_display",
+  "compensation_min_usd",
+  "compensation_max_usd",
+  "resume_artifact",
+  "resume_url",
+  "cover_letter_submitted",
+  "cover_letter_artifact",
+  "cover_letter_url",
+  "job_description_snapshot_url",
+  "linkedin_snapshot_screenshot_url",
+  "linkedin_snapshot_pdf_url",
+  "fit_score_100",
+  "outreach_status",
+  "outreach_target_name",
+  "outreach_channel",
+  "outreach_sent_at",
+  "outreach_message_text",
+  "interview_stage",
+  "interview_scheduled_at",
+  "follow_up_date",
+  "outcome",
+  "notes",
+  "schema_version",
+];
+const ARRAY_STORES = [
+  "applications",
+  "contacts",
+  "outreachMessages",
+  "lifecycleEvents",
+  "interviews",
+  "offers",
+  "artifacts",
+  "reminders",
+];
 const STATUSES = [
   "applied",
   "outreach_sent",
@@ -193,12 +238,76 @@ function parseCsv(text) {
     .filter((r) => r.some(Boolean))
     .map((r) => Object.fromEntries(head.map((h, i) => [h, r[i] ?? ""])));
 }
+
 function csv(rows) {
   const e = (v) =>
     /[",\n]/.test(String(v ?? ""))
       ? `"${String(v ?? "").replaceAll('"', '""')}"`
       : String(v ?? "");
   return rows.map((r) => r.map(e).join(",")).join("\n") + "\n";
+}
+function compareCodePoints(left, right) {
+  const leftText = String(left);
+  const rightText = String(right);
+  return leftText < rightText ? -1 : leftText > rightText ? 1 : 0;
+}
+function canonicalizeBackupBundle(bundle) {
+  const sorted = { ...bundle };
+  for (const store of ARRAY_STORES) {
+    sorted[store] = [...(bundle[store] ?? [])].sort((a, b) =>
+      compareCodePoints(a.id, b.id),
+    );
+  }
+  return sorted;
+}
+function exportJsonBackup(bundle) {
+  return `${JSON.stringify(canonicalizeBackupBundle(bundle), null, 2)}\n`;
+}
+function exportNdjsonBackup(bundle) {
+  const parsed = canonicalizeBackupBundle(bundle);
+  return (
+    [
+      JSON.stringify({
+        type: "meta",
+        schemaVersion: parsed.schemaVersion ?? 1,
+        exportedAt: parsed.exportedAt ?? now(),
+      }),
+      ...ARRAY_STORES.flatMap((store) =>
+        (parsed[store] ?? []).map((record) =>
+          JSON.stringify({ type: store, record }),
+        ),
+      ),
+      parsed.settings
+        ? JSON.stringify({ type: "settings", record: parsed.settings })
+        : undefined,
+    ]
+      .filter(Boolean)
+      .join("\n") + "\n"
+  );
+}
+function exportCompactCsv(bundle) {
+  const rows = [...(bundle.applications ?? [])]
+    .sort((a, b) => compareCodePoints(a.id, b.id))
+    .map((a) => ({
+      application_id: a.id,
+      company: a.company,
+      role_title: a.role,
+      status: a.status,
+      applied_at: day(a.appliedAt),
+      posting_url: a.postingUrl || "",
+      application_channel: a.source || "",
+      location_display: a.location || "",
+      follow_up_date: day(a.followUpDate),
+      outcome: OUTCOMES.has(a.status) ? a.status : "",
+      notes: a.notes || "",
+      schema_version: "1",
+    }));
+  return csv([
+    COMPACT_CSV_COLUMNS,
+    ...rows.map((row) =>
+      COMPACT_CSV_COLUMNS.map((column) => row[column] ?? ""),
+    ),
+  ]);
 }
 function safeIsoDate(value, fallback) {
   if (!value) return fallback;
@@ -725,60 +834,25 @@ function download(name, type, text) {
   setTimeout(() => URL.revokeObjectURL(a.href), 0);
 }
 function exportData(fmt) {
-  const b = state.bundle;
-  if (fmt === "json")
+  const bundle = state.bundle;
+  if (fmt === "json") {
     download(
       "jobbot3000-backup.json",
       "application/json",
-      JSON.stringify(b, null, 2),
+      exportJsonBackup(bundle),
     );
-  else if (fmt === "ndjson") {
-    const lines = [
-      JSON.stringify({ type: "meta", schemaVersion: 1, exportedAt: now() }),
-      ...[
-        "applications",
-        "contacts",
-        "outreachMessages",
-        "lifecycleEvents",
-        "interviews",
-        "offers",
-        "artifacts",
-        "reminders",
-      ].flatMap((s) =>
-        b[s].map((record) => JSON.stringify({ type: s, record })),
-      ),
-    ];
+  } else if (fmt === "ndjson") {
     download(
       "jobbot3000-backup.ndjson",
       "application/x-ndjson",
-      lines.join("\n") + "\n",
+      exportNdjsonBackup(bundle),
     );
   } else {
-    const head = [
-      "application_id",
-      "company",
-      "role_title",
-      "status",
-      "applied_at",
-      "posting_url",
-      "application_channel",
-      "follow_up_date",
-      "outcome",
-      "notes",
-    ];
-    const rows = b.applications.map((a) => [
-      a.id,
-      a.company,
-      a.role,
-      a.status,
-      day(a.appliedAt),
-      a.postingUrl || "",
-      a.source || "",
-      day(a.followUpDate),
-      OUTCOMES.has(a.status) ? a.status : "",
-      a.notes || "",
-    ]);
-    download("jobbot3000-applications.csv", "text/csv", csv([head, ...rows]));
+    download(
+      "jobbot3000-applications.csv",
+      "text/csv",
+      exportCompactCsv(bundle),
+    );
   }
 }
 
