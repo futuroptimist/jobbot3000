@@ -31,6 +31,28 @@ describe("static tracker build metadata", () => {
     expect(js).toContain('gitSha: "unavailable"');
     expect(build).toContain("packageJson.version");
     expect(build).toContain("GITHUB_SHA");
+    expect(build).toContain("Number.isFinite(sourceDateEpochSeconds)");
     expect(build).toContain("static/browser-only");
+  });
+
+  it("passes commit metadata through Docker image builds", async () => {
+    const dockerfile = await readFile(
+      path.join(repoRoot, "Dockerfile"),
+      "utf8",
+    );
+    const workflow = await readFile(
+      path.join(repoRoot, ".github/workflows/ci-image.yml"),
+      "utf8",
+    );
+    expect(dockerfile).toContain("ARG GITHUB_SHA");
+    expect(dockerfile).toContain("ARG JOBBOT_GIT_SHA");
+    expect(dockerfile).toContain("ARG SOURCE_DATE_EPOCH");
+    expect(workflow).toContain(
+      'source_date_epoch="$(git show -s --format=%ct HEAD)"',
+    );
+    expect(workflow).toContain("GITHUB_SHA=${{ steps.meta.outputs.full_sha }}");
+    expect(workflow).toContain(
+      "GITHUB_SHA=${{ needs.build-and-smoke.outputs.full_sha }}",
+    );
   });
 });

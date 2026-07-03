@@ -10,14 +10,13 @@ const repoRoot = path.resolve(
 const read = (file) => readFile(path.join(repoRoot, file), "utf8");
 
 describe("Helm chart production contract", () => {
-  it("defaults to the GHCR image, immutable-shaped example tag, and probe paths", async () => {
+  it("defaults to the GHCR image, pullable convenience tag, and probe paths", async () => {
     const values = await read("charts/jobbot3000/values.yaml");
     const deployment = await read(
       "charts/jobbot3000/templates/deployment.yaml",
     );
     expect(values).toContain("repository: ghcr.io/futuroptimist/jobbot3000");
-    expect(values).toContain("tag: main-SHORTSHA");
-    expect(values).not.toMatch(/tag:\s*(latest|main|main-latest)\s*$/m);
+    expect(values).toContain("tag: main-latest");
     expect(values).toContain("path: /healthz");
     expect(values).toContain("path: /livez");
     expect(values).toContain("readOnlyRootFilesystem: true");

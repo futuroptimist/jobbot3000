@@ -691,11 +691,16 @@ export const browserApplicationExportToRows = (bundle) => {
 };
 export const exportCompactCsv = (bundle) =>
   serializeCsv(browserApplicationExportToRows(bundle));
+const compareCodePoints = (left, right) =>
+  left < right ? -1 : left > right ? 1 : 0;
+
 const canonicalizeBackupBundle = (bundle) => {
   const parsed = browserApplicationExportSchema.parse(bundle);
   const sorted = { ...parsed };
   for (const store of ARRAY_STORES) {
-    sorted[store] = [...parsed[store]].sort((a, b) => a.id.localeCompare(b.id));
+    sorted[store] = [...parsed[store]].sort((a, b) =>
+      compareCodePoints(a.id, b.id),
+    );
   }
   return sorted;
 };

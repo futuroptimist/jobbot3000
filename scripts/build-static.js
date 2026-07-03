@@ -10,15 +10,17 @@ const assetsDir = path.join(distDir, "assets");
 const packageJson = JSON.parse(
   await fs.readFile(path.join(repoRoot, "package.json"), "utf8"),
 );
+const sourceDateEpochSeconds = Number(process.env.SOURCE_DATE_EPOCH);
 const buildMetadata = {
   version: packageJson.version ?? "unknown",
   gitSha:
     process.env.GITHUB_SHA?.slice(0, 12) ??
     process.env.JOBBOT_GIT_SHA?.slice(0, 12) ??
     "unavailable",
-  builtAt: process.env.SOURCE_DATE_EPOCH
-    ? new Date(Number(process.env.SOURCE_DATE_EPOCH) * 1000).toISOString()
-    : new Date().toISOString(),
+  builtAt:
+    process.env.SOURCE_DATE_EPOCH && Number.isFinite(sourceDateEpochSeconds)
+      ? new Date(sourceDateEpochSeconds * 1000).toISOString()
+      : new Date().toISOString(),
   mode: "static/browser-only",
 };
 

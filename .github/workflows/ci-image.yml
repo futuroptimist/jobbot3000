@@ -22,6 +22,7 @@ jobs:
       full_sha: ${{ steps.meta.outputs.full_sha }}
       short_sha: ${{ steps.meta.outputs.short_sha }}
       created: ${{ steps.meta.outputs.created }}
+      source_date_epoch: ${{ steps.meta.outputs.source_date_epoch }}
       publish: ${{ steps.meta.outputs.publish }}
       repository: ${{ steps.meta.outputs.repository }}
     steps:
@@ -46,6 +47,7 @@ jobs:
           full_sha="$(git rev-parse HEAD)"
           short_sha="$(git rev-parse --short=12 HEAD)"
           created="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          source_date_epoch="$(git show -s --format=%ct HEAD)"
           repository="ghcr.io/futuroptimist/jobbot3000"
           publish="false"
           selected_ref="${SELECTED_REF:-main}"
@@ -66,6 +68,7 @@ jobs:
             echo "full_sha=${full_sha}"
             echo "short_sha=${short_sha}"
             echo "created=${created}"
+            echo "source_date_epoch=${source_date_epoch}"
             echo "repository=${repository}"
             echo "publish=${publish}"
           } >> "${GITHUB_OUTPUT}"
@@ -103,6 +106,10 @@ jobs:
             org.opencontainers.image.revision=${{ steps.meta.outputs.full_sha }}
             org.opencontainers.image.created=${{ steps.meta.outputs.created }}
             org.opencontainers.image.licenses=MIT
+          build-args: |
+            GITHUB_SHA=${{ steps.meta.outputs.full_sha }}
+            JOBBOT_GIT_SHA=${{ steps.meta.outputs.full_sha }}
+            SOURCE_DATE_EPOCH=${{ steps.meta.outputs.source_date_epoch }}
           cache-from: type=gha,scope=jobbot3000-image
           cache-to: type=gha,mode=max,scope=jobbot3000-image
 
@@ -198,6 +205,10 @@ jobs:
             org.opencontainers.image.revision=${{ needs.build-and-smoke.outputs.full_sha }}
             org.opencontainers.image.created=${{ needs.build-and-smoke.outputs.created }}
             org.opencontainers.image.licenses=MIT
+          build-args: |
+            GITHUB_SHA=${{ needs.build-and-smoke.outputs.full_sha }}
+            JOBBOT_GIT_SHA=${{ needs.build-and-smoke.outputs.full_sha }}
+            SOURCE_DATE_EPOCH=${{ needs.build-and-smoke.outputs.source_date_epoch }}
           cache-from: type=gha,scope=jobbot3000-image
           cache-to: type=gha,mode=max,scope=jobbot3000-image
 

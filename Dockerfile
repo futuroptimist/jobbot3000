@@ -5,6 +5,12 @@ COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
 
 FROM deps AS build
+ARG GITHUB_SHA
+ARG JOBBOT_GIT_SHA
+ARG SOURCE_DATE_EPOCH
+ENV GITHUB_SHA=$GITHUB_SHA \
+    JOBBOT_GIT_SHA=$JOBBOT_GIT_SHA \
+    SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH
 COPY tsconfig.json ./
 COPY scripts/build-static.js ./scripts/build-static.js
 COPY src ./src

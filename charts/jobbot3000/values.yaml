@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/futuroptimist/jobbot3000
-  tag: main-SHORTSHA
+  tag: main-latest
   pullPolicy: IfNotPresent
 
 nameOverride: ""
