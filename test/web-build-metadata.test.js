@@ -33,6 +33,7 @@ describe("static tracker build metadata", () => {
     expect(build).toContain("esbuild.build");
     expect(build).toContain("GITHUB_SHA");
     expect(build).toContain("Number.isFinite(sourceDateEpochSeconds)");
+    expect(build).toContain("Number.isFinite(sourceDateEpoch.getTime())");
     expect(build).toContain("static/browser-only");
   });
 

@@ -12,16 +12,19 @@ const packageJson = JSON.parse(
   await fs.readFile(path.join(repoRoot, "package.json"), "utf8"),
 );
 const sourceDateEpochSeconds = Number(process.env.SOURCE_DATE_EPOCH);
+const sourceDateEpoch =
+  process.env.SOURCE_DATE_EPOCH && Number.isFinite(sourceDateEpochSeconds)
+    ? new Date(sourceDateEpochSeconds * 1000)
+    : new Date();
 const buildMetadata = {
   version: packageJson.version ?? "unknown",
   gitSha:
     process.env.GITHUB_SHA?.slice(0, 12) ??
     process.env.JOBBOT_GIT_SHA?.slice(0, 12) ??
     "unavailable",
-  builtAt:
-    process.env.SOURCE_DATE_EPOCH && Number.isFinite(sourceDateEpochSeconds)
-      ? new Date(sourceDateEpochSeconds * 1000).toISOString()
-      : new Date().toISOString(),
+  builtAt: Number.isFinite(sourceDateEpoch.getTime())
+    ? sourceDateEpoch.toISOString()
+    : new Date().toISOString(),
   mode: "static/browser-only",
 };
 
