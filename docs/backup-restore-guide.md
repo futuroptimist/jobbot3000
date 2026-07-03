@@ -100,3 +100,34 @@ Run a quick checklist before resuming normal operations:
   a sandbox directory.
 - Combine the NDJSON export and archive with offsite replication to stay ready
   for disaster recovery.
+
+## Browser IndexedDB production backups
+
+jobbot3000 production mode stores private tracker data in browser IndexedDB. Browser backups are explicit files generated in the browser. Real user data must never be baked into images, charts, Helm values, ConfigMaps, Secrets, PVCs, committed fixtures, screenshots, or public repositories.
+
+| Format | Shape                              | Use it for                                            | Limitations                                                             |
+| ------ | ---------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------- |
+| CSV    | 32-column, one row per application | Google Sheets interchange, human editing, quick audit | Not full-fidelity for multiple events/interviews/offers per application |
+| JSON   | Canonical full-fidelity bundle     | Primary backup, restore, browser migration            | Less convenient for spreadsheet editing                                 |
+| NDJSON | Line-oriented full-fidelity stream | Line-based tooling, review, resilient archives        | Requires every line to be valid JSON                                    |
+
+### Verify a browser backup before clearing data
+
+1. Export JSON and NDJSON from the source browser.
+2. Export CSV if spreadsheet compatibility matters.
+3. Restore JSON or NDJSON into an empty dev/staging browser profile.
+4. Confirm record counts by store, application count, representative notes/outreach/interviews/offers/reminders, and settings.
+5. Re-export from the restore target and compare canonicalized records or counts.
+6. Only then clear the original browser data.
+
+### Restore into dev, staging, and production browsers
+
+Dev, staging, and production deployments are separate browser/storage profiles unless the user imports the same backup into each. To seed any environment, open the deployed app in that browser profile and import an anonymized JSON/NDJSON backup or fake seed data through the UI. Do not include Daniel's real data in committed fixtures, public repos, Docker images, chart packages, or Kubernetes manifests.
+
+### Browser production backup rules
+
+- Production deploys should use immutable image tags.
+- Kubernetes rollback changes the static app version only; it does not roll back IndexedDB.
+- Do not mount PVCs for application tracker data.
+- Do not create Secrets or ConfigMaps containing applications, contacts, outreach, notes, offers, artifacts, reminders, or private settings.
+- Keep real backups in private storage with an access model appropriate for sensitive job-search data.

@@ -127,6 +127,70 @@ describe("web deployment artifacts", () => {
     expect(staticServer).not.toMatch(/writeFile|appendFile|createWriteStream/);
   });
 
+  it("exposes build metadata in static tracker artifacts", async () => {
+    const buildScript = await readFile(
+      path.join(repoRoot, "scripts", "build-static.js"),
+      "utf8",
+    );
+    const trackerHtml = await readFile(
+      path.join(repoRoot, "src", "web", "tracker", "index.html"),
+      "utf8",
+    );
+    expect(buildScript).toContain("build-info.json");
+    expect(buildScript).toContain("packageJson.version");
+    expect(buildScript).toContain("GITHUB_SHA");
+    expect(buildScript).toContain("static/browser-local");
+    expect(trackerHtml).toContain("data-build-info");
+    expect(trackerHtml).toContain("__JOBBOT_BUILD_INFO__");
+  });
+
+  it("regresses against server-side tracker PII persistence in static mode", async () => {
+    const trackerJs = await readFile(
+      path.join(repoRoot, "src", "web", "tracker", "tracker.js"),
+      "utf8",
+    );
+    const staticServer = await readFile(
+      path.join(repoRoot, "scripts", "static-server.js"),
+      "utf8",
+    );
+    const dockerignore = await readFile(
+      path.join(repoRoot, ".dockerignore"),
+      "utf8",
+    );
+    const dockerfile = await readFile(
+      path.join(repoRoot, "Dockerfile"),
+      "utf8",
+    );
+    const values = await readFile(
+      path.join(repoRoot, "charts", "jobbot3000", "values.yaml"),
+      "utf8",
+    );
+    const templates = await Promise.all(
+      ["deployment.yaml", "service.yaml", "ingress.yaml"].map((file) =>
+        readFile(
+          path.join(repoRoot, "charts", "jobbot3000", "templates", file),
+          "utf8",
+        ),
+      ),
+    );
+
+    expect(trackerJs).not.toMatch(/fetch\s*\(/);
+    expect(trackerJs).not.toMatch(/XMLHttpRequest|sendBeacon/);
+    expect(trackerJs).toContain("indexedDB.open");
+    expect(staticServer).not.toMatch(/app\.(post|put|patch|delete)\(/);
+    expect(staticServer).not.toMatch(/writeFile|appendFile|createWriteStream/);
+    expect(dockerignore).toMatch(/^data$/m);
+    expect(dockerignore).toMatch(/^\.env/m);
+    expect(dockerignore).toMatch(/^backups\/?$/m);
+    expect(dockerfile).not.toContain("COPY data");
+    expect(dockerfile).not.toContain(".env");
+    expect(values).toContain("repository: ghcr.io/futuroptimist/jobbot3000");
+    expect(values).not.toMatch(/latest|main-latest/);
+    for (const template of templates) {
+      expect(template).not.toMatch(/PersistentVolumeClaim|kind:\s*Secret/);
+    }
+  });
+
   it("documents static privacy boundaries and IndexedDB backup guidance", async () => {
     const doc = await readFile(
       path.join(repoRoot, "docs", "privacy-and-security.md"),

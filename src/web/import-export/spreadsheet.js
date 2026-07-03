@@ -691,10 +691,37 @@ export const browserApplicationExportToRows = (bundle) => {
 };
 export const exportCompactCsv = (bundle) =>
   serializeCsv(browserApplicationExportToRows(bundle));
-export const exportJsonBackup = (bundle) =>
-  `${JSON.stringify(browserApplicationExportSchema.parse(bundle), null, 2)}\n`;
-export const exportNdjsonBackup = (bundle) => {
+const sortRecordsById = (records) =>
+  [...records].sort((a, b) => String(a.id).localeCompare(String(b.id)));
+
+const canonicalizeBundle = (bundle) => {
   const parsed = browserApplicationExportSchema.parse(bundle);
+  return {
+    backup_schema_version: parsed.schemaVersion,
+    source_database_version: 1,
+    ...parsed,
+    ...Object.fromEntries(
+      ARRAY_STORES.map((store) => [store, sortRecordsById(parsed[store])]),
+    ),
+  };
+};
+
+const normalizeBackupBundle = (data) => {
+  if (
+    data &&
+    typeof data === "object" &&
+    "backup_schema_version" in data &&
+    !("schemaVersion" in data)
+  ) {
+    return { ...data, schemaVersion: data.backup_schema_version };
+  }
+  return data;
+};
+
+export const exportJsonBackup = (bundle) =>
+  `${JSON.stringify(canonicalizeBundle(bundle), null, 2)}\n`;
+export const exportNdjsonBackup = (bundle) => {
+  const parsed = canonicalizeBundle(bundle);
   const stores = ARRAY_STORES;
   return (
     [
@@ -715,7 +742,7 @@ export const exportNdjsonBackup = (bundle) => {
   );
 };
 export const importJsonBackup = (text) =>
-  browserApplicationExportSchema.parse(JSON.parse(text));
+  browserApplicationExportSchema.parse(normalizeBackupBundle(JSON.parse(text)));
 export const importNdjsonBackup = (text) => {
   const bundle = {
     schemaVersion: 1,

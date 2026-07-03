@@ -153,9 +153,23 @@ Run the snippet with `node example.js` after saving it to a file in the project 
 
 Production deployments use the static, browser-local web build. The container serves static assets and `/healthz` and `/livez`; it does not own private tracker data, Secrets, or application data volumes.
 
+- [docs/production-readiness.md](docs/production-readiness.md) is the final production checklist for first use, first deploy, restore, rollback, and verification.
+- [docs/backup-restore-guide.md](docs/backup-restore-guide.md) explains CSV/JSON/NDJSON backup and restore choices.
+- [docs/import-current-spreadsheet.md](docs/import-current-spreadsheet.md) covers replacing the current Google Sheets tracker with jobbot3000.
 - [docs/release-ghcr.md](docs/release-ghcr.md) explains the GHCR image workflow and immutable image tags such as `ghcr.io/futuroptimist/jobbot3000:main-<short-sha>`.
 - [docs/release-helm.md](docs/release-helm.md) explains the app-owned Helm chart, OCI publishing workflow, and Sugarkube chart pin for `oci://ghcr.io/futuroptimist/charts/jobbot3000`.
 - [charts/jobbot3000/ci](charts/jobbot3000/ci) contains placeholder dev, staging, and production values examples for Sugarkube-owned environment configuration.
+
+### Deploy with Sugarkube
+
+Sugarkube owns environment-specific orchestration. Use the Sugarkube jobbot3000 runbook there rather than duplicating hosts, secrets, or cluster-specific values in this repo. High-level flow:
+
+1. Publish `ghcr.io/futuroptimist/jobbot3000:main-<short-sha>` for the static app build.
+2. Publish `oci://ghcr.io/futuroptimist/charts/jobbot3000` only when chart content changes.
+3. Deploy staging with the immutable image tag.
+4. Verify `/`, `/tracker`, `/healthz`, and `/livez`.
+5. Import the backup through the browser UI, then export JSON/NDJSON and CSV backups from the browser UI.
+6. Promote production with the same immutable tag after staging verification.
 
 Image tags and chart versions are intentionally separate: bump the image tag for a new static app build, and bump `charts/jobbot3000/Chart.yaml` `version` for Kubernetes packaging or default-value changes.
 
@@ -169,8 +183,9 @@ Image tags and chart versions are intentionally separate: bump the image tag for
 - [docs/privacy-and-security.md](docs/privacy-and-security.md) – browser-only production privacy model, backups, clearing data, quota caveats, and static security headers
 - [docs/indexeddb-persistence.md](docs/indexeddb-persistence.md) – browser IndexedDB persistence, backup/restore, and quota caveats
 - [docs/spreadsheet-replacement.md](docs/spreadsheet-replacement.md) – CSV/JSON/NDJSON import-export workflow for replacing the current spreadsheet
-- [docs/backup-restore-guide.md](docs/backup-restore-guide.md) – backup, restore, and verification
-  steps
+- [docs/import-current-spreadsheet.md](docs/import-current-spreadsheet.md) – step-by-step Google Sheets CSV migration and transition backup cadence
+- [docs/backup-restore-guide.md](docs/backup-restore-guide.md) – backup, restore, and verification steps
+- [docs/production-readiness.md](docs/production-readiness.md) – production safety, deploy, restore, rollback, and smoke-test checklists
 - [docs/web-ux-guidelines.md](docs/web-ux-guidelines.md) – layout, typography, and interaction guardrails
 - [GitHub Actions: web-screenshots.yml](https://github.com/futuroptimist/jobbot3000/actions/workflows/web-screenshots.yml) – captures the latest UI flows for regressions
 

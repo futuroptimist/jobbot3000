@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs/promises";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -11,9 +12,39 @@ const assetsDir = path.join(distDir, "assets");
 await fs.rm(distDir, { recursive: true, force: true });
 await fs.mkdir(assetsDir, { recursive: true });
 
-await fs.copyFile(
+const packageJson = JSON.parse(
+  await fs.readFile(path.join(repoRoot, "package.json"), "utf8"),
+);
+const readGit = (args) => {
+  try {
+    return execFileSync("git", args, {
+      cwd: repoRoot,
+      encoding: "utf8",
+    }).trim();
+  } catch {
+    return "unknown";
+  }
+};
+const buildInfo = {
+  version: packageJson.version || "unknown",
+  gitSha:
+    process.env.GITHUB_SHA || readGit(["rev-parse", "--short=12", "HEAD"]),
+  builtAt: process.env.SOURCE_DATE_EPOCH
+    ? new Date(Number(process.env.SOURCE_DATE_EPOCH) * 1000).toISOString()
+    : new Date().toISOString(),
+  mode: "static/browser-local",
+};
+const trackerTemplate = await fs.readFile(
   path.join(repoRoot, "src/web/tracker/index.html"),
+  "utf8",
+);
+await fs.writeFile(
   path.join(distDir, "tracker.html"),
+  trackerTemplate.replace(
+    "__JOBBOT_BUILD_INFO__",
+    `${buildInfo.mode} · v${buildInfo.version} · ${buildInfo.gitSha} · ${buildInfo.builtAt}`,
+  ),
+  "utf8",
 );
 await fs.copyFile(
   path.join(repoRoot, "src/web/tracker/tracker.js"),
@@ -66,6 +97,12 @@ const manifest = {
   background_color: "#0b0d0f",
   theme_color: "#38bdf8",
 };
+await fs.writeFile(
+  path.join(distDir, "build-info.json"),
+  `${JSON.stringify(buildInfo, null, 2)}\n`,
+  "utf8",
+);
+
 await fs.writeFile(
   path.join(distDir, "manifest.webmanifest"),
   `${JSON.stringify(manifest, null, 2)}\n`,

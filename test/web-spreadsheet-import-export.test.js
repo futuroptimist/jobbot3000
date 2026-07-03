@@ -352,9 +352,7 @@ describe("spreadsheet import/export", () => {
       "app_regenerated",
     );
     expect(exported.interviews[0].contactIds).toEqual(
-      expect.not.arrayContaining([
-        expect.stringContaining("app_regenerated"),
-      ]),
+      expect.not.arrayContaining([expect.stringContaining("app_regenerated")]),
     );
     const childCounts = Object.fromEntries(
       childStores.map((store) => [store, exported[store].length]),
@@ -371,6 +369,234 @@ describe("spreadsheet import/export", () => {
         childStores.map((store) => [store, exportedAgain[store].length]),
       ),
     ).toEqual(childCounts);
+
+    repo.close();
+  });
+});
+
+describe("production backup and restore integrity", () => {
+  const canonical = (bundle) => ({
+    ...bundle,
+    exportedAt: "CANONICAL",
+    applications: [...bundle.applications].sort((a, b) =>
+      a.id.localeCompare(b.id),
+    ),
+    contacts: [...bundle.contacts].sort((a, b) => a.id.localeCompare(b.id)),
+    outreachMessages: [...bundle.outreachMessages].sort((a, b) =>
+      a.id.localeCompare(b.id),
+    ),
+    lifecycleEvents: [...bundle.lifecycleEvents].sort((a, b) =>
+      a.id.localeCompare(b.id),
+    ),
+    interviews: [...bundle.interviews].sort((a, b) => a.id.localeCompare(b.id)),
+    offers: [...bundle.offers].sort((a, b) => a.id.localeCompare(b.id)),
+    artifacts: [...bundle.artifacts].sort((a, b) => a.id.localeCompare(b.id)),
+    reminders: [...bundle.reminders].sort((a, b) => a.id.localeCompare(b.id)),
+  });
+
+  it("runs an end-to-end fake-data backup and restore smoke flow", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    const csv = await fixture();
+    await importCompactCsv(csv, repo, { mode: "replace" });
+
+    const now = "2026-04-01T12:00:00.000Z";
+    const app = {
+      id: "app_manual_gamma_003",
+      company: "Demo Analytics",
+      role: "Principal Data Engineer",
+      status: "applied",
+      postingUrl: "https://jobs.example.test/demo-analytics/principal-data",
+      appliedAt: now,
+      followUpDate: "2026-04-08T00:00:00.000Z",
+      notes: "Fake manual application for production-readiness smoke tests.",
+      createdAt: now,
+      updatedAt: now,
+    };
+    const contact = {
+      id: "contact_manual_gamma_003",
+      applicationId: app.id,
+      name: "Taylor Fixture",
+      email: "taylor.fixture@example.test",
+      createdAt: now,
+      updatedAt: now,
+    };
+    const reminder = {
+      id: "reminder_manual_gamma_003",
+      applicationId: app.id,
+      contactId: contact.id,
+      dueAt: "2026-04-08T00:00:00.000Z",
+      summary: "Send a fake follow-up",
+      createdAt: now,
+      updatedAt: now,
+    };
+    await repo.createApplication(app);
+    await repo.updateApplication({
+      ...app,
+      status: "technical_screen",
+      updatedAt: "2026-04-02T12:00:00.000Z",
+    });
+    await repo.upsertContact(contact);
+    await repo.addOutreachMessage({
+      id: "message_manual_gamma_003",
+      applicationId: app.id,
+      contactId: contact.id,
+      direction: "outbound",
+      channel: "email",
+      subject: "Fake hello",
+      body: "This is anonymized fixture outreach.",
+      sentAt: "2026-04-02T13:00:00.000Z",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await repo.upsertInterview({
+      id: "interview_manual_gamma_003",
+      applicationId: app.id,
+      contactIds: [contact.id],
+      stage: "technical_screen",
+      startsAt: "2026-04-04T16:00:00.000Z",
+      outcome: "completed",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await repo.upsertOffer({
+      id: "offer_manual_gamma_003",
+      applicationId: app.id,
+      status: "received",
+      baseSalaryMin: 180000,
+      baseSalaryMax: 210000,
+      currency: "USD",
+      createdAt: now,
+      updatedAt: now,
+    });
+    const withReminder = await repo.exportAllData();
+    await repo.importAllData(
+      { ...withReminder, reminders: [reminder] },
+      { allowOverwrite: true },
+    );
+    const completedReminder = {
+      ...reminder,
+      completedAt: "2026-04-03T00:00:00.000Z",
+      updatedAt: "2026-04-03T00:00:00.000Z",
+    };
+    await repo.importAllData(
+      { ...(await repo.exportAllData()), reminders: [completedReminder] },
+      { allowOverwrite: true },
+    );
+    await repo.importAllData(
+      { ...(await repo.exportAllData()), reminders: [reminder] },
+      { allowOverwrite: true },
+    );
+
+    const full = await repo.exportAllData();
+    expect(full.applications).toHaveLength(3);
+    expect(full.outreachMessages).toHaveLength(3);
+    expect(parseCsv(exportCompactCsv(full))[0]).toMatchObject({
+      application_id: "app_fake_alpha_001",
+    });
+    const json = exportJsonBackup(full);
+    const ndjson = exportNdjsonBackup(full);
+
+    await repo.clearAllData();
+    await repo.importAllData(importJsonBackup(json));
+    const restoredJson = await repo.exportAllData();
+    expect(restoredJson.offers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "offer_manual_gamma_003" }),
+      ]),
+    );
+
+    await repo.clearAllData();
+    await repo.importAllData(importNdjsonBackup(ndjson));
+    const restoredNdjson = await repo.exportAllData();
+    expect(canonical(restoredNdjson)).toMatchObject(canonical(restoredJson));
+
+    repo.close();
+  });
+
+  it("exports deterministic metadata and rejects corrupt restores", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    const csv = await fixture();
+    await importCompactCsv(csv, repo, { mode: "replace" });
+    const bundle = await repo.exportAllData();
+    const firstJson = exportJsonBackup(bundle);
+    const secondJson = exportJsonBackup({
+      ...bundle,
+      applications: [...bundle.applications].reverse(),
+    });
+    expect(firstJson).toBe(secondJson);
+    const parsed = JSON.parse(firstJson);
+    expect(parsed.backup_schema_version).toBe(1);
+    expect(parsed.source_database_version).toBe(1);
+    expect(
+      Object.fromEntries(
+        [
+          "applications",
+          "contacts",
+          "outreachMessages",
+          "lifecycleEvents",
+          "interviews",
+          "offers",
+          "artifacts",
+          "reminders",
+        ].map((store) => [store, parsed[store].length]),
+      ),
+    ).toMatchObject({ applications: 2, outreachMessages: 2 });
+    expect(exportNdjsonBackup(bundle)).toBe(
+      exportNdjsonBackup({
+        ...bundle,
+        applications: [...bundle.applications].reverse(),
+      }),
+    );
+    expect(exportCompactCsv(bundle).split("\n")[0]).toBe(
+      COMPACT_CSV_COLUMNS.join(","),
+    );
+
+    expect(() => importJsonBackup("{")).toThrow();
+    expect(() =>
+      importJsonBackup(JSON.stringify({ ...bundle, schemaVersion: 999 })),
+    ).toThrow();
+    expect(() =>
+      importJsonBackup(
+        JSON.stringify({
+          ...bundle,
+          applications: [bundle.applications[0], bundle.applications[0]],
+        }),
+      ),
+    ).toThrow(/Duplicate applications id/);
+    expect(() =>
+      importJsonBackup(
+        JSON.stringify({ schemaVersion: 1, exportedAt: bundle.exportedAt }),
+      ),
+    ).toThrow();
+    expect(() =>
+      importNdjsonBackup('{"type":"meta","schemaVersion":1}\nnot-json\n'),
+    ).toThrow();
+
+    const before = await repo.exportAllData();
+    await expect(
+      repo.importAllData(
+        {
+          ...bundle,
+          contacts: [{ ...bundle.contacts[0], applicationId: "missing" }],
+        },
+        { allowOverwrite: true },
+      ),
+    ).rejects.toMatchObject({ code: "schema_validation_failed" });
+    expect(canonical(await repo.exportAllData())).toMatchObject(
+      canonical(before),
+    );
+    const dryRun = await repo.importAllData(bundle, { dryRun: true });
+    expect(dryRun).toMatchObject({
+      imported: false,
+      hasExistingData: true,
+      conflicts: expect.any(Array),
+    });
+    expect(canonical(await repo.exportAllData())).toMatchObject(
+      canonical(before),
+    );
+    await expect(repo.importAllData(bundle)).rejects.toMatchObject({
+      code: "import_conflict",
+    });
 
     repo.close();
   });
