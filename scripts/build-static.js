@@ -7,6 +7,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const distDir = path.join(repoRoot, "dist");
 const assetsDir = path.join(distDir, "assets");
+const packageJson = JSON.parse(
+  await fs.readFile(path.join(repoRoot, "package.json"), "utf8"),
+);
+const buildMetadata = {
+  version: packageJson.version ?? "unknown",
+  gitSha: process.env.GITHUB_SHA || process.env.JOBBOT_GIT_SHA || "unknown",
+  buildTimestamp: process.env.SOURCE_DATE_EPOCH
+    ? new Date(Number(process.env.SOURCE_DATE_EPOCH) * 1000).toISOString()
+    : new Date().toISOString(),
+  mode: "static/browser-local",
+};
 
 await fs.rm(distDir, { recursive: true, force: true });
 await fs.mkdir(assetsDir, { recursive: true });
@@ -15,9 +26,18 @@ await fs.copyFile(
   path.join(repoRoot, "src/web/tracker/index.html"),
   path.join(distDir, "tracker.html"),
 );
-await fs.copyFile(
+const trackerJs = await fs.readFile(
   path.join(repoRoot, "src/web/tracker/tracker.js"),
+  "utf8",
+);
+const trackerBuildPreamble = [
+  "/* eslint-disable max-len */",
+  `globalThis.__JOBBOT_BUILD__ = ${JSON.stringify(buildMetadata)};`,
+].join("\n");
+await fs.writeFile(
   path.join(assetsDir, "tracker.js"),
+  `${trackerBuildPreamble}\n${trackerJs}`,
+  "utf8",
 );
 await fs.copyFile(
   path.join(repoRoot, "src/web/tracker/tracker.css"),
@@ -54,6 +74,8 @@ const indexHtml = `<!doctype html>
 This server only serves static assets and health endpoints.</p>
 <nav class="primary-nav"><a href="/tracker">Open tracker</a><a href="/healthz">healthz</a>
 <a href="/livez">livez</a></nav>
+<p class="muted">Version ${buildMetadata.version} • ${buildMetadata.mode} •
+${buildMetadata.gitSha.slice(0, 12)} • ${buildMetadata.buildTimestamp}</p>
 </main></body></html>\n`;
 await fs.writeFile(path.join(distDir, "index.html"), indexHtml, "utf8");
 await fs.writeFile(path.join(distDir, "404.html"), indexHtml, "utf8");

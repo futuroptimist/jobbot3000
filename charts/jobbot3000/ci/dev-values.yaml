@@ -1,5 +1,5 @@
 image:
-  tag: main-latest
+  tag: main-REPLACE_WITH_SHORT_SHA
 
 ingress:
   enabled: true

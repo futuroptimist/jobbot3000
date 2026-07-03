@@ -42,6 +42,15 @@ const esc = (v) =>
   );
 const id = (p = "id") =>
   `${p}_${Date.now().toString(36)}_${crypto.getRandomValues(new Uint32Array(1))[0].toString(36)}`;
+const buildMetadata = globalThis.__JOBBOT_BUILD__ ?? {};
+const buildLabel = () => {
+  const version = buildMetadata.version || "unknown";
+  const sha = buildMetadata.gitSha || "unknown";
+  const shortSha = sha === "unknown" ? sha : String(sha).slice(0, 12);
+  const timestamp = buildMetadata.buildTimestamp || "unknown";
+  const mode = buildMetadata.mode || "static/browser-local";
+  return `Version ${version} • ${mode} • ${shortSha} • ${timestamp}`;
+};
 function ensureIndex(store, name, keyPath) {
   if (!store.indexNames.contains(name)) store.createIndex(name, keyPath);
 }
@@ -782,6 +791,8 @@ function exportData(fmt) {
   }
 }
 function init() {
+  const buildInfo = $("[data-build-info]");
+  if (buildInfo) buildInfo.textContent = buildLabel();
   renderNav();
   $('[data-filter="status"]').innerHTML += STATUSES.map(
     (s) => `<option>${s}</option>`,

@@ -1,102 +1,39 @@
-# Backup and Restore Guide
+# Backup and restore guide
 
-Use this guide to capture and restore the persistent state that powers jobbot3000.
-The CLI and web server both read and write from the same directories.
-Back up the entire data root alongside structured exports before performing risky upgrades.
+jobbot3000 production mode stores private tracker data in browser IndexedDB. Backups are explicit browser downloads; the server, Docker image, Helm chart, Kubernetes resources, and repo fixtures must not contain real application data.
 
-## Scope
+## Formats
 
-- `JOBBOT_DATA_DIR` (defaults to `./data/`) stores SQLite databases, job snapshots,
-  deliverables, and resume artifacts.
-- `opportunities.db` inside the data directory persists opportunities, contacts,
-  lifecycle events, and attachment metadata.
-- `JOBBOT_AUDIT_LOG` (defaults to `data/audit/audit-log.jsonl`) records privileged
-  CLI actions.
+| Format | Fidelity                                      | Shape                                                           | Use when                                                                  |
+| ------ | --------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| CSV    | Spreadsheet-compatible, intentionally limited | Stable 32 columns, one row per application                      | Editing in Google Sheets, manual audits, interchange with the old tracker |
+| JSON   | Full fidelity                                 | One canonical backup bundle with schema metadata and all stores | Normal backup/restore, browser migration, pre-clear safety copy           |
+| NDJSON | Full fidelity                                 | One typed JSON record per line plus metadata                    | Streaming, diff-friendly review, automation                               |
 
-Before backing up, pause scheduled tasks and stop any running `npm run web:server`
-processes to avoid writes mid-archive.
+## Verify before clearing data
 
-## Backup
+1. Export JSON and NDJSON from **Import/Export**.
+2. Save them to an encrypted private location outside the repo and Docker build context.
+3. Restore into an empty browser profile or disposable staging origin.
+4. Verify application count, store counts, conflicts, schema version, representative records, and follow-up/reminder state.
+5. Re-export after restore and compare canonicalized records/counts.
+6. Only then clear the original browser data if needed.
 
-1. Resolve data and audit locations:
-   ```bash
-   export JOBBOT_DATA_DIR="${JOBBOT_DATA_DIR:-$(pwd)/data}"
-   export JOBBOT_AUDIT_LOG="${JOBBOT_AUDIT_LOG:-$JOBBOT_DATA_DIR/audit/audit-log.jsonl}"
-   mkdir -p backups
-   ```
-2. Export the SQLite contents as newline-delimited JSON so you can diff or replay
-   entries later:
-   ```bash
-   node scripts/export-data.js > backups/opportunities.ndjson
-   ```
-3. Archive the entire data directory, including attachments and deliverables:
-   ```bash
-   tar -czf backups/jobbot-backup.tgz -C "$JOBBOT_DATA_DIR" .
-   ```
-   On Windows PowerShell, use:
-   ```powershell
-   Compress-Archive -Path "$env:JOBBOT_DATA_DIR\*" -DestinationPath "backups\jobbot-backup.zip"
-   ```
-4. Copy the audit log alongside the archive for compliance reviews:
-   ```bash
-   cp "$JOBBOT_AUDIT_LOG" backups/
-   ```
-5. Store the archive, NDJSON export, and audit log in an encrypted destination
-   such as S3 with server-side encryption or a password-protected external drive.
+## Restore into dev, staging, or production browsers
 
-## Restore
+Dev, staging, and production are separate browser storage profiles unless the same backup is manually imported into each one. To restore or seed an environment:
 
-1. Point `JOBBOT_DATA_DIR` at the directory you want to hydrate and ensure it is
-   empty:
-   ```bash
-   export JOBBOT_DATA_DIR="${JOBBOT_DATA_DIR:-$(pwd)/data}"
-   rm -rf "$JOBBOT_DATA_DIR"
-   mkdir -p "$JOBBOT_DATA_DIR"
-   ```
-2. Extract the archived files:
-   ```bash
-   tar -xzf backups/jobbot-backup.tgz -C "$JOBBOT_DATA_DIR"
-   ```
-   On Windows PowerShell, run:
-   ```powershell
-   Expand-Archive -Path "backups\jobbot-backup.zip" -DestinationPath $env:JOBBOT_DATA_DIR -Force
-   ```
-3. Restore the audit log if present:
-   ```bash
-   cp backups/audit-log.jsonl "$JOBBOT_AUDIT_LOG"
-   ```
-4. Replay the structured export with a dry-run first:
-   ```bash
-   node scripts/import-data.js --source backups/opportunities.ndjson --dry-run
-   ```
-   When the validation succeeds, apply the import:
-   ```bash
-   node scripts/import-data.js --source backups/opportunities.ndjson
-   ```
-5. Restart any background schedulers or the web server after the restore completes.
+1. Open that environment's deployed app in the intended browser profile.
+2. Import an anonymized JSON/NDJSON backup, fake seed data, or the private production backup through the browser UI as appropriate.
+3. Do not commit Daniel's real data, real backups, real Drive links, real emails, outreach messages, resumes, or private settings.
+4. Do not place real backups in public repos, Docker images, Helm values, ConfigMaps, Secrets, PVCs, or server files.
 
-## Verify
+## Choosing a format
 
-Run a quick checklist before resuming normal operations:
+- Use **CSV** when a person needs to inspect or edit one application per row in a spreadsheet.
+- Use **JSON** before clearing data, before browser/profile changes, before production use, and for most restores.
+- Use **NDJSON** when line-oriented validation or automation is easier than a single JSON bundle.
 
-- Confirm analytics metrics load:
-  ```bash
-  jobbot analytics health --json
-  ```
-- Export a temporary snapshot to ensure SQLite reads succeed:
-  ```bash
-  node scripts/export-data.js > /tmp/restore-check.ndjson
-  ```
-- Inspect the audit log tail for recent entries and permissions issues:
-  ```bash
-  tail "$JOBBOT_AUDIT_LOG"
-  ```
+## Failure handling
 
-## Automation tips
-
-- Schedule the export and archive commands via cron or Task Scheduler to create
-  rolling backups.
-- Store multiple generations (daily or weekly) and test restores periodically in
-  a sandbox directory.
-- Combine the NDJSON export and archive with offsite replication to stay ready
-  for disaster recovery.
+Corrupt JSON, malformed NDJSON lines, unsupported backup schema versions, duplicate IDs, missing required stores, and dangling references should fail validation before mutating IndexedDB. Use dry-run/preview flows first; replace restore requires explicit overwrite confirmation when data already exists, and merge flows should report conflicts.

@@ -127,6 +127,32 @@ describe("web deployment artifacts", () => {
     expect(staticServer).not.toMatch(/writeFile|appendFile|createWriteStream/);
   });
 
+  it("proves static tracker source keeps private data in IndexedDB without POSTs", async () => {
+    const tracker = await readFile(
+      path.join(repoRoot, "src", "web", "tracker", "tracker.js"),
+      "utf8",
+    );
+    expect(tracker).toContain('indexedDB.open("jobbot3000", 1)');
+    for (const privateStore of [
+      "applications",
+      "contacts",
+      "outreachMessages",
+      "lifecycleEvents",
+      "interviews",
+      "offers",
+      "artifacts",
+      "reminders",
+      "settings",
+    ]) {
+      expect(tracker).toContain(`"${privateStore}"`);
+    }
+    expect(tracker).not.toMatch(/fetch\s*\(/);
+    expect(tracker).not.toMatch(/XMLHttpRequest|sendBeacon/);
+    expect(tracker).not.toMatch(/method:\s*["']POST["']/i);
+    expect(tracker).not.toContain("/commands");
+    expect(tracker).not.toContain("better-sqlite3");
+  });
+
   it("documents static privacy boundaries and IndexedDB backup guidance", async () => {
     const doc = await readFile(
       path.join(repoRoot, "docs", "privacy-and-security.md"),
@@ -200,5 +226,78 @@ describe("GHCR image workflow", () => {
     );
     expect(doc).toContain("/healthz");
     expect(doc).toContain("/livez");
+  });
+});
+
+describe("Helm chart production contract", () => {
+  it("keeps browser data out of Kubernetes defaults and uses immutable-shaped tags", async () => {
+    const values = await readFile(
+      path.join(repoRoot, "charts", "jobbot3000", "values.yaml"),
+      "utf8",
+    );
+    const deployment = await readFile(
+      path.join(
+        repoRoot,
+        "charts",
+        "jobbot3000",
+        "templates",
+        "deployment.yaml",
+      ),
+      "utf8",
+    );
+    const renderedSources = [
+      values,
+      deployment,
+      await readFile(
+        path.join(
+          repoRoot,
+          "charts",
+          "jobbot3000",
+          "templates",
+          "service.yaml",
+        ),
+        "utf8",
+      ),
+      await readFile(
+        path.join(
+          repoRoot,
+          "charts",
+          "jobbot3000",
+          "templates",
+          "ingress.yaml",
+        ),
+        "utf8",
+      ),
+    ].join("\n");
+
+    expect(values).toContain("repository: ghcr.io/futuroptimist/jobbot3000");
+    expect(values).toContain("tag: main-REPLACE_WITH_SHORT_SHA");
+    expect(values).not.toMatch(/^\s*tag:\s*(latest|main|main-latest)\s*$/m);
+    expect(renderedSources).toContain(
+      "path: {{ .Values.probes.readiness.path }}",
+    );
+    expect(renderedSources).toContain(
+      "path: {{ .Values.probes.liveness.path }}",
+    );
+    expect(values).toContain("path: /healthz");
+    expect(values).toContain("path: /livez");
+    expect(renderedSources).not.toMatch(
+      /kind:\s*(PersistentVolumeClaim|Secret)\b/,
+    );
+    expect(renderedSources).not.toContain("JOBBOT_DATA_DIR");
+    expect(renderedSources).not.toContain("persistentVolume");
+  });
+
+  it("validates default, ingress, staging, and prod helm templates", async () => {
+    const script = await readFile(
+      path.join(repoRoot, "scripts", "validate-helm.sh"),
+      "utf8",
+    );
+    expect(script).toContain('helm lint "${chart_dir}"');
+    expect(script).toContain("--set image.tag=main-TESTSHA");
+    expect(script).toContain(
+      "--set ingress.host=jobbot3000.staging.example.test",
+    );
+    expect(script).toContain("--set ingress.host=jobbot3000.example.test");
   });
 });

@@ -143,6 +143,197 @@ describe("spreadsheet import/export", () => {
     repo.close();
   });
 
+  it("covers a full fake-data CSV to JSON/NDJSON backup restore workflow", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    const csv = await fixture();
+    const importResult = await importCompactCsv(csv, repo, { mode: "replace" });
+    expect(importResult.imported).toBe(true);
+    expect(importResult.preview.rowCount).toBe(2);
+
+    const timestamp = "2026-03-04T05:06:07.000Z";
+    const manualApplication = {
+      id: "app_manual_gamma_003",
+      company: "Demo Analytics",
+      role: "Product Infrastructure Engineer",
+      status: "applied",
+      source: "manual",
+      postingUrl: "https://jobs.example.test/demo-analytics/product-infra",
+      location: "Remote",
+      remote: true,
+      appliedAt: timestamp,
+      followUpDate: "2026-03-10T00:00:00.000Z",
+      notes: "Anonymized manual smoke-test application.",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    await repo.createApplication(manualApplication);
+    await repo.updateApplication({
+      ...manualApplication,
+      status: "offer",
+      followUpDate: undefined,
+      updatedAt: "2026-03-05T05:06:07.000Z",
+    });
+    await repo.upsertContact({
+      id: "contact_manual_gamma_003",
+      applicationId: manualApplication.id,
+      name: "Taylor Test",
+      email: "taylor.test@example.test",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    await repo.addOutreachMessage({
+      id: "message_manual_gamma_003",
+      applicationId: manualApplication.id,
+      contactId: "contact_manual_gamma_003",
+      direction: "outbound",
+      channel: "email",
+      subject: "Anonymized outreach",
+      body: "Fake outreach body for restore testing.",
+      sentAt: "2026-03-05T12:00:00.000Z",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    await repo.addLifecycleEvent({
+      id: "event_manual_gamma_offer",
+      applicationId: manualApplication.id,
+      status: "offer",
+      occurredAt: "2026-03-06T12:00:00.000Z",
+      source: "manual",
+      note: "Fake final outcome.",
+      createdAt: timestamp,
+    });
+    await repo.upsertInterview({
+      id: "interview_manual_gamma_003",
+      applicationId: manualApplication.id,
+      contactIds: ["contact_manual_gamma_003"],
+      stage: "technical_screen",
+      startsAt: "2026-03-06T15:00:00.000Z",
+      outcome: "completed",
+      preparationNotes: "Fake preparation notes.",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    await repo.upsertOffer({
+      id: "offer_manual_gamma_003",
+      applicationId: manualApplication.id,
+      status: "received",
+      baseSalaryMin: 150000,
+      baseSalaryMax: 175000,
+      currency: "USD",
+      notes: "Fake offer notes.",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    const fullBundle = await repo.exportAllData();
+    expect(fullBundle.applications).toHaveLength(3);
+    expect(fullBundle.interviews).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "interview_manual_gamma_003" }),
+      ]),
+    );
+    expect(exportCompactCsv(fullBundle).split("\n")[0]).toBe(
+      COMPACT_CSV_COLUMNS.join(","),
+    );
+    const jsonText = exportJsonBackup(fullBundle);
+    const ndjsonText = exportNdjsonBackup(fullBundle);
+
+    await repo.clearAllData();
+    expect((await repo.exportAllData()).applications).toHaveLength(0);
+    await repo.importAllData(importJsonBackup(jsonText), {
+      allowOverwrite: true,
+    });
+    const restoredJson = await repo.exportAllData();
+    const restoredManual = restoredJson.applications.find(
+      ({ id }) => id === "app_manual_gamma_003",
+    );
+    expect(restoredManual).toMatchObject({
+      id: "app_manual_gamma_003",
+      status: "offer",
+    });
+    expect(restoredManual).not.toHaveProperty("followUpDate");
+    expect(restoredJson.offers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "offer_manual_gamma_003",
+          status: "received",
+        }),
+      ]),
+    );
+
+    await repo.clearAllData();
+    await repo.importAllData(importNdjsonBackup(ndjsonText), {
+      allowOverwrite: true,
+    });
+    const restoredNdjson = await repo.exportAllData();
+    const canonical = (bundle) =>
+      JSON.parse(
+        exportJsonBackup({ ...bundle, exportedAt: fullBundle.exportedAt }),
+      );
+    expect(canonical(restoredNdjson)).toEqual(canonical(fullBundle));
+    expect(
+      importJsonBackup(exportJsonBackup(restoredNdjson)).applications,
+    ).toHaveLength(3);
+
+    repo.close();
+  });
+
+  it("validates backup integrity, dry-runs, conflicts, and malformed restore inputs", async () => {
+    const csv = await fixture();
+    const { bundle } = csvToBrowserApplicationExport(csv, {
+      exportedAt: "2026-03-01T00:00:00.000Z",
+    });
+    expect(exportJsonBackup(bundle)).toBe(exportJsonBackup(bundle));
+    expect(exportNdjsonBackup(bundle)).toBe(exportNdjsonBackup(bundle));
+    expect(exportCompactCsv(bundle).split("\n")[0]).toBe(
+      COMPACT_CSV_COLUMNS.join(","),
+    );
+    expect(bundle.schemaVersion).toBe(1);
+
+    expect(() => importJsonBackup("{not json")).toThrow();
+    expect(() => importNdjsonBackup('{"type":"meta"}\nnot-json\n')).toThrow();
+    expect(() =>
+      importJsonBackup(JSON.stringify({ ...bundle, schemaVersion: 999 })),
+    ).toThrow();
+    expect(() =>
+      importJsonBackup(JSON.stringify({ ...bundle, contacts: undefined })),
+    ).toThrow();
+    expect(() =>
+      importJsonBackup(
+        JSON.stringify({
+          ...bundle,
+          applications: [bundle.applications[0], bundle.applications[0]],
+        }),
+      ),
+    ).toThrow(/Duplicate applications id/);
+
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    await repo.importAllData(bundle);
+    const beforeDryRun = await repo.exportAllData();
+    const dryRun = await repo.importAllData(bundle, { dryRun: true });
+    expect(dryRun).toMatchObject({
+      imported: false,
+      hasExistingData: true,
+      counts: { applications: 2, settings: 0 },
+      conflicts: expect.arrayContaining([
+        { storeName: "applications", id: "app_fake_alpha_001" },
+      ]),
+    });
+    expect({
+      ...(await repo.exportAllData()),
+      exportedAt: beforeDryRun.exportedAt,
+    }).toEqual(beforeDryRun);
+    await expect(repo.importAllData(bundle)).rejects.toMatchObject({
+      code: "import_conflict",
+    });
+    expect({
+      ...(await repo.exportAllData()),
+      exportedAt: beforeDryRun.exportedAt,
+    }).toEqual(beforeDryRun);
+
+    repo.close();
+  });
+
   it("preserves CSV timestamp, stage, and outcome exports", async () => {
     const csv = serializeCsv([
       {
@@ -352,9 +543,7 @@ describe("spreadsheet import/export", () => {
       "app_regenerated",
     );
     expect(exported.interviews[0].contactIds).toEqual(
-      expect.not.arrayContaining([
-        expect.stringContaining("app_regenerated"),
-      ]),
+      expect.not.arrayContaining([expect.stringContaining("app_regenerated")]),
     );
     const childCounts = Object.fromEntries(
       childStores.map((store) => [store, exported[store].length]),
