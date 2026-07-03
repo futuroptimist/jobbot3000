@@ -1,24 +1,55 @@
 #!/usr/bin/env node
 import fs from "node:fs/promises";
 import path from "node:path";
+import esbuild from "esbuild";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const distDir = path.join(repoRoot, "dist");
 const assetsDir = path.join(distDir, "assets");
+const packageJson = JSON.parse(
+  await fs.readFile(path.join(repoRoot, "package.json"), "utf8"),
+);
+const sourceDateEpochSeconds = Number(process.env.SOURCE_DATE_EPOCH);
+const sourceDateEpoch =
+  process.env.SOURCE_DATE_EPOCH && Number.isFinite(sourceDateEpochSeconds)
+    ? new Date(sourceDateEpochSeconds * 1000)
+    : new Date();
+const buildMetadata = {
+  version: packageJson.version ?? "unknown",
+  gitSha:
+    process.env.GITHUB_SHA?.slice(0, 12) ??
+    process.env.JOBBOT_GIT_SHA?.slice(0, 12) ??
+    "unavailable",
+  builtAt: Number.isFinite(sourceDateEpoch.getTime())
+    ? sourceDateEpoch.toISOString()
+    : new Date().toISOString(),
+  mode: "static/browser-only",
+};
 
 await fs.rm(distDir, { recursive: true, force: true });
 await fs.mkdir(assetsDir, { recursive: true });
 
-await fs.copyFile(
+const trackerTemplate = await fs.readFile(
   path.join(repoRoot, "src/web/tracker/index.html"),
+  "utf8",
+);
+await fs.writeFile(
   path.join(distDir, "tracker.html"),
+  trackerTemplate.replace(
+    "__JOBBOT_BUILD_METADATA__",
+    JSON.stringify(buildMetadata).replaceAll("<", "\\u003c"),
+  ),
+  "utf8",
 );
-await fs.copyFile(
-  path.join(repoRoot, "src/web/tracker/tracker.js"),
-  path.join(assetsDir, "tracker.js"),
-);
+await esbuild.build({
+  entryPoints: [path.join(repoRoot, "src/web/tracker/tracker.js")],
+  bundle: true,
+  format: "esm",
+  platform: "browser",
+  outfile: path.join(assetsDir, "tracker.js"),
+});
 await fs.copyFile(
   path.join(repoRoot, "src/web/tracker/tracker.css"),
   path.join(assetsDir, "tracker.css"),
@@ -54,6 +85,8 @@ const indexHtml = `<!doctype html>
 This server only serves static assets and health endpoints.</p>
 <nav class="primary-nav"><a href="/tracker">Open tracker</a><a href="/healthz">healthz</a>
 <a href="/livez">livez</a></nav>
+<p class="muted">Version ${buildMetadata.version} · ${buildMetadata.gitSha} ·
+${buildMetadata.mode}</p>
 </main></body></html>\n`;
 await fs.writeFile(path.join(distDir, "index.html"), indexHtml, "utf8");
 await fs.writeFile(path.join(distDir, "404.html"), indexHtml, "utf8");

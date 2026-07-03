@@ -691,10 +691,27 @@ export const browserApplicationExportToRows = (bundle) => {
 };
 export const exportCompactCsv = (bundle) =>
   serializeCsv(browserApplicationExportToRows(bundle));
-export const exportJsonBackup = (bundle) =>
-  `${JSON.stringify(browserApplicationExportSchema.parse(bundle), null, 2)}\n`;
-export const exportNdjsonBackup = (bundle) => {
+const compareCodePoints = (left, right) => {
+  const leftText = String(left);
+  const rightText = String(right);
+  return leftText < rightText ? -1 : leftText > rightText ? 1 : 0;
+};
+
+const canonicalizeBackupBundle = (bundle) => {
   const parsed = browserApplicationExportSchema.parse(bundle);
+  const sorted = { ...parsed };
+  for (const store of ARRAY_STORES) {
+    sorted[store] = [...parsed[store]].sort((a, b) =>
+      compareCodePoints(a.id, b.id),
+    );
+  }
+  return sorted;
+};
+
+export const exportJsonBackup = (bundle) =>
+  `${JSON.stringify(canonicalizeBackupBundle(bundle), null, 2)}\n`;
+export const exportNdjsonBackup = (bundle) => {
+  const parsed = canonicalizeBackupBundle(bundle);
   const stores = ARRAY_STORES;
   return (
     [

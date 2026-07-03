@@ -1,5 +1,25 @@
 /* global document, indexedDB, confirm */
 /* eslint-disable max-len */
+import {
+  COMPACT_CSV_COLUMNS,
+  exportCompactCsv,
+  exportJsonBackup,
+  exportNdjsonBackup,
+  importJsonBackup,
+  importNdjsonBackup,
+} from "../import-export/spreadsheet.js";
+
+/* canonical CSV/backup helpers are shared with spreadsheet import/export tests. */
+const ARRAY_STORES = [
+  "applications",
+  "contacts",
+  "outreachMessages",
+  "lifecycleEvents",
+  "interviews",
+  "offers",
+  "artifacts",
+  "reminders",
+];
 const STATUSES = [
   "applied",
   "outreach_sent",
@@ -156,6 +176,8 @@ const repo = {
 const state = {
   apps: [],
   bundle: null,
+  preview: null,
+  previewConflicts: [],
   sort: "appliedAt",
   dir: -1,
   current: null,
@@ -193,13 +215,7 @@ function parseCsv(text) {
     .filter((r) => r.some(Boolean))
     .map((r) => Object.fromEntries(head.map((h, i) => [h, r[i] ?? ""])));
 }
-function csv(rows) {
-  const e = (v) =>
-    /[",\n]/.test(String(v ?? ""))
-      ? `"${String(v ?? "").replaceAll('"', '""')}"`
-      : String(v ?? "");
-  return rows.map((r) => r.map(e).join(",")).join("\n") + "\n";
-}
+
 function safeIsoDate(value, fallback) {
   if (!value) return fallback;
   const date = new Date(value);
@@ -672,10 +688,8 @@ async function newApplication() {
   };
   openUnsavedDetail(app);
 }
-async function previewImport() {
-  const file = $("[data-import-file]").files[0];
-  if (!file) return;
-  const rows = parseCsv(await file.text());
+function previewBundleFromCsv(text) {
+  const rows = parseCsv(text);
   const bundle = {
     applications: [],
     contacts: [],
@@ -686,17 +700,75 @@ async function previewImport() {
     artifacts: [],
     reminders: [],
   };
-  for (const r of rows) {
-    const rec = rowToRecords(r);
-    for (const k of Object.keys(bundle)) bundle[k].push(...rec[k]);
+  for (const row of rows) {
+    const records = rowToRecords(row);
+    for (const store of Object.keys(bundle))
+      bundle[store].push(...records[store]);
   }
-  state.preview = bundle;
-  $("[data-import-result]").textContent =
-    `Dry-run OK: ${bundle.applications.length} applications, ${bundle.outreachMessages.length} outreach messages, ${bundle.interviews.length} interviews.`;
-  $("[data-import-apply]").disabled = false;
+  return bundle;
+}
+function bundleForIndexedDb(bundle) {
+  return {
+    ...Object.fromEntries(
+      ARRAY_STORES.map((store) => [store, bundle[store] ?? []]),
+    ),
+    settings: bundle.settings ? [bundle.settings] : [],
+  };
+}
+async function detectImportConflicts(recordsByStore) {
+  const conflicts = [];
+  await Promise.all(
+    Object.entries(recordsByStore).map(async ([storeName, rows]) => {
+      if (!rows.length) return;
+      const existingIds = new Set(
+        (await repo.list(storeName)).map((row) => row.id),
+      );
+      for (const row of rows) {
+        if (existingIds.has(row.id)) conflicts.push({ storeName, id: row.id });
+      }
+    }),
+  );
+  return conflicts;
+}
+function importFormatForFile(file) {
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".json")) return "json";
+  if (name.endsWith(".ndjson") || name.endsWith(".jsonl")) return "ndjson";
+  return "csv";
+}
+async function previewImport() {
+  const file = $("[data-import-file]").files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const format = importFormatForFile(file);
+    const bundle =
+      format === "json"
+        ? importJsonBackup(text)
+        : format === "ndjson"
+          ? importNdjsonBackup(text)
+          : previewBundleFromCsv(text);
+    state.preview = bundleForIndexedDb(bundle);
+    state.previewConflicts = await detectImportConflicts(state.preview);
+    const totalRecords = Object.values(state.preview).reduce(
+      (count, rows) => count + rows.length,
+      0,
+    );
+    const formatLabel = format === "csv" ? "" : ` (${format.toUpperCase()})`;
+    $("[data-import-result]").textContent =
+      `Dry-run OK${formatLabel}: ${(bundle.applications ?? []).length} applications, ${(bundle.outreachMessages ?? []).length} outreach messages, ${(bundle.interviews ?? []).length} interviews. ${totalRecords} total records. ${state.previewConflicts.length} existing record conflicts.`;
+    $("[data-import-apply]").disabled = false;
+  } catch (err) {
+    state.preview = null;
+    state.previewConflicts = [];
+    $("[data-import-apply]").disabled = true;
+    $("[data-import-result]").textContent =
+      `Import preview failed: ${err?.message ?? err}`;
+  }
 }
 function resetImportPreview() {
   state.preview = null;
+  state.previewConflicts = [];
   $("[data-import-apply]").disabled = true;
   $("[data-import-result]").textContent =
     "Select Preview/dry-run to validate the selected file before applying.";
@@ -704,6 +776,15 @@ function resetImportPreview() {
 async function applyImport() {
   if (!state.preview) {
     resetImportPreview();
+    return;
+  }
+  if (
+    state.previewConflicts.length &&
+    !confirm(
+      `Import will replace ${state.previewConflicts.length} existing local records with matching IDs. Continue?`,
+    )
+  ) {
+    $("[data-import-result]").textContent = "Import canceled.";
     return;
   }
   try {
@@ -717,6 +798,32 @@ async function applyImport() {
   $("[data-import-apply]").disabled = true;
   await refresh();
 }
+function cleanEmptyOptionalStrings(record) {
+  return Object.fromEntries(
+    Object.entries(record).filter(([, value]) => value !== ""),
+  );
+}
+function bundleForExport(bundle) {
+  return {
+    ...bundle,
+    applications: (bundle.applications ?? []).map(cleanEmptyOptionalStrings),
+    contacts: (bundle.contacts ?? []).map(cleanEmptyOptionalStrings),
+    outreachMessages: (bundle.outreachMessages ?? []).map(
+      cleanEmptyOptionalStrings,
+    ),
+    lifecycleEvents: (bundle.lifecycleEvents ?? []).map(
+      cleanEmptyOptionalStrings,
+    ),
+    interviews: (bundle.interviews ?? []).map(cleanEmptyOptionalStrings),
+    offers: (bundle.offers ?? []).map(cleanEmptyOptionalStrings),
+    artifacts: (bundle.artifacts ?? []).map(cleanEmptyOptionalStrings),
+    reminders: (bundle.reminders ?? []).map(cleanEmptyOptionalStrings),
+    settings: bundle.settings
+      ? cleanEmptyOptionalStrings(bundle.settings)
+      : undefined,
+  };
+}
+
 function download(name, type, text) {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([text], { type }));
@@ -725,63 +832,52 @@ function download(name, type, text) {
   setTimeout(() => URL.revokeObjectURL(a.href), 0);
 }
 function exportData(fmt) {
-  const b = state.bundle;
-  if (fmt === "json")
+  const bundle = bundleForExport(state.bundle);
+  if (fmt === "json") {
     download(
       "jobbot3000-backup.json",
       "application/json",
-      JSON.stringify(b, null, 2),
+      exportJsonBackup(bundle),
     );
-  else if (fmt === "ndjson") {
-    const lines = [
-      JSON.stringify({ type: "meta", schemaVersion: 1, exportedAt: now() }),
-      ...[
-        "applications",
-        "contacts",
-        "outreachMessages",
-        "lifecycleEvents",
-        "interviews",
-        "offers",
-        "artifacts",
-        "reminders",
-      ].flatMap((s) =>
-        b[s].map((record) => JSON.stringify({ type: s, record })),
-      ),
-    ];
+  } else if (fmt === "ndjson") {
     download(
       "jobbot3000-backup.ndjson",
       "application/x-ndjson",
-      lines.join("\n") + "\n",
+      exportNdjsonBackup(bundle),
     );
   } else {
-    const head = [
-      "application_id",
-      "company",
-      "role_title",
-      "status",
-      "applied_at",
-      "posting_url",
-      "application_channel",
-      "follow_up_date",
-      "outcome",
-      "notes",
-    ];
-    const rows = b.applications.map((a) => [
-      a.id,
-      a.company,
-      a.role,
-      a.status,
-      day(a.appliedAt),
-      a.postingUrl || "",
-      a.source || "",
-      day(a.followUpDate),
-      OUTCOMES.has(a.status) ? a.status : "",
-      a.notes || "",
-    ]);
-    download("jobbot3000-applications.csv", "text/csv", csv([head, ...rows]));
+    if (!COMPACT_CSV_COLUMNS.length)
+      throw new Error("CSV columns are unavailable");
+    download(
+      "jobbot3000-applications.csv",
+      "text/csv",
+      exportCompactCsv(bundle),
+    );
   }
 }
+
+function renderBuildMetadata() {
+  const target = $("[data-build-metadata]");
+  if (!target) return;
+  const fallback = {
+    version: "unknown",
+    gitSha: "unavailable",
+    builtAt: "unavailable",
+    mode: "static/browser-only",
+  };
+  let metadata = fallback;
+  const source = document.getElementById("jobbot-build-metadata");
+  if (source && !source.textContent.includes("__JOBBOT_BUILD_METADATA__")) {
+    try {
+      metadata = { ...fallback, ...JSON.parse(source.textContent) };
+    } catch {
+      metadata = fallback;
+    }
+  }
+  target.textContent = `Version ${metadata.version} · ${metadata.gitSha} · ${metadata.builtAt} · ${metadata.mode}`;
+}
 function init() {
+  renderBuildMetadata();
   renderNav();
   $('[data-filter="status"]').innerHTML += STATUSES.map(
     (s) => `<option>${s}</option>`,
