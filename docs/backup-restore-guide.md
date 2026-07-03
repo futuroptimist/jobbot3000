@@ -100,3 +100,29 @@ Run a quick checklist before resuming normal operations:
   a sandbox directory.
 - Combine the NDJSON export and archive with offsite replication to stay ready
   for disaster recovery.
+
+## Browser tracker production backup formats
+
+For the static production tracker, jobbot3000 data is browser-local IndexedDB data. The server only serves static files and health probes.
+
+- **CSV**: human-editable, spreadsheet-shaped, 32-column, one-row-per-application compatibility format. Use it for Google Sheets interchange or manual review.
+- **JSON**: canonical full-fidelity backup bundle. Use it for normal backup/restore of applications, contacts, outreach, lifecycle events, interviews, offers, artifacts, reminders, and settings.
+- **NDJSON**: line-oriented full-fidelity stream. Use it when line-by-line inspection, streaming, or text diffs are useful.
+
+Use CSV when a spreadsheet needs to read or edit the application list. Use JSON before clearing data, changing browsers, or promoting jobbot3000 as the primary tracker. Use NDJSON alongside JSON when you want an easy-to-inspect full-fidelity stream.
+
+### Verify browser backups before clearing data
+
+1. Export JSON and NDJSON.
+2. Restore into an empty browser profile or staging browser.
+3. Check record counts by store and representative applications, contacts, outreach messages, interviews, offers, artifacts, reminders, and settings.
+4. Re-export and compare canonical records where possible.
+5. Only then clear the original browser profile or archive the spreadsheet.
+
+### Restore into dev/staging/prod browsers
+
+Dev, staging, and prod are separate browser/storage profiles unless you import the same backup into each. Open the deployed app, use the browser UI import/restore flow, verify records, then export a fresh backup from that environment. Seed dev/staging with anonymized JSON/NDJSON or fake fixtures only.
+
+### Browser data boundary
+
+Never bake real user data into images, charts, Helm values, ConfigMaps, Secrets, PVCs, repo fixtures, `.env` files, SQLite databases, static server logs, or local backup directories committed to git. Real backups should stay in private user-controlled storage outside public repos and container artifacts.

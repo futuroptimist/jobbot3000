@@ -1,5 +1,5 @@
 image:
-  tag: main-latest
+  tag: main-1111111
 
 ingress:
   enabled: true

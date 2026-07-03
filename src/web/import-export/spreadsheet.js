@@ -691,10 +691,22 @@ export const browserApplicationExportToRows = (bundle) => {
 };
 export const exportCompactCsv = (bundle) =>
   serializeCsv(browserApplicationExportToRows(bundle));
-export const exportJsonBackup = (bundle) =>
-  `${JSON.stringify(browserApplicationExportSchema.parse(bundle), null, 2)}\n`;
-export const exportNdjsonBackup = (bundle) => {
+const sortRecords = (records) =>
+  [...records].sort((a, b) => String(a.id).localeCompare(String(b.id)));
+export const canonicalizeBrowserApplicationExport = (bundle) => {
   const parsed = browserApplicationExportSchema.parse(bundle);
+  const ordered = {
+    schemaVersion: parsed.schemaVersion,
+    exportedAt: parsed.exportedAt,
+  };
+  for (const store of ARRAY_STORES) ordered[store] = sortRecords(parsed[store]);
+  if (parsed.settings) ordered.settings = parsed.settings;
+  return ordered;
+};
+export const exportJsonBackup = (bundle) =>
+  `${JSON.stringify(canonicalizeBrowserApplicationExport(bundle), null, 2)}\n`;
+export const exportNdjsonBackup = (bundle) => {
+  const parsed = canonicalizeBrowserApplicationExport(bundle);
   const stores = ARRAY_STORES;
   return (
     [

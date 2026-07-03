@@ -159,6 +159,17 @@ Production deployments use the static, browser-local web build. The container se
 
 Image tags and chart versions are intentionally separate: bump the image tag for a new static app build, and bump `charts/jobbot3000/Chart.yaml` `version` for Kubernetes packaging or default-value changes.
 
+## Production readiness and deployment
+
+- [Production readiness](docs/production-readiness.md) summarizes the static/browser-local contract, verification, rollback, and dev/staging seeding guidance.
+- [Backup and restore guide](docs/backup-restore-guide.md) explains CSV, JSON, and NDJSON backups.
+- [Import the current spreadsheet](docs/import-current-spreadsheet.md) covers the Google Sheets migration workflow.
+- [GHCR image release](docs/release-ghcr.md) and [Helm chart release](docs/release-helm.md) document publishing.
+
+### Deploy with Sugarkube
+
+Sugarkube owns the cluster-side runbook and pinned environment values. At a high level: publish `ghcr.io/futuroptimist/jobbot3000` with an immutable `main-SHORTSHA` tag, publish `oci://ghcr.io/futuroptimist/charts/jobbot3000` when chart content changes, deploy staging with that immutable tag, verify `/`, `/healthz`, and `/livez`, import and export a backup through the browser UI, then promote production with the same immutable tag. Do not add real hostnames, secrets, or mutable production tags here.
+
 ## Documentation
 
 - [DESIGN.md](DESIGN.md) – architecture details and roadmap

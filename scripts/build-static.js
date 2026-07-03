@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs/promises";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -11,9 +12,38 @@ const assetsDir = path.join(distDir, "assets");
 await fs.rm(distDir, { recursive: true, force: true });
 await fs.mkdir(assetsDir, { recursive: true });
 
-await fs.copyFile(
-  path.join(repoRoot, "src/web/tracker/index.html"),
+const packageJson = JSON.parse(
+  await fs.readFile(path.join(repoRoot, "package.json"), "utf8"),
+);
+const gitSha = (() => {
+  try {
+    return execFileSync("git", ["rev-parse", "--short=12", "HEAD"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return process.env.GITHUB_SHA?.slice(0, 12) || "unknown";
+  }
+})();
+const buildTime = process.env.SOURCE_DATE_EPOCH
+  ? new Date(Number(process.env.SOURCE_DATE_EPOCH) * 1000).toISOString()
+  : new Date().toISOString();
+const applyBuildMetadata = (html) =>
+  html
+    .replaceAll("__JOBBOT_VERSION__", packageJson.version || "unknown")
+    .replaceAll("__JOBBOT_GIT_SHA__", gitSha || "unknown")
+    .replaceAll("__JOBBOT_BUILD_TIME__", buildTime || "unknown");
+
+await fs.writeFile(
   path.join(distDir, "tracker.html"),
+  applyBuildMetadata(
+    await fs.readFile(
+      path.join(repoRoot, "src/web/tracker/index.html"),
+      "utf8",
+    ),
+  ),
+  "utf8",
 );
 await fs.copyFile(
   path.join(repoRoot, "src/web/tracker/tracker.js"),
@@ -55,8 +85,16 @@ This server only serves static assets and health endpoints.</p>
 <nav class="primary-nav"><a href="/tracker">Open tracker</a><a href="/healthz">healthz</a>
 <a href="/livez">livez</a></nav>
 </main></body></html>\n`;
-await fs.writeFile(path.join(distDir, "index.html"), indexHtml, "utf8");
-await fs.writeFile(path.join(distDir, "404.html"), indexHtml, "utf8");
+await fs.writeFile(
+  path.join(distDir, "index.html"),
+  applyBuildMetadata(indexHtml),
+  "utf8",
+);
+await fs.writeFile(
+  path.join(distDir, "404.html"),
+  applyBuildMetadata(indexHtml),
+  "utf8",
+);
 
 const manifest = {
   name: "jobbot3000 Application Tracker",
