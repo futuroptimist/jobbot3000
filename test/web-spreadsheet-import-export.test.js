@@ -236,6 +236,9 @@ describe("spreadsheet import/export", () => {
     expect(tracker).toContain("importJsonBackup(text)");
     expect(tracker).toContain("importNdjsonBackup(text)");
     expect(tracker).toContain("bundleForIndexedDb(bundle)");
+    expect(tracker).toContain("detectImportConflicts(state.preview)");
+    expect(tracker).toContain("existing record conflicts");
+    expect(tracker).toContain("Import will replace");
     expect(tracker).toContain(
       "settings: bundle.settings ? [bundle.settings] : []",
     );

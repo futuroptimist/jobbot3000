@@ -176,6 +176,8 @@ const repo = {
 const state = {
   apps: [],
   bundle: null,
+  preview: null,
+  previewConflicts: [],
   sort: "appliedAt",
   dir: -1,
   current: null,
@@ -713,6 +715,21 @@ function bundleForIndexedDb(bundle) {
     settings: bundle.settings ? [bundle.settings] : [],
   };
 }
+async function detectImportConflicts(recordsByStore) {
+  const conflicts = [];
+  await Promise.all(
+    Object.entries(recordsByStore).map(async ([storeName, rows]) => {
+      if (!rows.length) return;
+      const existingIds = new Set(
+        (await repo.list(storeName)).map((row) => row.id),
+      );
+      for (const row of rows) {
+        if (existingIds.has(row.id)) conflicts.push({ storeName, id: row.id });
+      }
+    }),
+  );
+  return conflicts;
+}
 function importFormatForFile(file) {
   const name = file.name.toLowerCase();
   if (name.endsWith(".json")) return "json";
@@ -732,12 +749,18 @@ async function previewImport() {
           ? importNdjsonBackup(text)
           : previewBundleFromCsv(text);
     state.preview = bundleForIndexedDb(bundle);
+    state.previewConflicts = await detectImportConflicts(state.preview);
+    const totalRecords = Object.values(state.preview).reduce(
+      (count, rows) => count + rows.length,
+      0,
+    );
     const formatLabel = format === "csv" ? "" : ` (${format.toUpperCase()})`;
     $("[data-import-result]").textContent =
-      `Dry-run OK${formatLabel}: ${(bundle.applications ?? []).length} applications, ${(bundle.outreachMessages ?? []).length} outreach messages, ${(bundle.interviews ?? []).length} interviews.`;
+      `Dry-run OK${formatLabel}: ${(bundle.applications ?? []).length} applications, ${(bundle.outreachMessages ?? []).length} outreach messages, ${(bundle.interviews ?? []).length} interviews. ${totalRecords} total records. ${state.previewConflicts.length} existing record conflicts.`;
     $("[data-import-apply]").disabled = false;
   } catch (err) {
     state.preview = null;
+    state.previewConflicts = [];
     $("[data-import-apply]").disabled = true;
     $("[data-import-result]").textContent =
       `Import preview failed: ${err?.message ?? err}`;
@@ -745,6 +768,7 @@ async function previewImport() {
 }
 function resetImportPreview() {
   state.preview = null;
+  state.previewConflicts = [];
   $("[data-import-apply]").disabled = true;
   $("[data-import-result]").textContent =
     "Select Preview/dry-run to validate the selected file before applying.";
@@ -752,6 +776,15 @@ function resetImportPreview() {
 async function applyImport() {
   if (!state.preview) {
     resetImportPreview();
+    return;
+  }
+  if (
+    state.previewConflicts.length &&
+    !confirm(
+      `Import will replace ${state.previewConflicts.length} existing local records with matching IDs. Continue?`,
+    )
+  ) {
+    $("[data-import-result]").textContent = "Import canceled.";
     return;
   }
   try {
