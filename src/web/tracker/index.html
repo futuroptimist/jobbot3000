@@ -23,6 +23,9 @@
       <nav class="primary-nav" aria-label="Site navigation">
         <a href="/">Status hub</a>
       </nav>
+      <p class="muted" data-build-metadata>
+        Version unknown · build unavailable · static/browser-only
+      </p>
     </header>
     <main id="tracker-main" class="tracker-shell">
       <nav class="tracker-nav" aria-label="Tracker sections"></nav>
@@ -149,6 +152,9 @@
         <div data-detail></div>
       </section>
     </main>
+    <script type="application/json" id="jobbot-build-metadata">
+      __JOBBOT_BUILD_METADATA__
+    </script>
     <script type="module" src="/assets/tracker.js"></script>
   </body>
 </html>

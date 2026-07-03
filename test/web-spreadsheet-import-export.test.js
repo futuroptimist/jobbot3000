@@ -36,6 +36,175 @@ afterEach(async () => {
 const fixture = () => readFile("test/fixtures/fake-applications.csv", "utf8");
 
 describe("spreadsheet import/export", () => {
+  it("runs a fake full-fidelity backup/restore smoke flow", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    const csv = await fixture();
+    await importCompactCsv(csv, repo, { mode: "replace" });
+    const manual = {
+      id: "app_manual_prod_smoke",
+      company: "Demo Analytics",
+      role: "Principal Browser Engineer",
+      status: "offer",
+      postingUrl: "https://jobs.example.test/demo/principal-browser",
+      appliedAt: "2026-04-01T00:00:00.000Z",
+      followUpDate: "2026-04-10T23:59:59.000Z",
+      notes: "Fake production-readiness smoke record.",
+      createdAt: "2026-04-01T00:00:00.000Z",
+      updatedAt: "2026-04-02T00:00:00.000Z",
+    };
+    await repo.createApplication(manual);
+    await repo.upsertContact({
+      id: "contact_manual_smoke",
+      applicationId: manual.id,
+      name: "Taylor Test",
+      company: "Demo Analytics",
+      createdAt: manual.createdAt,
+      updatedAt: manual.updatedAt,
+    });
+    await repo.addOutreachMessage({
+      id: "message_manual_smoke",
+      applicationId: manual.id,
+      contactId: "contact_manual_smoke",
+      direction: "outbound",
+      channel: "email",
+      body: "Fake outreach body",
+      sentAt: "2026-04-02T12:00:00.000Z",
+      createdAt: manual.createdAt,
+      updatedAt: manual.updatedAt,
+    });
+    await repo.upsertInterview({
+      id: "interview_manual_smoke",
+      applicationId: manual.id,
+      contactIds: ["contact_manual_smoke"],
+      stage: "onsite_loop",
+      startsAt: "2026-04-05T16:00:00.000Z",
+      outcome: "scheduled",
+      createdAt: manual.createdAt,
+      updatedAt: manual.updatedAt,
+    });
+    await repo.upsertOffer({
+      id: "offer_manual_smoke",
+      applicationId: manual.id,
+      status: "received",
+      baseSalaryMin: 180000,
+      baseSalaryMax: 210000,
+      currency: "USD",
+      createdAt: manual.createdAt,
+      updatedAt: manual.updatedAt,
+    });
+    await repo.updateApplication({
+      ...manual,
+      followUpDate: undefined,
+      updatedAt: "2026-04-03T00:00:00.000Z",
+    });
+
+    const expected = await repo.exportAllData();
+    expect(exportCompactCsv(expected).split("\n")[0]).toBe(
+      COMPACT_CSV_COLUMNS.join(","),
+    );
+    const json = exportJsonBackup(expected);
+    const ndjson = exportNdjsonBackup(expected);
+    await repo.clearAllData();
+    expect(await repo.listApplications()).toHaveLength(0);
+
+    await repo.importAllData(importJsonBackup(json));
+    const restoredJson = await repo.exportAllData();
+    expect(restoredJson.applications).toHaveLength(3);
+    expect(restoredJson.outreachMessages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ body: "Fake outreach body" }),
+      ]),
+    );
+    expect(restoredJson.interviews).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ stage: "onsite_loop" }),
+      ]),
+    );
+    expect(restoredJson.offers).toEqual(
+      expect.arrayContaining([expect.objectContaining({ status: "received" })]),
+    );
+
+    await repo.clearAllData();
+    await repo.importAllData(importNdjsonBackup(ndjson));
+    const restoredNdjson = await repo.exportAllData();
+    expect(
+      exportJsonBackup(restoredNdjson).replace(
+        /"exportedAt": ".*?"/,
+        '"exportedAt": "normalized"',
+      ),
+    ).toBe(
+      exportJsonBackup(restoredJson).replace(
+        /"exportedAt": ".*?"/,
+        '"exportedAt": "normalized"',
+      ),
+    );
+    repo.close();
+  });
+
+  it("validates backup restore integrity and safety controls", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    const csv = await fixture();
+    await importCompactCsv(csv, repo, { mode: "replace" });
+    const bundle = await repo.exportAllData();
+    const normalizeExportedAt = (value) =>
+      value.replace(/"exportedAt": ".*?"/, '"exportedAt": "normalized"');
+    const before = normalizeExportedAt(exportJsonBackup(bundle));
+
+    const dryRun = await repo.importAllData(bundle, { dryRun: true });
+    expect(dryRun).toMatchObject({
+      imported: false,
+      hasExistingData: true,
+      counts: { applications: 2 },
+    });
+    expect(
+      normalizeExportedAt(exportJsonBackup(await repo.exportAllData())),
+    ).toBe(before);
+    await expect(repo.importAllData(bundle)).rejects.toMatchObject({
+      code: "import_conflict",
+    });
+    expect((await repo.exportAllData()).applications).toHaveLength(2);
+
+    expect(() => importJsonBackup("{")).toThrow();
+    expect(() =>
+      importNdjsonBackup(
+        '{"type":"meta","schemaVersion":1,"exportedAt":"2026-03-01T00:00:00.000Z"}\nnot-json\n',
+      ),
+    ).toThrow();
+    expect(() =>
+      importJsonBackup(JSON.stringify({ ...bundle, schemaVersion: 999 })),
+    ).toThrow();
+    expect(() =>
+      importJsonBackup(
+        JSON.stringify({
+          ...bundle,
+          applications: [bundle.applications[0], bundle.applications[0]],
+        }),
+      ),
+    ).toThrow();
+    const { contacts, ...missingRequiredStore } = bundle;
+    void contacts;
+    expect(() =>
+      importJsonBackup(JSON.stringify(missingRequiredStore)),
+    ).toThrow();
+    repo.close();
+  });
+
+  it("exports deterministic JSON, NDJSON, and CSV order", async () => {
+    const csv = await fixture();
+    const { bundle } = csvToBrowserApplicationExport(csv, {
+      exportedAt: "2026-03-01T00:00:00.000Z",
+    });
+    const shuffled = {
+      ...bundle,
+      applications: [...bundle.applications].reverse(),
+      contacts: [...bundle.contacts].reverse(),
+    };
+    expect(exportJsonBackup(shuffled)).toBe(exportJsonBackup(bundle));
+    expect(exportNdjsonBackup(shuffled)).toBe(exportNdjsonBackup(bundle));
+    expect(exportCompactCsv(shuffled).split("\n")[0]).toBe(
+      COMPACT_CSV_COLUMNS.join(","),
+    );
+  });
   it("imports the fake compact CSV fixture into IndexedDB and exports stable CSV", async () => {
     const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
     const csv = await fixture();
@@ -352,9 +521,7 @@ describe("spreadsheet import/export", () => {
       "app_regenerated",
     );
     expect(exported.interviews[0].contactIds).toEqual(
-      expect.not.arrayContaining([
-        expect.stringContaining("app_regenerated"),
-      ]),
+      expect.not.arrayContaining([expect.stringContaining("app_regenerated")]),
     );
     const childCounts = Object.fromEntries(
       childStores.map((store) => [store, exported[store].length]),

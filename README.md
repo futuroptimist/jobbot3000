@@ -24,6 +24,26 @@ npm run dev
 
 For production static tracker builds, run `npm run build` and serve `dist/` with `npm run start:static`; `/healthz` and `/livez` are available for container probes.
 
+Production readiness docs:
+
+- [Production readiness](docs/production-readiness.md)
+- [Spreadsheet migration](docs/import-current-spreadsheet.md)
+- [Backup and restore](docs/backup-restore-guide.md)
+- [GHCR image release](docs/release-ghcr.md)
+- [Helm chart release](docs/release-helm.md)
+
+### Deploy with Sugarkube
+
+Sugarkube owns the cluster-specific runbook and values. At a high level: publish
+`ghcr.io/futuroptimist/jobbot3000` with an immutable `main-SHORTSHA` image tag,
+publish `oci://ghcr.io/futuroptimist/charts/jobbot3000` only when chart content
+changes, deploy staging with that immutable tag, verify `/`, `/healthz`, and
+`/livez`, import a backup through the browser UI, export JSON/NDJSON from the
+browser UI, and then promote production with the same immutable tag. Do not use
+mutable tags such as `latest` for production and do not place real hostnames,
+secrets, or tracker data in this repo. See the Sugarkube jobbot3000 runbook in
+the `futuroptimist/sugarkube` repo for cluster steps.
+
 The development web server starts with backend functionality enabled.
 Use `npm run web:server -- --disable-native-cli` if you want to explore the
 mock-only UI without spawning CLI subprocesses.

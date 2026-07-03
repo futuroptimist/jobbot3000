@@ -48,6 +48,8 @@ describe("web deployment artifacts", () => {
     expect(compose).not.toContain("JOBBOT_DATA_DIR");
     expect(compose).not.toContain("JOBBOT_WEB_ENABLE_NATIVE_CLI");
     expect(compose).not.toContain("./data:/data");
+    expect(compose).not.toMatch(/^\s*env_file:/m);
+    expect(compose).not.toMatch(/^\s*- \.env/m);
     expect(compose).not.toContain("scripts/web-server.js");
     expect(compose).not.toMatch(/^\s*command:/m);
   });
@@ -108,6 +110,7 @@ describe("web deployment artifacts", () => {
     );
     expect(staticServer).toContain('app.get("/healthz"');
     expect(staticServer).toContain('app.get("/livez"');
+    expect(staticServer).not.toMatch(/app\.(post|put|patch|delete)\(/);
     expect(staticServer).toContain(
       'app.get(["/", "/index.html"], sendNoStoreFile("index.html"))',
     );
@@ -125,6 +128,9 @@ describe("web deployment artifacts", () => {
     expect(staticServer).not.toContain("/commands");
     expect(staticServer).not.toContain("better-sqlite3");
     expect(staticServer).not.toMatch(/writeFile|appendFile|createWriteStream/);
+    expect(staticServer).not.toMatch(
+      /JOBBOT_(GREENHOUSE|LEVER|SMARTRECRUITERS|WORKABLE).*TOKEN/,
+    );
   });
 
   it("documents static privacy boundaries and IndexedDB backup guidance", async () => {

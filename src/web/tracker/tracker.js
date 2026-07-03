@@ -781,7 +781,29 @@ function exportData(fmt) {
     download("jobbot3000-applications.csv", "text/csv", csv([head, ...rows]));
   }
 }
+
+function renderBuildMetadata() {
+  const target = $("[data-build-metadata]");
+  if (!target) return;
+  const fallback = {
+    version: "unknown",
+    gitSha: "unavailable",
+    builtAt: "unavailable",
+    mode: "static/browser-only",
+  };
+  let metadata = fallback;
+  const source = document.getElementById("jobbot-build-metadata");
+  if (source && !source.textContent.includes("__JOBBOT_BUILD_METADATA__")) {
+    try {
+      metadata = { ...fallback, ...JSON.parse(source.textContent) };
+    } catch {
+      metadata = fallback;
+    }
+  }
+  target.textContent = `Version ${metadata.version} · ${metadata.gitSha} · ${metadata.builtAt} · ${metadata.mode}`;
+}
 function init() {
+  renderBuildMetadata();
   renderNav();
   $('[data-filter="status"]').innerHTML += STATUSES.map(
     (s) => `<option>${s}</option>`,
