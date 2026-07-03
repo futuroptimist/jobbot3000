@@ -36,6 +36,13 @@ describe("static tracker build metadata", () => {
     expect(build).toContain("static/browser-only");
   });
 
+  it("declares direct build-time bundling dependencies", async () => {
+    const packageJson = JSON.parse(
+      await readFile(path.join(repoRoot, "package.json"), "utf8"),
+    );
+    expect(packageJson.devDependencies.esbuild).toBeDefined();
+  });
+
   it("passes commit metadata through Docker image builds", async () => {
     const dockerfile = await readFile(
       path.join(repoRoot, "Dockerfile"),

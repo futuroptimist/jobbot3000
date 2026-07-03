@@ -103,10 +103,13 @@
         <h2>Import/Export</h2>
         <div class="grid two-column">
           <article class="card">
-            <h3>Import compact CSV</h3>
+            <h3>Import CSV/JSON/NDJSON backup</h3>
             <label class="tracker-form"
-              ><span>CSV file</span
-              ><input type="file" accept=".csv,text/csv" data-import-file
+              ><span>Backup file</span
+              ><input
+                type="file"
+                accept=".csv,text/csv,.json,application/json,.ndjson,application/x-ndjson"
+                data-import-file
             /></label>
             <div class="tracker-actions">
               <button class="button" data-import-preview>Preview/dry-run</button

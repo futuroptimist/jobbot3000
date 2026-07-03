@@ -1,40 +1,15 @@
 /* global document, indexedDB, confirm */
 /* eslint-disable max-len */
-const COMPACT_CSV_COLUMNS = [
-  "application_id",
-  "company",
-  "role_title",
-  "status",
-  "applied_at",
-  "posting_url",
-  "application_url",
-  "posting_id",
-  "application_channel",
-  "work_model",
-  "location_display",
-  "compensation_min_usd",
-  "compensation_max_usd",
-  "resume_artifact",
-  "resume_url",
-  "cover_letter_submitted",
-  "cover_letter_artifact",
-  "cover_letter_url",
-  "job_description_snapshot_url",
-  "linkedin_snapshot_screenshot_url",
-  "linkedin_snapshot_pdf_url",
-  "fit_score_100",
-  "outreach_status",
-  "outreach_target_name",
-  "outreach_channel",
-  "outreach_sent_at",
-  "outreach_message_text",
-  "interview_stage",
-  "interview_scheduled_at",
-  "follow_up_date",
-  "outcome",
-  "notes",
-  "schema_version",
-];
+import {
+  COMPACT_CSV_COLUMNS,
+  exportCompactCsv,
+  exportJsonBackup,
+  exportNdjsonBackup,
+  importJsonBackup,
+  importNdjsonBackup,
+} from "../import-export/spreadsheet.js";
+
+/* canonical CSV/backup helpers are shared with spreadsheet import/export tests. */
 const ARRAY_STORES = [
   "applications",
   "contacts",
@@ -239,76 +214,6 @@ function parseCsv(text) {
     .map((r) => Object.fromEntries(head.map((h, i) => [h, r[i] ?? ""])));
 }
 
-function csv(rows) {
-  const e = (v) =>
-    /[",\n]/.test(String(v ?? ""))
-      ? `"${String(v ?? "").replaceAll('"', '""')}"`
-      : String(v ?? "");
-  return rows.map((r) => r.map(e).join(",")).join("\n") + "\n";
-}
-function compareCodePoints(left, right) {
-  const leftText = String(left);
-  const rightText = String(right);
-  return leftText < rightText ? -1 : leftText > rightText ? 1 : 0;
-}
-function canonicalizeBackupBundle(bundle) {
-  const sorted = { ...bundle };
-  for (const store of ARRAY_STORES) {
-    sorted[store] = [...(bundle[store] ?? [])].sort((a, b) =>
-      compareCodePoints(a.id, b.id),
-    );
-  }
-  return sorted;
-}
-function exportJsonBackup(bundle) {
-  return `${JSON.stringify(canonicalizeBackupBundle(bundle), null, 2)}\n`;
-}
-function exportNdjsonBackup(bundle) {
-  const parsed = canonicalizeBackupBundle(bundle);
-  return (
-    [
-      JSON.stringify({
-        type: "meta",
-        schemaVersion: parsed.schemaVersion ?? 1,
-        exportedAt: parsed.exportedAt ?? now(),
-      }),
-      ...ARRAY_STORES.flatMap((store) =>
-        (parsed[store] ?? []).map((record) =>
-          JSON.stringify({ type: store, record }),
-        ),
-      ),
-      parsed.settings
-        ? JSON.stringify({ type: "settings", record: parsed.settings })
-        : undefined,
-    ]
-      .filter(Boolean)
-      .join("\n") + "\n"
-  );
-}
-function exportCompactCsv(bundle) {
-  const rows = [...(bundle.applications ?? [])]
-    .sort((a, b) => compareCodePoints(a.id, b.id))
-    .map((a) => ({
-      application_id: a.id,
-      company: a.company,
-      role_title: a.role,
-      status: a.status,
-      applied_at: day(a.appliedAt),
-      posting_url: a.postingUrl || "",
-      application_channel: a.source || "",
-      location_display: a.location || "",
-      follow_up_date: day(a.followUpDate),
-      outcome: OUTCOMES.has(a.status) ? a.status : "",
-      notes: a.notes || "",
-      schema_version: "1",
-    }));
-  return csv([
-    COMPACT_CSV_COLUMNS,
-    ...rows.map((row) =>
-      COMPACT_CSV_COLUMNS.map((column) => row[column] ?? ""),
-    ),
-  ]);
-}
 function safeIsoDate(value, fallback) {
   if (!value) return fallback;
   const date = new Date(value);
@@ -781,10 +686,8 @@ async function newApplication() {
   };
   openUnsavedDetail(app);
 }
-async function previewImport() {
-  const file = $("[data-import-file]").files[0];
-  if (!file) return;
-  const rows = parseCsv(await file.text());
+function previewBundleFromCsv(text) {
+  const rows = parseCsv(text);
   const bundle = {
     applications: [],
     contacts: [],
@@ -795,14 +698,50 @@ async function previewImport() {
     artifacts: [],
     reminders: [],
   };
-  for (const r of rows) {
-    const rec = rowToRecords(r);
-    for (const k of Object.keys(bundle)) bundle[k].push(...rec[k]);
+  for (const row of rows) {
+    const records = rowToRecords(row);
+    for (const store of Object.keys(bundle))
+      bundle[store].push(...records[store]);
   }
-  state.preview = bundle;
-  $("[data-import-result]").textContent =
-    `Dry-run OK: ${bundle.applications.length} applications, ${bundle.outreachMessages.length} outreach messages, ${bundle.interviews.length} interviews.`;
-  $("[data-import-apply]").disabled = false;
+  return bundle;
+}
+function bundleForIndexedDb(bundle) {
+  return {
+    ...Object.fromEntries(
+      ARRAY_STORES.map((store) => [store, bundle[store] ?? []]),
+    ),
+    settings: bundle.settings ? [bundle.settings] : [],
+  };
+}
+function importFormatForFile(file) {
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".json")) return "json";
+  if (name.endsWith(".ndjson") || name.endsWith(".jsonl")) return "ndjson";
+  return "csv";
+}
+async function previewImport() {
+  const file = $("[data-import-file]").files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const format = importFormatForFile(file);
+    const bundle =
+      format === "json"
+        ? importJsonBackup(text)
+        : format === "ndjson"
+          ? importNdjsonBackup(text)
+          : previewBundleFromCsv(text);
+    state.preview = bundleForIndexedDb(bundle);
+    const formatLabel = format === "csv" ? "" : ` (${format.toUpperCase()})`;
+    $("[data-import-result]").textContent =
+      `Dry-run OK${formatLabel}: ${(bundle.applications ?? []).length} applications, ${(bundle.outreachMessages ?? []).length} outreach messages, ${(bundle.interviews ?? []).length} interviews.`;
+    $("[data-import-apply]").disabled = false;
+  } catch (err) {
+    state.preview = null;
+    $("[data-import-apply]").disabled = true;
+    $("[data-import-result]").textContent =
+      `Import preview failed: ${err?.message ?? err}`;
+  }
 }
 function resetImportPreview() {
   state.preview = null;
@@ -826,6 +765,32 @@ async function applyImport() {
   $("[data-import-apply]").disabled = true;
   await refresh();
 }
+function cleanEmptyOptionalStrings(record) {
+  return Object.fromEntries(
+    Object.entries(record).filter(([, value]) => value !== ""),
+  );
+}
+function bundleForExport(bundle) {
+  return {
+    ...bundle,
+    applications: (bundle.applications ?? []).map(cleanEmptyOptionalStrings),
+    contacts: (bundle.contacts ?? []).map(cleanEmptyOptionalStrings),
+    outreachMessages: (bundle.outreachMessages ?? []).map(
+      cleanEmptyOptionalStrings,
+    ),
+    lifecycleEvents: (bundle.lifecycleEvents ?? []).map(
+      cleanEmptyOptionalStrings,
+    ),
+    interviews: (bundle.interviews ?? []).map(cleanEmptyOptionalStrings),
+    offers: (bundle.offers ?? []).map(cleanEmptyOptionalStrings),
+    artifacts: (bundle.artifacts ?? []).map(cleanEmptyOptionalStrings),
+    reminders: (bundle.reminders ?? []).map(cleanEmptyOptionalStrings),
+    settings: bundle.settings
+      ? cleanEmptyOptionalStrings(bundle.settings)
+      : undefined,
+  };
+}
+
 function download(name, type, text) {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([text], { type }));
@@ -834,7 +799,7 @@ function download(name, type, text) {
   setTimeout(() => URL.revokeObjectURL(a.href), 0);
 }
 function exportData(fmt) {
-  const bundle = state.bundle;
+  const bundle = bundleForExport(state.bundle);
   if (fmt === "json") {
     download(
       "jobbot3000-backup.json",
@@ -848,6 +813,8 @@ function exportData(fmt) {
       exportNdjsonBackup(bundle),
     );
   } else {
+    if (!COMPACT_CSV_COLUMNS.length)
+      throw new Error("CSV columns are unavailable");
     download(
       "jobbot3000-applications.csv",
       "text/csv",

@@ -208,9 +208,12 @@ describe("spreadsheet import/export", () => {
 
   it("routes tracker UI exports through canonical backup helpers", async () => {
     const tracker = await readFile("src/web/tracker/tracker.js", "utf8");
+    expect(tracker).toContain("import {");
+    expect(tracker).toContain("COMPACT_CSV_COLUMNS");
     expect(tracker).toContain("exportCompactCsv");
     expect(tracker).toContain("exportJsonBackup");
     expect(tracker).toContain("exportNdjsonBackup");
+    expect(tracker).toContain("../import-export/spreadsheet.js");
     const legacyHeader = [
       "application_id",
       "company",
@@ -224,6 +227,18 @@ describe("spreadsheet import/export", () => {
       "notes",
     ].join('",\n      "');
     expect(tracker).not.toContain(`"${legacyHeader}"`);
+  });
+
+  it("wires browser restore previews for JSON and NDJSON backups", async () => {
+    const tracker = await readFile("src/web/tracker/tracker.js", "utf8");
+    const html = await readFile("src/web/tracker/index.html", "utf8");
+    expect(html).toContain(".json,application/json,.ndjson");
+    expect(tracker).toContain("importJsonBackup(text)");
+    expect(tracker).toContain("importNdjsonBackup(text)");
+    expect(tracker).toContain("bundleForIndexedDb(bundle)");
+    expect(tracker).toContain(
+      "settings: bundle.settings ? [bundle.settings] : []",
+    );
   });
 
   it("orders JSON and NDJSON backup records without default-locale collation", () => {

@@ -1,4 +1,5 @@
 import express from "express";
+import * as esbuild from "esbuild";
 import fs from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
@@ -6922,8 +6923,14 @@ export function createWebApp({
   const trackerHtmlBuffer = readFileSync(
     new URL("./tracker/index.html", import.meta.url),
   );
-  const trackerScriptBuffer = readFileSync(
-    new URL("./tracker/tracker.js", import.meta.url),
+  const trackerScriptBuffer = Buffer.from(
+    esbuild.buildSync({
+      entryPoints: [new URL("./tracker/tracker.js", import.meta.url).pathname],
+      bundle: true,
+      format: "esm",
+      platform: "browser",
+      write: false,
+    }).outputFiles[0].contents,
   );
   const trackerStylesBuffer = readFileSync(
     new URL("./tracker/tracker.css", import.meta.url),
