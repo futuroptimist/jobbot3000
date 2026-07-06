@@ -1,0 +1,2 @@
+application_id,event_type,occurred_at,contact_name,artifact_url,note
+app_company_04,hiring_manager_follow_up,2026-01-08T12:00:00.000Z,Contact 04,https://example.test/artifact/follow-up-04,Anonymized follow-up metadata
