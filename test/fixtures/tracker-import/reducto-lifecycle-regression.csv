@@ -1,0 +1,2 @@
+application_id,event_type,event_status,occurred_at,source,contact_name,channel,subject,body,artifact_url,notes,schema_version
+app_delta,application_note,written_assessment_submitted,2026-02-01T12:00:00.000Z,csv_import,Example Contact,email,Company Delta lifecycle fixture,Anonymized supplemental lifecycle event.,https://example.test/artifact/app_delta-lifecycle.pdf,Fake lifecycle metadata only.,1
