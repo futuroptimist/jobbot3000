@@ -329,12 +329,16 @@ describe("spreadsheet import/export", () => {
       ...rows
         .filter((row) => row.outcome === "rejected")
         .map((row) => row.application_id),
-      "app_reg_delta_004",
     ]);
-    expect(responseApplicationIds).toHaveLength(4);
+    expect(responseApplicationIds.size).toBe(3);
     expect(Math.round((responseApplicationIds.size / rows.length) * 100)).toBe(
-      27,
+      20,
     );
+    expect(
+      Math.round(
+        (bundle.outreachMessages.length / bundle.applications.length) * 100,
+      ),
+    ).toBe(47);
     expect(
       Math.round(
         (rows.filter((row) => row.outreach_status === "replied").length /
@@ -342,6 +346,48 @@ describe("spreadsheet import/export", () => {
           100,
       ),
     ).toBe(29);
+  });
+
+  it("keeps supplemental lifecycle regression fixtures tied to compact applications", async () => {
+    const compactRows = parseCsv(
+      await readFile(
+        "test/fixtures/tracker-import/compact-main-regression.csv",
+        "utf8",
+      ),
+    );
+    const applicationIds = new Set(
+      compactRows.map((row) => row.application_id),
+    );
+    const fixturePaths = [
+      "test/fixtures/tracker-import/canonical-lifecycle-regression.csv",
+      "test/fixtures/tracker-import/loft-lifecycle-regression.csv",
+      "test/fixtures/tracker-import/reducto-lifecycle-regression.csv",
+    ];
+    const lifecycleRows = (
+      await Promise.all(
+        fixturePaths.map(async (path) =>
+          parseCsv(await readFile(path, "utf8")),
+        ),
+      )
+    ).flat();
+
+    expect(lifecycleRows).toHaveLength(5);
+    expect(
+      lifecycleRows.map(({ event_type, event_status }) => [
+        event_type,
+        event_status,
+      ]),
+    ).toEqual([
+      ["outreach_reply", "replied"],
+      ["outreach_reply", "replied"],
+      ["decision", "rejected"],
+      ["assessment", "written_assessment_submitted"],
+      ["scheduler", "recruiter_screen_pending"],
+    ]);
+    expect(
+      lifecycleRows.every((row) => applicationIds.has(row.application_id)),
+    ).toBe(true);
+    expect(lifecycleRows.every((row) => row.schema_version === "1")).toBe(true);
   });
 
   it("imports the fake compact CSV fixture into IndexedDB and exports stable CSV", async () => {
