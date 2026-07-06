@@ -383,6 +383,70 @@ describe("spreadsheet import/export", () => {
     );
   });
 
+  it("documents supplemental lifecycle fixtures through the import path", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    try {
+      const mainCsv = await readFile(
+        "test/fixtures/tracker-import/compact-main-regression.csv",
+        "utf8",
+      );
+      const mainResult = await importCompactCsv(mainCsv, repo, {
+        mode: "replace",
+      });
+      expect(mainResult.imported).toBe(true);
+
+      const lifecycleFixturePaths = [
+        "test/fixtures/tracker-import/canonical-lifecycle-regression.csv",
+        "test/fixtures/tracker-import/loft-lifecycle-regression.csv",
+        "test/fixtures/tracker-import/reducto-lifecycle-regression.csv",
+      ];
+      const expectedLifecycleRows = (
+        await Promise.all(
+          lifecycleFixturePaths.map(async (path) =>
+            parseCsv(await readFile(path, "utf8")),
+          ),
+        )
+      ).flat();
+
+      for (const path of lifecycleFixturePaths) {
+        const result = await importCompactCsv(
+          await readFile(path, "utf8"),
+          repo,
+          {
+            mode: "merge",
+          },
+        );
+        expect(result.imported).toBe(true);
+      }
+
+      const exported = await repo.exportAllData();
+      expect(exported.lifecycleEvents).toEqual(
+        expect.arrayContaining(
+          expectedLifecycleRows.map((row) =>
+            expect.objectContaining({
+              applicationId: row.application_id,
+              status: row.event_status,
+              occurredAt: row.occurred_at,
+              source: row.source,
+            }),
+          ),
+        ),
+      );
+      expect(exported.artifacts).toEqual(
+        expect.arrayContaining(
+          expectedLifecycleRows.map((row) =>
+            expect.objectContaining({
+              applicationId: row.application_id,
+              url: row.artifact_url,
+            }),
+          ),
+        ),
+      );
+    } finally {
+      repo.close();
+    }
+  });
+
   it("imports the fake compact CSV fixture into IndexedDB and exports stable CSV", async () => {
     const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
     const csv = await fixture();
