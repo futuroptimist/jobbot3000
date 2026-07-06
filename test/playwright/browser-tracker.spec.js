@@ -1,4 +1,6 @@
 /* global IDBDatabase, indexedDB */
+import { readFile } from "node:fs/promises";
+
 import { expect, test } from "@playwright/test";
 
 import { startWebServer } from "../../src/web/server.js";
@@ -24,6 +26,9 @@ const weeklyCsvFixture = [
   "week_app_2,Week One B,Engineer,applied,2026-01-11,https://example.test/b,direct",
   "week_app_3,Week Two,Engineer,applied,2026-01-12,https://example.test/c,direct",
 ].join("\n");
+
+const regressionCsvFixture = () =>
+  readFile("test/fixtures/tracker-import/compact-main-regression.csv", "utf8");
 
 test.describe("browser application tracker", () => {
   let server;
@@ -56,6 +61,50 @@ test.describe("browser application tracker", () => {
       .getByRole("button", { name: "Applications", exact: true })
       .click();
     await expect(page.getByText("No applications yet")).toBeVisible();
+  });
+  test("previews compact CSV regression fixture without phantom interviews", async ({
+    page,
+  }) => {
+    const csv = await regressionCsvFixture();
+
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await page.setInputFiles("[data-import-file]", {
+      name: "compact-main-regression.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(csv),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+
+    await expect(page.locator("[data-import-result]")).toContainText(
+      "Dry-run OK: 15 applications, 7 outreach messages, 0 interviews",
+    );
+  });
+
+  test("imports compact CSV regression fixture with bounded dashboard metrics", async ({
+    page,
+  }) => {
+    const csv = await regressionCsvFixture();
+
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await page.setInputFiles("[data-import-file]", {
+      name: "compact-main-regression.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(csv),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await page.getByRole("button", { name: "Apply import" }).click();
+    await expect(page.locator("[data-import-result]")).toContainText(
+      "Import applied",
+    );
+
+    await page.getByRole("button", { name: "Dashboard" }).click();
+    const metrics = page.locator("[data-metrics]");
+    await expect(metrics).toContainText("Total applications15");
+    await expect(metrics).toContainText("Outreach sent7");
+    await expect(metrics).toContainText("Recruiter screens0");
+    await expect(metrics).toContainText("Interviews0");
+    await expect(metrics).toContainText("Offers0");
+    await expect(metrics).toContainText("Response rate27%");
   });
 
   test("imports CSV, shows list, edits detail, and renders follow-ups", async ({

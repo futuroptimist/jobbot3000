@@ -1,0 +1,4 @@
+application_id,event_type,event_status,occurred_at,source,contact_name,artifact_url,notes,schema_version
+app_reg_beta_002,outreach_reply,replied,2026-02-05T12:00:00.000Z,email,Casey Beta,https://example.test/artifact/beta/reply.eml,Fake reply metadata.,1
+app_reg_zeta_006,outreach_reply,replied,2026-02-12T12:00:00.000Z,email,Alex Zeta,https://example.test/artifact/zeta/reply.eml,Fake reply metadata.,1
+app_reg_gamma_003,decision,rejected,2026-02-10T09:00:00.000Z,portal,,https://example.test/artifact/gamma/rejection.html,Fake rejection metadata.,1

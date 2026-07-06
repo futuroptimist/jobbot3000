@@ -288,6 +288,62 @@ describe("spreadsheet import/export", () => {
     ).toEqual(["app_Z", "app_a"]);
   });
 
+  it("documents intended compact CSV regression metrics without phantom interviews", async () => {
+    const csv = await readFile(
+      "test/fixtures/tracker-import/compact-main-regression.csv",
+      "utf8",
+    );
+    const rows = parseCsv(csv);
+    const { bundle, errors } = csvToBrowserApplicationExport(csv, {
+      exportedAt: "2026-03-10T00:00:00.000Z",
+    });
+
+    expect(errors).toEqual([]);
+    expect(rows).toHaveLength(15);
+    expect(bundle.applications).toHaveLength(15);
+    expect(bundle.outreachMessages).toHaveLength(7);
+    expect(bundle.interviews).toHaveLength(0);
+    expect(bundle.offers).toHaveLength(0);
+    expect(
+      bundle.applications.filter(({ status }) => status === "recruiter_screen"),
+    ).toHaveLength(0);
+
+    const nonInterviewStageLabels = [
+      "Not started",
+      "Hiring manager follow-up",
+      "Application rejected",
+      "Written assessment submitted",
+      "Recruiter screen pending",
+    ];
+    for (const label of nonInterviewStageLabels) {
+      expect(rows.some((row) => row.interview_stage === label)).toBe(true);
+      expect(bundle.interviews).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ stage: label })]),
+      );
+    }
+
+    const responseApplicationIds = new Set([
+      ...rows
+        .filter((row) => row.outreach_status === "replied")
+        .map((row) => row.application_id),
+      ...rows
+        .filter((row) => row.outcome === "rejected")
+        .map((row) => row.application_id),
+      "app_reg_delta_004",
+    ]);
+    expect(responseApplicationIds).toHaveLength(4);
+    expect(Math.round((responseApplicationIds.size / rows.length) * 100)).toBe(
+      27,
+    );
+    expect(
+      Math.round(
+        (rows.filter((row) => row.outreach_status === "replied").length /
+          bundle.outreachMessages.length) *
+          100,
+      ),
+    ).toBe(29);
+  });
+
   it("imports the fake compact CSV fixture into IndexedDB and exports stable CSV", async () => {
     const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
     const csv = await fixture();
