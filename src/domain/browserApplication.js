@@ -11,6 +11,9 @@ export const browserApplicationLifecycleStatusSchema = z.enum([
   "rejected",
   "withdrawn",
   "closed_archived",
+  "replied",
+  "written_assessment_submitted",
+  "recruiter_screen_pending",
 ]);
 
 const isoDateTimeSchema = z.string().datetime();
@@ -57,6 +60,10 @@ export const browserApplicationLifecycleEventSchema = z.object({
     "json_import",
     "ndjson_import",
     "sqlite_migration",
+    "email",
+    "portal",
+    "loft",
+    "reducto",
   ]),
   note: optionalTrimmedStringSchema,
   createdAt: isoDateTimeSchema,
