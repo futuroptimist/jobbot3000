@@ -1,0 +1,4 @@
+application_id,event_type,event_status,event_at,source,contact_name,channel,note,artifact_url
+app_regression_02,outreach_reply,replied,2026-01-06T15:00:00.000Z,csv_import,Riley Recruiter,linkedin,Fake reply metadata,https://example.test/artifact/reply-beta
+app_regression_04,outreach_reply,replied,2026-01-10T16:00:00.000Z,csv_import,Jamie Talent,email,Fake reply metadata,https://example.test/artifact/reply-delta
+app_regression_06,assessment,written_assessment_submitted,2026-01-14T12:00:00.000Z,csv_import,Taylor Lead,email,Fake assessment metadata,https://example.test/artifact/assessment-zeta

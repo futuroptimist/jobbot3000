@@ -1,0 +1,2 @@
+application_id,event_type,event_status,event_at,source,contact_name,channel,note,artifact_url
+app_regression_08,recruiter_screen,pending,2026-01-16T12:00:00.000Z,csv_import,Quinn Contact,linkedin,Fake recruiter screen pending metadata,https://example.test/artifact/reducto-pending

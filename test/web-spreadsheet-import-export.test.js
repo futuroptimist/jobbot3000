@@ -34,6 +34,8 @@ afterEach(async () => {
 });
 
 const fixture = () => readFile("test/fixtures/fake-applications.csv", "utf8");
+const regressionFixture = () =>
+  readFile("test/fixtures/tracker-import/compact-main-regression.csv", "utf8");
 
 describe("spreadsheet import/export", () => {
   it("runs a fake full-fidelity backup/restore smoke flow", async () => {
@@ -286,6 +288,91 @@ describe("spreadsheet import/export", () => {
         .slice(1)
         .map((line) => JSON.parse(line).record.id),
     ).toEqual(["app_Z", "app_a"]);
+  });
+
+  it("documents compact regression fixture semantics without phantom interviews", async () => {
+    const csv = await regressionFixture();
+    const rows = parseCsv(csv);
+    const { bundle, errors } = csvToBrowserApplicationExport(csv, {
+      exportedAt: "2026-03-01T00:00:00.000Z",
+    });
+
+    expect(errors).toEqual([]);
+    expect(rows).toHaveLength(15);
+    expect(bundle.applications).toHaveLength(15);
+    expect(bundle.outreachMessages).toHaveLength(7);
+    expect(bundle.interviews).toHaveLength(0);
+    expect(bundle.offers).toHaveLength(0);
+    expect(
+      bundle.applications.filter(({ status }) => status === "recruiter_screen"),
+    ).toHaveLength(0);
+
+    const stageCounts = rows.reduce(
+      (counts, row) =>
+        counts.set(
+          row.interview_stage,
+          (counts.get(row.interview_stage) ?? 0) + 1,
+        ),
+      new Map(),
+    );
+    expect(stageCounts.get("Not started")).toBe(11);
+    for (const stage of [
+      "Not started",
+      "Hiring manager follow-up",
+      "Application rejected",
+      "Written assessment submitted",
+      "Recruiter screen pending",
+    ]) {
+      expect(
+        bundle.interviews.filter((interview) => interview.stage === stage),
+        `${stage} should remain descriptive CSV text, not an interview record`,
+      ).toHaveLength(0);
+    }
+
+    const responseApplicationIds = new Set(
+      rows
+        .filter(
+          (row) =>
+            row.outreach_status === "replied" ||
+            [
+              "Hiring manager follow-up",
+              "Written assessment submitted",
+            ].includes(row.interview_stage),
+        )
+        .map((row) => row.application_id),
+    );
+    expect(responseApplicationIds.size).toBe(4);
+    expect(Math.round((responseApplicationIds.size / rows.length) * 100)).toBe(
+      27,
+    );
+    expect(
+      Math.round(
+        (rows.filter((row) => row.outreach_status === "replied").length /
+          bundle.outreachMessages.length) *
+          100,
+      ),
+    ).toBe(29);
+  });
+
+  it("previews the compact regression fixture with intended aggregate counts", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    const preview = await previewCompactCsvImport(
+      await regressionFixture(),
+      repo,
+    );
+
+    expect(preview).toMatchObject({
+      rowCount: 15,
+      validRowCount: 15,
+      errors: [],
+      conflicts: [],
+    });
+    expect(preview.bundle.applications).toHaveLength(15);
+    expect(preview.bundle.outreachMessages).toHaveLength(7);
+    expect(preview.bundle.interviews).toHaveLength(0);
+    expect(preview.bundle.offers).toHaveLength(0);
+
+    repo.close();
   });
 
   it("imports the fake compact CSV fixture into IndexedDB and exports stable CSV", async () => {

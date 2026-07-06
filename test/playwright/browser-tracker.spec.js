@@ -1,4 +1,6 @@
 /* global IDBDatabase, indexedDB */
+import { readFile } from "node:fs/promises";
+
 import { expect, test } from "@playwright/test";
 
 import { startWebServer } from "../../src/web/server.js";
@@ -49,6 +51,43 @@ test.describe("browser application tracker", () => {
         }),
     );
     await page.goto(`${server.url}/tracker`);
+  });
+
+  test("imports compact regression CSV without phantom interviews", async ({
+    page,
+  }) => {
+    const csv = await readFile(
+      "test/fixtures/tracker-import/compact-main-regression.csv",
+      "utf8",
+    );
+
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await page.setInputFiles("[data-import-file]", {
+      name: "compact-main-regression.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(csv),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await expect(page.locator("[data-import-result]")).toContainText(
+      "Dry-run OK: 15 applications, 7 outreach messages, 0 interviews",
+    );
+    await page.getByRole("button", { name: "Apply import" }).click();
+
+    await page.getByRole("button", { name: "Dashboard" }).click();
+    await expect(page.locator("[data-metrics]")).toContainText(
+      "Total applications15",
+    );
+    await expect(page.locator("[data-metrics]")).toContainText(
+      "Outreach sent7",
+    );
+    await expect(page.locator("[data-metrics]")).toContainText(
+      "Recruiter screens0",
+    );
+    await expect(page.locator("[data-metrics]")).toContainText("Interviews0");
+    await expect(page.locator("[data-metrics]")).toContainText("Offers0");
+    await expect(page.locator("[data-metrics]")).toContainText(
+      "Response rate27%",
+    );
   });
 
   test("shows the empty state", async ({ page }) => {
