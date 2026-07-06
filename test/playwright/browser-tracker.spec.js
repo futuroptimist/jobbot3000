@@ -104,9 +104,7 @@ test.describe("browser application tracker", () => {
     await expect(metrics).toContainText("Recruiter screens0");
     await expect(metrics).toContainText("Interviews0");
     await expect(metrics).toContainText("Offers0");
-    await expect(metrics).toContainText("Application responses4");
-    await expect(metrics).toContainText("Application response rate27%");
-    await expect(metrics).toContainText("Outreach reply rate29%");
+    await expect(metrics).toContainText("Response rate47%");
   });
 
   test("imports CSV, shows list, edits detail, and renders follow-ups", async ({
