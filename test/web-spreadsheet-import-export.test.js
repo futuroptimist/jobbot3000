@@ -338,8 +338,20 @@ describe("spreadsheet import/export", () => {
         .map((row) => row.application_id),
     );
     expect(responseApplicationIds.size).toBe(4);
-    expect(Math.round((4 / 15) * 100)).toBe(27);
-    expect(Math.round((2 / 7) * 100)).toBe(29);
+
+    const dashboardResponseRate = Math.round(
+      ((bundle.outreachMessages.length +
+        bundle.interviews.length +
+        bundle.offers.length) /
+        bundle.applications.length) *
+        100,
+    );
+    expect(dashboardResponseRate).toBe(47);
+    expect(
+      Math.round(
+        (repliedOutreachRows.length / bundle.outreachMessages.length) * 100,
+      ),
+    ).toBe(29);
   });
 
   it("imports supplemental lifecycle fixtures through the compact CSV import path", async () => {
