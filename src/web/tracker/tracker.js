@@ -2,6 +2,7 @@
 /* eslint-disable max-len */
 import {
   COMPACT_CSV_COLUMNS,
+  csvToBrowserApplicationExport,
   exportCompactCsv,
   exportJsonBackup,
   exportNdjsonBackup,
@@ -183,44 +184,6 @@ const state = {
   current: null,
   detailSave: Promise.resolve(),
 };
-function parseCsv(text) {
-  const rows = [];
-  let row = [],
-    field = "",
-    q = false;
-  const input = String(text).replace(/^\uFEFF/, "");
-  for (let i = 0; i < input.length; i += 1) {
-    const ch = input[i];
-    if (q) {
-      if (ch === '"' && input[i + 1] === '"') {
-        field += '"';
-        i += 1;
-      } else if (ch === '"') q = false;
-      else field += ch;
-    } else if (ch === '"') q = true;
-    else if (ch === ",") {
-      row.push(field);
-      field = "";
-    } else if (ch === "\n") {
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = "";
-    } else if (ch !== "\r") field += ch;
-  }
-  row.push(field);
-  if (row.some(Boolean)) rows.push(row);
-  const head = (rows.shift() || []).map((h) => h.trim().toLowerCase());
-  return rows
-    .filter((r) => r.some(Boolean))
-    .map((r) => Object.fromEntries(head.map((h, i) => [h, r[i] ?? ""])));
-}
-
-function safeIsoDate(value, fallback) {
-  if (!value) return fallback;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? fallback : date.toISOString();
-}
 function weekBucket(value) {
   const d = day(value);
   if (!d) return "";
@@ -250,84 +213,6 @@ function linkForArtifact(artifact) {
 }
 function fitScore(notes) {
   return String(notes || "").match(/fit_score_100[":\s]+([\d.]+)/)?.[1] || "";
-}
-function rowToRecords(r) {
-  const ts = now(),
-    appId = r.application_id || id("app");
-  const app = {
-    id: appId,
-    company: r.company || "Unknown company",
-    role: r.role_title || r.role || "Unknown role",
-    status: STATUSES.includes(r.status) ? r.status : "applied",
-    source: r.application_channel || undefined,
-    postingUrl: r.posting_url || undefined,
-    appliedAt: safeIsoDate(r.applied_at, ts),
-    followUpDate: safeIsoDate(r.follow_up_date, undefined),
-    notes: r.notes || undefined,
-    createdAt: ts,
-    updatedAt: ts,
-  };
-  const records = {
-    applications: [app],
-    contacts: [],
-    outreachMessages: [],
-    lifecycleEvents: [
-      {
-        id: id("event"),
-        applicationId: appId,
-        status: app.status,
-        occurredAt: app.appliedAt,
-        source: "csv_import",
-        createdAt: ts,
-      },
-    ],
-    interviews: [],
-    offers: [],
-    artifacts: [],
-    reminders: [],
-  };
-  if (r.posting_url)
-    records.artifacts.push({
-      id: id("artifact"),
-      applicationId: appId,
-      kind: "job_posting",
-      name: "Posting",
-      url: r.posting_url,
-      private: true,
-      createdAt: ts,
-      updatedAt: ts,
-    });
-  if (r.outreach_message_text)
-    records.outreachMessages.push({
-      id: id("msg"),
-      applicationId: appId,
-      direction: "outbound",
-      channel: r.outreach_channel || "other",
-      body: r.outreach_message_text,
-      sentAt: safeIsoDate(r.outreach_sent_at, ts),
-      createdAt: ts,
-      updatedAt: ts,
-    });
-  if (r.interview_stage)
-    records.interviews.push({
-      id: id("interview"),
-      applicationId: appId,
-      contactIds: [],
-      stage: r.interview_stage,
-      outcome: "scheduled",
-      startsAt: ts,
-      createdAt: ts,
-      updatedAt: ts,
-    });
-  if (r.outcome === "offer")
-    records.offers.push({
-      id: id("offer"),
-      applicationId: appId,
-      status: "received",
-      createdAt: ts,
-      updatedAt: ts,
-    });
-  return records;
 }
 async function refresh() {
   state.bundle = await repo.exportAll();
@@ -689,23 +574,7 @@ async function newApplication() {
   openUnsavedDetail(app);
 }
 function previewBundleFromCsv(text) {
-  const rows = parseCsv(text);
-  const bundle = {
-    applications: [],
-    contacts: [],
-    outreachMessages: [],
-    lifecycleEvents: [],
-    interviews: [],
-    offers: [],
-    artifacts: [],
-    reminders: [],
-  };
-  for (const row of rows) {
-    const records = rowToRecords(row);
-    for (const store of Object.keys(bundle))
-      bundle[store].push(...records[store]);
-  }
-  return bundle;
+  return csvToBrowserApplicationExport(text).bundle;
 }
 function bundleForIndexedDb(bundle) {
   return {
