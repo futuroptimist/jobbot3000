@@ -7,16 +7,16 @@ import { startWebServer } from "../../src/web/server.js";
 
 const csvFixture = [
   "application_id,company,role_title,status,applied_at,posting_url," +
-    "application_channel,follow_up_date,outreach_channel,outreach_message_text," +
-    "interview_stage,outcome,notes",
+    "application_channel,follow_up_date,outreach_status,outreach_channel," +
+    "outreach_message_text,interview_stage,outcome,notes",
   "fake_app_1,Example Labs,Frontend Engineer,applied,2026-01-02," +
-    "https://example.test/jobs/frontend,direct,2026-01-09,email," +
-    "Following up on my application,recruiter_screen,,fit_score_100: 82",
+    "https://example.test/jobs/frontend,direct,2026-01-09,sent,email," +
+    "Following up on my application,,,fit_score_100: 82",
 ].join("\n");
 
 const dangerousCsvFixture = [
   "application_id,company,role_title,status,applied_at,posting_url,notes",
-  "fake_app_2,Evil Corp,Security Engineer,applied,not-a-date," +
+  "fake_app_2,Evil Corp,Security Engineer,applied,2026-01-03," +
     'javascript:alert(1),"He said ""hello"""',
 ].join("\n");
 
@@ -65,10 +65,6 @@ test.describe("browser application tracker", () => {
   test("previews compact CSV regression fixture without phantom interviews", async ({
     page,
   }) => {
-    test.fail(
-      true,
-      "Prompt 01 lands this red regression net; later prompts fix tracker import.",
-    );
     const csv = await regressionCsvFixture();
 
     await page.getByRole("button", { name: "Import/Export" }).click();

@@ -7,6 +7,7 @@ import {
   exportNdjsonBackup,
   importJsonBackup,
   importNdjsonBackup,
+  previewCompactCsvImport,
 } from "../import-export/spreadsheet.js";
 
 /* canonical CSV/backup helpers are shared with spreadsheet import/export tests. */
@@ -160,7 +161,7 @@ const repo = {
       db.close();
     }
   },
-  exportAll: async () =>
+  exportAllData: async () =>
     Object.assign(
       { schemaVersion: 1, exportedAt: now() },
       Object.fromEntries(
@@ -172,6 +173,17 @@ const repo = {
         ),
       ),
     ),
+  importAllData: async (bundle, { dryRun = false } = {}) => {
+    const recordsByStore = bundleForIndexedDb(bundle);
+    const recordCounts = Object.fromEntries(
+      Object.entries(recordsByStore).map(([store, rows]) => [
+        store,
+        rows.length,
+      ]),
+    );
+    if (!dryRun) await batchPut(recordsByStore);
+    return { dryRun, recordCounts };
+  },
 };
 const state = {
   apps: [],
@@ -183,44 +195,6 @@ const state = {
   current: null,
   detailSave: Promise.resolve(),
 };
-function parseCsv(text) {
-  const rows = [];
-  let row = [],
-    field = "",
-    q = false;
-  const input = String(text).replace(/^\uFEFF/, "");
-  for (let i = 0; i < input.length; i += 1) {
-    const ch = input[i];
-    if (q) {
-      if (ch === '"' && input[i + 1] === '"') {
-        field += '"';
-        i += 1;
-      } else if (ch === '"') q = false;
-      else field += ch;
-    } else if (ch === '"') q = true;
-    else if (ch === ",") {
-      row.push(field);
-      field = "";
-    } else if (ch === "\n") {
-      row.push(field);
-      rows.push(row);
-      row = [];
-      field = "";
-    } else if (ch !== "\r") field += ch;
-  }
-  row.push(field);
-  if (row.some(Boolean)) rows.push(row);
-  const head = (rows.shift() || []).map((h) => h.trim().toLowerCase());
-  return rows
-    .filter((r) => r.some(Boolean))
-    .map((r) => Object.fromEntries(head.map((h, i) => [h, r[i] ?? ""])));
-}
-
-function safeIsoDate(value, fallback) {
-  if (!value) return fallback;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? fallback : date.toISOString();
-}
 function weekBucket(value) {
   const d = day(value);
   if (!d) return "";
@@ -251,86 +225,8 @@ function linkForArtifact(artifact) {
 function fitScore(notes) {
   return String(notes || "").match(/fit_score_100[":\s]+([\d.]+)/)?.[1] || "";
 }
-function rowToRecords(r) {
-  const ts = now(),
-    appId = r.application_id || id("app");
-  const app = {
-    id: appId,
-    company: r.company || "Unknown company",
-    role: r.role_title || r.role || "Unknown role",
-    status: STATUSES.includes(r.status) ? r.status : "applied",
-    source: r.application_channel || undefined,
-    postingUrl: r.posting_url || undefined,
-    appliedAt: safeIsoDate(r.applied_at, ts),
-    followUpDate: safeIsoDate(r.follow_up_date, undefined),
-    notes: r.notes || undefined,
-    createdAt: ts,
-    updatedAt: ts,
-  };
-  const records = {
-    applications: [app],
-    contacts: [],
-    outreachMessages: [],
-    lifecycleEvents: [
-      {
-        id: id("event"),
-        applicationId: appId,
-        status: app.status,
-        occurredAt: app.appliedAt,
-        source: "csv_import",
-        createdAt: ts,
-      },
-    ],
-    interviews: [],
-    offers: [],
-    artifacts: [],
-    reminders: [],
-  };
-  if (r.posting_url)
-    records.artifacts.push({
-      id: id("artifact"),
-      applicationId: appId,
-      kind: "job_posting",
-      name: "Posting",
-      url: r.posting_url,
-      private: true,
-      createdAt: ts,
-      updatedAt: ts,
-    });
-  if (r.outreach_message_text)
-    records.outreachMessages.push({
-      id: id("msg"),
-      applicationId: appId,
-      direction: "outbound",
-      channel: r.outreach_channel || "other",
-      body: r.outreach_message_text,
-      sentAt: safeIsoDate(r.outreach_sent_at, ts),
-      createdAt: ts,
-      updatedAt: ts,
-    });
-  if (r.interview_stage)
-    records.interviews.push({
-      id: id("interview"),
-      applicationId: appId,
-      contactIds: [],
-      stage: r.interview_stage,
-      outcome: "scheduled",
-      startsAt: ts,
-      createdAt: ts,
-      updatedAt: ts,
-    });
-  if (r.outcome === "offer")
-    records.offers.push({
-      id: id("offer"),
-      applicationId: appId,
-      status: "received",
-      createdAt: ts,
-      updatedAt: ts,
-    });
-  return records;
-}
 async function refresh() {
-  state.bundle = await repo.exportAll();
+  state.bundle = await repo.exportAllData();
   state.apps = state.bundle.applications.sort((a, b) =>
     String(b.appliedAt || "").localeCompare(a.appliedAt || ""),
   );
@@ -688,25 +584,6 @@ async function newApplication() {
   };
   openUnsavedDetail(app);
 }
-function previewBundleFromCsv(text) {
-  const rows = parseCsv(text);
-  const bundle = {
-    applications: [],
-    contacts: [],
-    outreachMessages: [],
-    lifecycleEvents: [],
-    interviews: [],
-    offers: [],
-    artifacts: [],
-    reminders: [],
-  };
-  for (const row of rows) {
-    const records = rowToRecords(row);
-    for (const store of Object.keys(bundle))
-      bundle[store].push(...records[store]);
-  }
-  return bundle;
-}
 function bundleForIndexedDb(bundle) {
   return {
     ...Object.fromEntries(
@@ -742,21 +619,33 @@ async function previewImport() {
   try {
     const text = await file.text();
     const format = importFormatForFile(file);
+    const preview =
+      format === "csv" ? await previewCompactCsvImport(text, repo) : null;
+    if (preview?.errors?.length) {
+      throw new Error(
+        `CSV import has ${preview.errors.length} validation errors. First error: row ${preview.errors[0].rowNumber ?? "?"} ${preview.errors[0].field ?? ""} ${preview.errors[0].code ?? preview.errors[0].message ?? "invalid"}`.trim(),
+      );
+    }
     const bundle =
       format === "json"
         ? importJsonBackup(text)
         : format === "ndjson"
           ? importNdjsonBackup(text)
-          : previewBundleFromCsv(text);
+          : preview.bundle;
     state.preview = bundleForIndexedDb(bundle);
     state.previewConflicts = await detectImportConflicts(state.preview);
-    const totalRecords = Object.values(state.preview).reduce(
-      (count, rows) => count + rows.length,
+    const dryRun = await repo.importAllData(bundle, { dryRun: true });
+    const totalRecords = Object.values(dryRun.recordCounts).reduce(
+      (count, rows) => count + rows,
       0,
+    );
+    const conflictCount = Math.max(
+      state.previewConflicts.length,
+      preview?.conflicts?.length ?? 0,
     );
     const formatLabel = format === "csv" ? "" : ` (${format.toUpperCase()})`;
     $("[data-import-result]").textContent =
-      `Dry-run OK${formatLabel}: ${(bundle.applications ?? []).length} applications, ${(bundle.outreachMessages ?? []).length} outreach messages, ${(bundle.interviews ?? []).length} interviews. ${totalRecords} total records. ${state.previewConflicts.length} existing record conflicts.`;
+      `Dry-run OK${formatLabel}: ${(bundle.applications ?? []).length} applications, ${(bundle.outreachMessages ?? []).length} outreach messages, ${(bundle.interviews ?? []).length} interviews. ${totalRecords} total records. ${conflictCount} existing record conflicts.`;
     $("[data-import-apply]").disabled = false;
   } catch (err) {
     state.preview = null;
