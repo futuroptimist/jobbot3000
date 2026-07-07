@@ -16,7 +16,7 @@ const csvFixture = [
 
 const dangerousCsvFixture = [
   "application_id,company,role_title,status,applied_at,posting_url,notes",
-  "fake_app_2,Evil Corp,Security Engineer,applied,not-a-date," +
+  "fake_app_2,Evil Corp,Security Engineer,applied,2026-01-02," +
     'javascript:alert(1),"He said ""hello"""',
 ].join("\n");
 
@@ -173,7 +173,7 @@ test.describe("browser application tracker", () => {
     await page.getByRole("button", { name: "Preview/dry-run" }).click();
 
     await expect(page.locator("[data-import-result]")).toContainText(
-      "Import preview failed",
+      "Row 2 posting_url: posting_url is not a valid http(s) URL.",
     );
     await expect(
       page.getByRole("button", { name: "Apply import" }),
