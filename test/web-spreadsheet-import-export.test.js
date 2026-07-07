@@ -451,6 +451,93 @@ describe("spreadsheet import/export", () => {
         (repliedOutreachRows.length / bundle.outreachMessages.length) * 100,
       ),
     ).toBe(29);
+
+    const exportedRows = parseCsv(exportCompactCsv(bundle));
+    const originalRowsById = new Map(
+      rows.map((row) => [row.application_id, row]),
+    );
+    for (const exportedRow of exportedRows) {
+      const originalRow = originalRowsById.get(exportedRow.application_id);
+      expect(exportedRow).toMatchObject({
+        status: originalRow.status,
+        interview_stage: originalRow.interview_stage,
+        outcome: originalRow.outcome,
+        notes: originalRow.notes,
+      });
+    }
+    expect(exportedRows[0]).toMatchObject({
+      compensation_min_usd: "",
+      compensation_max_usd: "",
+      outreach_message_text: [
+        "Hello Company Alpha team,",
+        "I am excited about the platform work and would appreciate a conversation.",
+      ].join("\n"),
+    });
+  });
+
+  it("normalizes compact display labels while preserving raw spreadsheet metadata", () => {
+    const csv = serializeCsv([
+      {
+        application_id: "app_display_labels",
+        company: "Display Label Co",
+        role_title: "Engineer",
+        status: "Interviewing",
+        applied_at: "2026-01-01",
+        posting_url: "https://jobs.example.test/display-labels",
+        outreach_status: "replied",
+        outreach_target_name: "Recruiter Person",
+        outreach_channel: "email",
+        outreach_sent_at: "2026-01-02T12:00:00.000Z",
+        outreach_message_text: "First line\nSecond line",
+        interview_stage: "Written assessment",
+        outcome: "Application rejected",
+        notes: "Long note with spreadsheet context.",
+        schema_version: "1",
+      },
+    ]);
+
+    const { bundle, errors } = csvToBrowserApplicationExport(csv, {
+      exportedAt: "2026-03-01T00:00:00.000Z",
+    });
+
+    expect(errors).toEqual([]);
+    expect(bundle.applications[0]).toMatchObject({
+      id: "app_display_labels",
+      status: "recruiter_screen",
+    });
+    expect(bundle.applications[0].notes).toContain('"status":"Interviewing"');
+    expect(bundle.applications[0].notes).toContain(
+      '"interview_stage":"Written assessment"',
+    );
+    expect(bundle.applications[0].notes).toContain(
+      '"outcome":"Application rejected"',
+    );
+    expect(bundle.applications[0].notes).toContain(
+      '"outreach_status":"replied"',
+    );
+    expect(bundle.interviews).toHaveLength(0);
+    expect(bundle.lifecycleEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          status: "applied",
+          note: "Written assessment",
+        }),
+        expect.objectContaining({
+          status: "rejected",
+          note: "Application rejected",
+        }),
+      ]),
+    );
+
+    const [row] = parseCsv(exportCompactCsv(bundle));
+    expect(row).toMatchObject({
+      status: "Interviewing",
+      interview_stage: "Written assessment",
+      outcome: "Application rejected",
+      outreach_status: "replied",
+      outreach_message_text: "First line\nSecond line",
+      notes: "Long note with spreadsheet context.",
+    });
   });
 
   it("keeps supplemental lifecycle fixtures safe", async () => {
@@ -811,9 +898,7 @@ describe("spreadsheet import/export", () => {
     expect(exported.outreachMessages[0].contactId).not.toContain(
       "app_regenerated",
     );
-    expect(exported.interviews[0].contactIds).toEqual(
-      expect.not.arrayContaining([expect.stringContaining("app_regenerated")]),
-    );
+    expect(exported.interviews).toHaveLength(0);
     const childCounts = Object.fromEntries(
       childStores.map((store) => [store, exported[store].length]),
     );

@@ -48,6 +48,22 @@ const KNOWN_STATUSES = new Set([
   "closed_archived",
 ]);
 const OUTREACH_SENT_STATUSES = new Set(["sent", "replied"]);
+const STATUS_LABELS = new Map([
+  ["applied", "applied"],
+  ["application submitted", "applied"],
+  ["responded to inbound", "outreach_sent"],
+  ["interviewing", "recruiter_screen"],
+  ["application rejected", "rejected"],
+]);
+const NON_INTERVIEW_STAGE_LABELS = new Set([
+  "not started",
+  "application rejected",
+  "written assessment",
+  "written assessment submitted",
+  "hiring manager follow up",
+  "hiring manager follow-up",
+  "recruiter screen pending",
+]);
 const INTERVIEW_STAGES = new Map([
   ["recruiter_screen", "recruiter_screen"],
   ["phone_screen", "recruiter_screen"],
@@ -59,6 +75,7 @@ const OUTCOMES = new Map([
   ["offer", "offer"],
   ["accepted", "accepted"],
   ["rejected", "rejected"],
+  ["application rejected", "rejected"],
   ["withdrawn", "withdrawn"],
   ["closed", "closed_archived"],
   ["closed_archived", "closed_archived"],
@@ -286,6 +303,9 @@ const metadataFromRow = (row) =>
       "fit_score_100",
       "outreach_status",
       "outreach_channel",
+      "status",
+      "interview_stage",
+      "outcome",
       "schema_version",
     ]
       .map((key) => [key, compact(row[key])])
@@ -323,6 +343,8 @@ const readMetadataFromNotes = (notes) => {
 const mapStatus = (row) => {
   const status = normalizeKey(row.status);
   if (KNOWN_STATUSES.has(status)) return status;
+  const statusLabel = STATUS_LABELS.get(status);
+  if (statusLabel) return statusLabel;
   const outcome = OUTCOMES.get(normalizeKey(row.outcome));
   if (outcome) return outcome;
   const stage = INTERVIEW_STAGES.get(normalizeKey(row.interview_stage));
@@ -525,7 +547,8 @@ export const rowsToBrowserApplicationExport = (
         source: "csv_import",
         createdAt: exportedAt,
       });
-    const stage = INTERVIEW_STAGES.get(normalizeKey(row.interview_stage));
+    const stageKey = normalizeKey(row.interview_stage);
+    const stage = INTERVIEW_STAGES.get(stageKey);
     if (stage) {
       lifecycleEvents.push({
         id: stableId("event", id, stage),
@@ -536,15 +559,17 @@ export const rowsToBrowserApplicationExport = (
         note: compact(row.interview_stage),
         createdAt: exportedAt,
       });
-      interviews.push({
-        id: stableId("interview", id, stage),
+    } else if (NON_INTERVIEW_STAGE_LABELS.has(stageKey)) {
+      const statusForStage =
+        stageKey === "application rejected" ? "rejected" : "applied";
+      lifecycleEvents.push({
+        id: stableId("event", id, "spreadsheet_stage", stageKey),
         applicationId: id,
-        contactIds: contactId ? [contactId] : [],
-        stage,
-        startsAt: outreachSentAt ?? appliedAt ?? timestamp,
-        outcome: "scheduled",
-        createdAt: timestamp,
-        updatedAt: exportedAt,
+        status: statusForStage,
+        occurredAt: outreachSentAt ?? appliedAt ?? timestamp,
+        source: "csv_import",
+        note: compact(row.interview_stage),
+        createdAt: exportedAt,
       });
     }
     const outcome = OUTCOMES.get(normalizeKey(row.outcome));
@@ -643,7 +668,7 @@ export const browserApplicationExportToRows = (bundle) => {
         application_id: application.id,
         company: application.company,
         role_title: application.role,
-        status: application.status,
+        status: metadata.status ?? application.status,
         applied_at: dateOnly(application.appliedAt),
         posting_url: application.postingUrl ?? "",
         application_channel: application.source ?? "",
@@ -683,14 +708,14 @@ export const browserApplicationExportToRows = (bundle) => {
         outreach_sent_at: dateTime(outreach.sentAt),
         outreach_message_text: outreach.body ?? "",
         interview_stage:
+          metadata.interview_stage ??
           interview.stage ??
           interviewStageEvent.status ??
-          metadata.interview_stage ??
           "",
         outcome:
+          metadata.outcome ??
           outcomeEvent.status ??
           (offer.status === "received" ? "offer" : offer.status) ??
-          metadata.outcome ??
           "",
       });
       return row;
