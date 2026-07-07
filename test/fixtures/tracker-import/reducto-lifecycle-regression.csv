@@ -1,0 +1,2 @@
+application_id,event_type,event_status,occurred_at,source,contact_name,artifact_url,notes,schema_version
+app_reg_epsilon_005,scheduler,recruiter_screen_pending,2026-02-10T16:00:00.000Z,reducto,Riley Epsilon,https://example.test/artifact/epsilon/scheduler.html,Fake Reducto-style supplemental lifecycle row.,1

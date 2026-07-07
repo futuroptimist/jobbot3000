@@ -288,6 +288,110 @@ describe("spreadsheet import/export", () => {
     ).toEqual(["app_Z", "app_a"]);
   });
 
+  it("documents intended compact CSV regression metrics without phantom interviews", async () => {
+    const csv = await readFile(
+      "test/fixtures/tracker-import/compact-main-regression.csv",
+      "utf8",
+    );
+    const rows = parseCsv(csv);
+    const { bundle, errors } = csvToBrowserApplicationExport(csv, {
+      exportedAt: "2026-03-10T00:00:00.000Z",
+    });
+
+    expect(errors).toEqual([]);
+    expect(rows).toHaveLength(15);
+    expect(bundle.applications).toHaveLength(15);
+    expect(bundle.outreachMessages).toHaveLength(7);
+    expect(bundle.interviews).toHaveLength(0);
+    expect(bundle.offers).toHaveLength(0);
+    expect(
+      bundle.applications.filter(({ status }) => status === "recruiter_screen"),
+    ).toHaveLength(0);
+
+    const nonInterviewStageLabels = [
+      "Not started",
+      "Hiring manager follow-up",
+      "Application rejected",
+      "Written assessment submitted",
+      "Recruiter screen pending",
+    ];
+    for (const label of nonInterviewStageLabels) {
+      expect(rows.some((row) => row.interview_stage === label)).toBe(true);
+      expect(bundle.interviews).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ stage: label })]),
+      );
+    }
+
+    const repliedOutreachRows = rows.filter(
+      (row) => row.outreach_status === "replied",
+    );
+    expect(repliedOutreachRows).toHaveLength(2);
+
+    const responseApplicationIds = new Set(
+      rows
+        .filter(
+          (row) =>
+            row.outreach_status === "replied" ||
+            row.outcome === "rejected" ||
+            row.interview_stage === "Written assessment submitted",
+        )
+        .map((row) => row.application_id),
+    );
+    expect(responseApplicationIds.size).toBe(4);
+
+    expect(Math.round((responseApplicationIds.size / rows.length) * 100)).toBe(
+      27,
+    );
+    expect(
+      Math.round(
+        (repliedOutreachRows.length / bundle.outreachMessages.length) * 100,
+      ),
+    ).toBe(29);
+  });
+
+  it("keeps supplemental lifecycle fixtures safe", async () => {
+    // Prompt 01 only validates supplemental lifecycle fixture safety; importing
+    // these lifecycle CSVs is intentionally deferred to Prompt 04.
+    const compactRows = parseCsv(
+      await readFile(
+        "test/fixtures/tracker-import/compact-main-regression.csv",
+        "utf8",
+      ),
+    );
+    const applicationIds = new Set(
+      compactRows.map((row) => row.application_id),
+    );
+    const fixturePaths = [
+      "test/fixtures/tracker-import/canonical-lifecycle-regression.csv",
+      "test/fixtures/tracker-import/loft-lifecycle-regression.csv",
+      "test/fixtures/tracker-import/reducto-lifecycle-regression.csv",
+    ];
+    const lifecycleRowsByFile = await Promise.all(
+      fixturePaths.map(async (path) => parseCsv(await readFile(path, "utf8"))),
+    );
+    const lifecycleRows = lifecycleRowsByFile.flat();
+
+    for (const rowsForFile of lifecycleRowsByFile) {
+      expect(rowsForFile.length).toBeGreaterThan(0);
+    }
+    expect(
+      lifecycleRows.every((row) => applicationIds.has(row.application_id)),
+    ).toBe(true);
+    expect(
+      lifecycleRows.every((row) =>
+        row.artifact_url.startsWith("https://example.test/artifact/"),
+      ),
+    ).toBe(true);
+
+    const lifecycleText = lifecycleRows
+      .map((row) => Object.values(row).join(" "))
+      .join(" ");
+    expect(lifecycleText).not.toMatch(/https?:\/\/(?!example\.test\b)/i);
+    expect(lifecycleText).not.toMatch(
+      /(?:gmail|outlook|yahoo|hotmail|linkedin|greenhouse|lever|ashby|workday)\.com/i,
+    );
+  });
+
   it("imports the fake compact CSV fixture into IndexedDB and exports stable CSV", async () => {
     const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
     const csv = await fixture();
