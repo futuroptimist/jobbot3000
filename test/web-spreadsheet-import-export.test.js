@@ -329,6 +329,69 @@ describe("spreadsheet import/export", () => {
     });
   });
 
+  it("round-trips exported outreach messages through compact CSV", () => {
+    const sentAt = "2026-02-03T14:15:16.000Z";
+    const bundle = {
+      schemaVersion: 1,
+      exportedAt: "2026-02-04T00:00:00.000Z",
+      applications: [
+        {
+          id: "app_outreach_roundtrip",
+          company: "Outreach Example",
+          role: "Engineer",
+          status: "applied",
+          appliedAt: "2026-02-01T00:00:00.000Z",
+          notes: "No spreadsheet metadata here.",
+          createdAt: "2026-02-01T00:00:00.000Z",
+          updatedAt: "2026-02-04T00:00:00.000Z",
+        },
+      ],
+      contacts: [],
+      outreachMessages: [
+        {
+          id: "message_outreach_roundtrip",
+          applicationId: "app_outreach_roundtrip",
+          direction: "outbound",
+          channel: "email",
+          body: "Following up on my application.",
+          sentAt,
+          createdAt: sentAt,
+          updatedAt: "2026-02-04T00:00:00.000Z",
+        },
+      ],
+      lifecycleEvents: [],
+      interviews: [],
+      offers: [],
+      artifacts: [],
+      reminders: [],
+    };
+
+    const csv = exportCompactCsv(bundle);
+    const [row] = parseCsv(csv);
+
+    expect(row).toMatchObject({
+      application_id: "app_outreach_roundtrip",
+      outreach_status: "sent",
+      outreach_channel: "email",
+      outreach_sent_at: sentAt,
+      outreach_message_text: "Following up on my application.",
+    });
+
+    const { bundle: restored, errors } = csvToBrowserApplicationExport(csv, {
+      exportedAt: "2026-02-05T00:00:00.000Z",
+    });
+
+    expect(errors).toEqual([]);
+    expect(restored.outreachMessages).toEqual([
+      expect.objectContaining({
+        applicationId: "app_outreach_roundtrip",
+        channel: "email",
+        body: "Following up on my application.",
+        sentAt,
+      }),
+    ]);
+  });
+
   it("documents intended compact CSV regression metrics without phantom interviews", async () => {
     const csv = await readFile(
       "test/fixtures/tracker-import/compact-main-regression.csv",

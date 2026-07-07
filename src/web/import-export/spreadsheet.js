@@ -676,6 +676,9 @@ export const browserApplicationExportToRows = (bundle) => {
         linkedin_snapshot_screenshot_url: screenshot.url ?? "",
         linkedin_snapshot_pdf_url: pdf.url ?? "",
         outreach_target_name: contact.name ?? "",
+        outreach_status:
+          metadata.outreach_status ??
+          (outreach.body || outreach.sentAt ? "sent" : ""),
         outreach_channel: outreach.channel ?? metadata.outreach_channel ?? "",
         outreach_sent_at: dateTime(outreach.sentAt),
         outreach_message_text: outreach.body ?? "",
