@@ -484,9 +484,8 @@ export const rowsToBrowserApplicationExport = (
         updatedAt: exportedAt,
       });
     if (
-      compact(row.outreach_message_text) &&
-      (!compact(row.outreach_status) ||
-        OUTREACH_SENT_STATUSES.has(normalizeKey(row.outreach_status)))
+      OUTREACH_SENT_STATUSES.has(normalizeKey(row.outreach_status)) &&
+      compact(row.outreach_message_text)
     ) {
       outreachMessages.push({
         id: stableId(
@@ -676,9 +675,6 @@ export const browserApplicationExportToRows = (bundle) => {
         job_description_snapshot_url: job.url ?? "",
         linkedin_snapshot_screenshot_url: screenshot.url ?? "",
         linkedin_snapshot_pdf_url: pdf.url ?? "",
-        outreach_status: outreach.body
-          ? metadata.outreach_status || "sent"
-          : metadata.outreach_status || "",
         outreach_target_name: contact.name ?? "",
         outreach_channel: outreach.channel ?? metadata.outreach_channel ?? "",
         outreach_sent_at: dateTime(outreach.sentAt),

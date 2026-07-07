@@ -310,30 +310,22 @@ describe("spreadsheet import/export", () => {
     );
   });
 
-  it("preserves tracker CSV outreach messages without an explicit outreach status", () => {
+  it("accepts compact CSV posting URLs that use https", () => {
     const csv = serializeCsv([
       {
-        application_id: "app_blank_outreach_status",
-        company: "Outreach Example",
+        application_id: "app_safe_url",
+        company: "Safe Example",
         role_title: "Engineer",
         applied_at: "2026-01-01",
-        posting_url: "https://jobs.example.test/outreach",
-        outreach_channel: "email",
-        outreach_sent_at: "2026-01-03T15:30:00.000Z",
-        outreach_message_text: "Hello from a tracker export",
+        posting_url: "https://jobs.example.test/safe",
       },
     ]);
-    const { bundle, errors } = csvToBrowserApplicationExport(csv, {
-      exportedAt: "2026-03-01T00:00:00.000Z",
-    });
+    const { bundle, errors } = csvToBrowserApplicationExport(csv);
 
     expect(errors).toEqual([]);
-    expect(bundle.outreachMessages).toHaveLength(1);
-    expect(bundle.outreachMessages[0]).toMatchObject({
-      applicationId: "app_blank_outreach_status",
-      channel: "email",
-      body: "Hello from a tracker export",
-      sentAt: "2026-01-03T15:30:00.000Z",
+    expect(bundle.applications[0]).toMatchObject({
+      id: "app_safe_url",
+      postingUrl: "https://jobs.example.test/safe",
     });
   });
 
