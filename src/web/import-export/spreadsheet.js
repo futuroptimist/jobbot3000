@@ -55,9 +55,26 @@ const INTERVIEW_STAGES = new Map([
   ["onsite_loop", "onsite_loop"],
   ["onsite", "onsite_loop"],
 ]);
+const NON_INTERVIEW_STAGE_LABELS = new Set([
+  "not_started",
+  "application_rejected",
+  "written_assessment",
+  "written_assessment_submitted",
+  "hiring_manager_follow_up",
+  "recruiter_screen_pending",
+]);
 const OUTCOMES = new Map([
   ["offer", "offer"],
   ["accepted", "accepted"],
+  ["rejected", "rejected"],
+  ["application_rejected", "rejected"],
+  ["withdrawn", "withdrawn"],
+  ["closed", "closed_archived"],
+  ["closed_archived", "closed_archived"],
+]);
+const STATUS_LABELS = new Map([
+  ["applied", "applied"],
+  ["application_rejected", "rejected"],
   ["rejected", "rejected"],
   ["withdrawn", "withdrawn"],
   ["closed", "closed_archived"],
@@ -99,6 +116,11 @@ const normalizeKey = (value) =>
   String(value ?? "")
     .trim()
     .toLowerCase();
+const normalizeLabelKey = (value) =>
+  normalizeKey(value)
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
 const compact = (value) => String(value ?? "").trim();
 const slug = (value) =>
   compact(value)
@@ -277,6 +299,9 @@ const validUrl = (value, field, rowNumber, errors) => {
 const metadataFromRow = (row) =>
   Object.fromEntries(
     [
+      ["spreadsheet_status", row.status],
+      ["spreadsheet_interview_stage", row.interview_stage],
+      ["spreadsheet_outcome", row.outcome],
       "application_url",
       "posting_id",
       "work_model",
@@ -288,7 +313,11 @@ const metadataFromRow = (row) =>
       "outreach_channel",
       "schema_version",
     ]
-      .map((key) => [key, compact(row[key])])
+      .map((entry) =>
+        Array.isArray(entry)
+          ? [entry[0], compact(entry[1])]
+          : [entry, compact(row[entry])],
+      )
       .filter(([, value]) => value),
   );
 const appendMetadataToNotes = (notes, metadata) => {
@@ -321,13 +350,15 @@ const readMetadataFromNotes = (notes) => {
   }
 };
 const mapStatus = (row) => {
-  const status = normalizeKey(row.status);
+  const status = normalizeLabelKey(row.status);
   if (KNOWN_STATUSES.has(status)) return status;
-  const outcome = OUTCOMES.get(normalizeKey(row.outcome));
+  const statusLabel = STATUS_LABELS.get(status);
+  if (statusLabel) return statusLabel;
+  const outcome = OUTCOMES.get(normalizeLabelKey(row.outcome));
   if (outcome) return outcome;
-  const stage = INTERVIEW_STAGES.get(normalizeKey(row.interview_stage));
+  const stage = INTERVIEW_STAGES.get(normalizeLabelKey(row.interview_stage));
   if (stage) return stage;
-  if (OUTREACH_SENT_STATUSES.has(normalizeKey(row.outreach_status)))
+  if (OUTREACH_SENT_STATUSES.has(normalizeLabelKey(row.outreach_status)))
     return "outreach_sent";
   return "applied";
 };
@@ -525,7 +556,8 @@ export const rowsToBrowserApplicationExport = (
         source: "csv_import",
         createdAt: exportedAt,
       });
-    const stage = INTERVIEW_STAGES.get(normalizeKey(row.interview_stage));
+    const stageLabel = normalizeLabelKey(row.interview_stage);
+    const stage = INTERVIEW_STAGES.get(stageLabel);
     if (stage) {
       lifecycleEvents.push({
         id: stableId("event", id, stage),
@@ -536,18 +568,21 @@ export const rowsToBrowserApplicationExport = (
         note: compact(row.interview_stage),
         createdAt: exportedAt,
       });
-      interviews.push({
-        id: stableId("interview", id, stage),
-        applicationId: id,
-        contactIds: contactId ? [contactId] : [],
-        stage,
-        startsAt: outreachSentAt ?? appliedAt ?? timestamp,
-        outcome: "scheduled",
-        createdAt: timestamp,
-        updatedAt: exportedAt,
-      });
+    } else if (NON_INTERVIEW_STAGE_LABELS.has(stageLabel)) {
+      const nonInterviewStatus =
+        stageLabel === "application_rejected" ? "rejected" : undefined;
+      if (nonInterviewStatus)
+        lifecycleEvents.push({
+          id: stableId("event", id, stageLabel),
+          applicationId: id,
+          status: nonInterviewStatus,
+          occurredAt: outreachSentAt ?? appliedAt ?? timestamp,
+          source: "csv_import",
+          note: compact(row.interview_stage),
+          createdAt: exportedAt,
+        });
     }
-    const outcome = OUTCOMES.get(normalizeKey(row.outcome));
+    const outcome = OUTCOMES.get(normalizeLabelKey(row.outcome));
     if (outcome)
       lifecycleEvents.push({
         id: stableId("event", id, outcome),
@@ -682,15 +717,16 @@ export const browserApplicationExportToRows = (bundle) => {
         outreach_channel: outreach.channel ?? metadata.outreach_channel ?? "",
         outreach_sent_at: dateTime(outreach.sentAt),
         outreach_message_text: outreach.body ?? "",
+        status: metadata.spreadsheet_status ?? application.status,
         interview_stage:
+          metadata.spreadsheet_interview_stage ??
           interview.stage ??
           interviewStageEvent.status ??
-          metadata.interview_stage ??
           "",
         outcome:
+          metadata.spreadsheet_outcome ??
           outcomeEvent.status ??
           (offer.status === "received" ? "offer" : offer.status) ??
-          metadata.outcome ??
           "",
       });
       return row;

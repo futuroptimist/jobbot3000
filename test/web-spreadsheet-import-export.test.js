@@ -411,6 +411,9 @@ describe("spreadsheet import/export", () => {
     expect(
       bundle.applications.filter(({ status }) => status === "recruiter_screen"),
     ).toHaveLength(0);
+    expect(
+      bundle.applications.filter(({ status }) => status === "rejected"),
+    ).toHaveLength(1);
 
     const nonInterviewStageLabels = [
       "Not started",
@@ -430,6 +433,13 @@ describe("spreadsheet import/export", () => {
       (row) => row.outreach_status === "replied",
     );
     expect(repliedOutreachRows).toHaveLength(2);
+    expect(
+      bundle.applications
+        .filter(({ id }) =>
+          repliedOutreachRows.some((row) => row.application_id === id),
+        )
+        .every(({ notes }) => notes?.includes('"outreach_status":"replied"')),
+    ).toBe(true);
 
     const responseApplicationIds = new Set(
       rows
@@ -451,6 +461,100 @@ describe("spreadsheet import/export", () => {
         (repliedOutreachRows.length / bundle.outreachMessages.length) * 100,
       ),
     ).toBe(29);
+
+    const exportedRowsById = new Map(
+      parseCsv(exportCompactCsv(bundle)).map((row) => [
+        row.application_id,
+        row,
+      ]),
+    );
+    for (const originalRow of rows) {
+      expect(exportedRowsById.get(originalRow.application_id)).toMatchObject({
+        status: originalRow.status,
+        interview_stage: originalRow.interview_stage,
+        outcome: originalRow.outcome,
+        compensation_min_usd: originalRow.compensation_min_usd,
+        compensation_max_usd: originalRow.compensation_max_usd,
+        outreach_message_text: originalRow.outreach_message_text,
+        outreach_sent_at: originalRow.outreach_sent_at,
+      });
+    }
+    expect(exportedRowsById.get("app_reg_alpha_001").notes).toBe(
+      "Fit score reviewed.",
+    );
+  });
+
+  it("normalizes compact display labels without erasing spreadsheet metadata", () => {
+    const csv = serializeCsv([
+      {
+        application_id: "app_display_applied",
+        company: "Display Applied",
+        role_title: "Engineer",
+        status: "Applied",
+        applied_at: "2026-01-01",
+        interview_stage: "Not started",
+        outcome: "Written assessment",
+        schema_version: "1",
+      },
+      {
+        application_id: "app_display_rejected",
+        company: "Display Rejected",
+        role_title: "Engineer",
+        status: "Interviewing",
+        applied_at: "2026-01-02",
+        interview_stage: "Application rejected",
+        outcome: "Application rejected",
+        outreach_status: "replied",
+        schema_version: "1",
+      },
+    ]);
+
+    const { bundle, errors } = csvToBrowserApplicationExport(csv, {
+      exportedAt: "2026-03-10T00:00:00.000Z",
+    });
+
+    expect(errors).toEqual([]);
+    expect(bundle.interviews).toHaveLength(0);
+    expect(bundle.applications).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "app_display_applied",
+          status: "applied",
+        }),
+        expect.objectContaining({
+          id: "app_display_rejected",
+          status: "rejected",
+        }),
+      ]),
+    );
+    expect(bundle.lifecycleEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          applicationId: "app_display_rejected",
+          status: "rejected",
+          note: "Application rejected",
+        }),
+      ]),
+    );
+
+    const rows = parseCsv(exportCompactCsv(bundle));
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          application_id: "app_display_applied",
+          status: "Applied",
+          interview_stage: "Not started",
+          outcome: "Written assessment",
+        }),
+        expect.objectContaining({
+          application_id: "app_display_rejected",
+          status: "Interviewing",
+          interview_stage: "Application rejected",
+          outcome: "Application rejected",
+          outreach_status: "replied",
+        }),
+      ]),
+    );
   });
 
   it("keeps supplemental lifecycle fixtures safe", async () => {
@@ -799,7 +903,6 @@ describe("spreadsheet import/export", () => {
       "contacts",
       "outreachMessages",
       "lifecycleEvents",
-      "interviews",
       "offers",
     ];
     for (const store of childStores) {
@@ -811,9 +914,7 @@ describe("spreadsheet import/export", () => {
     expect(exported.outreachMessages[0].contactId).not.toContain(
       "app_regenerated",
     );
-    expect(exported.interviews[0].contactIds).toEqual(
-      expect.not.arrayContaining([expect.stringContaining("app_regenerated")]),
-    );
+    expect(exported.interviews).toEqual([]);
     const childCounts = Object.fromEntries(
       childStores.map((store) => [store, exported[store].length]),
     );
