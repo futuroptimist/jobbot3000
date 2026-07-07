@@ -548,13 +548,139 @@ describe("spreadsheet import/export", () => {
         }),
         expect.objectContaining({
           application_id: "app_display_rejected",
-          status: "Interviewing",
+          status: "rejected",
           interview_stage: "Application rejected",
           outcome: "Application rejected",
           outreach_status: "replied",
         }),
       ]),
     );
+  });
+
+  it("creates interview records for canonical compact interview stages", () => {
+    const csv = serializeCsv([
+      {
+        application_id: "app_real_interview",
+        company: "Real Interview Co",
+        role_title: "Engineer",
+        status: "technical_screen",
+        applied_at: "2026-01-01",
+        outreach_status: "sent",
+        outreach_target_name: "Taylor Recruiter",
+        outreach_channel: "email",
+        outreach_sent_at: "2026-01-02T12:00:00.000Z",
+        outreach_message_text: "Confirming the screen",
+        interview_stage: "technical_screen",
+        schema_version: "1",
+      },
+    ]);
+
+    const { bundle, errors } = csvToBrowserApplicationExport(csv, {
+      exportedAt: "2026-03-10T00:00:00.000Z",
+    });
+
+    expect(errors).toEqual([]);
+    expect(bundle.interviews).toEqual([
+      expect.objectContaining({
+        applicationId: "app_real_interview",
+        contactIds: ["contact_app_real_interview_taylor_recruiter"],
+        stage: "technical_screen",
+        startsAt: "2026-01-02T12:00:00.000Z",
+        outcome: "scheduled",
+      }),
+    ]);
+  });
+
+  it("exports live lifecycle values once imported spreadsheet rows are edited", () => {
+    const csv = serializeCsv([
+      {
+        application_id: "app_edited",
+        company: "Edited Co",
+        role_title: "Engineer",
+        status: "Applied",
+        applied_at: "2026-01-01",
+        interview_stage: "recruiter_screen",
+        outcome: "",
+        schema_version: "1",
+      },
+    ]);
+    const { bundle, errors } = csvToBrowserApplicationExport(csv, {
+      exportedAt: "2026-03-10T00:00:00.000Z",
+    });
+    expect(errors).toEqual([]);
+
+    bundle.applications[0] = {
+      ...bundle.applications[0],
+      status: "rejected",
+      updatedAt: "2026-03-11T00:00:00.000Z",
+    };
+    bundle.interviews[0] = {
+      ...bundle.interviews[0],
+      stage: "technical_screen",
+      updatedAt: "2026-03-11T00:00:00.000Z",
+    };
+    bundle.lifecycleEvents.push({
+      id: "event_app_edited_rejected_manual",
+      applicationId: "app_edited",
+      status: "rejected",
+      occurredAt: "2026-03-11T00:00:00.000Z",
+      source: "manual",
+      createdAt: "2026-03-11T00:00:00.000Z",
+    });
+
+    const [row] = parseCsv(exportCompactCsv(bundle));
+
+    expect(row).toMatchObject({
+      status: "rejected",
+      interview_stage: "technical_screen",
+      outcome: "rejected",
+    });
+  });
+
+  it("honors legacy compact CSV metadata keys when they still match live state", () => {
+    const [row] = parseCsv(
+      exportCompactCsv({
+        schemaVersion: 1,
+        exportedAt: "2026-03-01T00:00:00.000Z",
+        applications: [
+          {
+            id: "app_legacy_metadata",
+            company: "Legacy Metadata",
+            role: "Engineer",
+            status: "rejected",
+            notes: `Spreadsheet metadata: ${JSON.stringify({
+              status: "Application rejected",
+              interview_stage: "Application rejected",
+              outcome: "Application rejected",
+            })}`,
+            createdAt: "2026-03-01T00:00:00.000Z",
+            updatedAt: "2026-03-01T00:00:00.000Z",
+          },
+        ],
+        contacts: [],
+        outreachMessages: [],
+        lifecycleEvents: [
+          {
+            id: "event_legacy_rejected",
+            applicationId: "app_legacy_metadata",
+            status: "rejected",
+            occurredAt: "2026-03-01T00:00:00.000Z",
+            source: "manual",
+            createdAt: "2026-03-01T00:00:00.000Z",
+          },
+        ],
+        interviews: [],
+        offers: [],
+        artifacts: [],
+        reminders: [],
+      }),
+    );
+
+    expect(row).toMatchObject({
+      status: "Application rejected",
+      interview_stage: "Application rejected",
+      outcome: "Application rejected",
+    });
   });
 
   it("keeps supplemental lifecycle fixtures safe", async () => {
@@ -903,6 +1029,7 @@ describe("spreadsheet import/export", () => {
       "contacts",
       "outreachMessages",
       "lifecycleEvents",
+      "interviews",
       "offers",
     ];
     for (const store of childStores) {
@@ -914,7 +1041,7 @@ describe("spreadsheet import/export", () => {
     expect(exported.outreachMessages[0].contactId).not.toContain(
       "app_regenerated",
     );
-    expect(exported.interviews).toEqual([]);
+    expect(exported.interviews).toHaveLength(2);
     const childCounts = Object.fromEntries(
       childStores.map((store) => [store, exported[store].length]),
     );

@@ -356,11 +356,44 @@ const mapStatus = (row) => {
   if (statusLabel) return statusLabel;
   const outcome = OUTCOMES.get(normalizeLabelKey(row.outcome));
   if (outcome) return outcome;
-  const stage = INTERVIEW_STAGES.get(normalizeLabelKey(row.interview_stage));
+  const stageLabel = normalizeLabelKey(row.interview_stage);
+  const stage = INTERVIEW_STAGES.get(stageLabel);
   if (stage) return stage;
+  if (stageLabel === "application_rejected") return "rejected";
   if (OUTREACH_SENT_STATUSES.has(normalizeLabelKey(row.outreach_status)))
     return "outreach_sent";
   return "applied";
+};
+
+const getMetadataValue = (metadata, primaryKey, legacyKey) =>
+  metadata[primaryKey] ?? (legacyKey ? metadata[legacyKey] : undefined);
+
+const preservedStatus = (metadata, currentStatus) => {
+  const value = getMetadataValue(metadata, "spreadsheet_status", "status");
+  if (!value) return undefined;
+  return mapStatus({ status: value }) === currentStatus ? value : undefined;
+};
+
+const preservedInterviewStage = (metadata, currentStage) => {
+  const value = getMetadataValue(
+    metadata,
+    "spreadsheet_interview_stage",
+    "interview_stage",
+  );
+  if (!value) return undefined;
+  const label = normalizeLabelKey(value);
+  const mappedStage = INTERVIEW_STAGES.get(label);
+  if (mappedStage) return mappedStage === currentStage ? value : undefined;
+  return currentStage ? undefined : value;
+};
+
+const preservedOutcome = (metadata, currentOutcome) => {
+  const value = getMetadataValue(metadata, "spreadsheet_outcome", "outcome");
+  if (!value) return undefined;
+  const mappedOutcome = OUTCOMES.get(normalizeLabelKey(value));
+  if (mappedOutcome)
+    return mappedOutcome === currentOutcome ? value : undefined;
+  return currentOutcome ? undefined : value;
 };
 
 export const rowsToBrowserApplicationExport = (
@@ -559,14 +592,25 @@ export const rowsToBrowserApplicationExport = (
     const stageLabel = normalizeLabelKey(row.interview_stage);
     const stage = INTERVIEW_STAGES.get(stageLabel);
     if (stage) {
+      const startsAt = outreachSentAt ?? appliedAt ?? timestamp;
       lifecycleEvents.push({
         id: stableId("event", id, stage),
         applicationId: id,
         status: stage,
-        occurredAt: outreachSentAt ?? appliedAt ?? timestamp,
+        occurredAt: startsAt,
         source: "csv_import",
         note: compact(row.interview_stage),
         createdAt: exportedAt,
+      });
+      interviews.push({
+        id: stableId("interview", id, stage),
+        applicationId: id,
+        contactIds: contactId ? [contactId] : [],
+        stage,
+        startsAt,
+        outcome: "scheduled",
+        createdAt: exportedAt,
+        updatedAt: exportedAt,
       });
     } else if (NON_INTERVIEW_STAGE_LABELS.has(stageLabel)) {
       const nonInterviewStatus =
@@ -583,7 +627,12 @@ export const rowsToBrowserApplicationExport = (
         });
     }
     const outcome = OUTCOMES.get(normalizeLabelKey(row.outcome));
-    if (outcome)
+    const duplicatesStageEvent =
+      outcome &&
+      outcome ===
+        (stageLabel === "application_rejected" ? "rejected" : stage) &&
+      normalizeLabelKey(row.outcome) === stageLabel;
+    if (outcome && !duplicatesStageEvent)
       lifecycleEvents.push({
         id: stableId("event", id, outcome),
         applicationId: id,
@@ -702,6 +751,11 @@ export const browserApplicationExportToRows = (bundle) => {
         artifacts,
         ({ name }) => name === "LinkedIn snapshot PDF",
       );
+      const currentStage = interview.stage ?? interviewStageEvent.status ?? "";
+      const currentOutcome =
+        outcomeEvent.status ??
+        (offer.status === "received" ? "offer" : offer.status) ??
+        "";
       Object.assign(row, {
         resume_artifact: resume.name ?? "",
         resume_url: resume.url ?? "",
@@ -717,17 +771,11 @@ export const browserApplicationExportToRows = (bundle) => {
         outreach_channel: outreach.channel ?? metadata.outreach_channel ?? "",
         outreach_sent_at: dateTime(outreach.sentAt),
         outreach_message_text: outreach.body ?? "",
-        status: metadata.spreadsheet_status ?? application.status,
+        status:
+          preservedStatus(metadata, application.status) ?? application.status,
         interview_stage:
-          metadata.spreadsheet_interview_stage ??
-          interview.stage ??
-          interviewStageEvent.status ??
-          "",
-        outcome:
-          metadata.spreadsheet_outcome ??
-          outcomeEvent.status ??
-          (offer.status === "received" ? "offer" : offer.status) ??
-          "",
+          preservedInterviewStage(metadata, currentStage) ?? currentStage,
+        outcome: preservedOutcome(metadata, currentOutcome) ?? currentOutcome,
       });
       return row;
     });
