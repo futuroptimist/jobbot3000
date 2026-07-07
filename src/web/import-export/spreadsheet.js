@@ -255,20 +255,24 @@ const parseNumber = (value, field, rowNumber, errors) => {
   }
   return number;
 };
+const WEB_URL_PROTOCOLS = new Set(["http:", "https:"]);
+
 const validUrl = (value, field, rowNumber, errors) => {
   const text = compact(value);
   if (!text) return undefined;
   try {
-    return new URL(text).toString();
+    const url = new URL(text);
+    if (WEB_URL_PROTOCOLS.has(url.protocol)) return url.toString();
   } catch {
-    errors.push({
-      rowNumber,
-      field,
-      code: "malformed_url",
-      message: `${field} is not a valid URL.`,
-    });
-    return undefined;
+    // Report all parse failures with the shared URL validation error below.
   }
+  errors.push({
+    rowNumber,
+    field,
+    code: "malformed_url",
+    message: `${field} is not a valid http(s) URL.`,
+  });
+  return undefined;
 };
 const metadataFromRow = (row) =>
   Object.fromEntries(
@@ -672,6 +676,9 @@ export const browserApplicationExportToRows = (bundle) => {
         linkedin_snapshot_screenshot_url: screenshot.url ?? "",
         linkedin_snapshot_pdf_url: pdf.url ?? "",
         outreach_target_name: contact.name ?? "",
+        outreach_status:
+          metadata.outreach_status ??
+          (outreach.body || outreach.sentAt ? "sent" : ""),
         outreach_channel: outreach.channel ?? metadata.outreach_channel ?? "",
         outreach_sent_at: dateTime(outreach.sentAt),
         outreach_message_text: outreach.body ?? "",

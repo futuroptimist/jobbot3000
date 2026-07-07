@@ -7,16 +7,16 @@ import { startWebServer } from "../../src/web/server.js";
 
 const csvFixture = [
   "application_id,company,role_title,status,applied_at,posting_url," +
-    "application_channel,follow_up_date,outreach_channel,outreach_message_text," +
-    "interview_stage,outcome,notes",
+    "application_channel,follow_up_date,outreach_status,outreach_channel," +
+    "outreach_message_text,interview_stage,outcome,notes",
   "fake_app_1,Example Labs,Frontend Engineer,applied,2026-01-02," +
-    "https://example.test/jobs/frontend,direct,2026-01-09,email," +
+    "https://example.test/jobs/frontend,direct,2026-01-09,sent,email," +
     "Following up on my application,recruiter_screen,,fit_score_100: 82",
 ].join("\n");
 
 const dangerousCsvFixture = [
   "application_id,company,role_title,status,applied_at,posting_url,notes",
-  "fake_app_2,Evil Corp,Security Engineer,applied,not-a-date," +
+  "fake_app_2,Evil Corp,Security Engineer,applied,2026-01-02," +
     'javascript:alert(1),"He said ""hello"""',
 ].join("\n");
 
@@ -65,10 +65,6 @@ test.describe("browser application tracker", () => {
   test("previews compact CSV regression fixture without phantom interviews", async ({
     page,
   }) => {
-    test.fail(
-      true,
-      "Prompt 01 lands this red regression net; later prompts fix tracker import.",
-    );
     const csv = await regressionCsvFixture();
 
     await page.getByRole("button", { name: "Import/Export" }).click();
@@ -165,7 +161,7 @@ test.describe("browser application tracker", () => {
     );
   });
 
-  test("sanitizes imported artifact URLs and preserves CSV quotes", async ({
+  test("rejects unsafe compact CSV URLs before applying import", async ({
     page,
   }) => {
     await page.getByRole("button", { name: "Import/Export" }).click();
@@ -175,26 +171,13 @@ test.describe("browser application tracker", () => {
       buffer: Buffer.from(dangerousCsvFixture),
     });
     await page.getByRole("button", { name: "Preview/dry-run" }).click();
-    await page.getByRole("button", { name: "Apply import" }).click();
 
-    await page
-      .getByRole("button", { name: "Applications", exact: true })
-      .click();
-    await expect(
-      page.locator('[data-applications-table] a[href^="javascript:"]'),
-    ).toHaveCount(0);
-    await page.getByRole("button", { name: "Evil Corp" }).click();
-    await expect(page.locator('[name="notes"]').first()).toHaveValue(
-      'He said "hello"',
+    await expect(page.locator("[data-import-result]")).toContainText(
+      "Row 2 posting_url: posting_url is not a valid http(s) URL.",
     );
     await expect(
-      page.locator('[data-detail] a[href^="javascript:"]'),
-    ).toHaveCount(0);
-    await expect(page.locator('[name="source"]')).toHaveValue("");
-    await expect(page.locator('[name="source"]')).not.toHaveAttribute(
-      "required",
-      "",
-    );
+      page.getByRole("button", { name: "Apply import" }),
+    ).toBeDisabled();
   });
 
   test("shows import failures when IndexedDB writes fail", async ({ page }) => {
@@ -316,7 +299,7 @@ test.describe("browser application tracker", () => {
     await expect(page.locator('[name="company"]')).toHaveValue(
       "Example Labs Updated",
     );
-    await expect(page.locator(".timeline li")).toHaveCount(1);
+    await expect(page.locator(".timeline li")).toHaveCount(2);
 
     await page
       .locator('[data-core-form] [name="status"]')
