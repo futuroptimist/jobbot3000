@@ -15,6 +15,9 @@ import {
   exportNdjsonBackup,
   importCompactCsv,
   importJsonBackup,
+  normalizeCompactInterviewStageLabel,
+  normalizeCompactOutcomeLabel,
+  normalizeCompactStatusLabel,
   importNdjsonBackup,
   parseCsv,
   serializeCsv,
@@ -453,6 +456,67 @@ describe("spreadsheet import/export", () => {
     ).toBe(29);
   });
 
+  it("normalizes compact display labels while preserving raw spreadsheet metadata", () => {
+    const csv = serializeCsv([
+      {
+        application_id: "app_label_metadata",
+        company: "Label Metadata Co",
+        role_title: "Lifecycle Engineer",
+        status: "Responded to inbound",
+        applied_at: "2026-02-01T08:00:00.000Z",
+        posting_url: "https://example.test/jobs/label-metadata",
+        outreach_status: "replied",
+        outreach_channel: "email",
+        outreach_sent_at: "2026-02-02T09:00:00.000Z",
+        outreach_message_text: "Line one\nLine two with, comma",
+        interview_stage: "Written assessment submitted",
+        outcome: "Application rejected",
+        notes: "Long note line one\nLong note line two",
+        schema_version: "1",
+      },
+    ]);
+
+    expect(normalizeCompactStatusLabel("Applied")).toBe("applied");
+    expect(normalizeCompactStatusLabel("Responded to inbound")).toBeUndefined();
+    expect(
+      normalizeCompactInterviewStageLabel("Written assessment"),
+    ).toBeUndefined();
+    expect(normalizeCompactOutcomeLabel("Application rejected")).toBe(
+      "rejected",
+    );
+
+    const { bundle, errors } = csvToBrowserApplicationExport(csv, {
+      exportedAt: "2026-03-10T00:00:00.000Z",
+    });
+    expect(errors).toEqual([]);
+    expect(bundle.applications[0].status).toBe("rejected");
+    expect(bundle.interviews).toHaveLength(0);
+    expect(bundle.lifecycleEvents).toEqual(
+      expect.arrayContaining([expect.objectContaining({ status: "rejected" })]),
+    );
+    expect(bundle.applications[0].notes).toContain(
+      '"status":"Responded to inbound"',
+    );
+    expect(bundle.applications[0].notes).toContain(
+      '"interview_stage":"Written assessment submitted"',
+    );
+    expect(bundle.applications[0].notes).toContain(
+      '"outcome":"Application rejected"',
+    );
+
+    const [roundTripped] = parseCsv(exportCompactCsv(bundle));
+    expect(roundTripped).toMatchObject({
+      status: "Responded to inbound",
+      outreach_status: "replied",
+      interview_stage: "Written assessment submitted",
+      outcome: "Application rejected",
+      notes: "Long note line one\nLong note line two",
+      outreach_message_text: "Line one\nLine two with, comma",
+      compensation_min_usd: "",
+      compensation_max_usd: "",
+    });
+  });
+
   it("keeps supplemental lifecycle fixtures safe", async () => {
     // Prompt 01 only validates supplemental lifecycle fixture safety; importing
     // these lifecycle CSVs is intentionally deferred to Prompt 04.
@@ -811,9 +875,7 @@ describe("spreadsheet import/export", () => {
     expect(exported.outreachMessages[0].contactId).not.toContain(
       "app_regenerated",
     );
-    expect(exported.interviews[0].contactIds).toEqual(
-      expect.not.arrayContaining([expect.stringContaining("app_regenerated")]),
-    );
+    expect(exported.interviews).toHaveLength(0);
     const childCounts = Object.fromEntries(
       childStores.map((store) => [store, exported[store].length]),
     );

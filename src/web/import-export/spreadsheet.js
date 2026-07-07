@@ -48,6 +48,17 @@ const KNOWN_STATUSES = new Set([
   "closed_archived",
 ]);
 const OUTREACH_SENT_STATUSES = new Set(["sent", "replied"]);
+const STATUS_LABELS = new Map([
+  ["applied", "applied"],
+  ["application rejected", "rejected"],
+  ["rejected", "rejected"],
+  ["withdrawn", "withdrawn"],
+  ["offer", "offer"],
+  ["accepted", "accepted"],
+  ["closed", "closed_archived"],
+  ["closed archived", "closed_archived"],
+  ["closed_archived", "closed_archived"],
+]);
 const INTERVIEW_STAGES = new Map([
   ["recruiter_screen", "recruiter_screen"],
   ["phone_screen", "recruiter_screen"],
@@ -56,6 +67,7 @@ const INTERVIEW_STAGES = new Map([
   ["onsite", "onsite_loop"],
 ]);
 const OUTCOMES = new Map([
+  ["application rejected", "rejected"],
   ["offer", "offer"],
   ["accepted", "accepted"],
   ["rejected", "rejected"],
@@ -286,6 +298,9 @@ const metadataFromRow = (row) =>
       "fit_score_100",
       "outreach_status",
       "outreach_channel",
+      "status",
+      "interview_stage",
+      "outcome",
       "schema_version",
     ]
       .map((key) => [key, compact(row[key])])
@@ -320,12 +335,21 @@ const readMetadataFromNotes = (notes) => {
     return { notes: compact(notes), metadata: {} };
   }
 };
+export const normalizeCompactStatusLabel = (value) => {
+  const status = normalizeKey(value);
+  return KNOWN_STATUSES.has(status) ? status : STATUS_LABELS.get(status);
+};
+export const normalizeCompactInterviewStageLabel = (value) =>
+  INTERVIEW_STAGES.get(normalizeKey(value));
+export const normalizeCompactOutcomeLabel = (value) =>
+  OUTCOMES.get(normalizeKey(value));
+
 const mapStatus = (row) => {
-  const status = normalizeKey(row.status);
-  if (KNOWN_STATUSES.has(status)) return status;
-  const outcome = OUTCOMES.get(normalizeKey(row.outcome));
+  const status = normalizeCompactStatusLabel(row.status);
+  if (status) return status;
+  const outcome = normalizeCompactOutcomeLabel(row.outcome);
   if (outcome) return outcome;
-  const stage = INTERVIEW_STAGES.get(normalizeKey(row.interview_stage));
+  const stage = normalizeCompactInterviewStageLabel(row.interview_stage);
   if (stage) return stage;
   if (OUTREACH_SENT_STATUSES.has(normalizeKey(row.outreach_status)))
     return "outreach_sent";
@@ -525,7 +549,7 @@ export const rowsToBrowserApplicationExport = (
         source: "csv_import",
         createdAt: exportedAt,
       });
-    const stage = INTERVIEW_STAGES.get(normalizeKey(row.interview_stage));
+    const stage = normalizeCompactInterviewStageLabel(row.interview_stage);
     if (stage) {
       lifecycleEvents.push({
         id: stableId("event", id, stage),
@@ -536,18 +560,8 @@ export const rowsToBrowserApplicationExport = (
         note: compact(row.interview_stage),
         createdAt: exportedAt,
       });
-      interviews.push({
-        id: stableId("interview", id, stage),
-        applicationId: id,
-        contactIds: contactId ? [contactId] : [],
-        stage,
-        startsAt: outreachSentAt ?? appliedAt ?? timestamp,
-        outcome: "scheduled",
-        createdAt: timestamp,
-        updatedAt: exportedAt,
-      });
     }
-    const outcome = OUTCOMES.get(normalizeKey(row.outcome));
+    const outcome = normalizeCompactOutcomeLabel(row.outcome);
     if (outcome)
       lifecycleEvents.push({
         id: stableId("event", id, outcome),
@@ -643,7 +657,7 @@ export const browserApplicationExportToRows = (bundle) => {
         application_id: application.id,
         company: application.company,
         role_title: application.role,
-        status: application.status,
+        status: metadata.status ?? application.status,
         applied_at: dateOnly(application.appliedAt),
         posting_url: application.postingUrl ?? "",
         application_channel: application.source ?? "",
@@ -683,14 +697,16 @@ export const browserApplicationExportToRows = (bundle) => {
         outreach_sent_at: dateTime(outreach.sentAt),
         outreach_message_text: outreach.body ?? "",
         interview_stage:
-          interview.stage ??
-          interviewStageEvent.status ??
           metadata.interview_stage ??
+          interview.stage ??
+          interviewStageEvent.note ??
+          interviewStageEvent.status ??
           "",
         outcome:
+          metadata.outcome ??
+          outcomeEvent.note ??
           outcomeEvent.status ??
           (offer.status === "received" ? "offer" : offer.status) ??
-          metadata.outcome ??
           "",
       });
       return row;
