@@ -357,6 +357,8 @@ const mapStatus = (row) => {
   const outcome = OUTCOMES.get(normalizeLabelKey(row.outcome));
   if (outcome) return outcome;
   const stageLabel = normalizeLabelKey(row.interview_stage);
+  const stage = INTERVIEW_STAGES.get(stageLabel);
+  if (stage) return stage;
   if (stageLabel === "application_rejected") return "rejected";
   if (OUTREACH_SENT_STATUSES.has(normalizeLabelKey(row.outreach_status)))
     return "outreach_sent";

@@ -671,6 +671,47 @@ describe("spreadsheet import/export", () => {
     repo.close();
   });
 
+  it("uses canonical interview stages to set status with ambiguous display statuses", () => {
+    const csv = serializeCsv([
+      {
+        application_id: "app_interviewing_technical",
+        company: "Interviewing Technical",
+        role_title: "Engineer",
+        status: "Interviewing",
+        applied_at: "2026-01-05",
+        interview_stage: "technical_screen",
+        outcome: "scheduled",
+        schema_version: "1",
+      },
+    ]);
+
+    const { bundle, errors } = csvToBrowserApplicationExport(csv, {
+      exportedAt: "2026-03-10T00:00:00.000Z",
+    });
+
+    expect(errors).toEqual([]);
+    expect(bundle.applications).toEqual([
+      expect.objectContaining({
+        id: "app_interviewing_technical",
+        status: "technical_screen",
+      }),
+    ]);
+    expect(bundle.interviews).toEqual([
+      expect.objectContaining({
+        applicationId: "app_interviewing_technical",
+        stage: "technical_screen",
+        outcome: "scheduled",
+      }),
+    ]);
+
+    const [row] = parseCsv(exportCompactCsv(bundle));
+    expect(row).toMatchObject({
+      status: "technical_screen",
+      interview_stage: "technical_screen",
+      outcome: "scheduled",
+    });
+  });
+
   it("creates interview records for canonical compact interview stages", () => {
     const csv = serializeCsv([
       {
