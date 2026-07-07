@@ -251,6 +251,19 @@ function linkForArtifact(artifact) {
 function fitScore(notes) {
   return String(notes || "").match(/fit_score_100[":\s]+([\d.]+)/)?.[1] || "";
 }
+const IMPORT_INTERVIEW_STAGES = new Map([
+  ["recruiter_screen", "recruiter_screen"],
+  ["phone_screen", "recruiter_screen"],
+  ["technical_screen", "technical_screen"],
+  ["onsite_loop", "onsite_loop"],
+  ["onsite", "onsite_loop"],
+]);
+function compactImportValue(value) {
+  return String(value ?? "").trim();
+}
+function normalizeImportKey(value) {
+  return compactImportValue(value).toLowerCase();
+}
 function rowToRecords(r) {
   const ts = now(),
     appId = r.application_id || id("app");
@@ -308,12 +321,15 @@ function rowToRecords(r) {
       createdAt: ts,
       updatedAt: ts,
     });
-  if (r.interview_stage)
+  const interviewStage = IMPORT_INTERVIEW_STAGES.get(
+    normalizeImportKey(r.interview_stage),
+  );
+  if (interviewStage)
     records.interviews.push({
       id: id("interview"),
       applicationId: appId,
       contactIds: [],
-      stage: r.interview_stage,
+      stage: interviewStage,
       outcome: "scheduled",
       startsAt: ts,
       createdAt: ts,
