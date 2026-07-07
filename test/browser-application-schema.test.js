@@ -70,6 +70,9 @@ describe("browser application schemas", () => {
       "rejected",
       "withdrawn",
       "closed_archived",
+      "replied",
+      "written_assessment_submitted",
+      "recruiter_screen_pending",
     ]);
   });
 
