@@ -392,6 +392,79 @@ describe("spreadsheet import/export", () => {
     ]);
   });
 
+  it("normalizes compact display labels while preserving raw spreadsheet fields", () => {
+    const csv = serializeCsv([
+      {
+        application_id: "app_display_labels",
+        company: "Display Labels Inc",
+        role_title: "Lifecycle Engineer",
+        status: "Interviewing",
+        applied_at: "2026-02-01",
+        outreach_status: "replied",
+        outreach_channel: "email",
+        outreach_sent_at: "2026-02-02T12:00:00.000Z",
+        outreach_message_text: "Inbound reply with next steps.",
+        interview_stage: "Written assessment submitted",
+        outcome: "Application rejected",
+        notes: "Long note line one.\nLong note line two.",
+      },
+      {
+        application_id: "app_not_started",
+        company: "Not Started LLC",
+        role_title: "Spreadsheet Curator",
+        status: "Not started",
+        interview_stage: "Recruiter screen pending",
+      },
+    ]);
+
+    const { bundle, errors } = csvToBrowserApplicationExport(csv, {
+      exportedAt: "2026-03-01T00:00:00.000Z",
+    });
+
+    expect(errors).toEqual([]);
+    expect(bundle.applications).toEqual([
+      expect.objectContaining({
+        id: "app_display_labels",
+        status: "recruiter_screen",
+        notes: expect.stringContaining('"status":"Interviewing"'),
+      }),
+      expect.objectContaining({
+        id: "app_not_started",
+        status: "applied",
+        notes: expect.stringContaining(
+          '"interview_stage":"Recruiter screen pending"',
+        ),
+      }),
+    ]);
+    expect(bundle.interviews).toHaveLength(0);
+    expect(bundle.lifecycleEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          applicationId: "app_display_labels",
+          status: "rejected",
+          note: "Application rejected",
+        }),
+      ]),
+    );
+
+    const rows = parseCsv(exportCompactCsv(bundle));
+    expect(rows).toEqual([
+      expect.objectContaining({
+        application_id: "app_display_labels",
+        status: "Interviewing",
+        outreach_status: "replied",
+        interview_stage: "Written assessment submitted",
+        outcome: "Application rejected",
+        notes: "Long note line one.\nLong note line two.",
+      }),
+      expect.objectContaining({
+        application_id: "app_not_started",
+        status: "Not started",
+        interview_stage: "Recruiter screen pending",
+      }),
+    ]);
+  });
+
   it("documents intended compact CSV regression metrics without phantom interviews", async () => {
     const csv = await readFile(
       "test/fixtures/tracker-import/compact-main-regression.csv",
@@ -451,6 +524,27 @@ describe("spreadsheet import/export", () => {
         (repliedOutreachRows.length / bundle.outreachMessages.length) * 100,
       ),
     ).toBe(29);
+
+    const roundTripRows = parseCsv(exportCompactCsv(bundle));
+    const roundTripRowsById = new Map(
+      roundTripRows.map((row) => [row.application_id, row]),
+    );
+    expect(roundTripRows).toHaveLength(rows.length);
+    for (const row of rows) {
+      expect(roundTripRowsById.get(row.application_id)).toMatchObject({
+        application_id: row.application_id,
+        status: row.status,
+        interview_stage: row.interview_stage,
+        outcome: row.outcome,
+        notes: row.notes,
+        compensation_min_usd: row.compensation_min_usd,
+        compensation_max_usd: row.compensation_max_usd,
+        outreach_status: row.outreach_status,
+        outreach_message_text: row.outreach_message_text,
+        applied_at: row.applied_at.slice(0, 10),
+        outreach_sent_at: row.outreach_sent_at,
+      });
+    }
   });
 
   it("keeps supplemental lifecycle fixtures safe", async () => {
@@ -811,9 +905,7 @@ describe("spreadsheet import/export", () => {
     expect(exported.outreachMessages[0].contactId).not.toContain(
       "app_regenerated",
     );
-    expect(exported.interviews[0].contactIds).toEqual(
-      expect.not.arrayContaining([expect.stringContaining("app_regenerated")]),
-    );
+    expect(exported.interviews).toHaveLength(0);
     const childCounts = Object.fromEntries(
       childStores.map((store) => [store, exported[store].length]),
     );

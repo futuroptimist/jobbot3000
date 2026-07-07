@@ -48,6 +48,13 @@ const KNOWN_STATUSES = new Set([
   "closed_archived",
 ]);
 const OUTREACH_SENT_STATUSES = new Set(["sent", "replied"]);
+const STATUS_LABELS = new Map([
+  ["applied", "applied"],
+  ["not_started", "applied"],
+  ["responded_to_inbound", "outreach_sent"],
+  ["interviewing", "recruiter_screen"],
+  ["application_rejected", "rejected"],
+]);
 const INTERVIEW_STAGES = new Map([
   ["recruiter_screen", "recruiter_screen"],
   ["phone_screen", "recruiter_screen"],
@@ -62,6 +69,7 @@ const OUTCOMES = new Map([
   ["withdrawn", "withdrawn"],
   ["closed", "closed_archived"],
   ["closed_archived", "closed_archived"],
+  ["application_rejected", "rejected"],
 ]);
 const ARTIFACT_DEFS = [
   ["resume", "resume_artifact", "resume_url", "Resume"],
@@ -99,6 +107,11 @@ const normalizeKey = (value) =>
   String(value ?? "")
     .trim()
     .toLowerCase();
+const normalizeLabelKey = (value) =>
+  normalizeKey(value)
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
 const compact = (value) => String(value ?? "").trim();
 const slug = (value) =>
   compact(value)
@@ -286,6 +299,9 @@ const metadataFromRow = (row) =>
       "fit_score_100",
       "outreach_status",
       "outreach_channel",
+      "status",
+      "interview_stage",
+      "outcome",
       "schema_version",
     ]
       .map((key) => [key, compact(row[key])])
@@ -320,13 +336,20 @@ const readMetadataFromNotes = (notes) => {
     return { notes: compact(notes), metadata: {} };
   }
 };
-const mapStatus = (row) => {
-  const status = normalizeKey(row.status);
+const normalizeCompactStatus = (value) => {
+  const status = normalizeKey(value);
   if (KNOWN_STATUSES.has(status)) return status;
-  const outcome = OUTCOMES.get(normalizeKey(row.outcome));
+  return STATUS_LABELS.get(normalizeLabelKey(value));
+};
+const normalizeCompactStage = (value) =>
+  INTERVIEW_STAGES.get(normalizeKey(value));
+const normalizeCompactOutcome = (value) =>
+  OUTCOMES.get(normalizeKey(value)) ?? OUTCOMES.get(normalizeLabelKey(value));
+const mapStatus = (row) => {
+  const status = normalizeCompactStatus(row.status);
+  if (status) return status;
+  const outcome = normalizeCompactOutcome(row.outcome);
   if (outcome) return outcome;
-  const stage = INTERVIEW_STAGES.get(normalizeKey(row.interview_stage));
-  if (stage) return stage;
   if (OUTREACH_SENT_STATUSES.has(normalizeKey(row.outreach_status)))
     return "outreach_sent";
   return "applied";
@@ -525,7 +548,7 @@ export const rowsToBrowserApplicationExport = (
         source: "csv_import",
         createdAt: exportedAt,
       });
-    const stage = INTERVIEW_STAGES.get(normalizeKey(row.interview_stage));
+    const stage = normalizeCompactStage(row.interview_stage);
     if (stage) {
       lifecycleEvents.push({
         id: stableId("event", id, stage),
@@ -536,18 +559,8 @@ export const rowsToBrowserApplicationExport = (
         note: compact(row.interview_stage),
         createdAt: exportedAt,
       });
-      interviews.push({
-        id: stableId("interview", id, stage),
-        applicationId: id,
-        contactIds: contactId ? [contactId] : [],
-        stage,
-        startsAt: outreachSentAt ?? appliedAt ?? timestamp,
-        outcome: "scheduled",
-        createdAt: timestamp,
-        updatedAt: exportedAt,
-      });
     }
-    const outcome = OUTCOMES.get(normalizeKey(row.outcome));
+    const outcome = normalizeCompactOutcome(row.outcome);
     if (outcome)
       lifecycleEvents.push({
         id: stableId("event", id, outcome),
@@ -613,11 +626,10 @@ export const browserApplicationExportToRows = (bundle) => {
         parsed.outreachMessages,
         (message) => message.applicationId === application.id,
       );
-      const interview =
-        firstBy(
-          parsed.interviews,
-          (record) => record.applicationId === application.id,
-        ) ?? {};
+      const interview = firstBy(
+        parsed.interviews,
+        (record) => record.applicationId === application.id,
+      );
       const interviewStageEvent = firstBy(
         parsed.lifecycleEvents,
         (event) =>
@@ -683,16 +695,17 @@ export const browserApplicationExportToRows = (bundle) => {
         outreach_sent_at: dateTime(outreach.sentAt),
         outreach_message_text: outreach.body ?? "",
         interview_stage:
-          interview.stage ??
-          interviewStageEvent.status ??
           metadata.interview_stage ??
+          interview?.stage ??
+          interviewStageEvent.status ??
           "",
         outcome:
+          metadata.outcome ??
           outcomeEvent.status ??
           (offer.status === "received" ? "offer" : offer.status) ??
-          metadata.outcome ??
           "",
       });
+      row.status = metadata.status ?? application.status;
       return row;
     });
 };
