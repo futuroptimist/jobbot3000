@@ -93,109 +93,6 @@ const ARRAY_STORES = [
 ];
 const ARRAY_STORE_SET = new Set(ARRAY_STORES);
 
-const LIFECYCLE_CSV_COLUMNS = new Set([
-  "application_id",
-  "event_type",
-  "event_status",
-  "occurred_at",
-  "source",
-  "contact_name",
-  "artifact_url",
-  "notes",
-  "schema_version",
-]);
-
-const isLifecycleCsvRows = (rows) =>
-  rows.length > 0 &&
-  rows.every((row) =>
-    ["application_id", "event_type", "event_status", "occurred_at"].every(
-      (key) => Object.hasOwn(row, key),
-    ),
-  ) &&
-  rows.every((row) =>
-    Object.keys(row).every((key) => LIFECYCLE_CSV_COLUMNS.has(key)),
-  );
-
-const lifecycleRowsToBrowserApplicationExport = (
-  rows,
-  { exportedAt = nowIso() } = {},
-) => {
-  const errors = [];
-  const lifecycleEvents = [];
-  const artifacts = [];
-  rows.forEach((row, index) => {
-    const rowNumber = index + 2;
-    const applicationId = compact(row.application_id);
-    if (!applicationId)
-      errors.push({
-        rowNumber,
-        field: "application_id",
-        code: "required",
-        message: "application_id is required.",
-      });
-    const status = compact(row.event_status);
-    if (!status)
-      errors.push({
-        rowNumber,
-        field: "event_status",
-        code: "required",
-        message: "event_status is required.",
-      });
-    const occurredAt = parseDate(
-      row.occurred_at,
-      "occurred_at",
-      rowNumber,
-      errors,
-    );
-    const artifactUrl = validUrl(
-      row.artifact_url,
-      "artifact_url",
-      rowNumber,
-      errors,
-    );
-    if (applicationId && status && occurredAt)
-      lifecycleEvents.push({
-        id: stableId(
-          "event",
-          applicationId,
-          row.event_type,
-          status,
-          occurredAt,
-        ),
-        applicationId,
-        status,
-        occurredAt,
-        source: compact(row.source) || "csv_import",
-        note: compact(row.notes) || undefined,
-        createdAt: exportedAt,
-      });
-    if (applicationId && artifactUrl)
-      artifacts.push({
-        id: stableId("artifact", applicationId, row.event_type, artifactUrl),
-        applicationId,
-        kind: "link",
-        name: compact(row.event_type) || "Lifecycle artifact",
-        url: artifactUrl,
-        private: true,
-        createdAt: occurredAt ?? exportedAt,
-        updatedAt: exportedAt,
-      });
-  });
-  const bundle = {
-    schemaVersion: 1,
-    exportedAt,
-    applications: [],
-    contacts: [],
-    outreachMessages: [],
-    lifecycleEvents,
-    interviews: [],
-    offers: [],
-    artifacts,
-    reminders: [],
-  };
-  return { bundle, errors, lifecycleOnly: true };
-};
-
 const blankRow = () =>
   Object.fromEntries(COMPACT_CSV_COLUMNS.map((key) => [key, ""]));
 const normalizeKey = (value) =>
@@ -875,13 +772,7 @@ export const importNdjsonBackup = (text) => {
 };
 export const previewCompactCsvImport = async (csvText, repository) => {
   const rows = parseCsv(csvText);
-  const {
-    bundle,
-    errors,
-    lifecycleOnly = false,
-  } = isLifecycleCsvRows(rows)
-    ? lifecycleRowsToBrowserApplicationExport(rows)
-    : rowsToBrowserApplicationExport(rows);
+  const { bundle, errors } = rowsToBrowserApplicationExport(rows);
   const existing = repository
     ? await repository.exportAllData()
     : { applications: [] };
@@ -939,7 +830,6 @@ export const previewCompactCsvImport = async (csvText, repository) => {
     errors,
     conflicts,
     bundle,
-    lifecycleOnly,
   };
 };
 export const importCompactCsv = async (
@@ -949,31 +839,6 @@ export const importCompactCsv = async (
 ) => {
   const preview = await previewCompactCsvImport(csvText, repository);
   if (preview.errors.length > 0) return { imported: false, preview };
-  if (preview.lifecycleOnly) {
-    const existing = await repository.exportAllData();
-    const existingIds = new Set(existing.applications.map(({ id }) => id));
-    const incoming = {
-      lifecycleEvents: preview.bundle.lifecycleEvents.filter((record) =>
-        existingIds.has(record.applicationId),
-      ),
-      artifacts: preview.bundle.artifacts.filter((record) =>
-        existingIds.has(record.applicationId),
-      ),
-    };
-    const merged = { ...existing, exportedAt: nowIso() };
-    for (const store of ["lifecycleEvents", "artifacts"])
-      merged[store] = [
-        ...existing[store].filter(
-          (record) => !incoming[store].some(({ id }) => id === record.id),
-        ),
-        ...incoming[store],
-      ];
-    return {
-      imported: true,
-      preview,
-      result: await repository.importAllData(merged, { allowOverwrite: true }),
-    };
-  }
   if (mode === "replace")
     return {
       imported: true,

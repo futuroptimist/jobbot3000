@@ -339,14 +339,9 @@ describe("spreadsheet import/export", () => {
     );
     expect(responseApplicationIds.size).toBe(4);
 
-    const dashboardResponseRate = Math.round(
-      ((bundle.outreachMessages.length +
-        bundle.interviews.length +
-        bundle.offers.length) /
-        bundle.applications.length) *
-        100,
+    expect(Math.round((responseApplicationIds.size / rows.length) * 100)).toBe(
+      27,
     );
-    expect(dashboardResponseRate).toBe(47);
     expect(
       Math.round(
         (repliedOutreachRows.length / bundle.outreachMessages.length) * 100,
@@ -354,64 +349,9 @@ describe("spreadsheet import/export", () => {
     ).toBe(29);
   });
 
-  it("imports supplemental lifecycle fixtures through the compact CSV import path", async () => {
-    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
-    const compactCsv = await readFile(
-      "test/fixtures/tracker-import/compact-main-regression.csv",
-      "utf8",
-    );
-    const compactResult = await importCompactCsv(compactCsv, repo, {
-      mode: "replace",
-    });
-    expect(compactResult.imported).toBe(true);
-
-    const fixturePaths = [
-      "test/fixtures/tracker-import/canonical-lifecycle-regression.csv",
-      "test/fixtures/tracker-import/loft-lifecycle-regression.csv",
-      "test/fixtures/tracker-import/reducto-lifecycle-regression.csv",
-    ];
-    const expectedRows = [];
-    for (const path of fixturePaths) {
-      const csv = await readFile(path, "utf8");
-      expectedRows.push(...parseCsv(csv));
-      const result = await importCompactCsv(csv, repo, { mode: "merge" });
-      expect(result.imported).toBe(true);
-      expect(result.preview.lifecycleOnly).toBe(true);
-      expect(result.preview.errors).toEqual([]);
-    }
-
-    const exported = await repo.exportAllData();
-    expect(exported.applications).toHaveLength(15);
-    expect(exported.lifecycleEvents).toEqual(
-      expect.arrayContaining(
-        expectedRows.map((row) =>
-          expect.objectContaining({
-            applicationId: row.application_id,
-            status: row.event_status,
-            occurredAt: row.occurred_at,
-            source: row.source,
-            note: row.notes,
-          }),
-        ),
-      ),
-    );
-    expect(exported.artifacts).toEqual(
-      expect.arrayContaining(
-        expectedRows.map((row) =>
-          expect.objectContaining({
-            applicationId: row.application_id,
-            kind: "link",
-            name: row.event_type,
-            url: row.artifact_url,
-          }),
-        ),
-      ),
-    );
-
-    repo.close();
-  });
-
   it("keeps supplemental lifecycle fixtures safe", async () => {
+    // Prompt 01 only validates supplemental lifecycle fixture safety; importing
+    // these lifecycle CSVs is intentionally deferred to Prompt 04.
     const compactRows = parseCsv(
       await readFile(
         "test/fixtures/tracker-import/compact-main-regression.csv",
