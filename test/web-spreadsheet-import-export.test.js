@@ -548,7 +548,7 @@ describe("spreadsheet import/export", () => {
         }),
         expect.objectContaining({
           application_id: "app_display_rejected",
-          status: "rejected",
+          status: "Interviewing",
           interview_stage: "Application rejected",
           outcome: "Application rejected",
           outreach_status: "replied",
@@ -663,7 +663,7 @@ describe("spreadsheet import/export", () => {
       });
     }
     expect(exportedRowsById.get("app_explicit_reply")).toMatchObject({
-      status: "outreach_sent",
+      status: "Responded to inbound",
       interview_stage: "Hiring manager follow-up",
       outcome: "",
     });
@@ -706,7 +706,7 @@ describe("spreadsheet import/export", () => {
 
     const [row] = parseCsv(exportCompactCsv(bundle));
     expect(row).toMatchObject({
-      status: "technical_screen",
+      status: "Interviewing",
       interview_stage: "technical_screen",
       outcome: "scheduled",
     });

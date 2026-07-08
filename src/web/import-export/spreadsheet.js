@@ -371,7 +371,17 @@ const getMetadataValue = (metadata, primaryKey, legacyKey) =>
 const preservedStatus = (metadata, currentStatus) => {
   const value = getMetadataValue(metadata, "spreadsheet_status", "status");
   if (!value) return undefined;
-  return mapStatus({ status: value }) === currentStatus ? value : undefined;
+  const importedStatus = mapStatus({
+    status: value,
+    interview_stage: getMetadataValue(
+      metadata,
+      "spreadsheet_interview_stage",
+      "interview_stage",
+    ),
+    outcome: getMetadataValue(metadata, "spreadsheet_outcome", "outcome"),
+    outreach_status: metadata.outreach_status,
+  });
+  return importedStatus === currentStatus ? value : undefined;
 };
 
 const preservedInterviewStage = (metadata, currentStage) => {
