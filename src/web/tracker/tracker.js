@@ -11,6 +11,7 @@ import {
   importNdjsonBackup,
   previewSupplementalLifecycleCsvImport,
 } from "../import-export/spreadsheet.js";
+import { computeTrackerMetrics } from "./metrics.js";
 
 /* canonical CSV/backup helpers are shared with spreadsheet import/export tests. */
 const ARRAY_STORES = [
@@ -252,28 +253,43 @@ function renderNav() {
 }
 function renderDashboard() {
   const b = state.bundle;
-  const count = (s) => b.applications.filter((a) => a.status === s).length;
-  const outreach = b.outreachMessages.length,
-    interviews = b.interviews.length,
-    offers = b.offers.length,
-    total = b.applications.length;
+  const metricValues = computeTrackerMetrics(b);
   const metrics = [
-    ["Total applications", total],
-    ["Outreach sent", outreach],
-    ["Recruiter screens", count("recruiter_screen")],
-    ["Interviews", interviews],
-    ["Offers", offers],
+    ["Total applications", metricValues.totalApplications],
     [
-      "Response rate",
-      total
-        ? `${Math.round(((outreach + interviews + offers) / total) * 100)}%`
-        : "0%",
+      "Outreach sent",
+      metricValues.outreachSent,
+      "Outbound outreach messages, counted as messages rather than unique applications.",
+    ],
+    ["Outreach replies", metricValues.outreachReplies],
+    ["Application responses", metricValues.applicationsWithResponse],
+    ["Recruiter screens", metricValues.recruiterScreens],
+    [
+      "Interviews",
+      metricValues.interviews,
+      "Non-recruiter-screen interviews only.",
+    ],
+    [
+      "Assessments",
+      metricValues.assessments,
+      "Written assessments and take-homes; not counted as interviews.",
+    ],
+    ["Offers", metricValues.offers],
+    [
+      "Application response rate",
+      metricValues.applicationResponseRate,
+      `${metricValues.applicationsWithResponse} of ${metricValues.totalApplications} applications`,
+    ],
+    [
+      "Outreach reply rate",
+      metricValues.outreachReplyRate,
+      `${metricValues.outreachReplies} of ${metricValues.outreachSent} outreach messages`,
     ],
   ];
   $("[data-metrics]").innerHTML = metrics
     .map(
-      ([k, v]) =>
-        `<div class="metric"><span>${k}</span><strong>${v}</strong></div>`,
+      ([k, v, help]) =>
+        `<div class="metric"><span>${k}</span><strong>${v}</strong>${help ? `<small>${esc(help)}</small>` : ""}</div>`,
     )
     .join("");
   const weeks = {};

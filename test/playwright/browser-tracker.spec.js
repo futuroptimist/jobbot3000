@@ -83,10 +83,6 @@ test.describe("browser application tracker", () => {
   test("imports compact CSV regression fixture with bounded dashboard metrics", async ({
     page,
   }) => {
-    test.fail(
-      true,
-      "Prompt 01 lands this red regression net; later prompts fix dashboard/import.",
-    );
     const csv = await regressionCsvFixture();
 
     await page.getByRole("button", { name: "Import/Export" }).click();
