@@ -1,5 +1,6 @@
 /* global document, indexedDB, confirm */
 /* eslint-disable max-len */
+import { computeDashboardMetrics } from "./metrics.js";
 import {
   COMPACT_CSV_COLUMNS,
   csvToBrowserApplicationExport,
@@ -252,28 +253,48 @@ function renderNav() {
 }
 function renderDashboard() {
   const b = state.bundle;
-  const count = (s) => b.applications.filter((a) => a.status === s).length;
-  const outreach = b.outreachMessages.length,
-    interviews = b.interviews.length,
-    offers = b.offers.length,
-    total = b.applications.length;
+  const dashboardMetrics = computeDashboardMetrics(b);
   const metrics = [
-    ["Total applications", total],
-    ["Outreach sent", outreach],
-    ["Recruiter screens", count("recruiter_screen")],
-    ["Interviews", interviews],
-    ["Offers", offers],
+    ["Total applications", dashboardMetrics.totalApplications],
     [
-      "Response rate",
-      total
-        ? `${Math.round(((outreach + interviews + offers) / total) * 100)}%`
-        : "0%",
+      "Outreach sent",
+      dashboardMetrics.outreachSent,
+      "Outbound outreach messages",
+    ],
+    ["Recruiter screens", dashboardMetrics.recruiterScreens],
+    [
+      "Interviews",
+      dashboardMetrics.interviews,
+      "Excludes recruiter screens and assessments",
+    ],
+    [
+      "Assessments",
+      dashboardMetrics.assessments,
+      "Written assessments and take-homes",
+    ],
+    ["Offers", dashboardMetrics.offers],
+    [
+      "Application responses",
+      dashboardMetrics.applicationsWithResponse,
+      "Unique applications with an employer response",
+    ],
+    [
+      "Application response rate",
+      dashboardMetrics.applicationResponseRate,
+      dashboardMetrics.applicationResponseLabel,
+    ],
+    [
+      "Outreach reply rate",
+      dashboardMetrics.outreachReplyRate,
+      dashboardMetrics.outreachReplyLabel,
     ],
   ];
   $("[data-metrics]").innerHTML = metrics
     .map(
-      ([k, v]) =>
-        `<div class="metric"><span>${k}</span><strong>${v}</strong></div>`,
+      ([k, v, label]) =>
+        `<div class="metric"><span>${k}</span><strong>${v}</strong>${
+          label ? `<small>${esc(label)}</small>` : ""
+        }</div>`,
     )
     .join("");
   const weeks = {};
