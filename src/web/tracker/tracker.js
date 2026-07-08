@@ -3,11 +3,13 @@
 import {
   COMPACT_CSV_COLUMNS,
   csvToBrowserApplicationExport,
+  detectCsvImportKind,
   exportCompactCsv,
   exportJsonBackup,
   exportNdjsonBackup,
   importJsonBackup,
   importNdjsonBackup,
+  previewSupplementalLifecycleCsvImport,
 } from "../import-export/spreadsheet.js";
 
 /* canonical CSV/backup helpers are shared with spreadsheet import/export tests. */
@@ -573,7 +575,27 @@ async function newApplication() {
   };
   openUnsavedDetail(app);
 }
-function previewBundleFromCsv(text) {
+async function previewBundleFromCsv(text) {
+  if (detectCsvImportKind(text) === "lifecycle_csv") {
+    const preview = await previewSupplementalLifecycleCsvImport(text, repo);
+    if (preview.errors.length) {
+      throw new Error(
+        preview.errors
+          .map((error) =>
+            error.rowNumber
+              ? `Row ${error.rowNumber} ${error.field}: ${error.message}`
+              : `${error.field}: ${error.message}`,
+          )
+          .join("; "),
+      );
+    }
+    return {
+      ...preview.bundle,
+      __importKind: "lifecycle_csv",
+      __warnings: preview.warnings,
+      __conflicts: preview.conflicts,
+    };
+  }
   const { bundle, errors } = csvToBrowserApplicationExport(text);
   if (errors.length) {
     throw new Error(
@@ -628,16 +650,30 @@ async function previewImport() {
         ? importJsonBackup(text)
         : format === "ndjson"
           ? importNdjsonBackup(text)
-          : previewBundleFromCsv(text);
+          : await previewBundleFromCsv(text);
     state.preview = bundleForIndexedDb(bundle);
     state.previewConflicts = await detectImportConflicts(state.preview);
     const totalRecords = Object.values(state.preview).reduce(
       (count, rows) => count + rows.length,
       0,
     );
-    const formatLabel = format === "csv" ? "" : ` (${format.toUpperCase()})`;
+    const isLifecycleCsv = bundle.__importKind === "lifecycle_csv";
+    const formatLabel =
+      format === "csv"
+        ? isLifecycleCsv
+          ? " lifecycle CSV"
+          : ""
+        : ` (${format.toUpperCase()})`;
+    const warnings = bundle.__warnings?.length
+      ? ` ${bundle.__warnings.length} warnings.`
+      : "";
+    const conflicts =
+      bundle.__conflicts?.length ?? state.previewConflicts.length;
+    const lifecycleSummary = isLifecycleCsv
+      ? `, ${(bundle.lifecycleEvents ?? []).length} lifecycle events, ${(bundle.reminders ?? []).length} reminders`
+      : "";
     $("[data-import-result]").textContent =
-      `Dry-run OK${formatLabel}: ${(bundle.applications ?? []).length} applications, ${(bundle.outreachMessages ?? []).length} outreach messages, ${(bundle.interviews ?? []).length} interviews. ${totalRecords} total records. ${state.previewConflicts.length} existing record conflicts.`;
+      `Dry-run OK${formatLabel}: ${(bundle.applications ?? []).length} applications, ${(bundle.outreachMessages ?? []).length} outreach messages, ${(bundle.interviews ?? []).length} interviews${lifecycleSummary}. ${totalRecords} total records. ${conflicts} existing record conflicts.${warnings}`;
     $("[data-import-apply]").disabled = false;
   } catch (err) {
     state.preview = null;

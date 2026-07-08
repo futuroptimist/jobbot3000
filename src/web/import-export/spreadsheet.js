@@ -35,6 +35,23 @@ export const COMPACT_CSV_COLUMNS = [
   "schema_version",
 ];
 
+export const LIFECYCLE_CSV_COLUMNS = [
+  "application_id",
+  "company",
+  "role_title",
+  "event_type",
+  "occurred_at",
+  "stage",
+  "channel",
+  "actor",
+  "source_artifact",
+  "requires_user_action",
+  "action_status",
+  "due_at",
+  "no_ai_required",
+  "details",
+];
+
 const KNOWN_STATUSES = new Set([
   "applied",
   "outreach_sent",
@@ -109,6 +126,25 @@ const ARRAY_STORES = [
   "reminders",
 ];
 const ARRAY_STORE_SET = new Set(ARRAY_STORES);
+const LIFECYCLE_EVENT_TYPES = new Set([
+  "application_submitted",
+  "written_assessment_requested",
+  "written_assessment_submitted",
+  "hiring_manager_reply",
+  "next_tracking_step",
+  "recruiter_screen_scheduled",
+]);
+
+export const detectCsvImportKind = (csvText) => {
+  const input = String(csvText ?? "").replace(/^\uFEFF/, "");
+  const firstLineEnd = input.search(/\r?\n/);
+  const headerLine = firstLineEnd === -1 ? input : input.slice(0, firstLineEnd);
+  const headers = headerLine.split(",").map(normalizeKey);
+  if (headers.join(",") === LIFECYCLE_CSV_COLUMNS.join(","))
+    return "lifecycle_csv";
+  if (headers.join(",") === COMPACT_CSV_COLUMNS.join(",")) return "compact_csv";
+  return "unknown_csv";
+};
 
 const blankRow = () =>
   Object.fromEntries(COMPACT_CSV_COLUMNS.map((key) => [key, ""]));
@@ -871,6 +907,266 @@ export const importNdjsonBackup = (text) => {
     });
   return browserApplicationExportSchema.parse(bundle);
 };
+const parseBoolean = (value, field, rowNumber, errors) => {
+  const text = normalizeKey(value);
+  if (!text) return undefined;
+  if (["true", "t", "yes", "y", "1"].includes(text)) return true;
+  if (["false", "f", "no", "n", "0"].includes(text)) return false;
+  errors.push({
+    rowNumber,
+    field,
+    code: "malformed_boolean",
+    message: `${field} is not a valid boolean.`,
+  });
+  return undefined;
+};
+const lifecycleStatusForEvent = (eventType, stage) => {
+  if (eventType === "recruiter_screen_scheduled") return "recruiter_screen";
+  if (eventType === "application_submitted") return "applied";
+  if (normalizeLabelKey(stage) === "rejected") return "rejected";
+  return "applied";
+};
+export const rowsToSupplementalLifecycleExport = (
+  rows,
+  existing,
+  { exportedAt = nowIso() } = {},
+) => {
+  const errors = [];
+  const warnings = [];
+  const lifecycleEvents = [];
+  const interviews = [];
+  const reminders = [];
+  const existingIds = new Set(
+    (existing?.applications ?? []).map(({ id }) => id),
+  );
+  rows.forEach((sourceRow, index) => {
+    const rowNumber = index + 2;
+    const row = Object.fromEntries(
+      LIFECYCLE_CSV_COLUMNS.map((column) => [
+        column,
+        compact(sourceRow[column]),
+      ]),
+    );
+    if (!row.application_id) {
+      errors.push({
+        rowNumber,
+        field: "application_id",
+        code: "required",
+        message: "application_id is required.",
+      });
+      return;
+    }
+    if (!existingIds.has(row.application_id)) {
+      errors.push({
+        rowNumber,
+        field: "application_id",
+        code: "missing_application",
+        value: row.application_id,
+        message: `No existing application found for application_id ${row.application_id}.`,
+      });
+      return;
+    }
+    const occurredAt =
+      parseDate(row.occurred_at, "occurred_at", rowNumber, errors) ??
+      exportedAt;
+    const dueAt = parseDate(row.due_at, "due_at", rowNumber, errors);
+    const eventType = normalizeLabelKey(row.event_type);
+    if (!eventType)
+      errors.push({
+        rowNumber,
+        field: "event_type",
+        code: "required",
+        message: "event_type is required.",
+      });
+    else if (!LIFECYCLE_EVENT_TYPES.has(eventType))
+      warnings.push({
+        rowNumber,
+        field: "event_type",
+        code: "unknown_event_type",
+        value: row.event_type,
+        message: `Unknown lifecycle event_type preserved as metadata: ${row.event_type}.`,
+      });
+    const requiresUserAction = parseBoolean(
+      row.requires_user_action,
+      "requires_user_action",
+      rowNumber,
+      errors,
+    );
+    const noAiRequired = parseBoolean(
+      row.no_ai_required,
+      "no_ai_required",
+      rowNumber,
+      errors,
+    );
+    const eventId = stableId(
+      "event",
+      row.application_id,
+      eventType || row.event_type,
+      occurredAt,
+      row.stage,
+      row.due_at,
+      row.details,
+    );
+    const event = {
+      id: eventId,
+      applicationId: row.application_id,
+      status: lifecycleStatusForEvent(eventType, row.stage),
+      occurredAt,
+      source: "csv_import",
+      note: row.details || undefined,
+      eventType: eventType || row.event_type || undefined,
+      stageLabel: row.stage || undefined,
+      channel: row.channel || undefined,
+      actor: row.actor || undefined,
+      sourceArtifact: row.source_artifact || undefined,
+      requiresUserAction,
+      actionStatus: row.action_status || undefined,
+      dueAt,
+      noAiRequired,
+      details: row.details || undefined,
+      createdAt: exportedAt,
+    };
+    lifecycleEvents.push(event);
+    if (eventType === "recruiter_screen_scheduled" && dueAt) {
+      interviews.push({
+        id: stableId(
+          "interview",
+          row.application_id,
+          "recruiter_screen",
+          dueAt,
+        ),
+        applicationId: row.application_id,
+        contactIds: [],
+        stage: "recruiter_screen",
+        startsAt: dueAt,
+        outcome: "scheduled",
+        preparationNotes: row.details || undefined,
+        createdAt: exportedAt,
+        updatedAt: exportedAt,
+      });
+    }
+    if (eventType === "next_tracking_step" && dueAt) {
+      reminders.push({
+        id: stableId(
+          "reminder",
+          row.application_id,
+          eventType,
+          dueAt,
+          row.details,
+        ),
+        applicationId: row.application_id,
+        dueAt,
+        summary: row.details || row.stage || "Follow up on application",
+        notes: row.action_status || undefined,
+        createdAt: exportedAt,
+        updatedAt: exportedAt,
+      });
+    }
+  });
+  const bundle = {
+    schemaVersion: 1,
+    exportedAt,
+    applications: existing?.applications ?? [],
+    contacts: existing?.contacts ?? [],
+    outreachMessages: existing?.outreachMessages ?? [],
+    lifecycleEvents,
+    interviews,
+    offers: existing?.offers ?? [],
+    artifacts: existing?.artifacts ?? [],
+    reminders,
+    settings: existing?.settings,
+  };
+  const parsed = browserApplicationExportSchema.safeParse(bundle);
+  if (!parsed.success)
+    errors.push({
+      rowNumber: null,
+      field: "bundle",
+      code: "schema_validation_failed",
+      message: parsed.error.message,
+    });
+  return {
+    bundle: {
+      ...bundle,
+      applications: [],
+      contacts: [],
+      outreachMessages: [],
+      offers: [],
+      artifacts: [],
+    },
+    errors,
+    warnings,
+  };
+};
+export const previewSupplementalLifecycleCsvImport = async (
+  csvText,
+  repository,
+) => {
+  const rows = parseCsv(csvText);
+  const existing = repository
+    ? await repository.exportAllData()
+    : { applications: [] };
+  const { bundle, errors, warnings } = rowsToSupplementalLifecycleExport(
+    rows,
+    existing,
+  );
+  const conflicts = [];
+  const existingByStore = Object.fromEntries(
+    ARRAY_STORES.map((store) => [
+      store,
+      new Set((existing[store] ?? []).map(({ id }) => id)),
+    ]),
+  );
+  for (const store of ["lifecycleEvents", "interviews", "reminders"]) {
+    const seen = new Set();
+    for (const record of bundle[store]) {
+      if (seen.has(record.id))
+        conflicts.push({
+          storeName: store,
+          id: record.id,
+          code: "duplicate_in_file",
+        });
+      if (existingByStore[store]?.has(record.id))
+        conflicts.push({
+          storeName: store,
+          id: record.id,
+          code: "duplicate_existing",
+        });
+      seen.add(record.id);
+    }
+  }
+  return {
+    kind: "lifecycle_csv",
+    rowCount: rows.length,
+    errors,
+    warnings,
+    conflicts,
+    bundle,
+  };
+};
+export const importSupplementalLifecycleCsv = async (csvText, repository) => {
+  const preview = await previewSupplementalLifecycleCsvImport(
+    csvText,
+    repository,
+  );
+  if (preview.errors.length > 0) return { imported: false, preview };
+  const existing = await repository.exportAllData();
+  const merged = { ...existing, exportedAt: nowIso() };
+  for (const store of ["lifecycleEvents", "interviews", "reminders"]) {
+    const incoming = preview.bundle[store] ?? [];
+    merged[store] = [
+      ...existing[store].filter(
+        (record) => !incoming.some(({ id }) => id === record.id),
+      ),
+      ...incoming,
+    ];
+  }
+  return {
+    imported: true,
+    preview,
+    result: await repository.importAllData(merged, { allowOverwrite: true }),
+  };
+};
+
 export const previewCompactCsvImport = async (csvText, repository) => {
   const rows = parseCsv(csvText);
   const { bundle, errors } = rowsToBrowserApplicationExport(rows);
