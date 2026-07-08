@@ -880,9 +880,9 @@ describe("spreadsheet import/export", () => {
       compactRows.map((row) => row.application_id),
     );
     const fixturePaths = [
-      "test/fixtures/tracker-import/canonical-lifecycle-regression.csv",
-      "test/fixtures/tracker-import/loft-lifecycle-regression.csv",
-      "test/fixtures/tracker-import/reducto-lifecycle-regression.csv",
+      "test/fixtures/tracker-import/assessment-lifecycle-regression.csv",
+      "test/fixtures/tracker-import/employer-reply-lifecycle-regression.csv",
+      "test/fixtures/tracker-import/recruiter-screen-lifecycle-regression.csv",
     ];
     const lifecycleRowsByFile = await Promise.all(
       fixturePaths.map(async (path) => parseCsv(await readFile(path, "utf8"))),
@@ -896,8 +896,10 @@ describe("spreadsheet import/export", () => {
       lifecycleRows.every((row) => applicationIds.has(row.application_id)),
     ).toBe(true);
     expect(
-      lifecycleRows.every((row) =>
-        row.artifact_url.startsWith("https://example.test/artifact/"),
+      lifecycleRows.every(
+        (row) =>
+          !row.source_artifact ||
+          row.source_artifact.startsWith("https://example.test/artifact/"),
       ),
     ).toBe(true);
 
@@ -1035,6 +1037,150 @@ describe("spreadsheet import/export", () => {
     repo.close();
   });
 
+  it("detects lifecycle CSVs with quoted headers", () => {
+    const quotedHeaderCsv = [
+      LIFECYCLE_CSV_COLUMNS.map((column) => `"${column}"`).join(","),
+      LIFECYCLE_CSV_COLUMNS.map(() => "").join(","),
+    ].join("\n");
+
+    expect(detectSpreadsheetImportFormat(quotedHeaderCsv)).toBe(
+      "lifecycle_csv",
+    );
+  });
+
+  it("validates supplemental lifecycle boolean fields", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    await importCompactCsv(
+      serializeCsv([
+        {
+          application_id: "app_lifecycle_boolean",
+          company: "Lifecycle Boolean",
+          role_title: "Engineer",
+          applied_at: "2026-01-01",
+          schema_version: "1",
+        },
+      ]),
+      repo,
+      { mode: "replace" },
+    );
+
+    const validRows = [
+      ["true", "false", true, false],
+      ["false", "true", false, true],
+      ["yes", "no", true, false],
+      ["no", "yes", false, true],
+      ["1", "0", true, false],
+      ["0", "1", false, true],
+      ["", "", undefined, undefined],
+    ].map(([requires, noAi, expectedRequires, expectedNoAi], index) => ({
+      application_id: "app_lifecycle_boolean",
+      company: "Lifecycle Boolean",
+      role_title: "Engineer",
+      event_type: "hiring_manager_reply",
+      occurred_at: `2026-01-${String(index + 2).padStart(2, "0")}T12:00:00.000Z`,
+      requires_user_action: requires,
+      no_ai_required: noAi,
+      details: `Boolean row ${index}.`,
+      expectedRequires,
+      expectedNoAi,
+    }));
+    const preview = await previewSupplementalLifecycleCsvImport(
+      serializeCsv(validRows, LIFECYCLE_CSV_COLUMNS),
+      repo,
+    );
+    expect(preview.errors).toEqual([]);
+    expect(
+      preview.bundle.lifecycleEvents.map(
+        ({ requiresUserAction, noAiRequired }) => [
+          requiresUserAction,
+          noAiRequired,
+        ],
+      ),
+    ).toEqual(
+      validRows.map(({ expectedRequires, expectedNoAi }) => [
+        expectedRequires,
+        expectedNoAi,
+      ]),
+    );
+
+    const invalidPreview = await previewSupplementalLifecycleCsvImport(
+      serializeCsv(
+        [
+          {
+            application_id: "app_lifecycle_boolean",
+            company: "Lifecycle Boolean",
+            role_title: "Engineer",
+            event_type: "hiring_manager_reply",
+            occurred_at: "2026-01-12T12:00:00.000Z",
+            requires_user_action: "maybe",
+            no_ai_required: "later",
+          },
+        ],
+        LIFECYCLE_CSV_COLUMNS,
+      ),
+      repo,
+    );
+    expect(invalidPreview.errors).toEqual([
+      expect.objectContaining({
+        field: "requires_user_action",
+        code: "malformed_boolean",
+      }),
+      expect.objectContaining({
+        field: "no_ai_required",
+        code: "malformed_boolean",
+      }),
+    ]);
+    repo.close();
+  });
+
+  it("keeps blank lifecycle dates deterministic across re-imports", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    await importCompactCsv(
+      serializeCsv([
+        {
+          application_id: "app_lifecycle_blank_dates",
+          company: "Lifecycle Blank Dates",
+          role_title: "Engineer",
+          applied_at: "2026-01-01",
+          schema_version: "1",
+        },
+      ]),
+      repo,
+      { mode: "replace" },
+    );
+
+    const lifecycleCsv = serializeCsv(
+      [
+        {
+          application_id: "app_lifecycle_blank_dates",
+          company: "Lifecycle Blank Dates",
+          role_title: "Engineer",
+          event_type: "hiring_manager_reply",
+          details: "Blank date event remains stable.",
+        },
+      ],
+      LIFECYCLE_CSV_COLUMNS,
+    );
+
+    expect(
+      (await importSupplementalLifecycleCsv(lifecycleCsv, repo)).imported,
+    ).toBe(true);
+    expect(
+      (await importSupplementalLifecycleCsv(lifecycleCsv, repo)).imported,
+    ).toBe(true);
+    const exported = await repo.exportAllData();
+    expect(
+      exported.lifecycleEvents.filter(
+        ({ applicationId, eventType }) =>
+          applicationId === "app_lifecycle_blank_dates" &&
+          eventType === "hiring_manager_reply",
+      ),
+    ).toHaveLength(1);
+    expect(exported.interviews).toHaveLength(0);
+    expect(exported.reminders).toHaveLength(0);
+    repo.close();
+  });
+
   it("reports missing lifecycle application ids without creating orphans", async () => {
     const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
     const lifecycleCsv = serializeCsv(
@@ -1069,7 +1215,7 @@ describe("spreadsheet import/export", () => {
     repo.close();
   });
 
-  it("blocks duplicate supplemental lifecycle rows before applying", async () => {
+  it("deduplicates identical supplemental lifecycle rows before applying", async () => {
     const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
     await importCompactCsv(
       serializeCsv([
@@ -1099,12 +1245,11 @@ describe("spreadsheet import/export", () => {
       repo,
     );
     expect(preview.errors).toEqual([]);
-    expect(preview.conflicts).toEqual([
-      expect.objectContaining({ code: "duplicate_in_file" }),
-    ]);
+    expect(preview.conflicts).toEqual([]);
+    expect(preview.bundle.lifecycleEvents).toHaveLength(1);
     const result = await importSupplementalLifecycleCsv(lifecycleCsv, repo);
-    expect(result.imported).toBe(false);
-    expect((await repo.exportAllData()).lifecycleEvents).toHaveLength(1);
+    expect(result.imported).toBe(true);
+    expect((await repo.exportAllData()).lifecycleEvents).toHaveLength(2);
     repo.close();
   });
 

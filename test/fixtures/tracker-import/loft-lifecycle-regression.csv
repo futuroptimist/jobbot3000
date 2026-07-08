@@ -1,2 +1,0 @@
-application_id,event_type,event_status,occurred_at,source,contact_name,artifact_url,notes,schema_version
-app_reg_delta_004,assessment,written_assessment_submitted,2026-02-08T20:00:00.000Z,loft,,https://example.test/artifact/delta/assessment.pdf,Fake Loft-style supplemental lifecycle row.,1

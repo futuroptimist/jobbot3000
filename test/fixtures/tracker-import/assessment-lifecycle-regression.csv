@@ -1,0 +1,3 @@
+application_id,company,role_title,event_type,occurred_at,stage,channel,actor,source_artifact,requires_user_action,action_status,due_at,no_ai_required,details
+app_reg_alpha_001,Company Alpha,Frontend Platform Engineer,written_assessment_requested,2026-02-06T15:00:00.000Z,Written assessment,email,employer,https://example.test/artifact/alpha/assessment-request.eml,true,pending,2026-02-10T17:00:00.000Z,yes,Assessment request received from example employer.
+app_reg_alpha_001,Company Alpha,Frontend Platform Engineer,written_assessment_submitted,2026-02-09T18:30:00.000Z,Written assessment,portal,candidate,https://example.test/artifact/alpha/assessment-submission.pdf,false,submitted,,no,Assessment submission completed in example portal.

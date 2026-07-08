@@ -1,0 +1,3 @@
+application_id,company,role_title,event_type,occurred_at,stage,channel,actor,source_artifact,requires_user_action,action_status,due_at,no_ai_required,details
+app_reg_beta_002,Company Beta,Backend Systems Engineer,hiring_manager_reply,2026-02-05T12:00:00.000Z,Hiring manager follow-up,email,hiring_manager,https://example.test/artifact/beta/reply.eml,false,received,,,Example hiring manager reply received.
+app_reg_zeta_006,Company Zeta,Data Platform Engineer,hiring_manager_reply,2026-02-12T12:00:00.000Z,Hiring manager follow-up,email,hiring_manager,https://example.test/artifact/zeta/reply.eml,false,received,,,Example employer response received.

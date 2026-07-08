@@ -297,11 +297,18 @@ const parseDate = (
 const hasTimeComponent = (value) =>
   /(?:T|\s)\d{1,2}:\d{2}/.test(compact(value));
 
-const parseBoolean = (value) => {
+const parseBoolean = (value, field, rowNumber, errors) => {
   const text = normalizeKey(value);
   if (!text) return undefined;
   if (["true", "yes", "y", "1"].includes(text)) return true;
   if (["false", "no", "n", "0"].includes(text)) return false;
+  errors?.push({
+    rowNumber,
+    field,
+    code: "malformed_boolean",
+    value: compact(value),
+    message: `${field} must be true/false, yes/no, 1/0, or blank.`,
+  });
   return undefined;
 };
 const parseNumber = (value, field, rowNumber, errors) => {
@@ -536,10 +543,20 @@ export const lifecycleRowsToBrowserApplicationExport = (
       channel: compact(row.channel) || undefined,
       actor: compact(row.actor) || undefined,
       sourceArtifact,
-      requiresUserAction: parseBoolean(row.requires_user_action),
+      requiresUserAction: parseBoolean(
+        row.requires_user_action,
+        "requires_user_action",
+        rowNumber,
+        errors,
+      ),
       actionStatus: compact(row.action_status) || undefined,
       dueAt,
-      noAiRequired: parseBoolean(row.no_ai_required),
+      noAiRequired: parseBoolean(
+        row.no_ai_required,
+        "no_ai_required",
+        rowNumber,
+        errors,
+      ),
       details,
       createdAt: exportedAt,
     });
@@ -1203,6 +1220,17 @@ export const importCompactCsv = async (
   };
 };
 
+const lifecycleComparableRecord = (record) =>
+  Object.fromEntries(
+    Object.entries(record).filter(
+      ([key]) => !["createdAt", "updatedAt"].includes(key),
+    ),
+  );
+
+const lifecycleRecordsEqual = (left, right) =>
+  JSON.stringify(lifecycleComparableRecord(left)) ===
+  JSON.stringify(lifecycleComparableRecord(right));
+
 export const previewSupplementalLifecycleCsvImport = async (
   csvText,
   repository,
@@ -1217,17 +1245,26 @@ export const previewSupplementalLifecycleCsvImport = async (
   const conflicts = [];
   for (const store of incomingStores) {
     const seen = new Map();
+    const deduped = [];
     for (const record of bundle[store]) {
-      if (seen.has(record.id))
-        conflicts.push({
-          rowNumber: null,
-          field: "id",
-          code: "duplicate_in_file",
-          value: record.id,
-          store,
-        });
-      seen.set(record.id, true);
-      if ((existing[store] ?? []).some(({ id }) => id === record.id))
+      const previous = seen.get(record.id);
+      if (previous) {
+        if (!lifecycleRecordsEqual(previous, record))
+          conflicts.push({
+            rowNumber: null,
+            field: "id",
+            code: "duplicate_in_file",
+            value: record.id,
+            store,
+          });
+        continue;
+      }
+      seen.set(record.id, record);
+      deduped.push(record);
+      const existingRecord = (existing[store] ?? []).find(
+        ({ id }) => id === record.id,
+      );
+      if (existingRecord && !lifecycleRecordsEqual(existingRecord, record))
         conflicts.push({
           rowNumber: null,
           field: "id",
@@ -1236,6 +1273,7 @@ export const previewSupplementalLifecycleCsvImport = async (
           store,
         });
     }
+    bundle[store] = deduped;
   }
   return {
     kind: "lifecycle_csv",
@@ -1257,10 +1295,7 @@ export const importSupplementalLifecycleCsv = async (csvText, repository) => {
     csvText,
     repository,
   );
-  if (
-    preview.errors.length > 0 ||
-    preview.conflicts.some(({ code }) => code === "duplicate_in_file")
-  )
+  if (preview.errors.length > 0 || preview.conflicts.length > 0)
     return { imported: false, preview };
   const existing = await repository.exportAllData();
   const merged = { ...existing, exportedAt: nowIso() };
