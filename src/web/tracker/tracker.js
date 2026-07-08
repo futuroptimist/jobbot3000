@@ -3,9 +3,11 @@
 import {
   COMPACT_CSV_COLUMNS,
   csvToBrowserApplicationExport,
+  detectCsvImportFormat,
   exportCompactCsv,
   exportJsonBackup,
   exportNdjsonBackup,
+  lifecycleCsvToBrowserApplicationExport,
   importJsonBackup,
   importNdjsonBackup,
 } from "../import-export/spreadsheet.js";
@@ -574,7 +576,11 @@ async function newApplication() {
   openUnsavedDetail(app);
 }
 function previewBundleFromCsv(text) {
-  const { bundle, errors } = csvToBrowserApplicationExport(text);
+  const format = detectCsvImportFormat(text);
+  const { bundle, errors } =
+    format === "lifecycle_csv"
+      ? lifecycleCsvToBrowserApplicationExport(text, state.bundle)
+      : csvToBrowserApplicationExport(text);
   if (errors.length) {
     throw new Error(
       errors
@@ -586,7 +592,26 @@ function previewBundleFromCsv(text) {
         .join("; "),
     );
   }
-  return bundle;
+  return { bundle, format };
+}
+function mergeSupplementalLifecycleBundle(existing, incoming) {
+  const merged = { ...existing, exportedAt: now() };
+  for (const store of [
+    "lifecycleEvents",
+    "interviews",
+    "artifacts",
+    "reminders",
+  ]) {
+    const rows = incoming[store] ?? [];
+    merged[store] = [
+      ...(existing[store] ?? []).filter(
+        (record) =>
+          !rows.some(({ id: incomingId }) => incomingId === record.id),
+      ),
+      ...rows,
+    ];
+  }
+  return merged;
 }
 function bundleForIndexedDb(bundle) {
   return {
@@ -623,21 +648,30 @@ async function previewImport() {
   try {
     const text = await file.text();
     const format = importFormatForFile(file);
-    const bundle =
+    const parsed =
       format === "json"
-        ? importJsonBackup(text)
+        ? { bundle: importJsonBackup(text), format: "json" }
         : format === "ndjson"
-          ? importNdjsonBackup(text)
+          ? { bundle: importNdjsonBackup(text), format: "ndjson" }
           : previewBundleFromCsv(text);
+    const bundle =
+      parsed.format === "lifecycle_csv"
+        ? mergeSupplementalLifecycleBundle(state.bundle, parsed.bundle)
+        : parsed.bundle;
     state.preview = bundleForIndexedDb(bundle);
     state.previewConflicts = await detectImportConflicts(state.preview);
     const totalRecords = Object.values(state.preview).reduce(
       (count, rows) => count + rows.length,
       0,
     );
-    const formatLabel = format === "csv" ? "" : ` (${format.toUpperCase()})`;
+    const formatLabel =
+      parsed.format === "lifecycle_csv"
+        ? " (lifecycle CSV)"
+        : format === "csv"
+          ? " (compact CSV)"
+          : ` (${format.toUpperCase()})`;
     $("[data-import-result]").textContent =
-      `Dry-run OK${formatLabel}: ${(bundle.applications ?? []).length} applications, ${(bundle.outreachMessages ?? []).length} outreach messages, ${(bundle.interviews ?? []).length} interviews. ${totalRecords} total records. ${state.previewConflicts.length} existing record conflicts.`;
+      `Dry-run OK${formatLabel}: ${(bundle.applications ?? []).length} applications, ${(bundle.lifecycleEvents ?? []).length} lifecycle events, ${(bundle.outreachMessages ?? []).length} outreach messages, ${(bundle.interviews ?? []).length} interviews, ${(bundle.reminders ?? []).length} reminders. ${totalRecords} total records. ${state.previewConflicts.length} existing record conflicts.`;
     $("[data-import-apply]").disabled = false;
   } catch (err) {
     state.preview = null;
