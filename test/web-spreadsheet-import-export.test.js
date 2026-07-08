@@ -9,16 +9,20 @@ import {
 } from "../src/web/storage/indexedDbRepository.js";
 import {
   COMPACT_CSV_COLUMNS,
+  LIFECYCLE_CSV_COLUMNS,
   csvToBrowserApplicationExport,
+  detectSpreadsheetImportFormat,
   exportCompactCsv,
   exportJsonBackup,
   exportNdjsonBackup,
   importCompactCsv,
+  importSupplementalLifecycleCsv,
   importJsonBackup,
   importNdjsonBackup,
   parseCsv,
   serializeCsv,
   previewCompactCsvImport,
+  previewSupplementalLifecycleCsvImport,
 } from "../src/web/import-export/spreadsheet.js";
 
 const deleteDatabase = () =>
@@ -904,6 +908,165 @@ describe("spreadsheet import/export", () => {
     expect(lifecycleText).not.toMatch(
       /(?:gmail|outlook|yahoo|hotmail|linkedin|greenhouse|lever|ashby|workday)\.com/i,
     );
+  });
+
+  it("detects and imports supplemental lifecycle CSVs idempotently", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    const compactCsv = serializeCsv([
+      {
+        application_id: "app_lifecycle_alpha",
+        company: "Lifecycle Alpha",
+        role_title: "Engineer",
+        applied_at: "2026-01-01",
+        schema_version: "1",
+      },
+      {
+        application_id: "app_lifecycle_beta",
+        company: "Lifecycle Beta",
+        role_title: "Engineer",
+        applied_at: "2026-01-02",
+        schema_version: "1",
+      },
+    ]);
+    await importCompactCsv(compactCsv, repo, { mode: "replace" });
+    const lifecycleCsv = serializeCsv(
+      [
+        {
+          application_id: "app_lifecycle_alpha",
+          company: "Lifecycle Alpha",
+          role_title: "Engineer",
+          event_type: "written_assessment_requested",
+          occurred_at: "2026-01-03T12:00:00.000Z",
+          stage: "Written assessment",
+          channel: "email",
+          actor: "employer",
+          source_artifact: "https://example.test/artifact/assessment-alpha",
+          requires_user_action: "true",
+          action_status: "pending",
+          due_at: "2026-01-05T17:00:00.000Z",
+          no_ai_required: "yes",
+          details: "Complete a short written assessment.\nUse the portal link.",
+        },
+        {
+          application_id: "app_lifecycle_alpha",
+          company: "Lifecycle Alpha",
+          role_title: "Engineer",
+          event_type: "hiring_manager_reply",
+          occurred_at: "2026-01-04T12:00:00.000Z",
+          stage: "Hiring manager follow-up",
+          channel: "email",
+          actor: "hiring_manager",
+          source_artifact: "https://example.test/artifact/reply-alpha",
+          requires_user_action: "false",
+          action_status: "received",
+          details: "Hiring manager replied with next steps.",
+        },
+        {
+          application_id: "app_lifecycle_beta",
+          company: "Lifecycle Beta",
+          role_title: "Engineer",
+          event_type: "recruiter_screen_scheduled",
+          occurred_at: "2026-01-06T12:00:00.000Z",
+          stage: "Recruiter screen",
+          channel: "video",
+          actor: "recruiter",
+          due_at: "2026-01-08T16:30:00.000Z",
+          details: "Recruiter screen scheduled.",
+        },
+      ],
+      LIFECYCLE_CSV_COLUMNS,
+    );
+
+    expect(detectSpreadsheetImportFormat(compactCsv)).toBe("compact_csv");
+    expect(detectSpreadsheetImportFormat(lifecycleCsv)).toBe("lifecycle_csv");
+
+    const preview = await previewSupplementalLifecycleCsvImport(
+      lifecycleCsv,
+      repo,
+    );
+    expect(preview).toMatchObject({
+      kind: "lifecycle_csv",
+      rowCount: 3,
+      errors: [],
+    });
+    expect(preview.bundle.lifecycleEvents).toHaveLength(3);
+    expect(preview.bundle.interviews).toEqual([
+      expect.objectContaining({
+        applicationId: "app_lifecycle_beta",
+        stage: "recruiter_screen",
+        startsAt: "2026-01-08T16:30:00.000Z",
+      }),
+    ]);
+
+    expect(
+      (await importSupplementalLifecycleCsv(lifecycleCsv, repo)).imported,
+    ).toBe(true);
+    expect(
+      (await importSupplementalLifecycleCsv(lifecycleCsv, repo)).imported,
+    ).toBe(true);
+    const bundle = await repo.exportAllData();
+    expect(bundle.lifecycleEvents).toHaveLength(5);
+    expect(
+      bundle.lifecycleEvents.filter(
+        ({ eventType }) => eventType === "written_assessment_requested",
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        noAiRequired: true,
+        requiresUserAction: true,
+        sourceArtifact: "https://example.test/artifact/assessment-alpha",
+        details: "Complete a short written assessment.\nUse the portal link.",
+      }),
+    ]);
+    expect(bundle.interviews).toHaveLength(1);
+    expect(bundle.interviews[0]).toMatchObject({ stage: "recruiter_screen" });
+
+    const restored = importNdjsonBackup(
+      exportNdjsonBackup(importJsonBackup(exportJsonBackup(bundle))),
+    );
+    expect(restored.lifecycleEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventType: "written_assessment_requested",
+          noAiRequired: true,
+        }),
+      ]),
+    );
+    repo.close();
+  });
+
+  it("reports missing lifecycle application ids without creating orphans", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    const lifecycleCsv = serializeCsv(
+      [
+        {
+          application_id: "app_missing_lifecycle",
+          company: "Missing Lifecycle",
+          role_title: "Engineer",
+          event_type: "hiring_manager_reply",
+          occurred_at: "2026-01-04T12:00:00.000Z",
+          details: "Should not import.",
+        },
+      ],
+      LIFECYCLE_CSV_COLUMNS,
+    );
+
+    const preview = await previewSupplementalLifecycleCsvImport(
+      lifecycleCsv,
+      repo,
+    );
+    expect(preview.errors).toEqual([
+      expect.objectContaining({
+        rowNumber: 2,
+        field: "application_id",
+        code: "unknown_application",
+        value: "app_missing_lifecycle",
+      }),
+    ]);
+    const result = await importSupplementalLifecycleCsv(lifecycleCsv, repo);
+    expect(result.imported).toBe(false);
+    expect((await repo.exportAllData()).lifecycleEvents).toHaveLength(0);
+    repo.close();
   });
 
   it("imports the fake compact CSV fixture into IndexedDB and exports stable CSV", async () => {
