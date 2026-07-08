@@ -294,6 +294,9 @@ const parseDate = (
   }
   return date.toISOString();
 };
+const hasTimeComponent = (value) =>
+  /(?:T|\s)\d{1,2}:\d{2}/.test(compact(value));
+
 const parseBoolean = (value) => {
   const text = normalizeKey(value);
   if (!text) return undefined;
@@ -498,11 +501,14 @@ export const lifecycleRowsToBrowserApplicationExport = (
       return;
     }
     const eventType = normalizeLabelKey(row.event_type) || "lifecycle_event";
-    const occurredAt =
-      parseDate(row.occurred_at, "occurred_at", rowNumber, errors) ??
-      parseDate(row.due_at, "due_at", rowNumber, errors) ??
-      exportedAt;
+    const occurredAt = parseDate(
+      row.occurred_at,
+      "occurred_at",
+      rowNumber,
+      errors,
+    );
     const dueAt = parseDate(row.due_at, "due_at", rowNumber, errors);
+    const eventOccurredAt = occurredAt ?? dueAt ?? "1970-01-01T00:00:00.000Z";
     const stageLabel = compact(row.stage) || undefined;
     const status =
       lifecycleStatusForEvent(eventType) ??
@@ -513,7 +519,7 @@ export const lifecycleRowsToBrowserApplicationExport = (
       "event",
       applicationId,
       eventType,
-      occurredAt,
+      eventOccurredAt,
       dueAt ?? "",
       sourceArtifact ?? "",
       details ?? "",
@@ -522,7 +528,7 @@ export const lifecycleRowsToBrowserApplicationExport = (
       id,
       applicationId,
       status,
-      occurredAt,
+      occurredAt: eventOccurredAt,
       source: "csv_import",
       note: details,
       eventType,
@@ -553,7 +559,11 @@ export const lifecycleRowsToBrowserApplicationExport = (
         createdAt: exportedAt,
         updatedAt: exportedAt,
       });
-    if (eventType === "recruiter_screen_scheduled" && dueAt)
+    if (
+      eventType === "recruiter_screen_scheduled" &&
+      dueAt &&
+      hasTimeComponent(row.due_at)
+    )
       interviews.push({
         id: stableId("interview", applicationId, "recruiter_screen", dueAt),
         applicationId,
@@ -1247,7 +1257,11 @@ export const importSupplementalLifecycleCsv = async (csvText, repository) => {
     csvText,
     repository,
   );
-  if (preview.errors.length > 0) return { imported: false, preview };
+  if (
+    preview.errors.length > 0 ||
+    preview.conflicts.some(({ code }) => code === "duplicate_in_file")
+  )
+    return { imported: false, preview };
   const existing = await repository.exportAllData();
   const merged = { ...existing, exportedAt: nowIso() };
   for (const store of ["lifecycleEvents", "interviews", "reminders"]) {

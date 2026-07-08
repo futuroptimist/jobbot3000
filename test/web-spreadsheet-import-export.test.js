@@ -1069,6 +1069,110 @@ describe("spreadsheet import/export", () => {
     repo.close();
   });
 
+  it("blocks duplicate supplemental lifecycle rows before applying", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    await importCompactCsv(
+      serializeCsv([
+        {
+          application_id: "app_lifecycle_duplicate",
+          company: "Lifecycle Duplicate",
+          role_title: "Engineer",
+          applied_at: "2026-01-01",
+          schema_version: "1",
+        },
+      ]),
+      repo,
+      { mode: "replace" },
+    );
+    const row = {
+      application_id: "app_lifecycle_duplicate",
+      company: "Lifecycle Duplicate",
+      role_title: "Engineer",
+      event_type: "hiring_manager_reply",
+      occurred_at: "2026-01-04T12:00:00.000Z",
+      details: "Same row twice.",
+    };
+    const lifecycleCsv = serializeCsv([row, row], LIFECYCLE_CSV_COLUMNS);
+
+    const preview = await previewSupplementalLifecycleCsvImport(
+      lifecycleCsv,
+      repo,
+    );
+    expect(preview.errors).toEqual([]);
+    expect(preview.conflicts).toEqual([
+      expect.objectContaining({ code: "duplicate_in_file" }),
+    ]);
+    const result = await importSupplementalLifecycleCsv(lifecycleCsv, repo);
+    expect(result.imported).toBe(false);
+    expect((await repo.exportAllData()).lifecycleEvents).toHaveLength(1);
+    repo.close();
+  });
+
+  it("keeps lifecycle due date validation and date-only scheduling controlled", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    await importCompactCsv(
+      serializeCsv([
+        {
+          application_id: "app_lifecycle_due_dates",
+          company: "Lifecycle Due Dates",
+          role_title: "Engineer",
+          applied_at: "2026-01-01",
+          schema_version: "1",
+        },
+      ]),
+      repo,
+      { mode: "replace" },
+    );
+
+    const malformedDueCsv = serializeCsv(
+      [
+        {
+          application_id: "app_lifecycle_due_dates",
+          company: "Lifecycle Due Dates",
+          role_title: "Engineer",
+          event_type: "next_tracking_step",
+          due_at: "not-a-date",
+          details: "Bad due date.",
+        },
+      ],
+      LIFECYCLE_CSV_COLUMNS,
+    );
+    const malformedPreview = await previewSupplementalLifecycleCsvImport(
+      malformedDueCsv,
+      repo,
+    );
+    expect(
+      malformedPreview.errors.filter(({ code }) => code === "malformed_date"),
+    ).toHaveLength(1);
+
+    const dateOnlyCsv = serializeCsv(
+      [
+        {
+          application_id: "app_lifecycle_due_dates",
+          company: "Lifecycle Due Dates",
+          role_title: "Engineer",
+          event_type: "recruiter_screen_scheduled",
+          due_at: "2026-01-08",
+          details: "Date-only recruiter screen placeholder.",
+        },
+      ],
+      LIFECYCLE_CSV_COLUMNS,
+    );
+    const dateOnlyPreview = await previewSupplementalLifecycleCsvImport(
+      dateOnlyCsv,
+      repo,
+    );
+    expect(dateOnlyPreview.errors).toEqual([]);
+    expect(dateOnlyPreview.bundle.lifecycleEvents).toEqual([
+      expect.objectContaining({
+        occurredAt: "2026-01-08T00:00:00.000Z",
+        dueAt: "2026-01-08T00:00:00.000Z",
+      }),
+    ]);
+    expect(dateOnlyPreview.bundle.interviews).toEqual([]);
+    repo.close();
+  });
+
   it("imports the fake compact CSV fixture into IndexedDB and exports stable CSV", async () => {
     const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
     const csv = await fixture();

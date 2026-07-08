@@ -669,11 +669,18 @@ async function previewImport() {
       : format === "csv"
         ? ""
         : ` (${format.toUpperCase()})`;
+    const previewCounts = {
+      applications: state.preview.applications?.length ?? 0,
+      lifecycleEvents: state.preview.lifecycleEvents?.length ?? 0,
+      outreachMessages: state.preview.outreachMessages?.length ?? 0,
+      interviews: state.preview.interviews?.length ?? 0,
+      reminders: state.preview.reminders?.length ?? 0,
+    };
     const lifecycleSummary = lifecyclePreview
-      ? `${(bundle.lifecycleEvents ?? []).length} lifecycle events, `
+      ? `${previewCounts.lifecycleEvents} lifecycle events, `
       : "";
     $("[data-import-result]").textContent =
-      `Dry-run OK${formatLabel}: ${(bundle.applications ?? []).length} applications, ${lifecycleSummary}${(bundle.outreachMessages ?? []).length} outreach messages, ${(bundle.interviews ?? []).length} interviews, ${(bundle.reminders ?? []).length} reminders. ${totalRecords} total records. ${state.previewConflicts.length} existing record conflicts.`;
+      `Dry-run OK${formatLabel}: ${previewCounts.applications} applications, ${lifecycleSummary}${previewCounts.outreachMessages} outreach messages, ${previewCounts.interviews} interviews, ${previewCounts.reminders} reminders. ${totalRecords} total records. ${state.previewConflicts.length} existing record conflicts.`;
     $("[data-import-apply]").disabled = false;
   } catch (err) {
     state.preview = null;
