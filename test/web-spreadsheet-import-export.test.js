@@ -411,6 +411,9 @@ describe("spreadsheet import/export", () => {
     expect(
       bundle.applications.filter(({ status }) => status === "recruiter_screen"),
     ).toHaveLength(0);
+    expect(
+      bundle.applications.filter(({ status }) => status === "rejected"),
+    ).toHaveLength(1);
 
     const nonInterviewStageLabels = [
       "Not started",
@@ -430,6 +433,13 @@ describe("spreadsheet import/export", () => {
       (row) => row.outreach_status === "replied",
     );
     expect(repliedOutreachRows).toHaveLength(2);
+    expect(
+      bundle.applications
+        .filter(({ id }) =>
+          repliedOutreachRows.some((row) => row.application_id === id),
+        )
+        .every(({ notes }) => notes?.includes('"outreach_status":"replied"')),
+    ).toBe(true);
 
     const responseApplicationIds = new Set(
       rows
@@ -451,6 +461,406 @@ describe("spreadsheet import/export", () => {
         (repliedOutreachRows.length / bundle.outreachMessages.length) * 100,
       ),
     ).toBe(29);
+
+    const exportedRowsById = new Map(
+      parseCsv(exportCompactCsv(bundle)).map((row) => [
+        row.application_id,
+        row,
+      ]),
+    );
+    for (const originalRow of rows) {
+      expect(exportedRowsById.get(originalRow.application_id)).toMatchObject({
+        status: originalRow.status,
+        interview_stage: originalRow.interview_stage,
+        outcome: originalRow.outcome,
+        compensation_min_usd: originalRow.compensation_min_usd,
+        compensation_max_usd: originalRow.compensation_max_usd,
+        outreach_message_text: originalRow.outreach_message_text,
+        outreach_sent_at: originalRow.outreach_sent_at,
+      });
+    }
+    expect(exportedRowsById.get("app_reg_alpha_001").notes).toBe(
+      "Fit score reviewed.",
+    );
+  });
+
+  it("normalizes compact display labels without erasing spreadsheet metadata", () => {
+    const csv = serializeCsv([
+      {
+        application_id: "app_display_applied",
+        company: "Display Applied",
+        role_title: "Engineer",
+        status: "Applied",
+        applied_at: "2026-01-01",
+        interview_stage: "Not started",
+        outcome: "Written assessment",
+        schema_version: "1",
+      },
+      {
+        application_id: "app_display_rejected",
+        company: "Display Rejected",
+        role_title: "Engineer",
+        status: "Interviewing",
+        applied_at: "2026-01-02",
+        interview_stage: "Application rejected",
+        outcome: "Application rejected",
+        outreach_status: "replied",
+        schema_version: "1",
+      },
+      {
+        application_id: "app_applied_stage_rejected",
+        company: "Applied Stage Rejected",
+        role_title: "Engineer",
+        status: "Applied",
+        applied_at: "2026-01-03",
+        interview_stage: "Application rejected",
+        outcome: "",
+        schema_version: "1",
+      },
+    ]);
+
+    const { bundle, errors } = csvToBrowserApplicationExport(csv, {
+      exportedAt: "2026-03-10T00:00:00.000Z",
+    });
+
+    expect(errors).toEqual([]);
+    expect(bundle.interviews).toHaveLength(0);
+    expect(bundle.applications).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "app_display_applied",
+          status: "applied",
+        }),
+        expect.objectContaining({
+          id: "app_display_rejected",
+          status: "rejected",
+        }),
+        expect.objectContaining({
+          id: "app_applied_stage_rejected",
+          status: "rejected",
+        }),
+      ]),
+    );
+    expect(bundle.lifecycleEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          applicationId: "app_display_rejected",
+          status: "rejected",
+          note: "Application rejected",
+        }),
+        expect.objectContaining({
+          applicationId: "app_applied_stage_rejected",
+          status: "rejected",
+          note: "Application rejected",
+        }),
+      ]),
+    );
+
+    const rows = parseCsv(exportCompactCsv(bundle));
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          application_id: "app_display_applied",
+          status: "Applied",
+          interview_stage: "Not started",
+          outcome: "Written assessment",
+        }),
+        expect.objectContaining({
+          application_id: "app_display_rejected",
+          status: "Interviewing",
+          interview_stage: "Application rejected",
+          outcome: "Application rejected",
+          outreach_status: "replied",
+        }),
+        expect.objectContaining({
+          application_id: "app_applied_stage_rejected",
+          status: "Applied",
+          interview_stage: "Application rejected",
+          outcome: "rejected",
+        }),
+      ]),
+    );
+  });
+
+  it("preserves ambiguous compact status labels without inventing interviews", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    const rows = [
+      {
+        application_id: "app_ambiguous_interviewing",
+        company: "Ambiguous Interviewing",
+        role_title: "Engineer",
+        status: "Interviewing",
+        applied_at: "2026-01-01",
+        interview_stage: "Not started",
+        outcome: "",
+        schema_version: "1",
+      },
+      {
+        application_id: "app_ambiguous_inbound",
+        company: "Ambiguous Inbound",
+        role_title: "Engineer",
+        status: "Responded to inbound",
+        applied_at: "2026-01-02",
+        interview_stage: "Written assessment submitted",
+        outcome: "Hiring manager follow-up",
+        schema_version: "1",
+      },
+      {
+        application_id: "app_explicit_reply",
+        company: "Explicit Reply",
+        role_title: "Engineer",
+        status: "Responded to inbound",
+        applied_at: "2026-01-03",
+        outreach_status: "replied",
+        outreach_message_text: "Thanks for reaching out.",
+        interview_stage: "Hiring manager follow-up",
+        outcome: "",
+        schema_version: "1",
+      },
+      {
+        application_id: "app_canonical_status",
+        company: "Canonical Status",
+        role_title: "Engineer",
+        status: "recruiter_screen",
+        applied_at: "2026-01-04",
+        interview_stage: "Not started",
+        outcome: "",
+        schema_version: "1",
+      },
+    ];
+    const csv = serializeCsv(rows);
+
+    const preview = await importCompactCsv(csv, repo, { mode: "replace" });
+    expect(preview.imported).toBe(true);
+
+    const bundle = await repo.exportAllData();
+    expect(bundle.interviews).toHaveLength(0);
+    expect(bundle.applications).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "app_ambiguous_interviewing",
+          status: "applied",
+        }),
+        expect.objectContaining({
+          id: "app_ambiguous_inbound",
+          status: "applied",
+        }),
+        expect.objectContaining({
+          id: "app_explicit_reply",
+          status: "outreach_sent",
+        }),
+        expect.objectContaining({
+          id: "app_canonical_status",
+          status: "recruiter_screen",
+        }),
+      ]),
+    );
+    expect(
+      bundle.applications.find(({ id }) => id === "app_ambiguous_interviewing")
+        .status,
+    ).not.toBe("recruiter_screen");
+    expect(
+      bundle.outreachMessages.filter(
+        ({ applicationId }) => applicationId === "app_ambiguous_inbound",
+      ),
+    ).toHaveLength(0);
+    expect(
+      bundle.lifecycleEvents.filter(
+        ({ applicationId, status }) =>
+          applicationId === "app_ambiguous_inbound" && status !== "applied",
+      ),
+    ).toHaveLength(0);
+
+    const exportedRowsById = new Map(
+      parseCsv(exportCompactCsv(bundle)).map((row) => [
+        row.application_id,
+        row,
+      ]),
+    );
+    for (const row of rows.filter(
+      ({ application_id: applicationId }) =>
+        applicationId !== "app_explicit_reply",
+    )) {
+      expect(exportedRowsById.get(row.application_id)).toMatchObject({
+        status: row.status,
+        interview_stage: row.interview_stage,
+        outcome: row.outcome,
+      });
+    }
+    expect(exportedRowsById.get("app_explicit_reply")).toMatchObject({
+      status: "Responded to inbound",
+      interview_stage: "Hiring manager follow-up",
+      outcome: "",
+    });
+
+    repo.close();
+  });
+
+  it("uses canonical interview stages to set status with ambiguous display statuses", () => {
+    const csv = serializeCsv([
+      {
+        application_id: "app_interviewing_technical",
+        company: "Interviewing Technical",
+        role_title: "Engineer",
+        status: "Interviewing",
+        applied_at: "2026-01-05",
+        interview_stage: "technical_screen",
+        outcome: "scheduled",
+        schema_version: "1",
+      },
+    ]);
+
+    const { bundle, errors } = csvToBrowserApplicationExport(csv, {
+      exportedAt: "2026-03-10T00:00:00.000Z",
+    });
+
+    expect(errors).toEqual([]);
+    expect(bundle.applications).toEqual([
+      expect.objectContaining({
+        id: "app_interviewing_technical",
+        status: "technical_screen",
+      }),
+    ]);
+    expect(bundle.interviews).toEqual([
+      expect.objectContaining({
+        applicationId: "app_interviewing_technical",
+        stage: "technical_screen",
+        outcome: "scheduled",
+      }),
+    ]);
+
+    const [row] = parseCsv(exportCompactCsv(bundle));
+    expect(row).toMatchObject({
+      status: "Interviewing",
+      interview_stage: "technical_screen",
+      outcome: "scheduled",
+    });
+  });
+
+  it("creates interview records for canonical compact interview stages", () => {
+    const csv = serializeCsv([
+      {
+        application_id: "app_real_interview",
+        company: "Real Interview Co",
+        role_title: "Engineer",
+        status: "technical_screen",
+        applied_at: "2026-01-01",
+        outreach_status: "sent",
+        outreach_target_name: "Taylor Recruiter",
+        outreach_channel: "email",
+        outreach_sent_at: "2026-01-02T12:00:00.000Z",
+        outreach_message_text: "Confirming the screen",
+        interview_stage: "technical_screen",
+        schema_version: "1",
+      },
+    ]);
+
+    const { bundle, errors } = csvToBrowserApplicationExport(csv, {
+      exportedAt: "2026-03-10T00:00:00.000Z",
+    });
+
+    expect(errors).toEqual([]);
+    expect(bundle.interviews).toEqual([
+      expect.objectContaining({
+        applicationId: "app_real_interview",
+        contactIds: ["contact_app_real_interview_taylor_recruiter"],
+        stage: "technical_screen",
+        startsAt: "2026-01-02T12:00:00.000Z",
+        outcome: "scheduled",
+      }),
+    ]);
+  });
+
+  it("exports live lifecycle values once imported spreadsheet rows are edited", () => {
+    const csv = serializeCsv([
+      {
+        application_id: "app_edited",
+        company: "Edited Co",
+        role_title: "Engineer",
+        status: "Applied",
+        applied_at: "2026-01-01",
+        interview_stage: "recruiter_screen",
+        outcome: "",
+        schema_version: "1",
+      },
+    ]);
+    const { bundle, errors } = csvToBrowserApplicationExport(csv, {
+      exportedAt: "2026-03-10T00:00:00.000Z",
+    });
+    expect(errors).toEqual([]);
+
+    bundle.applications[0] = {
+      ...bundle.applications[0],
+      status: "rejected",
+      updatedAt: "2026-03-11T00:00:00.000Z",
+    };
+    bundle.interviews[0] = {
+      ...bundle.interviews[0],
+      stage: "technical_screen",
+      updatedAt: "2026-03-11T00:00:00.000Z",
+    };
+    bundle.lifecycleEvents.push({
+      id: "event_app_edited_rejected_manual",
+      applicationId: "app_edited",
+      status: "rejected",
+      occurredAt: "2026-03-11T00:00:00.000Z",
+      source: "manual",
+      createdAt: "2026-03-11T00:00:00.000Z",
+    });
+
+    const [row] = parseCsv(exportCompactCsv(bundle));
+
+    expect(row).toMatchObject({
+      status: "rejected",
+      interview_stage: "technical_screen",
+      outcome: "rejected",
+    });
+  });
+
+  it("honors legacy compact CSV metadata keys when they still match live state", () => {
+    const [row] = parseCsv(
+      exportCompactCsv({
+        schemaVersion: 1,
+        exportedAt: "2026-03-01T00:00:00.000Z",
+        applications: [
+          {
+            id: "app_legacy_metadata",
+            company: "Legacy Metadata",
+            role: "Engineer",
+            status: "rejected",
+            notes: `Spreadsheet metadata: ${JSON.stringify({
+              status: "Application rejected",
+              interview_stage: "Application rejected",
+              outcome: "Application rejected",
+            })}`,
+            createdAt: "2026-03-01T00:00:00.000Z",
+            updatedAt: "2026-03-01T00:00:00.000Z",
+          },
+        ],
+        contacts: [],
+        outreachMessages: [],
+        lifecycleEvents: [
+          {
+            id: "event_legacy_rejected",
+            applicationId: "app_legacy_metadata",
+            status: "rejected",
+            occurredAt: "2026-03-01T00:00:00.000Z",
+            source: "manual",
+            createdAt: "2026-03-01T00:00:00.000Z",
+          },
+        ],
+        interviews: [],
+        offers: [],
+        artifacts: [],
+        reminders: [],
+      }),
+    );
+
+    expect(row).toMatchObject({
+      status: "Application rejected",
+      interview_stage: "Application rejected",
+      outcome: "Application rejected",
+    });
   });
 
   it("keeps supplemental lifecycle fixtures safe", async () => {
@@ -756,7 +1166,7 @@ describe("spreadsheet import/export", () => {
         outreach_channel: "email",
         outreach_sent_at: "2026-01-01T15:30:00.000Z",
         outreach_message_text: "Original hello",
-        interview_stage: "recruiter_screen",
+        interview_stage: "Not started",
         schema_version: "1",
       },
     ]);
@@ -777,7 +1187,7 @@ describe("spreadsheet import/export", () => {
         outreach_channel: "email",
         outreach_sent_at: "2026-01-02T16:45:00.000Z",
         outreach_message_text: "Updated hello",
-        interview_stage: "technical_screen",
+        interview_stage: "Hiring manager follow-up",
         outcome: "offer",
         compensation_min_usd: "150000",
         compensation_max_usd: "175000",
@@ -811,9 +1221,7 @@ describe("spreadsheet import/export", () => {
     expect(exported.outreachMessages[0].contactId).not.toContain(
       "app_regenerated",
     );
-    expect(exported.interviews[0].contactIds).toEqual(
-      expect.not.arrayContaining([expect.stringContaining("app_regenerated")]),
-    );
+    expect(exported.interviews).toHaveLength(0);
     const childCounts = Object.fromEntries(
       childStores.map((store) => [store, exported[store].length]),
     );
