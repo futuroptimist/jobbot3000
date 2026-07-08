@@ -103,7 +103,7 @@ export const selectDashboardMetrics = (bundle = {}) => {
   const offers = bundle.offers ?? [];
   const metadataByApplicationId = applicationMetadata(bundle);
   const responseApplicationIds = new Set();
-  let compactOutreachReplies = 0;
+  const compactOutreachReplyApplicationIds = new Set();
   const compactOutreachApplicationIds = new Set();
   const outboundOutreachApplicationIds = new Set();
   const recruiterScreenKeys = new Set();
@@ -114,7 +114,7 @@ export const selectDashboardMetrics = (bundle = {}) => {
     const outreachStatus = compactOutreachStatus(metadata);
     if (outreachStatus) compactOutreachApplicationIds.add(application.id);
     if (OUTREACH_REPLY_STATUSES.has(outreachStatus)) {
-      compactOutreachReplies += 1;
+      compactOutreachReplyApplicationIds.add(application.id);
       addResponse(responseApplicationIds, application.id);
     }
     if (TERMINAL_EMPLOYER_STATUSES.has(application.status))
@@ -126,7 +126,8 @@ export const selectDashboardMetrics = (bundle = {}) => {
   }
 
   let outreachSent = 0;
-  let outreachReplies = compactOutreachReplies;
+  let outreachReplies = 0;
+  const representedReplyApplicationIds = new Set();
   for (const message of outreachMessages) {
     const direction = normalize(message.direction);
     if (direction === "outbound") {
@@ -139,8 +140,15 @@ export const selectDashboardMetrics = (bundle = {}) => {
       OUTREACH_REPLY_STATUSES.has(normalize(message.status))
     ) {
       outreachReplies += 1;
+      if (message.applicationId)
+        representedReplyApplicationIds.add(message.applicationId);
       addResponse(responseApplicationIds, message.applicationId);
     }
+  }
+
+  for (const applicationId of compactOutreachReplyApplicationIds) {
+    if (!representedReplyApplicationIds.has(applicationId))
+      outreachReplies += 1;
   }
 
   for (const applicationId of compactOutreachApplicationIds) {

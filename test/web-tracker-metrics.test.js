@@ -243,6 +243,49 @@ describe("tracker dashboard metrics", () => {
     expect(metrics.applicationsWithResponse).toBe(1);
   });
 
+  it("dedupes compact reply metadata represented by inbound outreach", () => {
+    const timestamp = "2026-01-01T00:00:00.000Z";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: "app_reply_overlap",
+          company: "Overlap",
+          role: "Engineer",
+          status: "applied",
+          notes: [
+            "Spreadsheet metadata:",
+            '{"outreach_status":"replied","outreach_message_text":"Checking in"}',
+          ].join(" "),
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      outreachMessages: [
+        {
+          id: "message_outbound",
+          applicationId: "app_reply_overlap",
+          direction: "outbound",
+          channel: "email",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+        {
+          id: "message_inbound",
+          applicationId: "app_reply_overlap",
+          direction: "inbound",
+          channel: "email",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+    });
+
+    expect(metrics.outreachSent).toBe(1);
+    expect(metrics.outreachReplies).toBe(1);
+    expect(metrics.outreachReplyRate).toBe(100);
+    expect(metrics.applicationsWithResponse).toBe(1);
+  });
+
   it("dedupes compact and lifecycle assessment signals by application", () => {
     const timestamp = "2026-01-01T00:00:00.000Z";
     const metrics = selectDashboardMetrics({
