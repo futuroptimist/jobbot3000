@@ -11,6 +11,7 @@ import {
   importNdjsonBackup,
   previewSupplementalLifecycleCsvImport,
 } from "../import-export/spreadsheet.js";
+import { formatMetricPercent, selectDashboardMetrics } from "./metrics.js";
 
 /* canonical CSV/backup helpers are shared with spreadsheet import/export tests. */
 const ARRAY_STORES = [
@@ -252,28 +253,39 @@ function renderNav() {
 }
 function renderDashboard() {
   const b = state.bundle;
-  const count = (s) => b.applications.filter((a) => a.status === s).length;
-  const outreach = b.outreachMessages.length,
-    interviews = b.interviews.length,
-    offers = b.offers.length,
-    total = b.applications.length;
+  const dashboardMetrics = selectDashboardMetrics(b);
   const metrics = [
-    ["Total applications", total],
-    ["Outreach sent", outreach],
-    ["Recruiter screens", count("recruiter_screen")],
-    ["Interviews", interviews],
-    ["Offers", offers],
+    ["Total applications", dashboardMetrics.totalApplications],
     [
-      "Response rate",
-      total
-        ? `${Math.round(((outreach + interviews + offers) / total) * 100)}%`
-        : "0%",
+      "Outreach sent",
+      dashboardMetrics.outreachSent,
+      "outbound outreach messages",
+    ],
+    ["Outreach replies", dashboardMetrics.outreachReplies],
+    ["Application responses", dashboardMetrics.applicationsWithResponse],
+    ["Recruiter screens", dashboardMetrics.recruiterScreens],
+    ["Interviews", dashboardMetrics.interviews, "excludes recruiter screens"],
+    [
+      "Assessments",
+      dashboardMetrics.assessments,
+      "written assessments/take-homes",
+    ],
+    ["Offers", dashboardMetrics.offers],
+    [
+      "Application response rate",
+      formatMetricPercent(dashboardMetrics.applicationResponseRate),
+      `${dashboardMetrics.applicationsWithResponse} of ${dashboardMetrics.totalApplications} applications`,
+    ],
+    [
+      "Outreach reply rate",
+      formatMetricPercent(dashboardMetrics.outreachReplyRate),
+      `${dashboardMetrics.outreachReplies} of ${dashboardMetrics.outreachSent} outreach messages`,
     ],
   ];
   $("[data-metrics]").innerHTML = metrics
     .map(
-      ([k, v]) =>
-        `<div class="metric"><span>${k}</span><strong>${v}</strong></div>`,
+      ([k, v, sublabel]) =>
+        `<div class="metric"><span>${k}</span><strong>${v}</strong>${sublabel ? `<small>${esc(sublabel)}</small>` : ""}</div>`,
     )
     .join("");
   const weeks = {};

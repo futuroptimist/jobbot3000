@@ -83,10 +83,6 @@ test.describe("browser application tracker", () => {
   test("imports compact CSV regression fixture with bounded dashboard metrics", async ({
     page,
   }) => {
-    test.fail(
-      true,
-      "Prompt 01 lands this red regression net; later prompts fix dashboard/import.",
-    );
     const csv = await regressionCsvFixture();
 
     await page.getByRole("button", { name: "Import/Export" }).click();
@@ -109,8 +105,15 @@ test.describe("browser application tracker", () => {
     await expect(metrics).toContainText("Interviews0");
     await expect(metrics).toContainText("Offers0");
     await expect(metrics).toContainText("Application responses4");
-    await expect(metrics).toContainText("Application response rate27%");
-    await expect(metrics).toContainText("Outreach reply rate29%");
+    await expect(metrics).toContainText("Assessments1");
+    await expect(metrics).toContainText(
+      "Application response rate27%4 of 15 applications",
+    );
+    await expect(metrics).toContainText(
+      "Outreach reply rate29%2 of 7 outreach messages",
+    );
+    await expect(metrics).not.toContainText("NaN%");
+    await expect(metrics).not.toContainText("Infinity%");
   });
 
   test("imports CSV, shows list, edits detail, and renders follow-ups", async ({
