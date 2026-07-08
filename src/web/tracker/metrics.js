@@ -24,6 +24,7 @@ const RECRUITER_SCREEN_EVENT_TYPES = new Set([
   "recruiter_screen_scheduled",
   "recruiter_screen_completed",
 ]);
+const OFFER_EVENT_TYPES = new Set(["offer", "offer_received"]);
 const OUTREACH_REPLY_STATUSES = new Set(["replied", "reply", "responded"]);
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const normalize = (value) =>
@@ -108,6 +109,7 @@ export const selectDashboardMetrics = (bundle = {}) => {
   const outboundOutreachApplicationIds = new Set();
   const recruiterScreenKeys = new Set();
   const assessmentApplicationIds = new Set();
+  const offerApplicationIds = new Set();
 
   for (const application of applications) {
     const metadata = metadataByApplicationId.get(application.id) ?? {};
@@ -173,6 +175,8 @@ export const selectDashboardMetrics = (bundle = {}) => {
       status === "recruiter_screen"
     )
       recruiterScreenKeys.add(recruiterScreenKey(event));
+    if (OFFER_EVENT_TYPES.has(eventType))
+      offerApplicationIds.add(event.applicationId);
   }
 
   for (const interview of interviews) {
@@ -197,11 +201,16 @@ export const selectDashboardMetrics = (bundle = {}) => {
     recruiterScreens: recruiterScreenKeys.size,
     interviews: nonRecruiterInterviews.length,
     assessments: assessmentApplicationIds.size,
-    offers: new Set([
-      ...offers.map((offer) => offer.applicationId ?? offer.id).filter(Boolean),
-      ...applications
-        .filter(({ status }) => ["offer", "accepted"].includes(status))
-        .map(({ id }) => id),
-    ]).size,
+    offers: new Set(
+      [
+        ...offers
+          .map((offer) => offer.applicationId ?? offer.id)
+          .filter(Boolean),
+        ...applications
+          .filter(({ status }) => ["offer", "accepted"].includes(status))
+          .map(({ id }) => id),
+        ...offerApplicationIds,
+      ].filter(Boolean),
+    ).size,
   };
 };

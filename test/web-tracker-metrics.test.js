@@ -216,7 +216,7 @@ describe("tracker dashboard metrics", () => {
       ],
     });
 
-    expect(metrics.offers).toBe(2);
+    expect(metrics.offers).toBe(3);
     expect(metrics.applicationsWithResponse).toBe(3);
   });
 
