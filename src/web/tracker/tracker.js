@@ -3,11 +3,13 @@
 import {
   COMPACT_CSV_COLUMNS,
   csvToBrowserApplicationExport,
+  detectSpreadsheetImportFormat,
   exportCompactCsv,
   exportJsonBackup,
   exportNdjsonBackup,
   importJsonBackup,
   importNdjsonBackup,
+  previewLifecycleCsvImport,
 } from "../import-export/spreadsheet.js";
 
 /* canonical CSV/backup helpers are shared with spreadsheet import/export tests. */
@@ -573,7 +575,30 @@ async function newApplication() {
   };
   openUnsavedDetail(app);
 }
-function previewBundleFromCsv(text) {
+async function previewBundleFromCsv(text) {
+  const format = detectSpreadsheetImportFormat(text);
+  if (format === "lifecycle_csv") {
+    const preview = await previewLifecycleCsvImport(text, {
+      exportAllData: () => repo.exportAll(),
+    });
+    const problems = [...preview.errors, ...preview.warnings];
+    if (preview.errors.length) {
+      throw new Error(
+        problems
+          .map((error) =>
+            error.rowNumber
+              ? `Row ${error.rowNumber} ${error.field}: ${error.message ?? error.code}`
+              : `${error.field}: ${error.message ?? error.code}`,
+          )
+          .join("; "),
+      );
+    }
+    return {
+      bundle: preview.bundle,
+      importKind: "supplemental lifecycle CSV",
+      warnings: preview.warnings,
+    };
+  }
   const { bundle, errors } = csvToBrowserApplicationExport(text);
   if (errors.length) {
     throw new Error(
@@ -586,7 +611,7 @@ function previewBundleFromCsv(text) {
         .join("; "),
     );
   }
-  return bundle;
+  return { bundle, importKind: "compact application CSV", warnings: [] };
 }
 function bundleForIndexedDb(bundle) {
   return {
@@ -623,21 +648,26 @@ async function previewImport() {
   try {
     const text = await file.text();
     const format = importFormatForFile(file);
-    const bundle =
+    const parsed =
       format === "json"
         ? importJsonBackup(text)
         : format === "ndjson"
           ? importNdjsonBackup(text)
-          : previewBundleFromCsv(text);
+          : await previewBundleFromCsv(text);
+    const bundle = parsed.bundle ?? parsed;
+    const importKind = parsed.importKind ?? format.toUpperCase();
+    const warnings = parsed.warnings ?? [];
     state.preview = bundleForIndexedDb(bundle);
     state.previewConflicts = await detectImportConflicts(state.preview);
     const totalRecords = Object.values(state.preview).reduce(
       (count, rows) => count + rows.length,
       0,
     );
-    const formatLabel = format === "csv" ? "" : ` (${format.toUpperCase()})`;
+    const formatLabel =
+      format === "csv" ? ` (${importKind})` : ` (${format.toUpperCase()})`;
+    const warningLabel = warnings.length ? ` ${warnings.length} warnings.` : "";
     $("[data-import-result]").textContent =
-      `Dry-run OK${formatLabel}: ${(bundle.applications ?? []).length} applications, ${(bundle.outreachMessages ?? []).length} outreach messages, ${(bundle.interviews ?? []).length} interviews. ${totalRecords} total records. ${state.previewConflicts.length} existing record conflicts.`;
+      `Dry-run OK${formatLabel}: ${(bundle.applications ?? []).length} applications, ${(bundle.lifecycleEvents ?? []).length} lifecycle events, ${(bundle.outreachMessages ?? []).length} outreach messages, ${(bundle.interviews ?? []).length} interviews, ${(bundle.reminders ?? []).length} reminders. ${totalRecords} total records. ${state.previewConflicts.length} existing record conflicts.${warningLabel}`;
     $("[data-import-apply]").disabled = false;
   } catch (err) {
     state.preview = null;
