@@ -34,6 +34,22 @@ export const COMPACT_CSV_COLUMNS = [
   "notes",
   "schema_version",
 ];
+export const LIFECYCLE_CSV_COLUMNS = [
+  "application_id",
+  "company",
+  "role_title",
+  "event_type",
+  "occurred_at",
+  "stage",
+  "channel",
+  "actor",
+  "source_artifact",
+  "requires_user_action",
+  "action_status",
+  "due_at",
+  "no_ai_required",
+  "details",
+];
 
 const KNOWN_STATUSES = new Set([
   "applied",
@@ -226,6 +242,27 @@ export const parseCsv = (text) => {
       ),
     );
 };
+export const csvHeaders = (text) => {
+  const input = String(text ?? "").replace(/^\uFEFF/, "");
+  const firstLine = input.split(/\r?\n/, 1)[0] ?? "";
+  return parseCsv(`${firstLine}\n`).length
+    ? []
+    : firstLine.split(",").map(normalizeKey);
+};
+export const detectCsvImportFormat = (text) => {
+  const headers = csvHeaders(text);
+  if (
+    headers.length === LIFECYCLE_CSV_COLUMNS.length &&
+    headers.every((header, index) => header === LIFECYCLE_CSV_COLUMNS[index])
+  )
+    return "lifecycle_csv";
+  if (
+    headers.length === COMPACT_CSV_COLUMNS.length &&
+    headers.every((header, index) => header === COMPACT_CSV_COLUMNS[index])
+  )
+    return "compact_csv";
+  return "csv";
+};
 
 const serializeField = (value) => {
   const text = String(value ?? "");
@@ -276,6 +313,19 @@ const parseNumber = (value, field, rowNumber, errors) => {
     return undefined;
   }
   return number;
+};
+const parseBoolean = (value, field, rowNumber, errors) => {
+  const text = normalizeKey(value);
+  if (!text) return undefined;
+  if (["true", "yes", "y", "1"].includes(text)) return true;
+  if (["false", "no", "n", "0"].includes(text)) return false;
+  errors.push({
+    rowNumber,
+    field,
+    code: "malformed_boolean",
+    message: `${field} is not a valid boolean.`,
+  });
+  return undefined;
 };
 const WEB_URL_PROTOCOLS = new Set(["http:", "https:"]);
 
@@ -690,6 +740,159 @@ export const rowsToBrowserApplicationExport = (
 export const csvToBrowserApplicationExport = (csvText, options) =>
   rowsToBrowserApplicationExport(parseCsv(csvText), options);
 
+const LIFECYCLE_STATUS_BY_EVENT_TYPE = new Map([
+  ["application_submitted", "applied"],
+  ["written_assessment_requested", "applied"],
+  ["written_assessment_submitted", "applied"],
+  ["hiring_manager_reply", "outreach_sent"],
+  ["next_tracking_step", "applied"],
+  ["recruiter_screen_scheduled", "recruiter_screen"],
+]);
+const lifecycleEventId = (row, applicationId) =>
+  stableId(
+    "event",
+    applicationId,
+    row.event_type,
+    row.occurred_at,
+    row.stage,
+    row.due_at,
+  );
+const lifecycleInterviewId = (eventId) => stableId("interview", eventId);
+const lifecycleReminderId = (eventId) => stableId("reminder", eventId);
+const lifecycleArtifactId = (eventId) => stableId("artifact", eventId);
+export const lifecycleRowsToBrowserApplicationExport = (
+  rows,
+  existing,
+  { exportedAt = nowIso() } = {},
+) => {
+  const errors = [];
+  const existingApplications = new Map(
+    (existing?.applications ?? []).map((application) => [
+      application.id,
+      application,
+    ]),
+  );
+  const lifecycleEvents = [],
+    interviews = [],
+    artifacts = [],
+    reminders = [];
+  rows.forEach((sourceRow, index) => {
+    const rowNumber = index + 2;
+    const row = Object.fromEntries(
+      LIFECYCLE_CSV_COLUMNS.map((key) => [key, compact(sourceRow[key])]),
+    );
+    const applicationId = row.application_id;
+    if (!applicationId || !existingApplications.has(applicationId)) {
+      errors.push({
+        rowNumber,
+        field: "application_id",
+        code: "missing_application",
+        value: applicationId,
+        message:
+          `application_id ${applicationId || "(blank)"} does not match ` +
+          "an existing application.",
+      });
+      return;
+    }
+    const occurredAt = parseDate(
+      row.occurred_at,
+      "occurred_at",
+      rowNumber,
+      errors,
+    );
+    const dueAt = parseDate(row.due_at, "due_at", rowNumber, errors);
+    const requiresUserAction = parseBoolean(
+      row.requires_user_action,
+      "requires_user_action",
+      rowNumber,
+      errors,
+    );
+    const noAiRequired = parseBoolean(
+      row.no_ai_required,
+      "no_ai_required",
+      rowNumber,
+      errors,
+    );
+    const eventType = normalizeLabelKey(row.event_type);
+    const eventId = lifecycleEventId(row, applicationId);
+    lifecycleEvents.push({
+      id: eventId,
+      applicationId,
+      status: LIFECYCLE_STATUS_BY_EVENT_TYPE.get(eventType) ?? "applied",
+      occurredAt: occurredAt ?? exportedAt,
+      source: "csv_import",
+      note: row.details || row.stage || undefined,
+      eventType: eventType || undefined,
+      stageLabel: row.stage || undefined,
+      channel: row.channel || undefined,
+      actor: row.actor || undefined,
+      sourceArtifact: row.source_artifact || undefined,
+      requiresUserAction,
+      actionStatus: row.action_status || undefined,
+      dueAt,
+      noAiRequired,
+      details: row.details || undefined,
+      createdAt: exportedAt,
+    });
+    if (row.source_artifact)
+      artifacts.push({
+        id: lifecycleArtifactId(eventId),
+        applicationId,
+        kind: "link",
+        name: row.source_artifact,
+        url: validUrl(
+          row.source_artifact,
+          "source_artifact",
+          rowNumber,
+          errors,
+        ),
+        private: true,
+        createdAt: occurredAt ?? exportedAt,
+        updatedAt: exportedAt,
+      });
+    if (eventType === "next_tracking_step" && dueAt)
+      reminders.push({
+        id: lifecycleReminderId(eventId),
+        applicationId,
+        dueAt,
+        summary: row.details || row.stage || "Next tracking step",
+        createdAt: exportedAt,
+        updatedAt: exportedAt,
+      });
+    if (eventType === "recruiter_screen_scheduled" && dueAt)
+      interviews.push({
+        id: lifecycleInterviewId(eventId),
+        applicationId,
+        contactIds: [],
+        stage: "recruiter_screen",
+        startsAt: dueAt,
+        outcome: "scheduled",
+        preparationNotes: row.details || undefined,
+        createdAt: exportedAt,
+        updatedAt: exportedAt,
+      });
+  });
+  const bundle = {
+    schemaVersion: 1,
+    exportedAt,
+    applications: [],
+    contacts: [],
+    outreachMessages: [],
+    lifecycleEvents,
+    interviews,
+    offers: [],
+    artifacts,
+    reminders,
+  };
+  return { bundle, errors };
+};
+export const lifecycleCsvToBrowserApplicationExport = (
+  csvText,
+  existing,
+  options,
+) =>
+  lifecycleRowsToBrowserApplicationExport(parseCsv(csvText), existing, options);
+
 const dateOnly = (value) => (value ? String(value).slice(0, 10) : "");
 const dateTime = (value) => (value ? String(value) : "");
 const firstBy = (records, predicate) => records.find(predicate) ?? {};
@@ -1008,6 +1211,88 @@ export const importCompactCsv = async (
             ...incoming,
           ]
         : [...existing[store], ...incoming];
+  }
+  return {
+    imported: true,
+    preview,
+    result: await repository.importAllData(merged, { allowOverwrite: true }),
+  };
+};
+
+export const previewLifecycleCsvImport = async (csvText, repository) => {
+  const rows = parseCsv(csvText);
+  const existing = repository
+    ? await repository.exportAllData()
+    : { applications: [] };
+  const { bundle, errors } = lifecycleRowsToBrowserApplicationExport(
+    rows,
+    existing,
+  );
+  const existingKeys = new Set(
+    ARRAY_STORES.flatMap((store) =>
+      (existing[store] ?? []).map(({ id }) => `${store}:${id}`),
+    ),
+  );
+  const incomingKeys = new Set();
+  const conflicts = [];
+  for (const store of ARRAY_STORES) {
+    (bundle[store] ?? []).forEach((record) => {
+      const key = `${store}:${record.id}`;
+      if (incomingKeys.has(key))
+        conflicts.push({
+          rowNumber: null,
+          field: "id",
+          code: "duplicate_in_file",
+          value: record.id,
+          store,
+        });
+      if (existingKeys.has(key))
+        conflicts.push({
+          rowNumber: null,
+          field: "id",
+          code: "duplicate_existing",
+          value: record.id,
+          store,
+        });
+      incomingKeys.add(key);
+    });
+  }
+  return {
+    format: "lifecycle_csv",
+    rowCount: rows.length,
+    validRowCount: Math.max(
+      0,
+      rows.length -
+        new Set(
+          errors
+            .map((error) => error.rowNumber)
+            .filter((rowNumber) => Number.isInteger(rowNumber)),
+        ).size,
+    ),
+    errors,
+    conflicts,
+    bundle,
+  };
+};
+
+export const importLifecycleCsv = async (csvText, repository) => {
+  const preview = await previewLifecycleCsvImport(csvText, repository);
+  if (preview.errors.length > 0) return { imported: false, preview };
+  const existing = await repository.exportAllData();
+  const merged = { ...existing, exportedAt: nowIso() };
+  for (const store of [
+    "lifecycleEvents",
+    "interviews",
+    "artifacts",
+    "reminders",
+  ]) {
+    const incoming = preview.bundle[store] ?? [];
+    merged[store] = [
+      ...(existing[store] ?? []).filter(
+        (record) => !incoming.some(({ id }) => id === record.id),
+      ),
+      ...incoming,
+    ];
   }
   return {
     imported: true,

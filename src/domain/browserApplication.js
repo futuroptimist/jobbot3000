@@ -59,6 +59,16 @@ export const browserApplicationLifecycleEventSchema = z.object({
     "sqlite_migration",
   ]),
   note: optionalTrimmedStringSchema,
+  eventType: optionalTrimmedStringSchema,
+  stageLabel: optionalTrimmedStringSchema,
+  channel: optionalTrimmedStringSchema,
+  actor: optionalTrimmedStringSchema,
+  sourceArtifact: optionalTrimmedStringSchema,
+  requiresUserAction: z.boolean().optional(),
+  actionStatus: optionalTrimmedStringSchema,
+  dueAt: isoDateTimeSchema.optional(),
+  noAiRequired: z.boolean().optional(),
+  details: optionalTrimmedStringSchema,
   createdAt: isoDateTimeSchema,
 });
 

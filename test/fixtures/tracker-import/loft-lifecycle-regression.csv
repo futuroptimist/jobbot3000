@@ -1,2 +1,3 @@
-application_id,event_type,event_status,occurred_at,source,contact_name,artifact_url,notes,schema_version
-app_reg_delta_004,assessment,written_assessment_submitted,2026-02-08T20:00:00.000Z,loft,,https://example.test/artifact/delta/assessment.pdf,Fake Loft-style supplemental lifecycle row.,1
+application_id,company,role_title,event_type,occurred_at,stage,channel,actor,source_artifact,requires_user_action,action_status,due_at,no_ai_required,details
+app_reg_beta_002,Company Beta,Backend Systems Engineer,hiring_manager_reply,2026-02-05T12:00:00.000Z,Hiring manager follow-up,email,Hiring Manager,https://example.test/artifact/beta/reply.eml,false,replied,,,Fake hiring-manager reply metadata.
+app_reg_zeta_006,Company Zeta,Security Engineer,hiring_manager_reply,2026-02-12T12:00:00.000Z,Hiring manager follow-up,email,Hiring Manager,https://example.test/artifact/zeta/reply.eml,false,replied,,,Fake reply metadata.

@@ -9,16 +9,21 @@ import {
 } from "../src/web/storage/indexedDbRepository.js";
 import {
   COMPACT_CSV_COLUMNS,
+  LIFECYCLE_CSV_COLUMNS,
   csvToBrowserApplicationExport,
+  detectCsvImportFormat,
   exportCompactCsv,
   exportJsonBackup,
   exportNdjsonBackup,
   importCompactCsv,
+  importLifecycleCsv,
   importJsonBackup,
   importNdjsonBackup,
+  lifecycleCsvToBrowserApplicationExport,
   parseCsv,
   serializeCsv,
   previewCompactCsvImport,
+  previewLifecycleCsvImport,
 } from "../src/web/import-export/spreadsheet.js";
 
 const deleteDatabase = () =>
@@ -893,7 +898,7 @@ describe("spreadsheet import/export", () => {
     ).toBe(true);
     expect(
       lifecycleRows.every((row) =>
-        row.artifact_url.startsWith("https://example.test/artifact/"),
+        row.source_artifact.startsWith("https://example.test/artifact/"),
       ),
     ).toBe(true);
 
@@ -904,6 +909,210 @@ describe("spreadsheet import/export", () => {
     expect(lifecycleText).not.toMatch(
       /(?:gmail|outlook|yahoo|hotmail|linkedin|greenhouse|lever|ashby|workday)\.com/i,
     );
+  });
+
+  it("detects compact and supplemental lifecycle CSV formats", async () => {
+    expect(
+      detectCsvImportFormat(
+        await readFile(
+          "test/fixtures/tracker-import/compact-main-regression.csv",
+          "utf8",
+        ),
+      ),
+    ).toBe("compact_csv");
+    expect(
+      detectCsvImportFormat(
+        await readFile(
+          "test/fixtures/tracker-import/canonical-lifecycle-regression.csv",
+          "utf8",
+        ),
+      ),
+    ).toBe("lifecycle_csv");
+    expect(LIFECYCLE_CSV_COLUMNS.join(",")).toBe(
+      [
+        "application_id",
+        "company",
+        "role_title",
+        "event_type",
+        "occurred_at",
+        "stage",
+        "channel",
+        "actor",
+        "source_artifact",
+        "requires_user_action",
+        "action_status",
+        "due_at",
+        "no_ai_required",
+        "details",
+      ].join(","),
+    );
+  });
+
+  it("parses lifecycle booleans, dates, multiline details, blanks, and unknown types", async () => {
+    const mainCsv = await readFile(
+      "test/fixtures/tracker-import/compact-main-regression.csv",
+      "utf8",
+    );
+    const { bundle: existing } = csvToBrowserApplicationExport(mainCsv, {
+      exportedAt: "2026-03-10T00:00:00.000Z",
+    });
+    const csv = serializeCsv(
+      [
+        {
+          application_id: "app_reg_alpha_001",
+          event_type: "custom_vendor_signal",
+          occurred_at: "2026-02-03",
+          stage: "Custom stage",
+          channel: "portal",
+          actor: "",
+          source_artifact: "https://example.test/artifact/alpha/custom.html",
+          requires_user_action: "yes",
+          action_status: "",
+          due_at: "",
+          no_ai_required: "no",
+          details: "Line one\nLine two",
+        },
+      ],
+      LIFECYCLE_CSV_COLUMNS,
+    );
+
+    const { bundle, errors } = lifecycleCsvToBrowserApplicationExport(
+      csv,
+      existing,
+      { exportedAt: "2026-03-11T00:00:00.000Z" },
+    );
+
+    expect(errors).toEqual([]);
+    expect(bundle.lifecycleEvents).toEqual([
+      expect.objectContaining({
+        applicationId: "app_reg_alpha_001",
+        status: "applied",
+        eventType: "custom_vendor_signal",
+        occurredAt: "2026-02-03T00:00:00.000Z",
+        stageLabel: "Custom stage",
+        channel: "portal",
+        requiresUserAction: true,
+        noAiRequired: false,
+        details: "Line one\nLine two",
+      }),
+    ]);
+  });
+
+  it("imports supplemental lifecycle fixtures without phantom interviews", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    const mainCsv = await readFile(
+      "test/fixtures/tracker-import/compact-main-regression.csv",
+      "utf8",
+    );
+    await importCompactCsv(mainCsv, repo, { mode: "replace" });
+
+    const canonicalCsv = await readFile(
+      "test/fixtures/tracker-import/canonical-lifecycle-regression.csv",
+      "utf8",
+    );
+    const loftCsv = await readFile(
+      "test/fixtures/tracker-import/loft-lifecycle-regression.csv",
+      "utf8",
+    );
+    const reductoCsv = await readFile(
+      "test/fixtures/tracker-import/reducto-lifecycle-regression.csv",
+      "utf8",
+    );
+
+    await importLifecycleCsv(canonicalCsv, repo);
+    await importLifecycleCsv(loftCsv, repo);
+    let bundle = await repo.exportAllData();
+    expect(bundle.applications).toHaveLength(15);
+    expect(bundle.interviews).toHaveLength(0);
+    expect(bundle.lifecycleEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventType: "written_assessment_requested",
+          noAiRequired: true,
+        }),
+        expect.objectContaining({ eventType: "written_assessment_submitted" }),
+        expect.objectContaining({ eventType: "hiring_manager_reply" }),
+      ]),
+    );
+
+    await importLifecycleCsv(reductoCsv, repo);
+    bundle = await repo.exportAllData();
+    expect(bundle.interviews).toEqual([
+      expect.objectContaining({
+        applicationId: "app_reg_epsilon_005",
+        stage: "recruiter_screen",
+        startsAt: "2026-02-12T17:30:00.000Z",
+      }),
+    ]);
+
+    await importLifecycleCsv(reductoCsv, repo);
+    const secondBundle = await repo.exportAllData();
+    expect(secondBundle.interviews).toHaveLength(1);
+    expect(
+      secondBundle.lifecycleEvents.filter(
+        ({ eventType }) => eventType === "recruiter_screen_scheduled",
+      ),
+    ).toHaveLength(1);
+
+    const roundTrip = importNdjsonBackup(exportNdjsonBackup(secondBundle));
+    expect(roundTrip.lifecycleEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventType: "written_assessment_requested",
+          noAiRequired: true,
+        }),
+      ]),
+    );
+    expect(
+      importJsonBackup(exportJsonBackup(secondBundle)).lifecycleEvents,
+    ).toEqual(roundTrip.lifecycleEvents);
+    repo.close();
+  });
+
+  it("reports missing lifecycle application IDs without orphan records", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    const mainCsv = await readFile(
+      "test/fixtures/tracker-import/compact-main-regression.csv",
+      "utf8",
+    );
+    await importCompactCsv(mainCsv, repo, { mode: "replace" });
+    const csv = serializeCsv(
+      [
+        {
+          application_id: "app_missing_999",
+          event_type: "hiring_manager_reply",
+          occurred_at: "2026-02-03T00:00:00.000Z",
+          details: "Should not import.",
+        },
+      ],
+      LIFECYCLE_CSV_COLUMNS,
+    );
+
+    const preview = await previewLifecycleCsvImport(csv, repo);
+    expect(preview.errors).toEqual([
+      expect.objectContaining({
+        rowNumber: 2,
+        field: "application_id",
+        code: "missing_application",
+        value: "app_missing_999",
+      }),
+    ]);
+    expect(preview.bundle.lifecycleEvents).toHaveLength(0);
+
+    const result = await importLifecycleCsv(csv, repo);
+    expect(result.imported).toBe(false);
+    const bundle = await repo.exportAllData();
+    expect(
+      bundle.lifecycleEvents.some(
+        ({ applicationId }) => applicationId === "app_missing_999",
+      ),
+    ).toBe(false);
+    expect(
+      bundle.interviews.some(
+        ({ applicationId }) => applicationId === "app_missing_999",
+      ),
+    ).toBe(false);
+    repo.close();
   });
 
   it("imports the fake compact CSV fixture into IndexedDB and exports stable CSV", async () => {

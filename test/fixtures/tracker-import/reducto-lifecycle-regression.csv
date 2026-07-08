@@ -1,2 +1,2 @@
-application_id,event_type,event_status,occurred_at,source,contact_name,artifact_url,notes,schema_version
-app_reg_epsilon_005,scheduler,recruiter_screen_pending,2026-02-10T16:00:00.000Z,reducto,Riley Epsilon,https://example.test/artifact/epsilon/scheduler.html,Fake Reducto-style supplemental lifecycle row.,1
+application_id,company,role_title,event_type,occurred_at,stage,channel,actor,source_artifact,requires_user_action,action_status,due_at,no_ai_required,details
+app_reg_epsilon_005,Company Epsilon,Developer Tools Engineer,recruiter_screen_scheduled,2026-02-10T16:00:00.000Z,Recruiter screen,email,Recruiter,https://example.test/artifact/epsilon/scheduler.html,false,scheduled,2026-02-12T17:30:00.000Z,false,Fake recruiter screen scheduled metadata.
