@@ -3,11 +3,13 @@
 import {
   COMPACT_CSV_COLUMNS,
   csvToBrowserApplicationExport,
+  detectSpreadsheetImportFormat,
   exportCompactCsv,
   exportJsonBackup,
   exportNdjsonBackup,
   importJsonBackup,
   importNdjsonBackup,
+  previewSupplementalLifecycleCsvImport,
 } from "../import-export/spreadsheet.js";
 
 /* canonical CSV/backup helpers are shared with spreadsheet import/export tests. */
@@ -623,21 +625,73 @@ async function previewImport() {
   try {
     const text = await file.text();
     const format = importFormatForFile(file);
-    const bundle =
-      format === "json"
+    const lifecyclePreview =
+      format === "csv" &&
+      detectSpreadsheetImportFormat(text) === "lifecycle_csv"
+        ? await previewSupplementalLifecycleCsvImport(text, {
+            exportAllData: repo.exportAll,
+          })
+        : null;
+    if (lifecyclePreview?.errors.length) {
+      throw new Error(
+        lifecyclePreview.errors
+          .map((error) =>
+            error.rowNumber
+              ? `Row ${error.rowNumber} ${error.field}: ${error.message}`
+              : `${error.field}: ${error.message}`,
+          )
+          .join("; "),
+      );
+    }
+    if (lifecyclePreview?.conflicts.length) {
+      throw new Error(
+        lifecyclePreview.conflicts
+          .map((conflict) =>
+            conflict.rowNumber
+              ? `Row ${conflict.rowNumber} ${conflict.field}: ${conflict.code}`
+              : `${conflict.store ?? "record"} ${conflict.field}: ${conflict.code}`,
+          )
+          .join("; "),
+      );
+    }
+    const bundle = lifecyclePreview
+      ? lifecyclePreview.bundle
+      : format === "json"
         ? importJsonBackup(text)
         : format === "ndjson"
           ? importNdjsonBackup(text)
           : previewBundleFromCsv(text);
-    state.preview = bundleForIndexedDb(bundle);
-    state.previewConflicts = await detectImportConflicts(state.preview);
+    state.preview = lifecyclePreview
+      ? {
+          lifecycleEvents: bundle.lifecycleEvents ?? [],
+          interviews: bundle.interviews ?? [],
+          reminders: bundle.reminders ?? [],
+        }
+      : bundleForIndexedDb(bundle);
+    state.previewConflicts =
+      lifecyclePreview?.conflicts ??
+      (await detectImportConflicts(state.preview));
     const totalRecords = Object.values(state.preview).reduce(
       (count, rows) => count + rows.length,
       0,
     );
-    const formatLabel = format === "csv" ? "" : ` (${format.toUpperCase()})`;
+    const formatLabel = lifecyclePreview
+      ? " (lifecycle CSV)"
+      : format === "csv"
+        ? ""
+        : ` (${format.toUpperCase()})`;
+    const previewCounts = {
+      applications: state.preview.applications?.length ?? 0,
+      lifecycleEvents: state.preview.lifecycleEvents?.length ?? 0,
+      outreachMessages: state.preview.outreachMessages?.length ?? 0,
+      interviews: state.preview.interviews?.length ?? 0,
+      reminders: state.preview.reminders?.length ?? 0,
+    };
+    const lifecycleSummary = lifecyclePreview
+      ? `${previewCounts.lifecycleEvents} lifecycle events, `
+      : "";
     $("[data-import-result]").textContent =
-      `Dry-run OK${formatLabel}: ${(bundle.applications ?? []).length} applications, ${(bundle.outreachMessages ?? []).length} outreach messages, ${(bundle.interviews ?? []).length} interviews. ${totalRecords} total records. ${state.previewConflicts.length} existing record conflicts.`;
+      `Dry-run OK${formatLabel}: ${previewCounts.applications} applications, ${lifecycleSummary}${previewCounts.outreachMessages} outreach messages, ${previewCounts.interviews} interviews, ${previewCounts.reminders} reminders. ${totalRecords} total records. ${state.previewConflicts.length} existing record conflicts.`;
     $("[data-import-apply]").disabled = false;
   } catch (err) {
     state.preview = null;
