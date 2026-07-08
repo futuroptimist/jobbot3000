@@ -643,6 +643,17 @@ async function previewImport() {
           .join("; "),
       );
     }
+    if (lifecyclePreview?.conflicts.length) {
+      throw new Error(
+        lifecyclePreview.conflicts
+          .map((conflict) =>
+            conflict.rowNumber
+              ? `Row ${conflict.rowNumber} ${conflict.field}: ${conflict.code}`
+              : `${conflict.store ?? "record"} ${conflict.field}: ${conflict.code}`,
+          )
+          .join("; "),
+      );
+    }
     const bundle = lifecyclePreview
       ? lifecyclePreview.bundle
       : format === "json"
