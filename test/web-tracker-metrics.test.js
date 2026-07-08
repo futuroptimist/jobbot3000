@@ -79,7 +79,7 @@ describe("tracker dashboard metrics", () => {
 
     const metrics = selectDashboardMetrics(mergeBundle(bundle, lifecycle));
 
-    expect(metrics.assessments).toBe(3);
+    expect(metrics.assessments).toBe(2);
     expect(metrics.interviews).toBe(0);
     expect(metrics.applicationsWithResponse).toBe(5);
   });
@@ -166,6 +166,141 @@ describe("tracker dashboard metrics", () => {
     expect(metrics.applicationsWithResponse).toBe(1);
     expect(metrics.applicationResponseRate).toBe(100);
     expect(metrics.outreachReplyRate).toBe(0);
+  });
+
+  it("dedupes overlapping offer records and offer statuses by application", () => {
+    const timestamp = "2026-01-01T00:00:00.000Z";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: "app_offer",
+          company: "Example",
+          role: "Engineer",
+          status: "offer",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+        {
+          id: "app_accepted",
+          company: "Accepted",
+          role: "Engineer",
+          status: "accepted",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      offers: [
+        { id: "offer_one", applicationId: "app_offer", createdAt: timestamp },
+        {
+          id: "offer_two",
+          applicationId: "app_accepted",
+          createdAt: timestamp,
+        },
+      ],
+    });
+
+    expect(metrics.offers).toBe(2);
+    expect(metrics.applicationsWithResponse).toBe(2);
+  });
+
+  it("counts compact replied outreach statuses as sent outreach when text is absent", () => {
+    const timestamp = "2026-01-01T00:00:00.000Z";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: "app_reply",
+          company: "Example",
+          role: "Engineer",
+          status: "applied",
+          notes:
+            'Spreadsheet metadata: {"outreach_status":"replied","outreach_message_text":""}',
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+    });
+
+    expect(metrics.outreachSent).toBe(1);
+    expect(metrics.outreachReplies).toBe(1);
+    expect(metrics.outreachReplyRate).toBe(100);
+    expect(metrics.applicationsWithResponse).toBe(1);
+  });
+
+  it("dedupes compact and lifecycle assessment signals by application", () => {
+    const timestamp = "2026-01-01T00:00:00.000Z";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: "app_assessment",
+          company: "Example",
+          role: "Engineer",
+          status: "applied",
+          notes:
+            'Spreadsheet metadata: {"spreadsheet_interview_stage":"Written assessment submitted"}',
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_assessment",
+          applicationId: "app_assessment",
+          eventType: "written_assessment",
+          occurredAt: timestamp,
+          createdAt: timestamp,
+        },
+      ],
+    });
+
+    expect(metrics.assessments).toBe(1);
+    expect(metrics.applicationsWithResponse).toBe(1);
+  });
+
+  it("counts recruiter-screen completions and interview records as responses", () => {
+    const timestamp = "2026-01-01T00:00:00.000Z";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: "app_screen",
+          company: "Screen",
+          role: "Engineer",
+          status: "applied",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+        {
+          id: "app_interview",
+          company: "Interview",
+          role: "Engineer",
+          status: "applied",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_screen",
+          applicationId: "app_screen",
+          eventType: "recruiter_screen_completed",
+          occurredAt: timestamp,
+          createdAt: timestamp,
+        },
+      ],
+      interviews: [
+        {
+          id: "interview_technical",
+          applicationId: "app_interview",
+          stage: "technical",
+          startsAt: timestamp,
+          createdAt: timestamp,
+        },
+      ],
+    });
+
+    expect(metrics.recruiterScreens).toBe(1);
+    expect(metrics.interviews).toBe(1);
+    expect(metrics.applicationsWithResponse).toBe(2);
+    expect(metrics.applicationResponseRate).toBe(100);
   });
 
   it("guards response percentages when child records exceed applications", () => {

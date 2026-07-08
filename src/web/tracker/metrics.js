@@ -8,10 +8,13 @@ const RESPONSE_EVENT_TYPES = new Set([
   "hiring_manager_reply",
   "written_assessment_requested",
   "recruiter_screen_scheduled",
+  "recruiter_screen_completed",
 ]);
 const ASSESSMENT_EVENT_TYPES = new Set([
+  "written_assessment",
   "written_assessment_requested",
   "written_assessment_submitted",
+  "take_home",
   "take_home_requested",
   "take_home_submitted",
 ]);
@@ -99,12 +102,16 @@ export const selectDashboardMetrics = (bundle = {}) => {
   const metadataByApplicationId = applicationMetadata(bundle);
   const responseApplicationIds = new Set();
   let compactOutreachReplies = 0;
+  const compactOutreachApplicationIds = new Set();
+  const outboundOutreachApplicationIds = new Set();
   const recruiterScreenKeys = new Set();
-  const assessmentKeys = new Set();
+  const assessmentApplicationIds = new Set();
 
   for (const application of applications) {
     const metadata = metadataByApplicationId.get(application.id) ?? {};
-    if (OUTREACH_REPLY_STATUSES.has(compactOutreachStatus(metadata))) {
+    const outreachStatus = compactOutreachStatus(metadata);
+    if (outreachStatus) compactOutreachApplicationIds.add(application.id);
+    if (OUTREACH_REPLY_STATUSES.has(outreachStatus)) {
       compactOutreachReplies += 1;
       addResponse(responseApplicationIds, application.id);
     }
@@ -112,18 +119,26 @@ export const selectDashboardMetrics = (bundle = {}) => {
       addResponse(responseApplicationIds, application.id);
     if (isAssessmentMetadata(metadata)) {
       addResponse(responseApplicationIds, application.id);
-      assessmentKeys.add(`metadata:${application.id}`);
+      assessmentApplicationIds.add(application.id);
     }
   }
 
   let outreachSent = 0;
   let outreachReplies = compactOutreachReplies;
   for (const message of outreachMessages) {
-    if (message.direction === "outbound") outreachSent += 1;
+    if (message.direction === "outbound") {
+      outreachSent += 1;
+      if (message.applicationId)
+        outboundOutreachApplicationIds.add(message.applicationId);
+    }
     if (message.direction === "inbound") {
       outreachReplies += 1;
       addResponse(responseApplicationIds, message.applicationId);
     }
+  }
+
+  for (const applicationId of compactOutreachApplicationIds) {
+    if (!outboundOutreachApplicationIds.has(applicationId)) outreachSent += 1;
   }
 
   for (const event of lifecycleEvents) {
@@ -134,10 +149,11 @@ export const selectDashboardMetrics = (bundle = {}) => {
       TERMINAL_EMPLOYER_STATUSES.has(status)
     )
       addResponse(responseApplicationIds, event.applicationId);
-    if (ASSESSMENT_EVENT_TYPES.has(eventType))
-      assessmentKeys.add(
-        event.id ?? `${event.applicationId}:${eventType}:${event.occurredAt}`,
-      );
+    if (ASSESSMENT_EVENT_TYPES.has(eventType)) {
+      addResponse(responseApplicationIds, event.applicationId);
+      if (event.applicationId)
+        assessmentApplicationIds.add(event.applicationId);
+    }
     if (
       RECRUITER_SCREEN_EVENT_TYPES.has(eventType) ||
       status === "recruiter_screen"
@@ -146,6 +162,7 @@ export const selectDashboardMetrics = (bundle = {}) => {
   }
 
   for (const interview of interviews) {
+    addResponse(responseApplicationIds, interview.applicationId);
     if (interview.stage === "recruiter_screen")
       recruiterScreenKeys.add(recruiterScreenKey(interview));
   }
@@ -165,11 +182,12 @@ export const selectDashboardMetrics = (bundle = {}) => {
     outreachReplyRate: boundedPercentage(outreachReplies, outreachSent),
     recruiterScreens: recruiterScreenKeys.size,
     interviews: nonRecruiterInterviews.length,
-    assessments: assessmentKeys.size,
-    offers:
-      offers.length +
-      applications.filter(({ status }) =>
-        ["offer", "accepted"].includes(status),
-      ).length,
+    assessments: assessmentApplicationIds.size,
+    offers: new Set([
+      ...offers.map((offer) => offer.applicationId ?? offer.id).filter(Boolean),
+      ...applications
+        .filter(({ status }) => ["offer", "accepted"].includes(status))
+        .map(({ id }) => id),
+    ]).size,
   };
 };
