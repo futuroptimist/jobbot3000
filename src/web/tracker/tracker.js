@@ -11,6 +11,7 @@ import {
   importNdjsonBackup,
   previewSupplementalLifecycleCsvImport,
 } from "../import-export/spreadsheet.js";
+import { selectDashboardMetrics } from "./metrics.js";
 
 /* canonical CSV/backup helpers are shared with spreadsheet import/export tests. */
 const ARRAY_STORES = [
@@ -252,28 +253,38 @@ function renderNav() {
 }
 function renderDashboard() {
   const b = state.bundle;
-  const count = (s) => b.applications.filter((a) => a.status === s).length;
-  const outreach = b.outreachMessages.length,
-    interviews = b.interviews.length,
-    offers = b.offers.length,
-    total = b.applications.length;
-  const metrics = [
-    ["Total applications", total],
-    ["Outreach sent", outreach],
-    ["Recruiter screens", count("recruiter_screen")],
-    ["Interviews", interviews],
-    ["Offers", offers],
+  const metrics = selectDashboardMetrics(b);
+  const cards = [
+    ["Total applications", metrics.totalApplications, "Application records"],
+    ["Outreach sent", metrics.outreachSent, "Outbound outreach messages"],
     [
-      "Response rate",
-      total
-        ? `${Math.round(((outreach + interviews + offers) / total) * 100)}%`
-        : "0%",
+      "Outreach replies",
+      metrics.outreachReplies,
+      "Inbound or replied outreach messages",
+    ],
+    [
+      "Recruiter screens",
+      metrics.recruiterScreens,
+      "Recruiter-screen interviews/events",
+    ],
+    ["Interviews", metrics.interviews, "Non-recruiter-screen interviews"],
+    ["Assessments", metrics.assessments, "Written assessments/take-homes"],
+    ["Offers", metrics.offers, "Offer records or offer outcomes"],
+    [
+      "Application response rate",
+      `${metrics.applicationResponseRate}%`,
+      `${metrics.applicationsWithResponse} of ${metrics.totalApplications} applications`,
+    ],
+    [
+      "Outreach reply rate",
+      `${metrics.outreachReplyRate}%`,
+      `${metrics.outreachReplies} of ${metrics.outreachSent} outreach messages`,
     ],
   ];
-  $("[data-metrics]").innerHTML = metrics
+  $("[data-metrics]").innerHTML = cards
     .map(
-      ([k, v]) =>
-        `<div class="metric"><span>${k}</span><strong>${v}</strong></div>`,
+      ([label, value, help]) =>
+        `<div class="metric" aria-label="${esc(label)}: ${esc(value)} (${esc(help)})"><span>${esc(label)}</span><strong>${esc(value)}</strong><small class="muted">${esc(help)}</small></div>`,
     )
     .join("");
   const weeks = {};
