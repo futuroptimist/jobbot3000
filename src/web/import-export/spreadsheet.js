@@ -35,6 +35,23 @@ export const COMPACT_CSV_COLUMNS = [
   "schema_version",
 ];
 
+export const LIFECYCLE_CSV_COLUMNS = [
+  "application_id",
+  "company",
+  "role_title",
+  "event_type",
+  "occurred_at",
+  "stage",
+  "channel",
+  "actor",
+  "source_artifact",
+  "requires_user_action",
+  "action_status",
+  "due_at",
+  "no_ai_required",
+  "details",
+];
+
 const KNOWN_STATUSES = new Set([
   "applied",
   "outreach_sent",
@@ -238,6 +255,49 @@ export const serializeCsv = (rows, columns = COMPACT_CSV_COLUMNS) =>
       columns.map((column) => serializeField(row[column])).join(","),
     ),
   ].join("\n");
+
+const headersFromCsv = (text) => {
+  const input = String(text ?? "").replace(/^\uFEFF/, "");
+  const [headerLine = ""] = input.split(/\r?\n/, 1);
+  return parseCsv(`${headerLine}\n`).length === 0
+    ? headerLine.split(",").map(normalizeKey)
+    : Object.keys(parseCsv(`${headerLine}\n_`).at(0) ?? {});
+};
+export const detectSpreadsheetImportFormat = (text) => {
+  const headers = headersFromCsv(text);
+  const same = (columns) =>
+    headers.length === columns.length &&
+    columns.every((column, index) => headers[index] === column);
+  if (same(LIFECYCLE_CSV_COLUMNS)) return "lifecycle_csv";
+  if (same(COMPACT_CSV_COLUMNS)) return "compact_csv";
+  return "unknown_csv";
+};
+const parseBoolean = (value, field, rowNumber, errors) => {
+  const text = normalizeKey(value);
+  if (!text) return undefined;
+  if (["true", "yes", "y", "1"].includes(text)) return true;
+  if (["false", "no", "n", "0"].includes(text)) return false;
+  errors.push({
+    rowNumber,
+    field,
+    code: "malformed_boolean",
+    message: `${field} is not a valid boolean.`,
+  });
+  return undefined;
+};
+const EVENT_STATUS = new Map([
+  ["application_submitted", "applied"],
+  ["recruiter_screen_scheduled", "recruiter_screen"],
+  ["rejected", "rejected"],
+  ["application_rejected", "rejected"],
+  ["offer", "offer"],
+  ["accepted", "accepted"],
+  ["withdrawn", "withdrawn"],
+]);
+const statusForLifecycleRow = (row) =>
+  EVENT_STATUS.get(normalizeLabelKey(row.event_type)) ??
+  EVENT_STATUS.get(normalizeLabelKey(row.stage)) ??
+  "applied";
 
 const parseDate = (
   value,
@@ -690,6 +750,171 @@ export const rowsToBrowserApplicationExport = (
 export const csvToBrowserApplicationExport = (csvText, options) =>
   rowsToBrowserApplicationExport(parseCsv(csvText), options);
 
+export const lifecycleRowsToBrowserApplicationExport = (
+  rows,
+  existingBundle = { applications: [] },
+  { exportedAt = nowIso() } = {},
+) => {
+  const errors = [];
+  const warnings = [];
+  const applicationsById = new Map(
+    (existingBundle.applications ?? []).map((application) => [
+      application.id,
+      application,
+    ]),
+  );
+  const lifecycleEvents = [];
+  const interviews = [];
+  const reminders = [];
+  rows.forEach((sourceRow, index) => {
+    const rowNumber = index + 2;
+    const row = Object.fromEntries(
+      LIFECYCLE_CSV_COLUMNS.map((key) => [key, compact(sourceRow[key])]),
+    );
+    if (!row.application_id) {
+      errors.push({
+        rowNumber,
+        field: "application_id",
+        code: "required",
+        message: "application_id is required.",
+      });
+      return;
+    }
+    if (!applicationsById.has(row.application_id)) {
+      errors.push({
+        rowNumber,
+        field: "application_id",
+        code: "missing_application",
+        value: row.application_id,
+        message: `application_id ${row.application_id} does not match an existing application.`,
+      });
+      return;
+    }
+    const occurredAt =
+      parseDate(row.occurred_at, "occurred_at", rowNumber, errors) ??
+      exportedAt;
+    const dueAt = parseDate(row.due_at, "due_at", rowNumber, errors);
+    const requiresUserAction = parseBoolean(
+      row.requires_user_action,
+      "requires_user_action",
+      rowNumber,
+      errors,
+    );
+    const noAiRequired = parseBoolean(
+      row.no_ai_required,
+      "no_ai_required",
+      rowNumber,
+      errors,
+    );
+    const eventType = normalizeLabelKey(row.event_type) || "lifecycle_event";
+    const stageLabel = compact(row.stage) || undefined;
+    if (
+      !EVENT_STATUS.has(eventType) &&
+      ![
+        "written_assessment_requested",
+        "written_assessment_submitted",
+        "hiring_manager_reply",
+        "next_tracking_step",
+      ].includes(eventType)
+    )
+      warnings.push({
+        rowNumber,
+        field: "event_type",
+        code: "unknown_event_type",
+        value: row.event_type,
+      });
+    lifecycleEvents.push({
+      id: stableId(
+        "event",
+        row.application_id,
+        eventType,
+        occurredAt,
+        row.due_at,
+        row.source_artifact,
+      ),
+      applicationId: row.application_id,
+      status: statusForLifecycleRow(row),
+      occurredAt,
+      source: "csv_import",
+      note: row.details || undefined,
+      eventType,
+      stageLabel,
+      channel: row.channel || undefined,
+      actor: row.actor || undefined,
+      sourceArtifact: row.source_artifact || undefined,
+      requiresUserAction,
+      actionStatus: row.action_status || undefined,
+      dueAt,
+      noAiRequired,
+      details: row.details || undefined,
+      createdAt: exportedAt,
+    });
+    if (eventType === "recruiter_screen_scheduled" && dueAt)
+      interviews.push({
+        id: stableId(
+          "interview",
+          row.application_id,
+          "recruiter_screen",
+          dueAt,
+        ),
+        applicationId: row.application_id,
+        contactIds: [],
+        stage: "recruiter_screen",
+        startsAt: dueAt,
+        location: row.channel || undefined,
+        preparationNotes: row.details || undefined,
+        outcome: "scheduled",
+        createdAt: exportedAt,
+        updatedAt: exportedAt,
+      });
+    if (eventType === "next_tracking_step" && dueAt)
+      reminders.push({
+        id: stableId("reminder", row.application_id, dueAt, row.details),
+        applicationId: row.application_id,
+        dueAt,
+        summary: row.action_status || row.details || "Follow up on application",
+        notes: row.details || undefined,
+        createdAt: exportedAt,
+        updatedAt: exportedAt,
+      });
+  });
+  const bundle = {
+    schemaVersion: 1,
+    exportedAt,
+    applications: [],
+    contacts: [],
+    outreachMessages: [],
+    lifecycleEvents,
+    interviews,
+    offers: [],
+    artifacts: [],
+    reminders,
+  };
+  const parsed = browserApplicationExportSchema.safeParse({
+    ...bundle,
+    applications: existingBundle.applications ?? [],
+    contacts: existingBundle.contacts ?? [],
+  });
+  if (!parsed.success)
+    errors.push({
+      rowNumber: null,
+      field: "bundle",
+      code: "schema_validation_failed",
+      message: parsed.error.message,
+    });
+  return { bundle, errors, warnings };
+};
+export const csvToLifecycleBrowserApplicationExport = (
+  csvText,
+  existingBundle,
+  options,
+) =>
+  lifecycleRowsToBrowserApplicationExport(
+    parseCsv(csvText),
+    existingBundle,
+    options,
+  );
+
 const dateOnly = (value) => (value ? String(value).slice(0, 10) : "");
 const dateTime = (value) => (value ? String(value) : "");
 const firstBy = (records, predicate) => records.find(predicate) ?? {};
@@ -871,6 +1096,73 @@ export const importNdjsonBackup = (text) => {
     });
   return browserApplicationExportSchema.parse(bundle);
 };
+
+export const previewLifecycleCsvImport = async (csvText, repository) => {
+  const rows = parseCsv(csvText);
+  const existing = repository
+    ? await repository.exportAllData()
+    : { applications: [] };
+  const { bundle, errors, warnings } = lifecycleRowsToBrowserApplicationExport(
+    rows,
+    existing,
+  );
+  const conflicts = [];
+  for (const store of ["lifecycleEvents", "interviews", "reminders"]) {
+    const existingIds = new Set((existing[store] ?? []).map(({ id }) => id));
+    for (const record of bundle[store] ?? []) {
+      if (existingIds.has(record.id))
+        conflicts.push({
+          storeName: store,
+          id: record.id,
+          code: "duplicate_existing",
+        });
+    }
+    const seen = new Set();
+    for (const record of bundle[store] ?? []) {
+      if (seen.has(record.id))
+        conflicts.push({
+          storeName: store,
+          id: record.id,
+          code: "duplicate_in_file",
+        });
+      seen.add(record.id);
+    }
+  }
+  return {
+    format: "lifecycle_csv",
+    rowCount: rows.length,
+    validRowCount: Math.max(
+      0,
+      rows.length -
+        new Set(errors.map((e) => e.rowNumber).filter(Number.isInteger)).size,
+    ),
+    errors,
+    warnings,
+    conflicts,
+    bundle,
+  };
+};
+export const importLifecycleCsv = async (csvText, repository) => {
+  const preview = await previewLifecycleCsvImport(csvText, repository);
+  if (preview.errors.length > 0) return { imported: false, preview };
+  const existing = await repository.exportAllData();
+  const merged = { ...existing, exportedAt: nowIso() };
+  for (const store of ["lifecycleEvents", "interviews", "reminders"]) {
+    const incoming = preview.bundle[store] ?? [];
+    merged[store] = [
+      ...(existing[store] ?? []).filter(
+        (record) => !incoming.some(({ id }) => id === record.id),
+      ),
+      ...incoming,
+    ];
+  }
+  return {
+    imported: true,
+    preview,
+    result: await repository.importAllData(merged, { allowOverwrite: true }),
+  };
+};
+
 export const previewCompactCsvImport = async (csvText, repository) => {
   const rows = parseCsv(csvText);
   const { bundle, errors } = rowsToBrowserApplicationExport(rows);

@@ -9,16 +9,20 @@ import {
 } from "../src/web/storage/indexedDbRepository.js";
 import {
   COMPACT_CSV_COLUMNS,
+  LIFECYCLE_CSV_COLUMNS,
   csvToBrowserApplicationExport,
+  detectSpreadsheetImportFormat,
   exportCompactCsv,
   exportJsonBackup,
   exportNdjsonBackup,
   importCompactCsv,
+  importLifecycleCsv,
   importJsonBackup,
   importNdjsonBackup,
   parseCsv,
   serializeCsv,
   previewCompactCsvImport,
+  previewLifecycleCsvImport,
 } from "../src/web/import-export/spreadsheet.js";
 
 const deleteDatabase = () =>
@@ -35,7 +39,200 @@ afterEach(async () => {
 
 const fixture = () => readFile("test/fixtures/fake-applications.csv", "utf8");
 
+const createLifecycleTestRepository = () =>
+  createIndexedDbRepository({
+    databaseName: `jobbot3000_lifecycle_${Date.now()}_${Math.random()}`,
+    indexedDb: indexedDB,
+  });
+
 describe("spreadsheet import/export", () => {
+  it("detects compact and supplemental lifecycle CSV formats", async () => {
+    const compact = await readFile(
+      "test/fixtures/tracker-import/compact-main-regression.csv",
+      "utf8",
+    );
+    const lifecycle = await readFile(
+      "test/fixtures/tracker-import/canonical-lifecycle-regression.csv",
+      "utf8",
+    );
+    expect(detectSpreadsheetImportFormat(compact)).toBe("compact_csv");
+    expect(detectSpreadsheetImportFormat(lifecycle)).toBe("lifecycle_csv");
+    expect(lifecycle.split(/\r?\n/, 1)[0]).toBe(
+      LIFECYCLE_CSV_COLUMNS.join(","),
+    );
+  });
+
+  it("imports supplemental lifecycle assessment rows without creating interviews", async () => {
+    const repo = await createLifecycleTestRepository();
+    const compact = await readFile(
+      "test/fixtures/tracker-import/compact-main-regression.csv",
+      "utf8",
+    );
+    await importCompactCsv(compact, repo, { mode: "replace" });
+    let exported = await repo.exportAllData();
+    expect(exported.applications).toHaveLength(15);
+    expect(exported.interviews).toHaveLength(0);
+
+    const lifecycle = await readFile(
+      "test/fixtures/tracker-import/canonical-lifecycle-regression.csv",
+      "utf8",
+    );
+    const preview = await previewLifecycleCsvImport(lifecycle, repo);
+    expect(preview.errors).toEqual([]);
+    expect(preview.bundle.lifecycleEvents).toHaveLength(2);
+    expect(preview.bundle.interviews).toHaveLength(0);
+    await importLifecycleCsv(lifecycle, repo);
+    exported = await repo.exportAllData();
+    expect(
+      exported.lifecycleEvents.filter((event) =>
+        event.eventType?.startsWith("written_assessment"),
+      ),
+    ).toHaveLength(2);
+    expect(
+      exported.lifecycleEvents.find(
+        (event) => event.eventType === "written_assessment_requested",
+      ).noAiRequired,
+    ).toBe(true);
+    expect(exported.interviews).toHaveLength(0);
+  });
+
+  it("imports hiring-manager replies without creating interviews", async () => {
+    const repo = await createLifecycleTestRepository();
+    await importCompactCsv(
+      await readFile(
+        "test/fixtures/tracker-import/compact-main-regression.csv",
+        "utf8",
+      ),
+      repo,
+      { mode: "replace" },
+    );
+    await importLifecycleCsv(
+      await readFile(
+        "test/fixtures/tracker-import/loft-lifecycle-regression.csv",
+        "utf8",
+      ),
+      repo,
+    );
+    const exported = await repo.exportAllData();
+    expect(
+      exported.lifecycleEvents.some(
+        (event) => event.eventType === "hiring_manager_reply",
+      ),
+    ).toBe(true);
+    expect(exported.interviews).toHaveLength(0);
+  });
+
+  it("creates one scheduled recruiter-screen interview idempotently", async () => {
+    const repo = await createLifecycleTestRepository();
+    await importCompactCsv(
+      await readFile(
+        "test/fixtures/tracker-import/compact-main-regression.csv",
+        "utf8",
+      ),
+      repo,
+      { mode: "replace" },
+    );
+    const lifecycle = await readFile(
+      "test/fixtures/tracker-import/reducto-lifecycle-regression.csv",
+      "utf8",
+    );
+    await importLifecycleCsv(lifecycle, repo);
+    await importLifecycleCsv(lifecycle, repo);
+    const exported = await repo.exportAllData();
+    expect(
+      exported.lifecycleEvents.filter(
+        (event) => event.eventType === "recruiter_screen_scheduled",
+      ),
+    ).toHaveLength(1);
+    expect(exported.interviews).toHaveLength(1);
+    expect(exported.interviews[0]).toMatchObject({
+      applicationId: "app_reg_epsilon_005",
+      stage: "recruiter_screen",
+      startsAt: "2026-02-14T18:30:00.000Z",
+    });
+  });
+
+  it("reports missing lifecycle application references without creating orphans", async () => {
+    const repo = await createLifecycleTestRepository();
+    await importCompactCsv(
+      await readFile(
+        "test/fixtures/tracker-import/compact-main-regression.csv",
+        "utf8",
+      ),
+      repo,
+      { mode: "replace" },
+    );
+    const csv = [
+      LIFECYCLE_CSV_COLUMNS.join(","),
+      [
+        "app_missing_999",
+        "Missing Co",
+        "Missing Role",
+        "hiring_manager_reply",
+        "2026-02-01T00:00:00.000Z",
+        "reply",
+        "email",
+        "Actor",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "Missing details",
+      ].join(","),
+    ].join("\n");
+    const preview = await previewLifecycleCsvImport(csv, repo);
+    expect(preview.errors).toContainEqual(
+      expect.objectContaining({
+        rowNumber: 2,
+        field: "application_id",
+        code: "missing_application",
+        value: "app_missing_999",
+      }),
+    );
+    const result = await importLifecycleCsv(csv, repo);
+    expect(result.imported).toBe(false);
+    const exported = await repo.exportAllData();
+    expect(
+      exported.lifecycleEvents.every(
+        (event) => event.applicationId !== "app_missing_999",
+      ),
+    ).toBe(true);
+  });
+
+  it("preserves lifecycle metadata through JSON and NDJSON backups", async () => {
+    const repo = await createLifecycleTestRepository();
+    await importCompactCsv(
+      await readFile(
+        "test/fixtures/tracker-import/compact-main-regression.csv",
+        "utf8",
+      ),
+      repo,
+      { mode: "replace" },
+    );
+    await importLifecycleCsv(
+      await readFile(
+        "test/fixtures/tracker-import/canonical-lifecycle-regression.csv",
+        "utf8",
+      ),
+      repo,
+    );
+    const exported = await repo.exportAllData();
+    const fromJson = importJsonBackup(exportJsonBackup(exported));
+    const fromNdjson = importNdjsonBackup(exportNdjsonBackup(exported));
+    for (const bundle of [fromJson, fromNdjson]) {
+      const assessment = bundle.lifecycleEvents.find(
+        (event) => event.eventType === "written_assessment_requested",
+      );
+      expect(assessment).toMatchObject({
+        sourceArtifact: "https://example.test/artifact/beta/assessment.eml",
+        requiresUserAction: true,
+        actionStatus: "pending",
+        dueAt: "2026-02-07T17:00:00.000Z",
+        noAiRequired: true,
+      });
+    }
+  });
   it("runs a fake full-fidelity backup/restore smoke flow", async () => {
     const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
     const csv = await fixture();
@@ -893,7 +1090,7 @@ describe("spreadsheet import/export", () => {
     ).toBe(true);
     expect(
       lifecycleRows.every((row) =>
-        row.artifact_url.startsWith("https://example.test/artifact/"),
+        row.source_artifact.startsWith("https://example.test/artifact/"),
       ),
     ).toBe(true);
 
