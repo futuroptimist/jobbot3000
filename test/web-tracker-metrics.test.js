@@ -84,7 +84,7 @@ describe("tracker dashboard metrics", () => {
     expect(metrics.applicationsWithResponse).toBe(5);
   });
 
-  it("counts hiring-manager replies as responses, not interviews", async () => {
+  it("counts hiring-manager lifecycle replies as outreach replies", async () => {
     const { bundle } = csvToBrowserApplicationExport(await compactFixture(), {
       exportedAt,
     });
@@ -95,6 +95,7 @@ describe("tracker dashboard metrics", () => {
 
     const metrics = selectDashboardMetrics(mergeBundle(bundle, lifecycle));
 
+    expect(metrics.outreachReplies).toBe(4);
     expect(metrics.applicationsWithResponse).toBe(4);
     expect(metrics.interviews).toBe(0);
   });
@@ -241,6 +242,27 @@ describe("tracker dashboard metrics", () => {
     expect(metrics.outreachReplies).toBe(1);
     expect(metrics.outreachReplyRate).toBe(100);
     expect(metrics.applicationsWithResponse).toBe(1);
+  });
+
+  it("ignores non-outbound compact outreach statuses for sent outreach", () => {
+    const timestamp = "2026-01-01T00:00:00.000Z";
+    const applications = ["not_started", "pending", "", "snoozed"].map(
+      (status, index) => ({
+        id: `app_non_outbound_${index}`,
+        company: "Example",
+        role: "Engineer",
+        status: "applied",
+        notes: `Spreadsheet metadata: {"outreach_status":"${status}"}`,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }),
+    );
+
+    const metrics = selectDashboardMetrics({ applications });
+
+    expect(metrics.outreachSent).toBe(0);
+    expect(metrics.outreachReplies).toBe(0);
+    expect(metrics.outreachReplyRate).toBe(0);
   });
 
   it("dedupes compact reply metadata represented by inbound outreach", () => {
@@ -401,9 +423,9 @@ describe("tracker dashboard metrics", () => {
       ],
       interviews: [
         {
-          id: "interview_technical",
+          id: "interview_technical_screen",
           applicationId: "app_interview",
-          stage: "technical",
+          stage: "technical_screen",
           startsAt: timestamp,
           createdAt: timestamp,
         },

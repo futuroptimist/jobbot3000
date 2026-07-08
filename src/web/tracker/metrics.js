@@ -26,6 +26,7 @@ const RECRUITER_SCREEN_EVENT_TYPES = new Set([
 ]);
 const OFFER_EVENT_TYPES = new Set(["offer", "offer_received"]);
 const OUTREACH_REPLY_STATUSES = new Set(["replied", "reply", "responded"]);
+const OUTREACH_SENT_STATUSES = new Set(["sent", ...OUTREACH_REPLY_STATUSES]);
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const normalize = (value) =>
   String(value ?? "")
@@ -114,7 +115,8 @@ export const selectDashboardMetrics = (bundle = {}) => {
   for (const application of applications) {
     const metadata = metadataByApplicationId.get(application.id) ?? {};
     const outreachStatus = compactOutreachStatus(metadata);
-    if (outreachStatus) compactOutreachApplicationIds.add(application.id);
+    if (OUTREACH_SENT_STATUSES.has(outreachStatus))
+      compactOutreachApplicationIds.add(application.id);
     if (OUTREACH_REPLY_STATUSES.has(outreachStatus)) {
       compactOutreachReplyApplicationIds.add(application.id);
       addResponse(responseApplicationIds, application.id);
@@ -165,6 +167,7 @@ export const selectDashboardMetrics = (bundle = {}) => {
       TERMINAL_EMPLOYER_STATUSES.has(status)
     )
       addResponse(responseApplicationIds, event.applicationId);
+    if (eventType === "hiring_manager_reply") outreachReplies += 1;
     if (ASSESSMENT_EVENT_TYPES.has(eventType)) {
       addResponse(responseApplicationIds, event.applicationId);
       if (event.applicationId)
