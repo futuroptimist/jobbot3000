@@ -9,6 +9,8 @@ const RESPONSE_EVENT_TYPES = new Set([
   "written_assessment_requested",
   "recruiter_screen_scheduled",
   "recruiter_screen_completed",
+  "offer",
+  "offer_received",
 ]);
 const ASSESSMENT_EVENT_TYPES = new Set([
   "written_assessment",
@@ -126,12 +128,16 @@ export const selectDashboardMetrics = (bundle = {}) => {
   let outreachSent = 0;
   let outreachReplies = compactOutreachReplies;
   for (const message of outreachMessages) {
-    if (message.direction === "outbound") {
+    const direction = normalize(message.direction);
+    if (direction === "outbound") {
       outreachSent += 1;
       if (message.applicationId)
         outboundOutreachApplicationIds.add(message.applicationId);
     }
-    if (message.direction === "inbound") {
+    if (
+      direction === "inbound" ||
+      OUTREACH_REPLY_STATUSES.has(normalize(message.status))
+    ) {
       outreachReplies += 1;
       addResponse(responseApplicationIds, message.applicationId);
     }

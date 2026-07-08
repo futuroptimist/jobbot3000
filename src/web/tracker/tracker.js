@@ -271,6 +271,11 @@ function renderDashboard() {
     ["Assessments", metrics.assessments, "Written assessments/take-homes"],
     ["Offers", metrics.offers, "Offer records or offer outcomes"],
     [
+      "Application responses",
+      metrics.applicationsWithResponse,
+      "Applications with employer response signals",
+    ],
+    [
       "Application response rate",
       `${metrics.applicationResponseRate}%`,
       `${metrics.applicationsWithResponse} of ${metrics.totalApplications} applications`,

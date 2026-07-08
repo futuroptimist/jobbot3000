@@ -105,6 +105,7 @@ test.describe("browser application tracker", () => {
     await expect(metrics).toContainText("Interviews0");
     await expect(metrics).toContainText("Offers0");
     await expect(metrics).toContainText("Assessments1");
+    await expect(metrics).toContainText("Application responses4");
     await expect(metrics).toContainText("Application response rate27%");
     await expect(metrics).toContainText("4 of 15 applications");
     await expect(metrics).toContainText("Outreach reply rate29%");

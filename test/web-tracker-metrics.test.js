@@ -188,6 +188,14 @@ describe("tracker dashboard metrics", () => {
           createdAt: timestamp,
           updatedAt: timestamp,
         },
+        {
+          id: "app_offer_event",
+          company: "Offer Event",
+          role: "Engineer",
+          status: "applied",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
       ],
       offers: [
         { id: "offer_one", applicationId: "app_offer", createdAt: timestamp },
@@ -197,10 +205,19 @@ describe("tracker dashboard metrics", () => {
           createdAt: timestamp,
         },
       ],
+      lifecycleEvents: [
+        {
+          id: "event_offer_received",
+          applicationId: "app_offer_event",
+          eventType: "offer_received",
+          occurredAt: timestamp,
+          createdAt: timestamp,
+        },
+      ],
     });
 
     expect(metrics.offers).toBe(2);
-    expect(metrics.applicationsWithResponse).toBe(2);
+    expect(metrics.applicationsWithResponse).toBe(3);
   });
 
   it("counts compact replied outreach statuses as sent outreach when text is absent", () => {
@@ -256,21 +273,13 @@ describe("tracker dashboard metrics", () => {
     expect(metrics.applicationsWithResponse).toBe(1);
   });
 
-  it("counts recruiter-screen completions and interview records as responses", () => {
+  it("counts lifecycle-only recruiter-screen completions as responses", () => {
     const timestamp = "2026-01-01T00:00:00.000Z";
     const metrics = selectDashboardMetrics({
       applications: [
         {
           id: "app_screen",
           company: "Screen",
-          role: "Engineer",
-          status: "applied",
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        },
-        {
-          id: "app_interview",
-          company: "Interview",
           role: "Engineer",
           status: "applied",
           createdAt: timestamp,
@@ -286,6 +295,67 @@ describe("tracker dashboard metrics", () => {
           createdAt: timestamp,
         },
       ],
+    });
+
+    expect(metrics.recruiterScreens).toBe(1);
+    expect(metrics.interviews).toBe(0);
+    expect(metrics.applicationsWithResponse).toBe(1);
+    expect(metrics.applicationResponseRate).toBe(100);
+  });
+
+  it("counts replied outreach records as outreach replies and application responses", () => {
+    const timestamp = "2026-01-01T00:00:00.000Z";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: "app_outreach_reply",
+          company: "Outreach",
+          role: "Engineer",
+          status: "applied",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      outreachMessages: [
+        {
+          id: "message_outbound",
+          applicationId: "app_outreach_reply",
+          direction: "outbound",
+          channel: "email",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+        {
+          id: "message_reply",
+          applicationId: "app_outreach_reply",
+          direction: "outbound",
+          status: "replied",
+          channel: "email",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+    });
+
+    expect(metrics.outreachSent).toBe(2);
+    expect(metrics.outreachReplies).toBe(1);
+    expect(metrics.applicationsWithResponse).toBe(1);
+    expect(metrics.applicationResponseRate).toBe(100);
+  });
+
+  it("counts interview records as responses while preserving interview counts", () => {
+    const timestamp = "2026-01-01T00:00:00.000Z";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: "app_interview",
+          company: "Interview",
+          role: "Engineer",
+          status: "applied",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
       interviews: [
         {
           id: "interview_technical",
@@ -297,10 +367,9 @@ describe("tracker dashboard metrics", () => {
       ],
     });
 
-    expect(metrics.recruiterScreens).toBe(1);
+    expect(metrics.recruiterScreens).toBe(0);
     expect(metrics.interviews).toBe(1);
-    expect(metrics.applicationsWithResponse).toBe(2);
-    expect(metrics.applicationResponseRate).toBe(100);
+    expect(metrics.applicationsWithResponse).toBe(1);
   });
 
   it("guards response percentages when child records exceed applications", () => {
