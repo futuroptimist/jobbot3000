@@ -351,9 +351,9 @@ const readMetadataFromNotes = (notes) => {
 };
 const mapStatus = (row) => {
   const status = normalizeLabelKey(row.status);
-  if (KNOWN_STATUSES.has(status)) return status;
+  if (KNOWN_STATUSES.has(status) && status !== "applied") return status;
   const statusLabel = STATUS_LABELS.get(status);
-  if (statusLabel) return statusLabel;
+  if (statusLabel && statusLabel !== "applied") return statusLabel;
   const outcome = OUTCOMES.get(normalizeLabelKey(row.outcome));
   if (outcome) return outcome;
   const stageLabel = normalizeLabelKey(row.interview_stage);

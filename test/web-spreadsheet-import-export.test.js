@@ -507,6 +507,16 @@ describe("spreadsheet import/export", () => {
         outreach_status: "replied",
         schema_version: "1",
       },
+      {
+        application_id: "app_applied_stage_rejected",
+        company: "Applied Stage Rejected",
+        role_title: "Engineer",
+        status: "Applied",
+        applied_at: "2026-01-03",
+        interview_stage: "Application rejected",
+        outcome: "",
+        schema_version: "1",
+      },
     ]);
 
     const { bundle, errors } = csvToBrowserApplicationExport(csv, {
@@ -525,12 +535,21 @@ describe("spreadsheet import/export", () => {
           id: "app_display_rejected",
           status: "rejected",
         }),
+        expect.objectContaining({
+          id: "app_applied_stage_rejected",
+          status: "rejected",
+        }),
       ]),
     );
     expect(bundle.lifecycleEvents).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           applicationId: "app_display_rejected",
+          status: "rejected",
+          note: "Application rejected",
+        }),
+        expect.objectContaining({
+          applicationId: "app_applied_stage_rejected",
           status: "rejected",
           note: "Application rejected",
         }),
@@ -552,6 +571,12 @@ describe("spreadsheet import/export", () => {
           interview_stage: "Application rejected",
           outcome: "Application rejected",
           outreach_status: "replied",
+        }),
+        expect.objectContaining({
+          application_id: "app_applied_stage_rejected",
+          status: "Applied",
+          interview_stage: "Application rejected",
+          outcome: "rejected",
         }),
       ]),
     );
