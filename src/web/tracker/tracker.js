@@ -250,10 +250,14 @@ const isAssessmentEvent = (record = {}) =>
     .some(
       (value) => value.includes("assessment") || value.includes("take_home"),
     );
+const RECRUITER_SCREEN_EVENT_TYPES = new Set([
+  "recruiter_screen_scheduled",
+  "recruiter_screen_completed",
+]);
 const isRecruiterScreen = (record = {}) =>
   normalize(record.stage) === "recruiter_screen" ||
   normalize(record.status) === "recruiter_screen" ||
-  normalize(record.eventType).startsWith("recruiter_screen");
+  RECRUITER_SCREEN_EVENT_TYPES.has(normalize(record.eventType));
 const hasMetadataAssessmentSignal = (metadata = {}) =>
   [metadata.spreadsheet_interview_stage, metadata.spreadsheet_outcome].some(
     (value) =>
@@ -502,8 +506,11 @@ function renderList() {
       const recruiterCount =
         m.interviews.filter(isRecruiterScreen).length +
         m.lifecycle.filter(isRecruiterScreen).length;
-      const assessmentCount = m.lifecycle.filter(isAssessmentEvent).length;
-      return `<tr><td><button class="button" data-open="${esc(a.id)}">${esc(a.company)}</button>${metadata ? `<small class="muted table-note">${esc(metadata)}</small>` : ""}</td><td>${esc(a.role)}</td><td><span class="chip">${esc(a.status)}</span></td><td>${day(a.appliedAt)}</td><td>${day(a.followUpDate) || "—"}</td><td>${esc(readSpreadsheetMetadata(a.notes).outreach_status || (m.outreach.length ? "sent" : "none"))}</td><td>${recruiterCount ? `<span class="chip">Recruiter screen ×${recruiterCount}</span>` : ""}${latestInterview ? `<span class="chip">Interview: ${esc(latestInterview.stage)}</span>` : ""}${assessmentCount ? `<span class="chip chip-warning">Assessment ×${assessmentCount}</span>` : ""}</td><td>${esc(outcomeForApp(a, m) || "—")}</td><td>${esc(fitScore(a.notes) || readSpreadsheetMetadata(a.notes).fit_score_100 || "")}</td><td class="clip-cell">${m.artifacts.map(linkForArtifact).join(", ")}</td></tr>`;
+      const rowMetadata = readSpreadsheetMetadata(a.notes);
+      const assessmentCount =
+        m.lifecycle.filter(isAssessmentEvent).length +
+        (hasMetadataAssessmentSignal(rowMetadata) ? 1 : 0);
+      return `<tr><td><button class="button" data-open="${esc(a.id)}">${esc(a.company)}</button>${metadata ? `<small class="muted table-note">${esc(metadata)}</small>` : ""}</td><td>${esc(a.role)}</td><td><span class="chip">${esc(a.status)}</span></td><td>${day(a.appliedAt)}</td><td>${day(a.followUpDate) || "—"}</td><td>${esc(rowMetadata.outreach_status || (m.outreach.length ? "sent" : "none"))}</td><td>${recruiterCount ? `<span class="chip">Recruiter screen ×${recruiterCount}</span>` : ""}${latestInterview ? `<span class="chip">Interview: ${esc(latestInterview.stage)}</span>` : ""}${assessmentCount ? `<span class="chip chip-warning">Assessment ×${assessmentCount}</span>` : ""}</td><td>${esc(outcomeForApp(a, m) || "—")}</td><td>${esc(fitScore(a.notes) || rowMetadata.fit_score_100 || "")}</td><td class="clip-cell">${m.artifacts.map(linkForArtifact).join(", ")}</td></tr>`;
     })
     .join("");
   $$("[data-open]").forEach(

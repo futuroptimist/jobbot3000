@@ -88,6 +88,78 @@ test.describe("browser application tracker", () => {
     );
   });
 
+  test("shows compact metadata assessments as list chips", async ({ page }) => {
+    const csv = await regressionCsvFixture();
+
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await page.setInputFiles("[data-import-file]", {
+      name: "compact-main-regression.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(csv),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await page.getByRole("button", { name: "Apply import" }).click();
+
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    const deltaRow = page
+      .locator("[data-applications-table] tbody tr")
+      .filter({ hasText: "Company Delta" });
+    await expect(deltaRow).toContainText("Assessment ×1");
+  });
+
+  test("does not show generic recruiter_screen lifecycle rows as recruiter chips", async ({
+    page,
+  }) => {
+    await page.evaluate(
+      () =>
+        new Promise((resolve, reject) => {
+          const request = indexedDB.open("jobbot3000", 1);
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => {
+            const db = request.result;
+            const tx = db.transaction(
+              ["applications", "lifecycleEvents"],
+              "readwrite",
+            );
+            tx.objectStore("applications").put({
+              id: "generic_recruiter_app",
+              company: "Generic Recruiter Co",
+              role: "Frontend Engineer",
+              status: "applied",
+              appliedAt: "2026-01-02",
+              createdAt: "2026-01-02T00:00:00.000Z",
+              updatedAt: "2026-01-02T00:00:00.000Z",
+            });
+            tx.objectStore("lifecycleEvents").put({
+              id: "generic_recruiter_event",
+              applicationId: "generic_recruiter_app",
+              eventType: "recruiter_screen",
+              occurredAt: "2026-01-03T00:00:00.000Z",
+              createdAt: "2026-01-03T00:00:00.000Z",
+              updatedAt: "2026-01-03T00:00:00.000Z",
+            });
+            tx.oncomplete = () => {
+              db.close();
+              resolve();
+            };
+            tx.onerror = () => reject(tx.error);
+          };
+        }),
+    );
+    await page.reload();
+
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    const row = page
+      .locator("[data-applications-table] tbody tr")
+      .filter({ hasText: "Generic Recruiter Co" });
+    await expect(row).toBeVisible();
+    await expect(row).not.toContainText("Recruiter screen ×1");
+  });
+
   test("previews supplemental lifecycle CSV counts and missing application errors", async ({
     page,
   }) => {
