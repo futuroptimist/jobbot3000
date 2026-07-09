@@ -727,6 +727,8 @@ describe("tracker dashboard metrics", () => {
           eventType: "devops_interview_scheduled",
           occurredAt: timestamp,
           dueAt: "2026-01-02T00:00:00.000Z",
+          occurredAtHasTime: false,
+          dueAtHasTime: false,
           createdAt: timestamp,
         },
         {
@@ -734,6 +736,7 @@ describe("tracker dashboard metrics", () => {
           applicationId: "app_date_only",
           eventType: "technical_interview_completed",
           occurredAt: "2026-01-03T00:00:00.000Z",
+          occurredAtHasTime: false,
           createdAt: timestamp,
         },
       ],
@@ -801,6 +804,8 @@ describe("tracker dashboard metrics", () => {
           eventType: "technical_interview_completed",
           occurredAt: "2026-05-10T00:00:00.000Z",
           dueAt: "2026-05-01T12:00:00.000Z",
+          occurredAtHasTime: false,
+          dueAtHasTime: true,
           createdAt: exportedAt,
         },
       ],
@@ -857,6 +862,44 @@ describe("tracker dashboard metrics", () => {
     expect(
       selectDashboardMetrics({ ...existing, ...lifecycle }).interviews,
     ).toBe(1);
+  });
+
+  it("treats legacy explicit midnight completed timestamps as timed", () => {
+    const applicationId = "app_legacy_midnight";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: applicationId,
+          company: "Legacy Midnight",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_legacy_midnight",
+          applicationId,
+          eventType: "technical_interview_completed",
+          occurredAt: "2026-05-10T00:00:00.000Z",
+          dueAt: "2026-05-01T12:00:00.000Z",
+          createdAt: exportedAt,
+        },
+      ],
+      interviews: [
+        {
+          id: "interview_legacy_midnight",
+          applicationId,
+          stage: "technical_screen",
+          startsAt: "2026-05-10T00:00:00.000Z",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+    });
+
+    expect(metrics.interviews).toBe(1);
   });
 
   it("uses explicit midnight completed occurred_at instead of falling back to due_at", () => {

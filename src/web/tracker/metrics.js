@@ -68,8 +68,6 @@ const isAssessmentMetadata = (metadata) => {
 const addResponse = (responses, applicationId) => {
   if (applicationId) responses.add(applicationId);
 };
-const hasParsedDateOnlyTimestamp = (value) =>
-  /T00:00:00(?:\.000)?(?:Z|[+-]\d{2}:?\d{2})$/.test(value);
 const canonicalTimestamp = (value) => {
   if (!value) return undefined;
   const timestamp = Date.parse(value);
@@ -78,7 +76,7 @@ const canonicalTimestamp = (value) => {
 const lifecycleTimestampHasTime = (event, field, value) => {
   const flag = event[`${field}HasTime`];
   if (typeof flag === "boolean") return flag;
-  return !hasParsedDateOnlyTimestamp(value);
+  return Boolean(value);
 };
 const isTimedLifecycleInterviewTimestamp = (event, field, value) =>
   Boolean(value) &&
