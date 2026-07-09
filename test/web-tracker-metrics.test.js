@@ -747,6 +747,53 @@ describe("tracker dashboard metrics", () => {
     expect(metrics.applicationsWithResponse).toBe(1);
   });
 
+  it("preserves lifecycle timestamp precision flags through JSON and NDJSON backups", () => {
+    const timestamp = "2026-01-01T00:00:00.000Z";
+    const bundle = {
+      schemaVersion: 1,
+      exportedAt: timestamp,
+      applications: [
+        {
+          id: "app_precision_backup",
+          company: "Precision Backup",
+          role: "Engineer",
+          status: "applied",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_precision_backup",
+          applicationId: "app_precision_backup",
+          status: "technical_screen",
+          occurredAt: timestamp,
+          source: "csv_import",
+          eventType: "devops_interview_scheduled",
+          dueAt: "2026-01-02T00:00:00.000Z",
+          occurredAtHasTime: false,
+          dueAtHasTime: false,
+          createdAt: timestamp,
+        },
+      ],
+      interviews: [],
+    };
+
+    const jsonRestored = importJsonBackup(exportJsonBackup(bundle));
+    const ndjsonRestored = importNdjsonBackup(exportNdjsonBackup(bundle));
+
+    expect(jsonRestored.lifecycleEvents[0]).toMatchObject({
+      occurredAtHasTime: false,
+      dueAtHasTime: false,
+    });
+    expect(ndjsonRestored.lifecycleEvents[0]).toMatchObject({
+      occurredAtHasTime: false,
+      dueAtHasTime: false,
+    });
+    expect(selectDashboardMetrics(jsonRestored).interviews).toBe(0);
+    expect(selectDashboardMetrics(ndjsonRestored).interviews).toBe(0);
+  });
+
   it("ignores ambiguous legacy date-only lifecycle timestamps without precision flags", () => {
     const timestamp = "2026-01-01T00:00:00.000Z";
     const metrics = selectDashboardMetrics({

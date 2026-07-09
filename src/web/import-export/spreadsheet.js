@@ -1175,8 +1175,42 @@ export const exportLifecycleCsv = (bundle) =>
     browserApplicationExportToLifecycleRows(bundle),
     LIFECYCLE_CSV_COLUMNS,
   );
+const lifecyclePrecisionFlagsById = (events = []) =>
+  new Map(
+    events.map((event) => [
+      event.id,
+      {
+        occurredAtHasTime: event.occurredAtHasTime,
+        dueAtHasTime: event.dueAtHasTime,
+      },
+    ]),
+  );
+const restoreLifecyclePrecisionFlags = (bundle, sourceEvents) => {
+  const flagsById = lifecyclePrecisionFlagsById(sourceEvents);
+  return {
+    ...bundle,
+    lifecycleEvents: bundle.lifecycleEvents.map((event) => {
+      const flags = flagsById.get(event.id);
+      if (!flags) return event;
+      return {
+        ...event,
+        ...(typeof flags.occurredAtHasTime === "boolean"
+          ? { occurredAtHasTime: flags.occurredAtHasTime }
+          : {}),
+        ...(typeof flags.dueAtHasTime === "boolean"
+          ? { dueAtHasTime: flags.dueAtHasTime }
+          : {}),
+      };
+    }),
+  };
+};
+const parseBackupBundlePreservingLifecyclePrecision = (bundle) =>
+  restoreLifecyclePrecisionFlags(
+    browserApplicationExportSchema.parse(bundle),
+    bundle?.lifecycleEvents ?? [],
+  );
 const canonicalizeBackupBundle = (bundle) => {
-  const parsed = browserApplicationExportSchema.parse(bundle);
+  const parsed = parseBackupBundlePreservingLifecyclePrecision(bundle);
   const sorted = { ...parsed };
   for (const store of ARRAY_STORES) {
     sorted[store] = [...parsed[store]].sort((a, b) =>
@@ -1234,7 +1268,7 @@ const normalizeBackupBundleInput = (input, { source = "json_import" } = {}) => {
 };
 
 export const importJsonBackup = (text) =>
-  browserApplicationExportSchema.parse(
+  parseBackupBundlePreservingLifecyclePrecision(
     normalizeBackupBundleInput(JSON.parse(text), { source: "json_import" }),
   );
 export const importNdjsonBackup = (text) => {
@@ -1272,7 +1306,7 @@ export const importNdjsonBackup = (text) => {
           `Unknown or malformed NDJSON record type: ${String(entry.type)}`,
         );
     });
-  return browserApplicationExportSchema.parse(
+  return parseBackupBundlePreservingLifecyclePrecision(
     normalizeBackupBundleInput(bundle, { source: "ndjson_import" }),
   );
 };
