@@ -64,6 +64,36 @@
               <option>withdrawn</option>
               <option>closed_archived</option>
             </select></label
+          ><label
+            ><span>Response</span
+            ><select data-filter="response">
+              <option value="">Any response</option>
+              <option value="responded">Has response</option>
+              <option value="no_response">No response yet</option>
+            </select></label
+          ><label
+            ><span>Outreach</span
+            ><select data-filter="outreach">
+              <option value="">Any outreach</option>
+              <option value="sent">Sent/replied</option>
+              <option value="none">No outreach</option>
+            </select></label
+          ><label
+            ><span>Follow-up</span
+            ><select data-filter="followup">
+              <option value="">Any follow-up</option>
+              <option value="due">Due/overdue</option>
+              <option value="scheduled">Scheduled</option>
+              <option value="none">No follow-up</option>
+            </select></label
+          ><label
+            ><span>Activity</span
+            ><select data-filter="activity">
+              <option value="">Any activity</option>
+              <option value="assessments">Assessments/actions</option>
+              <option value="recruiter_screens">Recruiter screens</option>
+              <option value="terminal">Terminal outcomes</option>
+            </select></label
           >
         </form>
         <p data-empty-state class="muted">
@@ -117,7 +147,12 @@
                 Apply import
               </button>
             </div>
-            <pre data-import-result class="muted"></pre>
+            <div
+              data-import-result
+              class="import-preview muted"
+              role="status"
+              aria-live="polite"
+            ></div>
           </article>
           <article class="card">
             <h3>Export backups</h3>
