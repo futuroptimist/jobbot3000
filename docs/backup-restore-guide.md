@@ -32,9 +32,9 @@ private tracker data on the server.
 ## Restore into dev, staging, or production browsers
 
 Dev, staging, and production are separate browser origins/profiles unless you
-import the same backup into each. The browser UI restores CSV, JSON, and NDJSON
+import the same backup into each. The browser UI restores compact CSV, supplemental lifecycle CSV, JSON, and NDJSON
 files. To restore, open the target deployed app in the chosen browser profile,
-use the import UI, run preview/dry-run, and apply only after confirming the reported record counts match the expected IndexedDB data. For a clean restore, create a new browser profile (or clear local tracker data after saving a verified backup), import JSON first when available, use NDJSON as the equivalent full-fidelity fallback, and then spot-check lifecycle timelines, recruiter screens, reminders, artifacts, and settings before deleting the original profile.
+use the import UI, run preview/dry-run, and apply only after confirming the reported record counts match the expected IndexedDB data. For a clean restore, create a new browser profile (or clear local tracker data after saving a verified backup), import JSON first when available, use NDJSON as the equivalent full-fidelity fallback, or import compact CSV followed by supplemental lifecycle CSV for spreadsheet interchange; then spot-check lifecycle timelines, recruiter screens, reminders, artifacts, and settings before deleting the original profile.
 
 ## Manual seeding
 

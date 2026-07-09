@@ -272,7 +272,7 @@ export const serializeCsv = (rows, columns = COMPACT_CSV_COLUMNS) =>
   ].join("\n");
 
 const ISO_OFFSET_DATE_TIME =
-  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|([+-])(\d{2}):(\d{2}))$/;
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?(Z|([+-])(\d{2}):(\d{2}))$/;
 
 const isValidIsoOffsetDateTime = (text) => {
   const match = ISO_OFFSET_DATE_TIME.exec(text);
@@ -284,7 +284,7 @@ const isValidIsoOffsetDateTime = (text) => {
     dayText,
     hourText,
     minuteText,
-    secondText,
+    secondText = "0",
     fractionText = "0",
     offsetText,
     offsetSign,
@@ -1130,7 +1130,7 @@ export const browserApplicationExportToLifecycleRows = (bundle) => {
         application_id: event.applicationId,
         company: application.company ?? "",
         role_title: application.role ?? "",
-        event_type: event.eventType ?? event.status ?? "",
+        event_type: event.eventType ?? "",
         occurred_at: event.occurredAt ?? "",
         stage: event.stageLabel ?? event.status ?? "",
         channel: event.channel ?? "",
