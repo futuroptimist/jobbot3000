@@ -258,6 +258,39 @@ const isRecruiterScreen = (record = {}) =>
   normalize(record.stage) === "recruiter_screen" ||
   normalize(record.status) === "recruiter_screen" ||
   RECRUITER_SCREEN_EVENT_TYPES.has(normalize(record.eventType));
+const recruiterScreenKey = (record = {}) =>
+  [
+    record.applicationId,
+    record.dueAt ?? record.startsAt ?? record.occurredAt ?? record.id,
+  ]
+    .filter(Boolean)
+    .join(":");
+const uniqueRecruiterScreens = (meta, events = meta.lifecycle) => {
+  const screens = [];
+  const seen = new Set();
+  for (const item of [
+    ...events.filter(isRecruiterScreen).map((event) => ({
+      key: recruiterScreenKey(event),
+      date: day(event.occurredAt) || day(event.dueAt),
+      label:
+        event.stageLabel ||
+        event.eventType ||
+        event.details ||
+        "recruiter screen",
+    })),
+    ...meta.interviews.filter(isRecruiterScreen).map((interview) => ({
+      key: recruiterScreenKey(interview),
+      date: day(interview.startsAt),
+      label: interview.outcome || interview.stage || "recruiter screen",
+    })),
+  ]) {
+    const key = item.key || `${item.date}:${item.label}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    screens.push(item);
+  }
+  return screens;
+};
 const hasMetadataAssessmentSignal = (metadata = {}) =>
   [metadata.spreadsheet_interview_stage, metadata.spreadsheet_outcome].some(
     (value) =>
@@ -475,9 +508,7 @@ function renderList() {
     const hasAssessment =
       m.lifecycle.some(isAssessmentEvent) ||
       hasMetadataAssessmentSignal(metadata);
-    const hasRecruiter =
-      m.interviews.some(isRecruiterScreen) ||
-      m.lifecycle.some(isRecruiterScreen);
+    const hasRecruiter = uniqueRecruiterScreens(m).length > 0;
     const terminal =
       OUTCOMES.has(a.status) || OUTCOMES.has(outcomeForApp(a, m));
     return (
@@ -516,9 +547,7 @@ function renderList() {
       const latestInterview = m.interviews
         .filter((item) => !isRecruiterScreen(item))
         .at(-1);
-      const recruiterCount =
-        m.interviews.filter(isRecruiterScreen).length +
-        m.lifecycle.filter(isRecruiterScreen).length;
+      const recruiterCount = uniqueRecruiterScreens(m).length;
       const rowMetadata = readSpreadsheetMetadata(a.notes);
       const assessmentCount =
         m.lifecycle.filter(isAssessmentEvent).length +
@@ -641,20 +670,7 @@ function detailForm(app) {
   const m = appMeta(app);
   const events = sortedLifecycleEvents(app.id);
   const metadata = readSpreadsheetMetadata(app.notes);
-  const recruiterScreens = [
-    ...m.interviews.filter(isRecruiterScreen).map((item) => ({
-      date: day(item.startsAt),
-      label: item.outcome || item.stage || "recruiter screen",
-    })),
-    ...events.filter(isRecruiterScreen).map((event) => ({
-      date: day(event.occurredAt) || day(event.dueAt),
-      label:
-        event.stageLabel ||
-        event.eventType ||
-        event.details ||
-        "recruiter screen",
-    })),
-  ];
+  const recruiterScreens = uniqueRecruiterScreens(m, events);
   const otherInterviews = m.interviews.filter(
     (item) => !isRecruiterScreen(item),
   );

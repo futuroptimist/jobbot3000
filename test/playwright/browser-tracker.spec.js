@@ -160,6 +160,62 @@ test.describe("browser application tracker", () => {
     await expect(row).not.toContainText("Recruiter screen ×1");
   });
 
+  test("deduplicates paired recruiter screen lifecycle and interview records", async ({
+    page,
+  }) => {
+    const csv = [
+      "application_id,company,role_title,status,applied_at,posting_url",
+      "paired_recruiter_app,Paired Recruiter Co,Frontend Engineer,applied," +
+        "2026-01-02,https://example.test/paired",
+    ].join("\n");
+    const lifecycle = [
+      "application_id,company,role_title,event_type,occurred_at,stage," +
+        "channel,actor,source_artifact,requires_user_action,action_status," +
+        "due_at,no_ai_required,details",
+      "paired_recruiter_app,Paired Recruiter Co,Frontend Engineer," +
+        "recruiter_screen_scheduled,2026-01-03,recruiter_screen," +
+        "email,recruiter,,,,2026-01-10T15:30:00.000Z,,Intro call",
+    ].join("\n");
+
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await page.setInputFiles("[data-import-file]", {
+      name: "paired-recruiter-app.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(csv),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await page.getByRole("button", { name: "Apply import" }).click();
+
+    await page.setInputFiles("[data-import-file]", {
+      name: "paired-recruiter-lifecycle.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(lifecycle),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await page.getByRole("button", { name: "Apply import" }).click();
+
+    await page.getByRole("button", { name: "Dashboard" }).click();
+    await expect(page.locator("[data-metrics]")).toContainText(
+      "Recruiter screens1",
+    );
+
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    const row = page
+      .locator("[data-applications-table] tbody tr")
+      .filter({ hasText: "Paired Recruiter Co" });
+    await expect(row).toContainText("Recruiter screen ×1");
+    await expect(row).not.toContainText("Recruiter screen ×2");
+
+    await page.getByRole("button", { name: "Paired Recruiter Co" }).click();
+    const recruiterSection = page.locator("[data-detail] article").filter({
+      has: page.getByRole("heading", { name: "Recruiter screens" }),
+    });
+    await expect(recruiterSection.locator("li")).toHaveCount(1);
+    await expect(recruiterSection).toContainText("recruiter_screen");
+  });
+
   test("previews supplemental lifecycle CSV counts and missing application errors", async ({
     page,
   }) => {
