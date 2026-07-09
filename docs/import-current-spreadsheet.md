@@ -1,7 +1,7 @@
 # Import the Current Spreadsheet
 
 Use this guide to move from a Google Sheets tracker to jobbot3000 while keeping
-CSV as a spreadsheet-compatible backup and JSON/NDJSON as full-fidelity restore
+compact CSV as a spreadsheet-compatible backup, supplemental lifecycle CSV for event metadata, and JSON/NDJSON as full-fidelity restore
 formats.
 
 ## Export Google Sheets as CSV
@@ -23,7 +23,8 @@ formats.
 
 ## Back up after import
 
-- Export CSV to keep a human-editable spreadsheet-shaped checkpoint.
+- Export compact CSV to keep a human-editable spreadsheet-shaped checkpoint.
+- Export supplemental lifecycle CSV if you want spreadsheet-readable event metadata keyed by `application_id`.
 - Export JSON as the canonical complete backup.
 - Export NDJSON when you want a line-oriented full-fidelity stream for review or
   transfer.
@@ -37,16 +38,20 @@ formats.
    offers, notes, artifacts, and reminders.
 5. Re-export JSON/NDJSON and compare record counts before deleting the old source.
 
-## Why CSV is not full fidelity
+## How the two CSV formats work together
 
-The CSV format is one row per application for spreadsheet compatibility. Once an
-application has multiple outreach messages, contacts, interviews, offers,
-artifacts, reminders, or lifecycle events, CSV cannot represent every child
-record without flattening or losing detail. Use JSON or NDJSON before clearing
-browser data.
+Compact CSV is one row per application for spreadsheet compatibility. Supplemental lifecycle CSV is one row per lifecycle event and uses `application_id` to attach events back to applications. Import compact CSV first, then lifecycle CSV, so lifecycle rows cannot create orphan child records.
+
+## Why JSON/NDJSON are preferred for full-fidelity backup
+
+The CSV formats are reviewable and spreadsheet-friendly, but they are not complete backups of every current IndexedDB store. JSON and NDJSON preserve applications, contacts, outreach messages, lifecycle events, interviews, offers, artifacts, reminders, settings, IDs, timestamps, and relationships. Use JSON or NDJSON before clearing browser data.
 
 ## Transition backup cadence
 
 During the first two weeks of using jobbot3000 as the primary tracker, export
 JSON and NDJSON after each job-search session and export CSV at least daily while
 you still reconcile with the spreadsheet. Keep backups private and encrypted.
+
+## Privacy expectations
+
+Real exports can contain private job-search data, notes, source artifact links, and contacts. Do not commit them, bake them into Docker images, or paste them into public issues. Keep real backups private and encrypted.

@@ -6,8 +6,12 @@ private tracker data on the server.
 
 ## Formats
 
-- **CSV**: human-editable, spreadsheet-shaped, one-row-per-application
+- **Compact application CSV**: human-editable, spreadsheet-shaped, one-row-per-application
   compatibility format. Use it for Google Sheets interchange and manual review.
+- **Supplemental lifecycle CSV**: event-rich CSV keyed by `application_id`. It
+  preserves per-application lifecycle metadata such as stage labels, actor,
+  channel, source artifact, action status, due date, `no_ai_required`, and
+  multiline details, while using application ID as the relationship source of truth.
 - **JSON**: canonical full-fidelity backup bundle. Use it before clearing data
   or moving browsers; restore it from the browser UI import panel.
 - **NDJSON**: line-oriented full-fidelity stream. Use it when you want per-record
@@ -16,7 +20,8 @@ private tracker data on the server.
 
 ## When to use each format
 
-- Use CSV when the goal is spreadsheet compatibility.
+- Use compact CSV when the goal is one-row-per-application spreadsheet compatibility.
+- Use supplemental lifecycle CSV with compact CSV when you need spreadsheet-readable event metadata.
 - Use JSON for routine complete backups and full-fidelity browser restores.
 - Use NDJSON for complete backups that should be easy to diff or process one
   record per line, and for full-fidelity browser restores.
@@ -25,7 +30,7 @@ private tracker data on the server.
 
 1. Export JSON and NDJSON from the browser UI.
 2. Save them outside the repo, Docker context, and public folders.
-3. Also export CSV when you need spreadsheet-compatible interchange.
+3. Also export compact CSV and lifecycle CSV when you need spreadsheet-compatible interchange or event review.
 4. Verify backups with repository/import-export tests or local dev tooling before
    deleting source data.
 5. For restores, import into an empty/disposable browser profile, confirm
@@ -34,7 +39,7 @@ private tracker data on the server.
 ## Restore into dev, staging, or production browsers
 
 Dev, staging, and production are separate browser origins/profiles unless you
-import the same backup into each. The browser UI restores CSV, JSON, and NDJSON
+import the same backup into each. The browser UI restores compact CSV, supplemental lifecycle CSV, JSON, and NDJSON
 files. To restore, open the target deployed app in the chosen browser profile,
 use the import UI, run preview/dry-run, and apply only after confirming the
 reported record counts match the expected IndexedDB data.
@@ -45,7 +50,7 @@ To seed dev or staging through the current browser UI, import an anonymized CSV
 file or a fake dev-only fixture. Keep anonymized JSON/NDJSON backups for
 repository-level validation and browser restore smoke tests. Do not
 include Daniel's real data in
-committed fixtures. Do not place real backups in public repos, Docker images,
+committed fixtures. Do not paste real backups into public issues or place them in public repos, Docker images,
 Helm charts, ConfigMaps, Secrets, PVCs, or static server directories.
 
 ## Server-side privacy boundary

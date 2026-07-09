@@ -1019,6 +1019,52 @@ export const browserApplicationExportToRows = (bundle) => {
 };
 export const exportCompactCsv = (bundle) =>
   serializeCsv(browserApplicationExportToRows(bundle));
+
+export const browserApplicationExportToLifecycleRows = (bundle) => {
+  const parsed = browserApplicationExportSchema.parse(bundle);
+  const applicationsById = new Map(
+    parsed.applications.map((application) => [application.id, application]),
+  );
+  return [...parsed.lifecycleEvents]
+    .sort((a, b) => {
+      const keys = [
+        compareCodePoints(a.applicationId, b.applicationId),
+        compareCodePoints(a.occurredAt ?? "", b.occurredAt ?? ""),
+        compareCodePoints(a.dueAt ?? "", b.dueAt ?? ""),
+        compareCodePoints(a.eventType ?? "", b.eventType ?? ""),
+        compareCodePoints(a.id, b.id),
+      ];
+      return keys.find((value) => value !== 0) ?? 0;
+    })
+    .map((event) => {
+      const application = applicationsById.get(event.applicationId);
+      return {
+        application_id: event.applicationId,
+        company: application?.company ?? "",
+        role_title: application?.role ?? "",
+        event_type: event.eventType ?? "",
+        occurred_at: event.occurredAt ?? "",
+        stage: event.stageLabel ?? "",
+        channel: event.channel ?? "",
+        actor: event.actor ?? "",
+        source_artifact: event.sourceArtifact ?? "",
+        requires_user_action:
+          event.requiresUserAction === undefined
+            ? ""
+            : String(event.requiresUserAction),
+        action_status: event.actionStatus ?? "",
+        due_at: event.dueAt ?? "",
+        no_ai_required:
+          event.noAiRequired === undefined ? "" : String(event.noAiRequired),
+        details: event.details ?? event.note ?? "",
+      };
+    });
+};
+export const exportLifecycleCsv = (bundle) =>
+  serializeCsv(
+    browserApplicationExportToLifecycleRows(bundle),
+    LIFECYCLE_CSV_COLUMNS,
+  );
 const compareCodePoints = (left, right) => {
   const leftText = String(left);
   const rightText = String(right);

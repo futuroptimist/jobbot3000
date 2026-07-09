@@ -46,15 +46,24 @@ After import, spot-check a few rows in the application tracker:
 
 The importer preserves compact fields that do not have a first-class normalized field as a `Spreadsheet metadata:` line in application notes, so values such as posting IDs, fit scores, and application URLs are not silently dropped.
 
+## Supplemental lifecycle CSV columns
+
+Lifecycle CSV is the event-rich companion format. It is keyed by `application_id`; the denormalized company and role title columns are convenience labels only. Export order is deterministic by application ID, occurred/due time, event type, and stable ID.
+
+```text
+application_id,company,role_title,event_type,occurred_at,stage,channel,actor,source_artifact,requires_user_action,action_status,due_at,no_ai_required,details
+```
+
 ## Export a backup
 
 Use the export flow after every meaningful update:
 
-- **CSV** for spreadsheet compatibility and manual review.
-- **JSON** for complete browser backup/restore.
-- **NDJSON** for future CLI/jobbot automation and streaming imports.
+- **Compact CSV** for one-row-per-application spreadsheet compatibility and manual review.
+- **Lifecycle CSV** for spreadsheet-readable event metadata keyed by `application_id`.
+- **JSON** for complete full-fidelity browser backup/restore.
+- **NDJSON** for full-fidelity line-oriented backups, future CLI/jobbot automation, and streaming imports.
 
-Store backups somewhere private and encrypted. The files may include application history, contacts, outreach messages, links to private artifacts, and notes.
+Store backups somewhere private and encrypted. The files may include application history, contacts, outreach messages, links to private artifacts, and notes. Do not commit real backups, embed them in Docker images, or paste them into public issues.
 
 ## Restore from backup
 

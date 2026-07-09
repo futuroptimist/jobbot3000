@@ -14,6 +14,7 @@ import {
   detectSpreadsheetImportFormat,
   exportCompactCsv,
   exportJsonBackup,
+  exportLifecycleCsv,
   exportNdjsonBackup,
   importCompactCsv,
   importSupplementalLifecycleCsv,
@@ -216,6 +217,7 @@ describe("spreadsheet import/export", () => {
     expect(tracker).toContain("COMPACT_CSV_COLUMNS");
     expect(tracker).toContain("exportCompactCsv");
     expect(tracker).toContain("exportJsonBackup");
+    expect(tracker).toContain("exportLifecycleCsv");
     expect(tracker).toContain("exportNdjsonBackup");
     expect(tracker).toContain("../import-export/spreadsheet.js");
     const legacyHeader = [
@@ -1034,6 +1036,171 @@ describe("spreadsheet import/export", () => {
         }),
       ]),
     );
+    repo.close();
+  });
+
+  it("exports supplemental lifecycle CSV with stable order and full metadata", () => {
+    const exportedAt = "2026-03-01T00:00:00.000Z";
+    const bundle = {
+      schemaVersion: 1,
+      exportedAt,
+      applications: [
+        {
+          id: "app_b",
+          company: "Lifecycle B",
+          role: "Backend Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+        {
+          id: "app_a",
+          company: "Lifecycle A",
+          role: "Frontend Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+      contacts: [],
+      outreachMessages: [],
+      lifecycleEvents: [
+        {
+          id: "event_b_late",
+          applicationId: "app_b",
+          status: "outreach_sent",
+          occurredAt: "2026-03-05T12:00:00.000Z",
+          source: "csv_import",
+          eventType: "hiring_manager_reply",
+          stageLabel: "Hiring manager follow-up",
+          channel: "email",
+          actor: "hiring_manager",
+          sourceArtifact: "https://example.test/artifact/reply,b",
+          requiresUserAction: false,
+          actionStatus: "received",
+          noAiRequired: true,
+          details: [
+            'Reply includes comma, "quote", URL',
+            "https://example.test/path?a=1,b=2\nand a second line.",
+          ].join(" "),
+          createdAt: exportedAt,
+        },
+        {
+          id: "event_a_due",
+          applicationId: "app_a",
+          status: "applied",
+          occurredAt: "2026-03-04T17:00:00.000Z",
+          source: "csv_import",
+          eventType: "written_assessment_requested",
+          stageLabel: "Written assessment",
+          channel: "portal",
+          actor: "employer",
+          sourceArtifact: "https://example.test/artifact/assessment-a",
+          requiresUserAction: true,
+          actionStatus: "pending",
+          dueAt: "2026-03-07T22:00:00.000Z",
+          noAiRequired: false,
+          details: "Assessment details",
+          createdAt: exportedAt,
+        },
+      ],
+      interviews: [],
+      offers: [],
+      artifacts: [],
+      reminders: [],
+    };
+
+    const csv = exportLifecycleCsv(bundle);
+    expect(csv.split("\n")[0]).toBe(LIFECYCLE_CSV_COLUMNS.join(","));
+    expect(csv).toContain('"https://example.test/artifact/reply,b"');
+    expect(csv).toContain('"Reply includes comma, ""quote"", URL');
+    const rows = parseCsv(csv);
+    expect(rows.map(({ application_id }) => application_id)).toEqual([
+      "app_a",
+      "app_b",
+    ]);
+    expect(rows[0]).toMatchObject({
+      application_id: "app_a",
+      company: "Lifecycle A",
+      role_title: "Frontend Engineer",
+      event_type: "written_assessment_requested",
+      occurred_at: "2026-03-04T17:00:00.000Z",
+      due_at: "2026-03-07T22:00:00.000Z",
+      requires_user_action: "true",
+      no_ai_required: "false",
+    });
+    expect(rows[1]).toMatchObject({
+      application_id: "app_b",
+      source_artifact: "https://example.test/artifact/reply,b",
+      requires_user_action: "false",
+      no_ai_required: "true",
+      details:
+        'Reply includes comma, "quote", URL https://example.test/path?a=1,b=2\nand a second line.',
+    });
+  });
+
+  it("round-trips supplemental lifecycle CSV exports through import", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    await importCompactCsv(
+      serializeCsv([
+        {
+          application_id: "app_lifecycle_export_roundtrip",
+          company: "Lifecycle Export Roundtrip",
+          role_title: "Engineer",
+          applied_at: "2026-01-01",
+          schema_version: "1",
+        },
+      ]),
+      repo,
+      { mode: "replace" },
+    );
+    const lifecycleCsv = serializeCsv(
+      [
+        {
+          application_id: "app_lifecycle_export_roundtrip",
+          company: "Lifecycle Export Roundtrip",
+          role_title: "Engineer",
+          event_type: "next_tracking_step",
+          occurred_at: "2026-01-02T09:00:00.000Z",
+          stage: "Follow up",
+          channel: "email",
+          actor: "candidate",
+          source_artifact: "https://example.test/artifact/follow-up",
+          requires_user_action: "true",
+          action_status: "pending",
+          due_at: "2026-01-05T17:00:00.000Z",
+          no_ai_required: "false",
+          details: "Follow up with a multiline note.\nSecond line.",
+        },
+      ],
+      LIFECYCLE_CSV_COLUMNS,
+    );
+    expect(
+      (await importSupplementalLifecycleCsv(lifecycleCsv, repo)).imported,
+    ).toBe(true);
+    const exportedCsv = exportLifecycleCsv(await repo.exportAllData());
+    const preview = await previewSupplementalLifecycleCsvImport(
+      exportedCsv,
+      repo,
+    );
+    expect(preview.errors).toEqual([]);
+    expect(preview.conflicts).toEqual([]);
+    expect(
+      preview.bundle.lifecycleEvents.filter(
+        ({ eventType }) => eventType === "next_tracking_step",
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        applicationId: "app_lifecycle_export_roundtrip",
+        eventType: "next_tracking_step",
+        sourceArtifact: "https://example.test/artifact/follow-up",
+        requiresUserAction: true,
+        actionStatus: "pending",
+        dueAt: "2026-01-05T17:00:00.000Z",
+        noAiRequired: false,
+        details: "Follow up with a multiline note.\nSecond line.",
+      }),
+    ]);
     repo.close();
   });
 
