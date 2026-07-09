@@ -1039,6 +1039,111 @@ describe("spreadsheet import/export", () => {
     repo.close();
   });
 
+  it("derives non-recruiter interviews from lifecycle rows idempotently", async () => {
+    const exportedAt = "2026-03-10T00:00:00.000Z";
+    const existing = {
+      applications: [
+        {
+          id: "app_devops",
+          company: "Redacted DevOps",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+        {
+          id: "app_onsite",
+          company: "Redacted Onsite",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+    };
+    const lifecycleCsv = serializeCsv(
+      [
+        {
+          application_id: "app_devops",
+          company: "Redacted DevOps",
+          role_title: "Engineer",
+          event_type: "devops_interview_scheduled",
+          occurred_at: "2026-01-06T12:00:00.000Z",
+          stage: "DevOps interview",
+          channel: "video",
+          actor: "interviewer",
+          due_at: "2026-01-10T15:30:00.000Z",
+          details: "DevOps interview scheduled.",
+        },
+        {
+          application_id: "app_onsite",
+          company: "Redacted Onsite",
+          role_title: "Engineer",
+          event_type: "onsite_interview_completed",
+          occurred_at: "2026-01-11T18:00:00.000Z",
+          stage: "Onsite interview",
+          channel: "video",
+          actor: "panel",
+          details: "Onsite interview completed.",
+        },
+        {
+          application_id: "app_devops",
+          company: "Redacted DevOps",
+          role_title: "Engineer",
+          event_type: "technical_interview_scheduled",
+          occurred_at: "2026-01-07T12:00:00.000Z",
+          stage: "Technical interview",
+          channel: "video",
+          actor: "interviewer",
+          due_at: "2026-01-12T15:30:00.000Z",
+          details: "Technical interview scheduled.",
+        },
+      ],
+      LIFECYCLE_CSV_COLUMNS,
+    );
+
+    const firstImport = lifecycleRowsToBrowserApplicationExport(
+      parseCsv(lifecycleCsv),
+      existing,
+      { exportedAt },
+    );
+    expect(firstImport.errors).toEqual([]);
+    expect(firstImport.warnings).toEqual([]);
+    expect(firstImport.bundle.interviews).toEqual([
+      expect.objectContaining({
+        applicationId: "app_devops",
+        stage: "technical_screen",
+        startsAt: "2026-01-10T15:30:00.000Z",
+        outcome: "scheduled",
+      }),
+      expect.objectContaining({
+        applicationId: "app_onsite",
+        stage: "onsite_loop",
+        startsAt: "2026-01-11T18:00:00.000Z",
+        outcome: "completed",
+      }),
+      expect.objectContaining({
+        applicationId: "app_devops",
+        stage: "technical_screen",
+        startsAt: "2026-01-12T15:30:00.000Z",
+        outcome: "scheduled",
+      }),
+    ]);
+
+    const secondImport = lifecycleRowsToBrowserApplicationExport(
+      parseCsv(lifecycleCsv),
+      { ...existing, interviews: firstImport.bundle.interviews },
+      { exportedAt },
+    );
+    expect(secondImport.bundle.interviews.map(({ id }) => id)).toEqual(
+      firstImport.bundle.interviews.map(({ id }) => id),
+    );
+
+    const restored = importJsonBackup(exportJsonBackup(firstImport.bundle));
+    expect(restored.lifecycleEvents).toHaveLength(3);
+    expect(restored.interviews).toHaveLength(3);
+  });
+
   it("round trips compact and supplemental lifecycle CSV deterministically", async () => {
     let repo = await createIndexedDbRepository({ indexedDb: indexedDB });
     const compactCsv = serializeCsv([

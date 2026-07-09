@@ -11,6 +11,10 @@ import {
   boundedPercentage,
   selectDashboardMetrics,
 } from "../src/web/tracker/metrics.js";
+import {
+  LIFECYCLE_EVENT_CATEGORIES,
+  classifyLifecycleEventType,
+} from "../src/web/tracker/lifecycle-classification.js";
 
 const exportedAt = "2026-03-10T00:00:00.000Z";
 const compactFixture = async () =>
@@ -68,6 +72,27 @@ describe("tracker dashboard metrics", () => {
     expect(metrics.applicationResponseRate).toBeLessThanOrEqual(100);
   });
 
+  it("classifies scheduled non-recruiter lifecycle interviews distinctly", () => {
+    expect(classifyLifecycleEventType("devops_interview_scheduled")).toBe(
+      LIFECYCLE_EVENT_CATEGORIES.NON_RECRUITER_INTERVIEW,
+    );
+    expect(classifyLifecycleEventType("technical_interview_scheduled")).toBe(
+      LIFECYCLE_EVENT_CATEGORIES.NON_RECRUITER_INTERVIEW,
+    );
+    expect(classifyLifecycleEventType("onsite_interview_scheduled")).toBe(
+      LIFECYCLE_EVENT_CATEGORIES.NON_RECRUITER_INTERVIEW,
+    );
+    expect(classifyLifecycleEventType("recruiter_screen_scheduled")).toBe(
+      LIFECYCLE_EVENT_CATEGORIES.RECRUITER_SCREEN,
+    );
+    expect(classifyLifecycleEventType("written_assessment_submitted")).toBe(
+      LIFECYCLE_EVENT_CATEGORIES.ASSESSMENT,
+    );
+    expect(classifyLifecycleEventType("hiring_manager_reply")).toBe(
+      LIFECYCLE_EVENT_CATEGORIES.EMPLOYER_RESPONSE,
+    );
+  });
+
   it("counts assessment lifecycle events as assessments, not interviews", async () => {
     const { bundle } = csvToBrowserApplicationExport(await compactFixture(), {
       exportedAt,
@@ -84,24 +109,21 @@ describe("tracker dashboard metrics", () => {
     expect(metrics.applicationsWithResponse).toBe(5);
   });
 
-  it(
-    "dedupes hiring-manager lifecycle replies already represented by compact metadata",
-    async () => {
-      const { bundle } = csvToBrowserApplicationExport(await compactFixture(), {
-        exportedAt,
-      });
-      const lifecycle = importLifecycle(
-        await lifecycleFixture("employer-reply-lifecycle-regression.csv"),
-        bundle,
-      );
+  it("dedupes hiring-manager lifecycle replies represented by compact metadata", async () => {
+    const { bundle } = csvToBrowserApplicationExport(await compactFixture(), {
+      exportedAt,
+    });
+    const lifecycle = importLifecycle(
+      await lifecycleFixture("employer-reply-lifecycle-regression.csv"),
+      bundle,
+    );
 
-      const metrics = selectDashboardMetrics(mergeBundle(bundle, lifecycle));
+    const metrics = selectDashboardMetrics(mergeBundle(bundle, lifecycle));
 
-      expect(metrics.outreachReplies).toBe(2);
-      expect(metrics.applicationsWithResponse).toBe(4);
-      expect(metrics.interviews).toBe(0);
-    },
-  );
+    expect(metrics.outreachReplies).toBe(2);
+    expect(metrics.applicationsWithResponse).toBe(4);
+    expect(metrics.interviews).toBe(0);
+  });
 
   it("counts lifecycle-only hiring-manager replies as outreach replies", () => {
     const timestamp = "2026-01-01T00:00:00.000Z";
@@ -475,6 +497,46 @@ describe("tracker dashboard metrics", () => {
           applicationId: "app_interview",
           stage: "technical_screen",
           startsAt: timestamp,
+          createdAt: timestamp,
+        },
+      ],
+    });
+
+    expect(metrics.recruiterScreens).toBe(0);
+    expect(metrics.interviews).toBe(1);
+    expect(metrics.applicationsWithResponse).toBe(1);
+  });
+
+  it("counts lifecycle-only interview events without double-counting records", () => {
+    const timestamp = "2026-01-01T00:00:00.000Z";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: "app_devops",
+          company: "Redacted",
+          role: "Engineer",
+          status: "applied",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_devops",
+          applicationId: "app_devops",
+          eventType: "devops_interview_scheduled",
+          dueAt: "2026-01-02T18:00:00.000Z",
+          occurredAt: timestamp,
+          createdAt: timestamp,
+        },
+      ],
+      interviews: [
+        {
+          id: "interview_devops",
+          applicationId: "app_devops",
+          stage: "technical_screen",
+          startsAt: "2026-01-02T18:00:00.000Z",
+          outcome: "scheduled",
           createdAt: timestamp,
         },
       ],
