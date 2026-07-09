@@ -591,6 +591,8 @@ export const lifecycleRowsToBrowserApplicationExport = (
     );
     const dueAt = parseDate(row.due_at, "due_at", rowNumber, errors);
     const eventOccurredAt = occurredAt ?? dueAt ?? "1970-01-01T00:00:00.000Z";
+    const occurredAtHasTime = hasTimeComponent(row.occurred_at);
+    const dueAtHasTime = hasTimeComponent(row.due_at);
     const stageLabel = compact(row.stage) || undefined;
     const knownLifecycleStatus = lifecycleStatusForEvent(eventType);
     if (
@@ -639,6 +641,8 @@ export const lifecycleRowsToBrowserApplicationExport = (
       ),
       actionStatus: compact(row.action_status) || undefined,
       dueAt,
+      occurredAtHasTime,
+      dueAtHasTime,
       noAiRequired: parseBoolean(
         row.no_ai_required,
         "no_ai_required",
@@ -665,8 +669,6 @@ export const lifecycleRowsToBrowserApplicationExport = (
         updatedAt: exportedAt,
       });
     const classification = classifyLifecycleEventType(eventType);
-    const occurredAtHasTime = hasTimeComponent(row.occurred_at);
-    const dueAtHasTime = hasTimeComponent(row.due_at);
     const interviewStartsAt =
       classification.interviewOutcome === "completed"
         ? occurredAtHasTime

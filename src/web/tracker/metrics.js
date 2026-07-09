@@ -68,24 +68,47 @@ const isAssessmentMetadata = (metadata) => {
 const addResponse = (responses, applicationId) => {
   if (applicationId) responses.add(applicationId);
 };
-const isParsedDateOnlyTimestamp = (value) =>
+const hasParsedDateOnlyTimestamp = (value) =>
   /T00:00:00(?:\.000)?(?:Z|[+-]\d{2}:?\d{2})$/.test(value);
-const isTimedLifecycleInterviewTimestamp = (value) =>
+const canonicalTimestamp = (value) => {
+  if (!value) return undefined;
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? value : new Date(timestamp).toISOString();
+};
+const lifecycleTimestampHasTime = (event, field, value) => {
+  const flag = event[`${field}HasTime`];
+  if (typeof flag === "boolean") return flag;
+  return !hasParsedDateOnlyTimestamp(value);
+};
+const isTimedLifecycleInterviewTimestamp = (event, field, value) =>
   Boolean(value) &&
   !isPlaceholderTimestamp(value) &&
-  !isParsedDateOnlyTimestamp(value);
-const timedValue = (...values) =>
-  values.find((value) => isTimedLifecycleInterviewTimestamp(value));
+  lifecycleTimestampHasTime(event, field, value);
+const timedValue = (event, ...fieldValuePairs) =>
+  fieldValuePairs.find(([field, value]) =>
+    isTimedLifecycleInterviewTimestamp(event, field, value),
+  )?.[1];
 const lifecycleInterviewTimestamp = (event, classification) => {
   if (classification.interviewOutcome === "completed")
-    return timedValue(event.occurredAt, event.dueAt, event.startsAt);
-  return timedValue(event.dueAt, event.startsAt);
+    return timedValue(
+      event,
+      ["occurredAt", event.occurredAt],
+      ["dueAt", event.dueAt],
+      ["startsAt", event.startsAt],
+    );
+  return timedValue(
+    event,
+    ["dueAt", event.dueAt],
+    ["startsAt", event.startsAt],
+  );
 };
 const interviewKey = (record, timestamp) => {
   const classification = classifyLifecycleEventType(record.eventType);
   return [
     record.applicationId,
-    timestamp ?? record.startsAt ?? record.dueAt ?? record.occurredAt,
+    canonicalTimestamp(
+      timestamp ?? record.startsAt ?? record.dueAt ?? record.occurredAt,
+    ),
     record.stage ??
       classification.interviewStage ??
       record.eventType ??

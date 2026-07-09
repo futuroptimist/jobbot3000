@@ -859,6 +859,84 @@ describe("tracker dashboard metrics", () => {
     ).toBe(1);
   });
 
+  it("uses explicit midnight completed occurred_at instead of falling back to due_at", () => {
+    const applicationId = "app_completed_midnight";
+    const existing = {
+      applications: [
+        {
+          id: applicationId,
+          company: "Completed Midnight",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+    };
+    const lifecycle = importLifecycle(
+      [
+        "application_id,event_type,occurred_at,due_at,details",
+        [
+          applicationId,
+          "technical_interview_completed",
+          "2026-05-10T00:00:00.000Z",
+          "2026-05-01T12:00:00.000Z",
+          "Completed technical interview at midnight",
+        ].join(","),
+      ].join("\n"),
+      existing,
+    );
+
+    expect(lifecycle.interviews).toEqual([
+      expect.objectContaining({
+        startsAt: "2026-05-10T00:00:00.000Z",
+        stage: "technical_screen",
+        outcome: "completed",
+      }),
+    ]);
+    expect(
+      selectDashboardMetrics({ ...existing, ...lifecycle }).interviews,
+    ).toBe(1);
+  });
+
+  it("canonicalizes equivalent lifecycle and explicit interview timestamps", () => {
+    const applicationId = "app_equivalent_timestamps";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: applicationId,
+          company: "Equivalent Timestamps",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_equivalent_timestamps",
+          applicationId,
+          eventType: "technical_interview_completed",
+          occurredAt: "2026-02-10T17:30:00Z",
+          occurredAtHasTime: true,
+          createdAt: exportedAt,
+        },
+      ],
+      interviews: [
+        {
+          id: "interview_equivalent_timestamps",
+          applicationId,
+          stage: "technical_screen",
+          startsAt: "2026-02-10T17:30:00.000Z",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+    });
+
+    expect(metrics.interviews).toBe(1);
+  });
+
   it("preserves untimed classified lifecycle metadata without deriving interviews", () => {
     const applicationId = "app_import_untimed";
     const existing = {
