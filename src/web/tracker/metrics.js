@@ -88,6 +88,14 @@ const recruiterScreenKey = (record) =>
   ]
     .filter(Boolean)
     .join(":");
+const isPlaceholderTimestamp = (value) =>
+  value === "1970-01-01T00:00:00.000Z" || value === "1970-01-01";
+const hasLifecycleInterviewTime = (event, classification) => {
+  if (event.startsAt || event.dueAt) return true;
+  if (!event.occurredAt || isPlaceholderTimestamp(event.occurredAt))
+    return false;
+  return classification.interviewOutcome === "completed";
+};
 
 /**
  * Dashboard selector for imported tracker bundles.
@@ -110,7 +118,8 @@ export const selectDashboardMetrics = (bundle = {}) => {
   const recruiterScreenKeys = new Set();
   const assessmentApplicationIds = new Set();
   const offerApplicationIds = new Set();
-  const nonRecruiterInterviewKeys = new Set();
+  const lifecycleNonRecruiterInterviewKeys = new Set();
+  const explicitNonRecruiterInterviewKeys = new Set();
 
   for (const application of applications) {
     const metadata = metadataByApplicationId.get(application.id) ?? {};
@@ -179,8 +188,11 @@ export const selectDashboardMetrics = (bundle = {}) => {
     }
     if (isLifecycleRecruiterScreen(eventType) || status === "recruiter_screen")
       recruiterScreenKeys.add(recruiterScreenKey(event));
-    if (isLifecycleNonRecruiterInterview(eventType))
-      nonRecruiterInterviewKeys.add(interviewKey(event));
+    if (
+      isLifecycleNonRecruiterInterview(eventType) &&
+      hasLifecycleInterviewTime(event, classification)
+    )
+      lifecycleNonRecruiterInterviewKeys.add(interviewKey(event));
     if (
       OFFER_EVENT_TYPES.has(eventType) ||
       ["offer", "accepted"].includes(status)
@@ -202,8 +214,13 @@ export const selectDashboardMetrics = (bundle = {}) => {
       recruiterScreenKeys.add(recruiterScreenKey(interview));
   }
   for (const interview of interviews) {
-    if (interview.stage !== "recruiter_screen")
-      nonRecruiterInterviewKeys.add(interviewKey(interview));
+    if (interview.stage !== "recruiter_screen") {
+      const lifecycleDuplicateKey = interviewKey(interview);
+      if (!lifecycleNonRecruiterInterviewKeys.has(lifecycleDuplicateKey))
+        explicitNonRecruiterInterviewKeys.add(
+          interview.id ? `explicit:${interview.id}` : lifecycleDuplicateKey,
+        );
+    }
   }
 
   return {
@@ -217,7 +234,9 @@ export const selectDashboardMetrics = (bundle = {}) => {
     ),
     outreachReplyRate: boundedPercentage(outreachReplies, outreachSent),
     recruiterScreens: recruiterScreenKeys.size,
-    interviews: nonRecruiterInterviewKeys.size,
+    interviews:
+      lifecycleNonRecruiterInterviewKeys.size +
+      explicitNonRecruiterInterviewKeys.size,
     assessments: assessmentApplicationIds.size,
     offers: new Set(
       [

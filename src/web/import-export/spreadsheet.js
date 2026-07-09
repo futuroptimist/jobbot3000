@@ -1,8 +1,5 @@
 import { browserApplicationExportSchema } from "../../domain/browserApplication.js";
-import {
-  classifyLifecycleEventType,
-  isLifecycleNonRecruiterInterview,
-} from "../tracker/lifecycleClassification.js";
+import { classifyLifecycleEventType } from "../tracker/lifecycleClassification.js";
 
 export const LIFECYCLE_CSV_COLUMNS = [
   "application_id",
@@ -668,14 +665,12 @@ export const lifecycleRowsToBrowserApplicationExport = (
         updatedAt: exportedAt,
       });
     const classification = classifyLifecycleEventType(eventType);
-    const interviewStartsAt = isLifecycleNonRecruiterInterview(eventType)
-      ? classification.interviewOutcome === "completed"
-        ? occurredAt
-        : dueAt
-      : dueAt;
+    const interviewStartsAt =
+      classification.interviewOutcome === "completed" ? occurredAt : dueAt;
     const hasScheduledTime =
-      classification.interviewOutcome === "completed" ||
-      hasTimeComponent(row.due_at);
+      classification.interviewOutcome === "completed"
+        ? Boolean(occurredAt)
+        : hasTimeComponent(row.due_at);
     if (classification.interviewStage && interviewStartsAt && hasScheduledTime)
       interviews.push({
         id: stableId(

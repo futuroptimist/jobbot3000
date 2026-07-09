@@ -449,6 +449,43 @@ describe("tracker dashboard metrics", () => {
     expect(metrics.applicationResponseRate).toBe(100);
   });
 
+  it("derives completed recruiter screens from occurred_at instead of due_at", () => {
+    const existing = {
+      applications: [
+        {
+          id: "app_screen_import",
+          company: "Screen Import",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+    };
+    const lifecycle = importLifecycle(
+      [
+        "application_id,event_type,occurred_at,due_at,details",
+        [
+          "app_screen_import",
+          "recruiter_screen_completed",
+          "2026-02-10T17:30:00Z",
+          "2026-02-01",
+          "Completed screen",
+        ].join(","),
+      ].join("\n"),
+      existing,
+    );
+
+    expect(lifecycle.interviews).toContainEqual(
+      expect.objectContaining({
+        applicationId: "app_screen_import",
+        stage: "recruiter_screen",
+        startsAt: "2026-02-10T17:30:00Z",
+        outcome: "completed",
+      }),
+    );
+  });
+
   it("counts replied outreach records as outreach replies and application responses", () => {
     const timestamp = "2026-01-01T00:00:00.000Z";
     const metrics = selectDashboardMetrics({
@@ -574,6 +611,72 @@ describe("tracker dashboard metrics", () => {
 
     expect(metrics.interviews).toBe(1);
     expect(metrics.applicationsWithResponse).toBe(1);
+  });
+
+  it("ignores untimed lifecycle-only interview metadata in dashboard metrics", () => {
+    const timestamp = "2026-01-01T00:00:00.000Z";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: "app_untimed",
+          company: "Untimed",
+          role: "Engineer",
+          status: "applied",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_untimed",
+          applicationId: "app_untimed",
+          eventType: "devops_interview_scheduled",
+          occurredAt: "1970-01-01T00:00:00.000Z",
+          createdAt: timestamp,
+        },
+      ],
+      interviews: [],
+    });
+
+    expect(metrics.interviews).toBe(0);
+    expect(metrics.applicationsWithResponse).toBe(1);
+  });
+
+  it("preserves distinct explicit same-time non-recruiter interviews", () => {
+    const timestamp = "2026-01-01T00:00:00.000Z";
+    const startsAt = "2026-01-15T00:00:00.000Z";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: "app_same_day",
+          company: "Same Day",
+          role: "Engineer",
+          status: "applied",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      interviews: [
+        {
+          id: "interview_one",
+          applicationId: "app_same_day",
+          stage: "technical_screen",
+          startsAt,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+        {
+          id: "interview_two",
+          applicationId: "app_same_day",
+          stage: "technical_screen",
+          startsAt,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+    });
+
+    expect(metrics.interviews).toBe(2);
   });
 
   it("dedupes lifecycle-derived interviews across import and JSON backup round trip", async () => {
