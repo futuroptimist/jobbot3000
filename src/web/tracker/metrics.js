@@ -124,11 +124,29 @@ const recruiterScreenKey = (record) =>
     .join(":");
 const isPlaceholderTimestamp = (value) =>
   value === "1970-01-01T00:00:00.000Z" || value === "1970-01-01";
+const lifecycleInterviewTimestampCandidates = (event, classification) => {
+  const candidates = [lifecycleInterviewTimestamp(event, classification)];
+  if (classification.interviewOutcome === "completed") {
+    candidates.push(
+      timedValue(event, ["dueAt", event.dueAt]),
+      timedValue(event, ["startsAt", event.startsAt]),
+      timedValue(event, ["occurredAt", event.occurredAt]),
+    );
+  }
+  return [...new Set(candidates.filter(Boolean))];
+};
 const lifecycleInterviewKey = (event, classification) => {
-  const timestamp = lifecycleInterviewTimestamp(event, classification);
+  const [timestamp] = lifecycleInterviewTimestampCandidates(
+    event,
+    classification,
+  );
   if (!timestamp) return undefined;
   return interviewKey(event, timestamp);
 };
+const lifecycleInterviewDuplicateKeys = (event, classification) =>
+  lifecycleInterviewTimestampCandidates(event, classification).map(
+    (timestamp) => interviewKey(event, timestamp),
+  );
 
 /**
  * Dashboard selector for imported tracker bundles.
@@ -152,6 +170,7 @@ export const selectDashboardMetrics = (bundle = {}) => {
   const assessmentApplicationIds = new Set();
   const offerApplicationIds = new Set();
   const lifecycleNonRecruiterInterviewKeys = new Set();
+  const lifecycleNonRecruiterInterviewDuplicateKeys = new Set();
   const explicitNonRecruiterInterviewKeys = new Set();
 
   for (const application of applications) {
@@ -223,7 +242,14 @@ export const selectDashboardMetrics = (bundle = {}) => {
       recruiterScreenKeys.add(recruiterScreenKey(event));
     if (isLifecycleNonRecruiterInterview(eventType)) {
       const key = lifecycleInterviewKey(event, classification);
-      if (key) lifecycleNonRecruiterInterviewKeys.add(key);
+      if (key) {
+        lifecycleNonRecruiterInterviewKeys.add(key);
+        for (const duplicateKey of lifecycleInterviewDuplicateKeys(
+          event,
+          classification,
+        ))
+          lifecycleNonRecruiterInterviewDuplicateKeys.add(duplicateKey);
+      }
     }
     if (
       OFFER_EVENT_TYPES.has(eventType) ||
@@ -248,7 +274,9 @@ export const selectDashboardMetrics = (bundle = {}) => {
   for (const interview of interviews) {
     if (interview.stage !== "recruiter_screen") {
       const lifecycleDuplicateKey = interviewKey(interview, interview.startsAt);
-      if (!lifecycleNonRecruiterInterviewKeys.has(lifecycleDuplicateKey))
+      if (
+        !lifecycleNonRecruiterInterviewDuplicateKeys.has(lifecycleDuplicateKey)
+      )
         explicitNonRecruiterInterviewKeys.add(
           interview.id ? `explicit:${interview.id}` : lifecycleDuplicateKey,
         );
