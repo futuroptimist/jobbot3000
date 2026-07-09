@@ -545,6 +545,10 @@ const lifecycleStatusForEvent = (eventType) => {
   if (KNOWN_STATUSES.has(eventType)) return eventType;
   return undefined;
 };
+const lifecycleStatusForStage = (stageLabel) => {
+  const status = normalizeLabelKey(stageLabel);
+  return KNOWN_STATUSES.has(status) ? status : undefined;
+};
 
 export const lifecycleRowsToBrowserApplicationExport = (
   rows,
@@ -602,6 +606,7 @@ export const lifecycleRowsToBrowserApplicationExport = (
       });
     const status =
       knownLifecycleStatus ??
+      lifecycleStatusForStage(stageLabel) ??
       mapStatus({ status: "", interview_stage: stageLabel ?? "", outcome: "" });
     const sourceArtifact = compact(row.source_artifact) || undefined;
     const details = compact(row.details) || undefined;

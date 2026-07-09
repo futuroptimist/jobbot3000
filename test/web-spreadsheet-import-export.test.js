@@ -1289,50 +1289,100 @@ describe("spreadsheet import/export", () => {
     ]);
   });
 
-  it("exports blank event_type for status-only lifecycle events", () => {
+  it("round trips status-only lifecycle events without status loss", async () => {
     const exportedAt = "2026-03-01T00:00:00.000Z";
+    const statuses = [
+      "offer",
+      "outreach_sent",
+      "rejected",
+      "accepted",
+      "withdrawn",
+      "closed_archived",
+    ];
+    const compactCsv = serializeCsv(
+      statuses.map((status) => ({
+        application_id: `app_status_only_${status}`,
+        company: `Status Only ${status}`,
+        role_title: "Engineer",
+        status: "applied",
+        applied_at: "2026-03-01",
+        schema_version: "1",
+      })),
+    );
     const existing = {
-      applications: [
-        {
-          id: "app_status_only",
-          company: "Status Only",
-          role: "Engineer",
-          status: "offer",
-          createdAt: exportedAt,
-          updatedAt: exportedAt,
-        },
-      ],
+      applications: statuses.map((status) => ({
+        id: `app_status_only_${status}`,
+        company: `Status Only ${status}`,
+        role: "Engineer",
+        status: "applied",
+        createdAt: exportedAt,
+        updatedAt: exportedAt,
+      })),
     };
+    const lifecycleEvents = statuses.map((status) => ({
+      id: `event_status_only_${status}`,
+      applicationId: `app_status_only_${status}`,
+      status,
+      occurredAt: "2026-03-02T00:00:00.000Z",
+      source: "manual",
+      createdAt: exportedAt,
+    }));
     const csv = exportLifecycleCsv({
       schemaVersion: 1,
       exportedAt,
       ...existing,
       contacts: [],
       outreachMessages: [],
-      lifecycleEvents: [
-        {
-          id: "event_status_only_offer",
-          applicationId: "app_status_only",
-          status: "offer",
-          occurredAt: "2026-03-02T00:00:00.000Z",
-          source: "manual",
-          createdAt: exportedAt,
-        },
-      ],
+      lifecycleEvents,
       interviews: [],
       offers: [],
       artifacts: [],
       reminders: [],
     });
 
-    const rows = parseCsv(csv);
+    expect(parseCsv(csv)).toEqual(
+      expect.arrayContaining(
+        statuses.map((status) =>
+          expect.objectContaining({
+            application_id: `app_status_only_${status}`,
+            event_type: "",
+            stage: status,
+          }),
+        ),
+      ),
+    );
 
-    expect(rows).toEqual([
-      expect.objectContaining({
-        event_type: "",
-        stage: "offer",
-      }),
-    ]);
+    let repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    await importCompactCsv(compactCsv, repo, { mode: "replace" });
+    await importSupplementalLifecycleCsv(csv, repo);
+    const exportedAgain = exportLifecycleCsv(await repo.exportAllData());
+    repo.close();
+
+    await deleteDatabase();
+    repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    await importCompactCsv(compactCsv, repo, { mode: "replace" });
+    await importSupplementalLifecycleCsv(exportedAgain, repo);
+    const restored = await repo.exportAllData();
+
+    expect(restored.lifecycleEvents).toEqual(
+      expect.arrayContaining(
+        statuses.map((status) =>
+          expect.objectContaining({
+            applicationId: `app_status_only_${status}`,
+            status,
+          }),
+        ),
+      ),
+    );
+    expect(
+      restored.lifecycleEvents.filter(
+        ({ eventType, id, occurredAt }) =>
+          eventType === "lifecycle_event" &&
+          id.startsWith("event_app_status_only_") &&
+          occurredAt === "2026-03-02T00:00:00.000Z",
+      ),
+    ).toHaveLength(statuses.length);
+    repo.close();
   });
 
   it("preserves valid ISO offset datetimes without milliseconds", () => {
