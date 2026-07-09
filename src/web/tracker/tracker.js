@@ -11,7 +11,7 @@ import {
   importNdjsonBackup,
   previewSupplementalLifecycleCsvImport,
 } from "../import-export/spreadsheet.js";
-import { selectDashboardMetrics } from "./metrics.js";
+import { readSpreadsheetMetadata, selectDashboardMetrics } from "./metrics.js";
 
 /* canonical CSV/backup helpers are shared with spreadsheet import/export tests. */
 const ARRAY_STORES = [
@@ -214,9 +214,69 @@ function linkForArtifact(artifact) {
     ? `<a href="${esc(href)}" rel="noopener noreferrer">${esc(artifact.name)}</a>`
     : esc(artifact.name);
 }
+function safeArtifactLink(value, label = value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  let href = "";
+  try {
+    const url = new URL(raw);
+    if (["http:", "https:"].includes(url.protocol)) href = url.toString();
+  } catch {
+    href = "";
+  }
+  return href
+    ? `<a href="${esc(href)}" rel="noopener noreferrer" target="_blank">${esc(label)}</a>`
+    : esc(raw);
+}
 function fitScore(notes) {
   return String(notes || "").match(/fit_score_100[":\s]+([\d.]+)/)?.[1] || "";
 }
+const normalize = (value) =>
+  String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+const isAssessmentEvent = (record = {}) =>
+  [
+    record.eventType,
+    record.stageLabel,
+    record.status,
+    record.note,
+    record.details,
+  ]
+    .map(normalize)
+    .some(
+      (value) => value.includes("assessment") || value.includes("take_home"),
+    );
+const isRecruiterScreen = (record = {}) =>
+  normalize(record.stage) === "recruiter_screen" ||
+  normalize(record.status) === "recruiter_screen" ||
+  normalize(record.eventType).startsWith("recruiter_screen");
+function metadataEntries(app) {
+  const metadata = readSpreadsheetMetadata(app.notes);
+  return Object.entries({
+    "Raw status": metadata.spreadsheet_status,
+    "Raw stage": metadata.spreadsheet_interview_stage,
+    "Raw outcome": metadata.spreadsheet_outcome,
+    "Outreach status": metadata.outreach_status,
+    "Outreach channel": metadata.outreach_channel,
+    "Follow-up date": day(app.followUpDate),
+    "Application URL": metadata.application_url,
+    "Posting ID": metadata.posting_id,
+    "Work model": metadata.work_model,
+    "Compensation min": metadata.compensation_min_usd,
+    "Compensation max": metadata.compensation_max_usd,
+    "Cover letter submitted": metadata.cover_letter_submitted,
+    "Fit score": metadata.fit_score_100,
+    "Schema version": metadata.schema_version,
+  }).filter(([, value]) => value !== undefined && value !== "");
+}
+const metadataText = (app) =>
+  metadataEntries(app)
+    .map(([label, value]) => `${label}: ${value}`)
+    .join(" · ");
 async function refresh() {
   state.bundle = await repo.exportAll();
   state.apps = state.bundle.applications.sort((a, b) =>
@@ -255,41 +315,66 @@ function renderDashboard() {
   const b = state.bundle;
   const metrics = selectDashboardMetrics(b);
   const cards = [
-    ["Total applications", metrics.totalApplications, "Application records"],
-    ["Outreach sent", metrics.outreachSent, "Outbound outreach messages"],
+    [
+      "Total applications",
+      metrics.totalApplications,
+      "Applications being tracked",
+      "volume",
+    ],
+    [
+      "Outreach sent",
+      metrics.outreachSent,
+      "Outbound outreach messages",
+      "outreach",
+    ],
     [
       "Outreach replies",
       metrics.outreachReplies,
-      "Inbound or replied outreach messages",
+      `${metrics.outreachReplies} of ${metrics.outreachSent} outreach messages`,
+      "outreach",
     ],
     [
       "Recruiter screens",
       metrics.recruiterScreens,
-      "Recruiter-screen interviews/events",
+      "Recruiter-screen events, separate from interviews",
+      "screen",
     ],
-    ["Interviews", metrics.interviews, "Non-recruiter-screen interviews"],
-    ["Assessments", metrics.assessments, "Written assessments/take-homes"],
-    ["Offers", metrics.offers, "Offer records or offer outcomes"],
+    [
+      "Interviews",
+      metrics.interviews,
+      "Technical, onsite, or other non-recruiter interviews",
+      "interview",
+    ],
+    [
+      "Assessments",
+      metrics.assessments,
+      "Written assessments and take-homes, not interviews",
+      "assessment",
+    ],
+    ["Offers", metrics.offers, "Offer records or offer outcomes", "offer"],
     [
       "Application responses",
       metrics.applicationsWithResponse,
-      "Applications with employer response signals",
+      `${metrics.applicationsWithResponse} of ${metrics.totalApplications} applications`,
+      "response",
     ],
     [
       "Application response rate",
       `${metrics.applicationResponseRate}%`,
       `${metrics.applicationsWithResponse} of ${metrics.totalApplications} applications`,
+      "response",
     ],
     [
       "Outreach reply rate",
       `${metrics.outreachReplyRate}%`,
       `${metrics.outreachReplies} of ${metrics.outreachSent} outreach messages`,
+      "outreach",
     ],
   ];
   $("[data-metrics]").innerHTML = cards
     .map(
-      ([label, value, help]) =>
-        `<div class="metric" aria-label="${esc(label)}: ${esc(value)} (${esc(help)})"><span>${esc(label)}</span><strong>${esc(value)}</strong><small class="muted">${esc(help)}</small></div>`,
+      ([label, value, help, kind]) =>
+        `<div class="metric metric-${esc(kind)}" aria-label="${esc(label)}: ${esc(value)} (${esc(help)})"><span>${esc(label)}</span><strong>${esc(value)}</strong><small class="muted">${esc(help || "No records yet")}</small></div>`,
     )
     .join("");
   const weeks = {};
@@ -307,6 +392,7 @@ function appMeta(app) {
   const b = state.bundle;
   return {
     outreach: b.outreachMessages.filter((x) => x.applicationId === app.id),
+    lifecycle: b.lifecycleEvents.filter((x) => x.applicationId === app.id),
     interviews: b.interviews.filter((x) => x.applicationId === app.id),
     offers: b.offers.filter((x) => x.applicationId === app.id),
     artifacts: b.artifacts.filter((x) => x.applicationId === app.id),
@@ -319,19 +405,64 @@ function outcomeForApp(app, meta = appMeta(app)) {
 function renderList() {
   const q = $('[data-filter="query"]').value.toLowerCase(),
     st = $('[data-filter="status"]').value,
-    out = $('[data-filter="outcome"]').value;
-  const hasActiveFilters = Boolean(q || st || out);
+    out = $('[data-filter="outcome"]').value,
+    response = $('[data-filter="response"]').value,
+    outreach = $('[data-filter="outreach"]').value,
+    followUp = $('[data-filter="follow-up"]').value,
+    activity = $('[data-filter="activity"]').value;
+  const today = day(now());
+  const hasActiveFilters = Boolean(
+    q || st || out || response || outreach || followUp || activity,
+  );
   let rows = state.apps.filter((a) => {
     const m = appMeta(a);
+    const metadata = readSpreadsheetMetadata(a.notes);
+    const hasResponse =
+      ["offer", "accepted", "rejected", "closed_archived"].includes(a.status) ||
+      m.outreach.some((x) => x.direction === "inbound") ||
+      m.lifecycle.some((x) =>
+        [
+          "hiring_manager_reply",
+          "written_assessment_requested",
+          "recruiter_screen_scheduled",
+        ].includes(normalize(x.eventType)),
+      );
+    const outreachState =
+      m.outreach.length || metadata.outreach_status ? "sent" : "none";
+    const dueState =
+      a.followUpDate && day(a.followUpDate) <= today
+        ? "due"
+        : a.followUpDate
+          ? "scheduled"
+          : "none";
+    const hasAssessment =
+      m.lifecycle.some(isAssessmentEvent) ||
+      [metadata.spreadsheet_interview_stage, metadata.spreadsheet_outcome].some(
+        (x) =>
+          normalize(x).includes("assessment") ||
+          normalize(x).includes("take_home"),
+      );
+    const hasRecruiter =
+      m.interviews.some(isRecruiterScreen) ||
+      m.lifecycle.some(isRecruiterScreen);
+    const terminal =
+      OUTCOMES.has(a.status) || OUTCOMES.has(outcomeForApp(a, m));
     return (
       (!q ||
-        [a.company, a.role, a.status, a.notes].some((x) =>
+        [a.company, a.role, a.status, a.notes, metadataText(a)].some((x) =>
           String(x || "")
             .toLowerCase()
             .includes(q),
         )) &&
       (!st || a.status === st) &&
-      (!out || outcomeForApp(a, m) === out)
+      (!out || outcomeForApp(a, m) === out) &&
+      (!response || (response === "responded" ? hasResponse : !hasResponse)) &&
+      (!outreach || outreachState === outreach) &&
+      (!followUp || dueState === followUp) &&
+      (!activity ||
+        (activity === "assessment" && hasAssessment) ||
+        (activity === "recruiter_screen" && hasRecruiter) ||
+        (activity === "terminal" && terminal))
     );
   });
   rows.sort(
@@ -348,7 +479,15 @@ function renderList() {
   $("[data-applications-table] tbody").innerHTML = rows
     .map((a) => {
       const m = appMeta(a);
-      return `<tr><td><button class="button" data-open="${esc(a.id)}">${esc(a.company)}</button></td><td>${esc(a.role)}</td><td>${esc(a.status)}</td><td>${day(a.appliedAt)}</td><td>${day(a.followUpDate)}</td><td>${m.outreach.length ? "sent" : "none"}</td><td>${esc(m.interviews.at(-1)?.stage || "")}</td><td>${esc(outcomeForApp(a, m))}</td><td>${esc(fitScore(a.notes))}</td><td>${m.artifacts.map(linkForArtifact).join(", ")}</td></tr>`;
+      const metadata = metadataText(a);
+      const latestInterview = m.interviews
+        .filter((item) => !isRecruiterScreen(item))
+        .at(-1);
+      const recruiterCount =
+        m.interviews.filter(isRecruiterScreen).length +
+        m.lifecycle.filter(isRecruiterScreen).length;
+      const assessmentCount = m.lifecycle.filter(isAssessmentEvent).length;
+      return `<tr><td><button class="button" data-open="${esc(a.id)}">${esc(a.company)}</button>${metadata ? `<small class="muted table-note">${esc(metadata)}</small>` : ""}</td><td>${esc(a.role)}</td><td><span class="chip">${esc(a.status)}</span></td><td>${day(a.appliedAt)}</td><td>${day(a.followUpDate) || "—"}</td><td>${esc(readSpreadsheetMetadata(a.notes).outreach_status || (m.outreach.length ? "sent" : "none"))}</td><td>${recruiterCount ? `<span class="chip">Recruiter screen ×${recruiterCount}</span>` : ""}${latestInterview ? `<span class="chip">Interview: ${esc(latestInterview.stage)}</span>` : ""}${assessmentCount ? `<span class="chip chip-warning">Assessment ×${assessmentCount}</span>` : ""}</td><td>${esc(outcomeForApp(a, m) || "—")}</td><td>${esc(fitScore(a.notes) || readSpreadsheetMetadata(a.notes).fit_score_100 || "")}</td><td class="clip-cell">${m.artifacts.map(linkForArtifact).join(", ")}</td></tr>`;
     })
     .join("");
   $$("[data-open]").forEach(
@@ -405,17 +544,74 @@ function renderAll() {
   renderFollowups();
   renderOutreach();
 }
+function sortedLifecycleEvents(appId) {
+  return [...state.bundle.lifecycleEvents]
+    .filter((e) => e.applicationId === appId)
+    .sort((a, b) => {
+      const left = a.occurredAt || a.dueAt || "";
+      const right = b.occurredAt || b.dueAt || "";
+      return (
+        left.localeCompare(right) || String(a.id).localeCompare(String(b.id))
+      );
+    });
+}
+function eventDetails(e) {
+  return Object.entries({
+    Type: e.eventType,
+    Stage: e.stageLabel,
+    Channel: e.channel,
+    Actor: e.actor,
+    "Source artifact": e.sourceArtifact
+      ? safeArtifactLink(e.sourceArtifact)
+      : "",
+    "Requires action":
+      e.requiresUserAction === undefined
+        ? ""
+        : e.requiresUserAction
+          ? "yes"
+          : "no",
+    "Action status": e.actionStatus,
+    "Due date": day(e.dueAt),
+    "No AI required":
+      e.noAiRequired === undefined ? "" : e.noAiRequired ? "yes" : "no",
+    Details: e.details || e.note,
+  })
+    .filter(([, value]) => value !== undefined && value !== "")
+    .map(
+      ([label, value]) =>
+        `<span><strong>${esc(label)}:</strong> ${label === "Source artifact" ? value : esc(value)}</span>`,
+    )
+    .join("");
+}
+function timelineItem(e) {
+  const kind = isAssessmentEvent(e)
+    ? "assessment"
+    : isRecruiterScreen(e)
+      ? "recruiter"
+      : "event";
+  const label =
+    kind === "assessment"
+      ? "Assessment/take-home"
+      : kind === "recruiter"
+        ? "Recruiter screen"
+        : "Lifecycle event";
+  return `<li class="timeline-item timeline-${kind}"><div><strong>${esc(label)}</strong> <span class="chip">${esc(e.status || e.eventType || "event")}</span></div><time>${esc(day(e.occurredAt) || day(e.dueAt) || "No date")}</time><div class="timeline-meta">${eventDetails(e)}</div></li>`;
+}
+function metadataSection(app) {
+  const entries = metadataEntries(app);
+  if (!entries.length)
+    return '<p class="muted">No compact CSV metadata for this application yet.</p>';
+  return `<dl class="metadata-list">${entries.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${label.includes("URL") ? safeArtifactLink(value) : esc(value)}</dd></div>`).join("")}</dl>`;
+}
 function detailForm(app) {
   const m = appMeta(app);
-  return `<div class="tracker-detail"><article class="card"><h2>${esc(app.company || "New application")} — ${esc(app.role || "Unsaved")}</h2><form class="tracker-form" data-core-form>${input("company", app.company, true)}${input("role", app.role, true)}${input("postingUrl", app.postingUrl, "url")}<label>Status<select name="status" required>${STATUSES.map((s) => `<option ${app.status === s ? "selected" : ""}>${s}</option>`).join("")}</select></label>${input("source", app.source, "text")}${input("appliedAt", day(app.appliedAt), "date", true)}${input("followUpDate", day(app.followUpDate), "date")}<label>Notes<textarea name="notes">${esc(app.notes)}</textarea></label><button class="button">Save application</button></form></article><article class="card"><h3>Lifecycle timeline</h3><ul class="timeline">${
-    state.bundle.lifecycleEvents
-      .filter((e) => e.applicationId === app.id)
-      .map(
-        (e) =>
-          `<li>${day(e.occurredAt)} ${esc(e.status)} ${esc(e.note || "")}</li>`,
-      )
-      .join("") || "<li>No events yet.</li>"
-  }</ul></article><article class="card"><h3>Links/artifacts</h3><form class="tracker-form" data-artifact-form>${input("name", "", true)}${input("url", "")}<button class="button">Add link/artifact</button></form><ul>${m.artifacts.map((a) => `<li>${linkForArtifact(a)}</li>`).join("")}</ul></article><article class="card"><h3>Outreach messages</h3><form class="tracker-form" data-outreach-form><label>Channel<select name="channel"><option>email</option><option>linkedin</option><option>phone</option><option>sms</option><option>other</option></select></label><label>Message<textarea name="body" required></textarea></label><button class="button">Add outreach</button></form><ul>${m.outreach.map((o) => `<li>${day(o.sentAt)} ${esc(o.channel)} ${esc(o.body)}</li>`).join("")}</ul></article><article class="card"><h3>Interviews</h3><form class="tracker-form" data-interview-form><label>Stage<select name="stage"><option>recruiter_screen</option><option>technical_screen</option><option>onsite_loop</option><option>other</option></select></label>${input("startsAt", day(now()), "date")}<button class="button">Log interview</button></form><ul>${m.interviews.map((i) => `<li>${day(i.startsAt)} ${esc(i.stage)} ${esc(i.outcome)}</li>`).join("")}</ul></article><article class="card"><h3>Offers</h3><form class="tracker-form" data-offer-form><label>Status<select name="status"><option>received</option><option>negotiating</option><option>accepted</option><option>declined</option></select></label>${input("notes", "")}<button class="button">Log offer</button></form><ul>${m.offers.map((o) => `<li>${esc(o.status)} ${esc(o.notes || "")}</li>`).join("")}</ul></article></div>`;
+  const events = sortedLifecycleEvents(app.id);
+  const recruiterScreens = m.interviews.filter(isRecruiterScreen);
+  const otherInterviews = m.interviews.filter(
+    (item) => !isRecruiterScreen(item),
+  );
+  const assessments = events.filter(isAssessmentEvent);
+  return `<div class="tracker-detail"><article class="card"><h2>${esc(app.company || "New application")} — ${esc(app.role || "Unsaved")}</h2><form class="tracker-form" data-core-form>${input("company", app.company, true)}${input("role", app.role, true)}${input("postingUrl", app.postingUrl, "url")}<label>Status<select name="status" required>${STATUSES.map((s) => `<option ${app.status === s ? "selected" : ""}>${s}</option>`).join("")}</select></label>${input("source", app.source, "text")}${input("appliedAt", day(app.appliedAt), "date", true)}${input("followUpDate", day(app.followUpDate), "date")}<label>Notes<textarea name="notes">${esc(app.notes)}</textarea></label><button class="button">Save application</button></form></article><article class="card"><h3>Compact CSV metadata</h3>${metadataSection(app)}</article><article class="card wide-card"><h3>Lifecycle timeline</h3><p class="muted">Events are sorted by occurred date, then due date, then stable ID. All data stays local in this browser.</p><ul class="timeline">${events.map(timelineItem).join("") || '<li class="muted">No lifecycle events for this application yet.</li>'}</ul></article><article class="card"><h3>Assessments/take-homes</h3>${assessments.length ? `<ul>${assessments.map((e) => `<li>${esc(day(e.occurredAt) || day(e.dueAt))} ${esc(e.stageLabel || e.eventType || e.details || "assessment")}</li>`).join("")}</ul>` : '<p class="muted">No written assessments or take-homes yet.</p>'}</article><article class="card"><h3>Recruiter screens</h3>${recruiterScreens.length ? `<ul>${recruiterScreens.map((i) => `<li>${day(i.startsAt)} ${esc(i.outcome)}</li>`).join("")}</ul>` : '<p class="muted">No recruiter screens yet.</p>'}</article><article class="card"><h3>Interviews</h3><form class="tracker-form" data-interview-form><label>Stage<select name="stage"><option>recruiter_screen</option><option>technical_screen</option><option>onsite_loop</option><option>other</option></select></label>${input("startsAt", day(now()), "date")}<button class="button">Log interview</button></form><ul>${otherInterviews.map((i) => `<li>${day(i.startsAt)} ${esc(i.stage)} ${esc(i.outcome)}</li>`).join("") || '<li class="muted">No non-recruiter interviews yet.</li>'}</ul></article><article class="card"><h3>Links/artifacts</h3><form class="tracker-form" data-artifact-form>${input("name", "", true)}${input("url", "")}<button class="button">Add link/artifact</button></form><ul>${m.artifacts.map((a) => `<li>${linkForArtifact(a)}</li>`).join("")}</ul></article><article class="card"><h3>Outreach messages</h3><form class="tracker-form" data-outreach-form><label>Channel<select name="channel"><option>email</option><option>linkedin</option><option>phone</option><option>sms</option><option>other</option></select></label><label>Message<textarea name="body" required></textarea></label><button class="button">Add outreach</button></form><ul>${m.outreach.map((o) => `<li>${day(o.sentAt)} ${esc(o.channel)} ${esc(o.body)}</li>`).join("")}</ul></article><article class="card"><h3>Offers</h3><form class="tracker-form" data-offer-form><label>Status<select name="status"><option>received</option><option>negotiating</option><option>accepted</option><option>declined</option></select></label>${input("notes", "")}<button class="button">Log offer</button></form><ul>${m.offers.map((o) => `<li>${esc(o.status)} ${esc(o.notes || "")}</li>`).join("")}</ul></article></div>`;
 }
 function input(n, v = "", type = "text", required = false) {
   const req = type === true || required ? "required" : "";
@@ -635,6 +831,67 @@ function importFormatForFile(file) {
   if (name.endsWith(".ndjson") || name.endsWith(".jsonl")) return "ndjson";
   return "csv";
 }
+function detectedFormatLabel(format, text, lifecyclePreview) {
+  if (lifecyclePreview) return "supplemental lifecycle CSV";
+  if (format === "json") return "JSON backup";
+  if (format === "ndjson") return "NDJSON backup";
+  return detectSpreadsheetImportFormat(text) === "compact_csv"
+    ? "compact application CSV"
+    : "CSV";
+}
+function countByStore(recordsByStore) {
+  const rows = {
+    applications: recordsByStore.applications?.length ?? 0,
+    contacts: recordsByStore.contacts?.length ?? 0,
+    outreachMessages: recordsByStore.outreachMessages?.length ?? 0,
+    lifecycleEvents: recordsByStore.lifecycleEvents?.length ?? 0,
+    recruiterScreens:
+      (recordsByStore.interviews ?? []).filter(isRecruiterScreen).length +
+      (recordsByStore.lifecycleEvents ?? []).filter(isRecruiterScreen).length,
+    interviews: (recordsByStore.interviews ?? []).filter(
+      (item) => !isRecruiterScreen(item),
+    ).length,
+    assessments:
+      (recordsByStore.lifecycleEvents ?? []).filter(isAssessmentEvent).length +
+      (recordsByStore.applications ?? []).filter((application) => {
+        const metadata = readSpreadsheetMetadata(application.notes);
+        return [
+          metadata.spreadsheet_interview_stage,
+          metadata.spreadsheet_outcome,
+        ].some(
+          (value) =>
+            normalize(value).includes("assessment") ||
+            normalize(value).includes("take_home"),
+        );
+      }).length,
+    offers: recordsByStore.offers?.length ?? 0,
+    artifacts: recordsByStore.artifacts?.length ?? 0,
+    reminders: recordsByStore.reminders?.length ?? 0,
+    settings: recordsByStore.settings?.length ?? 0,
+  };
+  return Object.entries(rows).filter(([, count]) => count > 0);
+}
+function formatIssue(issue) {
+  const where = issue.rowNumber
+    ? `Row ${issue.rowNumber}`
+    : issue.storeName || issue.store || "Import";
+  const field = issue.field ? ` ${issue.field}` : "";
+  return `${where}${field}: ${[issue.code, issue.message || issue.id].filter(Boolean).join(": ")}`;
+}
+function renderImportPreview({
+  label,
+  recordsByStore,
+  conflicts = [],
+  warnings = [],
+  errors = [],
+  blocking = false,
+}) {
+  const counts = countByStore(recordsByStore);
+  const totalRecords = counts.reduce((sum, [, count]) => sum + count, 0);
+  const compactSummary = `Dry-run OK: ${recordsByStore.applications?.length ?? 0} applications, ${recordsByStore.outreachMessages?.length ?? 0} outreach messages, ${(recordsByStore.interviews ?? []).filter((item) => !isRecruiterScreen(item)).length} interviews`;
+  $("[data-import-result]").innerHTML =
+    `<h4>${blocking ? "Import preview needs attention" : "Dry-run succeeded"}</h4>${blocking ? "" : `<p>${esc(compactSummary)}</p>`}<p><strong>Detected format:</strong> ${esc(label)}.</p><p>${blocking ? "Apply import is disabled until blocking errors are fixed." : "Data remains local in this browser until you choose Apply import; no tracker details are sent to a server."}</p><h5>Record counts</h5><ul>${counts.map(([store, count]) => `<li>${esc(store)}: ${count}</li>`).join("") || "<li>No records detected.</li>"}</ul><p><strong>Total records:</strong> ${totalRecords}</p><h5>Conflicts</h5><ul>${conflicts.map((conflict) => `<li>${esc(conflict.storeName || conflict.store || "record")} ${esc(conflict.id || conflict.value || "")}</li>`).join("") || "<li>No existing record conflicts in local browser data.</li>"}</ul>${warnings.length ? `<h5>Warnings</h5><ul>${warnings.map((warning) => `<li>${esc(formatIssue(warning))}</li>`).join("")}</ul>` : ""}${errors.length ? `<h5>Blocking errors</h5><ul>${errors.map((error) => `<li>${esc(formatIssue(error))}</li>`).join("")}</ul>` : ""}`;
+}
 async function previewImport() {
   const file = $("[data-import-file]").files[0];
   if (!file) return;
@@ -648,28 +905,7 @@ async function previewImport() {
             exportAllData: repo.exportAll,
           })
         : null;
-    if (lifecyclePreview?.errors.length) {
-      throw new Error(
-        lifecyclePreview.errors
-          .map((error) =>
-            error.rowNumber
-              ? `Row ${error.rowNumber} ${error.field}: ${error.message}`
-              : `${error.field}: ${error.message}`,
-          )
-          .join("; "),
-      );
-    }
-    if (lifecyclePreview?.conflicts.length) {
-      throw new Error(
-        lifecyclePreview.conflicts
-          .map((conflict) =>
-            conflict.rowNumber
-              ? `Row ${conflict.rowNumber} ${conflict.field}: ${conflict.code}`
-              : `${conflict.store ?? "record"} ${conflict.field}: ${conflict.code}`,
-          )
-          .join("; "),
-      );
-    }
+    if (lifecyclePreview?.errors.length) throw lifecyclePreview;
     const bundle = lifecyclePreview
       ? lifecyclePreview.bundle
       : format === "json"
@@ -687,41 +923,37 @@ async function previewImport() {
     state.previewConflicts =
       lifecyclePreview?.conflicts ??
       (await detectImportConflicts(state.preview));
-    const totalRecords = Object.values(state.preview).reduce(
-      (count, rows) => count + rows.length,
-      0,
-    );
-    const formatLabel = lifecyclePreview
-      ? " (lifecycle CSV)"
-      : format === "csv"
-        ? ""
-        : ` (${format.toUpperCase()})`;
-    const previewCounts = {
-      applications: state.preview.applications?.length ?? 0,
-      lifecycleEvents: state.preview.lifecycleEvents?.length ?? 0,
-      outreachMessages: state.preview.outreachMessages?.length ?? 0,
-      interviews: state.preview.interviews?.length ?? 0,
-      reminders: state.preview.reminders?.length ?? 0,
-    };
-    const lifecycleSummary = lifecyclePreview
-      ? `${previewCounts.lifecycleEvents} lifecycle events, `
-      : "";
-    $("[data-import-result]").textContent =
-      `Dry-run OK${formatLabel}: ${previewCounts.applications} applications, ${lifecycleSummary}${previewCounts.outreachMessages} outreach messages, ${previewCounts.interviews} interviews, ${previewCounts.reminders} reminders. ${totalRecords} total records. ${state.previewConflicts.length} existing record conflicts.`;
+    renderImportPreview({
+      label: detectedFormatLabel(format, text, lifecyclePreview),
+      recordsByStore: state.preview,
+      conflicts: state.previewConflicts,
+      warnings: lifecyclePreview?.warnings ?? [],
+    });
     $("[data-import-apply]").disabled = false;
   } catch (err) {
     state.preview = null;
     state.previewConflicts = [];
     $("[data-import-apply]").disabled = true;
-    $("[data-import-result]").textContent =
-      `Import preview failed: ${err?.message ?? err}`;
+    if (err?.errors) {
+      renderImportPreview({
+        label: "supplemental lifecycle CSV",
+        recordsByStore: {},
+        conflicts: err.conflicts ?? [],
+        warnings: err.warnings ?? [],
+        errors: err.errors,
+        blocking: true,
+      });
+    } else {
+      $("[data-import-result]").textContent =
+        `Import preview failed: ${err?.message ?? err}`;
+    }
   }
 }
 function resetImportPreview() {
   state.preview = null;
   state.previewConflicts = [];
   $("[data-import-apply]").disabled = true;
-  $("[data-import-result]").textContent =
+  $("[data-import-result]").innerHTML =
     "Select Preview/dry-run to validate the selected file before applying.";
 }
 async function applyImport() {
@@ -745,7 +977,8 @@ async function applyImport() {
       `Import failed: ${err?.message ?? err}`;
     return;
   }
-  $("[data-import-result]").textContent = "Import applied.";
+  $("[data-import-result]").textContent =
+    "Import applied successfully. Your tracker data remains local in this browser.";
   $("[data-import-apply]").disabled = true;
   await refresh();
 }

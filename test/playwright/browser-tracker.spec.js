@@ -29,6 +29,8 @@ const weeklyCsvFixture = [
 
 const regressionCsvFixture = () =>
   readFile("test/fixtures/tracker-import/compact-main-regression.csv", "utf8");
+const lifecycleFixture = (name) =>
+  readFile(`test/fixtures/tracker-import/${name}`, "utf8");
 
 test.describe("browser application tracker", () => {
   let server;
@@ -78,6 +80,63 @@ test.describe("browser application tracker", () => {
     await expect(page.locator("[data-import-result]")).toContainText(
       "Dry-run OK: 15 applications, 7 outreach messages, 0 interviews",
     );
+    await expect(page.locator("[data-import-result]")).toContainText(
+      "Detected format: compact application CSV",
+    );
+    await expect(page.locator("[data-import-result]")).toContainText(
+      "assessments: 1",
+    );
+  });
+
+  test("previews supplemental lifecycle CSV counts and missing application errors", async ({
+    page,
+  }) => {
+    const csv = await regressionCsvFixture();
+    const lifecycle = await lifecycleFixture(
+      "assessment-lifecycle-regression.csv",
+    );
+
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await page.setInputFiles("[data-import-file]", {
+      name: "compact-main-regression.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(csv),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await page.getByRole("button", { name: "Apply import" }).click();
+
+    await page.setInputFiles("[data-import-file]", {
+      name: "assessment-lifecycle-regression.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(lifecycle),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await expect(page.locator("[data-import-result]")).toContainText(
+      "Detected format: supplemental lifecycle CSV",
+    );
+    await expect(page.locator("[data-import-result]")).toContainText(
+      "lifecycleEvents: 2",
+    );
+    await expect(page.locator("[data-import-result]")).toContainText(
+      "assessments: 2",
+    );
+
+    const unknownApplicationLifecycle = lifecycle.replace(
+      "app_reg_alpha_001",
+      "missing_app_999",
+    );
+    await page.setInputFiles("[data-import-file]", {
+      name: "unknown-lifecycle.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(unknownApplicationLifecycle),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await expect(page.locator("[data-import-result]")).toContainText(
+      "unknown_application",
+    );
+    await expect(
+      page.getByRole("button", { name: "Apply import" }),
+    ).toBeDisabled();
   });
 
   test("imports compact CSV regression fixture with bounded dashboard metrics", async ({
@@ -110,6 +169,71 @@ test.describe("browser application tracker", () => {
     await expect(metrics).toContainText("4 of 15 applications");
     await expect(metrics).toContainText("Outreach reply rate29%");
     await expect(metrics).toContainText("2 of 7 outreach messages");
+  });
+
+  test("shows compact metadata and lifecycle metadata in application detail", async ({
+    page,
+  }) => {
+    const csv = await regressionCsvFixture();
+    const assessmentLifecycle = await lifecycleFixture(
+      "assessment-lifecycle-regression.csv",
+    );
+    const recruiterLifecycle = await lifecycleFixture(
+      "recruiter-screen-lifecycle-regression.csv",
+    );
+
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await page.setInputFiles("[data-import-file]", {
+      name: "compact-main-regression.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(csv),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await page.getByRole("button", { name: "Apply import" }).click();
+    for (const [name, buffer] of [
+      ["assessment-lifecycle-regression.csv", assessmentLifecycle],
+      ["recruiter-screen-lifecycle-regression.csv", recruiterLifecycle],
+    ]) {
+      await page.setInputFiles("[data-import-file]", {
+        name,
+        mimeType: "text/csv",
+        buffer: Buffer.from(buffer),
+      });
+      await page.getByRole("button", { name: "Preview/dry-run" }).click();
+      await page.getByRole("button", { name: "Apply import" }).click();
+    }
+
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await expect(page.locator("[data-applications-table]")).toContainText(
+      "Raw status: applied",
+    );
+    await page.getByRole("button", { name: "Company Alpha" }).click();
+    await expect(page.locator("[data-detail]")).toContainText(
+      "Compact CSV metadata",
+    );
+    await expect(page.locator("[data-detail]")).toContainText("Raw status");
+    await expect(page.locator("[data-detail]")).toContainText(
+      "Assessment/take-home",
+    );
+    await expect(page.locator("[data-detail]")).toContainText(
+      "No AI required: yes",
+    );
+    await expect(page.locator("[data-detail]")).toContainText(
+      "Source artifact:",
+    );
+
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Company Gamma" }).click();
+    await expect(page.locator("[data-detail]")).toContainText(
+      "Recruiter screens",
+    );
+    await expect(page.locator("[data-detail]")).toContainText(
+      "Recruiter screen",
+    );
   });
 
   test("imports CSV, shows list, edits detail, and renders follow-ups", async ({
