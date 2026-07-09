@@ -68,13 +68,12 @@ const isAssessmentMetadata = (metadata) => {
 const addResponse = (responses, applicationId) => {
   if (applicationId) responses.add(applicationId);
 };
+const timedValue = (...values) =>
+  values.find((value) => value && !isPlaceholderTimestamp(value));
 const lifecycleInterviewTimestamp = (event, classification) => {
-  if (classification.interviewOutcome === "completed") {
-    if (event.occurredAt && !isPlaceholderTimestamp(event.occurredAt))
-      return event.occurredAt;
-    return event.dueAt ?? event.startsAt;
-  }
-  return event.dueAt ?? event.startsAt;
+  if (classification.interviewOutcome === "completed")
+    return timedValue(event.occurredAt, event.dueAt, event.startsAt);
+  return timedValue(event.dueAt, event.startsAt);
 };
 const interviewKey = (record, timestamp) => {
   const classification = classifyLifecycleEventType(record.eventType);

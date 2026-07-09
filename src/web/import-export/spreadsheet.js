@@ -684,7 +684,6 @@ export const lifecycleRowsToBrowserApplicationExport = (
           applicationId,
           classification.interviewStage,
           interviewStartsAt,
-          eventType,
         ),
         applicationId,
         contactIds: [],
