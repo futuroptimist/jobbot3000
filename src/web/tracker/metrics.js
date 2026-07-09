@@ -132,6 +132,7 @@ export const selectDashboardMetrics = (bundle = {}) => {
   let outreachSent = 0;
   let outreachReplies = 0;
   const representedReplyApplicationIds = new Set();
+  const lifecycleReplyApplicationIds = new Set();
   for (const message of outreachMessages) {
     const direction = normalize(message.direction);
     if (direction === "outbound") {
@@ -167,7 +168,8 @@ export const selectDashboardMetrics = (bundle = {}) => {
       TERMINAL_EMPLOYER_STATUSES.has(status)
     )
       addResponse(responseApplicationIds, event.applicationId);
-    if (eventType === "hiring_manager_reply") outreachReplies += 1;
+    if (eventType === "hiring_manager_reply" && event.applicationId)
+      lifecycleReplyApplicationIds.add(event.applicationId);
     if (ASSESSMENT_EVENT_TYPES.has(eventType)) {
       addResponse(responseApplicationIds, event.applicationId);
       if (event.applicationId)
@@ -180,6 +182,14 @@ export const selectDashboardMetrics = (bundle = {}) => {
       recruiterScreenKeys.add(recruiterScreenKey(event));
     if (OFFER_EVENT_TYPES.has(eventType))
       offerApplicationIds.add(event.applicationId);
+  }
+
+  for (const applicationId of lifecycleReplyApplicationIds) {
+    if (
+      !representedReplyApplicationIds.has(applicationId) &&
+      !compactOutreachReplyApplicationIds.has(applicationId)
+    )
+      outreachReplies += 1;
   }
 
   for (const interview of interviews) {

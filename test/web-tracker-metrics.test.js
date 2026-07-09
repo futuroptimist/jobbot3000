@@ -84,19 +84,51 @@ describe("tracker dashboard metrics", () => {
     expect(metrics.applicationsWithResponse).toBe(5);
   });
 
-  it("counts hiring-manager lifecycle replies as outreach replies", async () => {
-    const { bundle } = csvToBrowserApplicationExport(await compactFixture(), {
-      exportedAt,
+  it(
+    "dedupes hiring-manager lifecycle replies already represented by compact metadata",
+    async () => {
+      const { bundle } = csvToBrowserApplicationExport(await compactFixture(), {
+        exportedAt,
+      });
+      const lifecycle = importLifecycle(
+        await lifecycleFixture("employer-reply-lifecycle-regression.csv"),
+        bundle,
+      );
+
+      const metrics = selectDashboardMetrics(mergeBundle(bundle, lifecycle));
+
+      expect(metrics.outreachReplies).toBe(2);
+      expect(metrics.applicationsWithResponse).toBe(4);
+      expect(metrics.interviews).toBe(0);
+    },
+  );
+
+  it("counts lifecycle-only hiring-manager replies as outreach replies", () => {
+    const timestamp = "2026-01-01T00:00:00.000Z";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: "app_lifecycle_reply",
+          company: "Lifecycle Reply",
+          role: "Engineer",
+          status: "applied",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_lifecycle_reply",
+          applicationId: "app_lifecycle_reply",
+          eventType: "hiring_manager_reply",
+          occurredAt: timestamp,
+          createdAt: timestamp,
+        },
+      ],
     });
-    const lifecycle = importLifecycle(
-      await lifecycleFixture("employer-reply-lifecycle-regression.csv"),
-      bundle,
-    );
 
-    const metrics = selectDashboardMetrics(mergeBundle(bundle, lifecycle));
-
-    expect(metrics.outreachReplies).toBe(4);
-    expect(metrics.applicationsWithResponse).toBe(4);
+    expect(metrics.outreachReplies).toBe(1);
+    expect(metrics.applicationsWithResponse).toBe(1);
     expect(metrics.interviews).toBe(0);
   });
 
