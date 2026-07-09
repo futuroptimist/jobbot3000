@@ -4,9 +4,15 @@ import { describe, expect, it } from "vitest";
 
 import {
   csvToBrowserApplicationExport,
+  exportJsonBackup,
+  importJsonBackup,
   lifecycleRowsToBrowserApplicationExport,
   parseCsv,
 } from "../src/web/import-export/spreadsheet.js";
+import {
+  LIFECYCLE_EVENT_CATEGORIES,
+  classifyLifecycleEventType,
+} from "../src/web/tracker/lifecycleClassification.js";
 import {
   boundedPercentage,
   selectDashboardMetrics,
@@ -32,6 +38,36 @@ const importLifecycle = (csv, existing) =>
   }).bundle;
 
 describe("tracker dashboard metrics", () => {
+  it("classifies scheduled lifecycle interview events centrally", () => {
+    expect(
+      classifyLifecycleEventType("devops_interview_scheduled"),
+    ).toMatchObject({
+      category: LIFECYCLE_EVENT_CATEGORIES.NON_RECRUITER_INTERVIEW,
+      interviewStage: "technical_screen",
+      interviewOutcome: "scheduled",
+    });
+    expect(
+      classifyLifecycleEventType("technical_interview_scheduled").category,
+    ).toBe(LIFECYCLE_EVENT_CATEGORIES.NON_RECRUITER_INTERVIEW);
+    expect(
+      classifyLifecycleEventType("onsite_interview_scheduled"),
+    ).toMatchObject({
+      category: LIFECYCLE_EVENT_CATEGORIES.NON_RECRUITER_INTERVIEW,
+      interviewStage: "onsite_loop",
+    });
+    expect(
+      classifyLifecycleEventType("recruiter_screen_completed").category,
+    ).toBe(LIFECYCLE_EVENT_CATEGORIES.RECRUITER_SCREEN);
+    expect(
+      classifyLifecycleEventType("written_assessment_submitted").category,
+    ).toBe(LIFECYCLE_EVENT_CATEGORIES.ASSESSMENT);
+    expect(classifyLifecycleEventType("hiring_manager_reply").category).toBe(
+      LIFECYCLE_EVENT_CATEGORIES.EMPLOYER_RESPONSE,
+    );
+    expect(classifyLifecycleEventType("generic_follow_up").category).toBe(
+      LIFECYCLE_EVENT_CATEGORIES.UNKNOWN_METADATA,
+    );
+  });
   it("returns safe zero metrics for empty bundles", () => {
     expect(selectDashboardMetrics({})).toMatchObject({
       totalApplications: 0,
@@ -84,24 +120,21 @@ describe("tracker dashboard metrics", () => {
     expect(metrics.applicationsWithResponse).toBe(5);
   });
 
-  it(
-    "dedupes hiring-manager lifecycle replies already represented by compact metadata",
-    async () => {
-      const { bundle } = csvToBrowserApplicationExport(await compactFixture(), {
-        exportedAt,
-      });
-      const lifecycle = importLifecycle(
-        await lifecycleFixture("employer-reply-lifecycle-regression.csv"),
-        bundle,
-      );
+  it("dedupes hiring-manager lifecycle replies represented by compact metadata", async () => {
+    const { bundle } = csvToBrowserApplicationExport(await compactFixture(), {
+      exportedAt,
+    });
+    const lifecycle = importLifecycle(
+      await lifecycleFixture("employer-reply-lifecycle-regression.csv"),
+      bundle,
+    );
 
-      const metrics = selectDashboardMetrics(mergeBundle(bundle, lifecycle));
+    const metrics = selectDashboardMetrics(mergeBundle(bundle, lifecycle));
 
-      expect(metrics.outreachReplies).toBe(2);
-      expect(metrics.applicationsWithResponse).toBe(4);
-      expect(metrics.interviews).toBe(0);
-    },
-  );
+    expect(metrics.outreachReplies).toBe(2);
+    expect(metrics.applicationsWithResponse).toBe(4);
+    expect(metrics.interviews).toBe(0);
+  });
 
   it("counts lifecycle-only hiring-manager replies as outreach replies", () => {
     const timestamp = "2026-01-01T00:00:00.000Z";
@@ -483,6 +516,82 @@ describe("tracker dashboard metrics", () => {
     expect(metrics.recruiterScreens).toBe(0);
     expect(metrics.interviews).toBe(1);
     expect(metrics.applicationsWithResponse).toBe(1);
+  });
+
+  it("counts one non-recruiter interview for Reducto-like devops events", async () => {
+    const { bundle } = csvToBrowserApplicationExport(await compactFixture(), {
+      exportedAt,
+    });
+    const lifecycle = importLifecycle(
+      await lifecycleFixture("devops-interview-lifecycle-regression.csv"),
+      bundle,
+    );
+
+    expect(lifecycle.lifecycleEvents).toHaveLength(2);
+    expect(lifecycle.interviews).toHaveLength(2);
+    expect(lifecycle.interviews).toContainEqual(
+      expect.objectContaining({
+        applicationId: "app_reg_epsilon_005",
+        stage: "technical_screen",
+        startsAt: "2026-02-18T20:00:00.000Z",
+        outcome: "scheduled",
+      }),
+    );
+
+    const metrics = selectDashboardMetrics(mergeBundle(bundle, lifecycle));
+
+    expect(metrics.recruiterScreens).toBe(1);
+    expect(metrics.interviews).toBe(1);
+    expect(metrics.assessments).toBe(1);
+    expect(metrics.applicationsWithResponse).toBe(5);
+  });
+
+  it("counts already-imported devops lifecycle events without requiring re-import", () => {
+    const timestamp = "2026-01-01T00:00:00.000Z";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: "app_devops",
+          company: "Example",
+          role: "Engineer",
+          status: "applied",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_devops",
+          applicationId: "app_devops",
+          eventType: "devops_interview_scheduled",
+          occurredAt: timestamp,
+          dueAt: "2026-01-02T18:00:00.000Z",
+          createdAt: timestamp,
+        },
+      ],
+      interviews: [],
+    });
+
+    expect(metrics.interviews).toBe(1);
+    expect(metrics.applicationsWithResponse).toBe(1);
+  });
+
+  it("dedupes lifecycle-derived interviews across import and JSON backup round trip", async () => {
+    const { bundle } = csvToBrowserApplicationExport(await compactFixture(), {
+      exportedAt,
+    });
+    const lifecycle = importLifecycle(
+      await lifecycleFixture("devops-interview-lifecycle-regression.csv"),
+      bundle,
+    );
+    const mergedOnce = mergeBundle(bundle, lifecycle);
+    const mergedTwice = mergeBundle(mergedOnce, lifecycle);
+
+    expect(selectDashboardMetrics(mergedTwice).interviews).toBe(1);
+
+    const restored = importJsonBackup(exportJsonBackup(mergedOnce));
+
+    expect(selectDashboardMetrics(restored).interviews).toBe(1);
   });
 
   it("guards response percentages when child records exceed applications", () => {

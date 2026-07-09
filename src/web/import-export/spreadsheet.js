@@ -1,4 +1,8 @@
 import { browserApplicationExportSchema } from "../../domain/browserApplication.js";
+import {
+  classifyLifecycleEventType,
+  isLifecycleNonRecruiterInterview,
+} from "../tracker/lifecycleClassification.js";
 
 export const LIFECYCLE_CSV_COLUMNS = [
   "application_id",
@@ -539,9 +543,8 @@ export const detectSpreadsheetImportFormat = (text) => {
 };
 
 const lifecycleStatusForEvent = (eventType) => {
-  if (eventType === "hiring_manager_reply") return "outreach_sent";
-  if (eventType === "recruiter_screen_scheduled") return "recruiter_screen";
-  if (eventType === "application_submitted") return "applied";
+  const classification = classifyLifecycleEventType(eventType);
+  if (classification.status) return classification.status;
   if (KNOWN_STATUSES.has(eventType)) return eventType;
   return undefined;
 };
@@ -664,18 +667,29 @@ export const lifecycleRowsToBrowserApplicationExport = (
         createdAt: exportedAt,
         updatedAt: exportedAt,
       });
-    if (
-      eventType === "recruiter_screen_scheduled" &&
-      dueAt &&
-      hasTimeComponent(row.due_at)
-    )
+    const classification = classifyLifecycleEventType(eventType);
+    const interviewStartsAt = isLifecycleNonRecruiterInterview(eventType)
+      ? classification.interviewOutcome === "completed"
+        ? occurredAt
+        : dueAt
+      : dueAt;
+    const hasScheduledTime =
+      classification.interviewOutcome === "completed" ||
+      hasTimeComponent(row.due_at);
+    if (classification.interviewStage && interviewStartsAt && hasScheduledTime)
       interviews.push({
-        id: stableId("interview", applicationId, "recruiter_screen", dueAt),
+        id: stableId(
+          "interview",
+          applicationId,
+          classification.interviewStage,
+          interviewStartsAt,
+          eventType,
+        ),
         applicationId,
         contactIds: [],
-        stage: "recruiter_screen",
-        startsAt: dueAt,
-        outcome: "scheduled",
+        stage: classification.interviewStage,
+        startsAt: interviewStartsAt,
+        outcome: classification.interviewOutcome ?? "scheduled",
         createdAt: exportedAt,
         updatedAt: exportedAt,
       });

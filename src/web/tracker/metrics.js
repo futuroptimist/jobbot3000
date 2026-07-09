@@ -1,28 +1,14 @@
+import {
+  classifyLifecycleEventType,
+  isLifecycleAssessment,
+  isLifecycleNonRecruiterInterview,
+  isLifecycleRecruiterScreen,
+} from "./lifecycleClassification.js";
 const TERMINAL_EMPLOYER_STATUSES = new Set([
   "offer",
   "accepted",
   "rejected",
   "closed_archived",
-]);
-const RESPONSE_EVENT_TYPES = new Set([
-  "hiring_manager_reply",
-  "written_assessment_requested",
-  "recruiter_screen_scheduled",
-  "recruiter_screen_completed",
-  "offer",
-  "offer_received",
-]);
-const ASSESSMENT_EVENT_TYPES = new Set([
-  "written_assessment",
-  "written_assessment_requested",
-  "written_assessment_submitted",
-  "take_home",
-  "take_home_requested",
-  "take_home_submitted",
-]);
-const RECRUITER_SCREEN_EVENT_TYPES = new Set([
-  "recruiter_screen_scheduled",
-  "recruiter_screen_completed",
 ]);
 const OFFER_EVENT_TYPES = new Set(["offer", "offer_received"]);
 const OUTREACH_REPLY_STATUSES = new Set(["replied", "reply", "responded"]);
@@ -82,6 +68,19 @@ const isAssessmentMetadata = (metadata) => {
 const addResponse = (responses, applicationId) => {
   if (applicationId) responses.add(applicationId);
 };
+const interviewKey = (record) => {
+  const classification = classifyLifecycleEventType(record.eventType);
+  return [
+    record.applicationId,
+    record.startsAt ?? record.dueAt ?? record.occurredAt ?? record.id,
+    record.stage ??
+      classification.interviewStage ??
+      record.eventType ??
+      "interview",
+  ]
+    .filter(Boolean)
+    .join(":");
+};
 const recruiterScreenKey = (record) =>
   [
     record.applicationId,
@@ -111,6 +110,7 @@ export const selectDashboardMetrics = (bundle = {}) => {
   const recruiterScreenKeys = new Set();
   const assessmentApplicationIds = new Set();
   const offerApplicationIds = new Set();
+  const nonRecruiterInterviewKeys = new Set();
 
   for (const application of applications) {
     const metadata = metadataByApplicationId.get(application.id) ?? {};
@@ -163,23 +163,24 @@ export const selectDashboardMetrics = (bundle = {}) => {
   for (const event of lifecycleEvents) {
     const eventType = normalize(event.eventType);
     const status = normalize(event.status);
+    const classification = classifyLifecycleEventType(eventType);
     if (
-      RESPONSE_EVENT_TYPES.has(eventType) ||
+      classification.countsAsResponse ||
+      OFFER_EVENT_TYPES.has(eventType) ||
       TERMINAL_EMPLOYER_STATUSES.has(status)
     )
       addResponse(responseApplicationIds, event.applicationId);
     if (eventType === "hiring_manager_reply" && event.applicationId)
       lifecycleReplyApplicationIds.add(event.applicationId);
-    if (ASSESSMENT_EVENT_TYPES.has(eventType)) {
+    if (isLifecycleAssessment(eventType)) {
       addResponse(responseApplicationIds, event.applicationId);
       if (event.applicationId)
         assessmentApplicationIds.add(event.applicationId);
     }
-    if (
-      RECRUITER_SCREEN_EVENT_TYPES.has(eventType) ||
-      status === "recruiter_screen"
-    )
+    if (isLifecycleRecruiterScreen(eventType) || status === "recruiter_screen")
       recruiterScreenKeys.add(recruiterScreenKey(event));
+    if (isLifecycleNonRecruiterInterview(eventType))
+      nonRecruiterInterviewKeys.add(interviewKey(event));
     if (
       OFFER_EVENT_TYPES.has(eventType) ||
       ["offer", "accepted"].includes(status)
@@ -200,9 +201,10 @@ export const selectDashboardMetrics = (bundle = {}) => {
     if (interview.stage === "recruiter_screen")
       recruiterScreenKeys.add(recruiterScreenKey(interview));
   }
-  const nonRecruiterInterviews = interviews.filter(
-    (interview) => interview.stage !== "recruiter_screen",
-  );
+  for (const interview of interviews) {
+    if (interview.stage !== "recruiter_screen")
+      nonRecruiterInterviewKeys.add(interviewKey(interview));
+  }
 
   return {
     totalApplications: applications.length,
@@ -215,7 +217,7 @@ export const selectDashboardMetrics = (bundle = {}) => {
     ),
     outreachReplyRate: boundedPercentage(outreachReplies, outreachSent),
     recruiterScreens: recruiterScreenKeys.size,
-    interviews: nonRecruiterInterviews.length,
+    interviews: nonRecruiterInterviewKeys.size,
     assessments: assessmentApplicationIds.size,
     offers: new Set(
       [
