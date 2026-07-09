@@ -707,6 +707,43 @@ describe("tracker dashboard metrics", () => {
     expect(metrics.applicationsWithResponse).toBe(1);
   });
 
+  it("ignores date-only lifecycle-only interview timestamps in dashboard metrics", () => {
+    const timestamp = "2026-01-01T00:00:00.000Z";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: "app_date_only",
+          company: "Date Only",
+          role: "Engineer",
+          status: "applied",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_date_only_scheduled",
+          applicationId: "app_date_only",
+          eventType: "devops_interview_scheduled",
+          occurredAt: timestamp,
+          dueAt: "2026-01-02T00:00:00.000Z",
+          createdAt: timestamp,
+        },
+        {
+          id: "event_date_only_completed",
+          applicationId: "app_date_only",
+          eventType: "technical_interview_completed",
+          occurredAt: "2026-01-03T00:00:00.000Z",
+          createdAt: timestamp,
+        },
+      ],
+      interviews: [],
+    });
+
+    expect(metrics.interviews).toBe(0);
+    expect(metrics.applicationsWithResponse).toBe(1);
+  });
+
   it("preserves distinct explicit same-time non-recruiter interviews", () => {
     const timestamp = "2026-01-01T00:00:00.000Z";
     const startsAt = "2026-01-15T00:00:00.000Z";
