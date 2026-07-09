@@ -64,6 +64,36 @@
               <option>withdrawn</option>
               <option>closed_archived</option>
             </select></label
+          ><label
+            ><span>Response</span
+            ><select data-filter="response">
+              <option value="">All response states</option>
+              <option value="responded">Employer responded</option>
+              <option value="no_response">No response yet</option>
+            </select></label
+          ><label
+            ><span>Outreach</span
+            ><select data-filter="outreach">
+              <option value="">All outreach states</option>
+              <option value="none">No outreach</option>
+              <option value="sent">Sent</option>
+              <option value="replied">Replied</option>
+            </select></label
+          ><label
+            ><span>Follow-up</span
+            ><select data-filter="follow-up">
+              <option value="">All follow-ups</option>
+              <option value="due">Due or overdue</option>
+              <option value="none">No follow-up date</option>
+            </select></label
+          ><label
+            ><span>Activity</span
+            ><select data-filter="activity">
+              <option value="">All activity</option>
+              <option value="assessments">Assessments/take-homes</option>
+              <option value="recruiter_screens">Recruiter screens</option>
+              <option value="terminal">Terminal outcomes</option>
+            </select></label
           >
         </form>
         <p data-empty-state class="muted">
@@ -117,7 +147,15 @@
                 Apply import
               </button>
             </div>
-            <pre data-import-result class="muted"></pre>
+            <div
+              data-import-result
+              class="import-result muted"
+              role="status"
+              aria-live="polite"
+            >
+              Select Preview/dry-run to validate the selected file before
+              applying.
+            </div>
           </article>
           <article class="card">
             <h3>Export backups</h3>
