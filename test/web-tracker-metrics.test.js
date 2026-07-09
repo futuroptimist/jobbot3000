@@ -5,7 +5,9 @@ import { describe, expect, it } from "vitest";
 import {
   csvToBrowserApplicationExport,
   exportJsonBackup,
+  exportNdjsonBackup,
   importJsonBackup,
+  importNdjsonBackup,
   lifecycleRowsToBrowserApplicationExport,
   parseCsv,
 } from "../src/web/import-export/spreadsheet.js";
@@ -555,6 +557,69 @@ describe("tracker dashboard metrics", () => {
     expect(metrics.applicationsWithResponse).toBe(1);
   });
 
+  it("derives all required non-recruiter lifecycle interview event types", () => {
+    const applicationId = "app_all_lifecycle_interviews";
+    const existing = {
+      applications: [
+        {
+          id: applicationId,
+          company: "Lifecycle Interviews",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+    };
+    const eventTypes = [
+      "devops_interview_scheduled",
+      "devops_interview_completed",
+      "technical_interview_scheduled",
+      "technical_interview_completed",
+      "technical_screen_scheduled",
+      "technical_screen_completed",
+      "onsite_interview_scheduled",
+      "onsite_interview_completed",
+      "final_interview_scheduled",
+      "final_interview_completed",
+    ];
+    const rows = [
+      "application_id,event_type,occurred_at,due_at,details",
+      ...eventTypes.map((eventType, index) => {
+        const hour = String(10 + index).padStart(2, "0");
+        const occurredAt = eventType.endsWith("_completed")
+          ? `2026-04-01T${hour}:30:00.000Z`
+          : `2026-04-01T${hour}:00:00.000Z`;
+        const dueAt = `2026-04-02T${hour}:00:00.000Z`;
+        return [
+          applicationId,
+          eventType,
+          occurredAt,
+          dueAt,
+          `${eventType} regression`,
+        ].join(",");
+      }),
+    ].join("\n");
+
+    const lifecycle = importLifecycle(rows, existing);
+
+    expect(lifecycle.lifecycleEvents).toHaveLength(eventTypes.length);
+    expect(lifecycle.interviews).toHaveLength(eventTypes.length);
+    expect(
+      lifecycle.interviews
+        .map(({ outcome }) => outcome)
+        .filter((outcome) => outcome === "scheduled"),
+    ).toHaveLength(5);
+    expect(
+      lifecycle.interviews
+        .map(({ outcome }) => outcome)
+        .filter((outcome) => outcome === "completed"),
+    ).toHaveLength(5);
+    expect(
+      selectDashboardMetrics({ ...existing, ...lifecycle }).interviews,
+    ).toBe(eventTypes.length);
+  });
+
   it("counts one non-recruiter interview for Reducto-like devops events", async () => {
     const { bundle } = csvToBrowserApplicationExport(await compactFixture(), {
       exportedAt,
@@ -679,6 +744,81 @@ describe("tracker dashboard metrics", () => {
     expect(metrics.interviews).toBe(2);
   });
 
+  it("uses completed occurred_at to dedupe lifecycle and derived interview records", () => {
+    const applicationId = "app_completed_both";
+    const existing = {
+      applications: [
+        {
+          id: applicationId,
+          company: "Completed Both",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+    };
+    const lifecycle = importLifecycle(
+      [
+        "application_id,event_type,occurred_at,due_at,details",
+        [
+          applicationId,
+          "technical_interview_completed",
+          "2026-05-10T17:30:00.000Z",
+          "2026-05-01T12:00:00.000Z",
+          "Completed technical interview",
+        ].join(","),
+      ].join("\n"),
+      existing,
+    );
+
+    expect(lifecycle.interviews).toEqual([
+      expect.objectContaining({
+        startsAt: "2026-05-10T17:30:00.000Z",
+        stage: "technical_screen",
+        outcome: "completed",
+      }),
+    ]);
+    expect(
+      selectDashboardMetrics({ ...existing, ...lifecycle }).interviews,
+    ).toBe(1);
+  });
+
+  it("preserves untimed classified lifecycle metadata without deriving interviews", () => {
+    const applicationId = "app_import_untimed";
+    const existing = {
+      applications: [
+        {
+          id: applicationId,
+          company: "Import Untimed",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+    };
+    const lifecycle = importLifecycle(
+      [
+        "application_id,event_type,occurred_at,due_at,details",
+        [
+          applicationId,
+          "devops_interview_scheduled",
+          "",
+          "",
+          "Metadata only",
+        ].join(","),
+      ].join("\n"),
+      existing,
+    );
+
+    expect(lifecycle.lifecycleEvents).toHaveLength(1);
+    expect(lifecycle.interviews).toHaveLength(0);
+    expect(
+      selectDashboardMetrics({ ...existing, ...lifecycle }).interviews,
+    ).toBe(0);
+  });
+
   it("dedupes lifecycle-derived interviews across import and JSON backup round trip", async () => {
     const { bundle } = csvToBrowserApplicationExport(await compactFixture(), {
       exportedAt,
@@ -690,11 +830,22 @@ describe("tracker dashboard metrics", () => {
     const mergedOnce = mergeBundle(bundle, lifecycle);
     const mergedTwice = mergeBundle(mergedOnce, lifecycle);
 
-    expect(selectDashboardMetrics(mergedTwice).interviews).toBe(1);
+    expect(selectDashboardMetrics(mergedTwice)).toMatchObject({
+      recruiterScreens: 1,
+      interviews: 1,
+    });
 
-    const restored = importJsonBackup(exportJsonBackup(mergedOnce));
+    const restoredJson = importJsonBackup(exportJsonBackup(mergedOnce));
+    const restoredNdjson = importNdjsonBackup(exportNdjsonBackup(mergedOnce));
 
-    expect(selectDashboardMetrics(restored).interviews).toBe(1);
+    for (const restored of [restoredJson, restoredNdjson]) {
+      expect(selectDashboardMetrics(restored)).toMatchObject({
+        recruiterScreens: 1,
+        interviews: 1,
+        assessments: 1,
+        applicationsWithResponse: 5,
+      });
+    }
   });
 
   it("guards response percentages when child records exceed applications", () => {

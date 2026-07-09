@@ -665,13 +665,19 @@ export const lifecycleRowsToBrowserApplicationExport = (
         updatedAt: exportedAt,
       });
     const classification = classifyLifecycleEventType(eventType);
+    const occurredAtHasTime = hasTimeComponent(row.occurred_at);
+    const dueAtHasTime = hasTimeComponent(row.due_at);
     const interviewStartsAt =
-      classification.interviewOutcome === "completed" ? occurredAt : dueAt;
-    const hasScheduledTime =
       classification.interviewOutcome === "completed"
-        ? Boolean(occurredAt)
-        : hasTimeComponent(row.due_at);
-    if (classification.interviewStage && interviewStartsAt && hasScheduledTime)
+        ? occurredAtHasTime
+          ? occurredAt
+          : dueAtHasTime
+            ? dueAt
+            : undefined
+        : dueAtHasTime
+          ? dueAt
+          : undefined;
+    if (classification.interviewStage && interviewStartsAt)
       interviews.push({
         id: stableId(
           "interview",

@@ -68,11 +68,19 @@ const isAssessmentMetadata = (metadata) => {
 const addResponse = (responses, applicationId) => {
   if (applicationId) responses.add(applicationId);
 };
-const interviewKey = (record) => {
+const lifecycleInterviewTimestamp = (event, classification) => {
+  if (classification.interviewOutcome === "completed") {
+    if (event.occurredAt && !isPlaceholderTimestamp(event.occurredAt))
+      return event.occurredAt;
+    return event.dueAt ?? event.startsAt;
+  }
+  return event.dueAt ?? event.startsAt;
+};
+const interviewKey = (record, timestamp) => {
   const classification = classifyLifecycleEventType(record.eventType);
   return [
     record.applicationId,
-    record.startsAt ?? record.dueAt ?? record.occurredAt ?? record.id,
+    timestamp ?? record.startsAt ?? record.dueAt ?? record.occurredAt,
     record.stage ??
       classification.interviewStage ??
       record.eventType ??
@@ -90,11 +98,10 @@ const recruiterScreenKey = (record) =>
     .join(":");
 const isPlaceholderTimestamp = (value) =>
   value === "1970-01-01T00:00:00.000Z" || value === "1970-01-01";
-const hasLifecycleInterviewTime = (event, classification) => {
-  if (event.startsAt || event.dueAt) return true;
-  if (!event.occurredAt || isPlaceholderTimestamp(event.occurredAt))
-    return false;
-  return classification.interviewOutcome === "completed";
+const lifecycleInterviewKey = (event, classification) => {
+  const timestamp = lifecycleInterviewTimestamp(event, classification);
+  if (!timestamp) return undefined;
+  return interviewKey(event, timestamp);
 };
 
 /**
@@ -188,11 +195,10 @@ export const selectDashboardMetrics = (bundle = {}) => {
     }
     if (isLifecycleRecruiterScreen(eventType) || status === "recruiter_screen")
       recruiterScreenKeys.add(recruiterScreenKey(event));
-    if (
-      isLifecycleNonRecruiterInterview(eventType) &&
-      hasLifecycleInterviewTime(event, classification)
-    )
-      lifecycleNonRecruiterInterviewKeys.add(interviewKey(event));
+    if (isLifecycleNonRecruiterInterview(eventType)) {
+      const key = lifecycleInterviewKey(event, classification);
+      if (key) lifecycleNonRecruiterInterviewKeys.add(key);
+    }
     if (
       OFFER_EVENT_TYPES.has(eventType) ||
       ["offer", "accepted"].includes(status)
@@ -215,7 +221,7 @@ export const selectDashboardMetrics = (bundle = {}) => {
   }
   for (const interview of interviews) {
     if (interview.stage !== "recruiter_screen") {
-      const lifecycleDuplicateKey = interviewKey(interview);
+      const lifecycleDuplicateKey = interviewKey(interview, interview.startsAt);
       if (!lifecycleNonRecruiterInterviewKeys.has(lifecycleDuplicateKey))
         explicitNonRecruiterInterviewKeys.add(
           interview.id ? `explicit:${interview.id}` : lifecycleDuplicateKey,
