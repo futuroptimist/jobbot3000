@@ -2,13 +2,13 @@
 /* eslint-disable max-len */
 import {
   COMPACT_CSV_COLUMNS,
-  csvToBrowserApplicationExport,
   detectSpreadsheetImportFormat,
   exportCompactCsv,
   exportJsonBackup,
   exportNdjsonBackup,
   importJsonBackup,
   importNdjsonBackup,
+  previewCompactCsvImport,
   previewSupplementalLifecycleCsvImport,
 } from "../import-export/spreadsheet.js";
 import { readSpreadsheetMetadata, selectDashboardMetrics } from "./metrics.js";
@@ -564,11 +564,9 @@ function sortedLifecycleEvents(appId) {
   return [...state.bundle.lifecycleEvents]
     .filter((e) => e.applicationId === appId)
     .sort((a, b) => {
-      const primary = (a.occurredAt || a.dueAt || "").localeCompare(
-        b.occurredAt || b.dueAt || "",
-      );
+      const occurred = (a.occurredAt || "").localeCompare(b.occurredAt || "");
       const due = (a.dueAt || "").localeCompare(b.dueAt || "");
-      return primary || due || String(a.id).localeCompare(String(b.id));
+      return occurred || due || String(a.id).localeCompare(String(b.id));
     });
 }
 function eventDetails(e) {
@@ -829,21 +827,6 @@ async function newApplication() {
   };
   openUnsavedDetail(app);
 }
-function previewBundleFromCsv(text) {
-  const { bundle, errors } = csvToBrowserApplicationExport(text);
-  if (errors.length) {
-    throw new Error(
-      errors
-        .map((error) =>
-          error.rowNumber
-            ? `Row ${error.rowNumber} ${error.field}: ${error.message}`
-            : `${error.field}: ${error.message}`,
-        )
-        .join("; "),
-    );
-  }
-  return bundle;
-}
 function bundleForIndexedDb(bundle) {
   return {
     ...Object.fromEntries(
@@ -911,7 +894,13 @@ function formatIssue(issue) {
     ? `Row ${issue.rowNumber}`
     : issue.storeName || issue.store || "Import";
   const field = issue.field ? ` ${issue.field}` : "";
-  return `${where}${field}: ${[issue.code, issue.message || issue.id].filter(Boolean).join(": ")}`;
+  const details = [
+    issue.code,
+    issue.message || issue.reason,
+    issue.value ? `value ${issue.value}` : "",
+    issue.id ? `ID ${issue.id}` : "",
+  ].filter(Boolean);
+  return `${where}${field}: ${details.join(": ")}`;
 }
 function renderImportPreview({
   label,
@@ -935,7 +924,7 @@ function renderImportPreview({
   ].reduce((sum, store) => sum + (recordsByStore[store]?.length ?? 0), 0);
   const compactSummary = `Dry-run OK: ${recordsByStore.applications?.length ?? 0} applications, ${recordsByStore.outreachMessages?.length ?? 0} outreach messages, ${(recordsByStore.interviews ?? []).filter((item) => !isRecruiterScreen(item)).length} interviews`;
   $("[data-import-result]").innerHTML =
-    `<h4>${blocking ? "Import preview needs attention" : "Dry-run succeeded"}</h4>${blocking ? "" : `<p>${esc(compactSummary)}</p>`}<p><strong>Detected format:</strong> ${esc(label)}.</p><p>${blocking ? "Apply import is disabled until blocking errors are fixed." : "Data remains local in this browser until you choose Apply import; no tracker details are sent to a server."}</p><h5>Record counts</h5><ul>${counts.map(([store, count]) => `<li>${esc(store)}: ${count}</li>`).join("") || "<li>No records detected.</li>"}</ul><p><strong>Total records:</strong> ${totalRecords}</p><h5>Conflicts</h5><ul>${conflicts.map((conflict) => `<li>${esc(conflict.storeName || conflict.store || "record")} ${esc(conflict.id || conflict.value || "")}</li>`).join("") || "<li>No existing record conflicts in local browser data.</li>"}</ul>${warnings.length ? `<h5>Warnings</h5><ul>${warnings.map((warning) => `<li>${esc(formatIssue(warning))}</li>`).join("")}</ul>` : ""}${errors.length ? `<h5>Blocking errors</h5><ul>${errors.map((error) => `<li>${esc(formatIssue(error))}</li>`).join("")}</ul>` : ""}`;
+    `<h4>${blocking ? "Import preview needs attention" : "Dry-run succeeded"}</h4>${blocking ? "" : `<p>${esc(compactSummary)}</p>`}<p><strong>Detected format:</strong> ${esc(label)}.</p><p>${blocking ? "Apply import is disabled until blocking errors are fixed." : "Data remains local in this browser until you choose Apply import; no tracker details are sent to a server."}</p><h5>Record counts</h5><ul>${counts.map(([store, count]) => `<li>${esc(store)}: ${count}</li>`).join("") || "<li>No records detected.</li>"}</ul><p><strong>Total records:</strong> ${totalRecords}</p><h5>Conflicts</h5><ul>${conflicts.map((conflict) => `<li>${esc(formatIssue(conflict))}</li>`).join("") || "<li>No existing record conflicts in local browser data.</li>"}</ul>${warnings.length ? `<h5>Warnings</h5><ul>${warnings.map((warning) => `<li>${esc(formatIssue(warning))}</li>`).join("")}</ul>` : ""}${errors.length ? `<h5>Blocking errors</h5><ul>${errors.map((error) => `<li>${esc(formatIssue(error))}</li>`).join("")}</ul>` : ""}`;
 }
 async function previewImport() {
   const file = $("[data-import-file]").files[0];
@@ -964,13 +953,33 @@ async function previewImport() {
       $("[data-import-apply]").disabled = true;
       return;
     }
+    const compactPreview =
+      !lifecyclePreview && format === "csv"
+        ? await previewCompactCsvImport(text, {
+            exportAllData: repo.exportAll,
+          })
+        : null;
+    if (compactPreview?.errors.length) {
+      renderImportPreview({
+        label: "compact application CSV",
+        recordsByStore: compactPreview.bundle ?? {},
+        conflicts: compactPreview.conflicts ?? [],
+        warnings: compactPreview.warnings ?? [],
+        errors: compactPreview.errors ?? [],
+        blocking: true,
+      });
+      state.preview = null;
+      state.previewConflicts = [];
+      $("[data-import-apply]").disabled = true;
+      return;
+    }
     const bundle = lifecyclePreview
       ? lifecyclePreview.bundle
-      : format === "json"
-        ? importJsonBackup(text)
-        : format === "ndjson"
-          ? importNdjsonBackup(text)
-          : previewBundleFromCsv(text);
+      : compactPreview
+        ? compactPreview.bundle
+        : format === "json"
+          ? importJsonBackup(text)
+          : importNdjsonBackup(text);
     state.preview = lifecyclePreview
       ? {
           lifecycleEvents: bundle.lifecycleEvents ?? [],
@@ -980,12 +989,13 @@ async function previewImport() {
       : bundleForIndexedDb(bundle);
     state.previewConflicts =
       lifecyclePreview?.conflicts ??
+      compactPreview?.conflicts ??
       (await detectImportConflicts(state.preview));
     renderImportPreview({
       label: detectedFormatLabel(format, text, lifecyclePreview),
       recordsByStore: state.preview,
       conflicts: state.previewConflicts,
-      warnings: lifecyclePreview?.warnings ?? [],
+      warnings: lifecyclePreview?.warnings ?? compactPreview?.warnings ?? [],
     });
     $("[data-import-apply]").disabled = false;
   } catch (err) {

@@ -490,6 +490,7 @@ export const lifecycleRowsToBrowserApplicationExport = (
   const lifecycleEvents = [];
   const interviews = [];
   const reminders = [];
+  const warnings = [];
   rows.forEach((sourceRow, index) => {
     const rowNumber = index + 2;
     const row = { ...blankLifecycleRow(), ...sourceRow };
@@ -507,7 +508,8 @@ export const lifecycleRowsToBrowserApplicationExport = (
       });
       return;
     }
-    const eventType = normalizeLabelKey(row.event_type) || "lifecycle_event";
+    const rawEventType = compact(row.event_type);
+    const eventType = normalizeLabelKey(rawEventType) || "lifecycle_event";
     const occurredAt = parseDate(
       row.occurred_at,
       "occurred_at",
@@ -517,8 +519,20 @@ export const lifecycleRowsToBrowserApplicationExport = (
     const dueAt = parseDate(row.due_at, "due_at", rowNumber, errors);
     const eventOccurredAt = occurredAt ?? dueAt ?? "1970-01-01T00:00:00.000Z";
     const stageLabel = compact(row.stage) || undefined;
+    const knownLifecycleStatus = lifecycleStatusForEvent(eventType);
+    if (
+      !knownLifecycleStatus &&
+      !["lifecycle_event", "next_tracking_step"].includes(eventType)
+    )
+      warnings.push({
+        rowNumber,
+        field: "event_type",
+        code: "unsupported_event_type",
+        value: rawEventType || eventType,
+        message: "Imported as a generic lifecycle event.",
+      });
     const status =
-      lifecycleStatusForEvent(eventType) ??
+      knownLifecycleStatus ??
       mapStatus({ status: "", interview_stage: stageLabel ?? "", outcome: "" });
     const sourceArtifact = compact(row.source_artifact) || undefined;
     const details = compact(row.details) || undefined;
@@ -604,7 +618,7 @@ export const lifecycleRowsToBrowserApplicationExport = (
     artifacts: [],
     reminders,
   };
-  return { bundle, errors };
+  return { bundle, errors, warnings };
 };
 
 export const csvToSupplementalLifecycleExport = (csvText, existing, options) =>
@@ -615,6 +629,7 @@ export const rowsToBrowserApplicationExport = (
   { exportedAt = nowIso() } = {},
 ) => {
   const errors = [];
+  const warnings = [];
   const applications = [],
     contacts = [],
     outreachMessages = [],
@@ -827,6 +842,14 @@ export const rowsToBrowserApplicationExport = (
         updatedAt: exportedAt,
       });
     } else if (NON_INTERVIEW_STAGE_LABELS.has(stageLabel)) {
+      warnings.push({
+        rowNumber: index + 2,
+        field: "interview_stage",
+        code: "ignored_non_interview_stage",
+        value: compact(row.interview_stage),
+        message:
+          "Non-interview stage label preserved in metadata without creating an interview.",
+      });
       const nonInterviewStatus =
         stageLabel === "application_rejected" ? "rejected" : undefined;
       if (nonInterviewStatus)
@@ -888,7 +911,7 @@ export const rowsToBrowserApplicationExport = (
       code: "schema_validation_failed",
       message: parsed.error.message,
     });
-  return { bundle, errors };
+  return { bundle, errors, warnings };
 };
 
 export const csvToBrowserApplicationExport = (csvText, options) =>
@@ -1077,7 +1100,7 @@ export const importNdjsonBackup = (text) => {
 };
 export const previewCompactCsvImport = async (csvText, repository) => {
   const rows = parseCsv(csvText);
-  const { bundle, errors } = rowsToBrowserApplicationExport(rows);
+  const { bundle, errors, warnings } = rowsToBrowserApplicationExport(rows);
   const existing = repository
     ? await repository.exportAllData()
     : { applications: [] };
@@ -1121,6 +1144,28 @@ export const previewCompactCsvImport = async (csvText, repository) => {
         value: application.postingUrl,
       });
   });
+  for (const store of [
+    "applications",
+    "contacts",
+    "outreachMessages",
+    "lifecycleEvents",
+    "interviews",
+    "offers",
+    "artifacts",
+    "reminders",
+  ]) {
+    const seen = new Set();
+    bundle[store] = (bundle[store] ?? []).filter((record) => {
+      if (seen.has(record.id)) return false;
+      seen.add(record.id);
+      return true;
+    });
+  }
+  const blockingErrors = conflicts.some(
+    (conflict) => conflict.code === "duplicate_in_file",
+  )
+    ? errors.filter((error) => error.code !== "schema_validation_failed")
+    : errors;
   return {
     rowCount: rows.length,
     validRowCount: Math.max(
@@ -1132,8 +1177,9 @@ export const previewCompactCsvImport = async (csvText, repository) => {
             .filter((rowNumber) => Number.isInteger(rowNumber)),
         ).size,
     ),
-    errors,
+    errors: blockingErrors,
     conflicts,
+    warnings,
     bundle,
   };
 };
@@ -1237,7 +1283,7 @@ export const previewSupplementalLifecycleCsvImport = async (
 ) => {
   const rows = parseCsv(csvText);
   const existing = await repository.exportAllData();
-  const { bundle, errors } = csvToSupplementalLifecycleExport(
+  const { bundle, errors, warnings } = csvToSupplementalLifecycleExport(
     csvText,
     existing,
   );
@@ -1286,6 +1332,7 @@ export const previewSupplementalLifecycleCsvImport = async (
     ),
     errors,
     conflicts,
+    warnings,
     bundle,
   };
 };
