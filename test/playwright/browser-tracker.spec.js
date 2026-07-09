@@ -32,6 +32,47 @@ const regressionCsvFixture = () =>
 const lifecycleFixture = (name) =>
   readFile(`test/fixtures/tracker-import/${name}`, "utf8");
 
+const clearTrackerState = async (page) => {
+  await page.evaluate(
+    () =>
+      new Promise((resolve, reject) => {
+        const request = indexedDB.deleteDatabase("jobbot3000");
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+        request.onblocked = () => reject(new Error("IndexedDB delete blocked"));
+      }),
+  );
+};
+
+const importFixture = async (page, name, contents, mimeType = "text/csv") => {
+  await page.getByRole("button", { name: "Import/Export" }).click();
+  await page.setInputFiles("[data-import-file]", {
+    name,
+    mimeType,
+    buffer: Buffer.from(contents),
+  });
+  await page.getByRole("button", { name: "Preview/dry-run" }).click();
+  await page.getByRole("button", { name: "Apply import" }).click();
+  await expect(page.locator("[data-import-result]")).toContainText(
+    "Import applied",
+  );
+};
+
+const importRegressionBundle = async (page) => {
+  await importFixture(
+    page,
+    "compact-main-regression.csv",
+    await regressionCsvFixture(),
+  );
+  for (const name of [
+    "assessment-lifecycle-regression.csv",
+    "employer-reply-lifecycle-regression.csv",
+    "recruiter-screen-lifecycle-regression.csv",
+  ]) {
+    await importFixture(page, name, await lifecycleFixture(name));
+  }
+};
+
 test.describe("browser application tracker", () => {
   let server;
 
@@ -45,16 +86,7 @@ test.describe("browser application tracker", () => {
 
   test.beforeEach(async ({ page }) => {
     await page.goto(server.url);
-    await page.evaluate(
-      () =>
-        new Promise((resolve, reject) => {
-          const request = indexedDB.deleteDatabase("jobbot3000");
-          request.onsuccess = () => resolve();
-          request.onerror = () => reject(request.error);
-          request.onblocked = () =>
-            reject(new Error("IndexedDB delete blocked"));
-        }),
-    );
+    await clearTrackerState(page);
     await page.goto(`${server.url}/tracker`);
   });
 
@@ -487,6 +519,93 @@ test.describe("browser application tracker", () => {
     await expect(page.locator("[data-detail]")).toContainText(
       "Recruiter screen",
     );
+  });
+
+  test("restores JSON backup with compact and lifecycle metadata intact", async ({
+    page,
+  }) => {
+    await importRegressionBundle(page);
+
+    await page.getByRole("button", { name: "Dashboard" }).click();
+    await expect(page.locator("[data-metrics]")).toContainText(
+      "Total applications15",
+    );
+    await expect(page.locator("[data-metrics]")).toContainText(
+      "Recruiter screens1",
+    );
+
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Backup now JSON" }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toBe("jobbot3000-backup.json");
+    const backupPath = await download.path();
+    const backupJson = await readFile(backupPath, "utf8");
+
+    await clearTrackerState(page);
+    await page.goto(`${server.url}/tracker`);
+    await importFixture(
+      page,
+      "jobbot3000-backup.json",
+      backupJson,
+      "application/json",
+    );
+
+    await page.getByRole("button", { name: "Dashboard" }).click();
+    const metrics = page.locator("[data-metrics]");
+    await expect(metrics).toContainText("Total applications15");
+    await expect(metrics).toContainText("Application responses5");
+    await expect(metrics).toContainText("Recruiter screens1");
+    await expect(metrics).toContainText("Interviews0");
+    await expect(metrics).toContainText("Application response rate33%");
+    await expect(metrics).toContainText("Outreach reply rate29%");
+
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Company Alpha" }).click();
+    await expect(page.locator("[data-detail]")).toContainText(
+      "No AI required: yes",
+    );
+    await expect(page.locator("[data-detail]")).toContainText(
+      "Assessment submission completed in example portal.",
+    );
+  });
+
+  test("keeps import edit dashboard and export flows browser-local", async ({
+    page,
+  }) => {
+    const unsafeRequests = [];
+    page.on("request", (request) => {
+      const method = request.method();
+      if (["POST", "PUT"].includes(method)) {
+        unsafeRequests.push({
+          method,
+          url: request.url(),
+          body: request.postData(),
+        });
+      }
+    });
+
+    await importRegressionBundle(page);
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Company Beta" }).click();
+    await page.locator('[name="followUpDate"]').fill("2026-02-20");
+    await page.getByRole("button", { name: "Save application" }).click();
+    await page.getByRole("button", { name: "Dashboard" }).click();
+    await expect(page.locator("[data-metrics]")).toContainText(
+      "Total applications15",
+    );
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export NDJSON" }).click();
+    expect((await downloadPromise).suggestedFilename()).toBe(
+      "jobbot3000-backup.ndjson",
+    );
+
+    expect(unsafeRequests).toEqual([]);
   });
 
   test("imports CSV, shows list, edits detail, and renders follow-ups", async ({

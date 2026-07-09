@@ -90,3 +90,48 @@ jobbot analytics health --json
 node scripts/export-data.js > /tmp/restore-check.ndjson
 tail "$JOBBOT_AUDIT_LOG"
 ```
+
+## Staging verification checklist
+
+Use this checklist after deploying a staging image/chart and before asking anyone
+to exercise the tracker with private data. Use only anonymized fixtures or fake
+records during verification.
+
+1. Deploy staging with the intended immutable image tag and chart values.
+2. Open `/`, `/tracker`, `/healthz`, and `/livez`; confirm the static landing
+   page, tracker UI, and health JSON load without authentication prompts or
+   server-side data setup.
+3. In `/tracker`, clear local data or use a clean browser profile.
+4. Import the compact application CSV and run **Preview/dry-run** first.
+5. Inspect preview counts before applying: total applications, outreach
+   messages, interviews, assessments, warnings, conflicts, and blocking errors.
+6. Apply the compact import only after the preview matches expectations.
+7. Check dashboard metrics for sane bounded values: total applications,
+   outreach sent, application responses, application response rate, outreach
+   reply rate, recruiter screens, interviews, assessments, and offers. Response
+   rates must never exceed 100%, and compact CSV-only imports must not create
+   phantom interviews.
+8. Import supplemental lifecycle CSVs and inspect representative application
+   detail timelines:
+   - assessment/take-home events show assessment metadata and do not create
+     interviews;
+   - hiring-manager reply events show response signals and do not create
+     interviews;
+   - recruiter screen events appear as recruiter screens and remain distinct
+     from non-recruiter-screen interviews.
+9. Export JSON and NDJSON full-fidelity backups from the browser UI.
+10. Restore the JSON backup into a clean browser profile and verify dashboard
+    metrics plus representative lifecycle detail metadata survive. If JSON is
+    unavailable, restore the NDJSON backup; browser E2E focuses on JSON because
+    the UI path is the everyday operator workflow, while NDJSON full-fidelity
+    restore remains covered by import/export tests and is available in the same
+    import panel.
+11. Confirm private tracker data remains browser-local: import, edit, dashboard
+    navigation, and export flows should not POST or PUT application payloads to
+    the staging server. The server should serve static assets and health probes
+    only.
+12. Never commit or publish real backups, screenshots, company names, personal
+    names, application notes, private URLs, resume/cover-letter artifacts, or
+    links to private storage. Keep any real backup files encrypted and outside
+    the repository, Docker build context, Helm charts, ConfigMaps, Secrets, PVCs,
+    and public issue trackers.
