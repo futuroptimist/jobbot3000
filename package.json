@@ -18,6 +18,7 @@
     "format:check": "prettier --check \"**/*.{js,mjs,cjs,ts,tsx,jsx,json,md,mdx,yml,yaml}\"",
     "format:fix": "prettier --write \"**/*.{js,mjs,cjs,ts,tsx,jsx,json,md,mdx,yml,yaml}\"",
     "test": "vitest",
+    "test:e2e": "playwright test",
     "test:ci": "node scripts/test-ci.js",
     "prepare:test": "node scripts/test-ci.js install",
     "summarize": "node scripts/summarize.js",

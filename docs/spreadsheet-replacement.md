@@ -64,3 +64,7 @@ Store backups somewhere private and encrypted. The files may include application
 3. Run the dry-run preview and confirm record counts.
 4. Use **Replace** semantics to restore the complete backup.
 5. Verify the restored application list and export a fresh CSV to confirm the compact spreadsheet view is available.
+
+## Staging verification
+
+Use the [tracker staging verification checklist](tracker-staging-verification.md) to validate compact CSV replacement workflows against the browser UI before promotion. Keep all real backups, screenshots, application notes, private URLs, and personal artifacts out of the repository.
