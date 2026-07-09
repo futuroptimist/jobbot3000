@@ -14,6 +14,7 @@ import {
   detectSpreadsheetImportFormat,
   exportCompactCsv,
   exportJsonBackup,
+  exportLifecycleCsv,
   exportNdjsonBackup,
   importCompactCsv,
   importSupplementalLifecycleCsv,
@@ -185,11 +186,22 @@ describe("spreadsheet import/export", () => {
         }),
       ),
     ).toThrow();
-    const { contacts, ...missingRequiredStore } = bundle;
-    void contacts;
+    const {
+      lifecycleEvents,
+      interviews,
+      offers,
+      artifacts,
+      reminders,
+      ...missingRequiredStore
+    } = bundle;
+    void lifecycleEvents;
+    void interviews;
+    void offers;
+    void artifacts;
+    void reminders;
     expect(() =>
       importJsonBackup(JSON.stringify(missingRequiredStore)),
-    ).toThrow();
+    ).not.toThrow();
     repo.close();
   });
 
@@ -1045,6 +1057,86 @@ describe("spreadsheet import/export", () => {
 
     expect(detectSpreadsheetImportFormat(quotedHeaderCsv)).toBe(
       "lifecycle_csv",
+    );
+  });
+
+  it("exports supplemental lifecycle CSV with stable order and escaped metadata", () => {
+    const exportedAt = "2026-03-01T00:00:00.000Z";
+    const bundle = {
+      schemaVersion: 1,
+      exportedAt,
+      applications: [
+        {
+          id: "app_lifecycle_export_b",
+          company: "Lifecycle Export, B",
+          role: 'Engineer "B"',
+          status: "outreach_sent",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+        {
+          id: "app_lifecycle_export_a",
+          company: "Lifecycle Export A",
+          role: "Engineer A",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+      contacts: [],
+      outreachMessages: [],
+      lifecycleEvents: [
+        {
+          id: "event_b_later",
+          applicationId: "app_lifecycle_export_b",
+          status: "outreach_sent",
+          occurredAt: "2026-03-03T09:00:00.000-05:00",
+          source: "csv_import",
+          eventType: "hiring_manager_reply",
+          stageLabel: "Hiring manager follow-up",
+          channel: "email",
+          actor: "hiring_manager",
+          sourceArtifact: "https://example.test/artifact/reply?x=1&y=2",
+          requiresUserAction: false,
+          actionStatus: "received",
+          noAiRequired: true,
+          details: 'Reply included commas, "quotes", and\nmultiple lines.',
+          createdAt: exportedAt,
+        },
+        {
+          id: "event_a_earlier",
+          applicationId: "app_lifecycle_export_a",
+          status: "applied",
+          occurredAt: "2026-03-02T09:00:00.000Z",
+          source: "csv_import",
+          eventType: "application_submitted",
+          createdAt: exportedAt,
+        },
+      ],
+      interviews: [],
+      offers: [],
+      artifacts: [],
+      reminders: [],
+    };
+
+    const csv = exportLifecycleCsv(bundle);
+    expect(csv.split("\n")[0]).toBe(LIFECYCLE_CSV_COLUMNS.join(","));
+    const rows = parseCsv(csv);
+    expect(rows.map((row) => row.application_id)).toEqual([
+      "app_lifecycle_export_a",
+      "app_lifecycle_export_b",
+    ]);
+    expect(rows[1]).toMatchObject({
+      company: "Lifecycle Export, B",
+      role_title: 'Engineer "B"',
+      occurred_at: "2026-03-03T09:00:00.000-05:00",
+      requires_user_action: "false",
+      no_ai_required: "true",
+      details: 'Reply included commas, "quotes", and\nmultiple lines.',
+    });
+    expect(csv).toContain('"Lifecycle Export, B"');
+    expect(csv).toContain(
+      '"Reply included commas, ""quotes"", and\nmultiple lines."',
     );
   });
 

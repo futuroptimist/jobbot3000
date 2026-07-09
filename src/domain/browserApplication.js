@@ -13,7 +13,7 @@ export const browserApplicationLifecycleStatusSchema = z.enum([
   "closed_archived",
 ]);
 
-const isoDateTimeSchema = z.string().datetime();
+const isoDateTimeSchema = z.string().datetime({ offset: true });
 const requiredStringSchema = z.string().trim().min(1);
 const optionalTrimmedStringSchema = requiredStringSchema.optional();
 const idSchema = requiredStringSchema;
