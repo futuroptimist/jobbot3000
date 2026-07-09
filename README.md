@@ -28,6 +28,7 @@ Production readiness docs:
 
 - [Production readiness](docs/production-readiness.md)
 - [Spreadsheet migration](docs/import-current-spreadsheet.md)
+- [Tracker import/export and staging verification](docs/spreadsheet-replacement.md)
 - [Backup and restore](docs/backup-restore-guide.md)
 - [GHCR image release](docs/release-ghcr.md)
 - [Helm chart release](docs/release-helm.md)
