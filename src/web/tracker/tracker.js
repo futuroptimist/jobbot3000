@@ -264,19 +264,42 @@ const hasMetadataAssessmentSignal = (metadata = {}) =>
       normalize(value).includes("assessment") ||
       normalize(value).includes("take_home"),
   );
+const TERMINAL_EMPLOYER_STATUSES = new Set([
+  "offer",
+  "accepted",
+  "rejected",
+  "closed_archived",
+]);
+const COMPACT_OUTREACH_REPLY_STATUSES = new Set([
+  "replied",
+  "reply",
+  "responded",
+]);
+const RESPONSE_EVENT_TYPES = new Set([
+  "hiring_manager_reply",
+  "written_assessment_requested",
+  "recruiter_screen_scheduled",
+  "recruiter_screen_completed",
+  "offer",
+  "offer_received",
+]);
 const hasMetadataResponseSignal = (metadata = {}) =>
-  [metadata.outreach_status, metadata.spreadsheet_interview_stage].some(
-    (value) =>
-      [
-        "replied",
-        "responded",
-        "response_received",
-        "written_assessment_submitted",
-        "written_assessment_requested",
-        "recruiter_screen_scheduled",
-        "interview_scheduled",
-      ].includes(normalize(value)),
-  );
+  COMPACT_OUTREACH_REPLY_STATUSES.has(normalize(metadata.outreach_status)) ||
+  hasMetadataAssessmentSignal(metadata);
+const hasListResponseSignal = (app, meta, metadata = {}) =>
+  TERMINAL_EMPLOYER_STATUSES.has(app.status) ||
+  meta.interviews.length > 0 ||
+  meta.outreach.some(
+    (x) =>
+      normalize(x.direction) === "inbound" ||
+      COMPACT_OUTREACH_REPLY_STATUSES.has(normalize(x.status)),
+  ) ||
+  meta.lifecycle.some(
+    (x) =>
+      RESPONSE_EVENT_TYPES.has(normalize(x.eventType)) ||
+      TERMINAL_EMPLOYER_STATUSES.has(normalize(x.status)),
+  ) ||
+  hasMetadataResponseSignal(metadata);
 function metadataEntries(app) {
   const metadata = readSpreadsheetMetadata(app.notes);
   return Object.entries({
@@ -440,17 +463,7 @@ function renderList() {
   let rows = state.apps.filter((a) => {
     const m = appMeta(a);
     const metadata = readSpreadsheetMetadata(a.notes);
-    const hasResponse =
-      ["offer", "accepted", "rejected", "closed_archived"].includes(a.status) ||
-      m.outreach.some((x) => x.direction === "inbound") ||
-      m.lifecycle.some((x) =>
-        [
-          "hiring_manager_reply",
-          "written_assessment_requested",
-          "recruiter_screen_scheduled",
-        ].includes(normalize(x.eventType)),
-      ) ||
-      hasMetadataResponseSignal(metadata);
+    const hasResponse = hasListResponseSignal(a, m, metadata);
     const outreachState =
       m.outreach.length || metadata.outreach_status ? "sent" : "none";
     const dueState =

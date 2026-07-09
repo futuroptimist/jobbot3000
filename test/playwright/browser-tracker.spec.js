@@ -282,6 +282,60 @@ test.describe("browser application tracker", () => {
     ).toBeDisabled();
   });
 
+  test("filters compact response signals like dashboard responses", async ({
+    page,
+  }) => {
+    const csv = [
+      "application_id,company,role_title,status,applied_at,posting_url," +
+        "outreach_status,interview_stage,notes",
+      "compact_reply_app,Reply Signal Co,Frontend Engineer,applied," +
+        "2026-01-02,https://example.test/reply,reply,,",
+      "compact_interview_app,Interview Signal Co,Backend Engineer,applied," +
+        "2026-01-03,https://example.test/interview,,technical_screen,",
+      "compact_quiet_app,Quiet Signal Co,Data Engineer,applied," +
+        "2026-01-04,https://example.test/quiet,,,",
+    ].join("\n");
+
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await page.setInputFiles("[data-import-file]", {
+      name: "compact-response-signals.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(csv),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await page.getByRole("button", { name: "Apply import" }).click();
+
+    await page.getByRole("button", { name: "Dashboard" }).click();
+    await expect(page.locator("[data-metrics]")).toContainText(
+      "Application responses2",
+    );
+
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.locator('[data-filter="response"]').selectOption("responded");
+    await expect(page.locator("[data-applications-table]")).toContainText(
+      "Reply Signal Co",
+    );
+    await expect(page.locator("[data-applications-table]")).toContainText(
+      "Interview Signal Co",
+    );
+    await expect(page.locator("[data-applications-table]")).not.toContainText(
+      "Quiet Signal Co",
+    );
+
+    await page.locator('[data-filter="response"]').selectOption("no_response");
+    await expect(page.locator("[data-applications-table]")).toContainText(
+      "Quiet Signal Co",
+    );
+    await expect(page.locator("[data-applications-table]")).not.toContainText(
+      "Reply Signal Co",
+    );
+    await expect(page.locator("[data-applications-table]")).not.toContainText(
+      "Interview Signal Co",
+    );
+  });
+
   test("imports compact CSV regression fixture with bounded dashboard metrics", async ({
     page,
   }) => {
