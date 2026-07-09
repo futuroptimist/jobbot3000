@@ -96,6 +96,17 @@ async function clearTrackerData(page) {
   );
 }
 
+async function assertRegressionMetrics(page) {
+  const metrics = page.locator("[data-metrics]");
+  await expect(metrics).toContainText("Total applications15");
+  await expect(metrics).toContainText("Outreach sent7");
+  await expect(metrics).toContainText("Application responses5");
+  await expect(metrics).toContainText("Application response rate33%");
+  await expect(metrics).toContainText("Outreach reply rate29%");
+  await expect(metrics).toContainText("Recruiter screens1");
+  await expect(metrics).toContainText("Interviews0");
+}
+
 test.describe("browser application tracker", () => {
   let server;
 
@@ -952,14 +963,7 @@ test.describe("browser application tracker", () => {
     await importRegressionBundle(page);
 
     await page.getByRole("button", { name: "Dashboard" }).click();
-    const metrics = page.locator("[data-metrics]");
-    await expect(metrics).toContainText("Total applications15");
-    await expect(metrics).toContainText("Outreach sent7");
-    await expect(metrics).toContainText("Application responses5");
-    await expect(metrics).toContainText("Recruiter screens1");
-    await expect(metrics).toContainText("Interviews0");
-    await expect(metrics).toContainText("Application response rate33%");
-    await expect(metrics).toContainText("Outreach reply rate29%");
+    await assertRegressionMetrics(page);
 
     await page
       .getByRole("button", { name: "Applications", exact: true })
@@ -1037,12 +1041,7 @@ test.describe("browser application tracker", () => {
       await importFixture(page, "jobbot3000-backup.json", backupJson);
 
       await page.getByRole("button", { name: "Dashboard" }).click();
-      await expect(page.locator("[data-metrics]")).toContainText(
-        "Total applications15",
-      );
-      await expect(page.locator("[data-metrics]")).toContainText(
-        "Recruiter screens1",
-      );
+      await assertRegressionMetrics(page);
       await page
         .getByRole("button", { name: "Applications", exact: true })
         .click();
@@ -1052,6 +1051,13 @@ test.describe("browser application tracker", () => {
       );
       await expect(page.locator("[data-detail]")).toContainText(
         "Assessment submission completed in example portal.",
+      );
+      await page
+        .getByRole("button", { name: "Applications", exact: true })
+        .click();
+      await page.getByRole("button", { name: "Company Beta" }).click();
+      await expect(page.locator("[data-detail]")).toContainText(
+        "Example hiring manager reply received.",
       );
 
       await clearTrackerData(page);
@@ -1063,12 +1069,7 @@ test.describe("browser application tracker", () => {
     }
 
     await page.getByRole("button", { name: "Dashboard" }).click();
-    await expect(page.locator("[data-metrics]")).toContainText(
-      "Total applications15",
-    );
-    await expect(page.locator("[data-metrics]")).toContainText(
-      "Recruiter screens1",
-    );
+    await assertRegressionMetrics(page);
     await page
       .getByRole("button", { name: "Applications", exact: true })
       .click();
@@ -1078,6 +1079,13 @@ test.describe("browser application tracker", () => {
     );
     await expect(page.locator("[data-detail]")).toContainText(
       "Assessment submission completed in example portal.",
+    );
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Company Gamma" }).click();
+    await expect(page.locator("[data-detail]")).toContainText(
+      "Recruiter screen",
     );
   });
 

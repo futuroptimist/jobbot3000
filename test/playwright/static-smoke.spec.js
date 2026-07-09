@@ -117,10 +117,11 @@ test.describe("static tracker smoke", () => {
   });
 
   test.afterAll(async () => {
-    if (serverProcess && serverProcess.exitCode === null) {
-      const exited = new Promise((resolve) =>
-        serverProcess.once("exit", resolve),
-      );
+    if (serverProcess?.exitCode === null && serverProcess.signalCode === null) {
+      const exited = new Promise((resolve) => {
+        serverProcess.once("exit", resolve);
+        serverProcess.once("close", resolve);
+      });
       serverProcess.kill("SIGTERM");
       await exited;
     }
