@@ -20,6 +20,7 @@ import {
   importSupplementalLifecycleCsv,
   importJsonBackup,
   importNdjsonBackup,
+  lifecycleRowsToBrowserApplicationExport,
   parseCsv,
   serializeCsv,
   previewCompactCsvImport,
@@ -1116,6 +1117,128 @@ describe("spreadsheet import/export", () => {
       no_ai_required: "true",
       occurred_at: "2026-03-03T10:00:00-05:00",
     });
+  });
+
+  it("sorts supplemental lifecycle CSV timestamps chronologically across offsets", () => {
+    const exportedAt = "2026-03-01T00:00:00.000Z";
+    const bundle = {
+      schemaVersion: 1,
+      exportedAt,
+      applications: [
+        {
+          id: "app_offsets",
+          company: "Offsets Inc.",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+      contacts: [],
+      outreachMessages: [],
+      lifecycleEvents: [
+        {
+          id: "event_later_offset",
+          applicationId: "app_offsets",
+          status: "outreach_sent",
+          occurredAt: "2026-03-03T08:00:00-05:00",
+          source: "manual",
+          createdAt: exportedAt,
+        },
+        {
+          id: "event_earlier_utc",
+          applicationId: "app_offsets",
+          status: "applied",
+          occurredAt: "2026-03-03T12:00:00+00:00",
+          source: "manual",
+          createdAt: exportedAt,
+        },
+      ],
+      interviews: [],
+      offers: [],
+      artifacts: [],
+      reminders: [],
+    };
+
+    const rows = parseCsv(exportLifecycleCsv(bundle));
+
+    expect(rows.map((row) => row.occurred_at)).toEqual([
+      "2026-03-03T12:00:00+00:00",
+      "2026-03-03T08:00:00-05:00",
+    ]);
+  });
+
+  it("round trips status-only lifecycle events through supplemental lifecycle CSV", () => {
+    const exportedAt = "2026-03-01T00:00:00.000Z";
+    const existing = {
+      applications: [
+        {
+          id: "app_status_only",
+          company: "Status Only",
+          role: "Engineer",
+          status: "offer",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+    };
+    const csv = exportLifecycleCsv({
+      schemaVersion: 1,
+      exportedAt,
+      ...existing,
+      contacts: [],
+      outreachMessages: [],
+      lifecycleEvents: [
+        {
+          id: "event_status_only_offer",
+          applicationId: "app_status_only",
+          status: "offer",
+          occurredAt: "2026-03-02T00:00:00.000Z",
+          source: "manual",
+          createdAt: exportedAt,
+        },
+      ],
+      interviews: [],
+      offers: [],
+      artifacts: [],
+      reminders: [],
+    });
+
+    const { bundle, errors, warnings } =
+      lifecycleRowsToBrowserApplicationExport(parseCsv(csv), existing, {
+        exportedAt,
+      });
+
+    expect(errors).toEqual([]);
+    expect(warnings).toEqual([]);
+    expect(bundle.lifecycleEvents).toEqual([
+      expect.objectContaining({
+        eventType: "offer",
+        status: "offer",
+      }),
+    ]);
+  });
+
+  it("reports invalid ISO offset datetimes as malformed date fields", () => {
+    const { errors } = csvToBrowserApplicationExport(
+      serializeCsv([
+        {
+          application_id: "app_bad_date",
+          company: "Bad Date",
+          role_title: "Engineer",
+          applied_at: "2026-02-30T10:00:00.000Z",
+          schema_version: "1",
+        },
+      ]),
+      { exportedAt: "2026-03-10T00:00:00.000Z" },
+    );
+
+    expect(errors).toEqual([
+      expect.objectContaining({
+        field: "applied_at",
+        code: "malformed_date",
+      }),
+    ]);
   });
 
   it("restores older JSON and NDJSON backups that omit lifecycle metadata stores", () => {

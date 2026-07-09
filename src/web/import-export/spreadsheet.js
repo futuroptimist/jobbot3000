@@ -271,6 +271,71 @@ export const serializeCsv = (rows, columns = COMPACT_CSV_COLUMNS) =>
     ),
   ].join("\n");
 
+const ISO_OFFSET_DATE_TIME =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|([+-])(\d{2}):(\d{2}))$/;
+
+const isValidIsoOffsetDateTime = (text) => {
+  const match = ISO_OFFSET_DATE_TIME.exec(text);
+  if (!match) return false;
+  const [
+    ,
+    yearText,
+    monthText,
+    dayText,
+    hourText,
+    minuteText,
+    secondText,
+    fractionText = "0",
+    offsetText,
+    offsetSign,
+    offsetHourText = "0",
+    offsetMinuteText = "0",
+  ] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const millisecond = Number(fractionText.padEnd(3, "0").slice(0, 3));
+  const offsetHour = Number(offsetHourText);
+  const offsetMinute = Number(offsetMinuteText);
+  if (
+    month < 1 ||
+    month > 12 ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59 ||
+    offsetHour > 23 ||
+    offsetMinute > 59
+  )
+    return false;
+  const offsetMultiplier = offsetText === "Z" || offsetSign === "+" ? 1 : -1;
+  const offsetMinutes = offsetMultiplier * (offsetHour * 60 + offsetMinute);
+  const instantMs =
+    Date.UTC(year, month - 1, day, hour, minute, second, millisecond) -
+    offsetMinutes * 60_000;
+  const local = new Date(instantMs + offsetMinutes * 60_000);
+  return (
+    local.getUTCFullYear() === year &&
+    local.getUTCMonth() === month - 1 &&
+    local.getUTCDate() === day &&
+    local.getUTCHours() === hour &&
+    local.getUTCMinutes() === minute &&
+    local.getUTCSeconds() === second &&
+    local.getUTCMilliseconds() === millisecond
+  );
+};
+
+const pushMalformedDateError = (errors, field, rowNumber) => {
+  errors.push({
+    rowNumber,
+    field,
+    code: "malformed_date",
+    message: `${field} is not a valid date.`,
+  });
+};
+
 const parseDate = (
   value,
   field,
@@ -282,24 +347,19 @@ const parseDate = (
   if (!text) return undefined;
   if (/^\d{4}-\d{2}-\d{2}$/.test(text))
     return `${text}T${endOfDay ? "23:59:59.000" : "00:00:00.000"}Z`;
-  const date = new Date(text);
-  if (Number.isNaN(date.getTime())) {
-    errors.push({
-      rowNumber,
-      field,
-      code: "malformed_date",
-      message: `${field} is not a valid date.`,
-    });
+  // Preserve explicit ISO date/time strings exactly enough for backup round
+  // trips, including timezone offsets, while still rejecting impossible
+  // calendar datetimes as field-level malformed_date import errors.
+  if (ISO_OFFSET_DATE_TIME.test(text)) {
+    if (isValidIsoOffsetDateTime(text)) return text;
+    pushMalformedDateError(errors, field, rowNumber);
     return undefined;
   }
-  // Preserve explicit ISO date/time strings exactly enough for backup round trips,
-  // including timezone offsets, while normalizing other Date-parseable inputs.
-  if (
-    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(
-      text,
-    )
-  )
-    return text;
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) {
+    pushMalformedDateError(errors, field, rowNumber);
+    return undefined;
+  }
   return date.toISOString();
 };
 const hasTimeComponent = (value) =>
@@ -482,6 +542,7 @@ const lifecycleStatusForEvent = (eventType) => {
   if (eventType === "hiring_manager_reply") return "outreach_sent";
   if (eventType === "recruiter_screen_scheduled") return "recruiter_screen";
   if (eventType === "application_submitted") return "applied";
+  if (KNOWN_STATUSES.has(eventType)) return eventType;
   return undefined;
 };
 
@@ -932,6 +993,18 @@ const compareCodePoints = (left, right) => {
   const rightText = String(right);
   return leftText < rightText ? -1 : leftText > rightText ? 1 : 0;
 };
+const compareIsoDateTimes = (left, right) => {
+  const leftText = left ?? "";
+  const rightText = right ?? "";
+  const leftTime = leftText ? new Date(leftText).getTime() : Number.NaN;
+  const rightTime = rightText ? new Date(rightText).getTime() : Number.NaN;
+  const leftValid = Number.isFinite(leftTime);
+  const rightValid = Number.isFinite(rightTime);
+  if (leftValid && rightValid && leftTime !== rightTime)
+    return leftTime - rightTime;
+  if (leftValid !== rightValid) return leftValid ? 1 : -1;
+  return compareCodePoints(leftText, rightText);
+};
 const firstBy = (records, predicate) => records.find(predicate) ?? {};
 export const browserApplicationExportToRows = (bundle) => {
   const parsed = browserApplicationExportSchema.parse(bundle);
@@ -1039,14 +1112,13 @@ export const browserApplicationExportToLifecycleRows = (bundle) => {
   );
   return [...parsed.lifecycleEvents]
     .sort((a, b) => {
-      for (const [left, right] of [
-        [a.applicationId, b.applicationId],
-        [a.occurredAt ?? "", b.occurredAt ?? ""],
-        [a.dueAt ?? "", b.dueAt ?? ""],
-        [a.eventType ?? "", b.eventType ?? ""],
-        [a.id, b.id],
+      for (const compared of [
+        compareCodePoints(a.applicationId, b.applicationId),
+        compareIsoDateTimes(a.occurredAt, b.occurredAt),
+        compareIsoDateTimes(a.dueAt, b.dueAt),
+        compareCodePoints(a.eventType ?? "", b.eventType ?? ""),
+        compareCodePoints(a.id, b.id),
       ]) {
-        const compared = compareCodePoints(left, right);
         if (compared !== 0) return compared;
       }
       return 0;
