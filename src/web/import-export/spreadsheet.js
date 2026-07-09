@@ -292,7 +292,7 @@ const parseDate = (
     });
     return undefined;
   }
-  return date.toISOString();
+  return text;
 };
 const hasTimeComponent = (value) =>
   /(?:T|\s)\d{1,2}:\d{2}/.test(compact(value));
@@ -1019,6 +1019,53 @@ export const browserApplicationExportToRows = (bundle) => {
 };
 export const exportCompactCsv = (bundle) =>
   serializeCsv(browserApplicationExportToRows(bundle));
+
+export const browserApplicationExportToLifecycleRows = (bundle) => {
+  const parsed = browserApplicationExportSchema.parse(bundle);
+  const applicationsById = new Map(
+    parsed.applications.map((application) => [application.id, application]),
+  );
+  return [...parsed.lifecycleEvents]
+    .sort((a, b) => {
+      const keys = [
+        compareCodePoints(a.applicationId, b.applicationId),
+        compareCodePoints(a.occurredAt ?? "", b.occurredAt ?? ""),
+        compareCodePoints(a.dueAt ?? "", b.dueAt ?? ""),
+        compareCodePoints(a.eventType ?? "", b.eventType ?? ""),
+        compareCodePoints(a.id, b.id),
+      ];
+      return keys.find((value) => value !== 0) ?? 0;
+    })
+    .map((event) => {
+      const application = applicationsById.get(event.applicationId);
+      return {
+        application_id: event.applicationId,
+        company: application?.company ?? "",
+        role_title: application?.role ?? "",
+        event_type: event.eventType ?? "",
+        occurred_at: event.occurredAt ?? "",
+        stage: event.stageLabel ?? "",
+        channel: event.channel ?? "",
+        actor: event.actor ?? "",
+        source_artifact: event.sourceArtifact ?? "",
+        requires_user_action:
+          event.requiresUserAction === undefined
+            ? ""
+            : String(event.requiresUserAction),
+        action_status: event.actionStatus ?? "",
+        due_at: event.dueAt ?? "",
+        no_ai_required:
+          event.noAiRequired === undefined ? "" : String(event.noAiRequired),
+        details: event.details ?? event.note ?? "",
+      };
+    });
+};
+
+export const exportLifecycleCsv = (bundle) =>
+  serializeCsv(
+    browserApplicationExportToLifecycleRows(bundle),
+    LIFECYCLE_CSV_COLUMNS,
+  );
 const compareCodePoints = (left, right) => {
   const leftText = String(left);
   const rightText = String(right);
@@ -1059,8 +1106,22 @@ export const exportNdjsonBackup = (bundle) => {
       .join("\n") + "\n"
   );
 };
+const normalizeBackupBundle = (data) => ({
+  schemaVersion: data?.schemaVersion ?? 1,
+  exportedAt: data?.exportedAt ?? nowIso(),
+  applications: data?.applications ?? [],
+  contacts: data?.contacts ?? [],
+  outreachMessages: data?.outreachMessages ?? [],
+  lifecycleEvents: data?.lifecycleEvents ?? [],
+  interviews: data?.interviews ?? [],
+  offers: data?.offers ?? [],
+  artifacts: data?.artifacts ?? [],
+  reminders: data?.reminders ?? [],
+  ...(data?.settings ? { settings: data.settings } : {}),
+});
+
 export const importJsonBackup = (text) =>
-  browserApplicationExportSchema.parse(JSON.parse(text));
+  browserApplicationExportSchema.parse(normalizeBackupBundle(JSON.parse(text)));
 export const importNdjsonBackup = (text) => {
   const bundle = {
     schemaVersion: 1,
@@ -1096,7 +1157,7 @@ export const importNdjsonBackup = (text) => {
           `Unknown or malformed NDJSON record type: ${String(entry.type)}`,
         );
     });
-  return browserApplicationExportSchema.parse(bundle);
+  return browserApplicationExportSchema.parse(normalizeBackupBundle(bundle));
 };
 export const previewCompactCsvImport = async (csvText, repository) => {
   const rows = parseCsv(csvText);

@@ -6,47 +6,66 @@ private tracker data on the server.
 
 ## Formats
 
-- **CSV**: human-editable, spreadsheet-shaped, one-row-per-application
-  compatibility format. Use it for Google Sheets interchange and manual review.
+- **Compact application CSV**: human-editable, spreadsheet-shaped,
+  one-row-per-application compatibility format. Use it for Google Sheets
+  interchange and manual review. It preserves the documented compact columns,
+  including raw compact status/stage/outcome metadata, but it is not a complete
+  backup for child records.
+- **Supplemental lifecycle CSV**: event-rich CSV keyed by `application_id`. Use
+  it with compact CSV when a spreadsheet workflow needs lifecycle events,
+  action metadata, source artifact URLs, due dates, actors, channels, and
+  multiline details. The denormalized company and role columns are convenience
+  labels; `application_id` is the relationship source of truth.
 - **JSON**: canonical full-fidelity backup bundle. Use it before clearing data
   or moving browsers; restore it from the browser UI import panel.
-- **NDJSON**: line-oriented full-fidelity stream. Use it when you want per-record
-  diffs, streaming-friendly storage, or easier manual inspection; restore it from
-  the browser UI import panel.
+- **NDJSON**: line-oriented full-fidelity stream with the same store coverage as
+  JSON. Use it when you want per-record diffs, streaming-friendly storage, or
+  easier manual inspection; restore it from the browser UI import panel.
+
+JSON and NDJSON backups include applications, contacts, outreach messages,
+lifecycle events, interviews, offers, artifacts, reminders, and settings.
 
 ## When to use each format
 
-- Use CSV when the goal is spreadsheet compatibility.
 - Use JSON for routine complete backups and full-fidelity browser restores.
 - Use NDJSON for complete backups that should be easy to diff or process one
   record per line, and for full-fidelity browser restores.
+- Use compact CSV when the goal is spreadsheet compatibility.
+- Use supplemental lifecycle CSV together with compact CSV when spreadsheet
+  interchange also needs event-level lifecycle metadata.
 
 ## Verify before clearing data
 
 1. Export JSON and NDJSON from the browser UI.
 2. Save them outside the repo, Docker context, and public folders.
-3. Also export CSV when you need spreadsheet-compatible interchange.
+3. Also export compact CSV and lifecycle CSV when you need
+   spreadsheet-compatible interchange.
 4. Verify backups with repository/import-export tests or local dev tooling before
    deleting source data.
 5. For restores, import into an empty/disposable browser profile, confirm
-   application counts, and re-export before clearing the original source.
+   application counts and representative lifecycle timelines, and re-export
+   before clearing the original source.
 
 ## Restore into dev, staging, or production browsers
 
 Dev, staging, and production are separate browser origins/profiles unless you
-import the same backup into each. The browser UI restores CSV, JSON, and NDJSON
-files. To restore, open the target deployed app in the chosen browser profile,
-use the import UI, run preview/dry-run, and apply only after confirming the
-reported record counts match the expected IndexedDB data.
+import the same backup into each. The browser UI restores compact CSV,
+supplemental lifecycle CSV, JSON, and NDJSON files. To restore into a clean
+browser profile, open the target deployed app in that profile, use the import UI,
+run preview/dry-run, and apply only after confirming the reported record counts
+match the expected IndexedDB data. Prefer JSON first; use NDJSON when that is the
+available full-fidelity backup. Import compact CSV before supplemental lifecycle
+CSV when restoring from spreadsheet formats so lifecycle rows can resolve their
+`application_id` references.
 
 ## Manual seeding
 
 To seed dev or staging through the current browser UI, import an anonymized CSV
 file or a fake dev-only fixture. Keep anonymized JSON/NDJSON backups for
-repository-level validation and browser restore smoke tests. Do not
-include Daniel's real data in
-committed fixtures. Do not place real backups in public repos, Docker images,
-Helm charts, ConfigMaps, Secrets, PVCs, or static server directories.
+repository-level validation and browser restore smoke tests. Do not include
+Daniel's real data in committed fixtures. Do not place real backups in public
+repos, Docker images, Helm charts, ConfigMaps, Secrets, PVCs, or static server
+directories. Do not paste real backup contents into public issues or chats.
 
 ## Server-side privacy boundary
 

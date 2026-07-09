@@ -50,16 +50,17 @@ The importer preserves compact fields that do not have a first-class normalized 
 
 Use the export flow after every meaningful update:
 
-- **CSV** for spreadsheet compatibility and manual review.
-- **JSON** for complete browser backup/restore.
-- **NDJSON** for future CLI/jobbot automation and streaming imports.
+- **Compact CSV** for one-row-per-application spreadsheet compatibility and manual review.
+- **Supplemental lifecycle CSV** for event-rich spreadsheet interchange keyed by `application_id`.
+- **JSON** for complete full-fidelity browser backup/restore across all IndexedDB stores.
+- **NDJSON** for the same full-fidelity data in a line-oriented stream for future CLI/jobbot automation and streaming imports.
 
-Store backups somewhere private and encrypted. The files may include application history, contacts, outreach messages, links to private artifacts, and notes.
+Store backups somewhere private and encrypted. The files may include application history, contacts, outreach messages, links to private artifacts, lifecycle details, compensation, and notes. Do not commit real backups, bake them into Docker images, or paste them into public issues.
 
 ## Restore from backup
 
 1. Start jobbot3000 in a browser profile with an empty or intentionally disposable IndexedDB database.
-2. Select the JSON or NDJSON backup.
+2. Select the JSON backup when available, or NDJSON when you need the line-oriented full-fidelity backup. If restoring from CSVs, import compact CSV first and supplemental lifecycle CSV second so lifecycle rows can resolve `application_id`.
 3. Run the dry-run preview and confirm record counts.
 4. Use **Replace** semantics to restore the complete backup.
 5. Verify the restored application list and export a fresh CSV to confirm the compact spreadsheet view is available.
