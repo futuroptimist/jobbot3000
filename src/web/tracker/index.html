@@ -55,6 +55,37 @@
               <option value="">All statuses</option>
             </select></label
           ><label
+            ><span>Response</span
+            ><select data-filter="response">
+              <option value="">All response states</option>
+              <option value="responded">Has response</option>
+              <option value="no_response">No response yet</option>
+            </select></label
+          ><label
+            ><span>Outreach</span
+            ><select data-filter="outreach">
+              <option value="">All outreach states</option>
+              <option value="sent">Sent</option>
+              <option value="replied">Replied</option>
+              <option value="none">No outreach</option>
+            </select></label
+          ><label
+            ><span>Follow-up</span
+            ><select data-filter="followup">
+              <option value="">All follow-ups</option>
+              <option value="due">Due or overdue</option>
+              <option value="scheduled">Scheduled</option>
+              <option value="none">No follow-up</option>
+            </select></label
+          ><label
+            ><span>Activity</span
+            ><select data-filter="activity">
+              <option value="">All activity</option>
+              <option value="assessment">Assessments/take-homes</option>
+              <option value="recruiter_screen">Recruiter screens</option>
+              <option value="terminal">Terminal outcomes</option>
+            </select></label
+          ><label
             ><span>Outcome</span
             ><select data-filter="outcome">
               <option value="">All outcomes</option>
@@ -117,7 +148,12 @@
                 Apply import
               </button>
             </div>
-            <pre data-import-result class="muted"></pre>
+            <div
+              data-import-result
+              class="import-preview muted"
+              role="status"
+              aria-live="polite"
+            ></div>
           </article>
           <article class="card">
             <h3>Export backups</h3>
