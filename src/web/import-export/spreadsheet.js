@@ -292,6 +292,14 @@ const parseDate = (
     });
     return undefined;
   }
+  // Preserve explicit ISO date/time strings exactly enough for backup round trips,
+  // including timezone offsets, while normalizing other Date-parseable inputs.
+  if (
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(
+      text,
+    )
+  )
+    return text;
   return date.toISOString();
 };
 const hasTimeComponent = (value) =>
@@ -919,6 +927,11 @@ export const csvToBrowserApplicationExport = (csvText, options) =>
 
 const dateOnly = (value) => (value ? String(value).slice(0, 10) : "");
 const dateTime = (value) => (value ? String(value) : "");
+const compareCodePoints = (left, right) => {
+  const leftText = String(left);
+  const rightText = String(right);
+  return leftText < rightText ? -1 : leftText > rightText ? 1 : 0;
+};
 const firstBy = (records, predicate) => records.find(predicate) ?? {};
 export const browserApplicationExportToRows = (bundle) => {
   const parsed = browserApplicationExportSchema.parse(bundle);
@@ -1019,12 +1032,56 @@ export const browserApplicationExportToRows = (bundle) => {
 };
 export const exportCompactCsv = (bundle) =>
   serializeCsv(browserApplicationExportToRows(bundle));
-const compareCodePoints = (left, right) => {
-  const leftText = String(left);
-  const rightText = String(right);
-  return leftText < rightText ? -1 : leftText > rightText ? 1 : 0;
+export const browserApplicationExportToLifecycleRows = (bundle) => {
+  const parsed = browserApplicationExportSchema.parse(bundle);
+  const applicationsById = new Map(
+    parsed.applications.map((application) => [application.id, application]),
+  );
+  return [...parsed.lifecycleEvents]
+    .sort((a, b) => {
+      for (const [left, right] of [
+        [a.applicationId, b.applicationId],
+        [a.occurredAt ?? "", b.occurredAt ?? ""],
+        [a.dueAt ?? "", b.dueAt ?? ""],
+        [a.eventType ?? "", b.eventType ?? ""],
+        [a.id, b.id],
+      ]) {
+        const compared = compareCodePoints(left, right);
+        if (compared !== 0) return compared;
+      }
+      return 0;
+    })
+    .map((event) => {
+      const application = applicationsById.get(event.applicationId) ?? {};
+      return {
+        ...blankLifecycleRow(),
+        application_id: event.applicationId,
+        company: application.company ?? "",
+        role_title: application.role ?? "",
+        event_type: event.eventType ?? event.status ?? "",
+        occurred_at: event.occurredAt ?? "",
+        stage: event.stageLabel ?? event.status ?? "",
+        channel: event.channel ?? "",
+        actor: event.actor ?? "",
+        source_artifact: event.sourceArtifact ?? "",
+        requires_user_action:
+          event.requiresUserAction === undefined
+            ? ""
+            : String(event.requiresUserAction),
+        action_status: event.actionStatus ?? "",
+        due_at: event.dueAt ?? "",
+        no_ai_required:
+          event.noAiRequired === undefined ? "" : String(event.noAiRequired),
+        details: event.details ?? event.note ?? "",
+      };
+    });
 };
 
+export const exportLifecycleCsv = (bundle) =>
+  serializeCsv(
+    browserApplicationExportToLifecycleRows(bundle),
+    LIFECYCLE_CSV_COLUMNS,
+  );
 const canonicalizeBackupBundle = (bundle) => {
   const parsed = browserApplicationExportSchema.parse(bundle);
   const sorted = { ...parsed };
@@ -1059,8 +1116,34 @@ export const exportNdjsonBackup = (bundle) => {
       .join("\n") + "\n"
   );
 };
+const normalizeBackupBundleInput = (input, { source = "json_import" } = {}) => {
+  const now = nowIso();
+  const bundle = {
+    schemaVersion: 1,
+    exportedAt: input?.exportedAt ?? now,
+    applications: input?.applications ?? [],
+    contacts: input?.contacts ?? [],
+    outreachMessages: input?.outreachMessages ?? [],
+    lifecycleEvents: (input?.lifecycleEvents ?? []).map((event) => ({
+      source,
+      createdAt: event.occurredAt ?? input?.exportedAt ?? now,
+      ...event,
+    })),
+    interviews: input?.interviews ?? [],
+    offers: input?.offers ?? [],
+    artifacts: input?.artifacts ?? [],
+    reminders: input?.reminders ?? [],
+    settings: input?.settings,
+  };
+  if (input?.schemaVersion !== undefined)
+    bundle.schemaVersion = input.schemaVersion;
+  return bundle;
+};
+
 export const importJsonBackup = (text) =>
-  browserApplicationExportSchema.parse(JSON.parse(text));
+  browserApplicationExportSchema.parse(
+    normalizeBackupBundleInput(JSON.parse(text), { source: "json_import" }),
+  );
 export const importNdjsonBackup = (text) => {
   const bundle = {
     schemaVersion: 1,
@@ -1096,7 +1179,9 @@ export const importNdjsonBackup = (text) => {
           `Unknown or malformed NDJSON record type: ${String(entry.type)}`,
         );
     });
-  return browserApplicationExportSchema.parse(bundle);
+  return browserApplicationExportSchema.parse(
+    normalizeBackupBundleInput(bundle, { source: "ndjson_import" }),
+  );
 };
 export const previewCompactCsvImport = async (csvText, repository) => {
   const rows = parseCsv(csvText);

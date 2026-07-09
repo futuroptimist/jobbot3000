@@ -14,6 +14,7 @@ import {
   detectSpreadsheetImportFormat,
   exportCompactCsv,
   exportJsonBackup,
+  exportLifecycleCsv,
   exportNdjsonBackup,
   importCompactCsv,
   importSupplementalLifecycleCsv,
@@ -1035,6 +1036,123 @@ describe("spreadsheet import/export", () => {
       ]),
     );
     repo.close();
+  });
+
+  it("exports supplemental lifecycle CSV with deterministic order and escaping", () => {
+    const exportedAt = "2026-03-01T00:00:00.000Z";
+    const bundle = {
+      schemaVersion: 1,
+      exportedAt,
+      applications: [
+        {
+          id: "app_b",
+          company: "Beta, Inc.",
+          role: 'Engineer "Two"',
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+        {
+          id: "app_a",
+          company: "Alpha",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+      contacts: [],
+      outreachMessages: [],
+      lifecycleEvents: [
+        {
+          id: "event_b_later",
+          applicationId: "app_b",
+          status: "outreach_sent",
+          occurredAt: "2026-03-03T10:00:00-05:00",
+          source: "csv_import",
+          eventType: "hiring_manager_reply",
+          stageLabel: "Hiring manager follow-up",
+          channel: "email",
+          actor: "hiring_manager",
+          sourceArtifact: "https://example.test/artifact/reply?x=1&y=2",
+          requiresUserAction: false,
+          actionStatus: "received",
+          noAiRequired: true,
+          details:
+            'Reply included comma, quote "here", and newline\nSecond line.',
+          createdAt: exportedAt,
+        },
+        {
+          id: "event_a_due",
+          applicationId: "app_a",
+          status: "applied",
+          occurredAt: "2026-03-02T09:00:00.000Z",
+          source: "csv_import",
+          eventType: "next_tracking_step",
+          dueAt: "2026-03-05T17:00:00.000Z",
+          requiresUserAction: true,
+          details: "Follow up",
+          createdAt: exportedAt,
+        },
+      ],
+      interviews: [],
+      offers: [],
+      artifacts: [],
+      reminders: [],
+    };
+
+    const csv = exportLifecycleCsv(bundle);
+    expect(csv.split("\n")[0]).toBe(LIFECYCLE_CSV_COLUMNS.join(","));
+    expect(csv).toContain('"Beta, Inc."');
+    expect(csv).toContain('"Engineer ""Two"""');
+    expect(csv).toContain(
+      '"Reply included comma, quote ""here"", and newline\nSecond line."',
+    );
+    const rows = parseCsv(csv);
+    expect(rows.map((row) => row.application_id)).toEqual(["app_a", "app_b"]);
+    expect(rows[1]).toMatchObject({
+      source_artifact: "https://example.test/artifact/reply?x=1&y=2",
+      requires_user_action: "false",
+      no_ai_required: "true",
+      occurred_at: "2026-03-03T10:00:00-05:00",
+    });
+  });
+
+  it("restores older JSON and NDJSON backups that omit lifecycle metadata stores", () => {
+    const oldJson = JSON.stringify({
+      schemaVersion: 1,
+      exportedAt: "2026-03-01T00:00:00.000Z",
+      applications: [
+        {
+          id: "app_old_backup",
+          company: "Old Backup",
+          role: "Engineer",
+          status: "applied",
+          createdAt: "2026-03-01T00:00:00.000Z",
+          updatedAt: "2026-03-01T00:00:00.000Z",
+        },
+      ],
+    });
+
+    expect(importJsonBackup(oldJson)).toMatchObject({
+      applications: [expect.objectContaining({ id: "app_old_backup" })],
+      contacts: [],
+      lifecycleEvents: [],
+      reminders: [],
+    });
+
+    const oldNdjson = [
+      JSON.stringify({
+        type: "meta",
+        schemaVersion: 1,
+        exportedAt: "2026-03-01T00:00:00.000Z",
+      }),
+      JSON.stringify({
+        type: "applications",
+        record: JSON.parse(oldJson).applications[0],
+      }),
+    ].join("\n");
+    expect(importNdjsonBackup(`${oldNdjson}\n`).applications).toHaveLength(1);
   });
 
   it("detects lifecycle CSVs with quoted headers", () => {

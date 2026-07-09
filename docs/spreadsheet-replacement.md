@@ -1,6 +1,6 @@
 # Replacing the Google Sheets application tracker
 
-jobbot3000 can import the compact CSV tracker into the browser-first IndexedDB data model and export durable backups. Use only fake/test data in the repository; keep real application records in private browser backups.
+jobbot3000 can import the compact CSV tracker into the browser-first IndexedDB data model and export durable backups. Compact CSV is the spreadsheet-compatible one-row-per-application format, supplemental lifecycle CSV carries event metadata keyed by `application_id`, and JSON/NDJSON are full-fidelity backup/restore formats. Use only fake/test data in the repository; keep real application records in private browser backups.
 
 ## Supported compact CSV columns
 
@@ -50,11 +50,12 @@ The importer preserves compact fields that do not have a first-class normalized 
 
 Use the export flow after every meaningful update:
 
-- **CSV** for spreadsheet compatibility and manual review.
-- **JSON** for complete browser backup/restore.
-- **NDJSON** for future CLI/jobbot automation and streaming imports.
+- **Compact CSV** for spreadsheet compatibility and manual review.
+- **Lifecycle CSV** when you need event rows, source artifacts, action status, due dates, and multiline details tied back to applications by `application_id`.
+- **JSON** for complete browser backup/restore; this is the preferred everyday backup.
+- **NDJSON** for equivalent full-fidelity backup/restore with one typed record per line.
 
-Store backups somewhere private and encrypted. The files may include application history, contacts, outreach messages, links to private artifacts, and notes.
+Store backups somewhere private and encrypted. The files may include application history, contacts, outreach messages, links to private artifacts, private URLs, company names, and notes. Do not commit real backups, bake them into Docker images, or paste them into public issues.
 
 ## Restore from backup
 

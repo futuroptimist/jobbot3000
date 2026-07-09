@@ -5,6 +5,7 @@ import {
   detectSpreadsheetImportFormat,
   exportCompactCsv,
   exportJsonBackup,
+  exportLifecycleCsv,
   exportNdjsonBackup,
   importJsonBackup,
   importNdjsonBackup,
@@ -1132,6 +1133,12 @@ function exportData(fmt) {
       "jobbot3000-backup.ndjson",
       "application/x-ndjson",
       exportNdjsonBackup(bundle),
+    );
+  } else if (fmt === "lifecycle-csv") {
+    download(
+      "jobbot3000-lifecycle-events.csv",
+      "text/csv",
+      exportLifecycleCsv(bundle),
     );
   } else {
     if (!COMPACT_CSV_COLUMNS.length)

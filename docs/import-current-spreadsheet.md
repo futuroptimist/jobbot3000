@@ -1,8 +1,7 @@
 # Import the Current Spreadsheet
 
 Use this guide to move from a Google Sheets tracker to jobbot3000 while keeping
-CSV as a spreadsheet-compatible backup and JSON/NDJSON as full-fidelity restore
-formats.
+compact CSV as a spreadsheet-compatible backup, supplemental lifecycle CSV as the event-rich spreadsheet companion, and JSON/NDJSON as full-fidelity restore formats.
 
 ## Export Google Sheets as CSV
 
@@ -23,7 +22,8 @@ formats.
 
 ## Back up after import
 
-- Export CSV to keep a human-editable spreadsheet-shaped checkpoint.
+- Export compact CSV to keep a human-editable spreadsheet-shaped checkpoint.
+- Export lifecycle CSV if you imported or maintain event metadata outside the compact sheet.
 - Export JSON as the canonical complete backup.
 - Export NDJSON when you want a line-oriented full-fidelity stream for review or
   transfer.
@@ -39,14 +39,10 @@ formats.
 
 ## Why CSV is not full fidelity
 
-The CSV format is one row per application for spreadsheet compatibility. Once an
-application has multiple outreach messages, contacts, interviews, offers,
-artifacts, reminders, or lifecycle events, CSV cannot represent every child
-record without flattening or losing detail. Use JSON or NDJSON before clearing
-browser data.
+Compact CSV is one row per application for spreadsheet compatibility. Supplemental lifecycle CSV adds one row per event keyed by `application_id`, but JSON/NDJSON remain preferred for full-fidelity backups because they preserve every current store, relationship, ID, setting, and child record without flattening. Use JSON or NDJSON before clearing browser data.
 
 ## Transition backup cadence
 
 During the first two weeks of using jobbot3000 as the primary tracker, export
 JSON and NDJSON after each job-search session and export CSV at least daily while
-you still reconcile with the spreadsheet. Keep backups private and encrypted.
+you still reconcile with the spreadsheet. Keep backups private and encrypted, and never commit real backups, embed them in Docker images, or paste them into public issues.
