@@ -23,8 +23,9 @@ formats.
 
 ## Back up after import
 
-- Export CSV to keep a human-editable spreadsheet-shaped checkpoint.
-- Export JSON as the canonical complete backup.
+- Export compact CSV to keep a human-editable one-row-per-application checkpoint.
+- Export supplemental lifecycle CSV when you need event metadata keyed by `application_id`.
+- Export JSON as the canonical complete backup for everyday restore.
 - Export NDJSON when you want a line-oriented full-fidelity stream for review or
   transfer.
 
@@ -41,8 +42,9 @@ formats.
 
 The CSV format is one row per application for spreadsheet compatibility. Once an
 application has multiple outreach messages, contacts, interviews, offers,
-artifacts, reminders, or lifecycle events, CSV cannot represent every child
-record without flattening or losing detail. Use JSON or NDJSON before clearing
+artifacts, reminders, or lifecycle events, compact CSV cannot represent every child
+record without flattening or losing detail. Use supplemental lifecycle CSV for
+event-rich spreadsheet interchange, and use JSON or NDJSON before clearing
 browser data.
 
 ## Transition backup cadence

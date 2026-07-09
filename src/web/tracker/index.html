@@ -133,7 +133,7 @@
         <h2>Import/Export</h2>
         <div class="grid two-column">
           <article class="card">
-            <h3>Import CSV/JSON/NDJSON backup</h3>
+            <h3>Import compact CSV, lifecycle CSV, JSON, or NDJSON</h3>
             <label class="tracker-form"
               ><span>Backup file</span
               ><input
@@ -160,17 +160,26 @@
           <article class="card">
             <h3>Export backups</h3>
             <p>
-              Use <strong>Backup now</strong> to download a JSON backup of
-              everything currently stored in IndexedDB.
+              Use <strong>Backup now</strong> for a full-fidelity JSON restore
+              file. NDJSON is also full-fidelity; compact CSV is one row per
+              application; lifecycle CSV exports event metadata keyed by
+              application_id.
             </p>
             <div class="tracker-actions">
               <button class="button" data-export="json">Backup now</button
-              ><button class="button" data-export="csv">Export CSV</button
+              ><button class="button" data-export="csv">
+                Export compact CSV</button
+              ><button class="button" data-export="lifecycle-csv">
+                Export lifecycle CSV</button
               ><button class="button" data-export="ndjson">
                 Export NDJSON
               </button>
             </div>
-            <p class="muted">Exports are generated entirely in the browser.</p>
+            <p class="muted">
+              Exports are generated entirely in the browser. Real backups can
+              contain private job-search data; keep them out of repos, public
+              issues, and Docker images.
+            </p>
           </article>
         </div>
       </section>
