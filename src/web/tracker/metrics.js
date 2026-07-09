@@ -68,10 +68,12 @@ const isAssessmentMetadata = (metadata) => {
 const addResponse = (responses, applicationId) => {
   if (applicationId) responses.add(applicationId);
 };
+const isParsedDateOnlyTimestamp = (value) =>
+  /T00:00:00(?:\.000)?(?:Z|[+-]\d{2}:?\d{2})$/.test(value);
 const isTimedLifecycleInterviewTimestamp = (value) =>
   Boolean(value) &&
   !isPlaceholderTimestamp(value) &&
-  !/T00:00:00(?:\.000)?Z$/.test(value);
+  !isParsedDateOnlyTimestamp(value);
 const timedValue = (...values) =>
   values.find((value) => isTimedLifecycleInterviewTimestamp(value));
 const lifecycleInterviewTimestamp = (event, classification) => {

@@ -781,6 +781,44 @@ describe("tracker dashboard metrics", () => {
     expect(metrics.interviews).toBe(2);
   });
 
+  it("falls back to timed due_at when completed occurred_at is date-only", () => {
+    const applicationId = "app_completed_date_only";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: applicationId,
+          company: "Completed Date Only",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_completed_date_only",
+          applicationId,
+          eventType: "technical_interview_completed",
+          occurredAt: "2026-05-10T00:00:00.000Z",
+          dueAt: "2026-05-01T12:00:00.000Z",
+          createdAt: exportedAt,
+        },
+      ],
+      interviews: [
+        {
+          id: "interview_completed_date_only",
+          applicationId,
+          stage: "technical_screen",
+          startsAt: "2026-05-01T12:00:00.000Z",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+    });
+
+    expect(metrics.interviews).toBe(1);
+  });
+
   it("uses completed occurred_at to dedupe lifecycle and derived interview records", () => {
     const applicationId = "app_completed_both";
     const existing = {
