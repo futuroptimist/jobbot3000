@@ -1241,6 +1241,47 @@ describe("spreadsheet import/export", () => {
     ]);
   });
 
+  it("reports invalid supplemental lifecycle ISO datetimes as malformed date fields", () => {
+    const existing = {
+      applications: [
+        {
+          id: "app_bad_lifecycle_date",
+          company: "Bad Lifecycle Date",
+          role: "Engineer",
+          status: "applied",
+          createdAt: "2026-03-10T00:00:00.000Z",
+          updatedAt: "2026-03-10T00:00:00.000Z",
+        },
+      ],
+    };
+    const { errors, bundle } = lifecycleRowsToBrowserApplicationExport(
+      [
+        {
+          ...Object.fromEntries(
+            LIFECYCLE_CSV_COLUMNS.map((column) => [column, ""]),
+          ),
+          application_id: "app_bad_lifecycle_date",
+          event_type: "hiring_manager_reply",
+          occurred_at: "2026-02-30T10:00:00.000Z",
+        },
+      ],
+      existing,
+      { exportedAt: "2026-03-10T00:00:00.000Z" },
+    );
+
+    expect(errors).toEqual([
+      expect.objectContaining({
+        field: "occurred_at",
+        code: "malformed_date",
+      }),
+    ]);
+    expect(bundle.lifecycleEvents).toEqual([
+      expect.objectContaining({
+        occurredAt: "1970-01-01T00:00:00.000Z",
+      }),
+    ]);
+  });
+
   it("restores older JSON and NDJSON backups that omit lifecycle metadata stores", () => {
     const oldJson = JSON.stringify({
       schemaVersion: 1,
