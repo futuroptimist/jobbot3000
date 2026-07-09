@@ -813,6 +813,7 @@ describe("tracker dashboard metrics", () => {
           applicationId: "app_legacy_date_only",
           eventType: "devops_interview_scheduled",
           dueAt: "2026-01-02T00:00:00.000Z",
+          source: "csv_import",
           createdAt: timestamp,
         },
         {
@@ -820,6 +821,7 @@ describe("tracker dashboard metrics", () => {
           applicationId: "app_legacy_date_only",
           eventType: "technical_interview_completed",
           occurredAt: "2026-01-03T00:00:00.000Z",
+          source: "csv_import",
           createdAt: timestamp,
         },
       ],
@@ -985,6 +987,34 @@ describe("tracker dashboard metrics", () => {
     expect(
       selectDashboardMetrics({ ...existing, ...lifecycle }).interviews,
     ).toBe(1);
+  });
+
+  it("counts legacy lifecycle-only explicit midnight completed interviews", () => {
+    const applicationId = "app_legacy_midnight_lifecycle_only";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: applicationId,
+          company: "Legacy Midnight Lifecycle Only",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_legacy_midnight_lifecycle_only",
+          applicationId,
+          eventType: "technical_interview_completed",
+          occurredAt: "2026-05-10T00:00:00.000Z",
+          createdAt: exportedAt,
+        },
+      ],
+      interviews: [],
+    });
+
+    expect(metrics.interviews).toBe(1);
   });
 
   it("treats legacy explicit midnight completed timestamps as timed", () => {

@@ -81,7 +81,13 @@ const isAmbiguousLegacyDateOnlyTimestamp = (value) => {
 const lifecycleTimestampHasTime = (event, field, value) => {
   const flag = event[`${field}HasTime`];
   if (typeof flag === "boolean") return flag;
-  return Boolean(value) && !isAmbiguousLegacyDateOnlyTimestamp(value);
+  if (!value) return false;
+  if (
+    event.source === "csv_import" &&
+    isAmbiguousLegacyDateOnlyTimestamp(value)
+  )
+    return false;
+  return true;
 };
 const isTimedLifecycleInterviewTimestamp = (event, field, value) =>
   Boolean(value) &&
