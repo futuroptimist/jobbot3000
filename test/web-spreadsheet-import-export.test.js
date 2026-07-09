@@ -14,11 +14,13 @@ import {
   detectSpreadsheetImportFormat,
   exportCompactCsv,
   exportJsonBackup,
+  exportLifecycleCsv,
   exportNdjsonBackup,
   importCompactCsv,
   importSupplementalLifecycleCsv,
   importJsonBackup,
   importNdjsonBackup,
+  lifecycleRowsToBrowserApplicationExport,
   parseCsv,
   serializeCsv,
   previewCompactCsvImport,
@@ -1035,6 +1037,476 @@ describe("spreadsheet import/export", () => {
       ]),
     );
     repo.close();
+  });
+
+  it("round trips compact and supplemental lifecycle CSV deterministically", async () => {
+    let repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    const compactCsv = serializeCsv([
+      {
+        application_id: "app_roundtrip_alpha",
+        company: "Roundtrip Alpha",
+        role_title: "Engineer, Platform",
+        status: "applied",
+        applied_at: "2026-03-01",
+        schema_version: "1",
+      },
+    ]);
+    await importCompactCsv(compactCsv, repo, { mode: "replace" });
+    const lifecycleCsv = serializeCsv(
+      [
+        {
+          application_id: "app_roundtrip_alpha",
+          company: "Roundtrip Alpha",
+          role_title: "Engineer, Platform",
+          event_type: "hiring_manager_reply",
+          occurred_at: "2026-03-03T10:00:00-05:00",
+          stage: "Hiring manager follow-up",
+          channel: "email",
+          actor: "hiring_manager",
+          source_artifact: "https://example.test/artifact/reply-alpha",
+          requires_user_action: "false",
+          action_status: "received",
+          no_ai_required: "true",
+          details: 'Reply said "great fit, next steps".\nSecond line.',
+        },
+        {
+          application_id: "app_roundtrip_alpha",
+          company: "Roundtrip Alpha",
+          role_title: "Engineer, Platform",
+          event_type: "next_tracking_step",
+          occurred_at: "2026-03-04T09:30:00-05:00",
+          stage: "",
+          channel: "",
+          actor: "candidate",
+          requires_user_action: "true",
+          action_status: "pending",
+          due_at: "2026-03-05T17:00:00-05:00",
+          no_ai_required: "",
+          details: "Follow up with quoted, comma text",
+        },
+        {
+          application_id: "app_roundtrip_alpha",
+          company: "Roundtrip Alpha",
+          role_title: "Engineer, Platform",
+          event_type: "recruiter_screen_scheduled",
+          occurred_at: "2026-03-06T08:00:00-05:00",
+          stage: "Recruiter screen",
+          channel: "video",
+          actor: "recruiter",
+          source_artifact: "",
+          requires_user_action: "",
+          action_status: "scheduled",
+          due_at: "2026-03-07T10:00:00-05:00",
+          no_ai_required: "false",
+          details: "Recruiter screen scheduled",
+        },
+      ],
+      LIFECYCLE_CSV_COLUMNS,
+    );
+
+    await importSupplementalLifecycleCsv(lifecycleCsv, repo);
+    const exportedLifecycleCsv = exportLifecycleCsv(await repo.exportAllData());
+    await importSupplementalLifecycleCsv(lifecycleCsv, repo);
+    const afterRepeatedImport = await repo.exportAllData();
+    expect(afterRepeatedImport.interviews).toHaveLength(1);
+    expect(afterRepeatedImport.reminders).toHaveLength(1);
+    expect(afterRepeatedImport.artifacts).toHaveLength(0);
+
+    repo.close();
+    await deleteDatabase();
+    repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    await importCompactCsv(compactCsv, repo, { mode: "replace" });
+    await importSupplementalLifecycleCsv(exportedLifecycleCsv, repo);
+    await importSupplementalLifecycleCsv(exportedLifecycleCsv, repo);
+    const restored = await repo.exportAllData();
+
+    expect(restored.lifecycleEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventType: "hiring_manager_reply",
+          occurredAt: "2026-03-03T10:00:00-05:00",
+          sourceArtifact: "https://example.test/artifact/reply-alpha",
+          requiresUserAction: false,
+          actionStatus: "received",
+          noAiRequired: true,
+          actor: "hiring_manager",
+          channel: "email",
+          details: 'Reply said "great fit, next steps".\nSecond line.',
+        }),
+        expect.objectContaining({
+          eventType: "next_tracking_step",
+          dueAt: "2026-03-05T17:00:00-05:00",
+          requiresUserAction: true,
+          actionStatus: "pending",
+          actor: "candidate",
+          details: "Follow up with quoted, comma text",
+        }),
+        expect.objectContaining({
+          eventType: "recruiter_screen_scheduled",
+          dueAt: "2026-03-07T10:00:00-05:00",
+          noAiRequired: false,
+        }),
+      ]),
+    );
+    expect(
+      restored.lifecycleEvents.filter(
+        ({ applicationId, eventType }) =>
+          applicationId === "app_roundtrip_alpha" && eventType,
+      ),
+    ).toHaveLength(4);
+    expect(restored.interviews).toHaveLength(1);
+    expect(restored.reminders).toHaveLength(1);
+    expect(restored.artifacts).toHaveLength(0);
+    repo.close();
+  });
+
+  it("exports supplemental lifecycle CSV with deterministic order and escaping", () => {
+    const exportedAt = "2026-03-01T00:00:00.000Z";
+    const bundle = {
+      schemaVersion: 1,
+      exportedAt,
+      applications: [
+        {
+          id: "app_b",
+          company: "Beta, Inc.",
+          role: 'Engineer "Two"',
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+        {
+          id: "app_a",
+          company: "Alpha",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+      contacts: [],
+      outreachMessages: [],
+      lifecycleEvents: [
+        {
+          id: "event_b_later",
+          applicationId: "app_b",
+          status: "outreach_sent",
+          occurredAt: "2026-03-03T10:00:00-05:00",
+          source: "csv_import",
+          eventType: "hiring_manager_reply",
+          stageLabel: "Hiring manager follow-up",
+          channel: "email",
+          actor: "hiring_manager",
+          sourceArtifact: "https://example.test/artifact/reply?x=1&y=2",
+          requiresUserAction: false,
+          actionStatus: "received",
+          noAiRequired: true,
+          details:
+            'Reply included comma, quote "here", and newline\nSecond line.',
+          createdAt: exportedAt,
+        },
+        {
+          id: "event_a_due",
+          applicationId: "app_a",
+          status: "applied",
+          occurredAt: "2026-03-02T09:00:00.000Z",
+          source: "csv_import",
+          eventType: "next_tracking_step",
+          dueAt: "2026-03-05T17:00:00.000Z",
+          requiresUserAction: true,
+          details: "Follow up",
+          createdAt: exportedAt,
+        },
+      ],
+      interviews: [],
+      offers: [],
+      artifacts: [],
+      reminders: [],
+    };
+
+    const csv = exportLifecycleCsv(bundle);
+    expect(csv.split("\n")[0]).toBe(LIFECYCLE_CSV_COLUMNS.join(","));
+    expect(csv).toContain('"Beta, Inc."');
+    expect(csv).toContain('"Engineer ""Two"""');
+    expect(csv).toContain(
+      '"Reply included comma, quote ""here"", and newline\nSecond line."',
+    );
+    const rows = parseCsv(csv);
+    expect(rows.map((row) => row.application_id)).toEqual(["app_a", "app_b"]);
+    expect(rows[1]).toMatchObject({
+      source_artifact: "https://example.test/artifact/reply?x=1&y=2",
+      requires_user_action: "false",
+      no_ai_required: "true",
+      occurred_at: "2026-03-03T10:00:00-05:00",
+    });
+  });
+
+  it("sorts supplemental lifecycle CSV timestamps chronologically across offsets", () => {
+    const exportedAt = "2026-03-01T00:00:00.000Z";
+    const bundle = {
+      schemaVersion: 1,
+      exportedAt,
+      applications: [
+        {
+          id: "app_offsets",
+          company: "Offsets Inc.",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+      contacts: [],
+      outreachMessages: [],
+      lifecycleEvents: [
+        {
+          id: "event_later_offset",
+          applicationId: "app_offsets",
+          status: "outreach_sent",
+          occurredAt: "2026-03-03T08:00:00-05:00",
+          source: "manual",
+          createdAt: exportedAt,
+        },
+        {
+          id: "event_earlier_utc",
+          applicationId: "app_offsets",
+          status: "applied",
+          occurredAt: "2026-03-03T12:00:00+00:00",
+          source: "manual",
+          createdAt: exportedAt,
+        },
+      ],
+      interviews: [],
+      offers: [],
+      artifacts: [],
+      reminders: [],
+    };
+
+    const rows = parseCsv(exportLifecycleCsv(bundle));
+
+    expect(rows.map((row) => row.occurred_at)).toEqual([
+      "2026-03-03T12:00:00+00:00",
+      "2026-03-03T08:00:00-05:00",
+    ]);
+  });
+
+  it("round trips status-only lifecycle events without status loss", async () => {
+    const exportedAt = "2026-03-01T00:00:00.000Z";
+    const statuses = [
+      "offer",
+      "outreach_sent",
+      "rejected",
+      "accepted",
+      "withdrawn",
+      "closed_archived",
+    ];
+    const compactCsv = serializeCsv(
+      statuses.map((status) => ({
+        application_id: `app_status_only_${status}`,
+        company: `Status Only ${status}`,
+        role_title: "Engineer",
+        status: "applied",
+        applied_at: "2026-03-01",
+        schema_version: "1",
+      })),
+    );
+    const existing = {
+      applications: statuses.map((status) => ({
+        id: `app_status_only_${status}`,
+        company: `Status Only ${status}`,
+        role: "Engineer",
+        status: "applied",
+        createdAt: exportedAt,
+        updatedAt: exportedAt,
+      })),
+    };
+    const lifecycleEvents = statuses.map((status) => ({
+      id: `event_status_only_${status}`,
+      applicationId: `app_status_only_${status}`,
+      status,
+      occurredAt: "2026-03-02T00:00:00.000Z",
+      source: "manual",
+      createdAt: exportedAt,
+    }));
+    const csv = exportLifecycleCsv({
+      schemaVersion: 1,
+      exportedAt,
+      ...existing,
+      contacts: [],
+      outreachMessages: [],
+      lifecycleEvents,
+      interviews: [],
+      offers: [],
+      artifacts: [],
+      reminders: [],
+    });
+
+    expect(parseCsv(csv)).toEqual(
+      expect.arrayContaining(
+        statuses.map((status) =>
+          expect.objectContaining({
+            application_id: `app_status_only_${status}`,
+            event_type: "",
+            stage: status,
+          }),
+        ),
+      ),
+    );
+
+    let repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    await importCompactCsv(compactCsv, repo, { mode: "replace" });
+    await importSupplementalLifecycleCsv(csv, repo);
+    const exportedAgain = exportLifecycleCsv(await repo.exportAllData());
+    repo.close();
+
+    await deleteDatabase();
+    repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    await importCompactCsv(compactCsv, repo, { mode: "replace" });
+    await importSupplementalLifecycleCsv(exportedAgain, repo);
+    const restored = await repo.exportAllData();
+
+    expect(restored.lifecycleEvents).toEqual(
+      expect.arrayContaining(
+        statuses.map((status) =>
+          expect.objectContaining({
+            applicationId: `app_status_only_${status}`,
+            status,
+          }),
+        ),
+      ),
+    );
+    expect(
+      restored.lifecycleEvents.filter(
+        ({ eventType, id, occurredAt }) =>
+          eventType === "lifecycle_event" &&
+          id.startsWith("event_app_status_only_") &&
+          occurredAt === "2026-03-02T00:00:00.000Z",
+      ),
+    ).toHaveLength(statuses.length);
+    repo.close();
+  });
+
+  it("preserves valid ISO offset datetimes without milliseconds", () => {
+    const { bundle, errors } = csvToBrowserApplicationExport(
+      serializeCsv([
+        {
+          application_id: "app_offset_seconds",
+          company: "Offset Seconds",
+          role_title: "Engineer",
+          applied_at: "2026-03-03T10:00:00-05:00",
+          follow_up_date: "2026-03-04T10:00:00-05:00",
+          schema_version: "1",
+        },
+      ]),
+      { exportedAt: "2026-03-10T00:00:00.000Z" },
+    );
+
+    expect(errors).toEqual([]);
+    expect(bundle.applications).toEqual([
+      expect.objectContaining({
+        appliedAt: "2026-03-03T10:00:00-05:00",
+        followUpDate: "2026-03-04T10:00:00-05:00",
+      }),
+    ]);
+  });
+
+  it("reports invalid ISO offset datetimes as malformed date fields", () => {
+    const { errors } = csvToBrowserApplicationExport(
+      serializeCsv([
+        {
+          application_id: "app_bad_date",
+          company: "Bad Date",
+          role_title: "Engineer",
+          applied_at: "2026-02-30T10:00:00.000Z",
+          schema_version: "1",
+        },
+      ]),
+      { exportedAt: "2026-03-10T00:00:00.000Z" },
+    );
+
+    expect(errors).toEqual([
+      expect.objectContaining({
+        field: "applied_at",
+        code: "malformed_date",
+      }),
+    ]);
+  });
+
+  it("reports invalid supplemental lifecycle ISO datetimes as malformed date fields", () => {
+    const existing = {
+      applications: [
+        {
+          id: "app_bad_lifecycle_date",
+          company: "Bad Lifecycle Date",
+          role: "Engineer",
+          status: "applied",
+          createdAt: "2026-03-10T00:00:00.000Z",
+          updatedAt: "2026-03-10T00:00:00.000Z",
+        },
+      ],
+    };
+    const { errors, bundle } = lifecycleRowsToBrowserApplicationExport(
+      [
+        {
+          ...Object.fromEntries(
+            LIFECYCLE_CSV_COLUMNS.map((column) => [column, ""]),
+          ),
+          application_id: "app_bad_lifecycle_date",
+          event_type: "hiring_manager_reply",
+          occurred_at: "2026-02-30T10:00:00.000Z",
+        },
+      ],
+      existing,
+      { exportedAt: "2026-03-10T00:00:00.000Z" },
+    );
+
+    expect(errors).toEqual([
+      expect.objectContaining({
+        field: "occurred_at",
+        code: "malformed_date",
+      }),
+    ]);
+    expect(bundle.lifecycleEvents).toEqual([
+      expect.objectContaining({
+        occurredAt: "1970-01-01T00:00:00.000Z",
+      }),
+    ]);
+  });
+
+  it("restores older JSON and NDJSON backups that omit lifecycle metadata stores", () => {
+    const oldJson = JSON.stringify({
+      schemaVersion: 1,
+      exportedAt: "2026-03-01T00:00:00.000Z",
+      applications: [
+        {
+          id: "app_old_backup",
+          company: "Old Backup",
+          role: "Engineer",
+          status: "applied",
+          createdAt: "2026-03-01T00:00:00.000Z",
+          updatedAt: "2026-03-01T00:00:00.000Z",
+        },
+      ],
+    });
+
+    expect(importJsonBackup(oldJson)).toMatchObject({
+      applications: [expect.objectContaining({ id: "app_old_backup" })],
+      contacts: [],
+      lifecycleEvents: [],
+      reminders: [],
+    });
+
+    const oldNdjson = [
+      JSON.stringify({
+        type: "meta",
+        schemaVersion: 1,
+        exportedAt: "2026-03-01T00:00:00.000Z",
+      }),
+      JSON.stringify({
+        type: "applications",
+        record: JSON.parse(oldJson).applications[0],
+      }),
+    ].join("\n");
+    expect(importNdjsonBackup(`${oldNdjson}\n`).applications).toHaveLength(1);
   });
 
   it("detects lifecycle CSVs with quoted headers", () => {
