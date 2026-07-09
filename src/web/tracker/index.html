@@ -160,12 +160,17 @@
           <article class="card">
             <h3>Export backups</h3>
             <p>
-              Use <strong>Backup now</strong> to download a JSON backup of
-              everything currently stored in IndexedDB.
+              Use <strong>Backup now</strong> to download a full-fidelity JSON
+              backup of everything currently stored in IndexedDB. JSON/NDJSON
+              are complete backups; compact CSV is spreadsheet-friendly;
+              lifecycle CSV is event metadata keyed by application ID.
             </p>
             <div class="tracker-actions">
               <button class="button" data-export="json">Backup now</button
-              ><button class="button" data-export="csv">Export CSV</button
+              ><button class="button" data-export="csv">
+                Export compact CSV</button
+              ><button class="button" data-export="lifecycle-csv">
+                Export lifecycle CSV</button
               ><button class="button" data-export="ndjson">
                 Export NDJSON
               </button>
