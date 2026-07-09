@@ -50,11 +50,12 @@ The importer preserves compact fields that do not have a first-class normalized 
 
 Use the export flow after every meaningful update:
 
-- **CSV** for spreadsheet compatibility and manual review.
-- **JSON** for complete browser backup/restore.
-- **NDJSON** for future CLI/jobbot automation and streaming imports.
+- **Compact CSV** for spreadsheet compatibility and manual review.
+- **Supplemental lifecycle CSV** for event metadata keyed by `application_id`; import it after compact CSV.
+- **JSON** for complete browser backup/restore and everyday backups.
+- **NDJSON** for full-fidelity line-oriented backups, future CLI/jobbot automation, and streaming imports.
 
-Store backups somewhere private and encrypted. The files may include application history, contacts, outreach messages, links to private artifacts, and notes.
+Store backups somewhere private and encrypted. The files may include application history, contacts, outreach messages, lifecycle details, links to private artifacts, and notes. Do not commit real backups, bake them into Docker images, or paste them into public issues.
 
 ## Restore from backup
 

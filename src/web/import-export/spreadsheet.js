@@ -271,6 +271,9 @@ export const serializeCsv = (rows, columns = COMPACT_CSV_COLUMNS) =>
     ),
   ].join("\n");
 
+const ISO_TIMESTAMP_WITH_ZONE =
+  /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:?\d{2})$/;
+
 const parseDate = (
   value,
   field,
@@ -292,6 +295,7 @@ const parseDate = (
     });
     return undefined;
   }
+  if (ISO_TIMESTAMP_WITH_ZONE.test(text)) return text.replace(" ", "T");
   return date.toISOString();
 };
 const hasTimeComponent = (value) =>
@@ -1024,6 +1028,59 @@ const compareCodePoints = (left, right) => {
   const rightText = String(right);
   return leftText < rightText ? -1 : leftText > rightText ? 1 : 0;
 };
+
+const lifecycleEventToRow = (event, applicationsById) => {
+  const application = applicationsById.get(event.applicationId) ?? {};
+  return {
+    application_id: event.applicationId,
+    company: application.company ?? "",
+    role_title: application.role ?? "",
+    event_type: event.eventType ?? "",
+    occurred_at: event.occurredAt ?? "",
+    stage: event.stageLabel ?? event.status ?? "",
+    channel: event.channel ?? "",
+    actor: event.actor ?? "",
+    source_artifact: event.sourceArtifact ?? "",
+    requires_user_action:
+      event.requiresUserAction === undefined
+        ? ""
+        : String(event.requiresUserAction),
+    action_status: event.actionStatus ?? "",
+    due_at: event.dueAt ?? "",
+    no_ai_required:
+      event.noAiRequired === undefined ? "" : String(event.noAiRequired),
+    details: event.details ?? event.note ?? "",
+    __id: event.id,
+  };
+};
+
+export const browserApplicationExportToLifecycleRows = (bundle) => {
+  const parsed = browserApplicationExportSchema.parse(bundle);
+  const applicationsById = new Map(
+    parsed.applications.map((application) => [application.id, application]),
+  );
+  return parsed.lifecycleEvents
+    .map((event) => lifecycleEventToRow(event, applicationsById))
+    .sort(
+      (left, right) =>
+        compareCodePoints(left.application_id, right.application_id) ||
+        compareCodePoints(left.occurred_at, right.occurred_at) ||
+        compareCodePoints(left.due_at, right.due_at) ||
+        compareCodePoints(left.event_type, right.event_type) ||
+        compareCodePoints(left.__id, right.__id),
+    )
+    .map((row) => {
+      const exportedRow = { ...row };
+      delete exportedRow.__id;
+      return exportedRow;
+    });
+};
+
+export const exportSupplementalLifecycleCsv = (bundle) =>
+  serializeCsv(
+    browserApplicationExportToLifecycleRows(bundle),
+    LIFECYCLE_CSV_COLUMNS,
+  );
 
 const canonicalizeBackupBundle = (bundle) => {
   const parsed = browserApplicationExportSchema.parse(bundle);

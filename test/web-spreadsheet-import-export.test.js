@@ -15,6 +15,7 @@ import {
   exportCompactCsv,
   exportJsonBackup,
   exportNdjsonBackup,
+  exportSupplementalLifecycleCsv,
   importCompactCsv,
   importSupplementalLifecycleCsv,
   importJsonBackup,
@@ -1031,6 +1032,189 @@ describe("spreadsheet import/export", () => {
         expect.objectContaining({
           eventType: "written_assessment_requested",
           noAiRequired: true,
+        }),
+      ]),
+    );
+    repo.close();
+  });
+
+  it("exports supplemental lifecycle CSV with documented order and escaping", () => {
+    const bundle = {
+      schemaVersion: 1,
+      exportedAt: "2026-03-01T00:00:00.000Z",
+      applications: [
+        {
+          id: "app_beta",
+          company: "Beta, Inc.",
+          role: "Backend Engineer",
+          status: "outreach_sent",
+          createdAt: "2026-03-01T00:00:00.000Z",
+          updatedAt: "2026-03-01T00:00:00.000Z",
+        },
+        {
+          id: "app_alpha",
+          company: "Alpha Labs",
+          role: 'AI "Tools" Engineer',
+          status: "applied",
+          createdAt: "2026-03-01T00:00:00.000Z",
+          updatedAt: "2026-03-01T00:00:00.000Z",
+        },
+      ],
+      contacts: [],
+      outreachMessages: [],
+      lifecycleEvents: [
+        {
+          id: "event_beta_reply",
+          applicationId: "app_beta",
+          status: "outreach_sent",
+          occurredAt: "2026-03-04T10:00:00.000Z",
+          source: "csv_import",
+          eventType: "hiring_manager_reply",
+          stageLabel: "Hiring manager follow-up",
+          channel: "email",
+          actor: "hiring_manager",
+          sourceArtifact: "https://example.test/artifact/reply?x=1&y=2",
+          requiresUserAction: false,
+          actionStatus: "received",
+          details:
+            'Reply includes comma, quote "ok", and newline\nSecond line.',
+          createdAt: "2026-03-04T10:00:00.000Z",
+        },
+        {
+          id: "event_alpha_assessment",
+          applicationId: "app_alpha",
+          status: "applied",
+          occurredAt: "2026-03-03T09:00:00.000Z",
+          source: "csv_import",
+          eventType: "written_assessment_requested",
+          stageLabel: "Written assessment",
+          channel: "portal",
+          actor: "employer",
+          requiresUserAction: true,
+          actionStatus: "pending",
+          dueAt: "2026-03-08T17:00:00.000Z",
+          noAiRequired: true,
+          details: "No AI assistance required.",
+          createdAt: "2026-03-03T09:00:00.000Z",
+        },
+      ],
+      interviews: [],
+      offers: [],
+      artifacts: [],
+      reminders: [],
+    };
+
+    const csv = exportSupplementalLifecycleCsv(bundle);
+    expect(csv.split("\n")[0]).toBe(LIFECYCLE_CSV_COLUMNS.join(","));
+    expect(csv).toContain('"Beta, Inc."');
+    expect(csv).toContain('"AI ""Tools"" Engineer"');
+    expect(csv).toContain(
+      '"Reply includes comma, quote ""ok"", and newline\nSecond line."',
+    );
+
+    const rows = parseCsv(csv);
+    expect(rows.map((row) => row.application_id)).toEqual([
+      "app_alpha",
+      "app_beta",
+    ]);
+    expect(rows[0]).toMatchObject({
+      requires_user_action: "true",
+      no_ai_required: "true",
+      due_at: "2026-03-08T17:00:00.000Z",
+      source_artifact: "",
+    });
+    expect(rows[1]).toMatchObject({
+      requires_user_action: "false",
+      no_ai_required: "",
+      source_artifact: "https://example.test/artifact/reply?x=1&y=2",
+      details: 'Reply includes comma, quote "ok", and newline\nSecond line.',
+    });
+  });
+
+  it("round-trips lifecycle CSV export metadata back through supplemental import", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    await importCompactCsv(
+      serializeCsv([
+        {
+          application_id: "app_lifecycle_export_roundtrip",
+          company: "Lifecycle Export Roundtrip",
+          role_title: "Engineer",
+          applied_at: "2026-01-01",
+          schema_version: "1",
+        },
+      ]),
+      repo,
+      { mode: "replace" },
+    );
+    const lifecycleCsv = serializeCsv(
+      [
+        {
+          application_id: "app_lifecycle_export_roundtrip",
+          company: "Lifecycle Export Roundtrip",
+          role_title: "Engineer",
+          event_type: "written_assessment_requested",
+          occurred_at: "2026-01-03T12:00:00.000-05:00",
+          stage: "Written assessment",
+          channel: "email",
+          actor: "employer",
+          source_artifact: "https://example.test/artifact/assessment-roundtrip",
+          requires_user_action: "true",
+          action_status: "pending",
+          due_at: "2026-01-05T17:00:00.000-05:00",
+          no_ai_required: "true",
+          details: "Line one.\nLine two.",
+        },
+      ],
+      LIFECYCLE_CSV_COLUMNS,
+    );
+
+    expect(
+      (await importSupplementalLifecycleCsv(lifecycleCsv, repo)).imported,
+    ).toBe(true);
+    const exportedCsv = exportSupplementalLifecycleCsv(
+      await repo.exportAllData(),
+    );
+    const exportedRows = parseCsv(exportedCsv).filter(
+      ({ event_type: eventType }) =>
+        eventType === "written_assessment_requested",
+    );
+    expect(exportedRows).toEqual([
+      expect.objectContaining({
+        occurred_at: "2026-01-03T12:00:00.000-05:00",
+        due_at: "2026-01-05T17:00:00.000-05:00",
+        source_artifact: "https://example.test/artifact/assessment-roundtrip",
+        no_ai_required: "true",
+        details: "Line one.\nLine two.",
+      }),
+    ]);
+
+    await repo.clearAllData();
+    await importCompactCsv(
+      serializeCsv([
+        {
+          application_id: "app_lifecycle_export_roundtrip",
+          company: "Lifecycle Export Roundtrip",
+          role_title: "Engineer",
+          applied_at: "2026-01-01",
+          schema_version: "1",
+        },
+      ]),
+      repo,
+      { mode: "replace" },
+    );
+    expect(
+      (await importSupplementalLifecycleCsv(exportedCsv, repo)).imported,
+    ).toBe(true);
+    const restored = await repo.exportAllData();
+    expect(restored.lifecycleEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventType: "written_assessment_requested",
+          occurredAt: "2026-01-03T12:00:00.000-05:00",
+          dueAt: "2026-01-05T17:00:00.000-05:00",
+          noAiRequired: true,
+          sourceArtifact: "https://example.test/artifact/assessment-roundtrip",
+          details: "Line one.\nLine two.",
         }),
       ]),
     );
