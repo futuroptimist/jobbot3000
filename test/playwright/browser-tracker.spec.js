@@ -29,6 +29,8 @@ const weeklyCsvFixture = [
 
 const regressionCsvFixture = () =>
   readFile("test/fixtures/tracker-import/compact-main-regression.csv", "utf8");
+const lifecycleFixture = (name) =>
+  readFile(`test/fixtures/tracker-import/${name}`, "utf8");
 
 test.describe("browser application tracker", () => {
   let server;
@@ -78,6 +80,316 @@ test.describe("browser application tracker", () => {
     await expect(page.locator("[data-import-result]")).toContainText(
       "Dry-run OK: 15 applications, 7 outreach messages, 0 interviews",
     );
+    await expect(page.locator("[data-import-result]")).toContainText(
+      "Detected format: compact application CSV",
+    );
+    await expect(page.locator("[data-import-result]")).toContainText(
+      "assessments: 1",
+    );
+  });
+
+  test("shows compact metadata assessments as list chips", async ({ page }) => {
+    const csv = await regressionCsvFixture();
+
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await page.setInputFiles("[data-import-file]", {
+      name: "compact-main-regression.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(csv),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await page.getByRole("button", { name: "Apply import" }).click();
+
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    const deltaRow = page
+      .locator("[data-applications-table] tbody tr")
+      .filter({ hasText: "Company Delta" });
+    await expect(deltaRow).toContainText("Assessment ×1");
+  });
+
+  test("does not show generic recruiter_screen lifecycle rows as recruiter chips", async ({
+    page,
+  }) => {
+    await page.evaluate(
+      () =>
+        new Promise((resolve, reject) => {
+          const request = indexedDB.open("jobbot3000", 1);
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => {
+            const db = request.result;
+            const tx = db.transaction(
+              ["applications", "lifecycleEvents"],
+              "readwrite",
+            );
+            tx.objectStore("applications").put({
+              id: "generic_recruiter_app",
+              company: "Generic Recruiter Co",
+              role: "Frontend Engineer",
+              status: "applied",
+              appliedAt: "2026-01-02",
+              createdAt: "2026-01-02T00:00:00.000Z",
+              updatedAt: "2026-01-02T00:00:00.000Z",
+            });
+            tx.objectStore("lifecycleEvents").put({
+              id: "generic_recruiter_event",
+              applicationId: "generic_recruiter_app",
+              eventType: "recruiter_screen",
+              occurredAt: "2026-01-03T00:00:00.000Z",
+              createdAt: "2026-01-03T00:00:00.000Z",
+              updatedAt: "2026-01-03T00:00:00.000Z",
+            });
+            tx.oncomplete = () => {
+              db.close();
+              resolve();
+            };
+            tx.onerror = () => reject(tx.error);
+          };
+        }),
+    );
+    await page.reload();
+
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    const row = page
+      .locator("[data-applications-table] tbody tr")
+      .filter({ hasText: "Generic Recruiter Co" });
+    await expect(row).toBeVisible();
+    await expect(row).not.toContainText("Recruiter screen ×1");
+  });
+
+  test("deduplicates paired recruiter screen lifecycle and interview records", async ({
+    page,
+  }) => {
+    const csv = [
+      "application_id,company,role_title,status,applied_at,posting_url",
+      "paired_recruiter_app,Paired Recruiter Co,Frontend Engineer,applied," +
+        "2026-01-02,https://example.test/paired",
+    ].join("\n");
+    const lifecycle = [
+      "application_id,company,role_title,event_type,occurred_at,stage," +
+        "channel,actor,source_artifact,requires_user_action,action_status," +
+        "due_at,no_ai_required,details",
+      "paired_recruiter_app,Paired Recruiter Co,Frontend Engineer," +
+        "recruiter_screen_scheduled,2026-01-03,recruiter_screen," +
+        "email,recruiter,,,,2026-01-10T15:30:00.000Z,,Intro call",
+    ].join("\n");
+
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await page.setInputFiles("[data-import-file]", {
+      name: "paired-recruiter-app.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(csv),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await page.getByRole("button", { name: "Apply import" }).click();
+
+    await page.setInputFiles("[data-import-file]", {
+      name: "paired-recruiter-lifecycle.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(lifecycle),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await page.getByRole("button", { name: "Apply import" }).click();
+
+    await page.getByRole("button", { name: "Dashboard" }).click();
+    await expect(page.locator("[data-metrics]")).toContainText(
+      "Recruiter screens1",
+    );
+
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    const row = page
+      .locator("[data-applications-table] tbody tr")
+      .filter({ hasText: "Paired Recruiter Co" });
+    await expect(row).toContainText("Recruiter screen ×1");
+    await expect(row).not.toContainText("Recruiter screen ×2");
+
+    await page.getByRole("button", { name: "Paired Recruiter Co" }).click();
+    const recruiterSection = page.locator("[data-detail] article").filter({
+      has: page.getByRole("heading", { name: "Recruiter screens" }),
+    });
+    await expect(recruiterSection.locator("li")).toHaveCount(1);
+    await expect(recruiterSection).toContainText("recruiter_screen");
+  });
+
+  test("previews supplemental lifecycle CSV counts and missing application errors", async ({
+    page,
+  }) => {
+    const csv = await regressionCsvFixture();
+    const lifecycle = await lifecycleFixture(
+      "assessment-lifecycle-regression.csv",
+    );
+
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await page.setInputFiles("[data-import-file]", {
+      name: "compact-main-regression.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(csv),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await page.getByRole("button", { name: "Apply import" }).click();
+
+    await page.setInputFiles("[data-import-file]", {
+      name: "assessment-lifecycle-regression.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(lifecycle),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await expect(page.locator("[data-import-result]")).toContainText(
+      "Detected format: supplemental lifecycle CSV",
+    );
+    await expect(page.locator("[data-import-result]")).toContainText(
+      "lifecycleEvents: 2",
+    );
+    await expect(page.locator("[data-import-result]")).toContainText(
+      "assessments: 2",
+    );
+
+    const unknownApplicationLifecycle = lifecycle.replace(
+      "app_reg_alpha_001",
+      "missing_app_999",
+    );
+    await page.setInputFiles("[data-import-file]", {
+      name: "unknown-lifecycle.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(unknownApplicationLifecycle),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await expect(page.locator("[data-import-result]")).toContainText(
+      "unknown_application",
+    );
+    await expect(
+      page.getByRole("button", { name: "Apply import" }),
+    ).toBeDisabled();
+  });
+
+  test("surfaces compact CSV conflicts and non-interview stage warnings", async ({
+    page,
+  }) => {
+    const duplicateCompactCsv = [
+      "application_id,company,role_title,status,applied_at,posting_url,interview_stage,notes",
+      "dup_app_1,Duplicate One,Engineer,applied,2026-01-02," +
+        "https://example.test/dup-a,written_assessment_submitted,first",
+      "dup_app_1,Duplicate Two,Engineer,applied,2026-01-03,https://example.test/dup-b,,second",
+    ].join("\n");
+
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await page.setInputFiles("[data-import-file]", {
+      name: "duplicate-compact.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(duplicateCompactCsv),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+
+    const preview = page.locator("[data-import-result]");
+    await expect(preview).toContainText("duplicate_in_file");
+    await expect(preview).toContainText("application_id");
+    await expect(preview).toContainText("ignored_non_interview_stage");
+    await expect(preview).toContainText("written_assessment_submitted");
+    await expect(
+      page.getByRole("button", { name: "Apply import" }),
+    ).toBeEnabled();
+  });
+
+  test("surfaces lifecycle warnings and blocking date/application errors", async ({
+    page,
+  }) => {
+    const csv = await regressionCsvFixture();
+    const lifecycleHeader =
+      "application_id,company,role_title,event_type,occurred_at,stage," +
+      "channel,actor,source_artifact,requires_user_action,action_status," +
+      "due_at,no_ai_required,details";
+    const lifecycle = [
+      lifecycleHeader,
+      "app_reg_alpha_001,Company Alpha,Engineer,bespoke_vendor_ping," +
+        "2026-03-01,,,,,,,,,Imported as generic",
+      "app_reg_alpha_001,Company Alpha,Engineer,hiring_manager_reply," +
+        "not-a-date,,,,,,,,,Bad date",
+      "missing_app_999,Missing,Engineer,hiring_manager_reply,2026-03-02,,,,,,,,,Missing app",
+    ].join("\n");
+
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await page.setInputFiles("[data-import-file]", {
+      name: "compact-main-regression.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(csv),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await page.getByRole("button", { name: "Apply import" }).click();
+
+    await page.setInputFiles("[data-import-file]", {
+      name: "warning-and-error-lifecycle.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(lifecycle),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+
+    const preview = page.locator("[data-import-result]");
+    await expect(preview).toContainText("unsupported_event_type");
+    await expect(preview).toContainText("bespoke_vendor_ping");
+    await expect(preview).toContainText("malformed_date");
+    await expect(preview).toContainText("unknown_application");
+    await expect(
+      page.getByRole("button", { name: "Apply import" }),
+    ).toBeDisabled();
+  });
+
+  test("filters compact response signals like dashboard responses", async ({
+    page,
+  }) => {
+    const csv = [
+      "application_id,company,role_title,status,applied_at,posting_url," +
+        "outreach_status,interview_stage,notes",
+      "compact_reply_app,Reply Signal Co,Frontend Engineer,applied," +
+        "2026-01-02,https://example.test/reply,reply,,",
+      "compact_interview_app,Interview Signal Co,Backend Engineer,applied," +
+        "2026-01-03,https://example.test/interview,,technical_screen,",
+      "compact_quiet_app,Quiet Signal Co,Data Engineer,applied," +
+        "2026-01-04,https://example.test/quiet,,,",
+    ].join("\n");
+
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await page.setInputFiles("[data-import-file]", {
+      name: "compact-response-signals.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(csv),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await page.getByRole("button", { name: "Apply import" }).click();
+
+    await page.getByRole("button", { name: "Dashboard" }).click();
+    await expect(page.locator("[data-metrics]")).toContainText(
+      "Application responses2",
+    );
+
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.locator('[data-filter="response"]').selectOption("responded");
+    await expect(page.locator("[data-applications-table]")).toContainText(
+      "Reply Signal Co",
+    );
+    await expect(page.locator("[data-applications-table]")).toContainText(
+      "Interview Signal Co",
+    );
+    await expect(page.locator("[data-applications-table]")).not.toContainText(
+      "Quiet Signal Co",
+    );
+
+    await page.locator('[data-filter="response"]').selectOption("no_response");
+    await expect(page.locator("[data-applications-table]")).toContainText(
+      "Quiet Signal Co",
+    );
+    await expect(page.locator("[data-applications-table]")).not.toContainText(
+      "Reply Signal Co",
+    );
+    await expect(page.locator("[data-applications-table]")).not.toContainText(
+      "Interview Signal Co",
+    );
   });
 
   test("imports compact CSV regression fixture with bounded dashboard metrics", async ({
@@ -110,6 +422,71 @@ test.describe("browser application tracker", () => {
     await expect(metrics).toContainText("4 of 15 applications");
     await expect(metrics).toContainText("Outreach reply rate29%");
     await expect(metrics).toContainText("2 of 7 outreach messages");
+  });
+
+  test("shows compact metadata and lifecycle metadata in application detail", async ({
+    page,
+  }) => {
+    const csv = await regressionCsvFixture();
+    const assessmentLifecycle = await lifecycleFixture(
+      "assessment-lifecycle-regression.csv",
+    );
+    const recruiterLifecycle = await lifecycleFixture(
+      "recruiter-screen-lifecycle-regression.csv",
+    );
+
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await page.setInputFiles("[data-import-file]", {
+      name: "compact-main-regression.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(csv),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await page.getByRole("button", { name: "Apply import" }).click();
+    for (const [name, buffer] of [
+      ["assessment-lifecycle-regression.csv", assessmentLifecycle],
+      ["recruiter-screen-lifecycle-regression.csv", recruiterLifecycle],
+    ]) {
+      await page.setInputFiles("[data-import-file]", {
+        name,
+        mimeType: "text/csv",
+        buffer: Buffer.from(buffer),
+      });
+      await page.getByRole("button", { name: "Preview/dry-run" }).click();
+      await page.getByRole("button", { name: "Apply import" }).click();
+    }
+
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await expect(page.locator("[data-applications-table]")).toContainText(
+      "Raw status: applied",
+    );
+    await page.getByRole("button", { name: "Company Alpha" }).click();
+    await expect(page.locator("[data-detail]")).toContainText(
+      "Compact CSV metadata",
+    );
+    await expect(page.locator("[data-detail]")).toContainText("Raw status");
+    await expect(page.locator("[data-detail]")).toContainText(
+      "Assessment/take-home",
+    );
+    await expect(page.locator("[data-detail]")).toContainText(
+      "No AI required: yes",
+    );
+    await expect(page.locator("[data-detail]")).toContainText(
+      "Source artifact:",
+    );
+
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Company Gamma" }).click();
+    await expect(page.locator("[data-detail]")).toContainText(
+      "Recruiter screens",
+    );
+    await expect(page.locator("[data-detail]")).toContainText(
+      "Recruiter screen",
+    );
   });
 
   test("imports CSV, shows list, edits detail, and renders follow-ups", async ({
@@ -172,7 +549,7 @@ test.describe("browser application tracker", () => {
     await page.getByRole("button", { name: "Preview/dry-run" }).click();
 
     await expect(page.locator("[data-import-result]")).toContainText(
-      "Row 2 posting_url: posting_url is not a valid http(s) URL.",
+      "Row 2 posting_url: malformed_url: posting_url is not a valid http(s) URL.",
     );
     await expect(
       page.getByRole("button", { name: "Apply import" }),
@@ -274,6 +651,49 @@ test.describe("browser application tracker", () => {
     ).toBeVisible();
     await expect(page.locator("[data-weekly-counts]")).toHaveText(
       "2026-01-05: 2 • 2026-01-12: 1",
+    );
+  });
+
+  test("sorts lifecycle timeline by occurred date, due date, then stable id", async ({
+    page,
+  }) => {
+    const lifecycleHeader =
+      "application_id,company,role_title,event_type,occurred_at,stage," +
+      "channel,actor,source_artifact,requires_user_action,action_status," +
+      "due_at,no_ai_required,details";
+    const lifecycle = [
+      lifecycleHeader,
+      "fake_app_1,Example Labs,Frontend Engineer,next_tracking_step," +
+        "2026-02-01,,,,,,,2026-02-20,,Later due date",
+      "fake_app_1,Example Labs,Frontend Engineer,next_tracking_step," +
+        "2026-02-01,,,,,,,2026-02-10,,Earlier due date",
+    ].join("\n");
+
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await page.setInputFiles("[data-import-file]", {
+      name: "fake-applications.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(csvFixture),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await page.getByRole("button", { name: "Apply import" }).click();
+    await page.setInputFiles("[data-import-file]", {
+      name: "lifecycle-sorting.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(lifecycle),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await page.getByRole("button", { name: "Apply import" }).click();
+
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Example Labs" }).click();
+    await expect(page.locator(".timeline li").nth(2)).toContainText(
+      "Earlier due date",
+    );
+    await expect(page.locator(".timeline li").nth(3)).toContainText(
+      "Later due date",
     );
   });
 
