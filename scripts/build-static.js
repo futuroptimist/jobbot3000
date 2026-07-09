@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
-const distDir = path.join(repoRoot, "dist");
+const distDir = path.resolve(
+  process.env.JOBBOT_STATIC_DIR ?? path.join(repoRoot, "dist"),
+);
 const assetsDir = path.join(distDir, "assets");
 const packageJson = JSON.parse(
   await fs.readFile(path.join(repoRoot, "package.json"), "utf8"),
