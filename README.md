@@ -189,8 +189,7 @@ Image tags and chart versions are intentionally separate: bump the image tag for
 - [docs/privacy-and-security.md](docs/privacy-and-security.md) – browser-only production privacy model, backups, clearing data, quota caveats, and static security headers
 - [docs/indexeddb-persistence.md](docs/indexeddb-persistence.md) – browser IndexedDB persistence, backup/restore, and quota caveats
 - [docs/spreadsheet-replacement.md](docs/spreadsheet-replacement.md) – CSV/JSON/NDJSON import-export workflow for replacing the current spreadsheet
-- [docs/backup-restore-guide.md](docs/backup-restore-guide.md) – backup, restore, and verification
-  steps
+- [docs/backup-restore-guide.md](docs/backup-restore-guide.md) – backup, restore, staging verification checklist, and browser-local privacy guardrails
 - [docs/web-ux-guidelines.md](docs/web-ux-guidelines.md) – layout, typography, and interaction guardrails
 - [GitHub Actions: web-screenshots.yml](https://github.com/futuroptimist/jobbot3000/actions/workflows/web-screenshots.yml) – captures the latest UI flows for regressions
 

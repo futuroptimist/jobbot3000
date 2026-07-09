@@ -57,6 +57,10 @@ Use the export flow after every meaningful update:
 
 Store backups somewhere private and encrypted. The files may include application history, contacts, outreach messages, links to private artifacts, private URLs, company names, and notes. Do not commit real backups, bake them into Docker images, or paste them into public issues.
 
+## Staging verification
+
+Operators should run the [staging verification checklist](backup-restore-guide.md#staging-verification-checklist) with anonymized fixtures before using real tracker data in staging. The smoke path verifies compact CSV preview counts, lifecycle CSV categorization, dashboard response-rate bounds, JSON restore, NDJSON backup availability, and that private tracker payloads stay in browser-owned IndexedDB instead of being sent to the static server.
+
 ## Restore from backup
 
 1. Start jobbot3000 in a browser profile with an empty or intentionally disposable IndexedDB database.

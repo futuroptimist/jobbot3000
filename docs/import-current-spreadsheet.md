@@ -28,6 +28,10 @@ compact CSV as a spreadsheet-compatible backup, supplemental lifecycle CSV as th
 - Export NDJSON when you want a line-oriented full-fidelity stream for review or
   transfer.
 
+## Staging smoke before real use
+
+Before using staging with private records, follow the staging verification checklist in [Backup and Restore Guide](backup-restore-guide.md#staging-verification-checklist). The checklist covers compact CSV preview/apply, lifecycle CSV detail review, JSON/NDJSON backup export, clean-profile restore, bounded dashboard metrics, and the browser-local privacy guardrails.
+
 ## Restore into an empty browser profile
 
 1. Create a new browser profile or clear local tracker data after saving a backup.
