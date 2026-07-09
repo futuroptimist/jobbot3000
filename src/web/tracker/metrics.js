@@ -73,10 +73,15 @@ const canonicalTimestamp = (value) => {
   const timestamp = Date.parse(value);
   return Number.isNaN(timestamp) ? value : new Date(timestamp).toISOString();
 };
+const isAmbiguousLegacyDateOnlyTimestamp = (value) => {
+  if (!value) return false;
+  const canonical = canonicalTimestamp(value);
+  return Boolean(canonical?.match(/^\d{4}-\d{2}-\d{2}T00:00:00\.000Z$/));
+};
 const lifecycleTimestampHasTime = (event, field, value) => {
   const flag = event[`${field}HasTime`];
   if (typeof flag === "boolean") return flag;
-  return Boolean(value);
+  return Boolean(value) && !isAmbiguousLegacyDateOnlyTimestamp(value);
 };
 const isTimedLifecycleInterviewTimestamp = (event, field, value) =>
   Boolean(value) &&
@@ -124,6 +129,13 @@ const recruiterScreenKey = (record) =>
     .join(":");
 const isPlaceholderTimestamp = (value) =>
   value === "1970-01-01T00:00:00.000Z" || value === "1970-01-01";
+const uniqueUsableTimestamps = (candidates) => [
+  ...new Set(
+    candidates.filter(
+      (candidate) => candidate && !isPlaceholderTimestamp(candidate),
+    ),
+  ),
+];
 const lifecycleInterviewTimestampCandidates = (event, classification) => {
   const candidates = [lifecycleInterviewTimestamp(event, classification)];
   if (classification.interviewOutcome === "completed") {
@@ -133,7 +145,19 @@ const lifecycleInterviewTimestampCandidates = (event, classification) => {
       timedValue(event, ["occurredAt", event.occurredAt]),
     );
   }
-  return [...new Set(candidates.filter(Boolean))];
+  return uniqueUsableTimestamps(candidates);
+};
+const lifecycleInterviewDuplicateTimestampCandidates = (
+  event,
+  classification,
+) => {
+  const candidates = lifecycleInterviewTimestampCandidates(
+    event,
+    classification,
+  );
+  if (classification.interviewOutcome === "completed")
+    candidates.push(event.dueAt, event.startsAt, event.occurredAt);
+  return uniqueUsableTimestamps(candidates);
 };
 const lifecycleInterviewKey = (event, classification) => {
   const [timestamp] = lifecycleInterviewTimestampCandidates(
@@ -144,7 +168,7 @@ const lifecycleInterviewKey = (event, classification) => {
   return interviewKey(event, timestamp);
 };
 const lifecycleInterviewDuplicateKeys = (event, classification) =>
-  lifecycleInterviewTimestampCandidates(event, classification).map(
+  lifecycleInterviewDuplicateTimestampCandidates(event, classification).map(
     (timestamp) => interviewKey(event, timestamp),
   );
 
