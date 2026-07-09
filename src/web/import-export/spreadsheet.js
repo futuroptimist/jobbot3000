@@ -1,4 +1,10 @@
 import { browserApplicationExportSchema } from "../../domain/browserApplication.js";
+import {
+  interviewStageForLifecycleEventType,
+  isKnownLifecycleEventType,
+  isRecruiterScreenLifecycleEvent,
+  lifecycleInterviewOutcomeForEventType,
+} from "../tracker/lifecycle-classification.js";
 
 export const LIFECYCLE_CSV_COLUMNS = [
   "application_id",
@@ -540,7 +546,7 @@ export const detectSpreadsheetImportFormat = (text) => {
 
 const lifecycleStatusForEvent = (eventType) => {
   if (eventType === "hiring_manager_reply") return "outreach_sent";
-  if (eventType === "recruiter_screen_scheduled") return "recruiter_screen";
+  if (isRecruiterScreenLifecycleEvent(eventType)) return "recruiter_screen";
   if (eventType === "application_submitted") return "applied";
   if (KNOWN_STATUSES.has(eventType)) return eventType;
   return undefined;
@@ -595,7 +601,8 @@ export const lifecycleRowsToBrowserApplicationExport = (
     const knownLifecycleStatus = lifecycleStatusForEvent(eventType);
     if (
       !knownLifecycleStatus &&
-      !["lifecycle_event", "next_tracking_step"].includes(eventType)
+      !isKnownLifecycleEventType(eventType) &&
+      !["lifecycle_event"].includes(eventType)
     )
       warnings.push({
         rowNumber,
@@ -664,18 +671,29 @@ export const lifecycleRowsToBrowserApplicationExport = (
         createdAt: exportedAt,
         updatedAt: exportedAt,
       });
-    if (
-      eventType === "recruiter_screen_scheduled" &&
-      dueAt &&
-      hasTimeComponent(row.due_at)
-    )
+    const interviewStage = interviewStageForLifecycleEventType(eventType);
+    const interviewOutcome = lifecycleInterviewOutcomeForEventType(eventType);
+    const interviewTiming =
+      interviewOutcome === "completed"
+        ? occurredAt && hasTimeComponent(row.occurred_at)
+          ? occurredAt
+          : undefined
+        : dueAt && hasTimeComponent(row.due_at)
+          ? dueAt
+          : undefined;
+    if (interviewStage && interviewOutcome && interviewTiming)
       interviews.push({
-        id: stableId("interview", applicationId, "recruiter_screen", dueAt),
+        id: stableId(
+          "interview",
+          applicationId,
+          interviewStage,
+          interviewTiming,
+        ),
         applicationId,
         contactIds: [],
-        stage: "recruiter_screen",
-        startsAt: dueAt,
-        outcome: "scheduled",
+        stage: interviewStage,
+        startsAt: interviewTiming,
+        outcome: interviewOutcome,
         createdAt: exportedAt,
         updatedAt: exportedAt,
       });
