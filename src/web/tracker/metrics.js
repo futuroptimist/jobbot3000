@@ -180,7 +180,10 @@ export const selectDashboardMetrics = (bundle = {}) => {
       status === "recruiter_screen"
     )
       recruiterScreenKeys.add(recruiterScreenKey(event));
-    if (OFFER_EVENT_TYPES.has(eventType))
+    if (
+      OFFER_EVENT_TYPES.has(eventType) ||
+      ["offer", "accepted"].includes(status)
+    )
       offerApplicationIds.add(event.applicationId);
   }
 

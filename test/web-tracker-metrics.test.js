@@ -229,6 +229,14 @@ describe("tracker dashboard metrics", () => {
           createdAt: timestamp,
           updatedAt: timestamp,
         },
+        {
+          id: "app_offer_status_event",
+          company: "Offer Status Event",
+          role: "Engineer",
+          status: "applied",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
       ],
       offers: [
         { id: "offer_one", applicationId: "app_offer", createdAt: timestamp },
@@ -246,11 +254,19 @@ describe("tracker dashboard metrics", () => {
           occurredAt: timestamp,
           createdAt: timestamp,
         },
+        {
+          id: "event_offer_status",
+          applicationId: "app_offer_status_event",
+          eventType: "status_change",
+          status: "accepted",
+          occurredAt: timestamp,
+          createdAt: timestamp,
+        },
       ],
     });
 
-    expect(metrics.offers).toBe(3);
-    expect(metrics.applicationsWithResponse).toBe(3);
+    expect(metrics.offers).toBe(4);
+    expect(metrics.applicationsWithResponse).toBe(4);
   });
 
   it("counts compact replied outreach statuses as sent outreach when text is absent", () => {
