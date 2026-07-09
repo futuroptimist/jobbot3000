@@ -46,3 +46,7 @@ Compact CSV is one row per application for spreadsheet compatibility. Supplement
 During the first two weeks of using jobbot3000 as the primary tracker, export
 JSON and NDJSON after each job-search session and export CSV at least daily while
 you still reconcile with the spreadsheet. Keep backups private and encrypted, and never commit real backups, embed them in Docker images, or paste them into public issues.
+
+## Staging verification
+
+After importing an anonymized spreadsheet fixture in staging, follow the [tracker staging verification checklist](tracker-staging-verification.md) before promotion. The checklist covers preview counts, dashboard metrics, supplemental lifecycle CSV metadata, full-fidelity JSON/NDJSON backups, clean-profile restore, and browser-local privacy guardrails.

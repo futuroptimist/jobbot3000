@@ -8109,7 +8109,7 @@ export function createWebApp({
     res.send(compactHtml(rawHtml));
   });
 
-  app.get("/health", async (req, res) => {
+  app.get(["/health", "/healthz"], async (req, res) => {
     const timestamp = new Date().toISOString();
     const uptime = process.uptime();
     const results = await runHealthChecks(normalizedChecks);
@@ -8123,7 +8123,7 @@ export function createWebApp({
     res.status(statusCode).json(payload);
   });
 
-  app.get("/ready", (req, res) => {
+  app.get(["/ready", "/livez"], (req, res) => {
     const timestamp = new Date().toISOString();
     const uptime = process.uptime();
     const payload = buildReadyResponse({

@@ -31,6 +31,8 @@ private tracker data on the server.
 
 ## Restore into dev, staging, or production browsers
 
+For staging promotion, also follow the [tracker staging verification checklist](tracker-staging-verification.md) so compact CSV import, supplemental lifecycle CSV import, JSON/NDJSON export, clean-profile restore, and browser-local privacy guardrails are verified together.
+
 Dev, staging, and production are separate browser origins/profiles unless you
 import the same backup into each. The browser UI restores compact CSV, supplemental lifecycle CSV, JSON, and NDJSON
 files. To restore, open the target deployed app in the chosen browser profile,

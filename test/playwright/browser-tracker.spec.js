@@ -32,6 +32,70 @@ const regressionCsvFixture = () =>
 const lifecycleFixture = (name) =>
   readFile(`test/fixtures/tracker-import/${name}`, "utf8");
 
+async function importThroughUi(page, { name, text, mimeType = "text/csv" }) {
+  await page.getByRole("button", { name: "Import/Export" }).click();
+  await page.setInputFiles("[data-import-file]", {
+    name,
+    mimeType,
+    buffer: Buffer.from(text),
+  });
+  await page.getByRole("button", { name: "Preview/dry-run" }).click();
+  await page.getByRole("button", { name: "Apply import" }).click();
+  await expect(page.locator("[data-import-result]")).toContainText(
+    "Import applied",
+  );
+}
+
+async function importRegressionBundle(page) {
+  await importThroughUi(page, {
+    name: "compact-main-regression.csv",
+    text: await regressionCsvFixture(),
+  });
+  for (const fixtureName of [
+    "assessment-lifecycle-regression.csv",
+    "employer-reply-lifecycle-regression.csv",
+    "recruiter-screen-lifecycle-regression.csv",
+  ]) {
+    await importThroughUi(page, {
+      name: fixtureName,
+      text: await lifecycleFixture(fixtureName),
+    });
+  }
+}
+
+async function assertRegressionMetrics(page) {
+  await page.getByRole("button", { name: "Dashboard" }).click();
+  const metrics = page.locator("[data-metrics]");
+  await expect(metrics).toContainText("Total applications15");
+  await expect(metrics).toContainText("Outreach sent7");
+  await expect(metrics).toContainText("Application responses5");
+  await expect(metrics).toContainText("Application response rate33%");
+  await expect(metrics).toContainText("Outreach reply rate29%");
+  await expect(metrics).toContainText("Recruiter screens1");
+  await expect(metrics).toContainText("Interviews0");
+}
+
+async function assertCompactRegressionMetrics(page) {
+  await page.getByRole("button", { name: "Dashboard" }).click();
+  const metrics = page.locator("[data-metrics]");
+  await expect(metrics).toContainText("Total applications15");
+  await expect(metrics).toContainText("Outreach sent7");
+  await expect(metrics).toContainText("Application responses4");
+  await expect(metrics).toContainText("Application response rate27%");
+  await expect(metrics).toContainText("Outreach reply rate29%");
+  await expect(metrics).toContainText("Recruiter screens0");
+  await expect(metrics).toContainText("Interviews0");
+}
+
+async function clearLocalTrackerData(page) {
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Clear local data" }).click();
+  await expect(page.locator("[data-settings-result]")).toContainText(
+    "Local IndexedDB tracker data cleared.",
+  );
+}
+
 test.describe("browser application tracker", () => {
   let server;
 
@@ -64,6 +128,30 @@ test.describe("browser application tracker", () => {
       .click();
     await expect(page.getByText("No applications yet")).toBeVisible();
   });
+
+  test("serves static tracker, health probes, assets, and build metadata", async ({
+    page,
+    request,
+  }) => {
+    for (const route of ["/", "/tracker", "/healthz", "/livez"]) {
+      const response = await request.get(`${server.url}${route}`);
+      expect(response.ok(), `${route} should be healthy`).toBe(true);
+    }
+
+    await page.goto(`${server.url}/tracker`);
+    await expect(page.locator("[data-build-metadata]")).toContainText(
+      "static/browser-only",
+    );
+
+    const script = await request.get(`${server.url}/assets/tracker.js`);
+    expect(script.ok()).toBe(true);
+    expect(script.headers()["content-type"]).toContain("javascript");
+
+    const css = await request.get(`${server.url}/assets/tracker.css`);
+    expect(css.ok()).toBe(true);
+    expect(css.headers()["content-type"]).toContain("text/css");
+  });
+
   test("previews compact CSV regression fixture without phantom interviews", async ({
     page,
   }) => {
@@ -487,6 +575,136 @@ test.describe("browser application tracker", () => {
     await expect(page.locator("[data-detail]")).toContainText(
       "Recruiter screen",
     );
+  });
+
+  test("imports all anonymized lifecycle fixtures with categorized timelines", async ({
+    page,
+  }) => {
+    await importRegressionBundle(page);
+
+    await assertRegressionMetrics(page);
+
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Company Alpha" }).click();
+    await expect(page.locator("[data-detail]")).toContainText(
+      "Assessment/take-home",
+    );
+    await expect(page.locator("[data-detail]")).toContainText(
+      "No AI required: yes",
+    );
+    await expect(page.locator("[data-detail]")).toContainText(
+      "Assessment request received from example employer.",
+    );
+    await expect(page.locator("[data-detail]")).toContainText(
+      "No non-recruiter interviews yet.",
+    );
+
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Company Beta" }).click();
+    await expect(page.locator("[data-detail]")).toContainText(
+      "Hiring manager follow-up",
+    );
+    await expect(page.locator("[data-detail]")).toContainText(
+      "Example hiring manager reply received.",
+    );
+    await expect(page.locator("[data-detail]")).toContainText(
+      "No non-recruiter interviews yet.",
+    );
+
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Company Gamma" }).click();
+    const recruiterSection = page.locator("[data-detail] article").filter({
+      has: page.getByRole("heading", { name: "Recruiter screens" }),
+    });
+    await expect(recruiterSection.locator("li")).toHaveCount(1);
+    await expect(recruiterSection).toContainText("Recruiter screen");
+    await expect(page.locator("[data-detail]")).toContainText(
+      "No non-recruiter interviews yet.",
+    );
+  });
+
+  test("exports JSON and NDJSON backups and restores JSON into a clean profile", async ({
+    page,
+  }) => {
+    await importRegressionBundle(page);
+
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    const jsonDownloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Backup now JSON" }).click();
+    const jsonDownload = await jsonDownloadPromise;
+    expect(jsonDownload.suggestedFilename()).toBe("jobbot3000-backup.json");
+    const jsonBackup = await readFile(await jsonDownload.path(), "utf8");
+    expect(jsonBackup).toContain("lifecycleEvents");
+
+    const ndjsonDownloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export NDJSON" }).click();
+    const ndjsonDownload = await ndjsonDownloadPromise;
+    expect(ndjsonDownload.suggestedFilename()).toBe("jobbot3000-backup.ndjson");
+
+    await clearLocalTrackerData(page);
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await expect(page.getByText("No applications yet")).toBeVisible();
+
+    await importThroughUi(page, {
+      name: "jobbot3000-backup.json",
+      text: jsonBackup,
+      mimeType: "application/json",
+    });
+
+    await assertRegressionMetrics(page);
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Company Alpha" }).click();
+    await expect(page.locator("[data-detail]")).toContainText(
+      "No AI required: yes",
+    );
+    await expect(page.locator("[data-detail]")).toContainText(
+      "Assessment request received from example employer.",
+    );
+  });
+
+  test("keeps tracker import, edit, dashboard, and export payloads browser-local", async ({
+    page,
+  }) => {
+    const privatePayloadRequests = [];
+    page.on("request", (request) => {
+      if (["POST", "PUT", "PATCH"].includes(request.method())) {
+        privatePayloadRequests.push({
+          method: request.method(),
+          url: request.url(),
+          body: request.postData() ?? "",
+        });
+      }
+    });
+
+    await importThroughUi(page, {
+      name: "compact-main-regression.csv",
+      text: await regressionCsvFixture(),
+    });
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Company Alpha" }).click();
+    await page
+      .locator('[data-core-form] [name="notes"]')
+      .fill("Browser-local smoke note");
+    await page.getByRole("button", { name: "Save application" }).click();
+    await assertCompactRegressionMetrics(page);
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Backup now JSON" }).click();
+    await downloadPromise;
+
+    expect(privatePayloadRequests).toEqual([]);
   });
 
   test("imports CSV, shows list, edits detail, and renders follow-ups", async ({
