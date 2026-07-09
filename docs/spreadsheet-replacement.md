@@ -64,3 +64,19 @@ Store backups somewhere private and encrypted. The files may include application
 3. Run the dry-run preview and confirm record counts.
 4. Use **Replace** semantics to restore the complete backup.
 5. Verify the restored application list and export a fresh CSV to confirm the compact spreadsheet view is available.
+
+## Staging verification checklist
+
+Use this checklist after deploying an immutable staging image and before promoting the static tracker to production. Run it with anonymized fixtures or a private backup only; never use real tracker data in repository files, screenshots, CI logs, or public issue comments.
+
+1. Deploy staging with the candidate image tag and confirm the static endpoints respond: `/`, `/tracker`, `/healthz`, `/livez`, `/assets/tracker.js`, `/assets/tracker.css`, and visible build metadata in the tracker header.
+2. Open `/tracker` in a clean browser profile or after exporting and clearing local tracker data.
+3. Import the compact application CSV from **Import/Export**.
+4. Inspect the dry-run preview before applying it: expected application count, outreach count, warnings, conflicts, and zero unexpected interviews for compact rows that only describe assessments or replies.
+5. Apply the compact import and check dashboard metrics for sane bounded values: total applications, outreach sent, application responses, application response rate at or below 100%, outreach reply rate at or below 100%, recruiter screens, interviews, offers, and assessments.
+6. Import supplemental lifecycle CSVs, preview each one, then apply only when the counts match expectations.
+7. Inspect representative application details and timelines: assessment/take-home metadata, `No AI required` flags, hiring-manager replies and response signals, recruiter screens, due dates, source artifacts, and action status.
+8. Export both JSON and NDJSON backups from the browser UI and store them in an encrypted private location outside the repository and Docker build context.
+9. Restore the JSON backup into a clean browser profile, then verify dashboard metrics and representative timeline metadata survived the restore. Use NDJSON as the equivalent full-fidelity fallback when JSON is unavailable.
+10. Confirm private tracker data remains browser-local: import, edit, navigate, and export flows must not send application notes, companies, artifact links, contacts, outreach text, JSON backups, NDJSON backups, or CSV contents to the staging server.
+11. Delete local staging downloads that are no longer needed. Never commit real backups, screenshots, application notes, company names, candidate/recruiter names, private artifact links, or personal job-search artifacts.

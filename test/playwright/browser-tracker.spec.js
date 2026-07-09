@@ -32,6 +32,35 @@ const regressionCsvFixture = () =>
 const lifecycleFixture = (name) =>
   readFile(`test/fixtures/tracker-import/${name}`, "utf8");
 
+const importFixture = async (page, name, contents) => {
+  await page.getByRole("button", { name: "Import/Export" }).click();
+  await page.setInputFiles("[data-import-file]", {
+    name,
+    mimeType: name.endsWith(".json")
+      ? "application/json"
+      : name.endsWith(".ndjson")
+        ? "application/x-ndjson"
+        : "text/csv",
+    buffer: Buffer.from(contents),
+  });
+  await page.getByRole("button", { name: "Preview/dry-run" }).click();
+  await page.getByRole("button", { name: "Apply import" }).click();
+  await expect(page.locator("[data-import-result]")).toContainText(
+    "Import applied",
+  );
+};
+
+const clearTrackerDatabase = (page) =>
+  page.evaluate(
+    () =>
+      new Promise((resolve, reject) => {
+        const request = indexedDB.deleteDatabase("jobbot3000");
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+        request.onblocked = () => reject(new Error("IndexedDB delete blocked"));
+      }),
+  );
+
 test.describe("browser application tracker", () => {
   let server;
 
@@ -45,16 +74,7 @@ test.describe("browser application tracker", () => {
 
   test.beforeEach(async ({ page }) => {
     await page.goto(server.url);
-    await page.evaluate(
-      () =>
-        new Promise((resolve, reject) => {
-          const request = indexedDB.deleteDatabase("jobbot3000");
-          request.onsuccess = () => resolve();
-          request.onerror = () => reject(request.error);
-          request.onblocked = () =>
-            reject(new Error("IndexedDB delete blocked"));
-        }),
-    );
+    await clearTrackerDatabase(page);
     await page.goto(`${server.url}/tracker`);
   });
 
@@ -889,5 +909,123 @@ test.describe("browser application tracker", () => {
       .getByRole("button", { name: "Applications", exact: true })
       .click();
     await expect(page.getByText("No applications yet")).toBeVisible();
+  });
+
+  test("restores a full-fidelity JSON backup after compact and lifecycle imports", async ({
+    page,
+  }) => {
+    const compactCsv = await regressionCsvFixture();
+    const assessmentLifecycle = await lifecycleFixture(
+      "assessment-lifecycle-regression.csv",
+    );
+    const employerReplyLifecycle = await lifecycleFixture(
+      "employer-reply-lifecycle-regression.csv",
+    );
+    const recruiterLifecycle = await lifecycleFixture(
+      "recruiter-screen-lifecycle-regression.csv",
+    );
+
+    await importFixture(page, "compact-main-regression.csv", compactCsv);
+    await importFixture(
+      page,
+      "assessment-lifecycle-regression.csv",
+      assessmentLifecycle,
+    );
+    await importFixture(
+      page,
+      "employer-reply-lifecycle-regression.csv",
+      employerReplyLifecycle,
+    );
+    await importFixture(
+      page,
+      "recruiter-screen-lifecycle-regression.csv",
+      recruiterLifecycle,
+    );
+
+    await page.getByRole("button", { name: "Dashboard" }).click();
+    await expect(page.locator("[data-metrics]")).toContainText(
+      "Total applications15",
+    );
+    await expect(page.locator("[data-metrics]")).toContainText(
+      "Recruiter screens1",
+    );
+
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Backup now JSON" }).click();
+    const download = await downloadPromise;
+    const backupPath = await download.path();
+    const backupJson = await readFile(backupPath, "utf8");
+
+    await clearTrackerDatabase(page);
+    await page.reload();
+    await importFixture(page, "jobbot3000-backup.json", backupJson);
+
+    await page.getByRole("button", { name: "Dashboard" }).click();
+    const metrics = page.locator("[data-metrics]");
+    await expect(metrics).toContainText("Total applications15");
+    await expect(metrics).toContainText("Application responses5");
+    await expect(metrics).toContainText("Recruiter screens1");
+    await expect(metrics).toContainText("Interviews0");
+
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Company Alpha" }).click();
+    await expect(page.locator("[data-detail]")).toContainText(
+      "No AI required: yes",
+    );
+    await expect(page.locator("[data-detail]")).toContainText(
+      "Assessment request received",
+    );
+
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Company Beta" }).click();
+    await expect(page.locator("[data-detail]")).toContainText(
+      "Type: hiring_manager_reply",
+    );
+    await expect(page.locator("[data-detail]")).toContainText(
+      "Example hiring manager reply received",
+    );
+  });
+
+  test("keeps private tracker payloads browser-local during import edit and export", async ({
+    page,
+  }) => {
+    const compactCsv = await regressionCsvFixture();
+    const privateWriteRequests = [];
+    await page.route("**/*", async (route) => {
+      const request = route.request();
+      if (["POST", "PUT", "PATCH"].includes(request.method())) {
+        privateWriteRequests.push({
+          method: request.method(),
+          url: request.url(),
+          body: request.postData() ?? "",
+        });
+      }
+      await route.continue();
+    });
+
+    await importFixture(page, "compact-main-regression.csv", compactCsv);
+    await page.getByRole("button", { name: "Dashboard" }).click();
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Company Alpha" }).click();
+    await page
+      .locator('[data-core-form] [name="notes"]')
+      .fill("Fake browser-local note");
+    await page.getByRole("button", { name: "Save application" }).click();
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    const jsonDownload = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Backup now JSON" }).click();
+    await jsonDownload;
+    const ndjsonDownload = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export NDJSON" }).click();
+    await ndjsonDownload;
+
+    expect(privateWriteRequests).toEqual([]);
   });
 });
