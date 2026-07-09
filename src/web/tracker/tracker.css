@@ -108,3 +108,117 @@
   background: rgba(127, 29, 29, 0.35);
   color: #fecaca;
 }
+.button:disabled,
+.tracker-nav button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.button:focus-visible,
+.tracker-nav button:focus-visible,
+.tracker-form input:focus-visible,
+.tracker-form select:focus-visible,
+.tracker-form textarea:focus-visible,
+.tracker-table th button:focus-visible {
+  outline: 3px solid var(--accent, #38bdf8);
+  outline-offset: 3px;
+}
+.metric small {
+  display: block;
+  margin-top: 0.35rem;
+}
+.metric-screen {
+  border-color: rgba(56, 189, 248, 0.75);
+}
+.metric-interview {
+  border-color: rgba(167, 139, 250, 0.75);
+}
+.metric-assessment {
+  border-color: rgba(251, 191, 36, 0.75);
+}
+.metric-offer {
+  border-color: rgba(74, 222, 128, 0.75);
+}
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.35rem;
+}
+.chip {
+  border: 1px solid var(--card-border, #334155);
+  border-radius: 999px;
+  display: inline-block;
+  font-size: 0.78rem;
+  padding: 0.15rem 0.45rem;
+  word-break: break-word;
+}
+.chip-screen {
+  border-color: rgba(56, 189, 248, 0.75);
+}
+.chip-assessment {
+  border-color: rgba(251, 191, 36, 0.75);
+}
+.wrap-cell,
+.tracker-table td {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.import-result {
+  border: 1px solid var(--card-border, #334155);
+  border-radius: 0.85rem;
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  white-space: normal;
+}
+.import-counts,
+.metadata-list,
+.timeline dl {
+  display: grid;
+  gap: 0.45rem;
+}
+.metadata-list div,
+.timeline dl div {
+  display: grid;
+  grid-template-columns: minmax(7rem, 0.35fr) 1fr;
+  gap: 0.5rem;
+}
+.metadata-list dt,
+.timeline dt {
+  color: var(--muted, #94a3b8);
+}
+.metadata-list dd,
+.timeline dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.timeline-item {
+  border-left: 4px solid var(--card-border, #334155);
+  padding-left: 0.75rem;
+}
+.timeline-screen {
+  border-left-color: #38bdf8;
+}
+.timeline-assessment {
+  border-left-color: #fbbf24;
+}
+.warning {
+  color: #fde68a;
+}
+.table-container {
+  overflow-x: auto;
+}
+@media (max-width: 760px) {
+  .metadata-list div,
+  .timeline dl div {
+    grid-template-columns: 1fr;
+  }
+}
+.visually-hidden {
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}

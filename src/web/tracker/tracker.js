@@ -2,16 +2,16 @@
 /* eslint-disable max-len */
 import {
   COMPACT_CSV_COLUMNS,
-  csvToBrowserApplicationExport,
   detectSpreadsheetImportFormat,
   exportCompactCsv,
   exportJsonBackup,
   exportNdjsonBackup,
   importJsonBackup,
   importNdjsonBackup,
+  previewCompactCsvImport,
   previewSupplementalLifecycleCsvImport,
 } from "../import-export/spreadsheet.js";
-import { selectDashboardMetrics } from "./metrics.js";
+import { readSpreadsheetMetadata, selectDashboardMetrics } from "./metrics.js";
 
 /* canonical CSV/backup helpers are shared with spreadsheet import/export tests. */
 const ARRAY_STORES = [
@@ -66,6 +66,49 @@ const esc = (v) =>
   );
 const id = (p = "id") =>
   `${p}_${Date.now().toString(36)}_${crypto.getRandomValues(new Uint32Array(1))[0].toString(36)}`;
+
+const STORE_LABELS = {
+  applications: "applications",
+  contacts: "contacts",
+  outreachMessages: "outreach messages",
+  lifecycleEvents: "lifecycle events",
+  interviews: "interviews",
+  offers: "offers",
+  artifacts: "artifacts",
+  reminders: "reminders",
+  settings: "settings",
+};
+const IMPORTANT_METADATA_KEYS = [
+  "spreadsheet_status",
+  "spreadsheet_interview_stage",
+  "spreadsheet_outcome",
+  "outreach_status",
+  "outreach_channel",
+  "application_url",
+  "posting_id",
+  "work_model",
+  "fit_score_100",
+];
+const normalizeUi = (value) =>
+  String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+const lifecycleType = (event) => normalizeUi(event.eventType || event.status);
+const isAssessmentEvent = (event) =>
+  [
+    "written_assessment",
+    "written_assessment_requested",
+    "written_assessment_submitted",
+    "take_home",
+    "take_home_requested",
+    "take_home_submitted",
+  ].includes(lifecycleType(event));
+const isRecruiterScreenEvent = (event) =>
+  lifecycleType(event).startsWith("recruiter_screen") ||
+  normalizeUi(event.status) === "recruiter_screen";
 function ensureIndex(store, name, keyPath) {
   if (!store.indexNames.contains(name)) store.createIndex(name, keyPath);
 }
@@ -255,41 +298,60 @@ function renderDashboard() {
   const b = state.bundle;
   const metrics = selectDashboardMetrics(b);
   const cards = [
-    ["Total applications", metrics.totalApplications, "Application records"],
-    ["Outreach sent", metrics.outreachSent, "Outbound outreach messages"],
     [
-      "Outreach replies",
-      metrics.outreachReplies,
-      "Inbound or replied outreach messages",
+      "Total applications",
+      metrics.totalApplications,
+      "Application records",
+      "volume",
     ],
     [
-      "Recruiter screens",
-      metrics.recruiterScreens,
-      "Recruiter-screen interviews/events",
+      "Outreach sent",
+      metrics.outreachSent,
+      "Outbound outreach messages",
+      "outreach",
     ],
-    ["Interviews", metrics.interviews, "Non-recruiter-screen interviews"],
-    ["Assessments", metrics.assessments, "Written assessments/take-homes"],
-    ["Offers", metrics.offers, "Offer records or offer outcomes"],
     [
       "Application responses",
       metrics.applicationsWithResponse,
-      "Applications with employer response signals",
+      `${metrics.applicationsWithResponse} of ${metrics.totalApplications} applications`,
+      "response",
     ],
     [
       "Application response rate",
       `${metrics.applicationResponseRate}%`,
       `${metrics.applicationsWithResponse} of ${metrics.totalApplications} applications`,
+      "response",
     ],
     [
       "Outreach reply rate",
       `${metrics.outreachReplyRate}%`,
       `${metrics.outreachReplies} of ${metrics.outreachSent} outreach messages`,
+      "outreach",
     ],
+    [
+      "Recruiter screens",
+      metrics.recruiterScreens,
+      "Recruiter screens only; separate from other interviews",
+      "screen",
+    ],
+    [
+      "Interviews",
+      metrics.interviews,
+      "Technical, onsite, and other non-recruiter interviews",
+      "interview",
+    ],
+    [
+      "Assessments",
+      metrics.assessments,
+      "Written assessments and take-homes; not counted as interviews",
+      "assessment",
+    ],
+    ["Offers", metrics.offers, "Offer records or offer outcomes", "offer"],
   ];
-  $("[data-metrics]").innerHTML = cards
+  $(`[data-metrics]`).innerHTML = cards
     .map(
-      ([label, value, help]) =>
-        `<div class="metric" aria-label="${esc(label)}: ${esc(value)} (${esc(help)})"><span>${esc(label)}</span><strong>${esc(value)}</strong><small class="muted">${esc(help)}</small></div>`,
+      ([label, value, help, kind]) =>
+        `<div class="metric metric-${esc(kind)}" aria-label="${esc(label)}: ${esc(value)} (${esc(help)})"><span>${esc(label)}</span><strong>${esc(value)}</strong><small class="muted">${esc(help)}</small></div>`,
     )
     .join("");
   const weeks = {};
@@ -297,7 +359,7 @@ function renderDashboard() {
     const bucket = weekBucket(a.appliedAt);
     if (bucket) weeks[bucket] = (weeks[bucket] || 0) + 1;
   }
-  $("[data-weekly-counts]").textContent =
+  $(`[data-weekly-counts]`).textContent =
     Object.entries(weeks)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([k, v]) => `${k}: ${v}`)
@@ -307,9 +369,11 @@ function appMeta(app) {
   const b = state.bundle;
   return {
     outreach: b.outreachMessages.filter((x) => x.applicationId === app.id),
+    lifecycle: b.lifecycleEvents.filter((x) => x.applicationId === app.id),
     interviews: b.interviews.filter((x) => x.applicationId === app.id),
     offers: b.offers.filter((x) => x.applicationId === app.id),
     artifacts: b.artifacts.filter((x) => x.applicationId === app.id),
+    metadata: readSpreadsheetMetadata(app.notes),
   };
 }
 function outcomeForApp(app, meta = appMeta(app)) {
@@ -317,21 +381,86 @@ function outcomeForApp(app, meta = appMeta(app)) {
   return meta.offers.at(-1)?.status || "";
 }
 function renderList() {
-  const q = $('[data-filter="query"]').value.toLowerCase(),
-    st = $('[data-filter="status"]').value,
-    out = $('[data-filter="outcome"]').value;
-  const hasActiveFilters = Boolean(q || st || out);
+  const q = $(`[data-filter="query"]`).value.toLowerCase(),
+    st = $(`[data-filter="status"]`).value,
+    out = $(`[data-filter="outcome"]`).value,
+    response = $(`[data-filter="response"]`).value,
+    outreachState = $(`[data-filter="outreach"]`).value,
+    followUp = $(`[data-filter="follow-up"]`).value,
+    activity = $(`[data-filter="activity"]`).value;
+  const today = day(now());
+  const hasActiveFilters = Boolean(
+    q || st || out || response || outreachState || followUp || activity,
+  );
   let rows = state.apps.filter((a) => {
     const m = appMeta(a);
+    const metadataText = Object.values(m.metadata).join(" ");
+    const hasResponse =
+      [
+        "offer",
+        "accepted",
+        "rejected",
+        "withdrawn",
+        "closed_archived",
+      ].includes(a.status) ||
+      m.outreach.some(
+        (x) =>
+          normalizeUi(x.direction) === "inbound" ||
+          ["replied", "reply", "responded"].includes(normalizeUi(x.status)),
+      ) ||
+      m.lifecycle.some((x) =>
+        [
+          "hiring_manager_reply",
+          "written_assessment_requested",
+          "recruiter_screen_scheduled",
+          "recruiter_screen_completed",
+          "offer",
+          "offer_received",
+        ].includes(lifecycleType(x)),
+      );
+    const hasAssessment =
+      m.lifecycle.some(isAssessmentEvent) ||
+      normalizeUi(m.metadata.spreadsheet_interview_stage).includes(
+        "assessment",
+      ) ||
+      normalizeUi(m.metadata.spreadsheet_outcome).includes("take_home");
+    const hasRecruiterScreen =
+      m.interviews.some((x) => x.stage === "recruiter_screen") ||
+      m.lifecycle.some(isRecruiterScreenEvent);
+    const isTerminal =
+      ["accepted", "rejected", "withdrawn", "closed_archived"].includes(
+        outcomeForApp(a, m),
+      ) ||
+      ["accepted", "rejected", "withdrawn", "closed_archived"].includes(
+        a.status,
+      );
+    const outreachStatus =
+      normalizeUi(m.metadata.outreach_status) ||
+      (m.outreach.length ? "sent" : "none");
     return (
       (!q ||
-        [a.company, a.role, a.status, a.notes].some((x) =>
+        [a.company, a.role, a.status, a.notes, metadataText].some((x) =>
           String(x || "")
             .toLowerCase()
             .includes(q),
         )) &&
       (!st || a.status === st) &&
-      (!out || outcomeForApp(a, m) === out)
+      (!out || outcomeForApp(a, m) === out) &&
+      (!response || (response === "responded" ? hasResponse : !hasResponse)) &&
+      (!outreachState ||
+        (outreachState === "none"
+          ? outreachStatus === "none"
+          : outreachStatus === outreachState)) &&
+      (!followUp ||
+        (followUp === "due"
+          ? day(a.followUpDate) && day(a.followUpDate) <= today
+          : !a.followUpDate)) &&
+      (!activity ||
+        (activity === "assessments"
+          ? hasAssessment
+          : activity === "recruiter_screens"
+            ? hasRecruiterScreen
+            : isTerminal))
     );
   });
   rows.sort(
@@ -339,19 +468,42 @@ function renderList() {
       String(a[state.sort] || "").localeCompare(String(b[state.sort] || "")) *
       state.dir,
   );
-  const emptyState = $("[data-empty-state]");
+  const emptyState = $(`[data-empty-state]`);
   emptyState.textContent = hasActiveFilters
     ? "No applications match the current filters."
     : "No applications yet. Create one or import a CSV backup.";
   emptyState.hidden = rows.length > 0;
-  $("[data-applications-table]").hidden = rows.length === 0;
-  $("[data-applications-table] tbody").innerHTML = rows
+  $(`[data-applications-table]`).hidden = rows.length === 0;
+  $(`[data-applications-table] tbody`).innerHTML = rows
     .map((a) => {
       const m = appMeta(a);
-      return `<tr><td><button class="button" data-open="${esc(a.id)}">${esc(a.company)}</button></td><td>${esc(a.role)}</td><td>${esc(a.status)}</td><td>${day(a.appliedAt)}</td><td>${day(a.followUpDate)}</td><td>${m.outreach.length ? "sent" : "none"}</td><td>${esc(m.interviews.at(-1)?.stage || "")}</td><td>${esc(outcomeForApp(a, m))}</td><td>${esc(fitScore(a.notes))}</td><td>${m.artifacts.map(linkForArtifact).join(", ")}</td></tr>`;
+      const rawStage = m.metadata.spreadsheet_interview_stage || "";
+      const rawOutcome = m.metadata.spreadsheet_outcome || "";
+      const chips = [
+        m.metadata.spreadsheet_status &&
+          `raw status: ${m.metadata.spreadsheet_status}`,
+        rawStage && `raw stage: ${rawStage}`,
+        rawOutcome && `raw outcome: ${rawOutcome}`,
+        m.metadata.outreach_status && `outreach: ${m.metadata.outreach_status}`,
+      ].filter(Boolean);
+      const latestInterview =
+        m.interviews.filter((x) => x.stage !== "recruiter_screen").at(-1)
+          ?.stage || "";
+      const recruiterChip =
+        m.interviews.some((x) => x.stage === "recruiter_screen") ||
+        m.lifecycle.some(isRecruiterScreenEvent)
+          ? '<span class="chip chip-screen">recruiter screen</span>'
+          : "";
+      const assessmentChip =
+        m.lifecycle.some(isAssessmentEvent) ||
+        normalizeUi(rawStage).includes("assessment") ||
+        normalizeUi(rawOutcome).includes("take_home")
+          ? '<span class="chip chip-assessment">assessment/take-home</span>'
+          : "";
+      return `<tr><td><button class="button" data-open="${esc(a.id)}">${esc(a.company)}</button></td><td>${esc(a.role)}</td><td>${esc(a.status)}<div class="chip-row">${chips.map((chip) => `<span class="chip">${esc(chip)}</span>`).join("")}</div></td><td>${day(a.appliedAt)}</td><td>${day(a.followUpDate || m.metadata.follow_up_date)}</td><td>${esc(m.metadata.outreach_status || (m.outreach.length ? "sent" : "none"))}</td><td><span>${esc(latestInterview)}</span><div class="chip-row">${recruiterChip}${assessmentChip}</div></td><td>${esc(outcomeForApp(a, m) || rawOutcome)}</td><td>${esc(fitScore(a.notes) || m.metadata.fit_score_100 || "")}</td><td class="wrap-cell">${m.artifacts.map(linkForArtifact).join(", ")}</td></tr>`;
     })
     .join("");
-  $$("[data-open]").forEach(
+  $$(`[data-open]`).forEach(
     (b) => (b.onclick = () => openDetail(b.dataset.open)),
   );
 }
@@ -405,17 +557,76 @@ function renderAll() {
   renderFollowups();
   renderOutreach();
 }
+function artifactLink(value, label = value) {
+  const raw = String(value ?? "").trim();
+  let href = "";
+  try {
+    const url = new URL(raw);
+    if (["http:", "https:"].includes(url.protocol)) href = url.toString();
+  } catch {
+    href = "";
+  }
+  return href
+    ? `<a href="${esc(href)}" rel="noopener noreferrer">${esc(label)}</a>`
+    : esc(label || "");
+}
+function metadataList(metadata) {
+  const entries = IMPORTANT_METADATA_KEYS.map((key) => [
+    key,
+    metadata[key],
+  ]).filter(([, value]) => value);
+  return entries.length
+    ? `<dl class="metadata-list">${entries.map(([key, value]) => `<div><dt>${esc(key.replaceAll("_", " "))}</dt><dd>${esc(value)}</dd></div>`).join("")}</dl>`
+    : '<p class="muted">No compact CSV metadata for this application yet.</p>';
+}
+function eventSortKey(event) {
+  return [
+    event.occurredAt || "9999",
+    event.dueAt || "9999",
+    event.id || "",
+  ].join("|");
+}
+function timelineItem(event) {
+  const classes = ["timeline-item"];
+  if (isAssessmentEvent(event)) classes.push("timeline-assessment");
+  if (isRecruiterScreenEvent(event)) classes.push("timeline-screen");
+  const fields = [
+    ["Type", event.eventType],
+    ["Stage", event.stageLabel],
+    ["Channel", event.channel],
+    ["Actor", event.actor],
+    [
+      "Requires action",
+      event.requiresUserAction === undefined
+        ? ""
+        : event.requiresUserAction
+          ? "yes"
+          : "no",
+    ],
+    ["Action status", event.actionStatus],
+    ["Due", day(event.dueAt)],
+    [
+      "No AI required",
+      event.noAiRequired === undefined ? "" : event.noAiRequired ? "yes" : "no",
+    ],
+    ["Source", event.sourceArtifact ? artifactLink(event.sourceArtifact) : ""],
+    ["Details", event.details || event.note],
+  ].filter(([, value]) => value !== undefined && value !== "");
+  return `<li class="${classes.join(" ")}"><strong>${day(event.occurredAt || event.dueAt) || "undated"} · ${esc(event.status || event.eventType || "event")}</strong><dl>${fields.map(([key, value]) => `<div><dt>${esc(key)}</dt><dd>${String(value).startsWith("<a ") ? value : esc(value)}</dd></div>`).join("")}</dl></li>`;
+}
 function detailForm(app) {
   const m = appMeta(app);
-  return `<div class="tracker-detail"><article class="card"><h2>${esc(app.company || "New application")} — ${esc(app.role || "Unsaved")}</h2><form class="tracker-form" data-core-form>${input("company", app.company, true)}${input("role", app.role, true)}${input("postingUrl", app.postingUrl, "url")}<label>Status<select name="status" required>${STATUSES.map((s) => `<option ${app.status === s ? "selected" : ""}>${s}</option>`).join("")}</select></label>${input("source", app.source, "text")}${input("appliedAt", day(app.appliedAt), "date", true)}${input("followUpDate", day(app.followUpDate), "date")}<label>Notes<textarea name="notes">${esc(app.notes)}</textarea></label><button class="button">Save application</button></form></article><article class="card"><h3>Lifecycle timeline</h3><ul class="timeline">${
-    state.bundle.lifecycleEvents
-      .filter((e) => e.applicationId === app.id)
-      .map(
-        (e) =>
-          `<li>${day(e.occurredAt)} ${esc(e.status)} ${esc(e.note || "")}</li>`,
-      )
-      .join("") || "<li>No events yet.</li>"
-  }</ul></article><article class="card"><h3>Links/artifacts</h3><form class="tracker-form" data-artifact-form>${input("name", "", true)}${input("url", "")}<button class="button">Add link/artifact</button></form><ul>${m.artifacts.map((a) => `<li>${linkForArtifact(a)}</li>`).join("")}</ul></article><article class="card"><h3>Outreach messages</h3><form class="tracker-form" data-outreach-form><label>Channel<select name="channel"><option>email</option><option>linkedin</option><option>phone</option><option>sms</option><option>other</option></select></label><label>Message<textarea name="body" required></textarea></label><button class="button">Add outreach</button></form><ul>${m.outreach.map((o) => `<li>${day(o.sentAt)} ${esc(o.channel)} ${esc(o.body)}</li>`).join("")}</ul></article><article class="card"><h3>Interviews</h3><form class="tracker-form" data-interview-form><label>Stage<select name="stage"><option>recruiter_screen</option><option>technical_screen</option><option>onsite_loop</option><option>other</option></select></label>${input("startsAt", day(now()), "date")}<button class="button">Log interview</button></form><ul>${m.interviews.map((i) => `<li>${day(i.startsAt)} ${esc(i.stage)} ${esc(i.outcome)}</li>`).join("")}</ul></article><article class="card"><h3>Offers</h3><form class="tracker-form" data-offer-form><label>Status<select name="status"><option>received</option><option>negotiating</option><option>accepted</option><option>declined</option></select></label>${input("notes", "")}<button class="button">Log offer</button></form><ul>${m.offers.map((o) => `<li>${esc(o.status)} ${esc(o.notes || "")}</li>`).join("")}</ul></article></div>`;
+  const lifecycle = state.bundle.lifecycleEvents
+    .filter((e) => e.applicationId === app.id)
+    .sort((a, b) => eventSortKey(a).localeCompare(eventSortKey(b)));
+  const recruiterInterviews = m.interviews.filter(
+    (i) => i.stage === "recruiter_screen",
+  );
+  const otherInterviews = m.interviews.filter(
+    (i) => i.stage !== "recruiter_screen",
+  );
+  const assessmentEvents = lifecycle.filter(isAssessmentEvent);
+  return `<div class="tracker-detail"><article class="card"><h2>${esc(app.company || "New application")} — ${esc(app.role || "Unsaved")}</h2><form class="tracker-form" data-core-form>${input("company", app.company, true)}${input("role", app.role, true)}${input("postingUrl", app.postingUrl, "url")}<label>Status<select name="status" required>${STATUSES.map((status) => `<option ${app.status === status ? "selected" : ""}>${status}</option>`).join("")}</select></label>${input("source", app.source, "text")}${input("appliedAt", day(app.appliedAt), "date", true)}${input("followUpDate", day(app.followUpDate), "date")}<label>Notes<textarea name="notes">${esc(app.notes)}</textarea></label><button class="button">Save application</button></form></article><article class="card"><h3>Compact CSV metadata</h3>${metadataList(m.metadata)}</article><article class="card"><h3>Lifecycle timeline</h3><p class="muted">Sorted by occurred date, due date, then stable event ID.</p><ul class="timeline">${lifecycle.map(timelineItem).join("") || "<li>No lifecycle events for this application yet.</li>"}</ul></article><article class="card"><h3>Written assessments / take-homes</h3>${assessmentEvents.length ? `<ul class="timeline">${assessmentEvents.map(timelineItem).join("")}</ul>` : '<p class="muted">No written assessments or take-homes recorded.</p>'}</article><article class="card"><h3>Recruiter screens</h3><ul>${recruiterInterviews.map((i) => `<li>${day(i.startsAt)} ${esc(i.outcome || "scheduled")}</li>`).join("") || '<li class="muted">No recruiter screens recorded.</li>'}</ul></article><article class="card"><h3>Links/artifacts</h3><form class="tracker-form" data-artifact-form>${input("name", "", true)}${input("url", "")}<button class="button">Add link/artifact</button></form><ul>${m.artifacts.map((a) => `<li>${linkForArtifact(a)}</li>`).join("")}</ul></article><article class="card"><h3>Outreach messages</h3><form class="tracker-form" data-outreach-form><label>Channel<select name="channel"><option>email</option><option>linkedin</option><option>phone</option><option>sms</option><option>other</option></select></label><label>Message<textarea name="body" required></textarea></label><button class="button">Add outreach</button></form><ul>${m.outreach.map((o) => `<li>${day(o.sentAt)} ${esc(o.channel)} ${esc(o.body)}</li>`).join("")}</ul></article><article class="card"><h3>Interviews (non-recruiter)</h3><form class="tracker-form" data-interview-form><label>Stage<select name="stage"><option>recruiter_screen</option><option>technical_screen</option><option>onsite_loop</option><option>other</option></select></label>${input("startsAt", day(now()), "date")}<button class="button">Log interview</button></form><ul>${otherInterviews.map((i) => `<li>${day(i.startsAt)} ${esc(i.stage)} ${esc(i.outcome)}</li>`).join("") || '<li class="muted">No non-recruiter interviews recorded.</li>'}</ul></article><article class="card"><h3>Offers</h3><form class="tracker-form" data-offer-form><label>Status<select name="status"><option>received</option><option>negotiating</option><option>accepted</option><option>declined</option></select></label>${input("notes", "")}<button class="button">Log offer</button></form><ul>${m.offers.map((o) => `<li>${esc(o.status)} ${esc(o.notes || "")}</li>`).join("")}</ul></article></div>`;
 }
 function input(n, v = "", type = "text", required = false) {
   const req = type === true || required ? "required" : "";
@@ -591,21 +802,6 @@ async function newApplication() {
   };
   openUnsavedDetail(app);
 }
-function previewBundleFromCsv(text) {
-  const { bundle, errors } = csvToBrowserApplicationExport(text);
-  if (errors.length) {
-    throw new Error(
-      errors
-        .map((error) =>
-          error.rowNumber
-            ? `Row ${error.rowNumber} ${error.field}: ${error.message}`
-            : `${error.field}: ${error.message}`,
-        )
-        .join("; "),
-    );
-  }
-  return bundle;
-}
 function bundleForIndexedDb(bundle) {
   return {
     ...Object.fromEntries(
@@ -635,93 +831,123 @@ function importFormatForFile(file) {
   if (name.endsWith(".ndjson") || name.endsWith(".jsonl")) return "ndjson";
   return "csv";
 }
+const formatLabel = (format, spreadsheetFormat) => {
+  if (format === "json") return "JSON backup";
+  if (format === "ndjson") return "NDJSON backup";
+  if (spreadsheetFormat === "lifecycle_csv")
+    return "supplemental lifecycle CSV";
+  if (spreadsheetFormat === "compact_csv") return "compact application CSV";
+  return "CSV (unknown column layout)";
+};
+function countPreviewRecords(preview) {
+  return Object.fromEntries(
+    [...ARRAY_STORES, "settings"].map((store) => [
+      store,
+      preview[store]?.length ?? 0,
+    ]),
+  );
+}
+function renderImportPreviewResult({ label, counts, conflicts, errors = [] }) {
+  const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+  const conflictRows = conflicts
+    .map(
+      (conflict) =>
+        `<li>${esc(conflict.storeName || conflict.store || "record")} ${esc(conflict.id || conflict.value || "unknown id")}: ${esc(conflict.code || "existing record conflict")}</li>`,
+    )
+    .join("");
+  const errorRows = errors
+    .map(
+      (error) =>
+        `<li>Row ${esc(error.rowNumber || "?")} ${esc(error.field || "record")}: ${esc(error.message || error.code)}</li>`,
+    )
+    .join("");
+  $(`[data-import-result]`).innerHTML =
+    `<div class="import-summary ${errors.length ? "danger" : conflicts.length ? "warning" : "success"}"><strong>${errors.length ? "Import preview found blocking errors" : conflicts.length ? "Import dry run succeeded with warnings" : "Import dry run succeeded"}</strong><p>Detected format: ${esc(label)}. Data remains local in this browser until you apply the import.</p><p>${total} total incoming records.</p><p class="visually-hidden">Dry-run OK: ${counts.applications} applications, ${counts.outreachMessages} outreach messages, ${counts.interviews} interviews</p></div><ul class="import-counts">${
+      Object.entries(counts)
+        .filter(([, count]) => count > 0)
+        .map(
+          ([store, count]) =>
+            `<li><strong>${count}</strong> ${esc(STORE_LABELS[store] || store)}</li>`,
+        )
+        .join("") || "<li>No importable records detected.</li>"
+    }</ul>${conflicts.length ? `<h4>Conflicts by store and ID</h4><ul>${conflictRows}</ul>` : '<p class="muted">No existing record conflicts detected.</p>'}${errors.length ? `<h4>Blocking errors</h4><ul>${errorRows}</ul>` : ""}`;
+}
 async function previewImport() {
-  const file = $("[data-import-file]").files[0];
+  const file = $(`[data-import-file]`).files[0];
   if (!file) return;
+  const applyButton = $(`[data-import-apply]`);
   try {
     const text = await file.text();
     const format = importFormatForFile(file);
-    const lifecyclePreview =
-      format === "csv" &&
-      detectSpreadsheetImportFormat(text) === "lifecycle_csv"
-        ? await previewSupplementalLifecycleCsvImport(text, {
-            exportAllData: repo.exportAll,
-          })
-        : null;
-    if (lifecyclePreview?.errors.length) {
-      throw new Error(
-        lifecyclePreview.errors
-          .map((error) =>
-            error.rowNumber
-              ? `Row ${error.rowNumber} ${error.field}: ${error.message}`
-              : `${error.field}: ${error.message}`,
-          )
-          .join("; "),
-      );
+    const spreadsheetFormat =
+      format === "csv" ? detectSpreadsheetImportFormat(text) : "";
+    let bundle;
+    let errors = [];
+    let conflicts = [];
+    if (spreadsheetFormat === "lifecycle_csv") {
+      const preview = await previewSupplementalLifecycleCsvImport(text, {
+        exportAllData: repo.exportAll,
+      });
+      bundle = preview.bundle;
+      errors = preview.errors;
+      conflicts = preview.conflicts;
+      state.preview = {
+        lifecycleEvents: bundle.lifecycleEvents ?? [],
+        interviews: bundle.interviews ?? [],
+        reminders: bundle.reminders ?? [],
+      };
+    } else if (
+      spreadsheetFormat === "compact_csv" ||
+      (format === "csv" && spreadsheetFormat === "unknown_csv")
+    ) {
+      const preview = await previewCompactCsvImport(text, {
+        exportAllData: repo.exportAll,
+      });
+      bundle = preview.bundle;
+      errors = preview.errors;
+      conflicts = preview.conflicts;
+      state.preview = bundleForIndexedDb(bundle);
+    } else {
+      bundle =
+        format === "json"
+          ? importJsonBackup(text)
+          : format === "ndjson"
+            ? importNdjsonBackup(text)
+            : (() => {
+                throw new Error(
+                  "Unsupported CSV column layout. Use compact application CSV or supplemental lifecycle CSV.",
+                );
+              })();
+      state.preview = bundleForIndexedDb(bundle);
+      conflicts = await detectImportConflicts(state.preview);
     }
-    if (lifecyclePreview?.conflicts.length) {
-      throw new Error(
-        lifecyclePreview.conflicts
-          .map((conflict) =>
-            conflict.rowNumber
-              ? `Row ${conflict.rowNumber} ${conflict.field}: ${conflict.code}`
-              : `${conflict.store ?? "record"} ${conflict.field}: ${conflict.code}`,
-          )
-          .join("; "),
-      );
-    }
-    const bundle = lifecyclePreview
-      ? lifecyclePreview.bundle
-      : format === "json"
-        ? importJsonBackup(text)
-        : format === "ndjson"
-          ? importNdjsonBackup(text)
-          : previewBundleFromCsv(text);
-    state.preview = lifecyclePreview
-      ? {
-          lifecycleEvents: bundle.lifecycleEvents ?? [],
-          interviews: bundle.interviews ?? [],
-          reminders: bundle.reminders ?? [],
-        }
-      : bundleForIndexedDb(bundle);
-    state.previewConflicts =
-      lifecyclePreview?.conflicts ??
-      (await detectImportConflicts(state.preview));
-    const totalRecords = Object.values(state.preview).reduce(
-      (count, rows) => count + rows.length,
-      0,
-    );
-    const formatLabel = lifecyclePreview
-      ? " (lifecycle CSV)"
-      : format === "csv"
-        ? ""
-        : ` (${format.toUpperCase()})`;
-    const previewCounts = {
-      applications: state.preview.applications?.length ?? 0,
-      lifecycleEvents: state.preview.lifecycleEvents?.length ?? 0,
-      outreachMessages: state.preview.outreachMessages?.length ?? 0,
-      interviews: state.preview.interviews?.length ?? 0,
-      reminders: state.preview.reminders?.length ?? 0,
-    };
-    const lifecycleSummary = lifecyclePreview
-      ? `${previewCounts.lifecycleEvents} lifecycle events, `
-      : "";
-    $("[data-import-result]").textContent =
-      `Dry-run OK${formatLabel}: ${previewCounts.applications} applications, ${lifecycleSummary}${previewCounts.outreachMessages} outreach messages, ${previewCounts.interviews} interviews, ${previewCounts.reminders} reminders. ${totalRecords} total records. ${state.previewConflicts.length} existing record conflicts.`;
-    $("[data-import-apply]").disabled = false;
+    state.previewConflicts = conflicts.length
+      ? conflicts
+      : await detectImportConflicts(state.preview);
+    renderImportPreviewResult({
+      label: formatLabel(
+        format,
+        spreadsheetFormat === "unknown_csv" ? "compact_csv" : spreadsheetFormat,
+      ),
+      counts: countPreviewRecords(state.preview),
+      conflicts: state.previewConflicts,
+      errors,
+    });
+    applyButton.disabled = errors.length > 0;
+    if (errors.length > 0) state.preview = null;
   } catch (err) {
     state.preview = null;
     state.previewConflicts = [];
-    $("[data-import-apply]").disabled = true;
-    $("[data-import-result]").textContent =
-      `Import preview failed: ${err?.message ?? err}`;
+    applyButton.disabled = true;
+    $(`[data-import-result]`).innerHTML =
+      `<div class="danger"><strong>Import preview failed</strong><p>${esc(err?.message ?? err)}</p></div>`;
   }
 }
 function resetImportPreview() {
   state.preview = null;
   state.previewConflicts = [];
-  $("[data-import-apply]").disabled = true;
-  $("[data-import-result]").textContent =
+  $(`[data-import-apply]`).disabled = true;
+  $(`[data-import-result]`).textContent =
     "Select Preview/dry-run to validate the selected file before applying.";
 }
 async function applyImport() {
@@ -735,18 +961,19 @@ async function applyImport() {
       `Import will replace ${state.previewConflicts.length} existing local records with matching IDs. Continue?`,
     )
   ) {
-    $("[data-import-result]").textContent = "Import canceled.";
+    $(`[data-import-result]`).textContent = "Import canceled.";
     return;
   }
   try {
     await batchPut(state.preview);
   } catch (err) {
-    $("[data-import-result]").textContent =
+    $(`[data-import-result]`).textContent =
       `Import failed: ${err?.message ?? err}`;
     return;
   }
-  $("[data-import-result]").textContent = "Import applied.";
-  $("[data-import-apply]").disabled = true;
+  $(`[data-import-result]`).innerHTML =
+    '<strong class="success">Import applied successfully.</strong><p class="muted">Imported records were written only to this browser\'s local IndexedDB.</p>';
+  $(`[data-import-apply]`).disabled = true;
   await refresh();
 }
 function cleanEmptyOptionalStrings(record) {
