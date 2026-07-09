@@ -1,68 +1,130 @@
 import { spawn } from "node:child_process";
-import { createServer } from "node:net";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 import { expect, test } from "@playwright/test";
 
-const getFreePort = () =>
-  new Promise((resolve, reject) => {
-    const server = createServer();
-    server.unref();
-    server.on("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      const port = typeof address === "object" && address ? address.port : 0;
-      server.close(() => resolve(port));
+const BUILD_TIMEOUT_MS = 120_000;
+const SERVER_READY_TIMEOUT_MS = 15_000;
+
+function waitForProcess(process, label, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      process.kill("SIGTERM");
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    process.once("error", (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      reject(error);
+    });
+    process.once("exit", (code, signal) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      code === 0
+        ? resolve()
+        : reject(new Error(`${label} exited ${code ?? signal}`));
     });
   });
+}
 
-async function waitForStaticServer(baseUrl) {
-  const deadline = Date.now() + 15_000;
+async function waitForStaticServer(process) {
+  const deadline = Date.now() + SERVER_READY_TIMEOUT_MS;
+  let output = "";
   let lastError;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`${baseUrl}/healthz`);
-      if (response.ok) return;
-      lastError = new Error(`Unexpected health status ${response.status}`);
-    } catch (error) {
-      lastError = error;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  throw lastError ?? new Error("Timed out waiting for static server");
+
+  return await new Promise((resolve, reject) => {
+    const cleanup = () => {
+      clearInterval(interval);
+      clearTimeout(timeout);
+      process.stdout?.off("data", onData);
+      process.off("exit", onExit);
+      process.off("error", onError);
+    };
+    const fail = (error) => {
+      cleanup();
+      reject(error);
+    };
+    const checkReady = async (candidateUrl) => {
+      try {
+        const response = await fetch(`${candidateUrl}/healthz`);
+        if (response.ok) {
+          cleanup();
+          resolve(candidateUrl);
+          return;
+        }
+        lastError = new Error(`Unexpected health status ${response.status}`);
+      } catch (error) {
+        lastError = error;
+      }
+    };
+    const onData = (chunk) => {
+      output += chunk.toString();
+      const match = output.match(/listening on (http:\/\/[^\s]+)/);
+      if (match) void checkReady(match[1]);
+    };
+    const onExit = (code, signal) =>
+      fail(new Error(`static server exited before ready: ${code ?? signal}`));
+    const onError = (error) => fail(error);
+    const interval = setInterval(() => {
+      if (Date.now() >= deadline) return;
+      const match = output.match(/listening on (http:\/\/[^\s]+)/);
+      if (match) void checkReady(match[1]);
+    }, 250);
+    const timeout = setTimeout(() => {
+      fail(lastError ?? new Error("Timed out waiting for static server"));
+    }, SERVER_READY_TIMEOUT_MS);
+
+    process.stdout?.on("data", onData);
+    process.stderr?.resume();
+    process.once("exit", onExit);
+    process.once("error", onError);
+  });
 }
 
 test.describe("static tracker smoke", () => {
   let serverProcess;
   let baseUrl;
+  let staticDir;
 
   test.beforeAll(async () => {
-    const port = await getFreePort();
-    baseUrl = `http://127.0.0.1:${port}`;
-
+    staticDir = await fs.mkdtemp(path.join(os.tmpdir(), "jobbot-static-"));
     const build = spawn("node", ["scripts/build-static.js"], {
       cwd: process.cwd(),
+      env: { ...process.env, JOBBOT_STATIC_DIR: staticDir },
       stdio: "inherit",
     });
-    await new Promise((resolve, reject) => {
-      build.on("exit", (code) =>
-        code === 0 ? resolve() : reject(new Error(`build exited ${code}`)),
-      );
-      build.on("error", reject);
-    });
+    await waitForProcess(build, "static build", BUILD_TIMEOUT_MS);
 
     serverProcess = spawn("node", ["scripts/static-server.js"], {
       cwd: process.cwd(),
-      env: { ...process.env, HOST: "127.0.0.1", PORT: String(port) },
+      env: {
+        ...process.env,
+        HOST: "127.0.0.1",
+        PORT: "0",
+        JOBBOT_STATIC_DIR: staticDir,
+      },
       stdio: ["ignore", "pipe", "pipe"],
     });
-    await waitForStaticServer(baseUrl);
+    baseUrl = await waitForStaticServer(serverProcess);
   });
 
   test.afterAll(async () => {
-    if (serverProcess) {
+    if (serverProcess && serverProcess.exitCode === null) {
+      const exited = new Promise((resolve) =>
+        serverProcess.once("exit", resolve),
+      );
       serverProcess.kill("SIGTERM");
-      await new Promise((resolve) => serverProcess.once("exit", resolve));
+      await exited;
     }
+    if (staticDir) await fs.rm(staticDir, { recursive: true, force: true });
   });
 
   test("serves health, tracker, assets, and build metadata", async ({

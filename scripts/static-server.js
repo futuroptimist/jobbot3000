@@ -11,10 +11,14 @@ const distDir = path.resolve(
 const host = process.env.HOST ?? process.env.JOBBOT_WEB_HOST ?? "0.0.0.0";
 const rawPort = process.env.PORT ?? process.env.JOBBOT_WEB_PORT ?? "3000";
 const port = Number.parseInt(rawPort, 10);
-if (!/^[1-9]\d*$/.test(rawPort) || !Number.isInteger(port) || port > 65535) {
+if (
+  !/^(0|[1-9]\d*)$/.test(rawPort) ||
+  !Number.isInteger(port) ||
+  port > 65535
+) {
   console.error(
     `Invalid static server port "${rawPort}". ` +
-      "Set PORT or JOBBOT_WEB_PORT to an integer from 1 to 65535.",
+      "Set PORT or JOBBOT_WEB_PORT to an integer from 0 to 65535.",
   );
   process.exit(1);
 }

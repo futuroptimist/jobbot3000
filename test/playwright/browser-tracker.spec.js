@@ -1086,7 +1086,7 @@ test.describe("browser application tracker", () => {
   }) => {
     const mutatingRequests = [];
     page.on("request", (request) => {
-      if (["POST", "PUT", "PATCH"].includes(request.method())) {
+      if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method())) {
         mutatingRequests.push({
           method: request.method(),
           url: request.url(),
