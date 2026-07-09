@@ -1,4 +1,5 @@
 import { browserApplicationExportSchema } from "../../domain/browserApplication.js";
+import { classifyLifecycleEventType } from "../tracker/lifecycleClassification.js";
 
 export const LIFECYCLE_CSV_COLUMNS = [
   "application_id",
@@ -539,9 +540,8 @@ export const detectSpreadsheetImportFormat = (text) => {
 };
 
 const lifecycleStatusForEvent = (eventType) => {
-  if (eventType === "hiring_manager_reply") return "outreach_sent";
-  if (eventType === "recruiter_screen_scheduled") return "recruiter_screen";
-  if (eventType === "application_submitted") return "applied";
+  const classification = classifyLifecycleEventType(eventType);
+  if (classification.status) return classification.status;
   if (KNOWN_STATUSES.has(eventType)) return eventType;
   return undefined;
 };
@@ -592,9 +592,10 @@ export const lifecycleRowsToBrowserApplicationExport = (
     const dueAt = parseDate(row.due_at, "due_at", rowNumber, errors);
     const eventOccurredAt = occurredAt ?? dueAt ?? "1970-01-01T00:00:00.000Z";
     const stageLabel = compact(row.stage) || undefined;
+    const classification = classifyLifecycleEventType(eventType);
     const knownLifecycleStatus = lifecycleStatusForEvent(eventType);
     if (
-      !knownLifecycleStatus &&
+      classification.category === "unknown" &&
       !["lifecycle_event", "next_tracking_step"].includes(eventType)
     )
       warnings.push({
@@ -664,18 +665,31 @@ export const lifecycleRowsToBrowserApplicationExport = (
         createdAt: exportedAt,
         updatedAt: exportedAt,
       });
+    const interviewStartsAt =
+      classification.outcome === "completed" ? occurredAt : dueAt;
+    const rawInterviewStartsAt =
+      classification.outcome === "completed" ? row.occurred_at : row.due_at;
     if (
-      eventType === "recruiter_screen_scheduled" &&
-      dueAt &&
-      hasTimeComponent(row.due_at)
+      classification.interviewStage &&
+      interviewStartsAt &&
+      hasTimeComponent(rawInterviewStartsAt)
     )
       interviews.push({
-        id: stableId("interview", applicationId, "recruiter_screen", dueAt),
+        id: stableId(
+          "interview",
+          applicationId,
+          classification.interviewStage,
+          interviewStartsAt,
+        ),
         applicationId,
         contactIds: [],
-        stage: "recruiter_screen",
-        startsAt: dueAt,
-        outcome: "scheduled",
+        stage: classification.interviewStage,
+        startsAt: interviewStartsAt,
+        outcome: classification.outcome ?? "scheduled",
+        preparationNotes:
+          classification.category === "non_recruiter_interview"
+            ? [eventType, details].filter(Boolean).join(": ")
+            : undefined,
         createdAt: exportedAt,
         updatedAt: exportedAt,
       });

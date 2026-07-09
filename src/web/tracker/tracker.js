@@ -12,6 +12,10 @@ import {
   previewCompactCsvImport,
   previewSupplementalLifecycleCsvImport,
 } from "../import-export/spreadsheet.js";
+import {
+  classifyLifecycleEventType,
+  isAssessmentLifecycleEvent,
+} from "./lifecycleClassification.js";
 import { readSpreadsheetMetadata, selectDashboardMetrics } from "./metrics.js";
 
 /* canonical CSV/backup helpers are shared with spreadsheet import/export tests. */
@@ -240,25 +244,19 @@ const normalize = (value) =>
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
 const isAssessmentEvent = (record = {}) =>
-  [
-    record.eventType,
-    record.stageLabel,
-    record.status,
-    record.note,
-    record.details,
-  ]
+  isAssessmentLifecycleEvent(record.eventType) ||
+  [record.stageLabel, record.status, record.note, record.details]
     .map(normalize)
     .some(
       (value) => value.includes("assessment") || value.includes("take_home"),
     );
-const RECRUITER_SCREEN_EVENT_TYPES = new Set([
-  "recruiter_screen_scheduled",
-  "recruiter_screen_completed",
-]);
 const isRecruiterScreen = (record = {}) =>
   normalize(record.stage) === "recruiter_screen" ||
   normalize(record.status) === "recruiter_screen" ||
-  RECRUITER_SCREEN_EVENT_TYPES.has(normalize(record.eventType));
+  classifyLifecycleEventType(record.eventType).category === "recruiter_screen";
+const isNonRecruiterInterviewEvent = (record = {}) =>
+  classifyLifecycleEventType(record.eventType).category ===
+  "non_recruiter_interview";
 const recruiterScreenKey = (record = {}) =>
   [
     record.applicationId,
@@ -309,13 +307,11 @@ const COMPACT_OUTREACH_REPLY_STATUSES = new Set([
   "reply",
   "responded",
 ]);
-const RESPONSE_EVENT_TYPES = new Set([
-  "hiring_manager_reply",
-  "written_assessment_requested",
-  "recruiter_screen_scheduled",
-  "recruiter_screen_completed",
-  "offer",
-  "offer_received",
+const RESPONSE_CATEGORIES = new Set([
+  "assessment",
+  "employer_response",
+  "non_recruiter_interview",
+  "recruiter_screen",
 ]);
 const hasMetadataResponseSignal = (metadata = {}) =>
   COMPACT_OUTREACH_REPLY_STATUSES.has(normalize(metadata.outreach_status)) ||
@@ -330,8 +326,9 @@ const hasListResponseSignal = (app, meta, metadata = {}) =>
   ) ||
   meta.lifecycle.some(
     (x) =>
-      RESPONSE_EVENT_TYPES.has(normalize(x.eventType)) ||
-      TERMINAL_EMPLOYER_STATUSES.has(normalize(x.status)),
+      RESPONSE_CATEGORIES.has(
+        classifyLifecycleEventType(x.eventType).category,
+      ) || TERMINAL_EMPLOYER_STATUSES.has(normalize(x.status)),
   ) ||
   hasMetadataResponseSignal(metadata);
 function metadataEntries(app) {
@@ -652,13 +649,17 @@ function timelineItem(e) {
     ? "assessment"
     : isRecruiterScreen(e)
       ? "recruiter"
-      : "event";
+      : isNonRecruiterInterviewEvent(e)
+        ? "interview"
+        : "event";
   const label =
     kind === "assessment"
       ? "Assessment/take-home"
       : kind === "recruiter"
         ? "Recruiter screen"
-        : "Lifecycle event";
+        : kind === "interview"
+          ? "Interview"
+          : "Lifecycle event";
   return `<li class="timeline-item timeline-${kind}"><div><strong>${esc(label)}</strong> <span class="chip">${esc(e.status || e.eventType || "event")}</span></div><time>${esc(day(e.occurredAt) || day(e.dueAt) || "No date")}</time><div class="timeline-meta">${eventDetails(e)}</div></li>`;
 }
 function metadataSection(app) {
@@ -672,9 +673,21 @@ function detailForm(app) {
   const events = sortedLifecycleEvents(app.id);
   const metadata = readSpreadsheetMetadata(app.notes);
   const recruiterScreens = uniqueRecruiterScreens(m, events);
-  const otherInterviews = m.interviews.filter(
-    (item) => !isRecruiterScreen(item),
-  );
+  const lifecycleInterviewItems = events
+    .filter(isNonRecruiterInterviewEvent)
+    .map((event) => ({
+      startsAt: event.dueAt || event.occurredAt,
+      stage:
+        event.stageLabel ||
+        classifyLifecycleEventType(event.eventType).interviewStage ||
+        event.eventType,
+      outcome:
+        classifyLifecycleEventType(event.eventType).outcome || "scheduled",
+    }));
+  const otherInterviews = [
+    ...m.interviews.filter((item) => !isRecruiterScreen(item)),
+    ...lifecycleInterviewItems,
+  ];
   const assessments = events.filter(isAssessmentEvent).map((event) => ({
     date: day(event.occurredAt) || day(event.dueAt),
     label: event.stageLabel || event.eventType || event.details || "assessment",
