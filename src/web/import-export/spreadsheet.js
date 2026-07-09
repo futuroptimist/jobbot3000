@@ -1,4 +1,11 @@
 import { browserApplicationExportSchema } from "../../domain/browserApplication.js";
+import {
+  classifyLifecycleEventType,
+  interviewStageForLifecycleEvent,
+  isNonRecruiterInterviewLifecycleEvent,
+  isRecruiterScreenLifecycleEvent,
+  LIFECYCLE_EVENT_CATEGORIES,
+} from "../tracker/lifecycleClassification.js";
 
 export const LIFECYCLE_CSV_COLUMNS = [
   "application_id",
@@ -539,9 +546,15 @@ export const detectSpreadsheetImportFormat = (text) => {
 };
 
 const lifecycleStatusForEvent = (eventType) => {
-  if (eventType === "hiring_manager_reply") return "outreach_sent";
-  if (eventType === "recruiter_screen_scheduled") return "recruiter_screen";
-  if (eventType === "application_submitted") return "applied";
+  const category = classifyLifecycleEventType(eventType);
+  if (category === LIFECYCLE_EVENT_CATEGORIES.EMPLOYER_RESPONSE)
+    return eventType === "hiring_manager_reply" ? "outreach_sent" : undefined;
+  if (category === LIFECYCLE_EVENT_CATEGORIES.RECRUITER_SCREEN)
+    return "recruiter_screen";
+  if (category === LIFECYCLE_EVENT_CATEGORIES.NON_RECRUITER_INTERVIEW)
+    return interviewStageForLifecycleEvent(eventType);
+  if (category === LIFECYCLE_EVENT_CATEGORIES.APPLICATION_SUBMISSION)
+    return "applied";
   if (KNOWN_STATUSES.has(eventType)) return eventType;
   return undefined;
 };
@@ -595,6 +608,8 @@ export const lifecycleRowsToBrowserApplicationExport = (
     const knownLifecycleStatus = lifecycleStatusForEvent(eventType);
     if (
       !knownLifecycleStatus &&
+      classifyLifecycleEventType(eventType) ===
+        LIFECYCLE_EVENT_CATEGORIES.UNKNOWN_METADATA &&
       !["lifecycle_event", "next_tracking_step"].includes(eventType)
     )
       warnings.push({
@@ -664,18 +679,32 @@ export const lifecycleRowsToBrowserApplicationExport = (
         createdAt: exportedAt,
         updatedAt: exportedAt,
       });
+    const interviewStage = isRecruiterScreenLifecycleEvent(eventType)
+      ? "recruiter_screen"
+      : interviewStageForLifecycleEvent(eventType);
+    const isCompletedInterviewEvent = eventType.endsWith("_completed");
+    const interviewStartsAt = isCompletedInterviewEvent ? occurredAt : dueAt;
+    const hasInterviewTiming = isCompletedInterviewEvent
+      ? Boolean(occurredAt)
+      : Boolean(dueAt && hasTimeComponent(row.due_at));
     if (
-      eventType === "recruiter_screen_scheduled" &&
-      dueAt &&
-      hasTimeComponent(row.due_at)
+      interviewStage &&
+      hasInterviewTiming &&
+      (isRecruiterScreenLifecycleEvent(eventType) ||
+        isNonRecruiterInterviewLifecycleEvent(eventType))
     )
       interviews.push({
-        id: stableId("interview", applicationId, "recruiter_screen", dueAt),
+        id: stableId(
+          "interview",
+          applicationId,
+          interviewStage,
+          interviewStartsAt,
+        ),
         applicationId,
         contactIds: [],
-        stage: "recruiter_screen",
-        startsAt: dueAt,
-        outcome: "scheduled",
+        stage: interviewStage,
+        startsAt: interviewStartsAt,
+        outcome: isCompletedInterviewEvent ? "completed" : "scheduled",
         createdAt: exportedAt,
         updatedAt: exportedAt,
       });

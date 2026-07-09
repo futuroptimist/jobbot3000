@@ -1039,6 +1039,100 @@ describe("spreadsheet import/export", () => {
     repo.close();
   });
 
+  it("derives non-recruiter interview records idempotently", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    const compactCsv = serializeCsv([
+      {
+        application_id: "app_devops_lifecycle",
+        company: "Lifecycle DevOps",
+        role_title: "DevOps Engineer",
+        applied_at: "2026-01-01",
+        outreach_status: "replied",
+        schema_version: "1",
+      },
+    ]);
+    await importCompactCsv(compactCsv, repo, { mode: "replace" });
+    const lifecycleCsv = serializeCsv(
+      [
+        {
+          application_id: "app_devops_lifecycle",
+          company: "Lifecycle DevOps",
+          role_title: "DevOps Engineer",
+          event_type: "recruiter_screen_scheduled",
+          occurred_at: "2026-01-02T12:00:00.000Z",
+          stage: "Recruiter screen",
+          channel: "video",
+          actor: "recruiter",
+          due_at: "2026-01-03T16:00:00.000Z",
+          details: "Recruiter screen scheduled.",
+        },
+        {
+          application_id: "app_devops_lifecycle",
+          company: "Lifecycle DevOps",
+          role_title: "DevOps Engineer",
+          event_type: "devops_interview_scheduled",
+          occurred_at: "2026-01-04T12:00:00.000Z",
+          stage: "DevOps interview",
+          channel: "video",
+          actor: "engineering",
+          due_at: "2026-01-05T18:00:00.000Z",
+          details: "DevOps interview scheduled.",
+        },
+        {
+          application_id: "app_devops_lifecycle",
+          company: "Lifecycle DevOps",
+          role_title: "DevOps Engineer",
+          event_type: "technical_interview_scheduled",
+          occurred_at: "2026-01-06T12:00:00.000Z",
+          stage: "Technical interview",
+          channel: "video",
+          actor: "engineering",
+          due_at: "2026-01-07T18:00:00.000Z",
+          details: "Technical interview scheduled.",
+        },
+        {
+          application_id: "app_devops_lifecycle",
+          company: "Lifecycle DevOps",
+          role_title: "DevOps Engineer",
+          event_type: "onsite_interview_scheduled",
+          occurred_at: "2026-01-08T12:00:00.000Z",
+          stage: "Onsite interview",
+          channel: "video",
+          actor: "engineering",
+          due_at: "2026-01-09T18:00:00.000Z",
+          details: "Onsite interview scheduled.",
+        },
+      ],
+      LIFECYCLE_CSV_COLUMNS,
+    );
+
+    const preview = await previewSupplementalLifecycleCsvImport(
+      lifecycleCsv,
+      repo,
+    );
+    expect(preview.errors).toEqual([]);
+    expect(preview.bundle.interviews).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ stage: "recruiter_screen" }),
+        expect.objectContaining({ stage: "technical_screen" }),
+        expect.objectContaining({ stage: "technical_screen" }),
+        expect.objectContaining({ stage: "onsite_loop" }),
+      ]),
+    );
+
+    await importSupplementalLifecycleCsv(lifecycleCsv, repo);
+    await importSupplementalLifecycleCsv(lifecycleCsv, repo);
+    const bundle = await repo.exportAllData();
+    expect(bundle.interviews).toHaveLength(4);
+    expect(
+      bundle.interviews.filter(({ stage }) => stage === "recruiter_screen"),
+    ).toHaveLength(1);
+    expect(
+      bundle.interviews.filter(({ stage }) => stage !== "recruiter_screen"),
+    ).toHaveLength(3);
+    repo.close();
+  });
+
   it("round trips compact and supplemental lifecycle CSV deterministically", async () => {
     let repo = await createIndexedDbRepository({ indexedDb: indexedDB });
     const compactCsv = serializeCsv([
