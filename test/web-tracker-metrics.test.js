@@ -84,24 +84,21 @@ describe("tracker dashboard metrics", () => {
     expect(metrics.applicationsWithResponse).toBe(5);
   });
 
-  it(
-    "dedupes hiring-manager lifecycle replies already represented by compact metadata",
-    async () => {
-      const { bundle } = csvToBrowserApplicationExport(await compactFixture(), {
-        exportedAt,
-      });
-      const lifecycle = importLifecycle(
-        await lifecycleFixture("employer-reply-lifecycle-regression.csv"),
-        bundle,
-      );
+  it("dedupes hiring-manager lifecycle replies in compact metadata", async () => {
+    const { bundle } = csvToBrowserApplicationExport(await compactFixture(), {
+      exportedAt,
+    });
+    const lifecycle = importLifecycle(
+      await lifecycleFixture("employer-reply-lifecycle-regression.csv"),
+      bundle,
+    );
 
-      const metrics = selectDashboardMetrics(mergeBundle(bundle, lifecycle));
+    const metrics = selectDashboardMetrics(mergeBundle(bundle, lifecycle));
 
-      expect(metrics.outreachReplies).toBe(2);
-      expect(metrics.applicationsWithResponse).toBe(4);
-      expect(metrics.interviews).toBe(0);
-    },
-  );
+    expect(metrics.outreachReplies).toBe(2);
+    expect(metrics.applicationsWithResponse).toBe(4);
+    expect(metrics.interviews).toBe(0);
+  });
 
   it("counts lifecycle-only hiring-manager replies as outreach replies", () => {
     const timestamp = "2026-01-01T00:00:00.000Z";
@@ -524,5 +521,88 @@ describe("tracker dashboard metrics", () => {
     expect(metrics.applicationsWithResponse).toBe(1);
     expect(metrics.applicationResponseRate).toBe(100);
     expect(metrics.outreachReplyRate).toBe(100);
+  });
+});
+
+describe("tracker dashboard lifecycle interview metrics", () => {
+  it("counts Reducto-like devops lifecycle interviews separately from recruiter screens", () => {
+    const timestamp = "2026-01-01T00:00:00.000Z";
+    const bundle = {
+      applications: [
+        {
+          id: "app_reducto_like",
+          company: "Example Systems",
+          role: "DevOps Engineer",
+          status: "applied",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_recruiter",
+          applicationId: "app_reducto_like",
+          eventType: "recruiter_screen_scheduled",
+          status: "recruiter_screen",
+          occurredAt: "2026-01-02T00:00:00.000Z",
+          dueAt: "2026-01-03T17:00:00.000Z",
+        },
+        {
+          id: "event_devops",
+          applicationId: "app_reducto_like",
+          eventType: "devops_interview_scheduled",
+          status: "technical_screen",
+          occurredAt: "2026-01-04T00:00:00.000Z",
+          dueAt: "2026-01-05T18:00:00.000Z",
+        },
+      ],
+      interviews: [],
+    };
+
+    expect(selectDashboardMetrics(bundle)).toMatchObject({
+      recruiterScreens: 1,
+      interviews: 1,
+      applicationsWithResponse: 1,
+    });
+  });
+
+  it("does not count assessments, hiring-manager replies, or follow-ups as interviews", () => {
+    const timestamp = "2026-01-01T00:00:00.000Z";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: "app_negative_events",
+          company: "Example",
+          role: "Engineer",
+          status: "applied",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_assessment",
+          applicationId: "app_negative_events",
+          eventType: "written_assessment_submitted",
+          occurredAt: timestamp,
+        },
+        {
+          id: "event_reply",
+          applicationId: "app_negative_events",
+          eventType: "hiring_manager_reply",
+          occurredAt: timestamp,
+        },
+        {
+          id: "event_follow_up",
+          applicationId: "app_negative_events",
+          eventType: "follow_up",
+          occurredAt: timestamp,
+        },
+      ],
+      interviews: [],
+    });
+
+    expect(metrics.interviews).toBe(0);
+    expect(metrics.assessments).toBe(1);
   });
 });

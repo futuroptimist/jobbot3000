@@ -1,40 +1,22 @@
+import {
+  isAssessmentLifecycleEvent,
+  isEmployerResponseLifecycleEvent,
+  isNonRecruiterInterviewLifecycleEvent,
+  isRecruiterScreenLifecycleEvent,
+  normalizeLifecycleEventType,
+} from "./lifecycleClassification.js";
+
 const TERMINAL_EMPLOYER_STATUSES = new Set([
   "offer",
   "accepted",
   "rejected",
   "closed_archived",
 ]);
-const RESPONSE_EVENT_TYPES = new Set([
-  "hiring_manager_reply",
-  "written_assessment_requested",
-  "recruiter_screen_scheduled",
-  "recruiter_screen_completed",
-  "offer",
-  "offer_received",
-]);
-const ASSESSMENT_EVENT_TYPES = new Set([
-  "written_assessment",
-  "written_assessment_requested",
-  "written_assessment_submitted",
-  "take_home",
-  "take_home_requested",
-  "take_home_submitted",
-]);
-const RECRUITER_SCREEN_EVENT_TYPES = new Set([
-  "recruiter_screen_scheduled",
-  "recruiter_screen_completed",
-]);
 const OFFER_EVENT_TYPES = new Set(["offer", "offer_received"]);
 const OUTREACH_REPLY_STATUSES = new Set(["replied", "reply", "responded"]);
 const OUTREACH_SENT_STATUSES = new Set(["sent", ...OUTREACH_REPLY_STATUSES]);
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-const normalize = (value) =>
-  String(value ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/&/g, " and ")
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
+const normalize = normalizeLifecycleEventType;
 
 export const readSpreadsheetMetadata = (notes) => {
   const prefix = "Spreadsheet metadata:";
@@ -109,6 +91,7 @@ export const selectDashboardMetrics = (bundle = {}) => {
   const compactOutreachApplicationIds = new Set();
   const outboundOutreachApplicationIds = new Set();
   const recruiterScreenKeys = new Set();
+  const interviewKeys = new Set();
   const assessmentApplicationIds = new Set();
   const offerApplicationIds = new Set();
 
@@ -164,22 +147,27 @@ export const selectDashboardMetrics = (bundle = {}) => {
     const eventType = normalize(event.eventType);
     const status = normalize(event.status);
     if (
-      RESPONSE_EVENT_TYPES.has(eventType) ||
+      isEmployerResponseLifecycleEvent(eventType) ||
+      isRecruiterScreenLifecycleEvent(eventType) ||
+      isAssessmentLifecycleEvent(eventType) ||
+      isNonRecruiterInterviewLifecycleEvent(eventType) ||
       TERMINAL_EMPLOYER_STATUSES.has(status)
     )
       addResponse(responseApplicationIds, event.applicationId);
     if (eventType === "hiring_manager_reply" && event.applicationId)
       lifecycleReplyApplicationIds.add(event.applicationId);
-    if (ASSESSMENT_EVENT_TYPES.has(eventType)) {
+    if (isAssessmentLifecycleEvent(eventType)) {
       addResponse(responseApplicationIds, event.applicationId);
       if (event.applicationId)
         assessmentApplicationIds.add(event.applicationId);
     }
     if (
-      RECRUITER_SCREEN_EVENT_TYPES.has(eventType) ||
+      isRecruiterScreenLifecycleEvent(eventType) ||
       status === "recruiter_screen"
     )
       recruiterScreenKeys.add(recruiterScreenKey(event));
+    if (isNonRecruiterInterviewLifecycleEvent(eventType))
+      interviewKeys.add(recruiterScreenKey(event));
     if (
       OFFER_EVENT_TYPES.has(eventType) ||
       ["offer", "accepted"].includes(status)
@@ -199,10 +187,8 @@ export const selectDashboardMetrics = (bundle = {}) => {
     addResponse(responseApplicationIds, interview.applicationId);
     if (interview.stage === "recruiter_screen")
       recruiterScreenKeys.add(recruiterScreenKey(interview));
+    else interviewKeys.add(recruiterScreenKey(interview));
   }
-  const nonRecruiterInterviews = interviews.filter(
-    (interview) => interview.stage !== "recruiter_screen",
-  );
 
   return {
     totalApplications: applications.length,
@@ -215,7 +201,7 @@ export const selectDashboardMetrics = (bundle = {}) => {
     ),
     outreachReplyRate: boundedPercentage(outreachReplies, outreachSent),
     recruiterScreens: recruiterScreenKeys.size,
-    interviews: nonRecruiterInterviews.length,
+    interviews: interviewKeys.size,
     assessments: assessmentApplicationIds.size,
     offers: new Set(
       [
