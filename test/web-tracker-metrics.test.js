@@ -957,8 +957,8 @@ describe("tracker dashboard metrics", () => {
     expect(metrics.interviews).toBe(2);
   });
 
-  it("dedupes completed lifecycle records against restored fallback timestamp interviews", () => {
-    const applicationId = "app_completed_fallback_alias";
+  it("does not use completed due dates as duplicate aliases", () => {
+    const applicationId = "app_completed_due_alias_distinct";
     const metrics = selectDashboardMetrics({
       applications: [
         {
@@ -972,7 +972,7 @@ describe("tracker dashboard metrics", () => {
       ],
       lifecycleEvents: [
         {
-          id: "event_completed_fallback_alias",
+          id: "event_completed_due_alias_distinct",
           applicationId,
           eventType: "technical_interview_completed",
           occurredAt: "2026-05-10T17:30:00.000Z",
@@ -984,7 +984,7 @@ describe("tracker dashboard metrics", () => {
       ],
       interviews: [
         {
-          id: "interview_completed_fallback_alias",
+          id: "interview_completed_due_alias_distinct",
           applicationId,
           stage: "technical_screen",
           startsAt: "2026-05-01T12:00:00.000Z",
@@ -994,7 +994,7 @@ describe("tracker dashboard metrics", () => {
       ],
     });
 
-    expect(metrics.interviews).toBe(1);
+    expect(metrics.interviews).toBe(2);
   });
 
   it("uses completed occurred_at to dedupe lifecycle and derived interview records", () => {

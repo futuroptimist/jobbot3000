@@ -157,7 +157,8 @@ const lifecycleInterviewDuplicateTimestampCandidates = (
   event,
   classification,
 ) => {
-  return lifecycleInterviewTimestampCandidates(event, classification);
+  const timestamp = lifecycleInterviewTimestamp(event, classification);
+  return uniqueUsableTimestamps([timestamp]);
 };
 const lifecycleInterviewKey = (event, classification) => {
   const [timestamp] = lifecycleInterviewTimestampCandidates(
