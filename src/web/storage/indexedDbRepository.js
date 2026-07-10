@@ -10,9 +10,13 @@ import {
   browserApplicationSchema,
   browserApplicationSettingsSchema,
 } from "../../domain/browserApplication.js";
+import {
+  BROWSER_BACKUP_SCHEMA_VERSION,
+  upgradeBrowserExportToV2,
+} from "./browserDataMigration.js";
 
 export const DATABASE_NAME = "jobbot3000";
-export const DATABASE_VERSION = 1;
+export const DATABASE_VERSION = 2;
 
 export const STORE_NAMES = [
   "applications",
@@ -112,6 +116,7 @@ export const migrations = {
       ensureIndex(applications, "by_status", "status");
       ensureIndex(applications, "by_appliedAt", "appliedAt");
       ensureIndex(applications, "by_followUpDate", "followUpDate");
+      ensureIndex(applications, "by_origin", "origin");
     }
 
     const contacts = createStore(db, "contacts");
@@ -131,6 +136,7 @@ export const migrations = {
         "applicationId",
         "occurredAt",
       ]);
+      ensureIndex(lifecycleEvents, "by_occurredAt", "occurredAt");
     }
 
     const interviews = createStore(db, "interviews");
@@ -153,6 +159,12 @@ export const migrations = {
       ensureIndex(reminders, "by_applicationId", "applicationId");
     }
     createStore(db, "settings");
+  },
+  2(db, transaction) {
+    const applications = transaction.objectStore("applications");
+    ensureIndex(applications, "by_origin", "origin");
+    const lifecycleEvents = transaction.objectStore("lifecycleEvents");
+    ensureIndex(lifecycleEvents, "by_occurredAt", "occurredAt");
   },
 };
 
@@ -182,7 +194,7 @@ export const openJobbotDatabase = ({
         currentVersion <= version;
         currentVersion += 1
       ) {
-        migrations[currentVersion]?.(db, request.transaction);
+        migrations[currentVersion]?.(db, request.transaction, event.oldVersion);
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -309,7 +321,8 @@ const deleteMatchingFromStore = async (store, indexName, value) => {
 };
 
 const validateImport = (data) => {
-  const result = browserApplicationExportSchema.safeParse(data);
+  const { data: upgraded, warnings } = upgradeBrowserExportToV2(data);
+  const result = browserApplicationExportSchema.safeParse(upgraded);
   if (!result.success) {
     throw new IndexedDbRepositoryError(
       "schema_validation_failed",
@@ -317,7 +330,7 @@ const validateImport = (data) => {
       { details: result.error.flatten() },
     );
   }
-  return { parsed: result.data };
+  return { parsed: result.data, warnings };
 };
 
 export const createIndexedDbRepository = async (options = {}) => {
@@ -436,7 +449,7 @@ export const createIndexedDbRepository = async (options = {}) => {
           settingsAll,
         ] = storeResults;
         const result = browserApplicationExportSchema.safeParse({
-          schemaVersion: DATABASE_VERSION,
+          schemaVersion: BROWSER_BACKUP_SCHEMA_VERSION,
           exportedAt: new Date().toISOString(),
           applications,
           contacts,
@@ -537,6 +550,40 @@ export const createIndexedDbRepository = async (options = {}) => {
         const tx = db.transaction(STORE_NAMES, "readwrite");
         const done = transactionDone(tx);
         for (const storeName of STORE_NAMES) tx.objectStore(storeName).clear();
+        await done;
+      });
+    },
+    listStore(storeName) {
+      if (!STORE_NAMES.includes(storeName))
+        throw new IndexedDbRepositoryError("unknown_store", "Unknown store.");
+      return safe(() => getAll(db, storeName));
+    },
+    putStore(storeName, record) {
+      if (!STORE_NAMES.includes(storeName))
+        throw new IndexedDbRepositoryError("unknown_store", "Unknown store.");
+      return safe(() => putRecord(db, storeName, record));
+    },
+    addStore(storeName, record) {
+      if (!STORE_NAMES.includes(storeName))
+        throw new IndexedDbRepositoryError("unknown_store", "Unknown store.");
+      return safe(() => addRecord(db, storeName, record));
+    },
+    importRecordsByStore(recordsByStore) {
+      return safe(async () => {
+        const storeNames = Object.entries(recordsByStore)
+          .filter(
+            ([storeName, rows]) =>
+              STORE_NAMES.includes(storeName) && rows.length,
+          )
+          .map(([storeName]) => storeName);
+        if (!storeNames.length) return;
+        const tx = db.transaction(storeNames, "readwrite");
+        const done = transactionDone(tx);
+        for (const [storeName, rows] of Object.entries(recordsByStore)) {
+          if (!storeNames.includes(storeName)) continue;
+          const store = tx.objectStore(storeName);
+          for (const row of rows) store.put(parseRecord(storeName, row));
+        }
         await done;
       });
     },

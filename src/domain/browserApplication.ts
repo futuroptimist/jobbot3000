@@ -6,7 +6,9 @@ import {
   browserApplicationExportSchema as runtimeBrowserApplicationExportSchema,
   browserApplicationInterviewSchema as runtimeBrowserApplicationInterviewSchema,
   browserApplicationLifecycleEventSchema as runtimeBrowserApplicationLifecycleEventSchema,
+  browserApplicationLifecycleEventTypeSchema as runtimeBrowserApplicationLifecycleEventTypeSchema,
   browserApplicationLifecycleStatusSchema as runtimeBrowserApplicationLifecycleStatusSchema,
+  browserApplicationOriginSchema as runtimeBrowserApplicationOriginSchema,
   browserApplicationOfferSchema as runtimeBrowserApplicationOfferSchema,
   browserApplicationOutreachMessageSchema as runtimeBrowserApplicationOutreachMessageSchema,
   browserApplicationReminderSchema as runtimeBrowserApplicationReminderSchema,
@@ -24,8 +26,12 @@ export const browserApplicationInterviewSchema =
   runtimeBrowserApplicationInterviewSchema;
 export const browserApplicationLifecycleEventSchema =
   runtimeBrowserApplicationLifecycleEventSchema;
+export const browserApplicationLifecycleEventTypeSchema =
+  runtimeBrowserApplicationLifecycleEventTypeSchema;
 export const browserApplicationLifecycleStatusSchema =
   runtimeBrowserApplicationLifecycleStatusSchema;
+export const browserApplicationOriginSchema =
+  runtimeBrowserApplicationOriginSchema;
 export const browserApplicationOfferSchema =
   runtimeBrowserApplicationOfferSchema;
 export const browserApplicationOutreachMessageSchema =
@@ -36,6 +42,12 @@ export const browserApplicationSchema = runtimeBrowserApplicationSchema;
 export const browserApplicationSettingsSchema =
   runtimeBrowserApplicationSettingsSchema;
 
+export type BrowserApplicationOrigin = z.infer<
+  typeof browserApplicationOriginSchema
+>;
+export type BrowserApplicationLifecycleEventType = z.infer<
+  typeof browserApplicationLifecycleEventTypeSchema
+>;
 export type BrowserApplicationLifecycleStatus = z.infer<
   typeof browserApplicationLifecycleStatusSchema
 >;
