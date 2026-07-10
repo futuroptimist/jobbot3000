@@ -1,4 +1,4 @@
-/* global document, indexedDB, confirm */
+/* global document, confirm */
 /* eslint-disable max-len */
 import {
   COMPACT_CSV_COLUMNS,
@@ -12,6 +12,7 @@ import {
   previewCompactCsvImport,
   previewSupplementalLifecycleCsvImport,
 } from "../import-export/spreadsheet.js";
+import { createIndexedDbRepository } from "../storage/indexedDbRepository.js";
 import {
   classifyLifecycleEventType,
   isLifecycleAssessment,
@@ -48,17 +49,6 @@ const STATUSES = [
   "withdrawn",
   "closed_archived",
 ];
-const STORES = [
-  "applications",
-  "contacts",
-  "outreachMessages",
-  "lifecycleEvents",
-  "interviews",
-  "offers",
-  "artifacts",
-  "reminders",
-  "settings",
-];
 const OUTCOMES = new Set([
   "offer",
   "accepted",
@@ -78,117 +68,64 @@ const esc = (v) =>
   );
 const id = (p = "id") =>
   `${p}_${Date.now().toString(36)}_${crypto.getRandomValues(new Uint32Array(1))[0].toString(36)}`;
-function ensureIndex(store, name, keyPath) {
-  if (!store.indexNames.contains(name)) store.createIndex(name, keyPath);
-}
-function runMigrationV1(db) {
-  const getStore = (name) =>
-    db.objectStoreNames.contains(name)
-      ? null
-      : db.createObjectStore(name, { keyPath: "id" });
-  const applications = getStore("applications");
-  if (applications) {
-    ensureIndex(applications, "by_company", "company");
-    ensureIndex(applications, "by_status", "status");
-    ensureIndex(applications, "by_appliedAt", "appliedAt");
-    ensureIndex(applications, "by_followUpDate", "followUpDate");
-  }
-  for (const n of STORES.filter(
-    (name) => !["applications", "settings"].includes(name),
-  )) {
-    const store = getStore(n);
-    if (!store) continue;
-    ensureIndex(store, "by_applicationId", "applicationId");
-    if (n === "lifecycleEvents")
-      ensureIndex(store, "by_applicationId_occurredAt", [
-        "applicationId",
-        "occurredAt",
-      ]);
-  }
-  getStore("settings");
-}
-function openDb() {
-  return new Promise((res, rej) => {
-    const r = indexedDB.open("jobbot3000", 1);
-    r.onupgradeneeded = () => runMigrationV1(r.result);
-    r.onsuccess = () => res(r.result);
-    r.onerror = () => rej(r.error);
-  });
-}
-async function tx(store, mode, fn) {
-  const db = await openDb();
-  try {
-    return await new Promise((res, rej) => {
-      const t = db.transaction(store, mode);
-      const out = fn(t.objectStore(store), t);
-      t.oncomplete = () => res(out);
-      t.onerror = () => rej(t.error);
-      t.onabort = () => rej(t.error);
-    });
-  } finally {
-    db.close();
-  }
-}
-async function batchPut(recordsByStore) {
-  const db = await openDb();
-  const storeNames = Object.entries(recordsByStore)
-    .filter(([, rows]) => rows.length)
-    .map(([storeName]) => storeName);
-  if (!storeNames.length) {
-    db.close();
-    return;
-  }
-  try {
-    await new Promise((res, rej) => {
-      const t = db.transaction(storeNames, "readwrite");
-      for (const [storeName, rows] of Object.entries(recordsByStore)) {
-        if (!rows.length) continue;
-        const store = t.objectStore(storeName);
-        for (const row of rows) store.put(row);
-      }
-      t.oncomplete = res;
-      t.onerror = () => rej(t.error);
-      t.onabort = () => rej(t.error);
-    });
-  } finally {
-    db.close();
-  }
-}
-const req = (r) =>
-  new Promise((res, rej) => {
-    r.onsuccess = () => res(r.result);
-    r.onerror = () => rej(r.error);
-  });
-const repo = {
-  list: (s) => tx(s, "readonly", (st) => req(st.getAll())),
-  put: (s, o) => tx(s, "readwrite", (st) => st.put(o)),
-  add: (s, o) => tx(s, "readwrite", (st) => st.add(o)),
-  clear: async () => {
-    const db = await openDb();
-    try {
-      await new Promise((res, rej) => {
-        const t = db.transaction(STORES, "readwrite");
-        for (const s of STORES) t.objectStore(s).clear();
-        t.oncomplete = res;
-        t.onerror = () => rej(t.error);
-      });
-    } finally {
-      db.close();
-    }
-  },
-  exportAll: async () =>
-    Object.assign(
-      { schemaVersion: 1, exportedAt: now() },
-      Object.fromEntries(
-        await Promise.all(
-          STORES.map(async (s) => [
-            s,
-            s === "settings" ? (await repo.list(s))[0] : await repo.list(s),
-          ]),
-        ),
-      ),
-    ),
+
+let repositoryPromise;
+const getRepository = () => {
+  repositoryPromise ??= createIndexedDbRepository();
+  return repositoryPromise;
 };
+const replaceAllData = async (bundle) => {
+  const repository = await getRepository();
+  await repository.importAllData(bundle, { allowOverwrite: true });
+};
+const repo = {
+  async list(storeName) {
+    const data = await (await getRepository()).exportAllData();
+    return storeName === "settings"
+      ? data.settings
+        ? [data.settings]
+        : []
+      : (data[storeName] ?? []);
+  },
+  async put(storeName, record) {
+    const data = await (await getRepository()).exportAllData();
+    if (storeName === "settings") data.settings = record;
+    else {
+      const records = data[storeName] ?? [];
+      const index = records.findIndex(({ id }) => id === record.id);
+      if (index === -1) records.push(record);
+      else records[index] = record;
+      data[storeName] = records;
+    }
+    await replaceAllData(data);
+    return record;
+  },
+  async add(storeName, record) {
+    const data = await (await getRepository()).exportAllData();
+    const records = data[storeName] ?? [];
+    if (records.some(({ id }) => id === record.id))
+      throw new Error(`Duplicate ${storeName} id: ${record.id}`);
+    records.push(record);
+    data[storeName] = records;
+    await replaceAllData(data);
+    return record;
+  },
+  async clear() {
+    await (await getRepository()).clearAllData();
+  },
+  exportAll: async () => (await getRepository()).exportAllData(),
+};
+async function batchPut(recordsByStore) {
+  const data = await (await getRepository()).exportAllData();
+  for (const [storeName, records] of Object.entries(recordsByStore)) {
+    const existing = data[storeName] ?? [];
+    const byId = new Map(existing.map((record) => [record.id, record]));
+    for (const record of records) byId.set(record.id, record);
+    data[storeName] = [...byId.values()];
+  }
+  await replaceAllData(data);
+}
+
 const state = {
   apps: [],
   bundle: null,
@@ -858,7 +795,8 @@ async function newApplication() {
     status: "applied",
     source: "",
     postingUrl: "",
-    appliedAt: day(ts),
+    appliedAt: ts,
+    origin: "application_submitted",
     createdAt: ts,
     updatedAt: ts,
     unsaved: true,

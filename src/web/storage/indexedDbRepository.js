@@ -1,6 +1,7 @@
 import {
   browserApplicationArtifactSchema,
   browserApplicationContactSchema,
+  BROWSER_EXPORT_SCHEMA_VERSION,
   browserApplicationExportSchema,
   browserApplicationInterviewSchema,
   browserApplicationLifecycleEventSchema,
@@ -10,9 +11,11 @@ import {
   browserApplicationSchema,
   browserApplicationSettingsSchema,
 } from "../../domain/browserApplication.js";
+import { upgradeBrowserExportToV2 } from "./browserDataMigration.js";
 
 export const DATABASE_NAME = "jobbot3000";
-export const DATABASE_VERSION = 1;
+export const INDEXEDDB_DATABASE_VERSION = 2;
+export const DATABASE_VERSION = INDEXEDDB_DATABASE_VERSION;
 
 export const STORE_NAMES = [
   "applications",
@@ -112,6 +115,7 @@ export const migrations = {
       ensureIndex(applications, "by_status", "status");
       ensureIndex(applications, "by_appliedAt", "appliedAt");
       ensureIndex(applications, "by_followUpDate", "followUpDate");
+      ensureIndex(applications, "by_origin", "origin");
     }
 
     const contacts = createStore(db, "contacts");
@@ -131,6 +135,7 @@ export const migrations = {
         "applicationId",
         "occurredAt",
       ]);
+      ensureIndex(lifecycleEvents, "by_occurredAt", "occurredAt");
     }
 
     const interviews = createStore(db, "interviews");
@@ -153,6 +158,14 @@ export const migrations = {
       ensureIndex(reminders, "by_applicationId", "applicationId");
     }
     createStore(db, "settings");
+  },
+  2(db, transaction) {
+    const applications = transaction.objectStore("applications");
+    ensureIndex(applications, "by_origin", "origin");
+    const lifecycleEvents = transaction.objectStore("lifecycleEvents");
+    ensureIndex(lifecycleEvents, "by_occurredAt", "occurredAt");
+    // Existing records are upgraded by repository export/import validation paths;
+    // the versionchange transaction owns v2 index creation atomically.
   },
 };
 
@@ -308,8 +321,55 @@ const deleteMatchingFromStore = async (store, indexName, value) => {
   });
 };
 
+const migrateExistingDataToV2 = async (db) => {
+  const tx = db.transaction(STORE_NAMES, "readwrite");
+  const done = transactionDone(tx);
+  const storeResults = await Promise.all(
+    STORE_NAMES.map((storeName) =>
+      requestToPromise(tx.objectStore(storeName).getAll()),
+    ),
+  );
+  const [
+    applications,
+    contacts,
+    outreachMessages,
+    lifecycleEvents,
+    interviews,
+    offers,
+    artifacts,
+    reminders,
+    settingsAll,
+  ] = storeResults;
+  const needsMigration =
+    applications.some((record) => !record.origin) ||
+    lifecycleEvents.some((record) => !record.occurredAtPrecision);
+  if (needsMigration) {
+    const upgraded = upgradeBrowserExportToV2({
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      applications,
+      contacts,
+      outreachMessages,
+      lifecycleEvents,
+      interviews,
+      offers,
+      artifacts,
+      reminders,
+      settings: settingsAll[0],
+    }).data;
+    for (const storeName of STORE_NAMES) tx.objectStore(storeName).clear();
+    for (const storeName of STORE_NAMES.filter((name) => name !== "settings")) {
+      for (const record of upgraded[storeName])
+        tx.objectStore(storeName).put(record);
+    }
+    if (upgraded.settings) tx.objectStore("settings").put(upgraded.settings);
+  }
+  await done;
+};
+
 const validateImport = (data) => {
-  const result = browserApplicationExportSchema.safeParse(data);
+  const upgraded = upgradeBrowserExportToV2(data);
+  const result = browserApplicationExportSchema.safeParse(upgraded.data);
   if (!result.success) {
     throw new IndexedDbRepositoryError(
       "schema_validation_failed",
@@ -317,7 +377,7 @@ const validateImport = (data) => {
       { details: result.error.flatten() },
     );
   }
-  return { parsed: result.data };
+  return { parsed: result.data, warnings: upgraded.warnings };
 };
 
 export const createIndexedDbRepository = async (options = {}) => {
@@ -331,6 +391,8 @@ export const createIndexedDbRepository = async (options = {}) => {
       "Unable to open jobbot3000 IndexedDB database.",
     );
   }
+
+  await migrateExistingDataToV2(db);
 
   const safe = async (operation) => {
     try {
@@ -435,8 +497,8 @@ export const createIndexedDbRepository = async (options = {}) => {
           reminders,
           settingsAll,
         ] = storeResults;
-        const result = browserApplicationExportSchema.safeParse({
-          schemaVersion: DATABASE_VERSION,
+        const upgraded = upgradeBrowserExportToV2({
+          schemaVersion: BROWSER_EXPORT_SCHEMA_VERSION,
           exportedAt: new Date().toISOString(),
           applications,
           contacts,
@@ -448,6 +510,7 @@ export const createIndexedDbRepository = async (options = {}) => {
           reminders,
           settings: settingsAll[0],
         });
+        const result = browserApplicationExportSchema.safeParse(upgraded.data);
         if (!result.success) {
           throw new IndexedDbRepositoryError(
             "schema_validation_failed",
