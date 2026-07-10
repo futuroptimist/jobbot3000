@@ -1481,7 +1481,13 @@ export const importCompactCsv = async (
 const lifecycleComparableRecord = (record) =>
   Object.fromEntries(
     Object.entries(record).filter(
-      ([key]) => !["createdAt", "updatedAt"].includes(key),
+      ([key]) =>
+        ![
+          "createdAt",
+          "updatedAt",
+          "occurredAtHasTime",
+          "dueAtHasTime",
+        ].includes(key),
     ),
   );
 
