@@ -533,14 +533,14 @@ describe("IndexedDB repository", () => {
   it("normalizes blank optional fields and infers legacy precision", async () => {
     const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
 
-    await repo.putStoreRecord("applications", {
+    await repo.upsertApplication({
       ...application,
       origin: undefined,
       source: "",
       postingUrl: "",
       notes: "",
     });
-    await repo.putStoreRecord("lifecycleEvents", {
+    await repo.createLifecycleEvent({
       ...lifecycleEvent,
       occurredAt: "2026-01-02",
       occurredAtPrecision: undefined,
@@ -564,7 +564,7 @@ describe("IndexedDB repository", () => {
     const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
 
     await expect(
-      repo.putStoreRecords({
+      repo.importPartialData({
         lifecycleEvents: [
           {
             ...lifecycleEvent,

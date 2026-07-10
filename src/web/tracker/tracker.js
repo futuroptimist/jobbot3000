@@ -1,4 +1,4 @@
-/* global document, confirm */
+/* global document, confirm, window */
 /* eslint-disable max-len */
 import {
   COMPACT_CSV_COLUMNS,
@@ -76,17 +76,34 @@ const getRepository = () => {
   });
   return indexedDbRepositoryPromise;
 };
+const repositoryMethod = (storeName, mode) => {
+  const methods = {
+    applications: { put: "upsertApplication" },
+    lifecycleEvents: { add: "createLifecycleEvent" },
+    artifacts: { add: "createArtifact" },
+    outreachMessages: { add: "createOutreachMessage" },
+    interviews: { add: "createInterview" },
+    offers: { add: "createOffer" },
+  };
+  return methods[storeName]?.[mode];
+};
 const repo = {
-  list: async (storeName) => (await getRepository()).listStore(storeName),
-  put: async (storeName, record) =>
-    (await getRepository()).putStoreRecord(storeName, record),
-  add: async (storeName, record) =>
-    (await getRepository()).addStoreRecord(storeName, record),
+  list: async (storeName) => (await getRepository()).listRecords(storeName),
+  put: async (storeName, record) => {
+    const method = repositoryMethod(storeName, "put");
+    if (!method) throw new Error(`Unsupported repository put: ${storeName}`);
+    return (await getRepository())[method](record);
+  },
+  add: async (storeName, record) => {
+    const method = repositoryMethod(storeName, "add");
+    if (!method) throw new Error(`Unsupported repository add: ${storeName}`);
+    return (await getRepository())[method](record);
+  },
   clear: async () => (await getRepository()).clearAllData(),
   exportAll: async () => (await getRepository()).exportAllData(),
 };
-async function batchPut(recordsByStore) {
-  return (await getRepository()).putStoreRecords(recordsByStore);
+async function batchImport(recordsByStore) {
+  return (await getRepository()).importPartialData(recordsByStore);
 }
 const state = {
   apps: [],
@@ -259,6 +276,31 @@ async function refresh() {
     String(b.appliedAt || "").localeCompare(a.appliedAt || ""),
   );
   renderAll();
+}
+function showInitializationError(error) {
+  const target = $("[data-import-result]") || $("main") || document.body;
+  target.textContent = `Tracker storage is temporarily unavailable: ${error?.message ?? error}`;
+}
+async function refreshWithRetry() {
+  try {
+    await refresh();
+  } catch (error) {
+    showInitializationError(error);
+    const retry = async () => {
+      try {
+        await refresh();
+        window.removeEventListener("focus", retry);
+        document.removeEventListener("visibilitychange", retryWhenVisible);
+      } catch (retryError) {
+        showInitializationError(retryError);
+      }
+    };
+    const retryWhenVisible = () => {
+      if (!document.hidden) retry();
+    };
+    window.addEventListener("focus", retry);
+    document.addEventListener("visibilitychange", retryWhenVisible);
+  }
 }
 function route(v) {
   $$(".tracker-view").forEach((x) => (x.hidden = x.dataset.view !== v));
@@ -598,6 +640,9 @@ function input(n, v = "", type = "text", required = false) {
 function values(form) {
   return Object.fromEntries(new FormData(form).entries());
 }
+function optionalBlankToUndefined(value) {
+  return value === "" ? undefined : value;
+}
 function setFormDisabled(form, disabled) {
   $$("button, input, select, textarea", form).forEach((control) => {
     control.disabled = disabled;
@@ -634,6 +679,10 @@ function bindDetail(app) {
         const saved = {
           ...current,
           ...v,
+          source: optionalBlankToUndefined(v.source),
+          postingUrl: optionalBlankToUndefined(v.postingUrl),
+          notes: optionalBlankToUndefined(v.notes),
+          origin: current.origin ?? "other_unknown",
           appliedAt: isoDate(v.appliedAt),
           followUpDate: isoDate(v.followUpDate),
           updatedAt: now(),
@@ -644,8 +693,12 @@ function bindDetail(app) {
           await repo.add("lifecycleEvents", {
             id: id("event"),
             applicationId: app.id,
+            eventType:
+              v.status === "applied" ? "application_submitted" : "status_changed",
             status: v.status,
             occurredAt: now(),
+            occurredAtPrecision: "instant",
+            inferred: false,
             source: "manual",
             createdAt: now(),
           });
@@ -976,7 +1029,7 @@ async function applyImport() {
     return;
   }
   try {
-    await batchPut(state.preview);
+    await batchImport(state.preview);
   } catch (err) {
     $("[data-import-result]").textContent =
       `Import failed: ${err?.message ?? err}`;
@@ -1105,6 +1158,6 @@ function init() {
       await refresh();
     }
   };
-  refresh();
+  refreshWithRetry();
 }
 if (typeof document !== "undefined") init();

@@ -193,7 +193,6 @@ export const migrations = {
       ensureIndex(applications, "by_status", "status");
       ensureIndex(applications, "by_appliedAt", "appliedAt");
       ensureIndex(applications, "by_followUpDate", "followUpDate");
-      ensureIndex(applications, "by_origin", "origin");
     }
 
     const contacts = createStore(db, "contacts");
@@ -213,7 +212,6 @@ export const migrations = {
         "applicationId",
         "occurredAt",
       ]);
-      ensureIndex(lifecycleEvents, "by_occurredAt", "occurredAt");
     }
 
     const interviews = createStore(db, "interviews");
@@ -242,6 +240,60 @@ export const migrations = {
     ensureIndex(applications, "by_origin", "origin");
     const lifecycleEvents = transaction.objectStore("lifecycleEvents");
     ensureIndex(lifecycleEvents, "by_occurredAt", "occurredAt");
+
+    const storeResults = {};
+    let remaining = STORE_NAMES.length;
+    const fail = (error) => {
+      transaction.abort();
+      throw error;
+    };
+    for (const storeName of STORE_NAMES) {
+      const request = transaction.objectStore(storeName).getAll();
+      request.onerror = () => fail(request.error);
+      request.onsuccess = () => {
+        storeResults[storeName] = request.result;
+        remaining -= 1;
+        if (remaining > 0) return;
+        try {
+          const migrationCreatedAt = new Date().toISOString();
+          const { data } = upgradeBrowserExportToV2(
+            {
+              schemaVersion: 1,
+              exportedAt: migrationCreatedAt,
+              applications: storeResults.applications ?? [],
+              contacts: storeResults.contacts ?? [],
+              outreachMessages: storeResults.outreachMessages ?? [],
+              lifecycleEvents: storeResults.lifecycleEvents ?? [],
+              interviews: storeResults.interviews ?? [],
+              offers: storeResults.offers ?? [],
+              artifacts: storeResults.artifacts ?? [],
+              reminders: storeResults.reminders ?? [],
+              settings: storeResults.settings?.[0],
+            },
+            { migrationCreatedAt },
+          );
+          const validation = browserApplicationExportSchema.safeParse(data);
+          if (!validation.success) {
+            throw new IndexedDbRepositoryError(
+              "schema_validation_failed",
+              "IndexedDB migration data does not match the v2 schema.",
+              { details: validation.error.flatten() },
+            );
+          }
+          for (const storeName of STORE_NAMES)
+            transaction.objectStore(storeName).clear();
+          for (const storeName of STORE_NAMES.filter(
+            (name) => name !== "settings",
+          ))
+            for (const record of validation.data[storeName])
+              transaction.objectStore(storeName).put(record);
+          if (validation.data.settings)
+            transaction.objectStore("settings").put(validation.data.settings);
+        } catch (error) {
+          fail(error);
+        }
+      };
+    }
   },
 };
 
@@ -410,57 +462,10 @@ const validateImport = (data) => {
   return { parsed: result.data, warnings: upgraded.warnings };
 };
 
-const normalizeExistingData = async (db) => {
-  const applications = await getAll(db, "applications");
-  const lifecycleEvents = await getAll(db, "lifecycleEvents");
-  const settings = await getAll(db, "settings");
-  const needsUpgrade =
-    applications.some((application) => !application.origin) ||
-    lifecycleEvents.some(
-      (event) =>
-        !event.eventType ||
-        !event.occurredAtPrecision ||
-        event.inferred === undefined,
-    ) ||
-    settings.some(
-      (record) => record.schemaVersion !== LOCAL_SETTINGS_SCHEMA_VERSION,
-    );
-  if (!needsUpgrade) return;
-  const records = Object.fromEntries(
-    await Promise.all(
-      STORE_NAMES.map(async (name) => [name, await getAll(db, name)]),
-    ),
-  );
-  const { data } = upgradeBrowserExportToV2(
-    {
-      schemaVersion: 1,
-      exportedAt: new Date(0).toISOString(),
-      applications: records.applications ?? [],
-      contacts: records.contacts ?? [],
-      outreachMessages: records.outreachMessages ?? [],
-      lifecycleEvents: records.lifecycleEvents ?? [],
-      interviews: records.interviews ?? [],
-      offers: records.offers ?? [],
-      artifacts: records.artifacts ?? [],
-      reminders: records.reminders ?? [],
-      settings: records.settings?.[0],
-    },
-    { migrationCreatedAt: new Date(0).toISOString() },
-  );
-  const tx = db.transaction(STORE_NAMES, "readwrite");
-  const done = transactionDone(tx);
-  for (const storeName of STORE_NAMES) tx.objectStore(storeName).clear();
-  for (const storeName of STORE_NAMES.filter((name) => name !== "settings"))
-    for (const record of data[storeName]) tx.objectStore(storeName).put(record);
-  if (data.settings) tx.objectStore("settings").put(data.settings);
-  await done;
-};
-
 export const createIndexedDbRepository = async (options = {}) => {
   let db;
   try {
     db = await openJobbotDatabase(options);
-    await normalizeExistingData(db);
   } catch (error) {
     throw wrapError(
       error,
@@ -682,16 +687,28 @@ export const createIndexedDbRepository = async (options = {}) => {
         await done;
       });
     },
-    listStore(storeName) {
+    listRecords(storeName) {
       return safe(() => getAll(db, storeName));
     },
-    putStoreRecord(storeName, record) {
-      return safe(() => putRecord(db, storeName, record));
+    upsertApplication(record) {
+      return safe(() => putRecord(db, "applications", record));
     },
-    addStoreRecord(storeName, record) {
-      return safe(() => addRecord(db, storeName, record));
+    createLifecycleEvent(record) {
+      return safe(() => addChildRecord(db, "lifecycleEvents", record));
     },
-    async putStoreRecords(recordsByStore) {
+    createArtifact(record) {
+      return safe(() => addChildRecord(db, "artifacts", record));
+    },
+    createOutreachMessage(record) {
+      return safe(() => addChildRecord(db, "outreachMessages", record));
+    },
+    createInterview(record) {
+      return safe(() => addChildRecord(db, "interviews", record));
+    },
+    createOffer(record) {
+      return safe(() => addChildRecord(db, "offers", record));
+    },
+    async importPartialData(recordsByStore) {
       return safe(async () => {
         const storeNames = Object.entries(recordsByStore)
           .filter(([, rows]) => rows.length)
