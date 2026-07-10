@@ -26,6 +26,7 @@ import {
   previewCompactCsvImport,
   previewSupplementalLifecycleCsvImport,
 } from "../src/web/import-export/spreadsheet.js";
+import { selectDashboardMetrics } from "../src/web/tracker/metrics.js";
 
 const deleteDatabase = () =>
   new Promise((resolve, reject) => {
@@ -1651,6 +1652,121 @@ describe("spreadsheet import/export", () => {
     expect(exported.interviews).toHaveLength(0);
     expect(exported.reminders).toHaveLength(0);
     repo.close();
+  });
+
+  it("upgrades legacy flagless lifecycle precision on supplemental re-import", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    await importCompactCsv(
+      serializeCsv([
+        {
+          application_id: "app_lifecycle_precision_upgrade",
+          company: "Lifecycle Precision Upgrade",
+          role_title: "Engineer",
+          applied_at: "2026-01-01",
+          schema_version: "1",
+        },
+      ]),
+      repo,
+      { mode: "replace" },
+    );
+
+    const lifecycleCsv = serializeCsv(
+      [
+        {
+          application_id: "app_lifecycle_precision_upgrade",
+          event_type: "technical_interview_completed",
+          occurred_at: "2026-05-10T00:00:00.000Z",
+          due_at: "2026-05-01T12:00:00.000Z",
+          details: "Completed at explicit midnight.",
+        },
+      ],
+      LIFECYCLE_CSV_COLUMNS,
+    );
+
+    expect(
+      (await importSupplementalLifecycleCsv(lifecycleCsv, repo)).imported,
+    ).toBe(true);
+
+    const legacyBundle = await repo.exportAllData();
+    legacyBundle.lifecycleEvents = legacyBundle.lifecycleEvents.map((event) => {
+      const legacyEvent = { ...event };
+      delete legacyEvent.occurredAtHasTime;
+      delete legacyEvent.dueAtHasTime;
+      return legacyEvent;
+    });
+    await repo.importAllData(legacyBundle, { allowOverwrite: true });
+
+    expect(
+      (await importSupplementalLifecycleCsv(lifecycleCsv, repo)).imported,
+    ).toBe(true);
+
+    const exported = await repo.exportAllData();
+    expect(
+      exported.lifecycleEvents.filter(
+        ({ applicationId, eventType }) =>
+          applicationId === "app_lifecycle_precision_upgrade" &&
+          eventType === "technical_interview_completed",
+      ),
+    ).toHaveLength(1);
+    expect(
+      exported.interviews.filter(
+        ({ applicationId, startsAt }) =>
+          applicationId === "app_lifecycle_precision_upgrade" &&
+          startsAt === "2026-05-10T00:00:00.000Z",
+      ),
+    ).toHaveLength(1);
+    expect(selectDashboardMetrics(exported).interviews).toBe(1);
+    repo.close();
+  });
+
+  it("dedupes legacy flagless explicit-midnight completions after restore", () => {
+    const exportedAt = "2026-03-10T00:00:00.000Z";
+    const bundle = {
+      schemaVersion: 1,
+      exportedAt,
+      applications: [
+        {
+          id: "app_legacy_precision_restore",
+          company: "Lifecycle Precision Restore",
+          role: "Engineer",
+          status: "technical_screen",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_legacy_precision_restore",
+          applicationId: "app_legacy_precision_restore",
+          status: "technical_screen",
+          occurredAt: "2026-05-10T00:00:00.000Z",
+          dueAt: "2026-05-01T12:00:00.000Z",
+          source: "csv_import",
+          eventType: "technical_interview_completed",
+          createdAt: exportedAt,
+        },
+      ],
+      interviews: [
+        {
+          id: "interview_legacy_precision_restore",
+          applicationId: "app_legacy_precision_restore",
+          contactIds: [],
+          stage: "technical_screen",
+          startsAt: "2026-05-10T00:00:00.000Z",
+          outcome: "completed",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+    };
+
+    const [event] = bundle.lifecycleEvents.filter(
+      ({ applicationId, eventType }) =>
+        applicationId === "app_legacy_precision_restore" &&
+        eventType === "technical_interview_completed",
+    );
+    expect(event.occurredAtHasTime).toBeUndefined();
+    expect(selectDashboardMetrics(bundle).interviews).toBe(1);
   });
 
   it("reports missing lifecycle application ids without creating orphans", async () => {

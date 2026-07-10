@@ -111,6 +111,20 @@ const lifecycleInterviewTimestamp = (event, classification) => {
     ["startsAt", event.startsAt],
   );
 };
+const matchingExplicitCompletedTimestamp = (
+  event,
+  classification,
+  explicitInterviewKeys,
+) => {
+  if (
+    classification.interviewOutcome !== "completed" ||
+    typeof event.occurredAtHasTime === "boolean" ||
+    !event.occurredAt
+  )
+    return undefined;
+  const key = interviewKey(event, event.occurredAt);
+  return explicitInterviewKeys.has(key) ? event.occurredAt : undefined;
+};
 const interviewKey = (record, timestamp) => {
   const classification = classifyLifecycleEventType(record.eventType);
   return [
@@ -142,8 +156,18 @@ const uniqueUsableTimestamps = (candidates) => [
     ),
   ),
 ];
-const lifecycleInterviewTimestampCandidates = (event, classification) => {
-  const candidates = [lifecycleInterviewTimestamp(event, classification)];
+const lifecycleInterviewTimestampCandidates = (
+  event,
+  classification,
+  explicitInterviewKeys = new Set(),
+) => {
+  const candidates = [
+    matchingExplicitCompletedTimestamp(
+      event,
+      classification,
+      explicitInterviewKeys,
+    ) ?? lifecycleInterviewTimestamp(event, classification),
+  ];
   if (classification.interviewOutcome === "completed") {
     candidates.push(
       timedValue(event, ["dueAt", event.dueAt]),
@@ -156,22 +180,39 @@ const lifecycleInterviewTimestampCandidates = (event, classification) => {
 const lifecycleInterviewDuplicateTimestampCandidates = (
   event,
   classification,
+  explicitInterviewKeys = new Set(),
 ) => {
-  const timestamp = lifecycleInterviewTimestamp(event, classification);
+  const timestamp =
+    matchingExplicitCompletedTimestamp(
+      event,
+      classification,
+      explicitInterviewKeys,
+    ) ?? lifecycleInterviewTimestamp(event, classification);
   return uniqueUsableTimestamps([timestamp]);
 };
-const lifecycleInterviewKey = (event, classification) => {
+const lifecycleInterviewKey = (
+  event,
+  classification,
+  explicitInterviewKeys,
+) => {
   const [timestamp] = lifecycleInterviewTimestampCandidates(
     event,
     classification,
+    explicitInterviewKeys,
   );
   if (!timestamp) return undefined;
   return interviewKey(event, timestamp);
 };
-const lifecycleInterviewDuplicateKeys = (event, classification) =>
-  lifecycleInterviewDuplicateTimestampCandidates(event, classification).map(
-    (timestamp) => interviewKey(event, timestamp),
-  );
+const lifecycleInterviewDuplicateKeys = (
+  event,
+  classification,
+  explicitInterviewKeys,
+) =>
+  lifecycleInterviewDuplicateTimestampCandidates(
+    event,
+    classification,
+    explicitInterviewKeys,
+  ).map((timestamp) => interviewKey(event, timestamp));
 
 /**
  * Dashboard selector for imported tracker bundles.
@@ -197,6 +238,11 @@ export const selectDashboardMetrics = (bundle = {}) => {
   const lifecycleNonRecruiterInterviewKeys = new Set();
   const lifecycleNonRecruiterInterviewDuplicateKeys = new Set();
   const explicitNonRecruiterInterviewKeys = new Set();
+  const explicitNonRecruiterInterviewCanonicalKeys = new Set(
+    interviews
+      .filter(({ stage }) => stage !== "recruiter_screen")
+      .map((interview) => interviewKey(interview, interview.startsAt)),
+  );
 
   for (const application of applications) {
     const metadata = metadataByApplicationId.get(application.id) ?? {};
@@ -266,12 +312,17 @@ export const selectDashboardMetrics = (bundle = {}) => {
     if (isLifecycleRecruiterScreen(eventType) || status === "recruiter_screen")
       recruiterScreenKeys.add(recruiterScreenKey(event));
     if (isLifecycleNonRecruiterInterview(eventType)) {
-      const key = lifecycleInterviewKey(event, classification);
+      const key = lifecycleInterviewKey(
+        event,
+        classification,
+        explicitNonRecruiterInterviewCanonicalKeys,
+      );
       if (key) {
         lifecycleNonRecruiterInterviewKeys.add(key);
         for (const duplicateKey of lifecycleInterviewDuplicateKeys(
           event,
           classification,
+          explicitNonRecruiterInterviewCanonicalKeys,
         ))
           lifecycleNonRecruiterInterviewDuplicateKeys.add(duplicateKey);
       }
