@@ -1,4 +1,8 @@
 import { browserApplicationExportSchema } from "../../domain/browserApplication.js";
+import {
+  BROWSER_BACKUP_SCHEMA_VERSION,
+  upgradeBrowserExportToV2,
+} from "../storage/browserDataMigration.js";
 import { classifyLifecycleEventType } from "../tracker/lifecycleClassification.js";
 
 export const LIFECYCLE_CSV_COLUMNS = [
@@ -6,7 +10,12 @@ export const LIFECYCLE_CSV_COLUMNS = [
   "company",
   "role_title",
   "event_type",
+  "raw_event_type",
+  "previous_status",
   "occurred_at",
+  "occurred_at_precision",
+  "inferred",
+  "supersedes_event_id",
   "stage",
   "channel",
   "actor",
@@ -28,6 +37,7 @@ export const COMPACT_CSV_COLUMNS = [
   "application_url",
   "posting_id",
   "application_channel",
+  "origin",
   "work_model",
   "location_display",
   "compensation_min_usd",
@@ -697,7 +707,7 @@ export const lifecycleRowsToBrowserApplicationExport = (
       });
   });
   const bundle = {
-    schemaVersion: 1,
+    schemaVersion: BROWSER_BACKUP_SCHEMA_VERSION,
     exportedAt,
     applications: existingApplications,
     contacts: [],
@@ -825,6 +835,7 @@ export const rowsToBrowserApplicationExport = (
       role: compact(row.role_title) || "Unknown role",
       status: mapStatus(row),
       source: compact(row.application_channel) || undefined,
+      origin: compact(row.origin) || undefined,
       postingUrl,
       location: compact(row.location_display) || undefined,
       remote: normalizeKey(row.work_model).includes("remote")
@@ -982,7 +993,7 @@ export const rowsToBrowserApplicationExport = (
       });
   });
   const bundle = {
-    schemaVersion: 1,
+    schemaVersion: BROWSER_BACKUP_SCHEMA_VERSION,
     exportedAt,
     applications,
     contacts,
@@ -993,15 +1004,22 @@ export const rowsToBrowserApplicationExport = (
     artifacts,
     reminders: [],
   };
-  const parsed = browserApplicationExportSchema.safeParse(bundle);
-  if (!parsed.success)
+  let upgraded = bundle;
+  try {
+    const result = upgradeBrowserExportToV2(bundle, {
+      migrationTimestamp: exportedAt,
+    });
+    upgraded = result.data;
+    warnings.push(...result.warnings);
+  } catch (error) {
     errors.push({
       rowNumber: null,
       field: "bundle",
       code: "schema_validation_failed",
-      message: parsed.error.message,
+      message: error.message,
     });
-  return { bundle, errors, warnings };
+  }
+  return { bundle: upgraded, errors, warnings };
 };
 
 export const csvToBrowserApplicationExport = (csvText, options) =>
@@ -1210,7 +1228,9 @@ const parseBackupBundlePreservingLifecyclePrecision = (bundle) =>
     bundle?.lifecycleEvents ?? [],
   );
 const canonicalizeBackupBundle = (bundle) => {
-  const parsed = parseBackupBundlePreservingLifecyclePrecision(bundle);
+  const parsed = upgradeBrowserExportToV2(
+    parseBackupBundlePreservingLifecyclePrecision(bundle),
+  ).data;
   const sorted = { ...parsed };
   for (const store of ARRAY_STORES) {
     sorted[store] = [...parsed[store]].sort((a, b) =>
@@ -1246,7 +1266,7 @@ export const exportNdjsonBackup = (bundle) => {
 const normalizeBackupBundleInput = (input, { source = "json_import" } = {}) => {
   const now = nowIso();
   const bundle = {
-    schemaVersion: 1,
+    schemaVersion: BROWSER_BACKUP_SCHEMA_VERSION,
     exportedAt: input?.exportedAt ?? now,
     applications: input?.applications ?? [],
     contacts: input?.contacts ?? [],
@@ -1268,12 +1288,12 @@ const normalizeBackupBundleInput = (input, { source = "json_import" } = {}) => {
 };
 
 export const importJsonBackup = (text) =>
-  parseBackupBundlePreservingLifecyclePrecision(
+  upgradeBrowserExportToV2(
     normalizeBackupBundleInput(JSON.parse(text), { source: "json_import" }),
-  );
+  ).data;
 export const importNdjsonBackup = (text) => {
   const bundle = {
-    schemaVersion: 1,
+    schemaVersion: BROWSER_BACKUP_SCHEMA_VERSION,
     exportedAt: nowIso(),
     applications: [],
     contacts: [],
@@ -1306,9 +1326,9 @@ export const importNdjsonBackup = (text) => {
           `Unknown or malformed NDJSON record type: ${String(entry.type)}`,
         );
     });
-  return parseBackupBundlePreservingLifecyclePrecision(
+  return upgradeBrowserExportToV2(
     normalizeBackupBundleInput(bundle, { source: "ndjson_import" }),
-  );
+  ).data;
 };
 export const previewCompactCsvImport = async (csvText, repository) => {
   const rows = parseCsv(csvText);
