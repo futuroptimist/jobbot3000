@@ -1,4 +1,5 @@
 import { browserApplicationExportSchema } from "../../domain/browserApplication.js";
+import { upgradeBrowserExportToV2 } from "../storage/browserDataMigration.js";
 import { classifyLifecycleEventType } from "../tracker/lifecycleClassification.js";
 
 export const LIFECYCLE_CSV_COLUMNS = [
@@ -6,7 +7,12 @@ export const LIFECYCLE_CSV_COLUMNS = [
   "company",
   "role_title",
   "event_type",
+  "raw_event_type",
+  "previous_status",
   "occurred_at",
+  "occurred_at_precision",
+  "inferred",
+  "supersedes_event_id",
   "stage",
   "channel",
   "actor",
@@ -28,6 +34,7 @@ export const COMPACT_CSV_COLUMNS = [
   "application_url",
   "posting_id",
   "application_channel",
+  "origin",
   "work_model",
   "location_display",
   "compensation_min_usd",
@@ -708,7 +715,14 @@ export const lifecycleRowsToBrowserApplicationExport = (
     artifacts: [],
     reminders,
   };
-  return { bundle, errors, warnings };
+  const upgraded = upgradeBrowserExportToV2(bundle, {
+    migrationCreatedAt: exportedAt,
+  });
+  return {
+    bundle: upgraded.data,
+    errors,
+    warnings: [...warnings, ...upgraded.warnings],
+  };
 };
 
 export const csvToSupplementalLifecycleExport = (csvText, existing, options) =>
@@ -993,7 +1007,24 @@ export const rowsToBrowserApplicationExport = (
     artifacts,
     reminders: [],
   };
-  const parsed = browserApplicationExportSchema.safeParse(bundle);
+  const upgraded = upgradeBrowserExportToV2(bundle, {
+    migrationCreatedAt: exportedAt,
+  });
+  for (const application of upgraded.data.applications) {
+    const row = rows.find((candidate, index) => {
+      const candidateId =
+        compact(candidate.application_id) ||
+        stableId(
+          candidate.company,
+          candidate.role_title,
+          candidate.posting_url,
+          index + 2,
+        );
+      return candidateId === application.id;
+    });
+    if (row && compact(row.origin)) application.origin = compact(row.origin);
+  }
+  const parsed = browserApplicationExportSchema.safeParse(upgraded.data);
   if (!parsed.success)
     errors.push({
       rowNumber: null,
@@ -1001,7 +1032,11 @@ export const rowsToBrowserApplicationExport = (
       code: "schema_validation_failed",
       message: parsed.error.message,
     });
-  return { bundle, errors, warnings };
+  return {
+    bundle: parsed.success ? parsed.data : upgraded.data,
+    errors,
+    warnings: [...warnings, ...upgraded.warnings],
+  };
 };
 
 export const csvToBrowserApplicationExport = (csvText, options) =>
@@ -1028,7 +1063,7 @@ const compareIsoDateTimes = (left, right) => {
 };
 const firstBy = (records, predicate) => records.find(predicate) ?? {};
 export const browserApplicationExportToRows = (bundle) => {
-  const parsed = browserApplicationExportSchema.parse(bundle);
+  const parsed = upgradeBrowserExportToV2(bundle).data;
   return [...parsed.applications]
     .sort((a, b) => a.id.localeCompare(b.id))
     .map((application) => {
@@ -1075,11 +1110,12 @@ export const browserApplicationExportToRows = (bundle) => {
         applied_at: dateOnly(application.appliedAt),
         posting_url: application.postingUrl ?? "",
         application_channel: application.source ?? "",
+        origin: application.origin ?? "",
         work_model: application.remote ? "remote" : (metadata.work_model ?? ""),
         location_display: application.location ?? "",
         follow_up_date: dateOnly(application.followUpDate),
         notes,
-        schema_version: metadata.schema_version ?? "1",
+        schema_version: "2",
       });
       const resume = firstBy(artifacts, ({ kind }) => kind === "resume");
       const cover = firstBy(artifacts, ({ kind }) => kind === "cover_letter");
@@ -1127,7 +1163,7 @@ export const browserApplicationExportToRows = (bundle) => {
 export const exportCompactCsv = (bundle) =>
   serializeCsv(browserApplicationExportToRows(bundle));
 export const browserApplicationExportToLifecycleRows = (bundle) => {
-  const parsed = browserApplicationExportSchema.parse(bundle);
+  const parsed = upgradeBrowserExportToV2(bundle).data;
   const applicationsById = new Map(
     parsed.applications.map((application) => [application.id, application]),
   );
@@ -1152,7 +1188,12 @@ export const browserApplicationExportToLifecycleRows = (bundle) => {
         company: application.company ?? "",
         role_title: application.role ?? "",
         event_type: event.eventType ?? "",
+        raw_event_type: event.rawEventType ?? "",
+        previous_status: event.previousStatus ?? "",
         occurred_at: event.occurredAt ?? "",
+        occurred_at_precision: event.occurredAtPrecision ?? "",
+        inferred: event.inferred === undefined ? "" : String(event.inferred),
+        supersedes_event_id: event.supersedesEventId ?? "",
         stage: event.stageLabel ?? event.status ?? "",
         channel: event.channel ?? "",
         actor: event.actor ?? "",
@@ -1206,7 +1247,7 @@ const restoreLifecyclePrecisionFlags = (bundle, sourceEvents) => {
 };
 const parseBackupBundlePreservingLifecyclePrecision = (bundle) =>
   restoreLifecyclePrecisionFlags(
-    browserApplicationExportSchema.parse(bundle),
+    upgradeBrowserExportToV2(bundle).data,
     bundle?.lifecycleEvents ?? [],
   );
 const canonicalizeBackupBundle = (bundle) => {
@@ -1246,7 +1287,7 @@ export const exportNdjsonBackup = (bundle) => {
 const normalizeBackupBundleInput = (input, { source = "json_import" } = {}) => {
   const now = nowIso();
   const bundle = {
-    schemaVersion: 1,
+    schemaVersion: input?.schemaVersion ?? 1,
     exportedAt: input?.exportedAt ?? now,
     applications: input?.applications ?? [],
     contacts: input?.contacts ?? [],
