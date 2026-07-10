@@ -35,7 +35,16 @@ Schema v2 adds required `applications.origin`. Preserve free-form `applications.
 | `referral`                   | Referral                      |
 | `other_unknown`              | Other/unknown                 |
 
-Every included application has exactly one effective origin. If migration cannot infer an origin from explicit structured evidence and exact allowlists, it must assign `other_unknown` and keep any original text in `applications.source` or import metadata.
+Every included application has exactly one effective origin. Migration must infer origin deterministically in this order:
+
+1. Use an effective, non-superseded canonical origin event when one exists.
+2. Otherwise, normalized exact `applications.source === "referral"` maps to `referral`; no other free-form source value may infer origin.
+3. Otherwise, use the earliest known structured evidence among `applications.appliedAt` mapping to `application_submitted`, inbound outreach `receivedAt` mapping to `recruiter_company_outreach`, and outbound outreach `sentAt` mapping to `candidate_outreach`.
+4. Break equal timestamps by the fixed origin order listed in the taxonomy table, then by stable record ID.
+5. Emit a deterministic warning when structured evidence conflicts.
+6. Use `other_unknown` when evidence is missing or insufficient.
+
+Values such as `direct`, `email`, `linkedin`, and `sourcing` remain free-form source or channel data only and are not origin aliases. If migration cannot infer an origin from explicit structured evidence and the exact `referral` source alias, it must assign `other_unknown` and keep any original text in `applications.source` or import metadata.
 
 ## Canonical lifecycle events
 
@@ -63,10 +72,12 @@ Schema v2 uses exactly this `eventType` vocabulary:
 - `status_changed`
 - `migration_status_snapshot`
 
-Known legacy event names must normalize through the allowlist below before the unknown-name fallback is considered. Unknown legacy event names normalize to `status_changed` while remaining available in optional `rawEventType`.
+Known legacy event names must normalize through the exact v1-to-v2 allowlist below before the unknown-event fallback is considered. Preserve each mapped legacy name in `rawEventType`. Never use substring or fuzzy matching; only values absent from this exact allowlist fall back to `status_changed`.
 
 | Legacy event type               | Canonical v2 event type      |
 | ------------------------------- | ---------------------------- |
+| `application_submitted`         | `application_submitted`      |
+| `hiring_manager_reply`          | `employer_response_received` |
 | `recruiter_screen_scheduled`    | `recruiter_screen`           |
 | `recruiter_screen_completed`    | `recruiter_screen`           |
 | `devops_interview_scheduled`    | `technical_interview`        |
@@ -85,7 +96,9 @@ Known legacy event names must normalize through the allowlist below before the u
 | `take_home`                     | `assessment_take_home`       |
 | `take_home_requested`           | `assessment_take_home`       |
 | `take_home_submitted`           | `assessment_take_home`       |
-| `hiring_manager_reply`          | `employer_response_received` |
+| `next_tracking_step`            | `status_changed`             |
+
+For `next_tracking_step`, preserve `next_tracking_step` in `rawEventType`; `dueAt` remains metadata and does not advance lifecycle state. For assessment aliases, preserve an existing action value; otherwise infer `requested` from the exact `*_requested` aliases and `submitted` from the exact `*_submitted` aliases, marking that inferred field accordingly. Bare assessment aliases create the persisted milestone without implying that an assessment is currently in progress.
 
 A v2 lifecycle event contains:
 
@@ -113,6 +126,9 @@ The diagram supports exactly these fixed-rank intermediate milestones:
 
 Projection rules:
 
+- Exact persisted structured stage/status aliases are preserved as milestones: `recruiter_screen` maps to milestone `recruiter_screen`, `technical_screen` maps to milestone `technical_interview`, `onsite_loop` maps to milestone `onsite_final_loop`, and `offer` maps to milestone `offer_received`.
+- Apply these aliases only to existing structured status and stage fields documented in `src/domain/browserApplication.js`; never infer milestones from free-form `stageLabel`, notes, company, role, or message text.
+- Unknown structured values produce no invented milestone and emit a deterministic warning.
 - Include only persisted milestones.
 - Collapse repeats so an application contributes a milestone at most once.
 - Never invent skipped stages.
@@ -151,6 +167,21 @@ Deterministic endpoint replay precedence:
 
 Assessment action `submitted`, `completed`, or `done` preserves the `assessment_take_home` milestone but is not “in progress.” Current replay must agree with `applications.status` or emit a warning.
 
+Current-status agreement and `migration_status_snapshot` fallback use the exact table below. Event replay remains authoritative; this table is only for deterministic migration fallback and current-status agreement checks. Assessment progress must still require the assessment action evidence specified above.
+
+| Current `applications.status` | Expected replay endpoint |
+| ----------------------------- | ------------------------ |
+| `applied`                     | `awaiting_response`      |
+| `outreach_sent`               | `awaiting_response`      |
+| `recruiter_screen`            | `interviewing`           |
+| `technical_screen`            | `interviewing`           |
+| `onsite_loop`                 | `interviewing`           |
+| `offer`                       | `offer_negotiating`      |
+| `accepted`                    | `offer_accepted`         |
+| `rejected`                    | `employer_rejected`      |
+| `withdrawn`                   | `candidate_withdrew`     |
+| `closed_archived`             | `closed_archived`        |
+
 ## Historical timeline
 
 Timeline positions are:
@@ -162,10 +193,10 @@ Timeline positions are:
 Timeline rules:
 
 - Equal exact instants form one bucket.
-- Date-only events on one stored calendar date form one bucket labeled “time not recorded.”
+- Date-only events with `occurredAtPrecision: date` on one stored calendar date form one bucket labeled “time not recorded.”
 - A date-only bucket sorts before exact instants whose normalized UTC date is the same date.
-- Dated cutoffs are inclusive.
-- Dated snapshots exclude unknown-time events.
+- Dated cutoffs are inclusive; date-only events belong to their stored calendar-date bucket and are included at that cutoff and later dated cutoffs without timezone-shifting the stored date.
+- Dated snapshots exclude unknown-time events, meaning events with `occurredAtPrecision: unknown`, including legacy `1970-01-01` placeholders. Unknown-time events do not include events with `occurredAtPrecision: date`.
 - Unknown-date shows only unknown/legacy-epoch history.
 - Current includes all applications and all effective events.
 - `1970-01-01` placeholders are unknown, not real activity.
