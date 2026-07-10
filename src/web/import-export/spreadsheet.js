@@ -1,4 +1,8 @@
 import { browserApplicationExportSchema } from "../../domain/browserApplication.js";
+import {
+  BROWSER_BACKUP_SCHEMA_VERSION,
+  upgradeBrowserExportToV2,
+} from "../storage/browserDataMigration.js";
 import { classifyLifecycleEventType } from "../tracker/lifecycleClassification.js";
 
 export const LIFECYCLE_CSV_COLUMNS = [
@@ -6,7 +10,12 @@ export const LIFECYCLE_CSV_COLUMNS = [
   "company",
   "role_title",
   "event_type",
+  "raw_event_type",
+  "previous_status",
   "occurred_at",
+  "occurred_at_precision",
+  "inferred",
+  "supersedes_event_id",
   "stage",
   "channel",
   "actor",
@@ -28,6 +37,7 @@ export const COMPACT_CSV_COLUMNS = [
   "application_url",
   "posting_id",
   "application_channel",
+  "origin",
   "work_model",
   "location_display",
   "compensation_min_usd",
@@ -697,7 +707,7 @@ export const lifecycleRowsToBrowserApplicationExport = (
       });
   });
   const bundle = {
-    schemaVersion: 1,
+    schemaVersion: BROWSER_BACKUP_SCHEMA_VERSION,
     exportedAt,
     applications: existingApplications,
     contacts: [],
@@ -708,7 +718,10 @@ export const lifecycleRowsToBrowserApplicationExport = (
     artifacts: [],
     reminders,
   };
-  return { bundle, errors, warnings };
+  const upgraded = upgradeBrowserExportToV2(bundle, {
+    migrationTimestamp: exportedAt,
+  }).data;
+  return { bundle: upgraded, errors, warnings };
 };
 
 export const csvToSupplementalLifecycleExport = (csvText, existing, options) =>
@@ -897,6 +910,12 @@ export const rowsToBrowserApplicationExport = (
         status: "applied",
         occurredAt: appliedAt,
         source: "csv_import",
+        eventType: "application_submitted",
+        occurredAtPrecision:
+          appliedAt && /^\d{4}-\d{2}-\d{2}T00:00:00/.test(appliedAt)
+            ? "date"
+            : "instant",
+        inferred: false,
         createdAt: exportedAt,
       });
     if (outreachSentAt)
@@ -906,6 +925,9 @@ export const rowsToBrowserApplicationExport = (
         status: "outreach_sent",
         occurredAt: outreachSentAt,
         source: "csv_import",
+        eventType: "candidate_outreach",
+        occurredAtPrecision: "instant",
+        inferred: false,
         createdAt: exportedAt,
       });
     const stageLabel = normalizeLabelKey(row.interview_stage);
@@ -982,7 +1004,7 @@ export const rowsToBrowserApplicationExport = (
       });
   });
   const bundle = {
-    schemaVersion: 1,
+    schemaVersion: BROWSER_BACKUP_SCHEMA_VERSION,
     exportedAt,
     applications,
     contacts,
@@ -993,15 +1015,20 @@ export const rowsToBrowserApplicationExport = (
     artifacts,
     reminders: [],
   };
-  const parsed = browserApplicationExportSchema.safeParse(bundle);
-  if (!parsed.success)
+  let upgraded = bundle;
+  try {
+    upgraded = upgradeBrowserExportToV2(bundle, {
+      migrationTimestamp: exportedAt,
+    }).data;
+  } catch (error) {
     errors.push({
       rowNumber: null,
       field: "bundle",
       code: "schema_validation_failed",
-      message: parsed.error.message,
+      message: error.message,
     });
-  return { bundle, errors, warnings };
+  }
+  return { bundle: upgraded, errors, warnings };
 };
 
 export const csvToBrowserApplicationExport = (csvText, options) =>
@@ -1028,7 +1055,7 @@ const compareIsoDateTimes = (left, right) => {
 };
 const firstBy = (records, predicate) => records.find(predicate) ?? {};
 export const browserApplicationExportToRows = (bundle) => {
-  const parsed = browserApplicationExportSchema.parse(bundle);
+  const parsed = upgradeBrowserExportToV2(bundle).data;
   return [...parsed.applications]
     .sort((a, b) => a.id.localeCompare(b.id))
     .map((application) => {
@@ -1075,6 +1102,7 @@ export const browserApplicationExportToRows = (bundle) => {
         applied_at: dateOnly(application.appliedAt),
         posting_url: application.postingUrl ?? "",
         application_channel: application.source ?? "",
+        origin: application.origin ?? "other_unknown",
         work_model: application.remote ? "remote" : (metadata.work_model ?? ""),
         location_display: application.location ?? "",
         follow_up_date: dateOnly(application.followUpDate),
@@ -1127,7 +1155,7 @@ export const browserApplicationExportToRows = (bundle) => {
 export const exportCompactCsv = (bundle) =>
   serializeCsv(browserApplicationExportToRows(bundle));
 export const browserApplicationExportToLifecycleRows = (bundle) => {
-  const parsed = browserApplicationExportSchema.parse(bundle);
+  const parsed = upgradeBrowserExportToV2(bundle).data;
   const applicationsById = new Map(
     parsed.applications.map((application) => [application.id, application]),
   );
@@ -1152,7 +1180,12 @@ export const browserApplicationExportToLifecycleRows = (bundle) => {
         company: application.company ?? "",
         role_title: application.role ?? "",
         event_type: event.eventType ?? "",
+        raw_event_type: event.rawEventType ?? "",
+        previous_status: event.previousStatus ?? "",
         occurred_at: event.occurredAt ?? "",
+        occurred_at_precision: event.occurredAtPrecision ?? "",
+        inferred: event.inferred === undefined ? "" : String(event.inferred),
+        supersedes_event_id: event.supersedesEventId ?? "",
         stage: event.stageLabel ?? event.status ?? "",
         channel: event.channel ?? "",
         actor: event.actor ?? "",
@@ -1210,7 +1243,9 @@ const parseBackupBundlePreservingLifecyclePrecision = (bundle) =>
     bundle?.lifecycleEvents ?? [],
   );
 const canonicalizeBackupBundle = (bundle) => {
-  const parsed = parseBackupBundlePreservingLifecyclePrecision(bundle);
+  const parsed = upgradeBrowserExportToV2(
+    parseBackupBundlePreservingLifecyclePrecision(bundle),
+  ).data;
   const sorted = { ...parsed };
   for (const store of ARRAY_STORES) {
     sorted[store] = [...parsed[store]].sort((a, b) =>
@@ -1268,9 +1303,9 @@ const normalizeBackupBundleInput = (input, { source = "json_import" } = {}) => {
 };
 
 export const importJsonBackup = (text) =>
-  parseBackupBundlePreservingLifecyclePrecision(
+  upgradeBrowserExportToV2(
     normalizeBackupBundleInput(JSON.parse(text), { source: "json_import" }),
-  );
+  ).data;
 export const importNdjsonBackup = (text) => {
   const bundle = {
     schemaVersion: 1,
@@ -1306,9 +1341,9 @@ export const importNdjsonBackup = (text) => {
           `Unknown or malformed NDJSON record type: ${String(entry.type)}`,
         );
     });
-  return parseBackupBundlePreservingLifecyclePrecision(
+  return upgradeBrowserExportToV2(
     normalizeBackupBundleInput(bundle, { source: "ndjson_import" }),
-  );
+  ).data;
 };
 export const previewCompactCsvImport = async (csvText, repository) => {
   const rows = parseCsv(csvText);

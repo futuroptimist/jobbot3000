@@ -1,4 +1,4 @@
-/* global document, indexedDB, confirm */
+/* global document, confirm */
 /* eslint-disable max-len */
 import {
   COMPACT_CSV_COLUMNS,
@@ -12,6 +12,7 @@ import {
   previewCompactCsvImport,
   previewSupplementalLifecycleCsvImport,
 } from "../import-export/spreadsheet.js";
+import { createIndexedDbRepository } from "../storage/indexedDbRepository.js";
 import {
   classifyLifecycleEventType,
   isLifecycleAssessment,
@@ -48,17 +49,6 @@ const STATUSES = [
   "withdrawn",
   "closed_archived",
 ];
-const STORES = [
-  "applications",
-  "contacts",
-  "outreachMessages",
-  "lifecycleEvents",
-  "interviews",
-  "offers",
-  "artifacts",
-  "reminders",
-  "settings",
-];
 const OUTCOMES = new Set([
   "offer",
   "accepted",
@@ -78,116 +68,19 @@ const esc = (v) =>
   );
 const id = (p = "id") =>
   `${p}_${Date.now().toString(36)}_${crypto.getRandomValues(new Uint32Array(1))[0].toString(36)}`;
-function ensureIndex(store, name, keyPath) {
-  if (!store.indexNames.contains(name)) store.createIndex(name, keyPath);
-}
-function runMigrationV1(db) {
-  const getStore = (name) =>
-    db.objectStoreNames.contains(name)
-      ? null
-      : db.createObjectStore(name, { keyPath: "id" });
-  const applications = getStore("applications");
-  if (applications) {
-    ensureIndex(applications, "by_company", "company");
-    ensureIndex(applications, "by_status", "status");
-    ensureIndex(applications, "by_appliedAt", "appliedAt");
-    ensureIndex(applications, "by_followUpDate", "followUpDate");
-  }
-  for (const n of STORES.filter(
-    (name) => !["applications", "settings"].includes(name),
-  )) {
-    const store = getStore(n);
-    if (!store) continue;
-    ensureIndex(store, "by_applicationId", "applicationId");
-    if (n === "lifecycleEvents")
-      ensureIndex(store, "by_applicationId_occurredAt", [
-        "applicationId",
-        "occurredAt",
-      ]);
-  }
-  getStore("settings");
-}
-function openDb() {
-  return new Promise((res, rej) => {
-    const r = indexedDB.open("jobbot3000", 1);
-    r.onupgradeneeded = () => runMigrationV1(r.result);
-    r.onsuccess = () => res(r.result);
-    r.onerror = () => rej(r.error);
-  });
-}
-async function tx(store, mode, fn) {
-  const db = await openDb();
-  try {
-    return await new Promise((res, rej) => {
-      const t = db.transaction(store, mode);
-      const out = fn(t.objectStore(store), t);
-      t.oncomplete = () => res(out);
-      t.onerror = () => rej(t.error);
-      t.onabort = () => rej(t.error);
-    });
-  } finally {
-    db.close();
-  }
-}
-async function batchPut(recordsByStore) {
-  const db = await openDb();
-  const storeNames = Object.entries(recordsByStore)
-    .filter(([, rows]) => rows.length)
-    .map(([storeName]) => storeName);
-  if (!storeNames.length) {
-    db.close();
-    return;
-  }
-  try {
-    await new Promise((res, rej) => {
-      const t = db.transaction(storeNames, "readwrite");
-      for (const [storeName, rows] of Object.entries(recordsByStore)) {
-        if (!rows.length) continue;
-        const store = t.objectStore(storeName);
-        for (const row of rows) store.put(row);
-      }
-      t.oncomplete = res;
-      t.onerror = () => rej(t.error);
-      t.onabort = () => rej(t.error);
-    });
-  } finally {
-    db.close();
-  }
-}
-const req = (r) =>
-  new Promise((res, rej) => {
-    r.onsuccess = () => res(r.result);
-    r.onerror = () => rej(r.error);
-  });
+let repository;
+const getRepository = async () => {
+  repository ??= await createIndexedDbRepository();
+  return repository;
+};
 const repo = {
-  list: (s) => tx(s, "readonly", (st) => req(st.getAll())),
-  put: (s, o) => tx(s, "readwrite", (st) => st.put(o)),
-  add: (s, o) => tx(s, "readwrite", (st) => st.add(o)),
-  clear: async () => {
-    const db = await openDb();
-    try {
-      await new Promise((res, rej) => {
-        const t = db.transaction(STORES, "readwrite");
-        for (const s of STORES) t.objectStore(s).clear();
-        t.oncomplete = res;
-        t.onerror = () => rej(t.error);
-      });
-    } finally {
-      db.close();
-    }
-  },
-  exportAll: async () =>
-    Object.assign(
-      { schemaVersion: 1, exportedAt: now() },
-      Object.fromEntries(
-        await Promise.all(
-          STORES.map(async (s) => [
-            s,
-            s === "settings" ? (await repo.list(s))[0] : await repo.list(s),
-          ]),
-        ),
-      ),
-    ),
+  list: async (s) => (await getRepository()).listStore(s),
+  put: async (s, o) => (await getRepository()).putStore(s, o),
+  add: async (s, o) => (await getRepository()).addStore(s, o),
+  clear: async () => (await getRepository()).clearAllData(),
+  exportAll: async () => (await getRepository()).exportAllData(),
+  batchPut: async (recordsByStore) =>
+    (await getRepository()).importRecordsByStore(recordsByStore),
 };
 const state = {
   apps: [],
@@ -746,7 +639,10 @@ function bindDetail(app) {
             id: id("event"),
             applicationId: app.id,
             status: v.status,
+            eventType: "status_changed",
             occurredAt: now(),
+            occurredAtPrecision: "instant",
+            inferred: false,
             source: "manual",
             createdAt: now(),
           });
@@ -856,6 +752,7 @@ async function newApplication() {
     company: "",
     role: "",
     status: "applied",
+    origin: "application_submitted",
     source: "",
     postingUrl: "",
     appliedAt: day(ts),
@@ -1077,7 +974,7 @@ async function applyImport() {
     return;
   }
   try {
-    await batchPut(state.preview);
+    await repo.batchPut(state.preview);
   } catch (err) {
     $("[data-import-result]").textContent =
       `Import failed: ${err?.message ?? err}`;
@@ -1172,7 +1069,7 @@ function renderBuildMetadata() {
   }
   target.textContent = `Version ${metadata.version} · ${metadata.gitSha} · ${metadata.builtAt} · ${metadata.mode}`;
 }
-function init() {
+async function init() {
   renderBuildMetadata();
   renderNav();
   $('[data-filter="status"]').innerHTML += STATUSES.map(
@@ -1206,6 +1103,12 @@ function init() {
       await refresh();
     }
   };
-  refresh();
+  try {
+    await getRepository();
+    await refresh();
+  } catch (error) {
+    const result = $(`[data-import-result]`) || document.body;
+    result.textContent = `Unable to initialize local tracker storage: ${error?.message ?? error}`;
+  }
 }
-if (typeof document !== "undefined") init();
+if (typeof document !== "undefined") void init();

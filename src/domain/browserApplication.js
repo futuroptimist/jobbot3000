@@ -14,6 +14,43 @@ export const browserApplicationLifecycleStatusSchema = z.enum([
 ]);
 
 const isoDateTimeSchema = z.string().datetime({ offset: true });
+const plainDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const stableLifecycleAnchorSchema = z.union([
+  isoDateTimeSchema,
+  plainDateSchema,
+]);
+
+export const browserApplicationOriginSchema = z.enum([
+  "application_submitted",
+  "recruiter_company_outreach",
+  "candidate_outreach",
+  "referral",
+  "other_unknown",
+]);
+
+export const browserApplicationLifecycleEventTypeSchema = z.enum([
+  "application_submitted",
+  "recruiter_company_outreach",
+  "candidate_outreach",
+  "referral",
+  "other_unknown",
+  "employer_response_received",
+  "recruiter_screen",
+  "assessment_take_home",
+  "technical_interview",
+  "onsite_final_loop",
+  "offer_received",
+  "offer_negotiating",
+  "employer_rejected",
+  "candidate_withdrew",
+  "offer_declined",
+  "offer_expired_rescinded",
+  "offer_accepted",
+  "closed_archived",
+  "application_reopened",
+  "status_changed",
+  "migration_status_snapshot",
+]);
 const requiredStringSchema = z.string().trim().min(1);
 const optionalTrimmedStringSchema = requiredStringSchema.optional();
 const idSchema = requiredStringSchema;
@@ -46,31 +83,59 @@ export const browserApplicationOutreachMessageSchema = z.object({
   updatedAt: isoDateTimeSchema,
 });
 
-export const browserApplicationLifecycleEventSchema = z.object({
-  id: idSchema,
-  applicationId: idSchema,
-  status: browserApplicationLifecycleStatusSchema,
-  occurredAt: isoDateTimeSchema,
-  source: z.enum([
-    "manual",
-    "csv_import",
-    "json_import",
-    "ndjson_import",
-    "sqlite_migration",
-  ]),
-  note: optionalTrimmedStringSchema,
-  eventType: optionalTrimmedStringSchema,
-  stageLabel: optionalTrimmedStringSchema,
-  channel: optionalTrimmedStringSchema,
-  actor: optionalTrimmedStringSchema,
-  sourceArtifact: optionalTrimmedStringSchema,
-  requiresUserAction: z.boolean().optional(),
-  actionStatus: optionalTrimmedStringSchema,
-  dueAt: isoDateTimeSchema.optional(),
-  noAiRequired: z.boolean().optional(),
-  details: optionalTrimmedStringSchema,
-  createdAt: isoDateTimeSchema,
-});
+export const browserApplicationLifecycleEventSchema = z
+  .object({
+    id: idSchema,
+    applicationId: idSchema,
+    status: browserApplicationLifecycleStatusSchema.optional(),
+    previousStatus: browserApplicationLifecycleStatusSchema.optional(),
+    occurredAt: stableLifecycleAnchorSchema,
+    occurredAtPrecision: z.enum(["instant", "date", "unknown"]),
+    inferred: z.boolean(),
+    supersedesEventId: idSchema.optional(),
+    source: z.enum([
+      "manual",
+      "csv_import",
+      "json_import",
+      "ndjson_import",
+      "sqlite_migration",
+      "browser_migration",
+      "reconciliation",
+    ]),
+    note: optionalTrimmedStringSchema,
+    eventType: browserApplicationLifecycleEventTypeSchema,
+    rawEventType: optionalTrimmedStringSchema,
+    stageLabel: optionalTrimmedStringSchema,
+    channel: optionalTrimmedStringSchema,
+    actor: optionalTrimmedStringSchema,
+    sourceArtifact: optionalTrimmedStringSchema,
+    requiresUserAction: z.boolean().optional(),
+    actionStatus: optionalTrimmedStringSchema,
+    actionStatusInferred: z.boolean().optional(),
+    dueAt: isoDateTimeSchema.optional(),
+    noAiRequired: z.boolean().optional(),
+    details: optionalTrimmedStringSchema,
+    createdAt: isoDateTimeSchema,
+  })
+  .superRefine((event, ctx) => {
+    if (event.occurredAtPrecision === "instant") {
+      const result = isoDateTimeSchema.safeParse(event.occurredAt);
+      if (!result.success)
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "instant occurredAt requires an ISO datetime with offset",
+          path: ["occurredAt"],
+        });
+    } else if (event.occurredAtPrecision === "date") {
+      const result = plainDateSchema.safeParse(event.occurredAt);
+      if (!result.success)
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "date occurredAt requires YYYY-MM-DD",
+          path: ["occurredAt"],
+        });
+    }
+  });
 
 export const browserApplicationInterviewSchema = z.object({
   id: idSchema,
@@ -162,7 +227,7 @@ export const browserApplicationReminderSchema = z.object({
 
 export const browserApplicationSettingsSchema = z.object({
   id: z.literal("local"),
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(2),
   locale: optionalTrimmedStringSchema,
   timezone: optionalTrimmedStringSchema,
   defaultExportFormat: z.enum(["json", "ndjson", "csv"]).default("json"),
@@ -175,6 +240,7 @@ export const browserApplicationSchema = z.object({
   company: requiredStringSchema,
   role: requiredStringSchema,
   status: browserApplicationLifecycleStatusSchema,
+  origin: browserApplicationOriginSchema,
   source: optionalTrimmedStringSchema,
   postingUrl: z.string().url().optional(),
   location: optionalTrimmedStringSchema,
@@ -234,9 +300,141 @@ const addContactReferenceIssues = (ctx, storeName, records, contactIds) => {
   });
 };
 
-export const browserApplicationExportSchema = z
+const validateExportBundleReferences = (exportData, ctx) => {
+  const keyedStores = [
+    ["applications", exportData.applications],
+    ["contacts", exportData.contacts],
+    ["outreachMessages", exportData.outreachMessages],
+    ["lifecycleEvents", exportData.lifecycleEvents],
+    ["interviews", exportData.interviews],
+    ["offers", exportData.offers],
+    ["artifacts", exportData.artifacts],
+    ["reminders", exportData.reminders],
+  ];
+  keyedStores.forEach(([storeName, records]) => {
+    addDuplicateIdIssues(ctx, storeName, records);
+  });
+  const applicationIds = new Set(
+    exportData.applications.map((application) => application.id),
+  );
+  const contactIds = new Set(exportData.contacts.map((contact) => contact.id));
+  [
+    ["contacts", exportData.contacts],
+    ["outreachMessages", exportData.outreachMessages],
+    ["lifecycleEvents", exportData.lifecycleEvents],
+    ["interviews", exportData.interviews],
+    ["offers", exportData.offers],
+    ["artifacts", exportData.artifacts],
+    ["reminders", exportData.reminders],
+  ].forEach(([storeName, records]) => {
+    addApplicationReferenceIssues(ctx, storeName, records, applicationIds);
+  });
+  addContactReferenceIssues(
+    ctx,
+    "outreachMessages",
+    exportData.outreachMessages,
+    contactIds,
+  );
+  addContactReferenceIssues(ctx, "reminders", exportData.reminders, contactIds);
+  exportData.interviews.forEach(
+    ({ contactIds: interviewContactIds }, index) => {
+      interviewContactIds.forEach((contactId, contactIndex) => {
+        if (!contactIds.has(contactId)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Unknown contactId: ${contactId}`,
+            path: ["interviews", index, "contactIds", contactIndex],
+          });
+        }
+      });
+    },
+  );
+  const eventsById = new Map(
+    exportData.lifecycleEvents.map((event) => [event.id, event]),
+  );
+  exportData.lifecycleEvents.forEach((event, index) => {
+    if (!event.supersedesEventId) return;
+    const referenced = eventsById.get(event.supersedesEventId);
+    if (!referenced) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Unknown supersedesEventId: ${event.supersedesEventId}`,
+        path: ["lifecycleEvents", index, "supersedesEventId"],
+      });
+    } else if (referenced.applicationId !== event.applicationId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "supersedesEventId must reference an event for the same application",
+        path: ["lifecycleEvents", index, "supersedesEventId"],
+      });
+    }
+  });
+  for (const event of exportData.lifecycleEvents) {
+    const seen = new Set();
+    let cursor = event;
+    while (cursor?.supersedesEventId) {
+      if (seen.has(cursor.id)) {
+        const index = exportData.lifecycleEvents.findIndex(
+          ({ id }) => id === event.id,
+        );
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "supersession chains must be acyclic",
+          path: ["lifecycleEvents", index, "supersedesEventId"],
+        });
+        break;
+      }
+      seen.add(cursor.id);
+      cursor = eventsById.get(cursor.supersedesEventId);
+    }
+  }
+};
+
+const legacyApplicationSchema = browserApplicationSchema
+  .omit({ origin: true })
+  .passthrough();
+const legacyLifecycleEventSchema = z
+  .object({
+    id: idSchema,
+    applicationId: idSchema,
+    status: browserApplicationLifecycleStatusSchema,
+    occurredAt: isoDateTimeSchema,
+    source: z.enum([
+      "manual",
+      "csv_import",
+      "json_import",
+      "ndjson_import",
+      "sqlite_migration",
+    ]),
+    createdAt: isoDateTimeSchema,
+  })
+  .passthrough();
+const legacySettingsSchema = browserApplicationSettingsSchema
+  .extend({ schemaVersion: z.literal(1) })
+  .passthrough();
+
+export const browserApplicationV1ExportSchema = z
   .object({
     schemaVersion: z.literal(1),
+    exportedAt: isoDateTimeSchema,
+    applications: z.array(legacyApplicationSchema),
+    contacts: z.array(browserApplicationContactSchema).default([]),
+    outreachMessages: z
+      .array(browserApplicationOutreachMessageSchema)
+      .default([]),
+    lifecycleEvents: z.array(legacyLifecycleEventSchema).default([]),
+    interviews: z.array(browserApplicationInterviewSchema).default([]),
+    offers: z.array(browserApplicationOfferSchema).default([]),
+    artifacts: z.array(browserApplicationArtifactSchema).default([]),
+    reminders: z.array(browserApplicationReminderSchema).default([]),
+    settings: legacySettingsSchema.optional(),
+  })
+  .superRefine(validateExportBundleReferences);
+
+export const browserApplicationExportSchema = z
+  .object({
+    schemaVersion: z.literal(2),
     exportedAt: isoDateTimeSchema,
     applications: z.array(browserApplicationSchema),
     contacts: z.array(browserApplicationContactSchema).default([]),
@@ -252,66 +450,4 @@ export const browserApplicationExportSchema = z
     reminders: z.array(browserApplicationReminderSchema).default([]),
     settings: browserApplicationSettingsSchema.optional(),
   })
-  .superRefine((exportData, ctx) => {
-    const keyedStores = [
-      ["applications", exportData.applications],
-      ["contacts", exportData.contacts],
-      ["outreachMessages", exportData.outreachMessages],
-      ["lifecycleEvents", exportData.lifecycleEvents],
-      ["interviews", exportData.interviews],
-      ["offers", exportData.offers],
-      ["artifacts", exportData.artifacts],
-      ["reminders", exportData.reminders],
-    ];
-
-    keyedStores.forEach(([storeName, records]) => {
-      addDuplicateIdIssues(ctx, storeName, records);
-    });
-
-    const applicationIds = new Set(
-      exportData.applications.map((application) => application.id),
-    );
-    const contactIds = new Set(
-      exportData.contacts.map((contact) => contact.id),
-    );
-    const applicationScopedStores = [
-      ["contacts", exportData.contacts],
-      ["outreachMessages", exportData.outreachMessages],
-      ["lifecycleEvents", exportData.lifecycleEvents],
-      ["interviews", exportData.interviews],
-      ["offers", exportData.offers],
-      ["artifacts", exportData.artifacts],
-      ["reminders", exportData.reminders],
-    ];
-
-    applicationScopedStores.forEach(([storeName, records]) => {
-      addApplicationReferenceIssues(ctx, storeName, records, applicationIds);
-    });
-
-    addContactReferenceIssues(
-      ctx,
-      "outreachMessages",
-      exportData.outreachMessages,
-      contactIds,
-    );
-    addContactReferenceIssues(
-      ctx,
-      "reminders",
-      exportData.reminders,
-      contactIds,
-    );
-
-    exportData.interviews.forEach(
-      ({ contactIds: interviewContactIds }, index) => {
-        interviewContactIds.forEach((contactId, contactIndex) => {
-          if (!contactIds.has(contactId)) {
-            ctx.addIssue({
-              code: z.ZodIssueCode.custom,
-              message: `Unknown contactId: ${contactId}`,
-              path: ["interviews", index, "contactIds", contactIndex],
-            });
-          }
-        });
-      },
-    );
-  });
+  .superRefine(validateExportBundleReferences);
