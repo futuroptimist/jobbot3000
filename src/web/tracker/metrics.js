@@ -1,28 +1,14 @@
+import {
+  classifyLifecycleEventType,
+  isLifecycleAssessment,
+  isLifecycleNonRecruiterInterview,
+  isLifecycleRecruiterScreen,
+} from "./lifecycleClassification.js";
 const TERMINAL_EMPLOYER_STATUSES = new Set([
   "offer",
   "accepted",
   "rejected",
   "closed_archived",
-]);
-const RESPONSE_EVENT_TYPES = new Set([
-  "hiring_manager_reply",
-  "written_assessment_requested",
-  "recruiter_screen_scheduled",
-  "recruiter_screen_completed",
-  "offer",
-  "offer_received",
-]);
-const ASSESSMENT_EVENT_TYPES = new Set([
-  "written_assessment",
-  "written_assessment_requested",
-  "written_assessment_submitted",
-  "take_home",
-  "take_home_requested",
-  "take_home_submitted",
-]);
-const RECRUITER_SCREEN_EVENT_TYPES = new Set([
-  "recruiter_screen_scheduled",
-  "recruiter_screen_completed",
 ]);
 const OFFER_EVENT_TYPES = new Set(["offer", "offer_received"]);
 const OUTREACH_REPLY_STATUSES = new Set(["replied", "reply", "responded"]);
@@ -82,13 +68,191 @@ const isAssessmentMetadata = (metadata) => {
 const addResponse = (responses, applicationId) => {
   if (applicationId) responses.add(applicationId);
 };
-const recruiterScreenKey = (record) =>
-  [
+const canonicalTimestamp = (value) => {
+  if (!value) return undefined;
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? value : new Date(timestamp).toISOString();
+};
+const isAmbiguousLegacyDateOnlyTimestamp = (value) => {
+  if (!value) return false;
+  const canonical = canonicalTimestamp(value);
+  return Boolean(canonical?.match(/^\d{4}-\d{2}-\d{2}T00:00:00\.000Z$/));
+};
+const lifecycleTimestampHasTime = (event, field, value) => {
+  const flag = event[`${field}HasTime`];
+  if (typeof flag === "boolean") return flag;
+  if (!value) return false;
+  if (
+    event.source === "csv_import" &&
+    isAmbiguousLegacyDateOnlyTimestamp(value)
+  )
+    return false;
+  return true;
+};
+const isTimedLifecycleInterviewTimestamp = (event, field, value) =>
+  Boolean(value) &&
+  !isPlaceholderTimestamp(value) &&
+  lifecycleTimestampHasTime(event, field, value);
+const timedValue = (event, ...fieldValuePairs) =>
+  fieldValuePairs.find(([field, value]) =>
+    isTimedLifecycleInterviewTimestamp(event, field, value),
+  )?.[1];
+const lifecycleInterviewTimestamp = (event, classification) => {
+  if (classification.interviewOutcome === "completed")
+    return timedValue(
+      event,
+      ["occurredAt", event.occurredAt],
+      ["dueAt", event.dueAt],
+      ["startsAt", event.startsAt],
+    );
+  return timedValue(
+    event,
+    ["dueAt", event.dueAt],
+    ["startsAt", event.startsAt],
+  );
+};
+const matchingExplicitCompletedTimestamp = (
+  event,
+  classification,
+  explicitInterviewKeys,
+) => {
+  if (
+    classification.interviewOutcome !== "completed" ||
+    typeof event.occurredAtHasTime === "boolean" ||
+    !event.occurredAt
+  )
+    return undefined;
+  const key = interviewKey(event, event.occurredAt);
+  return explicitInterviewKeys.has(key) ? event.occurredAt : undefined;
+};
+const interviewKey = (record, timestamp) => {
+  const classification = classifyLifecycleEventType(record.eventType);
+  return [
     record.applicationId,
-    record.dueAt ?? record.startsAt ?? record.occurredAt ?? record.id,
+    canonicalTimestamp(
+      timestamp ?? record.startsAt ?? record.dueAt ?? record.occurredAt,
+    ),
+    record.stage ??
+      classification.interviewStage ??
+      record.eventType ??
+      "interview",
   ]
     .filter(Boolean)
     .join(":");
+};
+const recruiterScreenIdentityKey = (record = {}, timestamp) =>
+  [record.applicationId, canonicalTimestamp(timestamp) ?? record.id]
+    .filter(Boolean)
+    .join(":");
+const matchingExplicitCompletedRecruiterScreenTimestamp = (
+  record,
+  explicitRecruiterScreenKeys = new Set(),
+) => {
+  if (
+    typeof record.occurredAtHasTime === "boolean" ||
+    !record.occurredAt ||
+    !explicitRecruiterScreenKeys.size
+  )
+    return undefined;
+  const key = recruiterScreenIdentityKey(record, record.occurredAt);
+  return explicitRecruiterScreenKeys.has(key) ? record.occurredAt : undefined;
+};
+export const recruiterScreenTimestamp = (
+  record = {},
+  explicitRecruiterScreenKeys = new Set(),
+) => {
+  if (record.startsAt) return record.startsAt;
+  const classification = classifyLifecycleEventType(record.eventType);
+  if (classification.interviewOutcome === "completed")
+    return (
+      matchingExplicitCompletedRecruiterScreenTimestamp(
+        record,
+        explicitRecruiterScreenKeys,
+      ) ??
+      timedValue(record, ["occurredAt", record.occurredAt]) ??
+      timedValue(record, ["dueAt", record.dueAt])
+    );
+  if (classification.interviewOutcome === "scheduled")
+    return timedValue(record, ["dueAt", record.dueAt]);
+  return (
+    timedValue(record, ["dueAt", record.dueAt]) ??
+    timedValue(record, ["occurredAt", record.occurredAt])
+  );
+};
+export const recruiterScreenKey = (
+  record = {},
+  explicitRecruiterScreenKeys = new Set(),
+) =>
+  recruiterScreenIdentityKey(
+    record,
+    recruiterScreenTimestamp(record, explicitRecruiterScreenKeys),
+  );
+const isPlaceholderTimestamp = (value) =>
+  value === "1970-01-01T00:00:00.000Z" || value === "1970-01-01";
+const uniqueUsableTimestamps = (candidates) => [
+  ...new Set(
+    candidates.filter(
+      (candidate) => candidate && !isPlaceholderTimestamp(candidate),
+    ),
+  ),
+];
+const lifecycleInterviewTimestampCandidates = (
+  event,
+  classification,
+  explicitInterviewKeys = new Set(),
+) => {
+  const candidates = [
+    matchingExplicitCompletedTimestamp(
+      event,
+      classification,
+      explicitInterviewKeys,
+    ) ?? lifecycleInterviewTimestamp(event, classification),
+  ];
+  if (classification.interviewOutcome === "completed") {
+    candidates.push(
+      timedValue(event, ["dueAt", event.dueAt]),
+      timedValue(event, ["startsAt", event.startsAt]),
+      timedValue(event, ["occurredAt", event.occurredAt]),
+    );
+  }
+  return uniqueUsableTimestamps(candidates);
+};
+const lifecycleInterviewDuplicateTimestampCandidates = (
+  event,
+  classification,
+  explicitInterviewKeys = new Set(),
+) => {
+  const timestamp =
+    matchingExplicitCompletedTimestamp(
+      event,
+      classification,
+      explicitInterviewKeys,
+    ) ?? lifecycleInterviewTimestamp(event, classification);
+  return uniqueUsableTimestamps([timestamp]);
+};
+const lifecycleInterviewKey = (
+  event,
+  classification,
+  explicitInterviewKeys,
+) => {
+  const [timestamp] = lifecycleInterviewTimestampCandidates(
+    event,
+    classification,
+    explicitInterviewKeys,
+  );
+  if (!timestamp) return undefined;
+  return interviewKey(event, timestamp);
+};
+const lifecycleInterviewDuplicateKeys = (
+  event,
+  classification,
+  explicitInterviewKeys,
+) =>
+  lifecycleInterviewDuplicateTimestampCandidates(
+    event,
+    classification,
+    explicitInterviewKeys,
+  ).map((timestamp) => interviewKey(event, timestamp));
 
 /**
  * Dashboard selector for imported tracker bundles.
@@ -111,6 +275,19 @@ export const selectDashboardMetrics = (bundle = {}) => {
   const recruiterScreenKeys = new Set();
   const assessmentApplicationIds = new Set();
   const offerApplicationIds = new Set();
+  const lifecycleNonRecruiterInterviewKeys = new Set();
+  const lifecycleNonRecruiterInterviewDuplicateKeys = new Set();
+  const explicitNonRecruiterInterviewKeys = new Set();
+  const explicitNonRecruiterInterviewCanonicalKeys = new Set(
+    interviews
+      .filter(({ stage }) => stage !== "recruiter_screen")
+      .map((interview) => interviewKey(interview, interview.startsAt)),
+  );
+  const explicitRecruiterScreenKeys = new Set(
+    interviews
+      .filter(({ stage }) => stage === "recruiter_screen")
+      .map((interview) => recruiterScreenKey(interview)),
+  );
 
   for (const application of applications) {
     const metadata = metadataByApplicationId.get(application.id) ?? {};
@@ -163,23 +340,40 @@ export const selectDashboardMetrics = (bundle = {}) => {
   for (const event of lifecycleEvents) {
     const eventType = normalize(event.eventType);
     const status = normalize(event.status);
+    const classification = classifyLifecycleEventType(eventType);
     if (
-      RESPONSE_EVENT_TYPES.has(eventType) ||
+      classification.countsAsResponse ||
+      OFFER_EVENT_TYPES.has(eventType) ||
       TERMINAL_EMPLOYER_STATUSES.has(status)
     )
       addResponse(responseApplicationIds, event.applicationId);
     if (eventType === "hiring_manager_reply" && event.applicationId)
       lifecycleReplyApplicationIds.add(event.applicationId);
-    if (ASSESSMENT_EVENT_TYPES.has(eventType)) {
+    if (isLifecycleAssessment(eventType)) {
       addResponse(responseApplicationIds, event.applicationId);
       if (event.applicationId)
         assessmentApplicationIds.add(event.applicationId);
     }
-    if (
-      RECRUITER_SCREEN_EVENT_TYPES.has(eventType) ||
-      status === "recruiter_screen"
-    )
-      recruiterScreenKeys.add(recruiterScreenKey(event));
+    if (isLifecycleRecruiterScreen(eventType) || status === "recruiter_screen")
+      recruiterScreenKeys.add(
+        recruiterScreenKey(event, explicitRecruiterScreenKeys),
+      );
+    if (isLifecycleNonRecruiterInterview(eventType)) {
+      const key = lifecycleInterviewKey(
+        event,
+        classification,
+        explicitNonRecruiterInterviewCanonicalKeys,
+      );
+      if (key) {
+        lifecycleNonRecruiterInterviewKeys.add(key);
+        for (const duplicateKey of lifecycleInterviewDuplicateKeys(
+          event,
+          classification,
+          explicitNonRecruiterInterviewCanonicalKeys,
+        ))
+          lifecycleNonRecruiterInterviewDuplicateKeys.add(duplicateKey);
+      }
+    }
     if (
       OFFER_EVENT_TYPES.has(eventType) ||
       ["offer", "accepted"].includes(status)
@@ -200,9 +394,17 @@ export const selectDashboardMetrics = (bundle = {}) => {
     if (interview.stage === "recruiter_screen")
       recruiterScreenKeys.add(recruiterScreenKey(interview));
   }
-  const nonRecruiterInterviews = interviews.filter(
-    (interview) => interview.stage !== "recruiter_screen",
-  );
+  for (const interview of interviews) {
+    if (interview.stage !== "recruiter_screen") {
+      const lifecycleDuplicateKey = interviewKey(interview, interview.startsAt);
+      if (
+        !lifecycleNonRecruiterInterviewDuplicateKeys.has(lifecycleDuplicateKey)
+      )
+        explicitNonRecruiterInterviewKeys.add(
+          interview.id ? `explicit:${interview.id}` : lifecycleDuplicateKey,
+        );
+    }
+  }
 
   return {
     totalApplications: applications.length,
@@ -215,7 +417,9 @@ export const selectDashboardMetrics = (bundle = {}) => {
     ),
     outreachReplyRate: boundedPercentage(outreachReplies, outreachSent),
     recruiterScreens: recruiterScreenKeys.size,
-    interviews: nonRecruiterInterviews.length,
+    interviews:
+      lifecycleNonRecruiterInterviewKeys.size +
+      explicitNonRecruiterInterviewKeys.size,
     assessments: assessmentApplicationIds.size,
     offers: new Set(
       [

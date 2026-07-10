@@ -1,4 +1,5 @@
 import { browserApplicationExportSchema } from "../../domain/browserApplication.js";
+import { classifyLifecycleEventType } from "../tracker/lifecycleClassification.js";
 
 export const LIFECYCLE_CSV_COLUMNS = [
   "application_id",
@@ -539,9 +540,8 @@ export const detectSpreadsheetImportFormat = (text) => {
 };
 
 const lifecycleStatusForEvent = (eventType) => {
-  if (eventType === "hiring_manager_reply") return "outreach_sent";
-  if (eventType === "recruiter_screen_scheduled") return "recruiter_screen";
-  if (eventType === "application_submitted") return "applied";
+  const classification = classifyLifecycleEventType(eventType);
+  if (classification.status) return classification.status;
   if (KNOWN_STATUSES.has(eventType)) return eventType;
   return undefined;
 };
@@ -591,6 +591,8 @@ export const lifecycleRowsToBrowserApplicationExport = (
     );
     const dueAt = parseDate(row.due_at, "due_at", rowNumber, errors);
     const eventOccurredAt = occurredAt ?? dueAt ?? "1970-01-01T00:00:00.000Z";
+    const occurredAtHasTime = hasTimeComponent(row.occurred_at);
+    const dueAtHasTime = hasTimeComponent(row.due_at);
     const stageLabel = compact(row.stage) || undefined;
     const knownLifecycleStatus = lifecycleStatusForEvent(eventType);
     if (
@@ -639,6 +641,8 @@ export const lifecycleRowsToBrowserApplicationExport = (
       ),
       actionStatus: compact(row.action_status) || undefined,
       dueAt,
+      occurredAtHasTime,
+      dueAtHasTime,
       noAiRequired: parseBoolean(
         row.no_ai_required,
         "no_ai_required",
@@ -664,18 +668,30 @@ export const lifecycleRowsToBrowserApplicationExport = (
         createdAt: exportedAt,
         updatedAt: exportedAt,
       });
-    if (
-      eventType === "recruiter_screen_scheduled" &&
-      dueAt &&
-      hasTimeComponent(row.due_at)
-    )
+    const classification = classifyLifecycleEventType(eventType);
+    const interviewStartsAt =
+      classification.interviewOutcome === "completed"
+        ? occurredAtHasTime
+          ? occurredAt
+          : dueAtHasTime
+            ? dueAt
+            : undefined
+        : dueAtHasTime
+          ? dueAt
+          : undefined;
+    if (classification.interviewStage && interviewStartsAt)
       interviews.push({
-        id: stableId("interview", applicationId, "recruiter_screen", dueAt),
+        id: stableId(
+          "interview",
+          applicationId,
+          classification.interviewStage,
+          interviewStartsAt,
+        ),
         applicationId,
         contactIds: [],
-        stage: "recruiter_screen",
-        startsAt: dueAt,
-        outcome: "scheduled",
+        stage: classification.interviewStage,
+        startsAt: interviewStartsAt,
+        outcome: classification.interviewOutcome ?? "scheduled",
         createdAt: exportedAt,
         updatedAt: exportedAt,
       });
@@ -1159,8 +1175,42 @@ export const exportLifecycleCsv = (bundle) =>
     browserApplicationExportToLifecycleRows(bundle),
     LIFECYCLE_CSV_COLUMNS,
   );
+const lifecyclePrecisionFlagsById = (events = []) =>
+  new Map(
+    events.map((event) => [
+      event.id,
+      {
+        occurredAtHasTime: event.occurredAtHasTime,
+        dueAtHasTime: event.dueAtHasTime,
+      },
+    ]),
+  );
+const restoreLifecyclePrecisionFlags = (bundle, sourceEvents) => {
+  const flagsById = lifecyclePrecisionFlagsById(sourceEvents);
+  return {
+    ...bundle,
+    lifecycleEvents: bundle.lifecycleEvents.map((event) => {
+      const flags = flagsById.get(event.id);
+      if (!flags) return event;
+      return {
+        ...event,
+        ...(typeof flags.occurredAtHasTime === "boolean"
+          ? { occurredAtHasTime: flags.occurredAtHasTime }
+          : {}),
+        ...(typeof flags.dueAtHasTime === "boolean"
+          ? { dueAtHasTime: flags.dueAtHasTime }
+          : {}),
+      };
+    }),
+  };
+};
+const parseBackupBundlePreservingLifecyclePrecision = (bundle) =>
+  restoreLifecyclePrecisionFlags(
+    browserApplicationExportSchema.parse(bundle),
+    bundle?.lifecycleEvents ?? [],
+  );
 const canonicalizeBackupBundle = (bundle) => {
-  const parsed = browserApplicationExportSchema.parse(bundle);
+  const parsed = parseBackupBundlePreservingLifecyclePrecision(bundle);
   const sorted = { ...parsed };
   for (const store of ARRAY_STORES) {
     sorted[store] = [...parsed[store]].sort((a, b) =>
@@ -1218,7 +1268,7 @@ const normalizeBackupBundleInput = (input, { source = "json_import" } = {}) => {
 };
 
 export const importJsonBackup = (text) =>
-  browserApplicationExportSchema.parse(
+  parseBackupBundlePreservingLifecyclePrecision(
     normalizeBackupBundleInput(JSON.parse(text), { source: "json_import" }),
   );
 export const importNdjsonBackup = (text) => {
@@ -1256,7 +1306,7 @@ export const importNdjsonBackup = (text) => {
           `Unknown or malformed NDJSON record type: ${String(entry.type)}`,
         );
     });
-  return browserApplicationExportSchema.parse(
+  return parseBackupBundlePreservingLifecyclePrecision(
     normalizeBackupBundleInput(bundle, { source: "ndjson_import" }),
   );
 };
@@ -1428,10 +1478,19 @@ export const importCompactCsv = async (
   };
 };
 
+// Precision flags are intentionally ignored only for conflict comparison.
+// Supplemental imports still replace the existing same-id lifecycle record with
+// the incoming record, so re-importing upgrades legacy flagless records.
 const lifecycleComparableRecord = (record) =>
   Object.fromEntries(
     Object.entries(record).filter(
-      ([key]) => !["createdAt", "updatedAt"].includes(key),
+      ([key]) =>
+        ![
+          "createdAt",
+          "updatedAt",
+          "occurredAtHasTime",
+          "dueAtHasTime",
+        ].includes(key),
     ),
   );
 

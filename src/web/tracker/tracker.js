@@ -12,7 +12,18 @@ import {
   previewCompactCsvImport,
   previewSupplementalLifecycleCsvImport,
 } from "../import-export/spreadsheet.js";
-import { readSpreadsheetMetadata, selectDashboardMetrics } from "./metrics.js";
+import {
+  classifyLifecycleEventType,
+  isLifecycleAssessment,
+  isLifecycleNonRecruiterInterview,
+  isLifecycleRecruiterScreen,
+} from "./lifecycleClassification.js";
+import {
+  readSpreadsheetMetadata,
+  recruiterScreenKey,
+  recruiterScreenTimestamp,
+  selectDashboardMetrics,
+} from "./metrics.js";
 
 /* canonical CSV/backup helpers are shared with spreadsheet import/export tests. */
 const ARRAY_STORES = [
@@ -240,39 +251,31 @@ const normalize = (value) =>
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
 const isAssessmentEvent = (record = {}) =>
-  [
-    record.eventType,
-    record.stageLabel,
-    record.status,
-    record.note,
-    record.details,
-  ]
+  isLifecycleAssessment(record.eventType) ||
+  [record.stageLabel, record.status, record.note, record.details]
     .map(normalize)
     .some(
       (value) => value.includes("assessment") || value.includes("take_home"),
     );
-const RECRUITER_SCREEN_EVENT_TYPES = new Set([
-  "recruiter_screen_scheduled",
-  "recruiter_screen_completed",
-]);
 const isRecruiterScreen = (record = {}) =>
   normalize(record.stage) === "recruiter_screen" ||
   normalize(record.status) === "recruiter_screen" ||
-  RECRUITER_SCREEN_EVENT_TYPES.has(normalize(record.eventType));
-const recruiterScreenKey = (record = {}) =>
-  [
-    record.applicationId,
-    record.dueAt ?? record.startsAt ?? record.occurredAt ?? record.id,
-  ]
-    .filter(Boolean)
-    .join(":");
-const uniqueRecruiterScreens = (meta, events = meta.lifecycle) => {
+  isLifecycleRecruiterScreen(record.eventType);
+const isNonRecruiterInterview = (record = {}) =>
+  (record.stage && normalize(record.stage) !== "recruiter_screen") ||
+  isLifecycleNonRecruiterInterview(record.eventType);
+export const uniqueRecruiterScreens = (meta, events = meta.lifecycle) => {
   const screens = [];
   const seen = new Set();
+  const explicitRecruiterScreenKeys = new Set(
+    meta.interviews
+      .filter(isRecruiterScreen)
+      .map((interview) => recruiterScreenKey(interview)),
+  );
   for (const item of [
     ...events.filter(isRecruiterScreen).map((event) => ({
-      key: recruiterScreenKey(event),
-      date: day(event.occurredAt) || day(event.dueAt),
+      key: recruiterScreenKey(event, explicitRecruiterScreenKeys),
+      date: day(recruiterScreenTimestamp(event, explicitRecruiterScreenKeys)),
       label:
         event.stageLabel ||
         event.eventType ||
@@ -309,14 +312,7 @@ const COMPACT_OUTREACH_REPLY_STATUSES = new Set([
   "reply",
   "responded",
 ]);
-const RESPONSE_EVENT_TYPES = new Set([
-  "hiring_manager_reply",
-  "written_assessment_requested",
-  "recruiter_screen_scheduled",
-  "recruiter_screen_completed",
-  "offer",
-  "offer_received",
-]);
+const RESPONSE_EVENT_TYPES = new Set(["offer", "offer_received"]);
 const hasMetadataResponseSignal = (metadata = {}) =>
   COMPACT_OUTREACH_REPLY_STATUSES.has(normalize(metadata.outreach_status)) ||
   hasMetadataAssessmentSignal(metadata);
@@ -330,6 +326,7 @@ const hasListResponseSignal = (app, meta, metadata = {}) =>
   ) ||
   meta.lifecycle.some(
     (x) =>
+      classifyLifecycleEventType(x.eventType).countsAsResponse ||
       RESPONSE_EVENT_TYPES.has(normalize(x.eventType)) ||
       TERMINAL_EMPLOYER_STATUSES.has(normalize(x.status)),
   ) ||
@@ -546,7 +543,7 @@ function renderList() {
       const m = appMeta(a);
       const metadata = metadataText(a);
       const latestInterview = m.interviews
-        .filter((item) => !isRecruiterScreen(item))
+        .filter(isNonRecruiterInterview)
         .at(-1);
       const recruiterCount = uniqueRecruiterScreens(m).length;
       const rowMetadata = readSpreadsheetMetadata(a.notes);
@@ -652,13 +649,17 @@ function timelineItem(e) {
     ? "assessment"
     : isRecruiterScreen(e)
       ? "recruiter"
-      : "event";
+      : isLifecycleNonRecruiterInterview(e.eventType)
+        ? "interview"
+        : "event";
   const label =
     kind === "assessment"
       ? "Assessment/take-home"
       : kind === "recruiter"
         ? "Recruiter screen"
-        : "Lifecycle event";
+        : kind === "interview"
+          ? "Interview"
+          : "Lifecycle event";
   return `<li class="timeline-item timeline-${kind}"><div><strong>${esc(label)}</strong> <span class="chip">${esc(e.status || e.eventType || "event")}</span></div><time>${esc(day(e.occurredAt) || day(e.dueAt) || "No date")}</time><div class="timeline-meta">${eventDetails(e)}</div></li>`;
 }
 function metadataSection(app) {
@@ -959,7 +960,7 @@ function renderImportPreview({
     "reminders",
     "settings",
   ].reduce((sum, store) => sum + (recordsByStore[store]?.length ?? 0), 0);
-  const compactSummary = `Dry-run OK: ${recordsByStore.applications?.length ?? 0} applications, ${recordsByStore.outreachMessages?.length ?? 0} outreach messages, ${(recordsByStore.interviews ?? []).filter((item) => !isRecruiterScreen(item)).length} interviews`;
+  const compactSummary = `Dry-run OK: ${recordsByStore.applications?.length ?? 0} applications, ${recordsByStore.outreachMessages?.length ?? 0} outreach messages, ${(recordsByStore.interviews ?? []).filter(isNonRecruiterInterview).length} interviews`;
   $("[data-import-result]").innerHTML =
     `<h4>${blocking ? "Import preview needs attention" : "Dry-run succeeded"}</h4>${blocking ? "" : `<p>${esc(compactSummary)}</p>`}<p><strong>Detected format:</strong> ${esc(label)}.</p><p>${blocking ? "Apply import is disabled until blocking errors are fixed." : "Data remains local in this browser until you choose Apply import; no tracker details are sent to a server."}</p><h5>Record counts</h5><ul>${counts.map(([store, count]) => `<li>${esc(store)}: ${count}</li>`).join("") || "<li>No records detected.</li>"}</ul><p><strong>Total records:</strong> ${totalRecords}</p><h5>Conflicts</h5><ul>${conflicts.map((conflict) => `<li>${esc(formatIssue(conflict))}</li>`).join("") || "<li>No existing record conflicts in local browser data.</li>"}</ul>${warnings.length ? `<h5>Warnings</h5><ul>${warnings.map((warning) => `<li>${esc(formatIssue(warning))}</li>`).join("")}</ul>` : ""}${errors.length ? `<h5>Blocking errors</h5><ul>${errors.map((error) => `<li>${esc(formatIssue(error))}</li>`).join("")}</ul>` : ""}`;
 }
@@ -1207,4 +1208,4 @@ function init() {
   };
   refresh();
 }
-init();
+if (typeof document !== "undefined") init();

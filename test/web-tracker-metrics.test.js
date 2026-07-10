@@ -4,13 +4,23 @@ import { describe, expect, it } from "vitest";
 
 import {
   csvToBrowserApplicationExport,
+  exportJsonBackup,
+  exportNdjsonBackup,
+  importJsonBackup,
+  importNdjsonBackup,
   lifecycleRowsToBrowserApplicationExport,
   parseCsv,
 } from "../src/web/import-export/spreadsheet.js";
 import {
+  LIFECYCLE_EVENT_CATEGORIES,
+  classifyLifecycleEventType,
+} from "../src/web/tracker/lifecycleClassification.js";
+import {
   boundedPercentage,
+  recruiterScreenKey,
   selectDashboardMetrics,
 } from "../src/web/tracker/metrics.js";
+import { uniqueRecruiterScreens } from "../src/web/tracker/tracker.js";
 
 const exportedAt = "2026-03-10T00:00:00.000Z";
 const compactFixture = async () =>
@@ -32,6 +42,36 @@ const importLifecycle = (csv, existing) =>
   }).bundle;
 
 describe("tracker dashboard metrics", () => {
+  it("classifies scheduled lifecycle interview events centrally", () => {
+    expect(
+      classifyLifecycleEventType("devops_interview_scheduled"),
+    ).toMatchObject({
+      category: LIFECYCLE_EVENT_CATEGORIES.NON_RECRUITER_INTERVIEW,
+      interviewStage: "technical_screen",
+      interviewOutcome: "scheduled",
+    });
+    expect(
+      classifyLifecycleEventType("technical_interview_scheduled").category,
+    ).toBe(LIFECYCLE_EVENT_CATEGORIES.NON_RECRUITER_INTERVIEW);
+    expect(
+      classifyLifecycleEventType("onsite_interview_scheduled"),
+    ).toMatchObject({
+      category: LIFECYCLE_EVENT_CATEGORIES.NON_RECRUITER_INTERVIEW,
+      interviewStage: "onsite_loop",
+    });
+    expect(
+      classifyLifecycleEventType("recruiter_screen_completed").category,
+    ).toBe(LIFECYCLE_EVENT_CATEGORIES.RECRUITER_SCREEN);
+    expect(
+      classifyLifecycleEventType("written_assessment_submitted").category,
+    ).toBe(LIFECYCLE_EVENT_CATEGORIES.ASSESSMENT);
+    expect(classifyLifecycleEventType("hiring_manager_reply").category).toBe(
+      LIFECYCLE_EVENT_CATEGORIES.EMPLOYER_RESPONSE,
+    );
+    expect(classifyLifecycleEventType("generic_follow_up").category).toBe(
+      LIFECYCLE_EVENT_CATEGORIES.UNKNOWN_METADATA,
+    );
+  });
   it("returns safe zero metrics for empty bundles", () => {
     expect(selectDashboardMetrics({})).toMatchObject({
       totalApplications: 0,
@@ -84,24 +124,21 @@ describe("tracker dashboard metrics", () => {
     expect(metrics.applicationsWithResponse).toBe(5);
   });
 
-  it(
-    "dedupes hiring-manager lifecycle replies already represented by compact metadata",
-    async () => {
-      const { bundle } = csvToBrowserApplicationExport(await compactFixture(), {
-        exportedAt,
-      });
-      const lifecycle = importLifecycle(
-        await lifecycleFixture("employer-reply-lifecycle-regression.csv"),
-        bundle,
-      );
+  it("dedupes hiring-manager lifecycle replies represented by compact metadata", async () => {
+    const { bundle } = csvToBrowserApplicationExport(await compactFixture(), {
+      exportedAt,
+    });
+    const lifecycle = importLifecycle(
+      await lifecycleFixture("employer-reply-lifecycle-regression.csv"),
+      bundle,
+    );
 
-      const metrics = selectDashboardMetrics(mergeBundle(bundle, lifecycle));
+    const metrics = selectDashboardMetrics(mergeBundle(bundle, lifecycle));
 
-      expect(metrics.outreachReplies).toBe(2);
-      expect(metrics.applicationsWithResponse).toBe(4);
-      expect(metrics.interviews).toBe(0);
-    },
-  );
+    expect(metrics.outreachReplies).toBe(2);
+    expect(metrics.applicationsWithResponse).toBe(4);
+    expect(metrics.interviews).toBe(0);
+  });
 
   it("counts lifecycle-only hiring-manager replies as outreach replies", () => {
     const timestamp = "2026-01-01T00:00:00.000Z";
@@ -416,6 +453,88 @@ describe("tracker dashboard metrics", () => {
     expect(metrics.applicationResponseRate).toBe(100);
   });
 
+  it("derives completed recruiter screens from occurred_at instead of due_at", () => {
+    const existing = {
+      applications: [
+        {
+          id: "app_screen_import",
+          company: "Screen Import",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+    };
+    const lifecycle = importLifecycle(
+      [
+        "application_id,event_type,occurred_at,due_at,details",
+        [
+          "app_screen_import",
+          "recruiter_screen_completed",
+          "2026-02-10T17:30:00Z",
+          "2026-02-01",
+          "Completed screen",
+        ].join(","),
+      ].join("\n"),
+      existing,
+    );
+
+    expect(lifecycle.interviews).toContainEqual(
+      expect.objectContaining({
+        applicationId: "app_screen_import",
+        stage: "recruiter_screen",
+        startsAt: "2026-02-10T17:30:00Z",
+        outcome: "completed",
+      }),
+    );
+  });
+
+  it("dedupes completed recruiter screens with distinct due_at and occurred_at", () => {
+    const existing = {
+      applications: [
+        {
+          id: "app_screen_dedupe",
+          company: "Screen Dedupe",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+    };
+    const lifecycle = importLifecycle(
+      [
+        "application_id,event_type,occurred_at,due_at,details",
+        [
+          "app_screen_dedupe",
+          "recruiter_screen_completed",
+          "2026-02-10T17:30:00Z",
+          "2026-02-01T15:00:00Z",
+          "Completed screen",
+        ].join(","),
+      ].join("\n"),
+      existing,
+    );
+    const bundle = mergeBundle(existing, lifecycle);
+    const metrics = selectDashboardMetrics(bundle);
+    const meta = {
+      lifecycle: bundle.lifecycleEvents,
+      interviews: bundle.interviews,
+    };
+    const recruiterScreens = uniqueRecruiterScreens(meta);
+
+    expect(metrics.recruiterScreens).toBe(1);
+    expect(metrics.interviews).toBe(0);
+    expect(recruiterScreens).toHaveLength(1);
+    expect(
+      new Set([
+        recruiterScreenKey(bundle.lifecycleEvents[0]),
+        recruiterScreenKey(bundle.interviews[0]),
+      ]).size,
+    ).toBe(1);
+  });
+
   it("counts replied outreach records as outreach replies and application responses", () => {
     const timestamp = "2026-01-01T00:00:00.000Z";
     const metrics = selectDashboardMetrics({
@@ -483,6 +602,707 @@ describe("tracker dashboard metrics", () => {
     expect(metrics.recruiterScreens).toBe(0);
     expect(metrics.interviews).toBe(1);
     expect(metrics.applicationsWithResponse).toBe(1);
+  });
+
+  it("derives all required non-recruiter lifecycle interview event types", () => {
+    const applicationId = "app_all_lifecycle_interviews";
+    const existing = {
+      applications: [
+        {
+          id: applicationId,
+          company: "Lifecycle Interviews",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+    };
+    const eventTypes = [
+      "devops_interview_scheduled",
+      "devops_interview_completed",
+      "technical_interview_scheduled",
+      "technical_interview_completed",
+      "technical_screen_scheduled",
+      "technical_screen_completed",
+      "onsite_interview_scheduled",
+      "onsite_interview_completed",
+      "final_interview_scheduled",
+      "final_interview_completed",
+    ];
+    const rows = [
+      "application_id,event_type,occurred_at,due_at,details",
+      ...eventTypes.map((eventType, index) => {
+        const hour = String(10 + index).padStart(2, "0");
+        const occurredAt = eventType.endsWith("_completed")
+          ? `2026-04-01T${hour}:30:00.000Z`
+          : `2026-04-01T${hour}:00:00.000Z`;
+        const dueAt = `2026-04-02T${hour}:00:00.000Z`;
+        return [
+          applicationId,
+          eventType,
+          occurredAt,
+          dueAt,
+          `${eventType} regression`,
+        ].join(",");
+      }),
+    ].join("\n");
+
+    const lifecycle = importLifecycle(rows, existing);
+
+    expect(lifecycle.lifecycleEvents).toHaveLength(eventTypes.length);
+    expect(lifecycle.interviews).toHaveLength(eventTypes.length);
+    expect(
+      lifecycle.interviews
+        .map(({ outcome }) => outcome)
+        .filter((outcome) => outcome === "scheduled"),
+    ).toHaveLength(5);
+    expect(
+      lifecycle.interviews
+        .map(({ outcome }) => outcome)
+        .filter((outcome) => outcome === "completed"),
+    ).toHaveLength(5);
+    expect(
+      selectDashboardMetrics({ ...existing, ...lifecycle }).interviews,
+    ).toBe(eventTypes.length);
+  });
+
+  it("counts one non-recruiter interview for Reducto-like devops events", async () => {
+    const { bundle } = csvToBrowserApplicationExport(await compactFixture(), {
+      exportedAt,
+    });
+    const lifecycle = importLifecycle(
+      await lifecycleFixture("devops-interview-lifecycle-regression.csv"),
+      bundle,
+    );
+
+    expect(lifecycle.lifecycleEvents).toHaveLength(2);
+    expect(lifecycle.interviews).toHaveLength(2);
+    expect(lifecycle.interviews).toContainEqual(
+      expect.objectContaining({
+        applicationId: "app_reg_epsilon_005",
+        stage: "technical_screen",
+        startsAt: "2026-02-18T20:00:00.000Z",
+        outcome: "scheduled",
+      }),
+    );
+
+    const metrics = selectDashboardMetrics(mergeBundle(bundle, lifecycle));
+
+    expect(metrics.recruiterScreens).toBe(1);
+    expect(metrics.interviews).toBe(1);
+    expect(metrics.assessments).toBe(1);
+    expect(metrics.applicationsWithResponse).toBe(5);
+  });
+
+  it("counts already-imported devops lifecycle events without requiring re-import", () => {
+    const timestamp = "2026-01-01T00:00:00.000Z";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: "app_devops",
+          company: "Example",
+          role: "Engineer",
+          status: "applied",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_devops",
+          applicationId: "app_devops",
+          eventType: "devops_interview_scheduled",
+          occurredAt: timestamp,
+          dueAt: "2026-01-02T18:00:00.000Z",
+          createdAt: timestamp,
+        },
+      ],
+      interviews: [],
+    });
+
+    expect(metrics.interviews).toBe(1);
+    expect(metrics.applicationsWithResponse).toBe(1);
+  });
+
+  it("ignores untimed lifecycle-only interview metadata in dashboard metrics", () => {
+    const timestamp = "2026-01-01T00:00:00.000Z";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: "app_untimed",
+          company: "Untimed",
+          role: "Engineer",
+          status: "applied",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_untimed",
+          applicationId: "app_untimed",
+          eventType: "devops_interview_scheduled",
+          occurredAt: "1970-01-01T00:00:00.000Z",
+          createdAt: timestamp,
+        },
+      ],
+      interviews: [],
+    });
+
+    expect(metrics.interviews).toBe(0);
+    expect(metrics.applicationsWithResponse).toBe(1);
+  });
+
+  it("ignores date-only lifecycle-only interview timestamps in dashboard metrics", () => {
+    const timestamp = "2026-01-01T00:00:00.000Z";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: "app_date_only",
+          company: "Date Only",
+          role: "Engineer",
+          status: "applied",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_date_only_scheduled",
+          applicationId: "app_date_only",
+          eventType: "devops_interview_scheduled",
+          occurredAt: timestamp,
+          dueAt: "2026-01-02T00:00:00.000Z",
+          occurredAtHasTime: false,
+          dueAtHasTime: false,
+          createdAt: timestamp,
+        },
+        {
+          id: "event_date_only_completed",
+          applicationId: "app_date_only",
+          eventType: "technical_interview_completed",
+          occurredAt: "2026-01-03T00:00:00.000Z",
+          occurredAtHasTime: false,
+          createdAt: timestamp,
+        },
+      ],
+      interviews: [],
+    });
+
+    expect(metrics.interviews).toBe(0);
+    expect(metrics.applicationsWithResponse).toBe(1);
+  });
+
+  it("preserves lifecycle timestamp precision flags through JSON and NDJSON backups", () => {
+    const timestamp = "2026-01-01T00:00:00.000Z";
+    const bundle = {
+      schemaVersion: 1,
+      exportedAt: timestamp,
+      applications: [
+        {
+          id: "app_precision_backup",
+          company: "Precision Backup",
+          role: "Engineer",
+          status: "applied",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_precision_backup",
+          applicationId: "app_precision_backup",
+          status: "technical_screen",
+          occurredAt: timestamp,
+          source: "csv_import",
+          eventType: "devops_interview_scheduled",
+          dueAt: "2026-01-02T00:00:00.000Z",
+          occurredAtHasTime: false,
+          dueAtHasTime: false,
+          createdAt: timestamp,
+        },
+      ],
+      interviews: [],
+    };
+
+    const jsonRestored = importJsonBackup(exportJsonBackup(bundle));
+    const ndjsonRestored = importNdjsonBackup(exportNdjsonBackup(bundle));
+
+    expect(jsonRestored.lifecycleEvents[0]).toMatchObject({
+      occurredAtHasTime: false,
+      dueAtHasTime: false,
+    });
+    expect(ndjsonRestored.lifecycleEvents[0]).toMatchObject({
+      occurredAtHasTime: false,
+      dueAtHasTime: false,
+    });
+    expect(selectDashboardMetrics(jsonRestored).interviews).toBe(0);
+    expect(selectDashboardMetrics(ndjsonRestored).interviews).toBe(0);
+  });
+
+  it("ignores ambiguous legacy date-only lifecycle timestamps without precision flags", () => {
+    const timestamp = "2026-01-01T00:00:00.000Z";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: "app_legacy_date_only",
+          company: "Legacy Date Only",
+          role: "Engineer",
+          status: "applied",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_legacy_date_only_scheduled",
+          applicationId: "app_legacy_date_only",
+          eventType: "devops_interview_scheduled",
+          dueAt: "2026-01-02T00:00:00.000Z",
+          source: "csv_import",
+          createdAt: timestamp,
+        },
+        {
+          id: "event_legacy_date_only_completed",
+          applicationId: "app_legacy_date_only",
+          eventType: "technical_interview_completed",
+          occurredAt: "2026-01-03T00:00:00.000Z",
+          source: "csv_import",
+          createdAt: timestamp,
+        },
+      ],
+      interviews: [],
+    });
+
+    expect(metrics.interviews).toBe(0);
+    expect(metrics.applicationsWithResponse).toBe(1);
+  });
+
+  it("preserves distinct explicit same-time non-recruiter interviews", () => {
+    const timestamp = "2026-01-01T00:00:00.000Z";
+    const startsAt = "2026-01-15T00:00:00.000Z";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: "app_same_day",
+          company: "Same Day",
+          role: "Engineer",
+          status: "applied",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+      interviews: [
+        {
+          id: "interview_one",
+          applicationId: "app_same_day",
+          stage: "technical_screen",
+          startsAt,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+        {
+          id: "interview_two",
+          applicationId: "app_same_day",
+          stage: "technical_screen",
+          startsAt,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      ],
+    });
+
+    expect(metrics.interviews).toBe(2);
+  });
+
+  it("falls back to timed due_at when completed occurred_at is date-only", () => {
+    const applicationId = "app_completed_date_only";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: applicationId,
+          company: "Completed Date Only",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_completed_date_only",
+          applicationId,
+          eventType: "technical_interview_completed",
+          occurredAt: "2026-05-10T00:00:00.000Z",
+          dueAt: "2026-05-01T12:00:00.000Z",
+          occurredAtHasTime: false,
+          dueAtHasTime: true,
+          createdAt: exportedAt,
+        },
+      ],
+      interviews: [
+        {
+          id: "interview_completed_date_only",
+          applicationId,
+          stage: "technical_screen",
+          startsAt: "2026-05-01T12:00:00.000Z",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+    });
+
+    expect(metrics.interviews).toBe(1);
+  });
+
+  it("does not use date-only completed lifecycle timestamps as duplicate aliases", () => {
+    const applicationId = "app_completed_date_only_distinct_midnight";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: applicationId,
+          company: "Completed Date Only Distinct Midnight",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_completed_date_only_distinct_midnight",
+          applicationId,
+          eventType: "technical_interview_completed",
+          occurredAt: "2026-05-10T00:00:00.000Z",
+          dueAt: "2026-05-01T12:00:00.000Z",
+          occurredAtHasTime: false,
+          dueAtHasTime: true,
+          createdAt: exportedAt,
+        },
+      ],
+      interviews: [
+        {
+          id: "interview_completed_date_only_fallback",
+          applicationId,
+          stage: "technical_screen",
+          startsAt: "2026-05-01T12:00:00.000Z",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+        {
+          id: "interview_distinct_midnight",
+          applicationId,
+          stage: "technical_screen",
+          startsAt: "2026-05-10T00:00:00.000Z",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+    });
+
+    expect(metrics.interviews).toBe(2);
+  });
+
+  it("does not use completed due dates as duplicate aliases", () => {
+    const applicationId = "app_completed_due_alias_distinct";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: applicationId,
+          company: "Completed Fallback Alias",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_completed_due_alias_distinct",
+          applicationId,
+          eventType: "technical_interview_completed",
+          occurredAt: "2026-05-10T17:30:00.000Z",
+          dueAt: "2026-05-01T12:00:00.000Z",
+          occurredAtHasTime: true,
+          dueAtHasTime: true,
+          createdAt: exportedAt,
+        },
+      ],
+      interviews: [
+        {
+          id: "interview_completed_due_alias_distinct",
+          applicationId,
+          stage: "technical_screen",
+          startsAt: "2026-05-01T12:00:00.000Z",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+    });
+
+    expect(metrics.interviews).toBe(2);
+  });
+
+  it("uses completed occurred_at to dedupe lifecycle and derived interview records", () => {
+    const applicationId = "app_completed_both";
+    const existing = {
+      applications: [
+        {
+          id: applicationId,
+          company: "Completed Both",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+    };
+    const lifecycle = importLifecycle(
+      [
+        "application_id,event_type,occurred_at,due_at,details",
+        [
+          applicationId,
+          "technical_interview_completed",
+          "2026-05-10T17:30:00.000Z",
+          "2026-05-01T12:00:00.000Z",
+          "Completed technical interview",
+        ].join(","),
+      ].join("\n"),
+      existing,
+    );
+
+    expect(lifecycle.interviews).toEqual([
+      expect.objectContaining({
+        startsAt: "2026-05-10T17:30:00.000Z",
+        stage: "technical_screen",
+        outcome: "completed",
+      }),
+    ]);
+    expect(
+      selectDashboardMetrics({ ...existing, ...lifecycle }).interviews,
+    ).toBe(1);
+  });
+
+  it("counts legacy lifecycle-only explicit midnight completed interviews", () => {
+    const applicationId = "app_legacy_midnight_lifecycle_only";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: applicationId,
+          company: "Legacy Midnight Lifecycle Only",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_legacy_midnight_lifecycle_only",
+          applicationId,
+          eventType: "technical_interview_completed",
+          occurredAt: "2026-05-10T00:00:00.000Z",
+          createdAt: exportedAt,
+        },
+      ],
+      interviews: [],
+    });
+
+    expect(metrics.interviews).toBe(1);
+  });
+
+  it("treats legacy explicit midnight completed timestamps as timed", () => {
+    const applicationId = "app_legacy_midnight";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: applicationId,
+          company: "Legacy Midnight",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_legacy_midnight",
+          applicationId,
+          eventType: "technical_interview_completed",
+          occurredAt: "2026-05-10T00:00:00.000Z",
+          dueAt: "2026-05-01T12:00:00.000Z",
+          createdAt: exportedAt,
+        },
+      ],
+      interviews: [
+        {
+          id: "interview_legacy_midnight",
+          applicationId,
+          stage: "technical_screen",
+          startsAt: "2026-05-10T00:00:00.000Z",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+    });
+
+    expect(metrics.interviews).toBe(1);
+  });
+
+  it("uses explicit midnight completed occurred_at instead of falling back to due_at", () => {
+    const applicationId = "app_completed_midnight";
+    const existing = {
+      applications: [
+        {
+          id: applicationId,
+          company: "Completed Midnight",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+    };
+    const lifecycle = importLifecycle(
+      [
+        "application_id,event_type,occurred_at,due_at,details",
+        [
+          applicationId,
+          "technical_interview_completed",
+          "2026-05-10T00:00:00.000Z",
+          "2026-05-01T12:00:00.000Z",
+          "Completed technical interview at midnight",
+        ].join(","),
+      ].join("\n"),
+      existing,
+    );
+
+    expect(lifecycle.interviews).toEqual([
+      expect.objectContaining({
+        startsAt: "2026-05-10T00:00:00.000Z",
+        stage: "technical_screen",
+        outcome: "completed",
+      }),
+    ]);
+    expect(
+      selectDashboardMetrics({ ...existing, ...lifecycle }).interviews,
+    ).toBe(1);
+  });
+
+  it("canonicalizes equivalent lifecycle and explicit interview timestamps", () => {
+    const applicationId = "app_equivalent_timestamps";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: applicationId,
+          company: "Equivalent Timestamps",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_equivalent_timestamps",
+          applicationId,
+          eventType: "technical_interview_completed",
+          occurredAt: "2026-02-10T17:30:00Z",
+          occurredAtHasTime: true,
+          createdAt: exportedAt,
+        },
+      ],
+      interviews: [
+        {
+          id: "interview_equivalent_timestamps",
+          applicationId,
+          stage: "technical_screen",
+          startsAt: "2026-02-10T17:30:00.000Z",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+    });
+
+    expect(metrics.interviews).toBe(1);
+  });
+
+  it("preserves untimed classified lifecycle metadata without deriving interviews", () => {
+    const applicationId = "app_import_untimed";
+    const existing = {
+      applications: [
+        {
+          id: applicationId,
+          company: "Import Untimed",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+    };
+    const lifecycle = importLifecycle(
+      [
+        "application_id,event_type,occurred_at,due_at,details",
+        [
+          applicationId,
+          "devops_interview_scheduled",
+          "",
+          "",
+          "Metadata only",
+        ].join(","),
+      ].join("\n"),
+      existing,
+    );
+
+    expect(lifecycle.lifecycleEvents).toHaveLength(1);
+    expect(lifecycle.interviews).toHaveLength(0);
+    expect(
+      selectDashboardMetrics({ ...existing, ...lifecycle }).interviews,
+    ).toBe(0);
+  });
+
+  it("dedupes lifecycle-derived interviews across import and JSON backup round trip", async () => {
+    const { bundle } = csvToBrowserApplicationExport(await compactFixture(), {
+      exportedAt,
+    });
+    const lifecycle = importLifecycle(
+      await lifecycleFixture("devops-interview-lifecycle-regression.csv"),
+      bundle,
+    );
+    expect(lifecycle.interviews).toEqual([
+      expect.objectContaining({
+        id: "interview_app_reg_epsilon_005_recruiter_screen_2026_02_15t18_00_00_000z",
+        stage: "recruiter_screen",
+        startsAt: "2026-02-15T18:00:00.000Z",
+      }),
+      expect.objectContaining({
+        id: "interview_app_reg_epsilon_005_technical_screen_2026_02_18t20_00_00_000z",
+        stage: "technical_screen",
+        startsAt: "2026-02-18T20:00:00.000Z",
+      }),
+    ]);
+
+    const mergedOnce = mergeBundle(bundle, lifecycle);
+    const mergedTwice = mergeBundle(mergedOnce, lifecycle);
+
+    expect(selectDashboardMetrics(mergedTwice)).toMatchObject({
+      recruiterScreens: 1,
+      interviews: 1,
+    });
+
+    const restoredJson = importJsonBackup(exportJsonBackup(mergedOnce));
+    const restoredNdjson = importNdjsonBackup(exportNdjsonBackup(mergedOnce));
+
+    for (const restored of [restoredJson, restoredNdjson]) {
+      expect(selectDashboardMetrics(restored)).toMatchObject({
+        recruiterScreens: 1,
+        interviews: 1,
+        assessments: 1,
+        applicationsWithResponse: 5,
+      });
+    }
   });
 
   it("guards response percentages when child records exceed applications", () => {
