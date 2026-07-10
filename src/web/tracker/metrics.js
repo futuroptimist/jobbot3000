@@ -157,13 +157,7 @@ const lifecycleInterviewDuplicateTimestampCandidates = (
   event,
   classification,
 ) => {
-  const candidates = lifecycleInterviewTimestampCandidates(
-    event,
-    classification,
-  );
-  if (classification.interviewOutcome === "completed")
-    candidates.push(event.dueAt, event.startsAt, event.occurredAt);
-  return uniqueUsableTimestamps(candidates);
+  return lifecycleInterviewTimestampCandidates(event, classification);
 };
 const lifecycleInterviewKey = (event, classification) => {
   const [timestamp] = lifecycleInterviewTimestampCandidates(

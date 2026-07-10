@@ -909,6 +909,54 @@ describe("tracker dashboard metrics", () => {
     expect(metrics.interviews).toBe(1);
   });
 
+  it("does not use date-only completed lifecycle timestamps as duplicate aliases", () => {
+    const applicationId = "app_completed_date_only_distinct_midnight";
+    const metrics = selectDashboardMetrics({
+      applications: [
+        {
+          id: applicationId,
+          company: "Completed Date Only Distinct Midnight",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_completed_date_only_distinct_midnight",
+          applicationId,
+          eventType: "technical_interview_completed",
+          occurredAt: "2026-05-10T00:00:00.000Z",
+          dueAt: "2026-05-01T12:00:00.000Z",
+          occurredAtHasTime: false,
+          dueAtHasTime: true,
+          createdAt: exportedAt,
+        },
+      ],
+      interviews: [
+        {
+          id: "interview_completed_date_only_fallback",
+          applicationId,
+          stage: "technical_screen",
+          startsAt: "2026-05-01T12:00:00.000Z",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+        {
+          id: "interview_distinct_midnight",
+          applicationId,
+          stage: "technical_screen",
+          startsAt: "2026-05-10T00:00:00.000Z",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+    });
+
+    expect(metrics.interviews).toBe(2);
+  });
+
   it("dedupes completed lifecycle records against restored fallback timestamp interviews", () => {
     const applicationId = "app_completed_fallback_alias";
     const metrics = selectDashboardMetrics({
