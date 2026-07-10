@@ -1229,15 +1229,12 @@ const restoreLifecyclePrecisionFlags = (bundle, sourceEvents) => {
     }),
   };
 };
-const parseBackupBundlePreservingLifecyclePrecision = (bundle) =>
-  restoreLifecyclePrecisionFlags(
-    browserApplicationExportSchema.parse(bundle),
-    bundle?.lifecycleEvents ?? [],
-  );
+const upgradeBackupBundlePreservingLifecyclePrecision = (bundle) => {
+  const upgraded = upgradeBrowserExportToV2(bundle).data;
+  return restoreLifecyclePrecisionFlags(upgraded, bundle?.lifecycleEvents ?? []);
+};
 const canonicalizeBackupBundle = (bundle) => {
-  const parsed = upgradeBrowserExportToV2(
-    parseBackupBundlePreservingLifecyclePrecision(bundle),
-  ).data;
+  const parsed = upgradeBackupBundlePreservingLifecyclePrecision(bundle);
   const sorted = { ...parsed };
   for (const store of ARRAY_STORES) {
     sorted[store] = [...parsed[store]].sort((a, b) =>
@@ -1295,11 +1292,9 @@ const normalizeBackupBundleInput = (input, { source = "json_import" } = {}) => {
 };
 
 export const importJsonBackup = (text) =>
-  upgradeBrowserExportToV2(
-    parseBackupBundlePreservingLifecyclePrecision(
-      normalizeBackupBundleInput(JSON.parse(text), { source: "json_import" }),
-    ),
-  ).data;
+  upgradeBackupBundlePreservingLifecyclePrecision(
+    normalizeBackupBundleInput(JSON.parse(text), { source: "json_import" }),
+  );
 export const importNdjsonBackup = (text) => {
   const bundle = {
     schemaVersion: 1,
@@ -1335,11 +1330,9 @@ export const importNdjsonBackup = (text) => {
           `Unknown or malformed NDJSON record type: ${String(entry.type)}`,
         );
     });
-  return upgradeBrowserExportToV2(
-    parseBackupBundlePreservingLifecyclePrecision(
-      normalizeBackupBundleInput(bundle, { source: "ndjson_import" }),
-    ),
-  ).data;
+  return upgradeBackupBundlePreservingLifecyclePrecision(
+    normalizeBackupBundleInput(bundle, { source: "ndjson_import" }),
+  );
 };
 export const previewCompactCsvImport = async (csvText, repository) => {
   const rows = parseCsv(csvText);

@@ -193,9 +193,14 @@ const hasStatusRepresented = (app, events) =>
       (e.status === app.status || e.eventType === STATUS_EVENT.get(app.status)),
   );
 
+const deterministicMigrationCreatedAt = (input) => {
+  if (typeof input?.exportedAt === "string") return input.exportedAt;
+  return new Date(0).toISOString();
+};
+
 export const upgradeBrowserExportToV2 = (input, options = {}) => {
   const migrationCreatedAt =
-    options.migrationCreatedAt ?? new Date().toISOString();
+    options.migrationCreatedAt ?? deterministicMigrationCreatedAt(input);
   const warnings = [];
   const source = clone(input);
   let parsed;

@@ -530,6 +530,55 @@ describe("IndexedDB repository", () => {
     repo.close();
   });
 
+  it("normalizes blank optional fields and infers legacy precision", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+
+    await repo.putStoreRecord("applications", {
+      ...application,
+      origin: undefined,
+      source: "",
+      postingUrl: "",
+      notes: "",
+    });
+    await repo.putStoreRecord("lifecycleEvents", {
+      ...lifecycleEvent,
+      occurredAt: "2026-01-02",
+      occurredAtPrecision: undefined,
+    });
+
+    const exported = await repo.exportAllData();
+    expect(exported.applications[0]).toMatchObject({
+      origin: "other_unknown",
+    });
+    expect(exported.applications[0].source).toBeUndefined();
+    expect(exported.applications[0].postingUrl).toBeUndefined();
+    expect(exported.lifecycleEvents[0]).toMatchObject({
+      occurredAt: "2026-01-02",
+      occurredAtPrecision: "date",
+    });
+
+    repo.close();
+  });
+
+  it("rejects bulk store records that would create orphan children", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+
+    await expect(
+      repo.putStoreRecords({
+        lifecycleEvents: [
+          {
+            ...lifecycleEvent,
+            applicationId: "missing_app",
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: "schema_validation_failed" });
+
+    expect((await repo.exportAllData()).lifecycleEvents).toHaveLength(0);
+
+    repo.close();
+  });
+
   it("reports unavailable IndexedDB before opening", async () => {
     await expect(
       createIndexedDbRepository({ indexedDb: undefined }),

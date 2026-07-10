@@ -101,6 +101,25 @@ describe("browser data v2 migration", () => {
     }
   });
 
+  it("preserves explicit origins and defaults timestamps deterministically", () => {
+    const input = base({
+      application: { origin: "recruiter_company_outreach" },
+    });
+
+    const first = upgradeBrowserExportToV2(input);
+    const second = upgradeBrowserExportToV2(input);
+
+    expect(first.data).toEqual(second.data);
+    expect(first.data.applications[0].origin).toBe(
+      "recruiter_company_outreach",
+    );
+    expect(
+      first.data.lifecycleEvents.find(
+        (event) => event.eventType === "migration_status_snapshot",
+      )?.createdAt,
+    ).toBe(input.exportedAt);
+  });
+
   it("orders structured evidence and emits safe conflict warnings", () => {
     const result = upgradeBrowserExportToV2(
       base({

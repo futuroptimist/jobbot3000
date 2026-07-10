@@ -70,7 +70,10 @@ const id = (p = "id") =>
   `${p}_${Date.now().toString(36)}_${crypto.getRandomValues(new Uint32Array(1))[0].toString(36)}`;
 let indexedDbRepositoryPromise;
 const getRepository = () => {
-  indexedDbRepositoryPromise ??= createIndexedDbRepository();
+  indexedDbRepositoryPromise ??= createIndexedDbRepository().catch((error) => {
+    indexedDbRepositoryPromise = undefined;
+    throw error;
+  });
   return indexedDbRepositoryPromise;
 };
 const repo = {

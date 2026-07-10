@@ -309,9 +309,13 @@ export const browserApplicationV1SettingsSchema =
   browserApplicationSettingsSchema.extend({
     schemaVersion: z.literal(1),
   });
-export const browserApplicationV1Schema = browserApplicationSchema.omit({
-  origin: true,
-});
+export const browserApplicationV1Schema = browserApplicationSchema
+  .omit({
+    origin: true,
+  })
+  .extend({
+    origin: browserApplicationOriginSchema.optional(),
+  });
 export const browserApplicationV1LifecycleEventSchema = z
   .object({
     id: idSchema,

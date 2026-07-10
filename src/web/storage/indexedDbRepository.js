@@ -72,23 +72,69 @@ const wrapError = (error, fallbackCode, fallbackMessage) => {
   });
 };
 
+const isoDate = /^\d{4}-\d{2}-\d{2}$/;
+const epochOccurredAtValues = new Set([
+  "1970-01-01",
+  "1970-01-01T00:00:00.000Z",
+  "1970-01-01T00:00:00Z",
+]);
+
+const removeBlankOptionalFields = (record, fields) =>
+  Object.fromEntries(
+    Object.entries(record).filter(
+      ([key, value]) => !(fields.includes(key) && value === ""),
+    ),
+  );
+
+const inferOccurredAtPrecision = (record) => {
+  if (["instant", "date", "unknown"].includes(record.occurredAtPrecision))
+    return record.occurredAtPrecision;
+  if (record.occurredAtHasTime === true) return "instant";
+  if (record.occurredAtHasTime === false) return "date";
+  if (epochOccurredAtValues.has(record.occurredAt)) return "unknown";
+  if (isoDate.test(String(record.occurredAt))) return "date";
+  return "instant";
+};
+
 const normalizeRecordForStore = (storeName, record) => {
-  if (storeName === "applications" && !record.origin)
-    return {
-      ...record,
-      origin: record.source === "referral" ? "referral" : "other_unknown",
-    };
+  if (storeName === "applications") {
+    const normalized = removeBlankOptionalFields(record, [
+      "source",
+      "postingUrl",
+      "location",
+      "compensationText",
+      "notes",
+    ]);
+    if (!normalized.origin)
+      return {
+        ...normalized,
+        origin: normalized.source === "referral" ? "referral" : "other_unknown",
+      };
+    return normalized;
+  }
   if (storeName === "lifecycleEvents") {
+    const normalized = removeBlankOptionalFields(record, [
+      "note",
+      "rawEventType",
+      "previousStatus",
+      "supersedesEventId",
+      "stageLabel",
+      "channel",
+      "actor",
+      "sourceArtifact",
+      "actionStatus",
+      "details",
+    ]);
     const eventType =
-      record.eventType ??
-      (record.status === "applied"
+      normalized.eventType ??
+      (normalized.status === "applied"
         ? "application_submitted"
         : "status_changed");
     return {
-      ...record,
+      ...normalized,
       eventType,
-      occurredAtPrecision: record.occurredAtPrecision ?? "instant",
-      inferred: record.inferred ?? false,
+      occurredAtPrecision: inferOccurredAtPrecision(normalized),
+      inferred: normalized.inferred ?? false,
     };
   }
   if (
@@ -651,11 +697,55 @@ export const createIndexedDbRepository = async (options = {}) => {
           .filter(([, rows]) => rows.length)
           .map(([name]) => name);
         if (!storeNames.length) return;
+        const parsedRowsByStore = Object.fromEntries(
+          Object.entries(recordsByStore).map(([storeName, rows]) => [
+            storeName,
+            rows.map((row) => parseRecord(storeName, row)),
+          ]),
+        );
+        const existing = Object.fromEntries(
+          await Promise.all(
+            STORE_NAMES.map(async (name) => [name, await getAll(db, name)]),
+          ),
+        );
+        const merged = Object.fromEntries(
+          STORE_NAMES.map((name) => {
+            const byId = new Map(
+              (existing[name] ?? []).map((record) => [record.id, record]),
+            );
+            for (const record of parsedRowsByStore[name] ?? [])
+              byId.set(record.id, record);
+            return [name, [...byId.values()]];
+          }),
+        );
+        const validation = browserApplicationExportSchema.safeParse({
+          schemaVersion: BROWSER_BACKUP_SCHEMA_VERSION,
+          exportedAt: new Date(0).toISOString(),
+          applications: merged.applications,
+          contacts: merged.contacts,
+          outreachMessages: merged.outreachMessages,
+          lifecycleEvents: merged.lifecycleEvents,
+          interviews: merged.interviews,
+          offers: merged.offers,
+          artifacts: merged.artifacts,
+          reminders: merged.reminders,
+          settings: merged.settings[0]
+            ? {
+                ...merged.settings[0],
+                schemaVersion: LOCAL_SETTINGS_SCHEMA_VERSION,
+              }
+            : undefined,
+        });
+        if (!validation.success)
+          throw new IndexedDbRepositoryError(
+            "schema_validation_failed",
+            "Bulk records would violate browser application references.",
+            { details: validation.error.flatten() },
+          );
         const tx = db.transaction(storeNames, "readwrite");
         const done = transactionDone(tx);
-        for (const [storeName, rows] of Object.entries(recordsByStore))
-          for (const row of rows)
-            tx.objectStore(storeName).put(parseRecord(storeName, row));
+        for (const [storeName, rows] of Object.entries(parsedRowsByStore))
+          for (const row of rows) tx.objectStore(storeName).put(row);
         await done;
       });
     },

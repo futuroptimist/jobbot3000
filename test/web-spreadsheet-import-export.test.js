@@ -1496,7 +1496,12 @@ describe("spreadsheet import/export", () => {
     expect(importJsonBackup(oldJson)).toMatchObject({
       applications: [expect.objectContaining({ id: "app_old_backup" })],
       contacts: [],
-      lifecycleEvents: [],
+      lifecycleEvents: [
+        expect.objectContaining({
+          applicationId: "app_old_backup",
+          eventType: "migration_status_snapshot",
+        }),
+      ],
       reminders: [],
     });
 
@@ -1512,6 +1517,53 @@ describe("spreadsheet import/export", () => {
       }),
     ].join("\n");
     expect(importNdjsonBackup(`${oldNdjson}\n`).applications).toHaveLength(1);
+  });
+
+  it("upgrades legacy JSON and NDJSON backups before v2 parsing", () => {
+    const legacyApplication = {
+      id: "app_legacy_first_parse",
+      company: "Legacy Parse Co",
+      role: "Engineer",
+      status: "applied",
+      createdAt: "2026-03-01T00:00:00.000Z",
+      updatedAt: "2026-03-01T00:00:00.000Z",
+    };
+    const legacyEvent = {
+      id: "event_legacy_first_parse",
+      applicationId: legacyApplication.id,
+      status: "applied",
+      occurredAt: "2026-03-01T00:00:00.000Z",
+      source: "json_import",
+      createdAt: "2026-03-01T00:00:00.000Z",
+    };
+    const legacyBundle = {
+      schemaVersion: 1,
+      exportedAt: "2026-03-01T00:00:00.000Z",
+      applications: [legacyApplication],
+      lifecycleEvents: [legacyEvent],
+    };
+
+    expect(importJsonBackup(JSON.stringify(legacyBundle))).toMatchObject({
+      schemaVersion: 2,
+      applications: [expect.objectContaining({ origin: "other_unknown" })],
+      lifecycleEvents: [
+        expect.objectContaining({ occurredAtPrecision: "instant" }),
+      ],
+    });
+
+    const legacyNdjson = [
+      JSON.stringify({
+        type: "meta",
+        schemaVersion: 1,
+        exportedAt: legacyBundle.exportedAt,
+      }),
+      JSON.stringify({ type: "applications", record: legacyApplication }),
+      JSON.stringify({ type: "lifecycleEvents", record: legacyEvent }),
+    ].join("\n");
+    expect(importNdjsonBackup(`${legacyNdjson}\n`)).toMatchObject({
+      schemaVersion: 2,
+      applications: [expect.objectContaining({ id: legacyApplication.id })],
+    });
   });
 
   it("detects lifecycle CSVs with quoted headers", () => {
