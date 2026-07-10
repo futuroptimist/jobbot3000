@@ -17,8 +17,10 @@ import {
 } from "../src/web/tracker/lifecycleClassification.js";
 import {
   boundedPercentage,
+  recruiterScreenKey,
   selectDashboardMetrics,
 } from "../src/web/tracker/metrics.js";
+import { uniqueRecruiterScreens } from "../src/web/tracker/tracker.js";
 
 const exportedAt = "2026-03-10T00:00:00.000Z";
 const compactFixture = async () =>
@@ -486,6 +488,51 @@ describe("tracker dashboard metrics", () => {
         outcome: "completed",
       }),
     );
+  });
+
+  it("dedupes completed recruiter screens with distinct due_at and occurred_at", () => {
+    const existing = {
+      applications: [
+        {
+          id: "app_screen_dedupe",
+          company: "Screen Dedupe",
+          role: "Engineer",
+          status: "applied",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+    };
+    const lifecycle = importLifecycle(
+      [
+        "application_id,event_type,occurred_at,due_at,details",
+        [
+          "app_screen_dedupe",
+          "recruiter_screen_completed",
+          "2026-02-10T17:30:00Z",
+          "2026-02-01T15:00:00Z",
+          "Completed screen",
+        ].join(","),
+      ].join("\n"),
+      existing,
+    );
+    const bundle = mergeBundle(existing, lifecycle);
+    const metrics = selectDashboardMetrics(bundle);
+    const meta = {
+      lifecycle: bundle.lifecycleEvents,
+      interviews: bundle.interviews,
+    };
+    const recruiterScreens = uniqueRecruiterScreens(meta);
+
+    expect(metrics.recruiterScreens).toBe(1);
+    expect(metrics.interviews).toBe(0);
+    expect(recruiterScreens).toHaveLength(1);
+    expect(
+      new Set([
+        recruiterScreenKey(bundle.lifecycleEvents[0]),
+        recruiterScreenKey(bundle.interviews[0]),
+      ]).size,
+    ).toBe(1);
   });
 
   it("counts replied outreach records as outreach replies and application responses", () => {

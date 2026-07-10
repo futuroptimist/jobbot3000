@@ -18,7 +18,12 @@ import {
   isLifecycleNonRecruiterInterview,
   isLifecycleRecruiterScreen,
 } from "./lifecycleClassification.js";
-import { readSpreadsheetMetadata, selectDashboardMetrics } from "./metrics.js";
+import {
+  readSpreadsheetMetadata,
+  recruiterScreenKey,
+  recruiterScreenTimestamp,
+  selectDashboardMetrics,
+} from "./metrics.js";
 
 /* canonical CSV/backup helpers are shared with spreadsheet import/export tests. */
 const ARRAY_STORES = [
@@ -259,20 +264,13 @@ const isRecruiterScreen = (record = {}) =>
 const isNonRecruiterInterview = (record = {}) =>
   (record.stage && normalize(record.stage) !== "recruiter_screen") ||
   isLifecycleNonRecruiterInterview(record.eventType);
-const recruiterScreenKey = (record = {}) =>
-  [
-    record.applicationId,
-    record.dueAt ?? record.startsAt ?? record.occurredAt ?? record.id,
-  ]
-    .filter(Boolean)
-    .join(":");
-const uniqueRecruiterScreens = (meta, events = meta.lifecycle) => {
+export const uniqueRecruiterScreens = (meta, events = meta.lifecycle) => {
   const screens = [];
   const seen = new Set();
   for (const item of [
     ...events.filter(isRecruiterScreen).map((event) => ({
       key: recruiterScreenKey(event),
-      date: day(event.occurredAt) || day(event.dueAt),
+      date: day(recruiterScreenTimestamp(event)),
       label:
         event.stageLabel ||
         event.eventType ||
@@ -1205,4 +1203,4 @@ function init() {
   };
   refresh();
 }
-init();
+if (typeof document !== "undefined") init();

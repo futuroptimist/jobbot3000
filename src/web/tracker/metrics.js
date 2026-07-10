@@ -140,10 +140,25 @@ const interviewKey = (record, timestamp) => {
     .filter(Boolean)
     .join(":");
 };
-const recruiterScreenKey = (record) =>
+export const recruiterScreenTimestamp = (record = {}) => {
+  if (record.startsAt) return record.startsAt;
+  const classification = classifyLifecycleEventType(record.eventType);
+  if (classification.interviewOutcome === "completed")
+    return (
+      timedValue(record, ["occurredAt", record.occurredAt]) ??
+      timedValue(record, ["dueAt", record.dueAt])
+    );
+  if (classification.interviewOutcome === "scheduled")
+    return timedValue(record, ["dueAt", record.dueAt]);
+  return (
+    timedValue(record, ["dueAt", record.dueAt]) ??
+    timedValue(record, ["occurredAt", record.occurredAt])
+  );
+};
+export const recruiterScreenKey = (record = {}) =>
   [
     record.applicationId,
-    record.dueAt ?? record.startsAt ?? record.occurredAt ?? record.id,
+    canonicalTimestamp(recruiterScreenTimestamp(record)) ?? record.id,
   ]
     .filter(Boolean)
     .join(":");

@@ -1478,6 +1478,9 @@ export const importCompactCsv = async (
   };
 };
 
+// Precision flags are intentionally ignored only for conflict comparison.
+// Supplemental imports still replace the existing same-id lifecycle record with
+// the incoming record, so re-importing upgrades legacy flagless records.
 const lifecycleComparableRecord = (record) =>
   Object.fromEntries(
     Object.entries(record).filter(
