@@ -267,10 +267,15 @@ const isNonRecruiterInterview = (record = {}) =>
 export const uniqueRecruiterScreens = (meta, events = meta.lifecycle) => {
   const screens = [];
   const seen = new Set();
+  const explicitRecruiterScreenKeys = new Set(
+    meta.interviews
+      .filter(isRecruiterScreen)
+      .map((interview) => recruiterScreenKey(interview)),
+  );
   for (const item of [
     ...events.filter(isRecruiterScreen).map((event) => ({
-      key: recruiterScreenKey(event),
-      date: day(recruiterScreenTimestamp(event)),
+      key: recruiterScreenKey(event, explicitRecruiterScreenKeys),
+      date: day(recruiterScreenTimestamp(event, explicitRecruiterScreenKeys)),
       label:
         event.stageLabel ||
         event.eventType ||

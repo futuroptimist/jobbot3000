@@ -140,11 +140,35 @@ const interviewKey = (record, timestamp) => {
     .filter(Boolean)
     .join(":");
 };
-export const recruiterScreenTimestamp = (record = {}) => {
+const recruiterScreenIdentityKey = (record = {}, timestamp) =>
+  [record.applicationId, canonicalTimestamp(timestamp) ?? record.id]
+    .filter(Boolean)
+    .join(":");
+const matchingExplicitCompletedRecruiterScreenTimestamp = (
+  record,
+  explicitRecruiterScreenKeys = new Set(),
+) => {
+  if (
+    typeof record.occurredAtHasTime === "boolean" ||
+    !record.occurredAt ||
+    !explicitRecruiterScreenKeys.size
+  )
+    return undefined;
+  const key = recruiterScreenIdentityKey(record, record.occurredAt);
+  return explicitRecruiterScreenKeys.has(key) ? record.occurredAt : undefined;
+};
+export const recruiterScreenTimestamp = (
+  record = {},
+  explicitRecruiterScreenKeys = new Set(),
+) => {
   if (record.startsAt) return record.startsAt;
   const classification = classifyLifecycleEventType(record.eventType);
   if (classification.interviewOutcome === "completed")
     return (
+      matchingExplicitCompletedRecruiterScreenTimestamp(
+        record,
+        explicitRecruiterScreenKeys,
+      ) ??
       timedValue(record, ["occurredAt", record.occurredAt]) ??
       timedValue(record, ["dueAt", record.dueAt])
     );
@@ -155,13 +179,14 @@ export const recruiterScreenTimestamp = (record = {}) => {
     timedValue(record, ["occurredAt", record.occurredAt])
   );
 };
-export const recruiterScreenKey = (record = {}) =>
-  [
-    record.applicationId,
-    canonicalTimestamp(recruiterScreenTimestamp(record)) ?? record.id,
-  ]
-    .filter(Boolean)
-    .join(":");
+export const recruiterScreenKey = (
+  record = {},
+  explicitRecruiterScreenKeys = new Set(),
+) =>
+  recruiterScreenIdentityKey(
+    record,
+    recruiterScreenTimestamp(record, explicitRecruiterScreenKeys),
+  );
 const isPlaceholderTimestamp = (value) =>
   value === "1970-01-01T00:00:00.000Z" || value === "1970-01-01";
 const uniqueUsableTimestamps = (candidates) => [
@@ -258,6 +283,11 @@ export const selectDashboardMetrics = (bundle = {}) => {
       .filter(({ stage }) => stage !== "recruiter_screen")
       .map((interview) => interviewKey(interview, interview.startsAt)),
   );
+  const explicitRecruiterScreenKeys = new Set(
+    interviews
+      .filter(({ stage }) => stage === "recruiter_screen")
+      .map((interview) => recruiterScreenKey(interview)),
+  );
 
   for (const application of applications) {
     const metadata = metadataByApplicationId.get(application.id) ?? {};
@@ -325,7 +355,9 @@ export const selectDashboardMetrics = (bundle = {}) => {
         assessmentApplicationIds.add(event.applicationId);
     }
     if (isLifecycleRecruiterScreen(eventType) || status === "recruiter_screen")
-      recruiterScreenKeys.add(recruiterScreenKey(event));
+      recruiterScreenKeys.add(
+        recruiterScreenKey(event, explicitRecruiterScreenKeys),
+      );
     if (isLifecycleNonRecruiterInterview(eventType)) {
       const key = lifecycleInterviewKey(
         event,

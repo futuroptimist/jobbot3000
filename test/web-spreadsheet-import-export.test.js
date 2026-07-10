@@ -26,7 +26,11 @@ import {
   previewCompactCsvImport,
   previewSupplementalLifecycleCsvImport,
 } from "../src/web/import-export/spreadsheet.js";
-import { selectDashboardMetrics } from "../src/web/tracker/metrics.js";
+import {
+  recruiterScreenKey,
+  selectDashboardMetrics,
+} from "../src/web/tracker/metrics.js";
+import { uniqueRecruiterScreens } from "../src/web/tracker/tracker.js";
 
 const deleteDatabase = () =>
   new Promise((resolve, reject) => {
@@ -1767,6 +1771,83 @@ describe("spreadsheet import/export", () => {
     );
     expect(event.occurredAtHasTime).toBeUndefined();
     expect(selectDashboardMetrics(bundle).interviews).toBe(1);
+  });
+
+  it("reconciles flagless completed recruiter screens at explicit midnight", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    await importCompactCsv(
+      serializeCsv([
+        {
+          application_id: "app_recruiter_midnight",
+          company: "Recruiter Midnight",
+          role_title: "Engineer",
+          applied_at: "2026-05-01",
+          schema_version: "1",
+        },
+      ]),
+      repo,
+      { mode: "replace" },
+    );
+    const lifecycleCsv = serializeCsv(
+      [
+        {
+          application_id: "app_recruiter_midnight",
+          company: "Recruiter Midnight",
+          role_title: "Engineer",
+          event_type: "recruiter_screen_completed",
+          occurred_at: "2026-05-10T00:00:00.000Z",
+          due_at: "2026-05-09T15:30:00.000Z",
+          details: "Completed recruiter screen at explicit midnight.",
+        },
+      ],
+      LIFECYCLE_CSV_COLUMNS,
+    );
+
+    const result = await importSupplementalLifecycleCsv(lifecycleCsv, repo);
+    expect(result.imported).toBe(true);
+    const exported = await repo.exportAllData();
+    expect(
+      exported.lifecycleEvents.filter(
+        ({ eventType }) => eventType === "recruiter_screen_completed",
+      ),
+    ).toEqual([
+      expect.not.objectContaining({
+        occurredAtHasTime: expect.anything(),
+        dueAtHasTime: expect.anything(),
+      }),
+    ]);
+    expect(selectDashboardMetrics(exported)).toMatchObject({
+      recruiterScreens: 1,
+      interviews: 0,
+    });
+    expect(
+      uniqueRecruiterScreens({
+        lifecycle: exported.lifecycleEvents,
+        interviews: exported.interviews,
+      }),
+    ).toHaveLength(1);
+
+    await repo.upsertInterview({
+      id: "interview_separate_due_at_screen",
+      applicationId: "app_recruiter_midnight",
+      stage: "recruiter_screen",
+      startsAt: "2026-05-09T15:30:00.000Z",
+      outcome: "scheduled",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z",
+    });
+    const withSeparateDueAtScreen = await repo.exportAllData();
+    expect(
+      selectDashboardMetrics(withSeparateDueAtScreen).recruiterScreens,
+    ).toBe(2);
+    expect(
+      new Set(
+        withSeparateDueAtScreen.interviews.map((interview) =>
+          recruiterScreenKey(interview),
+        ),
+      ).size,
+    ).toBe(2);
+    repo.close();
   });
 
   it("reports missing lifecycle application ids without creating orphans", async () => {
