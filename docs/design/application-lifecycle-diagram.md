@@ -63,7 +63,29 @@ Schema v2 uses exactly this `eventType` vocabulary:
 - `status_changed`
 - `migration_status_snapshot`
 
-Unknown legacy event names normalize to `status_changed` while remaining available in optional `rawEventType`.
+Known legacy event names must normalize through the allowlist below before the unknown-name fallback is considered. Unknown legacy event names normalize to `status_changed` while remaining available in optional `rawEventType`.
+
+| Legacy event type               | Canonical v2 event type      |
+| ------------------------------- | ---------------------------- |
+| `recruiter_screen_scheduled`    | `recruiter_screen`           |
+| `recruiter_screen_completed`    | `recruiter_screen`           |
+| `devops_interview_scheduled`    | `technical_interview`        |
+| `devops_interview_completed`    | `technical_interview`        |
+| `technical_interview_scheduled` | `technical_interview`        |
+| `technical_interview_completed` | `technical_interview`        |
+| `technical_screen_scheduled`    | `technical_interview`        |
+| `technical_screen_completed`    | `technical_interview`        |
+| `onsite_interview_scheduled`    | `onsite_final_loop`          |
+| `onsite_interview_completed`    | `onsite_final_loop`          |
+| `final_interview_scheduled`     | `onsite_final_loop`          |
+| `final_interview_completed`     | `onsite_final_loop`          |
+| `written_assessment`            | `assessment_take_home`       |
+| `written_assessment_requested`  | `assessment_take_home`       |
+| `written_assessment_submitted`  | `assessment_take_home`       |
+| `take_home`                     | `assessment_take_home`       |
+| `take_home_requested`           | `assessment_take_home`       |
+| `take_home_submitted`           | `assessment_take_home`       |
+| `hiring_manager_reply`          | `employer_response_received` |
 
 A v2 lifecycle event contains:
 
@@ -177,7 +199,7 @@ The v1 to v2 migration must be transactional and idempotent. It must preserve ID
 
 Origin inference is allowed only from explicit structured evidence and exact allowlists. It must never infer from company names, roles, notes, or message bodies. Preserve truthful timestamps and precision. Unknown or fallback history remains visibly inferred.
 
-Migration adds one deterministic inferred `migration_status_snapshot` only when the current status is otherwise unrepresented. It must never manufacture intermediate stages. Re-running migration or reconciliation must not create duplicates.
+Migration adds one deterministic inferred `migration_status_snapshot` only when the current status is otherwise unrepresented. Before falling back to `status_changed`, migration must preserve known legacy interview, assessment, and employer-response milestones by applying the canonical event-type allowlist in this contract. It must never manufacture intermediate stages. Re-running migration or reconciliation must not create duplicates.
 
 ## UI and accessibility
 
