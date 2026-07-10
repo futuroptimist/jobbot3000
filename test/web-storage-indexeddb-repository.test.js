@@ -18,6 +18,7 @@ const application = {
   company: "Example Robotics",
   role: "Staff Software Engineer",
   status: "applied",
+  origin: "application_submitted",
   postingUrl: "https://example.test/jobs/staff-engineer",
   appliedAt: now,
   followUpDate: later,
@@ -40,6 +41,9 @@ const lifecycleEvent = {
   status: "applied",
   occurredAt: now,
   source: "manual",
+  eventType: "application_submitted",
+  occurredAtPrecision: "instant",
+  inferred: false,
   createdAt: now,
 };
 
@@ -132,6 +136,7 @@ describe("IndexedDB repository", () => {
       "by_appliedAt",
       "by_company",
       "by_followUpDate",
+      "by_origin",
       "by_status",
     ]);
     expect(Array.from(tx.objectStore("contacts").indexNames)).toContain(
@@ -139,6 +144,9 @@ describe("IndexedDB repository", () => {
     );
     expect(Array.from(tx.objectStore("lifecycleEvents").indexNames)).toContain(
       "by_applicationId_occurredAt",
+    );
+    expect(Array.from(tx.objectStore("lifecycleEvents").indexNames)).toContain(
+      "by_occurredAt",
     );
     expect(Array.from(tx.objectStore("outreachMessages").indexNames)).toContain(
       "by_applicationId",

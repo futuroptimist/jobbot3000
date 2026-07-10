@@ -15,6 +15,7 @@ const validApplication = {
   company: "Example Robotics",
   role: "Staff Software Engineer",
   status: "applied",
+  origin: "application_submitted",
   postingUrl: "https://example.test/jobs/staff-engineer",
   appliedAt: now,
   createdAt: now,
@@ -22,7 +23,7 @@ const validApplication = {
 };
 
 const validExport = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   exportedAt: now,
   applications: [validApplication],
   contacts: [
@@ -52,6 +53,9 @@ const validExport = {
       status: "applied",
       occurredAt: now,
       source: "manual",
+      eventType: "application_submitted",
+      occurredAtPrecision: "instant",
+      inferred: false,
       createdAt: now,
     },
   ],
@@ -115,15 +119,15 @@ describe("browser application schemas", () => {
     ).toThrow(/baseSalaryMin/);
   });
 
-  it("pins settings schema version to the export schema version", () => {
-    expect(() =>
+  it("pins settings schema version independently at v2", () => {
+    expect(
       browserApplicationSettingsSchema.parse({
         id: "local",
         schemaVersion: 2,
         createdAt: now,
         updatedAt: now,
-      }),
-    ).toThrow();
+      }).schemaVersion,
+    ).toBe(2);
   });
 
   it("rejects duplicate export keys", () => {
