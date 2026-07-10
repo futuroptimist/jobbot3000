@@ -193,6 +193,7 @@ Image tags and chart versions are intentionally separate: bump the image tag for
 - [docs/backup-restore-guide.md](docs/backup-restore-guide.md) – backup, restore, and verification
   steps
 - [docs/web-ux-guidelines.md](docs/web-ux-guidelines.md) – layout, typography, and interaction guardrails
+- [docs/design/application-lifecycle-diagram.md](docs/design/application-lifecycle-diagram.md) – normative Application Lifecycle Diagram design contract
 - [GitHub Actions: web-screenshots.yml](https://github.com/futuroptimist/jobbot3000/actions/workflows/web-screenshots.yml) – captures the latest UI flows for regressions
 
 ### Durable data export/import
