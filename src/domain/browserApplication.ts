@@ -4,6 +4,10 @@ import {
   browserApplicationArtifactSchema as runtimeBrowserApplicationArtifactSchema,
   browserApplicationContactSchema as runtimeBrowserApplicationContactSchema,
   browserApplicationExportSchema as runtimeBrowserApplicationExportSchema,
+  browserApplicationExportV1Schema as runtimeBrowserApplicationExportV1Schema,
+  browserApplicationExportV2Schema as runtimeBrowserApplicationExportV2Schema,
+  browserApplicationOriginSchema as runtimeBrowserApplicationOriginSchema,
+  browserApplicationLifecycleEventTypeSchema as runtimeBrowserApplicationLifecycleEventTypeSchema,
   browserApplicationInterviewSchema as runtimeBrowserApplicationInterviewSchema,
   browserApplicationLifecycleEventSchema as runtimeBrowserApplicationLifecycleEventSchema,
   browserApplicationLifecycleStatusSchema as runtimeBrowserApplicationLifecycleStatusSchema,
@@ -20,6 +24,14 @@ export const browserApplicationContactSchema =
   runtimeBrowserApplicationContactSchema;
 export const browserApplicationExportSchema =
   runtimeBrowserApplicationExportSchema;
+export const browserApplicationExportV1Schema =
+  runtimeBrowserApplicationExportV1Schema;
+export const browserApplicationExportV2Schema =
+  runtimeBrowserApplicationExportV2Schema;
+export const browserApplicationOriginSchema =
+  runtimeBrowserApplicationOriginSchema;
+export const browserApplicationLifecycleEventTypeSchema =
+  runtimeBrowserApplicationLifecycleEventTypeSchema;
 export const browserApplicationInterviewSchema =
   runtimeBrowserApplicationInterviewSchema;
 export const browserApplicationLifecycleEventSchema =
@@ -36,6 +48,12 @@ export const browserApplicationSchema = runtimeBrowserApplicationSchema;
 export const browserApplicationSettingsSchema =
   runtimeBrowserApplicationSettingsSchema;
 
+export type BrowserApplicationOrigin = z.infer<
+  typeof browserApplicationOriginSchema
+>;
+export type BrowserApplicationLifecycleEventType = z.infer<
+  typeof browserApplicationLifecycleEventTypeSchema
+>;
 export type BrowserApplicationLifecycleStatus = z.infer<
   typeof browserApplicationLifecycleStatusSchema
 >;

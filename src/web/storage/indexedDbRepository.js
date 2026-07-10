@@ -10,9 +10,15 @@ import {
   browserApplicationSchema,
   browserApplicationSettingsSchema,
 } from "../../domain/browserApplication.js";
+import {
+  BROWSER_BACKUP_SCHEMA_VERSION,
+  LOCAL_SETTINGS_SCHEMA_VERSION,
+  upgradeBrowserExportToV2,
+} from "./browserDataMigration.js";
 
 export const DATABASE_NAME = "jobbot3000";
-export const DATABASE_VERSION = 1;
+export const DATABASE_VERSION = 2;
+export { BROWSER_BACKUP_SCHEMA_VERSION, LOCAL_SETTINGS_SCHEMA_VERSION };
 
 export const STORE_NAMES = [
   "applications",
@@ -153,6 +159,65 @@ export const migrations = {
       ensureIndex(reminders, "by_applicationId", "applicationId");
     }
     createStore(db, "settings");
+  },
+  2(db, transaction) {
+    const applications = transaction.objectStore("applications");
+    ensureIndex(applications, "by_origin", "origin");
+    const lifecycleEventsStore = transaction.objectStore("lifecycleEvents");
+    ensureIndex(lifecycleEventsStore, "by_occurredAt", "occurredAt");
+
+    const records = {};
+    let remaining = STORE_NAMES.length;
+    const fail = () => transaction.abort();
+    const finish = () => {
+      try {
+        const settings = records.settings[0];
+        const input = {
+          schemaVersion:
+            records.applications.every((application) => application.origin) &&
+            records.lifecycleEvents.every(
+              (event) =>
+                event.occurredAtPrecision && event.inferred !== undefined,
+            )
+              ? BROWSER_BACKUP_SCHEMA_VERSION
+              : 1,
+          exportedAt: new Date(0).toISOString(),
+          applications: records.applications,
+          contacts: records.contacts,
+          outreachMessages: records.outreachMessages,
+          lifecycleEvents: records.lifecycleEvents,
+          interviews: records.interviews,
+          offers: records.offers,
+          artifacts: records.artifacts,
+          reminders: records.reminders,
+          settings,
+        };
+        const { data } = upgradeBrowserExportToV2(input, {
+          migrationTimestamp: new Date(0).toISOString(),
+        });
+        for (const storeName of STORE_NAMES)
+          transaction.objectStore(storeName).clear();
+        for (const storeName of STORE_NAMES.filter(
+          (name) => name !== "settings",
+        )) {
+          for (const record of data[storeName])
+            transaction.objectStore(storeName).put(record);
+        }
+        if (data.settings)
+          transaction.objectStore("settings").put(data.settings);
+      } catch {
+        transaction.abort();
+      }
+    };
+    for (const storeName of STORE_NAMES) {
+      const request = transaction.objectStore(storeName).getAll();
+      request.onsuccess = () => {
+        records[storeName] = request.result;
+        remaining -= 1;
+        if (remaining === 0) finish();
+      };
+      request.onerror = fail;
+    }
   },
 };
 
@@ -309,7 +374,8 @@ const deleteMatchingFromStore = async (store, indexName, value) => {
 };
 
 const validateImport = (data) => {
-  const result = browserApplicationExportSchema.safeParse(data);
+  const upgraded = upgradeBrowserExportToV2(data);
+  const result = browserApplicationExportSchema.safeParse(upgraded.data);
   if (!result.success) {
     throw new IndexedDbRepositoryError(
       "schema_validation_failed",
@@ -317,7 +383,7 @@ const validateImport = (data) => {
       { details: result.error.flatten() },
     );
   }
-  return { parsed: result.data };
+  return { parsed: result.data, warnings: upgraded.warnings };
 };
 
 export const createIndexedDbRepository = async (options = {}) => {
@@ -343,6 +409,53 @@ export const createIndexedDbRepository = async (options = {}) => {
   return {
     close() {
       db.close();
+    },
+
+    listStore(storeName) {
+      if (!STORE_NAMES.includes(storeName))
+        throw new IndexedDbRepositoryError(
+          "invalid_store",
+          "Unknown IndexedDB store.",
+        );
+      return safe(() => getAll(db, storeName));
+    },
+    putStoreRecord(storeName, record) {
+      if (!STORE_NAMES.includes(storeName))
+        throw new IndexedDbRepositoryError(
+          "invalid_store",
+          "Unknown IndexedDB store.",
+        );
+      return safe(() => putRecord(db, storeName, record));
+    },
+    addStoreRecord(storeName, record) {
+      if (!STORE_NAMES.includes(storeName))
+        throw new IndexedDbRepositoryError(
+          "invalid_store",
+          "Unknown IndexedDB store.",
+        );
+      return safe(() => addRecord(db, storeName, record));
+    },
+    async importStoreRecords(recordsByStore) {
+      return safe(async () => {
+        const storeNames = Object.entries(recordsByStore)
+          .filter(([, rows]) => rows.length)
+          .map(([storeName]) => storeName);
+        if (!storeNames.length) return;
+        for (const storeName of storeNames)
+          if (!STORE_NAMES.includes(storeName))
+            throw new IndexedDbRepositoryError(
+              "invalid_store",
+              "Unknown IndexedDB store.",
+            );
+        const tx = db.transaction(storeNames, "readwrite");
+        const done = transactionDone(tx);
+        for (const [storeName, rows] of Object.entries(recordsByStore)) {
+          if (!rows.length) continue;
+          const store = tx.objectStore(storeName);
+          for (const row of rows) store.put(parseRecord(storeName, row));
+        }
+        await done;
+      });
     },
     createApplication(application) {
       return safe(() => addRecord(db, "applications", application));
@@ -435,8 +548,15 @@ export const createIndexedDbRepository = async (options = {}) => {
           reminders,
           settingsAll,
         ] = storeResults;
-        const result = browserApplicationExportSchema.safeParse({
-          schemaVersion: DATABASE_VERSION,
+        const upgraded = upgradeBrowserExportToV2({
+          schemaVersion:
+            applications.every((application) => application.origin) &&
+            lifecycleEvents.every(
+              (event) =>
+                event.occurredAtPrecision && event.inferred !== undefined,
+            )
+              ? BROWSER_BACKUP_SCHEMA_VERSION
+              : 1,
           exportedAt: new Date().toISOString(),
           applications,
           contacts,
@@ -448,6 +568,7 @@ export const createIndexedDbRepository = async (options = {}) => {
           reminders,
           settings: settingsAll[0],
         });
+        const result = browserApplicationExportSchema.safeParse(upgraded.data);
         if (!result.success) {
           throw new IndexedDbRepositoryError(
             "schema_validation_failed",
