@@ -24,6 +24,7 @@ import {
   recruiterScreenTimestamp,
   selectDashboardMetrics,
 } from "./metrics.js";
+import { planLifecycleReconciliation } from "./lifecycleReconciliation.js";
 import { createIndexedDbRepository } from "../storage/indexedDbRepository.js";
 
 /* canonical CSV/backup helpers are shared with spreadsheet import/export tests. */
@@ -49,6 +50,23 @@ const STATUSES = [
   "withdrawn",
   "closed_archived",
 ];
+const STATUS_EVENT_TYPES = {
+  outreach_sent: "candidate_outreach",
+  recruiter_screen: "recruiter_screen",
+  technical_screen: "technical_interview",
+  onsite_loop: "onsite_final_loop",
+  offer: "offer_received",
+  accepted: "offer_accepted",
+  rejected: "employer_rejected",
+  withdrawn: "candidate_withdrew",
+  closed_archived: "closed_archived",
+};
+const TERMINAL_STATUSES = new Set([
+  "accepted",
+  "rejected",
+  "withdrawn",
+  "closed_archived",
+]);
 const OUTCOMES = new Set([
   "offer",
   "accepted",
@@ -104,6 +122,8 @@ const repo = {
   },
   clear: async () => (await getRepository()).clearAllData(),
   exportAll: async () => (await getRepository()).exportAllData(),
+  commitLifecycleMutation: async (mutation) =>
+    (await getRepository()).commitLifecycleMutation(mutation),
 };
 async function batchImport(recordsByStore) {
   return (await getRepository()).importPartialData(recordsByStore);
@@ -116,6 +136,7 @@ const state = {
   sort: "appliedAt",
   dir: -1,
   current: null,
+  reconciliationWarnings: [],
   detailSave: Promise.resolve(),
 };
 function weekBucket(value) {
@@ -273,6 +294,16 @@ const metadataText = (app) =>
   metadataEntries(app)
     .map(([label, value]) => `${label}: ${value}`)
     .join(" · ");
+async function applyLifecycleReconciliation() {
+  const bundle = await repo.exportAll();
+  const plan = planLifecycleReconciliation(bundle);
+  state.reconciliationWarnings = plan.warnings;
+  if (plan.additions.length > 0) {
+    await repo.commitLifecycleMutation({
+      add: { lifecycleEvents: plan.additions },
+    });
+  }
+}
 async function refresh() {
   state.bundle = await repo.exportAll();
   state.apps = state.bundle.applications.sort((a, b) =>
@@ -318,6 +349,7 @@ async function refreshWithRetry() {
     }
   };
   try {
+    await applyLifecycleReconciliation();
     await refresh();
     clearInitializationRetry(retry, retryWhenVisible);
   } catch (error) {
@@ -692,6 +724,28 @@ function openUnsavedDetail(app) {
 function isoDate(v) {
   return v ? new Date(v).toISOString() : undefined;
 }
+function lifecycleEventRecord(
+  app,
+  current,
+  status,
+  eventType,
+  operationTime,
+  extra = {},
+) {
+  return {
+    id: id("event"),
+    applicationId: app.id,
+    eventType,
+    status,
+    previousStatus: current.status,
+    occurredAt: operationTime,
+    occurredAtPrecision: "instant",
+    inferred: false,
+    source: "manual",
+    createdAt: operationTime,
+    ...extra,
+  };
+}
 function bindDetail(app) {
   const persisted = !app.unsaved;
   const latestApp = () => state.apps.find((a) => a.id === app.id) || app;
@@ -716,20 +770,30 @@ function bindDetail(app) {
           updatedAt: now(),
         };
         delete saved.unsaved;
-        await repo.put("applications", saved);
-        if (!persisted || v.status !== current.status)
-          await repo.add("lifecycleEvents", {
-            id: id("event"),
-            applicationId: app.id,
-            eventType:
-              v.status === "applied" ? "application_submitted" : "status_changed",
-            status: v.status,
-            occurredAt: now(),
-            occurredAtPrecision: "instant",
-            inferred: false,
-            source: "manual",
-            createdAt: now(),
-          });
+        const operationTime = now();
+        const events = [];
+        if (!persisted || v.status !== current.status) {
+          const reopening =
+            TERMINAL_STATUSES.has(current.status) &&
+            !TERMINAL_STATUSES.has(v.status);
+          events.push(
+            lifecycleEventRecord(
+              app,
+              current,
+              v.status,
+              reopening
+                ? "application_reopened"
+                : v.status === "applied"
+                  ? "application_submitted"
+                  : (STATUS_EVENT_TYPES[v.status] ?? "status_changed"),
+              operationTime,
+            ),
+          );
+        }
+        await repo.commitLifecycleMutation({
+          [persisted ? "put" : "add"]: { applications: [saved] },
+          add: { lifecycleEvents: events },
+        });
         await refresh();
         openDetail(app.id);
       });
@@ -760,24 +824,39 @@ function bindDetail(app) {
     e.preventDefault();
     const v = values(e.target);
     const current = latestApp();
-    await repo.add("outreachMessages", {
+    const operationTime = now();
+    const message = {
       id: id("msg"),
       applicationId: app.id,
       direction: "outbound",
       channel: v.channel,
       body: v.body,
-      sentAt: now(),
-      createdAt: now(),
-      updatedAt: now(),
-    });
+      sentAt: operationTime,
+      createdAt: operationTime,
+      updatedAt: operationTime,
+    };
     const nextStatus =
       STATUS_RANK[current.status] >= STATUS_RANK.outreach_sent
         ? current.status
         : "outreach_sent";
-    await repo.put("applications", {
-      ...current,
-      status: nextStatus,
-      updatedAt: now(),
+    await repo.commitLifecycleMutation({
+      put: {
+        applications: [
+          { ...current, status: nextStatus, updatedAt: operationTime },
+        ],
+      },
+      add: {
+        outreachMessages: [message],
+        lifecycleEvents: [
+          lifecycleEventRecord(
+            app,
+            current,
+            nextStatus,
+            "candidate_outreach",
+            operationTime,
+          ),
+        ],
+      },
     });
     await refresh();
     openDetail(app.id);
@@ -786,24 +865,46 @@ function bindDetail(app) {
     e.preventDefault();
     const v = values(e.target);
     const current = latestApp();
-    await repo.add("interviews", {
-      id: id("interview"),
-      applicationId: app.id,
-      contactIds: [],
-      stage: v.stage,
-      startsAt: isoDate(v.startsAt),
-      outcome: "scheduled",
-      createdAt: now(),
-      updatedAt: now(),
-    });
+    const operationTime = now();
     const nextStatus =
       v.stage !== "other" && STATUS_RANK[v.stage] > STATUS_RANK[current.status]
         ? v.stage
         : current.status;
-    await repo.put("applications", {
-      ...current,
-      status: nextStatus,
-      updatedAt: now(),
+    await repo.commitLifecycleMutation({
+      put: {
+        applications: [
+          { ...current, status: nextStatus, updatedAt: operationTime },
+        ],
+      },
+      add: {
+        interviews: [
+          {
+            id: id("interview"),
+            applicationId: app.id,
+            contactIds: [],
+            stage: v.stage,
+            startsAt: isoDate(v.startsAt),
+            outcome: "scheduled",
+            createdAt: operationTime,
+            updatedAt: operationTime,
+          },
+        ],
+        lifecycleEvents: [
+          lifecycleEventRecord(
+            app,
+            current,
+            nextStatus,
+            v.stage === "recruiter_screen"
+              ? "recruiter_screen"
+              : v.stage === "technical_screen"
+                ? "technical_interview"
+                : v.stage === "onsite_loop"
+                  ? "onsite_final_loop"
+                  : "status_changed",
+            operationTime,
+          ),
+        ],
+      },
     });
     await refresh();
     openDetail(app.id);
@@ -812,18 +913,41 @@ function bindDetail(app) {
     e.preventDefault();
     const v = values(e.target);
     const current = latestApp();
-    await repo.add("offers", {
-      id: id("offer"),
-      applicationId: app.id,
-      status: v.status,
-      notes: v.notes || undefined,
-      createdAt: now(),
-      updatedAt: now(),
-    });
-    await repo.put("applications", {
-      ...current,
-      status: v.status === "accepted" ? "accepted" : "offer",
-      updatedAt: now(),
+    const operationTime = now();
+    const nextStatus = v.status === "accepted" ? "accepted" : "offer";
+    const offerEventTypes = {
+      received: "offer_received",
+      negotiating: "offer_negotiating",
+      accepted: "offer_accepted",
+      declined: "offer_declined",
+    };
+    await repo.commitLifecycleMutation({
+      put: {
+        applications: [
+          { ...current, status: nextStatus, updatedAt: operationTime },
+        ],
+      },
+      add: {
+        offers: [
+          {
+            id: id("offer"),
+            applicationId: app.id,
+            status: v.status,
+            notes: v.notes || undefined,
+            createdAt: operationTime,
+            updatedAt: operationTime,
+          },
+        ],
+        lifecycleEvents: [
+          lifecycleEventRecord(
+            app,
+            current,
+            nextStatus,
+            offerEventTypes[v.status] ?? "offer_received",
+            operationTime,
+          ),
+        ],
+      },
     });
     await refresh();
     openDetail(app.id);
@@ -1058,6 +1182,7 @@ async function applyImport() {
   }
   try {
     await batchImport(state.preview);
+    await applyLifecycleReconciliation();
   } catch (err) {
     $("[data-import-result]").textContent =
       `Import failed: ${err?.message ?? err}`;

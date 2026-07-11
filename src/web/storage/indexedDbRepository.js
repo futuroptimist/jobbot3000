@@ -449,6 +449,51 @@ const deleteMatchingFromStore = async (store, indexName, value) => {
   });
 };
 
+const validateLifecycleBundle = (records) => {
+  const result = browserApplicationExportSchema.safeParse({
+    schemaVersion: BROWSER_BACKUP_SCHEMA_VERSION,
+    exportedAt: new Date(0).toISOString(),
+    applications: records.applications ?? [],
+    contacts: records.contacts ?? [],
+    outreachMessages: records.outreachMessages ?? [],
+    lifecycleEvents: records.lifecycleEvents ?? [],
+    interviews: records.interviews ?? [],
+    offers: records.offers ?? [],
+    artifacts: records.artifacts ?? [],
+    reminders: records.reminders ?? [],
+    settings: records.settings?.[0]
+      ? {
+          ...records.settings[0],
+          schemaVersion: LOCAL_SETTINGS_SCHEMA_VERSION,
+        }
+      : undefined,
+  });
+  if (!result.success) {
+    throw new IndexedDbRepositoryError(
+      "schema_validation_failed",
+      "Lifecycle mutation would violate browser application data integrity.",
+      { details: result.error.flatten() },
+    );
+  }
+  return result.data;
+};
+
+const mergeById = (existing, additions = [], puts = []) => {
+  const byId = new Map(existing.map((record) => [record.id, record]));
+  for (const record of puts) byId.set(record.id, record);
+  for (const record of additions) {
+    if (byId.has(record.id)) {
+      throw new IndexedDbRepositoryError(
+        "duplicate_key",
+        "Lifecycle mutation would add a duplicate record.",
+        { details: { id: record.id } },
+      );
+    }
+    byId.set(record.id, record);
+  }
+  return [...byId.values()];
+};
+
 const validateImport = (data) => {
   const upgraded = upgradeBrowserExportToV2(data);
   const result = browserApplicationExportSchema.safeParse(upgraded.data);
@@ -707,6 +752,63 @@ export const createIndexedDbRepository = async (options = {}) => {
     },
     createOffer(record) {
       return safe(() => addChildRecord(db, "offers", record));
+    },
+
+    async commitLifecycleMutation(mutation) {
+      return safe(async () => {
+        const add = mutation.add ?? {};
+        const put = mutation.put ?? {};
+        const records = Object.fromEntries(
+          await Promise.all(
+            STORE_NAMES.map(async (name) => [name, await getAll(db, name)]),
+          ),
+        );
+        const parsedAdd = Object.fromEntries(
+          STORE_NAMES.map((storeName) => [
+            storeName,
+            (add[storeName] ?? []).map((row) => parseRecord(storeName, row)),
+          ]),
+        );
+        const parsedPut = Object.fromEntries(
+          STORE_NAMES.map((storeName) => [
+            storeName,
+            (put[storeName] ?? []).map((row) => parseRecord(storeName, row)),
+          ]),
+        );
+        const merged = Object.fromEntries(
+          STORE_NAMES.map((storeName) => [
+            storeName,
+            mergeById(
+              records[storeName],
+              parsedAdd[storeName],
+              parsedPut[storeName],
+            ),
+          ]),
+        );
+        validateLifecycleBundle(merged);
+        const touchedStores = STORE_NAMES.filter(
+          (storeName) =>
+            parsedAdd[storeName].length > 0 || parsedPut[storeName].length > 0,
+        );
+        if (!touchedStores.length) return { committed: true, counts: {} };
+        const tx = db.transaction(touchedStores, "readwrite");
+        const done = transactionDone(tx);
+        for (const storeName of touchedStores) {
+          const store = tx.objectStore(storeName);
+          for (const row of parsedPut[storeName]) store.put(row);
+          for (const row of parsedAdd[storeName]) store.add(row);
+        }
+        await done;
+        return {
+          committed: true,
+          counts: Object.fromEntries(
+            touchedStores.map((storeName) => [
+              storeName,
+              parsedAdd[storeName].length + parsedPut[storeName].length,
+            ]),
+          ),
+        };
+      });
     },
     async importPartialData(recordsByStore) {
       return safe(async () => {
