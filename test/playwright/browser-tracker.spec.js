@@ -1277,7 +1277,7 @@ test.describe("browser application tracker", () => {
       await page.locator('[name="appliedAt"]').fill("2026-01-10");
       await page.getByRole("button", { name: "Save application" }).click();
 
-      const recordCounts = async () =>
+      const recordSnapshots = async () =>
         page.evaluate(
           () =>
             new Promise((resolve, reject) => {
@@ -1289,28 +1289,30 @@ test.describe("browser application tracker", () => {
                   ["applications", "outreachMessages", "lifecycleEvents"],
                   "readonly",
                 );
-                const counts = {};
+                const snapshots = {};
                 for (const storeName of [
                   "applications",
                   "outreachMessages",
                   "lifecycleEvents",
                 ]) {
-                  const count = tx.objectStore(storeName).count();
-                  count.onerror = () => reject(count.error);
-                  count.onsuccess = () => {
-                    counts[storeName] = count.result;
+                  const getAll = tx.objectStore(storeName).getAll();
+                  getAll.onerror = () => reject(getAll.error);
+                  getAll.onsuccess = () => {
+                    snapshots[storeName] = getAll.result.toSorted((a, b) =>
+                      String(a.id).localeCompare(String(b.id)),
+                    );
                   };
                 }
                 tx.oncomplete = () => {
                   db.close();
-                  resolve(counts);
+                  resolve(snapshots);
                 };
                 tx.onabort = () => reject(tx.error);
               };
             }),
         );
 
-      const before = await recordCounts();
+      const before = await recordSnapshots();
 
       await page.evaluate(() => {
         const originalAdd = IDBObjectStore.prototype.add;
@@ -1324,67 +1326,105 @@ test.describe("browser application tracker", () => {
           }
           return request;
         };
+        window.__restoreLifecycleFailurePatch = () => {
+          IDBObjectStore.prototype.add = originalAdd;
+        };
 
-        window.__pendingLifecycleBlocker = new Promise((resolve, reject) => {
-          const open = indexedDB.open("jobbot3000");
-          open.onerror = () => reject(open.error);
-          open.onsuccess = () => {
-            const db = open.result;
-            const tx = db.transaction(
-              ["applications", "outreachMessages", "lifecycleEvents"],
-              "readwrite",
+        let releaseBlocker;
+        window.__releasePendingLifecycleBlocker = () => releaseBlocker?.();
+        window.__pendingLifecycleBlockerReady = new Promise(
+          (resolveReady, rejectReady) => {
+            window.__pendingLifecycleBlocker = new Promise(
+              (resolve, reject) => {
+                const open = indexedDB.open("jobbot3000");
+                open.onerror = () => {
+                  rejectReady(open.error);
+                  reject(open.error);
+                };
+                open.onsuccess = () => {
+                  const db = open.result;
+                  const tx = db.transaction(
+                    ["applications", "outreachMessages", "lifecycleEvents"],
+                    "readwrite",
+                  );
+                  const store = tx.objectStore("applications");
+                  let released = false;
+                  window.__releasePendingLifecycleBlocker = () => {
+                    released = true;
+                  };
+                  releaseBlocker = window.__releasePendingLifecycleBlocker;
+                  const keepAlive = () => {
+                    const request = store.get(
+                      "__delay_pending_lifecycle_submit__",
+                    );
+                    request.onerror = () => {
+                      rejectReady(request.error);
+                      reject(request.error);
+                    };
+                    request.onsuccess = () => {
+                      resolveReady();
+                      if (!released) keepAlive();
+                    };
+                  };
+                  keepAlive();
+                  tx.oncomplete = () => {
+                    db.close();
+                    resolve();
+                  };
+                  tx.onabort = () => {
+                    rejectReady(tx.error);
+                    reject(tx.error);
+                  };
+                };
+              },
             );
-            const store = tx.objectStore("applications");
-            const until = performance.now() + 500;
-            const keepAlive = () => {
-              const request = store.get("__delay_pending_lifecycle_submit__");
-              request.onerror = () => reject(request.error);
-              request.onsuccess = () => {
-                if (performance.now() < until) keepAlive();
-              };
-            };
-            keepAlive();
-            tx.oncomplete = () => {
-              db.close();
-              resolve();
-            };
-            tx.onabort = () => reject(tx.error);
-          };
-        });
+          },
+        );
       });
+      await page.evaluate(() => window.__pendingLifecycleBlockerReady);
 
-      const outreachForm = page.locator("[data-outreach-form]");
-      await outreachForm.locator('[name="direction"]').selectOption("inbound");
-      await outreachForm.locator('[name="channel"]').selectOption("linkedin");
-      await outreachForm
-        .locator('[name="body"]')
-        .fill("Persist me after failure");
-      const submit = page.getByRole("button", { name: "Add outreach" }).click();
+      try {
+        const outreachForm = page.locator("[data-outreach-form]");
+        await outreachForm
+          .locator('[name="direction"]')
+          .selectOption("inbound");
+        await outreachForm.locator('[name="channel"]').selectOption("linkedin");
+        await outreachForm
+          .locator('[name="body"]')
+          .fill("Persist me after failure");
+        const submit = page
+          .getByRole("button", { name: "Add outreach" })
+          .click();
 
-      await expect(outreachForm.locator('[name="direction"]')).toBeDisabled();
-      await expect(outreachForm.locator('[name="channel"]')).toBeDisabled();
-      await expect(outreachForm.locator('[name="body"]')).toBeDisabled();
-      await expect(
-        page.getByRole("button", { name: "Add outreach" }),
-      ).toBeDisabled();
+        await expect(outreachForm.locator('[name="direction"]')).toBeDisabled();
+        await expect(outreachForm.locator('[name="channel"]')).toBeDisabled();
+        await expect(outreachForm.locator('[name="body"]')).toBeDisabled();
+        await expect(
+          page.getByRole("button", { name: "Add outreach" }),
+        ).toBeDisabled();
 
-      await submit;
-      await expect(outreachForm.getByRole("alert")).toContainText(
-        "Save failed. No changes were written.",
-      );
-      await expect(outreachForm.locator('[name="direction"]')).toBeEnabled();
-      await expect(outreachForm.locator('[name="channel"]')).toBeEnabled();
-      await expect(outreachForm.locator('[name="body"]')).toBeEnabled();
-      await expect(outreachForm.locator('[name="direction"]')).toHaveValue(
-        "inbound",
-      );
-      await expect(outreachForm.locator('[name="channel"]')).toHaveValue(
-        "linkedin",
-      );
-      await expect(outreachForm.locator('[name="body"]')).toHaveValue(
-        "Persist me after failure",
-      );
-      await expect(recordCounts()).resolves.toEqual(before);
+        await page.evaluate(() => window.__releasePendingLifecycleBlocker());
+        await page.evaluate(() => window.__pendingLifecycleBlocker);
+        await submit;
+        await expect(outreachForm.getByRole("alert")).toContainText(
+          "Save failed. No changes were written.",
+        );
+        await expect(outreachForm.locator('[name="direction"]')).toBeEnabled();
+        await expect(outreachForm.locator('[name="channel"]')).toBeEnabled();
+        await expect(outreachForm.locator('[name="body"]')).toBeEnabled();
+        await expect(outreachForm.locator('[name="direction"]')).toHaveValue(
+          "inbound",
+        );
+        await expect(outreachForm.locator('[name="channel"]')).toHaveValue(
+          "linkedin",
+        );
+        await expect(outreachForm.locator('[name="body"]')).toHaveValue(
+          "Persist me after failure",
+        );
+        await expect(recordSnapshots()).resolves.toEqual(before);
+      } finally {
+        await page.evaluate(() => window.__restoreLifecycleFailurePatch?.());
+      }
     },
   );
 });
