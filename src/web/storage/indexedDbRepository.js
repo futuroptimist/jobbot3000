@@ -450,6 +450,12 @@ const assertSupersessionIsValid = (existingEvents, newEvents) => {
   }
 };
 
+const assertLifecycleSupersessionGraphIsValid = (events) =>
+  assertSupersessionIsValid([], events);
+
+const contactBelongsToApplication = (contact, applicationId) =>
+  contact?.applicationId === applicationId;
+
 const normalizeMutationInput = (mutation) => {
   const application = mutation.application
     ? parseRecord("applications", mutation.application)
@@ -492,9 +498,16 @@ const normalizeMutation = async (tx, mutationInput) => {
   const contactIds = childRecords
     .flatMap(({ record }) => [record.contactId, ...(record.contactIds ?? [])])
     .filter(Boolean);
+  const incomingContacts = new Map(
+    childRecords
+      .filter(({ storeName }) => storeName === "contacts")
+      .map(({ record }) => [record.id, record]),
+  );
   const contacts = await Promise.all(
-    contactIds.map((contactId) =>
-      requestToPromise(tx.objectStore("contacts").get(contactId)),
+    contactIds.map(
+      async (contactId) =>
+        incomingContacts.get(contactId) ??
+        requestToPromise(tx.objectStore("contacts").get(contactId)),
     ),
   );
   if (!application && !existingApplication) {
@@ -504,12 +517,14 @@ const normalizeMutation = async (tx, mutationInput) => {
       { details: { applicationId } },
     );
   }
-  const missingContactIds = contactIds.filter((_, index) => !contacts[index]);
-  if (missingContactIds.length) {
+  const invalidContactIds = contactIds.filter(
+    (_, index) => !contactBelongsToApplication(contacts[index], applicationId),
+  );
+  if (invalidContactIds.length) {
     throw new IndexedDbRepositoryError(
       "schema_validation_failed",
-      "Referenced contact does not exist.",
-      { details: { contactIds: missingContactIds } },
+      "Referenced contact does not exist for this application.",
+      { details: { contactIds: invalidContactIds } },
     );
   }
   const previousStatus = existingApplication?.status;
@@ -873,6 +888,7 @@ export const createIndexedDbRepository = async (options = {}) => {
             return [name, [...byId.values()]];
           }),
         );
+        assertLifecycleSupersessionGraphIsValid(merged.lifecycleEvents);
         const validation = browserApplicationExportSchema.safeParse({
           schemaVersion: BROWSER_BACKUP_SCHEMA_VERSION,
           exportedAt: new Date(0).toISOString(),

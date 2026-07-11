@@ -160,6 +160,60 @@ const EVENT_REGISTRY = Object.freeze({
     category: LIFECYCLE_EVENT_CATEGORIES.ASSESSMENT,
     countsAsResponse: true,
   },
+  recruiter_company_outreach: {
+    category: LIFECYCLE_EVENT_CATEGORIES.APPLICATION_SUBMISSION,
+    status: "outreach_sent",
+  },
+  candidate_outreach: {
+    category: LIFECYCLE_EVENT_CATEGORIES.APPLICATION_SUBMISSION,
+    status: "outreach_sent",
+  },
+  referral: {
+    category: LIFECYCLE_EVENT_CATEGORIES.APPLICATION_SUBMISSION,
+    status: "applied",
+  },
+  other_unknown: {
+    category: LIFECYCLE_EVENT_CATEGORIES.APPLICATION_SUBMISSION,
+  },
+  offer_received: {
+    category: LIFECYCLE_EVENT_CATEGORIES.EMPLOYER_RESPONSE,
+    status: "offer",
+  },
+  offer_negotiating: {
+    category: LIFECYCLE_EVENT_CATEGORIES.EMPLOYER_RESPONSE,
+    status: "offer",
+  },
+  employer_rejected: {
+    category: LIFECYCLE_EVENT_CATEGORIES.EMPLOYER_RESPONSE,
+    status: "rejected",
+  },
+  candidate_withdrew: {
+    category: LIFECYCLE_EVENT_CATEGORIES.EMPLOYER_RESPONSE,
+    status: "withdrawn",
+  },
+  offer_declined: {
+    category: LIFECYCLE_EVENT_CATEGORIES.EMPLOYER_RESPONSE,
+    status: "offer",
+  },
+  offer_expired_rescinded: {
+    category: LIFECYCLE_EVENT_CATEGORIES.EMPLOYER_RESPONSE,
+    status: "offer",
+  },
+  offer_accepted: {
+    category: LIFECYCLE_EVENT_CATEGORIES.EMPLOYER_RESPONSE,
+    status: "accepted",
+  },
+  closed_archived: {
+    category: LIFECYCLE_EVENT_CATEGORIES.EMPLOYER_RESPONSE,
+    status: "closed_archived",
+  },
+  application_reopened: {
+    category: LIFECYCLE_EVENT_CATEGORIES.EMPLOYER_RESPONSE,
+  },
+  status_changed: { category: LIFECYCLE_EVENT_CATEGORIES.EMPLOYER_RESPONSE },
+  migration_status_snapshot: {
+    category: LIFECYCLE_EVENT_CATEGORIES.UNKNOWN_METADATA,
+  },
   next_tracking_step: {
     category: LIFECYCLE_EVENT_CATEGORIES.REMINDER_ACTION,
   },

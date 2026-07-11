@@ -25,9 +25,23 @@ const terminal = new Set([
   "closed_archived",
 ]);
 const idPart = (part) =>
-  String(part ?? "none").replace(/[^a-zA-Z0-9_-]+/g, "_");
+  String(part ?? "none")
+    .replace(/[^a-zA-Z0-9_-]+/g, "_")
+    .slice(0, 40);
+const hashPart = (part) => {
+  const input = String(part ?? "none");
+  let hash = 2166136261;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  return hash.toString(36);
+};
 const stableId = (...parts) =>
-  `recon_${parts.map(idPart).join("_")}`.slice(0, 180);
+  `recon_${parts.map(idPart).join("_")}_${parts.map(hashPart).join("_")}`.slice(
+    0,
+    220,
+  );
 const sortById = (a, b) => String(a.id).localeCompare(String(b.id));
 const effectiveEvents = (events = []) => {
   const superseded = new Set(
@@ -164,7 +178,7 @@ export function planLifecycleReconciliation(bundle = {}) {
         existing,
         app,
         type,
-        i.createdAt || i.updatedAt,
+        i.updatedAt || i.createdAt,
         i.id,
         i.outcome,
         INTERVIEW_EVENT[i.stage] &&

@@ -720,12 +720,12 @@ function detailForm(app) {
         "Compact CSV assessment signal",
     });
   }
-  return `<div class="tracker-detail"><article class="card"><h2>${esc(app.company || "New application")} — ${esc(app.role || "Unsaved")}</h2><form class="tracker-form" data-core-form>${input("company", app.company, true)}${input("role", app.role, true)}${input("postingUrl", app.postingUrl, "url")}<label>Origin<select name="origin" required>${ORIGINS.map((origin) => `<option value="${origin}" ${app.origin === origin ? "selected" : ""}>${origin}</option>`).join("")}</select></label><label>Status<select name="status" required>${STATUSES.map((s) => `<option ${app.status === s ? "selected" : ""}>${s}</option>`).join("")}</select></label>${input("source", app.source, "text")}${input("appliedAt", day(app.appliedAt), "date", app.status === "applied")}${input("followUpDate", day(app.followUpDate), "date")}<label>Notes<textarea name="notes">${esc(app.notes)}</textarea></label><button class="button">Save application</button></form></article><article class="card"><h3>Compact CSV metadata</h3>${metadataSection(app)}</article><article class="card wide-card"><h3>Lifecycle timeline</h3><p class="muted">Events are sorted by occurred date, then due date, then stable ID. All data stays local in this browser.</p><ul class="timeline">${events.map(timelineItem).join("") || '<li class="muted">No lifecycle events for this application yet.</li>'}</ul></article><article class="card"><h3>Assessments/take-homes</h3><form class="tracker-form" data-assessment-form><label>Action status<select name="actionStatus"><option>requested</option><option>pending</option><option>started</option><option>in_progress</option><option>submitted</option><option>completed</option></select></label>${input("dueAt", "", "date")}<label>Details<textarea name="details"></textarea></label><button class="button">Log assessment</button></form>${assessments.length ? `<ul>${assessments.map((item) => `<li>${esc(item.date)} ${esc(item.label)}</li>`).join("")}</ul>` : '<p class="muted">No written assessments or take-homes yet.</p>'}</article><article class="card"><h3>Recruiter screens</h3>${recruiterScreens.length ? `<ul>${recruiterScreens.map((item) => `<li>${esc(item.date)} ${esc(item.label)}</li>`).join("")}</ul>` : '<p class="muted">No recruiter screens yet.</p>'}</article><article class="card"><h3>Interviews</h3><form class="tracker-form" data-interview-form><label>Stage<select name="stage"><option>recruiter_screen</option><option>technical_screen</option><option>onsite_loop</option><option>other</option></select></label>${input("startsAt", day(now()), "date")}<label>Outcome<select name="outcome"><option>scheduled</option><option>completed</option><option>cancelled</option><option>no_show</option></select></label><button class="button">Log interview</button></form><ul>${otherInterviews.map((i) => `<li>${day(i.startsAt)} ${esc(i.stage)} ${esc(i.outcome)}</li>`).join("") || '<li class="muted">No non-recruiter interviews yet.</li>'}</ul></article><article class="card"><h3>Links/artifacts</h3><form class="tracker-form" data-artifact-form>${input("name", "", true)}${input("url", "")}<button class="button">Add link/artifact</button></form><ul>${m.artifacts.map((a) => `<li>${linkForArtifact(a)}</li>`).join("")}</ul></article><article class="card"><h3>Outreach messages</h3><form class="tracker-form" data-outreach-form><label>Direction<select name="direction"><option value="outbound">Outbound</option><option value="inbound">Inbound</option></select></label><label>Channel<select name="channel"><option>email</option><option>linkedin</option><option>phone</option><option>sms</option><option>other</option></select></label><label>Message<textarea name="body" required></textarea></label><button class="button">Add outreach</button></form><ul>${m.outreach.map((o) => `<li>${esc(o.direction)} ${day(o.sentAt || o.receivedAt)} ${esc(o.channel)} ${esc(o.body)}</li>`).join("")}</ul></article><article class="card"><h3>Offers</h3><form class="tracker-form" data-offer-form><label>Status<select name="status"><option>received</option><option>negotiating</option><option>accepted</option><option>declined</option><option>expired</option><option>rescinded</option></select></label>${input("notes", "")}<button class="button">Log offer</button></form><ul>${m.offers.map((o) => `<li>${esc(o.status)} ${esc(o.notes || "")}</li>`).join("")}</ul></article></div>`;
+  return `<div class="tracker-detail"><article class="card"><h2>${esc(app.company || "New application")} — ${esc(app.role || "Unsaved")}</h2><form class="tracker-form" data-core-form>${input("company", app.company, true)}${input("role", app.role, true)}${input("postingUrl", app.postingUrl, "url")}<label>Origin<select name="origin" required>${ORIGINS.map((origin) => `<option value="${origin}" ${app.origin === origin ? "selected" : ""}>${origin}</option>`).join("")}</select></label><label>Status<select name="status" required>${STATUSES.map((s) => `<option ${app.status === s ? "selected" : ""}>${s}</option>`).join("")}</select></label>${input("source", app.source, "text")}${input("appliedAt", day(app.appliedAt), "date", app.origin === "application_submitted", "Application date (if applicable).")}${input("followUpDate", day(app.followUpDate), "date")}<label>Notes<textarea name="notes">${esc(app.notes)}</textarea></label><button class="button">Save application</button></form></article><article class="card"><h3>Compact CSV metadata</h3>${metadataSection(app)}</article><article class="card wide-card"><h3>Lifecycle timeline</h3><p class="muted">Events are sorted by occurred date, then due date, then stable ID. All data stays local in this browser.</p><ul class="timeline">${events.map(timelineItem).join("") || '<li class="muted">No lifecycle events for this application yet.</li>'}</ul></article><article class="card"><h3>Assessments/take-homes</h3><form class="tracker-form" data-assessment-form><label>Action status<select name="actionStatus"><option>requested</option><option>pending</option><option>started</option><option>in_progress</option><option>submitted</option><option>completed</option></select></label>${input("dueAt", "", "date")}<label>Details<textarea name="details"></textarea></label><button class="button">Log assessment</button></form>${assessments.length ? `<ul>${assessments.map((item) => `<li>${esc(item.date)} ${esc(item.label)}</li>`).join("")}</ul>` : '<p class="muted">No written assessments or take-homes yet.</p>'}</article><article class="card"><h3>Recruiter screens</h3>${recruiterScreens.length ? `<ul>${recruiterScreens.map((item) => `<li>${esc(item.date)} ${esc(item.label)}</li>`).join("")}</ul>` : '<p class="muted">No recruiter screens yet.</p>'}</article><article class="card"><h3>Interviews</h3><form class="tracker-form" data-interview-form><label>Stage<select name="stage"><option>recruiter_screen</option><option>technical_screen</option><option>onsite_loop</option><option>other</option></select></label>${input("startsAt", day(now()), "date")}<label>Outcome<select name="outcome"><option>scheduled</option><option>completed</option><option>cancelled</option><option>no_show</option></select></label><button class="button">Log interview</button></form><ul>${otherInterviews.map((i) => `<li>${day(i.startsAt)} ${esc(i.stage)} ${esc(i.outcome)}</li>`).join("") || '<li class="muted">No non-recruiter interviews yet.</li>'}</ul></article><article class="card"><h3>Links/artifacts</h3><form class="tracker-form" data-artifact-form>${input("name", "", true)}${input("url", "")}<button class="button">Add link/artifact</button></form><ul>${m.artifacts.map((a) => `<li>${linkForArtifact(a)}</li>`).join("")}</ul></article><article class="card"><h3>Outreach messages</h3><form class="tracker-form" data-outreach-form><label>Direction<select name="direction"><option value="outbound">Outbound</option><option value="inbound">Inbound</option></select></label><label>Channel<select name="channel"><option>email</option><option>linkedin</option><option>phone</option><option>sms</option><option>other</option></select></label><label>Message<textarea name="body" required></textarea></label><button class="button">Add outreach</button></form><ul>${m.outreach.map((o) => `<li>${esc(o.direction)} ${day(o.sentAt || o.receivedAt)} ${esc(o.channel)} ${esc(o.body)}</li>`).join("")}</ul></article><article class="card"><h3>Offers</h3><form class="tracker-form" data-offer-form><label>Status<select name="status"><option>received</option><option>negotiating</option><option>accepted</option><option>declined</option><option>expired</option><option>rescinded</option></select></label>${input("notes", "")}<button class="button">Log offer</button></form><ul>${m.offers.map((o) => `<li>${esc(o.status)} ${esc(o.notes || "")}</li>`).join("")}</ul></article></div>`;
 }
-function input(n, v = "", type = "text", required = false) {
+function input(n, v = "", type = "text", required = false, label = n) {
   const req = type === true || required ? "required" : "";
   type = type === true ? "text" : type;
-  return `<label>${n}<input name="${n}" type="${type}" value="${esc(v)}" ${req}></label>`;
+  return `<label>${esc(label)}<input name="${n}" type="${type}" value="${esc(v)}" ${req}></label>`;
 }
 function values(form) {
   return Object.fromEntries(new FormData(form).entries());
@@ -785,12 +785,29 @@ function bindDetail(app) {
     }
     return true;
   };
+  const coreForm = $("[data-core-form]");
+  const syncApplicationDateRequirement = () => {
+    const date = coreForm.elements.namedItem("appliedAt");
+    if (date)
+      date.required =
+        coreForm.elements.namedItem("origin")?.value ===
+        "application_submitted";
+  };
+  coreForm.elements
+    .namedItem("origin")
+    ?.addEventListener("change", syncApplicationDateRequirement);
+  syncApplicationDateRequirement();
   $("[data-core-form]").onsubmit = async (e) => {
     e.preventDefault();
     const form = e.target;
     await submitWithRecovery(form, async (v) => {
       const current = latestApp();
       const operationTime = now();
+      if (v.origin === "application_submitted" && !v.appliedAt) {
+        throw new Error(
+          "Application date is required for submitted applications.",
+        );
+      }
       const saved = {
         ...current,
         ...v,
@@ -810,8 +827,10 @@ function bindDetail(app) {
           applicationId: app.id,
           eventType: v.origin,
           status: v.status,
-          occurredAt: saved.appliedAt || operationTime,
-          occurredAtPrecision: saved.appliedAt ? "instant" : "unknown",
+          occurredAt:
+            v.origin === "application_submitted" ? v.appliedAt : operationTime,
+          occurredAtPrecision:
+            v.origin === "application_submitted" ? "date" : "instant",
           inferred: false,
           source: "manual",
           createdAt: operationTime,
@@ -827,8 +846,10 @@ function bindDetail(app) {
           applicationId: app.id,
           eventType: v.origin,
           status: current.status,
-          occurredAt: operationTime,
-          occurredAtPrecision: "instant",
+          occurredAt:
+            v.origin === "application_submitted" ? v.appliedAt : operationTime,
+          occurredAtPrecision:
+            v.origin === "application_submitted" ? "date" : "instant",
           inferred: false,
           source: "manual",
           supersedesEventId: priorOrigin?.id,
