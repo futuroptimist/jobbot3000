@@ -103,6 +103,9 @@ describe("web deployment artifacts", () => {
     expect(packageJson.scripts["smoke:container"]).toBe(
       "bash scripts/smoke-container.sh",
     );
+    expect(packageJson.scripts["smoke:promotion"]).toBe(
+      "node scripts/promotion-smoke.js",
+    );
 
     const staticServer = await readFile(
       path.join(repoRoot, "scripts", "static-server.js"),
@@ -123,6 +126,7 @@ describe("web deployment artifacts", () => {
     expect(staticServer).toContain(
       'res.setHeader("Cache-Control", "no-store")',
     );
+    expect(staticServer).not.toContain('app.get("/healthz/*');
     expect(staticServer).not.toContain("immutable");
     expect(staticServer).toContain("Content-Security-Policy");
     expect(staticServer).not.toContain("/commands");
@@ -142,6 +146,29 @@ describe("web deployment artifacts", () => {
     expect(doc).toContain("are not posted to jobbot3000 server APIs");
     expect(doc).toContain("Clear local data");
     expect(doc).toContain("Browser quota caveats");
+  });
+  it("documents observability boundaries and safe synthetic promotion checks", async () => {
+    const doc = await readFile(
+      path.join(repoRoot, "docs", "observability.md"),
+      "utf8",
+    );
+    expect(doc).toContain("read-only promotion smoke");
+    expect(doc).toContain("staging-only");
+    expect(doc).toContain("must not be collected by the server");
+    expect(doc).toContain(
+      "Custom in-process metrics are intentionally deferred",
+    );
+
+    const smoke = await readFile(
+      path.join(repoRoot, "scripts", "promotion-smoke.js"),
+      "utf8",
+    );
+    expect(smoke).toContain("production-read-only");
+    expect(smoke).toContain("staging-synthetic");
+    expect(smoke).toContain("test-results");
+    expect(smoke).not.toMatch(
+      /console\.log\([^`'"]*(Synthetic Smoke Employer|Synthetic Smoke Role)/,
+    );
   });
 });
 
