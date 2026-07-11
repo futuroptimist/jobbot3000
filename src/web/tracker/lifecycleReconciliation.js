@@ -43,12 +43,24 @@ const stableId = (...parts) =>
     220,
   );
 const sortById = (a, b) => String(a.id).localeCompare(String(b.id));
+const sortChronologically = (a, b) =>
+  String(a.occurredAt).localeCompare(String(b.occurredAt)) ||
+  String(a.id).localeCompare(String(b.id));
 const effectiveEvents = (events = []) => {
   const superseded = new Set(
     events.map((event) => event.supersedesEventId).filter(Boolean),
   );
   return events.filter((event) => !superseded.has(event.id)).sort(sortById);
 };
+const persistedTimestamp = (...records) => {
+  for (const record of records) {
+    const timestamp = record?.updatedAt || record?.createdAt;
+    if (timestamp) return timestamp;
+  }
+  return undefined;
+};
+const persistedApplicationTimestamp = (app) =>
+  app.updatedAt || app.createdAt || "1970-01-01";
 const warn = (warnings, code, applicationId, extra = {}) =>
   warnings.push({ code, applicationId, ...extra });
 const event = (
@@ -95,13 +107,20 @@ const add = (plan, existing, app, type, at, childId, state, status, extra) => {
   return true;
 };
 const replayStatus = (events) =>
-  events
-    .sort(
-      (a, b) =>
-        String(a.occurredAt).localeCompare(String(b.occurredAt)) ||
-        String(a.id).localeCompare(String(b.id)),
-    )
-    .at(-1)?.status;
+  [...events].sort(sortChronologically).at(-1)?.status;
+const detectsRegressiveHistory = (events) => {
+  let terminalReached = false;
+  for (const event of [...events].sort(sortChronologically)) {
+    if (event.eventType === "application_reopened") {
+      terminalReached = false;
+      continue;
+    }
+    if (terminalReached && event.status && !terminal.has(event.status))
+      return true;
+    if (terminal.has(event.status)) terminalReached = true;
+  }
+  return false;
+};
 export function planLifecycleReconciliation(bundle = {}) {
   const applications = [...(bundle.applications ?? [])].sort(sortById);
   const existing = effectiveEvents(bundle.lifecycleEvents ?? []);
@@ -132,31 +151,54 @@ export function planLifecycleReconciliation(bundle = {}) {
     for (const m of [...(bundle.outreachMessages ?? [])]
       .filter((x) => x.applicationId === app.id)
       .sort(sortById)) {
-      if (m.direction === "outbound")
-        add(
-          plan,
-          existing,
-          app,
-          "candidate_outreach",
-          m.sentAt,
-          m.id,
-          "outbound",
-          app.status,
-          { channel: m.channel, occurredAtPrecision: "instant" },
-        );
-      else if (m.direction === "inbound")
-        add(
-          plan,
-          existing,
-          app,
-          "employer_response_received",
-          m.receivedAt,
-          m.id,
-          "inbound",
-          app.status,
-          { channel: m.channel, occurredAtPrecision: "instant" },
-        );
-      else
+      if (m.direction === "outbound") {
+        const occurredAt = m.sentAt || persistedTimestamp(m);
+        if (!m.sentAt) warn(warnings, "unknown_occurrence_precision", app.id);
+        if (occurredAt)
+          add(
+            plan,
+            existing,
+            app,
+            "candidate_outreach",
+            occurredAt,
+            m.id,
+            "outbound",
+            app.status,
+            {
+              channel: m.channel,
+              occurredAtPrecision: m.sentAt ? "instant" : "unknown",
+            },
+          );
+        else
+          warn(warnings, "unreconciled_child_activity", app.id, {
+            childStore: "outreachMessages",
+            childId: m.id,
+          });
+      } else if (m.direction === "inbound") {
+        const occurredAt = m.receivedAt || persistedTimestamp(m);
+        if (!m.receivedAt)
+          warn(warnings, "unknown_occurrence_precision", app.id);
+        if (occurredAt)
+          add(
+            plan,
+            existing,
+            app,
+            "employer_response_received",
+            occurredAt,
+            m.id,
+            "inbound",
+            app.status,
+            {
+              channel: m.channel,
+              occurredAtPrecision: m.receivedAt ? "instant" : "unknown",
+            },
+          );
+        else
+          warn(warnings, "unreconciled_child_activity", app.id, {
+            childStore: "outreachMessages",
+            childId: m.id,
+          });
+      } else
         warn(warnings, "unreconciled_child_activity", app.id, {
           childStore: "outreachMessages",
           childId: m.id,
@@ -173,12 +215,20 @@ export function planLifecycleReconciliation(bundle = {}) {
           childStore: "interviews",
           childId: i.id,
         });
+      const occurredAt = i.updatedAt || i.createdAt;
+      if (!occurredAt) {
+        warn(warnings, "unknown_occurrence_precision", app.id);
+        warn(warnings, "unreconciled_child_activity", app.id, {
+          childStore: "interviews",
+          childId: i.id,
+        });
+      }
       add(
         plan,
         existing,
         app,
         type,
-        i.updatedAt || i.createdAt,
+        occurredAt,
         i.id,
         i.outcome,
         INTERVIEW_EVENT[i.stage] &&
@@ -188,7 +238,7 @@ export function planLifecycleReconciliation(bundle = {}) {
         {
           stageLabel: i.stage,
           dueAt: i.startsAt,
-          occurredAtPrecision: "instant",
+          occurredAtPrecision: occurredAt ? "instant" : "unknown",
         },
       );
     }
@@ -203,23 +253,32 @@ export function planLifecycleReconciliation(bundle = {}) {
         });
         continue;
       }
+      const occurredAt = o.updatedAt || o.createdAt;
+      if (!occurredAt) {
+        warn(warnings, "unknown_occurrence_precision", app.id);
+        warn(warnings, "unreconciled_child_activity", app.id, {
+          childStore: "offers",
+          childId: o.id,
+        });
+      }
       add(
         plan,
         existing,
         app,
         type,
-        o.updatedAt || o.createdAt,
+        occurredAt,
         o.id,
         o.status,
         o.status === "accepted" ? "accepted" : "offer",
         { occurredAtPrecision: "instant" },
       );
     }
-    const represented = existing
+    const effectiveAppEvents = existing
       .concat(plan.additions)
-      .some((e) => e.applicationId === app.id && e.status === app.status);
+      .filter((e) => e.applicationId === app.id);
+    const replayedBeforeSnapshot = replayStatus(effectiveAppEvents);
     if (
-      !represented &&
+      replayedBeforeSnapshot !== app.status &&
       !existing.some(
         (e) =>
           e.applicationId === app.id &&
@@ -232,7 +291,7 @@ export function planLifecycleReconciliation(bundle = {}) {
         event(
           app,
           "migration_status_snapshot",
-          "1970-01-01",
+          persistedApplicationTimestamp(app),
           "status",
           app.status,
           app.status,
@@ -240,12 +299,13 @@ export function planLifecycleReconciliation(bundle = {}) {
         ),
       );
     }
-    const replayed = replayStatus(
-      existing.concat(plan.additions).filter((e) => e.applicationId === app.id),
-    );
+    const replayEvents = existing
+      .concat(plan.additions)
+      .filter((e) => e.applicationId === app.id);
+    const replayed = replayStatus(replayEvents);
     if (replayed && replayed !== app.status)
       warn(warnings, "status_history_mismatch", app.id);
-    if (terminal.has(replayed) && !terminal.has(app.status))
+    if (detectsRegressiveHistory(replayEvents))
       warn(warnings, "regressive_history", app.id);
     plan.additions.sort(sortById);
     plan.warnings = warnings

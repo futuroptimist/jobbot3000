@@ -110,7 +110,6 @@ describe("lifecycle reconciliation planner", () => {
     });
     expect(plan.warnings.map((warning) => warning.code)).toEqual(
       expect.arrayContaining([
-        "status_history_mismatch",
         "status_snapshot_inferred",
         "unknown_occurrence_precision",
       ]),
@@ -125,6 +124,171 @@ describe("lifecycle reconciliation planner", () => {
         (event) => event.eventType === "migration_status_snapshot",
       ).occurredAtPrecision,
     ).toBe("unknown");
+  });
+
+  it("replays effective history before adding a deterministic status snapshot", () => {
+    const bundle = {
+      applications: [
+        {
+          ...app,
+          id: "app_fake_snapshot",
+          status: "applied",
+          updatedAt: "2026-01-04T00:00:00.000Z",
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_fake_origin",
+          applicationId: "app_fake_snapshot",
+          eventType: "application_submitted",
+          status: "applied",
+          occurredAt: "2026-01-01T00:00:00.000Z",
+          occurredAtPrecision: "instant",
+          inferred: false,
+          source: "manual",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          id: "event_fake_offer",
+          applicationId: "app_fake_snapshot",
+          eventType: "offer_received",
+          status: "offer",
+          occurredAt: "2026-01-02T00:00:00.000Z",
+          occurredAtPrecision: "instant",
+          inferred: false,
+          source: "manual",
+          createdAt: "2026-01-02T00:00:00.000Z",
+        },
+      ],
+      outreachMessages: [],
+      interviews: [],
+      offers: [],
+    };
+    const plan = planLifecycleReconciliation(bundle);
+    const snapshots = plan.additions.filter(
+      (event) => event.eventType === "migration_status_snapshot",
+    );
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]).toMatchObject({
+      occurredAt: "2026-01-04T00:00:00.000Z",
+      occurredAtPrecision: "unknown",
+      status: "applied",
+    });
+    expect(
+      planLifecycleReconciliation({
+        ...bundle,
+        lifecycleEvents: bundle.lifecycleEvents.concat(plan.additions),
+      }).additions,
+    ).toEqual([]);
+  });
+
+  it("reconciles outreach with missing direction timestamps safely", () => {
+    const plan = planLifecycleReconciliation({
+      applications: [app],
+      lifecycleEvents: [],
+      outreachMessages: [
+        {
+          id: "msg_fake_missing_sent",
+          applicationId: app.id,
+          direction: "outbound",
+          channel: "email",
+          createdAt: "2026-01-06T00:00:00.000Z",
+          body: "private outbound",
+        },
+        {
+          id: "msg_fake_missing_all",
+          applicationId: app.id,
+          direction: "inbound",
+          channel: "email",
+          body: "private inbound",
+        },
+      ],
+      interviews: [],
+      offers: [],
+    });
+    expect(
+      plan.additions.find(
+        (event) => event.sourceArtifact === "msg_fake_missing_sent",
+      ),
+    ).toMatchObject({
+      eventType: "candidate_outreach",
+      occurredAt: "2026-01-06T00:00:00.000Z",
+      occurredAtPrecision: "unknown",
+      actionStatus: "outbound",
+    });
+    expect(
+      plan.additions.some(
+        (event) => event.sourceArtifact === "msg_fake_missing_all",
+      ),
+    ).toBe(false);
+    expect(plan.warnings.map((warning) => warning.code)).toEqual(
+      expect.arrayContaining([
+        "unknown_occurrence_precision",
+        "unreconciled_child_activity",
+      ]),
+    );
+    expect(JSON.stringify(plan.warnings)).not.toContain("private");
+  });
+
+  it("warns when nonterminal history follows a terminal event without reopen", () => {
+    const base = {
+      applications: [{ ...app, id: "app_fake_regressive" }],
+      lifecycleEvents: [
+        {
+          id: "event_fake_rejected",
+          applicationId: "app_fake_regressive",
+          eventType: "employer_rejected",
+          status: "rejected",
+          occurredAt: "2026-01-02T00:00:00.000Z",
+          occurredAtPrecision: "instant",
+          inferred: false,
+          source: "manual",
+          createdAt: "2026-01-02T00:00:00.000Z",
+        },
+        {
+          id: "event_fake_interview",
+          applicationId: "app_fake_regressive",
+          eventType: "technical_interview",
+          status: "technical_screen",
+          occurredAt: "2026-01-03T00:00:00.000Z",
+          occurredAtPrecision: "instant",
+          inferred: false,
+          source: "manual",
+          createdAt: "2026-01-03T00:00:00.000Z",
+        },
+      ],
+      outreachMessages: [],
+      interviews: [],
+      offers: [],
+    };
+    expect(planLifecycleReconciliation(base).warnings).toContainEqual(
+      expect.objectContaining({
+        applicationId: "app_fake_regressive",
+        code: "regressive_history",
+      }),
+    );
+    expect(
+      planLifecycleReconciliation({
+        ...base,
+        lifecycleEvents: [
+          base.lifecycleEvents[0],
+          {
+            id: "event_fake_reopen",
+            applicationId: "app_fake_regressive",
+            eventType: "application_reopened",
+            status: "applied",
+            occurredAt: "2026-01-02T12:00:00.000Z",
+            occurredAtPrecision: "instant",
+            inferred: false,
+            source: "manual",
+            createdAt: "2026-01-02T12:00:00.000Z",
+          },
+          base.lifecycleEvents[1],
+        ],
+      }).warnings,
+    ).not.toContainEqual(
+      expect.objectContaining({ code: "regressive_history" }),
+    );
   });
 
   it("keeps cancelled and no-show interviews at current status", () => {

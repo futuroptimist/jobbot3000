@@ -623,6 +623,13 @@ function sortedLifecycleEvents(appId, options = {}) {
       return occurred || due || String(a.id).localeCompare(String(b.id));
     });
 }
+
+function effectiveLifecycleEvents(events = []) {
+  const superseded = new Set(
+    events.map((event) => event.supersedesEventId).filter(Boolean),
+  );
+  return events.filter((event) => !superseded.has(event.id));
+}
 function eventDetails(e) {
   return Object.entries({
     Type: e.eventType,
@@ -836,9 +843,9 @@ function bindDetail(app) {
           createdAt: operationTime,
         });
       } else if (v.origin !== current.origin) {
-        const priorOrigin = sortedLifecycleEvents(app.id, {
-          includeInferred: true,
-        })
+        const priorOrigin = effectiveLifecycleEvents(
+          sortedLifecycleEvents(app.id, { includeInferred: true }),
+        )
           .filter((event) => ORIGINS.includes(event.eventType))
           .at(-1);
         events.push({
