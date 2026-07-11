@@ -2,6 +2,8 @@
 
 The production tracker is a static, browser-only application. The container or server serves HTML, CSS, JavaScript, the web manifest, and health endpoints; private tracker records are stored in the user's browser IndexedDB database named `jobbot3000`.
 
+See [Static tracker observability contract](observability.md) for blackbox smoke checks, resource signals, synthetic staging journeys, and telemetry privacy boundaries.
+
 ## What stays in IndexedDB
 
 The browser tracker stores applications, contacts, outreach messages, lifecycle events, interviews, offers, artifact links, reminders, and tracker settings in IndexedDB. Imported CSV contents are parsed in the browser and written directly to IndexedDB only after the user chooses **Apply import**.

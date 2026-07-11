@@ -2,6 +2,8 @@
 
 Use this checklist after deploying a staging image or chart update for the browser-only tracker. Use only anonymized fixtures or private local backups; never commit real backups, screenshots, application notes, company names, candidate names, private URLs, or artifact links.
 
+See [Static tracker observability contract](observability.md) for blackbox smoke checks, resource signals, synthetic staging journeys, and telemetry privacy boundaries.
+
 ## Deploy and smoke-check staging
 
 1. Deploy staging with the intended immutable image tag.

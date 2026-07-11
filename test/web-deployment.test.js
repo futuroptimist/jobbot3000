@@ -103,6 +103,12 @@ describe("web deployment artifacts", () => {
     expect(packageJson.scripts["smoke:container"]).toBe(
       "bash scripts/smoke-container.sh",
     );
+    expect(packageJson.scripts["smoke:promotion"]).toBe(
+      "node scripts/promotion-smoke.js",
+    );
+    expect(packageJson.scripts["smoke:synthetic"]).toBe(
+      "node scripts/promotion-smoke.js --synthetic",
+    );
 
     const staticServer = await readFile(
       path.join(repoRoot, "scripts", "static-server.js"),

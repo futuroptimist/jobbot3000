@@ -4,6 +4,8 @@ jobbot3000 production mode is a static, browser-local application tracker. The
 container serves HTML, CSS, JavaScript, the web manifest, and health endpoints on
 port `8080`; tracker records are stored only in the user's browser IndexedDB.
 
+See [Static tracker observability contract](observability.md) for blackbox smoke checks, resource signals, synthetic staging journeys, and telemetry privacy boundaries.
+
 ## Architecture summary
 
 - Public deployment surface: `/`, `/tracker`, `/healthz`, `/livez`, and static
