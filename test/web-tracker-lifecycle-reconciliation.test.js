@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { planLifecycleReconciliation } from "../src/web/tracker/lifecycleReconciliation.js";
 
+const ts = "2026-01-01T00:00:00.000Z";
+
 const app = {
   id: "app_fake_001",
   company: "Fake Co",
@@ -294,7 +296,19 @@ describe("lifecycle reconciliation planner", () => {
   it("keeps cancelled and no-show interviews at current status", () => {
     const plan = planLifecycleReconciliation({
       applications: [{ ...app, status: "applied" }],
-      lifecycleEvents: [],
+      lifecycleEvents: [
+        {
+          id: "event_fake_snapshot_warning_origin",
+          applicationId: "app_fake_snapshot_warning",
+          eventType: "application_submitted",
+          status: "applied",
+          occurredAt: "2026-01-01T00:00:00.000Z",
+          occurredAtPrecision: "instant",
+          inferred: false,
+          source: "manual",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
       outreachMessages: [],
       interviews: [
         {
@@ -372,5 +386,283 @@ describe("lifecycle reconciliation planner", () => {
       ),
     ).toEqual([]);
     expect(JSON.stringify(plan.warnings)).not.toContain("private");
+  });
+  it("maps every offer state and keeps future startsAt only as dueAt", () => {
+    const offerCases = [
+      ["received", "offer_received", "offer"],
+      ["negotiating", "offer_negotiating", "offer"],
+      ["accepted", "offer_accepted", "accepted"],
+      ["declined", "offer_declined", "offer"],
+      ["expired", "offer_expired_rescinded", "offer"],
+      ["rescinded", "offer_expired_rescinded", "offer"],
+    ];
+    const plan = planLifecycleReconciliation({
+      applications: [app],
+      lifecycleEvents: [],
+      outreachMessages: [],
+      interviews: [
+        {
+          id: "int_fake_future",
+          applicationId: app.id,
+          contactIds: [],
+          stage: "onsite_loop",
+          startsAt: "2099-01-01T00:00:00.000Z",
+          outcome: "scheduled",
+          createdAt: "2026-01-07T00:00:00.000Z",
+          updatedAt: "2026-01-08T00:00:00.000Z",
+        },
+      ],
+      offers: offerCases.map(([status], index) => ({
+        id: `offer_fake_map_${status}`,
+        applicationId: app.id,
+        status,
+        notes: `private note ${index}`,
+        createdAt: `2026-01-1${index}T00:00:00.000Z`,
+        updatedAt: `2026-01-1${index}T00:00:00.000Z`,
+      })),
+    });
+    for (const [status, eventType, eventStatus] of offerCases) {
+      expect(plan.additions).toContainEqual(
+        expect.objectContaining({
+          sourceArtifact: `offer_fake_map_${status}`,
+          actionStatus: status,
+          eventType,
+          status: eventStatus,
+        }),
+      );
+    }
+    const interview = plan.additions.find(
+      (event) => event.sourceArtifact === "int_fake_future",
+    );
+    expect(interview).toMatchObject({
+      eventType: "onsite_final_loop",
+      occurredAt: "2026-01-08T00:00:00.000Z",
+      dueAt: "2099-01-01T00:00:00.000Z",
+    });
+    expect(JSON.stringify(plan)).not.toContain("private note");
+  });
+
+  it("emits every required warning code with identifier-only payloads", () => {
+    const plan = planLifecycleReconciliation({
+      applications: [
+        {
+          ...app,
+          id: "app_fake_warnings",
+          status: "accepted",
+          appliedAt: undefined,
+          company: "Do Not Leak Co",
+          role: "Do Not Leak Role",
+          createdAt: undefined,
+          updatedAt: undefined,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_fake_terminal_warning",
+          applicationId: "app_fake_warnings",
+          eventType: "employer_rejected",
+          status: "rejected",
+          occurredAt: "2026-01-02T00:00:00.000Z",
+          occurredAtPrecision: "instant",
+          inferred: false,
+          source: "manual",
+          note: "Do Not Leak Note",
+          createdAt: "2026-01-02T00:00:00.000Z",
+        },
+        {
+          id: "event_fake_regressive_warning",
+          applicationId: "app_fake_warnings",
+          eventType: "technical_interview",
+          status: "technical_screen",
+          occurredAt: "2026-01-03T00:00:00.000Z",
+          occurredAtPrecision: "instant",
+          inferred: false,
+          source: "manual",
+          details: "Do Not Leak Details",
+          createdAt: "2026-01-03T00:00:00.000Z",
+        },
+        {
+          id: "event_fake_existing_snapshot_wrong",
+          applicationId: "app_fake_warnings",
+          eventType: "migration_status_snapshot",
+          status: "offer",
+          occurredAt: "2026-01-04T00:00:00.000Z",
+          occurredAtPrecision: "unknown",
+          inferred: true,
+          source: "reconciliation",
+          createdAt: "1970-01-01T00:00:00.000Z",
+        },
+      ],
+      outreachMessages: [
+        {
+          id: "msg_fake_unknown_direction",
+          applicationId: "app_fake_warnings",
+          direction: "sideways",
+          channel: "email",
+          body: "Do Not Leak Body",
+          createdAt: "2026-01-05T00:00:00.000Z",
+          updatedAt: "2026-01-05T00:00:00.000Z",
+        },
+        {
+          id: "msg_fake_no_time",
+          applicationId: "app_fake_warnings",
+          direction: "outbound",
+          channel: "email",
+          body: "Do Not Leak URL https://private.test",
+        },
+      ],
+      interviews: [],
+      offers: [],
+    });
+    const snapshotPlan = planLifecycleReconciliation({
+      applications: [
+        {
+          ...app,
+          id: "app_fake_snapshot_warning",
+          status: "accepted",
+          appliedAt: undefined,
+        },
+      ],
+      lifecycleEvents: [
+        {
+          id: "event_fake_snapshot_warning_origin",
+          applicationId: "app_fake_snapshot_warning",
+          eventType: "application_submitted",
+          status: "applied",
+          occurredAt: "2026-01-01T00:00:00.000Z",
+          occurredAtPrecision: "instant",
+          inferred: false,
+          source: "manual",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      outreachMessages: [],
+      interviews: [],
+      offers: [],
+    });
+    expect(
+      [...plan.warnings, ...snapshotPlan.warnings].map(
+        (warning) => warning.code,
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        "missing_origin_timestamp",
+        "regressive_history",
+        "status_history_mismatch",
+        "status_snapshot_inferred",
+        "unknown_occurrence_precision",
+        "unreconciled_child_activity",
+      ]),
+    );
+    expect(plan.warnings).toEqual(
+      [...plan.warnings].sort(
+        (a, b) =>
+          a.applicationId.localeCompare(b.applicationId) ||
+          a.code.localeCompare(b.code),
+      ),
+    );
+    const serialized = JSON.stringify([
+      ...plan.warnings,
+      ...snapshotPlan.warnings,
+    ]);
+    for (const leaked of ["Do Not Leak", "private.test"]) {
+      expect(serialized).not.toContain(leaked);
+    }
+  });
+
+  it("uses collision-resistant deterministic IDs", () => {
+    const longPrefix = "shared-prefix-".repeat(8);
+    const planA = planLifecycleReconciliation({
+      applications: [app],
+      lifecycleEvents: [],
+      outreachMessages: [
+        {
+          id: "msg.a",
+          applicationId: app.id,
+          direction: "outbound",
+          channel: "email",
+          sentAt: ts,
+          createdAt: ts,
+          updatedAt: ts,
+        },
+        {
+          id: "msg/a",
+          applicationId: app.id,
+          direction: "outbound",
+          channel: "email",
+          sentAt: ts,
+          createdAt: ts,
+          updatedAt: ts,
+        },
+        {
+          id: `${longPrefix}A`,
+          applicationId: app.id,
+          direction: "inbound",
+          channel: "email",
+          receivedAt: ts,
+          createdAt: ts,
+          updatedAt: ts,
+        },
+        {
+          id: `${longPrefix}B`,
+          applicationId: app.id,
+          direction: "inbound",
+          channel: "email",
+          receivedAt: ts,
+          createdAt: ts,
+          updatedAt: ts,
+        },
+      ],
+      interviews: [],
+      offers: [],
+    });
+    const bundle = {
+      applications: [app],
+      lifecycleEvents: [],
+      outreachMessages: [
+        {
+          id: "msg.a",
+          applicationId: app.id,
+          direction: "outbound",
+          channel: "email",
+          sentAt: ts,
+          createdAt: ts,
+          updatedAt: ts,
+        },
+        {
+          id: "msg/a",
+          applicationId: app.id,
+          direction: "outbound",
+          channel: "email",
+          sentAt: ts,
+          createdAt: ts,
+          updatedAt: ts,
+        },
+        {
+          id: `${longPrefix}A`,
+          applicationId: app.id,
+          direction: "inbound",
+          channel: "email",
+          receivedAt: ts,
+          createdAt: ts,
+          updatedAt: ts,
+        },
+        {
+          id: `${longPrefix}B`,
+          applicationId: app.id,
+          direction: "inbound",
+          channel: "email",
+          receivedAt: ts,
+          createdAt: ts,
+          updatedAt: ts,
+        },
+      ],
+      interviews: [],
+      offers: [],
+    };
+    const planB = planLifecycleReconciliation(bundle);
+    const ids = planA.additions.map((event) => event.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toEqual(planB.additions.map((event) => event.id));
   });
 });

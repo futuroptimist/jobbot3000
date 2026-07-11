@@ -1191,4 +1191,76 @@ test.describe("browser application tracker", () => {
 
     expect(mutatingRequests).toEqual([]);
   });
+
+  test("requires application date only for submitted origins and records reopen events", async ({
+    page,
+  }) => {
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.getByRole("button", { name: "New application" }).click();
+
+    const dateInput = page.locator('[data-core-form] [name="appliedAt"]');
+    await expect(
+      page.getByText("Application date (if applicable).", { exact: true }),
+    ).toBeVisible();
+    await expect(dateInput).toHaveAttribute("required", "");
+    await page
+      .locator('[data-core-form] [name="origin"]')
+      .selectOption("candidate_outreach");
+    await expect(dateInput).not.toHaveAttribute("required", "");
+    await page
+      .locator('[data-core-form] [name="origin"]')
+      .selectOption("application_submitted");
+    await expect(dateInput).toHaveAttribute("required", "");
+
+    await page.locator('[name="company"]').fill("Reopen Coverage Co");
+    await page.locator('[name="role"]').fill("Lifecycle QA");
+    await dateInput.fill("2026-01-10");
+    await page.getByRole("button", { name: "Save application" }).click();
+
+    const countEvents = async () =>
+      page.evaluate(
+        () =>
+          new Promise((resolve, reject) => {
+            const request = indexedDB.open("jobbot3000");
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => {
+              const db = request.result;
+              const tx = db.transaction("lifecycleEvents", "readonly");
+              const getAll = tx.objectStore("lifecycleEvents").getAll();
+              getAll.onerror = () => reject(getAll.error);
+              getAll.onsuccess = () => resolve(getAll.result);
+              tx.oncomplete = () => db.close();
+            };
+          }),
+      );
+
+    const createdEvents = await countEvents();
+    await page.locator('[name="role"]').fill("Lifecycle QA Updated");
+    await page.getByRole("button", { name: "Save application" }).click();
+    await expect(page.locator('[name="role"]')).toHaveValue(
+      "Lifecycle QA Updated",
+    );
+    await expect
+      .poll(async () => (await countEvents()).length)
+      .toBe(createdEvents.length);
+
+    await page
+      .locator('[data-core-form] [name="status"]')
+      .selectOption("rejected");
+    await page.getByRole("button", { name: "Save application" }).click();
+    await page
+      .locator('[data-core-form] [name="status"]')
+      .selectOption("applied");
+    await page.getByRole("button", { name: "Save application" }).click();
+    await expect
+      .poll(
+        async () =>
+          (await countEvents()).filter(
+            (event) => event.eventType === "application_reopened",
+          ).length,
+      )
+      .toBe(1);
+  });
 });
