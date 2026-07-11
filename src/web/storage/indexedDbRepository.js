@@ -420,6 +420,118 @@ const putChildRecord = async (db, storeName, record) => {
   return putRecord(db, storeName, parsed);
 };
 
+const assertSupersessionIsValid = (events) => {
+  const byId = new Map(events.map((event) => [event.id, event]));
+  for (const event of events) {
+    if (!event.supersedesEventId) continue;
+    const superseded = byId.get(event.supersedesEventId);
+    if (!superseded || superseded.applicationId !== event.applicationId) {
+      throw new IndexedDbRepositoryError(
+        "schema_validation_failed",
+        "Lifecycle supersession must reference an event for the same application.",
+        { details: { supersedesEventId: event.supersedesEventId } },
+      );
+    }
+    const seen = new Set([event.id]);
+    let cursor = superseded;
+    while (cursor?.supersedesEventId) {
+      if (seen.has(cursor.supersedesEventId)) {
+        throw new IndexedDbRepositoryError(
+          "schema_validation_failed",
+          "Lifecycle supersession cycle rejected.",
+          { details: { supersedesEventId: event.supersedesEventId } },
+        );
+      }
+      seen.add(cursor.supersedesEventId);
+      cursor = byId.get(cursor.supersedesEventId);
+    }
+  }
+};
+
+const normalizeMutation = async (db, mutation) => {
+  const application = mutation.application
+    ? parseRecord("applications", mutation.application)
+    : null;
+  const childRecords = Object.entries(mutation.records ?? {}).flatMap(
+    ([storeName, records]) =>
+      records.map((record) => ({
+        storeName,
+        record: parseRecord(storeName, record),
+      })),
+  );
+  const appIds = new Set(
+    [
+      application?.id,
+      ...childRecords.map(({ record }) => record.applicationId),
+    ].filter(Boolean),
+  );
+  if (appIds.size !== 1) {
+    throw new IndexedDbRepositoryError(
+      "schema_validation_failed",
+      "Lifecycle mutation must reference exactly one application.",
+      { details: { applicationIds: [...appIds].sort() } },
+    );
+  }
+  const applicationId = [...appIds][0];
+  const stores = [
+    ...new Set([
+      "applications",
+      "contacts",
+      "lifecycleEvents",
+      ...childRecords.map(({ storeName }) => storeName),
+    ]),
+  ];
+  const tx = db.transaction(stores, "readonly");
+  const done = transactionDone(tx);
+  const existingApplication = await requestToPromise(
+    tx.objectStore("applications").get(applicationId),
+  );
+  const existingEvents = await requestToPromise(
+    tx
+      .objectStore("lifecycleEvents")
+      .index("by_applicationId")
+      .getAll(applicationId),
+  );
+  const contactIds = childRecords
+    .flatMap(({ record }) => [record.contactId, ...(record.contactIds ?? [])])
+    .filter(Boolean);
+  const contacts = await Promise.all(
+    contactIds.map((contactId) =>
+      requestToPromise(tx.objectStore("contacts").get(contactId)),
+    ),
+  );
+  await done;
+  if (!application && !existingApplication) {
+    throw new IndexedDbRepositoryError(
+      "schema_validation_failed",
+      "Referenced application does not exist.",
+      { details: { applicationId } },
+    );
+  }
+  const missingContactIds = contactIds.filter((_, index) => !contacts[index]);
+  if (missingContactIds.length) {
+    throw new IndexedDbRepositoryError(
+      "schema_validation_failed",
+      "Referenced contact does not exist.",
+      { details: { contactIds: missingContactIds } },
+    );
+  }
+  const previousStatus = existingApplication?.status;
+  const lifecycleEvents = childRecords
+    .filter(({ storeName }) => storeName === "lifecycleEvents")
+    .map(({ record }) => ({ previousStatus, ...record }));
+  assertSupersessionIsValid([...existingEvents, ...lifecycleEvents]);
+  return {
+    application,
+    childRecords: childRecords.map((item) =>
+      item.storeName === "lifecycleEvents"
+        ? { ...item, record: lifecycleEvents.shift() }
+        : item,
+    ),
+    previousStatus,
+  };
+};
+
 const deleteFromIndex = async (db, storeName, indexName, value) => {
   const tx = db.transaction(storeName, "readwrite");
   const done = transactionDone(tx);
@@ -547,6 +659,35 @@ export const createIndexedDbRepository = async (options = {}) => {
     },
     upsertArtifact(record) {
       return safe(() => putChildRecord(db, "artifacts", record));
+    },
+
+    async commitLifecycleMutation(mutation) {
+      return safe(async () => {
+        const normalized = await normalizeMutation(db, mutation);
+        const storeNames = [
+          ...new Set(
+            [
+              normalized.application ? "applications" : null,
+              ...normalized.childRecords.map(({ storeName }) => storeName),
+            ].filter(Boolean),
+          ),
+        ];
+        const tx = db.transaction(storeNames, "readwrite");
+        const done = transactionDone(tx);
+        if (normalized.application)
+          tx.objectStore("applications").put(normalized.application);
+        for (const { storeName, record } of normalized.childRecords) {
+          const store = tx.objectStore(storeName);
+          if (
+            storeName === "lifecycleEvents" ||
+            storeName === "outreachMessages"
+          )
+            store.add(record);
+          else store.put(record);
+        }
+        await done;
+        return { previousStatus: normalized.previousStatus };
+      });
     },
     async listDueFollowUps(now = new Date().toISOString()) {
       return safe(async () =>
