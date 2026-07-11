@@ -25,6 +25,7 @@ import {
   selectDashboardMetrics,
 } from "./metrics.js";
 import { createIndexedDbRepository } from "../storage/indexedDbRepository.js";
+import { planLifecycleReconciliation } from "./lifecycleReconciliation.js";
 
 /* canonical CSV/backup helpers are shared with spreadsheet import/export tests. */
 const ARRAY_STORES = [
@@ -36,6 +37,13 @@ const ARRAY_STORES = [
   "offers",
   "artifacts",
   "reminders",
+];
+const ORIGINS = [
+  "application_submitted",
+  "recruiter_company_outreach",
+  "candidate_outreach",
+  "referral",
+  "other_unknown",
 ];
 const STATUSES = [
   "applied",
@@ -104,6 +112,8 @@ const repo = {
   },
   clear: async () => (await getRepository()).clearAllData(),
   exportAll: async () => (await getRepository()).exportAllData(),
+  commitLifecycleMutation: async (mutation) =>
+    (await getRepository()).commitLifecycleMutation(mutation),
 };
 async function batchImport(recordsByStore) {
   return (await getRepository()).importPartialData(recordsByStore);
@@ -117,6 +127,7 @@ const state = {
   dir: -1,
   current: null,
   detailSave: Promise.resolve(),
+  reconciliationWarnings: [],
 };
 function weekBucket(value) {
   const d = day(value);
@@ -273,8 +284,14 @@ const metadataText = (app) =>
   metadataEntries(app)
     .map(([label, value]) => `${label}: ${value}`)
     .join(" · ");
+
+function updateLifecycleReconciliationWarnings(bundle) {
+  const plan = planLifecycleReconciliation(bundle, { operationTime: now() });
+  state.reconciliationWarnings = plan.warnings;
+}
 async function refresh() {
   state.bundle = await repo.exportAll();
+  updateLifecycleReconciliationWarnings(state.bundle);
   state.apps = state.bundle.applications.sort((a, b) =>
     String(b.appliedAt || "").localeCompare(a.appliedAt || ""),
   );
@@ -658,7 +675,7 @@ function detailForm(app) {
         "Compact CSV assessment signal",
     });
   }
-  return `<div class="tracker-detail"><article class="card"><h2>${esc(app.company || "New application")} — ${esc(app.role || "Unsaved")}</h2><form class="tracker-form" data-core-form>${input("company", app.company, true)}${input("role", app.role, true)}${input("postingUrl", app.postingUrl, "url")}<label>Status<select name="status" required>${STATUSES.map((s) => `<option ${app.status === s ? "selected" : ""}>${s}</option>`).join("")}</select></label>${input("source", app.source, "text")}${input("appliedAt", day(app.appliedAt), "date", true)}${input("followUpDate", day(app.followUpDate), "date")}<label>Notes<textarea name="notes">${esc(app.notes)}</textarea></label><button class="button">Save application</button></form></article><article class="card"><h3>Compact CSV metadata</h3>${metadataSection(app)}</article><article class="card wide-card"><h3>Lifecycle timeline</h3><p class="muted">Events are sorted by occurred date, then due date, then stable ID. All data stays local in this browser.</p><ul class="timeline">${events.map(timelineItem).join("") || '<li class="muted">No lifecycle events for this application yet.</li>'}</ul></article><article class="card"><h3>Assessments/take-homes</h3>${assessments.length ? `<ul>${assessments.map((item) => `<li>${esc(item.date)} ${esc(item.label)}</li>`).join("")}</ul>` : '<p class="muted">No written assessments or take-homes yet.</p>'}</article><article class="card"><h3>Recruiter screens</h3>${recruiterScreens.length ? `<ul>${recruiterScreens.map((item) => `<li>${esc(item.date)} ${esc(item.label)}</li>`).join("")}</ul>` : '<p class="muted">No recruiter screens yet.</p>'}</article><article class="card"><h3>Interviews</h3><form class="tracker-form" data-interview-form><label>Stage<select name="stage"><option>recruiter_screen</option><option>technical_screen</option><option>onsite_loop</option><option>other</option></select></label>${input("startsAt", day(now()), "date")}<button class="button">Log interview</button></form><ul>${otherInterviews.map((i) => `<li>${day(i.startsAt)} ${esc(i.stage)} ${esc(i.outcome)}</li>`).join("") || '<li class="muted">No non-recruiter interviews yet.</li>'}</ul></article><article class="card"><h3>Links/artifacts</h3><form class="tracker-form" data-artifact-form>${input("name", "", true)}${input("url", "")}<button class="button">Add link/artifact</button></form><ul>${m.artifacts.map((a) => `<li>${linkForArtifact(a)}</li>`).join("")}</ul></article><article class="card"><h3>Outreach messages</h3><form class="tracker-form" data-outreach-form><label>Channel<select name="channel"><option>email</option><option>linkedin</option><option>phone</option><option>sms</option><option>other</option></select></label><label>Message<textarea name="body" required></textarea></label><button class="button">Add outreach</button></form><ul>${m.outreach.map((o) => `<li>${day(o.sentAt)} ${esc(o.channel)} ${esc(o.body)}</li>`).join("")}</ul></article><article class="card"><h3>Offers</h3><form class="tracker-form" data-offer-form><label>Status<select name="status"><option>received</option><option>negotiating</option><option>accepted</option><option>declined</option></select></label>${input("notes", "")}<button class="button">Log offer</button></form><ul>${m.offers.map((o) => `<li>${esc(o.status)} ${esc(o.notes || "")}</li>`).join("")}</ul></article></div>`;
+  return `<div class="tracker-detail"><article class="card"><h2>${esc(app.company || "New application")} — ${esc(app.role || "Unsaved")}</h2><form class="tracker-form" data-core-form>${input("company", app.company, true)}${input("role", app.role, true)}${input("postingUrl", app.postingUrl, "url")}<label>Status<select name="status" required>${STATUSES.map((s) => `<option ${app.status === s ? "selected" : ""}>${s}</option>`).join("")}</select></label><label>Origin<select name="origin" required>${ORIGINS.map((origin) => `<option value="${origin}" ${app.origin === origin ? "selected" : ""}>${origin}</option>`).join("")}</select></label><label>Source<input name="source" type="text" value="${esc(app.source)}"></label><label>Application date (if applicable)<input name="appliedAt" type="date" value="${esc(day(app.appliedAt))}" ${app.origin === "application_submitted" ? "required" : ""}></label>${input("followUpDate", day(app.followUpDate), "date")}<div data-form-error role="alert" class="error" aria-live="polite"></div><label>Notes<textarea name="notes">${esc(app.notes)}</textarea></label><button class="button">Save application</button></form></article><article class="card"><h3>Compact CSV metadata</h3>${metadataSection(app)}</article><article class="card wide-card"><h3>Lifecycle timeline</h3><p class="muted">Events are sorted by occurred date, then due date, then stable ID. All data stays local in this browser.</p><ul class="timeline">${events.map(timelineItem).join("") || '<li class="muted">No lifecycle events for this application yet.</li>'}</ul></article><article class="card"><h3>Assessments/take-homes</h3>${assessments.length ? `<ul>${assessments.map((item) => `<li>${esc(item.date)} ${esc(item.label)}</li>`).join("")}</ul>` : '<p class="muted">No written assessments or take-homes yet.</p>'}</article><article class="card"><h3>Record assessment</h3><form class="tracker-form" data-assessment-form><label>Action status<select name="actionStatus"><option>requested</option><option>pending</option><option>started</option><option>in_progress</option><option>submitted</option><option>completed</option></select></label>${input("dueAt", "", "date")}<label>Details<textarea name="details"></textarea></label><button class="button">Log assessment</button></form></article><article class="card"><h3>Recruiter screens</h3>${recruiterScreens.length ? `<ul>${recruiterScreens.map((item) => `<li>${esc(item.date)} ${esc(item.label)}</li>`).join("")}</ul>` : '<p class="muted">No recruiter screens yet.</p>'}</article><article class="card"><h3>Interviews</h3><form class="tracker-form" data-interview-form><label>Stage<select name="stage"><option>recruiter_screen</option><option>technical_screen</option><option>onsite_loop</option><option>other</option></select></label><label>Outcome<select name="outcome"><option>scheduled</option><option>completed</option><option>cancelled</option><option>no_show</option></select></label>${input("startsAt", day(now()), "date")}<button class="button">Log interview</button></form><ul>${otherInterviews.map((i) => `<li>${day(i.startsAt)} ${esc(i.stage)} ${esc(i.outcome)}</li>`).join("") || '<li class="muted">No non-recruiter interviews yet.</li>'}</ul></article><article class="card"><h3>Links/artifacts</h3><form class="tracker-form" data-artifact-form>${input("name", "", true)}${input("url", "")}<button class="button">Add link/artifact</button></form><ul>${m.artifacts.map((a) => `<li>${linkForArtifact(a)}</li>`).join("")}</ul></article><article class="card"><h3>Outreach messages</h3><form class="tracker-form" data-outreach-form><label>Direction<select name="direction"><option value="outbound">Outbound</option><option value="inbound">Inbound</option></select></label><label>Channel<select name="channel"><option>email</option><option>linkedin</option><option>phone</option><option>sms</option><option>other</option></select></label><label>Message<textarea name="body" required></textarea></label><button class="button">Add outreach</button></form><ul>${m.outreach.map((o) => `<li>${day(o.sentAt)} ${esc(o.channel)} ${esc(o.body)}</li>`).join("")}</ul></article><article class="card"><h3>Offers</h3><form class="tracker-form" data-offer-form><label>Status<select name="status"><option>received</option><option>negotiating</option><option>accepted</option><option>declined</option><option>expired</option></select></label>${input("notes", "")}<button class="button">Log offer</button></form><ul>${m.offers.map((o) => `<li>${esc(o.status)} ${esc(o.notes || "")}</li>`).join("")}</ul></article></div>`;
 }
 function input(n, v = "", type = "text", required = false) {
   const req = type === true || required ? "required" : "";
@@ -692,14 +709,90 @@ function openUnsavedDetail(app) {
 function isoDate(v) {
   return v ? new Date(v).toISOString() : undefined;
 }
+
+const STATUS_EVENT_TYPE = {
+  outreach_sent: "candidate_outreach",
+  recruiter_screen: "recruiter_screen",
+  technical_screen: "technical_interview",
+  onsite_loop: "onsite_final_loop",
+  offer: "offer_received",
+  accepted: "offer_accepted",
+  rejected: "employer_rejected",
+  withdrawn: "candidate_withdrew",
+  closed_archived: "closed_archived",
+};
+const TERMINAL_STATUS = new Set([
+  "accepted",
+  "rejected",
+  "withdrawn",
+  "closed_archived",
+]);
+const offerEventType = (status) =>
+  ({
+    received: "offer_received",
+    negotiating: "offer_negotiating",
+    accepted: "offer_accepted",
+    declined: "offer_declined",
+    expired: "offer_expired_rescinded",
+  })[status] || "offer_received";
+const interviewEventType = (stage, outcome) =>
+  ["cancelled", "no_show"].includes(outcome)
+    ? "status_changed"
+    : {
+        recruiter_screen: "recruiter_screen",
+        technical_screen: "technical_interview",
+        onsite_loop: "onsite_final_loop",
+      }[stage] || "status_changed";
+function lifecycleEventRecord({
+  applicationId,
+  eventType,
+  status,
+  previousStatus,
+  operationTime,
+  extra = {},
+}) {
+  return {
+    id: id("event"),
+    applicationId,
+    eventType,
+    status,
+    previousStatus,
+    occurredAt: operationTime,
+    occurredAtPrecision: "instant",
+    inferred: false,
+    source: "manual",
+    createdAt: operationTime,
+    ...extra,
+  };
+}
+function statusEventType(previousStatus, nextStatus) {
+  if (TERMINAL_STATUS.has(previousStatus) && !TERMINAL_STATUS.has(nextStatus))
+    return "application_reopened";
+  if (nextStatus === "applied")
+    return previousStatus === nextStatus
+      ? "application_submitted"
+      : "status_changed";
+  return STATUS_EVENT_TYPE[nextStatus] || "status_changed";
+}
 function bindDetail(app) {
   const persisted = !app.unsaved;
   const latestApp = () => state.apps.find((a) => a.id === app.id) || app;
-  $("[data-core-form]").onsubmit = async (e) => {
+  $(`[data-core-form] [name="origin"]`).onchange = (event) => {
+    const required = event.target.value === "application_submitted";
+    $(`[data-core-form] [name="appliedAt"]`).required = required;
+  };
+  $(`[data-core-form]`).onsubmit = async (e) => {
     e.preventDefault();
     const form = e.target;
+    const errorTarget = $("[data-form-error]", form);
     const v = values(form);
+    if (v.origin === "application_submitted" && !v.appliedAt) {
+      errorTarget.textContent =
+        "Application date is required for submitted applications.";
+      return;
+    }
     setFormDisabled(form, true);
+    const operationTime = now();
     state.detailSave = state.detailSave
       .catch(() => {})
       .then(async () => {
@@ -710,32 +803,62 @@ function bindDetail(app) {
           source: optionalBlankToUndefined(v.source),
           postingUrl: optionalBlankToUndefined(v.postingUrl),
           notes: optionalBlankToUndefined(v.notes),
-          origin: current.origin ?? "other_unknown",
+          origin: v.origin,
           appliedAt: isoDate(v.appliedAt),
           followUpDate: isoDate(v.followUpDate),
-          updatedAt: now(),
+          updatedAt: operationTime,
         };
         delete saved.unsaved;
-        await repo.put("applications", saved);
-        if (!persisted || v.status !== current.status)
-          await repo.add("lifecycleEvents", {
-            id: id("event"),
-            applicationId: app.id,
-            eventType:
-              v.status === "applied" ? "application_submitted" : "status_changed",
-            status: v.status,
-            occurredAt: now(),
-            occurredAtPrecision: "instant",
-            inferred: false,
-            source: "manual",
-            createdAt: now(),
-          });
+        const events = [];
+        if (!persisted) {
+          events.push(
+            lifecycleEventRecord({
+              applicationId: app.id,
+              eventType: v.origin,
+              status: v.status,
+              operationTime,
+            }),
+          );
+        } else if (v.origin !== current.origin) {
+          const priorOrigin = sortedLifecycleEvents(app.id)
+            .filter((event) => ORIGINS.includes(event.eventType))
+            .at(-1);
+          events.push(
+            lifecycleEventRecord({
+              applicationId: app.id,
+              eventType: v.origin,
+              status: v.status,
+              previousStatus: current.status,
+              operationTime,
+              extra: priorOrigin ? { supersedesEventId: priorOrigin.id } : {},
+            }),
+          );
+        }
+        if (persisted && v.status !== current.status) {
+          events.push(
+            lifecycleEventRecord({
+              applicationId: app.id,
+              eventType: statusEventType(current.status, v.status),
+              status: v.status,
+              previousStatus: current.status,
+              operationTime,
+            }),
+          );
+        }
+        await repo.commitLifecycleMutation({
+          applicationId: app.id,
+          operationTime,
+          put: { applications: [saved] },
+          add: { lifecycleEvents: events },
+        });
         await refresh();
         openDetail(app.id);
       });
     try {
       await state.detailSave;
     } catch (error) {
+      errorTarget.textContent =
+        "Save failed. Your entered values were not changed; please try again.";
       setFormDisabled(form, false);
       throw error;
     }
@@ -760,24 +883,48 @@ function bindDetail(app) {
     e.preventDefault();
     const v = values(e.target);
     const current = latestApp();
-    await repo.add("outreachMessages", {
+    const operationTime = now();
+    const msg = {
       id: id("msg"),
       applicationId: app.id,
-      direction: "outbound",
+      direction: v.direction,
       channel: v.channel,
       body: v.body,
-      sentAt: now(),
-      createdAt: now(),
-      updatedAt: now(),
-    });
+      ...(v.direction === "inbound"
+        ? { receivedAt: operationTime }
+        : { sentAt: operationTime }),
+      createdAt: operationTime,
+      updatedAt: operationTime,
+    };
     const nextStatus =
-      STATUS_RANK[current.status] >= STATUS_RANK.outreach_sent
-        ? current.status
-        : "outreach_sent";
-    await repo.put("applications", {
-      ...current,
-      status: nextStatus,
-      updatedAt: now(),
+      v.direction === "outbound" &&
+      STATUS_RANK[current.status] < STATUS_RANK.outreach_sent
+        ? "outreach_sent"
+        : current.status;
+    await repo.commitLifecycleMutation({
+      applicationId: app.id,
+      operationTime,
+      put: {
+        applications: [
+          { ...current, status: nextStatus, updatedAt: operationTime },
+        ],
+      },
+      add: {
+        outreachMessages: [msg],
+        lifecycleEvents: [
+          lifecycleEventRecord({
+            applicationId: app.id,
+            eventType:
+              v.direction === "inbound"
+                ? "employer_response_received"
+                : "candidate_outreach",
+            status: nextStatus,
+            previousStatus: current.status,
+            operationTime,
+            extra: { channel: v.channel, actor: v.direction },
+          }),
+        ],
+      },
     });
     await refresh();
     openDetail(app.id);
@@ -786,24 +933,72 @@ function bindDetail(app) {
     e.preventDefault();
     const v = values(e.target);
     const current = latestApp();
-    await repo.add("interviews", {
+    const operationTime = now();
+    const interview = {
       id: id("interview"),
       applicationId: app.id,
       contactIds: [],
       stage: v.stage,
       startsAt: isoDate(v.startsAt),
-      outcome: "scheduled",
+      outcome: v.outcome,
       createdAt: now(),
-      updatedAt: now(),
-    });
+      updatedAt: operationTime,
+    };
     const nextStatus =
-      v.stage !== "other" && STATUS_RANK[v.stage] > STATUS_RANK[current.status]
+      !["cancelled", "no_show"].includes(v.outcome) &&
+      v.stage !== "other" &&
+      STATUS_RANK[v.stage] > STATUS_RANK[current.status]
         ? v.stage
         : current.status;
-    await repo.put("applications", {
-      ...current,
-      status: nextStatus,
-      updatedAt: now(),
+    await repo.commitLifecycleMutation({
+      applicationId: app.id,
+      operationTime,
+      put: {
+        applications: [
+          { ...current, status: nextStatus, updatedAt: operationTime },
+        ],
+      },
+      add: {
+        interviews: [interview],
+        lifecycleEvents: [
+          lifecycleEventRecord({
+            applicationId: app.id,
+            eventType: interviewEventType(v.stage, v.outcome),
+            status: nextStatus,
+            previousStatus: current.status,
+            operationTime,
+            extra: { stageLabel: v.stage, actionStatus: v.outcome },
+          }),
+        ],
+      },
+    });
+    await refresh();
+    openDetail(app.id);
+  };
+  $("[data-assessment-form]").onsubmit = async (e) => {
+    e.preventDefault();
+    const v = values(e.target);
+    const current = latestApp();
+    const operationTime = now();
+    await repo.commitLifecycleMutation({
+      applicationId: app.id,
+      operationTime,
+      add: {
+        lifecycleEvents: [
+          lifecycleEventRecord({
+            applicationId: app.id,
+            eventType: "assessment_take_home",
+            status: current.status,
+            previousStatus: current.status,
+            operationTime,
+            extra: {
+              actionStatus: v.actionStatus,
+              dueAt: isoDate(v.dueAt),
+              details: optionalBlankToUndefined(v.details),
+            },
+          }),
+        ],
+      },
     });
     await refresh();
     openDetail(app.id);
@@ -812,18 +1007,37 @@ function bindDetail(app) {
     e.preventDefault();
     const v = values(e.target);
     const current = latestApp();
-    await repo.add("offers", {
+    const operationTime = now();
+    const offer = {
       id: id("offer"),
       applicationId: app.id,
       status: v.status,
       notes: v.notes || undefined,
-      createdAt: now(),
-      updatedAt: now(),
-    });
-    await repo.put("applications", {
-      ...current,
-      status: v.status === "accepted" ? "accepted" : "offer",
-      updatedAt: now(),
+      createdAt: operationTime,
+      updatedAt: operationTime,
+    };
+    const nextStatus = v.status === "accepted" ? "accepted" : "offer";
+    await repo.commitLifecycleMutation({
+      applicationId: app.id,
+      operationTime,
+      put: {
+        applications: [
+          { ...current, status: nextStatus, updatedAt: operationTime },
+        ],
+      },
+      add: {
+        offers: [offer],
+        lifecycleEvents: [
+          lifecycleEventRecord({
+            applicationId: app.id,
+            eventType: offerEventType(v.status),
+            status: nextStatus,
+            previousStatus: current.status,
+            operationTime,
+            extra: { actionStatus: v.status },
+          }),
+        ],
+      },
     });
     await refresh();
     openDetail(app.id);
@@ -838,6 +1052,7 @@ async function newApplication() {
     status: "applied",
     source: "",
     postingUrl: "",
+    origin: "application_submitted",
     appliedAt: day(ts),
     createdAt: ts,
     updatedAt: ts,
