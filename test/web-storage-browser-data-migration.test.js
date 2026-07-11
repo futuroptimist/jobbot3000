@@ -120,6 +120,60 @@ describe("browser data v2 migration", () => {
     ).toBe(input.exportedAt);
   });
 
+  it("rejects missing, malformed, future, and invalid v2 schema versions", () => {
+    for (const schemaVersion of [undefined, null, "2", 999]) {
+      expect(() =>
+        upgradeBrowserExportToV2({ ...base(), schemaVersion }),
+      ).toThrow();
+    }
+    expect(() =>
+      upgradeBrowserExportToV2({
+        ...base(),
+        schemaVersion: 2,
+        applications: base().applications,
+      }),
+    ).toThrow();
+  });
+
+  it("accepts legacy date-only v1 timestamps without relaxing v2 validation", () => {
+    const result = upgradeBrowserExportToV2(
+      base({
+        lifecycleEvents: [
+          {
+            id: "event_date_only",
+            applicationId: "app_fake_001",
+            status: "applied",
+            eventType: "application_submitted",
+            occurredAt: "2026-02-28",
+            source: "manual",
+            createdAt: now,
+          },
+        ],
+      }),
+    );
+    expect(result.data.lifecycleEvents[0]).toMatchObject({
+      occurredAt: "2026-02-28",
+      occurredAtPrecision: "date",
+    });
+    expect(() =>
+      upgradeBrowserExportToV2(
+        base({
+          lifecycleEvents: [
+            {
+              id: "event_bad_date",
+              applicationId: "app_fake_001",
+              status: "applied",
+              eventType: "application_submitted",
+              occurredAt: "2026-02-31",
+              source: "manual",
+              createdAt: now,
+            },
+          ],
+        }),
+      ),
+    ).toThrow();
+  });
+
   it("orders structured evidence and emits safe conflict warnings", () => {
     const result = upgradeBrowserExportToV2(
       base({

@@ -5,7 +5,7 @@ import { indexedDB } from "fake-indexeddb";
 
 import {
   DATABASE_NAME,
-  createIndexedDbRepository,
+  createIndexedDbRepository as createTrackedIndexedDbRepository,
 } from "../src/web/storage/indexedDbRepository.js";
 import {
   COMPACT_CSV_COLUMNS,
@@ -32,15 +32,38 @@ import {
 } from "../src/web/tracker/metrics.js";
 import { uniqueRecruiterScreens } from "../src/web/tracker/tracker.js";
 
-const deleteDatabase = () =>
-  new Promise((resolve, reject) => {
+const openedRepositories = new Set();
+const createIndexedDbRepository = async (...args) => {
+  const repo = await createTrackedIndexedDbRepository(...args);
+  openedRepositories.add(repo);
+  const close = repo.close.bind(repo);
+  repo.close = () => {
+    openedRepositories.delete(repo);
+    return close();
+  };
+  return repo;
+};
+
+const deleteDatabase = () => {
+  let timeout;
+  return new Promise((resolve, reject) => {
     const request = indexedDB.deleteDatabase(DATABASE_NAME);
+    timeout = setTimeout(
+      () => reject(new Error(`Timed out deleting ${DATABASE_NAME}`)),
+      1000,
+    );
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error);
-    request.onblocked = () => resolve();
+    request.onblocked = () =>
+      reject(new Error(`Deleting ${DATABASE_NAME} was blocked`));
+  }).finally(() => {
+    clearTimeout(timeout);
   });
+};
 
 afterEach(async () => {
+  for (const repo of openedRepositories) repo.close();
+  openedRepositories.clear();
   await deleteDatabase();
 });
 
@@ -1017,10 +1040,13 @@ describe("spreadsheet import/export", () => {
     expect(bundle.lifecycleEvents).toHaveLength(5);
     expect(
       bundle.lifecycleEvents.filter(
-        ({ eventType }) => eventType === "written_assessment_requested",
+        ({ eventType, rawEventType }) =>
+          eventType === "assessment_take_home" &&
+          rawEventType === "written_assessment_requested",
       ),
     ).toEqual([
       expect.objectContaining({
+        actionStatus: "pending",
         noAiRequired: true,
         requiresUserAction: true,
         sourceArtifact: "https://example.test/artifact/assessment-alpha",
@@ -1036,7 +1062,8 @@ describe("spreadsheet import/export", () => {
     expect(restored.lifecycleEvents).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          eventType: "written_assessment_requested",
+          eventType: "assessment_take_home",
+          rawEventType: "written_assessment_requested",
           noAiRequired: true,
         }),
       ]),

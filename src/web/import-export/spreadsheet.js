@@ -600,6 +600,7 @@ export const lifecycleRowsToBrowserApplicationExport = (
     const eventOccurredAt = occurredAt ?? dueAt ?? "1970-01-01T00:00:00.000Z";
     const occurredAtHasTime = hasTimeComponent(row.occurred_at);
     const dueAtHasTime = hasTimeComponent(row.due_at);
+    const suppliedPrecision = compact(row.occurred_at_precision) || undefined;
     const stageLabel = compact(row.stage) || undefined;
     const knownLifecycleStatus = lifecycleStatusForEvent(eventType);
     if (
@@ -636,6 +637,8 @@ export const lifecycleRowsToBrowserApplicationExport = (
       source: "csv_import",
       note: details,
       eventType,
+      rawEventType: compact(row.raw_event_type) || undefined,
+      previousStatus: compact(row.previous_status) || undefined,
       stageLabel,
       channel: compact(row.channel) || undefined,
       actor: compact(row.actor) || undefined,
@@ -648,8 +651,12 @@ export const lifecycleRowsToBrowserApplicationExport = (
       ),
       actionStatus: compact(row.action_status) || undefined,
       dueAt,
+      occurredAtPrecision: suppliedPrecision,
       occurredAtHasTime,
       dueAtHasTime,
+      inferred:
+        parseBoolean(row.inferred, "inferred", rowNumber, errors) ?? false,
+      supersedesEventId: compact(row.supersedes_event_id) || undefined,
       noAiRequired: parseBoolean(
         row.no_ai_required,
         "no_ai_required",
@@ -715,7 +722,37 @@ export const lifecycleRowsToBrowserApplicationExport = (
     artifacts: [],
     reminders,
   };
-  return { bundle, errors, warnings };
+  for (const store of ["lifecycleEvents", "interviews", "reminders"]) {
+    const seen = new Set();
+    bundle[store] = bundle[store].filter(({ id }) => {
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  }
+  const incomingIds = {
+    lifecycleEvents: new Set(bundle.lifecycleEvents.map(({ id }) => id)),
+    interviews: new Set(bundle.interviews.map(({ id }) => id)),
+    reminders: new Set(bundle.reminders.map(({ id }) => id)),
+  };
+  const upgraded = upgradeBrowserExportToV2(bundle, {
+    migrationCreatedAt: exportedAt,
+  });
+  const canonicalBundle = {
+    ...bundle,
+    ...upgraded.data,
+    lifecycleEvents: upgraded.data.lifecycleEvents.filter(({ id }) =>
+      incomingIds.lifecycleEvents.has(id),
+    ),
+    interviews: upgraded.data.interviews.filter(({ id }) =>
+      incomingIds.interviews.has(id),
+    ),
+    reminders: upgraded.data.reminders.filter(({ id }) =>
+      incomingIds.reminders.has(id),
+    ),
+  };
+  warnings.push(...upgraded.warnings);
+  return { bundle: canonicalBundle, errors, warnings };
 };
 
 export const csvToSupplementalLifecycleExport = (csvText, existing, options) =>
@@ -933,6 +970,14 @@ export const rowsToBrowserApplicationExport = (
         occurredAt: startsAt,
         source: "csv_import",
         note: compact(row.interview_stage),
+        eventType:
+          stage === "technical_screen"
+            ? "technical_interview"
+            : stage === "onsite_loop"
+              ? "onsite_final_loop"
+              : stage,
+        occurredAtPrecision: "instant",
+        inferred: false,
         createdAt: exportedAt,
       });
       interviews.push({
@@ -964,6 +1009,9 @@ export const rowsToBrowserApplicationExport = (
           occurredAt: outreachSentAt ?? appliedAt ?? timestamp,
           source: "csv_import",
           note: compact(row.interview_stage),
+          eventType: "employer_rejected",
+          occurredAtPrecision: "instant",
+          inferred: false,
           createdAt: exportedAt,
         });
     }
@@ -981,6 +1029,18 @@ export const rowsToBrowserApplicationExport = (
         occurredAt: outreachSentAt ?? appliedAt ?? timestamp,
         source: "csv_import",
         note: compact(row.outcome),
+        eventType:
+          outcome === "offer"
+            ? "offer_received"
+            : outcome === "accepted"
+              ? "offer_accepted"
+              : outcome === "rejected"
+                ? "employer_rejected"
+                : outcome === "withdrawn"
+                  ? "candidate_withdrew"
+                  : "status_changed",
+        occurredAtPrecision: "instant",
+        inferred: false,
         createdAt: exportedAt,
       });
     if (outcome === "offer")
@@ -1007,11 +1067,20 @@ export const rowsToBrowserApplicationExport = (
     artifacts,
     reminders: [],
   };
-  const upgraded = upgradeBrowserExportToV2(bundle, {
-    migrationCreatedAt: exportedAt,
-  });
-  Object.assign(bundle, upgraded.data);
-  warnings.push(...upgraded.warnings);
+  try {
+    const upgraded = upgradeBrowserExportToV2(bundle, {
+      migrationCreatedAt: exportedAt,
+    });
+    Object.assign(bundle, upgraded.data);
+    warnings.push(...upgraded.warnings);
+  } catch (error) {
+    errors.push({
+      rowNumber: null,
+      field: "bundle",
+      code: "schema_validation_failed",
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
   const parsed = browserApplicationExportSchema.safeParse(bundle);
   if (!parsed.success)
     errors.push({
@@ -1270,7 +1339,7 @@ export const exportNdjsonBackup = (bundle) => {
 const normalizeBackupBundleInput = (input, { source = "json_import" } = {}) => {
   const now = nowIso();
   const bundle = {
-    schemaVersion: 1,
+    schemaVersion: input?.schemaVersion,
     exportedAt: input?.exportedAt ?? now,
     applications: input?.applications ?? [],
     contacts: input?.contacts ?? [],

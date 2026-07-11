@@ -203,17 +203,17 @@ export const upgradeBrowserExportToV2 = (input, options = {}) => {
     options.migrationCreatedAt ?? deterministicMigrationCreatedAt(input);
   const warnings = [];
   const source = clone(input);
+  const version = source?.schemaVersion;
   let parsed;
   if (source?.schemaVersion === 2) {
-    const v2 = browserApplicationExportSchema.safeParse(source);
-    parsed = v2.success
-      ? v2.data
-      : browserApplicationV1ExportSchema.parse({ ...source, schemaVersion: 1 });
-  } else
-    parsed = browserApplicationV1ExportSchema.parse({
-      ...source,
-      schemaVersion: 1,
-    });
+    parsed = browserApplicationExportSchema.parse(source);
+  } else if (version === 1) {
+    parsed = browserApplicationV1ExportSchema.parse(source);
+  } else {
+    throw new Error(
+      `Unsupported browser backup schemaVersion: ${String(version)}`,
+    );
+  }
   const lifecycleEvents = parsed.lifecycleEvents.map((event) =>
     normalizeEvent(event, warnings),
   );

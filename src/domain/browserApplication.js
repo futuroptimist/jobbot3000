@@ -52,7 +52,18 @@ export const browserApplicationOccurredAtPrecisionSchema = z.enum([
 ]);
 
 const isoDateTimeSchema = z.string().datetime({ offset: true });
-const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const isoDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((value) => {
+    const [year, month, day] = value.split("-").map(Number);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    return (
+      date.getUTCFullYear() === year &&
+      date.getUTCMonth() === month - 1 &&
+      date.getUTCDate() === day
+    );
+  }, "date must be a real calendar date");
 const stableDateOrDateTimeSchema = z.union([isoDateSchema, isoDateTimeSchema]);
 const requiredStringSchema = z.string().trim().min(1);
 const optionalTrimmedStringSchema = requiredStringSchema.optional();
@@ -321,7 +332,7 @@ export const browserApplicationV1LifecycleEventSchema = z
     id: idSchema,
     applicationId: idSchema,
     status: browserApplicationLifecycleStatusSchema,
-    occurredAt: isoDateTimeSchema,
+    occurredAt: stableDateOrDateTimeSchema,
     source: z.enum([
       "manual",
       "csv_import",
