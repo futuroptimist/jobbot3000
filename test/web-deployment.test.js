@@ -103,6 +103,9 @@ describe("web deployment artifacts", () => {
     expect(packageJson.scripts["smoke:container"]).toBe(
       "bash scripts/smoke-container.sh",
     );
+    expect(packageJson.scripts["smoke:promotion"]).toBe(
+      "node scripts/promotion-smoke.js",
+    );
 
     const staticServer = await readFile(
       path.join(repoRoot, "scripts", "static-server.js"),
@@ -123,6 +126,7 @@ describe("web deployment artifacts", () => {
     expect(staticServer).toContain(
       'res.setHeader("Cache-Control", "no-store")',
     );
+    expect(staticServer).toContain('.set("Cache-Control", "no-store")');
     expect(staticServer).not.toContain("immutable");
     expect(staticServer).toContain("Content-Security-Policy");
     expect(staticServer).not.toContain("/commands");
@@ -131,6 +135,19 @@ describe("web deployment artifacts", () => {
     expect(staticServer).not.toMatch(
       /JOBBOT_(GREENHOUSE|LEVER|SMARTRECRUITERS|WORKABLE).*TOKEN/,
     );
+
+    const promotionSmoke = await readFile(
+      path.join(repoRoot, "scripts", "promotion-smoke.js"),
+      "utf8",
+    );
+    expect(promotionSmoke).toContain("mode =");
+    expect(promotionSmoke).toContain('"readonly"');
+    expect(promotionSmoke).toContain('"synthetic"');
+    expect(promotionSmoke).toContain("test-results");
+    expect(promotionSmoke).toContain("launchPersistentContext");
+    expect(promotionSmoke).toContain("Synthetic Observability Employer");
+    expect(promotionSmoke).toContain("fresh-temporary-deleted");
+    expect(promotionSmoke).not.toMatch(/console\.log\(.*syntheticCsv/s);
   });
 
   it("documents static privacy boundaries and IndexedDB backup guidance", async () => {

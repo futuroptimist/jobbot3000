@@ -39,7 +39,15 @@ ingress:
   annotations: {}
   tls: []
 
-resources: {}
+# Defaults are intentionally Pi-friendly for the static asset + health server:
+# low enough for small Sugarkube nodes, non-empty for saturation/restart analysis.
+resources:
+  requests:
+    cpu: 25m
+    memory: 32Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
 
 probes:
   readiness:

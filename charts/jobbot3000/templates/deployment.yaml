@@ -15,7 +15,7 @@ spec:
         {{- with .Values.podLabels }}
 {{- toYaml . | nindent 8 }}
         {{- end }}
-{{- include "jobbot3000.selectorLabels" . | nindent 8 }}
+{{- include "jobbot3000.labels" . | nindent 8 }}
       {{- with .Values.podAnnotations }}
       annotations:
 {{- toYaml . | nindent 8 }}

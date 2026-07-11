@@ -73,6 +73,10 @@ Secrets, PVCs, logs, repo fixtures, or public object storage.
 4. If data was cleared or replaced locally, restore the last known-good JSON or
    NDJSON backup through the browser UI.
 
+## Observability
+
+See [docs/observability.md](observability.md) for the production observability contract, including read-only promotion smoke checks, staging-only synthetic journeys, Kubernetes resource signals, and privacy boundaries.
+
 ## Verification checklist
 
 - `npm ci`, `npm run lint`, `npm run typecheck`, `npm run test:ci`, and

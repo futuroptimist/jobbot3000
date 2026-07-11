@@ -133,6 +133,8 @@ test.describe("static tracker smoke", () => {
   }) => {
     const health = await page.request.get(`${baseUrl}/healthz`);
     expect(health.ok()).toBe(true);
+    expect(health.headers()["cache-control"]).toBe("no-store");
+    expect(health.headers()["content-type"]).toContain("application/json");
     await expect(health.json()).resolves.toEqual({
       status: "ok",
       mode: "static",
@@ -141,6 +143,13 @@ test.describe("static tracker smoke", () => {
 
     const live = await page.request.get(`${baseUrl}/livez`);
     expect(live.ok()).toBe(true);
+    expect(live.headers()["cache-control"]).toBe("no-store");
+
+    const invalidHealth = await page.request.get(`${baseUrl}/healthz/invalid`);
+    expect(invalidHealth.status()).toBe(404);
+    expect(invalidHealth.headers()["content-type"]).not.toContain(
+      "application/json",
+    );
 
     await page.goto(baseUrl);
     await expect(

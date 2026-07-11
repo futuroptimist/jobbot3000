@@ -34,3 +34,4 @@ test "${ready}" = 1
 curl -fsS "http://127.0.0.1:${port}/" >/dev/null
 curl -fsS "http://127.0.0.1:${port}/healthz" >/dev/null
 curl -fsS "http://127.0.0.1:${port}/livez" >/dev/null
+npm run smoke:promotion -- "http://127.0.0.1:${port}"
