@@ -69,6 +69,9 @@ const esc = (v) =>
 const id = (p = "id") =>
   `${p}_${Date.now().toString(36)}_${crypto.getRandomValues(new Uint32Array(1))[0].toString(36)}`;
 let indexedDbRepositoryPromise;
+let initializationRetryTimer;
+let initializationRetryDelayMs = 1000;
+let initializationRetryListenersRegistered = false;
 const getRepository = () => {
   indexedDbRepositoryPromise ??= createIndexedDbRepository().catch((error) => {
     indexedDbRepositoryPromise = undefined;
@@ -281,25 +284,50 @@ function showInitializationError(error) {
   const target = $("[data-import-result]") || $("main") || document.body;
   target.textContent = `Tracker storage is temporarily unavailable: ${error?.message ?? error}`;
 }
+function clearInitializationRetry(retry, retryWhenVisible) {
+  if (initializationRetryTimer) {
+    window.clearTimeout(initializationRetryTimer);
+    initializationRetryTimer = undefined;
+  }
+  initializationRetryDelayMs = 1000;
+  if (initializationRetryListenersRegistered) {
+    window.removeEventListener("focus", retry);
+    document.removeEventListener("visibilitychange", retryWhenVisible);
+    initializationRetryListenersRegistered = false;
+  }
+}
 async function refreshWithRetry() {
+  const retryWhenVisible = () => {
+    if (!document.hidden) retry();
+  };
+  const scheduleRetry = () => {
+    if (initializationRetryTimer) return;
+    initializationRetryTimer = window.setTimeout(() => {
+      initializationRetryTimer = undefined;
+      retry();
+    }, initializationRetryDelayMs);
+    initializationRetryDelayMs = Math.min(initializationRetryDelayMs * 2, 5000);
+  };
+  const retry = async () => {
+    try {
+      await refresh();
+      clearInitializationRetry(retry, retryWhenVisible);
+    } catch (retryError) {
+      showInitializationError(retryError);
+      scheduleRetry();
+    }
+  };
   try {
     await refresh();
+    clearInitializationRetry(retry, retryWhenVisible);
   } catch (error) {
     showInitializationError(error);
-    const retry = async () => {
-      try {
-        await refresh();
-        window.removeEventListener("focus", retry);
-        document.removeEventListener("visibilitychange", retryWhenVisible);
-      } catch (retryError) {
-        showInitializationError(retryError);
-      }
-    };
-    const retryWhenVisible = () => {
-      if (!document.hidden) retry();
-    };
-    window.addEventListener("focus", retry);
-    document.addEventListener("visibilitychange", retryWhenVisible);
+    if (!initializationRetryListenersRegistered) {
+      window.addEventListener("focus", retry);
+      document.addEventListener("visibilitychange", retryWhenVisible);
+      initializationRetryListenersRegistered = true;
+    }
+    scheduleRetry();
   }
 }
 function route(v) {
