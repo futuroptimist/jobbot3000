@@ -609,12 +609,13 @@ function renderAll() {
   renderFollowups();
   renderOutreach();
 }
-function sortedLifecycleEvents(appId) {
+function sortedLifecycleEvents(appId, options = {}) {
   return [...state.bundle.lifecycleEvents]
     .filter(
       (e) =>
         e.applicationId === appId &&
-        !(e.source === "reconciliation" && e.inferred),
+        (options.includeInferred ||
+          !(e.source === "reconciliation" && e.inferred)),
     )
     .sort((a, b) => {
       const occurred = (a.occurredAt || "").localeCompare(b.occurredAt || "");
@@ -816,7 +817,9 @@ function bindDetail(app) {
           createdAt: operationTime,
         });
       } else if (v.origin !== current.origin) {
-        const priorOrigin = sortedLifecycleEvents(app.id)
+        const priorOrigin = sortedLifecycleEvents(app.id, {
+          includeInferred: true,
+        })
           .filter((event) => ORIGINS.includes(event.eventType))
           .at(-1);
         events.push({
@@ -914,6 +917,7 @@ function bindDetail(app) {
               source: "manual",
               channel: v.channel,
               sourceArtifact: message.id,
+              actionStatus: v.direction,
               createdAt: operationTime,
             },
           ],

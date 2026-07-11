@@ -126,4 +126,43 @@ describe("lifecycle reconciliation planner", () => {
       ).occurredAtPrecision,
     ).toBe("unknown");
   });
+
+  it("keeps cancelled and no-show interviews at current status", () => {
+    const plan = planLifecycleReconciliation({
+      applications: [{ ...app, status: "applied" }],
+      lifecycleEvents: [],
+      outreachMessages: [],
+      interviews: [
+        {
+          id: "int_fake_cancelled",
+          applicationId: app.id,
+          contactIds: [],
+          stage: "technical_screen",
+          startsAt: "2026-02-01T00:00:00.000Z",
+          outcome: "cancelled",
+          createdAt: "2026-01-04T00:00:00.000Z",
+          updatedAt: "2026-01-04T00:00:00.000Z",
+        },
+        {
+          id: "int_fake_no_show",
+          applicationId: app.id,
+          contactIds: [],
+          stage: "onsite",
+          startsAt: "2026-02-02T00:00:00.000Z",
+          outcome: "no_show",
+          createdAt: "2026-01-05T00:00:00.000Z",
+          updatedAt: "2026-01-05T00:00:00.000Z",
+        },
+      ],
+      offers: [],
+    });
+    expect(
+      plan.additions
+        .filter((event) => event.sourceArtifact?.startsWith("int_fake_"))
+        .map((event) => [event.eventType, event.status]),
+    ).toEqual([
+      ["status_changed", "applied"],
+      ["status_changed", "applied"],
+    ]);
+  });
 });

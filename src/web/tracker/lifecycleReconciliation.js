@@ -167,7 +167,10 @@ export function planLifecycleReconciliation(bundle = {}) {
         i.createdAt || i.updatedAt,
         i.id,
         i.outcome,
-        INTERVIEW_EVENT[i.stage] ? i.stage : app.status,
+        INTERVIEW_EVENT[i.stage] &&
+          !["cancelled", "no_show"].includes(i.outcome)
+          ? i.stage
+          : app.status,
         {
           stageLabel: i.stage,
           dueAt: i.startsAt,

@@ -420,9 +420,11 @@ const putChildRecord = async (db, storeName, record) => {
   return putRecord(db, storeName, parsed);
 };
 
-const assertSupersessionIsValid = (events) => {
-  const byId = new Map(events.map((event) => [event.id, event]));
-  for (const event of events) {
+const assertSupersessionIsValid = (existingEvents, newEvents) => {
+  const byId = new Map(
+    [...existingEvents, ...newEvents].map((event) => [event.id, event]),
+  );
+  for (const event of newEvents) {
     if (!event.supersedesEventId) continue;
     const superseded = byId.get(event.supersedesEventId);
     if (!superseded || superseded.applicationId !== event.applicationId) {
@@ -448,7 +450,7 @@ const assertSupersessionIsValid = (events) => {
   }
 };
 
-const normalizeMutation = async (db, mutation) => {
+const normalizeMutationInput = (mutation) => {
   const application = mutation.application
     ? parseRecord("applications", mutation.application)
     : null;
@@ -473,16 +475,11 @@ const normalizeMutation = async (db, mutation) => {
     );
   }
   const applicationId = [...appIds][0];
-  const stores = [
-    ...new Set([
-      "applications",
-      "contacts",
-      "lifecycleEvents",
-      ...childRecords.map(({ storeName }) => storeName),
-    ]),
-  ];
-  const tx = db.transaction(stores, "readonly");
-  const done = transactionDone(tx);
+  return { application, childRecords, applicationId };
+};
+
+const normalizeMutation = async (tx, mutationInput) => {
+  const { application, childRecords, applicationId } = mutationInput;
   const existingApplication = await requestToPromise(
     tx.objectStore("applications").get(applicationId),
   );
@@ -500,7 +497,6 @@ const normalizeMutation = async (db, mutation) => {
       requestToPromise(tx.objectStore("contacts").get(contactId)),
     ),
   );
-  await done;
   if (!application && !existingApplication) {
     throw new IndexedDbRepositoryError(
       "schema_validation_failed",
@@ -519,8 +515,8 @@ const normalizeMutation = async (db, mutation) => {
   const previousStatus = existingApplication?.status;
   const lifecycleEvents = childRecords
     .filter(({ storeName }) => storeName === "lifecycleEvents")
-    .map(({ record }) => ({ previousStatus, ...record }));
-  assertSupersessionIsValid([...existingEvents, ...lifecycleEvents]);
+    .map(({ record }) => ({ ...record, previousStatus }));
+  assertSupersessionIsValid(existingEvents, lifecycleEvents);
   return {
     application,
     childRecords: childRecords.map((item) =>
@@ -663,17 +659,18 @@ export const createIndexedDbRepository = async (options = {}) => {
 
     async commitLifecycleMutation(mutation) {
       return safe(async () => {
-        const normalized = await normalizeMutation(db, mutation);
+        const mutationInput = normalizeMutationInput(mutation);
         const storeNames = [
-          ...new Set(
-            [
-              normalized.application ? "applications" : null,
-              ...normalized.childRecords.map(({ storeName }) => storeName),
-            ].filter(Boolean),
-          ),
+          ...new Set([
+            "applications",
+            "contacts",
+            "lifecycleEvents",
+            ...mutationInput.childRecords.map(({ storeName }) => storeName),
+          ]),
         ];
         const tx = db.transaction(storeNames, "readwrite");
         const done = transactionDone(tx);
+        const normalized = await normalizeMutation(tx, mutationInput);
         if (normalized.application)
           tx.objectStore("applications").put(normalized.application);
         for (const { storeName, record } of normalized.childRecords) {

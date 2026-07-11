@@ -37,6 +37,36 @@ const deleteDatabase = () =>
   });
 afterEach(deleteDatabase);
 
+const readRawLifecycleEvent = (id) =>
+  new Promise((resolve, reject) => {
+    const openRequest = indexedDB.open(DATABASE_NAME);
+    openRequest.onerror = () => reject(openRequest.error);
+    openRequest.onsuccess = () => {
+      const db = openRequest.result;
+      const tx = db.transaction("lifecycleEvents", "readonly");
+      const getRequest = tx.objectStore("lifecycleEvents").get(id);
+      getRequest.onerror = () => reject(getRequest.error);
+      getRequest.onsuccess = () => resolve(getRequest.result);
+      tx.oncomplete = () => db.close();
+    };
+  });
+
+const writeRawLifecycleEvents = (events) =>
+  new Promise((resolve, reject) => {
+    const openRequest = indexedDB.open(DATABASE_NAME);
+    openRequest.onerror = () => reject(openRequest.error);
+    openRequest.onsuccess = () => {
+      const db = openRequest.result;
+      const tx = db.transaction("lifecycleEvents", "readwrite");
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => reject(tx.error);
+      for (const item of events) tx.objectStore("lifecycleEvents").put(item);
+    };
+  });
+
 describe("atomic lifecycle persistence", () => {
   it("commits application and origin event atomically with previous persisted status", async () => {
     const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
@@ -130,6 +160,40 @@ describe("atomic lifecycle persistence", () => {
         },
       }),
     ).rejects.toMatchObject({ code: "schema_validation_failed" });
+    repo.close();
+  });
+
+  it("uses persisted previous status over caller data and tolerates unrelated cycles", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    await repo.commitLifecycleMutation({
+      application: app,
+      records: {
+        lifecycleEvents: [event("event_fake_origin", "application_submitted")],
+      },
+    });
+    await writeRawLifecycleEvents([
+      event("event_fake_cycle_a", "status_changed", "applied", {
+        supersedesEventId: "event_fake_cycle_b",
+      }),
+      event("event_fake_cycle_b", "status_changed", "applied", {
+        supersedesEventId: "event_fake_cycle_a",
+      }),
+    ]);
+    await repo.commitLifecycleMutation({
+      application: { ...app, status: "offer", updatedAt: ts },
+      records: {
+        lifecycleEvents: [
+          event("event_fake_offer", "offer_received", "offer", {
+            previousStatus: "accepted",
+          }),
+        ],
+      },
+    });
+    await expect(
+      readRawLifecycleEvent("event_fake_offer"),
+    ).resolves.toMatchObject({
+      previousStatus: "applied",
+    });
     repo.close();
   });
 });
