@@ -630,6 +630,18 @@ function effectiveLifecycleEvents(events = []) {
   );
   return events.filter((event) => !superseded.has(event.id));
 }
+function latestEffectiveOriginEvent(appId) {
+  return effectiveLifecycleEvents(
+    sortedLifecycleEvents(appId, { includeInferred: true }),
+  )
+    .filter((event) => ORIGINS.includes(event.eventType))
+    .sort(
+      (a, b) =>
+        String(a.createdAt || "").localeCompare(String(b.createdAt || "")) ||
+        String(a.id).localeCompare(String(b.id)),
+    )
+    .at(-1);
+}
 function eventDetails(e) {
   return Object.entries({
     Type: e.eventType,
@@ -843,11 +855,7 @@ function bindDetail(app) {
           createdAt: operationTime,
         });
       } else if (v.origin !== current.origin) {
-        const priorOrigin = effectiveLifecycleEvents(
-          sortedLifecycleEvents(app.id, { includeInferred: true }),
-        )
-          .filter((event) => ORIGINS.includes(event.eventType))
-          .at(-1);
+        const priorOrigin = latestEffectiveOriginEvent(app.id);
         events.push({
           id: id("event"),
           applicationId: app.id,

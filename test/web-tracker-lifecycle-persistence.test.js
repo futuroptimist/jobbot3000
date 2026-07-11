@@ -196,4 +196,58 @@ describe("atomic lifecycle persistence", () => {
     });
     repo.close();
   });
+
+  it("rejects cyclic partial imports without partial writes", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    await repo.commitLifecycleMutation({
+      application: app,
+      records: {
+        lifecycleEvents: [event("event_fake_origin", "application_submitted")],
+      },
+    });
+
+    await expect(
+      repo.importPartialData({
+        lifecycleEvents: [
+          event("event_fake_import_cycle_a", "status_changed", "applied", {
+            supersedesEventId: "event_fake_import_cycle_b",
+          }),
+          event("event_fake_import_cycle_b", "status_changed", "applied", {
+            supersedesEventId: "event_fake_import_cycle_a",
+          }),
+        ],
+      }),
+    ).rejects.toMatchObject({ code: "schema_validation_failed" });
+
+    const exported = await repo.exportAllData();
+    expect(exported.lifecycleEvents.map((item) => item.id).sort()).toEqual([
+      "event_fake_origin",
+    ]);
+
+    await writeRawLifecycleEvents([
+      event("event_fake_legacy_cycle_a", "status_changed", "applied", {
+        supersedesEventId: "event_fake_legacy_cycle_b",
+      }),
+      event("event_fake_legacy_cycle_b", "status_changed", "applied", {
+        supersedesEventId: "event_fake_legacy_cycle_a",
+      }),
+    ]);
+    await repo.commitLifecycleMutation({
+      application: { ...app, status: "offer", updatedAt: ts },
+      records: {
+        lifecycleEvents: [
+          event(
+            "event_fake_valid_after_legacy_cycle",
+            "offer_received",
+            "offer",
+          ),
+        ],
+      },
+    });
+
+    await expect(
+      readRawLifecycleEvent("event_fake_valid_after_legacy_cycle"),
+    ).resolves.toMatchObject({ status: "offer" });
+    repo.close();
+  });
 });

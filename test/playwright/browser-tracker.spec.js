@@ -642,7 +642,10 @@ test.describe("browser application tracker", () => {
       const originalTransaction = IDBDatabase.prototype.transaction;
       IDBDatabase.prototype.transaction = function transaction(...args) {
         if (args[1] === "readwrite") {
-          throw new DOMException("simulated quota exceeded", "QuotaExceededError");
+          throw new DOMException(
+            "simulated quota exceeded",
+            "QuotaExceededError",
+          );
         }
         return originalTransaction.apply(this, args);
       };
@@ -810,6 +813,68 @@ test.describe("browser application tracker", () => {
     await expect(page.locator('[data-core-form] [name="status"]')).toHaveValue(
       "technical_screen",
     );
+  });
+
+  test("repeated origin corrections leave one effective origin", async ({
+    page,
+  }) => {
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.getByRole("button", { name: "New application" }).click();
+    await page.locator('[name="company"]').fill("Origin Corrections Co");
+    await page.locator('[name="role"]').fill("Lifecycle Tester");
+    await page.locator('[name="appliedAt"]').fill("2026-01-10");
+    await page.getByRole("button", { name: "Save application" }).click();
+
+    await page
+      .locator('[data-core-form] [name="origin"]')
+      .selectOption("referral");
+    await page.getByRole("button", { name: "Save application" }).click();
+    await page
+      .locator('[data-core-form] [name="origin"]')
+      .selectOption("application_submitted");
+    await page.locator('[name="appliedAt"]').fill("2026-01-01");
+    await page.getByRole("button", { name: "Save application" }).click();
+    await page
+      .locator('[data-core-form] [name="origin"]')
+      .selectOption("candidate_outreach");
+    await page.getByRole("button", { name: "Save application" }).click();
+
+    const effectiveOrigins = await page.evaluate(
+      () =>
+        new Promise((resolve, reject) => {
+          const request = indexedDB.open("jobbot3000");
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => {
+            const db = request.result;
+            const tx = db.transaction("lifecycleEvents", "readonly");
+            const getAll = tx.objectStore("lifecycleEvents").getAll();
+            getAll.onerror = () => reject(getAll.error);
+            getAll.onsuccess = () => {
+              const events = getAll.result.filter((event) =>
+                [
+                  "application_submitted",
+                  "recruiter_company_outreach",
+                  "candidate_outreach",
+                  "referral",
+                  "other_unknown",
+                ].includes(event.eventType),
+              );
+              const superseded = new Set(
+                events.map((event) => event.supersedesEventId).filter(Boolean),
+              );
+              resolve(events.filter((event) => !superseded.has(event.id)));
+            };
+            tx.oncomplete = () => db.close();
+          };
+        }),
+    );
+
+    expect(effectiveOrigins).toHaveLength(1);
+    expect(effectiveOrigins[0]).toMatchObject({
+      eventType: "candidate_outreach",
+    });
   });
 
   test("combines status and outcome filters against distinct fields", async ({

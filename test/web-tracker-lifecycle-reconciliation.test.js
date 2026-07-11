@@ -329,4 +329,48 @@ describe("lifecycle reconciliation planner", () => {
       ["status_changed", "applied"],
     ]);
   });
+
+  it("does not infer duplicate outreach when a matching manual event exists", () => {
+    const bundle = {
+      applications: [app],
+      lifecycleEvents: [
+        {
+          id: "event_fake_manual_outreach",
+          applicationId: app.id,
+          eventType: "candidate_outreach",
+          status: "outreach_sent",
+          occurredAt: "2026-01-02T00:00:00.000Z",
+          occurredAtPrecision: "instant",
+          inferred: false,
+          source: "manual",
+          sourceArtifact: "msg_fake_manual_outreach",
+          actionStatus: "outbound",
+          createdAt: "2026-01-02T00:00:00.000Z",
+        },
+      ],
+      outreachMessages: [
+        {
+          id: "msg_fake_manual_outreach",
+          applicationId: app.id,
+          direction: "outbound",
+          channel: "email",
+          sentAt: "2026-01-02T00:00:00.000Z",
+          createdAt: "2026-01-02T00:00:00.000Z",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+          body: "private structured body",
+        },
+      ],
+      interviews: [],
+      offers: [],
+    };
+
+    const plan = planLifecycleReconciliation(bundle);
+
+    expect(
+      plan.additions.filter(
+        (event) => event.sourceArtifact === "msg_fake_manual_outreach",
+      ),
+    ).toEqual([]);
+    expect(JSON.stringify(plan.warnings)).not.toContain("private");
+  });
 });
