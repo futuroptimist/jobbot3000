@@ -1,6 +1,6 @@
 # Static Tracker Staging Verification Checklist
 
-Use this checklist after deploying a staging image or chart update for the browser-only tracker. Use only anonymized fixtures or private local backups; never commit real backups, screenshots, application notes, company names, candidate names, private URLs, or artifact links.
+Use this checklist with the [observability contract](observability.md) after deploying a staging image or chart update for the browser-only tracker. Use only anonymized fixtures or private local backups; never commit real backups, screenshots, application notes, company names, candidate names, private URLs, or artifact links.
 
 ## Deploy and smoke-check staging
 
@@ -38,6 +38,10 @@ Use this checklist after deploying a staging image or chart update for the brows
 3. Import the Reducto-like lifecycle CSV and inspect an application detail timeline.
    - Confirm exactly one recruiter screen is visible.
    - Confirm recruiter screens are separate from non-recruiter-screen interviews.
+
+## Staging-only synthetic promotion check
+
+Run `npm run smoke:promotion -- --base-url <staging-or-local-url> --synthetic` only against a disposable local or staging target. Confirm the generated `test-results/` summary contains only safe route/status/duration/final URL/content-type/pass-fail fields and no synthetic record contents. The command uses a fresh browser profile, verifies IndexedDB persistence across reload, exports a synthetic JSON backup, and removes the profile afterward.
 
 ## Backup, restore, and privacy guardrails
 

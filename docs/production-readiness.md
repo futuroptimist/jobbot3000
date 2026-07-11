@@ -45,6 +45,10 @@ Secrets, PVCs, logs, repo fixtures, or public object storage.
 4. Immediately export JSON and NDJSON backups and store them privately.
 5. Export CSV if you still want a spreadsheet-compatible checkpoint.
 
+## Observability
+
+Use the [observability contract](observability.md) for read-only promotion smoke checks, Kubernetes resource and restart signals, safe staging-only synthetic journeys, and privacy boundaries before promotion.
+
 ## First production deploy checklist
 
 1. Publish the image with an immutable tag such as `main-SHORTSHA`.

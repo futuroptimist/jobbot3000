@@ -39,7 +39,15 @@ ingress:
   annotations: {}
   tls: []
 
-resources: {}
+# Conservative Pi-friendly defaults make Kubernetes saturation and restart
+# analysis possible without over-reserving small Sugarkube nodes.
+resources:
+  requests:
+    cpu: 25m
+    memory: 32Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
 
 probes:
   readiness:

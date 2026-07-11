@@ -33,3 +33,7 @@ The tracker stores artifact links/metadata, not private file bytes. Keep resumes
 ## Static server headers
 
 `scripts/static-server.js` emits a restrictive Content Security Policy, Permissions Policy, Referrer Policy, `X-Content-Type-Options: nosniff`, and COOP headers. `/healthz` and `/livez` return JSON liveness responses without touching user data.
+
+## Observability boundary
+
+See the [observability contract](observability.md) for the safe blackbox, Kubernetes, and staging-synthetic signals. Production observability must not collect private tracker records or stable browser identifiers.
