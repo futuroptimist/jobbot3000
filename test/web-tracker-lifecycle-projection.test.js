@@ -299,6 +299,30 @@ describe("lifecycle projection", () => {
     expect(projection.warningCounts.status_mismatch).toBeUndefined();
   });
 
+  it("does not let stale unknown terminal snapshots undo a dated reopen", () => {
+    const projection = projectLifecycleAt(
+      bundle(
+        [app("a", { status: "technical_screen" })],
+        [
+          ev("origin", "a", "application_submitted", "2026-01-01"),
+          ev("reject", "a", "status_changed", "2026-01-02", {
+            status: "rejected",
+          }),
+          ev("reopen", "a", "application_reopened", "2026-01-03"),
+          ev("screen", "a", "technical_interview", "2026-01-04"),
+          ev("snapshot", "a", "migration_status_snapshot", "2026-01-01", {
+            occurredAtPrecision: "unknown",
+            currentStatus: "rejected",
+          }),
+        ],
+      ),
+    );
+
+    expect(projection.paths[0].endpoint).toBe("interviewing");
+    expect(projection.totals.terminal).toBe(0);
+    expect(projection.warningCounts.terminal_without_reopen).toBeUndefined();
+  });
+
   it("keeps higher-precedence endpoints within the same timestamp bucket", () => {
     const projection = projectLifecycleAt(
       bundle(

@@ -148,6 +148,14 @@ const instantMs = (value) => {
   const ms = Date.parse(String(value ?? ""));
   return Number.isFinite(ms) ? ms : undefined;
 };
+const fallbackKnownSort = (event) => {
+  const occurredAt = String(event?.occurredAt ?? "");
+  if (!occurredAt.includes("T")) {
+    const date = dateKey(occurredAt);
+    if (date) return `${date}|0`;
+  }
+  return eventTime({ ...event, occurredAtPrecision: undefined }).sort;
+};
 const eventTime = (event) => {
   if (isUnknownTime(event)) return { kind: "unknown", sort: "~unknown" };
   if (event?.occurredAtPrecision === "date") {
@@ -293,6 +301,13 @@ const projectApp = (app, appEvents, isCurrent) => {
   const events = [...appEvents].sort(
     (a, b) => codeCompare(a.time.sort, b.time.sort) || codeCompare(a.id, b.id),
   );
+  const knownReopenSorts = events
+    .filter(
+      (event) =>
+        event.canonicalType === "application_reopened" &&
+        ["date", "instant"].includes(event.time.kind),
+    )
+    .map((event) => event.time.sort);
   const origin = originFor(app, events, details);
   const milestoneSet = new Set();
   let highestObservedMilestoneRank = -1;
@@ -381,6 +396,15 @@ const projectApp = (app, appEvents, isCurrent) => {
       continue;
     }
     if (TERMINAL_IDS.has(terminalEndpoint)) {
+      if (
+        event.time.kind === "unknown" &&
+        (type === "status_changed" || type === "migration_status_snapshot") &&
+        knownReopenSorts.some(
+          (reopenSort) =>
+            codeCompare(fallbackKnownSort(event), reopenSort) <= 0,
+        )
+      )
+        continue;
       terminal = terminalEndpoint;
       continue;
     }
