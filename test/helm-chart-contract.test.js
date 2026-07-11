@@ -19,9 +19,24 @@ describe("Helm chart production contract", () => {
     expect(values).toContain("tag: main-latest");
     expect(values).toContain("path: /healthz");
     expect(values).toContain("path: /livez");
+    expect(values).toContain("cpu: 25m");
+    expect(values).toContain("memory: 32Mi");
+    expect(values).toContain("cpu: 200m");
+    expect(values).toContain("memory: 128Mi");
     expect(values).toContain("readOnlyRootFilesystem: true");
     expect(deployment).toContain("JOBBOT_WEB_PORT");
+    expect(deployment).toContain("resources:");
     expect(deployment).not.toContain("persistentVolumeClaim");
+  });
+
+  it("uses standard Kubernetes labels on rendered object and pod metadata", async () => {
+    const helpers = await read("charts/jobbot3000/templates/_helpers.tpl");
+    const deployment = await read(
+      "charts/jobbot3000/templates/deployment.yaml",
+    );
+    expect(helpers).toContain("app.kubernetes.io/component: static-tracker");
+    expect(helpers).toContain("app.kubernetes.io/part-of: jobbot3000");
+    expect(deployment).toContain('include "jobbot3000.labels" . | nindent 8');
   });
 
   it("does not define PVCs or user-data Secrets by default", async () => {

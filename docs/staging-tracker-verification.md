@@ -2,6 +2,10 @@
 
 Use this checklist after deploying a staging image or chart update for the browser-only tracker. Use only anonymized fixtures or private local backups; never commit real backups, screenshots, application notes, company names, candidate names, private URLs, or artifact links.
 
+## Observability contract
+
+Follow [docs/observability.md](observability.md) for safe blackbox checks and staging-only synthetic journeys. Production smoke is read-only; synthetic writes must use disposable profiles and clearly synthetic records only.
+
 ## Deploy and smoke-check staging
 
 1. Deploy staging with the intended immutable image tag.

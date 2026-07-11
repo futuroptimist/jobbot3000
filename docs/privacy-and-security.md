@@ -30,6 +30,10 @@ IndexedDB quota is controlled by the browser and device. Low disk space, private
 
 The tracker stores artifact links/metadata, not private file bytes. Keep resumes, cover letters, transcripts, and offer documents in private storage you control. Prefer encrypted local folders or an encrypted document vault, and link to those locations only when appropriate for your threat model.
 
+## Observability privacy
+
+The observability contract is documented in [docs/observability.md](observability.md). It permits blackbox route status, Kubernetes resource, restart, and probe signals, but forbids collecting private tracker records, resumes, notes, compensation, imported files, or browser identifiers on the server.
+
 ## Static server headers
 
 `scripts/static-server.js` emits a restrictive Content Security Policy, Permissions Policy, Referrer Policy, `X-Content-Type-Options: nosniff`, and COOP headers. `/healthz` and `/livez` return JSON liveness responses without touching user data.
