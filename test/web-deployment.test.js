@@ -103,6 +103,9 @@ describe("web deployment artifacts", () => {
     expect(packageJson.scripts["smoke:container"]).toBe(
       "bash scripts/smoke-container.sh",
     );
+    expect(packageJson.scripts["smoke:promotion"]).toBe(
+      "node scripts/promotion-smoke.js",
+    );
 
     const staticServer = await readFile(
       path.join(repoRoot, "scripts", "static-server.js"),
@@ -121,8 +124,9 @@ describe("web deployment artifacts", () => {
       'app.get("/manifest.webmanifest", sendNoStoreFile("manifest.webmanifest"))',
     );
     expect(staticServer).toContain(
-      'res.setHeader("Cache-Control", "no-store")',
+      '.set("Cache-Control", "no-store")',
     );
+    expect(staticServer).toContain('res.setHeader("Cache-Control", "no-store")');
     expect(staticServer).not.toContain("immutable");
     expect(staticServer).toContain("Content-Security-Policy");
     expect(staticServer).not.toContain("/commands");

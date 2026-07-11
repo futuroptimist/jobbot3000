@@ -39,7 +39,13 @@ ingress:
   annotations: {}
   tls: []
 
-resources: {}
+resources:
+  requests:
+    cpu: 25m
+    memory: 32Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
 
 probes:
   readiness:

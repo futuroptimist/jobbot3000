@@ -33,7 +33,8 @@
     "postinstall": "node scripts/install-console-font.js",
     "build": "node scripts/build-static.js",
     "start:static": "node scripts/static-server.js",
-    "smoke:container": "bash scripts/smoke-container.sh"
+    "smoke:container": "bash scripts/smoke-container.sh",
+    "smoke:promotion": "node scripts/promotion-smoke.js"
   },
   "engines": {
     "node": ">=20"
