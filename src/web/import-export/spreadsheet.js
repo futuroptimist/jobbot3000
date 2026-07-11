@@ -1339,7 +1339,7 @@ export const exportNdjsonBackup = (bundle) => {
 const normalizeBackupBundleInput = (input, { source = "json_import" } = {}) => {
   const now = nowIso();
   const bundle = {
-    schemaVersion: input?.schemaVersion,
+    schemaVersion: input?.schemaVersion ?? 1,
     exportedAt: input?.exportedAt ?? now,
     applications: input?.applications ?? [],
     contacts: input?.contacts ?? [],
@@ -1355,8 +1355,6 @@ const normalizeBackupBundleInput = (input, { source = "json_import" } = {}) => {
     reminders: input?.reminders ?? [],
     settings: input?.settings,
   };
-  if (input?.schemaVersion !== undefined)
-    bundle.schemaVersion = input.schemaVersion;
   return bundle;
 };
 

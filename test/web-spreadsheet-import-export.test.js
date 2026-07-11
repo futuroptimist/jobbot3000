@@ -1578,6 +1578,15 @@ describe("spreadsheet import/export", () => {
       ],
     });
 
+    const { schemaVersion, ...legacyBundleWithoutSchemaVersion } = legacyBundle;
+    void schemaVersion;
+    expect(
+      importJsonBackup(JSON.stringify(legacyBundleWithoutSchemaVersion)),
+    ).toMatchObject({
+      schemaVersion: 2,
+      applications: [expect.objectContaining({ id: legacyApplication.id })],
+    });
+
     const legacyNdjson = [
       JSON.stringify({
         type: "meta",
