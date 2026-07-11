@@ -186,6 +186,7 @@ export const browserApplicationOfferSchema = z
       "accepted",
       "declined",
       "expired",
+      "rescinded",
     ]),
     baseSalaryMin: z.number().nonnegative().optional(),
     baseSalaryMax: z.number().nonnegative().optional(),

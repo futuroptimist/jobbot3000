@@ -1,4 +1,4 @@
-/* global IDBDatabase, indexedDB */
+/* global IDBDatabase, IDBObjectStore, indexedDB, window */
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -642,7 +642,10 @@ test.describe("browser application tracker", () => {
       const originalTransaction = IDBDatabase.prototype.transaction;
       IDBDatabase.prototype.transaction = function transaction(...args) {
         if (args[1] === "readwrite") {
-          throw new DOMException("simulated quota exceeded", "QuotaExceededError");
+          throw new DOMException(
+            "simulated quota exceeded",
+            "QuotaExceededError",
+          );
         }
         return originalTransaction.apply(this, args);
       };
@@ -810,6 +813,68 @@ test.describe("browser application tracker", () => {
     await expect(page.locator('[data-core-form] [name="status"]')).toHaveValue(
       "technical_screen",
     );
+  });
+
+  test("repeated origin corrections leave one effective origin", async ({
+    page,
+  }) => {
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.getByRole("button", { name: "New application" }).click();
+    await page.locator('[name="company"]').fill("Origin Corrections Co");
+    await page.locator('[name="role"]').fill("Lifecycle Tester");
+    await page.locator('[name="appliedAt"]').fill("2026-01-10");
+    await page.getByRole("button", { name: "Save application" }).click();
+
+    await page
+      .locator('[data-core-form] [name="origin"]')
+      .selectOption("referral");
+    await page.getByRole("button", { name: "Save application" }).click();
+    await page
+      .locator('[data-core-form] [name="origin"]')
+      .selectOption("application_submitted");
+    await page.locator('[name="appliedAt"]').fill("2026-01-01");
+    await page.getByRole("button", { name: "Save application" }).click();
+    await page
+      .locator('[data-core-form] [name="origin"]')
+      .selectOption("candidate_outreach");
+    await page.getByRole("button", { name: "Save application" }).click();
+
+    const effectiveOrigins = await page.evaluate(
+      () =>
+        new Promise((resolve, reject) => {
+          const request = indexedDB.open("jobbot3000");
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => {
+            const db = request.result;
+            const tx = db.transaction("lifecycleEvents", "readonly");
+            const getAll = tx.objectStore("lifecycleEvents").getAll();
+            getAll.onerror = () => reject(getAll.error);
+            getAll.onsuccess = () => {
+              const events = getAll.result.filter((event) =>
+                [
+                  "application_submitted",
+                  "recruiter_company_outreach",
+                  "candidate_outreach",
+                  "referral",
+                  "other_unknown",
+                ].includes(event.eventType),
+              );
+              const superseded = new Set(
+                events.map((event) => event.supersedesEventId).filter(Boolean),
+              );
+              resolve(events.filter((event) => !superseded.has(event.id)));
+            };
+            tx.oncomplete = () => db.close();
+          };
+        }),
+    );
+
+    expect(effectiveOrigins).toHaveLength(1);
+    expect(effectiveOrigins[0]).toMatchObject({
+      eventType: "candidate_outreach",
+    });
   });
 
   test("combines status and outcome filters against distinct fields", async ({
@@ -1126,4 +1191,240 @@ test.describe("browser application tracker", () => {
 
     expect(mutatingRequests).toEqual([]);
   });
+
+  test("requires application date only for submitted origins and records reopen events", async ({
+    page,
+  }) => {
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.getByRole("button", { name: "New application" }).click();
+
+    const dateInput = page.locator('[data-core-form] [name="appliedAt"]');
+    await expect(
+      page.getByText("Application date (if applicable).", { exact: true }),
+    ).toBeVisible();
+    await expect(dateInput).toHaveAttribute("required", "");
+    await page
+      .locator('[data-core-form] [name="origin"]')
+      .selectOption("candidate_outreach");
+    await expect(dateInput).not.toHaveAttribute("required", "");
+    await page
+      .locator('[data-core-form] [name="origin"]')
+      .selectOption("application_submitted");
+    await expect(dateInput).toHaveAttribute("required", "");
+
+    await page.locator('[name="company"]').fill("Reopen Coverage Co");
+    await page.locator('[name="role"]').fill("Lifecycle QA");
+    await dateInput.fill("2026-01-10");
+    await page.getByRole("button", { name: "Save application" }).click();
+
+    const countEvents = async () =>
+      page.evaluate(
+        () =>
+          new Promise((resolve, reject) => {
+            const request = indexedDB.open("jobbot3000");
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => {
+              const db = request.result;
+              const tx = db.transaction("lifecycleEvents", "readonly");
+              const getAll = tx.objectStore("lifecycleEvents").getAll();
+              getAll.onerror = () => reject(getAll.error);
+              getAll.onsuccess = () => resolve(getAll.result);
+              tx.oncomplete = () => db.close();
+            };
+          }),
+      );
+
+    const createdEvents = await countEvents();
+    await page.locator('[name="role"]').fill("Lifecycle QA Updated");
+    await page.getByRole("button", { name: "Save application" }).click();
+    await expect(page.locator('[name="role"]')).toHaveValue(
+      "Lifecycle QA Updated",
+    );
+    await expect
+      .poll(async () => (await countEvents()).length)
+      .toBe(createdEvents.length);
+
+    await page
+      .locator('[data-core-form] [name="status"]')
+      .selectOption("rejected");
+    await page.getByRole("button", { name: "Save application" }).click();
+    await page
+      .locator('[data-core-form] [name="status"]')
+      .selectOption("applied");
+    await page.getByRole("button", { name: "Save application" }).click();
+    await expect
+      .poll(
+        async () =>
+          (await countEvents()).filter(
+            (event) => event.eventType === "application_reopened",
+          ).length,
+      )
+      .toBe(1);
+  });
+
+  test(
+    "disables lifecycle form controls during pending submission " +
+      "and recovers after submission failure",
+    async ({ page }) => {
+      await page
+        .getByRole("button", { name: "Applications", exact: true })
+        .click();
+      await page.getByRole("button", { name: "New application" }).click();
+      await page.locator('[name="company"]').fill("Failure Recovery Co");
+      await page.locator('[name="role"]').fill("Lifecycle QA");
+      await page.locator('[name="appliedAt"]').fill("2026-01-10");
+      await page.getByRole("button", { name: "Save application" }).click();
+
+      const recordSnapshots = async () =>
+        page.evaluate(
+          () =>
+            new Promise((resolve, reject) => {
+              const request = indexedDB.open("jobbot3000");
+              request.onerror = () => reject(request.error);
+              request.onsuccess = () => {
+                const db = request.result;
+                const tx = db.transaction(
+                  ["applications", "outreachMessages", "lifecycleEvents"],
+                  "readonly",
+                );
+                const snapshots = {};
+                for (const storeName of [
+                  "applications",
+                  "outreachMessages",
+                  "lifecycleEvents",
+                ]) {
+                  const getAll = tx.objectStore(storeName).getAll();
+                  getAll.onerror = () => reject(getAll.error);
+                  getAll.onsuccess = () => {
+                    snapshots[storeName] = getAll.result.toSorted((a, b) =>
+                      String(a.id).localeCompare(String(b.id)),
+                    );
+                  };
+                }
+                tx.oncomplete = () => {
+                  db.close();
+                  resolve(snapshots);
+                };
+                tx.onabort = () => reject(tx.error);
+              };
+            }),
+        );
+
+      const before = await recordSnapshots();
+
+      await page.evaluate(() => {
+        const originalAdd = IDBObjectStore.prototype.add;
+        IDBObjectStore.prototype.add = function delayedFailingAdd(...args) {
+          const request = originalAdd.apply(this, args);
+          if (
+            this.name === "outreachMessages" &&
+            args[0]?.body === "Persist me after failure"
+          ) {
+            this.transaction.abort();
+          }
+          return request;
+        };
+        window.__restoreLifecycleFailurePatch = () => {
+          IDBObjectStore.prototype.add = originalAdd;
+        };
+
+        let releaseBlocker;
+        window.__releasePendingLifecycleBlocker = () => releaseBlocker?.();
+        window.__pendingLifecycleBlockerReady = new Promise(
+          (resolveReady, rejectReady) => {
+            window.__pendingLifecycleBlocker = new Promise(
+              (resolve, reject) => {
+                const open = indexedDB.open("jobbot3000");
+                open.onerror = () => {
+                  rejectReady(open.error);
+                  reject(open.error);
+                };
+                open.onsuccess = () => {
+                  const db = open.result;
+                  const tx = db.transaction(
+                    ["applications", "outreachMessages", "lifecycleEvents"],
+                    "readwrite",
+                  );
+                  const store = tx.objectStore("applications");
+                  let released = false;
+                  window.__releasePendingLifecycleBlocker = () => {
+                    released = true;
+                  };
+                  releaseBlocker = window.__releasePendingLifecycleBlocker;
+                  const keepAlive = () => {
+                    const request = store.get(
+                      "__delay_pending_lifecycle_submit__",
+                    );
+                    request.onerror = () => {
+                      rejectReady(request.error);
+                      reject(request.error);
+                    };
+                    request.onsuccess = () => {
+                      resolveReady();
+                      if (!released) keepAlive();
+                    };
+                  };
+                  keepAlive();
+                  tx.oncomplete = () => {
+                    db.close();
+                    resolve();
+                  };
+                  tx.onabort = () => {
+                    rejectReady(tx.error);
+                    reject(tx.error);
+                  };
+                };
+              },
+            );
+          },
+        );
+      });
+      await page.evaluate(() => window.__pendingLifecycleBlockerReady);
+
+      try {
+        const outreachForm = page.locator("[data-outreach-form]");
+        await outreachForm
+          .locator('[name="direction"]')
+          .selectOption("inbound");
+        await outreachForm.locator('[name="channel"]').selectOption("linkedin");
+        await outreachForm
+          .locator('[name="body"]')
+          .fill("Persist me after failure");
+        const submit = page
+          .getByRole("button", { name: "Add outreach" })
+          .click();
+
+        await expect(outreachForm.locator('[name="direction"]')).toBeDisabled();
+        await expect(outreachForm.locator('[name="channel"]')).toBeDisabled();
+        await expect(outreachForm.locator('[name="body"]')).toBeDisabled();
+        await expect(
+          page.getByRole("button", { name: "Add outreach" }),
+        ).toBeDisabled();
+
+        await page.evaluate(() => window.__releasePendingLifecycleBlocker());
+        await page.evaluate(() => window.__pendingLifecycleBlocker);
+        await submit;
+        await expect(outreachForm.getByRole("alert")).toContainText(
+          "Save failed. No changes were written.",
+        );
+        await expect(outreachForm.locator('[name="direction"]')).toBeEnabled();
+        await expect(outreachForm.locator('[name="channel"]')).toBeEnabled();
+        await expect(outreachForm.locator('[name="body"]')).toBeEnabled();
+        await expect(outreachForm.locator('[name="direction"]')).toHaveValue(
+          "inbound",
+        );
+        await expect(outreachForm.locator('[name="channel"]')).toHaveValue(
+          "linkedin",
+        );
+        await expect(outreachForm.locator('[name="body"]')).toHaveValue(
+          "Persist me after failure",
+        );
+        await expect(recordSnapshots()).resolves.toEqual(before);
+      } finally {
+        await page.evaluate(() => window.__restoreLifecycleFailurePatch?.());
+      }
+    },
+  );
 });

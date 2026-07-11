@@ -420,6 +420,129 @@ const putChildRecord = async (db, storeName, record) => {
   return putRecord(db, storeName, parsed);
 };
 
+const assertSupersessionIsValid = (existingEvents, newEvents) => {
+  const byId = new Map(
+    [...existingEvents, ...newEvents].map((event) => [event.id, event]),
+  );
+  for (const event of newEvents) {
+    if (!event.supersedesEventId) continue;
+    const superseded = byId.get(event.supersedesEventId);
+    if (!superseded || superseded.applicationId !== event.applicationId) {
+      throw new IndexedDbRepositoryError(
+        "schema_validation_failed",
+        "Lifecycle supersession must reference an event for the same application.",
+        { details: { supersedesEventId: event.supersedesEventId } },
+      );
+    }
+    const seen = new Set([event.id]);
+    let cursor = superseded;
+    while (cursor?.supersedesEventId) {
+      if (seen.has(cursor.supersedesEventId)) {
+        throw new IndexedDbRepositoryError(
+          "schema_validation_failed",
+          "Lifecycle supersession cycle rejected.",
+          { details: { supersedesEventId: event.supersedesEventId } },
+        );
+      }
+      seen.add(cursor.supersedesEventId);
+      cursor = byId.get(cursor.supersedesEventId);
+    }
+  }
+};
+
+const assertLifecycleSupersessionGraphIsValid = (events) =>
+  assertSupersessionIsValid([], events);
+
+const contactBelongsToApplication = (contact, applicationId) =>
+  contact?.applicationId === applicationId;
+
+const normalizeMutationInput = (mutation) => {
+  const application = mutation.application
+    ? parseRecord("applications", mutation.application)
+    : null;
+  const childRecords = Object.entries(mutation.records ?? {}).flatMap(
+    ([storeName, records]) =>
+      records.map((record) => ({
+        storeName,
+        record: parseRecord(storeName, record),
+      })),
+  );
+  const appIds = new Set(
+    [
+      application?.id,
+      ...childRecords.map(({ record }) => record.applicationId),
+    ].filter(Boolean),
+  );
+  if (appIds.size !== 1) {
+    throw new IndexedDbRepositoryError(
+      "schema_validation_failed",
+      "Lifecycle mutation must reference exactly one application.",
+      { details: { applicationIds: [...appIds].sort() } },
+    );
+  }
+  const applicationId = [...appIds][0];
+  return { application, childRecords, applicationId };
+};
+
+const normalizeMutation = async (tx, mutationInput) => {
+  const { application, childRecords, applicationId } = mutationInput;
+  const existingApplication = await requestToPromise(
+    tx.objectStore("applications").get(applicationId),
+  );
+  const existingEvents = await requestToPromise(
+    tx
+      .objectStore("lifecycleEvents")
+      .index("by_applicationId")
+      .getAll(applicationId),
+  );
+  const contactIds = childRecords
+    .flatMap(({ record }) => [record.contactId, ...(record.contactIds ?? [])])
+    .filter(Boolean);
+  const incomingContacts = new Map(
+    childRecords
+      .filter(({ storeName }) => storeName === "contacts")
+      .map(({ record }) => [record.id, record]),
+  );
+  const contacts = await Promise.all(
+    contactIds.map(
+      async (contactId) =>
+        incomingContacts.get(contactId) ??
+        requestToPromise(tx.objectStore("contacts").get(contactId)),
+    ),
+  );
+  if (!application && !existingApplication) {
+    throw new IndexedDbRepositoryError(
+      "schema_validation_failed",
+      "Referenced application does not exist.",
+      { details: { applicationId } },
+    );
+  }
+  const invalidContactIds = contactIds.filter(
+    (_, index) => !contactBelongsToApplication(contacts[index], applicationId),
+  );
+  if (invalidContactIds.length) {
+    throw new IndexedDbRepositoryError(
+      "schema_validation_failed",
+      "Referenced contact does not exist for this application.",
+      { details: { contactIds: invalidContactIds } },
+    );
+  }
+  const previousStatus = existingApplication?.status;
+  const lifecycleEvents = childRecords
+    .filter(({ storeName }) => storeName === "lifecycleEvents")
+    .map(({ record }) => ({ ...record, previousStatus }));
+  assertSupersessionIsValid(existingEvents, lifecycleEvents);
+  return {
+    application,
+    childRecords: childRecords.map((item) =>
+      item.storeName === "lifecycleEvents"
+        ? { ...item, record: lifecycleEvents.shift() }
+        : item,
+    ),
+    previousStatus,
+  };
+};
+
 const deleteFromIndex = async (db, storeName, indexName, value) => {
   const tx = db.transaction(storeName, "readwrite");
   const done = transactionDone(tx);
@@ -547,6 +670,36 @@ export const createIndexedDbRepository = async (options = {}) => {
     },
     upsertArtifact(record) {
       return safe(() => putChildRecord(db, "artifacts", record));
+    },
+
+    async commitLifecycleMutation(mutation) {
+      return safe(async () => {
+        const mutationInput = normalizeMutationInput(mutation);
+        const storeNames = [
+          ...new Set([
+            "applications",
+            "contacts",
+            "lifecycleEvents",
+            ...mutationInput.childRecords.map(({ storeName }) => storeName),
+          ]),
+        ];
+        const tx = db.transaction(storeNames, "readwrite");
+        const done = transactionDone(tx);
+        const normalized = await normalizeMutation(tx, mutationInput);
+        if (normalized.application)
+          tx.objectStore("applications").put(normalized.application);
+        for (const { storeName, record } of normalized.childRecords) {
+          const store = tx.objectStore(storeName);
+          if (
+            storeName === "lifecycleEvents" ||
+            storeName === "outreachMessages"
+          )
+            store.add(record);
+          else store.put(record);
+        }
+        await done;
+        return { previousStatus: normalized.previousStatus };
+      });
     },
     async listDueFollowUps(now = new Date().toISOString()) {
       return safe(async () =>
@@ -735,6 +888,7 @@ export const createIndexedDbRepository = async (options = {}) => {
             return [name, [...byId.values()]];
           }),
         );
+        assertLifecycleSupersessionGraphIsValid(merged.lifecycleEvents);
         const validation = browserApplicationExportSchema.safeParse({
           schemaVersion: BROWSER_BACKUP_SCHEMA_VERSION,
           exportedAt: new Date(0).toISOString(),
