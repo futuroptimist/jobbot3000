@@ -454,6 +454,156 @@ describe("lifecycle projection", () => {
     expect(projection.events.map((event) => event.id)).toEqual(["screen"]);
   });
 
+  it("preserves status-derived terminals against active status events until reopen", () => {
+    const noReopen = projectLifecycleAt(
+      bundle(
+        [app("a", { status: "rejected" })],
+        [
+          ev("origin", "a", "application_submitted", "2026-01-01"),
+          ev("reject", "a", "status_changed", "2026-01-02", {
+            status: "rejected",
+          }),
+          ev("active_status", "a", "status_changed", "2026-01-03", {
+            status: "technical_screen",
+          }),
+          ev(
+            "active_snapshot",
+            "a",
+            "migration_status_snapshot",
+            "2026-01-04",
+            {
+              currentStatus: "technical_screen",
+            },
+          ),
+        ],
+      ),
+    );
+
+    expect(noReopen.paths[0].endpoint).toBe("employer_rejected");
+    expect(noReopen.warningCounts.terminal_without_reopen).toBe(2);
+
+    const reopened = projectLifecycleAt(
+      bundle(
+        [app("a", { status: "technical_screen" })],
+        [
+          ev("origin", "a", "application_submitted", "2026-01-01"),
+          ev("reject", "a", "status_changed", "2026-01-02", {
+            status: "rejected",
+          }),
+          ev("reopen", "a", "application_reopened", "2026-01-03"),
+          ev(
+            "active_snapshot",
+            "a",
+            "migration_status_snapshot",
+            "2026-01-04",
+            {
+              currentStatus: "technical_screen",
+            },
+          ),
+        ],
+      ),
+    );
+
+    expect(reopened.paths[0].endpoint).toBe("interviewing");
+    expect(reopened.warningCounts.terminal_without_reopen).toBeUndefined();
+  });
+
+  it("clears same-bucket assessment activity when submitted or completed", () => {
+    for (const actionStatus of ["submitted", "completed"]) {
+      const projection = projectLifecycleAt(
+        bundle(
+          [app(`a_${actionStatus}`, { status: "applied" })],
+          [
+            ev(
+              "origin",
+              `a_${actionStatus}`,
+              "application_submitted",
+              "2026-01-01",
+            ),
+            ev(
+              "request",
+              `a_${actionStatus}`,
+              "assessment_take_home",
+              "2026-01-02",
+              {
+                actionStatus: "requested",
+              },
+            ),
+            ev(
+              "submit",
+              `a_${actionStatus}`,
+              "assessment_take_home",
+              "2026-01-02",
+              {
+                actionStatus,
+              },
+            ),
+          ],
+        ),
+      );
+
+      expect(projection.paths[0].milestones).toEqual(["assessment_take_home"]);
+      expect(projection.paths[0].endpoint).toBe("awaiting_response");
+    }
+  });
+
+  it("lets the latest same-bucket status-derived terminal win by stable event id", () => {
+    const rejectedWins = projectLifecycleAt(
+      bundle(
+        [app("a", { status: "rejected" })],
+        [
+          ev("a_accept", "a", "status_changed", "2026-01-01", {
+            status: "accepted",
+          }),
+          ev("z_reject", "a", "status_changed", "2026-01-01", {
+            status: "rejected",
+          }),
+        ],
+      ),
+    );
+    expect(rejectedWins.paths[0].endpoint).toBe("employer_rejected");
+
+    const acceptedWins = projectLifecycleAt(
+      bundle(
+        [app("a", { status: "accepted" })],
+        [
+          ev("a_reject", "a", "status_changed", "2026-01-01", {
+            status: "rejected",
+          }),
+          ev("z_accept", "a", "status_changed", "2026-01-01", {
+            status: "accepted",
+          }),
+        ],
+      ),
+    );
+    expect(acceptedWins.paths[0].endpoint).toBe("offer_accepted");
+  });
+
+  it("exposes only effective same-bucket replacement events in timelines and projections", () => {
+    const b = bundle(
+      [app("a", { status: "offer" })],
+      [
+        ev("origin", "a", "application_submitted", "2026-01-01"),
+        ev("old", "a", "technical_interview", "2026-01-02"),
+        ev("replacement", "a", "offer_received", "2026-01-02", {
+          supersedesEventId: "old",
+        }),
+      ],
+    );
+
+    const timelineBucket = buildLifecycleTimeline(b).buckets.find(
+      (bucket) => bucket.id === "2026-01-02|0",
+    );
+    const projection = projectLifecycleAt(b, "2026-01-02|0");
+
+    expect(timelineBucket.eventIds).toEqual(["replacement"]);
+    expect(projection.events.map((event) => event.id)).toEqual(["replacement"]);
+    expect(projection.paths[0]).toMatchObject({
+      milestones: ["offer_received"],
+      endpoint: "offer_negotiating",
+    });
+  });
+
   it("reports deterministic structured warnings", () => {
     const projection = projectLifecycleAt(
       bundle(

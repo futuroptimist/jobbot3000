@@ -278,14 +278,6 @@ const originFor = (app, events, details) => {
 const endpointFromStatusEvent = (event) =>
   STATUS_ENDPOINT[normalize(event.status)] ??
   STATUS_ENDPOINT[normalize(event.currentStatus)];
-const ENDPOINT_PRECEDENCE = new Map(
-  ENDPOINTS.map(([id], index) => [id, index]),
-);
-const endpointPrecedence = (endpoint) =>
-  ENDPOINT_PRECEDENCE.get(endpoint) ?? Number.MAX_SAFE_INTEGER;
-const shouldApplyEndpoint = (nextEndpoint, endpoint, sameMoment) =>
-  !sameMoment ||
-  endpointPrecedence(nextEndpoint) >= endpointPrecedence(endpoint);
 const eventsByApplicationId = (events) => {
   const map = new Map();
   for (const event of events) {
@@ -304,25 +296,32 @@ const projectApp = (app, appEvents, isCurrent) => {
   const origin = originFor(app, events, details);
   const milestoneSet = new Set();
   let highestObservedMilestoneRank = -1;
-  let endpoint = "unknown";
   let terminal = undefined;
-  let lastEndpointSort = undefined;
-  const applyEndpoint = (nextEndpoint, event) => {
-    if (!nextEndpoint) return;
-    if (
-      shouldApplyEndpoint(
-        nextEndpoint,
-        endpoint,
-        event.time.sort === lastEndpointSort,
-      )
-    ) {
-      endpoint = nextEndpoint;
-      lastEndpointSort = event.time.sort;
-    }
+  let awaitingActive = false;
+  let interviewActive = false;
+  let assessmentActive = false;
+  let offerActive = false;
+  const endpointFromState = () => {
+    if (terminal) return terminal;
+    if (offerActive) return "offer_negotiating";
+    if (assessmentActive) return "assessment_in_progress";
+    if (interviewActive) return "interviewing";
+    if (awaitingActive) return "awaiting_response";
+    return "unknown";
   };
+  const markEndpoint = (nextEndpoint) => {
+    if (nextEndpoint === "offer_negotiating") offerActive = true;
+    else if (nextEndpoint === "assessment_in_progress") assessmentActive = true;
+    else if (nextEndpoint === "interviewing") interviewActive = true;
+    else if (nextEndpoint === "awaiting_response") awaitingActive = true;
+  };
+  const isResumedActivity = (event, statusEndpoint) =>
+    isLowerStageActivity(event.canonicalType) ||
+    (statusEndpoint && !TERMINAL_IDS.has(statusEndpoint));
   for (const event of events) {
     const type = event.canonicalType;
     const classified = classifyLifecycleEventType(event.rawType);
+    const statusEndpoint = endpointFromStatusEvent(event);
     if (event.inferred)
       details.push(
         makeWarning("inferred_event", app.id, { eventId: event.id }),
@@ -363,49 +362,46 @@ const projectApp = (app, appEvents, isCurrent) => {
     }
     if (type === "application_reopened") {
       terminal = undefined;
-      endpoint = "awaiting_response";
-      lastEndpointSort = event.time.sort;
+      awaitingActive = true;
+      interviewActive = false;
+      assessmentActive = false;
+      offerActive = false;
       continue;
     }
-    if (
-      terminal &&
-      !TERMINAL_EVENT_ENDPOINT[type] &&
-      !TERMINAL_IDS.has(endpointFromStatusEvent(event)) &&
-      isLowerStageActivity(type)
-    ) {
-      details.push(
-        makeWarning("terminal_without_reopen", app.id, { eventId: event.id }),
-      );
+    const terminalEndpoint = TERMINAL_EVENT_ENDPOINT[type] ?? statusEndpoint;
+    if (terminal && TERMINAL_IDS.has(terminalEndpoint)) {
+      terminal = terminalEndpoint;
       continue;
     }
-    if (TERMINAL_EVENT_ENDPOINT[type]) {
-      endpoint = TERMINAL_EVENT_ENDPOINT[type];
-      terminal = endpoint;
-      lastEndpointSort = event.time.sort;
+    if (terminal) {
+      if (isResumedActivity(event, statusEndpoint))
+        details.push(
+          makeWarning("terminal_without_reopen", app.id, { eventId: event.id }),
+        );
+      continue;
+    }
+    if (TERMINAL_IDS.has(terminalEndpoint)) {
+      terminal = terminalEndpoint;
       continue;
     }
     if (type === "offer_received" || type === "offer_negotiating")
-      applyEndpoint("offer_negotiating", event);
+      offerActive = true;
     else if (type === "assessment_take_home") {
       const assessmentStatus = normalize(event.actionStatus ?? event.action);
-      if (ASSESSMENT_IN_PROGRESS.has(assessmentStatus))
-        applyEndpoint("assessment_in_progress", event);
-      else if (["submitted", "completed", "done"].includes(assessmentStatus))
-        applyEndpoint("awaiting_response", event);
+      if (ASSESSMENT_IN_PROGRESS.has(assessmentStatus)) assessmentActive = true;
+      else if (["submitted", "completed", "done"].includes(assessmentStatus)) {
+        assessmentActive = false;
+        awaitingActive = true;
+      } else markEndpoint("assessment_in_progress");
     } else if (
       ["recruiter_screen", "technical_interview", "onsite_final_loop"].includes(
         type,
       )
     )
-      applyEndpoint("interviewing", event);
+      interviewActive = true;
     else if (ORIGIN_IDS.has(type) || type === "employer_response_received")
-      applyEndpoint("awaiting_response", event);
-    else if (endpointFromStatusEvent(event)) {
-      const statusEndpoint = endpointFromStatusEvent(event);
-      applyEndpoint(statusEndpoint, event);
-      if (TERMINAL_IDS.has(statusEndpoint) && endpoint === statusEndpoint)
-        terminal = statusEndpoint;
-    }
+      awaitingActive = true;
+    else markEndpoint(statusEndpoint);
     if (classified.eventType !== type)
       details.push(
         makeWarning("event_type_normalized", app.id, { eventId: event.id }),
@@ -414,6 +410,7 @@ const projectApp = (app, appEvents, isCurrent) => {
   const milestones = [...milestoneSet].sort(
     (a, b) => (MILESTONE_RANK.get(a) ?? 0) - (MILESTONE_RANK.get(b) ?? 0),
   );
+  const endpoint = endpointFromState();
   if (
     isCurrent &&
     STATUS_ENDPOINT[normalize(app.status)] &&
@@ -629,10 +626,7 @@ export function buildLifecycleTimeline(bundle = {}) {
       ...buildBucketMetadata(id, events),
       includedApplications: included,
       totalApplications: apps.length,
-      eventIds: (id === "current" || id === "unknown-date"
-        ? selected
-        : events.filter((event) => event.time.sort === id)
-      )
+      eventIds: boundaryEvents(selected, id)
         .map((event) => event.id)
         .sort(codeCompare),
     };
