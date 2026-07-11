@@ -120,6 +120,13 @@ const ASSESSMENT_IN_PROGRESS = new Set([
   "in_progress",
 ]);
 const MILESTONE_RANK = new Map(MILESTONES.map(([id], index) => [id, index]));
+
+const ORIGIN_RANK = new Map(ORIGINS.map(([id], index) => [id, index]));
+const isLowerStageActivity = (type) =>
+  ORIGIN_IDS.has(type) ||
+  MILESTONE_IDS.has(type) ||
+  type === "employer_response_received" ||
+  type === "offer_negotiating";
 const normalize = (value) =>
   String(value ?? "")
     .trim()
@@ -133,8 +140,9 @@ const canonicalEventType = (event) =>
 const eventId = (event, index) => String(event?.id ?? `missing_event_${index}`);
 const appId = (app, index) => String(app?.id ?? `missing_application_${index}`);
 const isUnknownTime = (event) =>
-  event?.occurredAtPrecision === "unknown" ||
-  String(event?.occurredAt ?? "").startsWith("1970-01-01");
+  ["unknown", "legacy-placeholder", "legacy_placeholder"].includes(
+    event?.occurredAtPrecision,
+  );
 const dateKey = (value) => /^\d{4}-\d{2}-\d{2}/u.exec(String(value ?? ""))?.[0];
 const instantMs = (value) => {
   const ms = Date.parse(String(value ?? ""));
@@ -148,10 +156,17 @@ const eventTime = (event) => {
       : dateKey(event.occurredAt);
     return date
       ? { kind: "date", date, sort: `${date}|0` }
-      : { kind: "invalid", sort: "" };
+      : {
+          kind: "invalid",
+          sort: `~~invalid|${String(event.occurredAt ?? "")}`,
+        };
   }
   const ms = instantMs(event?.occurredAt);
-  if (ms === undefined) return { kind: "invalid", sort: "" };
+  if (ms === undefined)
+    return {
+      kind: "invalid",
+      sort: `~~invalid|${String(event?.occurredAt ?? "")}`,
+    };
   const iso = new Date(ms).toISOString();
   return {
     kind: "instant",
@@ -172,12 +187,6 @@ const prepare = (bundle) => {
     .map((app, index) => ({ ...app, id: appId(app, index) }))
     .sort((a, b) => codeCompare(a.id, b.id));
   const knownApps = new Set(apps.map((app) => app.id));
-  const superseded = new Set(
-    (bundle.lifecycleEvents ?? [])
-      .map((event) => event?.supersedesEventId)
-      .filter(Boolean)
-      .map(String),
-  );
   const events = (bundle.lifecycleEvents ?? [])
     .map((event, index) => ({
       ...event,
@@ -187,7 +196,6 @@ const prepare = (bundle) => {
       canonicalType: canonicalEventType(event),
       time: eventTime(event),
     }))
-    .filter((event) => !superseded.has(event.id))
     .sort(
       (a, b) =>
         codeCompare(a.time.sort, b.time.sort) || codeCompare(a.id, b.id),
@@ -220,22 +228,47 @@ const prepare = (bundle) => {
   };
 };
 
-const bucketEvents = (events, bucketId) => {
-  if (bucketId === "current") return events;
-  if (bucketId === "unknown-date")
-    return events.filter((event) => event.time.kind === "unknown");
-  return events.filter(
-    (event) =>
-      event.time.kind !== "unknown" &&
-      event.time.kind !== "invalid" &&
-      codeCompare(event.time.sort, bucketId) <= 0,
+const withoutSuperseded = (events) => {
+  const superseded = new Set(
+    events
+      .map((event) => event.supersedesEventId)
+      .filter(Boolean)
+      .map(String),
   );
+  return events.filter((event) => !superseded.has(event.id));
+};
+
+const bucketEvents = (events, bucketId) => {
+  const selected =
+    bucketId === "current"
+      ? events
+      : bucketId === "unknown-date"
+        ? events.filter((event) => event.time.kind === "unknown")
+        : events.filter(
+            (event) =>
+              event.time.kind !== "unknown" &&
+              event.time.kind !== "invalid" &&
+              codeCompare(event.time.sort, bucketId) <= 0,
+          );
+  return withoutSuperseded(selected);
+};
+
+const boundaryEvents = (events, bucketId) => {
+  if (bucketId === "current") return events;
+  if (bucketId === "unknown-date") return events;
+  return events.filter((event) => event.time.sort === bucketId);
 };
 
 const originFor = (app, events, details) => {
-  const origin = events.find((event) =>
-    ORIGIN_IDS.has(event.canonicalType),
-  )?.canonicalType;
+  const origin = events
+    .filter((event) => ORIGIN_IDS.has(event.canonicalType))
+    .sort(
+      (a, b) =>
+        codeCompare(a.time.sort, b.time.sort) ||
+        (ORIGIN_RANK.get(a.canonicalType) ?? Number.MAX_SAFE_INTEGER) -
+          (ORIGIN_RANK.get(b.canonicalType) ?? Number.MAX_SAFE_INTEGER) ||
+        codeCompare(a.id, b.id),
+    )[0]?.canonicalType;
   if (origin) return origin;
   if (ORIGIN_IDS.has(app.origin)) return app.origin;
   if (normalize(app.source) === "referral") return "referral";
@@ -297,12 +330,25 @@ const projectApp = (app, appEvents, isCurrent) => {
     let milestone = undefined;
     if (MILESTONE_IDS.has(type)) milestone = type;
     else if (
-      ["technical_screen", "onsite_loop"].includes(normalize(event.stage))
+      ["technical_screen", "onsite_loop"].includes(normalize(event.stageLabel))
     )
       milestone =
-        normalize(event.stage) === "technical_screen"
+        normalize(event.stageLabel) === "technical_screen"
           ? "technical_interview"
           : "onsite_final_loop";
+    else if (
+      ["recruiter_screen", "technical_screen", "onsite_loop", "offer"].includes(
+        normalize(event.status),
+      )
+    )
+      milestone =
+        normalize(event.status) === "recruiter_screen"
+          ? "recruiter_screen"
+          : normalize(event.status) === "technical_screen"
+            ? "technical_interview"
+            : normalize(event.status) === "onsite_loop"
+              ? "onsite_final_loop"
+              : "offer_received";
     if (milestone) {
       const rank = MILESTONE_RANK.get(milestone) ?? 0;
       if (rank < highestObservedMilestoneRank)
@@ -324,7 +370,8 @@ const projectApp = (app, appEvents, isCurrent) => {
     if (
       terminal &&
       !TERMINAL_EVENT_ENDPOINT[type] &&
-      !TERMINAL_IDS.has(endpointFromStatusEvent(event))
+      !TERMINAL_IDS.has(endpointFromStatusEvent(event)) &&
+      isLowerStageActivity(type)
     ) {
       details.push(
         makeWarning("terminal_without_reopen", app.id, { eventId: event.id }),
@@ -339,12 +386,13 @@ const projectApp = (app, appEvents, isCurrent) => {
     }
     if (type === "offer_received" || type === "offer_negotiating")
       applyEndpoint("offer_negotiating", event);
-    else if (
-      type === "assessment_take_home" &&
-      ASSESSMENT_IN_PROGRESS.has(normalize(event.actionStatus ?? event.action))
-    )
-      applyEndpoint("assessment_in_progress", event);
-    else if (
+    else if (type === "assessment_take_home") {
+      const assessmentStatus = normalize(event.actionStatus ?? event.action);
+      if (ASSESSMENT_IN_PROGRESS.has(assessmentStatus))
+        applyEndpoint("assessment_in_progress", event);
+      else if (["submitted", "completed", "done"].includes(assessmentStatus))
+        applyEndpoint("awaiting_response", event);
+    } else if (
       ["recruiter_screen", "technical_interview", "onsite_final_loop"].includes(
         type,
       )
@@ -453,6 +501,18 @@ const countBy = (paths, key, order = []) => {
     ),
   );
 };
+const sortWarnings = (warnings) =>
+  [...warnings].sort(
+    (a, b) =>
+      codeCompare(a.code, b.code) ||
+      codeCompare(a.applicationId ?? "", b.applicationId ?? "") ||
+      codeCompare(a.eventId ?? "", b.eventId ?? "") ||
+      codeCompare(
+        a.eventType ?? a.replayEndpoint ?? "",
+        b.eventType ?? b.replayEndpoint ?? "",
+      ) ||
+      codeCompare(a.statusEndpoint ?? "", b.statusEndpoint ?? ""),
+  );
 const warningCounts = (warnings) =>
   Object.fromEntries(
     [
@@ -472,6 +532,7 @@ export function projectLifecycleAt(bundle = {}, bucketId = "current") {
     bucketId === "current"
       ? apps
       : apps.filter((app) => eventAppIds.has(app.id));
+  const boundarySelectedEvents = boundaryEvents(selectedEvents, bucketId);
   const selectedEventsByApp = eventsByApplicationId(selectedEvents);
   const paths = includedApps.map((app) =>
     projectApp(
@@ -514,7 +575,7 @@ export function projectLifecycleAt(bundle = {}, bucketId = "current") {
       active: paths.length - terminalTotal,
       terminal: terminalTotal,
     },
-    events: selectedEvents
+    events: boundarySelectedEvents
       .map((event) => ({
         id: event.id,
         applicationId: event.applicationId,
@@ -523,7 +584,7 @@ export function projectLifecycleAt(bundle = {}, bucketId = "current") {
         occurredAtPrecision: event.occurredAtPrecision,
       }))
       .sort((a, b) => codeCompare(a.id, b.id)),
-    warnings,
+    warnings: sortWarnings(warnings),
     warningCounts: warningCounts(warnings),
   };
   return deepFreeze(projection);
@@ -578,7 +639,7 @@ export function buildLifecycleTimeline(bundle = {}) {
   });
   return deepFreeze({
     buckets,
-    warnings,
+    warnings: sortWarnings(warnings),
     warningCounts: warningCounts(warnings),
   });
 }

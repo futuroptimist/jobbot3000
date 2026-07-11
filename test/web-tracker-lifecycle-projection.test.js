@@ -326,6 +326,134 @@ describe("lifecycle projection", () => {
     expect(projection.warningCounts.event_type_normalized).toBe(1);
   });
 
+  it("applies supersession only after the replacement is included", () => {
+    const b = bundle(
+      [app("a", { status: "offer" })],
+      [
+        ev("origin", "a", "application_submitted", "2026-01-01"),
+        ev("screen", "a", "technical_interview", "2026-01-02"),
+        ev("screen_fix", "a", "offer_received", "2026-01-03", {
+          supersedesEventId: "screen",
+        }),
+      ],
+    );
+
+    expect(projectLifecycleAt(b, "2026-01-02|0").paths[0]).toMatchObject({
+      milestones: ["technical_interview"],
+      endpoint: "interviewing",
+    });
+    expect(projectLifecycleAt(b, "2026-01-03|0").paths[0]).toMatchObject({
+      milestones: ["offer_received"],
+      endpoint: "offer_negotiating",
+    });
+    expect(projectLifecycleAt(b).paths[0]).toMatchObject({
+      milestones: ["offer_received"],
+      endpoint: "offer_negotiating",
+    });
+  });
+
+  it("keeps explicit 1970 date precision separate from unknown and invalid timestamps", () => {
+    const b = bundle(
+      [app("dated"), app("unknown"), app("invalid")],
+      [
+        ev("dated_epoch", "dated", "application_submitted", "1970-01-01", {
+          occurredAtPrecision: "date",
+        }),
+        ev("unknown_epoch", "unknown", "application_submitted", "1970-01-01", {
+          occurredAtPrecision: "unknown",
+        }),
+        ev("bad", "invalid", "application_submitted", "not-a-date", {
+          occurredAtPrecision: "instant",
+        }),
+      ],
+    );
+    const timeline = buildLifecycleTimeline(b);
+
+    expect(timeline.buckets.map((bucket) => bucket.id)).toEqual([
+      "unknown-date",
+      "1970-01-01|0",
+      "current",
+    ]);
+    expect(
+      projectLifecycleAt(b, "unknown-date").events.map((e) => e.id),
+    ).toEqual(["unknown_epoch"]);
+    expect(
+      projectLifecycleAt(b, "1970-01-01|0").events.map((e) => e.id),
+    ).toEqual(["dated_epoch"]);
+    expect(projectLifecycleAt(b).warningCounts.invalid_timestamp).toBe(1);
+  });
+
+  it("uses status and stageLabel aliases without free-form stage inference", () => {
+    const projection = projectLifecycleAt(
+      bundle(
+        [app("a", { status: "offer" })],
+        [
+          ev("status_alias", "a", "migration_status_snapshot", "2026-01-01", {
+            status: "technical_screen",
+          }),
+          ev(
+            "stage_label_alias",
+            "a",
+            "migration_status_snapshot",
+            "2026-01-02",
+            {
+              stageLabel: "onsite_loop",
+            },
+          ),
+          ev(
+            "free_form_stage",
+            "a",
+            "migration_status_snapshot",
+            "2026-01-03",
+            {
+              stage: "offer",
+            },
+          ),
+        ],
+      ),
+    );
+
+    expect(projection.paths[0].milestones).toEqual([
+      "technical_interview",
+      "onsite_final_loop",
+    ]);
+    expect(projection.paths[0].milestones).not.toContain("offer_received");
+  });
+
+  it("does not warn terminal_without_reopen for metadata-only events", () => {
+    const projection = projectLifecycleAt(
+      bundle(
+        [app("a", { status: "rejected" })],
+        [
+          ev("origin", "a", "application_submitted", "2026-01-01"),
+          ev("reject", "a", "status_changed", "2026-01-02", {
+            status: "rejected",
+          }),
+          ev("snapshot", "a", "migration_status_snapshot", "2026-01-03", {
+            currentStatus: "rejected",
+          }),
+        ],
+      ),
+    );
+
+    expect(projection.paths[0].endpoint).toBe("employer_rejected");
+    expect(projection.warningCounts.terminal_without_reopen).toBeUndefined();
+  });
+
+  it("returns boundary events for dated projection buckets", () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("origin", "a", "application_submitted", "2026-01-01"),
+        ev("screen", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const projection = projectLifecycleAt(b, "2026-01-02|0");
+
+    expect(projection.paths[0].milestones).toEqual(["technical_interview"]);
+    expect(projection.events.map((event) => event.id)).toEqual(["screen"]);
+  });
+
   it("reports deterministic structured warnings", () => {
     const projection = projectLifecycleAt(
       bundle(
