@@ -5,7 +5,7 @@ import { indexedDB } from "fake-indexeddb";
 
 import {
   DATABASE_NAME,
-  createIndexedDbRepository,
+  createIndexedDbRepository as createTrackedIndexedDbRepository,
 } from "../src/web/storage/indexedDbRepository.js";
 import {
   COMPACT_CSV_COLUMNS,
@@ -32,15 +32,38 @@ import {
 } from "../src/web/tracker/metrics.js";
 import { uniqueRecruiterScreens } from "../src/web/tracker/tracker.js";
 
-const deleteDatabase = () =>
-  new Promise((resolve, reject) => {
+const openedRepositories = new Set();
+const createIndexedDbRepository = async (...args) => {
+  const repo = await createTrackedIndexedDbRepository(...args);
+  openedRepositories.add(repo);
+  const close = repo.close.bind(repo);
+  repo.close = () => {
+    openedRepositories.delete(repo);
+    return close();
+  };
+  return repo;
+};
+
+const deleteDatabase = () => {
+  let timeout;
+  return new Promise((resolve, reject) => {
     const request = indexedDB.deleteDatabase(DATABASE_NAME);
+    timeout = setTimeout(
+      () => reject(new Error(`Timed out deleting ${DATABASE_NAME}`)),
+      1000,
+    );
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error);
-    request.onblocked = () => resolve();
+    request.onblocked = () =>
+      reject(new Error(`Deleting ${DATABASE_NAME} was blocked`));
+  }).finally(() => {
+    clearTimeout(timeout);
   });
+};
 
 afterEach(async () => {
+  for (const repo of openedRepositories) repo.close();
+  openedRepositories.clear();
   await deleteDatabase();
 });
 
@@ -295,7 +318,9 @@ describe("spreadsheet import/export", () => {
         .trim()
         .split("\n")
         .slice(1)
-        .map((line) => JSON.parse(line).record.id),
+        .map((line) => JSON.parse(line))
+        .filter((entry) => entry.type === "applications")
+        .map((entry) => entry.record.id),
     ).toEqual(["app_Z", "app_a"]);
   });
 
@@ -694,7 +719,12 @@ describe("spreadsheet import/export", () => {
     )) {
       expect(exportedRowsById.get(row.application_id)).toMatchObject({
         status: row.status,
-        interview_stage: row.interview_stage,
+        interview_stage:
+          row.status === "Interviewing"
+            ? "Not started"
+            : row.status === "recruiter_screen"
+              ? "recruiter_screen"
+              : row.interview_stage,
         outcome: row.outcome,
       });
     }
@@ -814,7 +844,10 @@ describe("spreadsheet import/export", () => {
       id: "event_app_edited_rejected_manual",
       applicationId: "app_edited",
       status: "rejected",
+      eventType: "employer_rejected",
       occurredAt: "2026-03-11T00:00:00.000Z",
+      occurredAtPrecision: "instant",
+      inferred: false,
       source: "manual",
       createdAt: "2026-03-11T00:00:00.000Z",
     });
@@ -1017,10 +1050,13 @@ describe("spreadsheet import/export", () => {
     expect(bundle.lifecycleEvents).toHaveLength(5);
     expect(
       bundle.lifecycleEvents.filter(
-        ({ eventType }) => eventType === "written_assessment_requested",
+        ({ eventType, rawEventType }) =>
+          eventType === "assessment_take_home" &&
+          rawEventType === "written_assessment_requested",
       ),
     ).toEqual([
       expect.objectContaining({
+        actionStatus: "pending",
         noAiRequired: true,
         requiresUserAction: true,
         sourceArtifact: "https://example.test/artifact/assessment-alpha",
@@ -1036,7 +1072,8 @@ describe("spreadsheet import/export", () => {
     expect(restored.lifecycleEvents).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          eventType: "written_assessment_requested",
+          eventType: "assessment_take_home",
+          rawEventType: "written_assessment_requested",
           noAiRequired: true,
         }),
       ]),
@@ -1128,7 +1165,8 @@ describe("spreadsheet import/export", () => {
     expect(restored.lifecycleEvents).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          eventType: "hiring_manager_reply",
+          eventType: "employer_response_received",
+          rawEventType: "hiring_manager_reply",
           occurredAt: "2026-03-03T10:00:00-05:00",
           sourceArtifact: "https://example.test/artifact/reply-alpha",
           requiresUserAction: false,
@@ -1139,7 +1177,8 @@ describe("spreadsheet import/export", () => {
           details: 'Reply said "great fit, next steps".\nSecond line.',
         }),
         expect.objectContaining({
-          eventType: "next_tracking_step",
+          eventType: "status_changed",
+          rawEventType: "next_tracking_step",
           dueAt: "2026-03-05T17:00:00-05:00",
           requiresUserAction: true,
           actionStatus: "pending",
@@ -1147,7 +1186,8 @@ describe("spreadsheet import/export", () => {
           details: "Follow up with quoted, comma text",
         }),
         expect.objectContaining({
-          eventType: "recruiter_screen_scheduled",
+          eventType: "recruiter_screen",
+          rawEventType: "recruiter_screen_scheduled",
           dueAt: "2026-03-07T10:00:00-05:00",
           noAiRequired: false,
         }),
@@ -1158,9 +1198,9 @@ describe("spreadsheet import/export", () => {
         ({ applicationId, eventType }) =>
           applicationId === "app_roundtrip_alpha" && eventType,
       ),
-    ).toHaveLength(4);
+    ).toHaveLength(5);
     expect(restored.interviews).toHaveLength(1);
-    expect(restored.reminders).toHaveLength(1);
+    expect(restored.reminders).toHaveLength(0);
     expect(restored.artifacts).toHaveLength(0);
     repo.close();
   });
@@ -1236,8 +1276,12 @@ describe("spreadsheet import/export", () => {
       '"Reply included comma, quote ""here"", and newline\nSecond line."',
     );
     const rows = parseCsv(csv);
-    expect(rows.map((row) => row.application_id)).toEqual(["app_a", "app_b"]);
-    expect(rows[1]).toMatchObject({
+    expect(rows.map((row) => row.application_id)).toEqual([
+      "app_a",
+      "app_b",
+      "app_b",
+    ]);
+    expect(rows[2]).toMatchObject({
       source_artifact: "https://example.test/artifact/reply?x=1&y=2",
       requires_user_action: "false",
       no_ai_required: "true",
@@ -1350,7 +1394,8 @@ describe("spreadsheet import/export", () => {
         statuses.map((status) =>
           expect.objectContaining({
             application_id: `app_status_only_${status}`,
-            event_type: "",
+            event_type:
+              status === "offer" ? "offer_received" : "status_changed",
             stage: status,
           }),
         ),
@@ -1382,7 +1427,7 @@ describe("spreadsheet import/export", () => {
     expect(
       restored.lifecycleEvents.filter(
         ({ eventType, id, occurredAt }) =>
-          eventType === "lifecycle_event" &&
+          eventType !== "migration_status_snapshot" &&
           id.startsWith("event_app_status_only_") &&
           occurredAt === "2026-03-02T00:00:00.000Z",
       ),
@@ -1496,7 +1541,12 @@ describe("spreadsheet import/export", () => {
     expect(importJsonBackup(oldJson)).toMatchObject({
       applications: [expect.objectContaining({ id: "app_old_backup" })],
       contacts: [],
-      lifecycleEvents: [],
+      lifecycleEvents: [
+        expect.objectContaining({
+          applicationId: "app_old_backup",
+          eventType: "migration_status_snapshot",
+        }),
+      ],
       reminders: [],
     });
 
@@ -1514,6 +1564,62 @@ describe("spreadsheet import/export", () => {
     expect(importNdjsonBackup(`${oldNdjson}\n`).applications).toHaveLength(1);
   });
 
+  it("upgrades legacy JSON and NDJSON backups before v2 parsing", () => {
+    const legacyApplication = {
+      id: "app_legacy_first_parse",
+      company: "Legacy Parse Co",
+      role: "Engineer",
+      status: "applied",
+      createdAt: "2026-03-01T00:00:00.000Z",
+      updatedAt: "2026-03-01T00:00:00.000Z",
+    };
+    const legacyEvent = {
+      id: "event_legacy_first_parse",
+      applicationId: legacyApplication.id,
+      status: "applied",
+      occurredAt: "2026-03-01T00:00:00.000Z",
+      source: "json_import",
+      createdAt: "2026-03-01T00:00:00.000Z",
+    };
+    const legacyBundle = {
+      schemaVersion: 1,
+      exportedAt: "2026-03-01T00:00:00.000Z",
+      applications: [legacyApplication],
+      lifecycleEvents: [legacyEvent],
+    };
+
+    expect(importJsonBackup(JSON.stringify(legacyBundle))).toMatchObject({
+      schemaVersion: 2,
+      applications: [expect.objectContaining({ origin: "other_unknown" })],
+      lifecycleEvents: [
+        expect.objectContaining({ occurredAtPrecision: "instant" }),
+      ],
+    });
+
+    const { schemaVersion, ...legacyBundleWithoutSchemaVersion } = legacyBundle;
+    void schemaVersion;
+    expect(
+      importJsonBackup(JSON.stringify(legacyBundleWithoutSchemaVersion)),
+    ).toMatchObject({
+      schemaVersion: 2,
+      applications: [expect.objectContaining({ id: legacyApplication.id })],
+    });
+
+    const legacyNdjson = [
+      JSON.stringify({
+        type: "meta",
+        schemaVersion: 1,
+        exportedAt: legacyBundle.exportedAt,
+      }),
+      JSON.stringify({ type: "applications", record: legacyApplication }),
+      JSON.stringify({ type: "lifecycleEvents", record: legacyEvent }),
+    ].join("\n");
+    expect(importNdjsonBackup(`${legacyNdjson}\n`)).toMatchObject({
+      schemaVersion: 2,
+      applications: [expect.objectContaining({ id: legacyApplication.id })],
+    });
+  });
+
   it("detects lifecycle CSVs with quoted headers", () => {
     const quotedHeaderCsv = [
       LIFECYCLE_CSV_COLUMNS.map((column) => `"${column}"`).join(","),
@@ -1522,6 +1628,31 @@ describe("spreadsheet import/export", () => {
 
     expect(detectSpreadsheetImportFormat(quotedHeaderCsv)).toBe(
       "lifecycle_csv",
+    );
+  });
+
+  it("detects legacy compact and lifecycle fixture headers by signature", async () => {
+    const fixtureNames = [
+      "assessment-lifecycle-regression.csv",
+      "employer-reply-lifecycle-regression.csv",
+      "recruiter-screen-lifecycle-regression.csv",
+    ];
+
+    await expect(
+      readFile(
+        "test/fixtures/tracker-import/compact-main-regression.csv",
+        "utf8",
+      ).then(detectSpreadsheetImportFormat),
+    ).resolves.toBe("compact_csv");
+    await Promise.all(
+      fixtureNames.map(async (fixtureName) => {
+        await expect(
+          readFile(
+            `test/fixtures/tracker-import/${fixtureName}`,
+            "utf8",
+          ).then(detectSpreadsheetImportFormat),
+        ).resolves.toBe("lifecycle_csv");
+      }),
     );
   });
 
@@ -1650,7 +1781,7 @@ describe("spreadsheet import/export", () => {
       exported.lifecycleEvents.filter(
         ({ applicationId, eventType }) =>
           applicationId === "app_lifecycle_blank_dates" &&
-          eventType === "hiring_manager_reply",
+          eventType === "employer_response_received",
       ),
     ).toHaveLength(1);
     expect(exported.interviews).toHaveLength(0);
@@ -1709,7 +1840,7 @@ describe("spreadsheet import/export", () => {
       exported.lifecycleEvents.filter(
         ({ applicationId, eventType }) =>
           applicationId === "app_lifecycle_precision_upgrade" &&
-          eventType === "technical_interview_completed",
+          eventType === "technical_interview",
       ),
     ).toHaveLength(1);
     expect(
@@ -1808,7 +1939,7 @@ describe("spreadsheet import/export", () => {
     const exported = await repo.exportAllData();
     expect(
       exported.lifecycleEvents.filter(
-        ({ eventType }) => eventType === "recruiter_screen_completed",
+        ({ rawEventType }) => rawEventType === "recruiter_screen_completed",
       ),
     ).toEqual([
       expect.not.objectContaining({
@@ -1979,7 +2110,8 @@ describe("spreadsheet import/export", () => {
     expect(dateOnlyPreview.errors).toEqual([]);
     expect(dateOnlyPreview.bundle.lifecycleEvents).toEqual([
       expect.objectContaining({
-        occurredAt: "2026-01-08T00:00:00.000Z",
+        occurredAt: "2026-01-08",
+        occurredAtPrecision: "date",
         dueAt: "2026-01-08T00:00:00.000Z",
       }),
     ]);
@@ -2317,7 +2449,7 @@ describe("spreadsheet import/export", () => {
       Object.fromEntries(
         childStores.map((store) => [store, exportedAgain[store].length]),
       ),
-    ).toEqual(childCounts);
+    ).toEqual({ ...childCounts, lifecycleEvents: childCounts.lifecycleEvents + 1 });
 
     repo.close();
   });

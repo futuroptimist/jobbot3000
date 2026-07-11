@@ -1,4 +1,5 @@
 import { browserApplicationExportSchema } from "../../domain/browserApplication.js";
+import { upgradeBrowserExportToV2 } from "../storage/browserDataMigration.js";
 import { classifyLifecycleEventType } from "../tracker/lifecycleClassification.js";
 
 export const LIFECYCLE_CSV_COLUMNS = [
@@ -6,7 +7,12 @@ export const LIFECYCLE_CSV_COLUMNS = [
   "company",
   "role_title",
   "event_type",
+  "raw_event_type",
+  "previous_status",
   "occurred_at",
+  "occurred_at_precision",
+  "inferred",
+  "supersedes_event_id",
   "stage",
   "channel",
   "actor",
@@ -28,6 +34,7 @@ export const COMPACT_CSV_COLUMNS = [
   "application_url",
   "posting_id",
   "application_channel",
+  "origin",
   "work_model",
   "location_display",
   "compensation_min_usd",
@@ -526,14 +533,17 @@ const preservedOutcome = (metadata, currentOutcome) => {
 
 export const detectSpreadsheetImportFormat = (text) => {
   const headers = csvHeaders(text);
-  if (
-    headers.length === LIFECYCLE_CSV_COLUMNS.length &&
-    headers.every((header, index) => header === LIFECYCLE_CSV_COLUMNS[index])
-  )
+  const headerSet = new Set(headers);
+  const hasAll = (...columns) => columns.every((column) => headerSet.has(column));
+
+  if (hasAll("application_id", "event_type", "occurred_at"))
     return "lifecycle_csv";
   if (
-    headers.length &&
-    COMPACT_CSV_COLUMNS.every((column) => headers.includes(column))
+    hasAll("application_id", "company", "role_title") &&
+    ["status", "applied_at", "posting_url"].some((column) =>
+      headerSet.has(column),
+    ) &&
+    !headerSet.has("event_type")
   )
     return "compact_csv";
   return "unknown_csv";
@@ -593,6 +603,7 @@ export const lifecycleRowsToBrowserApplicationExport = (
     const eventOccurredAt = occurredAt ?? dueAt ?? "1970-01-01T00:00:00.000Z";
     const occurredAtHasTime = hasTimeComponent(row.occurred_at);
     const dueAtHasTime = hasTimeComponent(row.due_at);
+    const suppliedPrecision = compact(row.occurred_at_precision) || undefined;
     const stageLabel = compact(row.stage) || undefined;
     const knownLifecycleStatus = lifecycleStatusForEvent(eventType);
     if (
@@ -629,6 +640,8 @@ export const lifecycleRowsToBrowserApplicationExport = (
       source: "csv_import",
       note: details,
       eventType,
+      rawEventType: compact(row.raw_event_type) || undefined,
+      previousStatus: compact(row.previous_status) || undefined,
       stageLabel,
       channel: compact(row.channel) || undefined,
       actor: compact(row.actor) || undefined,
@@ -641,8 +654,12 @@ export const lifecycleRowsToBrowserApplicationExport = (
       ),
       actionStatus: compact(row.action_status) || undefined,
       dueAt,
+      occurredAtPrecision: suppliedPrecision,
       occurredAtHasTime,
       dueAtHasTime,
+      inferred:
+        parseBoolean(row.inferred, "inferred", rowNumber, errors) ?? false,
+      supersedesEventId: compact(row.supersedes_event_id) || undefined,
       noAiRequired: parseBoolean(
         row.no_ai_required,
         "no_ai_required",
@@ -708,7 +725,37 @@ export const lifecycleRowsToBrowserApplicationExport = (
     artifacts: [],
     reminders,
   };
-  return { bundle, errors, warnings };
+  for (const store of ["lifecycleEvents", "interviews", "reminders"]) {
+    const seen = new Set();
+    bundle[store] = bundle[store].filter(({ id }) => {
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  }
+  const incomingIds = {
+    lifecycleEvents: new Set(bundle.lifecycleEvents.map(({ id }) => id)),
+    interviews: new Set(bundle.interviews.map(({ id }) => id)),
+    reminders: new Set(bundle.reminders.map(({ id }) => id)),
+  };
+  const upgraded = upgradeBrowserExportToV2(bundle, {
+    migrationCreatedAt: exportedAt,
+  });
+  const canonicalBundle = {
+    ...bundle,
+    ...upgraded.data,
+    lifecycleEvents: upgraded.data.lifecycleEvents.filter(({ id }) =>
+      incomingIds.lifecycleEvents.has(id),
+    ),
+    interviews: upgraded.data.interviews.filter(({ id }) =>
+      incomingIds.interviews.has(id),
+    ),
+    reminders: upgraded.data.reminders.filter(({ id }) =>
+      incomingIds.reminders.has(id),
+    ),
+  };
+  warnings.push(...upgraded.warnings);
+  return { bundle: canonicalBundle, errors, warnings };
 };
 
 export const csvToSupplementalLifecycleExport = (csvText, existing, options) =>
@@ -825,6 +872,7 @@ export const rowsToBrowserApplicationExport = (
       role: compact(row.role_title) || "Unknown role",
       status: mapStatus(row),
       source: compact(row.application_channel) || undefined,
+      origin: compact(row.origin) || undefined,
       postingUrl,
       location: compact(row.location_display) || undefined,
       remote: normalizeKey(row.work_model).includes("remote")
@@ -897,6 +945,9 @@ export const rowsToBrowserApplicationExport = (
         status: "applied",
         occurredAt: appliedAt,
         source: "csv_import",
+        eventType: "application_submitted",
+        occurredAtPrecision: "instant",
+        inferred: false,
         createdAt: exportedAt,
       });
     if (outreachSentAt)
@@ -906,6 +957,9 @@ export const rowsToBrowserApplicationExport = (
         status: "outreach_sent",
         occurredAt: outreachSentAt,
         source: "csv_import",
+        eventType: "candidate_outreach",
+        occurredAtPrecision: "instant",
+        inferred: false,
         createdAt: exportedAt,
       });
     const stageLabel = normalizeLabelKey(row.interview_stage);
@@ -919,6 +973,14 @@ export const rowsToBrowserApplicationExport = (
         occurredAt: startsAt,
         source: "csv_import",
         note: compact(row.interview_stage),
+        eventType:
+          stage === "technical_screen"
+            ? "technical_interview"
+            : stage === "onsite_loop"
+              ? "onsite_final_loop"
+              : stage,
+        occurredAtPrecision: "instant",
+        inferred: false,
         createdAt: exportedAt,
       });
       interviews.push({
@@ -950,6 +1012,9 @@ export const rowsToBrowserApplicationExport = (
           occurredAt: outreachSentAt ?? appliedAt ?? timestamp,
           source: "csv_import",
           note: compact(row.interview_stage),
+          eventType: "employer_rejected",
+          occurredAtPrecision: "instant",
+          inferred: false,
           createdAt: exportedAt,
         });
     }
@@ -967,6 +1032,18 @@ export const rowsToBrowserApplicationExport = (
         occurredAt: outreachSentAt ?? appliedAt ?? timestamp,
         source: "csv_import",
         note: compact(row.outcome),
+        eventType:
+          outcome === "offer"
+            ? "offer_received"
+            : outcome === "accepted"
+              ? "offer_accepted"
+              : outcome === "rejected"
+                ? "employer_rejected"
+                : outcome === "withdrawn"
+                  ? "candidate_withdrew"
+                  : "status_changed",
+        occurredAtPrecision: "instant",
+        inferred: false,
         createdAt: exportedAt,
       });
     if (outcome === "offer")
@@ -993,6 +1070,20 @@ export const rowsToBrowserApplicationExport = (
     artifacts,
     reminders: [],
   };
+  try {
+    const upgraded = upgradeBrowserExportToV2(bundle, {
+      migrationCreatedAt: exportedAt,
+    });
+    Object.assign(bundle, upgraded.data);
+    warnings.push(...upgraded.warnings);
+  } catch (error) {
+    errors.push({
+      rowNumber: null,
+      field: "bundle",
+      code: "schema_validation_failed",
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
   const parsed = browserApplicationExportSchema.safeParse(bundle);
   if (!parsed.success)
     errors.push({
@@ -1028,7 +1119,7 @@ const compareIsoDateTimes = (left, right) => {
 };
 const firstBy = (records, predicate) => records.find(predicate) ?? {};
 export const browserApplicationExportToRows = (bundle) => {
-  const parsed = browserApplicationExportSchema.parse(bundle);
+  const parsed = upgradeBrowserExportToV2(bundle).data;
   return [...parsed.applications]
     .sort((a, b) => a.id.localeCompare(b.id))
     .map((application) => {
@@ -1075,6 +1166,7 @@ export const browserApplicationExportToRows = (bundle) => {
         applied_at: dateOnly(application.appliedAt),
         posting_url: application.postingUrl ?? "",
         application_channel: application.source ?? "",
+        origin: application.origin ?? "",
         work_model: application.remote ? "remote" : (metadata.work_model ?? ""),
         location_display: application.location ?? "",
         follow_up_date: dateOnly(application.followUpDate),
@@ -1127,7 +1219,7 @@ export const browserApplicationExportToRows = (bundle) => {
 export const exportCompactCsv = (bundle) =>
   serializeCsv(browserApplicationExportToRows(bundle));
 export const browserApplicationExportToLifecycleRows = (bundle) => {
-  const parsed = browserApplicationExportSchema.parse(bundle);
+  const parsed = upgradeBrowserExportToV2(bundle).data;
   const applicationsById = new Map(
     parsed.applications.map((application) => [application.id, application]),
   );
@@ -1152,7 +1244,12 @@ export const browserApplicationExportToLifecycleRows = (bundle) => {
         company: application.company ?? "",
         role_title: application.role ?? "",
         event_type: event.eventType ?? "",
+        raw_event_type: event.rawEventType ?? "",
+        previous_status: event.previousStatus ?? "",
         occurred_at: event.occurredAt ?? "",
+        occurred_at_precision: event.occurredAtPrecision ?? "",
+        inferred: event.inferred === undefined ? "" : String(event.inferred),
+        supersedes_event_id: event.supersedesEventId ?? "",
         stage: event.stageLabel ?? event.status ?? "",
         channel: event.channel ?? "",
         actor: event.actor ?? "",
@@ -1204,13 +1301,12 @@ const restoreLifecyclePrecisionFlags = (bundle, sourceEvents) => {
     }),
   };
 };
-const parseBackupBundlePreservingLifecyclePrecision = (bundle) =>
-  restoreLifecyclePrecisionFlags(
-    browserApplicationExportSchema.parse(bundle),
-    bundle?.lifecycleEvents ?? [],
-  );
+const upgradeBackupBundlePreservingLifecyclePrecision = (bundle) => {
+  const upgraded = upgradeBrowserExportToV2(bundle).data;
+  return restoreLifecyclePrecisionFlags(upgraded, bundle?.lifecycleEvents ?? []);
+};
 const canonicalizeBackupBundle = (bundle) => {
-  const parsed = parseBackupBundlePreservingLifecyclePrecision(bundle);
+  const parsed = upgradeBackupBundlePreservingLifecyclePrecision(bundle);
   const sorted = { ...parsed };
   for (const store of ARRAY_STORES) {
     sorted[store] = [...parsed[store]].sort((a, b) =>
@@ -1246,7 +1342,7 @@ export const exportNdjsonBackup = (bundle) => {
 const normalizeBackupBundleInput = (input, { source = "json_import" } = {}) => {
   const now = nowIso();
   const bundle = {
-    schemaVersion: 1,
+    schemaVersion: input?.schemaVersion ?? 1,
     exportedAt: input?.exportedAt ?? now,
     applications: input?.applications ?? [],
     contacts: input?.contacts ?? [],
@@ -1262,13 +1358,11 @@ const normalizeBackupBundleInput = (input, { source = "json_import" } = {}) => {
     reminders: input?.reminders ?? [],
     settings: input?.settings,
   };
-  if (input?.schemaVersion !== undefined)
-    bundle.schemaVersion = input.schemaVersion;
   return bundle;
 };
 
 export const importJsonBackup = (text) =>
-  parseBackupBundlePreservingLifecyclePrecision(
+  upgradeBackupBundlePreservingLifecyclePrecision(
     normalizeBackupBundleInput(JSON.parse(text), { source: "json_import" }),
   );
 export const importNdjsonBackup = (text) => {
@@ -1306,7 +1400,7 @@ export const importNdjsonBackup = (text) => {
           `Unknown or malformed NDJSON record type: ${String(entry.type)}`,
         );
     });
-  return parseBackupBundlePreservingLifecyclePrecision(
+  return upgradeBackupBundlePreservingLifecyclePrecision(
     normalizeBackupBundleInput(bundle, { source: "ndjson_import" }),
   );
 };

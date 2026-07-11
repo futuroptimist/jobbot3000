@@ -1,4 +1,4 @@
-/* global document, indexedDB, confirm */
+/* global document, confirm, window */
 /* eslint-disable max-len */
 import {
   COMPACT_CSV_COLUMNS,
@@ -24,6 +24,7 @@ import {
   recruiterScreenTimestamp,
   selectDashboardMetrics,
 } from "./metrics.js";
+import { createIndexedDbRepository } from "../storage/indexedDbRepository.js";
 
 /* canonical CSV/backup helpers are shared with spreadsheet import/export tests. */
 const ARRAY_STORES = [
@@ -48,17 +49,6 @@ const STATUSES = [
   "withdrawn",
   "closed_archived",
 ];
-const STORES = [
-  "applications",
-  "contacts",
-  "outreachMessages",
-  "lifecycleEvents",
-  "interviews",
-  "offers",
-  "artifacts",
-  "reminders",
-  "settings",
-];
 const OUTCOMES = new Set([
   "offer",
   "accepted",
@@ -78,117 +68,46 @@ const esc = (v) =>
   );
 const id = (p = "id") =>
   `${p}_${Date.now().toString(36)}_${crypto.getRandomValues(new Uint32Array(1))[0].toString(36)}`;
-function ensureIndex(store, name, keyPath) {
-  if (!store.indexNames.contains(name)) store.createIndex(name, keyPath);
-}
-function runMigrationV1(db) {
-  const getStore = (name) =>
-    db.objectStoreNames.contains(name)
-      ? null
-      : db.createObjectStore(name, { keyPath: "id" });
-  const applications = getStore("applications");
-  if (applications) {
-    ensureIndex(applications, "by_company", "company");
-    ensureIndex(applications, "by_status", "status");
-    ensureIndex(applications, "by_appliedAt", "appliedAt");
-    ensureIndex(applications, "by_followUpDate", "followUpDate");
-  }
-  for (const n of STORES.filter(
-    (name) => !["applications", "settings"].includes(name),
-  )) {
-    const store = getStore(n);
-    if (!store) continue;
-    ensureIndex(store, "by_applicationId", "applicationId");
-    if (n === "lifecycleEvents")
-      ensureIndex(store, "by_applicationId_occurredAt", [
-        "applicationId",
-        "occurredAt",
-      ]);
-  }
-  getStore("settings");
-}
-function openDb() {
-  return new Promise((res, rej) => {
-    const r = indexedDB.open("jobbot3000", 1);
-    r.onupgradeneeded = () => runMigrationV1(r.result);
-    r.onsuccess = () => res(r.result);
-    r.onerror = () => rej(r.error);
+let indexedDbRepositoryPromise;
+let initializationRetryTimer;
+let initializationRetryDelayMs = 1000;
+let initializationRetryListenersRegistered = false;
+const getRepository = () => {
+  indexedDbRepositoryPromise ??= createIndexedDbRepository().catch((error) => {
+    indexedDbRepositoryPromise = undefined;
+    throw error;
   });
-}
-async function tx(store, mode, fn) {
-  const db = await openDb();
-  try {
-    return await new Promise((res, rej) => {
-      const t = db.transaction(store, mode);
-      const out = fn(t.objectStore(store), t);
-      t.oncomplete = () => res(out);
-      t.onerror = () => rej(t.error);
-      t.onabort = () => rej(t.error);
-    });
-  } finally {
-    db.close();
-  }
-}
-async function batchPut(recordsByStore) {
-  const db = await openDb();
-  const storeNames = Object.entries(recordsByStore)
-    .filter(([, rows]) => rows.length)
-    .map(([storeName]) => storeName);
-  if (!storeNames.length) {
-    db.close();
-    return;
-  }
-  try {
-    await new Promise((res, rej) => {
-      const t = db.transaction(storeNames, "readwrite");
-      for (const [storeName, rows] of Object.entries(recordsByStore)) {
-        if (!rows.length) continue;
-        const store = t.objectStore(storeName);
-        for (const row of rows) store.put(row);
-      }
-      t.oncomplete = res;
-      t.onerror = () => rej(t.error);
-      t.onabort = () => rej(t.error);
-    });
-  } finally {
-    db.close();
-  }
-}
-const req = (r) =>
-  new Promise((res, rej) => {
-    r.onsuccess = () => res(r.result);
-    r.onerror = () => rej(r.error);
-  });
-const repo = {
-  list: (s) => tx(s, "readonly", (st) => req(st.getAll())),
-  put: (s, o) => tx(s, "readwrite", (st) => st.put(o)),
-  add: (s, o) => tx(s, "readwrite", (st) => st.add(o)),
-  clear: async () => {
-    const db = await openDb();
-    try {
-      await new Promise((res, rej) => {
-        const t = db.transaction(STORES, "readwrite");
-        for (const s of STORES) t.objectStore(s).clear();
-        t.oncomplete = res;
-        t.onerror = () => rej(t.error);
-      });
-    } finally {
-      db.close();
-    }
-  },
-  exportAll: async () =>
-    Object.assign(
-      { schemaVersion: 1, exportedAt: now() },
-      Object.fromEntries(
-        await Promise.all(
-          STORES.map(async (s) => [
-            s,
-            s === "settings" ? (await repo.list(s))[0] : await repo.list(s),
-          ]),
-        ),
-      ),
-    ),
+  return indexedDbRepositoryPromise;
 };
+const repositoryMethod = (storeName, mode) => {
+  const methods = {
+    applications: { put: "upsertApplication" },
+    lifecycleEvents: { add: "createLifecycleEvent" },
+    artifacts: { add: "createArtifact" },
+    outreachMessages: { add: "createOutreachMessage" },
+    interviews: { add: "createInterview" },
+    offers: { add: "createOffer" },
+  };
+  return methods[storeName]?.[mode];
+};
+const repo = {
+  list: async (storeName) => (await getRepository()).listRecords(storeName),
+  put: async (storeName, record) => {
+    const method = repositoryMethod(storeName, "put");
+    if (!method) throw new Error(`Unsupported repository put: ${storeName}`);
+    return (await getRepository())[method](record);
+  },
+  add: async (storeName, record) => {
+    const method = repositoryMethod(storeName, "add");
+    if (!method) throw new Error(`Unsupported repository add: ${storeName}`);
+    return (await getRepository())[method](record);
+  },
+  clear: async () => (await getRepository()).clearAllData(),
+  exportAll: async () => (await getRepository()).exportAllData(),
+};
+async function batchImport(recordsByStore) {
+  return (await getRepository()).importPartialData(recordsByStore);
+}
 const state = {
   apps: [],
   bundle: null,
@@ -360,6 +279,56 @@ async function refresh() {
     String(b.appliedAt || "").localeCompare(a.appliedAt || ""),
   );
   renderAll();
+}
+function showInitializationError(error) {
+  const target = $("[data-import-result]") || $("main") || document.body;
+  target.textContent = `Tracker storage is temporarily unavailable: ${error?.message ?? error}`;
+}
+function clearInitializationRetry(retry, retryWhenVisible) {
+  if (initializationRetryTimer) {
+    window.clearTimeout(initializationRetryTimer);
+    initializationRetryTimer = undefined;
+  }
+  initializationRetryDelayMs = 1000;
+  if (initializationRetryListenersRegistered) {
+    window.removeEventListener("focus", retry);
+    document.removeEventListener("visibilitychange", retryWhenVisible);
+    initializationRetryListenersRegistered = false;
+  }
+}
+async function refreshWithRetry() {
+  const retryWhenVisible = () => {
+    if (!document.hidden) retry();
+  };
+  const scheduleRetry = () => {
+    if (initializationRetryTimer) return;
+    initializationRetryTimer = window.setTimeout(() => {
+      initializationRetryTimer = undefined;
+      retry();
+    }, initializationRetryDelayMs);
+    initializationRetryDelayMs = Math.min(initializationRetryDelayMs * 2, 5000);
+  };
+  const retry = async () => {
+    try {
+      await refresh();
+      clearInitializationRetry(retry, retryWhenVisible);
+    } catch (retryError) {
+      showInitializationError(retryError);
+      scheduleRetry();
+    }
+  };
+  try {
+    await refresh();
+    clearInitializationRetry(retry, retryWhenVisible);
+  } catch (error) {
+    showInitializationError(error);
+    if (!initializationRetryListenersRegistered) {
+      window.addEventListener("focus", retry);
+      document.addEventListener("visibilitychange", retryWhenVisible);
+      initializationRetryListenersRegistered = true;
+    }
+    scheduleRetry();
+  }
 }
 function route(v) {
   $$(".tracker-view").forEach((x) => (x.hidden = x.dataset.view !== v));
@@ -699,6 +668,9 @@ function input(n, v = "", type = "text", required = false) {
 function values(form) {
   return Object.fromEntries(new FormData(form).entries());
 }
+function optionalBlankToUndefined(value) {
+  return value === "" ? undefined : value;
+}
 function setFormDisabled(form, disabled) {
   $$("button, input, select, textarea", form).forEach((control) => {
     control.disabled = disabled;
@@ -735,6 +707,10 @@ function bindDetail(app) {
         const saved = {
           ...current,
           ...v,
+          source: optionalBlankToUndefined(v.source),
+          postingUrl: optionalBlankToUndefined(v.postingUrl),
+          notes: optionalBlankToUndefined(v.notes),
+          origin: current.origin ?? "other_unknown",
           appliedAt: isoDate(v.appliedAt),
           followUpDate: isoDate(v.followUpDate),
           updatedAt: now(),
@@ -745,8 +721,12 @@ function bindDetail(app) {
           await repo.add("lifecycleEvents", {
             id: id("event"),
             applicationId: app.id,
+            eventType:
+              v.status === "applied" ? "application_submitted" : "status_changed",
             status: v.status,
             occurredAt: now(),
+            occurredAtPrecision: "instant",
+            inferred: false,
             source: "manual",
             createdAt: now(),
           });
@@ -1077,7 +1057,7 @@ async function applyImport() {
     return;
   }
   try {
-    await batchPut(state.preview);
+    await batchImport(state.preview);
   } catch (err) {
     $("[data-import-result]").textContent =
       `Import failed: ${err?.message ?? err}`;
@@ -1206,6 +1186,6 @@ function init() {
       await refresh();
     }
   };
-  refresh();
+  refreshWithRetry();
 }
 if (typeof document !== "undefined") init();

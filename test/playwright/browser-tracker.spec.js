@@ -85,6 +85,8 @@ async function importRegressionBundle(page, { includeRecruiter = true } = {}) {
 }
 
 async function clearTrackerData(page) {
+  const origin = new URL(page.url()).origin;
+  if (origin !== "null") await page.goto(origin);
   await page.evaluate(
     () =>
       new Promise((resolve, reject) => {
@@ -175,34 +177,36 @@ test.describe("browser application tracker", () => {
     await expect(deltaRow).toContainText("Assessment ×1");
   });
 
-  test("does not show generic recruiter_screen lifecycle rows as recruiter chips", async ({
+  test("does not infer recruiter chips from free-form stage labels", async ({
     page,
   }) => {
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await importFixture(
+      page,
+      "generic-application.csv",
+      [
+        "application_id,company,role_title,status,applied_at,application_channel",
+        "generic_recruiter_app,Generic Recruiter Co,Frontend Engineer,applied,2026-01-02,direct",
+      ].join("\n"),
+    );
     await page.evaluate(
       () =>
         new Promise((resolve, reject) => {
-          const request = indexedDB.open("jobbot3000", 1);
+          const request = indexedDB.open("jobbot3000");
           request.onerror = () => reject(request.error);
           request.onsuccess = () => {
             const db = request.result;
-            const tx = db.transaction(
-              ["applications", "lifecycleEvents"],
-              "readwrite",
-            );
-            tx.objectStore("applications").put({
-              id: "generic_recruiter_app",
-              company: "Generic Recruiter Co",
-              role: "Frontend Engineer",
-              status: "applied",
-              appliedAt: "2026-01-02",
-              createdAt: "2026-01-02T00:00:00.000Z",
-              updatedAt: "2026-01-02T00:00:00.000Z",
-            });
+            const tx = db.transaction(["lifecycleEvents"], "readwrite");
             tx.objectStore("lifecycleEvents").put({
               id: "generic_recruiter_event",
               applicationId: "generic_recruiter_app",
-              eventType: "recruiter_screen",
+              eventType: "status_changed",
+              status: "applied",
+              stageLabel: "recruiter_screen",
+              source: "manual",
               occurredAt: "2026-01-03T00:00:00.000Z",
+              occurredAtPrecision: "instant",
+              inferred: false,
               createdAt: "2026-01-03T00:00:00.000Z",
               updatedAt: "2026-01-03T00:00:00.000Z",
             });
@@ -638,7 +642,7 @@ test.describe("browser application tracker", () => {
       const originalTransaction = IDBDatabase.prototype.transaction;
       IDBDatabase.prototype.transaction = function transaction(...args) {
         if (args[1] === "readwrite") {
-          throw new Error("simulated quota exceeded");
+          throw new DOMException("simulated quota exceeded", "QuotaExceededError");
         }
         return originalTransaction.apply(this, args);
       };
@@ -646,7 +650,7 @@ test.describe("browser application tracker", () => {
 
     await page.getByRole("button", { name: "Apply import" }).click();
     await expect(page.locator("[data-import-result]")).toContainText(
-      "Import failed: simulated quota exceeded",
+      "Import failed: IndexedDB quota was exceeded while saving jobbot3000 data.",
     );
     await expect(
       page.getByRole("button", { name: "Apply import" }),
@@ -823,7 +827,7 @@ test.describe("browser application tracker", () => {
     await page.evaluate(
       () =>
         new Promise((resolve, reject) => {
-          const request = indexedDB.open("jobbot3000", 1);
+          const request = indexedDB.open("jobbot3000");
           request.onerror = () => reject(request.error);
           request.onsuccess = () => {
             const db = request.result;
@@ -834,9 +838,10 @@ test.describe("browser application tracker", () => {
               role: "Frontend Engineer",
               status: "recruiter_screen",
               source: "direct",
+              origin: "application_submitted",
               postingUrl: "https://example.test/jobs/frontend",
-              appliedAt: "2026-01-02",
-              followUpDate: "2026-01-09",
+              appliedAt: "2026-01-02T00:00:00.000Z",
+              followUpDate: "2026-01-09T00:00:00.000Z",
               notes: "fit_score_100: 82",
               createdAt: "2026-01-02T00:00:00.000Z",
               updatedAt: "2026-01-03T00:00:00.000Z",
@@ -1036,7 +1041,7 @@ test.describe("browser application tracker", () => {
       const backupNdjson = await readFile(ndjsonBackupPath, "utf8");
 
       await clearTrackerData(page);
-      await page.reload();
+      await page.goto(`${new URL(page.url()).origin}/tracker`);
       await page.getByRole("button", { name: "Import/Export" }).click();
       await importFixture(page, "jobbot3000-backup.json", backupJson);
 
@@ -1061,7 +1066,7 @@ test.describe("browser application tracker", () => {
       );
 
       await clearTrackerData(page);
-      await page.reload();
+      await page.goto(`${new URL(page.url()).origin}/tracker`);
       await page.getByRole("button", { name: "Import/Export" }).click();
       await importFixture(page, "jobbot3000-backup.ndjson", backupNdjson);
     } finally {

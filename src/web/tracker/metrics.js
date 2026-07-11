@@ -126,7 +126,9 @@ const matchingExplicitCompletedTimestamp = (
   return explicitInterviewKeys.has(key) ? event.occurredAt : undefined;
 };
 const interviewKey = (record, timestamp) => {
-  const classification = classifyLifecycleEventType(record.eventType);
+  const classification = classifyLifecycleEventType(
+    normalize(record.rawEventType) || normalize(record.eventType),
+  );
   return [
     record.applicationId,
     canonicalTimestamp(
@@ -162,7 +164,9 @@ export const recruiterScreenTimestamp = (
   explicitRecruiterScreenKeys = new Set(),
 ) => {
   if (record.startsAt) return record.startsAt;
-  const classification = classifyLifecycleEventType(record.eventType);
+  const classification = classifyLifecycleEventType(
+    normalize(record.rawEventType) || normalize(record.eventType),
+  );
   if (classification.interviewOutcome === "completed")
     return (
       matchingExplicitCompletedRecruiterScreenTimestamp(
@@ -339,26 +343,38 @@ export const selectDashboardMetrics = (bundle = {}) => {
 
   for (const event of lifecycleEvents) {
     const eventType = normalize(event.eventType);
+    const rawEventType = normalize(event.rawEventType);
+    const classificationType = rawEventType || eventType;
     const status = normalize(event.status);
-    const classification = classifyLifecycleEventType(eventType);
+    const classification = classifyLifecycleEventType(classificationType);
     if (
       classification.countsAsResponse ||
       OFFER_EVENT_TYPES.has(eventType) ||
       TERMINAL_EMPLOYER_STATUSES.has(status)
     )
       addResponse(responseApplicationIds, event.applicationId);
-    if (eventType === "hiring_manager_reply" && event.applicationId)
+    if (classificationType === "hiring_manager_reply" && event.applicationId)
       lifecycleReplyApplicationIds.add(event.applicationId);
-    if (isLifecycleAssessment(eventType)) {
+    if (
+      isLifecycleAssessment(classificationType) ||
+      isLifecycleAssessment(eventType)
+    ) {
       addResponse(responseApplicationIds, event.applicationId);
       if (event.applicationId)
         assessmentApplicationIds.add(event.applicationId);
     }
-    if (isLifecycleRecruiterScreen(eventType) || status === "recruiter_screen")
+    if (
+      isLifecycleRecruiterScreen(classificationType) ||
+      isLifecycleRecruiterScreen(eventType) ||
+      status === "recruiter_screen"
+    )
       recruiterScreenKeys.add(
         recruiterScreenKey(event, explicitRecruiterScreenKeys),
       );
-    if (isLifecycleNonRecruiterInterview(eventType)) {
+    if (
+      isLifecycleNonRecruiterInterview(classificationType) ||
+      isLifecycleNonRecruiterInterview(eventType)
+    ) {
       const key = lifecycleInterviewKey(
         event,
         classification,

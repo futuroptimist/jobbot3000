@@ -10,9 +10,15 @@ import {
   browserApplicationSchema,
   browserApplicationSettingsSchema,
 } from "../../domain/browserApplication.js";
+import {
+  BROWSER_BACKUP_SCHEMA_VERSION,
+  LOCAL_SETTINGS_SCHEMA_VERSION,
+  upgradeBrowserExportToV2,
+} from "./browserDataMigration.js";
 
 export const DATABASE_NAME = "jobbot3000";
-export const DATABASE_VERSION = 1;
+export const INDEXEDDB_DATABASE_VERSION = 2;
+export const DATABASE_VERSION = INDEXEDDB_DATABASE_VERSION;
 
 export const STORE_NAMES = [
   "applications",
@@ -66,8 +72,83 @@ const wrapError = (error, fallbackCode, fallbackMessage) => {
   });
 };
 
+const isoDate = /^\d{4}-\d{2}-\d{2}$/;
+const epochOccurredAtValues = new Set([
+  "1970-01-01",
+  "1970-01-01T00:00:00.000Z",
+  "1970-01-01T00:00:00Z",
+]);
+
+const removeBlankOptionalFields = (record, fields) =>
+  Object.fromEntries(
+    Object.entries(record).filter(
+      ([key, value]) => !(fields.includes(key) && value === ""),
+    ),
+  );
+
+const inferOccurredAtPrecision = (record) => {
+  if (["instant", "date", "unknown"].includes(record.occurredAtPrecision))
+    return record.occurredAtPrecision;
+  if (record.occurredAtHasTime === true) return "instant";
+  if (record.occurredAtHasTime === false) return "date";
+  if (epochOccurredAtValues.has(record.occurredAt)) return "unknown";
+  if (isoDate.test(String(record.occurredAt))) return "date";
+  return "instant";
+};
+
+const normalizeRecordForStore = (storeName, record) => {
+  if (storeName === "applications") {
+    const normalized = removeBlankOptionalFields(record, [
+      "source",
+      "postingUrl",
+      "location",
+      "compensationText",
+      "notes",
+    ]);
+    if (!normalized.origin)
+      return {
+        ...normalized,
+        origin: normalized.source === "referral" ? "referral" : "other_unknown",
+      };
+    return normalized;
+  }
+  if (storeName === "lifecycleEvents") {
+    const normalized = removeBlankOptionalFields(record, [
+      "note",
+      "rawEventType",
+      "previousStatus",
+      "supersedesEventId",
+      "stageLabel",
+      "channel",
+      "actor",
+      "sourceArtifact",
+      "actionStatus",
+      "details",
+    ]);
+    const eventType =
+      normalized.eventType ??
+      (normalized.status === "applied"
+        ? "application_submitted"
+        : "status_changed");
+    return {
+      ...normalized,
+      eventType,
+      occurredAtPrecision: inferOccurredAtPrecision(normalized),
+      inferred: normalized.inferred ?? false,
+    };
+  }
+  if (
+    storeName === "settings" &&
+    record.schemaVersion !== LOCAL_SETTINGS_SCHEMA_VERSION
+  )
+    return { ...record, schemaVersion: LOCAL_SETTINGS_SCHEMA_VERSION };
+  return record;
+};
+
 const parseRecord = (storeName, record) => {
-  const result = STORE_SCHEMAS[storeName].safeParse(record);
+  const result = STORE_SCHEMAS[storeName].safeParse(
+    normalizeRecordForStore(storeName, record),
+  );
   if (!result.success) {
     throw new IndexedDbRepositoryError(
       "schema_validation_failed",
@@ -153,6 +234,66 @@ export const migrations = {
       ensureIndex(reminders, "by_applicationId", "applicationId");
     }
     createStore(db, "settings");
+  },
+  2(_db, transaction) {
+    const applications = transaction.objectStore("applications");
+    ensureIndex(applications, "by_origin", "origin");
+    const lifecycleEvents = transaction.objectStore("lifecycleEvents");
+    ensureIndex(lifecycleEvents, "by_occurredAt", "occurredAt");
+
+    const storeResults = {};
+    let remaining = STORE_NAMES.length;
+    const fail = (error) => {
+      transaction.abort();
+      throw error;
+    };
+    for (const storeName of STORE_NAMES) {
+      const request = transaction.objectStore(storeName).getAll();
+      request.onerror = () => fail(request.error);
+      request.onsuccess = () => {
+        storeResults[storeName] = request.result;
+        remaining -= 1;
+        if (remaining > 0) return;
+        try {
+          const migrationCreatedAt = new Date().toISOString();
+          const { data } = upgradeBrowserExportToV2(
+            {
+              schemaVersion: 1,
+              exportedAt: migrationCreatedAt,
+              applications: storeResults.applications ?? [],
+              contacts: storeResults.contacts ?? [],
+              outreachMessages: storeResults.outreachMessages ?? [],
+              lifecycleEvents: storeResults.lifecycleEvents ?? [],
+              interviews: storeResults.interviews ?? [],
+              offers: storeResults.offers ?? [],
+              artifacts: storeResults.artifacts ?? [],
+              reminders: storeResults.reminders ?? [],
+              settings: storeResults.settings?.[0],
+            },
+            { migrationCreatedAt },
+          );
+          const validation = browserApplicationExportSchema.safeParse(data);
+          if (!validation.success) {
+            throw new IndexedDbRepositoryError(
+              "schema_validation_failed",
+              "IndexedDB migration data does not match the v2 schema.",
+              { details: validation.error.flatten() },
+            );
+          }
+          for (const storeName of STORE_NAMES)
+            transaction.objectStore(storeName).clear();
+          for (const storeName of STORE_NAMES.filter(
+            (name) => name !== "settings",
+          ))
+            for (const record of validation.data[storeName])
+              transaction.objectStore(storeName).put(record);
+          if (validation.data.settings)
+            transaction.objectStore("settings").put(validation.data.settings);
+        } catch (error) {
+          fail(error);
+        }
+      };
+    }
   },
 };
 
@@ -309,7 +450,8 @@ const deleteMatchingFromStore = async (store, indexName, value) => {
 };
 
 const validateImport = (data) => {
-  const result = browserApplicationExportSchema.safeParse(data);
+  const upgraded = upgradeBrowserExportToV2(data);
+  const result = browserApplicationExportSchema.safeParse(upgraded.data);
   if (!result.success) {
     throw new IndexedDbRepositoryError(
       "schema_validation_failed",
@@ -317,7 +459,7 @@ const validateImport = (data) => {
       { details: result.error.flatten() },
     );
   }
-  return { parsed: result.data };
+  return { parsed: result.data, warnings: upgraded.warnings };
 };
 
 export const createIndexedDbRepository = async (options = {}) => {
@@ -436,7 +578,7 @@ export const createIndexedDbRepository = async (options = {}) => {
           settingsAll,
         ] = storeResults;
         const result = browserApplicationExportSchema.safeParse({
-          schemaVersion: DATABASE_VERSION,
+          schemaVersion: BROWSER_BACKUP_SCHEMA_VERSION,
           exportedAt: new Date().toISOString(),
           applications,
           contacts,
@@ -446,7 +588,12 @@ export const createIndexedDbRepository = async (options = {}) => {
           offers,
           artifacts,
           reminders,
-          settings: settingsAll[0],
+          settings: settingsAll[0]
+            ? {
+                ...settingsAll[0],
+                schemaVersion: LOCAL_SETTINGS_SCHEMA_VERSION,
+              }
+            : undefined,
         });
         if (!result.success) {
           throw new IndexedDbRepositoryError(
@@ -537,6 +684,85 @@ export const createIndexedDbRepository = async (options = {}) => {
         const tx = db.transaction(STORE_NAMES, "readwrite");
         const done = transactionDone(tx);
         for (const storeName of STORE_NAMES) tx.objectStore(storeName).clear();
+        await done;
+      });
+    },
+    listRecords(storeName) {
+      return safe(() => getAll(db, storeName));
+    },
+    upsertApplication(record) {
+      return safe(() => putRecord(db, "applications", record));
+    },
+    createLifecycleEvent(record) {
+      return safe(() => addChildRecord(db, "lifecycleEvents", record));
+    },
+    createArtifact(record) {
+      return safe(() => addChildRecord(db, "artifacts", record));
+    },
+    createOutreachMessage(record) {
+      return safe(() => addChildRecord(db, "outreachMessages", record));
+    },
+    createInterview(record) {
+      return safe(() => addChildRecord(db, "interviews", record));
+    },
+    createOffer(record) {
+      return safe(() => addChildRecord(db, "offers", record));
+    },
+    async importPartialData(recordsByStore) {
+      return safe(async () => {
+        const storeNames = Object.entries(recordsByStore)
+          .filter(([, rows]) => rows.length)
+          .map(([name]) => name);
+        if (!storeNames.length) return;
+        const parsedRowsByStore = Object.fromEntries(
+          Object.entries(recordsByStore).map(([storeName, rows]) => [
+            storeName,
+            rows.map((row) => parseRecord(storeName, row)),
+          ]),
+        );
+        const existing = Object.fromEntries(
+          await Promise.all(
+            STORE_NAMES.map(async (name) => [name, await getAll(db, name)]),
+          ),
+        );
+        const merged = Object.fromEntries(
+          STORE_NAMES.map((name) => {
+            const byId = new Map(
+              (existing[name] ?? []).map((record) => [record.id, record]),
+            );
+            for (const record of parsedRowsByStore[name] ?? [])
+              byId.set(record.id, record);
+            return [name, [...byId.values()]];
+          }),
+        );
+        const validation = browserApplicationExportSchema.safeParse({
+          schemaVersion: BROWSER_BACKUP_SCHEMA_VERSION,
+          exportedAt: new Date(0).toISOString(),
+          applications: merged.applications,
+          contacts: merged.contacts,
+          outreachMessages: merged.outreachMessages,
+          lifecycleEvents: merged.lifecycleEvents,
+          interviews: merged.interviews,
+          offers: merged.offers,
+          artifacts: merged.artifacts,
+          reminders: merged.reminders,
+          settings: merged.settings[0]
+            ? {
+                ...merged.settings[0],
+                schemaVersion: LOCAL_SETTINGS_SCHEMA_VERSION,
+              }
+            : undefined,
+        });
+        if (!validation.success)
+          throw new IndexedDbRepositoryError(
+            "schema_validation_failed",
+            "Bulk records would violate browser application references.",
+            { details: validation.error.flatten() },
+          );
+        const tx = db.transaction(storeNames, "readwrite");
+        const done = transactionDone(tx);
+        for (const [storeName, rows] of Object.entries(parsedRowsByStore))
+          for (const row of rows) tx.objectStore(storeName).put(row);
         await done;
       });
     },

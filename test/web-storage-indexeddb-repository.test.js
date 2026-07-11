@@ -18,6 +18,7 @@ const application = {
   company: "Example Robotics",
   role: "Staff Software Engineer",
   status: "applied",
+  origin: "application_submitted",
   postingUrl: "https://example.test/jobs/staff-engineer",
   appliedAt: now,
   followUpDate: later,
@@ -40,6 +41,9 @@ const lifecycleEvent = {
   status: "applied",
   occurredAt: now,
   source: "manual",
+  eventType: "application_submitted",
+  occurredAtPrecision: "instant",
+  inferred: false,
   createdAt: now,
 };
 
@@ -132,6 +136,7 @@ describe("IndexedDB repository", () => {
       "by_appliedAt",
       "by_company",
       "by_followUpDate",
+      "by_origin",
       "by_status",
     ]);
     expect(Array.from(tx.objectStore("contacts").indexNames)).toContain(
@@ -139,6 +144,9 @@ describe("IndexedDB repository", () => {
     );
     expect(Array.from(tx.objectStore("lifecycleEvents").indexNames)).toContain(
       "by_applicationId_occurredAt",
+    );
+    expect(Array.from(tx.objectStore("lifecycleEvents").indexNames)).toContain(
+      "by_occurredAt",
     );
     expect(Array.from(tx.objectStore("outreachMessages").indexNames)).toContain(
       "by_applicationId",
@@ -518,6 +526,55 @@ describe("IndexedDB repository", () => {
     expect(await repo.getApplication(sharedId)).toMatchObject({
       company: "Example Robotics",
     });
+
+    repo.close();
+  });
+
+  it("normalizes blank optional fields and infers legacy precision", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+
+    await repo.upsertApplication({
+      ...application,
+      origin: undefined,
+      source: "",
+      postingUrl: "",
+      notes: "",
+    });
+    await repo.createLifecycleEvent({
+      ...lifecycleEvent,
+      occurredAt: "2026-01-02",
+      occurredAtPrecision: undefined,
+    });
+
+    const exported = await repo.exportAllData();
+    expect(exported.applications[0]).toMatchObject({
+      origin: "other_unknown",
+    });
+    expect(exported.applications[0].source).toBeUndefined();
+    expect(exported.applications[0].postingUrl).toBeUndefined();
+    expect(exported.lifecycleEvents[0]).toMatchObject({
+      occurredAt: "2026-01-02",
+      occurredAtPrecision: "date",
+    });
+
+    repo.close();
+  });
+
+  it("rejects bulk store records that would create orphan children", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+
+    await expect(
+      repo.importPartialData({
+        lifecycleEvents: [
+          {
+            ...lifecycleEvent,
+            applicationId: "missing_app",
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: "schema_validation_failed" });
+
+    expect((await repo.exportAllData()).lifecycleEvents).toHaveLength(0);
 
     repo.close();
   });

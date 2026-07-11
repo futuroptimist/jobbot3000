@@ -13,7 +13,58 @@ export const browserApplicationLifecycleStatusSchema = z.enum([
   "closed_archived",
 ]);
 
+export const browserApplicationOriginSchema = z.enum([
+  "application_submitted",
+  "recruiter_company_outreach",
+  "candidate_outreach",
+  "referral",
+  "other_unknown",
+]);
+
+export const browserApplicationLifecycleEventTypeSchema = z.enum([
+  "application_submitted",
+  "recruiter_company_outreach",
+  "candidate_outreach",
+  "referral",
+  "other_unknown",
+  "employer_response_received",
+  "recruiter_screen",
+  "assessment_take_home",
+  "technical_interview",
+  "onsite_final_loop",
+  "offer_received",
+  "offer_negotiating",
+  "employer_rejected",
+  "candidate_withdrew",
+  "offer_declined",
+  "offer_expired_rescinded",
+  "offer_accepted",
+  "closed_archived",
+  "application_reopened",
+  "status_changed",
+  "migration_status_snapshot",
+]);
+
+export const browserApplicationOccurredAtPrecisionSchema = z.enum([
+  "instant",
+  "date",
+  "unknown",
+]);
+
 const isoDateTimeSchema = z.string().datetime({ offset: true });
+const isoDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine((value) => {
+    const [year, month, day] = value.split("-").map(Number);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    return (
+      date.getUTCFullYear() === year &&
+      date.getUTCMonth() === month - 1 &&
+      date.getUTCDate() === day
+    );
+  }, "date must be a real calendar date");
+const stableDateOrDateTimeSchema = z.union([isoDateSchema, isoDateTimeSchema]);
 const requiredStringSchema = z.string().trim().min(1);
 const optionalTrimmedStringSchema = requiredStringSchema.optional();
 const idSchema = requiredStringSchema;
@@ -46,31 +97,61 @@ export const browserApplicationOutreachMessageSchema = z.object({
   updatedAt: isoDateTimeSchema,
 });
 
-export const browserApplicationLifecycleEventSchema = z.object({
-  id: idSchema,
-  applicationId: idSchema,
-  status: browserApplicationLifecycleStatusSchema,
-  occurredAt: isoDateTimeSchema,
-  source: z.enum([
-    "manual",
-    "csv_import",
-    "json_import",
-    "ndjson_import",
-    "sqlite_migration",
-  ]),
-  note: optionalTrimmedStringSchema,
-  eventType: optionalTrimmedStringSchema,
-  stageLabel: optionalTrimmedStringSchema,
-  channel: optionalTrimmedStringSchema,
-  actor: optionalTrimmedStringSchema,
-  sourceArtifact: optionalTrimmedStringSchema,
-  requiresUserAction: z.boolean().optional(),
-  actionStatus: optionalTrimmedStringSchema,
-  dueAt: isoDateTimeSchema.optional(),
-  noAiRequired: z.boolean().optional(),
-  details: optionalTrimmedStringSchema,
-  createdAt: isoDateTimeSchema,
-});
+export const browserApplicationLifecycleEventSchema = z
+  .object({
+    id: idSchema,
+    applicationId: idSchema,
+    status: browserApplicationLifecycleStatusSchema,
+    occurredAt: stableDateOrDateTimeSchema,
+    source: z.enum([
+      "manual",
+      "csv_import",
+      "json_import",
+      "ndjson_import",
+      "sqlite_migration",
+      "browser_migration",
+      "reconciliation",
+    ]),
+    note: optionalTrimmedStringSchema,
+    eventType: browserApplicationLifecycleEventTypeSchema,
+    rawEventType: optionalTrimmedStringSchema,
+    previousStatus: browserApplicationLifecycleStatusSchema.optional(),
+    occurredAtPrecision: browserApplicationOccurredAtPrecisionSchema,
+    inferred: z.boolean(),
+    supersedesEventId: optionalTrimmedStringSchema,
+    stageLabel: optionalTrimmedStringSchema,
+    channel: optionalTrimmedStringSchema,
+    actor: optionalTrimmedStringSchema,
+    sourceArtifact: optionalTrimmedStringSchema,
+    requiresUserAction: z.boolean().optional(),
+    actionStatus: optionalTrimmedStringSchema,
+    dueAt: isoDateTimeSchema.optional(),
+    noAiRequired: z.boolean().optional(),
+    details: optionalTrimmedStringSchema,
+    createdAt: isoDateTimeSchema,
+  })
+  .superRefine((event, ctx) => {
+    if (
+      event.occurredAtPrecision === "instant" &&
+      !isoDateTimeSchema.safeParse(event.occurredAt).success
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "instant occurredAt must be an ISO datetime with offset",
+        path: ["occurredAt"],
+      });
+    }
+    if (
+      event.occurredAtPrecision === "date" &&
+      !isoDateSchema.safeParse(event.occurredAt).success
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "date occurredAt must be YYYY-MM-DD",
+        path: ["occurredAt"],
+      });
+    }
+  });
 
 export const browserApplicationInterviewSchema = z.object({
   id: idSchema,
@@ -162,7 +243,7 @@ export const browserApplicationReminderSchema = z.object({
 
 export const browserApplicationSettingsSchema = z.object({
   id: z.literal("local"),
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(2),
   locale: optionalTrimmedStringSchema,
   timezone: optionalTrimmedStringSchema,
   defaultExportFormat: z.enum(["json", "ndjson", "csv"]).default("json"),
@@ -176,6 +257,7 @@ export const browserApplicationSchema = z.object({
   role: requiredStringSchema,
   status: browserApplicationLifecycleStatusSchema,
   source: optionalTrimmedStringSchema,
+  origin: browserApplicationOriginSchema,
   postingUrl: z.string().url().optional(),
   location: optionalTrimmedStringSchema,
   remote: z.boolean().optional(),
@@ -234,9 +316,68 @@ const addContactReferenceIssues = (ctx, storeName, records, contactIds) => {
   });
 };
 
+export const browserApplicationV1SettingsSchema =
+  browserApplicationSettingsSchema.extend({
+    schemaVersion: z.literal(1),
+  });
+export const browserApplicationV1Schema = browserApplicationSchema
+  .omit({
+    origin: true,
+  })
+  .extend({
+    origin: browserApplicationOriginSchema.optional(),
+  });
+export const browserApplicationV1LifecycleEventSchema = z
+  .object({
+    id: idSchema,
+    applicationId: idSchema,
+    status: browserApplicationLifecycleStatusSchema,
+    occurredAt: stableDateOrDateTimeSchema,
+    source: z.enum([
+      "manual",
+      "csv_import",
+      "json_import",
+      "ndjson_import",
+      "sqlite_migration",
+      "browser_migration",
+      "reconciliation",
+    ]),
+    note: optionalTrimmedStringSchema,
+    eventType: optionalTrimmedStringSchema,
+    stageLabel: optionalTrimmedStringSchema,
+    channel: optionalTrimmedStringSchema,
+    actor: optionalTrimmedStringSchema,
+    sourceArtifact: optionalTrimmedStringSchema,
+    requiresUserAction: z.boolean().optional(),
+    actionStatus: optionalTrimmedStringSchema,
+    dueAt: isoDateTimeSchema.optional(),
+    noAiRequired: z.boolean().optional(),
+    details: optionalTrimmedStringSchema,
+    createdAt: isoDateTimeSchema,
+  })
+  .passthrough();
+
+export const browserApplicationV1ExportSchema = z.object({
+  schemaVersion: z.literal(1),
+  exportedAt: isoDateTimeSchema,
+  applications: z.array(browserApplicationV1Schema),
+  contacts: z.array(browserApplicationContactSchema).default([]),
+  outreachMessages: z
+    .array(browserApplicationOutreachMessageSchema)
+    .default([]),
+  lifecycleEvents: z
+    .array(browserApplicationV1LifecycleEventSchema)
+    .default([]),
+  interviews: z.array(browserApplicationInterviewSchema).default([]),
+  offers: z.array(browserApplicationOfferSchema).default([]),
+  artifacts: z.array(browserApplicationArtifactSchema).default([]),
+  reminders: z.array(browserApplicationReminderSchema).default([]),
+  settings: browserApplicationV1SettingsSchema.optional(),
+});
+
 export const browserApplicationExportSchema = z
   .object({
-    schemaVersion: z.literal(1),
+    schemaVersion: z.literal(2),
     exportedAt: isoDateTimeSchema,
     applications: z.array(browserApplicationSchema),
     contacts: z.array(browserApplicationContactSchema).default([]),
@@ -314,4 +455,40 @@ export const browserApplicationExportSchema = z
         });
       },
     );
+
+    const eventsById = new Map(
+      exportData.lifecycleEvents.map((event) => [event.id, event]),
+    );
+    exportData.lifecycleEvents.forEach((event, index) => {
+      if (!event.supersedesEventId) return;
+      const superseded = eventsById.get(event.supersedesEventId);
+      if (!superseded) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Unknown supersedesEventId: ${event.supersedesEventId}`,
+          path: ["lifecycleEvents", index, "supersedesEventId"],
+        });
+        return;
+      }
+      if (superseded.applicationId !== event.applicationId)
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "supersedesEventId must reference the same application",
+          path: ["lifecycleEvents", index, "supersedesEventId"],
+        });
+      const seen = new Set([event.id]);
+      let cursor = superseded;
+      while (cursor?.supersedesEventId) {
+        if (seen.has(cursor.supersedesEventId)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "supersession chain must be acyclic",
+            path: ["lifecycleEvents", index, "supersedesEventId"],
+          });
+          break;
+        }
+        seen.add(cursor.supersedesEventId);
+        cursor = eventsById.get(cursor.supersedesEventId);
+      }
+    });
   });
