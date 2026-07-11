@@ -462,6 +462,43 @@ const validateImport = (data) => {
   return { parsed: result.data, warnings: upgraded.warnings };
 };
 
+const toArray = (value) => (Array.isArray(value) ? value : []);
+
+const validateSupersessionGraph = (events) => {
+  const byId = new Map(events.map((event) => [event.id, event]));
+  for (const event of events) {
+    if (!event.supersedesEventId) continue;
+    const target = byId.get(event.supersedesEventId);
+    if (!target) {
+      throw new IndexedDbRepositoryError(
+        "schema_validation_failed",
+        "supersedesEventId must reference an existing lifecycle event.",
+        { details: { supersedesEventId: event.supersedesEventId } },
+      );
+    }
+    if (target.applicationId !== event.applicationId) {
+      throw new IndexedDbRepositoryError(
+        "schema_validation_failed",
+        "supersedesEventId must reference the same application.",
+        { details: { supersedesEventId: event.supersedesEventId } },
+      );
+    }
+    const seen = new Set([event.id]);
+    let cursor = target;
+    while (cursor?.supersedesEventId) {
+      if (seen.has(cursor.supersedesEventId)) {
+        throw new IndexedDbRepositoryError(
+          "schema_validation_failed",
+          "Lifecycle supersession chains must be acyclic.",
+          { details: { supersedesEventId: event.supersedesEventId } },
+        );
+      }
+      seen.add(cursor.supersedesEventId);
+      cursor = byId.get(cursor.supersedesEventId);
+    }
+  }
+};
+
 export const createIndexedDbRepository = async (options = {}) => {
   let db;
   try {
@@ -491,6 +528,94 @@ export const createIndexedDbRepository = async (options = {}) => {
     },
     updateApplication(application) {
       return safe(() => putRecord(db, "applications", application));
+    },
+    async commitLifecycleMutation(mutation = {}) {
+      return safe(async () => {
+        const requiredStores = [
+          "applications",
+          "lifecycleEvents",
+          ...Object.keys(mutation.put ?? {}),
+          ...Object.keys(mutation.add ?? {}),
+        ].filter(
+          (value, index, array) =>
+            STORE_NAMES.includes(value) && array.indexOf(value) === index,
+        );
+        const existing = Object.fromEntries(
+          await Promise.all(
+            STORE_NAMES.map(async (name) => [name, await getAll(db, name)]),
+          ),
+        );
+        const previousApplication = mutation.applicationId
+          ? (existing.applications.find(
+              ({ id }) => id === mutation.applicationId,
+            ) ?? null)
+          : null;
+        const operationTime =
+          mutation.operationTime ?? new Date().toISOString();
+        const additions = Object.fromEntries(
+          Object.entries(mutation.add ?? {}).map(([storeName, rows]) => [
+            storeName,
+            toArray(rows).map((row) => parseRecord(storeName, row)),
+          ]),
+        );
+        const puts = Object.fromEntries(
+          Object.entries(mutation.put ?? {}).map(([storeName, rows]) => [
+            storeName,
+            toArray(rows).map((row) => parseRecord(storeName, row)),
+          ]),
+        );
+        const merged = Object.fromEntries(
+          STORE_NAMES.map((name) => {
+            const byId = new Map(
+              existing[name].map((record) => [record.id, record]),
+            );
+            for (const row of puts[name] ?? []) byId.set(row.id, row);
+            for (const row of additions[name] ?? []) {
+              if (byId.has(row.id))
+                throw new IndexedDbRepositoryError(
+                  "constraint_failed",
+                  `Duplicate ${name} id in lifecycle mutation.`,
+                  { details: { storeName: name, id: row.id } },
+                );
+              byId.set(row.id, row);
+            }
+            return [name, [...byId.values()]];
+          }),
+        );
+        validateSupersessionGraph(merged.lifecycleEvents);
+        const validation = browserApplicationExportSchema.safeParse({
+          schemaVersion: BROWSER_BACKUP_SCHEMA_VERSION,
+          exportedAt: operationTime,
+          applications: merged.applications,
+          contacts: merged.contacts,
+          outreachMessages: merged.outreachMessages,
+          lifecycleEvents: merged.lifecycleEvents,
+          interviews: merged.interviews,
+          offers: merged.offers,
+          artifacts: merged.artifacts,
+          reminders: merged.reminders,
+          settings: merged.settings[0]
+            ? {
+                ...merged.settings[0],
+                schemaVersion: LOCAL_SETTINGS_SCHEMA_VERSION,
+              }
+            : undefined,
+        });
+        if (!validation.success)
+          throw new IndexedDbRepositoryError(
+            "schema_validation_failed",
+            "Lifecycle mutation would violate browser application schema.",
+            { details: validation.error.flatten() },
+          );
+        const tx = db.transaction(requiredStores, "readwrite");
+        const done = transactionDone(tx);
+        for (const [storeName, rows] of Object.entries(puts))
+          for (const row of rows) tx.objectStore(storeName).put(row);
+        for (const [storeName, rows] of Object.entries(additions))
+          for (const row of rows) tx.objectStore(storeName).add(row);
+        await done;
+        return { operationTime, previousStatus: previousApplication?.status };
+      });
     },
     async deleteApplication(id) {
       return safe(async () => {
