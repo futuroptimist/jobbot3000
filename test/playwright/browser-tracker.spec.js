@@ -1,4 +1,4 @@
-/* global IDBDatabase, indexedDB */
+/* global IDBDatabase, IDBObjectStore, indexedDB, window */
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -1263,4 +1263,128 @@ test.describe("browser application tracker", () => {
       )
       .toBe(1);
   });
+
+  test(
+    "disables lifecycle form controls during pending submission " +
+      "and recovers after submission failure",
+    async ({ page }) => {
+      await page
+        .getByRole("button", { name: "Applications", exact: true })
+        .click();
+      await page.getByRole("button", { name: "New application" }).click();
+      await page.locator('[name="company"]').fill("Failure Recovery Co");
+      await page.locator('[name="role"]').fill("Lifecycle QA");
+      await page.locator('[name="appliedAt"]').fill("2026-01-10");
+      await page.getByRole("button", { name: "Save application" }).click();
+
+      const recordCounts = async () =>
+        page.evaluate(
+          () =>
+            new Promise((resolve, reject) => {
+              const request = indexedDB.open("jobbot3000");
+              request.onerror = () => reject(request.error);
+              request.onsuccess = () => {
+                const db = request.result;
+                const tx = db.transaction(
+                  ["applications", "outreachMessages", "lifecycleEvents"],
+                  "readonly",
+                );
+                const counts = {};
+                for (const storeName of [
+                  "applications",
+                  "outreachMessages",
+                  "lifecycleEvents",
+                ]) {
+                  const count = tx.objectStore(storeName).count();
+                  count.onerror = () => reject(count.error);
+                  count.onsuccess = () => {
+                    counts[storeName] = count.result;
+                  };
+                }
+                tx.oncomplete = () => {
+                  db.close();
+                  resolve(counts);
+                };
+                tx.onabort = () => reject(tx.error);
+              };
+            }),
+        );
+
+      const before = await recordCounts();
+
+      await page.evaluate(() => {
+        const originalAdd = IDBObjectStore.prototype.add;
+        IDBObjectStore.prototype.add = function delayedFailingAdd(...args) {
+          const request = originalAdd.apply(this, args);
+          if (
+            this.name === "outreachMessages" &&
+            args[0]?.body === "Persist me after failure"
+          ) {
+            this.transaction.abort();
+          }
+          return request;
+        };
+
+        window.__pendingLifecycleBlocker = new Promise((resolve, reject) => {
+          const open = indexedDB.open("jobbot3000");
+          open.onerror = () => reject(open.error);
+          open.onsuccess = () => {
+            const db = open.result;
+            const tx = db.transaction(
+              ["applications", "outreachMessages", "lifecycleEvents"],
+              "readwrite",
+            );
+            const store = tx.objectStore("applications");
+            const until = performance.now() + 500;
+            const keepAlive = () => {
+              const request = store.get("__delay_pending_lifecycle_submit__");
+              request.onerror = () => reject(request.error);
+              request.onsuccess = () => {
+                if (performance.now() < until) keepAlive();
+              };
+            };
+            keepAlive();
+            tx.oncomplete = () => {
+              db.close();
+              resolve();
+            };
+            tx.onabort = () => reject(tx.error);
+          };
+        });
+      });
+
+      const outreachForm = page.locator("[data-outreach-form]");
+      await outreachForm.locator('[name="direction"]').selectOption("inbound");
+      await outreachForm.locator('[name="channel"]').selectOption("linkedin");
+      await outreachForm
+        .locator('[name="body"]')
+        .fill("Persist me after failure");
+      const submit = page.getByRole("button", { name: "Add outreach" }).click();
+
+      await expect(outreachForm.locator('[name="direction"]')).toBeDisabled();
+      await expect(outreachForm.locator('[name="channel"]')).toBeDisabled();
+      await expect(outreachForm.locator('[name="body"]')).toBeDisabled();
+      await expect(
+        page.getByRole("button", { name: "Add outreach" }),
+      ).toBeDisabled();
+
+      await submit;
+      await expect(outreachForm.getByRole("alert")).toContainText(
+        "Save failed. No changes were written.",
+      );
+      await expect(outreachForm.locator('[name="direction"]')).toBeEnabled();
+      await expect(outreachForm.locator('[name="channel"]')).toBeEnabled();
+      await expect(outreachForm.locator('[name="body"]')).toBeEnabled();
+      await expect(outreachForm.locator('[name="direction"]')).toHaveValue(
+        "inbound",
+      );
+      await expect(outreachForm.locator('[name="channel"]')).toHaveValue(
+        "linkedin",
+      );
+      await expect(outreachForm.locator('[name="body"]')).toHaveValue(
+        "Persist me after failure",
+      );
+      await expect(recordCounts()).resolves.toEqual(before);
+    },
+  );
 });
