@@ -20,6 +20,11 @@ describe("Helm chart production contract", () => {
     expect(values).toContain("path: /healthz");
     expect(values).toContain("path: /livez");
     expect(values).toContain("readOnlyRootFilesystem: true");
+    expect(values).toContain("cpu: 25m");
+    expect(values).toContain("memory: 32Mi");
+    expect(values).toContain("cpu: 200m");
+    expect(values).toContain("memory: 128Mi");
+    expect(deployment).toContain('include "jobbot3000.labels"');
     expect(deployment).toContain("JOBBOT_WEB_PORT");
     expect(deployment).not.toContain("persistentVolumeClaim");
   });

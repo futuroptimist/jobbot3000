@@ -65,10 +65,12 @@ app.use((req, res, next) => {
   next();
 });
 
-const health = (_req, res) =>
+const health = (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
   res
     .status(200)
     .json({ status: "ok", mode: "static", persistence: "browser-indexeddb" });
+};
 app.get("/healthz", health);
 app.get("/livez", health);
 app.get("/health", health);
