@@ -829,11 +829,19 @@ describe("tracker dashboard metrics", () => {
     const jsonRestored = importJsonBackup(exportJsonBackup(bundle));
     const ndjsonRestored = importNdjsonBackup(exportNdjsonBackup(bundle));
 
-    expect(jsonRestored.lifecycleEvents[0]).toMatchObject({
+    expect(
+      jsonRestored.lifecycleEvents.find(
+        ({ rawEventType }) => rawEventType === "devops_interview_scheduled",
+      ),
+    ).toMatchObject({
       occurredAtHasTime: false,
       dueAtHasTime: false,
     });
-    expect(ndjsonRestored.lifecycleEvents[0]).toMatchObject({
+    expect(
+      ndjsonRestored.lifecycleEvents.find(
+        ({ rawEventType }) => rawEventType === "devops_interview_scheduled",
+      ),
+    ).toMatchObject({
       occurredAtHasTime: false,
       dueAtHasTime: false,
     });

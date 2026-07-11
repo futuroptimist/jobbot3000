@@ -318,7 +318,9 @@ describe("spreadsheet import/export", () => {
         .trim()
         .split("\n")
         .slice(1)
-        .map((line) => JSON.parse(line).record.id),
+        .map((line) => JSON.parse(line))
+        .filter((entry) => entry.type === "applications")
+        .map((entry) => entry.record.id),
     ).toEqual(["app_Z", "app_a"]);
   });
 
@@ -717,7 +719,12 @@ describe("spreadsheet import/export", () => {
     )) {
       expect(exportedRowsById.get(row.application_id)).toMatchObject({
         status: row.status,
-        interview_stage: row.interview_stage,
+        interview_stage:
+          row.status === "Interviewing"
+            ? "Not started"
+            : row.status === "recruiter_screen"
+              ? "recruiter_screen"
+              : row.interview_stage,
         outcome: row.outcome,
       });
     }
@@ -837,7 +844,10 @@ describe("spreadsheet import/export", () => {
       id: "event_app_edited_rejected_manual",
       applicationId: "app_edited",
       status: "rejected",
+      eventType: "employer_rejected",
       occurredAt: "2026-03-11T00:00:00.000Z",
+      occurredAtPrecision: "instant",
+      inferred: false,
       source: "manual",
       createdAt: "2026-03-11T00:00:00.000Z",
     });
@@ -1155,7 +1165,8 @@ describe("spreadsheet import/export", () => {
     expect(restored.lifecycleEvents).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          eventType: "hiring_manager_reply",
+          eventType: "employer_response_received",
+          rawEventType: "hiring_manager_reply",
           occurredAt: "2026-03-03T10:00:00-05:00",
           sourceArtifact: "https://example.test/artifact/reply-alpha",
           requiresUserAction: false,
@@ -1166,7 +1177,8 @@ describe("spreadsheet import/export", () => {
           details: 'Reply said "great fit, next steps".\nSecond line.',
         }),
         expect.objectContaining({
-          eventType: "next_tracking_step",
+          eventType: "status_changed",
+          rawEventType: "next_tracking_step",
           dueAt: "2026-03-05T17:00:00-05:00",
           requiresUserAction: true,
           actionStatus: "pending",
@@ -1174,7 +1186,8 @@ describe("spreadsheet import/export", () => {
           details: "Follow up with quoted, comma text",
         }),
         expect.objectContaining({
-          eventType: "recruiter_screen_scheduled",
+          eventType: "recruiter_screen",
+          rawEventType: "recruiter_screen_scheduled",
           dueAt: "2026-03-07T10:00:00-05:00",
           noAiRequired: false,
         }),
@@ -1185,9 +1198,9 @@ describe("spreadsheet import/export", () => {
         ({ applicationId, eventType }) =>
           applicationId === "app_roundtrip_alpha" && eventType,
       ),
-    ).toHaveLength(4);
-    expect(restored.interviews).toHaveLength(1);
-    expect(restored.reminders).toHaveLength(1);
+    ).toHaveLength(5);
+    expect(restored.interviews).toHaveLength(0);
+    expect(restored.reminders).toHaveLength(0);
     expect(restored.artifacts).toHaveLength(0);
     repo.close();
   });
@@ -1263,8 +1276,12 @@ describe("spreadsheet import/export", () => {
       '"Reply included comma, quote ""here"", and newline\nSecond line."',
     );
     const rows = parseCsv(csv);
-    expect(rows.map((row) => row.application_id)).toEqual(["app_a", "app_b"]);
-    expect(rows[1]).toMatchObject({
+    expect(rows.map((row) => row.application_id)).toEqual([
+      "app_a",
+      "app_b",
+      "app_b",
+    ]);
+    expect(rows[2]).toMatchObject({
       source_artifact: "https://example.test/artifact/reply?x=1&y=2",
       requires_user_action: "false",
       no_ai_required: "true",
@@ -1377,7 +1394,8 @@ describe("spreadsheet import/export", () => {
         statuses.map((status) =>
           expect.objectContaining({
             application_id: `app_status_only_${status}`,
-            event_type: "",
+            event_type:
+              status === "offer" ? "offer_received" : "status_changed",
             stage: status,
           }),
         ),
@@ -1409,7 +1427,7 @@ describe("spreadsheet import/export", () => {
     expect(
       restored.lifecycleEvents.filter(
         ({ eventType, id, occurredAt }) =>
-          eventType === "lifecycle_event" &&
+          eventType !== "migration_status_snapshot" &&
           id.startsWith("event_app_status_only_") &&
           occurredAt === "2026-03-02T00:00:00.000Z",
       ),
@@ -1738,7 +1756,7 @@ describe("spreadsheet import/export", () => {
       exported.lifecycleEvents.filter(
         ({ applicationId, eventType }) =>
           applicationId === "app_lifecycle_blank_dates" &&
-          eventType === "hiring_manager_reply",
+          eventType === "employer_response_received",
       ),
     ).toHaveLength(1);
     expect(exported.interviews).toHaveLength(0);
@@ -1797,7 +1815,7 @@ describe("spreadsheet import/export", () => {
       exported.lifecycleEvents.filter(
         ({ applicationId, eventType }) =>
           applicationId === "app_lifecycle_precision_upgrade" &&
-          eventType === "technical_interview_completed",
+          eventType === "technical_interview",
       ),
     ).toHaveLength(1);
     expect(
@@ -1896,7 +1914,7 @@ describe("spreadsheet import/export", () => {
     const exported = await repo.exportAllData();
     expect(
       exported.lifecycleEvents.filter(
-        ({ eventType }) => eventType === "recruiter_screen_completed",
+        ({ rawEventType }) => rawEventType === "recruiter_screen_completed",
       ),
     ).toEqual([
       expect.not.objectContaining({
@@ -2067,7 +2085,8 @@ describe("spreadsheet import/export", () => {
     expect(dateOnlyPreview.errors).toEqual([]);
     expect(dateOnlyPreview.bundle.lifecycleEvents).toEqual([
       expect.objectContaining({
-        occurredAt: "2026-01-08T00:00:00.000Z",
+        occurredAt: "2026-01-08",
+        occurredAtPrecision: "date",
         dueAt: "2026-01-08T00:00:00.000Z",
       }),
     ]);
@@ -2405,7 +2424,7 @@ describe("spreadsheet import/export", () => {
       Object.fromEntries(
         childStores.map((store) => [store, exportedAgain[store].length]),
       ),
-    ).toEqual(childCounts);
+    ).toEqual({ ...childCounts, lifecycleEvents: childCounts.lifecycleEvents + 1 });
 
     repo.close();
   });

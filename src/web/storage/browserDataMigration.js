@@ -204,10 +204,12 @@ export const upgradeBrowserExportToV2 = (input, options = {}) => {
   const warnings = [];
   const source = clone(input);
   const version = source?.schemaVersion;
-  let parsed;
   if (source?.schemaVersion === 2) {
-    parsed = browserApplicationExportSchema.parse(source);
-  } else if (version === 1) {
+    const data = browserApplicationExportSchema.parse(source);
+    return { data, warnings };
+  }
+  let parsed;
+  if (version === 1) {
     parsed = browserApplicationV1ExportSchema.parse(source);
   } else {
     throw new Error(
