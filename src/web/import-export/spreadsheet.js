@@ -533,14 +533,17 @@ const preservedOutcome = (metadata, currentOutcome) => {
 
 export const detectSpreadsheetImportFormat = (text) => {
   const headers = csvHeaders(text);
-  if (
-    headers.length === LIFECYCLE_CSV_COLUMNS.length &&
-    headers.every((header, index) => header === LIFECYCLE_CSV_COLUMNS[index])
-  )
+  const headerSet = new Set(headers);
+  const hasAll = (...columns) => columns.every((column) => headerSet.has(column));
+
+  if (hasAll("application_id", "event_type", "occurred_at"))
     return "lifecycle_csv";
   if (
-    headers.length &&
-    COMPACT_CSV_COLUMNS.every((column) => headers.includes(column))
+    hasAll("application_id", "company", "role_title") &&
+    ["status", "applied_at", "posting_url"].some((column) =>
+      headerSet.has(column),
+    ) &&
+    !headerSet.has("event_type")
   )
     return "compact_csv";
   return "unknown_csv";

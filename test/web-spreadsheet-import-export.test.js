@@ -1199,7 +1199,7 @@ describe("spreadsheet import/export", () => {
           applicationId === "app_roundtrip_alpha" && eventType,
       ),
     ).toHaveLength(5);
-    expect(restored.interviews).toHaveLength(0);
+    expect(restored.interviews).toHaveLength(1);
     expect(restored.reminders).toHaveLength(0);
     expect(restored.artifacts).toHaveLength(0);
     repo.close();
@@ -1628,6 +1628,31 @@ describe("spreadsheet import/export", () => {
 
     expect(detectSpreadsheetImportFormat(quotedHeaderCsv)).toBe(
       "lifecycle_csv",
+    );
+  });
+
+  it("detects legacy compact and lifecycle fixture headers by signature", async () => {
+    const fixtureNames = [
+      "assessment-lifecycle-regression.csv",
+      "employer-reply-lifecycle-regression.csv",
+      "recruiter-screen-lifecycle-regression.csv",
+    ];
+
+    await expect(
+      readFile(
+        "test/fixtures/tracker-import/compact-main-regression.csv",
+        "utf8",
+      ).then(detectSpreadsheetImportFormat),
+    ).resolves.toBe("compact_csv");
+    await Promise.all(
+      fixtureNames.map(async (fixtureName) => {
+        await expect(
+          readFile(
+            `test/fixtures/tracker-import/${fixtureName}`,
+            "utf8",
+          ).then(detectSpreadsheetImportFormat),
+        ).resolves.toBe("lifecycle_csv");
+      }),
     );
   });
 

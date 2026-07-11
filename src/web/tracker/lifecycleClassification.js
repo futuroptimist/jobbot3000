@@ -26,6 +26,32 @@ const EVENT_REGISTRY = Object.freeze({
     status: "outreach_sent",
     countsAsResponse: true,
   },
+  employer_response_received: {
+    category: LIFECYCLE_EVENT_CATEGORIES.EMPLOYER_RESPONSE,
+    countsAsResponse: true,
+  },
+  recruiter_screen: {
+    category: LIFECYCLE_EVENT_CATEGORIES.RECRUITER_SCREEN,
+    status: "recruiter_screen",
+    interviewStage: "recruiter_screen",
+    countsAsResponse: true,
+  },
+  assessment_take_home: {
+    category: LIFECYCLE_EVENT_CATEGORIES.ASSESSMENT,
+    countsAsResponse: true,
+  },
+  technical_interview: {
+    category: LIFECYCLE_EVENT_CATEGORIES.NON_RECRUITER_INTERVIEW,
+    status: "technical_screen",
+    interviewStage: "technical_screen",
+    countsAsResponse: true,
+  },
+  onsite_final_loop: {
+    category: LIFECYCLE_EVENT_CATEGORIES.NON_RECRUITER_INTERVIEW,
+    status: "onsite_loop",
+    interviewStage: "onsite_loop",
+    countsAsResponse: true,
+  },
   recruiter_screen_scheduled: {
     category: LIFECYCLE_EVENT_CATEGORIES.RECRUITER_SCREEN,
     status: "recruiter_screen",
