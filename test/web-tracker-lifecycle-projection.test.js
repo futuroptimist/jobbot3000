@@ -261,6 +261,71 @@ describe("lifecycle projection", () => {
     expect(reopened.paths[0].endpoint).toBe("interviewing");
   });
 
+  it("locks terminal endpoints from status-derived events until reopen", () => {
+    const projection = projectLifecycleAt(
+      bundle(
+        [app("a", { status: "accepted" })],
+        [
+          ev("origin", "a", "application_submitted", "2026-01-01"),
+          ev("accepted", "a", "status_changed", "2026-01-02", {
+            status: "accepted",
+          }),
+          ev("screen", "a", "recruiter_screen", "2026-01-03"),
+        ],
+      ),
+    );
+
+    expect(projection.paths[0].endpoint).toBe("offer_accepted");
+    expect(projection.warningCounts.terminal_without_reopen).toBe(1);
+    expect(projection.totals.terminal).toBe(1);
+  });
+
+  it("replays unknown-precision status snapshots after dated history", () => {
+    const projection = projectLifecycleAt(
+      bundle(
+        [app("a", { status: "accepted" })],
+        [
+          ev("origin", "a", "application_submitted", "2026-01-01"),
+          ev("screen", "a", "technical_interview", "2026-01-02"),
+          ev("snapshot", "a", "migration_status_snapshot", "2026-01-01", {
+            occurredAtPrecision: "unknown",
+            currentStatus: "accepted",
+          }),
+        ],
+      ),
+    );
+
+    expect(projection.paths[0].endpoint).toBe("offer_accepted");
+    expect(projection.warningCounts.status_mismatch).toBeUndefined();
+  });
+
+  it("keeps higher-precedence endpoints within the same timestamp bucket", () => {
+    const projection = projectLifecycleAt(
+      bundle(
+        [app("a", { status: "offer" })],
+        [
+          ev("z_origin", "a", "application_submitted", "2026-01-01"),
+          ev("a_offer", "a", "offer_received", "2026-01-01"),
+        ],
+      ),
+    );
+
+    expect(projection.paths[0].endpoint).toBe("offer_negotiating");
+    expect(projection.paths[0].nodeIds).toContain("endpoint:offer_negotiating");
+  });
+
+  it("reports normalized legacy event types", () => {
+    const projection = projectLifecycleAt(
+      bundle(
+        [app("a", { status: "recruiter_screen" })],
+        [ev("legacy", "a", "recruiter_screen_scheduled", "2026-01-01")],
+      ),
+    );
+
+    expect(projection.paths[0].milestones).toEqual(["recruiter_screen"]);
+    expect(projection.warningCounts.event_type_normalized).toBe(1);
+  });
+
   it("reports deterministic structured warnings", () => {
     const projection = projectLifecycleAt(
       bundle(

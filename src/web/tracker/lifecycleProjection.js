@@ -127,8 +127,9 @@ const normalize = (value) =>
     .replace(/&/g, " and ")
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
+const rawEventType = (event) => normalize(event?.eventType);
 const canonicalEventType = (event) =>
-  LEGACY[normalize(event?.eventType)] ?? normalize(event?.eventType);
+  LEGACY[rawEventType(event)] ?? rawEventType(event);
 const eventId = (event, index) => String(event?.id ?? `missing_event_${index}`);
 const appId = (app, index) => String(app?.id ?? `missing_application_${index}`);
 const isUnknownTime = (event) =>
@@ -140,7 +141,7 @@ const instantMs = (value) => {
   return Number.isFinite(ms) ? ms : undefined;
 };
 const eventTime = (event) => {
-  if (isUnknownTime(event)) return { kind: "unknown", sort: "" };
+  if (isUnknownTime(event)) return { kind: "unknown", sort: "~unknown" };
   if (event?.occurredAtPrecision === "date") {
     const date = /^\d{4}-\d{2}-\d{2}$/u.test(String(event.occurredAt))
       ? String(event.occurredAt)
@@ -182,6 +183,7 @@ const prepare = (bundle) => {
       ...event,
       id: eventId(event, index),
       applicationId: String(event?.applicationId ?? ""),
+      rawType: rawEventType(event),
       canonicalType: canonicalEventType(event),
       time: eventTime(event),
     }))
@@ -243,6 +245,24 @@ const originFor = (app, events, details) => {
 const endpointFromStatusEvent = (event) =>
   STATUS_ENDPOINT[normalize(event.status)] ??
   STATUS_ENDPOINT[normalize(event.currentStatus)];
+const ENDPOINT_PRECEDENCE = new Map(
+  ENDPOINTS.map(([id], index) => [id, index]),
+);
+const endpointPrecedence = (endpoint) =>
+  ENDPOINT_PRECEDENCE.get(endpoint) ?? Number.MAX_SAFE_INTEGER;
+const shouldApplyEndpoint = (nextEndpoint, endpoint, sameMoment) =>
+  !sameMoment ||
+  endpointPrecedence(nextEndpoint) >= endpointPrecedence(endpoint);
+const eventsByApplicationId = (events) => {
+  const map = new Map();
+  for (const event of events) {
+    const group = map.get(event.applicationId) ?? [];
+    group.push(event);
+    map.set(event.applicationId, group);
+  }
+  return map;
+};
+
 const projectApp = (app, appEvents, isCurrent) => {
   const details = [];
   const events = [...appEvents].sort(
@@ -253,9 +273,23 @@ const projectApp = (app, appEvents, isCurrent) => {
   let highestObservedMilestoneRank = -1;
   let endpoint = "unknown";
   let terminal = undefined;
+  let lastEndpointSort = undefined;
+  const applyEndpoint = (nextEndpoint, event) => {
+    if (!nextEndpoint) return;
+    if (
+      shouldApplyEndpoint(
+        nextEndpoint,
+        endpoint,
+        event.time.sort === lastEndpointSort,
+      )
+    ) {
+      endpoint = nextEndpoint;
+      lastEndpointSort = event.time.sort;
+    }
+  };
   for (const event of events) {
     const type = event.canonicalType;
-    const classified = classifyLifecycleEventType(type);
+    const classified = classifyLifecycleEventType(event.rawType);
     if (event.inferred)
       details.push(
         makeWarning("inferred_event", app.id, { eventId: event.id }),
@@ -284,6 +318,7 @@ const projectApp = (app, appEvents, isCurrent) => {
     if (type === "application_reopened") {
       terminal = undefined;
       endpoint = "awaiting_response";
+      lastEndpointSort = event.time.sort;
       continue;
     }
     if (
@@ -299,25 +334,30 @@ const projectApp = (app, appEvents, isCurrent) => {
     if (TERMINAL_EVENT_ENDPOINT[type]) {
       endpoint = TERMINAL_EVENT_ENDPOINT[type];
       terminal = endpoint;
+      lastEndpointSort = event.time.sort;
       continue;
     }
     if (type === "offer_received" || type === "offer_negotiating")
-      endpoint = "offer_negotiating";
+      applyEndpoint("offer_negotiating", event);
     else if (
       type === "assessment_take_home" &&
       ASSESSMENT_IN_PROGRESS.has(normalize(event.actionStatus ?? event.action))
     )
-      endpoint = "assessment_in_progress";
+      applyEndpoint("assessment_in_progress", event);
     else if (
       ["recruiter_screen", "technical_interview", "onsite_final_loop"].includes(
         type,
       )
     )
-      endpoint = "interviewing";
+      applyEndpoint("interviewing", event);
     else if (ORIGIN_IDS.has(type) || type === "employer_response_received")
-      endpoint = "awaiting_response";
-    else if (endpointFromStatusEvent(event))
-      endpoint = endpointFromStatusEvent(event);
+      applyEndpoint("awaiting_response", event);
+    else if (endpointFromStatusEvent(event)) {
+      const statusEndpoint = endpointFromStatusEvent(event);
+      applyEndpoint(statusEndpoint, event);
+      if (TERMINAL_IDS.has(statusEndpoint) && endpoint === statusEndpoint)
+        terminal = statusEndpoint;
+    }
     if (classified.eventType !== type)
       details.push(
         makeWarning("event_type_normalized", app.id, { eventId: event.id }),
@@ -384,16 +424,19 @@ const makeLinks = (paths) => {
         source,
         target,
         value: 0,
-        applicationIds: [],
+        applicationIds: new Set(),
       };
-      if (!link.applicationIds.includes(path.applicationId)) {
-        link.applicationIds.push(path.applicationId);
+      if (!link.applicationIds.has(path.applicationId)) {
+        link.applicationIds.add(path.applicationId);
         link.value += 1;
       }
       map.set(key, link);
     }
   return [...map.values()]
-    .map((l) => ({ ...l, applicationIds: l.applicationIds.sort(codeCompare) }))
+    .map((l) => ({
+      ...l,
+      applicationIds: [...l.applicationIds].sort(codeCompare),
+    }))
     .sort((a, b) => codeCompare(a.id, b.id));
 };
 const countBy = (paths, key, order = []) => {
@@ -429,10 +472,11 @@ export function projectLifecycleAt(bundle = {}, bucketId = "current") {
     bucketId === "current"
       ? apps
       : apps.filter((app) => eventAppIds.has(app.id));
+  const selectedEventsByApp = eventsByApplicationId(selectedEvents);
   const paths = includedApps.map((app) =>
     projectApp(
       app,
-      selectedEvents.filter((event) => event.applicationId === app.id),
+      selectedEventsByApp.get(app.id) ?? [],
       bucketId === "current",
     ),
   );
