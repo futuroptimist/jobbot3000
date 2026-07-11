@@ -462,6 +462,130 @@ const validateImport = (data) => {
   return { parsed: result.data, warnings: upgraded.warnings };
 };
 
+const validateSupersessionGraph = (events) => {
+  const byId = new Map(events.map((event) => [event.id, event]));
+  for (const event of events) {
+    if (!event.supersedesEventId) continue;
+    const target = byId.get(event.supersedesEventId);
+    if (!target) {
+      throw new IndexedDbRepositoryError(
+        "schema_validation_failed",
+        "Superseded lifecycle event does not exist.",
+        { details: { supersedesEventId: event.supersedesEventId } },
+      );
+    }
+    if (target.applicationId !== event.applicationId) {
+      throw new IndexedDbRepositoryError(
+        "schema_validation_failed",
+        "Superseded lifecycle event belongs to another application.",
+        { details: { supersedesEventId: event.supersedesEventId } },
+      );
+    }
+    const seen = new Set([event.id]);
+    let cursor = target;
+    while (cursor?.supersedesEventId) {
+      if (seen.has(cursor.supersedesEventId)) {
+        throw new IndexedDbRepositoryError(
+          "schema_validation_failed",
+          "Lifecycle event supersession chain must be acyclic.",
+          { details: { eventId: event.id } },
+        );
+      }
+      seen.add(cursor.supersedesEventId);
+      cursor = byId.get(cursor.supersedesEventId);
+    }
+  }
+};
+
+const parseLifecycleMutation = async (db, mutation) => {
+  const operationTime = mutation.operationTime ?? new Date().toISOString();
+  const applicationInput = mutation.application ?? mutation.upsertApplication;
+  if (!applicationInput?.id) {
+    throw new IndexedDbRepositoryError(
+      "schema_validation_failed",
+      "Lifecycle mutation requires an application.",
+    );
+  }
+  const existingApplication = await getAll(db, "applications").then((rows) =>
+    rows.find((row) => row.id === applicationInput.id),
+  );
+  const application = parseRecord("applications", {
+    ...applicationInput,
+    updatedAt: applicationInput.updatedAt ?? operationTime,
+    createdAt:
+      applicationInput.createdAt ??
+      existingApplication?.createdAt ??
+      operationTime,
+  });
+  const previousStatus = existingApplication?.status;
+  const childRecords = mutation.records ?? {};
+  const parsed = {
+    application,
+    contacts: (childRecords.contacts ?? mutation.contacts ?? []).map((row) =>
+      parseRecord("contacts", row),
+    ),
+    outreachMessages: (
+      childRecords.outreachMessages ??
+      mutation.outreachMessages ??
+      []
+    ).map((row) => parseRecord("outreachMessages", row)),
+    interviews: (childRecords.interviews ?? mutation.interviews ?? []).map(
+      (row) => parseRecord("interviews", row),
+    ),
+    offers: (childRecords.offers ?? mutation.offers ?? []).map((row) =>
+      parseRecord("offers", row),
+    ),
+    artifacts: (childRecords.artifacts ?? mutation.artifacts ?? []).map((row) =>
+      parseRecord("artifacts", row),
+    ),
+    reminders: (childRecords.reminders ?? mutation.reminders ?? []).map((row) =>
+      parseRecord("reminders", row),
+    ),
+    lifecycleEvents: (
+      childRecords.lifecycleEvents ??
+      mutation.lifecycleEvents ??
+      []
+    ).map((row) =>
+      parseRecord("lifecycleEvents", {
+        ...row,
+        previousStatus: row.previousStatus ?? previousStatus,
+        createdAt: row.createdAt ?? operationTime,
+      }),
+    ),
+  };
+  for (const [storeName, rows] of Object.entries(parsed)) {
+    if (storeName === "application") continue;
+    for (const row of rows) {
+      if (row.applicationId !== application.id) {
+        throw new IndexedDbRepositoryError(
+          "schema_validation_failed",
+          "Lifecycle mutation child records must reference the mutated application.",
+          { details: { storeName, applicationId: row.applicationId } },
+        );
+      }
+    }
+  }
+  const contacts = new Set(parsed.contacts.map((row) => row.id));
+  for (const row of [...parsed.outreachMessages, ...parsed.reminders])
+    if (row.contactId && !contacts.has(row.contactId)) {
+      const existing = await getAll(db, "contacts");
+      if (
+        !existing.some(
+          (contact) =>
+            contact.id === row.contactId &&
+            contact.applicationId === application.id,
+        )
+      )
+        throw new IndexedDbRepositoryError(
+          "schema_validation_failed",
+          "Lifecycle mutation references an unknown contact.",
+        );
+    }
+  const existingEvents = await getAll(db, "lifecycleEvents");
+  validateSupersessionGraph([...existingEvents, ...parsed.lifecycleEvents]);
+  return { operationTime, previousStatus, ...parsed };
+};
+
 export const createIndexedDbRepository = async (options = {}) => {
   let db;
   try {
@@ -707,6 +831,43 @@ export const createIndexedDbRepository = async (options = {}) => {
     },
     createOffer(record) {
       return safe(() => addChildRecord(db, "offers", record));
+    },
+
+    async commitLifecycleMutation(mutation) {
+      return safe(async () => {
+        const parsed = await parseLifecycleMutation(db, mutation);
+        const stores = [
+          "applications",
+          "contacts",
+          "outreachMessages",
+          "interviews",
+          "offers",
+          "artifacts",
+          "reminders",
+          "lifecycleEvents",
+        ].filter(
+          (storeName) =>
+            storeName === "applications" || parsed[storeName]?.length > 0,
+        );
+        const tx = db.transaction(stores, "readwrite");
+        const done = transactionDone(tx);
+        tx.objectStore("applications").put(parsed.application);
+        for (const storeName of stores.filter(
+          (name) => name !== "applications" && name !== "lifecycleEvents",
+        ))
+          for (const row of parsed[storeName])
+            tx.objectStore(storeName).put(row);
+        if (stores.includes("lifecycleEvents"))
+          for (const row of parsed.lifecycleEvents)
+            tx.objectStore("lifecycleEvents").add(row);
+        await done;
+        return {
+          application: parsed.application,
+          lifecycleEvents: parsed.lifecycleEvents,
+          previousStatus: parsed.previousStatus,
+          operationTime: parsed.operationTime,
+        };
+      });
     },
     async importPartialData(recordsByStore) {
       return safe(async () => {
