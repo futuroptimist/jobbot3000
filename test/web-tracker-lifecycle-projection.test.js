@@ -186,6 +186,94 @@ describe("lifecycle projection", () => {
     expect(submitted.paths[0].endpoint).toBe("awaiting_response");
   });
 
+  it("preserves bare assessment milestones without activating progress", () => {
+    const projection = projectLifecycleAt(
+      bundle(
+        [app("a", { status: "applied" })],
+        [
+          ev("origin", "a", "application_submitted", "2026-01-01"),
+          ev("assessment", "a", "assessment_take_home", "2026-01-02"),
+        ],
+      ),
+    );
+
+    expect(projection.paths[0].milestones).toEqual(["assessment_take_home"]);
+    expect(projection.paths[0].endpoint).toBe("awaiting_response");
+    expect(projection.totals.endpoints.assessment_in_progress).toBeUndefined();
+  });
+
+  it("normalizes bare legacy assessment aliases without activating progress", () => {
+    for (const eventType of ["written_assessment", "take_home"]) {
+      const projection = projectLifecycleAt(
+        bundle(
+          [app(`a_${eventType}`, { status: "applied" })],
+          [
+            ev(
+              "origin",
+              `a_${eventType}`,
+              "application_submitted",
+              "2026-01-01",
+            ),
+            ev("assessment", `a_${eventType}`, eventType, "2026-01-02"),
+          ],
+        ),
+      );
+
+      expect(projection.paths[0].milestones).toEqual(["assessment_take_home"]);
+      expect(projection.paths[0].endpoint).toBe("awaiting_response");
+      expect(projection.warningCounts.event_type_normalized).toBe(1);
+    }
+  });
+
+  it("ignores unsupported assessment actions while preserving milestone state", () => {
+    const projection = projectLifecycleAt(
+      bundle(
+        [app("a", { status: "applied" })],
+        [
+          ev("origin", "a", "application_submitted", "2026-01-01"),
+          ev("assessment", "a", "assessment_take_home", "2026-01-02", {
+            actionStatus: "needs_review",
+          }),
+        ],
+      ),
+    );
+
+    expect(projection.paths[0].milestones).toEqual(["assessment_take_home"]);
+    expect(projection.paths[0].endpoint).toBe("awaiting_response");
+  });
+
+  it("activates requested assessments and clears them when done", () => {
+    const requested = projectLifecycleAt(
+      bundle(
+        [app("a", { status: "technical_screen" })],
+        [
+          ev("origin", "a", "application_submitted", "2026-01-01"),
+          ev("request", "a", "assessment_take_home", "2026-01-02", {
+            actionStatus: "requested",
+          }),
+        ],
+      ),
+    );
+    expect(requested.paths[0].endpoint).toBe("assessment_in_progress");
+
+    const done = projectLifecycleAt(
+      bundle(
+        [app("a", { status: "applied" })],
+        [
+          ev("origin", "a", "application_submitted", "2026-01-01"),
+          ev("request", "a", "assessment_take_home", "2026-01-02", {
+            actionStatus: "requested",
+          }),
+          ev("done", "a", "assessment_take_home", "2026-01-03", {
+            actionStatus: "done",
+          }),
+        ],
+      ),
+    );
+    expect(done.paths[0].milestones).toEqual(["assessment_take_home"]);
+    expect(done.paths[0].endpoint).toBe("awaiting_response");
+  });
+
   it("builds deterministic atomic timeline buckets", () => {
     const b = bundle(
       [app("a"), app("b"), app("c")],

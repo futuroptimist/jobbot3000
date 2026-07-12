@@ -416,7 +416,7 @@ const projectApp = (app, appEvents, isCurrent) => {
       else if (["submitted", "completed", "done"].includes(assessmentStatus)) {
         assessmentActive = false;
         awaitingActive = true;
-      } else markEndpoint("assessment_in_progress");
+      }
     } else if (
       ["recruiter_screen", "technical_interview", "onsite_final_loop"].includes(
         type,
