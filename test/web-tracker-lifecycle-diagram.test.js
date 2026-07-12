@@ -245,4 +245,60 @@ describe("lifecycle diagram view", () => {
       "Select a node or flow row",
     );
   });
+  it("keeps SVG and semantic selections equivalent and debounces live announcements", () => {
+    vi.useFakeTimers();
+    const b = bundle(
+      [app("a"), app("b")],
+      [
+        ev("o1", "a", "application_submitted", "2026-01-01"),
+        ev("t1", "a", "technical_interview", "2026-01-02"),
+        ev("o2", "b", "application_submitted", "2026-01-01"),
+        ev("t2", "b", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root, view, timeline, snapshot } = render(b);
+    const detailsText = () =>
+      root.querySelector("[data-diagram-details]").textContent;
+    const svgNode = root.querySelector(
+      "[data-diagram-node='origin:application_submitted']",
+    );
+    const nodeButton = root.querySelector(
+      "button[aria-label='Select Application submitted']",
+    );
+    svgNode.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    const svgNodeDetails = detailsText();
+    nodeButton.click();
+    expect(detailsText()).toBe(svgNodeDetails);
+    expect(detailsText()).toContain("2 applications (100%)");
+    expect(detailsText()).toContain("a, b");
+
+    const svgLink = root.querySelector("[data-diagram-link]");
+    const linkId = svgLink.getAttribute("data-diagram-link");
+    const link = snapshot.links.find((candidate) => candidate.id === linkId);
+    const from = link.source.split(":").at(-1).replaceAll("_", " ");
+    const to = link.target.split(":").at(-1).replaceAll("_", " ");
+    const semanticFlow = [
+      ...root.querySelectorAll("button[aria-label^='Select flow']"),
+    ].find(
+      (button) =>
+        button.getAttribute("aria-label").toLowerCase().includes(from) &&
+        button.getAttribute("aria-label").toLowerCase().includes(to),
+    );
+    svgLink.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    const svgLinkDetails = detailsText();
+    semanticFlow.click();
+    expect(detailsText()).toBe(svgLinkDetails);
+    expect(detailsText()).toContain(
+      `${link.applicationIds.length} applications`,
+    );
+
+    view.update({ timeline, snapshot, selectedBucketId: "current" });
+    view.announce("Missing historical point; returned to Current.");
+    root.dispatchEvent(new window.Event("resize"));
+    vi.advanceTimersByTime(80);
+    expect(root.querySelector("#lifecycle-diagram-live").textContent).toBe(
+      "Missing historical point; returned to Current.",
+    );
+    view.destroy();
+  });
 });

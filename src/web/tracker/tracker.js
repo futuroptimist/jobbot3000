@@ -649,13 +649,9 @@ function renderDiagram() {
     newerAvailable,
   });
   if (fallbackAnnounced) {
-    document
-      .getElementById("lifecycle-diagram-live")
-      ?.append(
-        document.createTextNode(
-          " Missing historical point; returned to Current.",
-        ),
-      );
+    state.diagramView.announce(
+      "Missing historical point; returned to Current.",
+    );
   }
 }
 function renderAll() {

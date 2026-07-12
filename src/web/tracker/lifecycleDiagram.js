@@ -79,6 +79,9 @@ const bucketValueText = (bucket) => {
   if (bucket.kind === "date") return `${bucket.label}`;
   return `Historical event at ${bucket.label}`;
 };
+const isUnknownPrecision = (precision) =>
+  ["unknown", "legacy-placeholder", "legacy_placeholder"].includes(precision);
+const unique = (items) => [...new Set(items.filter(Boolean))].sort(compare);
 const formatEventTime = (event) => {
   if (event?.occurredAtPrecision === "date") {
     const date = /^\d{4}-\d{2}-\d{2}/u.exec(
@@ -88,7 +91,7 @@ const formatEventTime = (event) => {
       ? { label: `${date} — time not recorded`, datetime: date }
       : { label: "Unknown date — off chronological scale" };
   }
-  if (event?.occurredAtPrecision === "unknown" || !event?.occurredAt)
+  if (isUnknownPrecision(event?.occurredAtPrecision) || !event?.occurredAt)
     return { label: "Unknown date — off chronological scale" };
   const parsed = new Date(event.occurredAt);
   return Number.isFinite(parsed.getTime())
@@ -99,12 +102,13 @@ const formatTimestamp = (bucket, projection) => {
   if (bucket.kind === "current") {
     const known = projection.events
       .filter(
-        (event) => event.occurredAtPrecision !== "unknown" && event.occurredAt,
+        (event) =>
+          !isUnknownPrecision(event.occurredAtPrecision) && event.occurredAt,
       )
       .sort((a, b) => String(a.occurredAt).localeCompare(String(b.occurredAt)))
       .at(-1);
-    const unknown = projection.events.filter(
-      (event) => event.occurredAtPrecision === "unknown",
+    const unknown = projection.events.filter((event) =>
+      isUnknownPrecision(event.occurredAtPrecision),
     ).length;
     const latest = known ? formatEventTime(known) : undefined;
     return {
@@ -116,7 +120,9 @@ const formatTimestamp = (bucket, projection) => {
     return { label: "Unknown date — off chronological scale" };
   if (bucket.kind === "date")
     return {
-      label: `${bucket.label} — time not recorded`,
+      label: bucket.label.includes("time not recorded")
+        ? bucket.label
+        : `${bucket.label} — time not recorded`,
       datetime: bucket.label.slice(0, 10),
     };
   return formatEventTime({
@@ -210,6 +216,9 @@ export function createLifecycleDiagramView(root, options = {}) {
   const tables = el("div", { className: "diagram-tables" });
   root.append(controls, stamp, live, scroll, details, simultaneous, tables);
 
+  const announce = makeDebounce((message) => {
+    live.textContent = message;
+  });
   const renderTable = (caption, headers, rows) => {
     const table = el("table", { className: "tracker-table" });
     table.append(el("caption", { textContent: caption }));
@@ -247,38 +256,56 @@ export function createLifecycleDiagramView(root, options = {}) {
     table.append(thead, tbody);
     return el("div", { className: "table-container" }, [table]);
   };
+  const featureApplicationIds = (feature) =>
+    unique(
+      feature.applicationIds?.length
+        ? feature.applicationIds
+        : projection.paths
+            .filter((path) => path.nodeIds?.includes(feature.id))
+            .map((path) => path.applicationId),
+    );
   const selectFeature = (feature) => {
     selectedFeature = {
       ...feature,
-      applicationIds: [...(feature.applicationIds ?? [])],
+      applicationIds: featureApplicationIds(feature),
     };
     renderDetails();
     renderSvg();
   };
   const renderDetails = () => {
     const total = projection.includedApplications || 0;
+    const warningCounts = projection.warningCounts ?? {};
+    const warningSummary = `Warnings: inferred history ${warningCounts.inferred_history ?? 0}; unknown origin/time ${(warningCounts.unknown_origin ?? 0) + (warningCounts.invalid_timestamp ?? 0) + (warningCounts.unknown_timestamp ?? 0)}; status mismatch ${warningCounts.status_endpoint_mismatch ?? 0}; regression ${warningCounts.regression ?? 0}.`;
     if (!selectedFeature) {
-      details.textContent =
-        "Select a node or flow row for counts, percentages, and affected applications.";
+      details.textContent = `Select a node or flow row for counts, percentages, and affected applications. ${warningSummary}`;
       return;
     }
-    const ids =
-      selectedFeature.applicationIds ??
-      projection.paths
-        .filter((p) => p.nodeIds.includes(selectedFeature.id))
-        .map((p) => p.applicationId);
+    const ids = featureApplicationIds(selectedFeature);
+    const inferred = unique(
+      projection.warnings
+        .filter(
+          (w) =>
+            ids.includes(w.applicationId) &&
+            String(w.code).includes("inferred"),
+        )
+        .map((w) => w.applicationId),
+    );
+    const observed = ids.filter((id) => !inferred.includes(id));
     details.textContent = "";
     details.append(
       el("h3", { textContent: selectedFeature.label }),
       el("p", {
-        textContent: `${ids.length} application${ids.length === 1 ? "" : "s"} (${pct(ids.length, total)}). Observed ${ids.length}; inferred ${projection.warnings.filter((w) => ids.includes(w.applicationId) && w.code.includes("inferred")).length}. Date range: ${projection.bucket.kind === "date" ? `${projection.bucket.label} — time not recorded` : projection.bucket.kind === "current" ? `through ${projection.bucket.label}` : projection.bucket.label}.`,
+        textContent: `${ids.length} application${ids.length === 1 ? "" : "s"} (${pct(ids.length, total)}). Observed ${observed.length}; inferred ${inferred.length}. Date range: ${projection.bucket.kind === "date" ? formatTimestamp(projection.bucket, projection).label : projection.bucket.kind === "current" ? `through ${projection.bucket.label}` : projection.bucket.label}.`,
       }),
     );
     const d = el("details", {}, [
       el("summary", { textContent: "Affected applications" }),
       el("p", { textContent: ids.join(", ") || "None" }),
     ]);
-    details.append(d);
+    details.append(
+      d,
+      el("p", { className: "muted", textContent: warningSummary }),
+    );
   };
   const renderSvg = () => {
     scroll.textContent = "";
@@ -387,7 +414,15 @@ export function createLifecycleDiagramView(root, options = {}) {
         fill: selectedFeature?.id === node.id ? "#fbbf24" : "#64748b",
         stroke: "#e2e8f0",
       });
-      const selectNode = () => selectFeature({ id: node.id, label: nodeLabel });
+      g.append(svgEl("title"));
+      g.querySelector("title").textContent = nodeLabel;
+      // SVG pointer handlers intentionally remain mouse-only; semantic table buttons below provide the compact keyboard equivalent.
+      const selectNode = () =>
+        selectFeature({
+          id: node.id,
+          label: nodeLabel,
+          applicationIds: node.applicationIds,
+        });
       g.addEventListener("click", selectNode);
       const label = svgEl("text", {
         x: node.x0 < width / 2 ? node.x1 + 6 : node.x0 - 6,
@@ -408,9 +443,11 @@ export function createLifecycleDiagramView(root, options = {}) {
       Object.entries(entries).map(([id, value]) => {
         const nodeId = `${namespace}:${id}`;
         const label = TAXONOMY.get(nodeId)?.label ?? id;
-        const applicationIds = projection.paths
-          .filter((path) => path.nodeIds.includes(nodeId))
-          .map((path) => path.applicationId);
+        const applicationIds = unique(
+          projection.paths
+            .filter((path) => path.nodeIds.includes(nodeId))
+            .map((path) => path.applicationId),
+        );
         return {
           cells: [label, String(value), pct(value, total)],
           label: `Select ${label}`,
@@ -503,11 +540,22 @@ export function createLifecycleDiagramView(root, options = {}) {
         ? el("time", { datetime: ts.datetime, textContent: ts.label })
         : document.createTextNode(ts.label),
     );
-    live.textContent = `${badge.textContent}. ${count.textContent}. ${bucketValueText(projection.bucket)}`;
-    const knownBoundaryEvents = projection.events.filter(
-      (event) => event.occurredAtPrecision !== "unknown" && event.occurredAt,
+    announce(
+      `${badge.textContent}. ${count.textContent}. ${bucketValueText(projection.bucket)}`,
     );
-    const sharedBoundary = knownBoundaryEvents.length > 1;
+    const boundaryBuckets = projection.events.reduce((map, event) => {
+      if (
+        projection.bucket.kind === "current" ||
+        projection.bucket.kind === "unknown-date" ||
+        isUnknownPrecision(event.occurredAtPrecision) ||
+        !event.occurredAt
+      )
+        return map;
+      const key = `${event.occurredAtPrecision}:${event.occurredAt}`;
+      map.set(key, (map.get(key) ?? 0) + 1);
+      return map;
+    }, new Map());
+    const sharedBoundary = [...boundaryBuckets.values()].some((n) => n > 1);
     simultaneous.querySelector("summary").textContent = sharedBoundary
       ? "Simultaneous selected-boundary events"
       : "Selected-boundary events";
@@ -551,11 +599,15 @@ export function createLifecycleDiagramView(root, options = {}) {
       if (snapshotChanged) selectedFeature = null;
       render(newerAvailable);
     },
+    announce(message) {
+      announce(message);
+    },
     destroy() {
       resizeObserver?.disconnect();
       if (windowResizeHandler)
         window.removeEventListener("resize", windowResizeHandler);
       debouncedResize.clear();
+      announce.clear();
       root.textContent = "";
     },
   };
