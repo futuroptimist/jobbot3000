@@ -202,3 +202,75 @@
   background: rgba(127, 29, 29, 0.35);
   color: #fecaca;
 }
+
+.diagram-controls {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-block: 1rem;
+}
+.diagram-controls label {
+  display: grid;
+  gap: 0.25rem;
+  min-width: min(18rem, 100%);
+}
+.diagram-controls input[type="range"] {
+  min-height: 44px;
+}
+.diagram-scroll {
+  border: 1px solid var(--border, #334155);
+  border-radius: 0.75rem;
+  margin-block: 1rem;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 0.75rem;
+}
+.diagram-scroll svg {
+  min-width: 720px;
+  max-width: none;
+}
+.diagram-scroll rect {
+  fill: var(--accent, #38bdf8);
+  stroke: CanvasText;
+  stroke-width: 1px;
+}
+.diagram-scroll text {
+  fill: currentColor;
+  font-size: 0.8rem;
+  paint-order: stroke;
+  stroke: var(--background, #0f172a);
+  stroke-width: 3px;
+}
+.diagram-link {
+  opacity: 0.45;
+}
+.diagram-link.is-selected,
+.diagram-scroll g.is-selected rect {
+  opacity: 1;
+  stroke: #fbbf24;
+  stroke-width: 3px;
+}
+.diagram-tables {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr));
+}
+.sr-only {
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+@media (max-width: 640px) {
+  .diagram-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .diagram-controls .button {
+    min-height: 44px;
+  }
+}
