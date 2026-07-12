@@ -22,6 +22,11 @@ describe("Helm chart production contract", () => {
     expect(values).toContain("readOnlyRootFilesystem: true");
     expect(deployment).toContain("JOBBOT_WEB_PORT");
     expect(deployment).not.toContain("persistentVolumeClaim");
+    expect(values).toContain("cpu: 25m");
+    expect(values).toContain("memory: 32Mi");
+    expect(values).toContain("cpu: 200m");
+    expect(values).toContain("memory: 128Mi");
+    expect(deployment).toContain("resources:");
   });
 
   it("does not define PVCs or user-data Secrets by default", async () => {
@@ -30,11 +35,14 @@ describe("Helm chart production contract", () => {
       read("charts/jobbot3000/templates/service.yaml"),
       read("charts/jobbot3000/templates/ingress.yaml"),
       read("scripts/validate-helm.sh"),
+      read("charts/jobbot3000/templates/_helpers.tpl"),
     ]);
     const combined = chartFiles.join("\n");
     expect(combined).not.toMatch(/kind:\s*PersistentVolumeClaim/);
     expect(combined).not.toMatch(/kind:\s*Secret/);
     expect(combined).toContain("helm lint");
+    expect(combined).toContain("app.kubernetes.io/component: static-tracker");
+    expect(combined).toContain("app.kubernetes.io/part-of: jobbot3000");
     expect(combined).toContain("--set image.tag=main-TESTSHA");
     expect(combined).toContain(
       "--set ingress.host=jobbot3000.staging.example.test",

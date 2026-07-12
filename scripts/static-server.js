@@ -68,6 +68,7 @@ app.use((req, res, next) => {
 const health = (_req, res) =>
   res
     .status(200)
+    .set("Cache-Control", "no-store")
     .json({ status: "ok", mode: "static", persistence: "browser-indexeddb" });
 app.get("/healthz", health);
 app.get("/livez", health);

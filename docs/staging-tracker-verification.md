@@ -1,13 +1,13 @@
 # Static Tracker Staging Verification Checklist
 
-Use this checklist after deploying a staging image or chart update for the browser-only tracker. Use only anonymized fixtures or private local backups; never commit real backups, screenshots, application notes, company names, candidate names, private URLs, or artifact links.
+Use this checklist after deploying a staging image or chart update for the browser-only tracker. The [observability contract](observability.md) defines safe blackbox checks and staging-only synthetic journeys. Use only anonymized fixtures or private local backups; never commit real backups, screenshots, application notes, company names, candidate names, private URLs, or artifact links.
 
 ## Deploy and smoke-check staging
 
 1. Deploy staging with the intended immutable image tag.
 2. Open `/` and confirm the static browser-only landing page loads.
 3. Open `/tracker` and confirm the tracker loads without a login or server-backed data prompt.
-4. Check `/healthz` and `/livez`; both should return healthy static responses.
+4. Check `/healthz` and `/livez`; both should return healthy `no-store` JSON static responses, and invalid health subpaths must not pass via the SPA fallback.
 5. Confirm build metadata is visible in the tracker footer/header area and identifies `static/browser-only` mode.
 
 ## Compact CSV import and dashboard sanity
