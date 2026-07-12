@@ -2,7 +2,6 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { chromium } from "playwright";
 
 const args = process.argv.slice(2);
 const baseUrlArg = args.find((arg) => !arg.startsWith("--"));
@@ -15,12 +14,15 @@ if (!baseUrlArg) {
   process.exit(2);
 }
 
+const normalizeDirectoryPath = (pathname) =>
+  pathname === "/" ? "/" : `${pathname.replace(/\/$/, "")}/`;
+
 const baseUrl = new URL(baseUrlArg);
 baseUrl.search = "";
 baseUrl.hash = "";
-const basePath = baseUrl.pathname.replace(/\/$/, "");
-const baseDirectoryUrl = new URL(baseUrl.toString());
-baseDirectoryUrl.pathname = `${basePath}/`;
+baseUrl.pathname = normalizeDirectoryPath(baseUrl.pathname);
+const expectedBasePath = baseUrl.pathname;
+const baseOrigin = baseUrl.origin;
 
 if (
   synthetic &&
@@ -36,28 +38,48 @@ if (
 const summary = {
   mode: synthetic ? "staging-synthetic" : "readonly",
   startedAt,
-  baseUrl: baseUrl.toString(),
+  baseUrl: `${baseOrigin}${expectedBasePath}`,
   checks: [],
   synthetic: synthetic
-    ? { isolatedProfile: true, cleanedUp: false, exportedBackup: false }
+    ? {
+        isolatedProfile: true,
+        cleanedUp: false,
+        exportedBackup: false,
+        cleanupCode: undefined,
+      }
     : undefined,
 };
 
-let topLevelFailure = false;
-let topLevelFailureMessage = "";
+let topLevelFailureCode = "";
+let pageDocumentUrl = "";
 
-const safeRoute = (url) => {
+const safeFinalUrl = (url) => {
   const parsed = new URL(url);
-  return `${parsed.pathname}${parsed.search}`;
+  return `${parsed.origin}${parsed.pathname}`;
+};
+
+const pathWithinExpectedBase = (url) => {
+  const parsed = new URL(url);
+  return (
+    parsed.origin === baseOrigin &&
+    (parsed.pathname === expectedBasePath.replace(/\/$/, "") ||
+      parsed.pathname.startsWith(expectedBasePath))
+  );
 };
 
 const resolveSmokeUrl = (route) => {
   if (route.startsWith("/")) {
     const url = new URL(baseUrl.toString());
-    url.pathname = `${basePath}${route}`;
+    url.pathname = `${expectedBasePath.replace(/\/$/, "")}${route}`;
     return url;
   }
-  return new URL(route, baseDirectoryUrl);
+  return new URL(route, pageDocumentUrl || baseUrl.toString());
+};
+
+const fail = (code) => {
+  const error = new Error(code);
+  error.smokeCode = code;
+  return error;
 };
 
 async function record(route, fn) {
@@ -69,125 +91,145 @@ async function record(route, fn) {
     entry.pass = true;
   } catch (error) {
     if (error.smokeMeta) Object.assign(entry, error.smokeMeta);
+    entry.code = error.smokeCode || "SMOKE_STEP_FAILED";
   } finally {
     entry.durationMs = Math.round(performance.now() - start);
     summary.checks.push(entry);
   }
-  if (!entry.pass) throw new Error(route);
+  if (!entry.pass) throw fail(entry.code);
   return entry;
 }
 
+async function fetchWithRedirects(url) {
+  let current = new URL(url);
+  for (let redirect = 0; redirect <= 2; redirect += 1) {
+    const response = await fetch(current, { redirect: "manual" });
+    if (![301, 302, 303, 307, 308].includes(response.status)) {
+      return response;
+    }
+    const location = response.headers.get("location");
+    if (!location) throw fail("REDIRECT_WITHOUT_LOCATION");
+    current = new URL(location, current);
+    if (!pathWithinExpectedBase(current)) throw fail("REDIRECT_ESCAPED_BASE_PATH");
+  }
+  throw fail("TOO_MANY_REDIRECTS");
+}
+
 async function responseCheck(
-  request,
   route,
   predicate = () => true,
-  { requireOk = true } = {},
+  { requireOk = true, documentUrl = false } = {},
 ) {
   return await record(route, async () => {
-    const response = await request.get(resolveSmokeUrl(route).toString(), {
-      maxRedirects: 2,
-    });
-    const headers = response.headers();
-    const finalUrl = response.url();
-    const status = response.status();
-    const contentType = headers["content-type"] ?? "";
-    const result = { status, contentType, finalUrl: safeRoute(finalUrl) };
+    const response = await fetchWithRedirects(resolveSmokeUrl(route));
+    const finalUrl = response.url;
+    const status = response.status;
+    const contentType = response.headers.get("content-type") ?? "";
+    const result = { status, contentType, finalUrl: safeFinalUrl(finalUrl) };
     const throwWithMeta = (error) => {
       error.smokeMeta = result;
       throw error;
     };
-    if (requireOk && !response.ok()) throwWithMeta(new Error(`HTTP ${status}`));
+    if (!pathWithinExpectedBase(finalUrl)) throwWithMeta(fail("FINAL_URL_ESCAPED_BASE_PATH"));
+    if (requireOk && !response.ok) throwWithMeta(fail("HTTP_NOT_OK"));
     try {
-      await predicate({ response, headers, status, contentType, finalUrl });
+      await predicate({ response, headers: response.headers, status, contentType, finalUrl });
     } catch (error) {
-      throwWithMeta(error);
+      throwWithMeta(error.smokeCode ? error : fail("RESPONSE_CONTRACT_FAILED"));
     }
+    if (documentUrl) pageDocumentUrl = finalUrl;
     return result;
   });
 }
 
-let userDataDir;
-let context;
-try {
-  await fs.mkdir(outDir, { recursive: true });
-  userDataDir = await fs.mkdtemp(
-    path.join(os.tmpdir(), "jobbot-smoke-profile-"),
-  );
-  context = await chromium.launchPersistentContext(userDataDir, {
-    headless: true,
-    acceptDownloads: true,
-  });
-  const page = await context.newPage();
-  const request = context.request;
+async function textIncludes(response, markers) {
+  const body = await response.text();
+  for (const marker of markers) {
+    if (!body.includes(marker)) throw fail("HTML_MARKER_MISSING");
+  }
+  return body;
+}
 
-  await responseCheck(request, "/", async ({ contentType }) => {
-    if (!contentType.includes("text/html")) throw new Error("root is not HTML");
-  });
-  await responseCheck(request, "/tracker", async ({ contentType }) => {
-    if (!contentType.includes("text/html")) throw new Error("tracker is not HTML");
+async function runReadonlyChecks() {
+  let rootHtml = "";
+  await responseCheck(
+    "/",
+    async ({ response, contentType }) => {
+      if (!contentType.includes("text/html")) throw fail("HTML_CONTENT_TYPE_MISMATCH");
+      rootHtml = await textIncludes(response, [
+        "Browser-only application tracker",
+        "static/browser-only",
+      ]);
+    },
+    { documentUrl: true },
+  );
+  await responseCheck("/tracker", async ({ response, contentType }) => {
+    if (!contentType.includes("text/html")) throw fail("HTML_CONTENT_TYPE_MISMATCH");
+    await textIncludes(response, ["Application tracker", "jobbot-build-metadata"]);
   });
   for (const route of ["/healthz", "/livez"]) {
-    await responseCheck(
-      request,
-      route,
-      async ({ response, headers, contentType }) => {
-        if (!contentType.includes("application/json"))
-          throw new Error("health is not JSON");
-        if (!headers["cache-control"]?.includes("no-store"))
-          throw new Error("health is cacheable");
-        const body = await response.json();
-        if (body.status !== "ok" || body.persistence !== "browser-indexeddb")
-          throw new Error("unexpected health body");
-      },
-    );
+    await responseCheck(route, async ({ response, headers, contentType }) => {
+      if (!contentType.includes("application/json")) throw fail("HEALTH_CONTENT_TYPE_MISMATCH");
+      if (headers.get("cache-control") !== "no-store") throw fail("HEALTH_CACHE_CONTROL_MISMATCH");
+      const body = await response.json();
+      if (
+        JSON.stringify(body) !==
+        JSON.stringify({ status: "ok", mode: "static", persistence: "browser-indexeddb" })
+      ) {
+        throw fail("HEALTH_JSON_MISMATCH");
+      }
+    });
   }
   await responseCheck(
-    request,
     "/healthz/not-real",
-    async ({ status, contentType }) => {
-      if (status !== 404) throw new Error(`expected HTTP 404, got ${status}`);
-      if (contentType.includes("application/json"))
-        throw new Error("invalid health path returned JSON");
+    async ({ response, status, contentType }) => {
+      if (status !== 404) throw fail("INVALID_HEALTH_STATUS_MISMATCH");
+      if (contentType.includes("application/json")) throw fail("INVALID_HEALTH_JSON_FALLBACK");
+      const body = await response.text();
+      if (body.includes('"persistence":"browser-indexeddb"')) {
+        throw fail("INVALID_HEALTH_BODY_FALLBACK");
+      }
     },
     { requireOk: false },
   );
-  await responseCheck(request, "/manifest.webmanifest", async ({ contentType }) => {
-    if (
-      !contentType.includes("manifest") &&
-      !contentType.includes("json")
-    ) {
-      throw new Error("manifest content type mismatch");
+  await responseCheck("/manifest.webmanifest", async ({ response, contentType }) => {
+    if (!contentType.includes("manifest") && !contentType.includes("json")) {
+      throw fail("MANIFEST_CONTENT_TYPE_MISMATCH");
     }
+    const manifest = await response.json();
+    if (!manifest.name || !manifest.start_url) throw fail("MANIFEST_JSON_MISMATCH");
   });
 
-  await page.goto(baseDirectoryUrl.toString(), { waitUntil: "domcontentloaded" });
-  let assetPath;
   await record("asset-reference", async () => {
-    const value = await page
-      .locator('link[rel="stylesheet"][href], script[src]')
-      .first()
-      .evaluate((el) => el.getAttribute("href") || el.getAttribute("src"));
-    if (!value) throw new Error("No JS or CSS asset reference found");
-    assetPath = value;
-    return {
-      status: 200,
-      contentType: "text/html",
-      finalUrl: safeRoute(page.url()),
-    };
+    const match = rootHtml.match(/<(?:link|script)[^>]+(?:href|src)=["']([^"']+)["']/i);
+    if (!match) throw fail("ASSET_REFERENCE_MISSING");
+    return { status: 200, contentType: "text/html", finalUrl: safeFinalUrl(pageDocumentUrl) };
   });
-  await responseCheck(request, assetPath, async ({ contentType }) => {
-    if (!/(javascript|css)/.test(contentType))
-      throw new Error("asset content type mismatch");
+  const assetPath = rootHtml.match(/<(?:link|script)[^>]+(?:href|src)=["']([^"']+)["']/i)?.[1];
+  await responseCheck(assetPath, async ({ contentType }) => {
+    if (!/(javascript|css)/.test(contentType)) throw fail("ASSET_CONTENT_TYPE_MISMATCH");
   });
+}
 
-  if (synthetic) {
+async function runSyntheticChecks() {
+  const { chromium } = await import("playwright");
+  const userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), "jobbot-smoke-profile-"));
+  const backupPath = path.join(userDataDir, "promotion-smoke-synthetic-backup.json");
+  let context;
+  const uniqueCompany = `Synthetic Smoke ${crypto.randomUUID()}`;
+  try {
+    context = await chromium.launchPersistentContext(userDataDir, {
+      headless: true,
+      acceptDownloads: true,
+    });
+    const page = await context.newPage();
     await record("/tracker#synthetic-journey", async () => {
       await page.goto(resolveSmokeUrl("/tracker").toString(), {
         waitUntil: "domcontentloaded",
       });
-      await page.getByRole("button", { name: "Applications" }).click();
+      await page.getByRole("button", { name: "Applications", exact: true }).click();
       await page.getByRole("button", { name: "New application" }).click();
-      await page.locator('[name="company"]').fill(`Synthetic Smoke ${Date.now()}`);
+      await page.locator('[name="company"]').fill(uniqueCompany);
       await page.locator('[name="role"]').fill("Synthetic Browser Persistence Check");
       await page.locator('[name="appliedAt"]').fill("2026-01-01");
       await page
@@ -195,38 +237,58 @@ try {
         .fill("Synthetic staging-only smoke record; no private data.");
       await page.getByRole("button", { name: "Save application" }).click();
       await page.reload({ waitUntil: "domcontentloaded" });
-      await page.getByRole("button", { name: "Applications" }).click();
-      const rows = await page.locator("[data-applications-table] tbody tr").count();
-      if (rows < 1) throw new Error("synthetic record did not persist after reload");
-      const downloadPromise = page.waitForEvent("download");
+      await page.getByRole("button", { name: "Applications", exact: true }).click();
+      const row = page.locator("[data-applications-table] tbody tr", {
+        hasText: uniqueCompany,
+      });
+      await row.waitFor({ state: "visible", timeout: 5000 });
+      if ((await row.count()) !== 1) throw fail("SYNTHETIC_RECORD_MISSING");
       await page.getByRole("button", { name: "Import/Export" }).click();
-      await page.locator('[data-export="json"]').first().click();
+      const downloadPromise = page.waitForEvent("download");
+      await page.getByRole("button", { name: "Backup now" }).click();
       const download = await downloadPromise;
-      await download.saveAs(
-        path.join(outDir, "promotion-smoke-synthetic-backup.json"),
-      );
+      await download.saveAs(backupPath);
+      const backup = JSON.parse(await fs.readFile(backupPath, "utf8"));
+      if (!Array.isArray(backup.applications)) throw fail("SYNTHETIC_BACKUP_SCHEMA_MISMATCH");
+      if (!backup.applications.some((app) => app.company === uniqueCompany)) {
+        throw fail("SYNTHETIC_BACKUP_RECORD_MISSING");
+      }
+      await fs.rm(backupPath, { force: true });
       summary.synthetic.exportedBackup = true;
-      return {
-        status: 200,
-        contentType: "browser/indexeddb",
-        finalUrl: "/tracker",
-      };
+      return { status: 200, contentType: "browser/indexeddb", finalUrl: safeFinalUrl(page.url()) };
     });
+  } finally {
+    try {
+      if (context) await context.close();
+    } catch {
+      summary.synthetic.cleanupCode = "CONTEXT_CLOSE_FAILED";
+    }
+    try {
+      await fs.rm(backupPath, { force: true });
+      await fs.rm(userDataDir, { recursive: true, force: true });
+      summary.synthetic.cleanedUp = true;
+    } catch {
+      summary.synthetic.cleanedUp = false;
+      summary.synthetic.cleanupCode = summary.synthetic.cleanupCode || "PROFILE_DELETE_FAILED";
+    }
   }
+}
+
+try {
+  await fs.mkdir(outDir, { recursive: true });
+  await runReadonlyChecks();
+  if (synthetic) await runSyntheticChecks();
 } catch (error) {
-  topLevelFailure = true;
-  topLevelFailureMessage = error.message;
+  topLevelFailureCode = error.smokeCode || "SMOKE_FAILED";
 } finally {
-  if (context) await context.close();
-  if (userDataDir) {
-    await fs.rm(userDataDir, { recursive: true, force: true });
-    if (summary.synthetic) summary.synthetic.cleanedUp = true;
-  }
   summary.finishedAt = new Date().toISOString();
   summary.pass =
-    !topLevelFailure &&
+    !topLevelFailureCode &&
     summary.checks.every((check) => check.pass) &&
-    (!summary.synthetic || summary.synthetic.cleanedUp);
+    (!summary.synthetic || (summary.synthetic.cleanedUp && !summary.synthetic.cleanupCode));
+  if (topLevelFailureCode && !summary.checks.some((check) => !check.pass)) {
+    summary.checks.push({ route: "smoke", pass: false, code: topLevelFailureCode, durationMs: 0 });
+  }
   await fs.mkdir(outDir, { recursive: true });
   await fs.writeFile(
     path.join(outDir, `promotion-smoke-${summary.mode}.json`),
@@ -234,7 +296,7 @@ try {
   );
 }
 
-if (topLevelFailureMessage) {
-  console.error(`Promotion smoke failed: ${topLevelFailureMessage}`);
+if (topLevelFailureCode) {
+  console.error(`Promotion smoke failed: ${topLevelFailureCode}`);
 }
 process.exit(summary.pass ? 0 : 1);
