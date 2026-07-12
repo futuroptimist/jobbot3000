@@ -1427,4 +1427,22 @@ test.describe("browser application tracker", () => {
       }
     },
   );
+  test("shows lifecycle diagram tab after dashboard", async ({ page }) => {
+    const navButtons = await page
+      .locator(".tracker-nav button")
+      .allTextContents();
+    expect(navButtons.slice(0, 3)).toEqual([
+      "Dashboard",
+      "Diagram",
+      "Applications",
+    ]);
+    await page.getByRole("button", { name: "Diagram" }).click();
+    await expect(page.locator('[data-view="diagram"]')).toBeVisible();
+    await expect(page.locator("[data-lifecycle-diagram]")).toContainText(
+      "Current",
+    );
+    await expect(page.locator("[data-lifecycle-diagram]")).toContainText(
+      "0/0 applications included",
+    );
+  });
 });

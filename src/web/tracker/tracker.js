@@ -26,6 +26,11 @@ import {
 } from "./metrics.js";
 import { createIndexedDbRepository } from "../storage/indexedDbRepository.js";
 import { planLifecycleReconciliation } from "./lifecycleReconciliation.js";
+import { createLifecycleDiagramView } from "./lifecycleDiagram.js";
+import {
+  buildLifecycleTimeline,
+  projectLifecycleAt,
+} from "./lifecycleProjection.js";
 
 /* canonical CSV/backup helpers are shared with spreadsheet import/export tests. */
 const ARRAY_STORES = [
@@ -128,6 +133,8 @@ const state = {
   current: null,
   detailSave: Promise.resolve(),
   reconciliationWarnings: [],
+  diagramBucketId: "current",
+  diagramView: null,
 };
 function weekBucket(value) {
   const d = day(value);
@@ -365,10 +372,12 @@ function route(v) {
     b.setAttribute("aria-current", b.dataset.route === v ? "page" : "false"),
   );
   if (v === "applications") $('[data-filter="query"]').focus();
+  if (v === "diagram") renderDiagram();
 }
 function renderNav() {
   const names = [
     ["Dashboard", "dashboard"],
+    ["Diagram", "diagram"],
     ["Applications", "applications"],
     ["Follow-ups", "follow-ups"],
     ["Contacts/Outreach", "contacts"],
@@ -603,8 +612,52 @@ function renderOutreach() {
       })
       .join("") || '<p class="muted">No outreach messages yet.</p>';
 }
+function renderDiagram() {
+  const root = $("[data-lifecycle-diagram]");
+  if (!root || !state.bundle) return;
+  const timeline = buildLifecycleTimeline(state.bundle);
+  const valid = new Set(timeline.buckets.map((bucket) => bucket.id));
+  let selectedBucketId = state.diagramBucketId || "current";
+  let fallbackAnnounced = false;
+  if (!valid.has(selectedBucketId)) {
+    selectedBucketId = "current";
+    state.diagramBucketId = "current";
+    fallbackAnnounced = true;
+  }
+  const snapshot = projectLifecycleAt(state.bundle, selectedBucketId);
+  const currentIndex = timeline.buckets.findIndex(
+    (bucket) => bucket.id === "current",
+  );
+  const selectedIndex = timeline.buckets.findIndex(
+    (bucket) => bucket.id === selectedBucketId,
+  );
+  if (!state.diagramView) {
+    state.diagramView = createLifecycleDiagramView(root, {
+      onBucketChange(bucketId) {
+        state.diagramBucketId = bucketId;
+        renderDiagram();
+      },
+    });
+  }
+  state.diagramView.update({
+    timeline,
+    snapshot,
+    selectedBucketId,
+    newerAvailable: selectedIndex >= 0 && currentIndex > selectedIndex,
+  });
+  if (fallbackAnnounced) {
+    root
+      .querySelector("[aria-live]")
+      ?.append(
+        document.createTextNode(
+          " Missing historical point; returned to Current.",
+        ),
+      );
+  }
+}
 function renderAll() {
   renderDashboard();
+  renderDiagram();
   renderList();
   renderFollowups();
   renderOutreach();
