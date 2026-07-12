@@ -26,6 +26,11 @@ import {
 } from "./metrics.js";
 import { createIndexedDbRepository } from "../storage/indexedDbRepository.js";
 import { planLifecycleReconciliation } from "./lifecycleReconciliation.js";
+import {
+  buildLifecycleTimeline,
+  projectLifecycleAt,
+} from "./lifecycleProjection.js";
+import { createLifecycleDiagramView } from "./lifecycleDiagram.js";
 
 /* canonical CSV/backup helpers are shared with spreadsheet import/export tests. */
 const ARRAY_STORES = [
@@ -128,6 +133,8 @@ const state = {
   current: null,
   detailSave: Promise.resolve(),
   reconciliationWarnings: [],
+  diagramBucketId: "current",
+  diagramView: null,
 };
 function weekBucket(value) {
   const d = day(value);
@@ -369,6 +376,7 @@ function route(v) {
 function renderNav() {
   const names = [
     ["Dashboard", "dashboard"],
+    ["Diagram", "diagram"],
     ["Applications", "applications"],
     ["Follow-ups", "follow-ups"],
     ["Contacts/Outreach", "contacts"],
@@ -605,10 +613,40 @@ function renderOutreach() {
 }
 function renderAll() {
   renderDashboard();
+  renderDiagram();
   renderList();
   renderFollowups();
   renderOutreach();
 }
+function renderDiagram() {
+  const root = $("[data-lifecycle-diagram]");
+  if (!root || !state.bundle) return;
+  if (!state.diagramView)
+    state.diagramView = createLifecycleDiagramView(root, {
+      onSelectBucket: (bucketId) => {
+        state.diagramBucketId = bucketId || "current";
+        renderDiagram();
+      },
+    });
+  const timeline = buildLifecycleTimeline(state.bundle);
+  const ids = new Set(timeline.buckets.map((bucket) => bucket.id));
+  let selectedBucketId = state.diagramBucketId || "current";
+  if (!ids.has(selectedBucketId)) {
+    selectedBucketId = "current";
+    state.diagramBucketId = "current";
+  }
+  const newerAvailable =
+    selectedBucketId !== "current" &&
+    timeline.buckets.findIndex((bucket) => bucket.id === selectedBucketId) <
+      timeline.buckets.length - 1;
+  state.diagramView.update({
+    timeline,
+    snapshot: projectLifecycleAt(state.bundle, selectedBucketId),
+    selectedBucketId,
+    newerAvailable,
+  });
+}
+
 function sortedLifecycleEvents(appId, options = {}) {
   return [...state.bundle.lifecycleEvents]
     .filter(
