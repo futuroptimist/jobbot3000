@@ -26,6 +26,8 @@ import {
 } from "./metrics.js";
 import { createIndexedDbRepository } from "../storage/indexedDbRepository.js";
 import { planLifecycleReconciliation } from "./lifecycleReconciliation.js";
+import { createLifecycleDiagramView } from "./lifecycleDiagram.js";
+import { buildLifecycleTimeline } from "./lifecycleProjection.js";
 
 /* canonical CSV/backup helpers are shared with spreadsheet import/export tests. */
 const ARRAY_STORES = [
@@ -128,6 +130,8 @@ const state = {
   current: null,
   detailSave: Promise.resolve(),
   reconciliationWarnings: [],
+  diagramBucketId: "current",
+  diagramView: null,
 };
 function weekBucket(value) {
   const d = day(value);
@@ -369,6 +373,7 @@ function route(v) {
 function renderNav() {
   const names = [
     ["Dashboard", "dashboard"],
+    ["Diagram", "diagram"],
     ["Applications", "applications"],
     ["Follow-ups", "follow-ups"],
     ["Contacts/Outreach", "contacts"],
@@ -603,9 +608,39 @@ function renderOutreach() {
       })
       .join("") || '<p class="muted">No outreach messages yet.</p>';
 }
+function renderDiagram() {
+  const root = $("[data-lifecycle-diagram]");
+  if (!root || !state.bundle) return;
+  state.diagramView ??= createLifecycleDiagramView(root);
+  const timeline = buildLifecycleTimeline(state.bundle);
+  const exists = timeline.buckets.some(
+    (bucket) => bucket.id === state.diagramBucketId,
+  );
+  if (!exists) {
+    state.diagramBucketId = "current";
+    root.dispatchEvent(
+      new CustomEvent("lifecycle-diagram-announcement", {
+        detail: {
+          message:
+            "Selected historical point is unavailable; returned to Current.",
+        },
+      }),
+    );
+  }
+  const newerAvailable =
+    state.diagramBucketId !== "current" &&
+    timeline.buckets.at(-1)?.id === "current";
+  state.diagramView.update({
+    timeline,
+    snapshot: state.bundle,
+    selectedBucketId: state.diagramBucketId,
+    newerAvailable,
+  });
+}
 function renderAll() {
   renderDashboard();
   renderList();
+  renderDiagram();
   renderFollowups();
   renderOutreach();
 }
@@ -1432,6 +1467,13 @@ function renderBuildMetadata() {
 function init() {
   renderBuildMetadata();
   renderNav();
+  $(`[data-lifecycle-diagram]`)?.addEventListener(
+    "lifecycle-diagram-bucket",
+    (event) => {
+      state.diagramBucketId = event.detail?.bucketId ?? "current";
+      renderDiagram();
+    },
+  );
   $('[data-filter="status"]').innerHTML += STATUSES.map(
     (s) => `<option>${s}</option>`,
   ).join("");

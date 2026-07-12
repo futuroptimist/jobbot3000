@@ -132,6 +132,22 @@ test.describe("browser application tracker", () => {
       .click();
     await expect(page.getByText("No applications yet")).toBeVisible();
   });
+
+  test("renders lifecycle diagram smoke coverage", async ({ page }) => {
+    await importRegressionBundle(page);
+
+    await page.getByRole("button", { name: "Diagram" }).click();
+
+    await expect(
+      page.locator("[data-lifecycle-diagram] svg[role='img']"),
+    ).toBeVisible();
+    await expect(page.getByRole("table", { name: "Origins" })).toBeVisible();
+    await expect(page.getByRole("table", { name: "Endpoints" })).toBeVisible();
+    await expect(page.locator("[data-lifecycle-diagram]")).toContainText(
+      "15/15 applications",
+    );
+  });
+
   test("previews compact CSV regression fixture without phantom interviews", async ({
     page,
   }) => {
