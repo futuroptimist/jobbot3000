@@ -1,10 +1,7 @@
 /* global document, window, ResizeObserver */
 /* eslint-disable max-len */
 import { sankey, sankeyLinkHorizontal } from "d3-sankey";
-import {
-  LIFECYCLE_DIAGRAM_TAXONOMY,
-  projectLifecycleAt,
-} from "./lifecycleProjection.js";
+import { LIFECYCLE_DIAGRAM_TAXONOMY } from "./lifecycleProjection.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const RANKS = { origin: 0, milestone: 1, endpoint: 6 };
@@ -43,13 +40,30 @@ const svgEl = (tag, attrs = {}) => {
       node.setAttribute(key, String(value));
   return node;
 };
-const debounce = (fn, ms = 80) => {
+const makeDebounce = (fn, ms = 80) => {
   let timer;
-  return (...args) => {
+  const debounced = (...args) => {
     clearTimeout(timer);
     timer = setTimeout(() => fn(...args), ms);
   };
+  debounced.clear = () => clearTimeout(timer);
+  return debounced;
 };
+const EMPTY_PROJECTION = Object.freeze({
+  bucket: Object.freeze({ id: "current", kind: "current", label: "Current" }),
+  totalApplications: 0,
+  includedApplications: 0,
+  nodes: Object.freeze([]),
+  links: Object.freeze([]),
+  paths: Object.freeze([]),
+  events: Object.freeze([]),
+  warnings: Object.freeze([]),
+  totals: Object.freeze({
+    origins: Object.freeze({}),
+    milestones: Object.freeze({}),
+    endpoints: Object.freeze({}),
+  }),
+});
 const nodeRank = (id) => {
   if (id.startsWith("origin:")) return RANKS.origin;
   if (id.startsWith("endpoint:")) return RANKS.endpoint;
@@ -65,38 +79,64 @@ const bucketValueText = (bucket) => {
   if (bucket.kind === "date") return `${bucket.label}`;
   return `Historical event at ${bucket.label}`;
 };
+const formatEventTime = (event) => {
+  if (event?.occurredAtPrecision === "date") {
+    const date = /^\d{4}-\d{2}-\d{2}/u.exec(
+      String(event.occurredAt ?? ""),
+    )?.[0];
+    return date
+      ? { label: `${date} — time not recorded`, datetime: date }
+      : { label: "Unknown date — off chronological scale" };
+  }
+  if (event?.occurredAtPrecision === "unknown" || !event?.occurredAt)
+    return { label: "Unknown date — off chronological scale" };
+  const parsed = new Date(event.occurredAt);
+  return Number.isFinite(parsed.getTime())
+    ? { label: parsed.toLocaleString(), datetime: parsed.toISOString() }
+    : { label: "Unknown date — off chronological scale" };
+};
 const formatTimestamp = (bucket, projection) => {
   if (bucket.kind === "current") {
     const known = projection.events
       .filter(
         (event) => event.occurredAtPrecision !== "unknown" && event.occurredAt,
       )
-      .map((event) => event.occurredAt)
-      .sort()
+      .sort((a, b) => String(a.occurredAt).localeCompare(String(b.occurredAt)))
       .at(-1);
     const unknown = projection.events.filter(
       (event) => event.occurredAtPrecision === "unknown",
     ).length;
+    const latest = known ? formatEventTime(known) : undefined;
     return {
-      label: `Current — latest data in this browser${known ? `, latest known event ${new Date(known).toLocaleString()}` : ""}${unknown ? `, ${unknown} unknown-time event${unknown === 1 ? "" : "s"}` : ""}`,
-      datetime: known,
+      label: `Current — latest data in this browser${latest ? `, latest known event ${latest.label}` : ""}${unknown ? `, ${unknown} unknown-time event${unknown === 1 ? "" : "s"}` : ""}`,
+      datetime: latest?.datetime,
     };
   }
   if (bucket.kind === "unknown-date")
     return { label: "Unknown date — off chronological scale" };
   if (bucket.kind === "date")
-    return { label: `${bucket.label}`, datetime: bucket.label.slice(0, 10) };
-  return {
-    label: new Date(bucket.label).toLocaleString(),
-    datetime: bucket.label,
-  };
+    return {
+      label: `${bucket.label} — time not recorded`,
+      datetime: bucket.label.slice(0, 10),
+    };
+  return formatEventTime({
+    occurredAt: bucket.label,
+    occurredAtPrecision: "instant",
+  });
 };
 const cloneProjectionForSankey = (projection) => ({
   nodes: projection.nodes
-    .map((node) => ({ ...node, rank: nodeRank(node.id) }))
+    .map((node) => ({
+      ...node,
+      applicationIds: [...(node.applicationIds ?? [])],
+      rank: nodeRank(node.id),
+    }))
     .sort(nodeSort),
   links: projection.links
-    .map((link) => ({ ...link }))
+    .map((link) => ({
+      ...link,
+      applicationIds: [...(link.applicationIds ?? [])],
+    }))
     .sort((a, b) => compare(a.id, b.id)),
 });
 
@@ -104,10 +144,12 @@ export function createLifecycleDiagramView(root, options = {}) {
   const onBucketChange = options.onBucketChange ?? (() => {});
   const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
   let selectedId = "current";
-  let projection = projectLifecycleAt({}, "current");
+  let projection = EMPTY_PROJECTION;
   let timeline = { buckets: [] };
   let selectedFeature = null;
   let resizeObserver;
+  let windowResizeHandler;
+  let lastNewerAvailable = false;
   const ids = {
     title: "lifecycle-diagram-title",
     desc: "lifecycle-diagram-desc",
@@ -180,30 +222,36 @@ export function createLifecycleDiagramView(root, options = {}) {
       ),
     );
     const tbody = el("tbody");
-    for (const row of rows)
-      tbody.append(
-        el(
-          "tr",
-          {},
-          row.map((cell, index) =>
-            el(index ? "td" : "th", {
-              scope: index ? undefined : "row",
-              textContent: cell,
-            }),
-          ),
-        ),
-      );
+    for (const row of rows) {
+      const tr = el("tr");
+      row.cells.forEach((cell, index) => {
+        const td = el(index ? "td" : "th", {
+          scope: index ? undefined : "row",
+        });
+        if (!index && row.onSelect) {
+          const button = el("button", {
+            type: "button",
+            className: "link-button diagram-select-button",
+            textContent: cell,
+            "aria-label": row.label,
+          });
+          button.addEventListener("click", row.onSelect);
+          td.append(button);
+        } else {
+          td.textContent = cell;
+        }
+        tr.append(td);
+      });
+      tbody.append(tr);
+    }
     table.append(thead, tbody);
     return el("div", { className: "table-container" }, [table]);
   };
-  const activateOnKeyboard = (event, activate) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      activate();
-    }
-  };
   const selectFeature = (feature) => {
-    selectedFeature = feature;
+    selectedFeature = {
+      ...feature,
+      applicationIds: [...(feature.applicationIds ?? [])],
+    };
     renderDetails();
     renderSvg();
   };
@@ -223,7 +271,7 @@ export function createLifecycleDiagramView(root, options = {}) {
     details.append(
       el("h3", { textContent: selectedFeature.label }),
       el("p", {
-        textContent: `${ids.length} application${ids.length === 1 ? "" : "s"} (${pct(ids.length, total)}). Observed ${ids.length}; inferred ${projection.warnings.filter((w) => ids.includes(w.applicationId) && w.code.includes("inferred")).length}. Date range: ${projection.bucket.label}.`,
+        textContent: `${ids.length} application${ids.length === 1 ? "" : "s"} (${pct(ids.length, total)}). Observed ${ids.length}; inferred ${projection.warnings.filter((w) => ids.includes(w.applicationId) && w.code.includes("inferred")).length}. Date range: ${projection.bucket.kind === "date" ? `${projection.bucket.label} — time not recorded` : projection.bucket.kind === "current" ? `through ${projection.bucket.label}` : projection.bucket.label}.`,
       }),
     );
     const d = el("details", {}, [
@@ -261,7 +309,17 @@ export function createLifecycleDiagramView(root, options = {}) {
         [16, 20],
         [width - 24, height - 30],
       ]);
-    layout(graph);
+    try {
+      layout(graph);
+    } catch {
+      scroll.append(
+        el("p", {
+          className: "muted",
+          textContent: "Unable to lay out lifecycle diagram.",
+        }),
+      );
+      return;
+    }
     const columnWidth = (width - 64) / 6;
     for (const node of graph.nodes) {
       const fixedX = 16 + node.rank * columnWidth;
@@ -269,6 +327,12 @@ export function createLifecycleDiagramView(root, options = {}) {
       node.x1 = fixedX + 18;
     }
     layout.update(graph);
+    const finiteNode = (node) =>
+      [node.x0, node.x1, node.y0, node.y1].every(Number.isFinite);
+    const finiteLink = (link) =>
+      finiteNode(link.source) &&
+      finiteNode(link.target) &&
+      Number.isFinite(link.width ?? 0);
     const svg = svgEl("svg", {
       role: "img",
       "aria-labelledby": `${ids.title} ${ids.desc}`,
@@ -283,16 +347,17 @@ export function createLifecycleDiagramView(root, options = {}) {
     svg.querySelector("desc").textContent =
       "Application counts flowing from origin through milestones to endpoints. Equivalent tables follow.";
     const linkG = svgEl("g", { fill: "none", strokeOpacity: "0.45" });
-    for (const link of graph.links.filter((l) => l.value > 0)) {
+    for (const link of graph.links.filter(
+      (l) => l.value > 0 && finiteLink(l),
+    )) {
       const linkLabel = `${TAXONOMY.get(link.source.id)?.label ?? link.source.id} to ${TAXONOMY.get(link.target.id)?.label ?? link.target.id}: ${link.value}`;
+      const pathData = sankeyLinkHorizontal()(link);
+      if (!pathData || /NaN|Infinity/u.test(pathData)) continue;
       const path = svgEl("path", {
-        d: sankeyLinkHorizontal()(link),
+        d: pathData,
         stroke: selectedFeature?.id === link.id ? "#fbbf24" : "#38bdf8",
         "stroke-width": Math.max(3, link.width || 1),
         "data-diagram-link": link.id,
-        tabindex: "0",
-        role: "button",
-        "aria-label": `Select flow ${linkLabel}`,
       });
       path.append(svgEl("title"));
       path.querySelector("title").textContent = linkLabel;
@@ -303,9 +368,6 @@ export function createLifecycleDiagramView(root, options = {}) {
           applicationIds: link.applicationIds,
         });
       path.addEventListener("click", selectLink);
-      path.addEventListener("keydown", (event) =>
-        activateOnKeyboard(event, selectLink),
-      );
       linkG.append(path);
     }
     svg.append(linkG);
@@ -315,9 +377,6 @@ export function createLifecycleDiagramView(root, options = {}) {
       const nodeLabel = `${node.label}: ${node.total}`;
       const g = svgEl("g", {
         "data-diagram-node": node.id,
-        tabindex: "0",
-        role: "button",
-        "aria-label": `Select node ${nodeLabel}`,
       });
       const rect = svgEl("rect", {
         x: node.x0,
@@ -330,9 +389,6 @@ export function createLifecycleDiagramView(root, options = {}) {
       });
       const selectNode = () => selectFeature({ id: node.id, label: nodeLabel });
       g.addEventListener("click", selectNode);
-      g.addEventListener("keydown", (event) =>
-        activateOnKeyboard(event, selectNode),
-      );
       const label = svgEl("text", {
         x: node.x0 < width / 2 ? node.x1 + 6 : node.x0 - 6,
         y: (node.y0 + node.y1) / 2,
@@ -348,74 +404,80 @@ export function createLifecycleDiagramView(root, options = {}) {
   };
   const renderTables = () => {
     const total = projection.includedApplications;
-    const originRows = Object.entries(projection.totals.origins).map(
-      ([id, value]) => [
-        TAXONOMY.get(`origin:${id}`)?.label ?? id,
-        String(value),
-        pct(value, total),
-      ],
+    const makeNodeRows = (entries, namespace) =>
+      Object.entries(entries).map(([id, value]) => {
+        const nodeId = `${namespace}:${id}`;
+        const label = TAXONOMY.get(nodeId)?.label ?? id;
+        const applicationIds = projection.paths
+          .filter((path) => path.nodeIds.includes(nodeId))
+          .map((path) => path.applicationId);
+        return {
+          cells: [label, String(value), pct(value, total)],
+          label: `Select ${label}`,
+          onSelect: () =>
+            selectFeature({
+              id: nodeId,
+              label: `${label}: ${value}`,
+              applicationIds,
+            }),
+        };
+      });
+    const originRows = makeNodeRows(projection.totals.origins, "origin");
+    const milestoneRows = makeNodeRows(
+      projection.totals.milestones,
+      "milestone",
     );
-    const endpointRows = Object.entries(projection.totals.endpoints).map(
-      ([id, value]) => [
-        TAXONOMY.get(`endpoint:${id}`)?.label ?? id,
-        String(value),
-        pct(value, total),
+    const endpointRows = makeNodeRows(projection.totals.endpoints, "endpoint");
+    const linkRows = projection.links.map((link) => {
+      const from = TAXONOMY.get(link.source)?.label ?? link.source;
+      const to = TAXONOMY.get(link.target)?.label ?? link.target;
+      const flowLabel = `${from} to ${to}`;
+      return {
+        cells: [flowLabel, String(link.value), pct(link.value, total)],
+        label: `Select flow ${flowLabel}`,
+        onSelect: () =>
+          selectFeature({
+            id: link.id,
+            label: `${flowLabel}: ${link.value}`,
+            applicationIds: link.applicationIds,
+          }),
+      };
+    });
+    const eventRows = projection.events.map((event) => ({
+      cells: [
+        event.id,
+        event.applicationId,
+        event.eventType,
+        event.occurredAt ?? "Unknown",
       ],
-    );
-    const linkRows = projection.links.map((link) => [
-      TAXONOMY.get(link.source)?.label ?? link.source,
-      TAXONOMY.get(link.target)?.label ?? link.target,
-      String(link.value),
-    ]);
-    const eventRows = projection.events.map((event) => [
-      event.id,
-      event.applicationId,
-      event.eventType,
-      event.occurredAt ?? "Unknown",
-    ]);
+    }));
     tables.textContent = "";
     tables.append(
       renderTable("Origins", ["Origin", "Count", "Percentage"], originRows),
+      renderTable(
+        "Milestones",
+        ["Milestone", "Count", "Percentage"],
+        milestoneRows,
+      ),
       renderTable(
         "Endpoints",
         ["Endpoint", "Count", "Percentage"],
         endpointRows,
       ),
-      renderTable("Flows", ["From", "To", "Application count"], linkRows),
+      renderTable(
+        "Flows",
+        ["Flow", "Application count", "Percentage"],
+        linkRows,
+      ),
       renderTable(
         "Selected-boundary events",
         ["Event", "Application", "Type", "Timestamp"],
         eventRows,
       ),
     );
-    tables.querySelectorAll("tbody tr").forEach((row, index) => {
-      if (
-        index >= originRows.length + endpointRows.length &&
-        index < originRows.length + endpointRows.length + linkRows.length
-      ) {
-        const link =
-          projection.links[index - originRows.length - endpointRows.length];
-        const flowLabel = `${linkRows[index - originRows.length - endpointRows.length][0]} to ${linkRows[index - originRows.length - endpointRows.length][1]}`;
-        row.tabIndex = 0;
-        row.setAttribute("role", "button");
-        row.setAttribute("aria-label", `Select flow ${flowLabel}`);
-        row.addEventListener("click", () =>
-          selectFeature({
-            id: link.id,
-            label: flowLabel,
-            applicationIds: link.applicationIds,
-          }),
-        );
-        row.addEventListener("keydown", (e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            row.click();
-          }
-        });
-      }
-    });
   };
-  const render = (newerAvailable = false) => {
+  const render = (newerAvailable = lastNewerAvailable) => {
+    lastNewerAvailable = newerAvailable;
     const buckets = timeline.buckets?.length
       ? timeline.buckets
       : [{ id: "current", kind: "current", label: "Current" }];
@@ -442,6 +504,13 @@ export function createLifecycleDiagramView(root, options = {}) {
         : document.createTextNode(ts.label),
     );
     live.textContent = `${badge.textContent}. ${count.textContent}. ${bucketValueText(projection.bucket)}`;
+    const knownBoundaryEvents = projection.events.filter(
+      (event) => event.occurredAtPrecision !== "unknown" && event.occurredAt,
+    );
+    const sharedBoundary = knownBoundaryEvents.length > 1;
+    simultaneous.querySelector("summary").textContent = sharedBoundary
+      ? "Simultaneous selected-boundary events"
+      : "Selected-boundary events";
     simultaneous.querySelector("[data-boundary-events]").textContent =
       projection.events.map((e) => `${e.id}: ${e.eventType}`).join("; ") ||
       "No boundary events.";
@@ -457,10 +526,15 @@ export function createLifecycleDiagramView(root, options = {}) {
   next.addEventListener("click", () => changeToIndex(Number(range.value) + 1));
   current.addEventListener("click", () => onBucketChange("current"));
   range.addEventListener("input", () => changeToIndex(Number(range.value)));
+  const debouncedResize = makeDebounce(() => render(lastNewerAvailable));
   resizeObserver = window.ResizeObserver
-    ? new ResizeObserver(debounce(() => render()))
+    ? new ResizeObserver(debouncedResize)
     : undefined;
-  resizeObserver?.observe(root);
+  if (resizeObserver) resizeObserver.observe(root);
+  else {
+    windowResizeHandler = debouncedResize;
+    window.addEventListener("resize", windowResizeHandler);
+  }
   return {
     update({
       timeline: nextTimeline,
@@ -468,14 +542,20 @@ export function createLifecycleDiagramView(root, options = {}) {
       selectedBucketId = "current",
       newerAvailable = false,
     }) {
+      const nextProjection = snapshot ?? EMPTY_PROJECTION;
+      const snapshotChanged =
+        projection !== nextProjection || selectedId !== selectedBucketId;
       timeline = nextTimeline ?? { buckets: [] };
       selectedId = selectedBucketId;
-      projection = snapshot ?? projectLifecycleAt({}, selectedId);
-      selectedFeature = null;
+      projection = nextProjection;
+      if (snapshotChanged) selectedFeature = null;
       render(newerAvailable);
     },
     destroy() {
       resizeObserver?.disconnect();
+      if (windowResizeHandler)
+        window.removeEventListener("resize", windowResizeHandler);
+      debouncedResize.clear();
       root.textContent = "";
     },
   };

@@ -183,15 +183,15 @@ describe("lifecycle diagram view", () => {
         tr.textContent.includes("Application submitted") &&
         tr.textContent.includes("Technical interview"),
     );
-    expect(row.getAttribute("role")).toBe("button");
-    expect(row.getAttribute("aria-label")).toContain("Select flow");
-    row.click();
+    const button = row.querySelector("button[aria-label^='Select flow']");
+    expect(button).toBeTruthy();
+    button.click();
     expect(root.querySelector("[data-diagram-details]").textContent).toContain(
       "1 application",
     );
   });
 
-  it("makes SVG flows and nodes keyboard operable", () => {
+  it("provides semantic button controls for flows and nodes", () => {
     const b = bundle(
       [app("a")],
       [
@@ -200,23 +200,22 @@ describe("lifecycle diagram view", () => {
       ],
     );
     const { root } = render(b);
-    const link = root.querySelector("[data-diagram-link]");
-    const node = root.querySelector("[data-diagram-node]");
-    expect(link.getAttribute("tabindex")).toBe("0");
-    expect(link.getAttribute("role")).toBe("button");
-    expect(link.getAttribute("aria-label")).toContain("Select flow");
-    expect(node.getAttribute("tabindex")).toBe("0");
-    expect(node.getAttribute("role")).toBe("button");
-    expect(node.getAttribute("aria-label")).toContain("Select node");
-    link.dispatchEvent(
+    expect(root.querySelector("[data-diagram-link]")).toBeTruthy();
+    expect(root.querySelector("[data-diagram-node]")).toBeTruthy();
+    const flowButton = root.querySelector("button[aria-label^='Select flow']");
+    const nodeButton = root.querySelector(
+      "button[aria-label='Select Application submitted']",
+    );
+    expect(flowButton).toBeTruthy();
+    expect(nodeButton).toBeTruthy();
+    flowButton.dispatchEvent(
       new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
     );
+    flowButton.click();
     expect(root.querySelector("[data-diagram-details]").textContent).toContain(
       "1 application",
     );
-    node.dispatchEvent(
-      new window.KeyboardEvent("keydown", { key: " ", bubbles: true }),
-    );
+    nodeButton.click();
     expect(root.querySelector("[data-diagram-details]").textContent).toContain(
       "Application submitted",
     );

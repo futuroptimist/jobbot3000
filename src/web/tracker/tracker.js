@@ -625,11 +625,14 @@ function renderDiagram() {
     fallbackAnnounced = true;
   }
   const snapshot = projectLifecycleAt(state.bundle, selectedBucketId);
-  const currentIndex = timeline.buckets.findIndex(
-    (bucket) => bucket.id === "current",
-  );
   const selectedIndex = timeline.buckets.findIndex(
     (bucket) => bucket.id === selectedBucketId,
+  );
+  const newerAvailable = timeline.buckets.some(
+    (bucket, index) =>
+      index > selectedIndex &&
+      bucket.id !== "current" &&
+      (bucket.eventIds?.length ?? 0) > 0,
   );
   if (!state.diagramView) {
     state.diagramView = createLifecycleDiagramView(root, {
@@ -643,7 +646,7 @@ function renderDiagram() {
     timeline,
     snapshot,
     selectedBucketId,
-    newerAvailable: selectedIndex >= 0 && currentIndex > selectedIndex,
+    newerAvailable,
   });
   if (fallbackAnnounced) {
     document
