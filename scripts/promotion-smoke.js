@@ -16,9 +16,22 @@ if (!baseUrlArg) {
 }
 
 const baseUrl = new URL(baseUrlArg);
-baseUrl.pathname = baseUrl.pathname.replace(/\/$/, "");
 baseUrl.search = "";
 baseUrl.hash = "";
+const basePath = baseUrl.pathname.replace(/\/$/, "");
+const baseDirectoryUrl = new URL(baseUrl.toString());
+baseDirectoryUrl.pathname = `${basePath}/`;
+
+if (
+  synthetic &&
+  process.env.JOBBOT_ALLOW_SYNTHETIC_PROMOTION !== "1" &&
+  !["localhost", "127.0.0.1", "::1"].includes(baseUrl.hostname)
+) {
+  console.error(
+    "Refusing --synthetic against a non-local host without JOBBOT_ALLOW_SYNTHETIC_PROMOTION=1.",
+  );
+  process.exit(2);
+}
 
 const summary = {
   mode: synthetic ? "staging-synthetic" : "readonly",
@@ -30,9 +43,21 @@ const summary = {
     : undefined,
 };
 
+let topLevelFailure = false;
+let topLevelFailureMessage = "";
+
 const safeRoute = (url) => {
   const parsed = new URL(url);
   return `${parsed.pathname}${parsed.search}`;
+};
+
+const resolveSmokeUrl = (route) => {
+  if (route.startsWith("/")) {
+    const url = new URL(baseUrl.toString());
+    url.pathname = `${basePath}${route}`;
+    return url;
+  }
+  return new URL(route, baseDirectoryUrl);
 };
 
 async function record(route, fn) {
@@ -43,12 +68,12 @@ async function record(route, fn) {
     Object.assign(entry, result);
     entry.pass = true;
   } catch (error) {
-    entry.error = error.message;
+    if (error.smokeMeta) Object.assign(entry, error.smokeMeta);
   } finally {
     entry.durationMs = Math.round(performance.now() - start);
     summary.checks.push(entry);
   }
-  if (!entry.pass) throw new Error(`${route}: ${entry.error}`);
+  if (!entry.pass) throw new Error(route);
   return entry;
 }
 
@@ -59,7 +84,7 @@ async function responseCheck(
   { requireOk = true } = {},
 ) {
   return await record(route, async () => {
-    const response = await request.get(new URL(route, baseUrl).toString(), {
+    const response = await request.get(resolveSmokeUrl(route).toString(), {
       maxRedirects: 2,
     });
     const headers = response.headers();
@@ -67,8 +92,16 @@ async function responseCheck(
     const status = response.status();
     const contentType = headers["content-type"] ?? "";
     const result = { status, contentType, finalUrl: safeRoute(finalUrl) };
-    if (requireOk && !response.ok()) throw new Error(`HTTP ${status}`);
-    await predicate({ response, headers, status, contentType, finalUrl });
+    const throwWithMeta = (error) => {
+      error.smokeMeta = result;
+      throw error;
+    };
+    if (requireOk && !response.ok()) throwWithMeta(new Error(`HTTP ${status}`));
+    try {
+      await predicate({ response, headers, status, contentType, finalUrl });
+    } catch (error) {
+      throwWithMeta(error);
+    }
     return result;
   });
 }
@@ -127,12 +160,21 @@ try {
     }
   });
 
-  await page.goto(baseUrl.toString(), { waitUntil: "domcontentloaded" });
-  const assetPath = await page
-    .locator('link[rel="stylesheet"][href], script[src]')
-    .first()
-    .evaluate((el) => el.getAttribute("href") || el.getAttribute("src"));
-  if (!assetPath) throw new Error("No JS or CSS asset reference found");
+  await page.goto(baseDirectoryUrl.toString(), { waitUntil: "domcontentloaded" });
+  let assetPath;
+  await record("asset-reference", async () => {
+    const value = await page
+      .locator('link[rel="stylesheet"][href], script[src]')
+      .first()
+      .evaluate((el) => el.getAttribute("href") || el.getAttribute("src"));
+    if (!value) throw new Error("No JS or CSS asset reference found");
+    assetPath = value;
+    return {
+      status: 200,
+      contentType: "text/html",
+      finalUrl: safeRoute(page.url()),
+    };
+  });
   await responseCheck(request, assetPath, async ({ contentType }) => {
     if (!/(javascript|css)/.test(contentType))
       throw new Error("asset content type mismatch");
@@ -140,7 +182,7 @@ try {
 
   if (synthetic) {
     await record("/tracker#synthetic-journey", async () => {
-      await page.goto(new URL("/tracker", baseUrl).toString(), {
+      await page.goto(resolveSmokeUrl("/tracker").toString(), {
         waitUntil: "domcontentloaded",
       });
       await page.getByRole("button", { name: "Applications" }).click();
@@ -171,6 +213,9 @@ try {
       };
     });
   }
+} catch (error) {
+  topLevelFailure = true;
+  topLevelFailureMessage = error.message;
 } finally {
   if (context) await context.close();
   if (userDataDir) {
@@ -179,6 +224,7 @@ try {
   }
   summary.finishedAt = new Date().toISOString();
   summary.pass =
+    !topLevelFailure &&
     summary.checks.every((check) => check.pass) &&
     (!summary.synthetic || summary.synthetic.cleanedUp);
   await fs.mkdir(outDir, { recursive: true });
@@ -188,4 +234,7 @@ try {
   );
 }
 
+if (topLevelFailureMessage) {
+  console.error(`Promotion smoke failed: ${topLevelFailureMessage}`);
+}
 process.exit(summary.pass ? 0 : 1);

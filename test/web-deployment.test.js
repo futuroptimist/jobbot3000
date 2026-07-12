@@ -107,6 +107,17 @@ describe("web deployment artifacts", () => {
       "node scripts/promotion-smoke.js",
     );
 
+    const promotionSmoke = await readFile(
+      path.join(repoRoot, "scripts", "promotion-smoke.js"),
+      "utf8",
+    );
+    expect(promotionSmoke).toContain("const resolveSmokeUrl = (route) =>");
+    expect(promotionSmoke).toContain("`${basePath}${route}`");
+    expect(promotionSmoke).toContain("JOBBOT_ALLOW_SYNTHETIC_PROMOTION");
+    expect(promotionSmoke).toContain("topLevelFailure");
+    expect(promotionSmoke).toContain("error.smokeMeta");
+    expect(promotionSmoke).not.toContain("entry.error");
+
     const staticServer = await readFile(
       path.join(repoRoot, "scripts", "static-server.js"),
       "utf8",
