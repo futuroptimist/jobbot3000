@@ -348,4 +348,62 @@ describe("lifecycle diagram view", () => {
     );
     view.destroy();
   });
+
+  it("renders warning summary from supplied P4 warning codes", () => {
+    const root = setup();
+    const view = createLifecycleDiagramView(root);
+    const baseSnapshot = {
+      bucket: { id: "current", kind: "current", label: "Current" },
+      totalApplications: 0,
+      includedApplications: 0,
+      nodes: [],
+      links: [],
+      paths: [],
+      totals: { origins: {}, milestones: {}, endpoints: {} },
+      warnings: [],
+      events: [],
+      warningCounts: {},
+    };
+
+    view.update({
+      timeline: {
+        buckets: [{ id: "current", kind: "current", label: "Current" }],
+      },
+      snapshot: {
+        ...baseSnapshot,
+        warningCounts: {
+          inferred_event: 2,
+          inferred_origin: 3,
+          invalid_timestamp: 5,
+          status_mismatch: 7,
+          regressive_history: 11,
+        },
+        events: [
+          { id: "unknown", occurredAtPrecision: "unknown" },
+          { id: "legacy-dash", occurredAtPrecision: "legacy-placeholder" },
+          {
+            id: "legacy-underscore",
+            occurredAtPrecision: "legacy_placeholder",
+          },
+          { id: "date", occurredAtPrecision: "date" },
+        ],
+      },
+      selectedBucketId: "current",
+    });
+
+    expect(root.querySelector("[data-diagram-details]").textContent).toContain(
+      "Warnings: inferred history 2; unknown origin/time 11; status mismatch 7; regression 11.",
+    );
+
+    view.update({
+      timeline: {
+        buckets: [{ id: "current", kind: "current", label: "Current" }],
+      },
+      snapshot: baseSnapshot,
+      selectedBucketId: "current",
+    });
+    expect(root.querySelector("[data-diagram-details]").textContent).toContain(
+      "Warnings: inferred history 0; unknown origin/time 0; status mismatch 0; regression 0.",
+    );
+  });
 });

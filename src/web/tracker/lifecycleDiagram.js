@@ -297,7 +297,10 @@ export function createLifecycleDiagramView(root, options = {}) {
   const renderDetails = () => {
     const total = projection.includedApplications || 0;
     const warningCounts = projection.warningCounts ?? {};
-    const warningSummary = `Warnings: inferred history ${warningCounts.inferred_history ?? 0}; unknown origin/time ${(warningCounts.unknown_origin ?? 0) + (warningCounts.invalid_timestamp ?? 0) + (warningCounts.unknown_timestamp ?? 0)}; status mismatch ${warningCounts.status_endpoint_mismatch ?? 0}; regression ${warningCounts.regression ?? 0}.`;
+    const unknownTimeEvents = (projection.events ?? []).filter((event) =>
+      isUnknownPrecision(event.occurredAtPrecision),
+    ).length;
+    const warningSummary = `Warnings: inferred history ${warningCounts.inferred_event ?? 0}; unknown origin/time ${(warningCounts.inferred_origin ?? 0) + (warningCounts.invalid_timestamp ?? 0) + unknownTimeEvents}; status mismatch ${warningCounts.status_mismatch ?? 0}; regression ${warningCounts.regressive_history ?? 0}.`;
     if (!selectedFeature) {
       details.textContent = `Select a node or flow row for counts, percentages, and affected applications. ${warningSummary}`;
       return;
