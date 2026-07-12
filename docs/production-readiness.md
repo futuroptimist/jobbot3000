@@ -73,11 +73,15 @@ Secrets, PVCs, logs, repo fixtures, or public object storage.
 4. If data was cleared or replaced locally, restore the last known-good JSON or
    NDJSON backup through the browser UI.
 
+## Observability
+
+See [Observability Contract](observability.md) for blackbox promotion checks, Kubernetes resource signals, staging-only synthetic journeys, and privacy boundaries.
+
 ## Verification checklist
 
 - `npm ci`, `npm run lint`, `npm run typecheck`, `npm run test:ci`, and
   `npm run build` pass.
-- Container smoke covers `/`, `/tracker`, `/healthz`, and `/livez`.
+- Read-only promotion smoke covers `/`, `/tracker`, `/healthz`, `/livez`, the web manifest, and a referenced JS/CSS asset.
 - Helm lint/template tests confirm probes, image repository, and no user-data PVC
   or Secret defaults.
 - No real data appears in fixtures, chart values, `.env`, Docker context, or

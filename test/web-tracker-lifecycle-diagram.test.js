@@ -228,6 +228,60 @@ describe("lifecycle diagram view", () => {
     );
   });
 
+  it("summarizes warnings from P4 codes and treats absent keys as zero", () => {
+    const root = setup();
+    const view = createLifecycleDiagramView(root);
+    const empty = projectLifecycleAt(bundle(), "current");
+    const timeline = buildLifecycleTimeline(bundle());
+    const snapshot = {
+      ...empty,
+      warningCounts: {
+        inferred_event: 2,
+        inferred_origin: 3,
+        invalid_timestamp: 5,
+        status_mismatch: 7,
+        regressive_history: 11,
+      },
+      events: [
+        {
+          id: "unknown",
+          applicationId: "a",
+          eventType: "application_submitted",
+          occurredAt: "unknown",
+          occurredAtPrecision: "unknown",
+        },
+        {
+          id: "legacy-dash",
+          applicationId: "b",
+          eventType: "application_submitted",
+          occurredAt: "unknown",
+          occurredAtPrecision: "legacy-placeholder",
+        },
+        {
+          id: "legacy-underscore",
+          applicationId: "c",
+          eventType: "application_submitted",
+          occurredAt: "unknown",
+          occurredAtPrecision: "legacy_placeholder",
+        },
+      ],
+    };
+
+    view.update({ timeline, snapshot, selectedBucketId: "current" });
+    expect(root.querySelector("[data-diagram-details]").textContent).toContain(
+      "Warnings: inferred history 2; unknown origin/time 11; status mismatch 7; regression 11.",
+    );
+
+    view.update({
+      timeline,
+      snapshot: { ...empty, warningCounts: {}, events: [] },
+      selectedBucketId: "current",
+    });
+    expect(root.querySelector("[data-diagram-details]").textContent).toContain(
+      "Warnings: inferred history 0; unknown origin/time 0; status mismatch 0; regression 0.",
+    );
+  });
+
   it("clears selected flow details when the snapshot changes", () => {
     const b = bundle(
       [app("a")],

@@ -1,10 +1,102 @@
+import http from "node:http";
+import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { readFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { describe, it, expect } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
+
+function runPromotionSmoke(baseUrl) {
+  return new Promise((resolve) => {
+    const child = spawn("node", ["scripts/promotion-smoke.js", baseUrl], {
+      cwd: repoRoot,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("close", (code) => resolve({ code, stdout, stderr }));
+  });
+}
+
+function startPrefixedSmokeServer({
+  badInvalidHealth = false,
+  badTrackerRedirect = false,
+  badManifestStartUrl = false,
+} = {}) {
+  const rootHtml = [
+    "<!doctype html><h1>Browser-only application tracker</h1>",
+    '<p>static/browser-only</p><link rel="stylesheet" href="assets/app.css">',
+  ].join("");
+  const trackerHtml = [
+    "<!doctype html><h1>Application tracker</h1>",
+    '<script id="jobbot-build-metadata" type="application/json">{}</script>',
+  ].join("");
+  const health = JSON.stringify({
+    status: "ok",
+    mode: "static",
+    persistence: "browser-indexeddb",
+  });
+  const server = http.createServer((req, res) => {
+    const url = new URL(req.url, "http://127.0.0.1");
+    if (badTrackerRedirect && url.pathname === "/jobbot/tracker") {
+      res.writeHead(302, { location: "/login?token=secret" });
+      res.end();
+      return;
+    }
+    if (url.pathname === "/jobbot/" || url.pathname === "/jobbot") {
+      res.writeHead(200, { "content-type": "text/html" });
+      res.end(rootHtml);
+      return;
+    }
+    if (url.pathname === "/jobbot/tracker") {
+      res.writeHead(200, { "content-type": "text/html" });
+      res.end(trackerHtml);
+      return;
+    }
+    if (["/jobbot/healthz", "/jobbot/livez"].includes(url.pathname)) {
+      res.writeHead(200, {
+        "content-type": "application/json",
+        "cache-control": "no-store",
+      });
+      res.end(health);
+      return;
+    }
+    if (url.pathname === "/jobbot/healthz/not-real") {
+      res.writeHead(404, { "content-type": badInvalidHealth ? "application/json" : "text/html" });
+      res.end(badInvalidHealth ? health : "not found");
+      return;
+    }
+    if (url.pathname === "/jobbot/manifest.webmanifest") {
+      res.writeHead(200, { "content-type": "application/manifest+json" });
+      res.end(JSON.stringify({
+        name: "jobbot3000",
+        start_url: badManifestStartUrl ? "/tracker" : "/jobbot/tracker",
+      }));
+      return;
+    }
+    if (url.pathname === "/jobbot/assets/app.css") {
+      res.writeHead(200, { "content-type": "text/css" });
+      res.end("body{}");
+      return;
+    }
+    res.writeHead(404, { "content-type": "text/html" });
+    res.end("not found");
+  });
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      resolve({
+        baseUrl: `http://127.0.0.1:${address.port}/jobbot/?private=secret#frag`,
+        close: () => new Promise((done) => server.close(done)),
+      });
+    });
+  });
+}
+
 
 describe("web deployment artifacts", () => {
   it("ships a Dockerfile for the web server", async () => {
@@ -103,6 +195,31 @@ describe("web deployment artifacts", () => {
     expect(packageJson.scripts["smoke:container"]).toBe(
       "bash scripts/smoke-container.sh",
     );
+    expect(packageJson.scripts["smoke:promotion"]).toBe(
+      "node scripts/promotion-smoke.js",
+    );
+
+    const promotionSmoke = await readFile(
+      path.join(repoRoot, "scripts", "promotion-smoke.js"),
+      "utf8",
+    );
+    expect(promotionSmoke).toContain("const resolveSmokeUrl = (route) =>");
+    expect(promotionSmoke).toContain("expectedBasePath");
+    expect(promotionSmoke).toContain("pathWithinExpectedBase");
+    expect(promotionSmoke).toContain("REDIRECT_ESCAPED_BASE_PATH");
+    expect(promotionSmoke).toContain("INVALID_HEALTH_BODY_FALLBACK");
+    expect(promotionSmoke).toContain("topLevelFailureCode");
+    expect(promotionSmoke).toContain("await import(\"playwright\")");
+    expect(promotionSmoke).not.toContain("import { chromium } from \"playwright\"");
+    expect(promotionSmoke).not.toContain("entry.error");
+    expect(promotionSmoke).not.toContain("error.message");
+
+    const smokeContainer = await readFile(
+      path.join(repoRoot, "scripts", "smoke-container.sh"),
+      "utf8",
+    );
+    expect(smokeContainer).toContain("npm run smoke:promotion --");
+    expect(smokeContainer).not.toContain("--synthetic");
 
     const staticServer = await readFile(
       path.join(repoRoot, "scripts", "static-server.js"),
@@ -121,8 +238,9 @@ describe("web deployment artifacts", () => {
       'app.get("/manifest.webmanifest", sendNoStoreFile("manifest.webmanifest"))',
     );
     expect(staticServer).toContain(
-      'res.setHeader("Cache-Control", "no-store")',
+      '.set("Cache-Control", "no-store")',
     );
+    expect(staticServer).toContain('res.setHeader("Cache-Control", "no-store")');
     expect(staticServer).not.toContain("immutable");
     expect(staticServer).toContain("Content-Security-Policy");
     expect(staticServer).not.toContain("/commands");
@@ -131,6 +249,113 @@ describe("web deployment artifacts", () => {
     expect(staticServer).not.toMatch(
       /JOBBOT_(GREENHOUSE|LEVER|SMARTRECRUITERS|WORKABLE).*TOKEN/,
     );
+  });
+
+
+
+  it("runs promotion smoke safely against path-prefixed deployments", async () => {
+    await rm(
+      path.join(repoRoot, "test-results", "promotion-smoke-readonly.json"),
+      { force: true },
+    );
+    const server = await startPrefixedSmokeServer();
+    try {
+      const result = await runPromotionSmoke(server.baseUrl);
+      expect(result).toMatchObject({ code: 0 });
+      const summary = JSON.parse(
+        await readFile(
+          path.join(repoRoot, "test-results", "promotion-smoke-readonly.json"),
+          "utf8",
+        ),
+      );
+      expect(summary.pass).toBe(true);
+      expect(summary.baseUrl).toMatch(/\/jobbot\/$/);
+      expect(summary.baseUrl).not.toContain("private=secret");
+      expect(summary.checks.map((check) => check.finalUrl).filter(Boolean)).toEqual(
+        expect.arrayContaining([
+          expect.stringMatching(/\/jobbot\/$/),
+          expect.stringMatching(/\/jobbot\/tracker$/),
+          expect.stringMatching(/\/jobbot\/assets\/app\.css$/),
+        ]),
+      );
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("writes failed privacy-safe summaries for bad smoke responses", async () => {
+    await rm(
+      path.join(repoRoot, "test-results", "promotion-smoke-readonly.json"),
+      { force: true },
+    );
+    const invalidHealthServer = await startPrefixedSmokeServer({ badInvalidHealth: true });
+    try {
+      const result = await runPromotionSmoke(invalidHealthServer.baseUrl);
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain("Promotion smoke failed:");
+      const summaryText = await readFile(
+        path.join(repoRoot, "test-results", "promotion-smoke-readonly.json"),
+        "utf8",
+      );
+      expect(summaryText).not.toContain("private=secret");
+      expect(summaryText).not.toContain("Synthetic Smoke");
+      expect(summaryText).not.toContain("Error:");
+      const summary = JSON.parse(summaryText);
+      expect(summary.pass).toBe(false);
+      expect(
+        summary.checks.some(
+          (check) => check.code === "INVALID_HEALTH_JSON_FALLBACK",
+        ),
+      ).toBe(true);
+    } finally {
+      await invalidHealthServer.close();
+    }
+
+    const redirectServer = await startPrefixedSmokeServer({
+      badTrackerRedirect: true,
+    });
+    try {
+      const result = await runPromotionSmoke(redirectServer.baseUrl);
+      expect(result.code).toBe(1);
+      const summary = JSON.parse(
+        await readFile(
+          path.join(repoRoot, "test-results", "promotion-smoke-readonly.json"),
+          "utf8",
+        ),
+      );
+      expect(summary.pass).toBe(false);
+      expect(
+        summary.checks.some(
+          (check) => check.code === "REDIRECT_ESCAPED_BASE_PATH",
+        ),
+      ).toBe(true);
+      expect(JSON.stringify(summary)).not.toContain("token=secret");
+    } finally {
+      await redirectServer.close();
+    }
+
+    const manifestServer = await startPrefixedSmokeServer({
+      badManifestStartUrl: true,
+    });
+    try {
+      const result = await runPromotionSmoke(manifestServer.baseUrl);
+      expect(result.code).toBe(1);
+      const summaryText = await readFile(
+        path.join(repoRoot, "test-results", "promotion-smoke-readonly.json"),
+        "utf8",
+      );
+      expect(summaryText).not.toContain("private=secret");
+      const summary = JSON.parse(summaryText);
+      expect(summary.pass).toBe(false);
+      expect(
+        summary.checks.some(
+          (check) => check.code === "MANIFEST_START_URL_ESCAPED_BASE_PATH",
+        ),
+      ).toBe(true);
+    } finally {
+      await manifestServer.close();
+    }
+
   });
 
   it("documents static privacy boundaries and IndexedDB backup guidance", async () => {
