@@ -196,6 +196,12 @@ export function createLifecycleDiagramView(root, options = {}) {
     table.append(thead, tbody);
     return el("div", { className: "table-container" }, [table]);
   };
+  const activateOnKeyboard = (event, activate) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      activate();
+    }
+  };
   const selectFeature = (feature) => {
     selectedFeature = feature;
     renderDetails();
@@ -278,21 +284,27 @@ export function createLifecycleDiagramView(root, options = {}) {
       "Application counts flowing from origin through milestones to endpoints. Equivalent tables follow.";
     const linkG = svgEl("g", { fill: "none", strokeOpacity: "0.45" });
     for (const link of graph.links.filter((l) => l.value > 0)) {
+      const linkLabel = `${TAXONOMY.get(link.source.id)?.label ?? link.source.id} to ${TAXONOMY.get(link.target.id)?.label ?? link.target.id}: ${link.value}`;
       const path = svgEl("path", {
         d: sankeyLinkHorizontal()(link),
         stroke: selectedFeature?.id === link.id ? "#fbbf24" : "#38bdf8",
         "stroke-width": Math.max(3, link.width || 1),
         "data-diagram-link": link.id,
+        tabindex: "0",
+        role: "button",
+        "aria-label": `Select flow ${linkLabel}`,
       });
       path.append(svgEl("title"));
-      path.querySelector("title").textContent =
-        `${TAXONOMY.get(link.source.id)?.label ?? link.source.id} to ${TAXONOMY.get(link.target.id)?.label ?? link.target.id}: ${link.value}`;
-      path.addEventListener("click", () =>
+      path.querySelector("title").textContent = linkLabel;
+      const selectLink = () =>
         selectFeature({
           id: link.id,
-          label: path.querySelector("title").textContent,
+          label: linkLabel,
           applicationIds: link.applicationIds,
-        }),
+        });
+      path.addEventListener("click", selectLink);
+      path.addEventListener("keydown", (event) =>
+        activateOnKeyboard(event, selectLink),
       );
       linkG.append(path);
     }
@@ -300,7 +312,13 @@ export function createLifecycleDiagramView(root, options = {}) {
     for (const node of graph.nodes.filter(
       (n) => n.total > 0 && [n.x0, n.x1, n.y0, n.y1].every(Number.isFinite),
     )) {
-      const g = svgEl("g", { "data-diagram-node": node.id });
+      const nodeLabel = `${node.label}: ${node.total}`;
+      const g = svgEl("g", {
+        "data-diagram-node": node.id,
+        tabindex: "0",
+        role: "button",
+        "aria-label": `Select node ${nodeLabel}`,
+      });
       const rect = svgEl("rect", {
         x: node.x0,
         y: node.y0,
@@ -310,8 +328,10 @@ export function createLifecycleDiagramView(root, options = {}) {
         fill: selectedFeature?.id === node.id ? "#fbbf24" : "#64748b",
         stroke: "#e2e8f0",
       });
-      rect.addEventListener("click", () =>
-        selectFeature({ id: node.id, label: `${node.label}: ${node.total}` }),
+      const selectNode = () => selectFeature({ id: node.id, label: nodeLabel });
+      g.addEventListener("click", selectNode);
+      g.addEventListener("keydown", (event) =>
+        activateOnKeyboard(event, selectNode),
       );
       const label = svgEl("text", {
         x: node.x0 < width / 2 ? node.x1 + 6 : node.x0 - 6,
@@ -375,11 +395,14 @@ export function createLifecycleDiagramView(root, options = {}) {
       ) {
         const link =
           projection.links[index - originRows.length - endpointRows.length];
+        const flowLabel = `${linkRows[index - originRows.length - endpointRows.length][0]} to ${linkRows[index - originRows.length - endpointRows.length][1]}`;
         row.tabIndex = 0;
+        row.setAttribute("role", "button");
+        row.setAttribute("aria-label", `Select flow ${flowLabel}`);
         row.addEventListener("click", () =>
           selectFeature({
             id: link.id,
-            label: `${linkRows[index - originRows.length - endpointRows.length][0]} to ${linkRows[index - originRows.length - endpointRows.length][1]}`,
+            label: flowLabel,
             applicationIds: link.applicationIds,
           }),
         );
@@ -448,6 +471,7 @@ export function createLifecycleDiagramView(root, options = {}) {
       timeline = nextTimeline ?? { buckets: [] };
       selectedId = selectedBucketId;
       projection = snapshot ?? projectLifecycleAt({}, selectedId);
+      selectedFeature = null;
       render(newerAvailable);
     },
     destroy() {

@@ -646,8 +646,8 @@ function renderDiagram() {
     newerAvailable: selectedIndex >= 0 && currentIndex > selectedIndex,
   });
   if (fallbackAnnounced) {
-    root
-      .querySelector("[aria-live]")
+    document
+      .getElementById("lifecycle-diagram-live")
       ?.append(
         document.createTextNode(
           " Missing historical point; returned to Current.",
@@ -657,7 +657,7 @@ function renderDiagram() {
 }
 function renderAll() {
   renderDashboard();
-  renderDiagram();
+  if (!$('[data-view="diagram"]')?.hidden) renderDiagram();
   renderList();
   renderFollowups();
   renderOutreach();

@@ -171,18 +171,79 @@ describe("lifecycle diagram view", () => {
         ev("t", "a", "technical_interview", "2026-01-02"),
       ],
     );
+    const root = setup();
+    const view = createLifecycleDiagramView(root);
+    const timeline = buildLifecycleTimeline(b);
     const snapshot = projectLifecycleAt(b);
     const before = JSON.stringify(snapshot);
-    const { root } = render(b);
+    view.update({ timeline, snapshot, selectedBucketId: "current" });
     expect(JSON.stringify(snapshot)).toBe(before);
     const row = [...root.querySelectorAll("tbody tr")].find(
       (tr) =>
         tr.textContent.includes("Application submitted") &&
         tr.textContent.includes("Technical interview"),
     );
+    expect(row.getAttribute("role")).toBe("button");
+    expect(row.getAttribute("aria-label")).toContain("Select flow");
     row.click();
     expect(root.querySelector("[data-diagram-details]").textContent).toContain(
       "1 application",
+    );
+  });
+
+  it("makes SVG flows and nodes keyboard operable", () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root } = render(b);
+    const link = root.querySelector("[data-diagram-link]");
+    const node = root.querySelector("[data-diagram-node]");
+    expect(link.getAttribute("tabindex")).toBe("0");
+    expect(link.getAttribute("role")).toBe("button");
+    expect(link.getAttribute("aria-label")).toContain("Select flow");
+    expect(node.getAttribute("tabindex")).toBe("0");
+    expect(node.getAttribute("role")).toBe("button");
+    expect(node.getAttribute("aria-label")).toContain("Select node");
+    link.dispatchEvent(
+      new window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+    expect(root.querySelector("[data-diagram-details]").textContent).toContain(
+      "1 application",
+    );
+    node.dispatchEvent(
+      new window.KeyboardEvent("keydown", { key: " ", bubbles: true }),
+    );
+    expect(root.querySelector("[data-diagram-details]").textContent).toContain(
+      "Application submitted",
+    );
+  });
+
+  it("clears selected flow details when the snapshot changes", () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root, view, timeline } = render(b);
+    root
+      .querySelector("[data-diagram-link]")
+      .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(root.querySelector("[data-diagram-details]").textContent).toContain(
+      "1 application",
+    );
+    view.update({
+      timeline,
+      snapshot: projectLifecycleAt(bundle(), "current"),
+      selectedBucketId: "current",
+    });
+    expect(root.querySelector("[data-diagram-details]").textContent).toContain(
+      "Select a node or flow row",
     );
   });
 });
