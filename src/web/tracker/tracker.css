@@ -202,3 +202,77 @@
   background: rgba(127, 29, 29, 0.35);
   color: #fecaca;
 }
+.lifecycle-diagram {
+  display: grid;
+  gap: 1rem;
+  max-width: 100%;
+}
+.diagram-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+.diagram-controls input[type="range"] {
+  min-width: min(18rem, 100%);
+  min-height: 44px;
+}
+.diagram-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--card-border, #334155);
+  border-radius: 1rem;
+  padding: 0.5rem;
+}
+.diagram-scroll svg {
+  min-width: 760px;
+  max-width: none;
+  height: auto;
+}
+.diagram-link {
+  fill: none;
+  stroke: #60a5fa;
+  stroke-opacity: 0.45;
+}
+.diagram-node {
+  fill: #fbbf24;
+  stroke: #111827;
+  stroke-width: 1;
+}
+.diagram-link.is-selected,
+.diagram-node.is-selected {
+  stroke: #f8fafc;
+  stroke-opacity: 1;
+  outline: 2px solid #f8fafc;
+}
+.diagram-nodes text {
+  fill: var(--foreground, #e5e7eb);
+  font-size: 12px;
+  paint-order: stroke;
+  stroke: #0f172a;
+  stroke-width: 3px;
+}
+.diagram-semantics {
+  display: grid;
+  gap: 1rem;
+}
+.lifecycle-table caption {
+  font-weight: 700;
+  text-align: left;
+  padding: 0.5rem 0;
+}
+@media (max-width: 760px) {
+  .diagram-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .diagram-controls > * {
+    width: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lifecycle-diagram * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -3,7 +3,7 @@ import globals from 'globals';
 
 export default [
   {
-    ignores: ['node_modules', '.cache'],
+    ignores: ['node_modules', '.cache', 'dist'],
   },
   {
     files: ['**/*.js'],
