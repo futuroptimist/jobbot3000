@@ -132,6 +132,27 @@ test.describe("browser application tracker", () => {
       .click();
     await expect(page.getByText("No applications yet")).toBeVisible();
   });
+
+  test("shows diagram tab between dashboard and applications", async ({
+    page,
+  }) => {
+    const navButtons = page.locator(".tracker-nav button");
+    await expect(navButtons).toHaveText([
+      "Dashboard",
+      "Diagram",
+      "Applications",
+      "Follow-ups",
+      "Contacts/Outreach",
+      "Import/Export",
+      "Settings",
+    ]);
+    await page.getByRole("button", { name: "Diagram", exact: true }).click();
+    await expect(page.locator('[data-view="diagram"]')).toBeVisible();
+    await expect(page.locator("[data-lifecycle-diagram]")).toContainText(
+      "Current",
+    );
+    await expect(page.locator('[data-view="applications"]')).toBeHidden();
+  });
   test("previews compact CSV regression fixture without phantom interviews", async ({
     page,
   }) => {

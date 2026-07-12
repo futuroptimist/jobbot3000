@@ -26,6 +26,11 @@ import {
 } from "./metrics.js";
 import { createIndexedDbRepository } from "../storage/indexedDbRepository.js";
 import { planLifecycleReconciliation } from "./lifecycleReconciliation.js";
+import {
+  buildLifecycleTimeline,
+  projectLifecycleAt,
+} from "./lifecycleProjection.js";
+import { createLifecycleDiagramView } from "./lifecycleDiagram.js";
 
 /* canonical CSV/backup helpers are shared with spreadsheet import/export tests. */
 const ARRAY_STORES = [
@@ -128,6 +133,8 @@ const state = {
   current: null,
   detailSave: Promise.resolve(),
   reconciliationWarnings: [],
+  diagramBucketId: "current",
+  diagramView: null,
 };
 function weekBucket(value) {
   const d = day(value);
@@ -369,6 +376,7 @@ function route(v) {
 function renderNav() {
   const names = [
     ["Dashboard", "dashboard"],
+    ["Diagram", "diagram"],
     ["Applications", "applications"],
     ["Follow-ups", "follow-ups"],
     ["Contacts/Outreach", "contacts"],
@@ -603,8 +611,41 @@ function renderOutreach() {
       })
       .join("") || '<p class="muted">No outreach messages yet.</p>';
 }
+function renderDiagram() {
+  const root = $("[data-lifecycle-diagram]");
+  if (!root || !state.bundle) return;
+  state.diagramView ??= createLifecycleDiagramView(root, {
+    onSelectBucket: (bucketId) => {
+      state.diagramBucketId = bucketId;
+      renderDiagram();
+    },
+  });
+  const timeline = buildLifecycleTimeline(state.bundle);
+  const hasSelected = timeline.buckets.some(
+    (bucket) => bucket.id === state.diagramBucketId,
+  );
+  let selectedBucketId = hasSelected ? state.diagramBucketId : "current";
+  let newerAvailable = false;
+  if (!hasSelected && state.diagramBucketId !== "current") {
+    selectedBucketId = "current";
+    state.diagramBucketId = "current";
+  } else if (selectedBucketId !== "current") {
+    newerAvailable =
+      timeline.buckets.at(-1)?.eventIds?.join("|") !==
+      timeline.buckets
+        .find((bucket) => bucket.id === selectedBucketId)
+        ?.eventIds?.join("|");
+  }
+  state.diagramView.update({
+    timeline,
+    snapshot: projectLifecycleAt(state.bundle, selectedBucketId),
+    selectedBucketId,
+    newerAvailable,
+  });
+}
 function renderAll() {
   renderDashboard();
+  renderDiagram();
   renderList();
   renderFollowups();
   renderOutreach();
