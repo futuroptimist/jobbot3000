@@ -132,6 +132,33 @@ test.describe("browser application tracker", () => {
       .click();
     await expect(page.getByText("No applications yet")).toBeVisible();
   });
+
+  test("shows Diagram tab between Dashboard and Applications", async ({
+    page,
+  }) => {
+    const navNames = await page
+      .locator(".tracker-nav button")
+      .allTextContents();
+    expect(navNames.slice(0, 3)).toEqual([
+      "Dashboard",
+      "Diagram",
+      "Applications",
+    ]);
+    await importRegressionBundle(page);
+    await page.getByRole("button", { name: "Diagram" }).click();
+    await expect(page.locator('[data-view="diagram"]')).toBeVisible();
+    await expect(
+      page.locator('[data-lifecycle-diagram] svg[role="img"]'),
+    ).toBeVisible();
+    await expect(page.locator("[data-diagram-badge]")).toContainText("Current");
+    await expect(
+      page.locator("[data-lifecycle-diagram] table caption").first(),
+    ).toContainText("Origins");
+    await expect(
+      page.locator("[data-lifecycle-diagram] foreignObject"),
+    ).toHaveCount(0);
+  });
+
   test("previews compact CSV regression fixture without phantom interviews", async ({
     page,
   }) => {

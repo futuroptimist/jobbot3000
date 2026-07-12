@@ -202,3 +202,75 @@
   background: rgba(127, 29, 29, 0.35);
   color: #fecaca;
 }
+.lifecycle-diagram {
+  display: grid;
+  gap: 1rem;
+}
+.diagram-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: end;
+}
+.diagram-range-label {
+  display: grid;
+  gap: 0.25rem;
+  min-width: min(100%, 18rem);
+}
+.diagram-range-label input {
+  min-height: 44px;
+}
+.diagram-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid var(--card-border, #334155);
+  border-radius: 0.75rem;
+  padding: 0.5rem;
+}
+.diagram-scroll svg {
+  display: block;
+  min-width: 760px;
+  color: var(--foreground, #e5e7eb);
+}
+.diagram-link {
+  opacity: 0.72;
+  cursor: pointer;
+}
+.diagram-link:hover,
+.diagram-link.is-selected,
+.lifecycle-diagram .is-selected .diagram-link {
+  opacity: 1;
+  stroke: #fbbf24;
+}
+.lifecycle-diagram rect {
+  cursor: pointer;
+}
+.lifecycle-diagram .is-selected rect {
+  stroke-width: 3px;
+}
+.diagram-tables {
+  display: grid;
+  gap: 1rem;
+}
+.diagram-tables .tracker-table {
+  min-width: 32rem;
+}
+.diagram-tables caption {
+  text-align: left;
+  font-weight: 700;
+  padding: 0.5rem 0;
+}
+@media (max-width: 760px) {
+  .diagram-controls,
+  .diagram-controls .button,
+  .diagram-range-label {
+    width: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .diagram-link,
+  .lifecycle-diagram rect {
+    transition: none;
+  }
+}
