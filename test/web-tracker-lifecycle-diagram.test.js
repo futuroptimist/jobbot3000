@@ -245,6 +245,46 @@ describe("lifecycle diagram view", () => {
       "Select a node or flow row",
     );
   });
+
+  it("preserves valid selections across unchanged snapshot instances", () => {
+    const b = bundle(
+      [app("a"), app("b")],
+      [
+        ev("o1", "a", "application_submitted", "2026-01-01"),
+        ev("t1", "a", "technical_interview", "2026-01-02"),
+        ev("o2", "b", "application_submitted", "2026-01-01"),
+        ev("t2", "b", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root, view, timeline } = render(b);
+    const link = root.querySelector("[data-diagram-link]");
+    const linkId = link.getAttribute("data-diagram-link");
+    link.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    const selectedDetails = root.querySelector(
+      "[data-diagram-details]",
+    ).textContent;
+    expect(
+      root
+        .querySelector(`[data-diagram-link='${linkId}']`)
+        .getAttribute("stroke"),
+    ).toBe("#fbbf24");
+
+    view.update({
+      timeline,
+      snapshot: projectLifecycleAt(b, "current"),
+      selectedBucketId: "current",
+    });
+
+    expect(root.querySelector("[data-diagram-details]").textContent).toBe(
+      selectedDetails,
+    );
+    expect(
+      root
+        .querySelector(`[data-diagram-link='${linkId}']`)
+        .getAttribute("stroke"),
+    ).toBe("#fbbf24");
+  });
+
   it("keeps SVG and semantic selections equivalent and debounces live announcements", () => {
     vi.useFakeTimers();
     const b = bundle(

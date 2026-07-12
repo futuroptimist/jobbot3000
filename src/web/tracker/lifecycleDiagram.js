@@ -264,6 +264,28 @@ export function createLifecycleDiagramView(root, options = {}) {
             .filter((path) => path.nodeIds?.includes(feature.id))
             .map((path) => path.applicationId),
     );
+  const featureById = (id) => {
+    const link = projection.links.find((candidate) => candidate.id === id);
+    if (link) {
+      const from = TAXONOMY.get(link.source)?.label ?? link.source;
+      const to = TAXONOMY.get(link.target)?.label ?? link.target;
+      return {
+        id: link.id,
+        label: `${from} to ${to}: ${link.value}`,
+        applicationIds: link.applicationIds,
+      };
+    }
+    const node = projection.nodes.find((candidate) => candidate.id === id);
+    if (node) {
+      const label = TAXONOMY.get(node.id)?.label ?? node.label ?? node.id;
+      return {
+        id: node.id,
+        label: `${label}: ${node.total ?? 0}`,
+        applicationIds: node.applicationIds,
+      };
+    }
+    return null;
+  };
   const selectFeature = (feature) => {
     selectedFeature = {
       ...feature,
@@ -591,12 +613,15 @@ export function createLifecycleDiagramView(root, options = {}) {
       newerAvailable = false,
     }) {
       const nextProjection = snapshot ?? EMPTY_PROJECTION;
-      const snapshotChanged =
-        projection !== nextProjection || selectedId !== selectedBucketId;
+      const bucketChanged = selectedId !== selectedBucketId;
+      const snapshotChanged = projection !== nextProjection;
+      const previousSelectionId = selectedFeature?.id;
       timeline = nextTimeline ?? { buckets: [] };
       selectedId = selectedBucketId;
       projection = nextProjection;
-      if (snapshotChanged) selectedFeature = null;
+      if (bucketChanged) selectedFeature = null;
+      else if (snapshotChanged && previousSelectionId)
+        selectedFeature = featureById(previousSelectionId);
       render(newerAvailable);
     },
     announce(message) {
