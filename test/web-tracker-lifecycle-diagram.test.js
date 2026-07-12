@@ -1,5 +1,5 @@
 /* global document, window */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JSDOM } from "jsdom";
 
 import { createLifecycleDiagramView } from "../src/web/tracker/lifecycleDiagram.js";
@@ -75,6 +75,13 @@ function render(b, selectedBucketId = "current", onBucketChange = vi.fn()) {
 
 describe("lifecycle diagram view", () => {
   beforeEach(() => vi.useRealTimers());
+
+  afterEach(() => {
+    vi.useRealTimers();
+    delete global.document;
+    delete global.window;
+    delete global.ResizeObserver;
+  });
 
   it("renders current default controls, accessible svg, and semantic totals", () => {
     const b = bundle(
