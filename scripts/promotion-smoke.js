@@ -192,12 +192,16 @@ async function runReadonlyChecks() {
     },
     { requireOk: false },
   );
-  await responseCheck("/manifest.webmanifest", async ({ response, contentType }) => {
+  await responseCheck("/manifest.webmanifest", async ({ response, contentType, finalUrl }) => {
     if (!contentType.includes("manifest") && !contentType.includes("json")) {
       throw fail("MANIFEST_CONTENT_TYPE_MISMATCH");
     }
     const manifest = await response.json();
     if (!manifest.name || !manifest.start_url) throw fail("MANIFEST_JSON_MISMATCH");
+    const manifestStartUrl = new URL(manifest.start_url, finalUrl);
+    if (!pathWithinExpectedBase(manifestStartUrl)) {
+      throw fail("MANIFEST_START_URL_ESCAPED_BASE_PATH");
+    }
   });
 
   await record("asset-reference", async () => {

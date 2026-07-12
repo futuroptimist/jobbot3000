@@ -25,6 +25,7 @@ function runPromotionSmoke(baseUrl) {
 function startPrefixedSmokeServer({
   badInvalidHealth = false,
   badTrackerRedirect = false,
+  badManifestStartUrl = false,
 } = {}) {
   const rootHtml = [
     "<!doctype html><h1>Browser-only application tracker</h1>",
@@ -71,7 +72,10 @@ function startPrefixedSmokeServer({
     }
     if (url.pathname === "/jobbot/manifest.webmanifest") {
       res.writeHead(200, { "content-type": "application/manifest+json" });
-      res.end(JSON.stringify({ name: "jobbot3000", start_url: "/tracker" }));
+      res.end(JSON.stringify({
+        name: "jobbot3000",
+        start_url: badManifestStartUrl ? "/tracker" : "/jobbot/tracker",
+      }));
       return;
     }
     if (url.pathname === "/jobbot/assets/app.css") {
@@ -329,6 +333,29 @@ describe("web deployment artifacts", () => {
     } finally {
       await redirectServer.close();
     }
+
+    const manifestServer = await startPrefixedSmokeServer({
+      badManifestStartUrl: true,
+    });
+    try {
+      const result = await runPromotionSmoke(manifestServer.baseUrl);
+      expect(result.code).toBe(1);
+      const summaryText = await readFile(
+        path.join(repoRoot, "test-results", "promotion-smoke-readonly.json"),
+        "utf8",
+      );
+      expect(summaryText).not.toContain("private=secret");
+      const summary = JSON.parse(summaryText);
+      expect(summary.pass).toBe(false);
+      expect(
+        summary.checks.some(
+          (check) => check.code === "MANIFEST_START_URL_ESCAPED_BASE_PATH",
+        ),
+      ).toBe(true);
+    } finally {
+      await manifestServer.close();
+    }
+
   });
 
   it("documents static privacy boundaries and IndexedDB backup guidance", async () => {
