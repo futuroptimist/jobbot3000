@@ -93,7 +93,7 @@ describe("lifecycle diagram view", () => {
         ev("offer", "a2", "offer_received", "2026-01-03"),
       ],
     );
-    const { root, snapshot } = render(b);
+    const { root } = render(b);
 
     expect(
       root.querySelector("input[type='range']").getAttribute("aria-valuetext"),
@@ -119,7 +119,7 @@ describe("lifecycle diagram view", () => {
       .find((caption) => caption.textContent === "Origins")
       .closest("table")
       .querySelectorAll("tbody tr").length;
-    expect(originCounts).toBe(Object.keys(snapshot.totals.origins).length);
+    expect(originCounts).toBe(5);
   });
 
   it("handles empty, unknown-only, date, and simultaneous boundary timestamps", () => {
@@ -401,6 +401,49 @@ describe("lifecycle diagram view", () => {
       "Missing historical point; returned to Current.",
     );
     view.destroy();
+  });
+
+  it("paginates boundary events and affected applications with reset rules", () => {
+    const applications = Array.from({ length: 60 }, (_, index) =>
+      app(`p${String(index).padStart(2, "0")}`),
+    );
+    const events = applications.flatMap((application, index) => [
+      ev(`o${index}`, application.id, "application_submitted", "2026-01-01"),
+      ev(`t${index}`, application.id, "technical_interview", "2026-01-02"),
+    ]);
+    const { root, view, timeline } = render(bundle(applications, events));
+    expect(root.textContent).toContain("Events 1–50 of 120");
+    expect(root.querySelectorAll("caption")).toHaveLength(5);
+    root.querySelector("button[aria-label='Next event page']").click();
+    expect(root.textContent).toContain("Events 51–100 of 120");
+    root.querySelector("button[aria-label='Next event page']").click();
+    expect(root.textContent).toContain("Events 101–120 of 120");
+    expect(
+      root.querySelector("button[aria-label='Next event page']").disabled,
+    ).toBe(true);
+
+    root
+      .querySelector("button[aria-label='Select Application submitted']")
+      .click();
+    expect(
+      root
+        .querySelector("button[aria-label='Select Application submitted']")
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(root.textContent).toContain("Applications 1–50 of 60");
+    root.querySelector("button[aria-label='Next application page']").click();
+    expect(root.textContent).toContain("Applications 51–60 of 60");
+
+    const historical = timeline.buckets.find(
+      (bucket) => bucket.kind === "date",
+    );
+    view.update({
+      timeline,
+      snapshot: projectLifecycleAt(bundle(applications, events), historical.id),
+      selectedBucketId: historical.id,
+    });
+    expect(root.textContent).toContain("Events 1–50 of 60");
+    expect(root.textContent).toContain("Select a node or flow row");
   });
 
   it("renders warning summary from supplied P4 warning codes", () => {

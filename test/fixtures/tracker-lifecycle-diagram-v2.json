@@ -1,0 +1,558 @@
+{
+  "schemaVersion": 2,
+  "exportedAt": "2026-01-10T00:00:00.000Z",
+  "applications": [
+    {
+      "id": "synthetic-app-01",
+      "company": "Synthetic Company 1",
+      "role": "Synthetic Role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-10T00:00:00.000Z"
+    },
+    {
+      "id": "synthetic-app-02",
+      "company": "Synthetic Company 2",
+      "role": "Synthetic Role",
+      "status": "applied",
+      "origin": "recruiter_company_outreach",
+      "source": "synthetic",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-10T00:00:00.000Z"
+    },
+    {
+      "id": "synthetic-app-03",
+      "company": "Synthetic Company 3",
+      "role": "Synthetic Role",
+      "status": "applied",
+      "origin": "candidate_outreach",
+      "source": "synthetic",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-10T00:00:00.000Z"
+    },
+    {
+      "id": "synthetic-app-04",
+      "company": "Synthetic Company 4",
+      "role": "Synthetic Role",
+      "status": "applied",
+      "origin": "referral",
+      "source": "synthetic",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-10T00:00:00.000Z"
+    },
+    {
+      "id": "synthetic-app-05",
+      "company": "Synthetic Company 5",
+      "role": "Synthetic Role",
+      "status": "applied",
+      "origin": "other_unknown",
+      "source": "synthetic",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-10T00:00:00.000Z"
+    },
+    {
+      "id": "synthetic-app-06",
+      "company": "Synthetic Company 6",
+      "role": "Synthetic Role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-10T00:00:00.000Z"
+    },
+    {
+      "id": "synthetic-app-07",
+      "company": "Synthetic Company 7",
+      "role": "Synthetic Role",
+      "status": "applied",
+      "origin": "recruiter_company_outreach",
+      "source": "synthetic",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-10T00:00:00.000Z"
+    },
+    {
+      "id": "synthetic-app-08",
+      "company": "Synthetic Company 8",
+      "role": "Synthetic Role",
+      "status": "applied",
+      "origin": "candidate_outreach",
+      "source": "synthetic",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-10T00:00:00.000Z"
+    },
+    {
+      "id": "synthetic-app-09",
+      "company": "Synthetic Company 9",
+      "role": "Synthetic Role",
+      "status": "applied",
+      "origin": "referral",
+      "source": "synthetic",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-10T00:00:00.000Z"
+    },
+    {
+      "id": "synthetic-app-10",
+      "company": "Synthetic Company 10",
+      "role": "Synthetic Role",
+      "status": "applied",
+      "origin": "other_unknown",
+      "source": "synthetic",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-10T00:00:00.000Z"
+    },
+    {
+      "id": "synthetic-app-11",
+      "company": "Synthetic Company 11",
+      "role": "Synthetic Role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-10T00:00:00.000Z"
+    },
+    {
+      "id": "synthetic-supersession",
+      "company": "Synthetic Correction",
+      "role": "Synthetic Role",
+      "status": "applied",
+      "origin": "referral",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-10T00:00:00.000Z"
+    },
+    {
+      "id": "synthetic-reopen",
+      "company": "Synthetic Reopen",
+      "role": "Synthetic Role",
+      "status": "applied",
+      "origin": "candidate_outreach",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-10T00:00:00.000Z"
+    },
+    {
+      "id": "synthetic-hostile",
+      "company": "<script>alert(1)</script>",
+      "role": "<img onerror=alert(1)> javascript:alert(1)",
+      "status": "applied",
+      "origin": "other_unknown",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-10T00:00:00.000Z"
+    }
+  ],
+  "lifecycleEvents": [
+    {
+      "id": "synthetic-app-01-origin",
+      "applicationId": "synthetic-app-01",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01T09:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "inferred": false,
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "synthetic-app-01-recruiter_screen",
+      "applicationId": "synthetic-app-01",
+      "eventType": "recruiter_screen",
+      "occurredAt": "2026-01-02T10:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "inferred": false,
+      "createdAt": "2026-01-02T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "synthetic-app-02-origin",
+      "applicationId": "synthetic-app-02",
+      "eventType": "recruiter_company_outreach",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "inferred": false,
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "synthetic-app-02-assessment_take_home",
+      "applicationId": "synthetic-app-02",
+      "eventType": "assessment_take_home",
+      "occurredAt": "2026-01-02T10:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "inferred": false,
+      "createdAt": "2026-01-02T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "synthetic-app-02-endpoint",
+      "applicationId": "synthetic-app-02",
+      "eventType": "technical_interview",
+      "occurredAt": "2026-01-03T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "inferred": false,
+      "createdAt": "2026-01-03T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "synthetic-app-03-origin",
+      "applicationId": "synthetic-app-03",
+      "eventType": "candidate_outreach",
+      "occurredAt": "2026-01-01T09:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "inferred": false,
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "synthetic-app-03-technical_interview",
+      "applicationId": "synthetic-app-03",
+      "eventType": "technical_interview",
+      "occurredAt": "2026-01-02T10:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "inferred": false,
+      "createdAt": "2026-01-02T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "synthetic-app-03-endpoint",
+      "applicationId": "synthetic-app-03",
+      "eventType": "assessment_take_home",
+      "occurredAt": "2026-01-03T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "inferred": false,
+      "createdAt": "2026-01-03T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import",
+      "actionStatus": "requested"
+    },
+    {
+      "id": "synthetic-app-04-origin",
+      "applicationId": "synthetic-app-04",
+      "eventType": "referral",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "inferred": false,
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "synthetic-app-04-onsite_final_loop",
+      "applicationId": "synthetic-app-04",
+      "eventType": "onsite_final_loop",
+      "occurredAt": "2026-01-02T10:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "inferred": false,
+      "createdAt": "2026-01-02T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "synthetic-app-04-endpoint",
+      "applicationId": "synthetic-app-04",
+      "eventType": "offer_negotiating",
+      "occurredAt": "2026-01-03T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "inferred": false,
+      "createdAt": "2026-01-03T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "synthetic-app-05-origin",
+      "applicationId": "synthetic-app-05",
+      "eventType": "other_unknown",
+      "occurredAt": "2026-01-01T09:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "inferred": false,
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "synthetic-app-05-offer_received",
+      "applicationId": "synthetic-app-05",
+      "eventType": "offer_received",
+      "occurredAt": "2026-01-02T10:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "inferred": false,
+      "createdAt": "2026-01-02T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "synthetic-app-05-endpoint",
+      "applicationId": "synthetic-app-05",
+      "eventType": "employer_rejected",
+      "occurredAt": "2026-01-03T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "inferred": false,
+      "createdAt": "2026-01-03T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "synthetic-app-06-origin",
+      "applicationId": "synthetic-app-06",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "inferred": false,
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "synthetic-app-06-endpoint",
+      "applicationId": "synthetic-app-06",
+      "eventType": "candidate_withdrew",
+      "occurredAt": "2026-01-03T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "inferred": false,
+      "createdAt": "2026-01-03T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "synthetic-app-07-origin",
+      "applicationId": "synthetic-app-07",
+      "eventType": "recruiter_company_outreach",
+      "occurredAt": "2026-01-01T09:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "inferred": false,
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "synthetic-app-07-endpoint",
+      "applicationId": "synthetic-app-07",
+      "eventType": "offer_declined",
+      "occurredAt": "2026-01-03T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "inferred": false,
+      "createdAt": "2026-01-03T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "synthetic-app-08-origin",
+      "applicationId": "synthetic-app-08",
+      "eventType": "candidate_outreach",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "inferred": false,
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "synthetic-app-08-endpoint",
+      "applicationId": "synthetic-app-08",
+      "eventType": "offer_expired_rescinded",
+      "occurredAt": "2026-01-03T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "inferred": false,
+      "createdAt": "2026-01-03T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "synthetic-app-09-origin",
+      "applicationId": "synthetic-app-09",
+      "eventType": "referral",
+      "occurredAt": "2026-01-01T09:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "inferred": false,
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "synthetic-app-09-endpoint",
+      "applicationId": "synthetic-app-09",
+      "eventType": "offer_accepted",
+      "occurredAt": "2026-01-03T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "inferred": false,
+      "createdAt": "2026-01-03T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "synthetic-app-10-origin",
+      "applicationId": "synthetic-app-10",
+      "eventType": "other_unknown",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "inferred": false,
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "synthetic-app-10-endpoint",
+      "applicationId": "synthetic-app-10",
+      "eventType": "closed_archived",
+      "occurredAt": "2026-01-03T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "inferred": false,
+      "createdAt": "2026-01-03T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "synthetic-app-11-origin",
+      "applicationId": "synthetic-app-11",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01T09:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "inferred": true,
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "synthetic-app-11-endpoint",
+      "applicationId": "synthetic-app-11",
+      "eventType": "status_changed",
+      "occurredAt": "2026-01-03T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "inferred": false,
+      "createdAt": "2026-01-03T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "sup-old",
+      "applicationId": "synthetic-supersession",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-04T00:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "inferred": false,
+      "createdAt": "2026-01-04T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "sup-new",
+      "applicationId": "synthetic-supersession",
+      "eventType": "referral",
+      "occurredAt": "2026-01-04T00:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "inferred": false,
+      "supersedesEventId": "sup-old",
+      "createdAt": "2026-01-04T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "reopen-origin",
+      "applicationId": "synthetic-reopen",
+      "eventType": "candidate_outreach",
+      "occurredAt": "2026-01-05",
+      "occurredAtPrecision": "date",
+      "inferred": false,
+      "createdAt": "2026-01-05T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "reopen-terminal",
+      "applicationId": "synthetic-reopen",
+      "eventType": "employer_rejected",
+      "occurredAt": "2026-01-06T00:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "inferred": false,
+      "createdAt": "2026-01-06T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "reopen-explicit",
+      "applicationId": "synthetic-reopen",
+      "eventType": "application_reopened",
+      "occurredAt": "2026-01-07T00:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "inferred": false,
+      "createdAt": "2026-01-07T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "hostile-origin",
+      "applicationId": "synthetic-hostile",
+      "eventType": "other_unknown",
+      "occurredAt": "1970-01-01",
+      "occurredAtPrecision": "unknown",
+      "inferred": true,
+      "details": "<svg onload=alert(1)> \" javascript:",
+      "createdAt": "2026-01-08T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "hostile-tech",
+      "applicationId": "synthetic-hostile",
+      "eventType": "technical_interview",
+      "occurredAt": "2026-01-08T00:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "inferred": false,
+      "createdAt": "2026-01-08T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    },
+    {
+      "id": "hostile-regress",
+      "applicationId": "synthetic-hostile",
+      "eventType": "recruiter_screen",
+      "occurredAt": "2026-01-09T00:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "inferred": false,
+      "createdAt": "2026-01-09T00:00:00.000Z",
+      "status": "applied",
+      "source": "json_import"
+    }
+  ],
+  "expected": {
+    "totalApplications": 14,
+    "endpointLabels": [
+      "awaiting_response",
+      "interviewing",
+      "assessment_in_progress",
+      "offer_negotiating",
+      "employer_rejected",
+      "candidate_withdrew",
+      "offer_declined",
+      "offer_expired_rescinded",
+      "offer_accepted",
+      "closed_archived",
+      "unknown"
+    ],
+    "originLabels": [
+      "application_submitted",
+      "recruiter_company_outreach",
+      "candidate_outreach",
+      "referral",
+      "other_unknown"
+    ],
+    "milestoneLabels": [
+      "recruiter_screen",
+      "assessment_take_home",
+      "technical_interview",
+      "onsite_final_loop",
+      "offer_received"
+    ]
+  },
+  "contacts": [],
+  "outreachMessages": [],
+  "interviews": [],
+  "offers": [],
+  "artifacts": [],
+  "reminders": []
+}
