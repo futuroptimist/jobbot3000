@@ -157,6 +157,11 @@ test.describe("static tracker smoke", () => {
     await expect(page.getByText("static/browser-only")).toBeVisible();
 
     await page.goto(`${baseUrl}/tracker`);
+    const trackerResponse = await page.request.get(`${baseUrl}/tracker`);
+    const csp = trackerResponse.headers()["content-security-policy"] ?? "";
+    expect(csp).toContain("default-src 'self'");
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).toContain("connect-src 'self'");
     await expect(
       page.getByRole("heading", { name: "Application tracker" }),
     ).toBeVisible();
@@ -210,5 +215,20 @@ test.describe("static tracker smoke", () => {
     expect(
       requests.filter((request) => new URL(request.url()).origin !== baseUrl),
     ).toHaveLength(0);
+  });
+
+  test("keeps container and image CI contracts static", async () => {
+    const dockerfile = await fs.readFile("Dockerfile", "utf8");
+    expect(dockerfile).toMatch(/FROM node:20-slim AS deps/u);
+    expect(dockerfile).toMatch(/FROM deps AS build/u);
+    expect(dockerfile).toMatch(/FROM node:20-slim AS runtime/u);
+    expect(dockerfile).toMatch(/^USER node$/mu);
+
+    const ciImage = await fs.readFile(".github/workflows/ci-image.yml", "utf8");
+    expect(ciImage).toContain("pull_request:");
+    expect(ciImage).toContain("Build local smoke-test image");
+    expect(ciImage).toContain("push: false");
+    expect(ciImage).toContain("load: true");
+    expect(ciImage).toContain("npm run smoke:container -- jobbot3000:smoke");
   });
 });

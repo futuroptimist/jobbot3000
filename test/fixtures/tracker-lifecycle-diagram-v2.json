@@ -151,11 +151,20 @@
       "source": "synthetic",
       "createdAt": "2026-03-01T00:00:00.000Z",
       "updatedAt": "2026-03-01T00:00:00.000Z"
+    },
+    {
+      "id": "app-16-<script>-<img onerror>-<svg>-\"quotes\"-javascript:-onclick=alert(1)",
+      "company": "Synthetic Unknown Endpoint Corp",
+      "role": "Synthetic unknown endpoint role",
+      "status": "applied",
+      "origin": "other_unknown",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-01T00:00:00.000Z"
     }
   ],
   "lifecycleEvents": [
     {
-      "id": "evt-001",
+      "id": "evt-001-<script>alert(1)</script>",
       "applicationId": "app-01",
       "eventType": "application_submitted",
       "occurredAt": "2026-01-01",
@@ -166,7 +175,7 @@
       "source": "json_import"
     },
     {
-      "id": "evt-002",
+      "id": "evt-002-<img src=x onerror=alert(1)>",
       "applicationId": "app-02",
       "eventType": "recruiter_company_outreach",
       "occurredAt": "2026-01-02",
@@ -177,7 +186,7 @@
       "source": "json_import"
     },
     {
-      "id": "evt-003",
+      "id": "evt-003-<svg onload=alert(1)>",
       "applicationId": "app-02",
       "eventType": "technical_interview",
       "occurredAt": "2026-01-02T10:00:00.000Z",
@@ -188,7 +197,7 @@
       "source": "json_import"
     },
     {
-      "id": "evt-004",
+      "id": "evt-004-\"quotes\"-javascript:alert(1)-onclick=alert(1)",
       "applicationId": "app-03",
       "eventType": "candidate_outreach",
       "occurredAt": "2026-01-03",

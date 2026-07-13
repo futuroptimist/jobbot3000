@@ -11,8 +11,15 @@ if (
     "Diagram visual review capture only runs in the dedicated GitHub Actions artifact job.",
   );
 }
+const runnerTemp = process.env.RUNNER_TEMP;
+if (!runnerTemp)
+  throw new Error("RUNNER_TEMP is required for diagram visual review capture.");
 const outDir = process.env.DIAGRAM_VISUAL_OUTPUT_DIR;
-if (!outDir || !outDir.includes(`${path.sep}jobbot3000-diagram-visual-review`))
+const expectedOutDir = path.resolve(
+  runnerTemp,
+  "jobbot3000-diagram-visual-review",
+);
+if (!outDir || path.resolve(outDir) !== expectedOutDir)
   throw new Error(
     "DIAGRAM_VISUAL_OUTPUT_DIR must be the runner temp visual-review directory.",
   );

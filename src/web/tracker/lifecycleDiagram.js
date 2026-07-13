@@ -474,6 +474,7 @@ export function createLifecycleDiagramView(root, options = {}) {
     svg.querySelector("desc").textContent =
       "Application counts flowing from origin through milestones to endpoints. " +
       "Equivalent tables follow.";
+    const linkHitG = svgEl("g", { fill: "none" });
     const linkG = svgEl("g", { fill: "none", strokeOpacity: "0.45" });
     for (const link of graph.links.filter(
       (l) => l.value > 0 && finiteLink(l),
@@ -496,7 +497,10 @@ export function createLifecycleDiagramView(root, options = {}) {
           label: linkLabel,
           applicationIds: link.applicationIds,
         });
-      path.addEventListener("click", selectLink);
+      path.addEventListener("click", (event) => {
+        event.stopPropagation();
+        selectLink();
+      });
       linkG.append(path);
       const hitPath = svgEl("path", {
         d: pathData,
@@ -505,9 +509,13 @@ export function createLifecycleDiagramView(root, options = {}) {
         "data-diagram-link-hit": link.id,
         "aria-hidden": "true",
       });
-      hitPath.addEventListener("click", selectLink);
-      linkG.append(hitPath);
+      hitPath.addEventListener("click", (event) => {
+        event.stopPropagation();
+        selectLink();
+      });
+      linkHitG.append(hitPath);
     }
+    svg.append(linkHitG);
     svg.append(linkG);
     for (const node of graph.nodes.filter(
       (n) => n.total > 0 && [n.x0, n.x1, n.y0, n.y1].every(Number.isFinite),
@@ -535,7 +543,6 @@ export function createLifecycleDiagramView(root, options = {}) {
           label: nodeLabel,
           applicationIds: node.applicationIds,
         });
-      g.addEventListener("click", selectNode);
       const hitRect = svgEl("rect", {
         x: node.x0 - Math.max(0, 44 - (node.x1 - node.x0)) / 2,
         y: node.y0 - Math.max(0, 44 - (node.y1 - node.y0)) / 2,
@@ -545,7 +552,14 @@ export function createLifecycleDiagramView(root, options = {}) {
         "aria-hidden": "true",
         "data-diagram-node-hit": node.id,
       });
-      hitRect.addEventListener("click", selectNode);
+      hitRect.addEventListener("click", (event) => {
+        event.stopPropagation();
+        selectNode();
+      });
+      rect.addEventListener("click", (event) => {
+        event.stopPropagation();
+        selectNode();
+      });
       const label = svgEl("text", {
         x: node.x0 < width / 2 ? node.x1 + 6 : node.x0 - 6,
         y: (node.y0 + node.y1) / 2,
@@ -770,7 +784,11 @@ export function createLifecycleDiagramView(root, options = {}) {
       if (bucketChanged) {
         selectedFeature = null;
         eventPage = 0;
-      } else if (snapshotChanged && previousSelectionId)
+      } else if (snapshotChanged) {
+        eventPage = 0;
+        if (previousSelectionId)
+          selectedFeature = featureById(previousSelectionId);
+      } else if (previousSelectionId)
         selectedFeature = featureById(previousSelectionId);
       render(newerAvailable);
     },

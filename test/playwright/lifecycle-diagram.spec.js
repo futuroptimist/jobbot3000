@@ -6,6 +6,31 @@ import axe from "axe-core";
 
 import { startWebServer } from "../../src/web/server.js";
 
+const EXPECTED_CURRENT = {
+  included: "16/16 applications included",
+  endpoints: [
+    "Awaiting response",
+    "Interviewing",
+    "Assessment in progress",
+    "Offer/negotiating",
+    "Employer rejected",
+    "Candidate withdrew",
+    "Offer declined",
+    "Offer expired/rescinded",
+    "Offer accepted",
+    "Closed/archived",
+    "Unknown",
+  ],
+  hostileApplicationId:
+    'app-16-<script>-<img onerror>-<svg>-"quotes"-javascript:-onclick=alert(1)',
+  hostileEventIds: [
+    "evt-001-<script>alert(1)</script>",
+    "evt-002-<img src=x onerror=alert(1)>",
+    "evt-003-<svg onload=alert(1)>",
+    'evt-004-"quotes"-javascript:alert(1)-onclick=alert(1)',
+  ],
+};
+
 async function clearTrackerData(page, url) {
   await page.goto(url);
   await page.evaluate(
@@ -94,26 +119,14 @@ test.describe("Application Lifecycle Diagram", () => {
     await importFixture(page);
     await page.getByRole("button", { name: "Diagram" }).click();
     await expect(page.locator("[data-lifecycle-diagram]")).toContainText(
-      "15/15 applications included",
+      EXPECTED_CURRENT.included,
     );
     await expect(
       page.getByRole("img", { name: /Lifecycle Sankey diagram/u }),
     ).toBeVisible();
     await expect(page.locator("svg > title")).not.toHaveText("");
     await expect(page.locator("svg > desc")).not.toHaveText("");
-    for (const label of [
-      "Awaiting response",
-      "Interviewing",
-      "Assessment in progress",
-      "Offer/negotiating",
-      "Employer rejected",
-      "Candidate withdrew",
-      "Offer declined",
-      "Offer expired/rescinded",
-      "Offer accepted",
-      "Closed/archived",
-      "Unknown",
-    ]) {
+    for (const label of EXPECTED_CURRENT.endpoints) {
       await expect(
         page
           .locator("caption", { hasText: "Endpoints" })
@@ -165,10 +178,12 @@ test.describe("Application Lifecycle Diagram", () => {
     );
     await page.getByRole("button", { name: "Return to current" }).click();
     await expect(page.locator("[data-lifecycle-diagram]")).toContainText(
-      "15/15 applications included",
+      EXPECTED_CURRENT.included,
     );
 
-    const node = page.locator("[data-diagram-node]").first();
+    const node = page
+      .locator("[data-diagram-node] rect:not([data-diagram-node-hit])")
+      .first();
     await node.click();
     const selected = await page.locator("[data-diagram-details]").innerText();
     await expect(
@@ -205,6 +220,30 @@ test.describe("Application Lifecycle Diagram", () => {
       .first()
       .click({ force: true });
     await runAxe(page);
+    await page
+      .getByRole("button", { name: "Select Other/unknown", exact: true })
+      .click();
+    await expect(page.locator("[data-diagram-details]")).toContainText(
+      EXPECTED_CURRENT.hostileApplicationId,
+    );
+    for (const hostileEventId of EXPECTED_CURRENT.hostileEventIds) {
+      await expect(page.locator("[data-lifecycle-diagram]")).toContainText(
+        hostileEventId,
+      );
+    }
+    await expect(
+      page.locator('[data-view="diagram"] script, foreignObject, svg a'),
+    ).toHaveCount(0);
+    await expect(
+      page.locator(
+        [
+          '[data-view="diagram"] [onload]',
+          '[data-view="diagram"] [onerror]',
+          '[data-view="diagram"] [onclick]',
+        ].join(", "),
+      ),
+    ).toHaveCount(0);
+    await expect(page.locator("svg")).not.toContainText("<svg");
 
     const after = await page.evaluate(
       () =>

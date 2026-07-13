@@ -5,9 +5,11 @@ on:
     paths:
       - "src/web/tracker/lifecycleDiagram.js"
       - "src/web/tracker/lifecycleProjection.js"
+      - "src/web/tracker/tracker.js"
       - "src/web/tracker/tracker.css"
       - "test/fixtures/tracker-lifecycle-diagram-v2.json"
       - "test/playwright/lifecycle-diagram.spec.js"
+      - "test/playwright/static-smoke.spec.js"
       - "test/web-tracker-lifecycle-diagram*.test.js"
       - "scripts/capture-diagram-visual-review.js"
       - ".github/workflows/diagram-visual-review.yml"

@@ -61,8 +61,9 @@ The PR handoff records exact command outcomes. Required commands are:
 | `npm run test:ci`                                                                                                                                                                     | Pass locally                                                                            |
 | `npm run build`                                                                                                                                                                       | Pass locally                                                                            |
 | `git diff --check`                                                                                                                                                                    | Pass locally                                                                            |
-| Docker build and `npm run smoke:container -- jobbot3000:p6`                                                                                                                           | Pass when Docker is available; otherwise GHCR workflow is authoritative                 |
-| Secret scan and binary audit commands                                                                                                                                                 | Pass locally                                                                            |
+| `BASE=$(git merge-base origin/main HEAD)`                                                                                                                                             | Not runnable in this container because no `origin` remote is configured                 |
+| Secret scan and binary audit commands                                                                                                                                                 | Pass locally using PR base SHA `a8749262ef00a2b058b2b138eebcffc4219fb46e`               |
+| Docker build and `npm run smoke:container -- jobbot3000:p6`                                                                                                                           | Not run locally because `docker` is unavailable; GHCR workflow remains authoritative    |
 
 ## Binary-file policy
 
