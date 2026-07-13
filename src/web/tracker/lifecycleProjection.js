@@ -582,7 +582,6 @@ export function projectLifecycleAt(bundle = {}, bucketId = "current") {
         paths,
         "origin",
         LIFECYCLE_DIAGRAM_TAXONOMY.origins.map((x) => x.id),
-        true,
       ),
       milestones: countBy(
         paths.flatMap((path) =>

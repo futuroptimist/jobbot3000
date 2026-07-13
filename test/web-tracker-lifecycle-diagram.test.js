@@ -5,6 +5,7 @@ import { JSDOM } from "jsdom";
 import { createLifecycleDiagramView } from "../src/web/tracker/lifecycleDiagram.js";
 import {
   buildLifecycleTimeline,
+  LIFECYCLE_DIAGRAM_TAXONOMY,
   projectLifecycleAt,
 } from "../src/web/tracker/lifecycleProjection.js";
 
@@ -130,11 +131,15 @@ describe("lifecycle diagram view", () => {
     ).toBe(true);
     expect(root.textContent).toContain("2/2 applications included");
     expect(root.textContent).toContain("Origins");
+    expect(snapshot.totals.origins).toEqual({
+      application_submitted: 1,
+      referral: 1,
+    });
     const originCounts = [...root.querySelectorAll("caption")]
       .find((caption) => caption.textContent === "Origins")
       .closest("table")
       .querySelectorAll("tbody tr").length;
-    expect(originCounts).toBe(Object.keys(snapshot.totals.origins).length);
+    expect(originCounts).toBe(LIFECYCLE_DIAGRAM_TAXONOMY.origins.length);
   });
 
   it("handles empty, unknown-only, date, and simultaneous boundary timestamps", () => {

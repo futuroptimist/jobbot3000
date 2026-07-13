@@ -24,7 +24,6 @@ jobs:
     env:
       GITHUB_ACTIONS: "true"
       DIAGRAM_VISUAL_ARTIFACTS: "1"
-      DIAGRAM_VISUAL_OUTPUT_DIR: ${{ runner.temp }}/jobbot3000-diagram-visual-review
       PLAYWRIGHT_BROWSERS_PATH: .cache/ms-playwright
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
       TZ: UTC
@@ -38,6 +37,8 @@ jobs:
       - run: npm ci
       - run: npm run prepare:test
       - run: node scripts/capture-diagram-visual-review.js
+        env:
+          DIAGRAM_VISUAL_OUTPUT_DIR: ${{ runner.temp }}/jobbot3000-diagram-visual-review
       - uses: actions/upload-artifact@v4
         with:
           name: diagram-visual-review-${{ github.event.pull_request.number || 'manual' }}-${{ github.run_attempt }}
