@@ -315,6 +315,13 @@ body {
   overflow-x: hidden;
 }
 
+body > header,
+body > main,
+body > footer,
+.primary-nav a {
+  box-sizing: border-box;
+}
+
 [data-lifecycle-diagram] summary {
   display: flex;
   align-items: center;

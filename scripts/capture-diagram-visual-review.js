@@ -1,4 +1,4 @@
-/* global document */
+/* global document, window */
 import { chromium } from "@playwright/test";
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
@@ -54,20 +54,37 @@ async function assertViewportAndNoPageOverflow(
         `got ${viewport?.width}x${viewport?.height}.`,
     );
   const overflow = await page.evaluate(() => ({
-    scrollWidth: document.documentElement.scrollWidth,
-    clientWidth: document.documentElement.clientWidth,
+    documentScrollWidth: document.documentElement.scrollWidth,
+    documentClientWidth: document.documentElement.clientWidth,
+    bodyScrollWidth: document.body?.scrollWidth ?? 0,
+    bodyClientWidth: document.body?.clientWidth ?? 0,
   }));
-  if (overflow.scrollWidth > overflow.clientWidth)
+  const maxScrollWidth = Math.max(
+    overflow.documentScrollWidth,
+    overflow.bodyScrollWidth,
+  );
+  const minClientWidth = Math.min(
+    overflow.documentClientWidth,
+    overflow.bodyClientWidth || overflow.documentClientWidth,
+  );
+  if (maxScrollWidth > minClientWidth)
     throw new Error(
       "Page-level horizontal overflow before capture: " +
-        `${overflow.scrollWidth} > ${overflow.clientWidth}.`,
+        `${maxScrollWidth} > ${minClientWidth}.`,
     );
 }
 
 async function capturePng(page, filePath, expectedWidth) {
+  const height = await page.evaluate(() =>
+    Math.max(
+      document.documentElement.scrollHeight,
+      document.body?.scrollHeight ?? 0,
+      window.innerHeight,
+    ),
+  );
   const buffer = await page.screenshot({
     path: filePath,
-    fullPage: true,
+    clip: { x: 0, y: 0, width: expectedWidth, height },
     animations: "disabled",
   });
   const width = readPngWidth(buffer);
