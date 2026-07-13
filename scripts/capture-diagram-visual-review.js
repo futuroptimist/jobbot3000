@@ -52,7 +52,9 @@ try {
       fullPage: true,
       animations: "disabled",
     });
-    await page.getByRole("button", { name: "Previous event" }).click();
+    await page
+      .getByRole("button", { name: "Previous event", exact: true })
+      .click();
     await page.screenshot({
       path: path.join(outDir, `diagram-${name}-history.png`),
       fullPage: true,

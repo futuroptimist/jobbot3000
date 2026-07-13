@@ -23,6 +23,8 @@ jobs:
       GITHUB_ACTIONS: "true"
       DIAGRAM_VISUAL_ARTIFACTS: "1"
       DIAGRAM_VISUAL_OUTPUT_DIR: ${{ runner.temp }}/jobbot3000-diagram-visual-review
+      PLAYWRIGHT_BROWSERS_PATH: .cache/ms-playwright
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
       TZ: UTC
       LANG: en_US.UTF-8
     steps:

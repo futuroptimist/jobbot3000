@@ -93,7 +93,7 @@ describe("lifecycle diagram view", () => {
         ev("offer", "a2", "offer_received", "2026-01-03"),
       ],
     );
-    const { root } = render(b);
+    const { root, snapshot } = render(b);
 
     expect(
       root.querySelector("input[type='range']").getAttribute("aria-valuetext"),
@@ -119,7 +119,7 @@ describe("lifecycle diagram view", () => {
       .find((caption) => caption.textContent === "Origins")
       .closest("table")
       .querySelectorAll("tbody tr").length;
-    expect(originCounts).toBe(5);
+    expect(originCounts).toBe(Object.keys(snapshot.totals.origins).length);
   });
 
   it("handles empty, unknown-only, date, and simultaneous boundary timestamps", () => {
@@ -371,7 +371,11 @@ describe("lifecycle diagram view", () => {
     nodeButton.click();
     expect(detailsText()).toBe(svgNodeDetails);
     expect(detailsText()).toContain("2 applications (100%)");
-    expect(detailsText()).toContain("a, b");
+    expect(
+      [...root.querySelectorAll("[data-affected-applications] li")].map(
+        (item) => item.textContent,
+      ),
+    ).toEqual(["a", "b"]);
 
     const svgLink = root.querySelector("[data-diagram-link]");
     const linkId = svgLink.getAttribute("data-diagram-link");

@@ -392,7 +392,12 @@ export function createLifecycleDiagramView(root, options = {}) {
         "data-application-range": "",
         textContent: `Applications ${appPage.start}–${appPage.end} of ${appPage.total}`,
       }),
-      el("p", { textContent: ids.join(", ") || "None" }),
+      el("p", {
+        className: "muted",
+        textContent: ids.length
+          ? "Application IDs are paginated below to keep rendering bounded."
+          : "None",
+      }),
       appList,
       el("div", { className: "diagram-pagination" }, [prevApp, nextApp]),
     ]);
