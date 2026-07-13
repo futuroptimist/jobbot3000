@@ -146,6 +146,42 @@ describe("lifecycle diagram view", () => {
     expect(outreachRow.textContent).toContain("0");
   });
 
+  it("keeps semantic tables aggregate-first and preserves semantic button focus", () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root, view, timeline } = render(b);
+    const disclosure = root.querySelector("details.diagram-tables");
+    expect(disclosure.querySelector("summary").textContent).toBe(
+      "Lifecycle data tables",
+    );
+    expect(disclosure.open).toBe(false);
+    disclosure.open = true;
+    disclosure.dispatchEvent(new window.Event("toggle"));
+    const button = root.querySelector(
+      "button[aria-label='Select Application submitted']",
+    );
+    button.focus();
+    button.click();
+    const pressed = root.querySelectorAll(
+      ".diagram-select-button[aria-pressed='true']",
+    );
+    expect(pressed).toHaveLength(1);
+    expect(document.activeElement.getAttribute("aria-label")).toBe(
+      "Select Application submitted",
+    );
+    view.update({
+      timeline,
+      snapshot: projectLifecycleAt(b, timeline.buckets[0].id),
+      selectedBucketId: timeline.buckets[0].id,
+    });
+    expect(root.querySelector("details.diagram-tables").open).toBe(true);
+  });
+
   it("handles empty, unknown-only, date, and simultaneous boundary timestamps", () => {
     expect(render(bundle()).root.textContent).toContain(
       "No lifecycle data yet",
@@ -570,6 +606,11 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
       [...root.querySelectorAll("[data-affected-applications] li")].map(
         (item) => item.textContent,
       );
+    const affected = root.querySelector("[data-diagram-details] details");
+    expect(affected.open).toBe(false);
+    expect(affected.querySelector("summary").textContent).toBe(
+      "Affected applications (125)",
+    );
     expect(pageIds()).toHaveLength(50);
     expect(root.querySelector("[data-application-range]").textContent).toBe(
       "Applications 1–50 of 125",

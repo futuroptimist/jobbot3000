@@ -112,7 +112,6 @@ test.describe("Application Lifecycle Diagram", () => {
 
   test("renders seeded current/historical states with semantic tables and selection", async ({
     page,
-    browser,
   }) => {
     const requests = [];
     page.on("request", (request) => requests.push(request));
@@ -126,6 +125,15 @@ test.describe("Application Lifecycle Diagram", () => {
     ).toBeVisible();
     await expect(page.locator("svg > title")).not.toHaveText("");
     await expect(page.locator("svg > desc")).not.toHaveText("");
+    await expect(page.locator("details.diagram-tables")).not.toHaveAttribute(
+      "open",
+      "",
+    );
+    await page.getByText("Lifecycle data tables").click();
+    await expect(page.locator("details.diagram-tables")).toHaveAttribute(
+      "open",
+      "",
+    );
     for (const label of EXPECTED_CURRENT.endpoints) {
       await expect(
         page
@@ -169,7 +177,10 @@ test.describe("Application Lifecycle Diagram", () => {
       /Historical|Unknown|2026/u,
     );
     await expect(page.locator("[data-lifecycle-diagram]")).toContainText(
-      /Newer activity available|Historical/u,
+      "Historical",
+    );
+    await expect(page.locator("[data-lifecycle-diagram]")).not.toContainText(
+      "Newer activity available",
     );
     await page.getByRole("button", { name: "Next event", exact: true }).click();
     await range.fill("0");
@@ -220,6 +231,10 @@ test.describe("Application Lifecycle Diagram", () => {
       .first()
       .click({ force: true });
     await runAxe(page);
+    if (
+      !(await page.locator("details.diagram-tables").evaluate((el) => el.open))
+    )
+      await page.getByText("Lifecycle data tables").click();
     await page
       .getByRole("button", { name: "Select Other/unknown", exact: true })
       .click();
@@ -284,8 +299,5 @@ test.describe("Application Lifecycle Diagram", () => {
       ),
     ).toHaveLength(0);
     expect(page.errors).toEqual([]);
-    await browser
-      .newContext({ viewport: { width: 1440, height: 900 } })
-      .then((context) => context.close());
   });
 });

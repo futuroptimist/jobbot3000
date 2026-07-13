@@ -310,3 +310,14 @@ body {
   max-width: 100%;
   overflow-x: hidden;
 }
+
+[data-lifecycle-diagram] summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+}
+.diagram-tables-body {
+  display: grid;
+  gap: 1rem;
+}

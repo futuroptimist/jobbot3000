@@ -200,6 +200,7 @@ test.describe("static tracker smoke", () => {
     await page.getByRole("button", { name: "Apply import" }).click();
     await page.getByRole("button", { name: "Diagram" }).click();
     await expect(page.locator("svg[role='img']")).toBeVisible();
+    await page.getByText("Lifecycle data tables").click();
     await expect(page.locator("caption", { hasText: "Origins" })).toBeVisible();
     await page
       .getByRole("button", { name: "Previous event", exact: true })

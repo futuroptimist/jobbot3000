@@ -135,6 +135,7 @@ const state = {
   reconciliationWarnings: [],
   diagramBucketId: "current",
   diagramView: null,
+  diagramHistoricalBaseline: null,
 };
 function weekBucket(value) {
   const d = day(value);
@@ -612,6 +613,15 @@ function renderOutreach() {
       })
       .join("") || '<p class="muted">No outreach messages yet.</p>';
 }
+
+function lifecycleTimelineFingerprint(timeline) {
+  return (timeline.buckets ?? [])
+    .map(
+      (bucket) =>
+        `${bucket.id}:${[...(bucket.eventIds ?? [])].sort().join(",")}`,
+    )
+    .join("|");
+}
 function renderDiagram() {
   const root = $("[data-lifecycle-diagram]");
   if (!root || !state.bundle) return;
@@ -622,22 +632,26 @@ function renderDiagram() {
   if (!valid.has(selectedBucketId)) {
     selectedBucketId = "current";
     state.diagramBucketId = "current";
+    state.diagramHistoricalBaseline = null;
     fallbackAnnounced = true;
   }
   const snapshot = projectLifecycleAt(state.bundle, selectedBucketId);
-  const selectedIndex = timeline.buckets.findIndex(
-    (bucket) => bucket.id === selectedBucketId,
-  );
-  const newerAvailable = timeline.buckets.some(
-    (bucket, index) =>
-      index > selectedIndex &&
-      bucket.id !== "current" &&
-      (bucket.eventIds?.length ?? 0) > 0,
-  );
+  const timelineFingerprint = lifecycleTimelineFingerprint(timeline);
+  if (selectedBucketId === "current") state.diagramHistoricalBaseline = null;
+  const newerAvailable =
+    selectedBucketId !== "current" &&
+    Boolean(state.diagramHistoricalBaseline) &&
+    state.diagramHistoricalBaseline !== timelineFingerprint;
   if (!state.diagramView) {
     state.diagramView = createLifecycleDiagramView(root, {
       onBucketChange(bucketId) {
+        const previousBucketId = state.diagramBucketId || "current";
         state.diagramBucketId = bucketId;
+        if (bucketId === "current") state.diagramHistoricalBaseline = null;
+        else if (previousBucketId === "current")
+          state.diagramHistoricalBaseline = lifecycleTimelineFingerprint(
+            buildLifecycleTimeline(state.bundle),
+          );
         renderDiagram();
       },
     });

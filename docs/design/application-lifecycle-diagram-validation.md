@@ -71,6 +71,8 @@ Follow-up verification on July 13, 2026 reconfirmed the restored sparse P4 proje
 - `test/web-tracker-lifecycle-diagram.test.js` verifies complete Diagram taxonomy rows against `LIFECYCLE_DIAGRAM_TAXONOMY` and separately asserts a rendered zero-count origin row, keeping UI completeness separate from sparse projection totals.
 - `npm run format:check` still fails only because of repository-wide baseline Prettier drift outside the P6 touch set; no unrelated formatting rewrite is included in this PR.
 - The GitHub-hosted Diagram visual-review workflow remains the required source of final artifact evidence: the expected artifact is `diagram-visual-review-${PR_NUMBER}-${RUN_ATTEMPT}` with `diagram-desktop-current.png`, `diagram-desktop-history.png`, `diagram-mobile-current.png`, and `diagram-mobile-history.png`.
+- Follow-up UI hardening keeps the Diagram aggregate-first: semantic lifecycle data tables now live inside a closed-by-default `Lifecycle data tables` disclosure, affected application IDs live inside a closed-by-default bounded disclosure, and keyboard activation of semantic controls preserves focus while updating exactly one selected state.
+- Historical `Newer activity available` now compares a stable timeline fingerprint captured when the user leaves Current, so selecting an older pre-existing bucket does not imply fresh data; returning to Current or losing the selected bucket clears the baseline.
 
 ## Binary-file policy
 

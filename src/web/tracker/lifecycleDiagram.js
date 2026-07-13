@@ -171,6 +171,7 @@ export function createLifecycleDiagramView(root, options = {}) {
   let lastNewerAvailable = false;
   let eventPage = 0;
   let applicationPage = 0;
+  let tablesOpen = false;
   const ids = {
     title: "lifecycle-diagram-title",
     desc: "lifecycle-diagram-desc",
@@ -228,8 +229,23 @@ export function createLifecycleDiagramView(root, options = {}) {
     "aria-live": "polite",
     "data-diagram-details": "",
   });
-  const tables = el("div", { className: "diagram-tables" });
-  root.append(controls, stamp, live, scroll, details, simultaneous, tables);
+  const tablesDisclosure = el("details", { className: "diagram-tables" }, [
+    el("summary", { textContent: "Lifecycle data tables" }),
+  ]);
+  const tables = el("div", { className: "diagram-tables-body" });
+  tablesDisclosure.append(tables);
+  tablesDisclosure.addEventListener("toggle", () => {
+    tablesOpen = tablesDisclosure.open;
+  });
+  root.append(
+    controls,
+    stamp,
+    live,
+    scroll,
+    details,
+    simultaneous,
+    tablesDisclosure,
+  );
 
   const announce = makeDebounce((message) => {
     live.textContent = message;
@@ -260,6 +276,7 @@ export function createLifecycleDiagramView(root, options = {}) {
             "aria-label": row.label,
             "aria-pressed":
               row.id && selectedFeature?.id === row.id ? "true" : "false",
+            "data-diagram-select-id": row.id,
           });
           button.addEventListener("click", row.onSelect);
           td.append(button);
@@ -317,6 +334,8 @@ export function createLifecycleDiagramView(root, options = {}) {
     return null;
   };
   const selectFeature = (feature) => {
+    const active = document.activeElement;
+    const shouldRestoreFocus = active?.matches?.(".diagram-select-button");
     if (selectedFeature?.id !== feature.id) applicationPage = 0;
     selectedFeature = {
       ...feature,
@@ -325,6 +344,10 @@ export function createLifecycleDiagramView(root, options = {}) {
     renderDetails();
     renderSvg();
     renderTables();
+    if (shouldRestoreFocus)
+      [...tables.querySelectorAll(".diagram-select-button")]
+        .find((button) => button.dataset.diagramSelectId === feature.id)
+        ?.focus();
   };
   const renderDetails = () => {
     const total = projection.includedApplications || 0;
@@ -387,7 +410,7 @@ export function createLifecycleDiagramView(root, options = {}) {
       renderDetails();
     });
     const d = el("details", {}, [
-      el("summary", { textContent: "Affected applications" }),
+      el("summary", { textContent: `Affected applications (${ids.length})` }),
       el("p", {
         "data-application-range": "",
         textContent: `Applications ${appPage.start}–${appPage.end} of ${appPage.total}`,
@@ -401,7 +424,6 @@ export function createLifecycleDiagramView(root, options = {}) {
       appList,
       el("div", { className: "diagram-pagination" }, [prevApp, nextApp]),
     ]);
-    d.open = true;
     details.append(
       d,
       el("p", { className: "muted", textContent: warningSummary }),
@@ -632,6 +654,7 @@ export function createLifecycleDiagramView(root, options = {}) {
         time: formatted,
       };
     });
+    tablesDisclosure.open = tablesOpen;
     tables.textContent = "";
     tables.append(
       renderTable("Origins", ["Origin", "Count", "Percentage"], originRows),
