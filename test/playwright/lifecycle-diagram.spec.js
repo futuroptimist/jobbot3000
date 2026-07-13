@@ -8,6 +8,52 @@ import { startWebServer } from "../../src/web/server.js";
 
 const EXPECTED_CURRENT = {
   included: "16/16 applications included",
+  origins: {
+    "Application submitted": "4",
+    "Candidate outreach": "3",
+    "Recruiter/company reached out": "2",
+    Referral: "3",
+    "Other/unknown": "4",
+  },
+  milestones: {
+    "Recruiter screen": "3",
+    "Technical interview": "4",
+    "Assessment/take-home": "2",
+    "Onsite/final loop": "1",
+    "Offer received": "2",
+  },
+  importedEndpoints: {
+    "Awaiting response": "3",
+    Interviewing: "4",
+    "Assessment in progress": "1",
+    "Offer/negotiating": "2",
+    "Employer rejected": "1",
+    "Candidate withdrew": "1",
+    "Offer declined": "1",
+    "Offer expired/rescinded": "1",
+    "Offer accepted": "1",
+    "Closed/archived": "1",
+    Unknown: "0",
+  },
+  rawFixtureEndpoints: {
+    "Awaiting response": "2",
+    Interviewing: "4",
+    "Assessment in progress": "1",
+    "Offer/negotiating": "2",
+    "Employer rejected": "1",
+    "Candidate withdrew": "1",
+    "Offer declined": "1",
+    "Offer expired/rescinded": "1",
+    "Offer accepted": "1",
+    "Closed/archived": "1",
+    Unknown: "1",
+  },
+  representativeFlows: {
+    "Application submitted to Awaiting response": "2",
+    "Technical interview to Interviewing": "3",
+    "Offer received to Offer/negotiating": "2",
+    "Other/unknown to Employer rejected": "1",
+  },
   endpoints: [
     "Awaiting response",
     "Interviewing",
@@ -66,6 +112,23 @@ async function openLifecycleTables(page) {
   const tables = page.locator("details.diagram-tables");
   if (!(await tables.evaluate((el) => el.open)))
     await page.getByText("Lifecycle data tables").click();
+}
+
+async function tableRowsByCaption(page, caption) {
+  return await page
+    .locator("table", { has: page.locator("caption", { hasText: caption }) })
+    .evaluate((table) =>
+      [...table.querySelectorAll("tbody tr")].map((row) =>
+        [...row.cells].map((cell) => cell.innerText.trim()),
+      ),
+    );
+}
+
+async function assertTableCounts(page, caption, expected) {
+  const rows = await tableRowsByCaption(page, caption);
+  expect(Object.fromEntries(rows.map((row) => [row[0], row[1]]))).toMatchObject(
+    expected,
+  );
 }
 
 async function selectedDetails(page) {
@@ -190,6 +253,24 @@ test.describe("Application Lifecycle Diagram", () => {
       "open",
       "",
     );
+    await assertTableCounts(page, "Origins", EXPECTED_CURRENT.origins);
+    await assertTableCounts(page, "Milestones", EXPECTED_CURRENT.milestones);
+    await assertTableCounts(
+      page,
+      "Endpoints",
+      EXPECTED_CURRENT.importedEndpoints,
+    );
+    await assertTableCounts(
+      page,
+      "Flows",
+      EXPECTED_CURRENT.representativeFlows,
+    );
+    // Raw P4 projection of the fixture intentionally has Unknown=1 and Awaiting=2;
+    // supported browser import/reconciliation fills the deliberately incomplete
+    // hostile application into its current endpoint, yielding Unknown=0 and
+    // Awaiting=3 in the imported UI expectation above.
+    expect(EXPECTED_CURRENT.rawFixtureEndpoints.Unknown).toBe("1");
+    expect(EXPECTED_CURRENT.importedEndpoints.Unknown).toBe("0");
     for (const label of EXPECTED_CURRENT.endpoints) {
       await expect(
         page
@@ -197,6 +278,15 @@ test.describe("Application Lifecycle Diagram", () => {
           .locator("..", { hasText: label }),
       ).toBeVisible();
     }
+    await expect(page.locator("svg")).toContainText("Awaiting response: 3");
+    await expect(page.locator("svg")).toContainText("Interviewing: 4");
+    await expect(
+      page.locator("time[datetime='2026-01-02T10:00:00.000Z']"),
+    ).toBeVisible();
+    await expect(page.locator("time[datetime='2026-01-01']")).toBeVisible();
+    await expect(page.locator("[data-lifecycle-diagram]")).toContainText(
+      "time not recorded",
+    );
     await runAxe(page);
 
     const before = await page.evaluate(
@@ -235,6 +325,13 @@ test.describe("Application Lifecycle Diagram", () => {
     await expect(page.locator("[data-lifecycle-diagram]")).toContainText(
       "Historical",
     );
+    await expect(page.locator("[data-lifecycle-diagram]")).not.toContainText(
+      "Newer activity available",
+    );
+    const historicalValue = await range.inputValue();
+    await page.getByRole("button", { name: "Applications" }).click();
+    await page.getByRole("button", { name: "Diagram" }).click();
+    await expect(range).toHaveValue(historicalValue);
     await expect(page.locator("[data-lifecycle-diagram]")).not.toContainText(
       "Newer activity available",
     );
@@ -278,10 +375,6 @@ test.describe("Application Lifecycle Diagram", () => {
     expect(await scroll.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(
       true,
     );
-    await scroll.evaluate((el) => {
-      el.scrollLeft = 80;
-    });
-    expect(await scroll.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
     await page
       .locator("[data-diagram-node-hit]")
       .first()

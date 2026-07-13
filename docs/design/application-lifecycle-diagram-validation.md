@@ -75,6 +75,8 @@ Follow-up verification on July 13, 2026 reconfirmed the restored sparse P4 proje
 - Historical `Newer activity available` now compares a stable timeline fingerprint captured when the user leaves Current, so selecting an older pre-existing bucket does not imply fresh data; returning to Current or losing the selected bucket clears the baseline.
 - Real touch-mobile validation now uses a dedicated 375×812 `hasTouch` context with `deviceScaleFactor: 1`, verifies no page-level horizontal overflow, keeps chart/table overflow local, and exercises SVG node/flow selection through touchscreen taps.
 - The visual-review capture script now fixes `deviceScaleFactor: 1`, asserts viewport width and no page-level overflow before each capture, and validates PNG IHDR widths as 1440px for desktop and 375px for mobile.
+- Playwright coverage now records separate literal expectations for raw fixture P4 endpoint totals (`Awaiting response: 2`, `Unknown: 1`) and supported imported/reconciled UI totals (`Awaiting response: 3`, `Unknown: 0`), because the browser import path reconciles the deliberately incomplete hostile application into its current awaiting-response endpoint without changing P4 projection semantics.
+- The focused lifecycle Playwright journey asserts hard-coded imported origin, milestone, endpoint, and representative-flow counts; SVG label parity; exact/date-only/unknown time display; historical tab-navigation persistence; real touch selection parity; and bounded read-only Diagram behavior.
 
 ## Binary-file policy
 
