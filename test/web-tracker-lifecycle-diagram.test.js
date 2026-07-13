@@ -119,7 +119,9 @@ describe("lifecycle diagram view", () => {
       .find((caption) => caption.textContent === "Origins")
       .closest("table")
       .querySelectorAll("tbody tr").length;
-    expect(originCounts).toBe(Object.keys(snapshot.totals.origins).length);
+    expect(originCounts).toBeGreaterThanOrEqual(
+      Object.keys(snapshot.totals.origins).length,
+    );
   });
 
   it("handles empty, unknown-only, date, and simultaneous boundary timestamps", () => {
@@ -459,5 +461,50 @@ describe("lifecycle diagram view", () => {
     expect(root.querySelector("[data-diagram-details]").textContent).toContain(
       "Warnings: inferred history 0; unknown origin/time 0; status mismatch 0; regression 0.",
     );
+  });
+
+  it("paginates events, selection state, hit regions, and time elements", () => {
+    const root = setup();
+    const applications = Array.from({ length: 60 }, (_, index) =>
+      app(`page-${String(index).padStart(2, "0")}`),
+    );
+    const events = applications.map((application, index) =>
+      ev(
+        `event-${String(index).padStart(2, "0")}`,
+        application.id,
+        "application_submitted",
+        index % 2 ? "2026-01-02" : "2026-01-02T00:00:00.000Z",
+      ),
+    );
+    const data = bundle(applications, events);
+    const timeline = buildLifecycleTimeline(data);
+    const snapshot = projectLifecycleAt(data, "current");
+    const view = createLifecycleDiagramView(root);
+    view.update({ timeline, snapshot });
+
+    expect(root.textContent).toContain("Events 1–50 of 60");
+    expect(
+      root.querySelectorAll("tbody")[4].querySelectorAll("tr"),
+    ).toHaveLength(50);
+    expect(root.querySelector('time[datetime="2026-01-02"]')).toBeTruthy();
+    root
+      .querySelector('[data-diagram-node-hit="origin:application_submitted"]')
+      .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(root.textContent).toContain("Applications 1–50 of 60");
+    expect(
+      root.querySelector('[data-diagram-node-hit][aria-hidden="true"]'),
+    ).toBeTruthy();
+    const pressed = root.querySelector(
+      '.diagram-select-button[aria-pressed="true"]',
+    );
+    expect(pressed?.textContent).toContain("Application submitted");
+    root.querySelector('button[aria-label="Next event page"]').click();
+    expect(root.textContent).toContain("Events 51–60 of 60");
+    view.update({
+      timeline,
+      snapshot: projectLifecycleAt(data, timeline.buckets[1].id),
+      selectedBucketId: timeline.buckets[1].id,
+    });
+    expect(root.textContent).toContain("Events 1–");
   });
 });

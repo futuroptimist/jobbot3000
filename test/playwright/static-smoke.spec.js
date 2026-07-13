@@ -134,6 +134,15 @@ test.describe("static tracker smoke", () => {
     const health = await page.request.get(`${baseUrl}/healthz`);
     expect(health.ok()).toBe(true);
     expect(health.headers()["cache-control"]).toContain("no-store");
+    expect(health.headers()["content-security-policy"]).toContain(
+      "default-src 'self'",
+    );
+    expect(health.headers()["content-security-policy"]).toContain(
+      "script-src 'self'",
+    );
+    expect(health.headers()["content-security-policy"]).toContain(
+      "connect-src 'self'",
+    );
     await expect(health.json()).resolves.toEqual({
       status: "ok",
       mode: "static",
@@ -146,7 +155,9 @@ test.describe("static tracker smoke", () => {
 
     const invalidHealth = await page.request.get(`${baseUrl}/healthz/not-real`);
     expect(invalidHealth.status()).toBe(404);
-    expect(invalidHealth.headers()["content-type"]).not.toContain("application/json");
+    expect(invalidHealth.headers()["content-type"]).not.toContain(
+      "application/json",
+    );
 
     await page.goto(baseUrl);
     await expect(
@@ -171,5 +182,53 @@ test.describe("static tracker smoke", () => {
       const response = await page.request.get(`${baseUrl}${asset}`);
       expect(response.ok(), asset).toBe(true);
     }
+  });
+
+  test("renders lifecycle Diagram from deterministic data without external requests", async ({
+    page,
+  }) => {
+    const external = [];
+    page.on("request", (request) => {
+      if (new URL(request.url()).origin !== baseUrl)
+        external.push(request.url());
+    });
+    await page.goto(`${baseUrl}/tracker`);
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    const fixture = await fs.readFile(
+      "test/fixtures/tracker-lifecycle-diagram-v2.json",
+      "utf8",
+    );
+    await page.setInputFiles("[data-import-file]", {
+      name: "tracker-lifecycle-diagram-v2.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(fixture),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await page.getByRole("button", { name: "Apply import" }).click();
+    await expect(page.locator("[data-import-result]")).toContainText(
+      "Import applied",
+    );
+    await page.getByRole("button", { name: "Diagram" }).click();
+    await expect(page.locator('[data-view="diagram"] svg')).toBeVisible();
+    await expect(page.locator("caption", { hasText: "Origins" })).toBeVisible();
+    await page
+      .getByRole("button", { name: "Previous event", exact: true })
+      .click();
+    await page.locator("[data-diagram-node]").first().click();
+    await expect(page.locator("[data-diagram-details]")).toContainText(
+      "application",
+    );
+    expect(external).toEqual([]);
+
+    const trackerJs = await fs.readFile(
+      path.join(staticDir, "assets", "tracker.js"),
+      "utf8",
+    );
+    expect(trackerJs).toContain("Lifecycle Sankey diagram");
+    const trackerHtml = await fs.readFile(
+      path.join(staticDir, "tracker.html"),
+      "utf8",
+    );
+    expect(trackerHtml).not.toMatch(/cdn|unpkg|jsdelivr/i);
   });
 });
