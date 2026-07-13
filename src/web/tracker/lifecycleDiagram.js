@@ -1,5 +1,4 @@
 /* global document, window, ResizeObserver */
-/* eslint-disable max-len */
 import { sankey, sankeyLinkHorizontal } from "d3-sankey";
 import { LIFECYCLE_DIAGRAM_TAXONOMY } from "./lifecycleProjection.js";
 
@@ -112,6 +111,7 @@ const formatTimestamp = (bucket, projection) => {
     ).length;
     const latest = known ? formatEventTime(known) : undefined;
     return {
+      // eslint-disable-next-line max-len
       label: `Current — latest data in this browser${latest ? `, latest known event ${latest.label}` : ""}${unknown ? `, ${unknown} unknown-time event${unknown === 1 ? "" : "s"}` : ""}`,
       datetime: latest?.datetime,
     };
@@ -300,9 +300,12 @@ export function createLifecycleDiagramView(root, options = {}) {
     const unknownTimeEvents = (projection.events ?? []).filter((event) =>
       isUnknownPrecision(event.occurredAtPrecision),
     ).length;
+    // eslint-disable-next-line max-len
     const warningSummary = `Warnings: inferred history ${warningCounts.inferred_event ?? 0}; unknown origin/time ${(warningCounts.inferred_origin ?? 0) + (warningCounts.invalid_timestamp ?? 0) + unknownTimeEvents}; status mismatch ${warningCounts.status_mismatch ?? 0}; regression ${warningCounts.regressive_history ?? 0}.`;
     if (!selectedFeature) {
-      details.textContent = `Select a node or flow row for counts, percentages, and affected applications. ${warningSummary}`;
+      details.textContent =
+        // eslint-disable-next-line max-len
+        `Select a node or flow row for counts, percentages, and affected applications. ${warningSummary}`;
       return;
     }
     const ids = featureApplicationIds(selectedFeature);
@@ -320,6 +323,7 @@ export function createLifecycleDiagramView(root, options = {}) {
     details.append(
       el("h3", { textContent: selectedFeature.label }),
       el("p", {
+        // eslint-disable-next-line max-len
         textContent: `${ids.length} application${ids.length === 1 ? "" : "s"} (${pct(ids.length, total)}). Observed ${observed.length}; inferred ${inferred.length}. Date range: ${projection.bucket.kind === "date" ? formatTimestamp(projection.bucket, projection).label : projection.bucket.kind === "current" ? `through ${projection.bucket.label}` : projection.bucket.label}.`,
       }),
     );
@@ -397,11 +401,13 @@ export function createLifecycleDiagramView(root, options = {}) {
     svg.querySelector("title").textContent = "Lifecycle Sankey diagram";
     svg.append(svgEl("desc", { id: ids.desc }));
     svg.querySelector("desc").textContent =
-      "Application counts flowing from origin through milestones to endpoints. Equivalent tables follow.";
+      "Application counts flowing from origin through milestones to endpoints. " +
+      "Equivalent tables follow.";
     const linkG = svgEl("g", { fill: "none", strokeOpacity: "0.45" });
     for (const link of graph.links.filter(
       (l) => l.value > 0 && finiteLink(l),
     )) {
+      // eslint-disable-next-line max-len
       const linkLabel = `${TAXONOMY.get(link.source.id)?.label ?? link.source.id} to ${TAXONOMY.get(link.target.id)?.label ?? link.target.id}: ${link.value}`;
       const pathData = sankeyLinkHorizontal()(link);
       if (!pathData || /NaN|Infinity/u.test(pathData)) continue;
@@ -441,7 +447,8 @@ export function createLifecycleDiagramView(root, options = {}) {
       });
       g.append(svgEl("title"));
       g.querySelector("title").textContent = nodeLabel;
-      // SVG pointer handlers intentionally remain mouse-only; semantic table buttons below provide the compact keyboard equivalent.
+      // SVG pointer handlers intentionally remain mouse-only; semantic table
+      // buttons below provide the compact keyboard equivalent.
       const selectNode = () =>
         selectFeature({
           id: node.id,
@@ -557,7 +564,9 @@ export function createLifecycleDiagramView(root, options = {}) {
       selectedId === "current"
         ? "Current"
         : `Historical${newerAvailable ? " · Newer activity available" : ""}`;
-    count.textContent = `${projection.includedApplications}/${projection.totalApplications} applications included`;
+    count.textContent =
+      `${projection.includedApplications}/${projection.totalApplications} ` +
+      "applications included";
     const ts = formatTimestamp(projection.bucket, projection);
     stamp.textContent = "";
     stamp.append(
