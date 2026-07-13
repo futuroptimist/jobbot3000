@@ -80,7 +80,20 @@ const bucketValueText = (bucket) => {
 };
 const isUnknownPrecision = (precision) =>
   ["unknown", "legacy-placeholder", "legacy_placeholder"].includes(precision);
+const PAGE_SIZE = 50;
 const unique = (items) => [...new Set(items.filter(Boolean))].sort(compare);
+const pageSlice = (items, page) => {
+  const maxPage = Math.max(0, Math.ceil(items.length / PAGE_SIZE) - 1);
+  const safePage = Math.min(Math.max(0, page), maxPage);
+  return {
+    page: safePage,
+    maxPage,
+    total: items.length,
+    start: items.length ? safePage * PAGE_SIZE + 1 : 0,
+    end: Math.min(items.length, (safePage + 1) * PAGE_SIZE),
+    items: items.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE),
+  };
+};
 const formatEventTime = (event) => {
   if (event?.occurredAtPrecision === "date") {
     const date = /^\d{4}-\d{2}-\d{2}/u.exec(
@@ -156,6 +169,8 @@ export function createLifecycleDiagramView(root, options = {}) {
   let resizeObserver;
   let windowResizeHandler;
   let lastNewerAvailable = false;
+  let eventPage = 0;
+  let applicationPage = 0;
   const ids = {
     title: "lifecycle-diagram-title",
     desc: "lifecycle-diagram-desc",
@@ -243,9 +258,15 @@ export function createLifecycleDiagramView(root, options = {}) {
             className: "link-button diagram-select-button",
             textContent: cell,
             "aria-label": row.label,
+            "aria-pressed":
+              row.id && selectedFeature?.id === row.id ? "true" : "false",
           });
           button.addEventListener("click", row.onSelect);
           td.append(button);
+        } else if (row.time && index === 3 && row.time.datetime) {
+          td.append(
+            el("time", { datetime: row.time.datetime, textContent: cell }),
+          );
         } else {
           td.textContent = cell;
         }
@@ -254,7 +275,16 @@ export function createLifecycleDiagramView(root, options = {}) {
       tbody.append(tr);
     }
     table.append(thead, tbody);
-    return el("div", { className: "table-container" }, [table]);
+    return el(
+      "div",
+      {
+        className: "table-container",
+        tabindex: "0",
+        role: "region",
+        "aria-label": `${caption} table`,
+      },
+      [table],
+    );
   };
   const featureApplicationIds = (feature) =>
     unique(
@@ -287,12 +317,14 @@ export function createLifecycleDiagramView(root, options = {}) {
     return null;
   };
   const selectFeature = (feature) => {
+    if (selectedFeature?.id !== feature.id) applicationPage = 0;
     selectedFeature = {
       ...feature,
       applicationIds: featureApplicationIds(feature),
     };
     renderDetails();
     renderSvg();
+    renderTables();
   };
   const renderDetails = () => {
     const total = projection.includedApplications || 0;
@@ -327,10 +359,44 @@ export function createLifecycleDiagramView(root, options = {}) {
         textContent: `${ids.length} application${ids.length === 1 ? "" : "s"} (${pct(ids.length, total)}). Observed ${observed.length}; inferred ${inferred.length}. Date range: ${projection.bucket.kind === "date" ? formatTimestamp(projection.bucket, projection).label : projection.bucket.kind === "current" ? `through ${projection.bucket.label}` : projection.bucket.label}.`,
       }),
     );
+    const appPage = pageSlice(ids, applicationPage);
+    applicationPage = appPage.page;
+    const appList = el("ul", { "data-affected-applications": "" });
+    for (const id of appPage.items)
+      appList.append(el("li", { textContent: id }));
+    const prevApp = el("button", {
+      type: "button",
+      className: "button",
+      textContent: "Previous application page",
+      "aria-label": "Previous application page",
+    });
+    const nextApp = el("button", {
+      type: "button",
+      className: "button",
+      textContent: "Next application page",
+      "aria-label": "Next application page",
+    });
+    prevApp.disabled = appPage.page <= 0;
+    nextApp.disabled = appPage.page >= appPage.maxPage;
+    prevApp.addEventListener("click", () => {
+      applicationPage -= 1;
+      renderDetails();
+    });
+    nextApp.addEventListener("click", () => {
+      applicationPage += 1;
+      renderDetails();
+    });
     const d = el("details", {}, [
       el("summary", { textContent: "Affected applications" }),
+      el("p", {
+        "data-application-range": "",
+        textContent: `Applications ${appPage.start}–${appPage.end} of ${appPage.total}`,
+      }),
       el("p", { textContent: ids.join(", ") || "None" }),
+      appList,
+      el("div", { className: "diagram-pagination" }, [prevApp, nextApp]),
     ]);
+    d.open = true;
     details.append(
       d,
       el("p", { className: "muted", textContent: warningSummary }),
@@ -427,6 +493,15 @@ export function createLifecycleDiagramView(root, options = {}) {
         });
       path.addEventListener("click", selectLink);
       linkG.append(path);
+      const hitPath = svgEl("path", {
+        d: pathData,
+        stroke: "transparent",
+        "stroke-width": Math.max(44, link.width || 1),
+        "data-diagram-link-hit": link.id,
+        "aria-hidden": "true",
+      });
+      hitPath.addEventListener("click", selectLink);
+      linkG.append(hitPath);
     }
     svg.append(linkG);
     for (const node of graph.nodes.filter(
@@ -456,6 +531,16 @@ export function createLifecycleDiagramView(root, options = {}) {
           applicationIds: node.applicationIds,
         });
       g.addEventListener("click", selectNode);
+      const hitRect = svgEl("rect", {
+        x: node.x0 - Math.max(0, 44 - (node.x1 - node.x0)) / 2,
+        y: node.y0 - Math.max(0, 44 - (node.y1 - node.y0)) / 2,
+        width: Math.max(44, node.x1 - node.x0),
+        height: Math.max(44, node.y1 - node.y0),
+        fill: "transparent",
+        "aria-hidden": "true",
+        "data-diagram-node-hit": node.id,
+      });
+      hitRect.addEventListener("click", selectNode);
       const label = svgEl("text", {
         x: node.x0 < width / 2 ? node.x1 + 6 : node.x0 - 6,
         y: (node.y0 + node.y1) / 2,
@@ -464,7 +549,7 @@ export function createLifecycleDiagramView(root, options = {}) {
         fill: "currentColor",
       });
       label.textContent = `${node.label} (${node.total})`;
-      g.append(rect, label);
+      g.append(hitRect, rect, label);
       svg.append(g);
     }
     scroll.append(svg);
@@ -472,9 +557,9 @@ export function createLifecycleDiagramView(root, options = {}) {
   const renderTables = () => {
     const total = projection.includedApplications;
     const makeNodeRows = (entries, namespace) =>
-      Object.entries(entries).map(([id, value]) => {
+      LIFECYCLE_DIAGRAM_TAXONOMY[`${namespace}s`].map(({ id, label }) => {
+        const value = entries[id] ?? 0;
         const nodeId = `${namespace}:${id}`;
-        const label = TAXONOMY.get(nodeId)?.label ?? id;
         const applicationIds = unique(
           projection.paths
             .filter((path) => path.nodeIds.includes(nodeId))
@@ -483,6 +568,7 @@ export function createLifecycleDiagramView(root, options = {}) {
         return {
           cells: [label, String(value), pct(value, total)],
           label: `Select ${label}`,
+          id: nodeId,
           onSelect: () =>
             selectFeature({
               id: nodeId,
@@ -504,6 +590,7 @@ export function createLifecycleDiagramView(root, options = {}) {
       return {
         cells: [flowLabel, String(link.value), pct(link.value, total)],
         label: `Select flow ${flowLabel}`,
+        id: link.id,
         onSelect: () =>
           selectFeature({
             id: link.id,
@@ -512,14 +599,20 @@ export function createLifecycleDiagramView(root, options = {}) {
           }),
       };
     });
-    const eventRows = projection.events.map((event) => ({
-      cells: [
-        event.id,
-        event.applicationId,
-        event.eventType,
-        event.occurredAt ?? "Unknown",
-      ],
-    }));
+    const eventPageData = pageSlice(projection.events, eventPage);
+    eventPage = eventPageData.page;
+    const eventRows = eventPageData.items.map((event) => {
+      const formatted = formatEventTime(event);
+      return {
+        cells: [
+          event.id,
+          event.applicationId,
+          event.eventType,
+          formatted.label,
+        ],
+        time: formatted,
+      };
+    });
     tables.textContent = "";
     tables.append(
       renderTable("Origins", ["Origin", "Count", "Percentage"], originRows),
@@ -543,6 +636,44 @@ export function createLifecycleDiagramView(root, options = {}) {
         ["Event", "Application", "Type", "Timestamp"],
         eventRows,
       ),
+      (() => {
+        const prevEvent = el("button", {
+          type: "button",
+          className: "button",
+          textContent: "Previous event page",
+          "aria-label": "Previous event page",
+        });
+        const nextEvent = el("button", {
+          type: "button",
+          className: "button",
+          textContent: "Next event page",
+          "aria-label": "Next event page",
+        });
+        prevEvent.disabled = eventPageData.page <= 0;
+        nextEvent.disabled = eventPageData.page >= eventPageData.maxPage;
+        prevEvent.addEventListener("click", () => {
+          eventPage -= 1;
+          renderTables();
+        });
+        nextEvent.addEventListener("click", () => {
+          eventPage += 1;
+          renderTables();
+        });
+        return el(
+          "div",
+          { className: "diagram-pagination", "data-event-pagination": "" },
+          [
+            el("span", {
+              "data-event-range": "",
+              textContent:
+                `Events ${eventPageData.start}–${eventPageData.end} ` +
+                `of ${eventPageData.total}`,
+            }),
+            prevEvent,
+            nextEvent,
+          ],
+        );
+      })(),
     );
   };
   const render = (newerAvailable = lastNewerAvailable) => {
@@ -631,8 +762,10 @@ export function createLifecycleDiagramView(root, options = {}) {
       timeline = nextTimeline ?? { buckets: [] };
       selectedId = selectedBucketId;
       projection = nextProjection;
-      if (bucketChanged) selectedFeature = null;
-      else if (snapshotChanged && previousSelectionId)
+      if (bucketChanged) {
+        selectedFeature = null;
+        eventPage = 0;
+      } else if (snapshotChanged && previousSelectionId)
         selectedFeature = featureById(previousSelectionId);
       render(newerAvailable);
     },

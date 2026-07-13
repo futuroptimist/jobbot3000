@@ -146,7 +146,9 @@ test.describe("static tracker smoke", () => {
 
     const invalidHealth = await page.request.get(`${baseUrl}/healthz/not-real`);
     expect(invalidHealth.status()).toBe(404);
-    expect(invalidHealth.headers()["content-type"]).not.toContain("application/json");
+    expect(invalidHealth.headers()["content-type"]).not.toContain(
+      "application/json",
+    );
 
     await page.goto(baseUrl);
     await expect(
@@ -171,5 +173,42 @@ test.describe("static tracker smoke", () => {
       const response = await page.request.get(`${baseUrl}${asset}`);
       expect(response.ok(), asset).toBe(true);
     }
+  });
+
+  test("renders lifecycle Diagram from deterministic data without external requests", async ({
+    page,
+  }) => {
+    const requests = [];
+    page.on("request", (request) => requests.push(request));
+    const fixture = await fs.readFile(
+      "test/fixtures/tracker-lifecycle-diagram-v2.json",
+      "utf8",
+    );
+    await page.goto(`${baseUrl}/tracker`);
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await page.setInputFiles("[data-import-file]", {
+      name: "tracker-lifecycle-diagram-v2.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(fixture),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await page.getByRole("button", { name: "Apply import" }).click();
+    await page.getByRole("button", { name: "Diagram" }).click();
+    await expect(page.locator("svg[role='img']")).toBeVisible();
+    await expect(page.locator("caption", { hasText: "Origins" })).toBeVisible();
+    await page
+      .getByRole("button", { name: "Previous event", exact: true })
+      .click();
+    await page.locator("[data-diagram-node]").first().click();
+    await expect(page.locator("[data-diagram-details]")).toContainText(
+      /application/u,
+    );
+    const trackerJs = await page.request.get(`${baseUrl}/assets/tracker.js`);
+    expect(await trackerJs.text()).toContain("Lifecycle Sankey diagram");
+    const trackerHtml = await page.request.get(`${baseUrl}/tracker`);
+    expect(await trackerHtml.text()).not.toMatch(/cdn\.|unpkg|jsdelivr/u);
+    expect(
+      requests.filter((request) => new URL(request.url()).origin !== baseUrl),
+    ).toHaveLength(0);
   });
 });

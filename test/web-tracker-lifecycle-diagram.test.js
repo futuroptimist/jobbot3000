@@ -93,7 +93,7 @@ describe("lifecycle diagram view", () => {
         ev("offer", "a2", "offer_received", "2026-01-03"),
       ],
     );
-    const { root, snapshot } = render(b);
+    const { root } = render(b);
 
     expect(
       root.querySelector("input[type='range']").getAttribute("aria-valuetext"),
@@ -119,7 +119,7 @@ describe("lifecycle diagram view", () => {
       .find((caption) => caption.textContent === "Origins")
       .closest("table")
       .querySelectorAll("tbody tr").length;
-    expect(originCounts).toBe(Object.keys(snapshot.totals.origins).length);
+    expect(originCounts).toBe(5);
   });
 
   it("handles empty, unknown-only, date, and simultaneous boundary timestamps", () => {
@@ -458,6 +458,103 @@ describe("lifecycle diagram view", () => {
     });
     expect(root.querySelector("[data-diagram-details]").textContent).toContain(
       "Warnings: inferred history 0; unknown origin/time 0; status mismatch 0; regression 0.",
+    );
+  });
+});
+
+describe("lifecycle diagram P6 pagination and hardening", () => {
+  afterEach(() => {
+    delete global.document;
+    delete global.window;
+    delete global.ResizeObserver;
+  });
+
+  it("paginates event rows and resets event pages when bucket changes", () => {
+    const applications = [app("many")];
+    const lifecycleEvents = Array.from({ length: 125 }, (_, index) =>
+      ev(
+        `many-${String(index).padStart(3, "0")}`,
+        "many",
+        index ? "employer_response_received" : "application_submitted",
+        `2026-03-${String((index % 28) + 1).padStart(2, "0")}T00:00:00.000Z`,
+      ),
+    );
+    const b = bundle(applications, lifecycleEvents);
+    const { root, view, timeline } = render(b);
+    const eventRows = () =>
+      [...root.querySelectorAll("caption")]
+        .find((caption) => caption.textContent === "Selected-boundary events")
+        .closest("table")
+        .querySelectorAll("tbody tr");
+    expect(eventRows()).toHaveLength(50);
+    expect(root.querySelector("[data-event-range]").textContent).toBe(
+      "Events 1–50 of 125",
+    );
+    root.querySelector("[aria-label='Next event page']").click();
+    expect(root.querySelector("[data-event-range]").textContent).toBe(
+      "Events 51–100 of 125",
+    );
+    root.querySelector("[aria-label='Next event page']").click();
+    expect(eventRows()).toHaveLength(25);
+    expect(root.querySelector("[aria-label='Next event page']").disabled).toBe(
+      true,
+    );
+    view.update({
+      timeline,
+      snapshot: projectLifecycleAt(b, timeline.buckets[0].id),
+      selectedBucketId: timeline.buckets[0].id,
+    });
+    expect(root.querySelector("[data-event-range]").textContent).toMatch(
+      /^Events (0–0|1–)/u,
+    );
+  });
+
+  it("exposes aria-pressed selection and transparent hit targets", () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root } = render(b);
+    const nodeButton = root.querySelector(
+      "button[aria-label='Select Application submitted']",
+    );
+    expect(nodeButton.getAttribute("aria-pressed")).toBe("false");
+    nodeButton.click();
+    expect(
+      root
+        .querySelector("button[aria-label='Select Application submitted']")
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(
+      root.querySelector("[data-diagram-node-hit][aria-hidden='true']"),
+    ).toBeTruthy();
+    expect(
+      root.querySelector("[data-diagram-link-hit][aria-hidden='true']"),
+    ).toBeTruthy();
+    expect(
+      root.querySelectorAll("[data-diagram-node-hit][tabindex]"),
+    ).toHaveLength(0);
+  });
+
+  it("uses time elements for exact and date-only event timestamps", () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("date", "a", "application_submitted", "2026-01-01"),
+        ev("exact", "a", "technical_interview", "2026-01-02T10:00:00.000Z"),
+        ev("unknown", "a", "employer_response_received", "unknown"),
+      ],
+    );
+    const { root } = render(b);
+    expect(root.querySelector("time[datetime='2026-01-01']")).toBeTruthy();
+    expect(
+      root.querySelector("time[datetime='2026-01-02T10:00:00.000Z']"),
+    ).toBeTruthy();
+    expect(root.textContent).toContain(
+      "Unknown date — off chronological scale",
     );
   });
 });
