@@ -508,11 +508,10 @@ const makeLinks = (paths) => {
     }))
     .sort((a, b) => codeCompare(a.id, b.id));
 };
-const countBy = (paths, key, order = [], includeZeroes = false) => {
-  const initialEntries = includeZeroes ? order.map((id) => [id, 0]) : [];
+const countBy = (paths, key, order = []) => {
   const map = paths.reduce(
     (m, p) => m.set(p[key], (m.get(p[key]) ?? 0) + 1),
-    new Map(initialEntries),
+    new Map(),
   );
   const rank = new Map(order.map((id, index) => [id, index]));
   return Object.fromEntries(

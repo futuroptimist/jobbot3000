@@ -135,11 +135,15 @@ describe("lifecycle diagram view", () => {
       application_submitted: 1,
       referral: 1,
     });
-    const originCounts = [...root.querySelectorAll("caption")]
+    const originRows = [...root.querySelectorAll("caption")]
       .find((caption) => caption.textContent === "Origins")
       .closest("table")
-      .querySelectorAll("tbody tr").length;
-    expect(originCounts).toBe(LIFECYCLE_DIAGRAM_TAXONOMY.origins.length);
+      .querySelectorAll("tbody tr");
+    expect(originRows).toHaveLength(LIFECYCLE_DIAGRAM_TAXONOMY.origins.length);
+    const outreachRow = [...originRows].find((row) =>
+      row.textContent.includes("Candidate outreach"),
+    );
+    expect(outreachRow.textContent).toContain("0");
   });
 
   it("handles empty, unknown-only, date, and simultaneous boundary timestamps", () => {
