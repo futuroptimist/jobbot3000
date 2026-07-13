@@ -65,6 +65,13 @@ The PR handoff records exact command outcomes. Required commands are:
 | Secret scan and binary audit commands                                                                                                                                                 | Pass locally using PR base SHA `a8749262ef00a2b058b2b138eebcffc4219fb46e`               |
 | Docker build and `npm run smoke:container -- jobbot3000:p6`                                                                                                                           | Not run locally because `docker` is unavailable; GHCR workflow remains authoritative    |
 
+Follow-up verification on July 13, 2026 reconfirmed the restored sparse P4 projection contract and P6 UI coverage without changing P2-P4 semantics:
+
+- `src/web/tracker/lifecycleProjection.js` keeps `countBy(paths, key, order = [])` sparse, so zero-count taxonomy categories are not inserted into projection totals for non-UI consumers.
+- `test/web-tracker-lifecycle-diagram.test.js` verifies complete Diagram taxonomy rows against `LIFECYCLE_DIAGRAM_TAXONOMY` and separately asserts a rendered zero-count origin row, keeping UI completeness separate from sparse projection totals.
+- `npm run format:check` still fails only because of repository-wide baseline Prettier drift outside the P6 touch set; no unrelated formatting rewrite is included in this PR.
+- The GitHub-hosted Diagram visual-review workflow remains the required source of final artifact evidence: the expected artifact is `diagram-visual-review-${PR_NUMBER}-${RUN_ATTEMPT}` with `diagram-desktop-current.png`, `diagram-desktop-history.png`, `diagram-mobile-current.png`, and `diagram-mobile-history.png`.
+
 ## Binary-file policy
 
 No PNG, APNG, JPEG, GIF, WebP, AVIF, BMP, ICO, TIFF, PDF, video, archive, font binary, Playwright golden image, screenshot fixture, or other binary source artifact may be created, modified, staged, or committed for P6. Mermaid remains source text only. Visual-review PNGs are generated only by `.github/workflows/diagram-visual-review.yml` under `${RUNNER_TEMP}/jobbot3000-diagram-visual-review` and uploaded as short-retention GitHub Actions artifacts.
