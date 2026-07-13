@@ -523,6 +523,11 @@ export function createLifecycleDiagramView(root, options = {}) {
         event.stopPropagation();
         selectLink();
       });
+      path.addEventListener("touchend", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        selectLink();
+      });
       linkG.append(path);
       const hitPath = svgEl("path", {
         d: pathData,
@@ -532,6 +537,11 @@ export function createLifecycleDiagramView(root, options = {}) {
         "aria-hidden": "true",
       });
       hitPath.addEventListener("click", (event) => {
+        event.stopPropagation();
+        selectLink();
+      });
+      hitPath.addEventListener("touchend", (event) => {
+        event.preventDefault();
         event.stopPropagation();
         selectLink();
       });
@@ -578,7 +588,17 @@ export function createLifecycleDiagramView(root, options = {}) {
         event.stopPropagation();
         selectNode();
       });
+      hitRect.addEventListener("touchend", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        selectNode();
+      });
       rect.addEventListener("click", (event) => {
+        event.stopPropagation();
+        selectNode();
+      });
+      rect.addEventListener("touchend", (event) => {
+        event.preventDefault();
         event.stopPropagation();
         selectNode();
       });

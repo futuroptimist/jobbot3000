@@ -73,6 +73,8 @@ Follow-up verification on July 13, 2026 reconfirmed the restored sparse P4 proje
 - The GitHub-hosted Diagram visual-review workflow remains the required source of final artifact evidence: the expected artifact is `diagram-visual-review-${PR_NUMBER}-${RUN_ATTEMPT}` with `diagram-desktop-current.png`, `diagram-desktop-history.png`, `diagram-mobile-current.png`, and `diagram-mobile-history.png`.
 - Follow-up UI hardening keeps the Diagram aggregate-first: semantic lifecycle data tables now live inside a closed-by-default `Lifecycle data tables` disclosure, affected application IDs live inside a closed-by-default bounded disclosure, and keyboard activation of semantic controls preserves focus while updating exactly one selected state.
 - Historical `Newer activity available` now compares a stable timeline fingerprint captured when the user leaves Current, so selecting an older pre-existing bucket does not imply fresh data; returning to Current or losing the selected bucket clears the baseline.
+- Real touch-mobile validation now uses a dedicated 375×812 `hasTouch` context with `deviceScaleFactor: 1`, verifies no page-level horizontal overflow, keeps chart/table overflow local, and exercises SVG node/flow selection through touchscreen taps.
+- The visual-review capture script now fixes `deviceScaleFactor: 1`, asserts viewport width and no page-level overflow before each capture, and validates PNG IHDR widths as 1440px for desktop and 375px for mobile.
 
 ## Binary-file policy
 

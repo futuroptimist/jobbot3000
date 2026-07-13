@@ -273,8 +273,12 @@
   margin: 0.75rem 0;
 }
 .diagram-select-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 44px;
   min-height: 44px;
+  height: 44px;
   padding: 0.35rem 0.5rem;
   border-radius: 0.5rem;
 }
@@ -320,4 +324,8 @@ body {
 .diagram-tables-body {
   display: grid;
   gap: 1rem;
+}
+[data-view="diagram"] .diagram-select-button {
+  min-height: 44px !important;
+  height: 44px !important;
 }
