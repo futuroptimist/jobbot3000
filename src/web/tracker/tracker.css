@@ -76,6 +76,10 @@
   all: unset;
   cursor: pointer;
   text-decoration: underline;
+  min-height: 44px;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
 }
 .tracker-table th,
 .tracker-table td {
@@ -259,6 +263,26 @@
 }
 .diagram-timestamp {
   margin: 0.5rem 0;
+}
+.diagram-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0.5rem 0;
+}
+.diagram-application-list {
+  margin: 0.5rem 0 0;
+  padding-left: 1.5rem;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-view="diagram"],
+  [data-view="diagram"] * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
 }
 @media (max-width: 760px) {
   .diagram-controls {

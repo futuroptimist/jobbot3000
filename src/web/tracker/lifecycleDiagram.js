@@ -156,6 +156,9 @@ export function createLifecycleDiagramView(root, options = {}) {
   let resizeObserver;
   let windowResizeHandler;
   let lastNewerAvailable = false;
+  let eventPage = 0;
+  let applicationPage = 0;
+  const PAGE_SIZE = 50;
   const ids = {
     title: "lifecycle-diagram-title",
     desc: "lifecycle-diagram-desc",
@@ -219,6 +222,42 @@ export function createLifecycleDiagramView(root, options = {}) {
   const announce = makeDebounce((message) => {
     live.textContent = message;
   });
+  const pageSlice = (items, page) =>
+    items.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+  const rangeText = (label, page, total) => {
+    if (!total) return `${label} 0 of 0`;
+    const start = page * PAGE_SIZE + 1;
+    const end = Math.min(total, start + PAGE_SIZE - 1);
+    return `${label} ${start}–${end} of ${total}`;
+  };
+  const renderPagination = (label, page, total, onPrev, onNext) => {
+    const wrapper = el("div", { className: "diagram-pagination" });
+    const prevPage = el("button", {
+      type: "button",
+      className: "button",
+      textContent: `Previous ${label.toLowerCase()} page`,
+      "aria-label": `Previous ${label.toLowerCase()} page`,
+    });
+    const nextPage = el("button", {
+      type: "button",
+      className: "button",
+      textContent: `Next ${label.toLowerCase()} page`,
+      "aria-label": `Next ${label.toLowerCase()} page`,
+    });
+    prevPage.disabled = page <= 0;
+    nextPage.disabled = (page + 1) * PAGE_SIZE >= total;
+    prevPage.addEventListener("click", onPrev);
+    nextPage.addEventListener("click", onNext);
+    wrapper.append(
+      el("span", {
+        className: "muted",
+        textContent: rangeText(`${label}s`, page, total),
+      }),
+      prevPage,
+      nextPage,
+    );
+    return wrapper;
+  };
   const renderTable = (caption, headers, rows) => {
     const table = el("table", { className: "tracker-table" });
     table.append(el("caption", { textContent: caption }));
@@ -243,6 +282,7 @@ export function createLifecycleDiagramView(root, options = {}) {
             className: "link-button diagram-select-button",
             textContent: cell,
             "aria-label": row.label,
+            "aria-pressed": selectedFeature?.id === row.id ? "true" : "false",
           });
           button.addEventListener("click", row.onSelect);
           td.append(button);
@@ -287,12 +327,14 @@ export function createLifecycleDiagramView(root, options = {}) {
     return null;
   };
   const selectFeature = (feature) => {
+    if (selectedFeature?.id !== feature.id) applicationPage = 0;
     selectedFeature = {
       ...feature,
       applicationIds: featureApplicationIds(feature),
     };
     renderDetails();
     renderSvg();
+    renderTables();
   };
   const renderDetails = () => {
     const total = projection.includedApplications || 0;
@@ -327,9 +369,33 @@ export function createLifecycleDiagramView(root, options = {}) {
         textContent: `${ids.length} application${ids.length === 1 ? "" : "s"} (${pct(ids.length, total)}). Observed ${observed.length}; inferred ${inferred.length}. Date range: ${projection.bucket.kind === "date" ? formatTimestamp(projection.bucket, projection).label : projection.bucket.kind === "current" ? `through ${projection.bucket.label}` : projection.bucket.label}.`,
       }),
     );
+    const safePage = Math.min(
+      applicationPage,
+      Math.max(0, Math.ceil(ids.length / PAGE_SIZE) - 1),
+    );
+    applicationPage = safePage;
+    const appList = el("ol", { className: "diagram-application-list" });
+    for (const id of pageSlice(ids, applicationPage))
+      appList.append(el("li", { textContent: id }));
+    const appSummary = el("p", { textContent: ids.join(", ") || "None" });
+    const appPager = renderPagination(
+      "Application",
+      applicationPage,
+      ids.length,
+      () => {
+        applicationPage = Math.max(0, applicationPage - 1);
+        renderDetails();
+      },
+      () => {
+        applicationPage += 1;
+        renderDetails();
+      },
+    );
     const d = el("details", {}, [
       el("summary", { textContent: "Affected applications" }),
-      el("p", { textContent: ids.join(", ") || "None" }),
+      appPager,
+      appSummary,
+      appList,
     ]);
     details.append(
       d,
@@ -427,6 +493,16 @@ export function createLifecycleDiagramView(root, options = {}) {
         });
       path.addEventListener("click", selectLink);
       linkG.append(path);
+      const hit = svgEl("path", {
+        d: pathData,
+        stroke: "transparent",
+        "stroke-width": Math.max(44, link.width || 1),
+        "pointer-events": "stroke",
+        "aria-hidden": "true",
+        "data-diagram-hit-link": link.id,
+      });
+      hit.addEventListener("click", selectLink);
+      linkG.append(hit);
     }
     svg.append(linkG);
     for (const node of graph.nodes.filter(
@@ -464,7 +540,18 @@ export function createLifecycleDiagramView(root, options = {}) {
         fill: "currentColor",
       });
       label.textContent = `${node.label} (${node.total})`;
-      g.append(rect, label);
+      const hitRect = svgEl("rect", {
+        x: node.x0 - Math.max(0, 44 - (node.x1 - node.x0)) / 2,
+        y: node.y0 - Math.max(0, 44 - (node.y1 - node.y0)) / 2,
+        width: Math.max(44, node.x1 - node.x0),
+        height: Math.max(44, node.y1 - node.y0),
+        fill: "transparent",
+        "pointer-events": "all",
+        "aria-hidden": "true",
+        "data-diagram-hit-node": node.id,
+      });
+      hitRect.addEventListener("click", selectNode);
+      g.append(rect, hitRect, label);
       svg.append(g);
     }
     scroll.append(svg);
@@ -472,7 +559,14 @@ export function createLifecycleDiagramView(root, options = {}) {
   const renderTables = () => {
     const total = projection.includedApplications;
     const makeNodeRows = (entries, namespace) =>
-      Object.entries(entries).map(([id, value]) => {
+      LIFECYCLE_DIAGRAM_TAXONOMY[
+        namespace === "origin"
+          ? "origins"
+          : namespace === "milestone"
+            ? "milestones"
+            : "endpoints"
+      ].map(({ id }) => {
+        const value = entries[id] ?? 0;
         const nodeId = `${namespace}:${id}`;
         const label = TAXONOMY.get(nodeId)?.label ?? id;
         const applicationIds = unique(
@@ -481,6 +575,7 @@ export function createLifecycleDiagramView(root, options = {}) {
             .map((path) => path.applicationId),
         );
         return {
+          id: nodeId,
           cells: [label, String(value), pct(value, total)],
           label: `Select ${label}`,
           onSelect: () =>
@@ -502,6 +597,7 @@ export function createLifecycleDiagramView(root, options = {}) {
       const to = TAXONOMY.get(link.target)?.label ?? link.target;
       const flowLabel = `${from} to ${to}`;
       return {
+        id: link.id,
         cells: [flowLabel, String(link.value), pct(link.value, total)],
         label: `Select flow ${flowLabel}`,
         onSelect: () =>
@@ -512,14 +608,17 @@ export function createLifecycleDiagramView(root, options = {}) {
           }),
       };
     });
-    const eventRows = projection.events.map((event) => ({
-      cells: [
-        event.id,
-        event.applicationId,
-        event.eventType,
-        event.occurredAt ?? "Unknown",
-      ],
-    }));
+    const eventRows = projection.events.map((event) => {
+      const time = formatEventTime(event);
+      return {
+        cells: [event.id, event.applicationId, event.eventType, time.label],
+        time,
+      };
+    });
+    eventPage = Math.min(
+      eventPage,
+      Math.max(0, Math.ceil(eventRows.length / PAGE_SIZE) - 1),
+    );
     tables.textContent = "";
     tables.append(
       renderTable("Origins", ["Origin", "Count", "Percentage"], originRows),
@@ -538,11 +637,42 @@ export function createLifecycleDiagramView(root, options = {}) {
         ["Flow", "Application count", "Percentage"],
         linkRows,
       ),
-      renderTable(
-        "Selected-boundary events",
-        ["Event", "Application", "Type", "Timestamp"],
-        eventRows,
-      ),
+      (() => {
+        const table = renderTable(
+          "Selected-boundary events",
+          ["Event", "Application", "Type", "Timestamp"],
+          pageSlice(eventRows, eventPage),
+        );
+        const rows = table.querySelectorAll("tbody tr");
+        pageSlice(eventRows, eventPage).forEach((row, index) => {
+          const cell = rows[index]?.querySelector("td:last-child");
+          if (cell && row.time?.datetime) {
+            cell.textContent = "";
+            cell.append(
+              el("time", {
+                datetime: row.time.datetime,
+                textContent: row.time.label,
+              }),
+            );
+          }
+        });
+        table.prepend(
+          renderPagination(
+            "Event",
+            eventPage,
+            eventRows.length,
+            () => {
+              eventPage = Math.max(0, eventPage - 1);
+              renderTables();
+            },
+            () => {
+              eventPage += 1;
+              renderTables();
+            },
+          ),
+        );
+        return table;
+      })(),
     );
   };
   const render = (newerAvailable = lastNewerAvailable) => {
@@ -631,8 +761,11 @@ export function createLifecycleDiagramView(root, options = {}) {
       timeline = nextTimeline ?? { buckets: [] };
       selectedId = selectedBucketId;
       projection = nextProjection;
-      if (bucketChanged) selectedFeature = null;
-      else if (snapshotChanged && previousSelectionId)
+      if (bucketChanged) {
+        selectedFeature = null;
+        eventPage = 0;
+        applicationPage = 0;
+      } else if (snapshotChanged && previousSelectionId)
         selectedFeature = featureById(previousSelectionId);
       render(newerAvailable);
     },

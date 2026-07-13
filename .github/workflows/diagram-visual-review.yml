@@ -1,0 +1,51 @@
+name: Diagram visual review
+
+on:
+  pull_request:
+    paths:
+      - "src/web/tracker/lifecycleDiagram.js"
+      - "src/web/tracker/lifecycleProjection.js"
+      - "src/web/tracker/tracker.css"
+      - "test/fixtures/tracker-lifecycle-diagram-v2.json"
+      - "test/playwright/lifecycle-diagram.spec.js"
+      - "test/web-tracker-lifecycle-diagram*.test.js"
+      - ".github/workflows/diagram-visual-review.yml"
+      - "scripts/capture-diagram-visual-review.js"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_ACTIONS: "true"
+      DIAGRAM_VISUAL_ARTIFACTS: "1"
+      DIAGRAM_VISUAL_OUTPUT_DIR: ${{ runner.temp }}/jobbot3000-diagram-visual-review
+      TZ: UTC
+      LANG: en_US.UTF-8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run prepare:test
+      - run: npm run build
+      - run: HOST=127.0.0.1 PORT=4173 npm run start:static >/tmp/jobbot3000-static.log 2>&1 &
+      - run: |
+          for attempt in {1..30}; do
+            curl -fsS http://127.0.0.1:4173/healthz && exit 0
+            sleep 1
+          done
+          cat /tmp/jobbot3000-static.log
+          exit 1
+      - run: node scripts/capture-diagram-visual-review.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: diagram-visual-review-${{ github.event.pull_request.number || 'manual' }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/jobbot3000-diagram-visual-review
+          if-no-files-found: error
+          retention-days: 7
