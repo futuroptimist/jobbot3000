@@ -145,6 +145,71 @@ async function assertNoPageOverflow(page) {
   ).toBe(true);
 }
 
+async function assertDensityAwareGeometry(page, expectedHeight = 820) {
+  const geometry = await page.locator(".diagram-scroll").evaluate((scroll) => {
+    const svg = scroll.querySelector("svg");
+    const viewBox = svg.getAttribute("viewBox").split(/\s+/u).map(Number);
+    const visibleNodes = [...svg.querySelectorAll("[data-diagram-node]")].map(
+      (group) => {
+        const rect = group.querySelector("rect:not([data-diagram-node-hit])");
+        const hit = group.querySelector("[data-diagram-node-hit]");
+        const text = group.querySelector("text");
+        const textBox = text.getBoundingClientRect();
+        const svgBox = svg.getBoundingClientRect();
+        return {
+          id: group.getAttribute("data-diagram-node"),
+          x: Number(rect.getAttribute("x")),
+          y0: Number(rect.getAttribute("y")),
+          y1:
+            Number(rect.getAttribute("y")) +
+            Number(rect.getAttribute("height")),
+          hitY0: Number(hit.getAttribute("y")),
+          hitY1:
+            Number(hit.getAttribute("y")) + Number(hit.getAttribute("height")),
+          labelTop: textBox.top - svgBox.top,
+          labelBottom: textBox.bottom - svgBox.top,
+        };
+      },
+    );
+    const groups = visibleNodes.reduce((accumulator, node) => {
+      const key = Math.round(node.x);
+      accumulator[key] = [...(accumulator[key] ?? []), node];
+      return accumulator;
+    }, {});
+    return {
+      height: Number(svg.getAttribute("height")),
+      viewBoxHeight: viewBox[3],
+      scrollClientHeight: scroll.clientHeight,
+      scrollHeight: scroll.scrollHeight,
+      scrollWidth: scroll.scrollWidth,
+      scrollClientWidth: scroll.clientWidth,
+      groups: Object.values(groups).map((nodes) =>
+        nodes.sort((a, b) => a.y0 - b.y0),
+      ),
+    };
+  });
+  expect(geometry.height).toBe(expectedHeight);
+  expect(geometry.viewBoxHeight).toBe(expectedHeight);
+  expect(geometry.scrollHeight).toBeGreaterThanOrEqual(expectedHeight);
+  expect(geometry.scrollClientHeight).toBeGreaterThanOrEqual(expectedHeight);
+  for (const rank of geometry.groups) {
+    for (let index = 0; index < rank.length; index += 1) {
+      expect(rank[index].y0).toBeGreaterThanOrEqual(31.5);
+      expect(rank[index].y1).toBeLessThanOrEqual(expectedHeight - 31.5);
+      expect(rank[index].labelTop).toBeGreaterThanOrEqual(-0.5);
+      expect(rank[index].labelBottom).toBeLessThanOrEqual(expectedHeight + 0.5);
+      if (index === 0) continue;
+      expect(rank[index].y0 - rank[index - 1].y1).toBeGreaterThanOrEqual(43.5);
+      expect(rank[index].hitY0).toBeGreaterThanOrEqual(
+        rank[index - 1].hitY1 - 0.5,
+      );
+      expect(rank[index].labelTop).toBeGreaterThanOrEqual(
+        rank[index - 1].labelBottom - 0.5,
+      );
+    }
+  }
+}
+
 async function assertVisibleControlsLargeEnough(page) {
   const boxes = await page
     .locator(
@@ -330,6 +395,7 @@ test.describe("Application Lifecycle Diagram", () => {
     await expect(
       page.getByRole("img", { name: /Lifecycle Sankey diagram/u }),
     ).toBeVisible();
+    await assertDensityAwareGeometry(page);
     await expect(page.locator("svg > title")).not.toHaveText("");
     await expect(page.locator("svg > desc")).not.toHaveText("");
     await expect(page.locator("details.diagram-tables")).not.toHaveAttribute(
@@ -471,6 +537,7 @@ test.describe("Application Lifecycle Diagram", () => {
     expect(await scroll.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(
       true,
     );
+    await assertDensityAwareGeometry(page);
     await page
       .locator("[data-diagram-node-hit]")
       .first()
@@ -567,6 +634,7 @@ test.describe("Application Lifecycle Diagram", () => {
       await expect(page.locator("[data-lifecycle-diagram]")).toContainText(
         EXPECTED_CURRENT.included,
       );
+      await assertDensityAwareGeometry(page);
       await assertNoPageOverflow(page);
       const scroll = page.locator(".diagram-scroll");
       expect(

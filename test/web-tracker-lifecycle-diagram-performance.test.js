@@ -2,7 +2,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JSDOM } from "jsdom";
 
-import { createLifecycleDiagramView } from "../src/web/tracker/lifecycleDiagram.js";
+import {
+  calculateLifecycleDiagramLayout,
+  createLifecycleDiagramView,
+} from "../src/web/tracker/lifecycleDiagram.js";
 import {
   buildLifecycleTimeline,
   projectLifecycleAt,
@@ -95,10 +98,15 @@ describe("lifecycle diagram large-data rendering", () => {
 
   it("bounds SVG/table DOM, preserves reachability, and avoids projection mutation", () => {
     const bundle = largeBundle();
+    const smallBundle = largeBundle(10);
     const timeline = buildLifecycleTimeline(bundle);
     const snapshot = projectLifecycleAt(bundle, "current");
+    const smallSnapshot = projectLifecycleAt(smallBundle, "current");
     const serialized = JSON.stringify(snapshot);
     Object.freeze(snapshot);
+    expect(calculateLifecycleDiagramLayout(snapshot).height).toBe(
+      calculateLifecycleDiagramLayout(smallSnapshot).height,
+    );
 
     let root = setup();
     let view = createLifecycleDiagramView(root);
@@ -114,8 +122,14 @@ describe("lifecycle diagram large-data rendering", () => {
     expect(
       root.querySelectorAll("[data-diagram-node]").length,
     ).toBeLessThanOrEqual(21);
+    expect(Number(root.querySelector("svg").getAttribute("height"))).toBe(
+      calculateLifecycleDiagramLayout(snapshot, 1200).height,
+    );
     expect(
       root.querySelectorAll("[data-diagram-node='perf-app-0001']"),
+    ).toHaveLength(0);
+    expect(
+      root.querySelectorAll("[data-diagram-node^='company:']"),
     ).toHaveLength(0);
     expect(root.querySelectorAll("caption")).not.toHaveLength(0);
     expect(root.querySelectorAll("caption").item(4).textContent).toBe(
@@ -160,5 +174,11 @@ describe("lifecycle diagram large-data rendering", () => {
     expect(JSON.stringify(snapshot)).toBe(serialized);
     for (const element of root.querySelectorAll("path"))
       expect(element.getAttribute("d") ?? "").not.toMatch(/NaN|Infinity/u);
+    for (const element of root.querySelectorAll("rect, text")) {
+      for (const attribute of ["x", "y", "width", "height"])
+        expect(element.getAttribute(attribute) ?? "").not.toMatch(
+          /NaN|Infinity/u,
+        );
+    }
   });
 });
