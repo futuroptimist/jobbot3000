@@ -181,6 +181,84 @@ async function assertVisibleControlsLargeEnough(page) {
   }
 }
 
+async function assertDensityAwareDiagramGeometry(page) {
+  const geometry = await page.locator("svg").evaluate((svg) => {
+    const number = (value) => Number(value);
+    const height = number(svg.getAttribute("height"));
+    const viewBoxHeight = number(svg.getAttribute("viewBox").split(/\s+/u)[3]);
+    const visible = [
+      ...svg.querySelectorAll(
+        "[data-diagram-node] rect:not([data-diagram-node-hit])",
+      ),
+    ].map((rect) => ({
+      x: number(rect.getAttribute("x")),
+      y: number(rect.getAttribute("y")),
+      width: number(rect.getAttribute("width")),
+      height: number(rect.getAttribute("height")),
+    }));
+    const hits = [...svg.querySelectorAll("[data-diagram-node-hit]")].map(
+      (rect) => ({
+        x: number(rect.getAttribute("x")),
+        y: number(rect.getAttribute("y")),
+        width: number(rect.getAttribute("width")),
+        height: number(rect.getAttribute("height")),
+      }),
+    );
+    const labels = [...svg.querySelectorAll("[data-diagram-node] text")].map(
+      (text) => {
+        const box = text.getBoundingClientRect();
+        const svgBox = svg.getBoundingClientRect();
+        return { top: box.top - svgBox.top, bottom: box.bottom - svgBox.top };
+      },
+    );
+    return { height, viewBoxHeight, visible, hits, labels };
+  });
+  const ranks = (rects) => {
+    const grouped = new Map();
+    for (const rect of rects) {
+      const key = Math.round(rect.x);
+      grouped.set(key, [...(grouped.get(key) ?? []), rect]);
+    }
+    return [...grouped.values()].map((rank) => rank.sort((a, b) => a.y - b.y));
+  };
+  const densestColumnCount = Math.max(
+    1,
+    ...ranks(geometry.visible).map((rank) => rank.length),
+  );
+  const expectedHeight = Math.max(
+    360,
+    Math.ceil(
+      32 +
+        32 +
+        densestColumnCount * 36 +
+        Math.max(0, densestColumnCount - 1) * 44,
+    ),
+  );
+  expect(geometry.height).toBe(expectedHeight);
+  expect(geometry.viewBoxHeight).toBe(expectedHeight);
+  for (const rect of geometry.visible) {
+    expect(Object.values(rect).every(Number.isFinite)).toBe(true);
+    expect(rect.y).toBeGreaterThanOrEqual(31.5);
+    expect(rect.y + rect.height).toBeLessThanOrEqual(geometry.height - 31.5);
+  }
+  for (const label of geometry.labels) {
+    expect(label.top).toBeGreaterThanOrEqual(-0.5);
+    expect(label.bottom).toBeLessThanOrEqual(geometry.height + 0.5);
+  }
+  for (const rank of ranks(geometry.visible)) {
+    for (let i = 1; i < rank.length; i += 1)
+      expect(
+        rank[i].y - (rank[i - 1].y + rank[i - 1].height),
+      ).toBeGreaterThanOrEqual(43.5);
+  }
+  for (const rank of ranks(geometry.hits)) {
+    for (let i = 1; i < rank.length; i += 1)
+      expect(rank[i].y).toBeGreaterThanOrEqual(
+        rank[i - 1].y + rank[i - 1].height - 0.5,
+      );
+  }
+}
+
 async function runAxe(page) {
   await page.addScriptTag({ content: axe.source });
   const results = await page.evaluate(
@@ -375,6 +453,7 @@ test.describe("Application Lifecycle Diagram", () => {
     await expect(page.locator("[data-lifecycle-diagram]")).toContainText(
       "time not recorded",
     );
+    await assertDensityAwareDiagramGeometry(page);
     await runAxe(page);
 
     const before = await page.evaluate(
@@ -568,6 +647,7 @@ test.describe("Application Lifecycle Diagram", () => {
         EXPECTED_CURRENT.included,
       );
       await assertNoPageOverflow(page);
+      await assertDensityAwareDiagramGeometry(page);
       const scroll = page.locator(".diagram-scroll");
       expect(
         await scroll.evaluate((el) => el.scrollWidth > el.clientWidth),
@@ -613,6 +693,7 @@ test.describe("Application Lifecycle Diagram", () => {
       await expect(page.locator("button[aria-pressed='true']")).toHaveCount(1);
 
       await assertNoPageOverflow(page);
+      await assertDensityAwareDiagramGeometry(page);
       expect(
         await page
           .locator("details.diagram-tables .table-container")

@@ -2,7 +2,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JSDOM } from "jsdom";
 
-import { createLifecycleDiagramView } from "../src/web/tracker/lifecycleDiagram.js";
+import {
+  calculateLifecycleDiagramLayout,
+  createLifecycleDiagramView,
+} from "../src/web/tracker/lifecycleDiagram.js";
 import {
   buildLifecycleTimeline,
   projectLifecycleAt,
@@ -98,6 +101,10 @@ describe("lifecycle diagram large-data rendering", () => {
     const timeline = buildLifecycleTimeline(bundle);
     const snapshot = projectLifecycleAt(bundle, "current");
     const serialized = JSON.stringify(snapshot);
+    const smallSnapshot = projectLifecycleAt(largeBundle(10), "current");
+    expect(calculateLifecycleDiagramLayout(snapshot).height).toBe(
+      calculateLifecycleDiagramLayout(smallSnapshot).height,
+    );
     Object.freeze(snapshot);
 
     let root = setup();
@@ -158,7 +165,12 @@ describe("lifecycle diagram large-data rendering", () => {
       firstRange,
     );
     expect(JSON.stringify(snapshot)).toBe(serialized);
+    expect(Number(root.querySelector("svg").getAttribute("height"))).toBe(
+      calculateLifecycleDiagramLayout(snapshot, 1200).height,
+    );
     for (const element of root.querySelectorAll("path"))
       expect(element.getAttribute("d") ?? "").not.toMatch(/NaN|Infinity/u);
+    for (const element of root.querySelectorAll("rect,path,text"))
+      expect(element.outerHTML).not.toMatch(/NaN|Infinity/u);
   });
 });

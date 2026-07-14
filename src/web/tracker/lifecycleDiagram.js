@@ -3,6 +3,17 @@ import { sankey, sankeyLinkHorizontal } from "d3-sankey";
 import { LIFECYCLE_DIAGRAM_TAXONOMY } from "./lifecycleProjection.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
+export const LIFECYCLE_DIAGRAM_LAYOUT = Object.freeze({
+  minimumSvgWidth: 760,
+  minimumSvgHeight: 360,
+  topMargin: 32,
+  bottomMargin: 32,
+  nodePadding: 44,
+  perNodeVerticalBudget: 36,
+  nodeWidth: 18,
+  leftMargin: 16,
+  rightMargin: 24,
+});
 const RANKS = { origin: 0, milestone: 1, endpoint: 6 };
 const MILESTONE_RANKS = new Map(
   LIFECYCLE_DIAGRAM_TAXONOMY.milestones.map((item, index) => [
@@ -143,6 +154,43 @@ const formatTimestamp = (bucket, projection) => {
     occurredAtPrecision: "instant",
   });
 };
+
+export function calculateLifecycleDiagramLayout(projection, availableWidth) {
+  const integerWidth = Math.floor(Number(availableWidth));
+  const sanitizedWidth =
+    Number.isFinite(integerWidth) && integerWidth > 0
+      ? integerWidth
+      : LIFECYCLE_DIAGRAM_LAYOUT.minimumSvgWidth;
+  const width = Math.max(
+    LIFECYCLE_DIAGRAM_LAYOUT.minimumSvgWidth,
+    sanitizedWidth,
+  );
+  const activeNodes = Array.isArray(projection?.nodes)
+    ? projection.nodes.filter((node) => Number(node?.total) > 0)
+    : [];
+  const countsByRank = new Map();
+  for (const node of activeNodes) {
+    const rank = nodeRank(String(node.id ?? ""));
+    countsByRank.set(rank, (countsByRank.get(rank) ?? 0) + 1);
+  }
+  const densestColumnCount = Math.max(1, ...countsByRank.values());
+  const densityHeight =
+    LIFECYCLE_DIAGRAM_LAYOUT.topMargin +
+    LIFECYCLE_DIAGRAM_LAYOUT.bottomMargin +
+    densestColumnCount * LIFECYCLE_DIAGRAM_LAYOUT.perNodeVerticalBudget +
+    Math.max(0, densestColumnCount - 1) * LIFECYCLE_DIAGRAM_LAYOUT.nodePadding;
+  return {
+    width,
+    height: Math.max(
+      LIFECYCLE_DIAGRAM_LAYOUT.minimumSvgHeight,
+      Math.ceil(densityHeight),
+    ),
+    nodePadding: LIFECYCLE_DIAGRAM_LAYOUT.nodePadding,
+    topMargin: LIFECYCLE_DIAGRAM_LAYOUT.topMargin,
+    bottomMargin: LIFECYCLE_DIAGRAM_LAYOUT.bottomMargin,
+  };
+}
+
 const cloneProjectionForSankey = (projection) => ({
   nodes: projection.nodes
     .map((node) => ({
@@ -446,17 +494,17 @@ export function createLifecycleDiagramView(root, options = {}) {
       );
       return;
     }
-    const width = Math.max(760, root.clientWidth || 760),
-      height = Math.max(260, 70 + projection.nodes.length * 34);
+    const { width, height, nodePadding, topMargin, bottomMargin } =
+      calculateLifecycleDiagramLayout(projection, root.clientWidth);
     const graph = cloneProjectionForSankey(projection);
     const layout = sankey()
       .nodeId((d) => d.id)
-      .nodeWidth(18)
-      .nodePadding(16)
+      .nodeWidth(LIFECYCLE_DIAGRAM_LAYOUT.nodeWidth)
+      .nodePadding(nodePadding)
       .nodeSort(nodeSort)
       .extent([
-        [16, 20],
-        [width - 24, height - 30],
+        [LIFECYCLE_DIAGRAM_LAYOUT.leftMargin, topMargin],
+        [width - LIFECYCLE_DIAGRAM_LAYOUT.rightMargin, height - bottomMargin],
       ]);
     try {
       layout(graph);
@@ -471,9 +519,10 @@ export function createLifecycleDiagramView(root, options = {}) {
     }
     const columnWidth = (width - 64) / 6;
     for (const node of graph.nodes) {
-      const fixedX = 16 + node.rank * columnWidth;
+      const fixedX =
+        LIFECYCLE_DIAGRAM_LAYOUT.leftMargin + node.rank * columnWidth;
       node.x0 = fixedX;
-      node.x1 = fixedX + 18;
+      node.x1 = fixedX + LIFECYCLE_DIAGRAM_LAYOUT.nodeWidth;
     }
     layout.update(graph);
     const finiteNode = (node) =>
