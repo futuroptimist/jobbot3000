@@ -265,3 +265,37 @@ The Diagram tab must not provide autoplay, filters, company-per-node rendering, 
 - **P6:** end-to-end, accessibility, mobile, security, and build hardening.
 
 P1 changes only documentation. Later phases must keep scope aligned with these boundaries unless a subsequent design-contract PR changes this document first.
+
+## Density-aware Sankey canvas sizing
+
+The SVG canvas height is derived from the active aggregate-node density in the busiest Sankey rank. A fixed minimum-height floor is allowed for sparse diagrams, but fixed final heights, fixture-specific heights, viewport-height rules, and mobile-specific shrink-to-fit behavior are prohibited.
+
+The renderer uses these normative layout constants:
+
+| Constant                      |   Value |
+| ----------------------------- | ------: |
+| Minimum SVG width             | `760px` |
+| Minimum SVG height            | `360px` |
+| Top internal layout margin    |  `32px` |
+| Bottom internal layout margin |  `32px` |
+| D3 node padding               |  `44px` |
+| Per-node vertical budget      |  `36px` |
+| D3 node width                 |  `18px` |
+
+For a selected projection, active aggregate nodes are projection nodes whose numeric `total` is greater than zero. Zero-count taxonomy entries remain available in semantic tables but do not enlarge the SVG. Active nodes are grouped by their existing fixed `nodeRank(node.id)`; taxonomy order and seven-rank horizontal placement are unchanged. With `densestColumnCount` equal to the largest active-node count in any rank, floored to `1` when there are no active nodes, canvas height is calculated as:
+
+```text
+densityHeight =
+  topMargin +
+  bottomMargin +
+  densestColumnCount * perNodeVerticalBudget +
+  max(0, densestColumnCount - 1) * nodePadding
+
+height = max(minimumSvgHeight, ceil(densityHeight))
+```
+
+Application count and lifecycle-event count do not directly affect canvas height. Adding more applications to the same fixed taxonomy nodes can increase aggregate values and link widths, but it must not increase height unless it activates more aggregate nodes in the busiest rank. This keeps rendering bounded by the fixed taxonomy while allowing dense endpoint or milestone columns to grow vertically.
+
+The 44px D3 node padding is part of the sizing contract. It prevents visible node rows, visible labels, and transparent 44px pointer/touch hit regions from crowding within the same rank. D3 layout uses extent `[16, topMargin]` to `[width - 24, height - bottomMargin]`, preserving the configured internal margins for the first and last node rectangles.
+
+Responsive behavior remains horizontal-only inside the diagram scroller. Desktop uses the available container width when it exceeds `760px`; mobile keeps the `760px` minimum SVG width inside the labeled `.diagram-scroll` horizontal scroller. The SVG and scroll container expand naturally to the computed height, and normal page-level vertical scrolling is expected on mobile. The page itself must not acquire horizontal overflow.

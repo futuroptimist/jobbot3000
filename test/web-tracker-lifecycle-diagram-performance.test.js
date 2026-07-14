@@ -2,7 +2,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JSDOM } from "jsdom";
 
-import { createLifecycleDiagramView } from "../src/web/tracker/lifecycleDiagram.js";
+import {
+  calculateLifecycleDiagramLayout,
+  createLifecycleDiagramView,
+} from "../src/web/tracker/lifecycleDiagram.js";
 import {
   buildLifecycleTimeline,
   projectLifecycleAt,
@@ -97,6 +100,12 @@ describe("lifecycle diagram large-data rendering", () => {
     const bundle = largeBundle();
     const timeline = buildLifecycleTimeline(bundle);
     const snapshot = projectLifecycleAt(bundle, "current");
+    const smallSnapshot = projectLifecycleAt(largeBundle(10), "current");
+    const largeLayout = calculateLifecycleDiagramLayout(snapshot, 1200);
+    expect(largeLayout).toEqual(
+      calculateLifecycleDiagramLayout(smallSnapshot, 1200),
+    );
+    expect(largeLayout.height).toBeLessThanOrEqual(900);
     const serialized = JSON.stringify(snapshot);
     Object.freeze(snapshot);
 
@@ -158,7 +167,15 @@ describe("lifecycle diagram large-data rendering", () => {
       firstRange,
     );
     expect(JSON.stringify(snapshot)).toBe(serialized);
+    expect(root.querySelector("svg").getAttribute("height")).toBe(
+      String(largeLayout.height),
+    );
     for (const element of root.querySelectorAll("path"))
       expect(element.getAttribute("d") ?? "").not.toMatch(/NaN|Infinity/u);
+    for (const element of root.querySelectorAll("rect, text, path"))
+      for (const attribute of ["x", "y", "width", "height", "stroke-width"])
+        expect(element.getAttribute(attribute) ?? "").not.toMatch(
+          /NaN|Infinity/u,
+        );
   });
 });
