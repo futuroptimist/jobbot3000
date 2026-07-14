@@ -336,3 +336,25 @@ body > footer,
   min-height: 44px !important;
   height: 44px !important;
 }
+
+.diagram-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  margin: 0.75rem 0;
+}
+
+.diagram-legend-item {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.diagram-legend-swatch {
+  border: 1px solid #020617;
+  border-radius: 999px;
+  display: inline-block;
+  height: 0.8rem;
+  width: 0.8rem;
+}

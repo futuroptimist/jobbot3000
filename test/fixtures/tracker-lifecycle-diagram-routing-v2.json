@@ -1,0 +1,486 @@
+{
+  "applications": [
+    {
+      "id": "routing-app-01",
+      "company": "Synthetic Co 01",
+      "role": "Lifecycle Test Role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "appliedAt": "2026-01-01"
+    },
+    {
+      "id": "routing-app-02",
+      "company": "Synthetic Co 02",
+      "role": "Lifecycle Test Role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "appliedAt": "2026-01-01"
+    },
+    {
+      "id": "routing-app-03",
+      "company": "Synthetic Co 03",
+      "role": "Lifecycle Test Role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "appliedAt": "2026-01-01"
+    },
+    {
+      "id": "routing-app-04",
+      "company": "Synthetic Co 04",
+      "role": "Lifecycle Test Role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "appliedAt": "2026-01-01"
+    },
+    {
+      "id": "routing-app-05",
+      "company": "Synthetic Co 05",
+      "role": "Lifecycle Test Role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "appliedAt": "2026-01-01"
+    },
+    {
+      "id": "routing-app-06",
+      "company": "Synthetic Co 06",
+      "role": "Lifecycle Test Role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "appliedAt": "2026-01-01"
+    },
+    {
+      "id": "routing-app-07",
+      "company": "Synthetic Co 07",
+      "role": "Lifecycle Test Role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "appliedAt": "2026-01-01"
+    },
+    {
+      "id": "routing-app-08",
+      "company": "Synthetic Co 08",
+      "role": "Lifecycle Test Role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "appliedAt": "2026-01-01"
+    },
+    {
+      "id": "routing-app-09",
+      "company": "Synthetic Co 09",
+      "role": "Lifecycle Test Role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "appliedAt": "2026-01-01"
+    },
+    {
+      "id": "routing-app-10",
+      "company": "Synthetic Co 10",
+      "role": "Lifecycle Test Role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "appliedAt": "2026-01-01"
+    },
+    {
+      "id": "routing-app-11",
+      "company": "Synthetic Co 11",
+      "role": "Lifecycle Test Role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "appliedAt": "2026-01-01"
+    },
+    {
+      "id": "routing-app-12",
+      "company": "Synthetic Co 12",
+      "role": "Lifecycle Test Role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "appliedAt": "2026-01-01"
+    },
+    {
+      "id": "routing-app-13",
+      "company": "Synthetic Co 13",
+      "role": "Lifecycle Test Role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "appliedAt": "2026-01-01"
+    },
+    {
+      "id": "routing-app-14",
+      "company": "Synthetic Co 14",
+      "role": "Lifecycle Test Role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "appliedAt": "2026-01-01"
+    },
+    {
+      "id": "routing-app-15",
+      "company": "Synthetic Co 15",
+      "role": "Lifecycle Test Role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "appliedAt": "2026-01-01"
+    },
+    {
+      "id": "routing-app-16",
+      "company": "Synthetic Co 16",
+      "role": "Lifecycle Test Role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "appliedAt": "2026-01-01"
+    },
+    {
+      "id": "routing-app-17",
+      "company": "Synthetic Co 17",
+      "role": "Lifecycle Test Role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "appliedAt": "2026-01-01"
+    },
+    {
+      "id": "routing-app-18",
+      "company": "Synthetic Co 18",
+      "role": "Lifecycle Test Role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "appliedAt": "2026-01-01"
+    },
+    {
+      "id": "routing-app-19",
+      "company": "Synthetic Co 19",
+      "role": "Lifecycle Test Role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "appliedAt": "2026-01-01"
+    },
+    {
+      "id": "routing-app-20",
+      "company": "Synthetic Co 20",
+      "role": "Lifecycle Test Role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "appliedAt": "2026-01-01"
+    },
+    {
+      "id": "routing-app-21",
+      "company": "Synthetic Co 21",
+      "role": "Lifecycle Test Role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "appliedAt": "2026-01-01"
+    },
+    {
+      "id": "routing-app-22",
+      "company": "Synthetic Co 22",
+      "role": "Lifecycle Test Role",
+      "status": "rejected",
+      "origin": "application_submitted",
+      "appliedAt": "2026-01-01"
+    },
+    {
+      "id": "routing-app-23",
+      "company": "Synthetic Co 23",
+      "role": "Lifecycle Test Role",
+      "status": "rejected",
+      "origin": "application_submitted",
+      "appliedAt": "2026-01-01"
+    },
+    {
+      "id": "routing-app-24",
+      "company": "Synthetic Co 24",
+      "role": "Lifecycle Test Role",
+      "status": "recruiter_screen",
+      "origin": "application_submitted",
+      "appliedAt": "2026-01-01"
+    },
+    {
+      "id": "routing-app-25",
+      "company": "Synthetic Co 25",
+      "role": "Lifecycle Test Role",
+      "status": "technical_screen",
+      "origin": "application_submitted",
+      "appliedAt": "2026-01-01"
+    }
+  ],
+  "lifecycleEvents": [
+    {
+      "id": "routing-event-01-submitted",
+      "applicationId": "routing-app-01",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-01",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-02-submitted",
+      "applicationId": "routing-app-02",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-01",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-03-submitted",
+      "applicationId": "routing-app-03",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-01",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-04-submitted",
+      "applicationId": "routing-app-04",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-01",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-05-submitted",
+      "applicationId": "routing-app-05",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-01",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-06-submitted",
+      "applicationId": "routing-app-06",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-01",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-07-submitted",
+      "applicationId": "routing-app-07",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-01",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-08-submitted",
+      "applicationId": "routing-app-08",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-01",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-09-submitted",
+      "applicationId": "routing-app-09",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-01",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-10-submitted",
+      "applicationId": "routing-app-10",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-01",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-11-submitted",
+      "applicationId": "routing-app-11",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-01",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-12-submitted",
+      "applicationId": "routing-app-12",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-01",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-13-submitted",
+      "applicationId": "routing-app-13",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-01",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-14-submitted",
+      "applicationId": "routing-app-14",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-01",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-15-submitted",
+      "applicationId": "routing-app-15",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-01",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-16-submitted",
+      "applicationId": "routing-app-16",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-01",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-17-submitted",
+      "applicationId": "routing-app-17",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-01",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-18-submitted",
+      "applicationId": "routing-app-18",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-01",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-19-submitted",
+      "applicationId": "routing-app-19",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-01",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-20-submitted",
+      "applicationId": "routing-app-20",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-01",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-21-submitted",
+      "applicationId": "routing-app-21",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-01",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-22-submitted",
+      "applicationId": "routing-app-22",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-01",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-23-submitted",
+      "applicationId": "routing-app-23",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-01",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-24-submitted",
+      "applicationId": "routing-app-24",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-01",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-25-submitted",
+      "applicationId": "routing-app-25",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-01-01",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-01",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-21-assessment",
+      "applicationId": "routing-app-21",
+      "eventType": "assessment_take_home",
+      "occurredAt": "2026-01-02",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-02",
+      "assessmentStatus": "requested",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-22-rejected",
+      "applicationId": "routing-app-22",
+      "eventType": "employer_rejected",
+      "occurredAt": "2026-01-03",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-03",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-23-rejected",
+      "applicationId": "routing-app-23",
+      "eventType": "employer_rejected",
+      "occurredAt": "2026-01-03",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-03",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-24-recruiter",
+      "applicationId": "routing-app-24",
+      "eventType": "recruiter_screen",
+      "occurredAt": "2026-01-04",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-04",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-25-recruiter",
+      "applicationId": "routing-app-25",
+      "eventType": "recruiter_screen",
+      "occurredAt": "2026-01-04",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-04",
+      "inferred": false
+    },
+    {
+      "id": "routing-event-25-technical",
+      "applicationId": "routing-app-25",
+      "eventType": "technical_interview",
+      "occurredAt": "2026-01-05",
+      "occurredAtPrecision": "date",
+      "createdAt": "2026-01-05",
+      "inferred": false
+    }
+  ]
+}

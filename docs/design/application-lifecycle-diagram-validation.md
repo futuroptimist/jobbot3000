@@ -122,3 +122,17 @@ P6-F2 replaces the previous coarse `70 + projection.nodes.length * 34` height es
 | Selection rerenders preserve the calculated height and semantic parity                                                             | Component test selects an SVG hit target and confirms the 900px dense height remains                                                   | Large render keeps aggregate semantic tables and bounded application pagination                                                      | Playwright checks SVG touch selection, flow selection, semantic-table keyboard selection, axe, and error-free desktop/mobile execution |
 
 The validation intentionally avoids screenshots, golden images, `getBBox()`-driven sizing, viewport-height rules, iterative collision loops, or fixture-name branching. Runtime height remains the pure density formula; browser tests only verify that the resulting SVG geometry satisfies the spacing contract.
+
+## P6-F3 validation matrix
+
+| Requirement                            | Validation                                                                                                                                              |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Endpoint-conditioned routing expansion | `test/web-tracker-lifecycle-diagram-layout.test.js` checks stable branch IDs, endpoint partitioning, hidden routing nodes, and adjacent-rank segments.  |
+| Collision geometry                     | Playwright lifecycle coverage samples rendered branch paths against visible nodes, labels, hit targets, handles, and transition corridors.              |
+| Branch colors and contrast             | Layout/component tests assert the exact endpoint palette, selected branches retaining endpoint color, dark separators, and active-only legend entries.  |
+| Semantic-table parity                  | Component tests compare SVG branch IDs, values, outcomes, and applications with the Flows table rows.                                                   |
+| Touch handles                          | Unit and Playwright tests require exactly one deterministic 44×44 handle per active branch and verify click/touch selection.                            |
+| Stress fixture                         | `test/fixtures/tracker-lifecycle-diagram-routing-v2.json` contains 25 synthetic applications reproducing the rank-0 to rank-6 awaiting-response branch. |
+| Desktop/mobile                         | Playwright runs current and historical diagram audits at 1440×900 and real 375×812 touch viewports.                                                     |
+| Performance bounds                     | Performance tests verify 1,000 applications on one aggregate branch do not create per-application routes and stay under the existing 5,000ms limit.     |
+| Actions-only visual artifacts          | `.github/workflows/diagram-visual-review.yml` captures the four PNG artifacts from the routing fixture into runner temporary storage only.              |

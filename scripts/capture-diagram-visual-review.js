@@ -93,7 +93,7 @@ async function main() {
     );
   await mkdir(outDir, { recursive: true });
   const fixture = await readFile(
-    "test/fixtures/tracker-lifecycle-diagram-v2.json",
+    "test/fixtures/tracker-lifecycle-diagram-routing-v2.json",
     "utf8",
   );
 
@@ -117,7 +117,7 @@ async function main() {
       await page.goto(`${server.url}/tracker`);
       await page.getByRole("button", { name: "Import/Export" }).click();
       await page.setInputFiles("[data-import-file]", {
-        name: "tracker-lifecycle-diagram-v2.json",
+        name: "tracker-lifecycle-diagram-routing-v2.json",
         mimeType: "application/json",
         buffer: Buffer.from(fixture),
       });
