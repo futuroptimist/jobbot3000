@@ -229,6 +229,94 @@ test.describe("Application Lifecycle Diagram", () => {
     expect(page.errors).toEqual([]);
   });
 
+  test("announces genuinely newer activity while preserving the historical snapshot", async ({
+    page,
+  }) => {
+    await importFixture(page);
+    await page.getByRole("button", { name: "Diagram", exact: true }).click();
+
+    const diagram = page.locator("[data-lifecycle-diagram]");
+    const range = page.getByRole("slider", {
+      name: "Lifecycle point",
+      exact: true,
+    });
+    await expect(range).toHaveAttribute("aria-valuetext", /Current/u);
+
+    await page
+      .getByRole("button", { name: "Previous event", exact: true })
+      .click();
+    const historicalAriaValue = await range.getAttribute("aria-valuetext");
+    expect(historicalAriaValue).toBeTruthy();
+    await expect(diagram).toContainText("Historical");
+    await expect(diagram).not.toContainText("Newer activity available");
+
+    await openLifecycleTables(page);
+    const historicalFlows = await tableRowsByCaption(page, "Flows");
+    const historicalIncluded = await page
+      .locator("[data-lifecycle-diagram] .muted")
+      .filter({ hasText: /applications included/u })
+      .innerText();
+
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Synthetic app-01", exact: true })
+      .click();
+    await page.clock.setFixedTime(new Date("2027-01-01T00:00:00.000Z"));
+    const applicationForm = page.locator("form[data-core-form]");
+    await applicationForm.locator('input[name="appliedAt"]').fill("2026-01-01");
+    await applicationForm
+      .locator('select[name="status"]')
+      .selectOption("technical_screen");
+    await expect(applicationForm.locator('select[name="status"]')).toHaveValue(
+      "technical_screen",
+    );
+    await page
+      .getByRole("button", { name: "Save application", exact: true })
+      .click();
+    await expect(page.locator(".timeline")).toContainText(
+      "technical_interview",
+    );
+
+    await page.getByRole("button", { name: "Diagram", exact: true }).click();
+    await expect(range).toHaveAttribute("aria-valuetext", historicalAriaValue);
+    await expect(diagram).toContainText("Historical");
+
+    const newerBadge = diagram
+      .locator(".chip")
+      .filter({ hasText: "Newer activity available" });
+    await expect(newerBadge).toHaveCount(1);
+    await expect(newerBadge).toBeVisible();
+    await expect(page.locator("#lifecycle-diagram-live")).toHaveAttribute(
+      "aria-live",
+      "polite",
+    );
+    const liveRegion = page.locator("#lifecycle-diagram-live");
+    await expect(liveRegion).toContainText("Newer activity available");
+    expect(
+      ((await liveRegion.innerText()).match(/Newer activity available/gu) ?? [])
+        .length,
+    ).toBe(1);
+    await expect(
+      page
+        .locator("[data-lifecycle-diagram] .muted")
+        .filter({ hasText: /applications included/u }),
+    ).toHaveText(historicalIncluded);
+    expect(await tableRowsByCaption(page, "Flows")).toEqual(historicalFlows);
+
+    await page
+      .getByRole("button", { name: "Return to current", exact: true })
+      .click();
+    await expect(range).toHaveAttribute("aria-valuetext", /Current/u);
+    await expect(diagram).not.toContainText("Newer activity available");
+
+    await page
+      .getByRole("button", { name: "Previous event", exact: true })
+      .click();
+    await expect(diagram).toContainText("Historical");
+    await expect(diagram).not.toContainText("Newer activity available");
+  });
   test("renders seeded current/historical states with semantic tables and selection", async ({
     page,
   }) => {
@@ -520,7 +608,7 @@ test.describe("Application Lifecycle Diagram", () => {
       const flowDetails = await selectedDetails(page);
       const flowButton = page.locator("button[aria-pressed='true']").first();
       await expect(flowButton).toBeVisible();
-      await flowButton.press(" ");
+      await flowButton.press("Space");
       expect(await selectedDetails(page)).toBe(flowDetails);
       await expect(page.locator("button[aria-pressed='true']")).toHaveCount(1);
 

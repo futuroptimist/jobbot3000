@@ -45,6 +45,8 @@ The fixture and tests use synthetic data only. Hostile strings containing script
 
 Static smoke coverage opens `/tracker`, imports deterministic lifecycle data, renders the Diagram SVG and tables, scrubs history, selects a feature, and observes no external runtime request. `/`, `/tracker`, `/healthz`, and `/livez` remain covered. `.github/workflows/ci-image.yml` remains the authoritative GHCR pull-request image build and smoke test.
 
+P6-F1 deterministic browser coverage verifies that quiet historical navigation remains notice-free while a supported application-form status change made with history selected shows the `Newer activity available` notice through the existing polite live region without changing the selected historical projection.
+
 ## Verification commands and results
 
 The PR handoff records exact command outcomes. Required commands are:
