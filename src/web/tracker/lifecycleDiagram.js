@@ -3,6 +3,17 @@ import { sankey, sankeyLinkHorizontal } from "d3-sankey";
 import { LIFECYCLE_DIAGRAM_TAXONOMY } from "./lifecycleProjection.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
+const MINIMUM_SVG_WIDTH = 760;
+const MINIMUM_SVG_HEIGHT = 360;
+const TOP_LAYOUT_MARGIN = 32;
+const BOTTOM_LAYOUT_MARGIN = 32;
+const SANKEY_NODE_PADDING = 44;
+const PER_NODE_VERTICAL_BUDGET = 36;
+const SANKEY_NODE_WIDTH = 18;
+const LEFT_LAYOUT_MARGIN = 16;
+const RIGHT_LAYOUT_MARGIN = 24;
+const HORIZONTAL_RANK_SPAN = 64;
+const RANK_INTERVALS = 6;
 const RANKS = { origin: 0, milestone: 1, endpoint: 6 };
 const MILESTONE_RANKS = new Map(
   LIFECYCLE_DIAGRAM_TAXONOMY.milestones.map((item, index) => [
@@ -70,6 +81,34 @@ const nodeRank = (id) => {
 };
 const nodeSort = (a, b) =>
   nodeRank(a.id) - nodeRank(b.id) || compare(a.id, b.id);
+
+export function calculateLifecycleDiagramLayout(projection, availableWidth) {
+  const integerWidth = Math.floor(Number(availableWidth));
+  const sanitizedWidth =
+    Number.isFinite(integerWidth) && integerWidth > 0
+      ? integerWidth
+      : MINIMUM_SVG_WIDTH;
+  const rankCounts = new Map();
+  for (const node of projection?.nodes ?? []) {
+    if (Number(node.total) > 0) {
+      const rank = nodeRank(String(node.id ?? ""));
+      rankCounts.set(rank, (rankCounts.get(rank) ?? 0) + 1);
+    }
+  }
+  const densestColumnCount = Math.max(1, ...rankCounts.values());
+  const densityHeight =
+    TOP_LAYOUT_MARGIN +
+    BOTTOM_LAYOUT_MARGIN +
+    densestColumnCount * PER_NODE_VERTICAL_BUDGET +
+    Math.max(0, densestColumnCount - 1) * SANKEY_NODE_PADDING;
+  return {
+    width: Math.max(MINIMUM_SVG_WIDTH, sanitizedWidth),
+    height: Math.max(MINIMUM_SVG_HEIGHT, Math.ceil(densityHeight)),
+    nodePadding: SANKEY_NODE_PADDING,
+    topMargin: TOP_LAYOUT_MARGIN,
+    bottomMargin: BOTTOM_LAYOUT_MARGIN,
+  };
+}
 const bucketValueText = (bucket) => {
   if (!bucket) return "Current — latest data in this browser";
   if (bucket.kind === "current") return "Current — latest data in this browser";
@@ -446,17 +485,17 @@ export function createLifecycleDiagramView(root, options = {}) {
       );
       return;
     }
-    const width = Math.max(760, root.clientWidth || 760),
-      height = Math.max(260, 70 + projection.nodes.length * 34);
+    const { width, height, nodePadding, topMargin, bottomMargin } =
+      calculateLifecycleDiagramLayout(projection, root.clientWidth);
     const graph = cloneProjectionForSankey(projection);
     const layout = sankey()
       .nodeId((d) => d.id)
-      .nodeWidth(18)
-      .nodePadding(16)
+      .nodeWidth(SANKEY_NODE_WIDTH)
+      .nodePadding(nodePadding)
       .nodeSort(nodeSort)
       .extent([
-        [16, 20],
-        [width - 24, height - 30],
+        [LEFT_LAYOUT_MARGIN, topMargin],
+        [width - RIGHT_LAYOUT_MARGIN, height - bottomMargin],
       ]);
     try {
       layout(graph);
@@ -469,11 +508,11 @@ export function createLifecycleDiagramView(root, options = {}) {
       );
       return;
     }
-    const columnWidth = (width - 64) / 6;
+    const columnWidth = (width - HORIZONTAL_RANK_SPAN) / RANK_INTERVALS;
     for (const node of graph.nodes) {
-      const fixedX = 16 + node.rank * columnWidth;
+      const fixedX = LEFT_LAYOUT_MARGIN + node.rank * columnWidth;
       node.x0 = fixedX;
-      node.x1 = fixedX + 18;
+      node.x1 = fixedX + SANKEY_NODE_WIDTH;
     }
     layout.update(graph);
     const finiteNode = (node) =>
@@ -532,7 +571,7 @@ export function createLifecycleDiagramView(root, options = {}) {
       const hitPath = svgEl("path", {
         d: pathData,
         stroke: "transparent",
-        "stroke-width": Math.max(44, link.width || 1),
+        "stroke-width": Math.max(SANKEY_NODE_PADDING, link.width || 1),
         "data-diagram-link-hit": link.id,
         "aria-hidden": "true",
       });
@@ -576,10 +615,10 @@ export function createLifecycleDiagramView(root, options = {}) {
           applicationIds: node.applicationIds,
         });
       const hitRect = svgEl("rect", {
-        x: node.x0 - Math.max(0, 44 - (node.x1 - node.x0)) / 2,
-        y: node.y0 - Math.max(0, 44 - (node.y1 - node.y0)) / 2,
-        width: Math.max(44, node.x1 - node.x0),
-        height: Math.max(44, node.y1 - node.y0),
+        x: node.x0 - Math.max(0, nodePadding - (node.x1 - node.x0)) / 2,
+        y: node.y0,
+        width: Math.max(nodePadding, node.x1 - node.x0),
+        height: Math.max(nodePadding, node.y1 - node.y0),
         fill: "transparent",
         "aria-hidden": "true",
         "data-diagram-node-hit": node.id,

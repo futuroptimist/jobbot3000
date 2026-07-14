@@ -232,6 +232,38 @@ Origin inference is allowed only from explicit structured evidence and exact all
 
 Migration adds one deterministic inferred `migration_status_snapshot` only when the current status is otherwise unrepresented. Before falling back to `status_changed`, migration must preserve known legacy interview, assessment, and employer-response milestones by applying the canonical event-type allowlist in this contract. It must never manufacture intermediate stages. Re-running migration or reconciliation must not create duplicates.
 
+## Density-aware SVG layout
+
+The SVG canvas height is derived from active aggregate-node density in the busiest Sankey rank. A fixed minimum-height floor is allowed, but fixed final desktop, mobile, fixture-specific, or viewport-specific heights are prohibited. Application count and lifecycle-event count do not directly affect height; only aggregate nodes with numeric `total > 0` participate in sizing, so zero-count taxonomy rows do not enlarge the SVG.
+
+The renderer uses these normative constants:
+
+| Constant                      |   Value |
+| ----------------------------- | ------: |
+| Minimum SVG width             | `760px` |
+| Minimum SVG height            | `360px` |
+| Top internal layout margin    |  `32px` |
+| Bottom internal layout margin |  `32px` |
+| D3 node padding               |  `44px` |
+| Per-node vertical budget      |  `36px` |
+| D3 node width                 |  `18px` |
+
+For a projection and available container width, the layout helper sanitizes width to a finite positive integer, falls back to `760px`, and returns `max(760, sanitizedWidth)`. It groups active aggregate nodes by their fixed `nodeRank(node.id)`, uses the largest active count in any rank as `densestColumnCount`, and floors that count at `1` when there are no active nodes. The height formula is:
+
+```text
+densityHeight =
+  topMargin +
+  bottomMargin +
+  densestColumnCount * perNodeVerticalBudget +
+  max(0, densestColumnCount - 1) * nodePadding
+
+height = max(minimumSvgHeight, ceil(densityHeight))
+```
+
+Examples: one or three active nodes in the busiest rank use the `360px` minimum; five produce `420px`; ten produce `820px`; eleven produce `900px`. The D3 extent is `[16, topMargin]` to `[width - 24, height - bottomMargin]`, while existing seven-rank horizontal placement and taxonomy ordering remain unchanged. The `44px` node padding is required to prevent visible-node, label, and touch-hit-region crowding.
+
+Mobile keeps the `760px` minimum SVG width inside the labeled diagram-local horizontal scroller and uses normal page-level vertical scrolling for taller dense diagrams. The page itself must not gain horizontal overflow, and the diagram must not add a fixed CSS height, maximum height, scale transform, viewport-height shrink, or diagram-local vertical scrollbar.
+
 ## UI and accessibility
 
 The Diagram tab must provide:
