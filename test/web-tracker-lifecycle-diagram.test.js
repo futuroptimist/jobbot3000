@@ -2,7 +2,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JSDOM } from "jsdom";
 
-import { createLifecycleDiagramView } from "../src/web/tracker/lifecycleDiagram.js";
+import {
+  calculateLifecycleDiagramLayout,
+  createLifecycleDiagramView,
+} from "../src/web/tracker/lifecycleDiagram.js";
 import {
   buildLifecycleTimeline,
   LIFECYCLE_DIAGRAM_TAXONOMY,
@@ -37,6 +40,62 @@ const bundle = (applications = [], lifecycleEvents = []) => ({
   applications,
   lifecycleEvents,
 });
+
+const node = (id, total = 1) => ({ id, label: id, total, applicationIds: [] });
+const projectionWithCounts = ({
+  origins = 1,
+  milestones = 1,
+  endpoints = 1,
+} = {}) => ({
+  nodes: [
+    ...Array.from({ length: origins }, (_, index) =>
+      node(
+        `origin:${LIFECYCLE_DIAGRAM_TAXONOMY.origins[index]?.id ?? `extra_${index}`}`,
+      ),
+    ),
+    ...Array.from({ length: milestones }, (_, index) =>
+      node(
+        `milestone:${
+          LIFECYCLE_DIAGRAM_TAXONOMY.milestones[index]?.id ?? `extra_${index}`
+        }`,
+      ),
+    ),
+    ...Array.from({ length: endpoints }, (_, index) =>
+      node(
+        `endpoint:${
+          LIFECYCLE_DIAGRAM_TAXONOMY.endpoints[index]?.id ?? `extra_${index}`
+        }`,
+      ),
+    ),
+  ],
+  links: [],
+});
+const deepFreeze = (value) => {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value)) deepFreeze(child);
+  }
+  return value;
+};
+const svgHeight = (root) =>
+  Number(root.querySelector("svg").getAttribute("height"));
+const visibleNodeBoxesByRank = (root) => {
+  const ranks = new Map();
+  for (const group of root.querySelectorAll("[data-diagram-node]")) {
+    const rect = group.querySelector("rect:not([data-diagram-node-hit])");
+    const x = Number(rect.getAttribute("x"));
+    const box = {
+      y0: Number(rect.getAttribute("y")),
+      y1: Number(rect.getAttribute("y")) + Number(rect.getAttribute("height")),
+    };
+    const key = String(Math.round(x));
+    if (!ranks.has(key)) ranks.set(key, []);
+    ranks.get(key).push(box);
+  }
+  for (const boxes of ranks.values()) boxes.sort((a, b) => a.y0 - b.y0);
+  return ranks;
+};
+
 const EXPECTED_FIXTURE_TAXONOMY_TOTALS = {
   endpoints: {
     awaiting_response: 2,
@@ -88,6 +147,116 @@ function render(b, selectedBucketId = "current", onBucketChange = vi.fn()) {
   });
   return { root, view, timeline, snapshot, onBucketChange };
 }
+
+describe("lifecycle diagram density-aware layout", () => {
+  it.each([
+    [1, 360],
+    [3, 360],
+    [5, 420],
+    [10, 820],
+    [11, 900],
+  ])(
+    "calculates contractual height for %i active nodes in the busiest rank",
+    (count, height) => {
+      expect(
+        calculateLifecycleDiagramLayout(
+          projectionWithCounts({ endpoints: count }),
+          760,
+        ),
+      ).toMatchObject({
+        width: 760,
+        height,
+        nodePadding: 44,
+        topMargin: 32,
+        bottomMargin: 32,
+      });
+    },
+  );
+
+  it.each([undefined, 0, -1, NaN, Infinity])(
+    "falls invalid width %s back to 760",
+    (width) => {
+      expect(
+        calculateLifecycleDiagramLayout(projectionWithCounts(), width).width,
+      ).toBe(760);
+    },
+  );
+
+  it("preserves wider desktop widths and is stable across node order", () => {
+    const projection = projectionWithCounts({
+      origins: 3,
+      milestones: 4,
+      endpoints: 5,
+    });
+    const shuffled = { ...projection, nodes: [...projection.nodes].reverse() };
+    expect(calculateLifecycleDiagramLayout(projection, 1200)).toEqual(
+      calculateLifecycleDiagramLayout(shuffled, 1200),
+    );
+    expect(calculateLifecycleDiagramLayout(projection, 1200).width).toBe(1200);
+  });
+
+  it("only grows when the busiest rank grows and ignores zero-total nodes", () => {
+    const base = projectionWithCounts({
+      origins: 2,
+      milestones: 3,
+      endpoints: 5,
+    });
+    const same = {
+      ...base,
+      nodes: [...base.nodes, node("origin:extra", 1), node("endpoint:zero", 0)],
+    };
+    const larger = {
+      ...base,
+      nodes: [...base.nodes, node("endpoint:extra", 1)],
+    };
+    expect(calculateLifecycleDiagramLayout(same, 760).height).toBe(
+      calculateLifecycleDiagramLayout(base, 760).height,
+    );
+    expect(calculateLifecycleDiagramLayout(larger, 760).height).toBe(
+      calculateLifecycleDiagramLayout(base, 760).height + 36 + 44,
+    );
+  });
+
+  it("does not mutate a deeply frozen projection", () => {
+    const projection = deepFreeze(
+      projectionWithCounts({ origins: 2, endpoints: 5 }),
+    );
+    const before = JSON.stringify(projection);
+    expect(calculateLifecycleDiagramLayout(projection, 760).height).toBe(420);
+    expect(JSON.stringify(projection)).toBe(before);
+  });
+
+  it("renders sparse and dense SVGs with calculated height and safe spacing", async () => {
+    const sparse = render(
+      bundle([app("a")], [ev("o", "a", "application_submitted", "2026-01-01")]),
+    );
+    expect(svgHeight(sparse.root)).toBe(360);
+    const fixture = await import(
+      "./fixtures/tracker-lifecycle-diagram-v2.json",
+      { with: { type: "json" } }
+    );
+    const dense = render(fixture.default);
+    const svg = dense.root.querySelector("svg");
+    expect(svgHeight(dense.root)).toBe(900);
+    expect(svg.getAttribute("viewBox")).toBe("0 0 760 900");
+    for (const boxes of visibleNodeBoxesByRank(dense.root).values()) {
+      for (let index = 1; index < boxes.length; index += 1)
+        expect(boxes[index].y0 - boxes[index - 1].y1).toBeGreaterThanOrEqual(
+          43.5,
+        );
+    }
+    for (const group of dense.root.querySelectorAll("[data-diagram-node]")) {
+      const hit = group.querySelector("[data-diagram-node-hit]");
+      const y = Number(hit.getAttribute("y"));
+      expect(y).toBeGreaterThanOrEqual(0);
+      expect(y + Number(hit.getAttribute("height"))).toBeLessThanOrEqual(900);
+    }
+    dense.root
+      .querySelector("[data-diagram-node-hit]")
+      .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(svgHeight(dense.root)).toBe(900);
+  });
+});
 
 describe("lifecycle diagram view", () => {
   beforeEach(() => vi.useRealTimers());

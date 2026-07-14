@@ -19,6 +19,9 @@ P6 hardens the P1-P5 Application Lifecycle Diagram for production readiness: bou
 | Selection not color-only and table buttons expose state                                          | `aria-pressed` and detail text assertions in Vitest and Playwright                                                                   |
 | Keyboard-accessible semantic controls                                                            | Semantic table button tests in Vitest and Playwright                                                                                 |
 | Pointer/touch SVG selection                                                                      | SVG node/link click and mobile tap coverage in Playwright; transparent hit-region tests in Vitest                                    |
+| Density-aware SVG height uses busiest active aggregate rank, not app/event volume                | `calculateLifecycleDiagramLayout` Vitest cases for 1/3/5/10/11 nodes, invalid widths, shuffled nodes, zero totals, and frozen inputs |
+| 44px D3 node padding prevents rank crowding and hit-region overlap                               | Vitest SVG geometry assertions plus desktop and 375×812 Playwright DOM/SVG geometry checks                                           |
+| Fixed taxonomy bounds height and DOM even for 1,000 applications                                 | `test/web-tracker-lifecycle-diagram-performance.test.js` compares small and 1,000-application bundles with unchanged density         |
 | Bounded DOM and complete reachability                                                            | 50-row event/application pagination in Vitest performance coverage                                                                   |
 | Accessibility                                                                                    | axe-core injected from local dependency in `test/playwright/lifecycle-diagram.spec.js`                                               |
 | Reduced motion                                                                                   | CSS media query and Vitest reduced-motion rendering assertion                                                                        |
@@ -37,9 +40,13 @@ The focused Playwright spec injects the installed `axe-core` source locally and 
 
 The fixture and tests use synthetic data only. Hostile strings containing script, SVG markup, event-handler attributes, quotes, and `javascript:`-style content are asserted to remain inert text. Diagram interactions are read-only: no POST, PUT, PATCH, or DELETE request is produced, no cross-origin runtime request is allowed, no application data is placed in URLs/cookies/telemetry, and `d3-sankey` is loaded only through the local bundle.
 
+## Density-aware spacing validation
+
+P6-F2 maps the spacing contract to three layers of automated coverage. `test/web-tracker-lifecycle-diagram.test.js` validates the pure helper formula, width fallback, order independence, non-busiest-rank stability, exact `perNodeVerticalBudget + nodePadding` growth, zero-total exclusion, frozen-projection purity, sparse `360px` rendering, dense fixture `900px` rendering, SVG/viewBox height agreement, 44px adjacent-node spacing, non-overlapping transparent node hit rectangles, in-bounds top/bottom geometry, and selection rerender height preservation. `test/web-tracker-lifecycle-diagram-performance.test.js` proves that height depends on bounded aggregate taxonomy density rather than application volume. `test/playwright/lifecycle-diagram.spec.js` exercises the same DOM/SVG geometry in desktop and real `375×812` touch contexts, including page-level horizontal overflow, diagram-local mobile scrolling, unclipped labels, touch node/flow selection, semantic-table keyboard parity, axe, and console/page-error checks.
+
 ## Large-data and DOM-clutter limits
 
-`test/web-tracker-lifecycle-diagram-performance.test.js` creates 1,000 synthetic applications with eight effective lifecycle events each. After one warm-up render, the measured render must complete within 5,000 ms. The test asserts at most 21 aggregate SVG nodes, no per-application/company nodes, at most 50 rendered event rows, at most 50 rendered affected application IDs, complete pagination reachability, no projection mutation, and no `NaN`/`Infinity` SVG geometry.
+`test/web-tracker-lifecycle-diagram-performance.test.js` creates 1,000 synthetic applications with eight effective lifecycle events each. After one warm-up render, the measured render must complete within 5,000 ms. The test asserts density-equivalent small and 1,000-application bundles have the same calculated height, at most 21 aggregate SVG nodes, no per-application/company nodes, at most 50 rendered event rows, at most 50 rendered affected application IDs, complete pagination reachability, no projection mutation, and no `NaN`/`Infinity` SVG geometry.
 
 ## Static build and container checks
 

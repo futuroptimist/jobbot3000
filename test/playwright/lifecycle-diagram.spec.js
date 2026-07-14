@@ -181,6 +181,72 @@ async function assertVisibleControlsLargeEnough(page) {
   }
 }
 
+async function assertDensityAwareGeometry(page, expectedHeight = 820) {
+  const geometry = await page.locator("svg[role='img']").evaluate((svg) => {
+    const height = Number(svg.getAttribute("height"));
+    const viewBoxHeight = Number(svg.getAttribute("viewBox")?.split(/\s+/u)[3]);
+    const byRank = new Map();
+    for (const group of svg.querySelectorAll("[data-diagram-node]")) {
+      const rect = group.querySelector("rect:not([data-diagram-node-hit])");
+      const hit = group.querySelector("[data-diagram-node-hit]");
+      const text = group.querySelector("text");
+      const x = Math.round(Number(rect.getAttribute("x")));
+      const item = {
+        rect: {
+          y0: Number(rect.getAttribute("y")),
+          y1:
+            Number(rect.getAttribute("y")) +
+            Number(rect.getAttribute("height")),
+        },
+        hit: {
+          y0: Number(hit.getAttribute("y")),
+          y1:
+            Number(hit.getAttribute("y")) + Number(hit.getAttribute("height")),
+        },
+        label: (() => {
+          const box = text.getBBox();
+          return { y0: box.y, y1: box.y + box.height };
+        })(),
+      };
+      if (!byRank.has(x)) byRank.set(x, []);
+      byRank.get(x).push(item);
+    }
+    return { height, viewBoxHeight, ranks: [...byRank.values()] };
+  });
+  expect(geometry.height).toBe(expectedHeight);
+  expect(geometry.viewBoxHeight).toBe(expectedHeight);
+  for (const rank of geometry.ranks) {
+    rank.sort((a, b) => a.rect.y0 - b.rect.y0);
+    for (const item of rank) {
+      expect(item.rect.y0).toBeGreaterThanOrEqual(0);
+      expect(item.rect.y1).toBeLessThanOrEqual(geometry.height);
+      expect(item.hit.y0).toBeGreaterThanOrEqual(0);
+      expect(item.hit.y1).toBeLessThanOrEqual(geometry.height);
+      expect(item.label.y0).toBeGreaterThanOrEqual(0);
+      expect(item.label.y1).toBeLessThanOrEqual(geometry.height);
+    }
+    for (let index = 1; index < rank.length; index += 1) {
+      expect(
+        rank[index].rect.y0 - rank[index - 1].rect.y1,
+      ).toBeGreaterThanOrEqual(43.5);
+      expect(rank[index].hit.y0).toBeGreaterThanOrEqual(
+        rank[index - 1].hit.y1 - 0.5,
+      );
+      expect(rank[index].label.y0).toBeGreaterThanOrEqual(
+        rank[index - 1].label.y1 - 0.5,
+      );
+    }
+  }
+  const scrollBottom = await page.locator(".diagram-scroll").evaluate((el) => {
+    const scroll = el.getBoundingClientRect();
+    const svg = el.querySelector("svg").getBoundingClientRect();
+    return { scrollBottom: scroll.bottom, svgBottom: svg.bottom };
+  });
+  expect(scrollBottom.svgBottom).toBeLessThanOrEqual(
+    scrollBottom.scrollBottom + 0.5,
+  );
+}
+
 async function runAxe(page) {
   await page.addScriptTag({ content: axe.source });
   const results = await page.evaluate(
@@ -433,6 +499,8 @@ test.describe("Application Lifecycle Diagram", () => {
       EXPECTED_CURRENT.included,
     );
 
+    await assertDensityAwareGeometry(page);
+
     const nodeGroup = page
       .locator("[data-diagram-node='origin:application_submitted']")
       .first();
@@ -568,6 +636,7 @@ test.describe("Application Lifecycle Diagram", () => {
         EXPECTED_CURRENT.included,
       );
       await assertNoPageOverflow(page);
+      await assertDensityAwareGeometry(page);
       const scroll = page.locator(".diagram-scroll");
       expect(
         await scroll.evaluate((el) => el.scrollWidth > el.clientWidth),
