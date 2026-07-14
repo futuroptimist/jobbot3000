@@ -186,13 +186,13 @@ test.describe("static tracker smoke", () => {
     const requests = [];
     page.on("request", (request) => requests.push(request));
     const fixture = await fs.readFile(
-      "test/fixtures/tracker-lifecycle-diagram-v2.json",
+      "test/fixtures/tracker-lifecycle-diagram-routing-v2.json",
       "utf8",
     );
     await page.goto(`${baseUrl}/tracker`);
     await page.getByRole("button", { name: "Import/Export" }).click();
     await page.setInputFiles("[data-import-file]", {
-      name: "tracker-lifecycle-diagram-v2.json",
+      name: "tracker-lifecycle-diagram-routing-v2.json",
       mimeType: "application/json",
       buffer: Buffer.from(fixture),
     });
