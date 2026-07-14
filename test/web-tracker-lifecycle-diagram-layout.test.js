@@ -1,0 +1,237 @@
+import { describe, expect, it } from "vitest";
+// eslint-disable-next-line max-len
+import routingFixture from "./fixtures/tracker-lifecycle-diagram-routing-v2.json" with { type: "json" };
+import { projectLifecycleAt } from "../src/web/tracker/lifecycleProjection.js";
+import {
+  BRANCH_STROKE_OPACITY,
+  ENDPOINT_BRANCH_COLORS,
+  LAYOUT_LEFT_MARGIN,
+  LAYOUT_RIGHT_MARGIN,
+  MINIMUM_RANK_CENTER_SPACING,
+  MINIMUM_SVG_WIDTH,
+  MINIMUM_TRANSITION_WIDTH,
+  RANK_CORRIDOR_HALF_WIDTH,
+  SANKEY_NODE_WIDTH,
+  assignBranchHandles,
+  buildLifecycleDisplayBranches,
+  buildLifecycleRoutingGraph,
+  calculateLifecycleDiagramLayout,
+  compareBranches,
+  endpointColor,
+  layoutLifecycleRoutingGraph,
+  rankCenterX,
+  wrapLifecycleLabel,
+} from "../src/web/tracker/lifecycleDiagramLayout.js";
+
+const projection = () => projectLifecycleAt(routingFixture);
+const deepFreeze = (value) => {
+  if (!value || typeof value !== "object" || Object.isFrozen(value))
+    return value;
+  for (const child of Object.values(value)) deepFreeze(child);
+  return Object.freeze(value);
+};
+const luminance = ([r, g, b]) => {
+  const channel = (v) => {
+    const n = v / 255;
+    return n <= 0.03928 ? n / 12.92 : ((n + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+};
+const hex = (color) =>
+  color.match(/[0-9a-f]{2}/giu).map((v) => parseInt(v, 16));
+const contrast = (a, b) => {
+  const [l1, l2] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (l1 + 0.05) / (l2 + 0.05);
+};
+
+describe("lifecycle diagram render-only routing layout", () => {
+  it("partitions semantic links into stable endpoint-conditioned display branches", () => {
+    const p = projection();
+    const branches = buildLifecycleDisplayBranches(p);
+    expect(branches.map((b) => b.id)).toContain(
+      "branch:link:origin:application_submitted->endpoint:" +
+        "awaiting_response:endpoint:awaiting_response",
+    );
+    for (const link of p.links) {
+      const related = branches.filter((b) => b.semanticLinkId === link.id);
+      expect(related.reduce((sum, b) => sum + b.value, 0)).toBe(link.value);
+      const union = related.flatMap((b) => b.applicationIds).sort();
+      expect(union).toEqual([...link.applicationIds].sort());
+      expect(new Set(union).size).toBe(union.length);
+    }
+    expect(branches).toEqual([...branches].sort(compareBranches));
+  });
+
+  it("is stable under shuffled inputs and does not mutate frozen projections", () => {
+    const p = projection();
+    const shuffled = deepFreeze({
+      ...p,
+      links: [...p.links].reverse().map((link) => ({
+        ...link,
+        applicationIds: [...link.applicationIds].reverse(),
+      })),
+      paths: [...p.paths].reverse(),
+    });
+    const before = JSON.stringify(shuffled);
+    expect(buildLifecycleDisplayBranches(shuffled)).toEqual(
+      buildLifecycleDisplayBranches(p),
+    );
+    expect(JSON.stringify(shuffled)).toBe(before);
+  });
+
+  it("uses the exact endpoint palette, unknown fallback, and readable composited colors", () => {
+    expect(ENDPOINT_BRANCH_COLORS).toEqual({
+      awaiting_response: "#60A5FA",
+      interviewing: "#C084FC",
+      assessment_in_progress: "#FACC15",
+      offer_negotiating: "#2DD4BF",
+      employer_rejected: "#FB7185",
+      candidate_withdrew: "#FB923C",
+      offer_declined: "#F472B6",
+      offer_expired_rescinded: "#A3E635",
+      offer_accepted: "#4ADE80",
+      closed_archived: "#94A3B8",
+      unknown: "#E2E8F0",
+    });
+    expect(endpointColor("missing")).toBe("#E2E8F0");
+    const background = hex("#0F172A");
+    for (const color of Object.values(ENDPOINT_BRANCH_COLORS)) {
+      const fg = hex(color).map((v, i) =>
+        Math.round(
+          v * BRANCH_STROKE_OPACITY +
+            background[i] * (1 - BRANCH_STROKE_OPACITY),
+        ),
+      );
+      expect(contrast(fg, background)).toBeGreaterThan(3);
+    }
+  });
+
+  it("expands rank-skipping branches into deterministic adjacent-rank routing segments", () => {
+    const graph = buildLifecycleRoutingGraph(projection());
+    const longBranch =
+      "branch:link:origin:application_submitted->endpoint:" +
+      "awaiting_response:endpoint:awaiting_response";
+    expect(
+      graph.nodes.filter((n) => n.branchId === longBranch).map((n) => n.rank),
+    ).toEqual([1, 2, 3, 4, 5]);
+    for (const segment of graph.links) {
+      const source = graph.nodes.find((node) => node.id === segment.source);
+      const target = graph.nodes.find((node) => node.id === segment.target);
+      expect(target.rank).toBe(source.rank + 1);
+      expect(segment.applicationIds).toEqual(
+        [...segment.applicationIds].sort(),
+      );
+    }
+    const adjacent = graph.branches.find(
+      (b) => b.sourceRank + 1 === b.targetRank,
+    );
+    expect(graph.nodes.filter((n) => n.branchId === adjacent.id)).toHaveLength(
+      0,
+    );
+    expect(
+      graph.nodes
+        .filter((n) => n.routing)
+        .every((n) => n.id === `route:${n.branchId}:rank:${n.rank}`),
+    ).toBe(true);
+    expect(
+      graph.nodes
+        .filter((n) => !n.routing)
+        .map((n) => n.id)
+        .some((id) => id.startsWith("route:")),
+    ).toBe(false);
+  });
+
+  it("calculates dimensions from routed lane density, not application volume", () => {
+    const p = projection();
+    const base = calculateLifecycleDiagramLayout(p, 100);
+    const volume = {
+      ...p,
+      links: p.links.map((link) => ({ ...link, value: link.value * 40 })),
+      nodes: p.nodes.map((node) => ({ ...node, total: node.total * 40 })),
+      includedApplications: p.includedApplications * 40,
+      totalApplications: p.totalApplications * 40,
+    };
+    expect(calculateLifecycleDiagramLayout(volume, 100).height).toBe(
+      base.height,
+    );
+    const denser = {
+      ...p,
+      links: [
+        ...p.links,
+        {
+          id: "link:origin:application_submitted->endpoint:unknown",
+          source: "origin:application_submitted",
+          target: "endpoint:unknown",
+          value: 1,
+          applicationIds: ["extra"],
+        },
+      ],
+      paths: [
+        ...p.paths,
+        {
+          applicationId: "extra",
+          endpoint: "unknown",
+          nodeIds: ["origin:application_submitted", "endpoint:unknown"],
+        },
+      ],
+      nodes: [
+        ...p.nodes,
+        {
+          id: "endpoint:unknown",
+          label: "Unknown",
+          total: 1,
+          applicationIds: ["extra"],
+        },
+      ],
+    };
+    expect(
+      calculateLifecycleDiagramLayout(denser, 100).height,
+    ).toBeGreaterThanOrEqual(base.height);
+  });
+
+  it("uses exact protected-corridor width calculations and deterministic sorting", () => {
+    expect(2 * RANK_CORRIDOR_HALF_WIDTH + MINIMUM_TRANSITION_WIDTH).toBe(
+      MINIMUM_RANK_CENTER_SPACING,
+    );
+    expect(
+      LAYOUT_LEFT_MARGIN +
+        LAYOUT_RIGHT_MARGIN +
+        SANKEY_NODE_WIDTH +
+        6 * MINIMUM_RANK_CENTER_SPACING,
+    ).toBe(MINIMUM_SVG_WIDTH);
+    expect(MINIMUM_SVG_WIDTH).toBe(1850);
+    expect(rankCenterX(1) - rankCenterX(0)).toBe(MINIMUM_RANK_CENTER_SPACING);
+    expect(
+      buildLifecycleRoutingGraph(projection()).links.map((l) => l.id),
+    ).toEqual(buildLifecycleRoutingGraph(projection()).links.map((l) => l.id));
+  });
+
+  it("wraps labels without truncation and assigns one non-overlapping handle per branch", () => {
+    const text = "Assessment/take-home requested outcome";
+    expect(wrapLifecycleLabel(text).join(" ")).toBe(text);
+    const { graph } = layoutLifecycleRoutingGraph(projection(), 1850);
+    const visibleNodes = graph.nodes.filter((n) => !n.routing && n.total > 0);
+    const byBranch = new Map();
+    for (const link of graph.links) {
+      if (!byBranch.has(link.branchId)) byBranch.set(link.branchId, []);
+      byBranch.get(link.branchId).push(link);
+    }
+    const handles = assignBranchHandles(graph.branches, byBranch, visibleNodes);
+    expect(handles).toHaveLength(graph.branches.length);
+    expect(new Set(handles.map((h) => h.branchId)).size).toBe(
+      graph.branches.length,
+    );
+    for (let i = 0; i < handles.length; i += 1) {
+      for (let j = i + 1; j < handles.length; j += 1) {
+        const a = handles[i].box;
+        const b = handles[j].box;
+        expect(
+          a.x < b.x + b.width &&
+            a.x + a.width > b.x &&
+            a.y < b.y + b.height &&
+            a.y + a.height > b.y,
+        ).toBe(false);
+      }
+    }
+  });
+});

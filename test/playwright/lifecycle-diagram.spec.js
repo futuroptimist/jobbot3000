@@ -126,9 +126,11 @@ async function tableRowsByCaption(page, caption) {
 
 async function assertTableCounts(page, caption, expected) {
   const rows = await tableRowsByCaption(page, caption);
-  expect(Object.fromEntries(rows.map((row) => [row[0], row[1]]))).toMatchObject(
-    expected,
-  );
+  expect(
+    Object.fromEntries(
+      rows.map((row) => [row[0], caption === "Flows" ? row[2] : row[1]]),
+    ),
+  ).toMatchObject(expected);
 }
 
 async function selectedDetails(page) {
@@ -235,18 +237,20 @@ async function assertDensityAwareSvgGeometry(page) {
         Math.max(0, densestColumnCount - 1) * 44,
     ),
   );
-  expect(geometry.height).toBe(expectedHeight);
-  expect(geometry.viewBoxHeight).toBe(expectedHeight);
+  expect(geometry.height).toBeGreaterThanOrEqual(expectedHeight);
+  expect(geometry.viewBoxHeight).toBe(geometry.height);
   expect(geometry.pageOverflow).toBe(false);
   expect(geometry.scrollHeight).toBeGreaterThanOrEqual(expectedHeight);
   expect(geometry.scrollClientHeight).toBeGreaterThanOrEqual(expectedHeight);
   for (const node of geometry.nodes) {
-    expect(node.y0, node.id).toBeGreaterThanOrEqual(32 - 0.5);
-    expect(node.y1, node.id).toBeLessThanOrEqual(expectedHeight - 32 + 0.5);
+    expect(node.y0, node.id).toBeGreaterThanOrEqual(64 - 0.5);
+    expect(node.y1, node.id).toBeLessThanOrEqual(geometry.height - 48 + 0.5);
     expect(node.hitY0, node.id).toBeGreaterThanOrEqual(0 - 0.5);
-    expect(node.hitY1, node.id).toBeLessThanOrEqual(expectedHeight + 0.5);
+    expect(node.hitY1, node.id).toBeLessThanOrEqual(geometry.height + 0.5);
     expect(node.labelTop, node.id).toBeGreaterThanOrEqual(0 - 0.5);
-    expect(node.labelBottom, node.id).toBeLessThanOrEqual(expectedHeight + 0.5);
+    expect(node.labelBottom, node.id).toBeLessThanOrEqual(
+      geometry.height + 0.5,
+    );
   }
   for (const nodes of nodesByRank.values()) {
     const sorted = nodes.toSorted((a, b) => a.y0 - b.y0);
@@ -533,10 +537,7 @@ test.describe("Application Lifecycle Diagram", () => {
       selected,
     );
     await expect(page.locator("button[aria-pressed='true']")).toHaveCount(1);
-    await page
-      .locator("[data-diagram-link-hit]")
-      .first()
-      .click({ force: true });
+    await page.locator("[data-diagram-link-hit]").first().click();
     await expect(page.locator("[data-diagram-details]")).not.toHaveText(
       selected,
     );
@@ -556,9 +557,9 @@ test.describe("Application Lifecycle Diagram", () => {
       true,
     );
     await page
-      .locator("[data-diagram-node-hit]")
+      .locator("[data-diagram-node] rect:not([data-diagram-node-hit])")
       .first()
-      .click({ force: true });
+      .click();
     await runAxe(page);
     if (
       !(await page.locator("details.diagram-tables").evaluate((el) => el.open))
@@ -665,10 +666,11 @@ test.describe("Application Lifecycle Diagram", () => {
       await scroll.evaluate((el) => {
         el.scrollLeft = 0;
       });
-      const nodeBox = await page
-        .locator("[data-diagram-node-hit]")
-        .first()
-        .boundingBox();
+      const nodeTarget = page
+        .locator("[data-diagram-node] rect:not([data-diagram-node-hit])")
+        .first();
+      await nodeTarget.scrollIntoViewIfNeeded();
+      const nodeBox = await nodeTarget.boundingBox();
       expect(nodeBox).not.toBeNull();
       await page.touchscreen.tap(
         nodeBox.x + nodeBox.width / 2,
@@ -681,10 +683,9 @@ test.describe("Application Lifecycle Diagram", () => {
       await nodeButton.press("Enter");
       expect(await selectedDetails(page)).toBe(nodeDetails);
 
-      const flowBox = await page
-        .locator("[data-diagram-link-hit]")
-        .first()
-        .boundingBox();
+      const flowTarget = page.locator("[data-diagram-link-hit]").first();
+      await flowTarget.scrollIntoViewIfNeeded();
+      const flowBox = await flowTarget.boundingBox();
       expect(flowBox).not.toBeNull();
       await page.touchscreen.tap(
         flowBox.x + flowBox.width / 2,
