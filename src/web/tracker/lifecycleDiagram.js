@@ -87,11 +87,11 @@ export function calculateLifecycleDiagramLayout(projection, availableWidth) {
       ? integerWidth
       : MINIMUM_SVG_WIDTH;
   const activeNodes = (projection?.nodes ?? []).filter(
-    (node) => Number(node?.total) > 0,
+    (node) => typeof node?.id === "string" && Number(node?.total) > 0,
   );
   const rankCounts = new Map();
   for (const node of activeNodes) {
-    const rank = nodeRank(String(node.id ?? ""));
+    const rank = nodeRank(node.id);
     rankCounts.set(rank, (rankCounts.get(rank) ?? 0) + 1);
   }
   const densestColumnCount = Math.max(1, ...rankCounts.values());
@@ -507,7 +507,9 @@ export function createLifecycleDiagramView(root, options = {}) {
       );
       return;
     }
-    const columnWidth = (width - 64) / 6;
+    const horizontalSpan =
+      width - LAYOUT_RIGHT_MARGIN - SANKEY_NODE_WIDTH - LAYOUT_LEFT_MARGIN;
+    const columnWidth = horizontalSpan / RANKS.endpoint;
     for (const node of graph.nodes) {
       const fixedX = LAYOUT_LEFT_MARGIN + node.rank * columnWidth;
       node.x0 = fixedX;

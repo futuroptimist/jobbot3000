@@ -194,6 +194,11 @@ describe("calculateLifecycleDiagramLayout", () => {
         nodes: [...projection.nodes, { id: "endpoint:zero", total: 0 }],
       }).height,
     ).toBe(calculateLifecycleDiagramLayout(projection).height);
+    expect(
+      calculateLifecycleDiagramLayout({
+        nodes: [...projection.nodes, { id: 42, total: 1 }],
+      }).height,
+    ).toBe(calculateLifecycleDiagramLayout(projection).height);
     const frozen = deepFreeze(structuredClone(projection));
     expect(() => calculateLifecycleDiagramLayout(frozen, 760)).not.toThrow();
     expect(frozen).toEqual(projection);
@@ -671,6 +676,15 @@ describe("lifecycle diagram view", () => {
     expect(calculateLifecycleDiagramLayout(dense.snapshot).height).toBe(900);
     expect(svg.getAttribute("height")).toBe("900");
     expect(svg.getAttribute("viewBox")).toBe("0 0 760 900");
+    const nodesById = new Map(
+      visibleNodeRects(dense.root).map((rect) => [
+        rect.closest("[data-diagram-node]").getAttribute("data-diagram-node"),
+        rectBox(rect),
+      ]),
+    );
+    expect(nodesById.get("origin:application_submitted").x).toBeCloseTo(16);
+    const awaitingResponse = nodesById.get("endpoint:awaiting_response");
+    expect(awaitingResponse.x + awaitingResponse.width).toBeCloseTo(736);
 
     for (const rects of byRank(visibleNodeRects(dense.root)).values()) {
       const sorted = rects.map(rectBox).sort((a, b) => a.y - b.y);
