@@ -608,7 +608,7 @@ test.describe("Application Lifecycle Diagram", () => {
       const flowDetails = await selectedDetails(page);
       const flowButton = page.locator("button[aria-pressed='true']").first();
       await expect(flowButton).toBeVisible();
-      await flowButton.press(" ");
+      await flowButton.press("Space");
       expect(await selectedDetails(page)).toBe(flowDetails);
       await expect(page.locator("button[aria-pressed='true']")).toHaveCount(1);
 
