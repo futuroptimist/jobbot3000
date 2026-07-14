@@ -10,6 +10,7 @@ const LAYOUT_BOTTOM_MARGIN = 32;
 const SANKEY_NODE_PADDING = 44;
 const PER_NODE_VERTICAL_BUDGET = 36;
 const SANKEY_NODE_WIDTH = 18;
+const FIXED_HORIZONTAL_RANK_SPAN = 64;
 const LAYOUT_LEFT_MARGIN = 16;
 const LAYOUT_RIGHT_MARGIN = 24;
 const RANKS = { origin: 0, milestone: 1, endpoint: 6 };
@@ -507,9 +508,8 @@ export function createLifecycleDiagramView(root, options = {}) {
       );
       return;
     }
-    const horizontalSpan =
-      width - LAYOUT_RIGHT_MARGIN - SANKEY_NODE_WIDTH - LAYOUT_LEFT_MARGIN;
-    const columnWidth = horizontalSpan / RANKS.endpoint;
+    // P6-F2 changes vertical sizing only; preserve the pre-P6 seven-rank horizontal span.
+    const columnWidth = (width - FIXED_HORIZONTAL_RANK_SPAN) / RANKS.endpoint;
     for (const node of graph.nodes) {
       const fixedX = LAYOUT_LEFT_MARGIN + node.rank * columnWidth;
       node.x0 = fixedX;

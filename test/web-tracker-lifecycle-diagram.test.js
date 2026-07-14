@@ -684,7 +684,7 @@ describe("lifecycle diagram view", () => {
     );
     expect(nodesById.get("origin:application_submitted").x).toBeCloseTo(16);
     const awaitingResponse = nodesById.get("endpoint:awaiting_response");
-    expect(awaitingResponse.x + awaitingResponse.width).toBeCloseTo(736);
+    expect(awaitingResponse.x + awaitingResponse.width).toBeCloseTo(730);
 
     for (const rects of byRank(visibleNodeRects(dense.root)).values()) {
       const sorted = rects.map(rectBox).sort((a, b) => a.y - b.y);

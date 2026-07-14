@@ -181,7 +181,7 @@ async function assertVisibleControlsLargeEnough(page) {
   }
 }
 
-async function assertDensityAwareSvgGeometry(page, expectedHeight) {
+async function assertDensityAwareSvgGeometry(page) {
   const geometry = await page.locator(".diagram-scroll").evaluate((scroll) => {
     const svg = scroll.querySelector("svg");
     const visibleNodes = [...svg.querySelectorAll("[data-diagram-node]")].map(
@@ -216,12 +216,30 @@ async function assertDensityAwareSvgGeometry(page, expectedHeight) {
         document.documentElement.clientWidth,
     };
   });
+  const nodesByRank = new Map();
+  for (const node of geometry.nodes) {
+    const key = Math.round(node.x);
+    if (!nodesByRank.has(key)) nodesByRank.set(key, []);
+    nodesByRank.get(key).push(node);
+  }
+  const densestColumnCount = Math.max(
+    1,
+    ...[...nodesByRank.values()].map((nodes) => nodes.length),
+  );
+  const expectedHeight = Math.max(
+    360,
+    Math.ceil(
+      32 +
+        32 +
+        densestColumnCount * 36 +
+        Math.max(0, densestColumnCount - 1) * 44,
+    ),
+  );
   expect(geometry.height).toBe(expectedHeight);
   expect(geometry.viewBoxHeight).toBe(expectedHeight);
   expect(geometry.pageOverflow).toBe(false);
   expect(geometry.scrollHeight).toBeGreaterThanOrEqual(expectedHeight);
   expect(geometry.scrollClientHeight).toBeGreaterThanOrEqual(expectedHeight);
-  const byRank = new Map();
   for (const node of geometry.nodes) {
     expect(node.y0, node.id).toBeGreaterThanOrEqual(32 - 0.5);
     expect(node.y1, node.id).toBeLessThanOrEqual(expectedHeight - 32 + 0.5);
@@ -229,11 +247,8 @@ async function assertDensityAwareSvgGeometry(page, expectedHeight) {
     expect(node.hitY1, node.id).toBeLessThanOrEqual(expectedHeight + 0.5);
     expect(node.labelTop, node.id).toBeGreaterThanOrEqual(0 - 0.5);
     expect(node.labelBottom, node.id).toBeLessThanOrEqual(expectedHeight + 0.5);
-    const key = Math.round(node.x);
-    if (!byRank.has(key)) byRank.set(key, []);
-    byRank.get(key).push(node);
   }
-  for (const nodes of byRank.values()) {
+  for (const nodes of nodesByRank.values()) {
     const sorted = nodes.toSorted((a, b) => a.y0 - b.y0);
     for (let index = 1; index < sorted.length; index += 1) {
       expect(sorted[index].y0 - sorted[index - 1].y1).toBeGreaterThanOrEqual(
@@ -400,7 +415,7 @@ test.describe("Application Lifecycle Diagram", () => {
     ).toBeVisible();
     await expect(page.locator("svg > title")).not.toHaveText("");
     await expect(page.locator("svg > desc")).not.toHaveText("");
-    await assertDensityAwareSvgGeometry(page, 820);
+    await assertDensityAwareSvgGeometry(page);
     await expect(page.locator("details.diagram-tables")).not.toHaveAttribute(
       "open",
       "",
@@ -637,7 +652,7 @@ test.describe("Application Lifecycle Diagram", () => {
         EXPECTED_CURRENT.included,
       );
       await assertNoPageOverflow(page);
-      await assertDensityAwareSvgGeometry(page, 820);
+      await assertDensityAwareSvgGeometry(page);
       const scroll = page.locator(".diagram-scroll");
       expect(
         await scroll.evaluate((el) => el.scrollWidth > el.clientWidth),
