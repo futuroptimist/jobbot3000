@@ -253,6 +253,50 @@ The Diagram tab must provide:
 - Preservation of historical selection across tab navigation.
 - A **Newer activity available** message if data changes while viewing history.
 
+### SVG density-aware layout
+
+The SVG canvas height is derived from active aggregate-node density in the
+busiest Sankey rank. A fixed minimum-height floor is allowed, but fixed final
+desktop, mobile, fixture-specific, or viewport-specific heights are prohibited.
+Application count and lifecycle-event count do not directly affect the height;
+only aggregate taxonomy nodes whose numeric `total` is greater than zero
+participate in the density calculation. Zero-count taxonomy rows may appear in
+semantic tables, but they must not enlarge the SVG.
+
+Normative layout constants:
+
+- Minimum SVG width: `760px`.
+- Minimum SVG height: `360px`.
+- Top internal layout margin: `32px`.
+- Bottom internal layout margin: `32px`.
+- D3 node padding: `44px`.
+- Per-node vertical budget: `36px`.
+- Node width: `18px`.
+- Existing horizontal margins and seven-rank positioning remain unchanged.
+
+The renderer sanitizes the available width to a finite, positive integer, falls
+back to `760`, and returns `max(760, sanitizedAvailableWidth)`. It groups active
+aggregate nodes by fixed `nodeRank(node.id)`, finds the busiest rank, and uses a
+floor of `1` active node when none are active. The formula is:
+
+```text
+densityHeight =
+  topMargin +
+  bottomMargin +
+  densestColumnCount * perNodeVerticalBudget +
+  max(0, densestColumnCount - 1) * nodePadding
+
+height = max(minimumSvgHeight, ceil(densityHeight))
+```
+
+The D3 extent is `[16, topMargin]` to `[width - 24, height - bottomMargin]`.
+The `44px` node padding is intentional: it prevents visible-node crowding and
+keeps transparent pointer/touch hit regions from overlapping in dense ranks.
+Mobile keeps the `760px` minimum SVG width inside the labeled diagram-local
+horizontal scroller and uses natural page-level vertical scrolling; the diagram
+must not add a fixed or maximum height, vertical scrollbar, scale transform, or
+viewport-height fit rule.
+
 The Diagram tab must not provide autoplay, filters, company-per-node rendering, editing from Diagram, or predictive scoring.
 
 ## Phase boundaries

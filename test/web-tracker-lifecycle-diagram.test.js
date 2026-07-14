@@ -2,7 +2,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JSDOM } from "jsdom";
 
-import { createLifecycleDiagramView } from "../src/web/tracker/lifecycleDiagram.js";
+import {
+  calculateLifecycleDiagramLayout,
+  createLifecycleDiagramView,
+  LIFECYCLE_DIAGRAM_LAYOUT,
+} from "../src/web/tracker/lifecycleDiagram.js";
 import {
   buildLifecycleTimeline,
   LIFECYCLE_DIAGRAM_TAXONOMY,
@@ -52,6 +56,7 @@ const EXPECTED_FIXTURE_TAXONOMY_TOTALS = {
     unknown: 1,
   },
 };
+const TOLERANCE = 0.5;
 
 function setup() {
   const dom = new JSDOM(
@@ -88,6 +93,114 @@ function render(b, selectedBucketId = "current", onBucketChange = vi.fn()) {
   });
   return { root, view, timeline, snapshot, onBucketChange };
 }
+const projectionFromNodeIds = (ids) => ({
+  nodes: ids.map((id) => ({ id, total: 1 })),
+  links: [],
+});
+const endpointIds = LIFECYCLE_DIAGRAM_TAXONOMY.endpoints.map(
+  ({ id }) => `endpoint:${id}`,
+);
+const milestoneIds = LIFECYCLE_DIAGRAM_TAXONOMY.milestones.map(
+  ({ id }) => `milestone:${id}`,
+);
+const visibleNodeRects = (root) =>
+  [
+    ...root.querySelectorAll(
+      "[data-diagram-node] rect:not([data-diagram-node-hit])",
+    ),
+  ].map((rect) => ({
+    id: rect.closest("[data-diagram-node]").dataset.diagramNode,
+    x: Number(rect.getAttribute("x")),
+    y: Number(rect.getAttribute("y")),
+    width: Number(rect.getAttribute("width")),
+    height: Number(rect.getAttribute("height")),
+  }));
+const nodeHitRects = (root) =>
+  [...root.querySelectorAll("[data-diagram-node-hit]")].map((rect) => ({
+    id: rect.getAttribute("data-diagram-node-hit"),
+    x: Number(rect.getAttribute("x")),
+    y: Number(rect.getAttribute("y")),
+    height: Number(rect.getAttribute("height")),
+  }));
+const rankKey = (rect) => Math.round(rect.x);
+const groupedByRank = (rects) =>
+  rects.reduce((groups, rect) => {
+    const key = rankKey(rect);
+    groups.set(key, [...(groups.get(key) ?? []), rect]);
+    return groups;
+  }, new Map());
+const deepFreeze = (value) => {
+  if (value && typeof value === "object") {
+    Object.freeze(value);
+    for (const child of Object.values(value)) deepFreeze(child);
+  }
+  return value;
+};
+
+describe("calculateLifecycleDiagramLayout", () => {
+  it("calculates contractual heights from the busiest active rank", () => {
+    for (const [count, height] of [
+      [1, 360],
+      [3, 360],
+      [5, 420],
+      [10, 820],
+      [11, 900],
+    ])
+      expect(
+        calculateLifecycleDiagramLayout(
+          projectionFromNodeIds(endpointIds.slice(0, count)),
+        ).height,
+      ).toBe(height);
+  });
+
+  it("sanitizes invalid widths and preserves desktop widths", () => {
+    for (const width of [undefined, 0, -1, Number.NaN, Infinity])
+      expect(calculateLifecycleDiagramLayout({ nodes: [] }, width).width).toBe(
+        760,
+      );
+    expect(calculateLifecycleDiagramLayout({ nodes: [] }, 1200.9).width).toBe(
+      1200,
+    );
+  });
+
+  it("is deterministic by rank density and ignores zero-total nodes", () => {
+    const dense = projectionFromNodeIds(endpointIds.slice(0, 5));
+    const shuffled = projectionFromNodeIds(
+      [...dense.nodes].reverse().map((node) => node.id),
+    );
+    expect(calculateLifecycleDiagramLayout(shuffled)).toEqual(
+      calculateLifecycleDiagramLayout(dense),
+    );
+    expect(
+      calculateLifecycleDiagramLayout({
+        nodes: [...dense.nodes, { id: milestoneIds[0], total: 1 }],
+      }).height,
+    ).toBe(calculateLifecycleDiagramLayout(dense).height);
+    expect(
+      calculateLifecycleDiagramLayout({
+        nodes: [...dense.nodes, { id: endpointIds[5], total: 1 }],
+      }).height,
+    ).toBe(
+      calculateLifecycleDiagramLayout(dense).height +
+        LIFECYCLE_DIAGRAM_LAYOUT.perNodeVerticalBudget +
+        LIFECYCLE_DIAGRAM_LAYOUT.nodePadding,
+    );
+    expect(
+      calculateLifecycleDiagramLayout({
+        nodes: [...dense.nodes, { id: endpointIds[5], total: 0 }],
+      }).height,
+    ).toBe(calculateLifecycleDiagramLayout(dense).height);
+  });
+
+  it("does not mutate deeply frozen projections", () => {
+    const projection = deepFreeze(
+      projectionFromNodeIds(endpointIds.slice(0, 5)),
+    );
+    const before = JSON.stringify(projection);
+    expect(calculateLifecycleDiagramLayout(projection).height).toBe(420);
+    expect(JSON.stringify(projection)).toBe(before);
+  });
+});
 
 describe("lifecycle diagram view", () => {
   beforeEach(() => vi.useRealTimers());
@@ -765,6 +878,61 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     expect(projection.totals.endpoints).toEqual(
       EXPECTED_FIXTURE_TAXONOMY_TOTALS.endpoints,
     );
+  });
+
+  it("renders sparse and dense SVGs with calculated height and safe geometry", async () => {
+    const sparse = render(
+      bundle(
+        [app("sparse")],
+        [ev("sparse-origin", "sparse", "application_submitted", "2026-01-01")],
+      ),
+    );
+    expect(sparse.root.querySelector("svg").getAttribute("height")).toBe("360");
+
+    const fixture = await import(
+      "./fixtures/tracker-lifecycle-diagram-v2.json",
+      {
+        with: { type: "json" },
+      }
+    );
+    const dense = render(fixture.default);
+    const svg = dense.root.querySelector("svg");
+    const expected = calculateLifecycleDiagramLayout(dense.snapshot);
+    expect(expected.height).toBe(900);
+    expect(svg.getAttribute("height")).toBe(String(expected.height));
+    expect(svg.getAttribute("viewBox")).toBe(
+      `0 0 ${expected.width} ${expected.height}`,
+    );
+
+    for (const rank of groupedByRank(visibleNodeRects(dense.root)).values()) {
+      const sorted = rank.sort((a, b) => a.y - b.y);
+      for (let index = 1; index < sorted.length; index += 1) {
+        const gap =
+          sorted[index].y - (sorted[index - 1].y + sorted[index - 1].height);
+        expect(gap).toBeGreaterThanOrEqual(
+          LIFECYCLE_DIAGRAM_LAYOUT.nodePadding - TOLERANCE,
+        );
+      }
+      expect(sorted[0].y).toBeGreaterThanOrEqual(
+        LIFECYCLE_DIAGRAM_LAYOUT.topMargin - TOLERANCE,
+      );
+      const last = sorted.at(-1);
+      expect(last.y + last.height).toBeLessThanOrEqual(
+        expected.height - LIFECYCLE_DIAGRAM_LAYOUT.bottomMargin + TOLERANCE,
+      );
+    }
+    for (const rank of groupedByRank(nodeHitRects(dense.root)).values()) {
+      const sorted = rank.sort((a, b) => a.y - b.y);
+      for (let index = 1; index < sorted.length; index += 1)
+        expect(sorted[index].y).toBeGreaterThanOrEqual(
+          sorted[index - 1].y + sorted[index - 1].height - TOLERANCE,
+        );
+    }
+
+    dense.root
+      .querySelector("[data-diagram-node-hit]")
+      .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(dense.root.querySelector("svg").getAttribute("height")).toBe("900");
   });
 
   it("uses time elements for exact and date-only event timestamps", () => {
