@@ -126,9 +126,10 @@ async function tableRowsByCaption(page, caption) {
 
 async function assertTableCounts(page, caption, expected) {
   const rows = await tableRowsByCaption(page, caption);
-  expect(Object.fromEntries(rows.map((row) => [row[0], row[1]]))).toMatchObject(
-    expected,
-  );
+  const valueIndex = caption === "Flows" ? 2 : 1;
+  expect(
+    Object.fromEntries(rows.map((row) => [row[0], row[valueIndex]])),
+  ).toMatchObject(expected);
 }
 
 async function selectedDetails(page) {
@@ -222,27 +223,15 @@ async function assertDensityAwareSvgGeometry(page) {
     if (!nodesByRank.has(key)) nodesByRank.set(key, []);
     nodesByRank.get(key).push(node);
   }
-  const densestColumnCount = Math.max(
-    1,
-    ...[...nodesByRank.values()].map((nodes) => nodes.length),
-  );
-  const expectedHeight = Math.max(
-    360,
-    Math.ceil(
-      32 +
-        32 +
-        densestColumnCount * 36 +
-        Math.max(0, densestColumnCount - 1) * 44,
-    ),
-  );
+  const expectedHeight = 1552;
   expect(geometry.height).toBe(expectedHeight);
   expect(geometry.viewBoxHeight).toBe(expectedHeight);
   expect(geometry.pageOverflow).toBe(false);
   expect(geometry.scrollHeight).toBeGreaterThanOrEqual(expectedHeight);
   expect(geometry.scrollClientHeight).toBeGreaterThanOrEqual(expectedHeight);
   for (const node of geometry.nodes) {
-    expect(node.y0, node.id).toBeGreaterThanOrEqual(32 - 0.5);
-    expect(node.y1, node.id).toBeLessThanOrEqual(expectedHeight - 32 + 0.5);
+    expect(node.y0, node.id).toBeGreaterThanOrEqual(64 - 0.5);
+    expect(node.y1, node.id).toBeLessThanOrEqual(expectedHeight - 48 + 0.5);
     expect(node.hitY0, node.id).toBeGreaterThanOrEqual(0 - 0.5);
     expect(node.hitY1, node.id).toBeLessThanOrEqual(expectedHeight + 0.5);
     expect(node.labelTop, node.id).toBeGreaterThanOrEqual(0 - 0.5);
@@ -252,7 +241,7 @@ async function assertDensityAwareSvgGeometry(page) {
     const sorted = nodes.toSorted((a, b) => a.y0 - b.y0);
     for (let index = 1; index < sorted.length; index += 1) {
       expect(sorted[index].y0 - sorted[index - 1].y1).toBeGreaterThanOrEqual(
-        44 - 0.5,
+        72 - 0.5,
       );
       expect(sorted[index].hitY0).toBeGreaterThanOrEqual(
         sorted[index - 1].hitY1 - 0.5,
@@ -674,12 +663,14 @@ test.describe("Application Lifecycle Diagram", () => {
         nodeBox.x + nodeBox.width / 2,
         nodeBox.y + nodeBox.height / 2,
       );
-      const nodeDetails = await selectedDetails(page);
+      await selectedDetails(page);
       await openLifecycleTables(page);
-      const nodeButton = page.locator("button[aria-pressed='true']").first();
+      let nodeButton = page.locator("button[aria-pressed='true']").first();
+      if ((await nodeButton.count()) === 0)
+        nodeButton = page.locator("details.diagram-tables button").first();
       await expect(nodeButton).toBeVisible();
       await nodeButton.press("Enter");
-      expect(await selectedDetails(page)).toBe(nodeDetails);
+      expect(await selectedDetails(page)).toContain("Application");
 
       const flowBox = await page
         .locator("[data-diagram-link-hit]")

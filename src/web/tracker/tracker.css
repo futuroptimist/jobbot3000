@@ -229,6 +229,28 @@
   min-height: 44px;
   width: 100%;
 }
+
+.diagram-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+  max-width: 100%;
+  margin: 0.75rem 0;
+}
+.diagram-legend-item {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+  font-size: 0.875rem;
+}
+.diagram-legend-swatch {
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 1px solid rgba(248, 250, 252, 0.75);
+  border-radius: 999px;
+}
+
 .diagram-scroll {
   overflow-x: auto;
   max-width: 100%;
@@ -239,7 +261,7 @@
 }
 .diagram-scroll svg {
   display: block;
-  min-width: 760px;
+  min-width: 1850px;
   max-width: none;
   color: var(--foreground, #e5e7eb);
 }

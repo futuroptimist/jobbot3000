@@ -1,42 +1,27 @@
 /* global document, window, ResizeObserver */
-import { sankey, sankeyLinkHorizontal } from "d3-sankey";
 import { LIFECYCLE_DIAGRAM_TAXONOMY } from "./lifecycleProjection.js";
+import {
+  ENDPOINT_COLORS,
+  assignBranchHandles,
+  buildLifecycleDisplayBranches,
+  compareBranches,
+  compareLifecycleDiagramValues as compare,
+  compoundBranchPath,
+  layoutLifecycleRoutingGraph,
+  rankCenterX,
+  wrapLifecycleNodeLabel,
+} from "./lifecycleDiagramLayout.js";
+export { calculateLifecycleDiagramLayout } from "./lifecycleDiagramLayout.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
-const MINIMUM_SVG_WIDTH = 760;
-const MINIMUM_SVG_HEIGHT = 360;
-const LAYOUT_TOP_MARGIN = 32;
-const LAYOUT_BOTTOM_MARGIN = 32;
-const SANKEY_NODE_PADDING = 44;
-const PER_NODE_VERTICAL_BUDGET = 36;
-const SANKEY_NODE_WIDTH = 18;
-const FIXED_HORIZONTAL_RANK_SPAN = 64;
-const LAYOUT_LEFT_MARGIN = 16;
-const LAYOUT_RIGHT_MARGIN = 24;
-const RANKS = { origin: 0, milestone: 1, endpoint: 6 };
-const MILESTONE_RANKS = new Map(
-  LIFECYCLE_DIAGRAM_TAXONOMY.milestones.map((item, index) => [
-    `milestone:${item.id}`,
-    index + 1,
-  ]),
-);
-const TAXONOMY = new Map(
-  [
-    ...LIFECYCLE_DIAGRAM_TAXONOMY.origins,
-    ...LIFECYCLE_DIAGRAM_TAXONOMY.milestones,
-    ...LIFECYCLE_DIAGRAM_TAXONOMY.endpoints,
-  ].map((item) => [item.nodeId, item]),
-);
-const collator = new Intl.Collator(undefined, { numeric: true });
-const compare = (a, b) => collator.compare(String(a), String(b));
-const pct = (value, total) =>
-  total ? `${Math.round((value / total) * 100)}%` : "0%";
+
 const el = (tag, attrs = {}, children = []) => {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(attrs)) {
     if (value === undefined || value === null) continue;
     if (key === "className") node.className = value;
     else if (key === "textContent") node.textContent = value;
+    else if (key === "style") node.setAttribute("style", String(value));
     else node.setAttribute(key, String(value));
   }
   for (const child of children) node.append(child);
@@ -73,42 +58,13 @@ const EMPTY_PROJECTION = Object.freeze({
     endpoints: Object.freeze({}),
   }),
 });
-const nodeRank = (id) => {
-  if (id.startsWith("origin:")) return RANKS.origin;
-  if (id.startsWith("endpoint:")) return RANKS.endpoint;
-  return MILESTONE_RANKS.get(id) ?? RANKS.milestone;
-};
-const nodeSort = (a, b) =>
-  nodeRank(a.id) - nodeRank(b.id) || compare(a.id, b.id);
-
-export function calculateLifecycleDiagramLayout(projection, availableWidth) {
-  const integerWidth = Math.floor(Number(availableWidth));
-  const sanitizedWidth =
-    Number.isFinite(integerWidth) && integerWidth > 0
-      ? integerWidth
-      : MINIMUM_SVG_WIDTH;
-  const activeNodes = (projection?.nodes ?? []).filter(
-    (node) => typeof node?.id === "string" && Number(node?.total) > 0,
-  );
-  const rankCounts = new Map();
-  for (const node of activeNodes) {
-    const rank = nodeRank(node.id);
-    rankCounts.set(rank, (rankCounts.get(rank) ?? 0) + 1);
-  }
-  const densestColumnCount = Math.max(1, ...rankCounts.values());
-  const densityHeight =
-    LAYOUT_TOP_MARGIN +
-    LAYOUT_BOTTOM_MARGIN +
-    densestColumnCount * PER_NODE_VERTICAL_BUDGET +
-    Math.max(0, densestColumnCount - 1) * SANKEY_NODE_PADDING;
-  return {
-    width: Math.max(MINIMUM_SVG_WIDTH, sanitizedWidth),
-    height: Math.max(MINIMUM_SVG_HEIGHT, Math.ceil(densityHeight)),
-    nodePadding: SANKEY_NODE_PADDING,
-    topMargin: LAYOUT_TOP_MARGIN,
-    bottomMargin: LAYOUT_BOTTOM_MARGIN,
-  };
-}
+const TAXONOMY = new Map(
+  [
+    ...LIFECYCLE_DIAGRAM_TAXONOMY.origins,
+    ...LIFECYCLE_DIAGRAM_TAXONOMY.milestones,
+    ...LIFECYCLE_DIAGRAM_TAXONOMY.endpoints,
+  ].map((item) => [item.nodeId, item]),
+);
 const bucketValueText = (bucket) => {
   if (!bucket) return "Current — latest data in this browser";
   if (bucket.kind === "current") return "Current — latest data in this browser";
@@ -120,6 +76,8 @@ const bucketValueText = (bucket) => {
 const isUnknownPrecision = (precision) =>
   ["unknown", "legacy-placeholder", "legacy_placeholder"].includes(precision);
 const PAGE_SIZE = 50;
+const pct = (value, total) =>
+  total ? `${Math.round((value / total) * 100)}%` : "0%";
 const unique = (items) => [...new Set(items.filter(Boolean))].sort(compare);
 const pageSlice = (items, page) => {
   const maxPage = Math.max(0, Math.ceil(items.length / PAGE_SIZE) - 1);
@@ -182,21 +140,6 @@ const formatTimestamp = (bucket, projection) => {
     occurredAtPrecision: "instant",
   });
 };
-const cloneProjectionForSankey = (projection) => ({
-  nodes: projection.nodes
-    .map((node) => ({
-      ...node,
-      applicationIds: [...(node.applicationIds ?? [])],
-      rank: nodeRank(node.id),
-    }))
-    .sort(nodeSort),
-  links: projection.links
-    .map((link) => ({
-      ...link,
-      applicationIds: [...(link.applicationIds ?? [])],
-    }))
-    .sort((a, b) => compare(a.id, b.id)),
-});
 
 export function createLifecycleDiagramView(root, options = {}) {
   const onBucketChange = options.onBucketChange ?? (() => {});
@@ -257,6 +200,12 @@ export function createLifecycleDiagramView(root, options = {}) {
     "aria-live": "polite",
   });
   controls.append(prev, rangeLabel, next, current, badge, count);
+  const legend = el("div", {
+    className: "diagram-legend",
+    "data-diagram-legend": "",
+    role: "list",
+    "aria-label": "Outcome branch colors",
+  });
   const scroll = el("div", {
     className: "diagram-scroll",
     tabindex: "0",
@@ -280,6 +229,7 @@ export function createLifecycleDiagramView(root, options = {}) {
     controls,
     stamp,
     live,
+    legend,
     scroll,
     details,
     simultaneous,
@@ -351,14 +301,19 @@ export function createLifecycleDiagramView(root, options = {}) {
             .map((path) => path.applicationId),
     );
   const featureById = (id) => {
-    const link = projection.links.find((candidate) => candidate.id === id);
-    if (link) {
-      const from = TAXONOMY.get(link.source)?.label ?? link.source;
-      const to = TAXONOMY.get(link.target)?.label ?? link.target;
+    const branch = buildLifecycleDisplayBranches(projection).find(
+      (candidate) => candidate.id === id,
+    );
+    if (branch) {
+      const from = TAXONOMY.get(branch.source)?.label ?? branch.source;
+      const to = TAXONOMY.get(branch.target)?.label ?? branch.target;
+      const outcome =
+        TAXONOMY.get(`endpoint:${branch.endpointId}`)?.label ??
+        branch.endpointId;
       return {
-        id: link.id,
-        label: `${from} to ${to}: ${link.value}`,
-        applicationIds: link.applicationIds,
+        id: branch.id,
+        label: `${from} to ${to}, outcome ${outcome}: ${branch.value}`,
+        applicationIds: branch.applicationIds,
       };
     }
     const node = projection.nodes.find((candidate) => candidate.id === id);
@@ -381,6 +336,7 @@ export function createLifecycleDiagramView(root, options = {}) {
       applicationIds: featureApplicationIds(feature),
     };
     renderDetails();
+    renderLegend();
     renderSvg();
     renderTables();
     if (shouldRestoreFocus)
@@ -468,6 +424,29 @@ export function createLifecycleDiagramView(root, options = {}) {
       el("p", { className: "muted", textContent: warningSummary }),
     );
   };
+  const renderLegend = () => {
+    legend.textContent = "";
+    const active = new Set(
+      buildLifecycleDisplayBranches(projection).map((b) => b.endpointId),
+    );
+    for (const endpoint of LIFECYCLE_DIAGRAM_TAXONOMY.endpoints) {
+      if (!active.has(endpoint.id)) continue;
+      const count = projection.totals.endpoints?.[endpoint.id] ?? 0;
+      const item = el("span", {
+        className: "diagram-legend-item",
+        role: "listitem",
+      });
+      item.append(
+        el("span", {
+          className: "diagram-legend-swatch",
+          "aria-hidden": "true",
+          style: `background: ${ENDPOINT_COLORS[endpoint.id] ?? ENDPOINT_COLORS.unknown}`,
+        }),
+        document.createTextNode(`${endpoint.label} (${count})`),
+      );
+      legend.append(item);
+    }
+  };
   const renderSvg = () => {
     scroll.textContent = "";
     if (!projection.totalApplications) {
@@ -485,20 +464,9 @@ export function createLifecycleDiagramView(root, options = {}) {
       );
       return;
     }
-    const { width, height, nodePadding, topMargin, bottomMargin } =
-      calculateLifecycleDiagramLayout(projection, root.clientWidth);
-    const graph = cloneProjectionForSankey(projection);
-    const layout = sankey()
-      .nodeId((d) => d.id)
-      .nodeWidth(SANKEY_NODE_WIDTH)
-      .nodePadding(nodePadding)
-      .nodeSort(nodeSort)
-      .extent([
-        [LAYOUT_LEFT_MARGIN, topMargin],
-        [width - LAYOUT_RIGHT_MARGIN, height - bottomMargin],
-      ]);
+    let laidOut;
     try {
-      layout(graph);
+      laidOut = layoutLifecycleRoutingGraph(projection, root.clientWidth);
     } catch {
       scroll.append(
         el("p", {
@@ -508,14 +476,8 @@ export function createLifecycleDiagramView(root, options = {}) {
       );
       return;
     }
-    // P6-F2 changes vertical sizing only; preserve the pre-P6 seven-rank horizontal span.
-    const columnWidth = (width - FIXED_HORIZONTAL_RANK_SPAN) / RANKS.endpoint;
-    for (const node of graph.nodes) {
-      const fixedX = LAYOUT_LEFT_MARGIN + node.rank * columnWidth;
-      node.x0 = fixedX;
-      node.x1 = fixedX + SANKEY_NODE_WIDTH;
-    }
-    layout.update(graph);
+    const { graph, dimensions } = laidOut;
+    const { width, height } = dimensions;
     const finiteNode = (node) =>
       [node.x0, node.x1, node.y0, node.y1].every(Number.isFinite);
     const finiteLink = (link) =>
@@ -537,27 +499,83 @@ export function createLifecycleDiagramView(root, options = {}) {
       "Application counts flowing from origin through milestones to endpoints. " +
       "Equivalent tables follow.";
     const linkHitG = svgEl("g", { fill: "none" });
-    const linkG = svgEl("g", { fill: "none", strokeOpacity: "0.45" });
+    const haloG = svgEl("g", { fill: "none", "aria-hidden": "true" });
+    const separatorG = svgEl("g", { fill: "none", "aria-hidden": "true" });
+    const linkG = svgEl("g", { fill: "none" });
+    const segmentsByBranch = new Map();
     for (const link of graph.links.filter(
       (l) => l.value > 0 && finiteLink(l),
     )) {
-      // eslint-disable-next-line max-len
-      const linkLabel = `${TAXONOMY.get(link.source.id)?.label ?? link.source.id} to ${TAXONOMY.get(link.target.id)?.label ?? link.target.id}: ${link.value}`;
-      const pathData = sankeyLinkHorizontal()(link);
+      if (!segmentsByBranch.has(link.branchId))
+        segmentsByBranch.set(link.branchId, []);
+      segmentsByBranch.get(link.branchId).push(link);
+    }
+    const branches = graph.branches
+      .filter((branch) => segmentsByBranch.has(branch.id))
+      .sort(compareBranches);
+    const handles = assignBranchHandles(branches, segmentsByBranch);
+    for (const branch of branches) {
+      const segments = (segmentsByBranch.get(branch.id) ?? []).sort(
+        (a, b) => a.segmentIndex - b.segmentIndex,
+      );
+      const pathData = compoundBranchPath(segments);
       if (!pathData || /NaN|Infinity/u.test(pathData)) continue;
-      const path = svgEl("path", {
+      const from = TAXONOMY.get(branch.source)?.label ?? branch.source;
+      const to = TAXONOMY.get(branch.target)?.label ?? branch.target;
+      const outcome =
+        TAXONOMY.get(`endpoint:${branch.endpointId}`)?.label ??
+        branch.endpointId;
+      const linkLabel = `${from} to ${to}, outcome ${outcome}: ${branch.value}`;
+      const selected = selectedFeature?.id === branch.id;
+      const widthPx = Math.max(
+        3,
+        ...segments.map((segment) => segment.width || 1),
+      );
+      const attrs = {
         d: pathData,
-        stroke: selectedFeature?.id === link.id ? "#fbbf24" : "#38bdf8",
-        "stroke-width": Math.max(3, link.width || 1),
-        "data-diagram-link": link.id,
+        "data-diagram-branch": branch.id,
+        "data-diagram-link": branch.id,
+        "data-semantic-link-id": branch.semanticLinkId,
+        "data-endpoint-id": branch.endpointId,
+        "data-source-node-id": branch.source,
+        "data-target-node-id": branch.target,
+        "data-selected": selected ? "true" : "false",
+        "data-segment-ranks": segments
+          .map((segment) => `${segment.source.rank}-${segment.target.rank}`)
+          .join(","),
+      };
+      const underAttrs = { ...attrs };
+      delete underAttrs["data-diagram-link"];
+      if (selected)
+        haloG.append(
+          svgEl("path", {
+            ...underAttrs,
+            stroke: "#F8FAFC",
+            "stroke-width": widthPx + 12,
+            "pointer-events": "none",
+          }),
+        );
+      separatorG.append(
+        svgEl("path", {
+          ...underAttrs,
+          stroke: "#020617",
+          "stroke-width": widthPx + 6,
+          "pointer-events": "none",
+        }),
+      );
+      const path = svgEl("path", {
+        ...attrs,
+        stroke: branch.color,
+        "stroke-width": widthPx,
+        "stroke-opacity": selected ? "1" : "0.82",
       });
       path.append(svgEl("title"));
       path.querySelector("title").textContent = linkLabel;
       const selectLink = () =>
         selectFeature({
-          id: link.id,
+          id: branch.id,
           label: linkLabel,
-          applicationIds: link.applicationIds,
+          applicationIds: branch.applicationIds,
         });
       path.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -569,28 +587,49 @@ export function createLifecycleDiagramView(root, options = {}) {
         selectLink();
       });
       linkG.append(path);
-      const hitPath = svgEl("path", {
-        d: pathData,
-        stroke: "transparent",
-        "stroke-width": Math.max(44, link.width || 1),
-        "data-diagram-link-hit": link.id,
+      for (const segment of segments) segment.__branchLabel = linkLabel;
+    }
+    for (const handle of handles) {
+      const branch = branches.find(
+        (candidate) => candidate.id === handle.branchId,
+      );
+      if (!branch) continue;
+      const from = TAXONOMY.get(branch.source)?.label ?? branch.source;
+      const to = TAXONOMY.get(branch.target)?.label ?? branch.target;
+      const outcome =
+        TAXONOMY.get(`endpoint:${branch.endpointId}`)?.label ??
+        branch.endpointId;
+      const selectLink = () =>
+        selectFeature({
+          id: branch.id,
+          label: `${from} to ${to}, outcome ${outcome}: ${branch.value}`,
+          applicationIds: branch.applicationIds,
+        });
+      const hit = svgEl("circle", {
+        cx: handle.x,
+        cy: handle.y,
+        r: handle.r,
+        fill: "transparent",
+        "data-diagram-link-hit": branch.id,
         "aria-hidden": "true",
       });
-      hitPath.addEventListener("click", (event) => {
+      hit.addEventListener("click", (event) => {
         event.stopPropagation();
         selectLink();
       });
-      hitPath.addEventListener("touchend", (event) => {
+      hit.addEventListener("touchend", (event) => {
         event.preventDefault();
         event.stopPropagation();
         selectLink();
       });
-      linkHitG.append(hitPath);
+      linkHitG.append(hit);
     }
-    svg.append(linkHitG);
-    svg.append(linkG);
+    svg.append(linkHitG, haloG, separatorG, linkG);
     for (const node of graph.nodes.filter(
-      (n) => n.total > 0 && [n.x0, n.x1, n.y0, n.y1].every(Number.isFinite),
+      (n) =>
+        !n.routing &&
+        n.total > 0 &&
+        [n.x0, n.x1, n.y0, n.y1].every(Number.isFinite),
     )) {
       const nodeLabel = `${node.label}: ${node.total}`;
       const g = svgEl("g", {
@@ -602,8 +641,13 @@ export function createLifecycleDiagramView(root, options = {}) {
         width: Math.max(8, node.x1 - node.x0),
         height: Math.max(8, node.y1 - node.y0),
         rx: 4,
-        fill: selectedFeature?.id === node.id ? "#fbbf24" : "#64748b",
-        stroke: "#e2e8f0",
+        fill: node.id.startsWith("endpoint:")
+          ? (ENDPOINT_COLORS[node.id.slice("endpoint:".length)] ??
+            ENDPOINT_COLORS.unknown)
+          : "#64748b",
+        stroke: selectedFeature?.id === node.id ? "#F8FAFC" : "#e2e8f0",
+        "stroke-width": selectedFeature?.id === node.id ? 4 : 1,
+        "data-selected": selectedFeature?.id === node.id ? "true" : "false",
       });
       g.append(svgEl("title"));
       g.querySelector("title").textContent = nodeLabel;
@@ -652,13 +696,21 @@ export function createLifecycleDiagramView(root, options = {}) {
         selectNode();
       };
       const label = svgEl("text", {
-        x: node.x0 < width / 2 ? node.x1 + 6 : node.x0 - 6,
-        y: (node.y0 + node.y1) / 2,
-        "dominant-baseline": "middle",
-        "text-anchor": node.x0 < width / 2 ? "start" : "end",
+        x: rankCenterX(node.rank),
+        y: Math.max(16, node.y0 - 28),
+        "text-anchor": "middle",
         fill: "currentColor",
+        "data-diagram-node-label": node.id,
       });
-      label.textContent = `${node.label} (${node.total})`;
+      const lines = wrapLifecycleNodeLabel(`${node.label} (${node.total})`);
+      lines.forEach((line, index) => {
+        const tspan = svgEl("tspan", {
+          x: rankCenterX(node.rank),
+          dy: index ? "1.1em" : "0",
+        });
+        tspan.textContent = line;
+        label.append(tspan);
+      });
       label.addEventListener("click", selectNodeFromLabel);
       label.addEventListener("touchend", touchNodeFromLabel);
       g.append(hitRect, rect, label);
@@ -695,19 +747,27 @@ export function createLifecycleDiagramView(root, options = {}) {
       "milestone",
     );
     const endpointRows = makeNodeRows(projection.totals.endpoints, "endpoint");
-    const linkRows = projection.links.map((link) => {
-      const from = TAXONOMY.get(link.source)?.label ?? link.source;
-      const to = TAXONOMY.get(link.target)?.label ?? link.target;
+    const linkRows = buildLifecycleDisplayBranches(projection).map((branch) => {
+      const from = TAXONOMY.get(branch.source)?.label ?? branch.source;
+      const to = TAXONOMY.get(branch.target)?.label ?? branch.target;
+      const outcome =
+        TAXONOMY.get(`endpoint:${branch.endpointId}`)?.label ??
+        branch.endpointId;
       const flowLabel = `${from} to ${to}`;
       return {
-        cells: [flowLabel, String(link.value), pct(link.value, total)],
-        label: `Select flow ${flowLabel}`,
-        id: link.id,
+        cells: [
+          flowLabel,
+          outcome,
+          String(branch.value),
+          pct(branch.value, total),
+        ],
+        label: `Select flow ${flowLabel}, outcome ${outcome}`,
+        id: branch.id,
         onSelect: () =>
           selectFeature({
-            id: link.id,
-            label: `${flowLabel}: ${link.value}`,
-            applicationIds: link.applicationIds,
+            id: branch.id,
+            label: `${flowLabel}, outcome ${outcome}: ${branch.value}`,
+            applicationIds: branch.applicationIds,
           }),
       };
     });
@@ -741,7 +801,7 @@ export function createLifecycleDiagramView(root, options = {}) {
       ),
       renderTable(
         "Flows",
-        ["Flow", "Application count", "Percentage"],
+        ["Flow", "Outcome", "Applications", "Percentage"],
         linkRows,
       ),
       renderTable(
@@ -841,6 +901,7 @@ export function createLifecycleDiagramView(root, options = {}) {
       projection.events.map((e) => `${e.id}: ${e.eventType}`).join("; ") ||
       "No boundary events.";
     renderDetails();
+    renderLegend();
     renderSvg();
     renderTables();
   };
