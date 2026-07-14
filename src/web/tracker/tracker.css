@@ -265,3 +265,74 @@
     display: grid;
   }
 }
+.diagram-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0.75rem 0;
+}
+.diagram-select-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  height: 44px;
+  padding: 0.35rem 0.5rem;
+  border-radius: 0.5rem;
+}
+.diagram-select-button[aria-pressed="true"] {
+  outline: 3px solid var(--accent, #38bdf8);
+  background: rgba(56, 189, 248, 0.16);
+}
+.diagram-scroll:focus-visible {
+  outline: 3px solid var(--accent, #38bdf8);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-lifecycle-diagram],
+  [data-lifecycle-diagram] * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+.tracker-shell,
+.tracker-view,
+[data-lifecycle-diagram],
+.diagram-tables,
+.table-container {
+  max-width: 100%;
+  min-width: 0;
+}
+[data-view="diagram"] {
+  overflow-x: clip;
+}
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+body > header,
+body > main,
+body > footer,
+.primary-nav a {
+  box-sizing: border-box;
+}
+
+[data-lifecycle-diagram] summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+}
+.diagram-tables-body {
+  display: grid;
+  gap: 1rem;
+}
+[data-view="diagram"] .diagram-select-button {
+  min-height: 44px !important;
+  height: 44px !important;
+}

@@ -146,7 +146,9 @@ test.describe("static tracker smoke", () => {
 
     const invalidHealth = await page.request.get(`${baseUrl}/healthz/not-real`);
     expect(invalidHealth.status()).toBe(404);
-    expect(invalidHealth.headers()["content-type"]).not.toContain("application/json");
+    expect(invalidHealth.headers()["content-type"]).not.toContain(
+      "application/json",
+    );
 
     await page.goto(baseUrl);
     await expect(
@@ -155,6 +157,11 @@ test.describe("static tracker smoke", () => {
     await expect(page.getByText("static/browser-only")).toBeVisible();
 
     await page.goto(`${baseUrl}/tracker`);
+    const trackerResponse = await page.request.get(`${baseUrl}/tracker`);
+    const csp = trackerResponse.headers()["content-security-policy"] ?? "";
+    expect(csp).toContain("default-src 'self'");
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).toContain("connect-src 'self'");
     await expect(
       page.getByRole("heading", { name: "Application tracker" }),
     ).toBeVisible();
@@ -171,5 +178,58 @@ test.describe("static tracker smoke", () => {
       const response = await page.request.get(`${baseUrl}${asset}`);
       expect(response.ok(), asset).toBe(true);
     }
+  });
+
+  test("renders lifecycle Diagram from deterministic data without external requests", async ({
+    page,
+  }) => {
+    const requests = [];
+    page.on("request", (request) => requests.push(request));
+    const fixture = await fs.readFile(
+      "test/fixtures/tracker-lifecycle-diagram-v2.json",
+      "utf8",
+    );
+    await page.goto(`${baseUrl}/tracker`);
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await page.setInputFiles("[data-import-file]", {
+      name: "tracker-lifecycle-diagram-v2.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(fixture),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await page.getByRole("button", { name: "Apply import" }).click();
+    await page.getByRole("button", { name: "Diagram" }).click();
+    await expect(page.locator("svg[role='img']")).toBeVisible();
+    await page.getByText("Lifecycle data tables").click();
+    await expect(page.locator("caption", { hasText: "Origins" })).toBeVisible();
+    await page
+      .getByRole("button", { name: "Previous event", exact: true })
+      .click();
+    await page.locator("[data-diagram-node]").first().click();
+    await expect(page.locator("[data-diagram-details]")).toContainText(
+      /application/u,
+    );
+    const trackerJs = await page.request.get(`${baseUrl}/assets/tracker.js`);
+    expect(await trackerJs.text()).toContain("Lifecycle Sankey diagram");
+    const trackerHtml = await page.request.get(`${baseUrl}/tracker`);
+    expect(await trackerHtml.text()).not.toMatch(/cdn\.|unpkg|jsdelivr/u);
+    expect(
+      requests.filter((request) => new URL(request.url()).origin !== baseUrl),
+    ).toHaveLength(0);
+  });
+
+  test("keeps container and image CI contracts static", async () => {
+    const dockerfile = await fs.readFile("Dockerfile", "utf8");
+    expect(dockerfile).toMatch(/FROM node:20-slim AS deps/u);
+    expect(dockerfile).toMatch(/FROM deps AS build/u);
+    expect(dockerfile).toMatch(/FROM node:20-slim AS runtime/u);
+    expect(dockerfile).toMatch(/^USER node$/mu);
+
+    const ciImage = await fs.readFile(".github/workflows/ci-image.yml", "utf8");
+    expect(ciImage).toContain("pull_request:");
+    expect(ciImage).toContain("Build local smoke-test image");
+    expect(ciImage).toContain("push: false");
+    expect(ciImage).toContain("load: true");
+    expect(ciImage).toContain("npm run smoke:container -- jobbot3000:smoke");
   });
 });

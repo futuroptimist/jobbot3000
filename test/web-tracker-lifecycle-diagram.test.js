@@ -5,6 +5,7 @@ import { JSDOM } from "jsdom";
 import { createLifecycleDiagramView } from "../src/web/tracker/lifecycleDiagram.js";
 import {
   buildLifecycleTimeline,
+  LIFECYCLE_DIAGRAM_TAXONOMY,
   projectLifecycleAt,
 } from "../src/web/tracker/lifecycleProjection.js";
 
@@ -36,6 +37,21 @@ const bundle = (applications = [], lifecycleEvents = []) => ({
   applications,
   lifecycleEvents,
 });
+const EXPECTED_FIXTURE_TAXONOMY_TOTALS = {
+  endpoints: {
+    awaiting_response: 2,
+    interviewing: 4,
+    assessment_in_progress: 1,
+    offer_negotiating: 2,
+    employer_rejected: 1,
+    candidate_withdrew: 1,
+    offer_declined: 1,
+    offer_expired_rescinded: 1,
+    offer_accepted: 1,
+    closed_archived: 1,
+    unknown: 1,
+  },
+};
 
 function setup() {
   const dom = new JSDOM(
@@ -75,6 +91,21 @@ function render(b, selectedBucketId = "current", onBucketChange = vi.fn()) {
 
 describe("lifecycle diagram view", () => {
   beforeEach(() => vi.useRealTimers());
+  it("parses and validates PNG dimensions for visual artifacts", async () => {
+    const { readPngDimensions } = await import(
+      "../scripts/capture-diagram-visual-review.js"
+    );
+    const png = Buffer.alloc(33);
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(png, 0);
+    png.writeUInt32BE(13, 8);
+    png.write("IHDR", 12, "ascii");
+    png.writeUInt32BE(375, 16);
+    png.writeUInt32BE(812, 20);
+    expect(readPngDimensions(png)).toEqual({ width: 375, height: 812 });
+    expect(() => readPngDimensions(Buffer.from("not a png"))).toThrow(
+      /valid PNG/u,
+    );
+  });
 
   afterEach(() => {
     vi.useRealTimers();
@@ -115,11 +146,55 @@ describe("lifecycle diagram view", () => {
     ).toBe(true);
     expect(root.textContent).toContain("2/2 applications included");
     expect(root.textContent).toContain("Origins");
-    const originCounts = [...root.querySelectorAll("caption")]
+    expect(snapshot.totals.origins).toEqual({
+      application_submitted: 1,
+      referral: 1,
+    });
+    const originRows = [...root.querySelectorAll("caption")]
       .find((caption) => caption.textContent === "Origins")
       .closest("table")
-      .querySelectorAll("tbody tr").length;
-    expect(originCounts).toBe(Object.keys(snapshot.totals.origins).length);
+      .querySelectorAll("tbody tr");
+    expect(originRows).toHaveLength(LIFECYCLE_DIAGRAM_TAXONOMY.origins.length);
+    const outreachRow = [...originRows].find((row) =>
+      row.textContent.includes("Candidate outreach"),
+    );
+    expect(outreachRow.textContent).toContain("0");
+  });
+
+  it("keeps semantic tables aggregate-first and preserves semantic button focus", () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root, view, timeline } = render(b);
+    const disclosure = root.querySelector("details.diagram-tables");
+    expect(disclosure.querySelector("summary").textContent).toBe(
+      "Lifecycle data tables",
+    );
+    expect(disclosure.open).toBe(false);
+    disclosure.open = true;
+    disclosure.dispatchEvent(new window.Event("toggle"));
+    const button = root.querySelector(
+      "button[aria-label='Select Application submitted']",
+    );
+    button.focus();
+    button.click();
+    const pressed = root.querySelectorAll(
+      ".diagram-select-button[aria-pressed='true']",
+    );
+    expect(pressed).toHaveLength(1);
+    expect(document.activeElement.getAttribute("aria-label")).toBe(
+      "Select Application submitted",
+    );
+    view.update({
+      timeline,
+      snapshot: projectLifecycleAt(b, timeline.buckets[0].id),
+      selectedBucketId: timeline.buckets[0].id,
+    });
+    expect(root.querySelector("details.diagram-tables").open).toBe(true);
   });
 
   it("handles empty, unknown-only, date, and simultaneous boundary timestamps", () => {
@@ -361,7 +436,7 @@ describe("lifecycle diagram view", () => {
     const detailsText = () =>
       root.querySelector("[data-diagram-details]").textContent;
     const svgNode = root.querySelector(
-      "[data-diagram-node='origin:application_submitted']",
+      "[data-diagram-node='origin:application_submitted'] rect:not([data-diagram-node-hit])",
     );
     const nodeButton = root.querySelector(
       "button[aria-label='Select Application submitted']",
@@ -371,7 +446,11 @@ describe("lifecycle diagram view", () => {
     nodeButton.click();
     expect(detailsText()).toBe(svgNodeDetails);
     expect(detailsText()).toContain("2 applications (100%)");
-    expect(detailsText()).toContain("a, b");
+    expect(
+      [...root.querySelectorAll("[data-affected-applications] li")].map(
+        (item) => item.textContent,
+      ),
+    ).toEqual(["a", "b"]);
 
     const svgLink = root.querySelector("[data-diagram-link]");
     const linkId = svgLink.getAttribute("data-diagram-link");
@@ -458,6 +537,252 @@ describe("lifecycle diagram view", () => {
     });
     expect(root.querySelector("[data-diagram-details]").textContent).toContain(
       "Warnings: inferred history 0; unknown origin/time 0; status mismatch 0; regression 0.",
+    );
+  });
+});
+
+describe("lifecycle diagram P6 pagination and hardening", () => {
+  afterEach(() => {
+    delete global.document;
+    delete global.window;
+    delete global.ResizeObserver;
+  });
+
+  it("paginates event rows and resets event pages when snapshots or buckets change", () => {
+    const applications = [app("many")];
+    const lifecycleEvents = Array.from({ length: 125 }, (_, index) =>
+      ev(
+        `many-${String(index).padStart(3, "0")}`,
+        "many",
+        index ? "employer_response_received" : "application_submitted",
+        `2026-03-${String((index % 28) + 1).padStart(2, "0")}T00:00:00.000Z`,
+      ),
+    );
+    const b = bundle(applications, lifecycleEvents);
+    const { root, view, timeline } = render(b);
+    const eventRows = () =>
+      [...root.querySelectorAll("caption")]
+        .find((caption) => caption.textContent === "Selected-boundary events")
+        .closest("table")
+        .querySelectorAll("tbody tr");
+    expect(eventRows()).toHaveLength(50);
+    expect(root.querySelector("[data-event-range]").textContent).toBe(
+      "Events 1–50 of 125",
+    );
+    root.querySelector("[aria-label='Next event page']").click();
+    expect(root.querySelector("[data-event-range]").textContent).toBe(
+      "Events 51–100 of 125",
+    );
+    root.querySelector("[aria-label='Next event page']").click();
+    expect(eventRows()).toHaveLength(25);
+    expect(root.querySelector("[aria-label='Next event page']").disabled).toBe(
+      true,
+    );
+    const updated = bundle(applications, lifecycleEvents.slice(0, 124));
+    view.update({
+      timeline,
+      snapshot: projectLifecycleAt(updated, "current"),
+      selectedBucketId: "current",
+    });
+    expect(root.querySelector("[data-event-range]").textContent).toBe(
+      "Events 1–50 of 124",
+    );
+    root.querySelector("[aria-label='Next event page']").click();
+    expect(root.querySelector("[data-event-range]").textContent).toBe(
+      "Events 51–100 of 124",
+    );
+    view.update({
+      timeline,
+      snapshot: projectLifecycleAt(b, timeline.buckets[0].id),
+      selectedBucketId: timeline.buckets[0].id,
+    });
+    expect(root.querySelector("[data-event-range]").textContent).toMatch(
+      /^Events (0–0|1–)/u,
+    );
+  });
+
+  it("paginates affected applications with bounded ranges", () => {
+    const applications = Array.from({ length: 125 }, (_, index) =>
+      app(`app-${String(index).padStart(3, "0")}`),
+    );
+    const lifecycleEvents = applications.map((application, index) =>
+      ev(
+        `evt-${String(index).padStart(3, "0")}`,
+        application.id,
+        "application_submitted",
+        "2026-01-01",
+      ),
+    );
+    const { root } = render(bundle(applications, lifecycleEvents));
+    root
+      .querySelector("[data-diagram-node='origin:application_submitted'] rect")
+      .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    const pageIds = () =>
+      [...root.querySelectorAll("[data-affected-applications] li")].map(
+        (item) => item.textContent,
+      );
+    const affected = root.querySelector("[data-diagram-details] details");
+    expect(affected.open).toBe(false);
+    expect(affected.querySelector("summary").textContent).toBe(
+      "Affected applications (125)",
+    );
+    expect(pageIds()).toHaveLength(50);
+    expect(root.querySelector("[data-application-range]").textContent).toBe(
+      "Applications 1–50 of 125",
+    );
+    expect(
+      root.querySelector("[aria-label='Previous application page']").disabled,
+    ).toBe(true);
+    root.querySelector("[aria-label='Next application page']").click();
+    expect(root.querySelector("[data-application-range]").textContent).toBe(
+      "Applications 51–100 of 125",
+    );
+    root.querySelector("[aria-label='Next application page']").click();
+    expect(pageIds()).toHaveLength(25);
+    expect(root.querySelector("[data-application-range]").textContent).toBe(
+      "Applications 101–125 of 125",
+    );
+    expect(
+      root.querySelector("[aria-label='Next application page']").disabled,
+    ).toBe(true);
+    root
+      .querySelector("[data-diagram-node='endpoint:awaiting_response'] rect")
+      .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(root.querySelector("[data-application-range]").textContent).toBe(
+      "Applications 1–50 of 125",
+    );
+    expect(
+      root.querySelector("[data-diagram-details]").textContent,
+    ).not.toContain(
+      applications.map((application) => application.id).join(", "),
+    );
+  });
+
+  it("exposes aria-pressed selection and transparent hit targets", () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root } = render(b);
+    const nodeButton = root.querySelector(
+      "button[aria-label='Select Application submitted']",
+    );
+    expect(nodeButton.getAttribute("aria-pressed")).toBe("false");
+    nodeButton.click();
+    expect(
+      root
+        .querySelector("button[aria-label='Select Application submitted']")
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(
+      root.querySelector("[data-diagram-node-hit][aria-hidden='true']"),
+    ).toBeTruthy();
+    expect(
+      root.querySelector("[data-diagram-link-hit][aria-hidden='true']"),
+    ).toBeTruthy();
+    expect(
+      root.querySelectorAll("[data-diagram-node-hit][tabindex]"),
+    ).toHaveLength(0);
+    expect(
+      root.querySelectorAll("[data-diagram-link-hit][tabindex]"),
+    ).toHaveLength(0);
+    expect(root.querySelectorAll("[data-diagram-link-hit] title")).toHaveLength(
+      0,
+    );
+  });
+
+  it("layers link hits below paths and avoids duplicate node renders", async () => {
+    const b = bundle(
+      [app("a"), app("b", { origin: "referral" })],
+      [
+        ev("o1", "a", "application_submitted", "2026-01-01"),
+        ev("t1", "a", "technical_interview", "2026-01-02"),
+        ev("o2", "b", "referral", "2026-01-01"),
+        ev("t2", "b", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root } = render(b);
+    const svg = root.querySelector("svg");
+    const childGroups = [...svg.children].filter(
+      (child) => child.tagName === "g",
+    );
+    const firstLinkHitGroupIndex = childGroups.findIndex((group) =>
+      group.querySelector("[data-diagram-link-hit]"),
+    );
+    const visibleLinkGroupIndex = childGroups.findIndex((group) =>
+      group.querySelector("[data-diagram-link]"),
+    );
+    expect(firstLinkHitGroupIndex).toBeGreaterThanOrEqual(0);
+    expect(visibleLinkGroupIndex).toBeGreaterThan(firstLinkHitGroupIndex);
+
+    const details = root.querySelector("[data-diagram-details]");
+    const callback = vi.fn();
+    const realObserver = new window.MutationObserver(callback);
+    realObserver.observe(details, { childList: true, subtree: true });
+    root
+      .querySelector("[data-diagram-node-hit='origin:application_submitted']")
+      .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await Promise.resolve();
+    expect(callback).toHaveBeenCalledTimes(1);
+    realObserver.disconnect();
+  });
+
+  it("selects visible SVG node labels exactly once", async () => {
+    const b = bundle(
+      [app("a")],
+      [ev("o", "a", "application_submitted", "2026-01-01")],
+    );
+    const { root } = render(b);
+    const details = root.querySelector("[data-diagram-details]");
+    const callback = vi.fn();
+    const observer = new window.MutationObserver(callback);
+    observer.observe(details, { childList: true, subtree: true });
+    root
+      .querySelector("[data-diagram-node='origin:application_submitted'] text")
+      .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await Promise.resolve();
+    expect(details.textContent).toContain("Application submitted: 1");
+    expect(
+      root
+        .querySelector("button[aria-label='Select Application submitted']")
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(callback).toHaveBeenCalledTimes(1);
+    observer.disconnect();
+  });
+
+  it("keeps fixture endpoint totals literal including Unknown", async () => {
+    const fixture = await import(
+      "./fixtures/tracker-lifecycle-diagram-v2.json",
+      {
+        with: { type: "json" },
+      }
+    );
+    const projection = projectLifecycleAt(fixture.default);
+    expect(projection.totals.endpoints).toEqual(
+      EXPECTED_FIXTURE_TAXONOMY_TOTALS.endpoints,
+    );
+  });
+
+  it("uses time elements for exact and date-only event timestamps", () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("date", "a", "application_submitted", "2026-01-01"),
+        ev("exact", "a", "technical_interview", "2026-01-02T10:00:00.000Z"),
+        ev("unknown", "a", "employer_response_received", "unknown"),
+      ],
+    );
+    const { root } = render(b);
+    expect(root.querySelector("time[datetime='2026-01-01']")).toBeTruthy();
+    expect(
+      root.querySelector("time[datetime='2026-01-02T10:00:00.000Z']"),
+    ).toBeTruthy();
+    expect(root.textContent).toContain(
+      "Unknown date — off chronological scale",
     );
   });
 });
