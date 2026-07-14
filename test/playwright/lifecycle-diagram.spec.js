@@ -131,6 +131,11 @@ async function assertTableCounts(page, caption, expected) {
   );
 }
 
+async function tableCounts(page, caption) {
+  const rows = await tableRowsByCaption(page, caption);
+  return Object.fromEntries(rows.map((row) => [row[0], row[1]]));
+}
+
 async function selectedDetails(page) {
   return await page.locator("[data-diagram-details]").innerText();
 }
@@ -627,6 +632,112 @@ test.describe("Application Lifecycle Diagram", () => {
         (request) => new URL(request.url()).origin !== server.url,
       ),
     ).toHaveLength(0);
+    expect(page.errors).toEqual([]);
+  });
+
+  test("announces genuinely newer activity while preserving the historical snapshot", async ({
+    page,
+  }) => {
+    await importFixture(page);
+    await page.getByRole("button", { name: "Diagram", exact: true }).click();
+    const diagram = page.locator("[data-lifecycle-diagram]");
+    const range = page.getByLabel("Lifecycle point", { exact: true });
+    await expect(range).toHaveAttribute("aria-valuetext", /Current/u);
+
+    await page
+      .getByRole("button", { name: "Previous event", exact: true })
+      .click();
+    await expect(diagram).toContainText("Historical");
+    const historicalValueText = await range.getAttribute("aria-valuetext");
+    expect(historicalValueText).not.toBeNull();
+    await expect(diagram).not.toContainText("Newer activity available");
+    await openLifecycleTables(page);
+    const historicalCounts = {
+      origins: await tableCounts(page, "Origins"),
+      milestones: await tableCounts(page, "Milestones"),
+      endpoints: await tableCounts(page, "Endpoints"),
+      flows: await tableCounts(page, "Flows"),
+    };
+
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Synthetic app-01" }).click();
+    await expect(
+      page.getByRole("heading", { name: /Synthetic app-01/u }),
+    ).toBeVisible();
+    await page.clock.setFixedTime(new Date("2027-01-01T00:00:00.000Z"));
+    await page
+      .locator('[data-core-form] [name="appliedAt"]')
+      .fill("2026-01-01");
+    await page
+      .locator('[data-core-form] [name="status"]')
+      .selectOption("technical_screen");
+    await page
+      .getByRole("button", { name: "Save application", exact: true })
+      .click();
+    await expect(page.locator('[data-core-form] [name="status"]')).toHaveValue(
+      "technical_screen",
+    );
+    await expect
+      .poll(async () =>
+        page.evaluate(
+          () =>
+            new Promise((resolve, reject) => {
+              const open = indexedDB.open("jobbot3000");
+              open.onerror = () => reject(open.error);
+              open.onsuccess = () => {
+                const tx = open.result.transaction(
+                  ["lifecycleEvents"],
+                  "readonly",
+                );
+                const request = tx.objectStore("lifecycleEvents").getAll();
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () =>
+                  resolve(
+                    request.result.some(
+                      (event) =>
+                        event.applicationId === "app-01" &&
+                        event.eventType === "technical_interview" &&
+                        event.occurredAt === "2027-01-01T00:00:00.000Z",
+                    ),
+                  );
+              };
+            }),
+        ),
+      )
+      .toBe(true);
+
+    await page.getByRole("button", { name: "Diagram", exact: true }).click();
+    await expect(range).toHaveAttribute("aria-valuetext", historicalValueText);
+    await expect(diagram).toContainText("Historical");
+    await expect(diagram.getByText("Newer activity available")).toHaveCount(1);
+    const liveRegion = page.locator("#lifecycle-diagram-live");
+    await expect(liveRegion).toHaveAttribute("aria-live", "polite");
+    await expect(liveRegion).toContainText("Newer activity available");
+    await openLifecycleTables(page);
+    expect(await tableCounts(page, "Origins")).toEqual(
+      historicalCounts.origins,
+    );
+    expect(await tableCounts(page, "Milestones")).toEqual(
+      historicalCounts.milestones,
+    );
+    expect(await tableCounts(page, "Endpoints")).toEqual(
+      historicalCounts.endpoints,
+    );
+    expect(await tableCounts(page, "Flows")).toEqual(historicalCounts.flows);
+
+    await page
+      .getByRole("button", { name: "Return to current", exact: true })
+      .click();
+    await expect(range).toHaveAttribute("aria-valuetext", /Current/u);
+    await expect(diagram).not.toContainText("Newer activity available");
+
+    await page
+      .getByRole("button", { name: "Previous event", exact: true })
+      .click();
+    await expect(diagram).toContainText("Historical");
+    await expect(diagram).not.toContainText("Newer activity available");
     expect(page.errors).toEqual([]);
   });
 
