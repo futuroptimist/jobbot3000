@@ -602,6 +602,15 @@ export function createLifecycleDiagramView(root, options = {}) {
         event.stopPropagation();
         selectNode();
       });
+      const selectNodeFromLabel = (event) => {
+        event.stopPropagation();
+        selectNode();
+      };
+      const touchNodeFromLabel = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        selectNode();
+      };
       const label = svgEl("text", {
         x: node.x0 < width / 2 ? node.x1 + 6 : node.x0 - 6,
         y: (node.y0 + node.y1) / 2,
@@ -610,6 +619,8 @@ export function createLifecycleDiagramView(root, options = {}) {
         fill: "currentColor",
       });
       label.textContent = `${node.label} (${node.total})`;
+      label.addEventListener("click", selectNodeFromLabel);
+      label.addEventListener("touchend", touchNodeFromLabel);
       g.append(hitRect, rect, label);
       svg.append(g);
     }

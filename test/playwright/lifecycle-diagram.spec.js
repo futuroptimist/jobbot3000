@@ -345,14 +345,22 @@ test.describe("Application Lifecycle Diagram", () => {
       EXPECTED_CURRENT.included,
     );
 
-    const node = page
-      .locator("[data-diagram-node] rect:not([data-diagram-node-hit])")
+    const nodeGroup = page
+      .locator("[data-diagram-node='origin:application_submitted']")
       .first();
-    await node.click();
+    await nodeGroup.locator("rect:not([data-diagram-node-hit])").click();
     const selected = await page.locator("[data-diagram-details]").innerText();
-    await expect(
-      page.locator("button[aria-pressed='true']").first(),
-    ).toBeVisible();
+    await nodeGroup.locator("text").click();
+    expect(await page.locator("[data-diagram-details]").innerText()).toBe(
+      selected,
+    );
+    await page
+      .getByRole("button", { name: "Select Application submitted" })
+      .click();
+    expect(await page.locator("[data-diagram-details]").innerText()).toBe(
+      selected,
+    );
+    await expect(page.locator("button[aria-pressed='true']")).toHaveCount(1);
     await page
       .locator("[data-diagram-link-hit]")
       .first()

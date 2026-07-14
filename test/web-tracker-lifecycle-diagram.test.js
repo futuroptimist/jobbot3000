@@ -91,6 +91,21 @@ function render(b, selectedBucketId = "current", onBucketChange = vi.fn()) {
 
 describe("lifecycle diagram view", () => {
   beforeEach(() => vi.useRealTimers());
+  it("parses and validates PNG dimensions for visual artifacts", async () => {
+    const { readPngDimensions } = await import(
+      "../scripts/capture-diagram-visual-review.js"
+    );
+    const png = Buffer.alloc(33);
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(png, 0);
+    png.writeUInt32BE(13, 8);
+    png.write("IHDR", 12, "ascii");
+    png.writeUInt32BE(375, 16);
+    png.writeUInt32BE(812, 20);
+    expect(readPngDimensions(png)).toEqual({ width: 375, height: 812 });
+    expect(() => readPngDimensions(Buffer.from("not a png"))).toThrow(
+      /valid PNG/u,
+    );
+  });
 
   afterEach(() => {
     vi.useRealTimers();
@@ -713,6 +728,30 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     await Promise.resolve();
     expect(callback).toHaveBeenCalledTimes(1);
     realObserver.disconnect();
+  });
+
+  it("selects visible SVG node labels exactly once", async () => {
+    const b = bundle(
+      [app("a")],
+      [ev("o", "a", "application_submitted", "2026-01-01")],
+    );
+    const { root } = render(b);
+    const details = root.querySelector("[data-diagram-details]");
+    const callback = vi.fn();
+    const observer = new window.MutationObserver(callback);
+    observer.observe(details, { childList: true, subtree: true });
+    root
+      .querySelector("[data-diagram-node='origin:application_submitted'] text")
+      .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await Promise.resolve();
+    expect(details.textContent).toContain("Application submitted: 1");
+    expect(
+      root
+        .querySelector("button[aria-label='Select Application submitted']")
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(callback).toHaveBeenCalledTimes(1);
+    observer.disconnect();
   });
 
   it("keeps fixture endpoint totals literal including Unknown", async () => {
