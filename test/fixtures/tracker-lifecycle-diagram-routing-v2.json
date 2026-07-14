@@ -1,0 +1,513 @@
+{
+  "schemaVersion": 1,
+  "exportedAt": "2026-04-10T00:00:00.000Z",
+  "applications": [
+    {
+      "id": "route-app-01",
+      "company": "Synthetic Routing Co 01",
+      "role": "Synthetic lifecycle role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-04-01T00:00:00.000Z",
+      "updatedAt": "2026-04-10T00:00:00.000Z"
+    },
+    {
+      "id": "route-app-02",
+      "company": "Synthetic Routing Co 02",
+      "role": "Synthetic lifecycle role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-04-01T00:00:00.000Z",
+      "updatedAt": "2026-04-10T00:00:00.000Z"
+    },
+    {
+      "id": "route-app-03",
+      "company": "Synthetic Routing Co 03",
+      "role": "Synthetic lifecycle role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-04-01T00:00:00.000Z",
+      "updatedAt": "2026-04-10T00:00:00.000Z"
+    },
+    {
+      "id": "route-app-04",
+      "company": "Synthetic Routing Co 04",
+      "role": "Synthetic lifecycle role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-04-01T00:00:00.000Z",
+      "updatedAt": "2026-04-10T00:00:00.000Z"
+    },
+    {
+      "id": "route-app-05",
+      "company": "Synthetic Routing Co 05",
+      "role": "Synthetic lifecycle role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-04-01T00:00:00.000Z",
+      "updatedAt": "2026-04-10T00:00:00.000Z"
+    },
+    {
+      "id": "route-app-06",
+      "company": "Synthetic Routing Co 06",
+      "role": "Synthetic lifecycle role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-04-01T00:00:00.000Z",
+      "updatedAt": "2026-04-10T00:00:00.000Z"
+    },
+    {
+      "id": "route-app-07",
+      "company": "Synthetic Routing Co 07",
+      "role": "Synthetic lifecycle role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-04-01T00:00:00.000Z",
+      "updatedAt": "2026-04-10T00:00:00.000Z"
+    },
+    {
+      "id": "route-app-08",
+      "company": "Synthetic Routing Co 08",
+      "role": "Synthetic lifecycle role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-04-01T00:00:00.000Z",
+      "updatedAt": "2026-04-10T00:00:00.000Z"
+    },
+    {
+      "id": "route-app-09",
+      "company": "Synthetic Routing Co 09",
+      "role": "Synthetic lifecycle role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-04-01T00:00:00.000Z",
+      "updatedAt": "2026-04-10T00:00:00.000Z"
+    },
+    {
+      "id": "route-app-10",
+      "company": "Synthetic Routing Co 10",
+      "role": "Synthetic lifecycle role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-04-01T00:00:00.000Z",
+      "updatedAt": "2026-04-10T00:00:00.000Z"
+    },
+    {
+      "id": "route-app-11",
+      "company": "Synthetic Routing Co 11",
+      "role": "Synthetic lifecycle role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-04-01T00:00:00.000Z",
+      "updatedAt": "2026-04-10T00:00:00.000Z"
+    },
+    {
+      "id": "route-app-12",
+      "company": "Synthetic Routing Co 12",
+      "role": "Synthetic lifecycle role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-04-01T00:00:00.000Z",
+      "updatedAt": "2026-04-10T00:00:00.000Z"
+    },
+    {
+      "id": "route-app-13",
+      "company": "Synthetic Routing Co 13",
+      "role": "Synthetic lifecycle role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-04-01T00:00:00.000Z",
+      "updatedAt": "2026-04-10T00:00:00.000Z"
+    },
+    {
+      "id": "route-app-14",
+      "company": "Synthetic Routing Co 14",
+      "role": "Synthetic lifecycle role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-04-01T00:00:00.000Z",
+      "updatedAt": "2026-04-10T00:00:00.000Z"
+    },
+    {
+      "id": "route-app-15",
+      "company": "Synthetic Routing Co 15",
+      "role": "Synthetic lifecycle role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-04-01T00:00:00.000Z",
+      "updatedAt": "2026-04-10T00:00:00.000Z"
+    },
+    {
+      "id": "route-app-16",
+      "company": "Synthetic Routing Co 16",
+      "role": "Synthetic lifecycle role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-04-01T00:00:00.000Z",
+      "updatedAt": "2026-04-10T00:00:00.000Z"
+    },
+    {
+      "id": "route-app-17",
+      "company": "Synthetic Routing Co 17",
+      "role": "Synthetic lifecycle role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-04-01T00:00:00.000Z",
+      "updatedAt": "2026-04-10T00:00:00.000Z"
+    },
+    {
+      "id": "route-app-18",
+      "company": "Synthetic Routing Co 18",
+      "role": "Synthetic lifecycle role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-04-01T00:00:00.000Z",
+      "updatedAt": "2026-04-10T00:00:00.000Z"
+    },
+    {
+      "id": "route-app-19",
+      "company": "Synthetic Routing Co 19",
+      "role": "Synthetic lifecycle role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-04-01T00:00:00.000Z",
+      "updatedAt": "2026-04-10T00:00:00.000Z"
+    },
+    {
+      "id": "route-app-20",
+      "company": "Synthetic Routing Co 20",
+      "role": "Synthetic lifecycle role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-04-01T00:00:00.000Z",
+      "updatedAt": "2026-04-10T00:00:00.000Z"
+    },
+    {
+      "id": "route-app-21",
+      "company": "Synthetic Routing Co 21",
+      "role": "Synthetic lifecycle role",
+      "status": "applied",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-04-01T00:00:00.000Z",
+      "updatedAt": "2026-04-10T00:00:00.000Z"
+    },
+    {
+      "id": "route-app-22",
+      "company": "Synthetic Routing Co 22",
+      "role": "Synthetic lifecycle role",
+      "status": "rejected",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-04-01T00:00:00.000Z",
+      "updatedAt": "2026-04-10T00:00:00.000Z"
+    },
+    {
+      "id": "route-app-23",
+      "company": "Synthetic Routing Co 23",
+      "role": "Synthetic lifecycle role",
+      "status": "rejected",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-04-01T00:00:00.000Z",
+      "updatedAt": "2026-04-10T00:00:00.000Z"
+    },
+    {
+      "id": "route-app-24",
+      "company": "Synthetic Routing Co 24",
+      "role": "Synthetic lifecycle role",
+      "status": "recruiter_screen",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-04-01T00:00:00.000Z",
+      "updatedAt": "2026-04-10T00:00:00.000Z"
+    },
+    {
+      "id": "route-app-25",
+      "company": "Synthetic Routing Co 25",
+      "role": "Synthetic lifecycle role",
+      "status": "recruiter_screen",
+      "origin": "application_submitted",
+      "source": "synthetic",
+      "createdAt": "2026-04-01T00:00:00.000Z",
+      "updatedAt": "2026-04-10T00:00:00.000Z"
+    }
+  ],
+  "lifecycleEvents": [
+    {
+      "id": "event-route-app-01-1",
+      "applicationId": "route-app-01",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-04-01T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-02-1",
+      "applicationId": "route-app-02",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-04-01T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-03-1",
+      "applicationId": "route-app-03",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-04-01T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-04-1",
+      "applicationId": "route-app-04",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-04-01T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-05-1",
+      "applicationId": "route-app-05",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-04-01T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-06-1",
+      "applicationId": "route-app-06",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-04-01T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-07-1",
+      "applicationId": "route-app-07",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-04-01T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-08-1",
+      "applicationId": "route-app-08",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-04-01T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-09-1",
+      "applicationId": "route-app-09",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-04-01T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-10-1",
+      "applicationId": "route-app-10",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-04-01T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-11-1",
+      "applicationId": "route-app-11",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-04-01T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-12-1",
+      "applicationId": "route-app-12",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-04-01T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-13-1",
+      "applicationId": "route-app-13",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-04-01T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-14-1",
+      "applicationId": "route-app-14",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-04-01T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-15-1",
+      "applicationId": "route-app-15",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-04-01T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-16-1",
+      "applicationId": "route-app-16",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-04-01T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-17-1",
+      "applicationId": "route-app-17",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-04-01T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-18-1",
+      "applicationId": "route-app-18",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-04-01T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-19-1",
+      "applicationId": "route-app-19",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-04-01T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-20-1",
+      "applicationId": "route-app-20",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-04-01T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-21-1",
+      "applicationId": "route-app-21",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-04-01T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-21-2",
+      "applicationId": "route-app-21",
+      "eventType": "assessment_take_home",
+      "occurredAt": "2026-04-02T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-22-1",
+      "applicationId": "route-app-22",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-04-01T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-22-2",
+      "applicationId": "route-app-22",
+      "eventType": "employer_rejected",
+      "occurredAt": "2026-04-03T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-23-1",
+      "applicationId": "route-app-23",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-04-01T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-23-2",
+      "applicationId": "route-app-23",
+      "eventType": "employer_rejected",
+      "occurredAt": "2026-04-03T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-24-1",
+      "applicationId": "route-app-24",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-04-01T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-24-2",
+      "applicationId": "route-app-24",
+      "eventType": "recruiter_screen",
+      "occurredAt": "2026-04-02T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-25-1",
+      "applicationId": "route-app-25",
+      "eventType": "application_submitted",
+      "occurredAt": "2026-04-01T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-25-2",
+      "applicationId": "route-app-25",
+      "eventType": "recruiter_screen",
+      "occurredAt": "2026-04-02T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    },
+    {
+      "id": "event-route-app-25-3",
+      "applicationId": "route-app-25",
+      "eventType": "technical_interview",
+      "occurredAt": "2026-04-03T12:00:00.000Z",
+      "occurredAtPrecision": "instant",
+      "source": "synthetic"
+    }
+  ],
+  "contacts": [],
+  "outreachMessages": [],
+  "interviews": [],
+  "offers": [],
+  "artifacts": [],
+  "reminders": [],
+  "settings": {}
+}

@@ -93,7 +93,7 @@ async function main() {
     );
   await mkdir(outDir, { recursive: true });
   const fixture = await readFile(
-    "test/fixtures/tracker-lifecycle-diagram-v2.json",
+    "test/fixtures/tracker-lifecycle-diagram-routing-v2.json",
     "utf8",
   );
 
