@@ -458,6 +458,114 @@ test.describe("Application Lifecycle Diagram", () => {
     expect(page.errors).toEqual([]);
   });
 
+  test("announces genuinely newer activity while preserving the historical snapshot", async ({
+    page,
+  }) => {
+    await importFixture(page);
+    await page.getByRole("button", { name: "Diagram", exact: true }).click();
+    await expect(page.locator("[data-lifecycle-diagram]")).toContainText(
+      EXPECTED_CURRENT.included,
+    );
+
+    const diagram = page.locator("[data-lifecycle-diagram]");
+    const range = page.getByRole("slider", { name: "Lifecycle point" });
+    await page
+      .getByRole("button", { name: "Previous event", exact: true })
+      .click();
+    await expect(diagram).toContainText("Historical");
+    await expect(diagram).not.toContainText("Newer activity available");
+    const historicalValueText = await range.getAttribute("aria-valuetext");
+    expect(historicalValueText).toBeTruthy();
+    const historicalTotals = await tableRowsByCaption(page, "Flows");
+
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: "Synthetic app-01", exact: true })
+      .click();
+    await page.evaluate(() => {
+      const fixedTime = Date.parse("2027-01-01T00:00:00.000Z");
+      const NativeDate = Date;
+      class FixedDate extends NativeDate {
+        constructor(...args) {
+          super(...(args.length ? args : [fixedTime]));
+        }
+        static now() {
+          return fixedTime;
+        }
+        static parse(value) {
+          return NativeDate.parse(value);
+        }
+        static UTC(...args) {
+          return NativeDate.UTC(...args);
+        }
+      }
+      window.Date = FixedDate;
+    });
+    await page
+      .locator('[data-core-form] [name="appliedAt"]')
+      .fill("2026-01-01");
+    await page
+      .locator('[data-core-form] [name="status"]')
+      .selectOption("technical_screen");
+    await page
+      .getByRole("button", { name: "Save application", exact: true })
+      .click();
+    await expect(page.locator('[data-core-form] [name="status"]')).toHaveValue(
+      "technical_screen",
+    );
+    await expect
+      .poll(async () =>
+        page.evaluate(
+          () =>
+            new Promise((resolve, reject) => {
+              const open = indexedDB.open("jobbot3000");
+              open.onerror = () => reject(open.error);
+              open.onsuccess = () => {
+                const db = open.result;
+                const tx = db.transaction(["lifecycleEvents"], "readonly");
+                const request = tx.objectStore("lifecycleEvents").getAll();
+                request.onsuccess = () =>
+                  resolve(
+                    request.result.filter(
+                      (event) => event.applicationId === "app-01",
+                    ).length,
+                  );
+                request.onerror = () => reject(request.error);
+              };
+            }),
+        ),
+      )
+      .toBe(2);
+
+    await page.getByRole("button", { name: "Diagram", exact: true }).click();
+    await expect(range).toHaveAttribute("aria-valuetext", historicalValueText);
+    await expect(diagram).toContainText("Historical");
+    await expect(
+      page.locator(".chip", { hasText: "Newer activity available" }),
+    ).toHaveCount(1);
+    await expect(
+      page.locator('#lifecycle-diagram-live[aria-live="polite"]'),
+    ).toContainText("Newer activity available");
+    expect(await tableRowsByCaption(page, "Flows")).toEqual(historicalTotals);
+
+    await page
+      .getByRole("button", { name: "Return to current", exact: true })
+      .click();
+    await expect(range).toHaveAttribute(
+      "aria-valuetext",
+      "Current — latest data in this browser",
+    );
+    await expect(diagram).not.toContainText("Newer activity available");
+
+    await page
+      .getByRole("button", { name: "Previous event", exact: true })
+      .click();
+    await expect(diagram).toContainText("Historical");
+    await expect(diagram).not.toContainText("Newer activity available");
+  });
+
   test("uses a real touch mobile context without page overflow", async ({
     browser,
   }) => {
