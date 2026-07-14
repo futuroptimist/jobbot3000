@@ -233,7 +233,7 @@ test.describe("Application Lifecycle Diagram", () => {
     page,
   }) => {
     await importFixture(page);
-    await page.getByRole("button", { name: "Diagram" }).click();
+    await page.getByRole("button", { name: "Diagram", exact: true }).click();
 
     const diagram = page.locator("[data-lifecycle-diagram]");
     const range = page.getByRole("slider", {
@@ -257,7 +257,9 @@ test.describe("Application Lifecycle Diagram", () => {
       .filter({ hasText: /applications included/u })
       .innerText();
 
-    await page.getByRole("button", { name: "Applications" }).click();
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
     await page
       .getByRole("button", { name: "Synthetic app-01", exact: true })
       .click();
@@ -277,7 +279,7 @@ test.describe("Application Lifecycle Diagram", () => {
       "technical_interview",
     );
 
-    await page.getByRole("button", { name: "Diagram" }).click();
+    await page.getByRole("button", { name: "Diagram", exact: true }).click();
     await expect(range).toHaveAttribute("aria-valuetext", historicalAriaValue);
     await expect(diagram).toContainText("Historical");
 
@@ -290,9 +292,12 @@ test.describe("Application Lifecycle Diagram", () => {
       "aria-live",
       "polite",
     );
-    await expect(page.locator("#lifecycle-diagram-live")).toContainText(
-      "Newer activity available",
-    );
+    const liveRegion = page.locator("#lifecycle-diagram-live");
+    await expect(liveRegion).toContainText("Newer activity available");
+    expect(
+      ((await liveRegion.innerText()).match(/Newer activity available/gu) ?? [])
+        .length,
+    ).toBe(1);
     await expect(
       page
         .locator("[data-lifecycle-diagram] .muted")
