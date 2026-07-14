@@ -23,6 +23,35 @@ This document defines the implementation-ready contract for the browser tracker'
 - Render an app-owned SVG for the diagram and provide equivalent semantic HTML tables for the same origin, endpoint, edge, and event data.
 - Do not repurpose `src/analytics/sankey.js`; that module models the older CLI/SQLite opportunity lifecycle, not the browser application lifecycle.
 
+## Density-aware SVG layout
+
+The SVG canvas height is derived from active aggregate-node density in the busiest Sankey rank. Fixed final heights, fixture-specific heights, viewport-height rules, DOM measurement loops, and per-application height growth are prohibited. A fixed minimum floor is allowed only as the lower bound of the deterministic density formula.
+
+Normative constants:
+
+- Minimum SVG width: `760px`
+- Minimum SVG height: `360px`
+- Top internal layout margin: `32px`
+- Bottom internal layout margin: `32px`
+- D3 node padding: `44px`
+- Per-node vertical budget: `36px`
+- Node width: `18px`
+- Existing horizontal margins and seven-rank positioning remain unchanged.
+
+The renderer selects active aggregate nodes where `Number(node.total) > 0`, groups them by the fixed `nodeRank(node.id)`, and uses the largest group size as `densestColumnCount` with a floor of `1`. Zero-total taxonomy entries do not enlarge the SVG. Application count, lifecycle-event count, flow value, link width, DOM measurements, viewport width, and viewport height do not directly affect height.
+
+```text
+densityHeight =
+  topMargin +
+  bottomMargin +
+  densestColumnCount * perNodeVerticalBudget +
+  max(0, densestColumnCount - 1) * nodePadding
+
+height = max(minimumSvgHeight, ceil(densityHeight))
+```
+
+The same calculated height must be used for the SVG `height`, SVG `viewBox`, and D3 extent. The D3 extent is `[16, topMargin]` to `[width - 24, height - bottomMargin]`, and the 44px node padding is the spacing contract that prevents visible-node and touch-hit-region crowding. Mobile keeps the 760px minimum SVG width inside the diagram-local horizontal scroller while the page uses natural vertical scrolling; the diagram must not add a fixed/max height or vertical scrollbar.
+
 ## Origin taxonomy
 
 Schema v2 adds required `applications.origin`. Preserve free-form `applications.source` separately.

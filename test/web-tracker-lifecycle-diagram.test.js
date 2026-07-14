@@ -2,7 +2,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JSDOM } from "jsdom";
 
-import { createLifecycleDiagramView } from "../src/web/tracker/lifecycleDiagram.js";
+import {
+  calculateLifecycleDiagramLayout,
+  createLifecycleDiagramView,
+  LIFECYCLE_DIAGRAM_LAYOUT,
+} from "../src/web/tracker/lifecycleDiagram.js";
 import {
   buildLifecycleTimeline,
   LIFECYCLE_DIAGRAM_TAXONOMY,
@@ -37,6 +41,59 @@ const bundle = (applications = [], lifecycleEvents = []) => ({
   applications,
   lifecycleEvents,
 });
+
+const layoutProjection = (countsByRank) => {
+  const nodeIdsByRank = {
+    origin: LIFECYCLE_DIAGRAM_TAXONOMY.origins.map((item) => item.nodeId),
+    milestone: LIFECYCLE_DIAGRAM_TAXONOMY.milestones.map((item) => item.nodeId),
+    endpoint: LIFECYCLE_DIAGRAM_TAXONOMY.endpoints.map((item) => item.nodeId),
+  };
+  return {
+    nodes: Object.entries(countsByRank).flatMap(([rank, count]) =>
+      nodeIdsByRank[rank].slice(0, count).map((id) => ({ id, total: 1 })),
+    ),
+    links: [],
+  };
+};
+
+const deepFreeze = (value) => {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value)) deepFreeze(child);
+  }
+  return value;
+};
+
+const svgHeight = (svg) => Number(svg.getAttribute("height"));
+const viewBoxHeight = (svg) =>
+  Number(svg.getAttribute("viewBox").split(/\s+/u)[3]);
+const visibleNodeRects = (root) =>
+  [
+    ...root.querySelectorAll(
+      "[data-diagram-node] rect:not([data-diagram-node-hit])",
+    ),
+  ].map((rect) => ({
+    x: Number(rect.getAttribute("x")),
+    y: Number(rect.getAttribute("y")),
+    width: Number(rect.getAttribute("width")),
+    height: Number(rect.getAttribute("height")),
+  }));
+const hitRects = (root) =>
+  [...root.querySelectorAll("[data-diagram-node-hit]")].map((rect) => ({
+    x: Number(rect.getAttribute("x")),
+    y: Number(rect.getAttribute("y")),
+    width: Number(rect.getAttribute("width")),
+    height: Number(rect.getAttribute("height")),
+  }));
+const byRank = (rects) => {
+  const ranks = new Map();
+  for (const rect of rects) {
+    const key = Math.round(rect.x);
+    ranks.set(key, [...(ranks.get(key) ?? []), rect]);
+  }
+  return [...ranks.values()].map((items) => items.sort((a, b) => a.y - b.y));
+};
+
 const EXPECTED_FIXTURE_TAXONOMY_TOTALS = {
   endpoints: {
     awaiting_response: 2,
@@ -88,6 +145,77 @@ function render(b, selectedBucketId = "current", onBucketChange = vi.fn()) {
   });
   return { root, view, timeline, snapshot, onBucketChange };
 }
+
+describe("lifecycle diagram density-aware layout helper", () => {
+  it("returns contractual heights for busiest rank counts", () => {
+    expect(
+      calculateLifecycleDiagramLayout(layoutProjection({ endpoint: 1 })).height,
+    ).toBe(360);
+    expect(
+      calculateLifecycleDiagramLayout(layoutProjection({ endpoint: 3 })).height,
+    ).toBe(360);
+    expect(
+      calculateLifecycleDiagramLayout(layoutProjection({ endpoint: 5 })).height,
+    ).toBe(420);
+    expect(
+      calculateLifecycleDiagramLayout(layoutProjection({ endpoint: 10 }))
+        .height,
+    ).toBe(820);
+    expect(
+      calculateLifecycleDiagramLayout(layoutProjection({ endpoint: 11 }))
+        .height,
+    ).toBe(900);
+  });
+
+  it("sanitizes invalid and desktop widths deterministically", () => {
+    for (const width of [undefined, 0, -1, Number.NaN, Infinity]) {
+      expect(
+        calculateLifecycleDiagramLayout(
+          layoutProjection({ endpoint: 1 }),
+          width,
+        ).width,
+      ).toBe(760);
+    }
+    expect(
+      calculateLifecycleDiagramLayout(layoutProjection({ endpoint: 1 }), 1200.9)
+        .width,
+    ).toBe(1200);
+  });
+
+  it("depends on busiest active rank density without mutating projections", () => {
+    const projection = layoutProjection({
+      origin: 2,
+      milestone: 3,
+      endpoint: 5,
+    });
+    const shuffled = { nodes: [...projection.nodes].reverse(), links: [] };
+    expect(calculateLifecycleDiagramLayout(shuffled)).toEqual(
+      calculateLifecycleDiagramLayout(projection),
+    );
+    expect(
+      calculateLifecycleDiagramLayout(
+        layoutProjection({ origin: 3, milestone: 3, endpoint: 5 }),
+      ).height,
+    ).toBe(calculateLifecycleDiagramLayout(projection).height);
+    expect(
+      calculateLifecycleDiagramLayout(
+        layoutProjection({ origin: 2, milestone: 3, endpoint: 6 }),
+      ).height - calculateLifecycleDiagramLayout(projection).height,
+    ).toBe(
+      LIFECYCLE_DIAGRAM_LAYOUT.perNodeVerticalBudget +
+        LIFECYCLE_DIAGRAM_LAYOUT.nodePadding,
+    );
+    expect(
+      calculateLifecycleDiagramLayout({
+        nodes: [...projection.nodes, { id: "endpoint:unknown", total: 0 }],
+        links: [],
+      }).height,
+    ).toBe(calculateLifecycleDiagramLayout(projection).height);
+    const frozen = deepFreeze(JSON.parse(JSON.stringify(projection)));
+    expect(() => calculateLifecycleDiagramLayout(frozen)).not.toThrow();
+    expect(frozen).toEqual(projection);
+  });
+});
 
 describe("lifecycle diagram view", () => {
   beforeEach(() => vi.useRealTimers());
@@ -784,5 +912,62 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     expect(root.textContent).toContain(
       "Unknown date — off chronological scale",
     );
+  });
+
+  it("uses calculated heights for sparse and dense rendered SVGs", async () => {
+    const sparse = render(
+      bundle([app("a")], [ev("o", "a", "application_submitted", "2026-01-01")]),
+    );
+    expect(svgHeight(sparse.root.querySelector("svg"))).toBe(360);
+
+    const fixture = await import(
+      "./fixtures/tracker-lifecycle-diagram-v2.json",
+      {
+        with: { type: "json" },
+      }
+    );
+    const dense = render(fixture.default);
+    const svg = dense.root.querySelector("svg");
+    expect(calculateLifecycleDiagramLayout(dense.snapshot).height).toBe(900);
+    expect(svgHeight(svg)).toBe(900);
+    expect(viewBoxHeight(svg)).toBe(900);
+  });
+
+  it("keeps rendered node geometry spaced, finite, and inside SVG bounds", async () => {
+    const fixture = await import(
+      "./fixtures/tracker-lifecycle-diagram-v2.json",
+      {
+        with: { type: "json" },
+      }
+    );
+    const { root, view, timeline, snapshot } = render(fixture.default);
+    const svg = root.querySelector("svg");
+    const height = svgHeight(svg);
+    for (const rect of visibleNodeRects(root)) {
+      expect(Object.values(rect).every(Number.isFinite)).toBe(true);
+      expect(rect.y).toBeGreaterThanOrEqual(
+        LIFECYCLE_DIAGRAM_LAYOUT.topMargin - 0.5,
+      );
+      expect(rect.y + rect.height).toBeLessThanOrEqual(
+        height - LIFECYCLE_DIAGRAM_LAYOUT.bottomMargin + 0.5,
+      );
+    }
+    for (const rank of byRank(visibleNodeRects(root))) {
+      for (let i = 1; i < rank.length; i += 1)
+        expect(
+          rank[i].y - (rank[i - 1].y + rank[i - 1].height),
+        ).toBeGreaterThanOrEqual(43.5);
+    }
+    for (const rank of byRank(hitRects(root))) {
+      for (let i = 1; i < rank.length; i += 1)
+        expect(rank[i].y).toBeGreaterThanOrEqual(
+          rank[i - 1].y + rank[i - 1].height - 0.5,
+        );
+    }
+    root
+      .querySelector("[data-diagram-node-hit='endpoint:awaiting_response']")
+      .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    view.update({ timeline, snapshot, selectedBucketId: "current" });
+    expect(svgHeight(root.querySelector("svg"))).toBe(900);
   });
 });
