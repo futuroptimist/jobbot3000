@@ -383,7 +383,7 @@ export function labelBoxForNode(node) {
   const width = NODE_LABEL_MAX_WIDTH;
   const height = lines.length * 16;
   const x = Math.max(0, rankCenterX(node.rank) - width / 2);
-  const y = 4;
+  const y = node.y1 + 8;
   return { x, y, width, height, lines };
 }
 
