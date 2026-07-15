@@ -430,7 +430,12 @@ export function assignBranchHandles(
   const renderedBranchSamples = [];
   for (const [branchId, segments] of segmentsByBranch) {
     for (const segment of segments) {
-      const clearance = BRANCH_HANDLE_RADIUS;
+      const renderedWidth = Math.max(
+        3,
+        Number.isFinite(segment.width) ? segment.width : 1,
+      );
+      const clearance =
+        BRANCH_HANDLE_RADIUS + (Math.min(renderedWidth, 3) + 6) / 2;
       for (let t = 0; t <= 1.0001; t += 0.05) {
         renderedBranchSamples.push({
           branchId,

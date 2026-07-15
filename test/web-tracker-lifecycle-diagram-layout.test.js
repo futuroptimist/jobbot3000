@@ -433,16 +433,27 @@ describe("lifecycle diagram render-only routing layout", () => {
         .filter(([branchId]) => branchId !== handle.branchId)
         .flatMap(([, branchSegments]) =>
           branchSegments.flatMap((segment) =>
-            Array.from({ length: 21 }, (_, index) =>
-              cubicTransitionPoint(segment, index / 20),
-            ),
+            Array.from({ length: 21 }, (_, index) => ({
+              ...cubicTransitionPoint(segment, index / 20),
+              clearance:
+                BRANCH_HANDLE_RADIUS +
+                (Math.min(
+                  Math.max(
+                    3,
+                    Number.isFinite(segment.width) ? segment.width : 1,
+                  ),
+                  3,
+                ) +
+                  6) /
+                  2,
+            })),
           ),
         );
       expect(
         unrelatedSamples.every(
           (sample) =>
             Math.hypot(sample.x - handle.x, sample.y - handle.y) >
-            BRANCH_HANDLE_RADIUS - 0.001,
+            sample.clearance - 0.001,
         ),
       ).toBe(true);
     }
