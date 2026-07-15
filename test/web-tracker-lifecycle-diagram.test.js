@@ -899,6 +899,30 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     }
   });
 
+  it("renders the layout fallback when node label wrapping fails", () => {
+    const spy = vi
+      .spyOn(lifecycleLayout, "wrapLifecycleLabel")
+      .mockImplementation(() => {
+        throw new Error("forced label wrapping failure");
+      });
+    try {
+      const b = bundle(
+        [app("a")],
+        [
+          ev("o", "a", "application_submitted", "2026-01-01"),
+          ev("t", "a", "technical_interview", "2026-01-02"),
+        ],
+      );
+      const { root } = render(b);
+      expect(root.textContent).toContain(
+        "Unable to lay out lifecycle diagram.",
+      );
+      expect(root.querySelector("svg")).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("layers link hits below paths and avoids duplicate node renders", async () => {
     const b = bundle(
       [app("a"), app("b", { origin: "referral" })],

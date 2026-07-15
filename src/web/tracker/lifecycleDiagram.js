@@ -639,91 +639,101 @@ export function createLifecycleDiagramView(root, options = {}) {
     }
     svg.append(branchG);
     svg.append(handleG);
-    for (const node of visibleNodes) {
-      const nodeLabel = `${node.label}: ${node.total}`;
-      const selected = selectedFeature?.id === node.id;
-      const g = svgEl("g", {
-        "data-diagram-node": node.id,
-        "data-selected": selected ? "true" : "false",
-      });
-      const rect = svgEl("rect", {
-        x: node.x0,
-        y: node.y0,
-        width: Math.max(8, node.x1 - node.x0),
-        height: Math.max(8, node.y1 - node.y0),
-        rx: 4,
-        fill: node.id.startsWith("endpoint:")
-          ? endpointColor(node.id.split(":").at(-1))
-          : "#64748b",
-        stroke: selected ? "#F8FAFC" : "#e2e8f0",
-        "stroke-width": selected ? "4" : "1",
-      });
-      g.append(svgEl("title"));
-      g.querySelector("title").textContent = nodeLabel;
-      const selectNode = () =>
-        selectFeature({
-          id: node.id,
-          label: nodeLabel,
-          applicationIds: node.applicationIds,
+    try {
+      for (const node of visibleNodes) {
+        const nodeLabel = `${node.label}: ${node.total}`;
+        const selected = selectedFeature?.id === node.id;
+        const g = svgEl("g", {
+          "data-diagram-node": node.id,
+          "data-selected": selected ? "true" : "false",
         });
-      const hitRect = svgEl("rect", {
-        x: node.x0 - Math.max(0, 44 - (node.x1 - node.x0)) / 2,
-        y: node.y0 - Math.max(0, 44 - (node.y1 - node.y0)) / 2,
-        width: Math.max(44, node.x1 - node.x0),
-        height: Math.max(44, node.y1 - node.y0),
-        fill: "transparent",
-        "pointer-events": "all",
-        "aria-hidden": "true",
-        "data-diagram-node-hit": node.id,
-      });
-      hitRect.addEventListener("click", (event) => {
-        event.stopPropagation();
-        selectNode();
-      });
-      hitRect.addEventListener("touchend", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        selectNode();
-      });
-      hitRect.addEventListener("pointerup", (event) => {
-        event.stopPropagation();
-        selectNode();
-      });
-      rect.addEventListener("click", (event) => {
-        event.stopPropagation();
-        selectNode();
-      });
-      rect.addEventListener("touchend", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        selectNode();
-      });
-      rect.addEventListener("pointerup", (event) => {
-        event.stopPropagation();
-        selectNode();
-      });
-      const labelBox = labelBoxForNode(node);
-      const label = svgEl("text", {
-        x: labelBox.x + labelBox.width / 2,
-        y: labelBox.y + 12,
-        "text-anchor": "middle",
-        fill: "currentColor",
-        "data-diagram-node-label": node.id,
-      });
-      wrapLifecycleLabel(node.label).forEach((line, index) => {
-        const tspan = svgEl("tspan", {
+        const rect = svgEl("rect", {
+          x: node.x0,
+          y: node.y0,
+          width: Math.max(8, node.x1 - node.x0),
+          height: Math.max(8, node.y1 - node.y0),
+          rx: 4,
+          fill: node.id.startsWith("endpoint:")
+            ? endpointColor(node.id.split(":").at(-1))
+            : "#64748b",
+          stroke: selected ? "#F8FAFC" : "#e2e8f0",
+          "stroke-width": selected ? "4" : "1",
+        });
+        g.append(svgEl("title"));
+        g.querySelector("title").textContent = nodeLabel;
+        const selectNode = () =>
+          selectFeature({
+            id: node.id,
+            label: nodeLabel,
+            applicationIds: node.applicationIds,
+          });
+        const hitRect = svgEl("rect", {
+          x: node.x0 - Math.max(0, 44 - (node.x1 - node.x0)) / 2,
+          y: node.y0 - Math.max(0, 44 - (node.y1 - node.y0)) / 2,
+          width: Math.max(44, node.x1 - node.x0),
+          height: Math.max(44, node.y1 - node.y0),
+          fill: "transparent",
+          "pointer-events": "all",
+          "aria-hidden": "true",
+          "data-diagram-node-hit": node.id,
+        });
+        hitRect.addEventListener("click", (event) => {
+          event.stopPropagation();
+          selectNode();
+        });
+        hitRect.addEventListener("touchend", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          selectNode();
+        });
+        hitRect.addEventListener("pointerup", (event) => {
+          event.stopPropagation();
+          selectNode();
+        });
+        rect.addEventListener("click", (event) => {
+          event.stopPropagation();
+          selectNode();
+        });
+        rect.addEventListener("touchend", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          selectNode();
+        });
+        rect.addEventListener("pointerup", (event) => {
+          event.stopPropagation();
+          selectNode();
+        });
+        const labelBox = labelBoxForNode(node);
+        const label = svgEl("text", {
           x: labelBox.x + labelBox.width / 2,
-          dy: index ? "1.1em" : "0",
+          y: labelBox.y + 12,
+          "text-anchor": "middle",
+          fill: "currentColor",
+          "data-diagram-node-label": node.id,
         });
-        tspan.textContent = line;
-        label.append(tspan);
-      });
-      label.addEventListener("click", (event) => {
-        event.stopPropagation();
-        selectNode();
-      });
-      g.append(hitRect, rect, label);
-      svg.append(g);
+        wrapLifecycleLabel(node.label).forEach((line, index) => {
+          const tspan = svgEl("tspan", {
+            x: labelBox.x + labelBox.width / 2,
+            dy: index ? "1.1em" : "0",
+          });
+          tspan.textContent = line;
+          label.append(tspan);
+        });
+        label.addEventListener("click", (event) => {
+          event.stopPropagation();
+          selectNode();
+        });
+        g.append(hitRect, rect, label);
+        svg.append(g);
+      }
+    } catch {
+      scroll.append(
+        el("p", {
+          className: "muted",
+          textContent: "Unable to lay out lifecycle diagram.",
+        }),
+      );
+      return;
     }
     scroll.append(svg);
   };
