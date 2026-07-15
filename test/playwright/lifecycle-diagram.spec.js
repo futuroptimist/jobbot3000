@@ -332,8 +332,8 @@ async function assertBrowserCollisionAudit(
       const paths = [...svg.querySelectorAll("[data-diagram-link]")].map(
         (path) => {
           const id = path.getAttribute("data-diagram-link");
-          const source = `origin:${path.getAttribute("data-source-node-id")}`;
-          const target = `endpoint:${path.getAttribute("data-target-node-id")}`;
+          const source = path.getAttribute("data-source-node-id");
+          const target = path.getAttribute("data-target-node-id");
           const length = path.getTotalLength();
           const ribbon = Number(path.getAttribute("stroke-width") || 0);
           const separator = Number(
