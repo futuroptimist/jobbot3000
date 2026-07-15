@@ -68,6 +68,7 @@ export const nodeRank = (id) => {
 };
 export const taxonomyOrder = (nodeId) =>
   TAXONOMY_BY_NODE_ID.get(nodeId)?.rank ?? 999;
+const taxonomyId = (nodeId) => TAXONOMY_BY_NODE_ID.get(nodeId)?.id ?? nodeId;
 
 export const branchSortKey = (branch) =>
   [
@@ -129,18 +130,27 @@ export function buildLifecycleDisplayBranches(projection = {}) {
 export const nodeSort = (a, b) => {
   const ar = a.routing ? 1 : 0;
   const br = b.routing ? 1 : 0;
-  const medianA = a.weightedEndpointMedian ?? endpointIndex(a.endpointId);
-  const medianB = b.weightedEndpointMedian ?? endpointIndex(b.endpointId);
+  const rankA = a.rank ?? 0;
+  const rankB = b.rank ?? 0;
+  if (rankA !== rankB) return rankA - rankB;
+  if (rankA === 0 || rankA === 6)
+    return (
+      taxonomyOrder(a.id) - taxonomyOrder(b.id) ||
+      ar - br ||
+      compareLifecycleIds(a.branchId ?? a.id, b.branchId ?? b.id)
+    );
+  const medianA = a.routing
+    ? endpointIndex(a.endpointId)
+    : (a.weightedEndpointMedian ?? 999);
+  const medianB = b.routing
+    ? endpointIndex(b.endpointId)
+    : (b.weightedEndpointMedian ?? 999);
   return (
-    (a.rank ?? 0) - (b.rank ?? 0) ||
     (medianA ?? 999) - (medianB ?? 999) ||
     ar - br ||
-    endpointIndex(a.endpointId) - endpointIndex(b.endpointId) ||
-    taxonomyOrder(a.id) - taxonomyOrder(b.id) ||
-    compareLifecycleIds(
-      a.sortKey ?? a.branchId ?? a.id,
-      b.sortKey ?? b.branchId ?? b.id,
-    )
+    compareLifecycleIds(taxonomyId(a.id), taxonomyId(b.id)) ||
+    compareLifecycleIds(a.branchId ?? "", b.branchId ?? "") ||
+    compareLifecycleIds(a.sortKey ?? a.id, b.sortKey ?? b.id)
   );
 };
 
@@ -361,11 +371,9 @@ export function wrapLifecycleLabel(
   }
   if (line) lines.push(line);
   if (lines.length <= 2) return lines;
-  const overflow = lines.slice(1).join(" ");
-  return [
-    lines[0],
-    overflow.length <= max ? overflow : `${overflow.slice(0, max - 1)}…`,
-  ];
+  throw new Error(
+    `Lifecycle label exceeds two ${max}-character lines: ${text}`,
+  );
 }
 
 export function labelBoxForNode(node) {
@@ -389,10 +397,10 @@ export function assignBranchHandles(
 ) {
   const handles = [];
   const nodeBoxes = visibleNodes.map((node) => ({
-    x: node.x0 - 22,
-    y: node.y0 - 22,
-    width: Math.max(44, node.x1 - node.x0),
-    height: Math.max(44, node.y1 - node.y0),
+    x: node.x0,
+    y: node.y0,
+    width: node.x1 - node.x0,
+    height: node.y1 - node.y0,
   }));
   const labelBoxes = visibleNodes.map(labelBoxForNode);
   for (const branch of [...branches].sort(compareBranches)) {
@@ -427,23 +435,7 @@ export function assignBranchHandles(
             t ** 3 * segment.y1,
         };
       };
-      const sourceDockX = segment.source.routing
-        ? sourceCenter
-        : segment.source.x1;
-      const targetDockX = segment.target.routing
-        ? targetCenter
-        : segment.target.x0;
-      const candidates = [
-        ...[0.5, 0.35, 0.65, 0.2, 0.8, 0.1, 0.9, 0.05, 0.95].map(cubicPoint),
-        ...[0.5, 0.75, 0.25].map((t) => ({
-          x: sourceDockX + (exitX - sourceDockX) * t,
-          y: segment.y0,
-        })),
-        ...[0.5, 0.75, 0.25].map((t) => ({
-          x: entryX + (targetDockX - entryX) * t,
-          y: segment.y1,
-        })),
-      ];
+      const candidates = [0.5, 0.35, 0.65].map(cubicPoint);
       for (const { x, y } of candidates) {
         const box = {
           x: x - BRANCH_HANDLE_RADIUS,
@@ -451,8 +443,8 @@ export function assignBranchHandles(
           width: BRANCH_HANDLE_RADIUS * 2,
           height: BRANCH_HANDLE_RADIUS * 2,
         };
-        if (x - BRANCH_HANDLE_RADIUS < Math.min(sourceDockX, exitX)) continue;
-        if (x + BRANCH_HANDLE_RADIUS > Math.max(entryX, targetDockX)) continue;
+        if (x - BRANCH_HANDLE_RADIUS < exitX) continue;
+        if (x + BRANCH_HANDLE_RADIUS > entryX) continue;
         if (
           [...nodeBoxes, ...labelBoxes, ...handles.map((h) => h.box)].some(
             (b) => boxesOverlap(box, b),

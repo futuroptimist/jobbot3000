@@ -6,6 +6,7 @@ import {
   calculateLifecycleDiagramLayout,
   createLifecycleDiagramView,
 } from "../src/web/tracker/lifecycleDiagram.js";
+import * as lifecycleLayout from "../src/web/tracker/lifecycleDiagramLayout.js";
 import { buildLifecycleDisplayBranches } from "../src/web/tracker/lifecycleDiagramLayout.js";
 import {
   buildLifecycleTimeline,
@@ -872,6 +873,30 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     expect(root.querySelectorAll("[data-diagram-link-hit] title")).toHaveLength(
       0,
     );
+  });
+
+  it("renders the layout fallback when branch handle placement fails", () => {
+    const spy = vi
+      .spyOn(lifecycleLayout, "assignBranchHandles")
+      .mockImplementation(() => {
+        throw new Error("forced handle placement failure");
+      });
+    try {
+      const b = bundle(
+        [app("a")],
+        [
+          ev("o", "a", "application_submitted", "2026-01-01"),
+          ev("t", "a", "technical_interview", "2026-01-02"),
+        ],
+      );
+      const { root } = render(b);
+      expect(root.textContent).toContain(
+        "Unable to lay out lifecycle diagram.",
+      );
+      expect(root.querySelector("svg")).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("layers link hits below paths and avoids duplicate node renders", async () => {

@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 // eslint-disable-next-line max-len
 import routingFixture from "./fixtures/tracker-lifecycle-diagram-routing-v2.json" with { type: "json" };
-import { projectLifecycleAt } from "../src/web/tracker/lifecycleProjection.js";
+import {
+  LIFECYCLE_DIAGRAM_TAXONOMY,
+  projectLifecycleAt,
+} from "../src/web/tracker/lifecycleProjection.js";
 import {
   BRANCH_STROKE_OPACITY,
   ENDPOINT_BRANCH_COLORS,
@@ -19,6 +22,7 @@ import {
   compareBranches,
   endpointColor,
   layoutLifecycleRoutingGraph,
+  nodeSort,
   rankCenterX,
   wrapLifecycleLabel,
 } from "../src/web/tracker/lifecycleDiagramLayout.js";
@@ -206,13 +210,81 @@ describe("lifecycle diagram render-only routing layout", () => {
     ).toEqual(buildLifecycleRoutingGraph(projection()).links.map((l) => l.id));
   });
 
+  it("sorts origins and endpoints canonically while ranking milestones by endpoint median", () => {
+    const shuffledOrigins = [
+      { id: "origin:referral", rank: 0, routing: false },
+      { id: "origin:application_submitted", rank: 0, routing: false },
+      { id: "origin:candidate_outreach", rank: 0, routing: false },
+    ].sort(nodeSort);
+    expect(shuffledOrigins.map((node) => node.id)).toEqual([
+      "origin:application_submitted",
+      "origin:candidate_outreach",
+      "origin:referral",
+    ]);
+
+    const shuffledEndpoints = [
+      { id: "endpoint:offer_accepted", rank: 6, routing: false },
+      { id: "endpoint:awaiting_response", rank: 6, routing: false },
+      { id: "endpoint:employer_rejected", rank: 6, routing: false },
+    ].sort(nodeSort);
+    expect(shuffledEndpoints.map((node) => node.id)).toEqual([
+      "endpoint:awaiting_response",
+      "endpoint:employer_rejected",
+      "endpoint:offer_accepted",
+    ]);
+
+    const milestoneAndRoutes = [
+      {
+        id: "route:branch:z:rank:2",
+        rank: 2,
+        routing: true,
+        endpointId: "employer_rejected",
+        branchId: "branch:z",
+      },
+      {
+        id: "milestone:technical_interview",
+        rank: 2,
+        routing: false,
+        weightedEndpointMedian: 4,
+      },
+      {
+        id: "milestone:assessment_take_home",
+        rank: 2,
+        routing: false,
+        weightedEndpointMedian: 4,
+      },
+      {
+        id: "route:branch:a:rank:2",
+        rank: 2,
+        routing: true,
+        endpointId: "employer_rejected",
+        branchId: "branch:a",
+      },
+    ].sort(nodeSort);
+    expect(milestoneAndRoutes.map((node) => node.id)).toEqual([
+      "milestone:assessment_take_home",
+      "milestone:technical_interview",
+      "route:branch:a:rank:2",
+      "route:branch:z:rank:2",
+    ]);
+  });
+
   it("wraps labels without truncation and assigns one non-overlapping handle per branch", () => {
-    const text = "Assessment/take-home requested outcome";
-    expect(wrapLifecycleLabel(text).join(" ")).toBe(text);
-    expect(
-      wrapLifecycleLabel("Alpha beta gamma delta epsilon zeta", 10).at(1)
-        .length,
-    ).toBeLessThanOrEqual(10);
+    const text = "Assessment/take-home requested unsupported outcome";
+    expect(() => wrapLifecycleLabel(text)).toThrow(/exceeds two/u);
+    for (const item of [
+      ...LIFECYCLE_DIAGRAM_TAXONOMY.origins,
+      ...LIFECYCLE_DIAGRAM_TAXONOMY.milestones,
+      ...LIFECYCLE_DIAGRAM_TAXONOMY.endpoints,
+    ]) {
+      const lines = wrapLifecycleLabel(item.label);
+      expect(lines.length, item.label).toBeLessThanOrEqual(2);
+      expect(
+        lines.every((line) => line.length <= 22),
+        item.label,
+      ).toBe(true);
+      expect(lines.join(" "), item.label).toBe(item.label);
+    }
     const { graph } = layoutLifecycleRoutingGraph(projection(), 1850);
     const visibleNodes = graph.nodes.filter((n) => !n.routing && n.total > 0);
     const byBranch = new Map();

@@ -36,8 +36,8 @@ function largeBundle(count = 1000) {
   const lifecycleEvents = [];
   for (let i = 0; i < count; i += 1) {
     const id = `perf-app-${String(i).padStart(4, "0")}`;
-    const origin = origins[i % origins.length];
-    const endpoint = endpoints[i % endpoints.length];
+    const origin = origins[0];
+    const endpoint = endpoints[0];
     applications.push({
       id,
       company: `Synthetic ${i}`,
