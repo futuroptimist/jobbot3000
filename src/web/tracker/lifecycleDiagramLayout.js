@@ -445,19 +445,21 @@ export function assignBranchHandles(
       }
     }
   }
-  const candidateClearsRequiredGeometry = (branch, x, y, box) => {
-    if (
-      [...nodeBoxes, ...labelBoxes, ...handles.map((h) => h.box)].some((b) =>
-        boxesOverlap(box, b),
-      )
-    )
-      return false;
-    return !renderedBranchSamples.some(
-      (sample) =>
-        sample.branchId !== branch.id &&
-        Math.hypot(sample.x - x, sample.y - y) <= sample.clearance,
+  const fixedGeometryBlocksCandidate = (box) =>
+    [...nodeBoxes, ...labelBoxes, ...handles.map((h) => h.box)].some((b) =>
+      boxesOverlap(box, b),
     );
-  };
+  const renderedBranchClearanceMargin = (branch, x, y) =>
+    renderedBranchSamples.reduce((margin, sample) => {
+      if (sample.branchId === branch.id) return margin;
+      return Math.min(
+        margin,
+        Math.hypot(sample.x - x, sample.y - y) - sample.clearance,
+      );
+    }, Number.POSITIVE_INFINITY);
+  const candidateClearsRequiredGeometry = (branch, x, y, box) =>
+    !fixedGeometryBlocksCandidate(box) &&
+    renderedBranchClearanceMargin(branch, x, y) > 0;
   for (const branch of [...branches].sort(compareBranches)) {
     const segments = [...(segmentsByBranch.get(branch.id) ?? [])].sort(
       (a, b) => a.segmentIndex - b.segmentIndex,
@@ -468,6 +470,7 @@ export function assignBranchHandles(
       segments[0];
     const ordered = [preferred, ...segments.filter((s) => s !== preferred)];
     let chosen;
+    let bestCandidate;
     for (const segment of ordered) {
       const sourceCenter = rankCenterX(segment.source.rank);
       const targetCenter = rankCenterX(segment.target.rank);
@@ -485,18 +488,31 @@ export function assignBranchHandles(
         };
         if (x - BRANCH_HANDLE_RADIUS < exitX) continue;
         if (x + BRANCH_HANDLE_RADIUS > entryX) continue;
-        if (!candidateClearsRequiredGeometry(branch, x, y, box)) continue;
-        chosen = {
+        if (fixedGeometryBlocksCandidate(box)) continue;
+        const clearanceMargin = renderedBranchClearanceMargin(branch, x, y);
+        const candidate = {
           branchId: branch.id,
           x,
           y,
           radius: BRANCH_HANDLE_RADIUS,
           box,
         };
+        if (clearanceMargin > (bestCandidate?.clearanceMargin ?? -Infinity))
+          bestCandidate = { ...candidate, clearanceMargin };
+        if (!candidateClearsRequiredGeometry(branch, x, y, box)) continue;
+        chosen = candidate;
         break;
       }
       if (chosen) break;
     }
+    if (!chosen && bestCandidate)
+      chosen = {
+        branchId: bestCandidate.branchId,
+        x: bestCandidate.x,
+        y: bestCandidate.y,
+        radius: bestCandidate.radius,
+        box: bestCandidate.box,
+      };
     if (!chosen)
       throw new Error(
         `Lifecycle diagram handle placement invariant violated for ${branch.id}`,
