@@ -6,6 +6,7 @@ import {
   projectLifecycleAt,
 } from "../src/web/tracker/lifecycleProjection.js";
 import {
+  BRANCH_HANDLE_RADIUS,
   BRANCH_STROKE_OPACITY,
   ENDPOINT_BRANCH_COLORS,
   LAYOUT_LEFT_MARGIN,
@@ -20,8 +21,10 @@ import {
   buildLifecycleRoutingGraph,
   calculateLifecycleDiagramLayout,
   compareBranches,
+  cubicTransitionPoint,
   endpointColor,
   layoutLifecycleRoutingGraph,
+  labelBoxForNode,
   nodeSort,
   rankCenterX,
   wrapLifecycleLabel,
@@ -46,6 +49,60 @@ const hex = (color) =>
 const contrast = (a, b) => {
   const [l1, l2] = [luminance(a), luminance(b)].sort((x, y) => y - x);
   return (l1 + 0.05) / (l2 + 0.05);
+};
+
+const boxesOverlap = (a, b) =>
+  a.x < b.x + b.width &&
+  a.x + a.width > b.x &&
+  a.y < b.y + b.height &&
+  a.y + a.height > b.y;
+const denseBranchProjection = () => {
+  const nodes = [];
+  const links = [];
+  const paths = [];
+  let applicationIndex = 0;
+  for (const origin of LIFECYCLE_DIAGRAM_TAXONOMY.origins) {
+    const originNode = {
+      id: `origin:${origin.id}`,
+      label: origin.label,
+      total: 0,
+      applicationIds: [],
+    };
+    nodes.push(originNode);
+    for (const endpoint of LIFECYCLE_DIAGRAM_TAXONOMY.endpoints) {
+      const applicationId = `dense-${applicationIndex}`;
+      applicationIndex += 1;
+      originNode.total += 1;
+      originNode.applicationIds.push(applicationId);
+      let endpointNode = nodes.find(
+        (node) => node.id === `endpoint:${endpoint.id}`,
+      );
+      if (!endpointNode) {
+        endpointNode = {
+          id: `endpoint:${endpoint.id}`,
+          label: endpoint.label,
+          total: 0,
+          applicationIds: [],
+        };
+        nodes.push(endpointNode);
+      }
+      endpointNode.total += 1;
+      endpointNode.applicationIds.push(applicationId);
+      links.push({
+        id: `link:origin:${origin.id}->endpoint:${endpoint.id}`,
+        source: `origin:${origin.id}`,
+        target: `endpoint:${endpoint.id}`,
+        value: 1,
+        applicationIds: [applicationId],
+      });
+      paths.push({
+        applicationId,
+        endpoint: endpoint.id,
+        nodeIds: [`origin:${origin.id}`, `endpoint:${endpoint.id}`],
+      });
+    }
+  }
+  return { nodes, links, paths };
 };
 
 describe("lifecycle diagram render-only routing layout", () => {
@@ -297,17 +354,97 @@ describe("lifecycle diagram render-only routing layout", () => {
     expect(new Set(handles.map((h) => h.branchId)).size).toBe(
       graph.branches.length,
     );
+    for (const handle of handles) {
+      const segments = byBranch.get(handle.branchId);
+      const allowed = segments.flatMap((segment) =>
+        [0.5, 0.35, 0.65].map((t) => ({
+          segment,
+          ...cubicTransitionPoint(segment, t),
+        })),
+      );
+      const match = allowed.find(
+        (candidate) =>
+          Math.abs(candidate.x - handle.x) < 0.001 &&
+          Math.abs(candidate.y - handle.y) < 0.001,
+      );
+      expect(match, handle.branchId).toBeTruthy();
+      const exitX =
+        rankCenterX(match.segment.source.rank) + RANK_CORRIDOR_HALF_WIDTH;
+      const entryX =
+        rankCenterX(match.segment.target.rank) - RANK_CORRIDOR_HALF_WIDTH;
+      expect(
+        handle.x - BRANCH_HANDLE_RADIUS,
+        handle.branchId,
+      ).toBeGreaterThanOrEqual(exitX - 0.001);
+      expect(
+        handle.x + BRANCH_HANDLE_RADIUS,
+        handle.branchId,
+      ).toBeLessThanOrEqual(entryX + 0.001);
+    }
     for (let i = 0; i < handles.length; i += 1) {
       for (let j = i + 1; j < handles.length; j += 1) {
-        const a = handles[i].box;
-        const b = handles[j].box;
-        expect(
-          a.x < b.x + b.width &&
-            a.x + a.width > b.x &&
-            a.y < b.y + b.height &&
-            a.y + a.height > b.y,
-        ).toBe(false);
+        expect(boxesOverlap(handles[i].box, handles[j].box)).toBe(false);
       }
+    }
+  });
+
+  it("keeps handle invariants with more than 32 display branches", () => {
+    const { graph } = layoutLifecycleRoutingGraph(
+      denseBranchProjection(),
+      1850,
+    );
+    expect(graph.branches.length).toBeGreaterThan(32);
+    const visibleNodes = graph.nodes.filter(
+      (node) => !node.routing && node.total > 0,
+    );
+    const byBranch = new Map();
+    for (const link of graph.links) {
+      if (!byBranch.has(link.branchId)) byBranch.set(link.branchId, []);
+      byBranch.get(link.branchId).push(link);
+    }
+    const handles = assignBranchHandles(graph.branches, byBranch, visibleNodes);
+    expect(handles).toHaveLength(graph.branches.length);
+    const nodeBoxes = visibleNodes.map((node) => ({
+      x: node.x0,
+      y: node.y0,
+      width: node.x1 - node.x0,
+      height: node.y1 - node.y0,
+    }));
+    const labelBoxes = visibleNodes.map(labelBoxForNode);
+    for (const handle of handles) {
+      expect(
+        [...nodeBoxes, ...labelBoxes].some((box) =>
+          boxesOverlap(handle.box, box),
+        ),
+      ).toBe(false);
+      const segments = byBranch.get(handle.branchId);
+      expect(
+        segments.some((segment) =>
+          [0.5, 0.35, 0.65].some((t) => {
+            const candidate = cubicTransitionPoint(segment, t);
+            return (
+              Math.abs(candidate.x - handle.x) < 0.001 &&
+              Math.abs(candidate.y - handle.y) < 0.001
+            );
+          }),
+        ),
+      ).toBe(true);
+      const unrelatedSamples = [...byBranch.entries()]
+        .filter(([branchId]) => branchId !== handle.branchId)
+        .flatMap(([, branchSegments]) =>
+          branchSegments.flatMap((segment) =>
+            Array.from({ length: 21 }, (_, index) =>
+              cubicTransitionPoint(segment, index / 20),
+            ),
+          ),
+        );
+      expect(
+        unrelatedSamples.every(
+          (sample) =>
+            Math.hypot(sample.x - handle.x, sample.y - handle.y) >
+            BRANCH_HANDLE_RADIUS - 0.001,
+        ),
+      ).toBe(true);
     }
   });
 });
