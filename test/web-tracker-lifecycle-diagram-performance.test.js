@@ -19,17 +19,30 @@ const origins = [
   "other_unknown",
 ];
 
+const endpoints = [
+  { id: "offer_negotiating", status: "offer" },
+  { id: "offer_accepted", status: "accepted", event: "offer_accepted" },
+  { id: "employer_rejected", status: "rejected", event: "employer_rejected" },
+  {
+    id: "candidate_withdrew",
+    status: "withdrawn",
+    event: "candidate_withdrew",
+  },
+  { id: "offer_declined", status: "withdrawn", event: "offer_declined" },
+];
+
 function largeBundle(count = 1000) {
   const applications = [];
   const lifecycleEvents = [];
   for (let i = 0; i < count; i += 1) {
     const id = `perf-app-${String(i).padStart(4, "0")}`;
     const origin = origins[i % origins.length];
+    const endpoint = endpoints[i % endpoints.length];
     applications.push({
       id,
       company: `Synthetic ${i}`,
       role: "Role",
-      status: "offer",
+      status: endpoint.status,
       origin,
     });
     [
@@ -40,7 +53,7 @@ function largeBundle(count = 1000) {
       "technical_interview",
       "onsite_final_loop",
       "offer_received",
-      i % 2 ? "offer_negotiating" : "offer_accepted",
+      endpoint.event ?? endpoint.id,
     ].forEach((eventType, index) => {
       lifecycleEvents.push({
         id: `perf-event-${String(i).padStart(4, "0")}-${index}`,

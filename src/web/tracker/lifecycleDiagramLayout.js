@@ -369,9 +369,7 @@ export function wrapLifecycleLabel(
 }
 
 export function labelBoxForNode(node) {
-  const lines = wrapLifecycleLabel(
-    `${node.label} (${node.total ?? node.value ?? 0})`,
-  );
+  const lines = wrapLifecycleLabel(node.label);
   const width = NODE_LABEL_MAX_WIDTH;
   const height = lines.length * 16;
   const x = Math.max(0, rankCenterX(node.rank) - width / 2);
@@ -412,20 +410,49 @@ export function assignBranchHandles(
       const targetCenter = rankCenterX(segment.target.rank);
       const exitX = sourceCenter + RANK_CORRIDOR_HALF_WIDTH;
       const entryX = targetCenter - RANK_CORRIDOR_HALF_WIDTH;
-      for (const t of [0.5, 0.35, 0.65]) {
-        const x = exitX + (entryX - exitX) * t;
-        const y = segment.y0 + (segment.y1 - segment.y0) * t;
+      const c1 = exitX + (entryX - exitX) / 3;
+      const c2 = entryX - (entryX - exitX) / 3;
+      const cubicPoint = (t) => {
+        const oneMinus = 1 - t;
+        return {
+          x:
+            oneMinus ** 3 * exitX +
+            3 * oneMinus ** 2 * t * c1 +
+            3 * oneMinus * t ** 2 * c2 +
+            t ** 3 * entryX,
+          y:
+            oneMinus ** 3 * segment.y0 +
+            3 * oneMinus ** 2 * t * segment.y0 +
+            3 * oneMinus * t ** 2 * segment.y1 +
+            t ** 3 * segment.y1,
+        };
+      };
+      const sourceDockX = segment.source.routing
+        ? sourceCenter
+        : segment.source.x1;
+      const targetDockX = segment.target.routing
+        ? targetCenter
+        : segment.target.x0;
+      const candidates = [
+        ...[0.5, 0.35, 0.65, 0.2, 0.8, 0.1, 0.9, 0.05, 0.95].map(cubicPoint),
+        ...[0.5, 0.75, 0.25].map((t) => ({
+          x: sourceDockX + (exitX - sourceDockX) * t,
+          y: segment.y0,
+        })),
+        ...[0.5, 0.75, 0.25].map((t) => ({
+          x: entryX + (targetDockX - entryX) * t,
+          y: segment.y1,
+        })),
+      ];
+      for (const { x, y } of candidates) {
         const box = {
           x: x - BRANCH_HANDLE_RADIUS,
           y: y - BRANCH_HANDLE_RADIUS,
-          width: 44,
-          height: 44,
+          width: BRANCH_HANDLE_RADIUS * 2,
+          height: BRANCH_HANDLE_RADIUS * 2,
         };
-        if (
-          x - BRANCH_HANDLE_RADIUS < exitX ||
-          x + BRANCH_HANDLE_RADIUS > entryX
-        )
-          continue;
+        if (x - BRANCH_HANDLE_RADIUS < Math.min(sourceDockX, exitX)) continue;
+        if (x + BRANCH_HANDLE_RADIUS > Math.max(entryX, targetDockX)) continue;
         if (
           [...nodeBoxes, ...labelBoxes, ...handles.map((h) => h.box)].some(
             (b) => boxesOverlap(box, b),
@@ -443,20 +470,10 @@ export function assignBranchHandles(
       }
       if (chosen) break;
     }
-    if (!chosen) {
-      const s = preferred;
-      const exitX = rankCenterX(s.source.rank) + RANK_CORRIDOR_HALF_WIDTH;
-      const entryX = rankCenterX(s.target.rank) - RANK_CORRIDOR_HALF_WIDTH;
-      const x = (exitX + entryX) / 2;
-      const y = (s.y0 + s.y1) / 2;
-      chosen = {
-        branchId: branch.id,
-        x,
-        y,
-        radius: BRANCH_HANDLE_RADIUS,
-        box: { x: x - 22, y: y - 22, width: 44, height: 44 },
-      };
-    }
+    if (!chosen)
+      throw new Error(
+        `Lifecycle diagram handle placement invariant violated for ${branch.id}`,
+      );
     handles.push(chosen);
   }
   return handles;

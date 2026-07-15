@@ -151,6 +151,7 @@ export function createLifecycleDiagramView(root, options = {}) {
   let applicationPage = 0;
   let displayBranches = [];
   let tablesOpen = false;
+  let lastLayoutWidth = null;
   const ids = {
     title: "lifecycle-diagram-title",
     desc: "lifecycle-diagram-desc",
@@ -699,16 +700,14 @@ export function createLifecycleDiagramView(root, options = {}) {
         fill: "currentColor",
         "data-diagram-node-label": node.id,
       });
-      wrapLifecycleLabel(`${node.label} (${node.total})`).forEach(
-        (line, index) => {
-          const tspan = svgEl("tspan", {
-            x: labelBox.x + labelBox.width / 2,
-            dy: index ? "1.1em" : "0",
-          });
-          tspan.textContent = line;
-          label.append(tspan);
-        },
-      );
+      wrapLifecycleLabel(node.label).forEach((line, index) => {
+        const tspan = svgEl("tspan", {
+          x: labelBox.x + labelBox.width / 2,
+          dy: index ? "1.1em" : "0",
+        });
+        tspan.textContent = line;
+        label.append(tspan);
+      });
       label.addEventListener("click", (event) => {
         event.stopPropagation();
         selectNode();
@@ -953,9 +952,25 @@ export function createLifecycleDiagramView(root, options = {}) {
   next.addEventListener("click", () => changeToIndex(Number(range.value) + 1));
   current.addEventListener("click", () => onBucketChange("current"));
   range.addEventListener("input", () => changeToIndex(Number(range.value)));
-  const debouncedResize = makeDebounce(() => render(lastNewerAvailable));
+  const sanitizedRootWidth = () => {
+    const width = Math.floor(Number(root.clientWidth));
+    return Number.isFinite(width) && width > 0 ? width : 0;
+  };
+  const debouncedResize = makeDebounce(() => {
+    const nextWidth = sanitizedRootWidth();
+    if (nextWidth === lastLayoutWidth) return;
+    lastLayoutWidth = nextWidth;
+    render(lastNewerAvailable);
+  });
   resizeObserver = window.ResizeObserver
-    ? new ResizeObserver(debouncedResize)
+    ? new ResizeObserver((entries) => {
+        const entryWidth = Math.floor(
+          Number(entries?.[0]?.contentRect?.width ?? root.clientWidth),
+        );
+        const nextWidth =
+          Number.isFinite(entryWidth) && entryWidth > 0 ? entryWidth : 0;
+        if (nextWidth !== lastLayoutWidth) debouncedResize();
+      })
     : undefined;
   if (resizeObserver) resizeObserver.observe(root);
   else {
@@ -977,6 +992,7 @@ export function createLifecycleDiagramView(root, options = {}) {
       selectedId = selectedBucketId;
       projection = nextProjection;
       displayBranches = buildLifecycleDisplayBranches(projection);
+      lastLayoutWidth = sanitizedRootWidth();
       if (bucketChanged) {
         selectedFeature = null;
         eventPage = 0;
