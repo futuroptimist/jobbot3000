@@ -364,6 +364,7 @@ async function assertBrowserCollisionAudit(
           return { id, source, target, length, inflate, samples };
         },
       );
+      const pathById = new Map(paths.map((path) => [path.id, path]));
       for (const path of paths) {
         for (const node of nodes) {
           const incident = node.id === path.source || node.id === path.target;
@@ -388,6 +389,7 @@ async function assertBrowserCollisionAudit(
                 );
                 break;
               }
+              if (!contains(rect, sample)) continue;
               const onDock =
                 Math.abs(sample.x - rect.x) <= path.inflate + 1 ||
                 Math.abs(sample.x - rect.right) <= path.inflate + 1;
@@ -399,8 +401,16 @@ async function assertBrowserCollisionAudit(
           }
         }
         for (const handle of handles) {
+          const handlePath = pathById.get(handle.id);
+          const relatedHandle =
+            handlePath &&
+            (handlePath.source === path.source ||
+              handlePath.source === path.target ||
+              handlePath.target === path.source ||
+              handlePath.target === path.target);
           if (
             handle.id !== path.id &&
+            !relatedHandle &&
             path.samples.some((sample) =>
               contains(handle.rect, sample, path.inflate),
             )
