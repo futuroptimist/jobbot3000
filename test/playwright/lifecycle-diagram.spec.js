@@ -410,13 +410,12 @@ async function assertBrowserCollisionAudit(page) {
         ? dockContact(left, node, sample) && dockContact(right, node, sample)
         : false;
     };
-    const denseAuditFixture = paths.length > 20;
     for (const path of paths) {
       for (const node of nodes) {
         const incident = node.id === path.source || node.id === path.target;
         for (const sample of path.samples) {
           const box = sampleBox(sample, path.inflate);
-          if (!denseAuditFixture && contains(node.label, sample, 0)) {
+          if (overlap(box, node.label)) {
             errors.push(`${path.id} intersects label ${node.id}`);
             break;
           }
@@ -448,29 +447,16 @@ async function assertBrowserCollisionAudit(page) {
           path.samples.some(
             (sample) =>
               Math.hypot(sample.x - handle.cx, sample.y - handle.cy) <=
-              branchHandleRadius,
+              branchHandleRadius + path.inflate,
           )
         )
           errors.push(`${path.id} intersects other handle ${handle.id}`);
       }
     }
-    const rankCenterX = (rank) => 100 + 18 / 2 + rank * 272;
-    const isInsideRankTransitionCorridor = (point) => {
-      for (let rank = 0; rank < 6; rank += 1) {
-        const left = rankCenterX(rank) + 100;
-        const right = rankCenterX(rank + 1) - 100;
-        if (point.x >= left - 1 && point.x <= right + 1) return true;
-      }
-      return false;
-    };
     for (let a = 0; a < paths.length; a += 1) {
       for (let b = a + 1; b < paths.length; b += 1) {
         const left = paths[a];
         const right = paths[b];
-        const sharesDock = [left.source, left.target].some((nodeId) =>
-          [right.source, right.target].includes(nodeId),
-        );
-        if (sharesDock) continue;
         const nearby = [];
         for (const sample of left.samples) {
           const near = right.samples.find(
@@ -490,16 +476,13 @@ async function assertBrowserCollisionAudit(page) {
         );
         if (!awayFromSharedDock.length) continue;
         if (awayFromSharedDock.length > 4) {
-          if (!denseAuditFixture)
-            errors.push(
-              `${left.id} has coincident centerline run with ${right.id}`,
-            );
+          errors.push(
+            `${left.id} has coincident centerline run with ${right.id}`,
+          );
           continue;
         }
-        if (!awayFromSharedDock.every(isInsideRankTransitionCorridor))
-          errors.push(
-            `${left.id} crosses ${right.id} outside transition corridor`,
-          );
+        if (awayFromSharedDock.length)
+          errors.push(`${left.id} crosses ${right.id}`);
       }
     }
     return {

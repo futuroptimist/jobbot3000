@@ -327,23 +327,6 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
     }
   }
   layout.update(graph);
-  const linksByTransition = new Map();
-  for (const link of graph.links) {
-    const sourceRank = link.source.rank;
-    const key = `${sourceRank}-${link.target.rank}`;
-    if (!linksByTransition.has(key)) linksByTransition.set(key, []);
-    linksByTransition.get(key).push(link);
-  }
-  for (const links of linksByTransition.values()) {
-    const ordered = links.sort(linkSort);
-    const span = dimensions.height - LAYOUT_TOP_MARGIN - LAYOUT_BOTTOM_MARGIN;
-    const step = span / (ordered.length + 1);
-    ordered.forEach((link, index) => {
-      const laneY = LAYOUT_TOP_MARGIN + step * (index + 1);
-      link.transitionY0 = laneY;
-      link.transitionY1 = laneY;
-    });
-  }
   return { graph, dimensions };
 }
 
@@ -353,8 +336,6 @@ export function adjacentRankSegmentPath(segment) {
   const targetCenter = rankCenterX(segment.target.rank);
   const sourceY = segment.y0;
   const targetY = segment.y1;
-  const transitionSourceY = segment.transitionY0 ?? sourceY;
-  const transitionTargetY = segment.transitionY1 ?? targetY;
   const sourceDockX = segment.source.routing ? sourceCenter : segment.source.x1;
   const targetDockX = segment.target.routing ? targetCenter : segment.target.x0;
   const exitX = sourceCenter + RANK_CORRIDOR_HALF_WIDTH;
@@ -364,13 +345,9 @@ export function adjacentRankSegmentPath(segment) {
   return [
     `M${point(sourceDockX, sourceY)}`,
     `L${point(exitX, sourceY)}`,
-    `L${point(exitX, transitionSourceY)}`,
-    [
-      `C${point(c1, transitionSourceY)}`,
-      point(c2, transitionTargetY),
-      point(entryX, transitionTargetY),
-    ].join(" "),
-    `L${point(entryX, targetY)}`,
+    [`C${point(c1, sourceY)}`, point(c2, targetY), point(entryX, targetY)].join(
+      " ",
+    ),
     `L${point(targetDockX, targetY)}`,
   ].join("");
 }
@@ -406,7 +383,7 @@ export function labelBoxForNode(node) {
   const width = NODE_LABEL_MAX_WIDTH;
   const height = lines.length * 16;
   const x = Math.max(0, rankCenterX(node.rank) - width / 2);
-  const y = Math.max(4, node.y0 - 60 - height);
+  const y = 4;
   return { x, y, width, height, lines };
 }
 
@@ -425,10 +402,10 @@ export const cubicTransitionPoint = (segment, t) => {
       3 * oneMinus * t ** 2 * c2 +
       t ** 3 * entryX,
     y:
-      oneMinus ** 3 * (segment.transitionY0 ?? segment.y0) +
-      3 * oneMinus ** 2 * t * (segment.transitionY0 ?? segment.y0) +
-      3 * oneMinus * t ** 2 * (segment.transitionY1 ?? segment.y1) +
-      t ** 3 * (segment.transitionY1 ?? segment.y1),
+      oneMinus ** 3 * segment.y0 +
+      3 * oneMinus ** 2 * t * segment.y0 +
+      3 * oneMinus * t ** 2 * segment.y1 +
+      t ** 3 * segment.y1,
   };
 };
 
