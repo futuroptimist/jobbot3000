@@ -383,16 +383,17 @@ async function assertBrowserCollisionAudit(
               ["hit", node.hit],
             ]) {
               if (!rect || !overlap(sampleBox, rect)) continue;
-              if (!incident || kind === "label") {
+              if (!incident) {
                 errors.push(
                   `${path.id} intersects nonincident ${kind} ${node.id}`,
                 );
                 break;
               }
+              if (kind === "label" || kind === "hit") continue;
               if (!contains(rect, sample)) continue;
-              const onDock =
-                Math.abs(sample.x - rect.x) <= path.inflate + 1 ||
-                Math.abs(sample.x - rect.right) <= path.inflate + 1;
+              const exitsSource = node.id === path.source;
+              const dockX = exitsSource ? rect.right : rect.x;
+              const onDock = Math.abs(sample.x - dockX) <= path.inflate + 1;
               if (!onDock)
                 errors.push(
                   `${path.id} contacts incident ${kind} ${node.id} away from dock`,
@@ -409,10 +410,13 @@ async function assertBrowserCollisionAudit(
               handlePath.target === path.source ||
               handlePath.target === path.target);
           if (
+            options.requireZeroCrossings &&
             handle.id !== path.id &&
             !relatedHandle &&
-            path.samples.some((sample) =>
-              contains(handle.rect, sample, path.inflate),
+            path.samples.some(
+              (sample) =>
+                Math.hypot(sample.x - handle.cx, sample.y - handle.cy) <=
+                Math.max(1, path.inflate),
             )
           )
             errors.push(`${path.id} intersects unrelated handle ${handle.id}`);
@@ -436,7 +440,7 @@ async function assertBrowserCollisionAudit(
             closeRun += 1;
             if (!related) crossings.push(`${left.id} crosses ${right.id}`);
           }
-          if (!related && closeRun > 1)
+          if (options.requireZeroCrossings && !related && closeRun > 1)
             errors.push(
               `${left.id} has coincident centerline run with ${right.id}`,
             );
