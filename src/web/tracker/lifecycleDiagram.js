@@ -515,12 +515,22 @@ export function createLifecycleDiagramView(root, options = {}) {
     const branches = graph.branches
       .filter((branch) => segmentsByBranch.has(branch.id))
       .sort(compareBranches);
-    const handles = new Map(
-      assignBranchHandles(branches, segmentsByBranch, visibleNodes).map((h) => [
-        h.branchId,
-        h,
-      ]),
-    );
+    let handles;
+    try {
+      handles = new Map(
+        assignBranchHandles(branches, segmentsByBranch, visibleNodes).map(
+          (h) => [h.branchId, h],
+        ),
+      );
+    } catch {
+      scroll.append(
+        el("p", {
+          className: "muted",
+          textContent: "Unable to lay out lifecycle diagram.",
+        }),
+      );
+      return;
+    }
     for (const branch of branches) {
       const segments = segmentsByBranch
         .get(branch.id)
