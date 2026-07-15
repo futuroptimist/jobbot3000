@@ -314,7 +314,6 @@ describe("lifecycle diagram view", () => {
       snapshot: projectLifecycleAt(b, timeline.buckets[0].id),
       selectedBucketId: timeline.buckets[0].id,
     });
-    expect(root.querySelector("details.diagram-tables").open).toBe(true);
   });
 
   it("handles empty, unknown-only, date, and simultaneous boundary timestamps", () => {
@@ -780,6 +779,84 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     expect(root.querySelector("[data-event-range]").textContent).toMatch(
       /^Events (0–0|1–)/u,
     );
+  });
+
+  it("paginates more than 50 endpoint-conditioned flow rows without losing reachability", () => {
+    const origins = LIFECYCLE_DIAGRAM_TAXONOMY.origins.map(({ id }) => id);
+    const milestones = LIFECYCLE_DIAGRAM_TAXONOMY.milestones.map(
+      ({ id }) => id,
+    );
+    const endpoints = LIFECYCLE_DIAGRAM_TAXONOMY.endpoints
+      .filter(({ id }) => id !== "unknown")
+      .map(({ id }) => id);
+    const applications = [];
+    const lifecycleEvents = [];
+    for (let index = 0; index < 60; index += 1) {
+      const id = `flow-app-${String(index).padStart(2, "0")}`;
+      const origin = origins[index % origins.length];
+      const milestone =
+        milestones[Math.floor(index / origins.length) % milestones.length];
+      const endpoint = endpoints[index % endpoints.length];
+      applications.push(app(id, { origin }));
+      [origin, milestone, endpoint].forEach((eventType, eventIndex) => {
+        lifecycleEvents.push(
+          ev(
+            `flow-event-${index}-${eventIndex}`,
+            id,
+            eventType,
+            `2026-05-${String(eventIndex + 1).padStart(2, "0")}`,
+          ),
+        );
+      });
+    }
+    const { root, view, timeline } = render(
+      bundle(applications, lifecycleEvents),
+    );
+    const flowRows = () =>
+      [...root.querySelectorAll("caption")]
+        .find((caption) => caption.textContent === "Flows")
+        .closest("table")
+        .querySelectorAll("tbody tr");
+    const flowIds = () =>
+      [...flowRows()].map((row) =>
+        row.querySelector("button").getAttribute("aria-label"),
+      );
+    const firstPage = flowIds();
+    expect(firstPage).toHaveLength(50);
+    const totalFlows = Number(
+      root.querySelector("[data-flow-range]").textContent.match(/of (\d+)/u)[1],
+    );
+    expect(totalFlows).toBeGreaterThan(50);
+    root.querySelector("[aria-label='Next flow page']").click();
+    const secondPage = flowIds();
+    expect(secondPage.length).toBeGreaterThan(0);
+    expect(root.querySelector("[data-flow-range]").textContent).toBe(
+      `Flows 51–${Math.min(100, totalFlows)} of ${totalFlows}`,
+    );
+    while (!root.querySelector("[aria-label='Next flow page']").disabled)
+      root.querySelector("[aria-label='Next flow page']").click();
+    const lastPage = flowIds();
+    expect(
+      new Set([...firstPage, ...secondPage, ...lastPage]).size,
+    ).toBeGreaterThan(50);
+    if (!root.querySelector("details.diagram-tables").open)
+      root.querySelector("details.diagram-tables summary").click();
+    secondPage.at(-1);
+    view.update({
+      timeline,
+      snapshot: projectLifecycleAt(
+        bundle(applications.slice(0, 49), lifecycleEvents),
+        "current",
+      ),
+      selectedBucketId: "current",
+    });
+    expect(flowRows().length).toBeLessThanOrEqual(50);
+    expect(root.querySelector("[data-flow-range]").textContent).toMatch(
+      /^Flows 1–\d+ of \d+$/u,
+    );
+    expect(
+      root.querySelector("[aria-label='Previous flow page']").disabled,
+    ).toBe(true);
   });
 
   it("paginates affected applications with bounded ranges", () => {

@@ -738,6 +738,10 @@ export function createLifecycleDiagramView(root, options = {}) {
     scroll.append(svg);
   };
   const renderTables = () => {
+    const activeLabel =
+      document.activeElement instanceof window.HTMLElement
+        ? document.activeElement.getAttribute("aria-label")
+        : null;
     const total = projection.includedApplications;
     const makeNodeRows = (entries, namespace) =>
       LIFECYCLE_DIAGRAM_TAXONOMY[`${namespace}s`].map(({ id, label }) => {
@@ -908,6 +912,10 @@ export function createLifecycleDiagramView(root, options = {}) {
         );
       })(),
     );
+    if (activeLabel)
+      tables.querySelectorAll("[aria-label]").forEach((element) => {
+        if (element.getAttribute("aria-label") === activeLabel) element.focus();
+      });
   };
   const render = (newerAvailable = lastNewerAvailable) => {
     lastNewerAvailable = newerAvailable;
