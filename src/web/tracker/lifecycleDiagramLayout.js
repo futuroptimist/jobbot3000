@@ -381,7 +381,7 @@ export function labelBoxForNode(node) {
   const width = NODE_LABEL_MAX_WIDTH;
   const height = lines.length * 16;
   const x = Math.max(0, rankCenterX(node.rank) - width / 2);
-  const y = Math.max(4, node.y0 - 14 - height);
+  const y = Math.max(4, node.y0 - 28 - height);
   return { x, y, width, height, lines };
 }
 
@@ -407,29 +407,6 @@ const cubicTransitionPoint = (segment, t) => {
   };
 };
 
-const segmentSamplePoints = (segment) => {
-  const sourceCenter = rankCenterX(segment.source.rank);
-  const targetCenter = rankCenterX(segment.target.rank);
-  const sourceDockX = segment.source.routing ? sourceCenter : segment.source.x1;
-  const targetDockX = segment.target.routing ? targetCenter : segment.target.x0;
-  const exitX = sourceCenter + RANK_CORRIDOR_HALF_WIDTH;
-  const entryX = targetCenter - RANK_CORRIDOR_HALF_WIDTH;
-  const samples = [];
-  for (let t = 0; t <= 1.0001; t += 0.05)
-    samples.push({
-      x: sourceDockX + (exitX - sourceDockX) * Math.min(t, 1),
-      y: segment.y0,
-    });
-  for (let t = 0; t <= 1.0001; t += 0.025)
-    samples.push(cubicTransitionPoint(segment, Math.min(t, 1)));
-  for (let t = 0; t <= 1.0001; t += 0.05)
-    samples.push({
-      x: entryX + (targetDockX - entryX) * Math.min(t, 1),
-      y: segment.y1,
-    });
-  return samples;
-};
-
 const boxesOverlap = (a, b) =>
   a.x < b.x + b.width &&
   a.x + a.width > b.x &&
@@ -448,39 +425,6 @@ export function assignBranchHandles(
     height: node.y1 - node.y0,
   }));
   const labelBoxes = visibleNodes.map(labelBoxForNode);
-  const maxNodeBottom = Math.max(
-    MINIMUM_SVG_HEIGHT,
-    ...visibleNodes.map((node) => node.y1 ?? 0),
-  );
-  const absoluteHandleRows = Array.from(
-    {
-      length: Math.max(
-        1,
-        Math.floor((maxNodeBottom + LAYOUT_BOTTOM_MARGIN) / 56),
-      ),
-    },
-    (_, index) => BRANCH_HANDLE_RADIUS + 6 + index * 56,
-  );
-  const allHandleColumns = Array.from(
-    { length: Math.floor((rankCenterX(6) + LAYOUT_RIGHT_MARGIN) / 56) },
-    (_, index) => BRANCH_HANDLE_RADIUS + 6 + index * 56,
-  );
-  const auditHandlePathClearance = branches.length <= 32;
-  const segmentSamplesByBranch = new Map(
-    (auditHandlePathClearance ? [...segmentsByBranch.entries()] : []).map(
-      ([branchId, branchSegments]) => [
-        branchId,
-        branchSegments.flatMap((segment) => {
-          const clearance =
-            BRANCH_HANDLE_RADIUS + Math.max(1, segment.width ?? 1) / 2 + 6;
-          return segmentSamplePoints(segment).map((sample) => ({
-            ...sample,
-            clearance,
-          }));
-        }),
-      ],
-    ),
-  );
   const candidateClearsLayout = (branch, x, y, box) => {
     if (
       [...nodeBoxes, ...labelBoxes, ...handles.map((h) => h.box)].some((b) =>
@@ -488,14 +432,7 @@ export function assignBranchHandles(
       )
     )
       return false;
-    return ![...segmentSamplesByBranch.entries()].some(
-      ([otherBranchId, samples]) =>
-        otherBranchId !== branch.id &&
-        samples.some(
-          (sample) =>
-            Math.hypot(sample.x - x, sample.y - y) <= sample.clearance,
-        ),
-    );
+    return true;
   };
   for (const branch of [...branches].sort(compareBranches)) {
     const segments = [...(segmentsByBranch.get(branch.id) ?? [])].sort(
@@ -512,19 +449,9 @@ export function assignBranchHandles(
       const targetCenter = rankCenterX(segment.target.rank);
       const exitX = sourceCenter + RANK_CORRIDOR_HALF_WIDTH;
       const entryX = targetCenter - RANK_CORRIDOR_HALF_WIDTH;
-      const candidates = [0.5, 0.35, 0.65].flatMap((t) => {
-        const base = cubicTransitionPoint(segment, t);
-        if (!auditHandlePathClearance) return [base];
-        return [
-          0, -36, 36, -72, 72, -108, 108, -144, 144, -216, 216, -288, 288, -360,
-          360, -432, 432,
-        ].flatMap((offsetY) =>
-          [0, -36, 36, -72, 72].map((offsetX) => ({
-            x: base.x + offsetX,
-            y: base.y + offsetY,
-          })),
-        );
-      });
+      const candidates = [0.5, 0.35, 0.65].map((t) =>
+        cubicTransitionPoint(segment, t),
+      );
       for (const { x, y } of candidates) {
         const box = {
           x: x - BRANCH_HANDLE_RADIUS,
@@ -545,29 +472,6 @@ export function assignBranchHandles(
         break;
       }
       if (chosen) break;
-    }
-    if (!chosen && auditHandlePathClearance) {
-      for (const y of absoluteHandleRows) {
-        for (const x of allHandleColumns) {
-          const box = {
-            x: x - BRANCH_HANDLE_RADIUS,
-            y: y - BRANCH_HANDLE_RADIUS,
-            width: BRANCH_HANDLE_RADIUS * 2,
-            height: BRANCH_HANDLE_RADIUS * 2,
-          };
-          if (candidateClearsLayout(branch, x, y, box)) {
-            chosen = {
-              branchId: branch.id,
-              x,
-              y,
-              radius: BRANCH_HANDLE_RADIUS,
-              box,
-            };
-            break;
-          }
-        }
-        if (chosen) break;
-      }
     }
     if (!chosen)
       throw new Error(
