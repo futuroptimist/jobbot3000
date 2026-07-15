@@ -296,9 +296,9 @@ height = max(minimumSvgHeight, ceil(densityHeight))
 
 Application count and lifecycle-event count do not directly affect canvas height. P6-F3 supersedes the P6-F2 visible-node-only density rule below by counting both active semantic nodes and hidden routing lanes; adding more applications to an existing branch can increase width but not routed lane count.
 
-The historical 44px D3 node padding was part of the P6-F2 sizing contract; P6-F3 uses routed node padding and protected corridors instead. It prevents visible node rows, visible labels, and transparent 44px pointer/touch hit regions from crowding within the same rank. D3 layout uses extent `[16, topMargin]` to `[width - 24, height - bottomMargin]`, preserving the configured internal margins for the first and last node rectangles.
+The historical 44px D3 node padding was part of the P6-F2 sizing contract; P6-F3 uses routed node padding and protected corridors instead. In P6-F2, that padding prevented visible node rows, visible labels, and transparent 44px pointer/touch hit regions from crowding within the same rank. The P6-F2 D3 layout used extent `[16, topMargin]` to `[width - 24, height - bottomMargin]`, preserving that phase's configured internal margins for the first and last node rectangles.
 
-Responsive behavior remains horizontal-only inside the diagram scroller. Desktop uses the available container width when it exceeds `760px`; mobile keeps the `760px` minimum SVG width inside the labeled `.diagram-scroll` horizontal scroller. The SVG and scroll container expand naturally to the computed height, and normal page-level vertical scrolling is expected on mobile. The page itself must not acquire horizontal overflow.
+Responsive behavior remains horizontal-only inside the diagram scroller. P6-F2 desktop used the available container width when it exceeded `760px`, while mobile kept the `760px` minimum SVG width inside the labeled `.diagram-scroll` horizontal scroller. The SVG and scroll container expand naturally to the computed height, and normal page-level vertical scrolling is expected on mobile. The page itself must not acquire horizontal overflow.
 
 ## P6-F3 render-only routed branch layout
 

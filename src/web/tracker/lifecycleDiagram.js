@@ -147,7 +147,9 @@ export function createLifecycleDiagramView(root, options = {}) {
   let windowResizeHandler;
   let lastNewerAvailable = false;
   let eventPage = 0;
+  let flowPage = 0;
   let applicationPage = 0;
+  let displayBranches = [];
   let tablesOpen = false;
   const ids = {
     title: "lifecycle-diagram-title",
@@ -296,9 +298,7 @@ export function createLifecycleDiagramView(root, options = {}) {
             .map((path) => path.applicationId),
     );
   const featureById = (id) => {
-    const branch = buildLifecycleDisplayBranches(projection).find(
-      (candidate) => candidate.id === id,
-    );
+    const branch = displayBranches.find((candidate) => candidate.id === id);
     if (branch) {
       const from = TAXONOMY.get(branch.source)?.label ?? branch.source;
       const to = TAXONOMY.get(branch.target)?.label ?? branch.target;
@@ -747,7 +747,7 @@ export function createLifecycleDiagramView(root, options = {}) {
       "milestone",
     );
     const endpointRows = makeNodeRows(projection.totals.endpoints, "endpoint");
-    const linkRows = buildLifecycleDisplayBranches(projection).map((branch) => {
+    const linkRows = displayBranches.map((branch) => {
       const from = TAXONOMY.get(branch.source)?.label ?? branch.source;
       const to = TAXONOMY.get(branch.target)?.label ?? branch.target;
       const outcome =
@@ -772,6 +772,8 @@ export function createLifecycleDiagramView(root, options = {}) {
           }),
       };
     });
+    const flowPageData = pageSlice(linkRows, flowPage);
+    flowPage = flowPageData.page;
     const eventPageData = pageSlice(projection.events, eventPage);
     eventPage = eventPageData.page;
     const eventRows = eventPageData.items.map((event) => {
@@ -803,8 +805,46 @@ export function createLifecycleDiagramView(root, options = {}) {
       renderTable(
         "Flows",
         ["Flow", "Outcome", "Applications", "Percentage"],
-        pageSlice(linkRows, 0).items,
+        flowPageData.items,
       ),
+      (() => {
+        const prevFlow = el("button", {
+          type: "button",
+          className: "button",
+          textContent: "Previous flow page",
+          "aria-label": "Previous flow page",
+        });
+        const nextFlow = el("button", {
+          type: "button",
+          className: "button",
+          textContent: "Next flow page",
+          "aria-label": "Next flow page",
+        });
+        prevFlow.disabled = flowPageData.page <= 0;
+        nextFlow.disabled = flowPageData.page >= flowPageData.maxPage;
+        prevFlow.addEventListener("click", () => {
+          flowPage -= 1;
+          renderTables();
+        });
+        nextFlow.addEventListener("click", () => {
+          flowPage += 1;
+          renderTables();
+        });
+        return el(
+          "div",
+          { className: "diagram-pagination", "data-flow-pagination": "" },
+          [
+            el("span", {
+              "data-flow-range": "",
+              textContent:
+                `Flows ${flowPageData.start}–${flowPageData.end} ` +
+                `of ${flowPageData.total}`,
+            }),
+            prevFlow,
+            nextFlow,
+          ],
+        );
+      })(),
       renderTable(
         "Selected-boundary events",
         ["Event", "Application", "Type", "Timestamp"],
@@ -936,11 +976,14 @@ export function createLifecycleDiagramView(root, options = {}) {
       timeline = nextTimeline ?? { buckets: [] };
       selectedId = selectedBucketId;
       projection = nextProjection;
+      displayBranches = buildLifecycleDisplayBranches(projection);
       if (bucketChanged) {
         selectedFeature = null;
         eventPage = 0;
+        flowPage = 0;
       } else if (snapshotChanged) {
         eventPage = 0;
+        flowPage = 0;
         if (previousSelectionId)
           selectedFeature = featureById(previousSelectionId);
       } else if (previousSelectionId)

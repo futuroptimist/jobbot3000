@@ -361,7 +361,11 @@ export function wrapLifecycleLabel(
   }
   if (line) lines.push(line);
   if (lines.length <= 2) return lines;
-  return [lines[0], lines.slice(1).join(" ")];
+  const overflow = lines.slice(1).join(" ");
+  return [
+    lines[0],
+    overflow.length <= max ? overflow : `${overflow.slice(0, max - 1)}…`,
+  ];
 }
 
 export function labelBoxForNode(node) {

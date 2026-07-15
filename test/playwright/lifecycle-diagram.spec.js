@@ -49,10 +49,10 @@ const EXPECTED_CURRENT = {
     Unknown: "1",
   },
   representativeFlows: {
-    "Application submitted to Awaiting response": "2",
-    "Technical interview to Interviewing": "3",
-    "Offer received to Offer/negotiating": "2",
-    "Other/unknown to Employer rejected": "1",
+    "Application submitted to Awaiting response — Awaiting response": "2",
+    "Technical interview to Interviewing — Interviewing": "3",
+    "Offer received to Offer/negotiating — Offer/negotiating": "2",
+    "Other/unknown to Employer rejected — Employer rejected": "1",
   },
   endpoints: [
     "Awaiting response",
@@ -126,11 +126,14 @@ async function tableRowsByCaption(page, caption) {
 
 async function assertTableCounts(page, caption, expected) {
   const rows = await tableRowsByCaption(page, caption);
-  expect(
-    Object.fromEntries(
-      rows.map((row) => [row[0], caption === "Flows" ? row[2] : row[1]]),
-    ),
-  ).toMatchObject(expected);
+  const actual = Object.fromEntries(
+    rows.map((row) => {
+      const key = caption === "Flows" ? `${row[0]} — ${row[1]}` : row[0];
+      const value = caption === "Flows" ? row[2] : row[1];
+      return [key, value];
+    }),
+  );
+  expect(actual).toMatchObject(expected);
 }
 
 async function selectedDetails(page) {

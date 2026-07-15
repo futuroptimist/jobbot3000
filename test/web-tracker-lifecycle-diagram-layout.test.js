@@ -209,6 +209,10 @@ describe("lifecycle diagram render-only routing layout", () => {
   it("wraps labels without truncation and assigns one non-overlapping handle per branch", () => {
     const text = "Assessment/take-home requested outcome";
     expect(wrapLifecycleLabel(text).join(" ")).toBe(text);
+    expect(
+      wrapLifecycleLabel("Alpha beta gamma delta epsilon zeta", 10).at(1)
+        .length,
+    ).toBeLessThanOrEqual(10);
     const { graph } = layoutLifecycleRoutingGraph(projection(), 1850);
     const visibleNodes = graph.nodes.filter((n) => !n.routing && n.total > 0);
     const byBranch = new Map();
