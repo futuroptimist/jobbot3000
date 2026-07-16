@@ -6,7 +6,7 @@ export const MINIMUM_SVG_HEIGHT = 360;
 export const LAYOUT_TOP_MARGIN = 64;
 export const LAYOUT_BOTTOM_MARGIN = 48;
 export const ROUTED_NODE_PADDING = 72;
-export const PER_LANE_VERTICAL_BUDGET = 56;
+export const PER_LANE_VERTICAL_BUDGET = 36;
 export const NODE_LABEL_MAX_WIDTH = 176;
 export const NODE_LABEL_MAX_CHARACTERS_PER_LINE = 22;
 export const RANK_CORRIDOR_HALF_WIDTH = 100;
@@ -328,32 +328,32 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
   }
   layout.update(graph);
 
-  const linkCounts = new Map();
-  for (const link of graph.links) {
-    linkCounts.set(
-      link.source.id,
-      Math.max(linkCounts.get(link.source.id) ?? 0, 0) + 1,
-    );
-    linkCounts.set(
-      link.target.id,
-      Math.max(linkCounts.get(link.target.id) ?? 0, 0) + 1,
-    );
-  }
+  const routingNodesByRank = new Map();
   for (const node of graph.nodes) {
-    if (node.routing) continue;
-    const laneCount = linkCounts.get(node.id) ?? 0;
-    if (laneCount <= 1) continue;
-    const minHeight = (laneCount - 1) * 180;
-    const currentHeight = (node.y1 ?? node.y0) - (node.y0 ?? node.y1);
-    if (currentHeight >= minHeight) continue;
-    const centerY = ((node.y0 ?? 0) + (node.y1 ?? 0)) / 2;
-    node.y0 = Math.max(LAYOUT_TOP_MARGIN, centerY - minHeight / 2);
-    node.y1 = node.y0 + minHeight;
-    const overflow = node.y1 - (dimensions.height - LAYOUT_BOTTOM_MARGIN);
-    if (overflow > 0) {
-      node.y0 = Math.max(LAYOUT_TOP_MARGIN, node.y0 - overflow);
-      node.y1 = node.y0 + minHeight;
-    }
+    if (!node.routing) continue;
+    if (!routingNodesByRank.has(node.rank))
+      routingNodesByRank.set(node.rank, []);
+    routingNodesByRank.get(node.rank).push(node);
+  }
+  const laneTop = LAYOUT_TOP_MARGIN + PER_LANE_VERTICAL_BUDGET / 2;
+  const laneBottom =
+    dimensions.height - LAYOUT_BOTTOM_MARGIN - PER_LANE_VERTICAL_BUDGET / 2;
+  for (const nodes of routingNodesByRank.values()) {
+    const ordered = nodes.sort(nodeSort);
+    const step =
+      ordered.length > 1 ? (laneBottom - laneTop) / (ordered.length - 1) : 0;
+    ordered.forEach((node, index) => {
+      const y =
+        ordered.length > 1
+          ? laneTop + step * index
+          : (laneTop + laneBottom) / 2;
+      node.y0 = y;
+      node.y1 = y;
+    });
+  }
+  for (const link of graph.links) {
+    if (link.source?.routing) link.y0 = link.source.y0;
+    if (link.target?.routing) link.y1 = link.target.y0;
   }
 
   const positionLinksAtStableDockLanes = (links, key, coordinate) => {
@@ -524,6 +524,7 @@ export function assignBranchHandles(
       segments[0];
     const ordered = [preferred, ...segments.filter((s) => s !== preferred)];
     let chosen;
+    let bestCandidate;
     for (const segment of ordered) {
       const sourceCenter = rankCenterX(segment.source.rank);
       const targetCenter = rankCenterX(segment.target.rank);
@@ -542,18 +543,32 @@ export function assignBranchHandles(
         if (x - BRANCH_HANDLE_RADIUS < exitX) continue;
         if (x + BRANCH_HANDLE_RADIUS > entryX) continue;
         if (fixedGeometryBlocksCandidate(box)) continue;
-        if (!candidateClearsRequiredGeometry(branch, x, y, box)) continue;
-        chosen = {
+        const clearanceMargin = renderedBranchClearanceMargin(branch, x, y);
+        const candidate = {
           branchId: branch.id,
           x,
           y,
           radius: BRANCH_HANDLE_RADIUS,
           box,
+          clearanceMargin,
         };
+        if (
+          !bestCandidate ||
+          clearanceMargin > bestCandidate.clearanceMargin ||
+          (clearanceMargin === bestCandidate.clearanceMargin &&
+            compareLifecycleIds(
+              `${x}:${y}`,
+              `${bestCandidate.x}:${bestCandidate.y}`,
+            ) < 0)
+        )
+          bestCandidate = candidate;
+        if (!candidateClearsRequiredGeometry(branch, x, y, box)) continue;
+        chosen = candidate;
         break;
       }
       if (chosen) break;
     }
+    if (!chosen) chosen = bestCandidate;
     if (!chosen)
       throw new Error(
         `Lifecycle diagram handle placement invariant violated for ${branch.id}`,
