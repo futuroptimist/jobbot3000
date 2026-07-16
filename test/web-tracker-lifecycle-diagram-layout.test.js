@@ -437,14 +437,11 @@ describe("lifecycle diagram render-only routing layout", () => {
               ...cubicTransitionPoint(segment, index / 20),
               clearance:
                 BRANCH_HANDLE_RADIUS +
-                (Math.min(
-                  Math.max(
-                    3,
-                    Number.isFinite(segment.width) ? segment.width : 1,
-                  ),
+                (Math.max(
                   3,
+                  Number.isFinite(segment.width) ? segment.width : 1,
                 ) +
-                  6) /
+                  12) /
                   2,
             })),
           ),

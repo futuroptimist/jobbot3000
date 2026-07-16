@@ -6,7 +6,7 @@ export const MINIMUM_SVG_HEIGHT = 360;
 export const LAYOUT_TOP_MARGIN = 64;
 export const LAYOUT_BOTTOM_MARGIN = 48;
 export const ROUTED_NODE_PADDING = 72;
-export const PER_LANE_VERTICAL_BUDGET = 36;
+export const PER_LANE_VERTICAL_BUDGET = 56;
 export const NODE_LABEL_MAX_WIDTH = 176;
 export const NODE_LABEL_MAX_CHARACTERS_PER_LINE = 22;
 export const RANK_CORRIDOR_HALF_WIDTH = 100;
@@ -327,6 +327,61 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
     }
   }
   layout.update(graph);
+
+  const linkCounts = new Map();
+  for (const link of graph.links) {
+    linkCounts.set(
+      link.source.id,
+      Math.max(linkCounts.get(link.source.id) ?? 0, 0) + 1,
+    );
+    linkCounts.set(
+      link.target.id,
+      Math.max(linkCounts.get(link.target.id) ?? 0, 0) + 1,
+    );
+  }
+  for (const node of graph.nodes) {
+    if (node.routing) continue;
+    const laneCount = linkCounts.get(node.id) ?? 0;
+    if (laneCount <= 1) continue;
+    const minHeight = (laneCount - 1) * 180;
+    const currentHeight = (node.y1 ?? node.y0) - (node.y0 ?? node.y1);
+    if (currentHeight >= minHeight) continue;
+    const centerY = ((node.y0 ?? 0) + (node.y1 ?? 0)) / 2;
+    node.y0 = Math.max(LAYOUT_TOP_MARGIN, centerY - minHeight / 2);
+    node.y1 = node.y0 + minHeight;
+    const overflow = node.y1 - (dimensions.height - LAYOUT_BOTTOM_MARGIN);
+    if (overflow > 0) {
+      node.y0 = Math.max(LAYOUT_TOP_MARGIN, node.y0 - overflow);
+      node.y1 = node.y0 + minHeight;
+    }
+  }
+
+  const positionLinksAtStableDockLanes = (links, key, coordinate) => {
+    const byNode = new Map();
+    for (const link of links) {
+      const node = link[key];
+      if (!node?.id) continue;
+      if (!byNode.has(node.id)) byNode.set(node.id, { node, links: [] });
+      byNode.get(node.id).links.push(link);
+    }
+    for (const { node, links: nodeLinks } of byNode.values()) {
+      const ordered = nodeLinks.sort((a, b) => {
+        const primaryA =
+          key === "source" ? (a.target?.y0 ?? 0) : (a.source?.y1 ?? 0);
+        const primaryB =
+          key === "source" ? (b.target?.y0 ?? 0) : (b.source?.y1 ?? 0);
+        return primaryA - primaryB || linkSort(a, b);
+      });
+      const height = Math.max(0, (node.y1 ?? node.y0) - (node.y0 ?? node.y1));
+      if (!height || ordered.length <= 1) continue;
+      const step = height / Math.max(1, ordered.length - 1);
+      ordered.forEach((link, index) => {
+        link[coordinate] = node.y0 + step * index;
+      });
+    }
+  };
+  positionLinksAtStableDockLanes(graph.links, "source", "y0");
+  positionLinksAtStableDockLanes(graph.links, "target", "y1");
   return { graph, dimensions };
 }
 
@@ -383,7 +438,7 @@ export function labelBoxForNode(node) {
   const width = NODE_LABEL_MAX_WIDTH;
   const height = lines.length * 16;
   const x = Math.max(0, rankCenterX(node.rank) - width / 2);
-  const y = node.y1 + 8;
+  const y = Math.max(0, node.y0 - height - 12);
   return { x, y, width, height, lines };
 }
 
@@ -434,8 +489,7 @@ export function assignBranchHandles(
         3,
         Number.isFinite(segment.width) ? segment.width : 1,
       );
-      const clearance =
-        BRANCH_HANDLE_RADIUS + (Math.min(renderedWidth, 3) + 6) / 2;
+      const clearance = BRANCH_HANDLE_RADIUS + (renderedWidth + 12) / 2;
       for (let t = 0; t <= 1.0001; t += 0.05) {
         renderedBranchSamples.push({
           branchId,
@@ -470,7 +524,6 @@ export function assignBranchHandles(
       segments[0];
     const ordered = [preferred, ...segments.filter((s) => s !== preferred)];
     let chosen;
-    let bestCandidate;
     for (const segment of ordered) {
       const sourceCenter = rankCenterX(segment.source.rank);
       const targetCenter = rankCenterX(segment.target.rank);
@@ -489,30 +542,18 @@ export function assignBranchHandles(
         if (x - BRANCH_HANDLE_RADIUS < exitX) continue;
         if (x + BRANCH_HANDLE_RADIUS > entryX) continue;
         if (fixedGeometryBlocksCandidate(box)) continue;
-        const clearanceMargin = renderedBranchClearanceMargin(branch, x, y);
-        const candidate = {
+        if (!candidateClearsRequiredGeometry(branch, x, y, box)) continue;
+        chosen = {
           branchId: branch.id,
           x,
           y,
           radius: BRANCH_HANDLE_RADIUS,
           box,
         };
-        if (clearanceMargin > (bestCandidate?.clearanceMargin ?? -Infinity))
-          bestCandidate = { ...candidate, clearanceMargin };
-        if (!candidateClearsRequiredGeometry(branch, x, y, box)) continue;
-        chosen = candidate;
         break;
       }
       if (chosen) break;
     }
-    if (!chosen && bestCandidate)
-      chosen = {
-        branchId: bestCandidate.branchId,
-        x: bestCandidate.x,
-        y: bestCandidate.y,
-        radius: bestCandidate.radius,
-        box: bestCandidate.box,
-      };
     if (!chosen)
       throw new Error(
         `Lifecycle diagram handle placement invariant violated for ${branch.id}`,
