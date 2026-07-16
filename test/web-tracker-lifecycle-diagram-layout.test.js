@@ -444,7 +444,6 @@ describe("lifecycle diagram render-only routing layout", () => {
       expect(Number.isFinite(handle.x), handle.branchId).toBe(true);
       expect(Number.isFinite(handle.y), handle.branchId).toBe(true);
       expect(handle.clearanceMargin, handle.branchId).toBeGreaterThan(0);
-      const branch = graph.branches.find(({ id }) => id === handle.branchId);
       const segments = byBranch.get(handle.branchId);
       const allowed = segments.flatMap((segment) =>
         [
@@ -463,8 +462,6 @@ describe("lifecycle diagram render-only routing layout", () => {
       expect(
         renderedSamples.every((sample) => {
           if (sample.branchId === handle.branchId) return true;
-          if (sample.sourceId === branch.source) return true;
-          if (sample.targetId === branch.target) return true;
           return (
             Math.hypot(sample.x - handle.x, sample.y - handle.y) >
             sample.clearance - 0.001
@@ -508,7 +505,10 @@ describe("lifecycle diagram render-only routing layout", () => {
       const segments = byBranch.get(handle.branchId);
       expect(
         segments.some((segment) =>
-          [0.5, 0.35, 0.65].some((t) => {
+          [
+            0.5, 0.35, 0.65, 0.25, 0.75, 0.15, 0.85, 0.1, 0.2, 0.3, 0.4, 0.6,
+            0.7, 0.8, 0.9,
+          ].some((t) => {
             const candidate = cubicTransitionPoint(segment, t);
             return (
               Math.abs(candidate.x - handle.x) < 0.001 &&
