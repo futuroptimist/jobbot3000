@@ -330,9 +330,8 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
   layout.update(graph);
 
   const orderedBranches = [...graph.branches].sort(compareBranches);
-  const laneBranches = [...graph.branches].sort(compareBranches);
   const branchLaneOrdinal = new Map(
-    laneBranches.map((branch, index) => [branch.id, index]),
+    orderedBranches.map((branch, index) => [branch.id, index]),
   );
   const laneOrderValue = (link) => {
     const sourceY = Number.isFinite(link.y0) ? link.y0 : 0;
@@ -344,26 +343,46 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
     return (sourceY + targetY) / 2;
   };
   const compareLaneLinks = (a, b) =>
-    laneOrderValue(a) - laneOrderValue(b) ||
-    endpointIndex(a.endpointId) - endpointIndex(b.endpointId) ||
     (branchLaneOrdinal.get(a.branchId) ?? 0) -
       (branchLaneOrdinal.get(b.branchId) ?? 0) ||
+    laneOrderValue(a) - laneOrderValue(b) ||
+    endpointIndex(a.endpointId) - endpointIndex(b.endpointId) ||
     linkSort(a, b);
   const laneTop = BRANCH_HANDLE_RADIUS + 4;
   const laneBottom = dimensions.height - BRANCH_HANDLE_RADIUS - 4;
-  const transitionLaneByLink = new Map();
-  const globalLaneStep =
-    orderedBranches.length > 1
-      ? (laneBottom - laneTop) / (laneBranches.length - 1)
-      : 0;
+  const branchConflicts = (a, b) =>
+    a.sourceRank < b.targetRank && b.sourceRank < a.targetRank;
+  const trackAssignments = new Map();
+  const trackBranches = [];
+  for (const branch of orderedBranches) {
+    let assigned = -1;
+    for (let track = 0; track < trackBranches.length; track += 1) {
+      if (
+        trackBranches[track].every((other) => !branchConflicts(branch, other))
+      ) {
+        assigned = track;
+        break;
+      }
+    }
+    if (assigned < 0) {
+      assigned = trackBranches.length;
+      trackBranches.push([]);
+    }
+    trackBranches[assigned].push(branch);
+    trackAssignments.set(branch.id, assigned);
+  }
+  const trackCount = Math.max(1, trackBranches.length);
   const branchLaneY = new Map(
-    laneBranches.map((branch, index) => [
-      branch.id,
-      laneBranches.length > 1
-        ? laneTop + globalLaneStep * index
-        : (laneTop + laneBottom) / 2,
-    ]),
+    orderedBranches.map((branch) => {
+      const track = trackAssignments.get(branch.id) ?? 0;
+      const y =
+        trackCount > 1
+          ? laneTop + ((laneBottom - laneTop) * track) / (trackCount - 1)
+          : (laneTop + laneBottom) / 2;
+      return [branch.id, y];
+    }),
   );
+  const transitionLaneByLink = new Map();
   for (const link of graph.links) {
     transitionLaneByLink.set(
       link,
