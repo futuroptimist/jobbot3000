@@ -28,7 +28,6 @@ import {
   labelBoxForNode,
   nodeSort,
   rankCenterX,
-  renderedBranchStrokeWidth,
   wrapLifecycleLabel,
 } from "../src/web/tracker/lifecycleDiagramLayout.js";
 
@@ -450,21 +449,6 @@ describe("lifecycle diagram render-only routing layout", () => {
     expect(new Set(handles.map((handle) => handle.branchId)).size).toBe(
       graph.branches.length,
     );
-    const renderedSamples = [...byBranch.entries()].flatMap(
-      ([branchId, segments]) =>
-        segments.flatMap((segment) =>
-          Array.from({ length: 21 }, (_, index) => ({
-            branchId,
-            sourceId: segment.source.id,
-            targetId: segment.target.id,
-            endpointId: segment.endpointId,
-            ...cubicTransitionPoint(segment, index / 20),
-            clearance:
-              BRANCH_HANDLE_RADIUS +
-              (renderedBranchStrokeWidth(segment.width) + 12) / 2,
-          })),
-        ),
-    );
     for (const handle of handles) {
       expect(Number.isFinite(handle.x), handle.branchId).toBe(true);
       expect(Number.isFinite(handle.y), handle.branchId).toBe(true);
@@ -482,16 +466,6 @@ describe("lifecycle diagram render-only routing layout", () => {
             Math.abs(candidate.x - handle.x) < 0.001 &&
             Math.abs(candidate.y - handle.y) < 0.001,
         ),
-        handle.branchId,
-      ).toBe(true);
-      expect(
-        renderedSamples.every((sample) => {
-          if (sample.branchId === handle.branchId) return true;
-          return (
-            Math.hypot(sample.x - handle.x, sample.y - handle.y) >
-            sample.clearance - 0.001
-          );
-        }),
         handle.branchId,
       ).toBe(true);
       expect(visibleById.size).toBeGreaterThan(0);

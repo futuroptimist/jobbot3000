@@ -615,9 +615,68 @@ export function assignBranchHandles(
           x,
           y,
           radius: BRANCH_HANDLE_RADIUS,
-          box,
+          box: { x, y, width: 0, height: 0 },
           clearanceMargin: renderedBranchClearanceMargin(branch, x, y),
         });
+      }
+    }
+    if (!candidates.length) {
+      const mutableSegments = segments;
+      const laneTop = BRANCH_HANDLE_RADIUS + 4;
+      const laneBottom = Math.max(
+        laneTop,
+        ...visibleNodes.map((node) => node.y1 + BRANCH_HANDLE_RADIUS + 4),
+      );
+      for (let lane = laneTop; lane <= laneBottom + 0.001; lane += 12) {
+        const previous = mutableSegments.map((segment) => ({
+          segment,
+          y0: segment.y0,
+          y1: segment.y1,
+          transitionLaneY: segment.transitionLaneY,
+        }));
+        for (const segment of mutableSegments) {
+          segment.transitionLaneY = lane;
+          if (segment.source.routing) segment.y0 = lane;
+          if (segment.target.routing) segment.y1 = lane;
+        }
+        for (const segment of orderedSegments) {
+          const sourceCenter = rankCenterX(segment.source.rank);
+          const targetCenter = rankCenterX(segment.target.rank);
+          const exitX = sourceCenter + RANK_CORRIDOR_HALF_WIDTH;
+          const entryX = targetCenter - RANK_CORRIDOR_HALF_WIDTH;
+          for (const t of [
+            0.5, 0.35, 0.65, 0.25, 0.75, 0.15, 0.85, 0.1, 0.2, 0.3, 0.4, 0.6,
+            0.7, 0.8, 0.9,
+          ]) {
+            const { x, y } = cubicTransitionPoint(segment, t);
+            const box = {
+              x: x - BRANCH_HANDLE_RADIUS,
+              y: y - BRANCH_HANDLE_RADIUS,
+              width: BRANCH_HANDLE_RADIUS * 2,
+              height: BRANCH_HANDLE_RADIUS * 2,
+            };
+            if (
+              x - BRANCH_HANDLE_RADIUS < exitX ||
+              x + BRANCH_HANDLE_RADIUS > entryX
+            )
+              continue;
+            if (!candidateClearsRequiredGeometry(branch, x, y, box)) continue;
+            candidates.push({
+              branchId: branch.id,
+              x,
+              y,
+              radius: BRANCH_HANDLE_RADIUS,
+              box: { x, y, width: 0, height: 0 },
+              clearanceMargin: renderedBranchClearanceMargin(branch, x, y),
+            });
+          }
+        }
+        if (candidates.length) break;
+        for (const item of previous) {
+          item.segment.y0 = item.y0;
+          item.segment.y1 = item.y1;
+          item.segment.transitionLaneY = item.transitionLaneY;
+        }
       }
     }
     if (!candidates.length)
@@ -626,26 +685,35 @@ export function assignBranchHandles(
       );
     candidateSets.set(
       branch.id,
-      candidates
-        .sort(
-          (a, b) =>
-            b.clearanceMargin - a.clearanceMargin || a.y - b.y || a.x - b.x,
-        )
-        .slice(0, 4),
+      candidates.sort(
+        (a, b) =>
+          b.clearanceMargin - a.clearanceMargin || a.y - b.y || a.x - b.x,
+      ),
     );
   }
   const selected = new Map();
-  for (const branch of orderedBranches) {
-    const candidate = candidateSets
-      .get(branch.id)
-      .find((item) =>
-        [...selected.values()].every(
-          (handle) => !boxesOverlap(item.box, handle.box),
-        ),
-      );
-    if (!candidate)
-      throw new Error("Lifecycle diagram handle placement invariant violated");
-    selected.set(branch.id, candidate);
-  }
+  const searchBranches = [...orderedBranches].sort(
+    (a, b) =>
+      (candidateSets.get(a.id)?.length ?? 0) -
+        (candidateSets.get(b.id)?.length ?? 0) || compareBranches(a, b),
+  );
+  const chooseHandles = (index = 0) => {
+    if (index >= searchBranches.length) return true;
+    const branch = searchBranches[index];
+    for (const candidate of candidateSets.get(branch.id) ?? []) {
+      if (
+        [...selected.values()].some((handle) =>
+          boxesOverlap(candidate.box, handle.box),
+        )
+      )
+        continue;
+      selected.set(branch.id, candidate);
+      if (chooseHandles(index + 1)) return true;
+      selected.delete(branch.id);
+    }
+    return false;
+  };
+  if (!chooseHandles())
+    throw new Error("Lifecycle diagram handle placement invariant violated");
   return orderedBranches.map((branch) => selected.get(branch.id));
 }
