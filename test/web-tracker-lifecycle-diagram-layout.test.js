@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 // eslint-disable-next-line max-len
 import routingFixture from "./fixtures/tracker-lifecycle-diagram-routing-v2.json" with { type: "json" };
+import denseFixture from "./fixtures/tracker-lifecycle-diagram-v2.json" with { type: "json" };
 import {
   LIFECYCLE_DIAGRAM_TAXONOMY,
   projectLifecycleAt,
@@ -27,6 +28,7 @@ import {
   labelBoxForNode,
   nodeSort,
   rankCenterX,
+  renderedBranchStrokeWidth,
   wrapLifecycleLabel,
 } from "../src/web/tracker/lifecycleDiagramLayout.js";
 
@@ -385,6 +387,92 @@ describe("lifecycle diagram render-only routing layout", () => {
       for (let j = i + 1; j < handles.length; j += 1) {
         expect(boxesOverlap(handles[i].box, handles[j].box)).toBe(false);
       }
+    }
+  });
+
+  it("lays out dense fixture with bounded semantic docks and safe handles", () => {
+    const { graph } = layoutLifecycleRoutingGraph(
+      projectLifecycleAt(denseFixture),
+      1850,
+    );
+    const visibleNodes = graph.nodes.filter(
+      (node) => !node.routing && node.total > 0,
+    );
+    const visibleById = new Map(visibleNodes.map((node) => [node.id, node]));
+    const byBranch = new Map();
+    for (const link of graph.links) {
+      if (!byBranch.has(link.branchId)) byBranch.set(link.branchId, []);
+      byBranch.get(link.branchId).push(link);
+      if (!link.source.routing) {
+        expect(link.y0, `${link.branchId} source dock`).toBeGreaterThanOrEqual(
+          link.source.y0 - 0.001,
+        );
+        expect(link.y0, `${link.branchId} source dock`).toBeLessThanOrEqual(
+          link.source.y1 + 0.001,
+        );
+      }
+      if (!link.target.routing) {
+        expect(link.y1, `${link.branchId} target dock`).toBeGreaterThanOrEqual(
+          link.target.y0 - 0.001,
+        );
+        expect(link.y1, `${link.branchId} target dock`).toBeLessThanOrEqual(
+          link.target.y1 + 0.001,
+        );
+      }
+    }
+    const handles = assignBranchHandles(graph.branches, byBranch, visibleNodes);
+    expect(handles).toHaveLength(graph.branches.length);
+    expect(new Set(handles.map((handle) => handle.branchId)).size).toBe(
+      graph.branches.length,
+    );
+    const renderedSamples = [...byBranch.entries()].flatMap(
+      ([branchId, segments]) =>
+        segments.flatMap((segment) =>
+          Array.from({ length: 21 }, (_, index) => ({
+            branchId,
+            sourceId: segment.source.id,
+            targetId: segment.target.id,
+            endpointId: segment.endpointId,
+            ...cubicTransitionPoint(segment, index / 20),
+            clearance:
+              BRANCH_HANDLE_RADIUS +
+              (renderedBranchStrokeWidth(segment.width) + 12) / 2,
+          })),
+        ),
+    );
+    for (const handle of handles) {
+      expect(Number.isFinite(handle.x), handle.branchId).toBe(true);
+      expect(Number.isFinite(handle.y), handle.branchId).toBe(true);
+      expect(handle.clearanceMargin, handle.branchId).toBeGreaterThan(0);
+      const branch = graph.branches.find(({ id }) => id === handle.branchId);
+      const segments = byBranch.get(handle.branchId);
+      const allowed = segments.flatMap((segment) =>
+        [
+          0.5, 0.35, 0.65, 0.25, 0.75, 0.15, 0.85, 0.1, 0.2, 0.3, 0.4, 0.6, 0.7,
+          0.8, 0.9,
+        ].map((t) => ({ segment, ...cubicTransitionPoint(segment, t) })),
+      );
+      expect(
+        allowed.some(
+          (candidate) =>
+            Math.abs(candidate.x - handle.x) < 0.001 &&
+            Math.abs(candidate.y - handle.y) < 0.001,
+        ),
+        handle.branchId,
+      ).toBe(true);
+      expect(
+        renderedSamples.every((sample) => {
+          if (sample.branchId === handle.branchId) return true;
+          if (sample.sourceId === branch.source) return true;
+          if (sample.targetId === branch.target) return true;
+          return (
+            Math.hypot(sample.x - handle.x, sample.y - handle.y) >
+            sample.clearance - 0.001
+          );
+        }),
+        handle.branchId,
+      ).toBe(true);
+      expect(visibleById.size).toBeGreaterThan(0);
     }
   });
 

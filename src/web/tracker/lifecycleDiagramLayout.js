@@ -333,24 +333,13 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
   const branchLaneOrdinal = new Map(
     orderedBranches.map((branch, index) => [branch.id, index]),
   );
-  const branchById = new Map(
-    orderedBranches.map((branch) => [branch.id, branch]),
-  );
-  const compareLaneLinks = (a, b) => {
-    const branchA = branchById.get(a.branchId);
-    const branchB = branchById.get(b.branchId);
-    return (
-      taxonomyOrder(branchA?.source) - taxonomyOrder(branchB?.source) ||
-      taxonomyOrder(branchA?.target) - taxonomyOrder(branchB?.target) ||
-      endpointIndex(a.endpointId) - endpointIndex(b.endpointId) ||
-      (branchLaneOrdinal.get(a.branchId) ?? 0) -
-        (branchLaneOrdinal.get(b.branchId) ?? 0) ||
-      linkSort(a, b)
-    );
-  };
-  const laneTop = LAYOUT_TOP_MARGIN + PER_LANE_VERTICAL_BUDGET / 2;
-  const laneBottom =
-    dimensions.height - LAYOUT_BOTTOM_MARGIN - PER_LANE_VERTICAL_BUDGET / 2;
+  const compareLaneLinks = (a, b) =>
+    (branchLaneOrdinal.get(a.branchId) ?? 0) -
+      (branchLaneOrdinal.get(b.branchId) ?? 0) ||
+    endpointIndex(a.endpointId) - endpointIndex(b.endpointId) ||
+    linkSort(a, b);
+  const laneTop = BRANCH_HANDLE_RADIUS + 4;
+  const laneBottom = dimensions.height - BRANCH_HANDLE_RADIUS - 4;
   const transitionLaneByLink = new Map();
   const transitionLinksByRank = new Map();
   for (const link of graph.links) {
@@ -362,10 +351,10 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
   for (const node of graph.nodes) {
     if (node.routing || !(Number(node.total) > 0)) continue;
     const boxes = [
-      { y0: node.y0 - 32, y1: node.y1 + 32, nodeId: node.id },
+      { y0: node.y0 - 8, y1: node.y1 + 8, nodeId: node.id },
       {
-        y0: labelBoxForNode(node).y - 32,
-        y1: labelBoxForNode(node).y + labelBoxForNode(node).height + 32,
+        y0: labelBoxForNode(node).y - 8,
+        y1: labelBoxForNode(node).y + labelBoxForNode(node).height + 8,
         nodeId: node.id,
       },
     ];
@@ -379,6 +368,13 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
     const ordered = [...links].sort(compareLaneLinks);
     const step =
       ordered.length > 1 ? (laneBottom - laneTop) / (ordered.length - 1) : 0;
+    const minimumLaneSeparation =
+      ordered.length > 1
+        ? Math.min(
+            88,
+            Math.max(8, (laneBottom - laneTop) / (ordered.length - 1)),
+          )
+        : 88;
     const used = [];
     ordered.forEach((link, index) => {
       const ideal =
@@ -393,17 +389,37 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
           obstacle.nodeId !== link.source.id &&
           obstacle.nodeId !== link.target.id,
       );
+      const feasibleCandidates = laneCandidates.filter((candidate) =>
+        obstacles.every(
+          (obstacle) => candidate < obstacle.y0 || candidate > obstacle.y1,
+        ),
+      );
+      const rankedCandidates = feasibleCandidates.map((candidate) => ({
+        candidate,
+        nearestUsed: used.length
+          ? Math.min(...used.map((other) => Math.abs(other - candidate)))
+          : Number.POSITIVE_INFINITY,
+      }));
       const laneY =
-        [...laneCandidates]
-          .sort((a, b) => Math.abs(a - ideal) - Math.abs(b - ideal) || a - b)
-          .find(
-            (candidate) =>
-              used.every((other) => Math.abs(other - candidate) > 88) &&
-              obstacles.every(
-                (obstacle) =>
-                  candidate < obstacle.y0 || candidate > obstacle.y1,
-              ),
-          ) ?? ideal;
+        rankedCandidates
+          .filter(
+            ({ nearestUsed }) =>
+              nearestUsed + 0.001 >= minimumLaneSeparation ||
+              nearestUsed === Number.POSITIVE_INFINITY,
+          )
+          .sort(
+            (a, b) =>
+              Math.abs(a.candidate - ideal) - Math.abs(b.candidate - ideal) ||
+              a.candidate - b.candidate,
+          )[0]?.candidate ??
+        rankedCandidates.sort(
+          (a, b) =>
+            b.nearestUsed - a.nearestUsed ||
+            Math.abs(a.candidate - ideal) - Math.abs(b.candidate - ideal) ||
+            a.candidate - b.candidate,
+        )[0]?.candidate;
+      if (!Number.isFinite(laneY))
+        throw new Error("Lifecycle diagram transition lane allocation failed");
       used.push(laneY);
       transitionLaneByLink.set(link, laneY);
     });
@@ -416,7 +432,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
       ordered.forEach((link, index) => {
         const laneY = laneYForLink(link);
         link.transitionLaneY = laneY;
-        if (node.routing || coordinate === "y1") {
+        if (node.routing) {
           link[coordinate] = laneY;
           return;
         }
@@ -553,6 +569,9 @@ export function assignBranchHandles(
       for (let t = 0; t <= 1.0001; t += 0.05) {
         renderedBranchSamples.push({
           branchId,
+          sourceId: segment.source.id,
+          targetId: segment.target.id,
+          endpointId: segment.endpointId,
           ...cubicTransitionPoint(segment, Math.min(1, t)),
           clearance,
         });
@@ -564,6 +583,11 @@ export function assignBranchHandles(
   const renderedBranchClearanceMargin = (branch, x, y) =>
     renderedBranchSamples.reduce((margin, sample) => {
       if (sample.branchId === branch.id) return margin;
+      if (
+        sample.sourceId === branch.source ||
+        sample.targetId === branch.target
+      )
+        return margin;
       return Math.min(
         margin,
         Math.hypot(sample.x - x, sample.y - y) - sample.clearance,
@@ -594,7 +618,10 @@ export function assignBranchHandles(
       const targetCenter = rankCenterX(segment.target.rank);
       const exitX = sourceCenter + RANK_CORRIDOR_HALF_WIDTH;
       const entryX = targetCenter - RANK_CORRIDOR_HALF_WIDTH;
-      for (const t of [0.5, 0.35, 0.65]) {
+      for (const t of [
+        0.5, 0.35, 0.65, 0.25, 0.75, 0.15, 0.85, 0.1, 0.2, 0.3, 0.4, 0.6, 0.7,
+        0.8, 0.9,
+      ]) {
         const { x, y } = cubicTransitionPoint(segment, t);
         const box = {
           x: x - BRANCH_HANDLE_RADIUS,
@@ -602,8 +629,7 @@ export function assignBranchHandles(
           width: BRANCH_HANDLE_RADIUS * 2,
           height: BRANCH_HANDLE_RADIUS * 2,
         };
-        if (x - BRANCH_HANDLE_RADIUS < exitX) continue;
-        if (x + BRANCH_HANDLE_RADIUS > entryX) continue;
+        if (x < exitX || x > entryX) continue;
         if (!candidateClearsRequiredGeometry(branch, x, y, box)) continue;
         candidates.push({
           branchId: branch.id,
