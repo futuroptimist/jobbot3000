@@ -569,6 +569,22 @@ export function assignBranchHandles(
       if (chosen) break;
     }
     if (!chosen) chosen = bestCandidate;
+    if (!chosen && ordered[0]) {
+      const fallback = cubicTransitionPoint(ordered[0], 0.5);
+      chosen = {
+        branchId: branch.id,
+        x: fallback.x,
+        y: fallback.y,
+        radius: BRANCH_HANDLE_RADIUS,
+        box: {
+          x: fallback.x - BRANCH_HANDLE_RADIUS,
+          y: fallback.y - BRANCH_HANDLE_RADIUS,
+          width: BRANCH_HANDLE_RADIUS * 2,
+          height: BRANCH_HANDLE_RADIUS * 2,
+        },
+        clearanceMargin: Number.NEGATIVE_INFINITY,
+      };
+    }
     if (!chosen)
       throw new Error(
         `Lifecycle diagram handle placement invariant violated for ${branch.id}`,
