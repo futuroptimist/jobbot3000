@@ -343,10 +343,10 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
     return (sourceY + targetY) / 2;
   };
   const compareLaneLinks = (a, b) =>
-    (branchLaneOrdinal.get(a.branchId) ?? 0) -
-      (branchLaneOrdinal.get(b.branchId) ?? 0) ||
     laneOrderValue(a) - laneOrderValue(b) ||
     endpointIndex(a.endpointId) - endpointIndex(b.endpointId) ||
+    (branchLaneOrdinal.get(a.branchId) ?? 0) -
+      (branchLaneOrdinal.get(b.branchId) ?? 0) ||
     linkSort(a, b);
   const laneTop = BRANCH_HANDLE_RADIUS + 4;
   const laneBottom = dimensions.height - BRANCH_HANDLE_RADIUS - 4;
