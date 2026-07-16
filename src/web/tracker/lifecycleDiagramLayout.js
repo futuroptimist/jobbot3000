@@ -352,45 +352,57 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
   const laneBottom = dimensions.height - BRANCH_HANDLE_RADIUS - 4;
   const branchConflicts = (a, b) =>
     a.sourceRank < b.targetRank && b.sourceRank < a.targetRank;
-  const trackAssignments = new Map();
-  const trackBranches = [];
-  for (const branch of orderedBranches) {
-    let assigned = -1;
-    for (let track = 0; track < trackBranches.length; track += 1) {
-      if (
-        trackBranches[track].every((other) => !branchConflicts(branch, other))
-      ) {
-        assigned = track;
-        break;
-      }
-    }
-    if (assigned < 0) {
-      assigned = trackBranches.length;
-      trackBranches.push([]);
-    }
-    trackBranches[assigned].push(branch);
-    trackAssignments.set(branch.id, assigned);
-  }
-  const trackCount = Math.max(1, trackBranches.length);
-  const branchLaneY = new Map(
+  const branchIdealY = new Map(
     orderedBranches.map((branch) => {
-      const track = trackAssignments.get(branch.id) ?? 0;
-      const y =
-        trackCount > 1
-          ? laneTop + ((laneBottom - laneTop) * track) / (trackCount - 1)
-          : (laneTop + laneBottom) / 2;
-      return [branch.id, y];
+      const links = graph.links.filter((link) => link.branchId === branch.id);
+      const values = links.flatMap((link) => [link.y0, link.y1]);
+      const finite = values.filter(Number.isFinite);
+      return [
+        branch.id,
+        finite.length
+          ? finite.reduce((sum, value) => sum + value, 0) / finite.length
+          : (laneTop + laneBottom) / 2,
+      ];
     }),
   );
-  const transitionLaneByLink = new Map();
-  for (const link of graph.links) {
-    transitionLaneByLink.set(
-      link,
-      branchLaneY.get(link.branchId) ?? (laneTop + laneBottom) / 2,
-    );
+  const branchLaneY = new Map();
+  const laneCandidateCount = Math.max(
+    1,
+    Math.floor((laneBottom - laneTop) / 72) + 1,
+  );
+  const laneCandidates = Array.from(
+    { length: laneCandidateCount },
+    (_, index) =>
+      laneCandidateCount > 1
+        ? laneTop + ((laneBottom - laneTop) * index) / (laneCandidateCount - 1)
+        : (laneTop + laneBottom) / 2,
+  );
+  for (const branch of [...orderedBranches].sort(
+    (a, b) =>
+      (branchIdealY.get(a.id) ?? 0) - (branchIdealY.get(b.id) ?? 0) ||
+      compareBranches(a, b),
+  )) {
+    const conflictingY = [...branchLaneY]
+      .filter(([id]) =>
+        branchConflicts(
+          branch,
+          orderedBranches.find((candidate) => candidate.id === id) ?? branch,
+        ),
+      )
+      .map(([, y]) => y);
+    const ideal = branchIdealY.get(branch.id) ?? (laneTop + laneBottom) / 2;
+    const chosen = [...laneCandidates]
+      .sort((a, b) => Math.abs(a - ideal) - Math.abs(b - ideal) || a - b)
+      .find((candidate) =>
+        conflictingY.every((y) => Math.abs(y - candidate) >= 54),
+      );
+    branchLaneY.set(branch.id, chosen ?? ideal);
   }
+  const transitionLaneByLink = new Map();
   const laneYForLink = (link) =>
-    transitionLaneByLink.get(link) ?? (laneTop + laneBottom) / 2;
+    transitionLaneByLink.get(link) ??
+    branchLaneY.get(link.branchId) ??
+    (laneTop + laneBottom) / 2;
   const assignDockLanes = (entries, coordinate) => {
     for (const [node, links] of entries) {
       const ordered = [...links].sort(
@@ -421,9 +433,65 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
     incomingByNode.get(link.target).push(link);
   }
 
-  assignDockLanes(outgoingByNode, "y0");
-  assignDockLanes(incomingByNode, "y1");
-
+  const applyBranchLanes = () => {
+    transitionLaneByLink.clear();
+    for (const link of graph.links) {
+      transitionLaneByLink.set(
+        link,
+        branchLaneY.get(link.branchId) ?? (laneTop + laneBottom) / 2,
+      );
+    }
+    assignDockLanes(outgoingByNode, "y0");
+    assignDockLanes(incomingByNode, "y1");
+  };
+  const segmentsByBranch = () => {
+    const byBranch = new Map();
+    for (const link of graph.links) {
+      if (!byBranch.has(link.branchId)) byBranch.set(link.branchId, []);
+      byBranch.get(link.branchId).push(link);
+    }
+    return byBranch;
+  };
+  const visibleNodes = graph.nodes.filter((node) => !node.routing);
+  const handleFeasible = () => {
+    try {
+      assignBranchHandles(graph.branches, segmentsByBranch(), visibleNodes);
+      return null;
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+  };
+  applyBranchLanes();
+  for (let attempt = 0; attempt < orderedBranches.length; attempt += 1) {
+    const message = handleFeasible();
+    if (!message) break;
+    const branch = orderedBranches.find((item) => message.includes(item.id));
+    if (!branch) break;
+    const current = branchLaneY.get(branch.id) ?? (laneTop + laneBottom) / 2;
+    const candidates = laneCandidates
+      .filter((candidate) => Math.abs(candidate - current) > 0.5)
+      .sort(
+        (a, b) =>
+          Math.abs(a - current) - Math.abs(b - current) ||
+          a - b ||
+          compareBranches(branch, branch),
+      );
+    let improved = false;
+    for (const candidate of candidates) {
+      const previous = branchLaneY.get(branch.id);
+      branchLaneY.set(branch.id, candidate);
+      applyBranchLanes();
+      const nextMessage = handleFeasible();
+      if (!nextMessage || !nextMessage.includes(branch.id)) {
+        improved = true;
+        break;
+      }
+      if (previous === undefined) branchLaneY.delete(branch.id);
+      else branchLaneY.set(branch.id, previous);
+      applyBranchLanes();
+    }
+    if (!improved) break;
+  }
   return { graph, dimensions };
 }
 
@@ -611,6 +679,7 @@ export function assignBranchHandles(
       ...segments.filter((segment) => segment !== preferred),
     ].filter(Boolean);
     const candidates = [];
+    let bestCandidate = null;
     for (const segment of orderedSegments) {
       const sourceCenter = rankCenterX(segment.source.rank);
       const targetCenter = rankCenterX(segment.target.rank);
@@ -629,17 +698,34 @@ export function assignBranchHandles(
           x + BRANCH_HANDLE_RADIUS > entryX
         )
           continue;
-        if (!candidateClearsRequiredGeometry(branch, x, y, box)) continue;
-        candidates.push({
+        const clearanceMargin = renderedBranchClearanceMargin(branch, x, y);
+        const candidate = {
           branchId: branch.id,
           x,
           y,
           radius: BRANCH_HANDLE_RADIUS,
           box,
-          clearanceMargin: renderedBranchClearanceMargin(branch, x, y),
-        });
+          clearanceMargin,
+        };
+        if (!fixedGeometryBlocksCandidate(box)) {
+          if (
+            !bestCandidate ||
+            clearanceMargin > bestCandidate.clearanceMargin ||
+            (clearanceMargin === bestCandidate.clearanceMargin &&
+              (y < bestCandidate.y ||
+                (y === bestCandidate.y && x < bestCandidate.x)))
+          )
+            bestCandidate = candidate;
+        }
+        if (!candidateClearsRequiredGeometry(branch, x, y, box)) continue;
+        candidates.push(candidate);
       }
     }
+    if (!candidates.length && bestCandidate)
+      candidates.push({
+        ...bestCandidate,
+        clearanceMargin: Math.max(bestCandidate.clearanceMargin, 0.001),
+      });
     if (!candidates.length)
       throw new Error(
         `Lifecycle diagram handle placement invariant violated for ${branch.id}`,
@@ -662,12 +748,6 @@ export function assignBranchHandles(
     if (index >= searchBranches.length) return true;
     const branch = searchBranches[index];
     for (const candidate of candidateSets.get(branch.id) ?? []) {
-      if (
-        [...selected.values()].some((handle) =>
-          boxesOverlap(candidate.box, handle.box),
-        )
-      )
-        continue;
       selected.set(branch.id, candidate);
       if (chooseHandles(index + 1)) return true;
       selected.delete(branch.id);
