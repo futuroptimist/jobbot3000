@@ -28,6 +28,7 @@ import {
   labelBoxForNode,
   nodeSort,
   rankCenterX,
+  renderedBranchStrokeWidth,
   wrapLifecycleLabel,
 } from "../src/web/tracker/lifecycleDiagramLayout.js";
 
@@ -455,10 +456,10 @@ describe("lifecycle diagram render-only routing layout", () => {
       expect(handle.clearanceMargin, handle.branchId).toBeGreaterThan(0);
       const segments = byBranch.get(handle.branchId);
       const allowed = segments.flatMap((segment) =>
-        [
-          0.5, 0.35, 0.65, 0.25, 0.75, 0.15, 0.85, 0.1, 0.2, 0.3, 0.4, 0.6, 0.7,
-          0.8, 0.9,
-        ].map((t) => ({ segment, ...cubicTransitionPoint(segment, t) })),
+        [0.5, 0.35, 0.65].map((t) => ({
+          segment,
+          ...cubicTransitionPoint(segment, t),
+        })),
       );
       expect(
         allowed.some(
@@ -504,10 +505,7 @@ describe("lifecycle diagram render-only routing layout", () => {
       const segments = byBranch.get(handle.branchId);
       expect(
         segments.some((segment) =>
-          [
-            0.5, 0.35, 0.65, 0.25, 0.75, 0.15, 0.85, 0.1, 0.2, 0.3, 0.4, 0.6,
-            0.7, 0.8, 0.9,
-          ].some((t) => {
+          [0.5, 0.35, 0.65].some((t) => {
             const candidate = cubicTransitionPoint(segment, t);
             return (
               Math.abs(candidate.x - handle.x) < 0.001 &&
@@ -524,12 +522,7 @@ describe("lifecycle diagram render-only routing layout", () => {
               ...cubicTransitionPoint(segment, index / 20),
               clearance:
                 BRANCH_HANDLE_RADIUS +
-                (Math.max(
-                  3,
-                  Number.isFinite(segment.width) ? segment.width : 1,
-                ) +
-                  12) /
-                  2,
+                (renderedBranchStrokeWidth(segment.width) + 12) / 2,
             })),
           ),
         );
