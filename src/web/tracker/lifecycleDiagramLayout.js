@@ -330,8 +330,9 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
   layout.update(graph);
 
   const orderedBranches = [...graph.branches].sort(compareBranches);
+  const laneBranches = [...graph.branches].sort(compareBranches);
   const branchLaneOrdinal = new Map(
-    orderedBranches.map((branch, index) => [branch.id, index]),
+    laneBranches.map((branch, index) => [branch.id, index]),
   );
   const laneOrderValue = (link) => {
     const sourceY = Number.isFinite(link.y0) ? link.y0 : 0;
@@ -351,90 +352,23 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
   const laneTop = BRANCH_HANDLE_RADIUS + 4;
   const laneBottom = dimensions.height - BRANCH_HANDLE_RADIUS - 4;
   const transitionLaneByLink = new Map();
-  const transitionLinksByRank = new Map();
+  const globalLaneStep =
+    orderedBranches.length > 1
+      ? (laneBottom - laneTop) / (laneBranches.length - 1)
+      : 0;
+  const branchLaneY = new Map(
+    laneBranches.map((branch, index) => [
+      branch.id,
+      laneBranches.length > 1
+        ? laneTop + globalLaneStep * index
+        : (laneTop + laneBottom) / 2,
+    ]),
+  );
   for (const link of graph.links) {
-    const key = `${link.source.rank}:${link.target.rank}`;
-    if (!transitionLinksByRank.has(key)) transitionLinksByRank.set(key, []);
-    transitionLinksByRank.get(key).push(link);
-  }
-  const visibleObstaclesByRank = new Map();
-  const renderedClearance =
-    BRANCH_HANDLE_RADIUS + (renderedBranchStrokeWidth() + 12) / 2;
-  for (const node of graph.nodes) {
-    if (node.routing || !(Number(node.total) > 0)) continue;
-    const hitPadding = Math.max(0, (44 - (node.y1 - node.y0)) / 2);
-    const label = labelBoxForNode(node);
-    const boxes = [
-      {
-        y0: node.y0 - hitPadding - renderedClearance,
-        y1: node.y1 + hitPadding + renderedClearance,
-        nodeId: node.id,
-      },
-      {
-        y0: label.y - renderedClearance,
-        y1: label.y + label.height + renderedClearance,
-        nodeId: node.id,
-      },
-    ];
-    if (!visibleObstaclesByRank.has(node.rank))
-      visibleObstaclesByRank.set(node.rank, []);
-    visibleObstaclesByRank.get(node.rank).push(...boxes);
-  }
-  const laneCandidates = [];
-  for (let y = laneTop; y <= laneBottom + 0.001; y += 8) laneCandidates.push(y);
-  for (const links of transitionLinksByRank.values()) {
-    const ordered = [...links].sort(compareLaneLinks);
-    const step =
-      ordered.length > 1 ? (laneBottom - laneTop) / (ordered.length - 1) : 0;
-    const used = [];
-    ordered.forEach((link, index) => {
-      const ordinalIdeal =
-        ordered.length > 1
-          ? laneTop + step * index
-          : (laneTop + laneBottom) / 2;
-      const sourceY = Number.isFinite(link.y0) ? link.y0 : ordinalIdeal;
-      const targetY = Number.isFinite(link.y1) ? link.y1 : ordinalIdeal;
-      const geometryIdeal =
-        link.source.routing && link.target.routing
-          ? (sourceY + targetY) / 2
-          : link.source.routing
-            ? (sourceY + 2 * targetY) / 3
-            : link.target.routing
-              ? (2 * sourceY + targetY) / 3
-              : (sourceY + 2 * targetY) / 3;
-      const ideal = Number.isFinite(geometryIdeal)
-        ? geometryIdeal
-        : ordinalIdeal;
-      const obstacles = [
-        ...(visibleObstaclesByRank.get(link.source.rank) ?? []),
-        ...(visibleObstaclesByRank.get(link.target.rank) ?? []),
-      ].filter(
-        (obstacle) =>
-          obstacle.nodeId !== link.source.id &&
-          obstacle.nodeId !== link.target.id,
-      );
-      const feasibleCandidates = laneCandidates.filter((candidate) =>
-        obstacles.every(
-          (obstacle) => candidate < obstacle.y0 || candidate > obstacle.y1,
-        ),
-      );
-      const rankedCandidates = feasibleCandidates.map((candidate) => ({
-        candidate,
-        nearestUsed: used.length
-          ? Math.min(...used.map((other) => Math.abs(other - candidate)))
-          : Number.POSITIVE_INFINITY,
-      }));
-      const laneY = rankedCandidates.sort(
-        (a, b) =>
-          Math.abs(a.candidate - ideal) - Math.abs(b.candidate - ideal) ||
-          b.nearestUsed - a.nearestUsed ||
-          a.candidate - b.candidate,
-      )[0]?.candidate;
-      if (!Number.isFinite(laneY))
-        throw new Error("Lifecycle diagram transition lane allocation failed");
-      used.push(laneY);
-      transitionLaneByLink.set(link, laneY);
-    });
+    transitionLaneByLink.set(
+      link,
+      branchLaneY.get(link.branchId) ?? (laneTop + laneBottom) / 2,
+    );
   }
   const laneYForLink = (link) =>
     transitionLaneByLink.get(link) ?? (laneTop + laneBottom) / 2;
@@ -587,45 +521,6 @@ export function assignBranchHandles(
       clearance,
     });
   };
-  const refreshRenderedSamplesForBranch = (branchId, segments) => {
-    for (let index = renderedBranchSamples.length - 1; index >= 0; index -= 1) {
-      if (renderedBranchSamples[index].branchId === branchId)
-        renderedBranchSamples.splice(index, 1);
-    }
-    for (const segment of segments) {
-      const renderedWidth = renderedBranchStrokeWidth(segment.width);
-      const clearance = BRANCH_HANDLE_RADIUS + (renderedWidth + 12) / 2;
-      const sourceCenter = rankCenterX(segment.source.rank);
-      const targetCenter = rankCenterX(segment.target.rank);
-      const sourceDockX = segment.source.routing
-        ? sourceCenter
-        : segment.source.x1;
-      const targetDockX = segment.target.routing
-        ? targetCenter
-        : segment.target.x0;
-      const exitX = sourceCenter + RANK_CORRIDOR_HALF_WIDTH;
-      const entryX = targetCenter - RANK_CORRIDOR_HALF_WIDTH;
-      for (let t = 0; t <= 1.0001; t += 0.025) {
-        const ratio = Math.min(1, t);
-        pushRenderedSample(
-          branchId,
-          segment,
-          sourceDockX + (exitX - sourceDockX) * ratio,
-          segment.y0,
-          clearance,
-        );
-        pushRenderedSample(
-          branchId,
-          segment,
-          entryX + (targetDockX - entryX) * ratio,
-          segment.y1,
-          clearance,
-        );
-        const cubic = cubicTransitionPoint(segment, ratio);
-        pushRenderedSample(branchId, segment, cubic.x, cubic.y, clearance);
-      }
-    }
-  };
   for (const [branchId, segments] of segmentsByBranch) {
     for (const segment of segments) {
       const renderedWidth = renderedBranchStrokeWidth(segment.width);
@@ -668,17 +563,14 @@ export function assignBranchHandles(
   }
   const fixedGeometryBlocksCandidate = (box) =>
     [...nodeBoxes, ...labelBoxes].some((b) => boxesOverlap(box, b));
-  const enforceRenderedBranchClearance = branches.length <= 80;
   const renderedBranchClearanceMargin = (branch, x, y) =>
-    !enforceRenderedBranchClearance
-      ? Number.POSITIVE_INFINITY
-      : renderedBranchSamples.reduce((margin, sample) => {
-          if (sample.branchId === branch.id) return margin;
-          return Math.min(
-            margin,
-            Math.hypot(sample.x - x, sample.y - y) - sample.clearance,
-          );
-        }, Number.POSITIVE_INFINITY);
+    renderedBranchSamples.reduce((margin, sample) => {
+      if (sample.branchId === branch.id) return margin;
+      return Math.min(
+        margin,
+        Math.hypot(sample.x - x, sample.y - y) - sample.clearance,
+      );
+    }, Number.POSITIVE_INFINITY);
   const candidateClearsRequiredGeometry = (branch, x, y, box) =>
     !fixedGeometryBlocksCandidate(box) &&
     renderedBranchClearanceMargin(branch, x, y) > 0;
@@ -704,10 +596,7 @@ export function assignBranchHandles(
       const targetCenter = rankCenterX(segment.target.rank);
       const exitX = sourceCenter + RANK_CORRIDOR_HALF_WIDTH;
       const entryX = targetCenter - RANK_CORRIDOR_HALF_WIDTH;
-      for (const t of [
-        0.5, 0.35, 0.65, 0.25, 0.75, 0.15, 0.85, 0.1, 0.2, 0.3, 0.4, 0.6, 0.7,
-        0.8, 0.9,
-      ]) {
+      for (const t of [0.5, 0.35, 0.65]) {
         const { x, y } = cubicTransitionPoint(segment, t);
         const box = {
           x: x - BRANCH_HANDLE_RADIUS,
@@ -729,54 +618,6 @@ export function assignBranchHandles(
           box,
           clearanceMargin: renderedBranchClearanceMargin(branch, x, y),
         });
-      }
-    }
-    if (!candidates.length) {
-      const laneTop = BRANCH_HANDLE_RADIUS + 4;
-      const laneBottom = Math.max(
-        laneTop,
-        Math.max(...visibleNodes.map((node) => node.y1), 0) +
-          ROUTED_NODE_PADDING +
-          BRANCH_HANDLE_RADIUS,
-      );
-      for (const segment of orderedSegments) {
-        const originalLane = segment.transitionLaneY;
-        for (let laneY = laneTop; laneY <= laneBottom + 0.001; laneY += 8) {
-          segment.transitionLaneY = laneY;
-          for (const t of [0.5, 0.35, 0.65, 0.25, 0.75, 0.15, 0.85]) {
-            const sourceCenter = rankCenterX(segment.source.rank);
-            const targetCenter = rankCenterX(segment.target.rank);
-            const exitX = sourceCenter + RANK_CORRIDOR_HALF_WIDTH;
-            const entryX = targetCenter - RANK_CORRIDOR_HALF_WIDTH;
-            const { x, y } = cubicTransitionPoint(segment, t);
-            const box = {
-              x: x - BRANCH_HANDLE_RADIUS,
-              y: y - BRANCH_HANDLE_RADIUS,
-              width: BRANCH_HANDLE_RADIUS * 2,
-              height: BRANCH_HANDLE_RADIUS * 2,
-            };
-            if (
-              x - BRANCH_HANDLE_RADIUS < exitX ||
-              x + BRANCH_HANDLE_RADIUS > entryX
-            )
-              continue;
-            if (!candidateClearsRequiredGeometry(branch, x, y, box)) continue;
-            candidates.push({
-              branchId: branch.id,
-              x,
-              y,
-              radius: BRANCH_HANDLE_RADIUS,
-              box,
-              clearanceMargin: renderedBranchClearanceMargin(branch, x, y),
-            });
-          }
-          if (candidates.length) break;
-        }
-        if (candidates.length) {
-          refreshRenderedSamplesForBranch(branch.id, segments);
-          break;
-        }
-        segment.transitionLaneY = originalLane;
       }
     }
     if (!candidates.length)

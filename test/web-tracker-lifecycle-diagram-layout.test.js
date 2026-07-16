@@ -390,6 +390,31 @@ describe("lifecycle diagram render-only routing layout", () => {
     }
   });
 
+  it("keeps branch route coordinates stable while assigning handles", () => {
+    const { graph } = layoutLifecycleRoutingGraph(projection(), 1850);
+    const visibleNodes = graph.nodes.filter((n) => !n.routing && n.total > 0);
+    const byBranch = new Map();
+    for (const link of graph.links) {
+      if (!byBranch.has(link.branchId)) byBranch.set(link.branchId, []);
+      byBranch.get(link.branchId).push(link);
+    }
+    const before = graph.links.map((link) => ({
+      id: `${link.branchId}:${link.segmentIndex}`,
+      y0: link.y0,
+      y1: link.y1,
+      transitionLaneY: link.transitionLaneY,
+    }));
+    assignBranchHandles(graph.branches, byBranch, visibleNodes);
+    expect(
+      graph.links.map((link) => ({
+        id: `${link.branchId}:${link.segmentIndex}`,
+        y0: link.y0,
+        y1: link.y1,
+        transitionLaneY: link.transitionLaneY,
+      })),
+    ).toEqual(before);
+  });
+
   it("lays out dense fixture with bounded semantic docks and safe handles", () => {
     const { graph } = layoutLifecycleRoutingGraph(
       projectLifecycleAt(denseFixture),
