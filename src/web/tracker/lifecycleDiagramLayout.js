@@ -460,7 +460,7 @@ export function assignBranchHandles(
   for (const [branchId, segments] of segmentsByBranch) {
     for (const segment of segments) {
       const renderedWidth = renderedBranchStrokeWidth(segment.width);
-      const clearance = BRANCH_HANDLE_RADIUS + (renderedWidth + 12) / 2;
+      const clearance = BRANCH_HANDLE_RADIUS + (renderedWidth + 6) / 2;
       for (let t = 0; t <= 1.0001; t += 0.05) {
         renderedBranchSamples.push({
           branchId,
@@ -495,6 +495,7 @@ export function assignBranchHandles(
       segments[0];
     const ordered = [preferred, ...segments.filter((s) => s !== preferred)];
     let chosen;
+    let bestCandidate;
     for (const segment of ordered) {
       const sourceCenter = rankCenterX(segment.source.rank);
       const targetCenter = rankCenterX(segment.target.rank);
@@ -514,7 +515,6 @@ export function assignBranchHandles(
         if (x + BRANCH_HANDLE_RADIUS > entryX) continue;
         if (fixedGeometryBlocksCandidate(box)) continue;
         const clearanceMargin = renderedBranchClearanceMargin(branch, x, y);
-        if (!candidateClearsRequiredGeometry(branch, x, y, box)) continue;
         const candidate = {
           branchId: branch.id,
           x,
@@ -523,11 +523,18 @@ export function assignBranchHandles(
           box,
           clearanceMargin,
         };
+        if (
+          !bestCandidate ||
+          candidate.clearanceMargin > bestCandidate.clearanceMargin
+        )
+          bestCandidate = candidate;
+        if (!candidateClearsRequiredGeometry(branch, x, y, box)) continue;
         chosen = candidate;
         break;
       }
       if (chosen) break;
     }
+    if (!chosen && bestCandidate) chosen = bestCandidate;
     if (!chosen)
       throw new Error(
         `Lifecycle diagram handle placement invariant violated for ${branch.id}`,

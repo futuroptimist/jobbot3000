@@ -441,7 +441,7 @@ describe("lifecycle diagram render-only routing layout", () => {
                   3,
                   Number.isFinite(segment.width) ? segment.width : 1,
                 ) +
-                  12) /
+                  6) /
                   2,
             })),
           ),
