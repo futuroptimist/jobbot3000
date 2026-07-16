@@ -11,6 +11,7 @@ import {
   endpointColor,
   layoutLifecycleRoutingGraph,
   labelBoxForNode,
+  renderedBranchStrokeWidth,
   wrapLifecycleLabel,
 } from "./lifecycleDiagramLayout.js";
 export { calculateLifecycleDiagramLayout };
@@ -547,7 +548,7 @@ export function createLifecycleDiagramView(root, options = {}) {
       const selected = selectedFeature?.id === branch.id;
       const widthPx = Math.max(
         3,
-        ...segments.map((segment) => segment.width || 1),
+        ...segments.map((segment) => renderedBranchStrokeWidth(segment.width)),
       );
       const selectBranch = () =>
         selectFeature({
