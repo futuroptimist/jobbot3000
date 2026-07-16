@@ -353,6 +353,15 @@ async function assertBrowserCollisionAudit(page) {
         };
       },
     );
+    const nodeById = new Map(nodes.map((node) => [node.id, node]));
+    const handles = [
+      ...svg.querySelectorAll("[data-diagram-branch-handle]"),
+    ].map((handle) => ({
+      id: handle.getAttribute("data-diagram-branch-handle"),
+      rect: rectOf(handle),
+      cx: Number(handle.getAttribute("cx")),
+      cy: Number(handle.getAttribute("cy")),
+    }));
     const paths = [...svg.querySelectorAll("[data-diagram-link]")].map(
       (path) => {
         const id = path.getAttribute("data-diagram-link");
@@ -395,6 +404,17 @@ async function assertBrowserCollisionAudit(page) {
         sample.y <= rect.bottom + path.inflate + 1
       );
     };
+    const atSharedDock = (left, right, sample) => {
+      const shared = [left.source, left.target].find(
+        (id) => id === right.source || id === right.target,
+      );
+      if (!shared) return false;
+      const node = nodeById.get(shared);
+      return node
+        ? dockContact(left, node, sample) && dockContact(right, node, sample)
+        : false;
+    };
+    const branchHandleRadius = 22;
     for (const path of paths) {
       for (const node of nodes) {
         const incident = node.id === path.source || node.id === path.target;
@@ -424,9 +444,48 @@ async function assertBrowserCollisionAudit(page) {
           }
         }
       }
-      // Branch-to-branch centerline and transparent handle proximity are
-      // exercised by layout unit tests where deterministic geometry is
-      // available without browser font/antialiasing variance.
+      for (const handle of handles) {
+        if (handle.id === path.id) continue;
+        if (
+          path.samples.some(
+            (sample) =>
+              Math.hypot(sample.x - handle.cx, sample.y - handle.cy) <=
+              branchHandleRadius + path.inflate,
+          )
+        )
+          errors.push(`${path.id} intersects other handle ${handle.id}`);
+      }
+    }
+    for (let a = 0; a < paths.length; a += 1) {
+      for (let b = a + 1; b < paths.length; b += 1) {
+        const left = paths[a];
+        const right = paths[b];
+        const nearby = [];
+        for (const sample of left.samples) {
+          const near = right.samples.find(
+            (other) =>
+              Math.hypot(sample.x - other.x, sample.y - other.y) <= 0.5,
+          );
+          if (near)
+            nearby.push({
+              x: (sample.x + near.x) / 2,
+              y: (sample.y + near.y) / 2,
+              sample,
+            });
+        }
+        if (!nearby.length) continue;
+        const awayFromSharedDock = nearby.filter(
+          (point) => !atSharedDock(left, right, point.sample),
+        );
+        if (!awayFromSharedDock.length) continue;
+        if (awayFromSharedDock.length > 4) {
+          errors.push(
+            `${left.id} has coincident centerline run with ${right.id}`,
+          );
+          continue;
+        }
+        errors.push(`${left.id} crosses ${right.id}`);
+      }
     }
     return {
       ok: errors.length === 0,
