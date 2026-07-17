@@ -22,6 +22,9 @@ export const MINIMUM_SVG_WIDTH =
 export const BRANCH_STROKE_OPACITY = 0.82;
 export const BRANCH_HANDLE_RADIUS = 22;
 export const renderedBranchStrokeWidth = () => 3;
+const MAX_PREFERRED_LANE_CANDIDATES = 5;
+const MAX_LANE_ADJUSTMENT_ITERATIONS = 16;
+const LANE_Y_EPSILON = 0.001;
 
 export const ENDPOINT_BRANCH_COLORS = Object.freeze({
   awaiting_response: "#60A5FA",
@@ -449,7 +452,6 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
         .sort(
           (a, b) =>
             a.candidates.length - b.candidates.length ||
-            Math.abs(a.ideal - b.ideal) ||
             compareLaneLinks(a.link, b.link),
         )[0];
       if (!next || next.candidates.length === 0) return false;
@@ -552,7 +554,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
           .sort((a, b) => Math.abs(a - ideal) - Math.abs(b - ideal) || a - b);
         const spreadValues = [...orderedValues].sort((a, b) => a - b);
         const values = [...new Set([
-          ...orderedValues.slice(0, 5),
+          ...orderedValues.slice(0, MAX_PREFERRED_LANE_CANDIDATES),
           spreadValues[0],
           spreadValues[Math.floor(spreadValues.length / 2)],
           spreadValues.at(-1),
@@ -566,7 +568,11 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
         : candidateResult.reason === "no-candidates"
           ? candidateResult.blockedBranchIds.length
           : Number.POSITIVE_INFINITY;
-    for (let iteration = 0; iteration < 16; iteration += 1) {
+    for (
+      let iteration = 0;
+      iteration < MAX_LANE_ADJUSTMENT_ITERATIONS;
+      iteration += 1
+    ) {
       if (result.ok || result.reason !== "no-candidates") break;
       const blocked = new Set(result.blockedBranchIds);
       const adjustableLinks = graph.links
@@ -578,7 +584,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
       for (const link of adjustableLinks) {
         const currentY = laneYForLink(link);
         for (const candidateY of candidateValuesByLink.get(link.id) ?? []) {
-          if (Math.abs(candidateY - currentY) < 0.001) continue;
+          if (Math.abs(candidateY - currentY) < LANE_Y_EPSILON) continue;
           transitionLaneByLink.set(link, candidateY);
           applyLaneGeometry();
           const candidateResult = handleResult();
@@ -586,12 +592,15 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
           transitionLaneByLink.set(link, currentY);
           applyLaneGeometry();
           if (candidateScore >= baselineScore) continue;
+          const compareBestMove = bestMove
+            ? compareLaneLinks(link, bestMove.link)
+            : 0;
           if (
             !bestMove ||
             candidateScore < bestMove.score ||
             (candidateScore === bestMove.score &&
-              (compareLaneLinks(link, bestMove.link) < 0 ||
-                (link.id === bestMove.link.id && candidateY < bestMove.y)))
+              (compareBestMove < 0 ||
+                (compareBestMove === 0 && candidateY < bestMove.y)))
           ) {
             bestMove = { link, y: candidateY, score: candidateScore, candidateResult };
           }
