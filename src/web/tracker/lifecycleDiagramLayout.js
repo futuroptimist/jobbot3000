@@ -781,12 +781,16 @@ const tryAssignBranchHandles = (
       const distanceSquared = deltaX * deltaX + deltaY * deltaY;
       const clearanceSquared = sample.clearance * sample.clearance;
       if (distanceSquared <= clearanceSquared) return -1;
+      if (Number.isFinite(margin)) {
+        const maxDistance = sample.clearance + margin;
+        if (distanceSquared >= maxDistance * maxDistance) continue;
+      }
       const candidateMargin = Math.sqrt(distanceSquared) - sample.clearance;
       if (candidateMargin < margin) margin = candidateMargin;
     }
     return margin;
   };
-  const candidateClearsRequiredGeometry = (clearanceMargin) => clearanceMargin > 0;
+  const hasSufficientClearance = (clearanceMargin) => clearanceMargin > 0;
   const orderedBranches = [...branches].sort(compareBranches);
   const candidateSets = new Map();
   for (const branch of orderedBranches) {
@@ -832,7 +836,7 @@ const tryAssignBranchHandles = (
           box,
           clearanceMargin,
         };
-        if (candidateClearsRequiredGeometry(clearanceMargin))
+        if (hasSufficientClearance(clearanceMargin))
           candidates.push(candidate);
       }
     }
