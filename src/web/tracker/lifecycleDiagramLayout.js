@@ -22,8 +22,8 @@ export const MINIMUM_SVG_WIDTH =
 export const BRANCH_STROKE_OPACITY = 0.82;
 export const BRANCH_HANDLE_RADIUS = 22;
 export const renderedBranchStrokeWidth = () => 3;
-const MAX_PREFERRED_LANE_CANDIDATES = 3;
 const MAX_LANE_ADJUSTMENT_ITERATIONS = 16;
+const MAX_COMPLETE_LANE_REFINEMENT_BRANCHES = 32;
 const LANE_Y_EPSILON = 0.001;
 const COLLISION_MARGIN = -1;
 
@@ -360,10 +360,12 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
     2,
     Math.floor((laneBottom - laneTop) / minLaneSpacing) + 1,
   );
-  const laneCandidates = Array.from({ length: laneCandidateCount }, (_, index) =>
-    laneCandidateCount > 1
-      ? laneTop + ((laneBottom - laneTop) * index) / (laneCandidateCount - 1)
-      : (laneTop + laneBottom) / 2,
+  const laneCandidates = Array.from(
+    { length: laneCandidateCount },
+    (_, index) =>
+      laneCandidateCount > 1
+        ? laneTop + ((laneBottom - laneTop) * index) / (laneCandidateCount - 1)
+        : (laneTop + laneBottom) / 2,
   );
   const visibleNodes = graph.nodes.filter(
     (node) => !node.routing && Number(node.total) > 0,
@@ -443,11 +445,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
                 (selected) => Math.abs(selected - candidateY) >= minLaneSpacing,
               ),
             )
-            .sort(
-              (a, b) =>
-                Math.abs(a - ideal) - Math.abs(b - ideal) ||
-                a - b,
-            );
+            .sort((a, b) => Math.abs(a - ideal) - Math.abs(b - ideal) || a - b);
           return { link, candidates, ideal };
         })
         .sort(
@@ -541,7 +539,10 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
   };
   applyLaneGeometry();
   const transitionPeersByLink = new Map(
-    graph.links.map((link) => [link.id, linksByTransition.get(link.source.rank) ?? []]),
+    graph.links.map((link) => [
+      link.id,
+      linksByTransition.get(link.source.rank) ?? [],
+    ]),
   );
   const meetsMinimumTransitionSpacing = (link, candidateY) =>
     (transitionPeersByLink.get(link.id) ?? []).every(
@@ -560,15 +561,23 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
       graph.links.map((link) => {
         const ideal = initialLaneByLink.get(link.id) ?? laneOrderValue(link);
         const orderedValues = laneCandidates
-          .filter((candidateY) => !candidateBlockedByFixedGeometry(link, candidateY))
+          .filter(
+            (candidateY) => !candidateBlockedByFixedGeometry(link, candidateY),
+          )
           .sort((a, b) => Math.abs(a - ideal) - Math.abs(b - ideal) || a - b);
         const spreadValues = [...orderedValues].sort((a, b) => a - b);
-        const values = [...new Set([
-          ...orderedValues.slice(0, MAX_PREFERRED_LANE_CANDIDATES),
-          spreadValues[0],
-          spreadValues[Math.floor(spreadValues.length / 2)],
-          spreadValues.at(-1),
-        ])].filter(Number.isFinite);
+        const values = [
+          ...new Set(
+            graph.branches.length <= MAX_COMPLETE_LANE_REFINEMENT_BRANCHES
+              ? orderedValues
+              : [
+                  ...orderedValues.slice(0, 3),
+                  spreadValues[0],
+                  spreadValues[Math.floor(spreadValues.length / 2)],
+                  spreadValues.at(-1),
+                ],
+          ),
+        ].filter(Number.isFinite);
         return [link.id, values];
       }),
     );
@@ -771,23 +780,44 @@ const tryAssignBranchHandles = (
       }
     }
   }
+  const fixedGeometry = [...nodeBoxes, ...labelBoxes];
   const fixedGeometryBlocksCandidate = (box) =>
-    [...nodeBoxes, ...labelBoxes].some((b) => boxesOverlap(box, b));
+    fixedGeometry.some((b) => boxesOverlap(box, b));
+  const sampleBucketWidth =
+    BRANCH_HANDLE_RADIUS + (renderedBranchStrokeWidth() + 12) / 2;
+  const renderedSampleBuckets = new Map();
+  for (const sample of renderedBranchSamples) {
+    const bucket = Math.floor(sample.x / sampleBucketWidth);
+    if (!renderedSampleBuckets.has(bucket))
+      renderedSampleBuckets.set(bucket, []);
+    renderedSampleBuckets.get(bucket).push(sample);
+  }
   const renderedBranchClearanceMargin = (branch, x, y) => {
     let margin = Number.POSITIVE_INFINITY;
-    for (const sample of renderedBranchSamples) {
-      if (sample.branchId === branch.id) continue;
-      const deltaX = sample.x - x;
-      const deltaY = sample.y - y;
-      const distanceSquared = deltaX * deltaX + deltaY * deltaY;
-      const clearanceSquared = sample.clearance * sample.clearance;
-      if (distanceSquared <= clearanceSquared) return COLLISION_MARGIN;
-      if (Number.isFinite(margin)) {
-        const maxDistance = sample.clearance + margin;
-        if (distanceSquared >= maxDistance * maxDistance) continue;
+    const centerBucket = Math.floor(x / sampleBucketWidth);
+    for (
+      let bucket = centerBucket - 1;
+      bucket <= centerBucket + 1;
+      bucket += 1
+    ) {
+      for (const sample of renderedSampleBuckets.get(bucket) ?? []) {
+        if (sample.branchId === branch.id) continue;
+        const deltaX = sample.x - x;
+        const maxRelevantX =
+          sample.clearance + (Number.isFinite(margin) ? margin : 0);
+        if (Math.abs(deltaX) > Math.max(sample.clearance, maxRelevantX))
+          continue;
+        const deltaY = sample.y - y;
+        const distanceSquared = deltaX * deltaX + deltaY * deltaY;
+        const clearanceSquared = sample.clearance * sample.clearance;
+        if (distanceSquared <= clearanceSquared) return COLLISION_MARGIN;
+        if (Number.isFinite(margin)) {
+          const maxDistance = sample.clearance + margin;
+          if (distanceSquared >= maxDistance * maxDistance) continue;
+        }
+        const candidateMargin = Math.sqrt(distanceSquared) - sample.clearance;
+        if (candidateMargin < margin) margin = candidateMargin;
       }
-      const candidateMargin = Math.sqrt(distanceSquared) - sample.clearance;
-      if (candidateMargin < margin) margin = candidateMargin;
     }
     return margin;
   };
@@ -836,8 +866,7 @@ const tryAssignBranchHandles = (
           box,
           clearanceMargin,
         };
-        if (clearanceMargin > 0)
-          candidates.push(candidate);
+        if (clearanceMargin > 0) candidates.push(candidate);
       }
     }
     candidateSets.set(
