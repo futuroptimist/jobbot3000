@@ -337,10 +337,24 @@ describe("lifecycle diagram view", () => {
       "button[aria-label^='Select flow Application submitted to Technical interview']",
     );
     expect(flowButton).toBeTruthy();
+    const flowId = flowButton.getAttribute("data-diagram-select-id");
     flowButton.click();
 
     expect(disclosure.open).toBe(true);
-    expect(flowButton.getAttribute("aria-pressed")).toBe("true");
+    expect(flowButton.isConnected).toBe(false);
+
+    const selectedFlowButton = [
+      ...root.querySelectorAll("button[data-diagram-select-id]"),
+    ].find(
+      (button) => button.getAttribute("data-diagram-select-id") === flowId,
+    );
+
+    expect(selectedFlowButton).toBeTruthy();
+    expect(selectedFlowButton).not.toBe(flowButton);
+    expect(selectedFlowButton.getAttribute("aria-pressed")).toBe("true");
+    expect(
+      root.querySelectorAll(".diagram-select-button[aria-pressed='true']"),
+    ).toHaveLength(1);
   });
 
   it("handles empty, unknown-only, date, and simultaneous boundary timestamps", () => {
