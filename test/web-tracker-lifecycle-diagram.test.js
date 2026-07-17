@@ -316,6 +316,33 @@ describe("lifecycle diagram view", () => {
     });
   });
 
+  it("keeps semantic table disclosure open across immediate node and flow selection", () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root } = render(b);
+    const disclosure = root.querySelector("details.diagram-tables");
+    disclosure.open = true;
+
+    root
+      .querySelector("button[aria-label='Select Application submitted']")
+      .click();
+    expect(disclosure.open).toBe(true);
+
+    const flowButton = root.querySelector(
+      "button[aria-label^='Select flow Application submitted to Technical interview']",
+    );
+    expect(flowButton).toBeTruthy();
+    flowButton.click();
+
+    expect(disclosure.open).toBe(true);
+    expect(flowButton.getAttribute("aria-pressed")).toBe("true");
+  });
+
   it("handles empty, unknown-only, date, and simultaneous boundary timestamps", () => {
     expect(render(bundle()).root.textContent).toContain(
       "No lifecycle data yet",

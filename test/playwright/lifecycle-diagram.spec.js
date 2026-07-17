@@ -421,16 +421,17 @@ async function assertBrowserCollisionAudit(page) {
         for (const sample of path.samples) {
           const box = sampleBox(sample, path.inflate);
           if (overlap(box, node.label)) {
-            continue;
+            errors.push(`${path.id} intersects label ${node.id}`);
+            break;
           }
           if (overlap(box, node.hit) && !incident) {
-            // Dense routed branches may pass through transparent node-hit
-            // rectangles while remaining outside the visible semantic node.
-            // Visible node rectangles are still fatal below.
+            errors.push(`${path.id} intersects nonincident hit ${node.id}`);
+            break;
           }
           if (!overlap(box, node.rect)) continue;
           if (!incident) {
-            continue;
+            errors.push(`${path.id} intersects nonincident node ${node.id}`);
+            break;
           }
           if (
             !dockContact(path, node, sample) &&
@@ -478,9 +479,12 @@ async function assertBrowserCollisionAudit(page) {
         );
         if (!awayFromSharedDock.length) continue;
         if (awayFromSharedDock.length > 4) {
+          errors.push(
+            `${left.id} has coincident centerline run with ${right.id}`,
+          );
           continue;
         }
-        continue;
+        errors.push(`${left.id} crosses ${right.id}`);
       }
     }
     return {

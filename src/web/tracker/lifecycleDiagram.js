@@ -151,7 +151,6 @@ export function createLifecycleDiagramView(root, options = {}) {
   let flowPage = 0;
   let applicationPage = 0;
   let displayBranches = [];
-  let tablesOpen = false;
   let lastLayoutWidth = null;
   const ids = {
     title: "lifecycle-diagram-title",
@@ -221,9 +220,6 @@ export function createLifecycleDiagramView(root, options = {}) {
   ]);
   const tables = el("div", { className: "diagram-tables-body" });
   tablesDisclosure.append(tables);
-  tablesDisclosure.addEventListener("toggle", () => {
-    tablesOpen = tablesDisclosure.open;
-  });
   root.append(
     controls,
     stamp,
@@ -812,7 +808,6 @@ export function createLifecycleDiagramView(root, options = {}) {
         time: formatted,
       };
     });
-    tablesDisclosure.open = tablesOpen;
     tables.textContent = "";
     tables.append(
       renderTable("Origins", ["Origin", "Count", "Percentage"], originRows),
