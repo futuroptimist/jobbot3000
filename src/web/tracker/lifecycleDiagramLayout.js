@@ -22,7 +22,7 @@ export const MINIMUM_SVG_WIDTH =
 export const BRANCH_STROKE_OPACITY = 0.82;
 export const BRANCH_HANDLE_RADIUS = 22;
 export const renderedBranchStrokeWidth = () => 3;
-const MAX_PREFERRED_LANE_CANDIDATES = 5;
+const MAX_PREFERRED_LANE_CANDIDATES = 3;
 const MAX_LANE_ADJUSTMENT_ITERATIONS = 16;
 const LANE_Y_EPSILON = 0.001;
 
@@ -539,6 +539,15 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
     return byBranch;
   };
   applyLaneGeometry();
+  const transitionPeersByLink = new Map(
+    graph.links.map((link) => [link.id, linksByTransition.get(link.source.rank) ?? []]),
+  );
+  const candidateRespectsTransitionSpacing = (link, candidateY) =>
+    (transitionPeersByLink.get(link.id) ?? []).every(
+      (peer) =>
+        peer.id === link.id ||
+        Math.abs(laneYForLink(peer) - candidateY) >= minLaneSpacing,
+    );
   const initialLaneByLink = new Map(
     graph.links.map((link) => [link.id, laneYForLink(link)]),
   );
@@ -580,36 +589,27 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
         .sort(compareLaneLinks);
       if (!adjustableLinks.length) break;
       const baselineScore = blockedCount(result);
-      let bestMove = null;
+      let improved = false;
       for (const link of adjustableLinks) {
         const currentY = laneYForLink(link);
         for (const candidateY of candidateValuesByLink.get(link.id) ?? []) {
           if (Math.abs(candidateY - currentY) < LANE_Y_EPSILON) continue;
+          if (!candidateRespectsTransitionSpacing(link, candidateY)) continue;
           transitionLaneByLink.set(link, candidateY);
           applyLaneGeometry();
           const candidateResult = handleResult();
           const candidateScore = blockedCount(candidateResult);
+          if (candidateScore < baselineScore) {
+            result = candidateResult;
+            improved = true;
+            break;
+          }
           transitionLaneByLink.set(link, currentY);
           applyLaneGeometry();
-          if (candidateScore >= baselineScore) continue;
-          const compareBestMove = bestMove
-            ? compareLaneLinks(link, bestMove.link)
-            : 0;
-          if (
-            !bestMove ||
-            candidateScore < bestMove.score ||
-            (candidateScore === bestMove.score &&
-              (compareBestMove < 0 ||
-                (compareBestMove === 0 && candidateY < bestMove.y)))
-          ) {
-            bestMove = { link, y: candidateY, score: candidateScore, candidateResult };
-          }
         }
+        if (improved) break;
       }
-      if (!bestMove) break;
-      transitionLaneByLink.set(bestMove.link, bestMove.y);
-      applyLaneGeometry();
-      result = bestMove.candidateResult;
+      if (!improved) break;
     }
   }
   return { graph, dimensions };
@@ -759,11 +759,12 @@ const tryAssignBranchHandles = (
           segment.y1,
           clearance,
         );
+        const transitionPoint = cubicTransitionPoint(segment, ratio);
         pushRenderedSample(
           branchId,
           segment,
-          cubicTransitionPoint(segment, ratio).x,
-          cubicTransitionPoint(segment, ratio).y,
+          transitionPoint.x,
+          transitionPoint.y,
           clearance,
         );
       }
@@ -771,17 +772,21 @@ const tryAssignBranchHandles = (
   }
   const fixedGeometryBlocksCandidate = (box) =>
     [...nodeBoxes, ...labelBoxes].some((b) => boxesOverlap(box, b));
-  const renderedBranchClearanceMargin = (branch, x, y) =>
-    renderedBranchSamples.reduce((margin, sample) => {
-      if (sample.branchId === branch.id) return margin;
-      return Math.min(
-        margin,
-        Math.hypot(sample.x - x, sample.y - y) - sample.clearance,
-      );
-    }, Number.POSITIVE_INFINITY);
-  const candidateClearsRequiredGeometry = (branch, x, y, box) =>
-    !fixedGeometryBlocksCandidate(box) &&
-    renderedBranchClearanceMargin(branch, x, y) > 0;
+  const renderedBranchClearanceMargin = (branch, x, y) => {
+    let margin = Number.POSITIVE_INFINITY;
+    for (const sample of renderedBranchSamples) {
+      if (sample.branchId === branch.id) continue;
+      const deltaX = sample.x - x;
+      const deltaY = sample.y - y;
+      const distanceSquared = deltaX * deltaX + deltaY * deltaY;
+      const clearanceSquared = sample.clearance * sample.clearance;
+      if (distanceSquared <= clearanceSquared) return -1;
+      const candidateMargin = Math.sqrt(distanceSquared) - sample.clearance;
+      if (candidateMargin < margin) margin = candidateMargin;
+    }
+    return margin;
+  };
+  const candidateClearsRequiredGeometry = (clearanceMargin) => clearanceMargin > 0;
   const orderedBranches = [...branches].sort(compareBranches);
   const candidateSets = new Map();
   for (const branch of orderedBranches) {
@@ -812,6 +817,7 @@ const tryAssignBranchHandles = (
           width: BRANCH_HANDLE_RADIUS * 2,
           height: BRANCH_HANDLE_RADIUS * 2,
         };
+        if (fixedGeometryBlocksCandidate(box)) continue;
         if (
           x - BRANCH_HANDLE_RADIUS < exitX ||
           x + BRANCH_HANDLE_RADIUS > entryX
@@ -826,7 +832,7 @@ const tryAssignBranchHandles = (
           box,
           clearanceMargin,
         };
-        if (candidateClearsRequiredGeometry(branch, x, y, box))
+        if (candidateClearsRequiredGeometry(clearanceMargin))
           candidates.push(candidate);
       }
     }
