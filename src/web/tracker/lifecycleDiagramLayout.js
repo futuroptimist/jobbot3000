@@ -25,6 +25,7 @@ export const renderedBranchStrokeWidth = () => 3;
 const MAX_PREFERRED_LANE_CANDIDATES = 3;
 const MAX_LANE_ADJUSTMENT_ITERATIONS = 16;
 const LANE_Y_EPSILON = 0.001;
+const COLLISION_MARGIN = -1;
 
 export const ENDPOINT_BRANCH_COLORS = Object.freeze({
   awaiting_response: "#60A5FA",
@@ -542,7 +543,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
   const transitionPeersByLink = new Map(
     graph.links.map((link) => [link.id, linksByTransition.get(link.source.rank) ?? []]),
   );
-  const hasValidTransitionSpacing = (link, candidateY) =>
+  const meetsMinimumTransitionSpacing = (link, candidateY) =>
     (transitionPeersByLink.get(link.id) ?? []).every(
       (peer) =>
         peer.id === link.id ||
@@ -594,7 +595,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
         const currentY = laneYForLink(link);
         for (const candidateY of candidateValuesByLink.get(link.id) ?? []) {
           if (Math.abs(candidateY - currentY) < LANE_Y_EPSILON) continue;
-          if (!hasValidTransitionSpacing(link, candidateY)) continue;
+          if (!meetsMinimumTransitionSpacing(link, candidateY)) continue;
           transitionLaneByLink.set(link, candidateY);
           applyLaneGeometry();
           const candidateResult = handleResult();
@@ -780,7 +781,7 @@ const tryAssignBranchHandles = (
       const deltaY = sample.y - y;
       const distanceSquared = deltaX * deltaX + deltaY * deltaY;
       const clearanceSquared = sample.clearance * sample.clearance;
-      if (distanceSquared <= clearanceSquared) return -1; // collision => negative margin
+      if (distanceSquared <= clearanceSquared) return COLLISION_MARGIN;
       if (Number.isFinite(margin)) {
         const maxDistance = sample.clearance + margin;
         if (distanceSquared >= maxDistance * maxDistance) continue;
