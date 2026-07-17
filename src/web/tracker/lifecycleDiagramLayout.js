@@ -679,7 +679,6 @@ export function assignBranchHandles(
       ...segments.filter((segment) => segment !== preferred),
     ].filter(Boolean);
     const candidates = [];
-    let bestCandidate = null;
     for (const segment of orderedSegments) {
       const sourceCenter = rankCenterX(segment.source.rank);
       const targetCenter = rankCenterX(segment.target.rank);
@@ -699,33 +698,17 @@ export function assignBranchHandles(
         )
           continue;
         const clearanceMargin = renderedBranchClearanceMargin(branch, x, y);
-        const candidate = {
+        if (!candidateClearsRequiredGeometry(branch, x, y, box)) continue;
+        candidates.push({
           branchId: branch.id,
           x,
           y,
           radius: BRANCH_HANDLE_RADIUS,
           box,
           clearanceMargin,
-        };
-        if (!fixedGeometryBlocksCandidate(box)) {
-          if (
-            !bestCandidate ||
-            clearanceMargin > bestCandidate.clearanceMargin ||
-            (clearanceMargin === bestCandidate.clearanceMargin &&
-              (y < bestCandidate.y ||
-                (y === bestCandidate.y && x < bestCandidate.x)))
-          )
-            bestCandidate = candidate;
-        }
-        if (!candidateClearsRequiredGeometry(branch, x, y, box)) continue;
-        candidates.push(candidate);
+        });
       }
     }
-    if (!candidates.length && bestCandidate)
-      candidates.push({
-        ...bestCandidate,
-        clearanceMargin: Math.max(bestCandidate.clearanceMargin, 0.001),
-      });
     if (!candidates.length)
       throw new Error(
         `Lifecycle diagram handle placement invariant violated for ${branch.id}`,
@@ -748,6 +731,12 @@ export function assignBranchHandles(
     if (index >= searchBranches.length) return true;
     const branch = searchBranches[index];
     for (const candidate of candidateSets.get(branch.id) ?? []) {
+      if (
+        [...selected.values()].some((handle) =>
+          boxesOverlap(candidate.box, handle.box),
+        )
+      )
+        continue;
       selected.set(branch.id, candidate);
       if (chooseHandles(index + 1)) return true;
       selected.delete(branch.id);
