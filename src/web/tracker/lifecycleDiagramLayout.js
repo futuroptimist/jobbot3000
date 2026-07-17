@@ -632,7 +632,6 @@ const tryAssignBranchHandles = (
       ...segments.filter((segment) => segment !== preferred),
     ].filter(Boolean);
     const candidates = [];
-    let fallbackCandidate = null;
     for (const segment of orderedSegments) {
       const sourceCenter = rankCenterX(segment.source.rank);
       const targetCenter = rankCenterX(segment.target.rank);
@@ -660,29 +659,10 @@ const tryAssignBranchHandles = (
           box,
           clearanceMargin,
         };
-        if (candidateClearsRequiredGeometry(branch, x, y, box)) {
+        if (candidateClearsRequiredGeometry(branch, x, y, box))
           candidates.push(candidate);
-          continue;
-        }
-        if (!fixedGeometryBlocksCandidate(box)) {
-          const comparable = {
-            ...candidate,
-            clearanceMargin: Math.max(clearanceMargin, 0.001),
-          };
-          if (
-            !fallbackCandidate ||
-            comparable.clearanceMargin > fallbackCandidate.clearanceMargin ||
-            (comparable.clearanceMargin === fallbackCandidate.clearanceMargin &&
-              (comparable.y < fallbackCandidate.y ||
-                (comparable.y === fallbackCandidate.y &&
-                  comparable.x < fallbackCandidate.x)))
-          )
-            fallbackCandidate = comparable;
-        }
       }
     }
-    if (!candidates.length && fallbackCandidate)
-      candidates.push(fallbackCandidate);
     candidateSets.set(
       branch.id,
       candidates.sort(
