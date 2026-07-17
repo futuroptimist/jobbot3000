@@ -682,24 +682,29 @@ const tryAssignBranchHandles = (
       candidateSets,
     };
   const selected = new Map();
-  const searchBranches = [...orderedBranches].sort(
-    (a, b) =>
-      (candidateSets.get(a.id)?.length ?? 0) -
-        (candidateSets.get(b.id)?.length ?? 0) || compareBranches(a, b),
-  );
-  const chooseHandles = (index = 0) => {
-    if (index >= searchBranches.length) return true;
-    const branch = searchBranches[index];
-    for (const candidate of candidateSets.get(branch.id) ?? []) {
-      if (
-        [...selected.values()].some((handle) =>
-          boxesOverlap(candidate.box, handle.box),
-        )
-      )
-        continue;
-      selected.set(branch.id, candidate);
-      if (chooseHandles(index + 1)) return true;
-      selected.delete(branch.id);
+  const chooseHandles = () => {
+    if (selected.size >= orderedBranches.length) return true;
+    const branch = [...orderedBranches]
+      .filter((candidateBranch) => !selected.has(candidateBranch.id))
+      .map((candidateBranch) => {
+        const candidates = (candidateSets.get(candidateBranch.id) ?? []).filter(
+          (candidate) =>
+            ![...selected.values()].some((handle) =>
+              boxesOverlap(candidate.box, handle.box),
+            ),
+        );
+        return { branch: candidateBranch, candidates };
+      })
+      .sort(
+        (a, b) =>
+          a.candidates.length - b.candidates.length ||
+          compareBranches(a.branch, b.branch),
+      )[0];
+    if (!branch || branch.candidates.length === 0) return false;
+    for (const candidate of branch.candidates) {
+      selected.set(branch.branch.id, candidate);
+      if (chooseHandles()) return true;
+      selected.delete(branch.branch.id);
     }
     return false;
   };
