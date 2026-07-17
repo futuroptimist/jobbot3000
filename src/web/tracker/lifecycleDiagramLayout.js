@@ -444,50 +444,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
     assignDockLanes(outgoingByNode, "y0");
     assignDockLanes(incomingByNode, "y1");
   };
-  const segmentsByBranch = () => {
-    const byBranch = new Map();
-    for (const link of graph.links) {
-      if (!byBranch.has(link.branchId)) byBranch.set(link.branchId, []);
-      byBranch.get(link.branchId).push(link);
-    }
-    return byBranch;
-  };
-  const visibleNodes = graph.nodes.filter((node) => !node.routing);
-  const handleFeasible = () =>
-    tryAssignBranchHandles(graph.branches, segmentsByBranch(), visibleNodes);
   applyBranchLanes();
-  for (let attempt = 0; attempt < orderedBranches.length; attempt += 1) {
-    const result = handleFeasible();
-    if (result.ok) break;
-    const branch = orderedBranches.find((item) =>
-      result.blockedBranchIds.includes(item.id),
-    );
-    if (!branch) break;
-    const current = branchLaneY.get(branch.id) ?? (laneTop + laneBottom) / 2;
-    const candidates = laneCandidates
-      .filter((candidate) => Math.abs(candidate - current) > 0.5)
-      .sort(
-        (a, b) =>
-          Math.abs(a - current) - Math.abs(b - current) ||
-          a - b ||
-          compareBranches(branch, branch),
-      );
-    let improved = false;
-    for (const candidate of candidates) {
-      const previous = branchLaneY.get(branch.id);
-      branchLaneY.set(branch.id, candidate);
-      applyBranchLanes();
-      const nextResult = handleFeasible();
-      if (nextResult.ok || !nextResult.blockedBranchIds.includes(branch.id)) {
-        improved = true;
-        break;
-      }
-      if (previous === undefined) branchLaneY.delete(branch.id);
-      else branchLaneY.set(branch.id, previous);
-      applyBranchLanes();
-    }
-    if (!improved) break;
-  }
   return { graph, dimensions };
 }
 
