@@ -350,60 +350,144 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
     linkSort(a, b);
   const laneTop = BRANCH_HANDLE_RADIUS + 4;
   const laneBottom = dimensions.height - BRANCH_HANDLE_RADIUS - 4;
-  const branchConflicts = (a, b) =>
-    a.sourceRank < b.targetRank && b.sourceRank < a.targetRank;
-  const branchIdealY = new Map(
-    orderedBranches.map((branch) => {
-      const links = graph.links.filter((link) => link.branchId === branch.id);
-      const values = links.flatMap((link) => [link.y0, link.y1]);
-      const finite = values.filter(Number.isFinite);
-      return [
-        branch.id,
-        finite.length
-          ? finite.reduce((sum, value) => sum + value, 0) / finite.length
-          : (laneTop + laneBottom) / 2,
-      ];
-    }),
-  );
-  const branchLaneY = new Map();
+  const minLaneSpacing =
+    BRANCH_HANDLE_RADIUS * 2 + renderedBranchStrokeWidth(1) + 12;
   const laneCandidateCount = Math.max(
-    1,
-    Math.floor((laneBottom - laneTop) / 72) + 1,
+    2,
+    Math.floor((laneBottom - laneTop) / minLaneSpacing) + 1,
   );
-  const laneCandidates = Array.from(
-    { length: laneCandidateCount },
-    (_, index) =>
-      laneCandidateCount > 1
-        ? laneTop + ((laneBottom - laneTop) * index) / (laneCandidateCount - 1)
-        : (laneTop + laneBottom) / 2,
+  const laneCandidates = Array.from({ length: laneCandidateCount }, (_, index) =>
+    laneCandidateCount > 1
+      ? laneTop + ((laneBottom - laneTop) * index) / (laneCandidateCount - 1)
+      : (laneTop + laneBottom) / 2,
   );
-  for (const branch of [...orderedBranches].sort(
-    (a, b) =>
-      (branchIdealY.get(a.id) ?? 0) - (branchIdealY.get(b.id) ?? 0) ||
-      compareBranches(a, b),
-  )) {
-    const conflictingY = [...branchLaneY]
-      .filter(([id]) =>
-        branchConflicts(
-          branch,
-          orderedBranches.find((candidate) => candidate.id === id) ?? branch,
-        ),
-      )
-      .map(([, y]) => y);
-    const ideal = branchIdealY.get(branch.id) ?? (laneTop + laneBottom) / 2;
-    const chosen = [...laneCandidates]
-      .sort((a, b) => Math.abs(a - ideal) - Math.abs(b - ideal) || a - b)
-      .find((candidate) =>
-        conflictingY.every((y) => Math.abs(y - candidate) >= 54),
-      );
-    branchLaneY.set(branch.id, chosen ?? ideal);
-  }
+  const visibleNodes = graph.nodes.filter(
+    (node) => !node.routing && Number(node.total) > 0,
+  );
+  const nodeBoxes = visibleNodes.map((node) => ({
+    id: node.id,
+    x: node.x0,
+    y: node.y0,
+    width: node.x1 - node.x0,
+    height: node.y1 - node.y0,
+  }));
+  const labelBoxes = visibleNodes.map((node) => ({
+    id: node.id,
+    ...labelBoxForNode(node),
+  }));
+  const expandedHitBoxes = nodeBoxes.map((box) => ({
+    id: box.id,
+    x: box.x - BRANCH_HANDLE_RADIUS,
+    y: box.y - BRANCH_HANDLE_RADIUS,
+    width: box.width + BRANCH_HANDLE_RADIUS * 2,
+    height: box.height + BRANCH_HANDLE_RADIUS * 2,
+  }));
   const transitionLaneByLink = new Map();
   const laneYForLink = (link) =>
-    transitionLaneByLink.get(link) ??
-    branchLaneY.get(link.branchId) ??
-    (laneTop + laneBottom) / 2;
-  const assignDockLanes = (entries, coordinate) => {
+    transitionLaneByLink.get(link) ?? (laneTop + laneBottom) / 2;
+  const candidateBlockedByFixedGeometry = (link, y) => {
+    const sourceCenter = rankCenterX(link.source.rank);
+    const targetCenter = rankCenterX(link.target.rank);
+    const x = (sourceCenter + targetCenter) / 2;
+    const box = {
+      x: x - BRANCH_HANDLE_RADIUS,
+      y: y - BRANCH_HANDLE_RADIUS,
+      width: BRANCH_HANDLE_RADIUS * 2,
+      height: BRANCH_HANDLE_RADIUS * 2,
+    };
+    const incident = new Set([link.source.id, link.target.id]);
+    return [...nodeBoxes, ...labelBoxes, ...expandedHitBoxes].some(
+      (candidateBox) =>
+        !incident.has(candidateBox.id) && boxesOverlap(box, candidateBox),
+    );
+  };
+  const linksByTransition = new Map();
+  for (const link of graph.links) {
+    const transitionIndex = link.source.rank;
+    if (!linksByTransition.has(transitionIndex))
+      linksByTransition.set(transitionIndex, []);
+    linksByTransition.get(transitionIndex).push(link);
+  }
+  const previousTransitionY = new Map();
+  for (const transitionIndex of [...linksByTransition.keys()].sort(
+    (a, b) => a - b,
+  )) {
+    const transitionLinks = linksByTransition
+      .get(transitionIndex)
+      .sort(compareLaneLinks);
+    const filteredCandidates = new Map(
+      transitionLinks.map((link) => [
+        link.id,
+        laneCandidates.filter(
+          (candidateY) => !candidateBlockedByFixedGeometry(link, candidateY),
+        ),
+      ]),
+    );
+    const selectedY = new Map();
+    const chooseTransitionLanes = () => {
+      if (selectedY.size >= transitionLinks.length) return true;
+      const next = transitionLinks
+        .filter((link) => !selectedY.has(link.id))
+        .map((link) => {
+          const ideal =
+            previousTransitionY.get(link.branchId) ??
+            laneOrderValue(link) ??
+            (laneTop + laneBottom) / 2;
+          const candidates = (filteredCandidates.get(link.id) ?? laneCandidates)
+            .filter((candidateY) =>
+              [...selectedY.values()].every(
+                (selected) => Math.abs(selected - candidateY) >= minLaneSpacing,
+              ),
+            )
+            .sort(
+              (a, b) =>
+                Math.abs(a - ideal) - Math.abs(b - ideal) ||
+                a - b,
+            );
+          return { link, candidates, ideal };
+        })
+        .sort(
+          (a, b) =>
+            a.candidates.length - b.candidates.length ||
+            Math.abs(a.ideal - b.ideal) ||
+            compareLaneLinks(a.link, b.link),
+        )[0];
+      if (!next || next.candidates.length === 0) return false;
+      for (const candidateY of next.candidates) {
+        selectedY.set(next.link.id, candidateY);
+        if (chooseTransitionLanes()) return true;
+        selectedY.delete(next.link.id);
+      }
+      return false;
+    };
+    if (!chooseTransitionLanes()) {
+      for (const link of transitionLinks) {
+        const ideal =
+          previousTransitionY.get(link.branchId) ??
+          laneOrderValue(link) ??
+          (laneTop + laneBottom) / 2;
+        const fallback =
+          (filteredCandidates.get(link.id) ?? laneCandidates).sort(
+            (a, b) => Math.abs(a - ideal) - Math.abs(b - ideal) || a - b,
+          )[0] ?? ideal;
+        selectedY.set(link.id, fallback);
+      }
+    }
+    for (const link of transitionLinks) {
+      const laneY = selectedY.get(link.id) ?? (laneTop + laneBottom) / 2;
+      transitionLaneByLink.set(link, laneY);
+      previousTransitionY.set(link.branchId, laneY);
+    }
+  }
+  const outgoingByNode = new Map();
+  const incomingByNode = new Map();
+  for (const link of graph.links) {
+    if (!outgoingByNode.has(link.source)) outgoingByNode.set(link.source, []);
+    outgoingByNode.get(link.source).push(link);
+    if (!incomingByNode.has(link.target)) incomingByNode.set(link.target, []);
+    incomingByNode.get(link.target).push(link);
+  }
+  const assignDockLanesWithRouting = (entries, coordinate, routingNodeY) => {
     for (const [node, links] of entries) {
       const ordered = [...links].sort(
         (a, b) => laneYForLink(a) - laneYForLink(b) || compareLaneLinks(a, b),
@@ -412,7 +496,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
         const laneY = laneYForLink(link);
         link.transitionLaneY = laneY;
         if (node.routing) {
-          link[coordinate] = laneY;
+          link[coordinate] = routingNodeY.get(node) ?? laneY;
           return;
         }
         const height = Math.max(0, node.y1 - node.y0);
@@ -424,27 +508,101 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
       });
     }
   };
-  const outgoingByNode = new Map();
-  const incomingByNode = new Map();
-  for (const link of graph.links) {
-    if (!outgoingByNode.has(link.source)) outgoingByNode.set(link.source, []);
-    outgoingByNode.get(link.source).push(link);
-    if (!incomingByNode.has(link.target)) incomingByNode.set(link.target, []);
-    incomingByNode.get(link.target).push(link);
-  }
-
-  const applyBranchLanes = () => {
-    transitionLaneByLink.clear();
-    for (const link of graph.links) {
-      transitionLaneByLink.set(
-        link,
-        branchLaneY.get(link.branchId) ?? (laneTop + laneBottom) / 2,
+  const applyLaneGeometry = () => {
+    const routingNodeY = new Map();
+    for (const node of graph.nodes.filter((candidate) => candidate.routing)) {
+      const incident = [
+        ...(outgoingByNode.get(node) ?? []),
+        ...(incomingByNode.get(node) ?? []),
+      ];
+      const yValues = incident
+        .map((link) => laneYForLink(link))
+        .filter(Number.isFinite);
+      routingNodeY.set(
+        node,
+        yValues.length
+          ? yValues.reduce((sum, value) => sum + value, 0) / yValues.length
+          : (laneTop + laneBottom) / 2,
       );
     }
-    assignDockLanes(outgoingByNode, "y0");
-    assignDockLanes(incomingByNode, "y1");
+    assignDockLanesWithRouting(outgoingByNode, "y0", routingNodeY);
+    assignDockLanesWithRouting(incomingByNode, "y1", routingNodeY);
   };
-  applyBranchLanes();
+  const segmentsByBranch = () => {
+    const byBranch = new Map();
+    for (const link of graph.links) {
+      if (!byBranch.has(link.branchId)) byBranch.set(link.branchId, []);
+      byBranch.get(link.branchId).push(link);
+    }
+    return byBranch;
+  };
+  applyLaneGeometry();
+  const initialLaneByLink = new Map(
+    graph.links.map((link) => [link.id, laneYForLink(link)]),
+  );
+  const handleResult = () =>
+    tryAssignBranchHandles(graph.branches, segmentsByBranch(), visibleNodes);
+  let result = handleResult();
+  if (!result.ok && result.reason === "no-candidates") {
+    const candidateValuesByLink = new Map(
+      graph.links.map((link) => {
+        const ideal = initialLaneByLink.get(link.id) ?? laneOrderValue(link);
+        const orderedValues = laneCandidates
+          .filter((candidateY) => !candidateBlockedByFixedGeometry(link, candidateY))
+          .sort((a, b) => Math.abs(a - ideal) - Math.abs(b - ideal) || a - b);
+        const spreadValues = [...orderedValues].sort((a, b) => a - b);
+        const values = [...new Set([
+          ...orderedValues.slice(0, 5),
+          spreadValues[0],
+          spreadValues[Math.floor(spreadValues.length / 2)],
+          spreadValues.at(-1),
+        ])].filter(Number.isFinite);
+        return [link.id, values];
+      }),
+    );
+    const blockedCount = (candidateResult) =>
+      candidateResult.ok
+        ? 0
+        : candidateResult.reason === "no-candidates"
+          ? candidateResult.blockedBranchIds.length
+          : Number.POSITIVE_INFINITY;
+    for (let iteration = 0; iteration < 16; iteration += 1) {
+      if (result.ok || result.reason !== "no-candidates") break;
+      const blocked = new Set(result.blockedBranchIds);
+      const adjustableLinks = graph.links
+        .filter((link) => blocked.has(link.branchId))
+        .sort(compareLaneLinks);
+      if (!adjustableLinks.length) break;
+      const baselineScore = blockedCount(result);
+      let bestMove = null;
+      for (const link of adjustableLinks) {
+        const currentY = laneYForLink(link);
+        for (const candidateY of candidateValuesByLink.get(link.id) ?? []) {
+          if (Math.abs(candidateY - currentY) < 0.001) continue;
+          transitionLaneByLink.set(link, candidateY);
+          applyLaneGeometry();
+          const candidateResult = handleResult();
+          const candidateScore = blockedCount(candidateResult);
+          transitionLaneByLink.set(link, currentY);
+          applyLaneGeometry();
+          if (candidateScore >= baselineScore) continue;
+          if (
+            !bestMove ||
+            candidateScore < bestMove.score ||
+            (candidateScore === bestMove.score &&
+              (compareLaneLinks(link, bestMove.link) < 0 ||
+                (link.id === bestMove.link.id && candidateY < bestMove.y)))
+          ) {
+            bestMove = { link, y: candidateY, score: candidateScore, candidateResult };
+          }
+        }
+      }
+      if (!bestMove) break;
+      transitionLaneByLink.set(bestMove.link, bestMove.y);
+      applyLaneGeometry();
+      result = bestMove.candidateResult;
+    }
+  }
   return { graph, dimensions };
 }
 
