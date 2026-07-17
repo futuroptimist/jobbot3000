@@ -453,19 +453,15 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
     return byBranch;
   };
   const visibleNodes = graph.nodes.filter((node) => !node.routing);
-  const handleFeasible = () => {
-    try {
-      assignBranchHandles(graph.branches, segmentsByBranch(), visibleNodes);
-      return null;
-    } catch (error) {
-      return error instanceof Error ? error.message : String(error);
-    }
-  };
+  const handleFeasible = () =>
+    tryAssignBranchHandles(graph.branches, segmentsByBranch(), visibleNodes);
   applyBranchLanes();
   for (let attempt = 0; attempt < orderedBranches.length; attempt += 1) {
-    const message = handleFeasible();
-    if (!message) break;
-    const branch = orderedBranches.find((item) => message.includes(item.id));
+    const result = handleFeasible();
+    if (result.ok) break;
+    const branch = orderedBranches.find((item) =>
+      result.blockedBranchIds.includes(item.id),
+    );
     if (!branch) break;
     const current = branchLaneY.get(branch.id) ?? (laneTop + laneBottom) / 2;
     const candidates = laneCandidates
@@ -481,8 +477,8 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
       const previous = branchLaneY.get(branch.id);
       branchLaneY.set(branch.id, candidate);
       applyBranchLanes();
-      const nextMessage = handleFeasible();
-      if (!nextMessage || !nextMessage.includes(branch.id)) {
+      const nextResult = handleFeasible();
+      if (nextResult.ok || !nextResult.blockedBranchIds.includes(branch.id)) {
         improved = true;
         break;
       }
@@ -585,11 +581,11 @@ const boxesOverlap = (a, b) =>
   a.x + a.width > b.x &&
   a.y < b.y + b.height &&
   a.y + a.height > b.y;
-export function assignBranchHandles(
+const tryAssignBranchHandles = (
   branches,
   segmentsByBranch,
   visibleNodes = [],
-) {
+) => {
   const nodeBoxes = visibleNodes.map((node) => ({
     x: node.x0,
     y: node.y0,
@@ -709,10 +705,6 @@ export function assignBranchHandles(
         });
       }
     }
-    if (!candidates.length)
-      throw new Error(
-        `Lifecycle diagram handle placement invariant violated for ${branch.id}`,
-      );
     candidateSets.set(
       branch.id,
       candidates.sort(
@@ -721,6 +713,16 @@ export function assignBranchHandles(
       ),
     );
   }
+  const blockedBranchIds = orderedBranches
+    .filter((branch) => !(candidateSets.get(branch.id)?.length > 0))
+    .map((branch) => branch.id);
+  if (blockedBranchIds.length)
+    return {
+      ok: false,
+      reason: "no-candidates",
+      blockedBranchIds,
+      candidateSets,
+    };
   const selected = new Map();
   const searchBranches = [...orderedBranches].sort(
     (a, b) =>
@@ -744,6 +746,34 @@ export function assignBranchHandles(
     return false;
   };
   if (!chooseHandles())
-    throw new Error("Lifecycle diagram handle placement invariant violated");
-  return orderedBranches.map((branch) => selected.get(branch.id));
+    return {
+      ok: false,
+      reason: "handle-overlap",
+      blockedBranchIds: orderedBranches.map((branch) => branch.id),
+      candidateSets,
+    };
+  return {
+    ok: true,
+    handles: orderedBranches.map((branch) => selected.get(branch.id)),
+    candidateSets,
+  };
+};
+
+export function assignBranchHandles(
+  branches,
+  segmentsByBranch,
+  visibleNodes = [],
+) {
+  const result = tryAssignBranchHandles(
+    branches,
+    segmentsByBranch,
+    visibleNodes,
+  );
+  if (result.ok) return result.handles;
+  const branchId = result.blockedBranchIds[0];
+  throw new Error(
+    branchId
+      ? `Lifecycle diagram handle placement invariant violated for ${branchId}`
+      : "Lifecycle diagram handle placement invariant violated",
+  );
 }
