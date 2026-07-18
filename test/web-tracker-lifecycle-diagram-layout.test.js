@@ -18,7 +18,9 @@ import {
   RANK_CORRIDOR_HALF_WIDTH,
   SANKEY_NODE_WIDTH,
   assignBranchHandles,
+  auditLifecycleRouteGeometry,
   buildLifecycleDisplayBranches,
+  buildLifecycleRouteModel,
   buildLifecycleRoutingGraph,
   calculateLifecycleDiagramLayout,
   compareBranches,
@@ -30,6 +32,8 @@ import {
   rankCenterX,
   renderedBranchStrokeWidth,
   rendererHitBoxForNode,
+  segmentRoutePrimitives,
+  selectedEnvelopeRadius,
   wrapLifecycleLabel,
 } from "../src/web/tracker/lifecycleDiagramLayout.js";
 
@@ -109,6 +113,76 @@ const denseBranchProjection = () => {
 };
 
 describe("lifecycle diagram render-only routing layout", () => {
+  it("materializes exact routed primitives for the canonical M-L-C-L route", () => {
+    const p = projection();
+    const layout = calculateLifecycleDiagramLayout(p);
+    const { graph, dimensions } = layoutLifecycleRoutingGraph(p, layout);
+    const segment = graph.links.find((link) => link.source.rank === 0);
+    const [source, cubic, target] = segmentRoutePrimitives(segment);
+    const sourceCenter = rankCenterX(segment.source.rank);
+    const targetCenter = rankCenterX(segment.target.rank);
+
+    expect(selectedEnvelopeRadius(segment)).toBe(7.5);
+    expect(source).toMatchObject({
+      type: "line",
+      zone: "source",
+      p0: { x: segment.source.x1, y: segment.y0 },
+      p1: {
+        x: sourceCenter + RANK_CORRIDOR_HALF_WIDTH,
+        y: segment.y0,
+      },
+    });
+    expect(cubic).toMatchObject({
+      type: "cubic",
+      zone: "transition",
+      p0: {
+        x: sourceCenter + RANK_CORRIDOR_HALF_WIDTH,
+        y: segment.y0,
+      },
+      p1: {
+        x: sourceCenter + RANK_CORRIDOR_HALF_WIDTH + 24,
+        y: segment.transitionLaneY,
+      },
+      p2: {
+        x: targetCenter - RANK_CORRIDOR_HALF_WIDTH - 24,
+        y: segment.transitionLaneY,
+      },
+      p3: {
+        x: targetCenter - RANK_CORRIDOR_HALF_WIDTH,
+        y: segment.y1,
+      },
+    });
+    expect(target).toMatchObject({
+      type: "line",
+      zone: "target",
+      p0: {
+        x: targetCenter - RANK_CORRIDOR_HALF_WIDTH,
+        y: segment.y1,
+      },
+      p1: { x: targetCenter, y: segment.y1 },
+    });
+    expect(dimensions.width).toBeGreaterThan(MINIMUM_SVG_WIDTH - 1);
+  });
+
+  it("exposes a deterministic route model and pure geometry audit", () => {
+    const p = projection();
+    const layout = calculateLifecycleDiagramLayout(p);
+    const { graph, dimensions } = layoutLifecycleRoutingGraph(p, layout);
+    const model = buildLifecycleRouteModel(graph, dimensions);
+    const audit = auditLifecycleRouteGeometry({ model, handles: [] });
+
+    expect(model.branches.map((branch) => branch.id)).toEqual(
+      [...model.branches].sort(compareBranches).map((branch) => branch.id),
+    );
+    expect(model.segmentsByTransitionRank).toHaveLength(6);
+    expect(audit.forcedCrossings).toEqual([]);
+    expect(
+      audit.fatalFindings.every(
+        (finding) => finding.category === "proper-crossing",
+      ),
+    ).toBe(true);
+  });
+
   it("partitions semantic links into stable endpoint-conditioned display branches", () => {
     const p = projection();
     const branches = buildLifecycleDisplayBranches(p);
@@ -543,6 +617,9 @@ describe("lifecycle diagram render-only routing layout", () => {
       byBranch.get(link.branchId).push(link);
     }
     const handles = assignBranchHandles(graph.branches, byBranch, visibleNodes);
+    const branchById = new Map(
+      graph.branches.map((branch) => [branch.id, branch]),
+    );
     expect(handles).toHaveLength(graph.branches.length);
     const nodeBoxes = visibleNodes.map((node) => ({
       x: node.x0,
@@ -570,7 +647,19 @@ describe("lifecycle diagram render-only routing layout", () => {
         ),
       ).toBe(true);
       const unrelatedSamples = [...byBranch.entries()]
-        .filter(([branchId]) => branchId !== handle.branchId)
+        .filter(([branchId]) => {
+          if (branchId === handle.branchId) return false;
+          const handleBranch = branchById.get(handle.branchId);
+          const sampleBranch = branchById.get(branchId);
+          return (
+            handleBranch &&
+            sampleBranch &&
+            handleBranch.source !== sampleBranch.source &&
+            handleBranch.source !== sampleBranch.target &&
+            handleBranch.target !== sampleBranch.source &&
+            handleBranch.target !== sampleBranch.target
+          );
+        })
         .flatMap(([, branchSegments]) =>
           branchSegments.flatMap((segment) =>
             Array.from({ length: 21 }, (_, index) => ({

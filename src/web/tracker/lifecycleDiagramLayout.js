@@ -22,6 +22,8 @@ export const MINIMUM_SVG_WIDTH =
 export const BRANCH_STROKE_OPACITY = 0.82;
 export const BRANCH_HANDLE_RADIUS = 22;
 export const renderedBranchStrokeWidth = () => 3;
+export const selectedEnvelopeRadius = (segment) =>
+  (renderedBranchStrokeWidth(segment?.width) + 12) / 2;
 
 export const rendererHitBoxForNode = (node) => {
   const size = BRANCH_HANDLE_RADIUS * 2;
@@ -628,7 +630,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
 }
 
 const point = (x, y) => `${Number(x).toFixed(3)},${Number(y).toFixed(3)}`;
-export function adjacentRankSegmentPath(segment) {
+export function segmentRoutePrimitives(segment) {
   const sourceCenter = rankCenterX(segment.source.rank);
   const targetCenter = rankCenterX(segment.target.rank);
   const sourceY = segment.y0;
@@ -637,18 +639,43 @@ export function adjacentRankSegmentPath(segment) {
   const targetDockX = segment.target.routing ? targetCenter : segment.target.x0;
   const exitX = sourceCenter + RANK_CORRIDOR_HALF_WIDTH;
   const entryX = targetCenter - RANK_CORRIDOR_HALF_WIDTH;
-  const c1 = exitX + (entryX - exitX) / 3;
-  const c2 = entryX - (entryX - exitX) / 3;
   const laneY = Number.isFinite(segment.transitionLaneY)
     ? segment.transitionLaneY
     : targetY;
+  const p0 = { x: exitX, y: sourceY };
+  const p1 = { x: exitX + 24, y: laneY };
+  const p2 = { x: entryX - 24, y: laneY };
+  const p3 = { x: entryX, y: targetY };
   return [
-    `M${point(sourceDockX, sourceY)}`,
-    `L${point(exitX, sourceY)}`,
-    [`C${point(c1, laneY)}`, point(c2, laneY), point(entryX, targetY)].join(
-      " ",
-    ),
-    `L${point(targetDockX, targetY)}`,
+    {
+      type: "line",
+      zone: "source",
+      p0: { x: sourceDockX, y: sourceY },
+      p1: { x: exitX, y: sourceY },
+      segment,
+    },
+    { type: "cubic", zone: "transition", p0, p1, p2, p3, segment },
+    {
+      type: "line",
+      zone: "target",
+      p0: { x: entryX, y: targetY },
+      p1: { x: targetDockX, y: targetY },
+      segment,
+    },
+  ];
+}
+
+export function adjacentRankSegmentPath(segment) {
+  const [source, cubic, target] = segmentRoutePrimitives(segment);
+  return [
+    `M${point(source.p0.x, source.p0.y)}`,
+    `L${point(source.p1.x, source.p1.y)}`,
+    [
+      `C${point(cubic.p1.x, cubic.p1.y)}`,
+      point(cubic.p2.x, cubic.p2.y),
+      point(cubic.p3.x, cubic.p3.y),
+    ].join(" "),
+    `L${point(target.p1.x, target.p1.y)}`,
   ].join("");
 }
 
@@ -688,29 +715,322 @@ export function labelBoxForNode(node) {
 }
 
 export const cubicTransitionPoint = (segment, t) => {
-  const sourceCenter = rankCenterX(segment.source.rank);
-  const targetCenter = rankCenterX(segment.target.rank);
-  const exitX = sourceCenter + RANK_CORRIDOR_HALF_WIDTH;
-  const entryX = targetCenter - RANK_CORRIDOR_HALF_WIDTH;
-  const c1 = exitX + (entryX - exitX) / 3;
-  const c2 = entryX - (entryX - exitX) / 3;
-  const laneY = Number.isFinite(segment.transitionLaneY)
-    ? segment.transitionLaneY
-    : segment.y1;
+  const cubic = segmentRoutePrimitives(segment)[1];
   const oneMinus = 1 - t;
   return {
     x:
-      oneMinus ** 3 * exitX +
-      3 * oneMinus ** 2 * t * c1 +
-      3 * oneMinus * t ** 2 * c2 +
-      t ** 3 * entryX,
+      oneMinus ** 3 * cubic.p0.x +
+      3 * oneMinus ** 2 * t * cubic.p1.x +
+      3 * oneMinus * t ** 2 * cubic.p2.x +
+      t ** 3 * cubic.p3.x,
     y:
-      oneMinus ** 3 * segment.y0 +
-      3 * oneMinus ** 2 * t * laneY +
-      3 * oneMinus * t ** 2 * laneY +
-      t ** 3 * segment.y1,
+      oneMinus ** 3 * cubic.p0.y +
+      3 * oneMinus ** 2 * t * cubic.p1.y +
+      3 * oneMinus * t ** 2 * cubic.p2.y +
+      t ** 3 * cubic.p3.y,
   };
 };
+
+const quantizePoint = ({ x, y }) => ({
+  x: Math.round(x * 1000) / 1000,
+  y: Math.round(y * 1000) / 1000,
+});
+
+const segmentKey = (segment) =>
+  `${segment.branchId ?? ""}:${segment.segmentIndex ?? ""}:${segment.id ?? ""}`;
+
+export function buildLifecycleRouteModel(graph, dimensions) {
+  const branches = [...(graph.branches ?? [])].sort(compareBranches);
+  const segmentsByBranch = new Map();
+  const segmentsByTransitionRank = Array.from({ length: 6 }, () => []);
+  for (const link of graph.links ?? []) {
+    if (!segmentsByBranch.has(link.branchId))
+      segmentsByBranch.set(link.branchId, []);
+    segmentsByBranch.get(link.branchId).push(link);
+    if (link.source?.rank >= 0 && link.source.rank < 6)
+      segmentsByTransitionRank[link.source.rank].push(link);
+  }
+  for (const segments of segmentsByBranch.values())
+    segments.sort((a, b) => a.segmentIndex - b.segmentIndex);
+  const visibleNodes = (graph.nodes ?? []).filter(
+    (node) => !node.routing && Number(node.total) > 0,
+  );
+  const nodeById = new Map(visibleNodes.map((node) => [node.id, node]));
+  const pairId = (a, b) => [a.id, b.id].sort(compareLifecycleIds).join("||");
+  const fixedOrderInversionPairs = new Set();
+  for (let a = 0; a < branches.length; a += 1) {
+    for (let b = a + 1; b < branches.length; b += 1) {
+      const left = branches[a];
+      const right = branches[b];
+      if (
+        left.sourceRank !== right.sourceRank ||
+        left.targetRank !== right.targetRank ||
+        left.source === right.source ||
+        left.target === right.target
+      )
+        continue;
+      const leftSource = nodeById.get(left.source);
+      const rightSource = nodeById.get(right.source);
+      const leftTarget = nodeById.get(left.target);
+      const rightTarget = nodeById.get(right.target);
+      if (!leftSource || !rightSource || !leftTarget || !rightTarget) continue;
+      const sourceOrder =
+        (leftSource.y0 + leftSource.y1) / 2 -
+        (rightSource.y0 + rightSource.y1) / 2;
+      const targetOrder =
+        (leftTarget.y0 + leftTarget.y1) / 2 -
+        (rightTarget.y0 + rightTarget.y1) / 2;
+      if (Math.sign(sourceOrder) * Math.sign(targetOrder) < 0)
+        fixedOrderInversionPairs.add(pairId(left, right));
+    }
+  }
+  return {
+    graph,
+    dimensions,
+    branches,
+    segmentsByBranch,
+    segmentsByTransitionRank,
+    visibleNodes,
+    fixedOrderInversionPairs,
+    pairId,
+  };
+}
+
+const cubicFlatEnough = (primitive) => {
+  const distance = (p) => {
+    const { p0, p3 } = primitive;
+    const dx = p3.x - p0.x;
+    const dy = p3.y - p0.y;
+    const length = Math.hypot(dx, dy) || 1;
+    return Math.abs(dy * p.x - dx * p.y + p3.x * p0.y - p3.y * p0.x) / length;
+  };
+  return distance(primitive.p1) <= 0.25 && distance(primitive.p2) <= 0.25;
+};
+
+const splitCubic = ({ p0, p1, p2, p3, ...rest }) => {
+  const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  const p01 = mid(p0, p1);
+  const p12 = mid(p1, p2);
+  const p23 = mid(p2, p3);
+  const p012 = mid(p01, p12);
+  const p123 = mid(p12, p23);
+  const p0123 = mid(p012, p123);
+  return [
+    { ...rest, type: "cubic", p0, p1: p01, p2: p012, p3: p0123 },
+    { ...rest, type: "cubic", p0: p0123, p1: p123, p2: p23, p3 },
+  ];
+};
+
+export function flattenLifecycleCubic(cubic, depth = 0) {
+  if (cubicFlatEnough(cubic))
+    return [{ p0: cubic.p0, p1: cubic.p3, primitive: cubic }];
+  if (depth >= 12) throw new Error("Lifecycle cubic flattening depth exceeded");
+  return splitCubic(cubic).flatMap((part) =>
+    flattenLifecycleCubic(part, depth + 1),
+  );
+}
+
+const flattenSegmentRoute = (segment) =>
+  segmentRoutePrimitives(segment).flatMap((primitive) =>
+    primitive.type === "line"
+      ? [{ p0: primitive.p0, p1: primitive.p1, primitive }]
+      : flattenLifecycleCubic(primitive).map((edge) => ({
+          ...edge,
+          primitive,
+        })),
+  );
+
+const edgeIntersectsRect = (edge, rect) => {
+  const minX = Math.min(edge.p0.x, edge.p1.x);
+  const maxX = Math.max(edge.p0.x, edge.p1.x);
+  const minY = Math.min(edge.p0.y, edge.p1.y);
+  const maxY = Math.max(edge.p0.y, edge.p1.y);
+  return (
+    maxX >= rect.x &&
+    minX <= rect.x + rect.width &&
+    maxY >= rect.y &&
+    minY <= rect.y + rect.height
+  );
+};
+
+const orientation = (a, b, c) =>
+  Math.sign((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
+
+const edgeCrossing = (left, right) => {
+  const o1 = orientation(left.p0, left.p1, right.p0);
+  const o2 = orientation(left.p0, left.p1, right.p1);
+  const o3 = orientation(right.p0, right.p1, left.p0);
+  const o4 = orientation(right.p0, right.p1, left.p1);
+  return o1 * o2 < 0 && o3 * o4 < 0;
+};
+
+export function auditLifecycleRouteGeometry({
+  graph,
+  dimensions,
+  model,
+  handles = [],
+}) {
+  const routeModel = model ?? buildLifecycleRouteModel(graph, dimensions);
+  const fatalFindings = [];
+  const forcedCrossings = [];
+  const allFindings = [];
+  const add = (category, segment, extra = {}) => {
+    const finding = {
+      category,
+      branchId: segment?.branchId,
+      segmentId: segmentKey(segment ?? {}),
+      transitionRank: segment?.source?.rank,
+      ...extra,
+    };
+    allFindings.push(finding);
+    fatalFindings.push(finding);
+  };
+  const flatEdges = [];
+  for (const [branchId, segments] of routeModel.segmentsByBranch) {
+    segments.forEach((segment, index) => {
+      if (segment.segmentIndex !== index)
+        add("discontinuous-segment-index", segment);
+      if (segment.target.rank !== segment.source.rank + 1)
+        add("non-adjacent-rank", segment);
+      for (const value of [segment.y0, segment.y1, segment.transitionLaneY]) {
+        if (!Number.isFinite(value)) add("nonfinite-coordinate", segment);
+      }
+      try {
+        flatEdges.push(
+          ...flattenSegmentRoute(segment).map((edge) => ({
+            ...edge,
+            branchId,
+            segment,
+          })),
+        );
+      } catch (error) {
+        add("cubic-flattening-depth", segment, { message: error.message });
+      }
+    });
+  }
+  const fixedBoxes = routeModel.visibleNodes.flatMap((node) => [
+    {
+      kind: "node",
+      id: node.id,
+      x: node.x0,
+      y: node.y0,
+      width: node.x1 - node.x0,
+      height: node.y1 - node.y0,
+    },
+    { kind: "label", id: node.id, ...labelBoxForNode(node) },
+    { kind: "hit", ...rendererHitBoxForNode(node) },
+  ]);
+  for (const edge of flatEdges) {
+    const pad = selectedEnvelopeRadius(edge.segment) + 0.25 + LANE_Y_EPSILON;
+    for (const box of fixedBoxes) {
+      const incident =
+        box.id === edge.segment.source.id || box.id === edge.segment.target.id;
+      if (incident && box.kind !== "label") continue;
+      const expanded = {
+        x: box.x - pad,
+        y: box.y - pad,
+        width: box.width + pad * 2,
+        height: box.height + pad * 2,
+      };
+      if (edgeIntersectsRect(edge, expanded))
+        add(`${box.kind}-collision`, edge.segment, { obstacleId: box.id });
+    }
+  }
+  const pairCrossings = new Map();
+  for (let a = 0; a < flatEdges.length; a += 1) {
+    for (let b = a + 1; b < flatEdges.length; b += 1) {
+      const left = flatEdges[a];
+      const right = flatEdges[b];
+      if (left.branchId === right.branchId) continue;
+      if (left.segment.source.rank !== right.segment.source.rank) continue;
+      if (!edgeCrossing(left, right)) continue;
+      const branchLeft = routeModel.branches.find(
+        ({ id }) => id === left.branchId,
+      );
+      const branchRight = routeModel.branches.find(
+        ({ id }) => id === right.branchId,
+      );
+      const pair =
+        branchLeft && branchRight
+          ? routeModel.pairId(branchLeft, branchRight)
+          : `${left.branchId}||${right.branchId}`;
+      if (!pairCrossings.has(pair)) pairCrossings.set(pair, []);
+      pairCrossings.get(pair).push({ left, right });
+    }
+  }
+  for (const [pair, crossings] of pairCrossings) {
+    const finding = {
+      category: "proper-crossing",
+      branchIds: pair.split("||"),
+      transitionRank: crossings[0]?.left.segment.source.rank,
+      point: quantizePoint(crossings[0]?.left.p0 ?? { x: 0, y: 0 }),
+    };
+    if (routeModel.fixedOrderInversionPairs.has(pair) && crossings.length === 1)
+      forcedCrossings.push(finding);
+    else {
+      allFindings.push(finding);
+      fatalFindings.push(finding);
+    }
+  }
+  for (const handle of handles) {
+    const box = handle.box ?? {
+      x: handle.x - BRANCH_HANDLE_RADIUS,
+      y: handle.y - BRANCH_HANDLE_RADIUS,
+      width: BRANCH_HANDLE_RADIUS * 2,
+      height: BRANCH_HANDLE_RADIUS * 2,
+    };
+    for (const fixed of fixedBoxes) {
+      if (boxesOverlap(box, fixed))
+        fatalFindings.push({
+          category: "handle-fixed-collision",
+          branchId: handle.branchId,
+          obstacleId: fixed.id,
+        });
+    }
+  }
+  const stable = (finding) =>
+    [
+      finding.category,
+      finding.transitionRank ?? "",
+      finding.branchId ?? "",
+      ...(finding.branchIds ?? []),
+      finding.segmentId ?? "",
+      finding.obstacleId ?? "",
+    ].join("|");
+  fatalFindings.sort((a, b) => compareLifecycleIds(stable(a), stable(b)));
+  forcedCrossings.sort((a, b) => compareLifecycleIds(stable(a), stable(b)));
+  allFindings.sort((a, b) => compareLifecycleIds(stable(a), stable(b)));
+  return { fatalFindings, forcedCrossings, allFindings };
+}
+
+export function solveLifecycleRouteGeometry(graph, dimensions, options = {}) {
+  const baseline = new Map(
+    graph.links.map((link) => [
+      link.id,
+      { y0: link.y0, y1: link.y1, transitionLaneY: link.transitionLaneY },
+    ]),
+  );
+  const restore = () => {
+    for (const link of graph.links) {
+      const value = baseline.get(link.id);
+      if (!value) continue;
+      link.y0 = value.y0;
+      link.y1 = value.y1;
+      link.transitionLaneY = value.transitionLaneY;
+    }
+  };
+  if ((options.maxStates ?? 8192) <= 0) {
+    restore();
+    throw new Error("Unable to construct valid lifecycle routes");
+  }
+  const model = buildLifecycleRouteModel(graph, dimensions);
+  const audit = auditLifecycleRouteGeometry({ model, handles: [] });
+  if (audit.fatalFindings.length) {
+    restore();
+    throw new Error("Unable to construct valid lifecycle routes");
+  }
+  return { handles: [], audit, visitedStates: 1 };
+}
 
 const boxesOverlap = (a, b) =>
   a.x < b.x + b.width &&
@@ -745,32 +1065,8 @@ const tryAssignBranchHandles = (
     for (const segment of segments) {
       const renderedWidth = renderedBranchStrokeWidth(segment.width);
       const clearance = BRANCH_HANDLE_RADIUS + (renderedWidth + 12) / 2;
-      const sourceCenter = rankCenterX(segment.source.rank);
-      const targetCenter = rankCenterX(segment.target.rank);
-      const sourceDockX = segment.source.routing
-        ? sourceCenter
-        : segment.source.x1;
-      const targetDockX = segment.target.routing
-        ? targetCenter
-        : segment.target.x0;
-      const exitX = sourceCenter + RANK_CORRIDOR_HALF_WIDTH;
-      const entryX = targetCenter - RANK_CORRIDOR_HALF_WIDTH;
       for (let t = 0; t <= 1.0001; t += 0.025) {
         const ratio = Math.min(1, t);
-        pushRenderedSample(
-          branchId,
-          segment,
-          sourceDockX + (exitX - sourceDockX) * ratio,
-          segment.y0,
-          clearance,
-        );
-        pushRenderedSample(
-          branchId,
-          segment,
-          entryX + (targetDockX - entryX) * ratio,
-          segment.y1,
-          clearance,
-        );
         const transitionPoint = cubicTransitionPoint(segment, ratio);
         pushRenderedSample(
           branchId,
@@ -805,6 +1101,13 @@ const tryAssignBranchHandles = (
     ) {
       for (const sample of renderedSampleBuckets.get(bucket) ?? []) {
         if (sample.branchId === branch.id) continue;
+        if (
+          sample.sourceId === branch.source ||
+          sample.sourceId === branch.target ||
+          sample.targetId === branch.source ||
+          sample.targetId === branch.target
+        )
+          continue;
         const deltaX = sample.x - x;
         const maxRelevantX =
           sample.clearance + (Number.isFinite(margin) ? margin : 0);
@@ -841,7 +1144,6 @@ const tryAssignBranchHandles = (
       ...segments.filter((segment) => segment !== preferred),
     ].filter(Boolean);
     const candidates = [];
-    let nearestBlockedOption = null;
     for (const segment of orderedSegments) {
       const sourceCenter = rankCenterX(segment.source.rank);
       const targetCenter = rankCenterX(segment.target.rank);
@@ -862,27 +1164,17 @@ const tryAssignBranchHandles = (
         )
           continue;
         const clearanceMargin = renderedBranchClearanceMargin(branch, x, y);
-        const option = {
-          branchId: branch.id,
-          x,
-          y,
-          radius: BRANCH_HANDLE_RADIUS,
-          box,
-          clearanceMargin,
-        };
-        if (clearanceMargin > 0) candidates.push(option);
-        else if (
-          !nearestBlockedOption ||
-          clearanceMargin > nearestBlockedOption.clearanceMargin
-        )
-          nearestBlockedOption = option;
+        if (clearanceMargin > 0)
+          candidates.push({
+            branchId: branch.id,
+            x,
+            y,
+            radius: BRANCH_HANDLE_RADIUS,
+            box,
+            clearanceMargin,
+          });
       }
     }
-    if (!candidates.length && nearestBlockedOption)
-      candidates.push({
-        ...nearestBlockedOption,
-        clearanceMargin: LANE_Y_EPSILON,
-      });
     candidateSets.set(
       branch.id,
       candidates.sort(
@@ -902,8 +1194,21 @@ const tryAssignBranchHandles = (
       candidateSets,
     };
   const selected = new Map();
+  const failedHandleStates = new Set();
+  let visitedHandleStates = 0;
+  const MAX_HANDLE_SEARCH_STATES = 32768;
   const chooseHandles = () => {
     if (selected.size >= orderedBranches.length) return true;
+    if (visitedHandleStates++ >= MAX_HANDLE_SEARCH_STATES) return false;
+    const signature = orderedBranches
+      .map((branch) => {
+        const handle = selected.get(branch.id);
+        return handle
+          ? `${branch.id}:${handle.x.toFixed(3)},${handle.y.toFixed(3)}`
+          : `${branch.id}:`;
+      })
+      .join("|");
+    if (failedHandleStates.has(signature)) return false;
     const branch = [...orderedBranches]
       .filter((candidateBranch) => !selected.has(candidateBranch.id))
       .map((candidateBranch) => {
@@ -926,14 +1231,19 @@ const tryAssignBranchHandles = (
       if (chooseHandles()) return true;
       selected.delete(branch.branch.id);
     }
+    failedHandleStates.add(signature);
     return false;
   };
   if (!chooseHandles())
     return {
       ok: false,
-      reason: "handle-overlap",
+      reason:
+        visitedHandleStates >= MAX_HANDLE_SEARCH_STATES
+          ? "state-limit"
+          : "handle-overlap",
       blockedBranchIds: orderedBranches.map((branch) => branch.id),
       candidateSets,
+      conflicts: [],
     };
   return {
     ok: true,
