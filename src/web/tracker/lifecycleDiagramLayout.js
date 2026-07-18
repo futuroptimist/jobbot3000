@@ -39,7 +39,7 @@ export const rendererHitBoxForNode = (node) => {
     height,
   };
 };
-const MAX_ROUTE_SEARCH_STATES = 4096;
+const MAX_ROUTE_SEARCH_STATES = 8192;
 const LANE_Y_EPSILON = 0.001;
 const COLLISION_MARGIN = -1;
 
@@ -368,7 +368,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
   const fixedBoxes = [...nodeBoxes, ...labelBoxes, ...hitBoxes];
   const laneTop = BRANCH_HANDLE_RADIUS + 4;
   const laneBottom = dimensions.height - BRANCH_HANDLE_RADIUS - 4;
-  const routeEnvelopeRadius = (renderedBranchStrokeWidth() + 12) / 2;
+  const routeEnvelopeRadius = selectedEnvelopeRadius({ width: 1 });
   const minLaneSpacing = BRANCH_HANDLE_RADIUS * 2 + routeEnvelopeRadius * 2;
   const baselineLinks = new Map(
     graph.links.map((link) => [
