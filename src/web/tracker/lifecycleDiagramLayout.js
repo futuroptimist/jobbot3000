@@ -538,10 +538,12 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
           );
         }),
       );
-      assignments.set(
-        branch.id,
-        candidate ?? domains.get(branch.id)?.[0] ?? branchIdealY(branch),
-      );
+      let selected = candidate;
+      if (selected == null) {
+        const branchDomain = domains.get(branch.id) ?? [];
+        selected = branchDomain.length ? branchDomain[0] : branchIdealY(branch);
+      }
+      assignments.set(branch.id, selected);
     }
     return true;
   };
@@ -837,7 +839,7 @@ const tryAssignBranchHandles = (
       ...segments.filter((segment) => segment !== preferred),
     ].filter(Boolean);
     const candidates = [];
-    let rejectedCandidate = null;
+    let blockedHandleCandidate = null;
     for (const segment of orderedSegments) {
       const sourceCenter = rankCenterX(segment.source.rank);
       const targetCenter = rankCenterX(segment.target.rank);
@@ -868,16 +870,16 @@ const tryAssignBranchHandles = (
         };
         if (clearanceMargin > 0) candidates.push(candidate);
         else if (
-          !rejectedCandidate ||
-          clearanceMargin > rejectedCandidate.clearanceMargin
+          !blockedHandleCandidate ||
+          clearanceMargin > blockedHandleCandidate.clearanceMargin
         )
-          rejectedCandidate = candidate;
+          blockedHandleCandidate = candidate;
       }
     }
-    if (!candidates.length && rejectedCandidate)
+    if (!candidates.length && blockedHandleCandidate)
       candidates.push({
-        ...rejectedCandidate,
-        clearanceMargin: Number.EPSILON,
+        ...blockedHandleCandidate,
+        clearanceMargin: LANE_Y_EPSILON,
       });
     candidateSets.set(
       branch.id,
