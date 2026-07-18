@@ -29,6 +29,7 @@ import {
   nodeSort,
   rankCenterX,
   renderedBranchStrokeWidth,
+  rendererHitBoxForNode,
   wrapLifecycleLabel,
 } from "../src/web/tracker/lifecycleDiagramLayout.js";
 
@@ -250,6 +251,25 @@ describe("lifecycle diagram render-only routing layout", () => {
     expect(
       calculateLifecycleDiagramLayout(denser, 100).height,
     ).toBeGreaterThanOrEqual(base.height);
+  });
+
+  it("uses renderer-equivalent minimum hit boxes for layout obstacles", () => {
+    const { graph } = layoutLifecycleRoutingGraph(projection(), 1850);
+    const visible = graph.nodes.find(
+      (node) => !node.routing && node.id === "origin:application_submitted",
+    );
+    const hit = rendererHitBoxForNode(visible);
+    expect(hit.width).toBe(
+      Math.max(BRANCH_HANDLE_RADIUS * 2, visible.x1 - visible.x0),
+    );
+    expect(hit.height).toBe(
+      Math.max(BRANCH_HANDLE_RADIUS * 2, visible.y1 - visible.y0),
+    );
+    expect(hit.x + hit.width / 2).toBeCloseTo((visible.x0 + visible.x1) / 2, 6);
+    expect(hit.y + hit.height / 2).toBeCloseTo(
+      (visible.y0 + visible.y1) / 2,
+      6,
+    );
   });
 
   it("uses exact protected-corridor width calculations and deterministic sorting", () => {

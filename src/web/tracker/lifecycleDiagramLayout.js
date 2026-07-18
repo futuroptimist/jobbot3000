@@ -22,6 +22,21 @@ export const MINIMUM_SVG_WIDTH =
 export const BRANCH_STROKE_OPACITY = 0.82;
 export const BRANCH_HANDLE_RADIUS = 22;
 export const renderedBranchStrokeWidth = () => 3;
+
+export const rendererHitBoxForNode = (node) => {
+  const size = BRANCH_HANDLE_RADIUS * 2;
+  const nodeWidth = node.x1 - node.x0;
+  const nodeHeight = node.y1 - node.y0;
+  const width = Math.max(size, nodeWidth);
+  const height = Math.max(size, nodeHeight);
+  return {
+    id: node.id,
+    x: (node.x0 + node.x1 - width) / 2,
+    y: (node.y0 + node.y1 - height) / 2,
+    width,
+    height,
+  };
+};
 const MAX_LANE_ADJUSTMENT_ITERATIONS = 16;
 const MAX_COMPLETE_LANE_REFINEMENT_BRANCHES = 32;
 const LANE_Y_EPSILON = 0.001;
@@ -381,13 +396,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
     id: node.id,
     ...labelBoxForNode(node),
   }));
-  const expandedHitBoxes = nodeBoxes.map((box) => ({
-    id: box.id,
-    x: box.x - BRANCH_HANDLE_RADIUS,
-    y: box.y - BRANCH_HANDLE_RADIUS,
-    width: box.width + BRANCH_HANDLE_RADIUS * 2,
-    height: box.height + BRANCH_HANDLE_RADIUS * 2,
-  }));
+  const expandedHitBoxes = visibleNodes.map(rendererHitBoxForNode);
   const transitionLaneByLink = new Map();
   const laneYForLink = (link) =>
     transitionLaneByLink.get(link) ?? (laneTop + laneBottom) / 2;
