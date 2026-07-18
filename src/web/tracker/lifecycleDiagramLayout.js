@@ -511,6 +511,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
   };
   const applyLaneGeometry = () => {
     const routingNodeY = new Map();
+    const routingNodesByRank = new Map();
     for (const node of graph.nodes.filter((candidate) => candidate.routing)) {
       const incident = [
         ...(outgoingByNode.get(node) ?? []),
@@ -519,12 +520,38 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
       const yValues = incident
         .map((link) => laneYForLink(link))
         .filter(Number.isFinite);
-      routingNodeY.set(
-        node,
-        yValues.length
-          ? yValues.reduce((sum, value) => sum + value, 0) / yValues.length
-          : (laneTop + laneBottom) / 2,
+      const idealY = yValues.length
+        ? yValues.reduce((sum, value) => sum + value, 0) / yValues.length
+        : (laneTop + laneBottom) / 2;
+      routingNodeY.set(node, idealY);
+      if (!routingNodesByRank.has(node.rank))
+        routingNodesByRank.set(node.rank, []);
+      routingNodesByRank.get(node.rank).push({ node, idealY });
+    }
+    for (const entries of routingNodesByRank.values()) {
+      const ordered = entries.sort(
+        (a, b) =>
+          a.idealY - b.idealY || compareLifecycleIds(a.node.id, b.node.id),
       );
+      let previousY = null;
+      for (const entry of ordered) {
+        const constrainedY =
+          previousY === null
+            ? entry.idealY
+            : Math.max(entry.idealY, previousY + minLaneSpacing);
+        const clampedY = Math.min(laneBottom, Math.max(laneTop, constrainedY));
+        routingNodeY.set(entry.node, clampedY);
+        previousY = clampedY;
+      }
+      for (let index = ordered.length - 2; index >= 0; index -= 1) {
+        const current = routingNodeY.get(ordered[index].node);
+        const next = routingNodeY.get(ordered[index + 1].node);
+        if (next - current >= minLaneSpacing - LANE_Y_EPSILON) continue;
+        routingNodeY.set(
+          ordered[index].node,
+          Math.max(laneTop, next - minLaneSpacing),
+        );
+      }
     }
     assignDockLanesWithRouting(outgoingByNode, "y0", routingNodeY);
     assignDockLanesWithRouting(incomingByNode, "y1", routingNodeY);

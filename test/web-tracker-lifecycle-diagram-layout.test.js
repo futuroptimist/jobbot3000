@@ -415,6 +415,41 @@ describe("lifecycle diagram render-only routing layout", () => {
     ).toEqual(before);
   });
 
+  it("keeps routing-fixture private anchors distinct after lane refinement", () => {
+    const { graph } = layoutLifecycleRoutingGraph(
+      projectLifecycleAt(routingFixture),
+      1850,
+    );
+    const routingAnchors = new Map();
+    for (const link of graph.links) {
+      if (link.target.routing) routingAnchors.set(link.target.id, link.y1);
+      if (link.source.routing) routingAnchors.set(link.source.id, link.y0);
+    }
+    const awaitingAnchor = routingAnchors.get(
+      [
+        "route:branch:link:origin:application_submitted->endpoint",
+        ":awaiting_response:endpoint:awaiting_response:rank:1",
+      ].join(""),
+    );
+    const assessmentAnchor = routingAnchors.get(
+      [
+        "route:branch:link:origin:application_submitted->milestone",
+        ":assessment_take_home:endpoint:assessment_in_progress:rank:1",
+      ].join(""),
+    );
+    expect(Number.isFinite(awaitingAnchor)).toBe(true);
+    expect(Number.isFinite(assessmentAnchor)).toBe(true);
+    expect(Math.abs(awaitingAnchor - assessmentAnchor)).toBeGreaterThan(
+      BRANCH_HANDLE_RADIUS * 2,
+    );
+    for (const node of graph.nodes.filter((candidate) => candidate.routing)) {
+      const incoming = graph.links.filter((link) => link.target === node);
+      const outgoing = graph.links.filter((link) => link.source === node);
+      if (incoming.length === 1 && outgoing.length === 1)
+        expect(incoming[0].y1).toBeCloseTo(outgoing[0].y0, 6);
+    }
+  });
+
   it("lays out dense fixture with bounded semantic docks and safe handles", () => {
     const { graph } = layoutLifecycleRoutingGraph(
       projectLifecycleAt(denseFixture),
