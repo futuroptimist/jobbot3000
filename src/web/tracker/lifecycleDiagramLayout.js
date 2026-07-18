@@ -527,18 +527,88 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
     assignDockLanes(outgoingByNode, "y0");
     assignDockLanes(incomingByNode, "y1");
   };
+  const assignGreedyTracks = () => {
+    for (const branch of orderedBranches) {
+      const candidate = (domains.get(branch.id) ?? []).find((candidateY) =>
+        orderedBranches.every((peer) => {
+          if (peer.id === branch.id || !assignments.has(peer.id)) return true;
+          if (!intervalsOverlap(branch, peer)) return true;
+          return (
+            Math.abs(assignments.get(peer.id) - candidateY) >= minLaneSpacing
+          );
+        }),
+      );
+      assignments.set(
+        branch.id,
+        candidate ?? domains.get(branch.id)?.[0] ?? branchIdealY(branch),
+      );
+    }
+    return true;
+  };
   try {
-    if (!searchTracks()) {
+    if (
+      !(orderedBranches.length > 32 ? assignGreedyTracks() : searchTracks())
+    ) {
       throw new Error(
         `Lifecycle route search exhausted after ${exploredStates} states`,
       );
     }
     applyTrackGeometry();
-    const handleCheck = tryAssignBranchHandles(
+    let handleCheck = tryAssignBranchHandles(
       graph.branches,
       linksByBranch,
       visibleNodes,
     );
+    const blockedCount = (result) =>
+      result.ok ? 0 : (result.blockedBranchIds ?? []).length;
+    const refinementBudget =
+      graph.branches.length <= 32 ? Math.max(1, blockedCount(handleCheck)) : 0;
+    let refinementCount = 0;
+    while (!handleCheck.ok && refinementCount < refinementBudget) {
+      refinementCount += 1;
+      const baselineScore = blockedCount(handleCheck);
+      let accepted = null;
+      for (const branchId of [
+        ...handleCheck.blockedBranchIds,
+        ...orderedBranches.map(({ id }) => id),
+      ]) {
+        const currentY = assignments.get(branchId);
+        for (const candidateY of domains.get(branchId) ?? []) {
+          if (candidateY === currentY) continue;
+          const branch = orderedBranches.find(({ id }) => id === branchId);
+          const legal = orderedBranches.every((peer) => {
+            if (!branch || peer.id === branch.id || !assignments.has(peer.id))
+              return true;
+            if (!intervalsOverlap(branch, peer)) return true;
+            return (
+              Math.abs(assignments.get(peer.id) - candidateY) >= minLaneSpacing
+            );
+          });
+          if (!legal) continue;
+          assignments.set(branchId, candidateY);
+          restoreBaseline();
+          applyTrackGeometry();
+          const nextCheck = tryAssignBranchHandles(
+            graph.branches,
+            linksByBranch,
+            visibleNodes,
+          );
+          assignments.set(branchId, currentY);
+          restoreBaseline();
+          applyTrackGeometry();
+          if (blockedCount(nextCheck) < baselineScore) {
+            accepted = { branchId, candidateY, result: nextCheck };
+            break;
+          }
+        }
+        if (accepted) break;
+      }
+      if (!accepted) break;
+      assignments.set(accepted.branchId, accepted.candidateY);
+      restoreBaseline();
+      applyTrackGeometry();
+      handleCheck = accepted.result;
+    }
     if (!handleCheck.ok) {
       const blockedBranchId =
         handleCheck.blockedBranchIds[0] ?? "unknown branch";
@@ -708,7 +778,8 @@ const tryAssignBranchHandles = (
       }
     }
   }
-  const fixedGeometry = [...nodeBoxes, ...labelBoxes];
+  const hitBoxes = visibleNodes.map(rendererHitBoxForNode);
+  const fixedGeometry = [...nodeBoxes, ...labelBoxes, ...hitBoxes];
   const fixedGeometryBlocksCandidate = (box) =>
     fixedGeometry.some((b) => boxesOverlap(box, b));
   const sampleBucketWidth =
@@ -766,7 +837,7 @@ const tryAssignBranchHandles = (
       ...segments.filter((segment) => segment !== preferred),
     ].filter(Boolean);
     const candidates = [];
-    let fallbackCandidate = null;
+    let rejectedCandidate = null;
     for (const segment of orderedSegments) {
       const sourceCenter = rankCenterX(segment.source.rank);
       const targetCenter = rankCenterX(segment.target.rank);
@@ -797,14 +868,17 @@ const tryAssignBranchHandles = (
         };
         if (clearanceMargin > 0) candidates.push(candidate);
         else if (
-          !fallbackCandidate ||
-          clearanceMargin > fallbackCandidate.clearanceMargin
+          !rejectedCandidate ||
+          clearanceMargin > rejectedCandidate.clearanceMargin
         )
-          fallbackCandidate = candidate;
+          rejectedCandidate = candidate;
       }
     }
-    if (!candidates.length && fallbackCandidate)
-      candidates.push({ ...fallbackCandidate, clearanceMargin: 0.001 });
+    if (!candidates.length && rejectedCandidate)
+      candidates.push({
+        ...rejectedCandidate,
+        clearanceMargin: Number.EPSILON,
+      });
     candidateSets.set(
       branch.id,
       candidates.sort(
