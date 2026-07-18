@@ -529,7 +529,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
     assignDockLanes(outgoingByNode, "y0");
     assignDockLanes(incomingByNode, "y1");
   };
-  const assignFallbackTracks = () => {
+  const assignInitialTracks = () => {
     for (const branch of orderedBranches) {
       const candidate = (domains.get(branch.id) ?? []).find((candidateY) =>
         orderedBranches.every((peer) => {
@@ -540,19 +540,18 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
           );
         }),
       );
-      let selected = candidate;
-      if (selected == null) {
-        const branchDomain = domains.get(branch.id) ?? [];
-        selected = branchDomain.length ? branchDomain[0] : branchIdealY(branch);
-      }
-      assignments.set(branch.id, selected);
+      if (candidate == null) return false;
+      assignments.set(branch.id, candidate);
     }
     return true;
   };
   try {
-    if (
-      !(orderedBranches.length > 32 ? assignFallbackTracks() : searchTracks())
-    ) {
+    const boundedBacktrackingLimit = 32;
+    const routeAssigned =
+      orderedBranches.length <= boundedBacktrackingLimit
+        ? searchTracks()
+        : assignInitialTracks();
+    if (!routeAssigned) {
       throw new Error(
         `Lifecycle route search exhausted after ${exploredStates} states`,
       );
@@ -1019,7 +1018,7 @@ export function solveLifecycleRouteGeometry(graph, dimensions, options = {}) {
       link.transitionLaneY = value.transitionLaneY;
     }
   };
-  if ((options.maxStates ?? 8192) <= 0) {
+  if ((options.maxStates ?? MAX_ROUTE_SEARCH_STATES) <= 0) {
     restore();
     throw new Error("Unable to construct valid lifecycle routes");
   }
