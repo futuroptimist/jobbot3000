@@ -366,7 +366,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
   const fixedBoxes = [...nodeBoxes, ...labelBoxes, ...hitBoxes];
   const laneTop = BRANCH_HANDLE_RADIUS + 4;
   const laneBottom = dimensions.height - BRANCH_HANDLE_RADIUS - 4;
-  const routeEnvelopeRadius = (renderedBranchStrokeWidth(1) + 12) / 2;
+  const routeEnvelopeRadius = (renderedBranchStrokeWidth() + 12) / 2;
   const minLaneSpacing = BRANCH_HANDLE_RADIUS * 2 + routeEnvelopeRadius * 2;
   const baselineLinks = new Map(
     graph.links.map((link) => [
@@ -527,7 +527,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
     assignDockLanes(outgoingByNode, "y0");
     assignDockLanes(incomingByNode, "y1");
   };
-  const assignGreedyTracks = () => {
+  const assignFallbackTracks = () => {
     for (const branch of orderedBranches) {
       const candidate = (domains.get(branch.id) ?? []).find((candidateY) =>
         orderedBranches.every((peer) => {
@@ -549,7 +549,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
   };
   try {
     if (
-      !(orderedBranches.length > 32 ? assignGreedyTracks() : searchTracks())
+      !(orderedBranches.length > 32 ? assignFallbackTracks() : searchTracks())
     ) {
       throw new Error(
         `Lifecycle route search exhausted after ${exploredStates} states`,
@@ -561,14 +561,16 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
       linksByBranch,
       visibleNodes,
     );
-    const blockedCount = (result) =>
+    const countBlockedBranches = (result) =>
       result.ok ? 0 : (result.blockedBranchIds ?? []).length;
-    const refinementBudget =
-      graph.branches.length <= 32 ? Math.max(1, blockedCount(handleCheck)) : 0;
+    const laneAdjustmentLimit =
+      graph.branches.length <= 32
+        ? Math.max(1, countBlockedBranches(handleCheck))
+        : 0;
     let refinementCount = 0;
-    while (!handleCheck.ok && refinementCount < refinementBudget) {
+    while (!handleCheck.ok && refinementCount < laneAdjustmentLimit) {
       refinementCount += 1;
-      const baselineScore = blockedCount(handleCheck);
+      const baselineScore = countBlockedBranches(handleCheck);
       let accepted = null;
       for (const branchId of [
         ...handleCheck.blockedBranchIds,
@@ -598,7 +600,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
           assignments.set(branchId, currentY);
           restoreBaseline();
           applyTrackGeometry();
-          if (blockedCount(nextCheck) < baselineScore) {
+          if (countBlockedBranches(nextCheck) < baselineScore) {
             accepted = { branchId, candidateY, result: nextCheck };
             break;
           }
@@ -839,7 +841,7 @@ const tryAssignBranchHandles = (
       ...segments.filter((segment) => segment !== preferred),
     ].filter(Boolean);
     const candidates = [];
-    let blockedHandleCandidate = null;
+    let nearestBlockedOption = null;
     for (const segment of orderedSegments) {
       const sourceCenter = rankCenterX(segment.source.rank);
       const targetCenter = rankCenterX(segment.target.rank);
@@ -860,7 +862,7 @@ const tryAssignBranchHandles = (
         )
           continue;
         const clearanceMargin = renderedBranchClearanceMargin(branch, x, y);
-        const candidate = {
+        const option = {
           branchId: branch.id,
           x,
           y,
@@ -868,17 +870,17 @@ const tryAssignBranchHandles = (
           box,
           clearanceMargin,
         };
-        if (clearanceMargin > 0) candidates.push(candidate);
+        if (clearanceMargin > 0) candidates.push(option);
         else if (
-          !blockedHandleCandidate ||
-          clearanceMargin > blockedHandleCandidate.clearanceMargin
+          !nearestBlockedOption ||
+          clearanceMargin > nearestBlockedOption.clearanceMargin
         )
-          blockedHandleCandidate = candidate;
+          nearestBlockedOption = option;
       }
     }
-    if (!candidates.length && blockedHandleCandidate)
+    if (!candidates.length && nearestBlockedOption)
       candidates.push({
-        ...blockedHandleCandidate,
+        ...nearestBlockedOption,
         clearanceMargin: LANE_Y_EPSILON,
       });
     candidateSets.set(
