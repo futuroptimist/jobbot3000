@@ -271,7 +271,7 @@ const transitionDensityProjection = () => {
 describe("transition lane solver", () => {
   const laneSignature = (projectionValue) => {
     const { graph } = layoutLifecycleRoutingGraph(projectionValue, 1850, {
-      skipHandlePlacementInvariant: true,
+      transitionLanePhaseOnly: true,
     });
     return {
       lanes: [...graph.links]
@@ -282,7 +282,7 @@ describe("transition lane solver", () => {
   };
   const expectSpacingLegal = (projectionValue, expectedBranches) => {
     const { graph } = layoutLifecycleRoutingGraph(projectionValue, 1850, {
-      skipHandlePlacementInvariant: true,
+      transitionLanePhaseOnly: true,
     });
     expect(graph.branches).toHaveLength(expectedBranches);
     for (const rank of [0, 1, 2, 3, 4, 5]) {
@@ -316,7 +316,7 @@ describe("transition lane solver", () => {
     const rawLayout = calculateLifecycleDiagramLayout(p, 100, rawGraph);
     const rawSignature = laneSignature(p);
     const { graph: d3Graph } = layoutLifecycleRoutingGraph(p, 100, {
-      skipHandlePlacementInvariant: true,
+      transitionLanePhaseOnly: true,
     });
     expect(calculateLifecycleDiagramLayout(p, 100, d3Graph)).toEqual(rawLayout);
     expect(transitionCountsByGraphRanks(d3Graph)).toEqual(
@@ -328,12 +328,12 @@ describe("transition lane solver", () => {
   it("routes dense fixtures without transition-lane allocation invariants", () => {
     expect(
       layoutLifecycleRoutingGraph(projection(), 1850, {
-        skipHandlePlacementInvariant: true,
+        transitionLanePhaseOnly: true,
       }).graph,
     ).toBeTruthy();
     expect(
       layoutLifecycleRoutingGraph(projectLifecycleAt(denseFixture), 1850, {
-        skipHandlePlacementInvariant: true,
+        transitionLanePhaseOnly: true,
       }).graph,
     ).toBeTruthy();
   });
@@ -374,21 +374,30 @@ describe("transition lane solver", () => {
 
   it("fails deterministically and restores the baseline for an infeasible component", () => {
     const p = projection();
-    const graph = buildLifecycleRoutingGraph(p);
-    const node = graph.nodes.find(
-      (candidate) => candidate.id === graph.links[0].source,
-    );
-    node.rank = Number.NaN;
+    const { graph } = layoutLifecycleRoutingGraph(p, 100, {
+      transitionLanePhaseOnly: true,
+    });
     const before = graph.links.map((link) => ({
       id: link.id,
       y0: link.y0,
       y1: link.y1,
       transitionLaneY: link.transitionLaneY,
     }));
-    expect(() => layoutLifecycleRoutingGraph(p, 100)).not.toThrow();
-    expect(() => calculateLifecycleDiagramLayout(p, 100, graph)).toThrow(
-      /link .* source .* without valid integer graph node rank data/u,
-    );
+    expect(
+      before.every(
+        (link) =>
+          Number.isFinite(link.y0) &&
+          Number.isFinite(link.y1) &&
+          Number.isFinite(link.transitionLaneY),
+      ),
+    ).toBe(true);
+    expect(() =>
+      layoutLifecycleRoutingGraph(p, 100, {
+        routingGraph: graph,
+        transitionLanePhaseOnly: true,
+        transitionLaneStateLimit: 0,
+      }),
+    ).toThrow(/exceeded 0 deterministic states/u);
     expect(
       graph.links.map((link) => ({
         id: link.id,
@@ -583,17 +592,13 @@ describe("lifecycle diagram render-only routing layout", () => {
 
     let routed;
     expect(() => {
-      routed = layoutLifecycleRoutingGraph(projection, 1850, {
-        skipHandlePlacementInvariant: true,
-      });
+      routed = layoutLifecycleRoutingGraph(projection, 1850);
     }).not.toThrow();
     assertRoutedGraph(routed.graph);
 
     let routedShuffled;
     expect(() => {
-      routedShuffled = layoutLifecycleRoutingGraph(shuffled, 1850, {
-        skipHandlePlacementInvariant: true,
-      });
+      routedShuffled = layoutLifecycleRoutingGraph(shuffled, 1850);
     }).not.toThrow();
     assertRoutedGraph(routedShuffled.graph);
 
