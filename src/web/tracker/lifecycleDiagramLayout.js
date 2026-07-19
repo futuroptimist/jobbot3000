@@ -417,7 +417,16 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
     width: node.x1 - node.x0,
     height: node.y1 - node.y0,
   }));
-  const laneObstacles = nodeBoxes;
+  const labelBoxes = visibleNodes.map((node) => ({
+    kind: "label",
+    id: node.id,
+    ...labelBoxForNode(node),
+  }));
+  const hitBoxes = visibleNodes.map((node) => ({
+    kind: "hit",
+    ...rendererHitBoxForNode(node),
+  }));
+  const laneObstacles = [...nodeBoxes, ...labelBoxes, ...hitBoxes];
   const laneTop = BRANCH_HANDLE_RADIUS + 4;
   const laneBottom = dimensions.height - BRANCH_HANDLE_RADIUS - 4;
   const routeEnvelopeRadius = selectedEnvelopeRadius({ width: 1 });
@@ -432,11 +441,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
       ? (laneTop + laneBottom) / 2
       : laneTop + ((laneBottom - laneTop) * index) / (count - 1);
   const baseLaneValues = new Set([clampLaneY(laneTop), clampLaneY(laneBottom)]);
-  for (
-    let y = laneTop;
-    y <= laneBottom + LANE_Y_EPSILON;
-    y += Math.max(1, minLaneSpacing)
-  )
+  for (let y = laneTop; y <= laneBottom + LANE_Y_EPSILON; y += 1)
     baseLaneValues.add(clampLaneY(y));
   for (const box of laneObstacles) {
     baseLaneValues.add(clampLaneY(box.y - clearancePad));
@@ -445,7 +450,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
   const baseLaneCandidates = [...baseLaneValues].sort((a, b) => a - b);
   const candidateClearsSpan = (y, minX, maxX, incidentIds = new Set()) =>
     laneObstacles.every((box) => {
-      if (incidentIds.has(box.id)) return true;
+      if (incidentIds.has(box.id) && box.kind !== "label") return true;
       if (box.x + box.width < minX || box.x > maxX) return true;
       return y < box.y - clearancePad || y > box.y + box.height + clearancePad;
     });
@@ -600,10 +605,12 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
       );
       const height = Math.max(0, node.y1 - node.y0);
       ordered.forEach((link, index) => {
-        link.y0 =
+        const evenY =
           ordered.length > 1
             ? node.y0 + (height * (index + 1)) / (ordered.length + 1)
             : (node.y0 + node.y1) / 2;
+        const laneY = Math.min(node.y1 - 0.5, Math.max(node.y0 + 0.5, link.transitionLaneY));
+        link.y0 = quantizeY((evenY + laneY) / 2);
       });
     }
     for (const [node, links] of incomingByNode) {
@@ -614,10 +621,12 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
       );
       const height = Math.max(0, node.y1 - node.y0);
       ordered.forEach((link, index) => {
-        link.y1 =
+        const evenY =
           ordered.length > 1
             ? node.y0 + (height * (index + 1)) / (ordered.length + 1)
             : (node.y0 + node.y1) / 2;
+        const laneY = Math.min(node.y1 - 0.5, Math.max(node.y0 + 0.5, link.transitionLaneY));
+        link.y1 = quantizeY((evenY + laneY) / 2);
       });
     }
     const routingNodesByRank = new Map();

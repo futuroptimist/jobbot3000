@@ -859,7 +859,8 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     for (let index = 0; index < 60; index += 1) {
       const id = `flow-app-${String(index).padStart(2, "0")}`;
       const origin = origins[index % origins.length];
-      const milestone = milestones[0];
+      const milestone =
+        milestones[Math.floor(index / origins.length) % milestones.length];
       const endpoint = endpoints[index % endpoints.length];
       applications.push(app(id, { origin }));
       [origin, milestone, endpoint].forEach((eventType, eventIndex) => {
