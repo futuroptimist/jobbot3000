@@ -40,6 +40,9 @@ export const rendererHitBoxForNode = (node) => {
   };
 };
 const MAX_ROUTE_SEARCH_STATES = 8192;
+const OVERSIZED_BRANCH_GRAPH_THRESHOLD = 64;
+const OVERSIZED_REPAIR_ITERATION_LIMIT = 4;
+const OVERSIZED_REPAIR_TRIAL_LIMIT = 128;
 const LANE_Y_EPSILON = 0.001;
 const COLLISION_MARGIN = -1;
 
@@ -569,23 +572,40 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
       linksByBranch,
       visibleNodes,
     );
+    const branchCount = orderedBranches.length;
     const countMissingCandidateBranches = (result) =>
       result.ok ? 0 : (result.blockedBranchIds ?? []).length;
-    const laneRepairLimit = Math.max(
-      1,
-      countMissingCandidateBranches(handleCheck),
-    );
+    const oversizedGraph = branchCount > OVERSIZED_BRANCH_GRAPH_THRESHOLD;
+    const laneRepairLimit = oversizedGraph
+      ? Math.min(
+          OVERSIZED_REPAIR_ITERATION_LIMIT,
+          Math.max(1, countMissingCandidateBranches(handleCheck)),
+        )
+      : Math.max(1, countMissingCandidateBranches(handleCheck));
     let repairCount = 0;
-    while (!handleCheck.ok && repairCount < laneRepairLimit) {
+    let repairTrials = 0;
+    const maxRepairTrials = oversizedGraph
+      ? OVERSIZED_REPAIR_TRIAL_LIMIT
+      : Number.POSITIVE_INFINITY;
+    while (
+      !handleCheck.ok &&
+      repairCount < laneRepairLimit &&
+      repairTrials < maxRepairTrials
+    ) {
       repairCount += 1;
       const baselineScore = countMissingCandidateBranches(handleCheck);
       let accepted = null;
-      for (const branchId of [
-        ...handleCheck.blockedBranchIds,
-        ...orderedBranches.map(({ id }) => id),
-      ]) {
+      const blockedBranchIds = handleCheck.blockedBranchIds ?? [];
+      for (
+        const branchId of [
+          ...blockedBranchIds,
+          ...orderedBranches.map(({ id }) => id),
+        ]
+      ) {
+        if (repairTrials >= maxRepairTrials) break;
         const currentY = assignments.get(branchId);
         for (const candidateY of domains.get(branchId) ?? []) {
+          if (repairTrials >= maxRepairTrials) break;
           if (candidateY === currentY) continue;
           const branch = orderedBranches.find(({ id }) => id === branchId);
           const legal = orderedBranches.every((peer) => {
@@ -605,6 +625,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
             linksByBranch,
             visibleNodes,
           );
+          repairTrials += 1;
           assignments.set(branchId, currentY);
           restoreBaseline();
           applyTrackGeometry();
@@ -613,7 +634,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
             break;
           }
         }
-        if (accepted) break;
+        if (accepted || repairTrials >= maxRepairTrials) break;
       }
       if (!accepted) break;
       assignments.set(accepted.branchId, accepted.candidateY);
