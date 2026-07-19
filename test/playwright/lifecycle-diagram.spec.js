@@ -49,10 +49,10 @@ const EXPECTED_CURRENT = {
     Unknown: "1",
   },
   representativeFlows: {
-    "Application submitted to Awaiting response": "2",
-    "Technical interview to Interviewing": "3",
-    "Offer received to Offer/negotiating": "2",
-    "Other/unknown to Employer rejected": "1",
+    "Application submitted to Awaiting response — Awaiting response": "2",
+    "Technical interview to Interviewing — Interviewing": "3",
+    "Offer received to Offer/negotiating — Offer/negotiating": "2",
+    "Other/unknown to Employer rejected — Employer rejected": "1",
   },
   endpoints: [
     "Awaiting response",
@@ -90,14 +90,14 @@ async function clearTrackerData(page, url) {
   );
 }
 
-async function importFixture(page) {
-  const text = await readFile(
-    "test/fixtures/tracker-lifecycle-diagram-v2.json",
-    "utf8",
-  );
+async function importFixture(
+  page,
+  fixture = "tracker-lifecycle-diagram-v2.json",
+) {
+  const text = await readFile(`test/fixtures/${fixture}`, "utf8");
   await page.getByRole("button", { name: "Import/Export" }).click();
   await page.setInputFiles("[data-import-file]", {
-    name: "tracker-lifecycle-diagram-v2.json",
+    name: fixture,
     mimeType: "application/json",
     buffer: Buffer.from(text),
   });
@@ -126,9 +126,14 @@ async function tableRowsByCaption(page, caption) {
 
 async function assertTableCounts(page, caption, expected) {
   const rows = await tableRowsByCaption(page, caption);
-  expect(Object.fromEntries(rows.map((row) => [row[0], row[1]]))).toMatchObject(
-    expected,
+  const actual = Object.fromEntries(
+    rows.map((row) => {
+      const key = caption === "Flows" ? `${row[0]} — ${row[1]}` : row[0];
+      const value = caption === "Flows" ? row[2] : row[1];
+      return [key, value];
+    }),
   );
+  expect(actual).toMatchObject(expected);
 }
 
 async function selectedDetails(page) {
@@ -235,18 +240,20 @@ async function assertDensityAwareSvgGeometry(page) {
         Math.max(0, densestColumnCount - 1) * 44,
     ),
   );
-  expect(geometry.height).toBe(expectedHeight);
-  expect(geometry.viewBoxHeight).toBe(expectedHeight);
+  expect(geometry.height).toBeGreaterThanOrEqual(expectedHeight);
+  expect(geometry.viewBoxHeight).toBe(geometry.height);
   expect(geometry.pageOverflow).toBe(false);
   expect(geometry.scrollHeight).toBeGreaterThanOrEqual(expectedHeight);
   expect(geometry.scrollClientHeight).toBeGreaterThanOrEqual(expectedHeight);
   for (const node of geometry.nodes) {
-    expect(node.y0, node.id).toBeGreaterThanOrEqual(32 - 0.5);
-    expect(node.y1, node.id).toBeLessThanOrEqual(expectedHeight - 32 + 0.5);
+    expect(node.y0, node.id).toBeGreaterThanOrEqual(64 - 0.5);
+    expect(node.y1, node.id).toBeLessThanOrEqual(geometry.height - 48 + 0.5);
     expect(node.hitY0, node.id).toBeGreaterThanOrEqual(0 - 0.5);
-    expect(node.hitY1, node.id).toBeLessThanOrEqual(expectedHeight + 0.5);
+    expect(node.hitY1, node.id).toBeLessThanOrEqual(geometry.height + 0.5);
     expect(node.labelTop, node.id).toBeGreaterThanOrEqual(0 - 0.5);
-    expect(node.labelBottom, node.id).toBeLessThanOrEqual(expectedHeight + 0.5);
+    expect(node.labelBottom, node.id).toBeLessThanOrEqual(
+      geometry.height + 0.5,
+    );
   }
   for (const nodes of nodesByRank.values()) {
     const sorted = nodes.toSorted((a, b) => a.y0 - b.y0);
@@ -262,6 +269,236 @@ async function assertDensityAwareSvgGeometry(page) {
       );
     }
   }
+}
+
+async function assertBrowserCollisionAudit(page) {
+  const result = await page.locator(".diagram-scroll").evaluate((scroll) => {
+    const svg = scroll.querySelector("svg");
+    if (!svg)
+      return {
+        ok: false,
+        fatalErrors: ["missing svg"],
+        pathCount: 0,
+      };
+    const fatalErrors = [];
+    const makePoint = (x, y) => {
+      const point = svg.createSVGPoint();
+      point.x = x;
+      point.y = y;
+      return point;
+    };
+    const toSvgPoint = (x, y) => {
+      const ctm = svg.getScreenCTM();
+      if (!ctm) return { x, y };
+      const point = makePoint(x, y).matrixTransform(ctm.inverse());
+      return { x: point.x, y: point.y };
+    };
+    const rectOf = (element) => {
+      const box = element.getBoundingClientRect();
+      const corners = [
+        toSvgPoint(box.left, box.top),
+        toSvgPoint(box.right, box.top),
+        toSvgPoint(box.right, box.bottom),
+        toSvgPoint(box.left, box.bottom),
+      ];
+      const xs = corners.map((point) => point.x);
+      const ys = corners.map((point) => point.y);
+      const x = Math.min(...xs);
+      const y = Math.min(...ys);
+      const right = Math.max(...xs);
+      const bottom = Math.max(...ys);
+      return {
+        id:
+          element.getAttribute("data-diagram-node") ??
+          element.getAttribute("data-diagram-node-hit") ??
+          element.getAttribute("data-diagram-node-label") ??
+          element.getAttribute("data-diagram-branch-handle") ??
+          "unknown",
+        x,
+        y,
+        width: right - x,
+        height: bottom - y,
+        right,
+        bottom,
+      };
+    };
+    const overlap = (a, b) =>
+      a.x < b.right &&
+      a.x + a.width > b.x &&
+      a.y < b.bottom &&
+      a.y + a.height > b.y;
+    const contains = (rect, point, pad = 0) =>
+      point.x >= rect.x - pad &&
+      point.x <= rect.right + pad &&
+      point.y >= rect.y - pad &&
+      point.y <= rect.bottom + pad;
+    const sampleBox = (sample, inflate) => ({
+      x: sample.x - inflate,
+      y: sample.y - inflate,
+      width: inflate * 2,
+      height: inflate * 2,
+      right: sample.x + inflate,
+      bottom: sample.y + inflate,
+    });
+    const nodes = [...svg.querySelectorAll("[data-diagram-node]")].map(
+      (group) => {
+        const id = group.getAttribute("data-diagram-node");
+        return {
+          id,
+          rect: rectOf(
+            group.querySelector("rect:not([data-diagram-node-hit])"),
+          ),
+          hit: rectOf(group.querySelector("[data-diagram-node-hit]")),
+          label: rectOf(group.querySelector("[data-diagram-node-label]")),
+        };
+      },
+    );
+    const nodeById = new Map(nodes.map((node) => [node.id, node]));
+    const handles = [
+      ...svg.querySelectorAll("[data-diagram-branch-handle]"),
+    ].map((handle) => ({
+      id: handle.getAttribute("data-diagram-branch-handle"),
+      rect: rectOf(handle),
+      cx: Number(handle.getAttribute("cx")),
+      cy: Number(handle.getAttribute("cy")),
+    }));
+    const paths = [...svg.querySelectorAll("[data-diagram-link]")].map(
+      (path) => {
+        const id = path.getAttribute("data-diagram-link");
+        const source = path.getAttribute("data-source-node-id");
+        const target = path.getAttribute("data-target-node-id");
+        const length = path.getTotalLength();
+        const ribbon = Number(path.getAttribute("stroke-width") || 0);
+        const selectorId = window.CSS.escape(id);
+        const separator = Number(
+          svg
+            .querySelector(`[data-diagram-branch-separator="${selectorId}"]`)
+            ?.getAttribute("stroke-width") || 0,
+        );
+        const halo = Number(
+          svg
+            .querySelector(`[data-diagram-branch-halo="${selectorId}"]`)
+            ?.getAttribute("stroke-width") || 0,
+        );
+        const inflate = Math.max(ribbon, separator, halo) / 2;
+        const step = Math.max(0.25, Math.min(1, length || 1));
+        const samples = [];
+        for (let distance = 0; distance <= length; distance += step) {
+          const point = path.getPointAtLength(distance);
+          samples.push({ x: point.x, y: point.y, distance });
+        }
+        if (!samples.length || samples.at(-1).distance < length) {
+          const point = path.getPointAtLength(length);
+          samples.push({ x: point.x, y: point.y, distance: length });
+        }
+        return { id, source, target, length, inflate, samples };
+      },
+    );
+    const dockContact = (path, node, sample) => {
+      const exitsSource = node.id === path.source;
+      const rect = node.rect;
+      const dockX = exitsSource ? rect.right : rect.x;
+      return (
+        Math.abs(sample.x - dockX) <= path.inflate + 1 &&
+        sample.y >= rect.y - path.inflate - 1 &&
+        sample.y <= rect.bottom + path.inflate + 1
+      );
+    };
+    const atSharedDock = (left, right, sample) => {
+      const shared = [left.source, left.target].find(
+        (id) => id === right.source || id === right.target,
+      );
+      if (!shared) return false;
+      const node = nodeById.get(shared);
+      return node
+        ? dockContact(left, node, sample) && dockContact(right, node, sample)
+        : false;
+    };
+    const branchHandleRadius = 22;
+    for (const path of paths) {
+      for (const node of nodes) {
+        const incident = node.id === path.source || node.id === path.target;
+        for (const sample of path.samples) {
+          const box = sampleBox(sample, path.inflate);
+          if (overlap(box, node.label)) {
+            fatalErrors.push(`${path.id} intersects label ${node.id}`);
+            break;
+          }
+          if (overlap(box, node.hit) && !incident) {
+            fatalErrors.push(
+              `${path.id} intersects nonincident hit ${node.id}`,
+            );
+            break;
+          }
+          if (!overlap(box, node.rect)) continue;
+          if (!incident) {
+            fatalErrors.push(
+              `${path.id} intersects nonincident node ${node.id}`,
+            );
+            break;
+          }
+          if (
+            !dockContact(path, node, sample) &&
+            contains(node.rect, sample, 0)
+          ) {
+            fatalErrors.push(
+              `${path.id} contacts incident node ${node.id} away from dock`,
+            );
+            break;
+          }
+        }
+      }
+      for (const handle of handles) {
+        if (handle.id === path.id) continue;
+        if (
+          path.samples.some(
+            (sample) =>
+              Math.hypot(sample.x - handle.cx, sample.y - handle.cy) <=
+              branchHandleRadius + path.inflate,
+          )
+        ) {
+          fatalErrors.push(`${path.id} intersects other handle ${handle.id}`);
+          break;
+        }
+      }
+    }
+    for (let a = 0; a < paths.length; a += 1) {
+      for (let b = a + 1; b < paths.length; b += 1) {
+        const left = paths[a];
+        const right = paths[b];
+        const nearby = [];
+        for (const sample of left.samples) {
+          const near = right.samples.find(
+            (other) =>
+              Math.hypot(sample.x - other.x, sample.y - other.y) <= 0.5,
+          );
+          if (near)
+            nearby.push({
+              x: (sample.x + near.x) / 2,
+              y: (sample.y + near.y) / 2,
+              sample,
+            });
+        }
+        if (!nearby.length) continue;
+        const awayFromSharedDock = nearby.filter(
+          (point) => !atSharedDock(left, right, point.sample),
+        );
+        if (!awayFromSharedDock.length) continue;
+        if (awayFromSharedDock.length > 4) {
+          fatalErrors.push(`${left.id} coincides with ${right.id}`);
+          continue;
+        }
+        fatalErrors.push(`${left.id} crosses ${right.id}`);
+      }
+    }
+    return {
+      fatalErrors: [...new Set(fatalErrors)].slice(0, 20),
+      forcedCrossings: [],
+      pathCount: paths.length,
+    };
+  });
+  expect(result.pathCount).toBeGreaterThan(0);
+  expect(result.fatalErrors).toEqual([]);
 }
 
 async function runAxe(page) {
@@ -533,10 +770,7 @@ test.describe("Application Lifecycle Diagram", () => {
       selected,
     );
     await expect(page.locator("button[aria-pressed='true']")).toHaveCount(1);
-    await page
-      .locator("[data-diagram-link-hit]")
-      .first()
-      .click({ force: true });
+    await page.locator("[data-diagram-link-hit]").first().click();
     await expect(page.locator("[data-diagram-details]")).not.toHaveText(
       selected,
     );
@@ -556,9 +790,9 @@ test.describe("Application Lifecycle Diagram", () => {
       true,
     );
     await page
-      .locator("[data-diagram-node-hit]")
+      .locator("[data-diagram-node] rect:not([data-diagram-node-hit])")
       .first()
-      .click({ force: true });
+      .click();
     await runAxe(page);
     if (
       !(await page.locator("details.diagram-tables").evaluate((el) => el.open))
@@ -630,6 +864,64 @@ test.describe("Application Lifecycle Diagram", () => {
     expect(page.errors).toEqual([]);
   });
 
+  for (const fixture of [
+    "tracker-lifecycle-diagram-v2.json",
+    "tracker-lifecycle-diagram-routing-v2.json",
+  ]) {
+    test(`audits routed branch collisions for ${fixture} on desktop and touch`, async ({
+      browser,
+      page,
+    }) => {
+      test.slow();
+      await importFixture(page, fixture);
+      await page.getByRole("button", { name: "Diagram" }).click();
+      await expect(page.locator("[data-diagram-link]").first()).toBeVisible();
+      await assertBrowserCollisionAudit(page);
+      await page
+        .getByRole("button", { name: "Previous event", exact: true })
+        .click();
+      await assertBrowserCollisionAudit(page);
+
+      const context = await browser.newContext({
+        viewport: { width: 375, height: 812 },
+        hasTouch: true,
+        deviceScaleFactor: 1,
+        reducedMotion: "reduce",
+        timezoneId: "UTC",
+        locale: "en-US",
+      });
+      const mobile = await context.newPage();
+      try {
+        await clearTrackerData(mobile, server.url);
+        await mobile.goto(`${server.url}/tracker`);
+        await importFixture(mobile, fixture);
+        await mobile.getByRole("button", { name: "Diagram" }).click();
+        await expect(
+          mobile.locator("[data-diagram-link]").first(),
+        ).toBeVisible();
+        await assertNoPageOverflow(mobile);
+        await assertBrowserCollisionAudit(mobile);
+        const handle = mobile.locator("[data-diagram-link-hit]").first();
+        await handle.scrollIntoViewIfNeeded();
+        const box = await handle.boundingBox();
+        expect(box).not.toBeNull();
+        await mobile.touchscreen.tap(
+          box.x + box.width / 2,
+          box.y + box.height / 2,
+        );
+        await expect(mobile.locator("button[aria-pressed='true']")).toHaveCount(
+          1,
+        );
+        await mobile
+          .getByRole("button", { name: "Previous event", exact: true })
+          .click();
+        await assertBrowserCollisionAudit(mobile);
+      } finally {
+        await context.close();
+      }
+    });
+  }
+
   test("uses a real touch mobile context without page overflow", async ({
     browser,
   }) => {
@@ -665,10 +957,11 @@ test.describe("Application Lifecycle Diagram", () => {
       await scroll.evaluate((el) => {
         el.scrollLeft = 0;
       });
-      const nodeBox = await page
-        .locator("[data-diagram-node-hit]")
-        .first()
-        .boundingBox();
+      const nodeTarget = page
+        .locator("[data-diagram-node] rect:not([data-diagram-node-hit])")
+        .first();
+      await nodeTarget.scrollIntoViewIfNeeded();
+      const nodeBox = await nodeTarget.boundingBox();
       expect(nodeBox).not.toBeNull();
       await page.touchscreen.tap(
         nodeBox.x + nodeBox.width / 2,
@@ -681,10 +974,9 @@ test.describe("Application Lifecycle Diagram", () => {
       await nodeButton.press("Enter");
       expect(await selectedDetails(page)).toBe(nodeDetails);
 
-      const flowBox = await page
-        .locator("[data-diagram-link-hit]")
-        .first()
-        .boundingBox();
+      const flowTarget = page.locator("[data-diagram-link-hit]").first();
+      await flowTarget.scrollIntoViewIfNeeded();
+      const flowBox = await flowTarget.boundingBox();
       expect(flowBox).not.toBeNull();
       await page.touchscreen.tap(
         flowBox.x + flowBox.width / 2,

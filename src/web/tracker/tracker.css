@@ -237,9 +237,28 @@
   padding: 0.75rem;
   background: rgba(15, 23, 42, 0.35);
 }
+.diagram-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  margin: 0.5rem 0;
+}
+.diagram-legend-item {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+.diagram-legend-swatch {
+  border: 1px solid rgba(248, 250, 252, 0.75);
+  border-radius: 999px;
+  display: inline-block;
+  height: 0.85rem;
+  width: 0.85rem;
+}
 .diagram-scroll svg {
   display: block;
-  min-width: 760px;
+  min-width: 1850px;
   max-width: none;
   color: var(--foreground, #e5e7eb);
 }

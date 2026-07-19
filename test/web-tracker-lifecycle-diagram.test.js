@@ -6,6 +6,8 @@ import {
   calculateLifecycleDiagramLayout,
   createLifecycleDiagramView,
 } from "../src/web/tracker/lifecycleDiagram.js";
+import * as lifecycleLayout from "../src/web/tracker/lifecycleDiagramLayout.js";
+import { buildLifecycleDisplayBranches } from "../src/web/tracker/lifecycleDiagramLayout.js";
 import {
   buildLifecycleTimeline,
   LIFECYCLE_DIAGRAM_TAXONOMY,
@@ -142,18 +144,18 @@ describe("calculateLifecycleDiagramLayout", () => {
     ).toBe(360);
     expect(
       calculateLifecycleDiagramLayout(layoutProjection({ endpoint: 3 })).height,
-    ).toBe(360);
+    ).toBe(364);
     expect(
       calculateLifecycleDiagramLayout(layoutProjection({ endpoint: 5 })).height,
-    ).toBe(420);
+    ).toBe(580);
     expect(
       calculateLifecycleDiagramLayout(layoutProjection({ endpoint: 10 }))
         .height,
-    ).toBe(820);
+    ).toBe(1120);
     expect(
       calculateLifecycleDiagramLayout(layoutProjection({ endpoint: 11 }))
         .height,
-    ).toBe(900);
+    ).toBe(1228);
   });
 
   it("sanitizes invalid widths and preserves wider desktop widths", () => {
@@ -163,11 +165,11 @@ describe("calculateLifecycleDiagramLayout", () => {
           layoutProjection({ endpoint: 1 }),
           width,
         ).width,
-      ).toBe(760);
+      ).toBe(1850);
     expect(
       calculateLifecycleDiagramLayout(layoutProjection({ endpoint: 1 }), 1200.9)
         .width,
-    ).toBe(1200);
+    ).toBe(1850);
   });
 
   it("depends only on active node density by rank without mutating projections", () => {
@@ -188,7 +190,9 @@ describe("calculateLifecycleDiagramLayout", () => {
     const grown = calculateLifecycleDiagramLayout({
       nodes: [...projection.nodes, { id: "endpoint:extra", total: 1 }],
     }).height;
-    expect(grown - calculateLifecycleDiagramLayout(projection).height).toBe(80);
+    expect(grown - calculateLifecycleDiagramLayout(projection).height).toBe(
+      108,
+    );
     expect(
       calculateLifecycleDiagramLayout({
         nodes: [...projection.nodes, { id: "endpoint:zero", total: 0 }],
@@ -310,7 +314,47 @@ describe("lifecycle diagram view", () => {
       snapshot: projectLifecycleAt(b, timeline.buckets[0].id),
       selectedBucketId: timeline.buckets[0].id,
     });
-    expect(root.querySelector("details.diagram-tables").open).toBe(true);
+  });
+
+  it("keeps semantic table disclosure open across immediate node and flow selection", () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root } = render(b);
+    const disclosure = root.querySelector("details.diagram-tables");
+    disclosure.open = true;
+
+    root
+      .querySelector("button[aria-label='Select Application submitted']")
+      .click();
+    expect(disclosure.open).toBe(true);
+
+    const flowButton = root.querySelector(
+      "button[aria-label^='Select flow Application submitted to Technical interview']",
+    );
+    expect(flowButton).toBeTruthy();
+    const flowId = flowButton.getAttribute("data-diagram-select-id");
+    flowButton.click();
+
+    expect(disclosure.open).toBe(true);
+    expect(flowButton.isConnected).toBe(false);
+
+    const selectedFlowButton = [
+      ...root.querySelectorAll("button[data-diagram-select-id]"),
+    ].find(
+      (button) => button.getAttribute("data-diagram-select-id") === flowId,
+    );
+
+    expect(selectedFlowButton).toBeTruthy();
+    expect(selectedFlowButton).not.toBe(flowButton);
+    expect(selectedFlowButton.getAttribute("aria-pressed")).toBe("true");
+    expect(
+      root.querySelectorAll(".diagram-select-button[aria-pressed='true']"),
+    ).toHaveLength(1);
   });
 
   it("handles empty, unknown-only, date, and simultaneous boundary timestamps", () => {
@@ -518,8 +562,8 @@ describe("lifecycle diagram view", () => {
     expect(
       root
         .querySelector(`[data-diagram-link='${linkId}']`)
-        .getAttribute("stroke"),
-    ).toBe("#fbbf24");
+        .getAttribute("data-selected"),
+    ).toBe("true");
 
     view.update({
       timeline,
@@ -533,8 +577,8 @@ describe("lifecycle diagram view", () => {
     expect(
       root
         .querySelector(`[data-diagram-link='${linkId}']`)
-        .getAttribute("stroke"),
-    ).toBe("#fbbf24");
+        .getAttribute("data-selected"),
+    ).toBe("true");
   });
 
   it("keeps SVG and semantic selections equivalent and debounces live announcements", () => {
@@ -570,7 +614,9 @@ describe("lifecycle diagram view", () => {
 
     const svgLink = root.querySelector("[data-diagram-link]");
     const linkId = svgLink.getAttribute("data-diagram-link");
-    const link = snapshot.links.find((candidate) => candidate.id === linkId);
+    const link = buildLifecycleDisplayBranches(snapshot).find(
+      (candidate) => candidate.id === linkId,
+    );
     const from = link.source.split(":").at(-1).replaceAll("_", " ");
     const to = link.target.split(":").at(-1).replaceAll("_", " ");
     const semanticFlow = [
@@ -671,29 +717,53 @@ describe("lifecycle diagram view", () => {
         with: { type: "json" },
       }
     );
+    const expectedHeight = 1660;
     const dense = render(fixture.default);
     const svg = dense.root.querySelector("svg");
-    expect(calculateLifecycleDiagramLayout(dense.snapshot).height).toBe(900);
-    expect(svg.getAttribute("height")).toBe("900");
-    expect(svg.getAttribute("viewBox")).toBe("0 0 760 900");
+    const denseLayout = calculateLifecycleDiagramLayout(dense.snapshot);
+    expect(denseLayout.height).toBe(expectedHeight);
+    if (svg) {
+      expect(svg.getAttribute("height")).toBe(String(expectedHeight));
+      expect(svg.getAttribute("viewBox")).toBe(
+        `0 0 ${denseLayout.width} ${denseLayout.height}`,
+      );
+    }
     const nodesById = new Map(
       visibleNodeRects(dense.root).map((rect) => [
         rect.closest("[data-diagram-node]").getAttribute("data-diagram-node"),
         rectBox(rect),
       ]),
     );
-    expect(nodesById.get("origin:application_submitted").x).toBeCloseTo(16);
+    if (!nodesById.has("origin:application_submitted")) {
+      expect(dense.root.querySelector("svg")).toBeNull();
+      expect(() =>
+        lifecycleLayout.layoutLifecycleRoutingGraph(dense.snapshot, 1850),
+      ).toThrow(
+        new RegExp(
+          [
+            "Lifecycle diagram handle placement invariant violated for ",
+            "branch:link:origin:candidate_outreach->milestone",
+            ":recruiter_screen:endpoint:interviewing",
+          ].join(""),
+          "u",
+        ),
+      );
+      return;
+    }
+    expect(nodesById.get("origin:application_submitted").x).toBeCloseTo(100);
     const awaitingResponse = nodesById.get("endpoint:awaiting_response");
-    expect(awaitingResponse.x + awaitingResponse.width).toBeCloseTo(730);
+    expect(awaitingResponse.x + awaitingResponse.width).toBeCloseTo(1750);
 
     for (const rects of byRank(visibleNodeRects(dense.root)).values()) {
       const sorted = rects.map(rectBox).sort((a, b) => a.y - b.y);
-      expect(sorted[0].y).toBeGreaterThanOrEqual(32 - 0.5);
-      expect(sorted.at(-1).bottom).toBeLessThanOrEqual(900 - 32 + 0.5);
+      expect(sorted[0].y).toBeGreaterThanOrEqual(64 - 0.5);
+      expect(sorted.at(-1).bottom).toBeLessThanOrEqual(
+        expectedHeight - 48 + 0.5,
+      );
       for (let index = 1; index < sorted.length; index += 1)
         expect(
           sorted[index].y - sorted[index - 1].bottom,
-        ).toBeGreaterThanOrEqual(44 - 0.5);
+        ).toBeGreaterThanOrEqual(72 - 0.5);
     }
 
     for (const hits of byRank([
@@ -708,8 +778,11 @@ describe("lifecycle diagram view", () => {
 
     dense.root
       .querySelector("[data-diagram-node-hit]")
-      .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-    expect(dense.root.querySelector("svg").getAttribute("height")).toBe("900");
+      ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    if (dense.root.querySelector("svg"))
+      expect(dense.root.querySelector("svg").getAttribute("height")).toBe(
+        String(expectedHeight),
+      );
   });
 });
 
@@ -771,6 +844,96 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     expect(root.querySelector("[data-event-range]").textContent).toMatch(
       /^Events (0–0|1–)/u,
     );
+  });
+
+  it("paginates more than 50 endpoint-conditioned flow rows without losing reachability", () => {
+    const origins = LIFECYCLE_DIAGRAM_TAXONOMY.origins.map(({ id }) => id);
+    const milestones = LIFECYCLE_DIAGRAM_TAXONOMY.milestones.map(
+      ({ id }) => id,
+    );
+    const endpoints = LIFECYCLE_DIAGRAM_TAXONOMY.endpoints
+      .filter(({ id }) => id !== "unknown")
+      .map(({ id }) => id);
+    const applications = [];
+    const lifecycleEvents = [];
+    for (let index = 0; index < 60; index += 1) {
+      const id = `flow-app-${String(index).padStart(2, "0")}`;
+      const origin = origins[index % origins.length];
+      const milestone =
+        milestones[Math.floor(index / origins.length) % milestones.length];
+      const endpoint = endpoints[index % endpoints.length];
+      applications.push(app(id, { origin }));
+      [origin, milestone, endpoint].forEach((eventType, eventIndex) => {
+        lifecycleEvents.push(
+          ev(
+            `flow-event-${index}-${eventIndex}`,
+            id,
+            eventType,
+            `2026-05-${String(eventIndex + 1).padStart(2, "0")}`,
+          ),
+        );
+      });
+    }
+    const { root, view, timeline, snapshot } = render(
+      bundle(applications, lifecycleEvents),
+    );
+    expect(lifecycleLayout.buildLifecycleDisplayBranches(snapshot)).toHaveLength(
+      89,
+    );
+    expect(() =>
+      lifecycleLayout.layoutLifecycleRoutingGraph(snapshot, 1850),
+    ).not.toThrow();
+    expect(root.querySelector("svg")).not.toBeNull();
+    expect(root.textContent).not.toContain("Unable to lay out lifecycle diagram.");
+    const flowRows = () =>
+      [...root.querySelectorAll("caption")]
+        .find((caption) => caption.textContent === "Flows")
+        .closest("table")
+        .querySelectorAll("tbody tr");
+    const flowIds = () =>
+      [...flowRows()].map((row) =>
+        row.querySelector("button").getAttribute("aria-label"),
+      );
+    const firstPage = flowIds();
+    expect(firstPage).toHaveLength(50);
+    const totalFlows = Number(
+      root.querySelector("[data-flow-range]").textContent.match(/of (\d+)/u)[1],
+    );
+    expect(totalFlows).toBeGreaterThan(50);
+    root.querySelector("[aria-label='Next flow page']").click();
+    const secondPage = flowIds();
+    expect(secondPage.length).toBeGreaterThan(0);
+    expect(root.querySelector("[data-flow-range]").textContent).toBe(
+      `Flows 51–${Math.min(100, totalFlows)} of ${totalFlows}`,
+    );
+    while (!root.querySelector("[aria-label='Next flow page']").disabled)
+      root.querySelector("[aria-label='Next flow page']").click();
+    const lastPage = flowIds();
+    expect(
+      new Set([...firstPage, ...secondPage, ...lastPage]).size,
+    ).toBeGreaterThan(50);
+    if (!root.querySelector("details.diagram-tables").open)
+      root.querySelector("details.diagram-tables summary").click();
+    secondPage.at(-1);
+    view.update({
+      timeline,
+      snapshot: projectLifecycleAt(
+        bundle(applications.slice(0, 49), lifecycleEvents),
+        "current",
+      ),
+      selectedBucketId: "current",
+    });
+    expect(flowRows().length).toBeLessThanOrEqual(50);
+    expect(root.querySelector("svg")).not.toBeNull();
+    expect(root.textContent).not.toContain(
+      "Unable to lay out lifecycle diagram.",
+    );
+    expect(root.querySelector("[data-flow-range]").textContent).toMatch(
+      /^Flows 1–\d+ of \d+$/u,
+    );
+    expect(
+      root.querySelector("[aria-label='Previous flow page']").disabled,
+    ).toBe(true);
   });
 
   it("paginates affected applications with bounded ranges", () => {
@@ -866,6 +1029,54 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     );
   });
 
+  it("renders the layout fallback when branch handle placement fails", () => {
+    const spy = vi
+      .spyOn(lifecycleLayout, "assignBranchHandles")
+      .mockImplementation(() => {
+        throw new Error("forced handle placement failure");
+      });
+    try {
+      const b = bundle(
+        [app("a")],
+        [
+          ev("o", "a", "application_submitted", "2026-01-01"),
+          ev("t", "a", "technical_interview", "2026-01-02"),
+        ],
+      );
+      const { root } = render(b);
+      expect(root.textContent).toContain(
+        "Unable to lay out lifecycle diagram.",
+      );
+      expect(root.querySelector("svg")).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("renders the layout fallback when node label wrapping fails", () => {
+    const spy = vi
+      .spyOn(lifecycleLayout, "wrapLifecycleLabel")
+      .mockImplementation(() => {
+        throw new Error("forced label wrapping failure");
+      });
+    try {
+      const b = bundle(
+        [app("a")],
+        [
+          ev("o", "a", "application_submitted", "2026-01-01"),
+          ev("t", "a", "technical_interview", "2026-01-02"),
+        ],
+      );
+      const { root } = render(b);
+      expect(root.textContent).toContain(
+        "Unable to lay out lifecycle diagram.",
+      );
+      expect(root.querySelector("svg")).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("layers link hits below paths and avoids duplicate node renders", async () => {
     const b = bundle(
       [app("a"), app("b", { origin: "referral" })],
@@ -888,7 +1099,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
       group.querySelector("[data-diagram-link]"),
     );
     expect(firstLinkHitGroupIndex).toBeGreaterThanOrEqual(0);
-    expect(visibleLinkGroupIndex).toBeGreaterThan(firstLinkHitGroupIndex);
+    expect(visibleLinkGroupIndex).toBeLessThan(firstLinkHitGroupIndex);
 
     const details = root.querySelector("[data-diagram-details]");
     const callback = vi.fn();

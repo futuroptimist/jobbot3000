@@ -8,6 +8,8 @@ on:
       - "src/web/tracker/tracker.js"
       - "src/web/tracker/tracker.css"
       - "test/fixtures/tracker-lifecycle-diagram-v2.json"
+      - "test/fixtures/tracker-lifecycle-diagram-routing-v2.json"
+      - "src/web/tracker/lifecycleDiagramLayout.js"
       - "test/playwright/lifecycle-diagram.spec.js"
       - "test/playwright/static-smoke.spec.js"
       - "test/web-tracker-lifecycle-diagram*.test.js"
