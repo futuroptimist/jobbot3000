@@ -573,7 +573,7 @@ export function layoutLifecycleRoutingGraph(
     idealY,
   }) => {
     const incidentKey = [...incidentIds].sort(compareLifecycleIds).join("|");
-    const key = `${quantizeY(minX)}:${quantizeY(maxX)}:${incidentKey}`;
+    const key = `${quantizeY(minX)}:${quantizeY(maxX)}:${incidentKey}:${quantizeY(idealY)}`;
     if (!laneDomainCache.has(key)) {
       laneDomainCache.set(
         key,
