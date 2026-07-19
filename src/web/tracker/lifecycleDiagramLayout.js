@@ -305,13 +305,13 @@ export function calculateLifecycleDiagramLayout(
     const endpointId =
       endpoint && typeof endpoint === "object" ? endpoint.id : endpoint;
     const rank = rankByNodeId.get(endpointId);
-    if (!Number.isFinite(rank)) {
+    if (!Number.isInteger(rank)) {
       throw new Error(
         [
           "Lifecycle diagram layout invariant violated:",
           `link ${link.id ?? "<unknown>"}`,
           `references ${endpointName} ${String(endpointId)}`,
-          "without valid graph node rank data",
+          "without valid integer graph node rank data",
         ].join(" "),
       );
     }
@@ -559,13 +559,11 @@ export function layoutLifecycleRoutingGraph(
         candidates.add(clampLaneY(value));
       }
     }
-    return [...candidates]
-      .filter(
-        (value) =>
-          Number.isFinite(value) &&
-          candidateClearsSpan(value, minX, maxX, incidentIds),
-      )
-      .sort((a, b) => Math.abs(a - idealY) - Math.abs(b - idealY) || a - b);
+    return [...candidates].filter(
+      (value) =>
+        Number.isFinite(value) &&
+        candidateClearsSpan(value, minX, maxX, incidentIds),
+    );
   };
   const laneDomainCache = new Map();
   const laneDomainForSpan = ({
@@ -575,9 +573,7 @@ export function layoutLifecycleRoutingGraph(
     idealY,
   }) => {
     const incidentKey = [...incidentIds].sort(compareLifecycleIds).join("|");
-    const key = `${quantizeY(minX)}:${quantizeY(maxX)}:${incidentKey}:${quantizeY(
-      idealY,
-    )}`;
+    const key = `${quantizeY(minX)}:${quantizeY(maxX)}:${incidentKey}`;
     if (!laneDomainCache.has(key)) {
       laneDomainCache.set(
         key,
@@ -586,7 +582,7 @@ export function layoutLifecycleRoutingGraph(
     }
     return laneDomainCache.get(key) ?? [];
   };
-  const assignMonotone = (items, domainFor, idealFor) => {
+  const assignMonotone = (items, domainFor, idealFor, onStateVisited) => {
     // Return [] for a successful no-op placement when there are no items.
     if (!items.length) return [];
     const ideals = items.map((item, index) => {
@@ -616,6 +612,7 @@ export function layoutLifecycleRoutingGraph(
         candidateIndex < currentDomain.length;
         candidateIndex += 1
       ) {
+        onStateVisited?.();
         const candidate = currentDomain[candidateIndex];
         while (
           pointer < previousDomain.length &&
@@ -675,9 +672,22 @@ export function layoutLifecycleRoutingGraph(
     statesVisited: 0,
     stateLimit: 200000,
   };
+  const recordSolverState = () => {
+    transitionLaneSolverStats.statesVisited += 1;
+    if (
+      transitionLaneSolverStats.statesVisited >
+      transitionLaneSolverStats.stateLimit
+    ) {
+      throw new Error(
+        [
+          "Lifecycle transition lane allocation exceeded",
+          `${transitionLaneSolverStats.stateLimit} deterministic states`,
+        ].join(" "),
+      );
+    }
+  };
   const solveTransitionLanes = (links) => {
     transitionLaneSolverStats.components += 1;
-    transitionLaneSolverStats.statesVisited += links.length;
     return assignMonotone(
       links,
       (link, idealY) => {
@@ -690,6 +700,7 @@ export function layoutLifecycleRoutingGraph(
         ((link.source.y0 + link.source.y1) / 2 +
           (link.target.y0 + link.target.y1) / 2) /
         2,
+      recordSolverState,
     );
   };
 
@@ -872,8 +883,13 @@ export function layoutLifecycleRoutingGraph(
       linksByBranch,
       visibleNodes,
     );
-    graph.handlePlacementCheck = handleCheck;
-    if (!handleCheck.ok && !options.skipHandlePlacementInvariant) {
+    const canSkipHandlePlacementInvariant =
+      options.skipHandlePlacementInvariant &&
+      (process.env.NODE_ENV === "test" || process.env.VITEST === "true");
+    if (!handleCheck.ok || canSkipHandlePlacementInvariant) {
+      graph.handlePlacementCheck = handleCheck;
+    }
+    if (!handleCheck.ok && !canSkipHandlePlacementInvariant) {
       const blockedBranchId =
         handleCheck.blockedBranchIds[0] ?? "unknown branch";
       throw new Error(
