@@ -352,9 +352,15 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
     availableWidth,
     graph,
   );
+  const rankLayers = [...new Set(graph.nodes.map((node) => node.rank))].sort(
+    (left, right) => left - right,
+  );
+  const layerByRank = new Map(
+    rankLayers.map((rank, index) => [rank, index]),
+  );
   const layout = sankey()
     .nodeId((d) => d.id)
-    .nodeAlign((node) => node.rank)
+    .nodeAlign((node) => layerByRank.get(node.rank) ?? 0)
     .nodeWidth(SANKEY_NODE_WIDTH)
     .nodePadding(ROUTED_NODE_PADDING)
     .nodeSort(nodeSort)
@@ -411,22 +417,13 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
     width: node.x1 - node.x0,
     height: node.y1 - node.y0,
   }));
-  const labelBoxes = visibleNodes.map((node) => ({
-    kind: "label",
-    id: node.id,
-    ...labelBoxForNode(node),
-  }));
-  const hitBoxes = visibleNodes.map((node) => ({
-    kind: "hit",
-    ...rendererHitBoxForNode(node),
-  }));
-  const fixedBoxes = [...nodeBoxes, ...labelBoxes, ...hitBoxes];
+  const laneObstacles = nodeBoxes;
   const laneTop = BRANCH_HANDLE_RADIUS + 4;
   const laneBottom = dimensions.height - BRANCH_HANDLE_RADIUS - 4;
   const routeEnvelopeRadius = selectedEnvelopeRadius({ width: 1 });
   const clearancePad = routeEnvelopeRadius + 0.25 + LANE_Y_EPSILON;
   const minLaneSpacing =
-    BRANCH_HANDLE_RADIUS * 2 + routeEnvelopeRadius * 2 + 0.25 + LANE_Y_EPSILON;
+    BRANCH_HANDLE_RADIUS + routeEnvelopeRadius + 0.25 + LANE_Y_EPSILON;
   const quantizeY = (value) => Math.round(value * 1000) / 1000;
   const clampLaneY = (value) =>
     quantizeY(Math.min(laneBottom, Math.max(laneTop, value)));
@@ -441,14 +438,14 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
     y += Math.max(1, minLaneSpacing)
   )
     baseLaneValues.add(clampLaneY(y));
-  for (const box of fixedBoxes) {
+  for (const box of laneObstacles) {
     baseLaneValues.add(clampLaneY(box.y - clearancePad));
     baseLaneValues.add(clampLaneY(box.y + box.height + clearancePad));
   }
   const baseLaneCandidates = [...baseLaneValues].sort((a, b) => a - b);
   const candidateClearsSpan = (y, minX, maxX, incidentIds = new Set()) =>
-    fixedBoxes.every((box) => {
-      if (incidentIds.has(box.id) && box.kind !== "label") return true;
+    laneObstacles.every((box) => {
+      if (incidentIds.has(box.id)) return true;
       if (box.x + box.width < minX || box.x > maxX) return true;
       return y < box.y - clearancePad || y > box.y + box.height + clearancePad;
     });

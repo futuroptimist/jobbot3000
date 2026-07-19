@@ -150,13 +150,14 @@ const denseBranchProjection = () => {
 };
 
 const transitionDensityProjection = () => {
+  const originIds = LIFECYCLE_DIAGRAM_TAXONOMY.origins.map(({ id }) => id);
   const nodes = [
-    {
-      id: "origin:application_submitted",
-      label: "Application submitted",
-      total: 50,
+    ...LIFECYCLE_DIAGRAM_TAXONOMY.origins.map((origin) => ({
+      id: `origin:${origin.id}`,
+      label: origin.label,
+      total: 0,
       applicationIds: [],
-    },
+    })),
     {
       id: "milestone:recruiter_screen",
       label: "Recruiter screen",
@@ -185,15 +186,17 @@ const transitionDensityProjection = () => {
   for (let index = 0; index < 89; index += 1) {
     const applicationId = `transition-density-${String(index).padStart(3, "0")}`;
     const endpointId = endpointIds[index % endpointIds.length];
+    const originId = originIds[index % originIds.length];
     nodeById.get(`endpoint:${endpointId}`).total += 1;
     nodeById.get(`endpoint:${endpointId}`).applicationIds.push(applicationId);
     if (index < 50) {
       nodeById
-        .get("origin:application_submitted")
+        .get(`origin:${originId}`)
         .applicationIds.push(applicationId);
+      nodeById.get(`origin:${originId}`).total += 1;
       links.push({
-        id: `link:origin->recruiter:${index}`,
-        source: "origin:application_submitted",
+        id: `link:origin:${originId}->recruiter:${index}`,
+        source: `origin:${originId}`,
         target: "milestone:recruiter_screen",
         value: 1,
         applicationIds: [applicationId],
@@ -219,7 +222,7 @@ const transitionDensityProjection = () => {
       nodeIds:
         index < 50
           ? [
-              "origin:application_submitted",
+              `origin:${originId}`,
               "milestone:recruiter_screen",
               `endpoint:${endpointId}`,
             ]
@@ -327,6 +330,28 @@ describe("lifecycle diagram render-only routing layout", () => {
       buildLifecycleRoutingGraph(shuffled),
     );
     expect(shuffledLayout).toMatchObject(dense);
+
+    let routed;
+    expect(() => {
+      routed = layoutLifecycleRoutingGraph(projection, 1850);
+    }).not.toThrow();
+    expect(routed.graph.branches).toHaveLength(89);
+    for (const link of routed.graph.links) {
+      expect(Number.isFinite(link.y0)).toBe(true);
+      expect(Number.isFinite(link.y1)).toBe(true);
+      expect(Number.isFinite(link.transitionLaneY)).toBe(true);
+    }
+
+    let routedShuffled;
+    expect(() => {
+      routedShuffled = layoutLifecycleRoutingGraph(shuffled, 1850);
+    }).not.toThrow();
+    expect(routedShuffled.graph.branches).toHaveLength(89);
+    for (const link of routedShuffled.graph.links) {
+      expect(Number.isFinite(link.y0)).toBe(true);
+      expect(Number.isFinite(link.y1)).toBe(true);
+      expect(Number.isFinite(link.transitionLaneY)).toBe(true);
+    }
   });
 
   it("partitions semantic links into stable endpoint-conditioned display branches", () => {

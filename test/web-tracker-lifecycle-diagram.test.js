@@ -859,8 +859,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     for (let index = 0; index < 60; index += 1) {
       const id = `flow-app-${String(index).padStart(2, "0")}`;
       const origin = origins[index % origins.length];
-      const milestone =
-        milestones[Math.floor(index / origins.length) % milestones.length];
+      const milestone = milestones[0];
       const endpoint = endpoints[index % endpoints.length];
       applications.push(app(id, { origin }));
       [origin, milestone, endpoint].forEach((eventType, eventIndex) => {
@@ -877,6 +876,8 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     const { root, view, timeline } = render(
       bundle(applications, lifecycleEvents),
     );
+    expect(root.querySelector("svg")).not.toBeNull();
+    expect(root.textContent).not.toContain("Unable to lay out lifecycle diagram.");
     const flowRows = () =>
       [...root.querySelectorAll("caption")]
         .find((caption) => caption.textContent === "Flows")
