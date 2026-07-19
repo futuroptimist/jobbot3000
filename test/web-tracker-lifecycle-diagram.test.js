@@ -874,9 +874,15 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
         );
       });
     }
-    const { root, view, timeline } = render(
+    const { root, view, timeline, snapshot } = render(
       bundle(applications, lifecycleEvents),
     );
+    expect(lifecycleLayout.buildLifecycleDisplayBranches(snapshot)).toHaveLength(
+      89,
+    );
+    expect(() =>
+      lifecycleLayout.layoutLifecycleRoutingGraph(snapshot, 1850),
+    ).not.toThrow();
     expect(root.querySelector("svg")).not.toBeNull();
     expect(root.textContent).not.toContain("Unable to lay out lifecycle diagram.");
     const flowRows = () =>
@@ -918,6 +924,10 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
       selectedBucketId: "current",
     });
     expect(flowRows().length).toBeLessThanOrEqual(50);
+    expect(root.querySelector("svg")).not.toBeNull();
+    expect(root.textContent).not.toContain(
+      "Unable to lay out lifecycle diagram.",
+    );
     expect(root.querySelector("[data-flow-range]").textContent).toMatch(
       /^Flows 1–\d+ of \d+$/u,
     );

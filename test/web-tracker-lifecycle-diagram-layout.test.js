@@ -28,6 +28,7 @@ import {
   buildLifecycleRoutingGraph,
   calculateLifecycleDiagramLayout,
   compareBranches,
+  compareLifecycleIds,
   cubicTransitionPoint,
   endpointColor,
   layoutLifecycleRoutingGraph,
@@ -331,27 +332,89 @@ describe("lifecycle diagram render-only routing layout", () => {
     );
     expect(shuffledLayout).toMatchObject(dense);
 
+    const graphSignature = (graph) => {
+      const links = [...graph.links]
+        .sort((a, b) => compareLifecycleIds(a.id, b.id))
+        .map((link) => ({
+          id: link.id,
+          branchId: link.branchId,
+          segmentIndex: link.segmentIndex,
+          y0: link.y0,
+          y1: link.y1,
+          transitionLaneY: link.transitionLaneY,
+        }));
+      const visibleNodes = graph.nodes.filter(
+        (node) => !node.routing && Number(node.total) > 0,
+      );
+      const segmentsByBranch = new Map();
+      for (const link of graph.links) {
+        if (!segmentsByBranch.has(link.branchId)) segmentsByBranch.set(link.branchId, []);
+        segmentsByBranch.get(link.branchId).push(link);
+      }
+      const handles = assignBranchHandles(
+        graph.branches,
+        segmentsByBranch,
+        visibleNodes,
+      );
+      expect(handles).toHaveLength(graph.branches.length);
+      for (const handle of handles) {
+        expect(handle.radius).toBe(BRANCH_HANDLE_RADIUS);
+        expect(handle.box.width).toBe(BRANCH_HANDLE_RADIUS * 2);
+        expect(handle.box.height).toBe(BRANCH_HANDLE_RADIUS * 2);
+        expect(Number.isFinite(handle.x)).toBe(true);
+        expect(Number.isFinite(handle.y)).toBe(true);
+      }
+      const sortedHandles = [...handles].sort((a, b) =>
+        compareLifecycleIds(a.branchId, b.branchId),
+      );
+      for (let i = 0; i < sortedHandles.length; i += 1) {
+        for (let j = i + 1; j < sortedHandles.length; j += 1) {
+          expect(
+            boxesOverlap(sortedHandles[i].box, sortedHandles[j].box),
+            `${sortedHandles[i].branchId} overlaps ${sortedHandles[j].branchId}`,
+          ).toBe(false);
+        }
+      }
+      return {
+        links,
+        handles: sortedHandles.map((handle) => ({
+          branchId: handle.branchId,
+          x: handle.x,
+          y: handle.y,
+          radius: handle.radius,
+          box: handle.box,
+        })),
+      };
+    };
+    const assertRoutedGraph = (graph) => {
+      expect(graph.branches).toHaveLength(89);
+      for (const link of graph.links) {
+        expect(Number.isFinite(link.y0)).toBe(true);
+        expect(Number.isFinite(link.y1)).toBe(true);
+        expect(Number.isFinite(link.transitionLaneY)).toBe(true);
+      }
+      for (const node of graph.nodes.filter((candidate) => candidate.routing)) {
+        const incoming = graph.links.filter((link) => link.target === node);
+        const outgoing = graph.links.filter((link) => link.source === node);
+        if (incoming.length === 1 && outgoing.length === 1) {
+          expect(incoming[0].y1).toBe(outgoing[0].y0);
+        }
+      }
+    };
+
     let routed;
     expect(() => {
       routed = layoutLifecycleRoutingGraph(projection, 1850);
     }).not.toThrow();
-    expect(routed.graph.branches).toHaveLength(89);
-    for (const link of routed.graph.links) {
-      expect(Number.isFinite(link.y0)).toBe(true);
-      expect(Number.isFinite(link.y1)).toBe(true);
-      expect(Number.isFinite(link.transitionLaneY)).toBe(true);
-    }
+    assertRoutedGraph(routed.graph);
 
     let routedShuffled;
     expect(() => {
       routedShuffled = layoutLifecycleRoutingGraph(shuffled, 1850);
     }).not.toThrow();
-    expect(routedShuffled.graph.branches).toHaveLength(89);
-    for (const link of routedShuffled.graph.links) {
-      expect(Number.isFinite(link.y0)).toBe(true);
-      expect(Number.isFinite(link.y1)).toBe(true);
-      expect(Number.isFinite(link.transitionLaneY)).toBe(true);
-    }
+    assertRoutedGraph(routedShuffled.graph);
+
+    expect(graphSignature(routed.graph)).toEqual(graphSignature(routedShuffled.graph));
   });
 
   it("partitions semantic links into stable endpoint-conditioned display branches", () => {

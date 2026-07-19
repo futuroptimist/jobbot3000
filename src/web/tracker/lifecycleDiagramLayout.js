@@ -39,7 +39,6 @@ export const rendererHitBoxForNode = (node) => {
     height,
   };
 };
-const MAX_ROUTE_SEARCH_STATES = 8192;
 const LANE_Y_EPSILON = 0.001;
 const COLLISION_MARGIN = -1;
 
@@ -400,7 +399,13 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
         ].join(" "),
       );
     }
+    const leftSourceCenter = (left.source.y0 + left.source.y1) / 2;
+    const rightSourceCenter = (right.source.y0 + right.source.y1) / 2;
+    const leftTargetCenter = (left.target.y0 + left.target.y1) / 2;
+    const rightTargetCenter = (right.target.y0 + right.target.y1) / 2;
     return (
+      leftSourceCenter - rightSourceCenter ||
+      leftTargetCenter - rightTargetCenter ||
       compareBranches(leftBranch, rightBranch) ||
       left.segmentIndex - right.segmentIndex ||
       linkSort(left, right)
@@ -432,7 +437,10 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
   const routeEnvelopeRadius = selectedEnvelopeRadius({ width: 1 });
   const clearancePad = routeEnvelopeRadius + 0.25 + LANE_Y_EPSILON;
   const minLaneSpacing =
-    BRANCH_HANDLE_RADIUS + routeEnvelopeRadius + 0.25 + LANE_Y_EPSILON;
+    BRANCH_HANDLE_RADIUS * 2 +
+    routeEnvelopeRadius * 2 +
+    0.25 +
+    LANE_Y_EPSILON;
   const quantizeY = (value) => Math.round(value * 1000) / 1000;
   const clampLaneY = (value) =>
     quantizeY(Math.min(laneBottom, Math.max(laneTop, value)));
@@ -440,30 +448,132 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
     count <= 1
       ? (laneTop + laneBottom) / 2
       : laneTop + ((laneBottom - laneTop) * index) / (count - 1);
-  const baseLaneValues = new Set([clampLaneY(laneTop), clampLaneY(laneBottom)]);
-  for (let y = laneTop; y <= laneBottom + LANE_Y_EPSILON; y += 1)
-    baseLaneValues.add(clampLaneY(y));
-  for (const box of laneObstacles) {
-    baseLaneValues.add(clampLaneY(box.y - clearancePad));
-    baseLaneValues.add(clampLaneY(box.y + box.height + clearancePad));
-  }
-  const baseLaneCandidates = [...baseLaneValues].sort((a, b) => a - b);
   const candidateClearsSpan = (y, minX, maxX, incidentIds = new Set()) =>
     laneObstacles.every((box) => {
       if (incidentIds.has(box.id) && box.kind !== "label") return true;
       if (box.x + box.width < minX || box.x > maxX) return true;
       return y < box.y - clearancePad || y > box.y + box.height + clearancePad;
     });
-  const assignMonotone = (items, domainFor) => {
+  const blockedIntervalsForSpan = (minX, maxX, incidentIds = new Set()) => {
+    const intervals = laneObstacles
+      .filter((box) => {
+        if (incidentIds.has(box.id) && box.kind !== "label") return false;
+        return !(box.x + box.width < minX || box.x > maxX);
+      })
+      .map((box) => [
+        Math.max(laneTop, box.y - clearancePad),
+        Math.min(laneBottom, box.y + box.height + clearancePad),
+      ])
+      .filter(([start, end]) => end > start + LANE_Y_EPSILON)
+      .sort((left, right) => left[0] - right[0] || left[1] - right[1]);
+    const merged = [];
+    for (const [start, end] of intervals) {
+      const last = merged.at(-1);
+      if (!last || start > last[1] + LANE_Y_EPSILON) {
+        merged.push([start, end]);
+        continue;
+      }
+      last[1] = Math.max(last[1], end);
+    }
+    return merged;
+  };
+  const freeIntervalsForSpan = (minX, maxX, incidentIds = new Set()) => {
+    const blocked = blockedIntervalsForSpan(minX, maxX, incidentIds);
+    if (!blocked.length) return [[laneTop, laneBottom]];
+    const free = [];
+    let cursor = laneTop;
+    for (const [start, end] of blocked) {
+      if (start > cursor + LANE_Y_EPSILON) free.push([cursor, start]);
+      cursor = Math.max(cursor, end);
+    }
+    if (cursor < laneBottom - LANE_Y_EPSILON) free.push([cursor, laneBottom]);
+    return free;
+  };
+  const laneCandidatesForSpan = ({
+    minX,
+    maxX,
+    incidentIds = new Set(),
+    idealY,
+  }) => {
+    const candidates = new Set();
+    for (const [intervalStart, intervalEnd] of freeIntervalsForSpan(
+      minX,
+      maxX,
+      incidentIds,
+    )) {
+      const start = clampLaneY(intervalStart);
+      const end = clampLaneY(intervalEnd);
+      if (end < start + LANE_Y_EPSILON) continue;
+      const clampedIdeal = clampLaneY(Math.min(end, Math.max(start, idealY)));
+      candidates.add(start);
+      candidates.add(end);
+      candidates.add(clampedIdeal);
+      for (
+        let value = clampedIdeal;
+        value <= end + LANE_Y_EPSILON;
+        value += minLaneSpacing
+      ) {
+        candidates.add(clampLaneY(value));
+      }
+      for (
+        let value = clampedIdeal;
+        value >= start - LANE_Y_EPSILON;
+        value -= minLaneSpacing
+      ) {
+        candidates.add(clampLaneY(value));
+      }
+      for (
+        let value = start;
+        value <= end + LANE_Y_EPSILON;
+        value += minLaneSpacing
+      ) {
+        candidates.add(clampLaneY(value));
+      }
+      for (
+        let value = end;
+        value >= start - LANE_Y_EPSILON;
+        value -= minLaneSpacing
+      ) {
+        candidates.add(clampLaneY(value));
+      }
+    }
+    return [...candidates]
+      .filter((value) => Number.isFinite(value))
+      .sort((a, b) => a - b)
+      .filter((candidate) =>
+        candidateClearsSpan(candidate, minX, maxX, incidentIds),
+      );
+  };
+  const laneDomainCache = new Map();
+  const laneDomainForSpan = ({
+    minX,
+    maxX,
+    incidentIds = new Set(),
+    idealY,
+  }) => {
+    const incidentKey = [...incidentIds].sort(compareLifecycleIds).join("|");
+    const key = `${quantizeY(minX)}:${quantizeY(maxX)}:${incidentKey}:${quantizeY(
+      idealY,
+    )}`;
+    if (!laneDomainCache.has(key)) {
+      laneDomainCache.set(key, laneCandidatesForSpan({ minX, maxX, incidentIds, idealY }));
+    }
+    return laneDomainCache.get(key) ?? [];
+  };
+  const assignMonotone = (items, domainFor, idealFor) => {
     // Return [] for a successful no-op placement when there are no items.
     if (!items.length) return [];
-    const domains = items.map((item) =>
-      [...new Set(domainFor(item).map(clampLaneY))]
+    const ideals = items.map((item, index) => {
+      const fallback = spreadLane(index, items.length);
+      const ideal = idealFor?.(item, index, items.length);
+      return clampLaneY(Number.isFinite(ideal) ? ideal : fallback);
+    });
+    const domains = items.map((item, index) =>
+      [...new Set(domainFor(item, ideals[index]).map(clampLaneY))]
         .filter((value) => Number.isFinite(value))
         .sort((a, b) => a - b),
     );
     if (domains.some((domain) => domain.length === 0)) return null;
-    const ideals = items.map((_, index) => spreadLane(index, items.length));
     const predecessors = domains.map((domain) => Array(domain.length).fill(-1));
     let previousCosts = domains[0].map((candidate) =>
       Math.abs(candidate - ideals[0]),
@@ -580,14 +690,19 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
       const links = [...(transitionLinks.get(rank) ?? [])].sort(
         compareBranchLinks,
       );
-      const assignment = assignMonotone(links, (link) => {
-        const minX = rankCenterX(link.source.rank) - RANK_CORRIDOR_HALF_WIDTH;
-        const maxX = rankCenterX(link.target.rank) + RANK_CORRIDOR_HALF_WIDTH;
-        const incidentIds = new Set([link.source.id, link.target.id]);
-        return baseLaneCandidates.filter((candidate) =>
-          candidateClearsSpan(candidate, minX, maxX, incidentIds),
-        );
-      });
+      const assignment = assignMonotone(
+        links,
+        (link, idealY) => {
+          const minX = rankCenterX(link.source.rank) - RANK_CORRIDOR_HALF_WIDTH;
+          const maxX = rankCenterX(link.target.rank) + RANK_CORRIDOR_HALF_WIDTH;
+          const incidentIds = new Set([link.source.id, link.target.id]);
+          return laneDomainForSpan({ minX, maxX, incidentIds, idealY });
+        },
+        (link) =>
+          ((link.source.y0 + link.source.y1) / 2 +
+            (link.target.y0 + link.target.y1) / 2) /
+          2,
+      );
       if (!assignment) {
         throw new Error(
           `Lifecycle transition lane allocation failed for transition rank ${rank}`,
@@ -609,8 +724,11 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
           ordered.length > 1
             ? node.y0 + (height * (index + 1)) / (ordered.length + 1)
             : (node.y0 + node.y1) / 2;
-        const laneY = Math.min(node.y1 - 0.5, Math.max(node.y0 + 0.5, link.transitionLaneY));
-        link.y0 = quantizeY((evenY + laneY) / 2);
+        const laneY = Math.min(
+          node.y1 - 0.5,
+          Math.max(node.y0 + 0.5, link.transitionLaneY),
+        );
+        link.y0 = quantizeY((evenY + laneY * 3) / 4);
       });
     }
     for (const [node, links] of incomingByNode) {
@@ -625,8 +743,11 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
           ordered.length > 1
             ? node.y0 + (height * (index + 1)) / (ordered.length + 1)
             : (node.y0 + node.y1) / 2;
-        const laneY = Math.min(node.y1 - 0.5, Math.max(node.y0 + 0.5, link.transitionLaneY));
-        link.y1 = quantizeY((evenY + laneY) / 2);
+        const laneY = Math.min(
+          node.y1 - 0.5,
+          Math.max(node.y0 + 0.5, link.transitionLaneY),
+        );
+        link.y1 = quantizeY((evenY + laneY * 3) / 4);
       });
     }
     const routingNodesByRank = new Map();
@@ -652,10 +773,20 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
         },
       );
       const centerX = rankCenterX(rank);
-      const assignment = assignMonotone(nodes, () =>
-        baseLaneCandidates.filter((candidate) =>
-          candidateClearsSpan(candidate, centerX, centerX),
-        ),
+      const assignment = assignMonotone(
+        nodes,
+        (_, idealY) =>
+          laneDomainForSpan({ minX: centerX, maxX: centerX, idealY }),
+        (node) => {
+          const lanes = [
+            ...(incomingByNode.get(node) ?? []),
+            ...(outgoingByNode.get(node) ?? []),
+          ]
+            .map((link) => link.transitionLaneY)
+            .filter((value) => Number.isFinite(value));
+          if (!lanes.length) return (laneTop + laneBottom) / 2;
+          return lanes.reduce((sum, value) => sum + value, 0) / lanes.length;
+        },
       );
       if (!assignment) {
         throw new Error(
@@ -1145,7 +1276,7 @@ export function solveLifecycleRouteGeometry(graph, dimensions, options = {}) {
       link.transitionLaneY = value.transitionLaneY;
     }
   };
-  if ((options.maxStates ?? MAX_ROUTE_SEARCH_STATES) <= 0) {
+  if ((options.maxStates ?? 1) <= 0) {
     restore();
     throw new Error("Unable to construct valid lifecycle routes");
   }
