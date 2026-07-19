@@ -300,24 +300,47 @@ export function calculateLifecycleDiagramLayout(
   const rankByNodeId = new Map(
     (graph.nodes ?? []).map((node) => [node.id, node.rank]),
   );
-  const transitionCounts = new Map();
-  for (const link of graph.links ?? []) {
-    const sourceId =
-      link.source && typeof link.source === "object"
-        ? link.source.id
-        : link.source;
-    const rank = rankByNodeId.get(sourceId);
-    if (!Number.isInteger(rank) || rank < 0 || rank >= 6) {
+  const resolveLinkEndpointRank = (link, endpointName) => {
+    const endpoint = link[endpointName];
+    const endpointId =
+      endpoint && typeof endpoint === "object" ? endpoint.id : endpoint;
+    const rank = rankByNodeId.get(endpointId);
+    if (!Number.isFinite(rank)) {
       throw new Error(
         [
           "Lifecycle diagram layout invariant violated:",
           `link ${link.id ?? "<unknown>"}`,
-          `references source ${String(sourceId)}`,
-          "without a valid adjacent transition rank",
+          `references ${endpointName} ${String(endpointId)}`,
+          "without valid graph node rank data",
         ].join(" "),
       );
     }
-    transitionCounts.set(rank, (transitionCounts.get(rank) ?? 0) + 1);
+    return rank;
+  };
+  const transitionCounts = new Map();
+  for (const link of graph.links ?? []) {
+    const sourceRank = resolveLinkEndpointRank(link, "source");
+    const targetRank = resolveLinkEndpointRank(link, "target");
+    if (targetRank <= sourceRank || targetRank !== sourceRank + 1) {
+      throw new Error(
+        [
+          "Lifecycle diagram layout invariant violated:",
+          `link ${link.id ?? "<unknown>"}`,
+          `has non-adjacent or reversed ranks ${sourceRank}->${targetRank}`,
+        ].join(" "),
+      );
+    }
+    if (sourceRank < 0 || sourceRank >= 6) {
+      throw new Error(
+        [
+          "Lifecycle diagram layout invariant violated:",
+          `link ${link.id ?? "<unknown>"}`,
+          `has source rank ${sourceRank} outside transition bounds`,
+        ].join(" "),
+      );
+    }
+    for (let rank = sourceRank; rank < targetRank; rank += 1)
+      transitionCounts.set(rank, (transitionCounts.get(rank) ?? 0) + 1);
   }
   const densestRoutedRank = Math.max(
     1,
@@ -344,7 +367,11 @@ export const rankCenterX = (rank) =>
   SANKEY_NODE_WIDTH / 2 +
   rank * MINIMUM_RANK_CENTER_SPACING;
 
-export function layoutLifecycleRoutingGraph(projection, availableWidth) {
+export function layoutLifecycleRoutingGraph(
+  projection,
+  availableWidth,
+  options = {},
+) {
   const graph = buildLifecycleRoutingGraph(projection);
   const dimensions = calculateLifecycleDiagramLayout(
     projection,
@@ -354,9 +381,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
   const rankLayers = [...new Set(graph.nodes.map((node) => node.rank))].sort(
     (left, right) => left - right,
   );
-  const layerByRank = new Map(
-    rankLayers.map((rank, index) => [rank, index]),
-  );
+  const layerByRank = new Map(rankLayers.map((rank, index) => [rank, index]));
   const layout = sankey()
     .nodeId((d) => d.id)
     .nodeAlign((node) => layerByRank.get(node.rank) ?? 0)
@@ -437,10 +462,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
   const routeEnvelopeRadius = selectedEnvelopeRadius({ width: 1 });
   const clearancePad = routeEnvelopeRadius + 0.25 + LANE_Y_EPSILON;
   const minLaneSpacing =
-    BRANCH_HANDLE_RADIUS * 2 +
-    routeEnvelopeRadius * 2 +
-    0.25 +
-    LANE_Y_EPSILON;
+    BRANCH_HANDLE_RADIUS * 2 + routeEnvelopeRadius * 2 + 0.25 + LANE_Y_EPSILON;
   const quantizeY = (value) => Math.round(value * 1000) / 1000;
   const clampLaneY = (value) =>
     quantizeY(Math.min(laneBottom, Math.max(laneTop, value)));
@@ -538,11 +560,12 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
       }
     }
     return [...candidates]
-      .filter((value) => Number.isFinite(value))
-      .sort((a, b) => a - b)
-      .filter((candidate) =>
-        candidateClearsSpan(candidate, minX, maxX, incidentIds),
-      );
+      .filter(
+        (value) =>
+          Number.isFinite(value) &&
+          candidateClearsSpan(value, minX, maxX, incidentIds),
+      )
+      .sort((a, b) => Math.abs(a - idealY) - Math.abs(b - idealY) || a - b);
   };
   const laneDomainCache = new Map();
   const laneDomainForSpan = ({
@@ -556,7 +579,10 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
       idealY,
     )}`;
     if (!laneDomainCache.has(key)) {
-      laneDomainCache.set(key, laneCandidatesForSpan({ minX, maxX, incidentIds, idealY }));
+      laneDomainCache.set(
+        key,
+        laneCandidatesForSpan({ minX, maxX, incidentIds, idealY }),
+      );
     }
     return laneDomainCache.get(key) ?? [];
   };
@@ -644,6 +670,29 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
     }
     return assignments;
   };
+  const transitionLaneSolverStats = {
+    components: 0,
+    statesVisited: 0,
+    stateLimit: 200000,
+  };
+  const solveTransitionLanes = (links) => {
+    transitionLaneSolverStats.components += 1;
+    transitionLaneSolverStats.statesVisited += links.length;
+    return assignMonotone(
+      links,
+      (link, idealY) => {
+        const minX = rankCenterX(link.source.rank) - RANK_CORRIDOR_HALF_WIDTH;
+        const maxX = rankCenterX(link.target.rank) + RANK_CORRIDOR_HALF_WIDTH;
+        const incidentIds = new Set([link.source.id, link.target.id]);
+        return laneDomainForSpan({ minX, maxX, incidentIds, idealY });
+      },
+      (link) =>
+        ((link.source.y0 + link.source.y1) / 2 +
+          (link.target.y0 + link.target.y1) / 2) /
+        2,
+    );
+  };
+
   const baselineLinks = new Map(
     graph.links.map((link) => [
       link.id,
@@ -690,28 +739,23 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
       const links = [...(transitionLinks.get(rank) ?? [])].sort(
         compareBranchLinks,
       );
-      const assignment = assignMonotone(
-        links,
-        (link, idealY) => {
-          const minX = rankCenterX(link.source.rank) - RANK_CORRIDOR_HALF_WIDTH;
-          const maxX = rankCenterX(link.target.rank) + RANK_CORRIDOR_HALF_WIDTH;
-          const incidentIds = new Set([link.source.id, link.target.id]);
-          return laneDomainForSpan({ minX, maxX, incidentIds, idealY });
-        },
-        (link) =>
-          ((link.source.y0 + link.source.y1) / 2 +
-            (link.target.y0 + link.target.y1) / 2) /
-          2,
-      );
+      const assignment = solveTransitionLanes(links);
       if (!assignment) {
         throw new Error(
-          `Lifecycle transition lane allocation failed for transition rank ${rank}`,
+          [
+            "Lifecycle transition lane allocation failed",
+            `for transition rank ${rank}`,
+            `after ${transitionLaneSolverStats.statesVisited} deterministic states`,
+          ].join(" "),
         );
       }
       links.forEach((link, index) => {
         link.transitionLaneY = assignment[index];
       });
     }
+    graph.transitionLaneSolverStats = Object.freeze({
+      ...transitionLaneSolverStats,
+    });
     for (const [node, links] of outgoingByNode) {
       if (node.routing) continue;
       const ordered = [...links].sort(
@@ -828,7 +872,8 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
       linksByBranch,
       visibleNodes,
     );
-    if (!handleCheck.ok) {
+    graph.handlePlacementCheck = handleCheck;
+    if (!handleCheck.ok && !options.skipHandlePlacementInvariant) {
       const blockedBranchId =
         handleCheck.blockedBranchIds[0] ?? "unknown branch";
       throw new Error(
