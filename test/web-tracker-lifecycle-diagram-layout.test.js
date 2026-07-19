@@ -145,6 +145,86 @@ const denseBranchProjection = () => {
   return { nodes, links, paths };
 };
 
+const transitionDensityProjection = () => {
+  const nodes = [
+    {
+      id: "origin:application_submitted",
+      label: "Application submitted",
+      total: 50,
+      applicationIds: [],
+    },
+    {
+      id: "milestone:recruiter_screen",
+      label: "Recruiter screen",
+      total: 50,
+      applicationIds: [],
+    },
+    {
+      id: "milestone:technical_interview",
+      label: "Technical interview",
+      total: 39,
+      applicationIds: [],
+    },
+    ...LIFECYCLE_DIAGRAM_TAXONOMY.endpoints.map((endpoint) => ({
+      id: `endpoint:${endpoint.id}`,
+      label: endpoint.label,
+      total: 0,
+      applicationIds: [],
+    })),
+  ];
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const links = [];
+  const paths = [];
+  const endpointIds = LIFECYCLE_DIAGRAM_TAXONOMY.endpoints
+    .map(({ id }) => id)
+    .filter((id) => id !== "unknown");
+  for (let index = 0; index < 89; index += 1) {
+    const applicationId = `transition-density-${String(index).padStart(3, "0")}`;
+    const endpointId = endpointIds[index % endpointIds.length];
+    nodeById.get(`endpoint:${endpointId}`).total += 1;
+    nodeById.get(`endpoint:${endpointId}`).applicationIds.push(applicationId);
+    if (index < 50) {
+      nodeById
+        .get("origin:application_submitted")
+        .applicationIds.push(applicationId);
+      links.push({
+        id: `link:origin->recruiter:${index}`,
+        source: "origin:application_submitted",
+        target: "milestone:recruiter_screen",
+        value: 1,
+        applicationIds: [applicationId],
+      });
+      nodeById
+        .get("milestone:recruiter_screen")
+        .applicationIds.push(applicationId);
+    } else {
+      links.push({
+        id: `link:technical->endpoint:${index}`,
+        source: "milestone:technical_interview",
+        target: `endpoint:${endpointId}`,
+        value: 1,
+        applicationIds: [applicationId],
+      });
+      nodeById
+        .get("milestone:technical_interview")
+        .applicationIds.push(applicationId);
+    }
+    paths.push({
+      applicationId,
+      endpoint: endpointId,
+      nodeIds:
+        index < 50
+          ? [
+              "origin:application_submitted",
+              "milestone:recruiter_screen",
+              `endpoint:${endpointId}`,
+            ]
+          : ["milestone:technical_interview", `endpoint:${endpointId}`],
+    });
+  }
+  return { nodes, links, paths };
+};
+
 describe("lifecycle diagram render-only routing layout", () => {
   it("materializes exact routed primitives for the canonical M-L-C-L route", () => {
     const p = projection();
@@ -214,6 +294,28 @@ describe("lifecycle diagram render-only routing layout", () => {
         (finding) => finding.category === "proper-crossing",
       ),
     ).toBe(true);
+  });
+
+  it("allocates lanes by transition density", () => {
+    const projection = transitionDensityProjection();
+    expect(buildLifecycleDisplayBranches(projection)).toHaveLength(89);
+    const graph = buildLifecycleRoutingGraph(projection);
+    const dense = calculateLifecycleDiagramLayout(projection, 1850, graph);
+    const transitionCounts = transitionCountsByGraphRanks(graph);
+    expect(Math.max(...transitionCounts)).toBe(50);
+    expect(dense.densestRoutedRank).toBe(50);
+    expect(dense.height).toBeGreaterThan(5000);
+    const shuffled = {
+      ...projection,
+      links: [...projection.links].reverse(),
+      paths: [...projection.paths].reverse(),
+    };
+    const shuffledLayout = calculateLifecycleDiagramLayout(
+      shuffled,
+      1850,
+      buildLifecycleRoutingGraph(shuffled),
+    );
+    expect(shuffledLayout).toMatchObject(dense);
   });
 
   it("partitions semantic links into stable endpoint-conditioned display branches", () => {
