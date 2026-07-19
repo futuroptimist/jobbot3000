@@ -734,7 +734,22 @@ describe("lifecycle diagram view", () => {
         rectBox(rect),
       ]),
     );
-    if (!nodesById.has("origin:application_submitted")) return;
+    if (!nodesById.has("origin:application_submitted")) {
+      expect(dense.root.querySelector("svg")).toBeNull();
+      expect(() =>
+        lifecycleLayout.layoutLifecycleRoutingGraph(dense.snapshot, 1850),
+      ).toThrow(
+        new RegExp(
+          [
+            "Lifecycle diagram handle placement invariant violated for ",
+            "branch:link:origin:candidate_outreach->milestone",
+            ":recruiter_screen:endpoint:interviewing",
+          ].join(""),
+          "u",
+        ),
+      );
+      return;
+    }
     expect(nodesById.get("origin:application_submitted").x).toBeCloseTo(100);
     const awaitingResponse = nodesById.get("endpoint:awaiting_response");
     expect(awaitingResponse.x + awaitingResponse.width).toBeCloseTo(1750);

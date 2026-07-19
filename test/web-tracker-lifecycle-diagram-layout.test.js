@@ -10,12 +10,16 @@ import {
   BRANCH_HANDLE_RADIUS,
   BRANCH_STROKE_OPACITY,
   ENDPOINT_BRANCH_COLORS,
+  LAYOUT_BOTTOM_MARGIN,
+  LAYOUT_TOP_MARGIN,
   LAYOUT_LEFT_MARGIN,
   LAYOUT_RIGHT_MARGIN,
+  PER_LANE_VERTICAL_BUDGET,
   MINIMUM_RANK_CENTER_SPACING,
   MINIMUM_SVG_WIDTH,
   MINIMUM_TRANSITION_WIDTH,
   RANK_CORRIDOR_HALF_WIDTH,
+  ROUTED_NODE_PADDING,
   SANKEY_NODE_WIDTH,
   assignBranchHandles,
   auditLifecycleRouteGeometry,
@@ -304,7 +308,14 @@ describe("lifecycle diagram render-only routing layout", () => {
     const transitionCounts = transitionCountsByGraphRanks(graph);
     expect(Math.max(...transitionCounts)).toBe(50);
     expect(dense.densestRoutedRank).toBe(50);
-    expect(dense.height).toBeGreaterThan(5000);
+    expect(dense.height).toBe(
+      Math.ceil(
+        LAYOUT_TOP_MARGIN +
+          LAYOUT_BOTTOM_MARGIN +
+          50 * PER_LANE_VERTICAL_BUDGET +
+          49 * ROUTED_NODE_PADDING,
+      ),
+    );
     const shuffled = {
       ...projection,
       links: [...projection.links].reverse(),

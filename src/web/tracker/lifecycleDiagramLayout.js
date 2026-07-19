@@ -453,6 +453,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
       return y < box.y - clearancePad || y > box.y + box.height + clearancePad;
     });
   const assignMonotone = (items, domainFor) => {
+    // Return [] for a successful no-op placement when there are no items.
     if (!items.length) return [];
     const domains = items.map((item) =>
       [...new Set(domainFor(item).map(clampLaneY))]
@@ -483,6 +484,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
           previousDomain[pointer] <= candidate - minLaneSpacing
         ) {
           const cost = previousCosts[pointer];
+          // Lower predecessor indexes keep equal-cost paths deterministic.
           if (cost < bestCost || (cost === bestCost && pointer < bestIndex)) {
             bestCost = cost;
             bestIndex = pointer;
@@ -499,17 +501,23 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
     let bestTerminalIndex = -1;
     let bestTerminalCost = Infinity;
     const finalDomain = domains.at(-1) ?? [];
+    const terminalPredecessor = (index) =>
+      predecessors[domains.length - 1][index] ?? -1;
+    const prefersTerminal = (candidateIndex, currentIndex) => {
+      if (currentIndex < 0) return true;
+      const candidateY = finalDomain[candidateIndex];
+      const currentY = finalDomain[currentIndex];
+      if (candidateY !== currentY) return candidateY < currentY;
+      return (
+        terminalPredecessor(candidateIndex) < terminalPredecessor(currentIndex)
+      );
+    };
     for (let index = 0; index < finalDomain.length; index += 1) {
       const cost = previousCosts[index];
       if (!Number.isFinite(cost)) continue;
       if (
         cost < bestTerminalCost ||
-        (cost === bestTerminalCost &&
-          (bestTerminalIndex < 0 ||
-            finalDomain[index] < finalDomain[bestTerminalIndex] ||
-            (finalDomain[index] === finalDomain[bestTerminalIndex] &&
-              predecessors[domains.length - 1][index] <
-                predecessors[domains.length - 1][bestTerminalIndex])))
+        (cost === bestTerminalCost && prefersTerminal(index, bestTerminalIndex))
       ) {
         bestTerminalCost = cost;
         bestTerminalIndex = index;
