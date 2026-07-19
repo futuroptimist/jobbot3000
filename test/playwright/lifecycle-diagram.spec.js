@@ -277,10 +277,10 @@ async function assertBrowserCollisionAudit(page) {
     if (!svg)
       return {
         ok: false,
-        errors: ["missing svg"],
+        fatalErrors: ["missing svg"],
         pathCount: 0,
       };
-    const errors = [];
+    const fatalErrors = [];
     const makePoint = (x, y) => {
       const point = svg.createSVGPoint();
       point.x = x;
@@ -421,23 +421,27 @@ async function assertBrowserCollisionAudit(page) {
         for (const sample of path.samples) {
           const box = sampleBox(sample, path.inflate);
           if (overlap(box, node.label)) {
-            errors.push(`${path.id} intersects label ${node.id}`);
+            fatalErrors.push(`${path.id} intersects label ${node.id}`);
             break;
           }
           if (overlap(box, node.hit) && !incident) {
-            errors.push(`${path.id} intersects nonincident hit ${node.id}`);
+            fatalErrors.push(
+              `${path.id} intersects nonincident hit ${node.id}`,
+            );
             break;
           }
           if (!overlap(box, node.rect)) continue;
           if (!incident) {
-            errors.push(`${path.id} intersects nonincident node ${node.id}`);
+            fatalErrors.push(
+              `${path.id} intersects nonincident node ${node.id}`,
+            );
             break;
           }
           if (
             !dockContact(path, node, sample) &&
             contains(node.rect, sample, 0)
           ) {
-            errors.push(
+            fatalErrors.push(
               `${path.id} contacts incident node ${node.id} away from dock`,
             );
             break;
@@ -453,6 +457,7 @@ async function assertBrowserCollisionAudit(page) {
               branchHandleRadius + path.inflate,
           )
         ) {
+          fatalErrors.push(`${path.id} intersects other handle ${handle.id}`);
           break;
         }
       }
@@ -480,19 +485,20 @@ async function assertBrowserCollisionAudit(page) {
         );
         if (!awayFromSharedDock.length) continue;
         if (awayFromSharedDock.length > 4) {
+          fatalErrors.push(`${left.id} coincides with ${right.id}`);
           continue;
         }
-        continue;
+        fatalErrors.push(`${left.id} crosses ${right.id}`);
       }
     }
     return {
-      ok: errors.length === 0,
-      errors: [...new Set(errors)].slice(0, 20),
+      fatalErrors: [...new Set(fatalErrors)].slice(0, 20),
+      forcedCrossings: [],
       pathCount: paths.length,
     };
   });
   expect(result.pathCount).toBeGreaterThan(0);
-  expect(result.errors).toEqual([]);
+  expect(result.fatalErrors).toEqual([]);
 }
 
 async function runAxe(page) {
