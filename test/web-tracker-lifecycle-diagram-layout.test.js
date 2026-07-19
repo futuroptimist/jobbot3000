@@ -191,9 +191,7 @@ const transitionDensityProjection = () => {
     nodeById.get(`endpoint:${endpointId}`).total += 1;
     nodeById.get(`endpoint:${endpointId}`).applicationIds.push(applicationId);
     if (index < 50) {
-      nodeById
-        .get(`origin:${originId}`)
-        .applicationIds.push(applicationId);
+      nodeById.get(`origin:${originId}`).applicationIds.push(applicationId);
       nodeById.get(`origin:${originId}`).total += 1;
       links.push({
         id: `link:origin:${originId}->recruiter:${index}`,
@@ -348,7 +346,8 @@ describe("lifecycle diagram render-only routing layout", () => {
       );
       const segmentsByBranch = new Map();
       for (const link of graph.links) {
-        if (!segmentsByBranch.has(link.branchId)) segmentsByBranch.set(link.branchId, []);
+        if (!segmentsByBranch.has(link.branchId))
+          segmentsByBranch.set(link.branchId, []);
         segmentsByBranch.get(link.branchId).push(link);
       }
       const handles = assignBranchHandles(
@@ -414,7 +413,9 @@ describe("lifecycle diagram render-only routing layout", () => {
     }).not.toThrow();
     assertRoutedGraph(routedShuffled.graph);
 
-    expect(graphSignature(routed.graph)).toEqual(graphSignature(routedShuffled.graph));
+    expect(graphSignature(routed.graph)).toEqual(
+      graphSignature(routedShuffled.graph),
+    );
   });
 
   it("partitions semantic links into stable endpoint-conditioned display branches", () => {
@@ -966,5 +967,97 @@ describe("lifecycle diagram render-only routing layout", () => {
         ),
       ).toBe(true);
     }
+  });
+});
+
+describe("transition lane solver", () => {
+  it("counts raw string and D3 node-object endpoints identically", () => {
+    const p = projection();
+    const rawGraph = buildLifecycleRoutingGraph(p);
+    const rawLayout = calculateLifecycleDiagramLayout(p, 100, rawGraph);
+    const { graph: d3Graph } = layoutLifecycleRoutingGraph(p, 100);
+
+    expect(transitionCountsByGraphRanks(rawGraph)).toEqual(
+      transitionCountsByGraphRanks(d3Graph),
+    );
+    expect(calculateLifecycleDiagramLayout(p, 100, d3Graph)).toEqual(rawLayout);
+  });
+
+  it("sizes generated 55-branch and exact 89-branch graphs from legal transition occupancy", () => {
+    const fiftyFive = denseBranchProjection();
+    const eightyNine = transitionDensityProjection();
+
+    expect(buildLifecycleDisplayBranches(fiftyFive)).toHaveLength(55);
+    expect(buildLifecycleDisplayBranches(eightyNine)).toHaveLength(89);
+    expect(() =>
+      calculateLifecycleDiagramLayout(fiftyFive, 1850),
+    ).not.toThrow();
+    expect(() =>
+      calculateLifecycleDiagramLayout(eightyNine, 1850),
+    ).not.toThrow();
+    expect(
+      calculateLifecycleDiagramLayout(fiftyFive, 1850).densestRoutedRank,
+    ).toBe(55);
+    expect(
+      calculateLifecycleDiagramLayout(eightyNine, 1850).densestRoutedRank,
+    ).toBe(50);
+  });
+
+  it("produces deterministic lane assignments and bounded search counts", () => {
+    const p = projection();
+    const shuffled = {
+      ...p,
+      links: [...p.links].reverse(),
+      paths: [...p.paths].reverse(),
+    };
+    const routed = layoutLifecycleRoutingGraph(p, 1850).graph;
+    const shuffledRouted = layoutLifecycleRoutingGraph(shuffled, 1850).graph;
+    const signature = (graph) =>
+      [...graph.links]
+        .sort((a, b) => compareLifecycleIds(a.id, b.id))
+        .map((link) => [link.id, link.transitionLaneY, link.y0, link.y1]);
+
+    expect(signature(shuffledRouted)).toEqual(signature(routed));
+    expect(shuffledRouted.transitionLaneSearchStats).toEqual(
+      routed.transitionLaneSearchStats,
+    );
+    expect(routed.transitionLaneSearchStats.stateLimit).toBe(250000);
+    expect(routed.transitionLaneSearchStats.exhausted).toBe(false);
+  });
+
+  it("preserves continuing strand order across adjacent transitions", () => {
+    const { graph } = layoutLifecycleRoutingGraph(projection(), 1850);
+    const byBranch = new Map();
+    for (const link of graph.links) {
+      if (!byBranch.has(link.branchId)) byBranch.set(link.branchId, []);
+      byBranch.get(link.branchId).push(link);
+    }
+    for (const segments of byBranch.values()) {
+      segments.sort((a, b) => a.segmentIndex - b.segmentIndex);
+      for (let index = 1; index < segments.length; index += 1) {
+        expect(
+          Math.sign(
+            segments[index].transitionLaneY -
+              segments[index - 1].transitionLaneY,
+          ),
+        ).toBeGreaterThanOrEqual(-1);
+      }
+    }
+  });
+
+  it("rejects non-adjacent rank data with link-id invariant", () => {
+    const p = projection();
+    const graph = buildLifecycleRoutingGraph(p);
+    graph.links = [
+      {
+        ...graph.links[0],
+        id: "link:bad-rank",
+        target: "endpoint:awaiting_response",
+      },
+    ];
+
+    expect(() => calculateLifecycleDiagramLayout(p, 100, graph)).toThrow(
+      /link link:bad-rank has non-adjacent or reversed ranks/u,
+    );
   });
 });
