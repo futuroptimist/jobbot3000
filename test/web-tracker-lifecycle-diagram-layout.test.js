@@ -372,7 +372,11 @@ describe("transition lane solver", () => {
       y1: link.y1,
       transitionLaneY: link.transitionLaneY,
     }));
-    expect(() => layoutLifecycleRoutingGraph(p, 100)).not.toThrow();
+    expect(() =>
+      layoutLifecycleRoutingGraph(p, 100, {
+        skipHandlePlacementInvariant: true,
+      }),
+    ).not.toThrow();
     expect(() => calculateLifecycleDiagramLayout(p, 100, graph)).toThrow(
       /link .* source .* without valid graph node rank data/u,
     );

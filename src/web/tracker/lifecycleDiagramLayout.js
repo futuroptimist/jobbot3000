@@ -675,22 +675,171 @@ export function layoutLifecycleRoutingGraph(
     statesVisited: 0,
     stateLimit: 200000,
   };
+  const linkIdealY = (link) =>
+    ((link.source.y0 + link.source.y1) / 2 +
+      (link.target.y0 + link.target.y1) / 2) /
+    2;
+  const intervalsOverlap = (left, right) =>
+    left.minRank < right.maxRank && right.minRank < left.maxRank;
+  const orderedConflict = (left, right) => compareBranchLinks(left, right) <= 0;
   const solveTransitionLanes = (links) => {
-    transitionLaneSolverStats.components += 1;
-    transitionLaneSolverStats.statesVisited += links.length;
-    return assignMonotone(
-      links,
-      (link, idealY) => {
-        const minX = rankCenterX(link.source.rank) - RANK_CORRIDOR_HALF_WIDTH;
-        const maxX = rankCenterX(link.target.rank) + RANK_CORRIDOR_HALF_WIDTH;
-        const incidentIds = new Set([link.source.id, link.target.id]);
-        return laneDomainForSpan({ minX, maxX, incidentIds, idealY });
-      },
-      (link) =>
-        ((link.source.y0 + link.source.y1) / 2 +
-          (link.target.y0 + link.target.y1) / 2) /
-        2,
+    const orderedLinks = [...links].sort(compareBranchLinks);
+    const branchIntervalForLink = (link) => ({
+      minRank: link.source.rank,
+      maxRank: link.target.rank,
+      minX: rankCenterX(link.source.rank) - RANK_CORRIDOR_HALF_WIDTH,
+      maxX: rankCenterX(link.target.rank) + RANK_CORRIDOR_HALF_WIDTH,
+      incidentIds: new Set([link.source.id, link.target.id]),
+      idealY: linkIdealY(link),
+    });
+    const intervals = new Map(
+      orderedLinks.map((link) => [link, branchIntervalForLink(link)]),
     );
+    const neighbors = new Map(orderedLinks.map((link) => [link, new Set()]));
+    for (let leftIndex = 0; leftIndex < orderedLinks.length; leftIndex += 1) {
+      for (
+        let rightIndex = leftIndex + 1;
+        rightIndex < orderedLinks.length;
+        rightIndex += 1
+      ) {
+        const left = orderedLinks[leftIndex];
+        const right = orderedLinks[rightIndex];
+        if (!intervalsOverlap(intervals.get(left), intervals.get(right)))
+          continue;
+        neighbors.get(left).add(right);
+        neighbors.get(right).add(left);
+      }
+    }
+    const components = [];
+    const seen = new Set();
+    for (const link of orderedLinks) {
+      if (seen.has(link)) continue;
+      const stack = [link];
+      const component = [];
+      seen.add(link);
+      while (stack.length) {
+        const current = stack.pop();
+        component.push(current);
+        for (const next of neighbors.get(current) ?? []) {
+          if (seen.has(next)) continue;
+          seen.add(next);
+          stack.push(next);
+        }
+      }
+      components.push(component.sort(compareBranchLinks));
+    }
+    const assignments = new Map();
+    const exceedsLimit = () =>
+      transitionLaneSolverStats.statesVisited >=
+      transitionLaneSolverStats.stateLimit;
+    for (const component of components) {
+      transitionLaneSolverStats.components += 1;
+      const domains = new Map();
+      for (const link of component) {
+        const interval = intervals.get(link);
+        const domain = [
+          ...new Set(
+            laneDomainForSpan(interval).map((value) => clampLaneY(value)),
+          ),
+        ]
+          .filter((value) => Number.isFinite(value))
+          .sort(
+            (left, right) =>
+              Math.abs(left - interval.idealY) -
+                Math.abs(right - interval.idealY) || left - right,
+          );
+        if (!domain.length) return null;
+        domains.set(link, domain);
+      }
+      if (component.length > 20) {
+        let previousLane = -Infinity;
+        for (const link of component) {
+          const lane = [...domains.get(link)]
+            .sort((left, right) => left - right)
+            .find((candidate) => candidate >= previousLane + minLaneSpacing);
+          transitionLaneSolverStats.statesVisited += domains.get(link).length;
+          if (!Number.isFinite(lane) || exceedsLimit()) return null;
+          assignments.set(link, lane);
+          previousLane = lane;
+        }
+        continue;
+      }
+      const componentAssignments = new Map();
+      const failed = new Set();
+      const conflicts = (link, candidate, other, otherCandidate) => {
+        if (!intervalsOverlap(intervals.get(link), intervals.get(other)))
+          return false;
+        if (link.branchId === other.branchId)
+          return Math.abs(candidate - otherCandidate) > LANE_Y_EPSILON;
+        if (
+          Math.abs(candidate - otherCandidate) + LANE_Y_EPSILON <
+          minLaneSpacing
+        )
+          return true;
+        return orderedConflict(link, other)
+          ? candidate > otherCandidate + LANE_Y_EPSILON
+          : otherCandidate > candidate + LANE_Y_EPSILON;
+      };
+      const legalDomain = (link) =>
+        domains.get(link).filter((candidate) => {
+          for (const [other, otherCandidate] of componentAssignments) {
+            if (conflicts(link, candidate, other, otherCandidate)) return false;
+          }
+          return true;
+        });
+      const signature = () =>
+        component
+          .map((link) =>
+            componentAssignments.has(link)
+              ? `${link.id}=${componentAssignments.get(link)}`
+              : `${link.id}=?`,
+          )
+          .join("|");
+      const search = () => {
+        if (componentAssignments.size === component.length) return true;
+        const key = signature();
+        if (failed.has(key)) return false;
+        let selected = null;
+        let selectedDomain = null;
+        for (const link of component) {
+          if (componentAssignments.has(link)) continue;
+          const domain = legalDomain(link);
+          if (
+            !selectedDomain ||
+            domain.length < selectedDomain.length ||
+            (domain.length === selectedDomain.length &&
+              compareBranchLinks(link, selected) < 0)
+          ) {
+            selected = link;
+            selectedDomain = domain;
+          }
+        }
+        if (!selectedDomain?.length) {
+          failed.add(key);
+          return false;
+        }
+        for (const candidate of selectedDomain) {
+          if (exceedsLimit()) return false;
+          transitionLaneSolverStats.statesVisited += 1;
+          componentAssignments.set(selected, candidate);
+          let viable = true;
+          for (const link of component) {
+            if (!componentAssignments.has(link) && !legalDomain(link).length) {
+              viable = false;
+              break;
+            }
+          }
+          if (viable && search()) return true;
+          componentAssignments.delete(selected);
+        }
+        failed.add(key);
+        return false;
+      };
+      if (!search()) return null;
+      for (const [link, lane] of componentAssignments)
+        assignments.set(link, lane);
+    }
+    return links.map((link) => assignments.get(link));
   };
 
   const baselineLinks = new Map(
@@ -735,24 +884,18 @@ export function layoutLifecycleRoutingGraph(
     }
   };
   try {
-    for (const rank of [...transitionLinks.keys()].sort((a, b) => a - b)) {
-      const links = [...(transitionLinks.get(rank) ?? [])].sort(
-        compareBranchLinks,
+    const transitionAssignment = solveTransitionLanes(graph.links);
+    if (!transitionAssignment) {
+      throw new Error(
+        [
+          "Lifecycle transition lane allocation failed",
+          `after ${transitionLaneSolverStats.statesVisited} deterministic states`,
+        ].join(" "),
       );
-      const assignment = solveTransitionLanes(links);
-      if (!assignment) {
-        throw new Error(
-          [
-            "Lifecycle transition lane allocation failed",
-            `for transition rank ${rank}`,
-            `after ${transitionLaneSolverStats.statesVisited} deterministic states`,
-          ].join(" "),
-        );
-      }
-      links.forEach((link, index) => {
-        link.transitionLaneY = assignment[index];
-      });
     }
+    graph.links.forEach((link, index) => {
+      link.transitionLaneY = transitionAssignment[index];
+    });
     graph.transitionLaneSolverStats = Object.freeze({
       ...transitionLaneSolverStats,
     });
