@@ -125,8 +125,10 @@ export function buildLifecycleDisplayBranches(projection = {}) {
       groups.get(endpointId).push(id);
     }
     for (const [endpointId, applicationIds] of groups) {
-      const sourceRank = nodeRank(link.source);
-      const targetRank = nodeRank(link.target);
+      const sourceNodeId = link.source;
+      const targetNodeId = link.target;
+      const sourceRank = nodeRank(sourceNodeId);
+      const targetRank = nodeRank(targetNodeId);
       const semanticLinkId = link.id;
       const id = `branch:${semanticLinkId}:endpoint:${endpointId}`;
       const branch = {
@@ -296,11 +298,27 @@ export function calculateLifecycleDiagramLayout(
     if (node.routing || Number(node.total) > 0 || Number(node.value) > 0)
       rankCounts.set(node.rank, (rankCounts.get(node.rank) ?? 0) + 1);
   }
+  const rankByNodeId = new Map(
+    (graph.nodes ?? []).map((node) => [node.id, node.rank]),
+  );
   const transitionCounts = new Map();
   for (const link of graph.links ?? []) {
-    const rank = nodeRank(link.source?.id ?? link.source);
-    if (rank >= 0 && rank < 6)
-      transitionCounts.set(rank, (transitionCounts.get(rank) ?? 0) + 1);
+    const sourceId =
+      link.source && typeof link.source === "object"
+        ? link.source.id
+        : link.source;
+    const rank = rankByNodeId.get(sourceId);
+    if (!Number.isInteger(rank) || rank < 0 || rank >= 6) {
+      throw new Error(
+        [
+          "Lifecycle diagram layout invariant violated:",
+          `link ${link.id ?? "<unknown>"}`,
+          `references source ${String(sourceId)}`,
+          "without a valid adjacent transition rank",
+        ].join(" "),
+      );
+    }
+    transitionCounts.set(rank, (transitionCounts.get(rank) ?? 0) + 1);
   }
   const densestRoutedRank = Math.max(
     1,

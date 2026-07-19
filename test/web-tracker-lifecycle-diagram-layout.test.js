@@ -63,6 +63,39 @@ const boxesOverlap = (a, b) =>
   a.x + a.width > b.x &&
   a.y < b.y + b.height &&
   a.y + a.height > b.y;
+
+const transitionCountsByGraphRanks = (graph) => {
+  const rankByNodeId = new Map(
+    (graph.nodes ?? []).map((node) => [node.id, node.rank]),
+  );
+  const counts = Array.from({ length: 6 }, () => 0);
+  for (const link of graph.links ?? []) {
+    const sourceId =
+      link.source && typeof link.source === "object"
+        ? link.source.id
+        : link.source;
+    const rank = rankByNodeId.get(sourceId);
+    if (!Number.isInteger(rank) || rank < 0 || rank >= counts.length) {
+      throw new Error(`invalid test source rank for ${String(sourceId)}`);
+    }
+    counts[rank] += 1;
+  }
+  return counts;
+};
+
+const expectRoutedDensity = (
+  projectionValue,
+  expectedCounts,
+  expectedHeight,
+) => {
+  const graph = buildLifecycleRoutingGraph(projectionValue);
+  const layout = calculateLifecycleDiagramLayout(projectionValue, 100, graph);
+  expect(transitionCountsByGraphRanks(graph)).toEqual(expectedCounts);
+  expect(layout.densestRoutedRank).toBe(Math.max(...expectedCounts));
+  expect(layout.height).toBe(expectedHeight);
+  return { graph, layout };
+};
+
 const denseBranchProjection = () => {
   const nodes = [];
   const links = [];
@@ -277,6 +310,60 @@ describe("lifecycle diagram render-only routing layout", () => {
         .map((n) => n.id)
         .some((id) => id.startsWith("route:")),
     ).toBe(false);
+  });
+
+  it("counts routed transition density from graph node ranks", () => {
+    expectRoutedDensity(projection(), [4, 5, 5, 5, 5, 5], 580);
+    expectRoutedDensity(
+      projectLifecycleAt(denseFixture),
+      [15, 15, 15, 13, 13, 12],
+      1660,
+    );
+    expectRoutedDensity(
+      denseBranchProjection(),
+      [55, 55, 55, 55, 55, 55],
+      5980,
+    );
+  });
+
+  it("keeps routed dimensions stable for D3 node sources and shuffled graph input", () => {
+    const p = projection();
+    const rawGraph = buildLifecycleRoutingGraph(p);
+    const rawLayout = calculateLifecycleDiagramLayout(p, 100, rawGraph);
+    const { graph: laidOutGraph } = layoutLifecycleRoutingGraph(p, 100);
+    expect(
+      laidOutGraph.links.every((link) => typeof link.source === "object"),
+    ).toBe(true);
+    expect(calculateLifecycleDiagramLayout(p, 100, laidOutGraph)).toEqual(
+      rawLayout,
+    );
+
+    const shuffledGraph = {
+      ...rawGraph,
+      nodes: [...rawGraph.nodes].reverse(),
+      links: [...rawGraph.links].reverse(),
+    };
+    expect(transitionCountsByGraphRanks(shuffledGraph)).toEqual([
+      4, 5, 5, 5, 5, 5,
+    ]);
+    expect(calculateLifecycleDiagramLayout(p, 100, shuffledGraph)).toEqual(
+      rawLayout,
+    );
+  });
+
+  it("throws a deterministic invariant when a link source is missing", () => {
+    const p = projection();
+    const graph = buildLifecycleRoutingGraph(p);
+    graph.links = [
+      {
+        ...graph.links[0],
+        id: "link:broken-source",
+        source: "route:missing:rank:3",
+      },
+    ];
+    expect(() => calculateLifecycleDiagramLayout(p, 100, graph)).toThrow(
+      /link link:broken-source references source route:missing:rank:3/u,
+    );
   });
 
   it("calculates dimensions from routed lane density, not application volume", () => {
