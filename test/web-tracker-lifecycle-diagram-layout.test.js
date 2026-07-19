@@ -32,6 +32,7 @@ import {
   cubicTransitionPoint,
   endpointColor,
   layoutLifecycleRoutingGraph,
+  lifecycleLaneSolverDebug,
   labelBoxForNode,
   nodeSort,
   rankCenterX,
@@ -191,9 +192,7 @@ const transitionDensityProjection = () => {
     nodeById.get(`endpoint:${endpointId}`).total += 1;
     nodeById.get(`endpoint:${endpointId}`).applicationIds.push(applicationId);
     if (index < 50) {
-      nodeById
-        .get(`origin:${originId}`)
-        .applicationIds.push(applicationId);
+      nodeById.get(`origin:${originId}`).applicationIds.push(applicationId);
       nodeById.get(`origin:${originId}`).total += 1;
       links.push({
         id: `link:origin:${originId}->recruiter:${index}`,
@@ -348,7 +347,8 @@ describe("lifecycle diagram render-only routing layout", () => {
       );
       const segmentsByBranch = new Map();
       for (const link of graph.links) {
-        if (!segmentsByBranch.has(link.branchId)) segmentsByBranch.set(link.branchId, []);
+        if (!segmentsByBranch.has(link.branchId))
+          segmentsByBranch.set(link.branchId, []);
         segmentsByBranch.get(link.branchId).push(link);
       }
       const handles = assignBranchHandles(
@@ -414,7 +414,9 @@ describe("lifecycle diagram render-only routing layout", () => {
     }).not.toThrow();
     assertRoutedGraph(routedShuffled.graph);
 
-    expect(graphSignature(routed.graph)).toEqual(graphSignature(routedShuffled.graph));
+    expect(graphSignature(routed.graph)).toEqual(
+      graphSignature(routedShuffled.graph),
+    );
   });
 
   it("partitions semantic links into stable endpoint-conditioned display branches", () => {
@@ -966,5 +968,115 @@ describe("lifecycle diagram render-only routing layout", () => {
         ),
       ).toBe(true);
     }
+  });
+});
+
+describe("transition lane solver", () => {
+  const laneSignature = (projectionValue) => {
+    const { graph } = layoutLifecycleRoutingGraph(projectionValue, 1850);
+    return Object.fromEntries(
+      [...graph.links]
+        .sort((a, b) => compareLifecycleIds(a.id, b.id))
+        .map((link) => [link.id, link.transitionLaneY]),
+    );
+  };
+
+  it("counts raw string and D3 node-object endpoints identically", () => {
+    const p = projection();
+    const rawGraph = buildLifecycleRoutingGraph(p);
+    const rawLayout = calculateLifecycleDiagramLayout(p, 1850, rawGraph);
+    const routedGraph = layoutLifecycleRoutingGraph(p, 1850).graph;
+    expect(calculateLifecycleDiagramLayout(p, 1850, routedGraph)).toEqual(
+      rawLayout,
+    );
+    expect(transitionCountsByGraphRanks(rawGraph)).toEqual([4, 5, 5, 5, 5, 5]);
+  });
+
+  it("sizes routing, dense, 55-branch, over-32, and exact 89-branch corridors", () => {
+    expect(() => layoutLifecycleRoutingGraph(projection(), 1850)).not.toThrow(
+      /transition lane allocation/u,
+    );
+    expectRoutedDensity(
+      projectLifecycleAt(denseFixture),
+      [15, 15, 15, 13, 13, 12],
+      1660,
+    );
+    expectRoutedDensity(
+      denseBranchProjection(),
+      [55, 55, 55, 55, 55, 55],
+      5980,
+    );
+    const graph89 = buildLifecycleRoutingGraph(transitionDensityProjection());
+    const layout89 = calculateLifecycleDiagramLayout(
+      transitionDensityProjection(),
+      1850,
+      graph89,
+    );
+    expect(
+      buildLifecycleDisplayBranches(transitionDensityProjection()),
+    ).toHaveLength(89);
+    expect(Math.max(...transitionCountsByGraphRanks(graph89))).toBe(50);
+    expect(layout89.densestRoutedRank).toBe(50);
+  });
+
+  it("keeps shuffled lane assignments and state counts deterministic", () => {
+    const p = projection();
+    const first = laneSignature(p);
+    const firstCounts = [...lifecycleLaneSolverDebug.stateCounts];
+    const shuffled = {
+      ...p,
+      links: [...p.links].reverse(),
+      paths: [...p.paths].reverse(),
+    };
+    expect(laneSignature(shuffled)).toEqual(first);
+    expect(lifecycleLaneSolverDebug.stateCounts).toEqual(firstCounts);
+  });
+
+  it("preserves continuing strand order across adjacent transitions", () => {
+    const { graph } = layoutLifecycleRoutingGraph(projection(), 1850);
+    const rankOrder = (rank) =>
+      graph.links
+        .filter((link) => link.source.rank === rank)
+        .sort((a, b) => a.transitionLaneY - b.transitionLaneY)
+        .map((link) => link.branchId);
+    const continuing = rankOrder(0).filter((branchId) =>
+      rankOrder(1).includes(branchId),
+    );
+    expect(
+      rankOrder(1).filter((branchId) => continuing.includes(branchId)),
+    ).toEqual(continuing);
+  });
+
+  it("fails deterministically for invalid endpoints and leaves graph coordinates untouched", () => {
+    const p = projection();
+    const graph = buildLifecycleRoutingGraph(p);
+    const baseline = graph.links.map((link) => [
+      link.id,
+      link.y0,
+      link.y1,
+      link.transitionLaneY,
+    ]);
+    graph.links[0] = {
+      ...graph.links[0],
+      id: "bad-reversed",
+      target: graph.links[0].source,
+      source: graph.links[0].target,
+    };
+    expect(() => calculateLifecycleDiagramLayout(p, 1850, graph)).toThrow(
+      /link bad-reversed has non-adjacent or reversed ranks/u,
+    );
+    expect(
+      graph.links
+        .map((link) => [link.id, link.y0, link.y1, link.transitionLaneY])
+        .slice(1),
+    ).toEqual(baseline.slice(1));
+  });
+
+  it("uses deterministic state bounds without unchecked candidate fallback", () => {
+    layoutLifecycleRoutingGraph(projection(), 1850);
+    expect(lifecycleLaneSolverDebug.stateCounts).toEqual([1, 1, 1, 1, 1, 1]);
+    expect(
+      Math.max(...lifecycleLaneSolverDebug.stateCounts),
+    ).toBeLessThanOrEqual(250000);
   });
 });
