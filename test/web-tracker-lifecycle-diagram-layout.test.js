@@ -415,6 +415,61 @@ describe("transition lane solver", () => {
       graph.links.every((link) => Number.isFinite(link.transitionLaneY)),
     ).toBe(true);
   });
+
+  it("selects lanes that clear non-incident obstacles in the branch X span", () => {
+    const p = projection();
+    const { graph } = layoutLifecycleRoutingGraph(p, 1850, {
+      transitionLanePhaseOnly: true,
+    });
+    // routeEnvelopeRadius + 0.25 matches the internal clearancePad
+    const clearancePad = selectedEnvelopeRadius({ width: 1 }) + 0.25;
+    const visibleNodes = graph.nodes.filter(
+      (node) => !node.routing && Number(node.total) > 0,
+    );
+    let nonIncidentPairsChecked = 0;
+    for (const link of graph.links) {
+      const sourceRank = link.source.rank;
+      const targetRank = link.target.rank;
+      const minX = rankCenterX(sourceRank) - RANK_CORRIDOR_HALF_WIDTH;
+      const maxX = rankCenterX(targetRank) + RANK_CORRIDOR_HALF_WIDTH;
+      const incidentIds = new Set([link.source.id, link.target.id]);
+      const laneY = link.transitionLaneY;
+      for (const node of visibleNodes) {
+        if (incidentIds.has(node.id)) continue;
+        if (node.x1 < minX || node.x0 > maxX) continue;
+        nonIncidentPairsChecked += 1;
+        expect(
+          laneY < node.y0 - clearancePad || laneY > node.y1 + clearancePad,
+          `link ${link.id} laneY=${laneY} intersects non-incident node ` +
+            `${node.id} at y=[${node.y0},${node.y1}]`,
+        ).toBe(true);
+      }
+    }
+    // The routing fixture has milestone nodes that are non-incident
+    // obstacles for rank-spanning branches; verify at least some pairs
+    // were checked to confirm the test is not vacuously passing.
+    expect(nonIncidentPairsChecked).toBeGreaterThan(0);
+  });
+
+  it("resolves conflicted branches with MRV forward-checking in one state per branch", () => {
+    // The routing fixture has 8 branches with many overlapping rank
+    // intervals, creating a heavily-connected conflict graph. Naive
+    // greedy first-fit required 23 states for this fixture; MRV +
+    // forward-checking prunes conflicting values before they are
+    // attempted, solving each branch in at most one state.
+    const p = projection();
+    const { graph } = layoutLifecycleRoutingGraph(p, 1850, {
+      transitionLanePhaseOnly: true,
+    });
+    expect(graph.branches.length).toBeGreaterThan(0);
+    expect(graph.transitionLaneSolverStats.statesVisited).toBeLessThanOrEqual(
+      graph.branches.length,
+    );
+    // All branches receive a finite lane.
+    expect(
+      graph.links.every((link) => Number.isFinite(link.transitionLaneY)),
+    ).toBe(true);
+  });
 });
 
 describe("lifecycle diagram render-only routing layout", () => {

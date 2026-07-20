@@ -698,77 +698,108 @@ export function layoutLifecycleRoutingGraph(
   };
   const compareStableKeys = (left, right) =>
     compareLifecycleIds(left.stableId ?? left.id, right.stableId ?? right.id);
-  const orderedDomainForBranch = (branch) => {
-    const values = new Set();
-    const clampedIdeal = clampLaneY(branch.idealY);
-    values.add(clampedIdeal);
-    values.add(laneTop);
-    values.add(laneBottom);
-    for (
-      let value = clampedIdeal;
-      value <= laneBottom + LANE_Y_EPSILON;
-      value += minLaneSpacing
-    )
-      values.add(clampLaneY(value));
-    for (
-      let value = clampedIdeal;
-      value >= laneTop - LANE_Y_EPSILON;
-      value -= minLaneSpacing
-    )
-      values.add(clampLaneY(value));
-    for (
-      let value = laneTop;
-      value <= laneBottom + LANE_Y_EPSILON;
-      value += minLaneSpacing
-    )
-      values.add(clampLaneY(value));
-    return [...values]
-      .filter((value) => Number.isFinite(value))
-      .sort(
-        (left, right) =>
-          Math.abs(left - branch.idealY) - Math.abs(right - branch.idealY) ||
-          left - right ||
-          compareStableKeys(branch, branch),
-      );
-  };
+  const orderedDomainForBranch = (branch) =>
+    laneDomainForSpan({
+      minX: branch.minX,
+      maxX: branch.maxX,
+      incidentIds: branch.incidentIds,
+      idealY: branch.idealY,
+    }).sort(
+      (left, right) =>
+        Math.abs(left - branch.idealY) - Math.abs(right - branch.idealY) ||
+        left - right,
+    );
   const intervalsOverlap = (left, right) =>
     left.sourceRank < right.targetRank && right.sourceRank < left.targetRank;
   const solveBranchComponent = (component, neighbors) => {
-    const orderedComponent = [...component].sort(
-      (left, right) =>
-        left.sourceRank - right.sourceRank ||
-        right.targetRank - left.targetRank ||
-        compareStableKeys(left, right),
-    );
     const assignments = new Map();
-    const domains = new Map(
-      orderedComponent.map((branch) => [
+    const sortedDomains = new Map(
+      component.map((branch) => [branch.id, orderedDomainForBranch(branch)]),
+    );
+    const remainingDomains = new Map(
+      component.map((branch) => [
         branch.id,
-        orderedDomainForBranch(branch),
+        new Set(sortedDomains.get(branch.id)),
       ]),
     );
-    const isLegalValue = (branch, value) => {
-      for (const otherId of neighbors.get(branch.id) ?? []) {
-        const otherValue = assignments.get(otherId);
-        if (!Number.isFinite(otherValue)) continue;
-        if (Math.abs(value - otherValue) < minLaneSpacing - LANE_Y_EPSILON)
-          return false;
-      }
-      return true;
-    };
-    for (const branch of orderedComponent) {
-      const domain = domains.get(branch.id) ?? [];
-      let chosen;
-      for (const value of domain) {
-        recordSolverState();
-        if (isLegalValue(branch, value)) {
-          chosen = value;
-          break;
+    const failedStates = new Set();
+    const selectBranch = () => {
+      let chosen = null;
+      for (const branch of component) {
+        if (assignments.has(branch.id)) continue;
+        if (
+          !chosen ||
+          remainingDomains.get(branch.id).size <
+            remainingDomains.get(chosen.id).size ||
+          (remainingDomains.get(branch.id).size ===
+            remainingDomains.get(chosen.id).size &&
+            compareStableKeys(branch, chosen) < 0)
+        ) {
+          chosen = branch;
         }
       }
-      if (!Number.isFinite(chosen)) return null;
-      assignments.set(branch.id, chosen);
-    }
+      return chosen;
+    };
+    const backtrack = () => {
+      const branch = selectBranch();
+      if (!branch) return true;
+      const sig = [...assignments.entries()]
+        .sort(([a], [b]) => compareLifecycleIds(a, b))
+        .map(([id, v]) => `${id}:${v}`)
+        .join("|");
+      if (failedStates.has(sig)) return false;
+      const remaining = remainingDomains.get(branch.id);
+      const domainValues = sortedDomains
+        .get(branch.id)
+        .filter((v) => remaining.has(v));
+      for (const value of domainValues) {
+        recordSolverState();
+        let legal = true;
+        for (const otherId of neighbors.get(branch.id) ?? []) {
+          const otherValue = assignments.get(otherId);
+          if (!Number.isFinite(otherValue)) continue;
+          if (Math.abs(value - otherValue) < minLaneSpacing - LANE_Y_EPSILON) {
+            legal = false;
+            break;
+          }
+        }
+        if (!legal) continue;
+        assignments.set(branch.id, value);
+        const pruned = new Map();
+        let forwardOk = true;
+        for (const otherId of neighbors.get(branch.id) ?? []) {
+          if (assignments.has(otherId)) continue;
+          const otherDomain = remainingDomains.get(otherId);
+          if (!otherDomain) continue;
+          const toRemove = [];
+          for (const otherValue of otherDomain) {
+            if (
+              Math.abs(value - otherValue) <
+              minLaneSpacing - LANE_Y_EPSILON
+            ) {
+              toRemove.push(otherValue);
+            }
+          }
+          if (toRemove.length > 0) {
+            for (const v of toRemove) otherDomain.delete(v);
+            pruned.set(otherId, toRemove);
+            if (otherDomain.size === 0) {
+              forwardOk = false;
+              break;
+            }
+          }
+        }
+        if (forwardOk && backtrack()) return true;
+        assignments.delete(branch.id);
+        for (const [otherId, removed] of pruned) {
+          const dom = remainingDomains.get(otherId);
+          for (const v of removed) dom.add(v);
+        }
+      }
+      failedStates.add(sig);
+      return false;
+    };
+    if (!backtrack()) return null;
     return assignments;
   };
 
