@@ -549,6 +549,104 @@ describe("lifecycle diagram render-only routing layout", () => {
     }
   });
 
+  it("surfaces structured handle diagnostics for all blocked candidates", () => {
+    const makeSegment = (id, y) => ({
+      id: `${id}:segment:0`,
+      branchId: id,
+      segmentIndex: 0,
+      source: { id: `${id}:source`, rank: 0, routing: true },
+      target: { id: `${id}:target`, rank: 1, routing: true },
+      y0: y,
+      y1: y,
+      transitionLaneY: y,
+      width: 1,
+    });
+    const branches = [{ id: "branch:blocked" }];
+    const segments = new Map([
+      ["branch:blocked", [makeSegment("branch:blocked", 240)]],
+      ["branch:blocker", [makeSegment("branch:blocker", 240)]],
+    ]);
+
+    expect(() => assignBranchHandles(branches, segments, [])).toThrowError(
+      expect.objectContaining({
+        cause: expect.objectContaining({
+          type: "lifecycle-handle-placement",
+          reason: "no-candidates",
+          blockedBranchIds: ["branch:blocked"],
+          branches: [
+            expect.objectContaining({
+              branchId: "branch:blocked",
+              attempts: 3,
+              accepted: 0,
+              rejected: expect.objectContaining({
+                fixedGeometry: 0,
+                outsideTransitionCorridor: 0,
+                nonincidentRouteClearance: 3,
+              }),
+              nearestRejectedCandidate: expect.objectContaining({
+                clearanceMargin: expect.any(Number),
+                blocker: expect.objectContaining({
+                  kind: "route",
+                  branchId: "branch:blocker",
+                }),
+              }),
+            }),
+          ],
+        }),
+      }),
+    );
+  });
+
+  it("identifies fixed geometry blockers in handle diagnostics", () => {
+    const segment = {
+      id: "branch:fixed:segment:0",
+      branchId: "branch:fixed",
+      segmentIndex: 0,
+      source: { id: "branch:fixed:source", rank: 0, routing: true },
+      target: { id: "branch:fixed:target", rank: 1, routing: true },
+      y0: 180,
+      y1: 180,
+      transitionLaneY: 180,
+      width: 1,
+    };
+    const midpoint = cubicTransitionPoint(segment, 0.5);
+    const visibleNodes = [
+      {
+        id: "node:blocker",
+        label: "Blocker",
+        x0: midpoint.x - 5,
+        x1: midpoint.x + 5,
+        y0: midpoint.y - 5,
+        y1: midpoint.y + 5,
+      },
+    ];
+
+    expect(() =>
+      assignBranchHandles(
+        [{ id: "branch:fixed" }],
+        new Map([["branch:fixed", [segment]]]),
+        visibleNodes,
+      ),
+    ).toThrowError(
+      expect.objectContaining({
+        cause: expect.objectContaining({
+          reason: "no-candidates",
+          branches: [
+            expect.objectContaining({
+              rejected: expect.objectContaining({ fixedGeometry: 3 }),
+              nearestRejectedCandidate: expect.objectContaining({
+                blocker: expect.objectContaining({
+                  kind: "hit-region",
+                  id: "node:blocker",
+                }),
+              }),
+            }),
+          ],
+        }),
+      }),
+    );
+  });
+
   it("materializes exact routed primitives for the canonical M-L-C-L route", () => {
     const p = projection();
     const layout = calculateLifecycleDiagramLayout(p);

@@ -1131,11 +1131,7 @@ export function layoutLifecycleRoutingGraph(
       visibleNodes,
     );
     if (!handleCheck.ok) {
-      const blockedBranchId =
-        handleCheck.blockedBranchIds[0] ?? "unknown branch";
-      throw new Error(
-        `Lifecycle diagram handle placement invariant violated for ${blockedBranchId}`,
-      );
+      throw handlePlacementError(handleCheck);
     }
   } catch (error) {
     restoreBaseline();
@@ -1596,6 +1592,31 @@ const boxesOverlap = (a, b) =>
   a.x + a.width > b.x &&
   a.y < b.y + b.height &&
   a.y + a.height > b.y;
+
+const deepFreezePlain = (value) => {
+  if (!value || typeof value !== "object" || Object.isFrozen(value))
+    return value;
+  for (const child of Object.values(value)) deepFreezePlain(child);
+  return Object.freeze(value);
+};
+
+const handlePlacementError = (result) => {
+  const branchId = result.blockedBranchIds?.[0] ?? "unknown branch";
+  const error = new Error(
+    `Lifecycle diagram handle placement invariant violated for ${branchId}`,
+  );
+  error.cause = deepFreezePlain({
+    type: "lifecycle-handle-placement",
+    reason: result.reason,
+    blockedBranchIds: [...(result.blockedBranchIds ?? [])].sort(
+      compareLifecycleIds,
+    ),
+    branches: [...(result.branchDiagnostics ?? [])],
+    component: result.component ?? null,
+  });
+  return error;
+};
+
 const tryAssignBranchHandles = (
   branches,
   segmentsByBranch,
@@ -1626,23 +1647,63 @@ const tryAssignBranchHandles = (
     }
   }
   const hitBoxes = visibleNodes.map(rendererHitBoxForNode);
-  const fixedGeometry = [...nodeBoxes, ...labelBoxes, ...hitBoxes];
-  const fixedGeometryBlocksCandidate = (box) =>
-    fixedGeometry.some((b) => boxesOverlap(box, b));
-  const renderedBranchClearanceMargin = (branch, x, y) => {
-    let margin = Number.POSITIVE_INFINITY;
+  const fixedGeometry = [
+    ...nodeBoxes.map((box, index) => ({
+      ...box,
+      kind: "node",
+      id: visibleNodes[index]?.id,
+    })),
+    ...labelBoxes.map((box, index) => ({
+      ...box,
+      kind: "label",
+      id: visibleNodes[index]?.id,
+    })),
+    ...hitBoxes.map((box, index) => ({
+      ...box,
+      kind: "hit-region",
+      id: visibleNodes[index]?.id,
+    })),
+  ];
+  const fixedGeometryBlockerForCandidate = (box) =>
+    fixedGeometry
+      .filter((candidate) => boxesOverlap(box, candidate))
+      .sort(
+        (a, b) =>
+          compareLifecycleIds(a.kind, b.kind) ||
+          compareLifecycleIds(a.id ?? "", b.id ?? ""),
+      )[0] ?? null;
+  const renderedBranchClearance = (branch, x, y) => {
+    let best = { margin: Number.POSITIVE_INFINITY, blocker: null };
     for (const edge of routeEdges) {
       if (edge.branchId === branch.id) continue;
       const required =
         BRANCH_HANDLE_RADIUS + edge.envelopeRadius + 0.25 + LANE_Y_EPSILON;
       const distance = pointToSegmentDistance({ x, y }, edge);
-      if (distance <= required) return COLLISION_MARGIN;
-      margin = Math.min(margin, distance - required);
+      const margin = distance - required;
+      if (
+        margin < best.margin - LANE_Y_EPSILON ||
+        (Math.abs(margin - best.margin) <= LANE_Y_EPSILON &&
+          compareLifecycleIds(edge.branchId, best.blocker?.branchId ?? "") < 0)
+      ) {
+        best = {
+          margin,
+          blocker: {
+            kind: "route",
+            id: edge.segmentId,
+            branchId: edge.branchId,
+            segmentId: edge.segmentId,
+            transitionRank: edge.transitionRank,
+            zone: edge.zone,
+          },
+        };
+      }
     }
-    return margin;
+    return best;
   };
+  const quantizedCandidate = (value) => Number(value.toFixed(3));
   const orderedBranches = [...branches].sort(compareBranches);
   const candidateSets = new Map();
+  const branchDiagnostics = new Map();
   for (const branch of orderedBranches) {
     const segments = [...(segmentsByBranch.get(branch.id) ?? [])].sort(
       (a, b) => a.segmentIndex - b.segmentIndex,
@@ -1658,6 +1719,33 @@ const tryAssignBranchHandles = (
       ...segments.filter((segment) => segment !== preferred),
     ].filter(Boolean);
     const candidates = [];
+    const diagnostic = {
+      branchId: branch.id,
+      segmentsExamined: orderedSegments.length,
+      attempts: 0,
+      accepted: 0,
+      rejected: {
+        fixedGeometry: 0,
+        outsideTransitionCorridor: 0,
+        nonincidentRouteClearance: 0,
+      },
+      nearestRejectedCandidate: null,
+    };
+    const rememberRejected = (candidate) => {
+      if (
+        !diagnostic.nearestRejectedCandidate ||
+        candidate.clearanceMargin <
+          diagnostic.nearestRejectedCandidate.clearanceMargin ||
+        (candidate.clearanceMargin ===
+          diagnostic.nearestRejectedCandidate.clearanceMargin &&
+          compareLifecycleIds(
+            candidate.segmentId,
+            diagnostic.nearestRejectedCandidate.segmentId,
+          ) < 0)
+      ) {
+        diagnostic.nearestRejectedCandidate = candidate;
+      }
+    };
     for (const segment of orderedSegments) {
       const sourceCenter = rankCenterX(segment.source.rank);
       const targetCenter = rankCenterX(segment.target.rank);
@@ -1671,14 +1759,55 @@ const tryAssignBranchHandles = (
           width: BRANCH_HANDLE_RADIUS * 2,
           height: BRANCH_HANDLE_RADIUS * 2,
         };
-        if (fixedGeometryBlocksCandidate(box)) continue;
+        diagnostic.attempts += 1;
+        const baseRejected = {
+          segmentId: segmentKey(segment),
+          segmentIndex: segment.segmentIndex,
+          transitionRank: segment.source?.rank,
+          t,
+          x: quantizedCandidate(x),
+          y: quantizedCandidate(y),
+        };
+        const fixedBlocker = fixedGeometryBlockerForCandidate(box);
+        if (fixedBlocker) {
+          diagnostic.rejected.fixedGeometry += 1;
+          rememberRejected({
+            ...baseRejected,
+            clearanceMargin: COLLISION_MARGIN,
+            blocker: {
+              kind: fixedBlocker.kind,
+              id: fixedBlocker.id,
+              branchId: null,
+              segmentId: null,
+              transitionRank: null,
+              zone: null,
+            },
+          });
+          continue;
+        }
         if (
           x - BRANCH_HANDLE_RADIUS < exitX ||
           x + BRANCH_HANDLE_RADIUS > entryX
-        )
+        ) {
+          diagnostic.rejected.outsideTransitionCorridor += 1;
+          rememberRejected({
+            ...baseRejected,
+            clearanceMargin: COLLISION_MARGIN,
+            blocker: {
+              kind: "corridor-bounds",
+              id: `${segment.source?.rank}->${segment.target?.rank}`,
+              branchId: null,
+              segmentId: null,
+              transitionRank: segment.source?.rank,
+              zone: "transition-corridor",
+            },
+          });
           continue;
-        const clearanceMargin = renderedBranchClearanceMargin(branch, x, y);
-        if (clearanceMargin > 0)
+        }
+        const clearance = renderedBranchClearance(branch, x, y);
+        const clearanceMargin = clearance.margin;
+        if (clearanceMargin > 0) {
+          diagnostic.accepted += 1;
           candidates.push({
             branchId: branch.id,
             x,
@@ -1687,6 +1816,14 @@ const tryAssignBranchHandles = (
             box,
             clearanceMargin,
           });
+        } else {
+          diagnostic.rejected.nonincidentRouteClearance += 1;
+          rememberRejected({
+            ...baseRejected,
+            clearanceMargin: quantizedCandidate(clearanceMargin),
+            blocker: clearance.blocker,
+          });
+        }
       }
     }
     candidateSets.set(
@@ -1696,6 +1833,7 @@ const tryAssignBranchHandles = (
           b.clearanceMargin - a.clearanceMargin || a.y - b.y || a.x - b.x,
       ),
     );
+    branchDiagnostics.set(branch.id, diagnostic);
   }
   const blockedBranchIds = orderedBranches
     .filter((branch) => !(candidateSets.get(branch.id)?.length > 0))
@@ -1705,6 +1843,9 @@ const tryAssignBranchHandles = (
       ok: false,
       reason: "no-candidates",
       blockedBranchIds,
+      branchDiagnostics: blockedBranchIds.map((id) =>
+        branchDiagnostics.get(id),
+      ),
       candidateSets,
     };
   const selected = new Map();
@@ -1843,7 +1984,32 @@ const tryAssignBranchHandles = (
       blockedBranchIds: orderedBranches
         .filter((branch) => !selected.has(branch.id))
         .map((branch) => branch.id),
+      branchDiagnostics: orderedBranches.map((branch) =>
+        branchDiagnostics.get(branch.id),
+      ),
       candidateSets,
+      component: {
+        componentBranchIds: orderedBranches.map((branch) => branch.id),
+        candidateCounts: Object.fromEntries(
+          orderedBranches.map((branch) => [
+            branch.id,
+            candidateSets.get(branch.id)?.length ?? 0,
+          ]),
+        ),
+        conflictingBranchPairs: [...candidateConflicts.entries()]
+          .flatMap(([left, rights]) =>
+            [...rights]
+              .filter((right) => compareLifecycleIds(left, right) < 0)
+              .map((right) => [left, right]),
+          )
+          .sort(
+            (a, b) =>
+              compareLifecycleIds(a[0], b[0]) ||
+              compareLifecycleIds(a[1], b[1]),
+          ),
+        visitedStates: visitedHandleStates,
+        stateLimit: MAX_HANDLE_SEARCH_STATES,
+      },
       conflicts: candidateConflicts,
     };
   return {
@@ -1864,10 +2030,5 @@ export function assignBranchHandles(
     visibleNodes,
   );
   if (result.ok) return result.handles;
-  const branchId = result.blockedBranchIds[0];
-  throw new Error(
-    branchId
-      ? `Lifecycle diagram handle placement invariant violated for ${branchId}`
-      : "Lifecycle diagram handle placement invariant violated",
-  );
+  throw handlePlacementError(result);
 }
