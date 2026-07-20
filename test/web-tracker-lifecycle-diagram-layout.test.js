@@ -463,10 +463,34 @@ describe("transition lane solver", () => {
     ).toBeTruthy();
   });
 
-  it("assigns spacing-legal lanes for 55, more-than-32, and 89 branch graphs", () => {
-    expectSpacingLegal(denseBranchProjection(), 55);
-    expectSpacingLegal(multiLongProjection(33), 33);
-    expectSpacingLegal(transitionDensityProjection(), 89);
+  it("assigns spacing-legal lanes for 55-branch multi-source dense graph", () => {
+    const graph = expectSpacingLegal(denseBranchProjection(), 55);
+    expect(graph.transitionLaneSolverStats.statesVisited).toBeLessThan(10000);
+    const repeated = laneSignature(denseBranchProjection());
+    const shuffledProjection = denseBranchProjection();
+    const shuffled = {
+      ...shuffledProjection,
+      nodes: [...shuffledProjection.nodes].reverse(),
+      links: [...shuffledProjection.links].reverse(),
+      paths: [...shuffledProjection.paths].reverse(),
+    };
+    expect(JSON.stringify(laneSignature(shuffled))).toBe(
+      JSON.stringify(repeated),
+    );
+  });
+
+  it("assigns spacing-legal lanes for 33-branch graph above the former cutoff", () => {
+    const graph = expectSpacingLegal(multiLongProjection(33), 33);
+    expect(graph.transitionLaneSolverStats.statesVisited).toBeLessThanOrEqual(
+      graph.transitionLaneSolverStats.stateLimit,
+    );
+  });
+
+  it("assigns spacing-legal lanes for 89-branch transition-density graph", () => {
+    const graph = expectSpacingLegal(transitionDensityProjection(), 89);
+    expect(graph.transitionLaneSolverStats.statesVisited).toBeLessThanOrEqual(
+      graph.transitionLaneSolverStats.stateLimit,
+    );
   });
 
   it("keeps shuffled input byte-for-byte identical for lanes and search counts", () => {
@@ -549,13 +573,23 @@ describe("transition lane solver", () => {
           Number.isFinite(link.transitionLaneY),
       ),
     ).toBe(true);
-    expect(() =>
+    let thrown;
+    try {
       layoutLifecycleRoutingGraph(p, 100, {
         routingGraph: graph,
         transitionLanePhaseOnly: true,
         transitionLaneStateLimit: 0,
-      }),
-    ).toThrow(/exceeded 0 deterministic states/u);
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown?.message).toMatch(/exceeded 0 deterministic states/u);
+    expect(thrown?.cause).toMatchObject({
+      type: "lifecycle-transition-lane-order",
+      reason: "state-limit",
+      stateLimit: 0,
+    });
+    expect(thrown.cause.linkIds.length).toBeGreaterThan(0);
     expect(
       graph.links.map((link) => ({
         id: link.id,

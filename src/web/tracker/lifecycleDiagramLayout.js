@@ -101,17 +101,12 @@ export const buildTransitionPrecedence = ({
   for (let index = 1; index < continuing.length; index += 1) {
     addEdge(continuing[index - 1], continuing[index], "continuation");
   }
-  const startingBySource = new Map();
-  for (const starter of starting) {
-    const sourceId = starter.sourceId ?? starter.link?.source?.id;
-    if (!sourceId) continue;
-    if (!startingBySource.has(sourceId)) startingBySource.set(sourceId, []);
-    startingBySource.get(sourceId).push(starter);
-  }
-  for (const sourceStarters of [...startingBySource.values()]) {
-    sourceStarters.sort(compareDock((variable) => variable.sourceDockY));
-    for (let index = 1; index < sourceStarters.length; index += 1) {
-      addEdge(sourceStarters[index - 1], sourceStarters[index], "source-dock");
+  const starterIds = new Set(starting.map((variable) => variable.id));
+  for (let index = 1; index < merged.length; index += 1) {
+    const from = merged[index - 1];
+    const to = merged[index];
+    if (starterIds.has(from.id) || starterIds.has(to.id)) {
+      addEdge(from, to, "source-dock");
     }
   }
   const endingByTarget = new Map();
@@ -926,24 +921,47 @@ export function layoutLifecycleRoutingGraph(
     backtracks: 0,
     memoizedFailures: 0,
   };
-  const recordSolverState = () => {
+  let solverFailureContext = null;
+  const sortedUnique = (values) =>
+    [...new Set(values.filter(Boolean))].sort(compareLifecycleIds);
+  const laneFailureCause = (reason, context = {}) =>
+    Object.freeze({
+      type: "lifecycle-transition-lane-order",
+      reason,
+      rank: context.rank ?? null,
+      branchIds: Object.freeze(sortedUnique(context.branchIds ?? [])),
+      linkIds: Object.freeze(sortedUnique(context.linkIds ?? [])),
+      edgeKinds: Object.freeze(sortedUnique(context.edgeKinds ?? [])),
+      statesVisited: transitionLaneSolverStats.statesVisited,
+      stateLimit: transitionLaneSolverStats.stateLimit,
+      backtracks: transitionLaneSolverStats.backtracks,
+      memoizedFailures: transitionLaneSolverStats.memoizedFailures,
+    });
+  // A deterministic solver state is one attempted prefix-variable placement
+  // or one fixed-order interval item visit during forward/backward/rebuild.
+  const recordSolverState = (context = solverFailureContext) => {
     transitionLaneSolverStats.statesVisited += 1;
     if (
       transitionLaneSolverStats.statesVisited >
       transitionLaneSolverStats.stateLimit
     ) {
-      throw new Error(
+      const cause = laneFailureCause("state-limit", context ?? {});
+      const firstId = cause.linkIds[0] ?? cause.branchIds[0] ?? "unknown";
+      const error = new Error(
         [
           "Lifecycle transition lane allocation exceeded",
           `${transitionLaneSolverStats.stateLimit} deterministic states`,
-        ].join(" "),
+          cause.rank === null ? "" : `at transition rank ${cause.rank}`,
+          `for ${firstId}`,
+        ]
+          .filter(Boolean)
+          .join(" "),
       );
+      error.cause = cause;
+      throw error;
     }
   };
   const solveTransitionLanes = (links) => {
-    if (transitionLaneSolverStats.stateLimit <= 0) {
-      recordSolverState();
-    }
     const variables = links
       .map((link) => {
         const rank = link.source.rank;
@@ -1092,7 +1110,13 @@ export function layoutLifecycleRoutingGraph(
       return solved;
     };
     const solveOrder = (solvedOrder, precedence) => {
-      const solved = assignMonotoneIntervals(solvedOrder, null);
+      solverFailureContext = {
+        rank: precedence.rank,
+        branchIds: solvedOrder.map((variable) => variable.branchId),
+        linkIds: solvedOrder.map((variable) => variable.id),
+        edgeKinds: precedence.edges.map((edge) => edge.kind),
+      };
+      const solved = assignMonotoneIntervals(solvedOrder, recordSolverState);
       if (!solved) return null;
       const solvedById = new Map(
         solvedOrder.map((variable, index) => [variable.id, solved[index]]),
@@ -1228,32 +1252,8 @@ export function layoutLifecycleRoutingGraph(
       const search = (lastY) => {
         if (placedIds.length === rankVariables.length) {
           const order = placedIds.map((id) => byId.get(id));
-          const solvedById = new Map(
-            placedIds.map((id) => [id, placedValues.get(id)]),
-          );
-          for (const variable of order) {
-            const value = solvedById.get(variable.id);
-            if (
-              !Number.isFinite(value) ||
-              !candidateClearsSpan(
-                value,
-                variable.minX,
-                variable.maxX,
-                variable.incidentIds,
-              )
-            ) {
-              return false;
-            }
-          }
-          for (const edge of precedence.edges) {
-            if (
-              solvedById.get(edge.toId) - solvedById.get(edge.fromId) <
-              minLaneSpacing - LANE_Y_EPSILON
-            ) {
-              return false;
-            }
-          }
-          return accept(order, solvedById);
+          const solvedById = solveOrder(order, precedence);
+          return solvedById ? accept(order, solvedById) : false;
         }
         const signature = prefixSignature(lastY);
         if (failedPrefixes.has(signature)) {
@@ -1336,20 +1336,10 @@ export function layoutLifecycleRoutingGraph(
           `for ${precedence.linkIds[0] ?? precedence.branchIds[0]}`,
         ].join(" "),
       );
-      error.cause = Object.freeze({
-        type: "lifecycle-transition-lane-order",
-        reason: precedence.reason,
-        rank: precedence.rank,
-        branchIds: Object.freeze([...precedence.branchIds]),
-        linkIds: Object.freeze([...precedence.linkIds]),
-        edgeKinds: Object.freeze([...precedence.edgeKinds]),
-        statesVisited: transitionLaneSolverStats.statesVisited,
-        stateLimit: transitionLaneSolverStats.stateLimit,
-      });
+      error.cause = laneFailureCause(precedence.reason, precedence);
       throw error;
     };
     const solveRank = (rankIndex, priorOrder) => {
-      recordSolverState();
       if (rankIndex >= sortedRanks.length) return true;
       const rank = sortedRanks[rankIndex];
       const expectedPriorRank = sortedRanks[rankIndex - 1];
@@ -1365,6 +1355,13 @@ export function layoutLifecycleRoutingGraph(
         .filter((branchId) => activeBranches.has(branchId))
         .join("|")}`;
       if (failedStates.has(stateKey)) return false;
+      solverFailureContext = {
+        rank,
+        branchIds: rankVariables.map((variable) => variable.branchId),
+        linkIds: rankVariables.map((variable) => variable.id),
+        edgeKinds: [],
+      };
+      recordSolverState();
       const precedence = buildTransitionPrecedence({
         rank,
         variables: rankVariables,
@@ -1424,12 +1421,22 @@ export function layoutLifecycleRoutingGraph(
       if (deepestFailure?.reason === "semantic-order-cycle") {
         throwPrecedenceFailure(deepestFailure);
       }
+      const cause = laneFailureCause(
+        deepestFailure?.reason ?? "no-feasible-topological-order",
+        deepestFailure ?? {},
+      );
+      const firstId = cause.linkIds[0] ?? cause.branchIds[0] ?? "unknown";
       const error = new Error(
         [
           "Lifecycle transition lane allocation failed",
           `after ${transitionLaneSolverStats.statesVisited} deterministic states`,
-        ].join(" "),
+          cause.rank === null ? "" : `at transition rank ${cause.rank}`,
+          `for ${firstId}`,
+        ]
+          .filter(Boolean)
+          .join(" "),
       );
+      error.cause = cause;
       throw error;
     }
     return assignments;
@@ -1469,12 +1476,8 @@ export function layoutLifecycleRoutingGraph(
   try {
     const transitionLaneAssignments = solveTransitionLanes(graph.links);
     if (!transitionLaneAssignments) {
-      const error = new Error(
-        [
-          "Lifecycle transition lane allocation failed",
-          `after ${transitionLaneSolverStats.statesVisited} deterministic states`,
-        ].join(" "),
-      );
+      const error = new Error("Lifecycle transition lane allocation failed");
+      error.cause = laneFailureCause("no-feasible-topological-order");
       throw error;
     }
     for (const link of graph.links) {
