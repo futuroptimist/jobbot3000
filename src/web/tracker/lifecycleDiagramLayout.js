@@ -118,7 +118,16 @@ export const buildTransitionPrecedence = ({
   for (const variable of variables.filter((candidate) => candidate.isEnding)) {
     const targetId = variable.targetId ?? variable.link?.target?.id;
     if (!targetId) continue;
-    if (variable.link?.target?.routing === false) continue;
+    if (variable.link?.target?.routing === true) {
+      return {
+        ok: false,
+        reason: "malformed-ending-target",
+        rank,
+        branchIds: [variable.branchId],
+        linkIds: [variable.id],
+        edgeKinds: ["target-dock"],
+      };
+    }
     if (!endingByTarget.has(targetId)) endingByTarget.set(targetId, []);
     endingByTarget.get(targetId).push(variable);
   }
@@ -141,29 +150,23 @@ export const buildTransitionPrecedence = ({
       compareLifecycleIds(a.kind, b.kind),
   );
   const byId = new Map(variables.map((variable) => [variable.id, variable]));
-  const productionVariables = variables.every((variable) => variable.link);
-  const hasPath = (outgoing, fromId, toId, seen = new Set()) => {
+  const allHaveLinks = variables.every((variable) => variable.link);
+  const reaches = (outgoing, fromId, toId, seen = new Set()) => {
     if (fromId === toId) return true;
     if (seen.has(fromId)) return false;
     seen.add(fromId);
     return (outgoing.get(fromId) ?? []).some((nextId) =>
-      hasPath(outgoing, nextId, toId, seen),
+      reaches(outgoing, nextId, toId, seen),
     );
   };
   const activeEdges = [];
-  const cycleProbeOutgoing = new Map(
-    variables.map((variable) => [variable.id, []]),
-  );
+  const probeOutgoing = new Map(variables.map((variable) => [variable.id, []]));
   for (const edge of dedupedEdges) {
-    if (
-      productionVariables &&
-      edge.kind === "target-dock" &&
-      hasPath(cycleProbeOutgoing, edge.toId, edge.fromId)
-    ) {
+    if (allHaveLinks && reaches(probeOutgoing, edge.toId, edge.fromId)) {
       continue;
     }
     activeEdges.push(edge);
-    cycleProbeOutgoing.get(edge.fromId)?.push(edge.toId);
+    probeOutgoing.get(edge.fromId)?.push(edge.toId);
   }
   const indegree = new Map(variables.map((variable) => [variable.id, 0]));
   const outgoing = new Map(variables.map((variable) => [variable.id, []]));
@@ -937,6 +940,8 @@ export function layoutLifecycleRoutingGraph(
     components: 0,
     statesVisited: 0,
     stateLimit: options.transitionLaneStateLimit ?? 200000,
+    backtracks: 0,
+    memoizedFailures: 0,
   };
   const recordSolverState = () => {
     transitionLaneSolverStats.statesVisited += 1;
@@ -1160,137 +1165,6 @@ export function layoutLifecycleRoutingGraph(
       }
       yield* visit();
     };
-    const solveOrderAndLanes = (rankVariables, precedence, priorOrder) => {
-      const byId = new Map(
-        rankVariables.map((variable) => [variable.id, variable]),
-      );
-      const outgoing = new Map(
-        rankVariables.map((variable) => [variable.id, []]),
-      );
-      const indegree = new Map(
-        rankVariables.map((variable) => [variable.id, 0]),
-      );
-      for (const edge of precedence.edges) {
-        outgoing.get(edge.fromId)?.push(edge.toId);
-        indegree.set(edge.toId, (indegree.get(edge.toId) ?? 0) + 1);
-      }
-      const priorIndex = new Map(priorOrder.map((id, index) => [id, index]));
-      const assigned = new Map();
-      const placed = [];
-      const failed = new Set();
-      const lowerFor = (variable) => {
-        let lower = laneTop;
-        for (const edge of precedence.edges) {
-          if (edge.toId !== variable.id) continue;
-          const value = assigned.get(edge.fromId);
-          if (Number.isFinite(value))
-            lower = Math.max(
-              lower,
-              quantizeY(value + minLaneSpacing + LANE_Y_EPSILON),
-            );
-        }
-        if (placed.length)
-          lower = Math.max(
-            lower,
-            quantizeY(
-              (assigned.get(placed.at(-1)) ?? laneTop) + minLaneSpacing,
-            ),
-          );
-        return lower;
-      };
-      const candidatesFor = (variable, lower) => {
-        const values = new Set(
-          variable.domain.filter((value) => value >= lower - LANE_Y_EPSILON),
-        );
-        const nearest = legalNearestInEnvelope(
-          variable.intervals,
-          lower,
-          laneBottom,
-          variable.idealY,
-        );
-        if (nearest !== null) values.add(nearest);
-        return [...values]
-          .filter((value) =>
-            candidateClearsSpan(
-              value,
-              variable.minX,
-              variable.maxX,
-              variable.incidentIds,
-            ),
-          )
-          .sort(
-            (a, b) =>
-              Math.abs(a - variable.idealY) - Math.abs(b - variable.idealY) ||
-              a - b,
-          );
-      };
-      const compareReady = (left, right) => {
-        const leftLower = lowerFor(left);
-        const rightLower = lowerFor(right);
-        const leftCount = candidatesFor(left, leftLower).length;
-        const rightCount = candidatesFor(right, rightLower).length;
-        const leftPrior = priorIndex.has(left.branchId)
-          ? priorIndex.get(left.branchId)
-          : Infinity;
-        const rightPrior = priorIndex.has(right.branchId)
-          ? priorIndex.get(right.branchId)
-          : Infinity;
-        return (
-          leftCount - rightCount ||
-          leftPrior - rightPrior ||
-          left.sourceDockY - right.sourceDockY ||
-          left.targetDockY - right.targetDockY ||
-          compareStableVariables(left, right)
-        );
-      };
-      const visit = () => {
-        if (placed.length === rankVariables.length) {
-          return {
-            order: placed.map((id) => byId.get(id)),
-            solvedById: new Map(assigned),
-          };
-        }
-        const previousAssignedY = quantizeY(
-          assigned.get(placed.at(-1)) ?? laneTop,
-        );
-        const signature = `${placed.join("|")}@${previousAssignedY}:${[
-          ...indegree.entries(),
-        ]
-          .sort()
-          .map(([id, count]) => `${id}:${count}`)
-          .join(",")}`;
-        if (failed.has(signature)) return null;
-        const [variable] = rankVariables
-          .filter(
-            (candidate) =>
-              !assigned.has(candidate.id) && indegree.get(candidate.id) === 0,
-          )
-          .sort(compareReady);
-        if (variable) {
-          const lower = lowerFor(variable);
-          const [value] = candidatesFor(variable, lower);
-          if (Number.isFinite(value)) {
-            recordSolverState();
-            assigned.set(variable.id, value);
-            placed.push(variable.id);
-            for (const toId of outgoing.get(variable.id) ?? [])
-              indegree.set(toId, indegree.get(toId) - 1);
-            const remaining = rankVariables.length - placed.length;
-            const fits =
-              value + remaining * minLaneSpacing <= laneBottom + LANE_Y_EPSILON;
-            const result = fits ? visit() : null;
-            if (result) return result;
-            for (const toId of outgoing.get(variable.id) ?? [])
-              indegree.set(toId, indegree.get(toId) + 1);
-            placed.pop();
-            assigned.delete(variable.id);
-          }
-        }
-        failed.add(signature);
-        return null;
-      };
-      return visit();
-    };
     const solveOrder = (solvedOrder, precedence) => {
       const sampledStateEstimate = solvedOrder
         .slice(1)
@@ -1389,49 +1263,8 @@ export function layoutLifecycleRoutingGraph(
         for (const variable of rankVariables) assignments.delete(variable.id);
         return false;
       };
-      const jointSolution = solveOrderAndLanes(
-        rankVariables,
-        precedence,
-        effectivePrior,
-      );
-      if (jointSolution) {
-        for (const [id, value] of jointSolution.solvedById)
-          assignments.set(id, value);
-        if (
-          solveRank(
-            rankIndex + 1,
-            jointSolution.order.map((variable) => variable.branchId),
-          )
-        ) {
-          return true;
-        }
-        for (const variable of rankVariables) assignments.delete(variable.id);
-      }
       if (trySolvedOrder(precedence.order)) return true;
-      const unconstrainedOrder = [...rankVariables].sort(
-        (left, right) =>
-          left.sourceDockY - right.sourceDockY ||
-          compareStableVariables(left, right),
-      );
-      const unconstrained = assignMonotoneIntervals(unconstrainedOrder);
-      if (unconstrained) {
-        unconstrainedOrder.forEach((variable, index) =>
-          assignments.set(variable.id, unconstrained[index]),
-        );
-        if (
-          solveRank(
-            rankIndex + 1,
-            unconstrainedOrder.map((variable) => variable.branchId),
-          )
-        ) {
-          return true;
-        }
-        for (const variable of rankVariables) assignments.delete(variable.id);
-      }
-      const defaultSignature = precedence.order
-        .map((variable) => variable.id)
-        .join("|");
-      if (rankVariables.length > 12) {
+      if (rankVariables.length >= 13) {
         const dockOrder = [...rankVariables].sort(
           (left, right) =>
             left.sourceDockY - right.sourceDockY ||
@@ -1439,23 +1272,26 @@ export function layoutLifecycleRoutingGraph(
             compareStableVariables(left, right),
         );
         if (trySolvedOrder(dockOrder)) return true;
-        deepestFailure = {
-          ok: false,
-          reason: "no-feasible-topological-order",
-          rank,
-          branchIds: rankVariables
-            .map((variable) => variable.branchId)
-            .sort(compareLifecycleIds),
-          linkIds: rankVariables
-            .map((variable) => variable.id)
-            .sort(compareLifecycleIds),
-          edgeKinds: [
-            ...new Set(precedence.edges.map((edge) => edge.kind)),
-          ].sort(compareLifecycleIds),
-        };
-        failedStates.add(stateKey);
+        const placed =
+          assignMonotoneIntervals(dockOrder) ??
+          dockOrder.map((_, index) => spreadLane(index, dockOrder.length));
+        dockOrder.forEach((variable, index) =>
+          assignments.set(variable.id, placed[index]),
+        );
+        if (
+          solveRank(
+            rankIndex + 1,
+            dockOrder.map((variable) => variable.branchId),
+          )
+        ) {
+          return true;
+        }
+        for (const variable of rankVariables) assignments.delete(variable.id);
         return false;
       }
+      const defaultSignature = precedence.order
+        .map((variable) => variable.id)
+        .join("|");
       for (const solvedOrder of enumerateTopologicalOrders(
         rank,
         rankVariables,
@@ -1468,7 +1304,6 @@ export function layoutLifecycleRoutingGraph(
         ) {
           continue;
         }
-        recordSolverState();
         if (trySolvedOrder(solvedOrder)) return true;
       }
       deepestFailure = {
@@ -1488,38 +1323,17 @@ export function layoutLifecycleRoutingGraph(
       failedStates.add(stateKey);
       return false;
     };
-    let solvedRanks = false;
-    try {
-      solvedRanks = solveRank(0, []);
-    } catch (error) {
-      if (
-        !/Lifecycle transition lane allocation exceeded/.test(error.message)
-      ) {
-        throw error;
-      }
-    }
+    const solvedRanks = solveRank(0, []);
     if (!solvedRanks) {
       if (deepestFailure?.reason === "semantic-order-cycle") {
         throwPrecedenceFailure(deepestFailure);
       }
-      const fallbackAssignments = new Map();
-      for (const rank of sortedRanks) {
-        const rankVariables = [...(variablesByRank.get(rank) ?? [])].sort(
-          (left, right) =>
-            left.sourceDockY - right.sourceDockY ||
-            left.targetDockY - right.targetDockY ||
-            compareStableVariables(left, right),
-        );
-        const solved =
-          assignMonotoneIntervals(rankVariables) ??
-          rankVariables.map((_, index) =>
-            spreadLane(index, rankVariables.length),
-          );
-        rankVariables.forEach((variable, index) =>
-          fallbackAssignments.set(variable.id, solved[index]),
-        );
-      }
-      return fallbackAssignments;
+      throw new Error(
+        [
+          "Lifecycle transition lane allocation failed",
+          `after ${transitionLaneSolverStats.statesVisited} deterministic states`,
+        ].join(" "),
+      );
     }
     return assignments;
   };
