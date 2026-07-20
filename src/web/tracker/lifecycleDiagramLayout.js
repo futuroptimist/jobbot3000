@@ -43,6 +43,162 @@ export const rendererHitBoxForNode = (node) => {
 const LANE_Y_EPSILON = 0.001;
 const COLLISION_MARGIN = -1;
 
+export const buildTransitionPrecedence = ({
+  rank,
+  variables,
+  priorOrder = [],
+  strictCycles = true,
+}) => {
+  const variableByBranch = new Map(
+    variables.map((variable) => [variable.branchId, variable]),
+  );
+  const compareStableVariables = (left, right) =>
+    compareLifecycleIds(left.stableId ?? left.id, right.stableId ?? right.id) ||
+    compareLifecycleIds(left.id, right.id);
+  const compareDock = (dockFor) => (left, right) => {
+    const leftDock = dockFor(left);
+    const rightDock = dockFor(right);
+    if (
+      Number.isFinite(leftDock) &&
+      Number.isFinite(rightDock) &&
+      Math.abs(leftDock - rightDock) > LANE_Y_EPSILON
+    ) {
+      return leftDock - rightDock;
+    }
+    return compareStableVariables(left, right);
+  };
+  const continuing = priorOrder
+    .map((branchId) => variableByBranch.get(branchId))
+    .filter(Boolean);
+  const continuingIds = new Set(
+    continuing.map((variable) => variable.branchId),
+  );
+  const starting = variables
+    .filter((variable) => !continuingIds.has(variable.branchId))
+    .sort(compareDock((variable) => variable.sourceDockY));
+  const merged = [...continuing];
+  for (const starter of starting) {
+    let insertAt = merged.length;
+    for (let index = 0; index < merged.length; index += 1) {
+      const current = merged[index];
+      if (
+        starter.sourceDockY < current.sourceDockY - LANE_Y_EPSILON ||
+        (Math.abs(starter.sourceDockY - current.sourceDockY) <=
+          LANE_Y_EPSILON &&
+          compareStableVariables(starter, current) < 0)
+      ) {
+        insertAt = index;
+        break;
+      }
+    }
+    merged.splice(insertAt, 0, starter);
+  }
+
+  const edges = [];
+  const addEdge = (from, to, kind) => {
+    if (!from || !to || from.id === to.id) return;
+    edges.push({ fromId: from.id, toId: to.id, kind, rank });
+  };
+  for (let index = 1; index < continuing.length; index += 1) {
+    addEdge(continuing[index - 1], continuing[index], "continuation");
+  }
+  for (let index = 1; index < merged.length; index += 1) {
+    const left = merged[index - 1];
+    const right = merged[index];
+    if (starting.includes(left) || starting.includes(right))
+      addEdge(left, right, "source-dock");
+  }
+  const ending = variables
+    .filter((variable) => variable.isEnding)
+    .sort(compareDock((variable) => variable.targetDockY));
+  for (let index = 1; index < ending.length; index += 1) {
+    addEdge(ending[index - 1], ending[index], "target-dock");
+  }
+
+  const edgeByKey = new Map();
+  for (const edge of edges) {
+    const key = `${edge.fromId}\0${edge.toId}\0${edge.kind}\0${edge.rank}`;
+    edgeByKey.set(key, edge);
+  }
+  const dedupedEdges = [...edgeByKey.values()].sort(
+    (a, b) =>
+      compareLifecycleIds(a.fromId, b.fromId) ||
+      compareLifecycleIds(a.toId, b.toId) ||
+      compareLifecycleIds(a.kind, b.kind),
+  );
+  const byId = new Map(variables.map((variable) => [variable.id, variable]));
+  const indegree = new Map(variables.map((variable) => [variable.id, 0]));
+  const outgoing = new Map(variables.map((variable) => [variable.id, []]));
+  for (const edge of dedupedEdges) {
+    outgoing.get(edge.fromId)?.push(edge.toId);
+    indegree.set(edge.toId, (indegree.get(edge.toId) ?? 0) + 1);
+  }
+  const priorIndex = new Map(priorOrder.map((id, index) => [id, index]));
+  const compareReady = (left, right) => {
+    const leftPrior = priorIndex.has(left.branchId)
+      ? priorIndex.get(left.branchId)
+      : Infinity;
+    const rightPrior = priorIndex.has(right.branchId)
+      ? priorIndex.get(right.branchId)
+      : Infinity;
+    return (
+      leftPrior - rightPrior ||
+      left.sourceDockY - right.sourceDockY ||
+      left.targetDockY - right.targetDockY ||
+      compareStableVariables(left, right)
+    );
+  };
+  const ready = variables
+    .filter((variable) => indegree.get(variable.id) === 0)
+    .sort(compareReady);
+  const order = [];
+  while (ready.length) {
+    const variable = ready.shift();
+    order.push(variable);
+    for (const toId of outgoing.get(variable.id) ?? []) {
+      indegree.set(toId, indegree.get(toId) - 1);
+      if (indegree.get(toId) === 0) {
+        ready.push(byId.get(toId));
+        ready.sort(compareReady);
+      }
+    }
+  }
+  if (order.length === variables.length) {
+    return { ok: true, order, edges: dedupedEdges };
+  }
+  const cycleIds = [...indegree.entries()]
+    .filter(([, count]) => count > 0)
+    .map(([id]) => id)
+    .sort(compareLifecycleIds);
+  const cycleIdSet = new Set(cycleIds);
+  const cycleEdges = dedupedEdges.filter(
+    (edge) => cycleIdSet.has(edge.fromId) && cycleIdSet.has(edge.toId),
+  );
+  const cycleVariables = cycleIds.map((id) => byId.get(id)).filter(Boolean);
+  const failure = {
+    ok: false,
+    reason: "semantic-order-cycle",
+    rank,
+    branchIds: [
+      ...new Set(cycleVariables.map((variable) => variable.branchId)),
+    ].sort(compareLifecycleIds),
+    linkIds: cycleIds,
+    edgeKinds: [...new Set(cycleEdges.map((edge) => edge.kind))].sort(
+      compareLifecycleIds,
+    ),
+  };
+  if (strictCycles) return failure;
+  return buildTransitionPrecedence({
+    rank,
+    variables: variables.map((variable) => ({
+      ...variable,
+      isEnding: false,
+    })),
+    priorOrder,
+    strictCycles: true,
+  });
+};
+
 export const ENDPOINT_BRANCH_COLORS = Object.freeze({
   awaiting_response: "#60A5FA",
   interviewing: "#C084FC",
@@ -808,6 +964,7 @@ export function layoutLifecycleRoutingGraph(
               left - right,
           ),
           intervals: legalIntervalsForSpan(minX, maxX, incidentIds),
+          isEnding: false,
         };
       })
       .sort(
@@ -825,23 +982,18 @@ export function layoutLifecycleRoutingGraph(
       ranks.add(variable.rank);
     }
     const sortedRanks = [...ranks].sort((a, b) => a - b);
+    for (const variable of variables) {
+      variable.isEnding = !variables.some(
+        (candidate) =>
+          candidate.branchId === variable.branchId &&
+          candidate.rank === variable.rank + 1,
+      );
+    }
     const compareStableVariables = (left, right) =>
       compareLifecycleIds(
         left.stableId ?? left.id,
         right.stableId ?? right.id,
       ) || compareLifecycleIds(left.id, right.id);
-    const compareDock = (dockFor) => (left, right) => {
-      const leftDock = dockFor(left);
-      const rightDock = dockFor(right);
-      if (
-        Number.isFinite(leftDock) &&
-        Number.isFinite(rightDock) &&
-        Math.abs(leftDock - rightDock) > LANE_Y_EPSILON
-      ) {
-        return leftDock - rightDock;
-      }
-      return compareStableVariables(left, right);
-    };
     const assignMonotoneIntervals = (items) => {
       if (!items.length) return [];
       const forward = [];
@@ -904,40 +1056,33 @@ export function layoutLifecycleRoutingGraph(
       const rankVariables = [...(variablesByRank.get(rank) ?? [])].sort(
         compareStableVariables,
       );
-      const variableByBranch = new Map(
-        rankVariables.map((variable) => [variable.branchId, variable]),
-      );
-      const continuing =
-        previousRank === rank - 1
-          ? priorOrder
-              .map((branchId) => variableByBranch.get(branchId))
-              .filter(Boolean)
-          : [];
-      const continuingIds = new Set(
-        continuing.map((variable) => variable.branchId),
-      );
-      const starting = rankVariables
-        .filter((variable) => !continuingIds.has(variable.branchId))
-        .sort(compareDock((variable) => variable.sourceDockY));
-      const ordered = [...continuing];
-      for (const starter of starting) {
-        let insertAt = ordered.length;
-        for (let index = 0; index < ordered.length; index += 1) {
-          const current = ordered[index];
-          if (
-            starter.sourceDockY < current.sourceDockY - LANE_Y_EPSILON ||
-            (Math.abs(starter.sourceDockY - current.sourceDockY) <=
-              LANE_Y_EPSILON &&
-              compareStableVariables(starter, current) < 0)
-          ) {
-            insertAt = index;
-            break;
-          }
-        }
-        ordered.splice(insertAt, 0, starter);
+      const precedence = buildTransitionPrecedence({
+        rank,
+        variables: rankVariables,
+        priorOrder: previousRank === rank - 1 ? priorOrder : [],
+        strictCycles: false,
+      });
+      if (!precedence.ok) {
+        const error = new Error(
+          [
+            "Lifecycle transition lane allocation failed:",
+            precedence.reason,
+            `at transition rank ${precedence.rank}`,
+            `for ${precedence.linkIds[0] ?? precedence.branchIds[0]}`,
+          ].join(" "),
+        );
+        error.cause = Object.freeze({
+          type: "lifecycle-transition-lane-order",
+          reason: precedence.reason,
+          rank: precedence.rank,
+          branchIds: Object.freeze([...precedence.branchIds]),
+          linkIds: Object.freeze([...precedence.linkIds]),
+          edgeKinds: Object.freeze([...precedence.edgeKinds]),
+        });
+        throw error;
       }
       transitionLaneSolverStats.components += 1;
-      const solvedOrder = ordered;
+      const solvedOrder = precedence.order;
       let solved = assignMonotone(
         solvedOrder,
         (variable) => variable.domain,
@@ -946,6 +1091,17 @@ export function layoutLifecycleRoutingGraph(
       );
       if (!solved) solved = assignMonotoneIntervals(solvedOrder);
       if (!solved) return null;
+      const solvedById = new Map(
+        solvedOrder.map((variable, index) => [variable.id, solved[index]]),
+      );
+      for (const edge of precedence.edges) {
+        if (
+          solvedById.get(edge.toId) - solvedById.get(edge.fromId) <
+          minLaneSpacing - LANE_Y_EPSILON
+        ) {
+          return null;
+        }
+      }
       solvedOrder.forEach((variable, index) => {
         assignments.set(variable.id, solved[index]);
       });
@@ -1600,6 +1756,174 @@ const deepFreezePlain = (value) => {
   return Object.freeze(value);
 };
 
+export const solveHandleCandidateSets = (
+  branches,
+  candidateSets,
+  { maxStates = 32768 } = {},
+) => {
+  const orderedBranches = [...branches].sort(compareBranches);
+  const branchById = new Map(
+    orderedBranches.map((branch) => [branch.id, branch]),
+  );
+  const candidateConflicts = new Map(
+    orderedBranches.map((branch) => [branch.id, new Set()]),
+  );
+  for (let leftIndex = 0; leftIndex < orderedBranches.length; leftIndex += 1) {
+    const left = orderedBranches[leftIndex];
+    const leftCandidates = candidateSets.get(left.id) ?? [];
+    for (
+      let rightIndex = leftIndex + 1;
+      rightIndex < orderedBranches.length;
+      rightIndex += 1
+    ) {
+      const right = orderedBranches[rightIndex];
+      const rightCandidates = candidateSets.get(right.id) ?? [];
+      if (
+        leftCandidates.some((leftCandidate) =>
+          rightCandidates.some((rightCandidate) =>
+            boxesOverlap(leftCandidate.box, rightCandidate.box),
+          ),
+        )
+      ) {
+        candidateConflicts.get(left.id).add(right.id);
+        candidateConflicts.get(right.id).add(left.id);
+      }
+    }
+  }
+  const conflictingBranchPairs = [...candidateConflicts.entries()]
+    .flatMap(([left, rights]) =>
+      [...rights]
+        .filter((right) => compareLifecycleIds(left, right) < 0)
+        .map((right) => [left, right]),
+    )
+    .sort(
+      (a, b) =>
+        compareLifecycleIds(a[0], b[0]) || compareLifecycleIds(a[1], b[1]),
+    );
+  const components = [];
+  const seen = new Set();
+  for (const branch of orderedBranches) {
+    if (seen.has(branch.id)) continue;
+    const stack = [branch.id];
+    const component = [];
+    seen.add(branch.id);
+    while (stack.length) {
+      const id = stack.pop();
+      const branch = branchById.get(id);
+      if (branch) component.push(branch);
+      for (const next of candidateConflicts.get(id) ?? []) {
+        if (seen.has(next)) continue;
+        seen.add(next);
+        stack.push(next);
+      }
+    }
+    components.push(component.sort(compareBranches));
+  }
+  const selected = new Map();
+  let visitedStates = 0;
+  const componentSummary = (component) => ({
+    branchIds: component.map((branch) => branch.id).sort(compareLifecycleIds),
+    candidateCounts: Object.fromEntries(
+      component
+        .map((branch) => [branch.id, candidateSets.get(branch.id)?.length ?? 0])
+        .sort(([a], [b]) => compareLifecycleIds(a, b)),
+    ),
+    conflictingBranchPairs: conflictingBranchPairs.filter(([left, right]) =>
+      component.some((branch) => branch.id === left || branch.id === right),
+    ),
+    visitedStates,
+    stateLimit: maxStates,
+  });
+  const solveComponent = (component) => {
+    const assignments = new Map();
+    const failedStates = new Set();
+    const legalCandidatesFor = (branch) =>
+      (candidateSets.get(branch.id) ?? []).filter((candidate) =>
+        [...assignments.values()].every(
+          (handle) => !boxesOverlap(candidate.box, handle.box),
+        ),
+      );
+    const stateSignature = () =>
+      [...assignments.entries()]
+        .sort(([a], [b]) => compareLifecycleIds(a, b))
+        .map(([id, handle]) => `${id}:${handle.x}:${handle.y}`)
+        .join("|");
+    const selectBranch = () => {
+      let chosen = null;
+      let chosenCandidates = null;
+      for (const branch of component) {
+        if (assignments.has(branch.id)) continue;
+        const candidates = legalCandidatesFor(branch);
+        if (
+          !chosen ||
+          candidates.length < chosenCandidates.length ||
+          (candidates.length === chosenCandidates.length &&
+            compareBranches(branch, chosen) < 0)
+        ) {
+          chosen = branch;
+          chosenCandidates = candidates;
+        }
+      }
+      return chosen ? { branch: chosen, candidates: chosenCandidates } : null;
+    };
+    const backtrack = () => {
+      if (assignments.size === component.length) return true;
+      const signature = stateSignature();
+      if (failedStates.has(signature)) return false;
+      const next = selectBranch();
+      if (!next) return assignments.size === component.length;
+      if (next.candidates.length === 0) {
+        failedStates.add(signature);
+        return false;
+      }
+      for (const candidate of next.candidates) {
+        if (visitedStates >= maxStates) return "state-limit";
+        visitedStates += 1;
+        assignments.set(next.branch.id, candidate);
+        let forwardOk = true;
+        for (const branch of component) {
+          if (
+            !assignments.has(branch.id) &&
+            legalCandidatesFor(branch).length === 0
+          ) {
+            forwardOk = false;
+            break;
+          }
+        }
+        const result = forwardOk ? backtrack() : false;
+        if (result === true) return true;
+        assignments.delete(next.branch.id);
+        if (result === "state-limit") return result;
+      }
+      failedStates.add(signature);
+      return false;
+    };
+    const solved = backtrack();
+    return solved === true ? assignments : solved;
+  };
+  for (const component of components.sort((a, b) =>
+    compareBranches(a[0], b[0]),
+  )) {
+    const solved = solveComponent(component);
+    if (solved === "state-limit")
+      return {
+        ok: false,
+        reason: "state-limit",
+        selected,
+        component: componentSummary(component),
+      };
+    if (!solved)
+      return {
+        ok: false,
+        reason: "handle-overlap",
+        selected,
+        component: componentSummary(component),
+      };
+    for (const [branchId, handle] of solved) selected.set(branchId, handle);
+  }
+  return { ok: true, selected };
+};
+
 const handlePlacementError = (result) => {
   const branchId = result.blockedBranchIds?.[0] ?? "unknown branch";
   const error = new Error(
@@ -1856,173 +2180,28 @@ const tryAssignBranchHandles = (
       ),
       candidateSets,
     };
-  const selected = new Map();
-  let visitedHandleStates = 0;
-  const MAX_HANDLE_SEARCH_STATES = 32768;
-  const branchById = new Map(
-    orderedBranches.map((branch) => [branch.id, branch]),
+  const handleAssignment = solveHandleCandidateSets(
+    orderedBranches,
+    candidateSets,
   );
-  const candidateConflicts = new Map(
-    orderedBranches.map((branch) => [branch.id, new Set()]),
-  );
-  for (let leftIndex = 0; leftIndex < orderedBranches.length; leftIndex += 1) {
-    const left = orderedBranches[leftIndex];
-    const leftCandidates = candidateSets.get(left.id) ?? [];
-    for (
-      let rightIndex = leftIndex + 1;
-      rightIndex < orderedBranches.length;
-      rightIndex += 1
-    ) {
-      const right = orderedBranches[rightIndex];
-      const rightCandidates = candidateSets.get(right.id) ?? [];
-      if (
-        leftCandidates.some((leftCandidate) =>
-          rightCandidates.some((rightCandidate) =>
-            boxesOverlap(leftCandidate.box, rightCandidate.box),
-          ),
-        )
-      ) {
-        candidateConflicts.get(left.id).add(right.id);
-        candidateConflicts.get(right.id).add(left.id);
-      }
-    }
-  }
-  const components = [];
-  const seen = new Set();
-  for (const branch of orderedBranches) {
-    if (seen.has(branch.id)) continue;
-    const stack = [branch.id];
-    const component = [];
-    seen.add(branch.id);
-    while (stack.length) {
-      const id = stack.pop();
-      const branch = branchById.get(id);
-      if (branch) component.push(branch);
-      for (const next of candidateConflicts.get(id) ?? []) {
-        if (seen.has(next)) continue;
-        seen.add(next);
-        stack.push(next);
-      }
-    }
-    components.push(component.sort(compareBranches));
-  }
-  const solveHandleComponent = (component) => {
-    const assignments = new Map();
-    const failedStates = new Set();
-    const legalCandidatesFor = (branch) =>
-      (candidateSets.get(branch.id) ?? []).filter((candidate) =>
-        [...assignments.values()].every(
-          (handle) => !boxesOverlap(candidate.box, handle.box),
-        ),
-      );
-    const stateSignature = () =>
-      [...assignments.entries()]
-        .sort(([a], [b]) => compareLifecycleIds(a, b))
-        .map(([id, handle]) => `${id}:${handle.x}:${handle.y}`)
-        .join("|");
-    const selectBranch = () => {
-      let chosen = null;
-      let chosenCandidates = null;
-      for (const branch of component) {
-        if (assignments.has(branch.id)) continue;
-        const candidates = legalCandidatesFor(branch);
-        if (
-          !chosen ||
-          candidates.length < chosenCandidates.length ||
-          (candidates.length === chosenCandidates.length &&
-            compareBranches(branch, chosen) < 0)
-        ) {
-          chosen = branch;
-          chosenCandidates = candidates;
-        }
-      }
-      return chosen ? { branch: chosen, candidates: chosenCandidates } : null;
-    };
-    const backtrack = () => {
-      if (assignments.size === component.length) return true;
-      const signature = stateSignature();
-      if (failedStates.has(signature)) return false;
-      const next = selectBranch();
-      if (!next) return assignments.size === component.length;
-      if (next.candidates.length === 0) {
-        failedStates.add(signature);
-        return false;
-      }
-      for (const candidate of next.candidates) {
-        if (visitedHandleStates++ >= MAX_HANDLE_SEARCH_STATES)
-          return "state-limit";
-        assignments.set(next.branch.id, candidate);
-        let forwardOk = true;
-        for (const branch of component) {
-          if (
-            !assignments.has(branch.id) &&
-            legalCandidatesFor(branch).length === 0
-          ) {
-            forwardOk = false;
-            break;
-          }
-        }
-        const result = forwardOk ? backtrack() : false;
-        if (result === true) return true;
-        assignments.delete(next.branch.id);
-        if (result === "state-limit") return result;
-      }
-      failedStates.add(signature);
-      return false;
-    };
-    const result = backtrack();
-    return result === true ? assignments : result;
-  };
-  const chooseHandles = () => {
-    for (const component of components.sort((a, b) =>
-      compareBranches(a[0], b[0]),
-    )) {
-      const solved = solveHandleComponent(component);
-      if (solved === "state-limit") return "state-limit";
-      if (!solved) return "handle-overlap";
-      for (const [branchId, handle] of solved) selected.set(branchId, handle);
-    }
-    return true;
-  };
-  const handleAssignment = chooseHandles();
-  if (handleAssignment !== true)
+  if (!handleAssignment.ok)
     return {
       ok: false,
-      reason: handleAssignment,
+      reason: handleAssignment.reason,
       blockedBranchIds: orderedBranches
-        .filter((branch) => !selected.has(branch.id))
+        .filter((branch) => !handleAssignment.selected.has(branch.id))
         .map((branch) => branch.id),
       branchDiagnostics: orderedBranches.map((branch) =>
         branchDiagnostics.get(branch.id),
       ),
       candidateSets,
-      component: {
-        componentBranchIds: orderedBranches.map((branch) => branch.id),
-        candidateCounts: Object.fromEntries(
-          orderedBranches.map((branch) => [
-            branch.id,
-            candidateSets.get(branch.id)?.length ?? 0,
-          ]),
-        ),
-        conflictingBranchPairs: [...candidateConflicts.entries()]
-          .flatMap(([left, rights]) =>
-            [...rights]
-              .filter((right) => compareLifecycleIds(left, right) < 0)
-              .map((right) => [left, right]),
-          )
-          .sort(
-            (a, b) =>
-              compareLifecycleIds(a[0], b[0]) ||
-              compareLifecycleIds(a[1], b[1]),
-          ),
-        visitedStates: visitedHandleStates,
-        stateLimit: MAX_HANDLE_SEARCH_STATES,
-      },
-      conflicts: candidateConflicts,
+      component: handleAssignment.component,
     };
   return {
     ok: true,
-    handles: orderedBranches.map((branch) => selected.get(branch.id)),
+    handles: orderedBranches.map((branch) =>
+      handleAssignment.selected.get(branch.id),
+    ),
     candidateSets,
   };
 };

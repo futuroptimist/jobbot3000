@@ -24,6 +24,7 @@ import {
   SANKEY_NODE_WIDTH,
   assignBranchHandles,
   auditLifecycleRouteGeometry,
+  buildTransitionPrecedence,
   buildLifecycleDisplayBranches,
   buildLifecycleRouteModel,
   buildLifecycleRoutingGraph,
@@ -40,6 +41,7 @@ import {
   rendererHitBoxForNode,
   segmentRoutePrimitives,
   selectedEnvelopeRadius,
+  solveHandleCandidateSets,
   wrapLifecycleLabel,
 } from "../src/web/tracker/lifecycleDiagramLayout.js";
 
@@ -270,6 +272,118 @@ const transitionDensityProjection = () => {
 };
 
 describe("transition lane solver", () => {
+  it("builds explicit precedence for more than 16 reversed-id strands", () => {
+    const continuers = Array.from({ length: 18 }, (_, index) => ({
+      id: `link:${String(99 - index).padStart(2, "0")}`,
+      branchId: `branch:${String(99 - index).padStart(2, "0")}`,
+      stableId: `branch:${String(99 - index).padStart(2, "0")}`,
+      rank: 2,
+      sourceDockY: 100 + index * 40,
+      targetDockY: 100 + index * 40,
+      isEnding: index < 2,
+    }));
+    const starters = [
+      {
+        id: "link:starter:z",
+        branchId: "branch:starter:z",
+        stableId: "branch:starter:z",
+        rank: 2,
+        sourceDockY: 130,
+        targetDockY: 130,
+        isEnding: false,
+      },
+      {
+        id: "link:starter:a",
+        branchId: "branch:starter:a",
+        stableId: "branch:starter:a",
+        rank: 2,
+        sourceDockY: 150,
+        targetDockY: 150,
+        isEnding: false,
+      },
+    ];
+    const variables = [...starters, ...continuers].reverse();
+    const priorOrder = continuers.map((variable) => variable.branchId);
+    const result = buildTransitionPrecedence({
+      rank: 2,
+      variables,
+      priorOrder,
+    });
+    expect(result.ok).toBe(true);
+    const order = result.order.map((variable) => variable.branchId);
+    expect(order.filter((id) => priorOrder.includes(id))).toEqual(priorOrder);
+    expect(order.indexOf("branch:starter:z")).toBeGreaterThan(
+      order.indexOf(continuers[0].branchId),
+    );
+    expect(order.indexOf("branch:starter:z")).toBeLessThan(
+      order.indexOf("branch:starter:a"),
+    );
+    expect(result.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "continuation", rank: 2 }),
+        expect.objectContaining({ kind: "source-dock", rank: 2 }),
+        expect.objectContaining({ kind: "target-dock", rank: 2 }),
+      ]),
+    );
+    const shuffled = buildTransitionPrecedence({
+      rank: 2,
+      variables: [...variables].reverse(),
+      priorOrder,
+    });
+    expect(JSON.stringify(shuffled)).toBe(JSON.stringify(result));
+  });
+
+  it("reports semantic-order-cycle diagnostics deterministically", () => {
+    const variables = [
+      {
+        id: "link:a",
+        branchId: "branch:a",
+        stableId: "branch:a",
+        rank: 1,
+        sourceDockY: 100,
+        targetDockY: 300,
+        isEnding: true,
+      },
+      {
+        id: "link:b",
+        branchId: "branch:b",
+        stableId: "branch:b",
+        rank: 1,
+        sourceDockY: 200,
+        targetDockY: 200,
+        isEnding: true,
+      },
+      {
+        id: "link:c",
+        branchId: "branch:c",
+        stableId: "branch:c",
+        rank: 1,
+        sourceDockY: 300,
+        targetDockY: 100,
+        isEnding: true,
+      },
+    ];
+    const result = buildTransitionPrecedence({
+      rank: 1,
+      variables,
+      priorOrder: ["branch:a", "branch:b", "branch:c"],
+    });
+    expect(result).toEqual({
+      ok: false,
+      reason: "semantic-order-cycle",
+      rank: 1,
+      branchIds: ["branch:a", "branch:b", "branch:c"],
+      linkIds: ["link:a", "link:b", "link:c"],
+      edgeKinds: ["continuation", "target-dock"],
+    });
+    const reversed = buildTransitionPrecedence({
+      rank: 1,
+      variables: [...variables].reverse(),
+      priorOrder: ["branch:a", "branch:b", "branch:c"],
+    });
+    expect(JSON.stringify(reversed)).toBe(JSON.stringify(result));
+  });
+
   const laneSignature = (projectionValue, routingGraph) => {
     const { graph } = layoutLifecycleRoutingGraph(projectionValue, 1850, {
       routingGraph,
@@ -661,6 +775,56 @@ describe("lifecycle diagram render-only routing layout", () => {
         }),
       }),
     );
+  });
+
+  it("classifies handle-overlap and state-limit assignment diagnostics deterministically", () => {
+    const branches = [{ id: "branch:a" }, { id: "branch:b" }];
+    const candidate = (branchId, x, y) => ({
+      branchId,
+      x,
+      y,
+      box: { x: x - 22, y: y - 22, width: 44, height: 44 },
+      clearanceMargin: 10,
+    });
+    const overlapSets = new Map([
+      ["branch:a", [candidate("branch:a", 100, 100)]],
+      ["branch:b", [candidate("branch:b", 100, 100)]],
+    ]);
+    const overlap = solveHandleCandidateSets(branches, overlapSets);
+    const reversedOverlap = solveHandleCandidateSets(
+      [...branches].reverse(),
+      new Map([...overlapSets.entries()].reverse()),
+    );
+    expect(overlap).toEqual({
+      ok: false,
+      reason: "handle-overlap",
+      selected: expect.any(Map),
+      component: {
+        branchIds: ["branch:a", "branch:b"],
+        candidateCounts: { "branch:a": 1, "branch:b": 1 },
+        conflictingBranchPairs: [["branch:a", "branch:b"]],
+        visitedStates: 1,
+        stateLimit: 32768,
+      },
+    });
+    expect(JSON.stringify(overlap.component)).toBe(
+      JSON.stringify(reversedOverlap.component),
+    );
+
+    const stateLimit = solveHandleCandidateSets(branches, overlapSets, {
+      maxStates: 0,
+    });
+    expect(stateLimit).toEqual(
+      expect.objectContaining({
+        ok: false,
+        reason: "state-limit",
+        component: expect.objectContaining({
+          visitedStates: 0,
+          stateLimit: 0,
+        }),
+      }),
+    );
+    expect(overlap.component.stateLimit).toBe(32768);
   });
 
   it("materializes exact routed primitives for the canonical M-L-C-L route", () => {
