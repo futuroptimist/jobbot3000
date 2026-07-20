@@ -521,6 +521,76 @@ export function layoutLifecycleRoutingGraph(
     if (cursor < laneBottom - LANE_Y_EPSILON) free.push([cursor, laneBottom]);
     return free;
   };
+  const legalIntervalsForSpan = (minX, maxX, incidentIds = new Set()) => {
+    const intervals = [];
+    for (const [rawStart, rawEnd] of freeIntervalsForSpan(
+      minX,
+      maxX,
+      incidentIds,
+    )) {
+      let start = quantizeY(
+        Math.ceil((rawStart + LANE_Y_EPSILON) * 1000) / 1000,
+      );
+      let end = quantizeY(Math.floor((rawEnd - LANE_Y_EPSILON) * 1000) / 1000);
+      while (
+        start <= end &&
+        !candidateClearsSpan(start, minX, maxX, incidentIds)
+      ) {
+        start = quantizeY(start + 0.001);
+      }
+      while (
+        end >= start &&
+        !candidateClearsSpan(end, minX, maxX, incidentIds)
+      ) {
+        end = quantizeY(end - 0.001);
+      }
+      if (end < start || end < laneTop || start > laneBottom) continue;
+      const last = intervals.at(-1);
+      if (last && start <= last[1] + 0.001 + LANE_Y_EPSILON) {
+        last[1] = Math.max(last[1], end);
+      } else {
+        intervals.push([start, end]);
+      }
+    }
+    return intervals;
+  };
+  const firstLegalAtOrAbove = (intervals, lower) => {
+    const min = quantizeY(Math.ceil((lower - LANE_Y_EPSILON) * 1000) / 1000);
+    for (const [start, end] of intervals) {
+      const candidate = Math.max(start, min);
+      if (candidate <= end + LANE_Y_EPSILON) return quantizeY(candidate);
+    }
+    return null;
+  };
+  const lastLegalAtOrBelow = (intervals, upper) => {
+    const max = quantizeY(Math.floor((upper + LANE_Y_EPSILON) * 1000) / 1000);
+    for (let index = intervals.length - 1; index >= 0; index -= 1) {
+      const [start, end] = intervals[index];
+      const candidate = Math.min(end, max);
+      if (candidate >= start - LANE_Y_EPSILON) return quantizeY(candidate);
+    }
+    return null;
+  };
+  const legalNearestInEnvelope = (intervals, lower, upper, idealY) => {
+    const start = quantizeY(Math.ceil((lower - LANE_Y_EPSILON) * 1000) / 1000);
+    const end = quantizeY(Math.floor((upper + LANE_Y_EPSILON) * 1000) / 1000);
+    let best = null;
+    for (const [intervalStart, intervalEnd] of intervals) {
+      const lo = Math.max(intervalStart, start);
+      const hi = Math.min(intervalEnd, end);
+      if (hi < lo - LANE_Y_EPSILON) continue;
+      const candidate = quantizeY(Math.min(hi, Math.max(lo, idealY)));
+      if (
+        best === null ||
+        Math.abs(candidate - idealY) <
+          Math.abs(best - idealY) - LANE_Y_EPSILON ||
+        (Math.abs(candidate - idealY) <= LANE_Y_EPSILON && candidate < best)
+      ) {
+        best = candidate;
+      }
+    }
+    return best;
+  };
   const laneCandidatesForSpan = ({
     minX,
     maxX,
@@ -723,11 +793,15 @@ export function layoutLifecycleRoutingGraph(
           idealY,
           sourceDockY,
           targetDockY,
+          minX,
+          maxX,
+          incidentIds,
           domain: laneDomainForSpan({ minX, maxX, incidentIds, idealY }).sort(
             (left, right) =>
               Math.abs(left - idealY) - Math.abs(right - idealY) ||
               left - right,
           ),
+          intervals: legalIntervalsForSpan(minX, maxX, incidentIds),
         };
       })
       .sort(
@@ -761,6 +835,61 @@ export function layoutLifecycleRoutingGraph(
         return leftDock - rightDock;
       }
       return compareStableVariables(left, right);
+    };
+    const assignMonotoneIntervals = (items) => {
+      if (!items.length) return [];
+      const forward = [];
+      let lower = laneTop;
+      for (const item of items) {
+        recordSolverState();
+        const value = firstLegalAtOrAbove(item.intervals, lower);
+        if (value === null) return null;
+        forward.push(value);
+        lower = quantizeY(value + minLaneSpacing);
+      }
+      const backward = Array(items.length);
+      let upper = laneBottom;
+      for (let index = items.length - 1; index >= 0; index -= 1) {
+        recordSolverState();
+        const value = lastLegalAtOrBelow(items[index].intervals, upper);
+        if (value === null || value < forward[index] - LANE_Y_EPSILON)
+          return null;
+        backward[index] = value;
+        upper = quantizeY(value - minLaneSpacing);
+      }
+      const solved = [];
+      let previous = null;
+      for (let index = 0; index < items.length; index += 1) {
+        recordSolverState();
+        const lowerBound = Math.max(
+          forward[index],
+          previous === null ? laneTop : quantizeY(previous + minLaneSpacing),
+        );
+        const upperBound = backward[index];
+        const value = legalNearestInEnvelope(
+          items[index].intervals,
+          lowerBound,
+          upperBound,
+          items[index].idealY,
+        );
+        if (value === null) return null;
+        if (
+          !Number.isFinite(value) ||
+          (previous !== null &&
+            value < previous + minLaneSpacing - LANE_Y_EPSILON) ||
+          !candidateClearsSpan(
+            value,
+            items[index].minX,
+            items[index].maxX,
+            items[index].incidentIds,
+          )
+        ) {
+          return null;
+        }
+        solved.push(value);
+        previous = value;
+      }
+      return solved;
     };
     const assignments = new Map();
     let priorOrder = [];
@@ -801,40 +930,15 @@ export function layoutLifecycleRoutingGraph(
         }
         ordered.splice(insertAt, 0, starter);
       }
-      // Ending strands are validated by their transition-local target-dock order
-      // when it is compatible with the carried continuing order; otherwise the
-      // carried order remains authoritative for continuers.
       transitionLaneSolverStats.components += 1;
-      let solvedOrder = ordered;
+      const solvedOrder = ordered;
       let solved = assignMonotone(
         solvedOrder,
         (variable) => variable.domain,
         (variable) => variable.idealY,
         recordSolverState,
       );
-      if (!solved && continuing.length === 0) {
-        solvedOrder = [...ordered].sort(
-          compareDock((variable) => variable.targetDockY),
-        );
-        solved = assignMonotone(
-          solvedOrder,
-          (variable) => variable.domain,
-          (variable) => variable.idealY,
-          recordSolverState,
-        );
-      }
-      if (!solved) {
-        solvedOrder = [...ordered].sort(
-          (left, right) =>
-            left.idealY - right.idealY || compareStableVariables(left, right),
-        );
-        solved = assignMonotone(
-          solvedOrder,
-          (variable) => variable.domain,
-          (variable) => variable.idealY,
-          recordSolverState,
-        );
-      }
+      if (!solved) solved = assignMonotoneIntervals(solvedOrder);
       if (!solved) return null;
       solvedOrder.forEach((variable, index) => {
         assignments.set(variable.id, solved[index]);
@@ -1680,11 +1784,12 @@ const tryAssignBranchHandles = (
       return chosen ? { branch: chosen, candidates: chosenCandidates } : null;
     };
     const backtrack = () => {
-      if (assignments.size >= candidateSets.size) return true;
+      if (assignments.size === component.length) return true;
       const signature = stateSignature();
       if (failedStates.has(signature)) return false;
       const next = selectBranch();
-      if (!next || next.candidates.length === 0) {
+      if (!next) return assignments.size === component.length;
+      if (next.candidates.length === 0) {
         failedStates.add(signature);
         return false;
       }

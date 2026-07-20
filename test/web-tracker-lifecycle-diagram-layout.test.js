@@ -509,6 +509,45 @@ describe("transition lane solver", () => {
 });
 
 describe("lifecycle diagram render-only routing layout", () => {
+  it("assigns handles across independent conflict components deterministically", () => {
+    const makeSegment = (id, y) => ({
+      id: `${id}:segment:0`,
+      branchId: id,
+      segmentIndex: 0,
+      source: { id: `${id}:source`, rank: 0, routing: true },
+      target: { id: `${id}:target`, rank: 1, routing: true },
+      y0: y,
+      y1: y,
+      transitionLaneY: y,
+      width: 1,
+    });
+    const branches = ["branch:a", "branch:b", "branch:c"].map((id) => ({ id }));
+    const segments = new Map([
+      ["branch:a", [makeSegment("branch:a", 120)]],
+      ["branch:b", [makeSegment("branch:b", 320)]],
+      ["branch:c", [makeSegment("branch:c", 520)]],
+    ]);
+    const handles = assignBranchHandles(branches, segments, []);
+    const reversed = assignBranchHandles([...branches].reverse(), segments, []);
+
+    expect(handles.map((handle) => handle.branchId)).toEqual([
+      "branch:a",
+      "branch:b",
+      "branch:c",
+    ]);
+    expect(reversed).toEqual(handles);
+    for (const handle of handles) {
+      expect(handle.box.width).toBe(BRANCH_HANDLE_RADIUS * 2);
+      expect(handle.box.height).toBe(BRANCH_HANDLE_RADIUS * 2);
+      expect(handle.clearanceMargin).toBeGreaterThan(0);
+    }
+    for (let left = 0; left < handles.length; left += 1) {
+      for (let right = left + 1; right < handles.length; right += 1) {
+        expect(boxesOverlap(handles[left].box, handles[right].box)).toBe(false);
+      }
+    }
+  });
+
   it("materializes exact routed primitives for the canonical M-L-C-L route", () => {
     const p = projection();
     const layout = calculateLifecycleDiagramLayout(p);
