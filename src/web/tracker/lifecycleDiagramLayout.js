@@ -713,6 +713,9 @@ export function layoutLifecycleRoutingGraph(
     left.sourceRank < right.targetRank && right.sourceRank < left.targetRank;
   const solveBranchComponent = (component, neighbors) => {
     const assignments = new Map();
+    const componentBranchById = new Map(
+      component.map((branch) => [branch.id, branch]),
+    );
     const sortedDomains = new Map(
       component.map((branch) => [branch.id, orderedDomainForBranch(branch)]),
     );
@@ -723,6 +726,24 @@ export function layoutLifecycleRoutingGraph(
       ]),
     );
     const failedStates = new Set();
+    // Semantic order: branches with lower idealY get lower lane Y values.
+    // Equal idealY ties are broken by stable ID so the ordering is total.
+    const semanticOrder = (branchA, branchB) => {
+      const idealDiff = branchA.idealY - branchB.idealY;
+      if (Math.abs(idealDiff) > LANE_Y_EPSILON) return idealDiff;
+      return compareStableKeys(branchA, branchB);
+    };
+    // Returns true iff assigning `value` to `branch` is consistent with
+    // the already-assigned `otherValue` for a conflicting `otherBranch`:
+    // both minimum spacing and the semantic ordering constraint must hold.
+    const isLegalPair = (branch, otherBranch, value, otherValue) => {
+      if (Math.abs(value - otherValue) < minLaneSpacing - LANE_Y_EPSILON)
+        return false;
+      const order = semanticOrder(branch, otherBranch);
+      if (order < 0 && value >= otherValue - LANE_Y_EPSILON) return false;
+      if (order > 0 && value <= otherValue + LANE_Y_EPSILON) return false;
+      return true;
+    };
     const selectBranch = () => {
       let chosen = null;
       for (const branch of component) {
@@ -758,7 +779,8 @@ export function layoutLifecycleRoutingGraph(
         for (const otherId of neighbors.get(branch.id) ?? []) {
           const otherValue = assignments.get(otherId);
           if (!Number.isFinite(otherValue)) continue;
-          if (Math.abs(value - otherValue) < minLaneSpacing - LANE_Y_EPSILON) {
+          const otherBranch = componentBranchById.get(otherId);
+          if (!otherBranch || !isLegalPair(branch, otherBranch, value, otherValue)) {
             legal = false;
             break;
           }
@@ -771,11 +793,12 @@ export function layoutLifecycleRoutingGraph(
           if (assignments.has(otherId)) continue;
           const otherDomain = remainingDomains.get(otherId);
           if (!otherDomain) continue;
+          const otherBranch = componentBranchById.get(otherId);
           const toRemove = [];
           for (const otherValue of otherDomain) {
             if (
-              Math.abs(value - otherValue) <
-              minLaneSpacing - LANE_Y_EPSILON
+              !otherBranch ||
+              !isLegalPair(branch, otherBranch, value, otherValue)
             ) {
               toRemove.push(otherValue);
             }
