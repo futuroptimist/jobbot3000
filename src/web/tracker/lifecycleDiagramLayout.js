@@ -970,23 +970,7 @@ export function layoutLifecycleRoutingGraph(
       compareStableKeys(a[0], b[0]),
     )) {
       transitionLaneSolverStats.components += 1;
-      let solved = null;
-      if (component.length > 32) {
-        for (const branch of component) branch.precedes = new Set();
-      } else {
-        solved = solveBranchComponent(component, neighbors);
-      }
-      if (!solved) {
-        const savedPrecedence = component.map((branch) => [
-          branch,
-          branch.precedes,
-        ]);
-        for (const branch of component) branch.precedes = new Set();
-        solved = solveBranchComponent(component, neighbors);
-        for (const [branch, precedes] of savedPrecedence) {
-          branch.precedes = precedes;
-        }
-      }
+      const solved = solveBranchComponent(component, neighbors);
       if (!solved) return null;
       for (const [branchId, laneY] of solved) assignments.set(branchId, laneY);
     }
@@ -1748,42 +1732,140 @@ const tryAssignBranchHandles = (
   const selected = new Map();
   let visitedHandleStates = 0;
   const MAX_HANDLE_SEARCH_STATES = 32768;
+  const branchById = new Map(
+    orderedBranches.map((branch) => [branch.id, branch]),
+  );
+  const candidateConflicts = new Map(
+    orderedBranches.map((branch) => [branch.id, new Set()]),
+  );
+  for (let leftIndex = 0; leftIndex < orderedBranches.length; leftIndex += 1) {
+    const left = orderedBranches[leftIndex];
+    const leftCandidates = candidateSets.get(left.id) ?? [];
+    for (
+      let rightIndex = leftIndex + 1;
+      rightIndex < orderedBranches.length;
+      rightIndex += 1
+    ) {
+      const right = orderedBranches[rightIndex];
+      const rightCandidates = candidateSets.get(right.id) ?? [];
+      if (
+        leftCandidates.some((leftCandidate) =>
+          rightCandidates.some((rightCandidate) =>
+            boxesOverlap(leftCandidate.box, rightCandidate.box),
+          ),
+        )
+      ) {
+        candidateConflicts.get(left.id).add(right.id);
+        candidateConflicts.get(right.id).add(left.id);
+      }
+    }
+  }
+  const components = [];
+  const seen = new Set();
+  for (const branch of orderedBranches) {
+    if (seen.has(branch.id)) continue;
+    const stack = [branch.id];
+    const component = [];
+    seen.add(branch.id);
+    while (stack.length) {
+      const id = stack.pop();
+      const branch = branchById.get(id);
+      if (branch) component.push(branch);
+      for (const next of candidateConflicts.get(id) ?? []) {
+        if (seen.has(next)) continue;
+        seen.add(next);
+        stack.push(next);
+      }
+    }
+    components.push(component.sort(compareBranches));
+  }
+  const solveHandleComponent = (component) => {
+    const assignments = new Map();
+    const failedStates = new Set();
+    const legalCandidatesFor = (branch) =>
+      (candidateSets.get(branch.id) ?? []).filter((candidate) =>
+        [...assignments.values()].every(
+          (handle) => !boxesOverlap(candidate.box, handle.box),
+        ),
+      );
+    const stateSignature = () =>
+      [...assignments.entries()]
+        .sort(([a], [b]) => compareLifecycleIds(a, b))
+        .map(([id, handle]) => `${id}:${handle.x}:${handle.y}`)
+        .join("|");
+    const selectBranch = () => {
+      let chosen = null;
+      let chosenCandidates = null;
+      for (const branch of component) {
+        if (assignments.has(branch.id)) continue;
+        const candidates = legalCandidatesFor(branch);
+        if (
+          !chosen ||
+          candidates.length < chosenCandidates.length ||
+          (candidates.length === chosenCandidates.length &&
+            compareBranches(branch, chosen) < 0)
+        ) {
+          chosen = branch;
+          chosenCandidates = candidates;
+        }
+      }
+      return chosen ? { branch: chosen, candidates: chosenCandidates } : null;
+    };
+    const backtrack = () => {
+      if (assignments.size === component.length) return true;
+      const signature = stateSignature();
+      if (failedStates.has(signature)) return false;
+      const next = selectBranch();
+      if (!next || next.candidates.length === 0) {
+        failedStates.add(signature);
+        return false;
+      }
+      for (const candidate of next.candidates) {
+        if (visitedHandleStates++ >= MAX_HANDLE_SEARCH_STATES)
+          return "state-limit";
+        assignments.set(next.branch.id, candidate);
+        let forwardOk = true;
+        for (const branch of component) {
+          if (
+            !assignments.has(branch.id) &&
+            legalCandidatesFor(branch).length === 0
+          ) {
+            forwardOk = false;
+            break;
+          }
+        }
+        const result = forwardOk ? backtrack() : false;
+        if (result === true) return true;
+        assignments.delete(next.branch.id);
+        if (result === "state-limit") return result;
+      }
+      failedStates.add(signature);
+      return false;
+    };
+    const result = backtrack();
+    return result === true ? assignments : result;
+  };
   const chooseHandles = () => {
-    while (selected.size < orderedBranches.length) {
-      if (visitedHandleStates++ >= MAX_HANDLE_SEARCH_STATES) return false;
-      const next = orderedBranches
-        .filter((candidateBranch) => !selected.has(candidateBranch.id))
-        .map((candidateBranch) => {
-          const candidates = (
-            candidateSets.get(candidateBranch.id) ?? []
-          ).filter(
-            (candidate) =>
-              ![...selected.values()].some((handle) =>
-                boxesOverlap(candidate.box, handle.box),
-              ),
-          );
-          return { branch: candidateBranch, candidates };
-        })
-        .sort(
-          (a, b) =>
-            a.candidates.length - b.candidates.length ||
-            compareBranches(a.branch, b.branch),
-        )[0];
-      if (!next || next.candidates.length === 0) return false;
-      selected.set(next.branch.id, next.candidates[0]);
+    for (const component of components.sort((a, b) =>
+      compareBranches(a[0], b[0]),
+    )) {
+      const solved = solveHandleComponent(component);
+      if (solved === "state-limit") return "state-limit";
+      if (!solved) return "handle-overlap";
+      for (const [branchId, handle] of solved) selected.set(branchId, handle);
     }
     return true;
   };
-  if (!chooseHandles())
+  const handleAssignment = chooseHandles();
+  if (handleAssignment !== true)
     return {
       ok: false,
-      reason:
-        visitedHandleStates >= MAX_HANDLE_SEARCH_STATES
-          ? "state-limit"
-          : "handle-overlap",
-      blockedBranchIds: orderedBranches.map((branch) => branch.id),
+      reason: handleAssignment,
+      blockedBranchIds: orderedBranches
+        .filter((branch) => !selected.has(branch.id))
+        .map((branch) => branch.id),
       candidateSets,
-      conflicts: [],
+      conflicts: candidateConflicts,
     };
   return {
     ok: true,
