@@ -47,7 +47,6 @@ export const buildTransitionPrecedence = ({
   rank,
   variables,
   priorOrder = [],
-  strictCycles = true,
 }) => {
   const variableByBranch = new Map(
     variables.map((variable) => [variable.branchId, variable]),
@@ -102,17 +101,29 @@ export const buildTransitionPrecedence = ({
   for (let index = 1; index < continuing.length; index += 1) {
     addEdge(continuing[index - 1], continuing[index], "continuation");
   }
-  for (let index = 1; index < merged.length; index += 1) {
-    const left = merged[index - 1];
-    const right = merged[index];
-    if (starting.includes(left) || starting.includes(right))
-      addEdge(left, right, "source-dock");
+  const startingBySource = new Map();
+  for (const starter of starting) {
+    const sourceId = starter.sourceId ?? starter.link?.source?.id ?? "";
+    if (!startingBySource.has(sourceId)) startingBySource.set(sourceId, []);
+    startingBySource.get(sourceId).push(starter);
   }
-  const ending = variables
-    .filter((variable) => variable.isEnding)
-    .sort(compareDock((variable) => variable.targetDockY));
-  for (let index = 1; index < ending.length; index += 1) {
-    addEdge(ending[index - 1], ending[index], "target-dock");
+  for (const sourceStarters of [...startingBySource.values()]) {
+    sourceStarters.sort(compareDock((variable) => variable.sourceDockY));
+    for (let index = 1; index < sourceStarters.length; index += 1) {
+      addEdge(sourceStarters[index - 1], sourceStarters[index], "source-dock");
+    }
+  }
+  const endingByTarget = new Map();
+  for (const variable of variables.filter((candidate) => candidate.isEnding)) {
+    const targetId = variable.targetId ?? variable.link?.target?.id ?? "";
+    if (!endingByTarget.has(targetId)) endingByTarget.set(targetId, []);
+    endingByTarget.get(targetId).push(variable);
+  }
+  for (const ending of [...endingByTarget.values()]) {
+    ending.sort(compareDock((variable) => variable.targetDockY));
+    for (let index = 1; index < ending.length; index += 1) {
+      addEdge(ending[index - 1], ending[index], "target-dock");
+    }
   }
 
   const edgeByKey = new Map();
@@ -187,16 +198,7 @@ export const buildTransitionPrecedence = ({
       compareLifecycleIds,
     ),
   };
-  if (strictCycles) return failure;
-  return buildTransitionPrecedence({
-    rank,
-    variables: variables.map((variable) => ({
-      ...variable,
-      isEnding: false,
-    })),
-    priorOrder,
-    strictCycles: true,
-  });
+  return failure;
 };
 
 export const ENDPOINT_BRANCH_COLORS = Object.freeze({
@@ -955,6 +957,8 @@ export function layoutLifecycleRoutingGraph(
           idealY,
           sourceDockY,
           targetDockY,
+          sourceId: link.source?.id,
+          targetId: link.target?.id,
           minX,
           maxX,
           incidentIds,
@@ -1060,7 +1064,6 @@ export function layoutLifecycleRoutingGraph(
         rank,
         variables: rankVariables,
         priorOrder: previousRank === rank - 1 ? priorOrder : [],
-        strictCycles: false,
       });
       if (!precedence.ok) {
         const error = new Error(
