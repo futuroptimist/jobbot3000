@@ -47,6 +47,7 @@ export const buildTransitionPrecedence = ({
   rank,
   variables,
   priorOrder = [],
+  projectedEdges = [],
 }) => {
   const variableByBranch = new Map(
     variables.map((variable) => [variable.branchId, variable]),
@@ -101,16 +102,27 @@ export const buildTransitionPrecedence = ({
   for (let index = 1; index < continuing.length; index += 1) {
     addEdge(continuing[index - 1], continuing[index], "continuation");
   }
-  const starterIds = new Set(starting.map((variable) => variable.id));
-  for (let index = 1; index < merged.length; index += 1) {
-    const from = merged[index - 1];
-    const to = merged[index];
-    if (starterIds.has(from.id) || starterIds.has(to.id)) {
-      addEdge(from, to, "source-dock");
+  const startingBySource = new Map();
+  for (const starter of starting) {
+    const sourceId = starter.sourceId ?? starter.link?.source?.id;
+    if (!sourceId) continue;
+    if (!startingBySource.has(sourceId)) startingBySource.set(sourceId, []);
+    startingBySource.get(sourceId).push(starter);
+  }
+  for (const sourceStarters of startingBySource.values()) {
+    sourceStarters.sort(compareDock((variable) => variable.sourceDockY));
+    for (let index = 1; index < sourceStarters.length; index += 1) {
+      addEdge(sourceStarters[index - 1], sourceStarters[index], "source-dock");
     }
+  }
+  for (const edge of projectedEdges) {
+    const from = variables.find((variable) => variable.id === edge.fromId);
+    const to = variables.find((variable) => variable.id === edge.toId);
+    if (from && to) addEdge(from, to, edge.kind);
   }
   const endingByTarget = new Map();
   for (const variable of variables.filter((candidate) => candidate.isEnding)) {
+    if (variable.link) continue;
     const targetId = variable.targetId ?? variable.link?.target?.id;
     if (!targetId) continue;
     if (variable.link?.target?.routing === true) {
@@ -921,7 +933,6 @@ export function layoutLifecycleRoutingGraph(
     backtracks: 0,
     memoizedFailures: 0,
   };
-  let solverFailureContext = null;
   const sortedUnique = (values) =>
     [...new Set(values.filter(Boolean))].sort(compareLifecycleIds);
   const laneFailureCause = (reason, context = {}) =>
@@ -939,7 +950,7 @@ export function layoutLifecycleRoutingGraph(
     });
   // A deterministic solver state is one attempted prefix-variable placement
   // or one fixed-order interval item visit during forward/backward/rebuild.
-  const recordSolverState = (context = solverFailureContext) => {
+  const recordSolverState = (context = {}) => {
     transitionLaneSolverStats.statesVisited += 1;
     if (
       transitionLaneSolverStats.statesVisited >
@@ -997,8 +1008,8 @@ export function layoutLifecycleRoutingGraph(
           idealY,
           sourceDockY,
           targetDockY,
-          sourceId: link.source?.id,
-          targetId: link.target?.id,
+          sourceId: branchById.get(link.branchId)?.source ?? link.source?.id,
+          targetId: branchById.get(link.branchId)?.target ?? link.target?.id,
           controlMinX,
           controlMaxX,
           minX: clearanceMinX,
@@ -1044,6 +1055,62 @@ export function layoutLifecycleRoutingGraph(
           candidate.rank === variable.rank + 1,
       );
     }
+
+    const branchSpans = new Map();
+    for (const branchId of new Set(
+      variables.map((variable) => variable.branchId),
+    )) {
+      const branchVariables = variables
+        .filter((variable) => variable.branchId === branchId)
+        .sort((a, b) => a.rank - b.rank || compareLifecycleIds(a.id, b.id));
+      const first = branchVariables[0];
+      const last = branchVariables[branchVariables.length - 1];
+      branchSpans.set(branchId, {
+        branchId,
+        semanticSourceId: first.sourceId,
+        semanticTargetId: last.targetId,
+        startRank: first.rank,
+        endRank: last.rank,
+        sourceDockY: first.sourceDockY,
+        targetDockY: last.targetDockY,
+        stableId: first.stableId ?? first.id,
+      });
+    }
+    const branchPrecedenceEdges = [];
+    const addBranchEdges = (groups, dockKey, kind) => {
+      for (const group of groups.values()) {
+        group.sort(
+          (left, right) =>
+            left[dockKey] - right[dockKey] ||
+            compareLifecycleIds(left.stableId, right.stableId) ||
+            compareLifecycleIds(left.branchId, right.branchId),
+        );
+        for (let index = 1; index < group.length; index += 1) {
+          branchPrecedenceEdges.push({
+            fromBranchId: group[index - 1].branchId,
+            toBranchId: group[index].branchId,
+            kind,
+          });
+        }
+      }
+    };
+    const sourceGroups = new Map();
+    const targetGroups = new Map();
+    for (const span of branchSpans.values()) {
+      if (span.semanticSourceId) {
+        if (!sourceGroups.has(span.semanticSourceId))
+          sourceGroups.set(span.semanticSourceId, []);
+        sourceGroups.get(span.semanticSourceId).push(span);
+      }
+      if (span.semanticTargetId) {
+        if (!targetGroups.has(span.semanticTargetId))
+          targetGroups.set(span.semanticTargetId, []);
+        targetGroups.get(span.semanticTargetId).push(span);
+      }
+    }
+    addBranchEdges(sourceGroups, "sourceDockY", "source-dock");
+    // Target-dock lookahead is enforced at terminal ranks; projecting it
+    // across unrelated source groups can overconstrain valid multi-source flows.
     const compareStableVariables = (left, right) =>
       compareLifecycleIds(
         left.stableId ?? left.id,
@@ -1110,13 +1177,15 @@ export function layoutLifecycleRoutingGraph(
       return solved;
     };
     const solveOrder = (solvedOrder, precedence) => {
-      solverFailureContext = {
+      const context = {
         rank: precedence.rank,
         branchIds: solvedOrder.map((variable) => variable.branchId),
         linkIds: solvedOrder.map((variable) => variable.id),
         edgeKinds: precedence.edges.map((edge) => edge.kind),
       };
-      const solved = assignMonotoneIntervals(solvedOrder, recordSolverState);
+      const solved = assignMonotoneIntervals(solvedOrder, () =>
+        recordSolverState(context),
+      );
       if (!solved) return null;
       const solvedById = new Map(
         solvedOrder.map((variable, index) => [variable.id, solved[index]]),
@@ -1252,8 +1321,47 @@ export function layoutLifecycleRoutingGraph(
       const search = (lastY) => {
         if (placedIds.length === rankVariables.length) {
           const order = placedIds.map((id) => byId.get(id));
-          const solvedById = solveOrder(order, precedence);
-          return solvedById ? accept(order, solvedById) : false;
+          const solvedById = new Map(
+            order.map((variable) => [
+              variable.id,
+              placedValues.get(variable.id),
+            ]),
+          );
+          let valid = true;
+          for (let index = 0; index < order.length; index += 1) {
+            const variable = order[index];
+            const value = solvedById.get(variable.id);
+            const previous =
+              index > 0 ? solvedById.get(order[index - 1].id) : null;
+            if (
+              !Number.isFinite(value) ||
+              (previous !== null &&
+                value < previous + minLaneSpacing - LANE_Y_EPSILON) ||
+              firstLegalAtOrAbove(
+                variable.intervals,
+                value - LANE_Y_EPSILON,
+              ) === null ||
+              !candidateClearsSpan(
+                value,
+                variable.minX,
+                variable.maxX,
+                variable.incidentIds,
+              )
+            ) {
+              valid = false;
+              break;
+            }
+          }
+          for (const edge of precedence.edges) {
+            if (
+              solvedById.get(edge.toId) - solvedById.get(edge.fromId) <
+              minLaneSpacing - LANE_Y_EPSILON
+            ) {
+              valid = false;
+              break;
+            }
+          }
+          return valid ? accept(order, solvedById) : false;
         }
         const signature = prefixSignature(lastY);
         if (failedPrefixes.has(signature)) {
@@ -1265,12 +1373,19 @@ export function layoutLifecycleRoutingGraph(
             ? laneTop
             : quantizeY(lastY + minLaneSpacing + LANE_Y_EPSILON);
         const ready = currentReady()
-          .map((variable) => ({
-            variable,
-            value: earliestCandidate(variable, lowerBound),
-            candidateCount: remainingCandidateCount(variable, lowerBound),
-          }))
-          .filter(({ value }) => value !== null)
+          .map((variable) => {
+            const value = earliestCandidate(variable, lowerBound);
+            const latest = lastLegalAtOrBelow(variable.intervals, laneBottom);
+            return {
+              variable,
+              value,
+              latest,
+              slack:
+                value === null || latest === null ? Infinity : latest - value,
+              candidateCount: remainingCandidateCount(variable, lowerBound),
+            };
+          })
+          .filter(({ value, latest }) => value !== null && latest !== null)
           .sort((left, right) => {
             const leftPrior = priorIndex.has(left.variable.branchId)
               ? priorIndex.get(left.variable.branchId)
@@ -1279,7 +1394,8 @@ export function layoutLifecycleRoutingGraph(
               ? priorIndex.get(right.variable.branchId)
               : Infinity;
             return (
-              left.candidateCount - right.candidateCount ||
+              left.latest - right.latest ||
+              left.slack - right.slack ||
               leftPrior - rightPrior ||
               left.variable.sourceDockY - right.variable.sourceDockY ||
               left.variable.targetDockY - right.variable.targetDockY ||
@@ -1291,7 +1407,12 @@ export function layoutLifecycleRoutingGraph(
           return false;
         }
         for (const { variable, value } of ready) {
-          recordSolverState();
+          recordSolverState({
+            rank,
+            branchIds: rankVariables.map((item) => item.branchId),
+            linkIds: rankVariables.map((item) => item.id),
+            edgeKinds: precedence.edges.map((edge) => edge.kind),
+          });
           placedIds.push(variable.id);
           placedIdSet.add(variable.id);
           placedValues.set(variable.id, value);
@@ -1302,8 +1423,22 @@ export function layoutLifecycleRoutingGraph(
           const nextLower = quantizeY(value + minLaneSpacing + LANE_Y_EPSILON);
           const fits =
             value + remaining * minLaneSpacing <= laneBottom + LANE_Y_EPSILON;
+          const remainingDeadlines = rankVariables
+            .filter((candidate) => !placedIdSet.has(candidate.id))
+            .map((candidate) =>
+              lastLegalAtOrBelow(candidate.intervals, laneBottom),
+            )
+            .filter((value) => value !== null)
+            .sort((left, right) => left - right);
+          const capacityOk =
+            remainingDeadlines.length === remaining &&
+            remainingDeadlines.every(
+              (deadline, index) =>
+                deadline + LANE_Y_EPSILON >= nextLower + index * minLaneSpacing,
+            );
           const forwardOk =
             fits &&
+            capacityOk &&
             rankVariables.every((candidate) => {
               if (placedIdSet.has(candidate.id)) return true;
               return earliestCandidate(candidate, nextLower) !== null;
@@ -1355,17 +1490,31 @@ export function layoutLifecycleRoutingGraph(
         .filter((branchId) => activeBranches.has(branchId))
         .join("|")}`;
       if (failedStates.has(stateKey)) return false;
-      solverFailureContext = {
+      const rankContext = {
         rank,
         branchIds: rankVariables.map((variable) => variable.branchId),
         linkIds: rankVariables.map((variable) => variable.id),
         edgeKinds: [],
       };
-      recordSolverState();
+      recordSolverState(rankContext);
+      const projectedEdges = branchPrecedenceEdges
+        .map((edge) => {
+          const from = rankVariables.find(
+            (variable) => variable.branchId === edge.fromBranchId,
+          );
+          const to = rankVariables.find(
+            (variable) => variable.branchId === edge.toBranchId,
+          );
+          return from && to
+            ? { fromId: from.id, toId: to.id, kind: edge.kind }
+            : null;
+        })
+        .filter(Boolean);
       const precedence = buildTransitionPrecedence({
         rank,
         variables: rankVariables,
         priorOrder: effectivePrior,
+        projectedEdges,
       });
       if (!precedence.ok) {
         deepestFailure = precedence;
