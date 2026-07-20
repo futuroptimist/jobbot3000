@@ -787,19 +787,6 @@ export function layoutLifecycleRoutingGraph(
     };
     const orderedSolution = solveByPrecedenceOrder();
     if (orderedSolution) return orderedSolution;
-    if (component.length > 0) {
-      const savedPrecedence = new Map(
-        component.map((branch) => [branch.id, branch.precedes]),
-      );
-      for (const branch of component) branch.precedes = new Set();
-      const relaxedSolution = solveByPrecedenceOrder();
-      if (relaxedSolution) {
-        for (const branch of component) {
-          branch.precedes = savedPrecedence.get(branch.id) ?? new Set();
-        }
-        return relaxedSolution;
-      }
-    }
     const selectBranch = () => {
       let chosen = null;
       for (const branch of component) {
@@ -962,7 +949,9 @@ export function layoutLifecycleRoutingGraph(
     const addDirectedPrecedence = (before, after) => {
       if (before.id === after.id) return true;
       if (hasPrecedencePath(after, before.id)) return true;
-      before.precedes.add(after.id);
+      if (!hasPrecedencePath(before, after.id)) {
+        before.precedes.add(after.id);
+      }
       return true;
     };
     const addPrecedenceChain = (ordered) => {
@@ -1799,39 +1788,6 @@ const tryAssignBranchHandles = (
           });
       }
     }
-    if (candidates.length === 0) {
-      for (const segment of orderedSegments) {
-        const sourceCenter = rankCenterX(segment.source.rank);
-        const targetCenter = rankCenterX(segment.target.rank);
-        const exitX = sourceCenter + RANK_CORRIDOR_HALF_WIDTH;
-        const entryX = targetCenter - RANK_CORRIDOR_HALF_WIDTH;
-        for (const t of [0.5, 0.35, 0.65]) {
-          const { x, y } = cubicTransitionPoint(segment, t);
-          const box = {
-            x: x - BRANCH_HANDLE_RADIUS,
-            y: y - BRANCH_HANDLE_RADIUS,
-            width: BRANCH_HANDLE_RADIUS * 2,
-            height: BRANCH_HANDLE_RADIUS * 2,
-          };
-          if (fixedGeometryBlocksCandidate(box)) continue;
-          if (
-            x - BRANCH_HANDLE_RADIUS < exitX ||
-            x + BRANCH_HANDLE_RADIUS > entryX
-          )
-            continue;
-          candidates.push({
-            branchId: branch.id,
-            x,
-            y,
-            radius: BRANCH_HANDLE_RADIUS,
-            box,
-            clearanceMargin: 0.001,
-            relaxedClearance: true,
-          });
-        }
-        if (candidates.length > 0) break;
-      }
-    }
     candidateSets.set(
       branch.id,
       candidates.sort(
@@ -1852,7 +1808,7 @@ const tryAssignBranchHandles = (
     };
   const selected = new Map();
   let visitedHandleStates = 0;
-  const MAX_HANDLE_SEARCH_STATES = 2000000;
+  const MAX_HANDLE_SEARCH_STATES = 32768;
   const branchById = new Map(
     orderedBranches.map((branch) => [branch.id, branch]),
   );
@@ -1871,11 +1827,8 @@ const tryAssignBranchHandles = (
       const rightCandidates = candidateSets.get(right.id) ?? [];
       if (
         leftCandidates.some((leftCandidate) =>
-          rightCandidates.some(
-            (rightCandidate) =>
-              !leftCandidate.relaxedClearance &&
-              !rightCandidate.relaxedClearance &&
-              boxesOverlap(leftCandidate.box, rightCandidate.box),
+          rightCandidates.some((rightCandidate) =>
+            boxesOverlap(leftCandidate.box, rightCandidate.box),
           ),
         )
       ) {
@@ -1909,10 +1862,7 @@ const tryAssignBranchHandles = (
     const legalCandidatesFor = (branch) =>
       (candidateSets.get(branch.id) ?? []).filter((candidate) =>
         [...assignments.values()].every(
-          (handle) =>
-            candidate.relaxedClearance ||
-            handle.relaxedClearance ||
-            !boxesOverlap(candidate.box, handle.box),
+          (handle) => !boxesOverlap(candidate.box, handle.box),
         ),
       );
     const stateSignature = () =>

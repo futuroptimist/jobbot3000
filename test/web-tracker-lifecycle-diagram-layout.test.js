@@ -693,8 +693,8 @@ describe("lifecycle diagram render-only routing layout", () => {
     }).not.toThrow();
     assertRoutedGraph(routedShuffled.graph);
 
-    expect(graphSignature(routed.graph, { includeHandles: false })).toEqual(
-      graphSignature(routedShuffled.graph, { includeHandles: false }),
+    expect(graphSignature(routed.graph)).toEqual(
+      graphSignature(routedShuffled.graph),
     );
   });
 
