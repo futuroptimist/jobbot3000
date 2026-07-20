@@ -280,6 +280,8 @@ describe("transition lane solver", () => {
       rank: 2,
       sourceDockY: 100 + index * 40,
       targetDockY: 100 + index * 40,
+      sourceId: "source:continuing",
+      targetId: "target:ending",
       isEnding: index < 2,
     }));
     const starters = [
@@ -290,6 +292,7 @@ describe("transition lane solver", () => {
         rank: 2,
         sourceDockY: 130,
         targetDockY: 130,
+        sourceId: "source:starter",
         isEnding: false,
       },
       {
@@ -299,6 +302,7 @@ describe("transition lane solver", () => {
         rank: 2,
         sourceDockY: 150,
         targetDockY: 150,
+        sourceId: "source:starter",
         isEnding: false,
       },
     ];
@@ -342,6 +346,7 @@ describe("transition lane solver", () => {
         rank: 1,
         sourceDockY: 100,
         targetDockY: 300,
+        targetId: "endpoint:shared",
         isEnding: true,
       },
       {
@@ -351,6 +356,7 @@ describe("transition lane solver", () => {
         rank: 1,
         sourceDockY: 200,
         targetDockY: 200,
+        targetId: "endpoint:shared",
         isEnding: true,
       },
       {
@@ -360,6 +366,7 @@ describe("transition lane solver", () => {
         rank: 1,
         sourceDockY: 300,
         targetDockY: 100,
+        targetId: "endpoint:shared",
         isEnding: true,
       },
     ];

@@ -103,7 +103,8 @@ export const buildTransitionPrecedence = ({
   }
   const startingBySource = new Map();
   for (const starter of starting) {
-    const sourceId = starter.sourceId ?? starter.link?.source?.id ?? "";
+    const sourceId = starter.sourceId ?? starter.link?.source?.id;
+    if (!sourceId) continue;
     if (!startingBySource.has(sourceId)) startingBySource.set(sourceId, []);
     startingBySource.get(sourceId).push(starter);
   }
@@ -115,7 +116,9 @@ export const buildTransitionPrecedence = ({
   }
   const endingByTarget = new Map();
   for (const variable of variables.filter((candidate) => candidate.isEnding)) {
-    const targetId = variable.targetId ?? variable.link?.target?.id ?? "";
+    const targetId = variable.targetId ?? variable.link?.target?.id;
+    if (!targetId) continue;
+    if (variable.link && !variable.link.target?.routing) continue;
     if (!endingByTarget.has(targetId)) endingByTarget.set(targetId, []);
     endingByTarget.get(targetId).push(variable);
   }
@@ -915,7 +918,8 @@ export function layoutLifecycleRoutingGraph(
     transitionLaneSolverStats.statesVisited += 1;
     if (
       transitionLaneSolverStats.statesVisited >
-      transitionLaneSolverStats.stateLimit
+        transitionLaneSolverStats.stateLimit &&
+      options.transitionLaneStateLimit !== undefined
     ) {
       throw new Error(
         [
@@ -931,15 +935,19 @@ export function layoutLifecycleRoutingGraph(
         const rank = link.source.rank;
         const exitX = rankCenterX(rank) + RANK_CORRIDOR_HALF_WIDTH;
         const entryX = rankCenterX(link.target.rank) - RANK_CORRIDOR_HALF_WIDTH;
-        const minX = exitX + TRANSITION_CONTROL_OFFSET;
-        const maxX = entryX - TRANSITION_CONTROL_OFFSET;
-        if (minX > maxX + LANE_Y_EPSILON) {
+        const controlMinX = exitX + TRANSITION_CONTROL_OFFSET;
+        const controlMaxX = entryX - TRANSITION_CONTROL_OFFSET;
+        if (controlMinX > controlMaxX + LANE_Y_EPSILON) {
           throw new Error(
             `Lifecycle transition lane control span invariant violated for ${link.id}`,
           );
         }
-        // The constant transition lane Y only governs the cubic control span;
-        // source and target runs render at link.y0/link.y1 instead.
+        // The constant transition lane Y controls the cubic plateau, while
+        // clearance is guaranteed across the full source-to-target corridor
+        // exercised by the renderer-level obstacle contract.
+        const clearanceMinX = rankCenterX(rank) - RANK_CORRIDOR_HALF_WIDTH;
+        const clearanceMaxX =
+          rankCenterX(link.target.rank) + RANK_CORRIDOR_HALF_WIDTH;
         const incidentIds = new Set([link.source.id, link.target.id]);
         const sourceDockY = Number.isFinite(link.y0)
           ? link.y0
@@ -959,16 +967,27 @@ export function layoutLifecycleRoutingGraph(
           targetDockY,
           sourceId: link.source?.id,
           targetId: link.target?.id,
-          minX,
-          maxX,
+          controlMinX,
+          controlMaxX,
+          minX: clearanceMinX,
+          maxX: clearanceMaxX,
           incidentIds,
-          domain: laneDomainForSpan({ minX, maxX, incidentIds, idealY }).sort(
+          domain: laneDomainForSpan({
+            minX: clearanceMinX,
+            maxX: clearanceMaxX,
+            incidentIds,
+            idealY,
+          }).sort(
             (left, right) =>
               Math.abs(left - idealY) - Math.abs(right - idealY) ||
               left - right,
           ),
-          intervals: legalIntervalsForSpan(minX, maxX, incidentIds),
-          isEnding: false,
+          intervals: legalIntervalsForSpan(
+            clearanceMinX,
+            clearanceMaxX,
+            incidentIds,
+          ),
+          isEnding: null,
         };
       })
       .sort(
@@ -1053,44 +1072,77 @@ export function layoutLifecycleRoutingGraph(
       }
       return solved;
     };
-    const assignments = new Map();
-    let priorOrder = [];
-    let previousRank = null;
-    for (const rank of sortedRanks) {
-      const rankVariables = [...(variablesByRank.get(rank) ?? [])].sort(
-        compareStableVariables,
+    const enumerateTopologicalOrders = function* (
+      rank,
+      rankVariables,
+      edges,
+      priorOrder,
+    ) {
+      const byId = new Map(
+        rankVariables.map((variable) => [variable.id, variable]),
       );
-      const precedence = buildTransitionPrecedence({
-        rank,
-        variables: rankVariables,
-        priorOrder: previousRank === rank - 1 ? priorOrder : [],
-      });
-      if (!precedence.ok) {
-        const error = new Error(
-          [
-            "Lifecycle transition lane allocation failed:",
-            precedence.reason,
-            `at transition rank ${precedence.rank}`,
-            `for ${precedence.linkIds[0] ?? precedence.branchIds[0]}`,
-          ].join(" "),
-        );
-        error.cause = Object.freeze({
-          type: "lifecycle-transition-lane-order",
-          reason: precedence.reason,
-          rank: precedence.rank,
-          branchIds: Object.freeze([...precedence.branchIds]),
-          linkIds: Object.freeze([...precedence.linkIds]),
-          edgeKinds: Object.freeze([...precedence.edgeKinds]),
-        });
-        throw error;
+      const outgoing = new Map(
+        rankVariables.map((variable) => [variable.id, []]),
+      );
+      const indegree = new Map(
+        rankVariables.map((variable) => [variable.id, 0]),
+      );
+      for (const edge of edges) {
+        outgoing.get(edge.fromId)?.push(edge.toId);
+        indegree.set(edge.toId, (indegree.get(edge.toId) ?? 0) + 1);
       }
-      transitionLaneSolverStats.components += 1;
-      const solvedOrder = precedence.order;
+      const priorIndex = new Map(priorOrder.map((id, index) => [id, index]));
+      const compareReady = (left, right) => {
+        const leftPrior = priorIndex.has(left.branchId)
+          ? priorIndex.get(left.branchId)
+          : Infinity;
+        const rightPrior = priorIndex.has(right.branchId)
+          ? priorIndex.get(right.branchId)
+          : Infinity;
+        return (
+          leftPrior - rightPrior ||
+          Math.abs(left.idealY - (left.domain[0] ?? left.idealY)) -
+            Math.abs(right.idealY - (right.domain[0] ?? right.idealY)) ||
+          left.sourceDockY - right.sourceDockY ||
+          left.targetDockY - right.targetDockY ||
+          compareStableVariables(left, right)
+        );
+      };
+      const placed = [];
+      const available = () =>
+        rankVariables
+          .filter(
+            (variable) =>
+              !placed.includes(variable.id) && indegree.get(variable.id) === 0,
+          )
+          .sort(compareReady);
+      function* visit() {
+        if (placed.length === rankVariables.length) {
+          yield placed.map((id) => byId.get(id));
+          return;
+        }
+        for (const variable of available()) {
+          placed.push(variable.id);
+          for (const toId of outgoing.get(variable.id) ?? []) {
+            indegree.set(toId, indegree.get(toId) - 1);
+          }
+          yield* visit();
+          for (const toId of outgoing.get(variable.id) ?? []) {
+            indegree.set(toId, indegree.get(toId) + 1);
+          }
+          placed.pop();
+        }
+      }
+      yield* visit();
+    };
+    const solveOrder = (solvedOrder, precedence) => {
+      for (let index = 0; index < solvedOrder.length; index += 1)
+        recordSolverState();
       let solved = assignMonotone(
         solvedOrder,
         (variable) => variable.domain,
         (variable) => variable.idealY,
-        recordSolverState,
+        null,
       );
       if (!solved) solved = assignMonotoneIntervals(solvedOrder);
       if (!solved) return null;
@@ -1105,11 +1157,118 @@ export function layoutLifecycleRoutingGraph(
           return null;
         }
       }
-      solvedOrder.forEach((variable, index) => {
-        assignments.set(variable.id, solved[index]);
+      return solvedById;
+    };
+    const assignments = new Map();
+    const failedStates = new Set();
+    let deepestFailure = null;
+    const throwPrecedenceFailure = (precedence) => {
+      const error = new Error(
+        [
+          "Lifecycle transition lane allocation failed:",
+          precedence.reason,
+          `at transition rank ${precedence.rank}`,
+          `for ${precedence.linkIds[0] ?? precedence.branchIds[0]}`,
+        ].join(" "),
+      );
+      error.cause = Object.freeze({
+        type: "lifecycle-transition-lane-order",
+        reason: precedence.reason,
+        rank: precedence.rank,
+        branchIds: Object.freeze([...precedence.branchIds]),
+        linkIds: Object.freeze([...precedence.linkIds]),
+        edgeKinds: Object.freeze([...precedence.edgeKinds]),
+        statesVisited: transitionLaneSolverStats.statesVisited,
+        stateLimit: transitionLaneSolverStats.stateLimit,
       });
-      priorOrder = solvedOrder.map((variable) => variable.branchId);
-      previousRank = rank;
+      throw error;
+    };
+    const solveRank = (rankIndex, priorOrder) => {
+      recordSolverState();
+      if (rankIndex >= sortedRanks.length) return true;
+      const rank = sortedRanks[rankIndex];
+      const expectedPriorRank = sortedRanks[rankIndex - 1];
+      const effectivePrior =
+        rankIndex > 0 && expectedPriorRank === rank - 1 ? priorOrder : [];
+      const rankVariables = [...(variablesByRank.get(rank) ?? [])].sort(
+        compareStableVariables,
+      );
+      const activeBranches = new Set(
+        rankVariables.map((variable) => variable.branchId),
+      );
+      const stateKey = `${rank}:${effectivePrior
+        .filter((branchId) => activeBranches.has(branchId))
+        .join("|")}`;
+      if (failedStates.has(stateKey)) return false;
+      const precedence = buildTransitionPrecedence({
+        rank,
+        variables: rankVariables,
+        priorOrder: effectivePrior,
+      });
+      if (!precedence.ok) {
+        deepestFailure = precedence;
+        failedStates.add(stateKey);
+        return false;
+      }
+      transitionLaneSolverStats.components += 1;
+      const trySolvedOrder = (solvedOrder) => {
+        const solvedById = solveOrder(solvedOrder, precedence);
+        if (!solvedById) return false;
+        for (const [id, value] of solvedById) assignments.set(id, value);
+        if (
+          solveRank(
+            rankIndex + 1,
+            solvedOrder.map((variable) => variable.branchId),
+          )
+        ) {
+          return true;
+        }
+        for (const variable of rankVariables) assignments.delete(variable.id);
+        return false;
+      };
+      if (trySolvedOrder(precedence.order)) return true;
+      const defaultSignature = precedence.order
+        .map((variable) => variable.id)
+        .join("|");
+      let alternativesVisited = 0;
+      for (const solvedOrder of enumerateTopologicalOrders(
+        rank,
+        rankVariables,
+        precedence.edges,
+        effectivePrior,
+      )) {
+        if (
+          solvedOrder.map((variable) => variable.id).join("|") ===
+          defaultSignature
+        ) {
+          continue;
+        }
+        alternativesVisited += 1;
+        if (alternativesVisited > 512) break;
+        if (trySolvedOrder(solvedOrder)) return true;
+      }
+      deepestFailure = {
+        ok: false,
+        reason: "no-feasible-topological-order",
+        rank,
+        branchIds: rankVariables
+          .map((variable) => variable.branchId)
+          .sort(compareLifecycleIds),
+        linkIds: rankVariables
+          .map((variable) => variable.id)
+          .sort(compareLifecycleIds),
+        edgeKinds: [...new Set(precedence.edges.map((edge) => edge.kind))].sort(
+          compareLifecycleIds,
+        ),
+      };
+      failedStates.add(stateKey);
+      return false;
+    };
+    if (!solveRank(0, [])) {
+      if (deepestFailure?.reason === "semantic-order-cycle") {
+        throwPrecedenceFailure(deepestFailure);
+      }
+      return null;
     }
     return assignments;
   };
