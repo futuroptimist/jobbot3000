@@ -567,7 +567,13 @@ describe("lifecycle diagram render-only routing layout", () => {
       ["branch:blocker", [makeSegment("branch:blocker", 240)]],
     ]);
 
-    expect(() => assignBranchHandles(branches, segments, [])).toThrowError(
+    let thrown;
+    try {
+      assignBranchHandles(branches, segments, []);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toEqual(
       expect.objectContaining({
         cause: expect.objectContaining({
           type: "lifecycle-handle-placement",
@@ -595,6 +601,16 @@ describe("lifecycle diagram render-only routing layout", () => {
         }),
       }),
     );
+    const [diagnostic] = thrown.cause.branches;
+    expect(diagnostic.attempts).toBe(
+      diagnostic.accepted +
+        diagnostic.rejected.fixedGeometry +
+        diagnostic.rejected.outsideTransitionCorridor +
+        diagnostic.rejected.nonincidentRouteClearance,
+    );
+    expect(
+      diagnostic.nearestRejectedCandidate.clearanceMargin,
+    ).toBeLessThanOrEqual(0);
   });
 
   it("identifies fixed geometry blockers in handle diagnostics", () => {

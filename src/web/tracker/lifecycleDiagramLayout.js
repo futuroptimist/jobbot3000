@@ -1734,14 +1734,22 @@ const tryAssignBranchHandles = (
     const rememberRejected = (candidate) => {
       if (
         !diagnostic.nearestRejectedCandidate ||
-        candidate.clearanceMargin <
+        candidate.clearanceMargin >
           diagnostic.nearestRejectedCandidate.clearanceMargin ||
         (candidate.clearanceMargin ===
           diagnostic.nearestRejectedCandidate.clearanceMargin &&
-          compareLifecycleIds(
+          (compareLifecycleIds(
             candidate.segmentId,
             diagnostic.nearestRejectedCandidate.segmentId,
-          ) < 0)
+          ) < 0 ||
+            (candidate.segmentId ===
+              diagnostic.nearestRejectedCandidate.segmentId &&
+              (candidate.t < diagnostic.nearestRejectedCandidate.t ||
+                (candidate.t === diagnostic.nearestRejectedCandidate.t &&
+                  compareLifecycleIds(
+                    candidate.blocker?.id ?? "",
+                    diagnostic.nearestRejectedCandidate.blocker?.id ?? "",
+                  ) < 0)))))
       ) {
         diagnostic.nearestRejectedCandidate = candidate;
       }
