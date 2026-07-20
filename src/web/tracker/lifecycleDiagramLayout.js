@@ -726,24 +726,15 @@ export function layoutLifecycleRoutingGraph(
       ]),
     );
     const failedStates = new Set();
-    // Semantic order: branches with lower idealY get lower lane Y values.
-    // Equal idealY ties are broken by stable ID so the ordering is total.
-    const semanticOrder = (branchA, branchB) => {
-      const idealDiff = branchA.idealY - branchB.idealY;
-      if (Math.abs(idealDiff) > LANE_Y_EPSILON) return idealDiff;
-      return compareStableKeys(branchA, branchB);
-    };
-    // Returns true iff assigning `value` to `branch` is consistent with
-    // the already-assigned `otherValue` for a conflicting `otherBranch`:
-    // both minimum spacing and the semantic ordering constraint must hold.
-    const isLegalPair = (branch, otherBranch, value, otherValue) => {
-      if (Math.abs(value - otherValue) < minLaneSpacing - LANE_Y_EPSILON)
-        return false;
-      const order = semanticOrder(branch, otherBranch);
-      if (order < 0 && value >= otherValue - LANE_Y_EPSILON) return false;
-      if (order > 0 && value <= otherValue + LANE_Y_EPSILON) return false;
-      return true;
-    };
+    // Returns true iff assigning `value` to `branch` is consistent with the
+    // already-assigned `otherValue` for a conflicting `otherBranch`.  The
+    // only hard legality criterion is minimum lane spacing; semantic
+    // (idealY-based) ordering is expressed through domain sort order so that
+    // the solver naturally prefers Sankey-aligned assignments while remaining
+    // feasible when obstacle-filtered domains cannot accommodate a strict
+    // global total order.
+    const isLegalPair = (_branch, _otherBranch, value, otherValue) =>
+      Math.abs(value - otherValue) >= minLaneSpacing - LANE_Y_EPSILON;
     const selectBranch = () => {
       let chosen = null;
       for (const branch of component) {
