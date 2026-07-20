@@ -150,24 +150,7 @@ export const buildTransitionPrecedence = ({
       compareLifecycleIds(a.kind, b.kind),
   );
   const byId = new Map(variables.map((variable) => [variable.id, variable]));
-  const allHaveLinks = variables.every((variable) => variable.link);
-  const reaches = (outgoing, fromId, toId, seen = new Set()) => {
-    if (fromId === toId) return true;
-    if (seen.has(fromId)) return false;
-    seen.add(fromId);
-    return (outgoing.get(fromId) ?? []).some((nextId) =>
-      reaches(outgoing, nextId, toId, seen),
-    );
-  };
-  const activeEdges = [];
-  const probeOutgoing = new Map(variables.map((variable) => [variable.id, []]));
-  for (const edge of dedupedEdges) {
-    if (allHaveLinks && reaches(probeOutgoing, edge.toId, edge.fromId)) {
-      continue;
-    }
-    activeEdges.push(edge);
-    probeOutgoing.get(edge.fromId)?.push(edge.toId);
-  }
+  const activeEdges = dedupedEdges;
   const indegree = new Map(variables.map((variable) => [variable.id, 0]));
   const outgoing = new Map(variables.map((variable) => [variable.id, []]));
   for (const edge of activeEdges) {
@@ -205,7 +188,7 @@ export const buildTransitionPrecedence = ({
     }
   }
   if (order.length === variables.length) {
-    return { ok: true, order, edges: activeEdges };
+    return { ok: true, order, edges: activeEdges, merged };
   }
   const cycleIds = [...indegree.entries()]
     .filter(([, count]) => count > 0)
@@ -1102,69 +1085,6 @@ export function layoutLifecycleRoutingGraph(
       }
       return solved;
     };
-    const enumerateTopologicalOrders = function* (
-      rank,
-      rankVariables,
-      edges,
-      priorOrder,
-    ) {
-      const byId = new Map(
-        rankVariables.map((variable) => [variable.id, variable]),
-      );
-      const outgoing = new Map(
-        rankVariables.map((variable) => [variable.id, []]),
-      );
-      const indegree = new Map(
-        rankVariables.map((variable) => [variable.id, 0]),
-      );
-      for (const edge of edges) {
-        outgoing.get(edge.fromId)?.push(edge.toId);
-        indegree.set(edge.toId, (indegree.get(edge.toId) ?? 0) + 1);
-      }
-      const priorIndex = new Map(priorOrder.map((id, index) => [id, index]));
-      const compareReady = (left, right) => {
-        const leftPrior = priorIndex.has(left.branchId)
-          ? priorIndex.get(left.branchId)
-          : Infinity;
-        const rightPrior = priorIndex.has(right.branchId)
-          ? priorIndex.get(right.branchId)
-          : Infinity;
-        return (
-          leftPrior - rightPrior ||
-          Math.abs(left.idealY - (left.domain[0] ?? left.idealY)) -
-            Math.abs(right.idealY - (right.domain[0] ?? right.idealY)) ||
-          left.sourceDockY - right.sourceDockY ||
-          left.targetDockY - right.targetDockY ||
-          compareStableVariables(left, right)
-        );
-      };
-      const placed = [];
-      const available = () =>
-        rankVariables
-          .filter(
-            (variable) =>
-              !placed.includes(variable.id) && indegree.get(variable.id) === 0,
-          )
-          .sort(compareReady);
-      function* visit() {
-        if (placed.length === rankVariables.length) {
-          yield placed.map((id) => byId.get(id));
-          return;
-        }
-        for (const variable of available()) {
-          placed.push(variable.id);
-          for (const toId of outgoing.get(variable.id) ?? []) {
-            indegree.set(toId, indegree.get(toId) - 1);
-          }
-          yield* visit();
-          for (const toId of outgoing.get(variable.id) ?? []) {
-            indegree.set(toId, indegree.get(toId) + 1);
-          }
-          placed.pop();
-        }
-      }
-      yield* visit();
-    };
     const solveOrder = (solvedOrder, precedence) => {
       const sampledStateEstimate = solvedOrder
         .slice(1)
@@ -1182,6 +1102,31 @@ export function layoutLifecycleRoutingGraph(
         );
       }
       if (!solved) solved = assignMonotoneIntervals(solvedOrder);
+      if (!solved) {
+        let previous = null;
+        const spread = solvedOrder.map((variable, index) => {
+          const ideal = spreadLane(index, solvedOrder.length);
+          const lower = previous === null ? laneTop : previous + minLaneSpacing;
+          const value = legalNearestInEnvelope(
+            variable.intervals,
+            lower,
+            laneBottom,
+            ideal,
+          );
+          previous = value;
+          return value;
+        });
+        if (
+          spread.every((value) => value !== null) &&
+          spread.every(
+            (value, index) =>
+              index === 0 ||
+              value >= spread[index - 1] + minLaneSpacing - LANE_Y_EPSILON,
+          )
+        ) {
+          solved = spread;
+        }
+      }
       if (!solved) return null;
       const solvedById = new Map(
         solvedOrder.map((variable, index) => [variable.id, solved[index]]),
@@ -1196,7 +1141,201 @@ export function layoutLifecycleRoutingGraph(
       }
       return solvedById;
     };
+    const solveRankOrders = (
+      rank,
+      rankVariables,
+      precedence,
+      priorOrder,
+      accept,
+    ) => {
+      const byId = new Map(
+        rankVariables.map((variable) => [variable.id, variable]),
+      );
+      const outgoing = new Map(
+        rankVariables.map((variable) => [variable.id, []]),
+      );
+      const indegree = new Map(
+        rankVariables.map((variable) => [variable.id, 0]),
+      );
+      for (const edge of precedence.edges) {
+        outgoing.get(edge.fromId)?.push(edge.toId);
+        indegree.set(edge.toId, (indegree.get(edge.toId) ?? 0) + 1);
+      }
+      const priorIndex = new Map(priorOrder.map((id, index) => [id, index]));
+      const placedIds = [];
+      const placedIdSet = new Set();
+      const placedValues = new Map();
+      const failedPrefixes = new Set();
+      const candidateValues = (variable, lowerBound) => {
+        const values = new Set(
+          variable.domain.filter(
+            (value) =>
+              value >= lowerBound - LANE_Y_EPSILON &&
+              candidateClearsSpan(
+                value,
+                variable.minX,
+                variable.maxX,
+                variable.incidentIds,
+              ),
+          ),
+        );
+        const intervalValue = firstLegalAtOrAbove(
+          variable.intervals,
+          lowerBound,
+        );
+        if (
+          intervalValue !== null &&
+          candidateClearsSpan(
+            intervalValue,
+            variable.minX,
+            variable.maxX,
+            variable.incidentIds,
+          )
+        ) {
+          values.add(intervalValue);
+        }
+        return [...values].sort(
+          (left, right) =>
+            Math.abs(left - variable.idealY) -
+              Math.abs(right - variable.idealY) || left - right,
+        );
+      };
+      const currentReady = () =>
+        rankVariables.filter(
+          (variable) =>
+            !placedIdSet.has(variable.id) && indegree.get(variable.id) === 0,
+        );
+      const prefixSignature = (lastY) => {
+        const remaining = rankVariables
+          .filter((variable) => !placedIdSet.has(variable.id))
+          .map((variable) => `${variable.id}:${indegree.get(variable.id)}`)
+          .sort(compareLifecycleIds)
+          .join(",");
+        const filteredPrior = priorOrder
+          .filter((branchId) =>
+            rankVariables.some(
+              (variable) =>
+                variable.branchId === branchId && !placedIdSet.has(variable.id),
+            ),
+          )
+          .join("|");
+        return [
+          rank,
+          placedIds.join("|"),
+          quantizeY(lastY ?? laneTop),
+          remaining,
+          filteredPrior,
+        ].join(":");
+      };
+      const hasAcyclicCompletion = () => {
+        const scratchIndegree = new Map(indegree);
+        const scratchPlaced = new Set(placedIdSet);
+        let progressed = true;
+        while (progressed) {
+          progressed = false;
+          for (const variable of rankVariables) {
+            if (
+              scratchPlaced.has(variable.id) ||
+              scratchIndegree.get(variable.id) !== 0
+            )
+              continue;
+            scratchPlaced.add(variable.id);
+            progressed = true;
+            for (const toId of outgoing.get(variable.id) ?? []) {
+              scratchIndegree.set(toId, scratchIndegree.get(toId) - 1);
+            }
+          }
+        }
+        return scratchPlaced.size === rankVariables.length;
+      };
+      const search = (lastY) => {
+        if (placedIds.length === rankVariables.length) {
+          const order = placedIds.map((id) => byId.get(id));
+          const solvedById = new Map(
+            placedIds.map((id) => [id, placedValues.get(id)]),
+          );
+          for (const edge of precedence.edges) {
+            if (
+              solvedById.get(edge.toId) - solvedById.get(edge.fromId) <
+              minLaneSpacing - LANE_Y_EPSILON
+            ) {
+              return false;
+            }
+          }
+          return accept(order, solvedById);
+        }
+        const signature = prefixSignature(lastY);
+        if (failedPrefixes.has(signature)) {
+          transitionLaneSolverStats.memoizedFailures += 1;
+          return false;
+        }
+        const lowerBound =
+          placedIds.length === 0
+            ? laneTop
+            : quantizeY(lastY + minLaneSpacing + LANE_Y_EPSILON);
+        const ready = currentReady()
+          .map((variable) => ({
+            variable,
+            values: candidateValues(variable, lowerBound),
+          }))
+          .filter(({ values }) => values.length > 0)
+          .sort((left, right) => {
+            const leftPrior = priorIndex.has(left.variable.branchId)
+              ? priorIndex.get(left.variable.branchId)
+              : Infinity;
+            const rightPrior = priorIndex.has(right.variable.branchId)
+              ? priorIndex.get(right.variable.branchId)
+              : Infinity;
+            return (
+              left.values.length - right.values.length ||
+              leftPrior - rightPrior ||
+              left.variable.sourceDockY - right.variable.sourceDockY ||
+              left.variable.targetDockY - right.variable.targetDockY ||
+              compareStableVariables(left.variable, right.variable)
+            );
+          });
+        if (!ready.length || !hasAcyclicCompletion()) {
+          failedPrefixes.add(signature);
+          return false;
+        }
+        for (const { variable, values } of ready.slice(0, 1)) {
+          for (const value of values.slice(0, 1)) {
+            placedIds.push(variable.id);
+            placedIdSet.add(variable.id);
+            placedValues.set(variable.id, value);
+            for (const toId of outgoing.get(variable.id) ?? []) {
+              indegree.set(toId, indegree.get(toId) - 1);
+            }
+            const remaining = rankVariables.length - placedIds.length;
+            const fits =
+              value + remaining * minLaneSpacing <= laneBottom + LANE_Y_EPSILON;
+            const forwardOk =
+              fits &&
+              rankVariables.every((candidate) => {
+                if (placedIdSet.has(candidate.id)) return true;
+                return candidateValues(
+                  candidate,
+                  quantizeY(value + minLaneSpacing + LANE_Y_EPSILON),
+                ).length;
+              });
+            if (forwardOk && search(value)) return true;
+            for (const toId of outgoing.get(variable.id) ?? []) {
+              indegree.set(toId, indegree.get(toId) + 1);
+            }
+            placedValues.delete(variable.id);
+            placedIdSet.delete(variable.id);
+            placedIds.pop();
+            transitionLaneSolverStats.backtracks += 1;
+          }
+        }
+        failedPrefixes.add(signature);
+        return false;
+      };
+      return search(null);
+    };
+
     const assignments = new Map();
+
     const failedStates = new Set();
     let deepestFailure = null;
     const throwPrecedenceFailure = (precedence) => {
@@ -1248,9 +1387,7 @@ export function layoutLifecycleRoutingGraph(
         return false;
       }
       transitionLaneSolverStats.components += 1;
-      const trySolvedOrder = (solvedOrder) => {
-        const solvedById = solveOrder(solvedOrder, precedence);
-        if (!solvedById) return false;
+      const acceptSolved = (solvedOrder, solvedById) => {
         for (const [id, value] of solvedById) assignments.set(id, value);
         if (
           solveRank(
@@ -1261,51 +1398,34 @@ export function layoutLifecycleRoutingGraph(
           return true;
         }
         for (const variable of rankVariables) assignments.delete(variable.id);
+        transitionLaneSolverStats.backtracks += 1;
         return false;
       };
-      if (trySolvedOrder(precedence.order)) return true;
-      if (rankVariables.length >= 13) {
-        const dockOrder = [...rankVariables].sort(
-          (left, right) =>
-            left.sourceDockY - right.sourceDockY ||
-            left.targetDockY - right.targetDockY ||
-            compareStableVariables(left, right),
-        );
-        if (trySolvedOrder(dockOrder)) return true;
-        const placed =
-          assignMonotoneIntervals(dockOrder) ??
-          dockOrder.map((_, index) => spreadLane(index, dockOrder.length));
-        dockOrder.forEach((variable, index) =>
-          assignments.set(variable.id, placed[index]),
-        );
-        if (
-          solveRank(
-            rankIndex + 1,
-            dockOrder.map((variable) => variable.branchId),
-          )
-        ) {
-          return true;
-        }
-        for (const variable of rankVariables) assignments.delete(variable.id);
-        return false;
+      const defaultSolved = solveOrder(precedence.order, precedence);
+      if (defaultSolved && acceptSolved(precedence.order, defaultSolved)) {
+        return true;
       }
-      const defaultSignature = precedence.order
-        .map((variable) => variable.id)
-        .join("|");
-      for (const solvedOrder of enumerateTopologicalOrders(
+      const dockOrder = [...rankVariables].sort(
+        (left, right) =>
+          left.sourceDockY - right.sourceDockY ||
+          left.targetDockY - right.targetDockY ||
+          compareStableVariables(left, right),
+      );
+      if (
+        dockOrder.map((variable) => variable.id).join("|") !==
+        precedence.order.map((variable) => variable.id).join("|")
+      ) {
+        const dockSolved = solveOrder(dockOrder, precedence);
+        if (dockSolved && acceptSolved(dockOrder, dockSolved)) return true;
+      }
+      const accepted = solveRankOrders(
         rank,
         rankVariables,
-        precedence.edges,
+        precedence,
         effectivePrior,
-      )) {
-        if (
-          solvedOrder.map((variable) => variable.id).join("|") ===
-          defaultSignature
-        ) {
-          continue;
-        }
-        if (trySolvedOrder(solvedOrder)) return true;
-      }
+        acceptSolved,
+      );
+      if (accepted) return true;
       deepestFailure = {
         ok: false,
         reason: "no-feasible-topological-order",
