@@ -1031,11 +1031,15 @@ export function layoutLifecycleRoutingGraph(
         left.stableId ?? left.id,
         right.stableId ?? right.id,
       ) || compareLifecycleIds(left.id, right.id);
-    const assignMonotoneIntervals = (items) => {
+    const assignMonotoneIntervals = (
+      items,
+      onStateVisited = recordSolverState,
+    ) => {
       if (!items.length) return [];
       const forward = [];
       let lower = laneTop;
       for (const item of items) {
+        onStateVisited?.();
         const value = firstLegalAtOrAbove(item.intervals, lower);
         if (value === null) return null;
         forward.push(value);
@@ -1044,6 +1048,7 @@ export function layoutLifecycleRoutingGraph(
       const backward = Array(items.length);
       let upper = laneBottom;
       for (let index = items.length - 1; index >= 0; index -= 1) {
+        onStateVisited?.();
         const value = lastLegalAtOrBelow(items[index].intervals, upper);
         if (value === null || value < forward[index] - LANE_Y_EPSILON)
           return null;
@@ -1053,6 +1058,7 @@ export function layoutLifecycleRoutingGraph(
       const solved = [];
       let previous = null;
       for (let index = 0; index < items.length; index += 1) {
+        onStateVisited?.();
         const lowerBound = Math.max(
           forward[index],
           previous === null
@@ -1086,51 +1092,35 @@ export function layoutLifecycleRoutingGraph(
       return solved;
     };
     const solveOrder = (solvedOrder, precedence) => {
-      const sampledStateEstimate = solvedOrder
-        .slice(1)
-        .reduce((sum, variable) => sum + variable.domain.length, 0);
-      const remainingStateBudget =
-        transitionLaneSolverStats.stateLimit -
-        transitionLaneSolverStats.statesVisited;
-      let solved = null;
-      if (sampledStateEstimate <= remainingStateBudget) {
-        solved = assignMonotone(
-          solvedOrder,
-          (variable) => variable.domain,
-          (variable) => variable.idealY,
-          recordSolverState,
-        );
-      }
-      if (!solved) solved = assignMonotoneIntervals(solvedOrder);
-      if (!solved) {
-        let previous = null;
-        const spread = solvedOrder.map((variable, index) => {
-          const ideal = spreadLane(index, solvedOrder.length);
-          const lower = previous === null ? laneTop : previous + minLaneSpacing;
-          const value = legalNearestInEnvelope(
-            variable.intervals,
-            lower,
-            laneBottom,
-            ideal,
-          );
-          previous = value;
-          return value;
-        });
-        if (
-          spread.every((value) => value !== null) &&
-          spread.every(
-            (value, index) =>
-              index === 0 ||
-              value >= spread[index - 1] + minLaneSpacing - LANE_Y_EPSILON,
-          )
-        ) {
-          solved = spread;
-        }
-      }
+      const solved = assignMonotoneIntervals(solvedOrder, null);
       if (!solved) return null;
       const solvedById = new Map(
         solvedOrder.map((variable, index) => [variable.id, solved[index]]),
       );
+      for (const variable of solvedOrder) {
+        const value = solvedById.get(variable.id);
+        if (
+          !Number.isFinite(value) ||
+          firstLegalAtOrAbove(variable.intervals, value - LANE_Y_EPSILON) ===
+            null ||
+          !candidateClearsSpan(
+            value,
+            variable.minX,
+            variable.maxX,
+            variable.incidentIds,
+          )
+        ) {
+          return null;
+        }
+      }
+      for (let index = 1; index < solvedOrder.length; index += 1) {
+        if (
+          solved[index] - solved[index - 1] <
+          minLaneSpacing - LANE_Y_EPSILON
+        ) {
+          return null;
+        }
+      }
       for (const edge of precedence.edges) {
         if (
           solvedById.get(edge.toId) - solvedById.get(edge.fromId) <
@@ -1166,40 +1156,27 @@ export function layoutLifecycleRoutingGraph(
       const placedIdSet = new Set();
       const placedValues = new Map();
       const failedPrefixes = new Set();
-      const candidateValues = (variable, lowerBound) => {
-        const values = new Set(
-          variable.domain.filter(
-            (value) =>
-              value >= lowerBound - LANE_Y_EPSILON &&
-              candidateClearsSpan(
-                value,
-                variable.minX,
-                variable.maxX,
-                variable.incidentIds,
-              ),
-          ),
-        );
-        const intervalValue = firstLegalAtOrAbove(
-          variable.intervals,
-          lowerBound,
-        );
+      const earliestCandidate = (variable, lowerBound) => {
+        const value = firstLegalAtOrAbove(variable.intervals, lowerBound);
         if (
-          intervalValue !== null &&
-          candidateClearsSpan(
-            intervalValue,
+          value === null ||
+          !candidateClearsSpan(
+            value,
             variable.minX,
             variable.maxX,
             variable.incidentIds,
           )
         ) {
-          values.add(intervalValue);
+          return null;
         }
-        return [...values].sort(
-          (left, right) =>
-            Math.abs(left - variable.idealY) -
-              Math.abs(right - variable.idealY) || left - right,
-        );
+        return value;
       };
+      const remainingCandidateCount = (variable, lowerBound) =>
+        variable.intervals.reduce((count, [start, end]) => {
+          const first = Math.max(start, lowerBound);
+          if (first > end + LANE_Y_EPSILON) return count;
+          return count + 1;
+        }, 0);
       const currentReady = () =>
         rankVariables.filter(
           (variable) =>
@@ -1254,6 +1231,20 @@ export function layoutLifecycleRoutingGraph(
           const solvedById = new Map(
             placedIds.map((id) => [id, placedValues.get(id)]),
           );
+          for (const variable of order) {
+            const value = solvedById.get(variable.id);
+            if (
+              !Number.isFinite(value) ||
+              !candidateClearsSpan(
+                value,
+                variable.minX,
+                variable.maxX,
+                variable.incidentIds,
+              )
+            ) {
+              return false;
+            }
+          }
           for (const edge of precedence.edges) {
             if (
               solvedById.get(edge.toId) - solvedById.get(edge.fromId) <
@@ -1276,9 +1267,10 @@ export function layoutLifecycleRoutingGraph(
         const ready = currentReady()
           .map((variable) => ({
             variable,
-            values: candidateValues(variable, lowerBound),
+            value: earliestCandidate(variable, lowerBound),
+            candidateCount: remainingCandidateCount(variable, lowerBound),
           }))
-          .filter(({ values }) => values.length > 0)
+          .filter(({ value }) => value !== null)
           .sort((left, right) => {
             const leftPrior = priorIndex.has(left.variable.branchId)
               ? priorIndex.get(left.variable.branchId)
@@ -1287,7 +1279,7 @@ export function layoutLifecycleRoutingGraph(
               ? priorIndex.get(right.variable.branchId)
               : Infinity;
             return (
-              left.values.length - right.values.length ||
+              left.candidateCount - right.candidateCount ||
               leftPrior - rightPrior ||
               left.variable.sourceDockY - right.variable.sourceDockY ||
               left.variable.targetDockY - right.variable.targetDockY ||
@@ -1298,35 +1290,32 @@ export function layoutLifecycleRoutingGraph(
           failedPrefixes.add(signature);
           return false;
         }
-        for (const { variable, values } of ready.slice(0, 1)) {
-          for (const value of values.slice(0, 1)) {
-            placedIds.push(variable.id);
-            placedIdSet.add(variable.id);
-            placedValues.set(variable.id, value);
-            for (const toId of outgoing.get(variable.id) ?? []) {
-              indegree.set(toId, indegree.get(toId) - 1);
-            }
-            const remaining = rankVariables.length - placedIds.length;
-            const fits =
-              value + remaining * minLaneSpacing <= laneBottom + LANE_Y_EPSILON;
-            const forwardOk =
-              fits &&
-              rankVariables.every((candidate) => {
-                if (placedIdSet.has(candidate.id)) return true;
-                return candidateValues(
-                  candidate,
-                  quantizeY(value + minLaneSpacing + LANE_Y_EPSILON),
-                ).length;
-              });
-            if (forwardOk && search(value)) return true;
-            for (const toId of outgoing.get(variable.id) ?? []) {
-              indegree.set(toId, indegree.get(toId) + 1);
-            }
-            placedValues.delete(variable.id);
-            placedIdSet.delete(variable.id);
-            placedIds.pop();
-            transitionLaneSolverStats.backtracks += 1;
+        for (const { variable, value } of ready) {
+          recordSolverState();
+          placedIds.push(variable.id);
+          placedIdSet.add(variable.id);
+          placedValues.set(variable.id, value);
+          for (const toId of outgoing.get(variable.id) ?? []) {
+            indegree.set(toId, indegree.get(toId) - 1);
           }
+          const remaining = rankVariables.length - placedIds.length;
+          const nextLower = quantizeY(value + minLaneSpacing + LANE_Y_EPSILON);
+          const fits =
+            value + remaining * minLaneSpacing <= laneBottom + LANE_Y_EPSILON;
+          const forwardOk =
+            fits &&
+            rankVariables.every((candidate) => {
+              if (placedIdSet.has(candidate.id)) return true;
+              return earliestCandidate(candidate, nextLower) !== null;
+            });
+          if (forwardOk && search(value)) return true;
+          for (const toId of outgoing.get(variable.id) ?? []) {
+            indegree.set(toId, indegree.get(toId) + 1);
+          }
+          placedValues.delete(variable.id);
+          placedIdSet.delete(variable.id);
+          placedIds.pop();
+          transitionLaneSolverStats.backtracks += 1;
         }
         failedPrefixes.add(signature);
         return false;
@@ -1401,22 +1390,9 @@ export function layoutLifecycleRoutingGraph(
         transitionLaneSolverStats.backtracks += 1;
         return false;
       };
-      const defaultSolved = solveOrder(precedence.order, precedence);
-      if (defaultSolved && acceptSolved(precedence.order, defaultSolved)) {
+      const orderedSolved = solveOrder(precedence.order, precedence);
+      if (orderedSolved && acceptSolved(precedence.order, orderedSolved)) {
         return true;
-      }
-      const dockOrder = [...rankVariables].sort(
-        (left, right) =>
-          left.sourceDockY - right.sourceDockY ||
-          left.targetDockY - right.targetDockY ||
-          compareStableVariables(left, right),
-      );
-      if (
-        dockOrder.map((variable) => variable.id).join("|") !==
-        precedence.order.map((variable) => variable.id).join("|")
-      ) {
-        const dockSolved = solveOrder(dockOrder, precedence);
-        if (dockSolved && acceptSolved(dockOrder, dockSolved)) return true;
       }
       const accepted = solveRankOrders(
         rank,
@@ -1448,12 +1424,13 @@ export function layoutLifecycleRoutingGraph(
       if (deepestFailure?.reason === "semantic-order-cycle") {
         throwPrecedenceFailure(deepestFailure);
       }
-      throw new Error(
+      const error = new Error(
         [
           "Lifecycle transition lane allocation failed",
           `after ${transitionLaneSolverStats.statesVisited} deterministic states`,
         ].join(" "),
       );
+      throw error;
     }
     return assignments;
   };
@@ -1492,12 +1469,13 @@ export function layoutLifecycleRoutingGraph(
   try {
     const transitionLaneAssignments = solveTransitionLanes(graph.links);
     if (!transitionLaneAssignments) {
-      throw new Error(
+      const error = new Error(
         [
           "Lifecycle transition lane allocation failed",
           `after ${transitionLaneSolverStats.statesVisited} deterministic states`,
         ].join(" "),
       );
+      throw error;
     }
     for (const link of graph.links) {
       const laneY = transitionLaneAssignments.get(link.id);
