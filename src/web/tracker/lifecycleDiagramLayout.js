@@ -709,8 +709,6 @@ export function layoutLifecycleRoutingGraph(
         Math.abs(left - branch.idealY) - Math.abs(right - branch.idealY) ||
         left - right,
     );
-  const intervalsOverlap = (left, right) =>
-    left.sourceRank < right.targetRank && right.sourceRank < left.targetRank;
   const solveBranchComponent = (component, neighbors) => {
     const assignments = new Map();
     const componentBranchById = new Map(
@@ -738,6 +736,62 @@ export function layoutLifecycleRoutingGraph(
       }
       return true;
     };
+    const topologicalOrder = () => {
+      const ordered = [];
+      const remaining = new Set(component.map((branch) => branch.id));
+      while (remaining.size > 0) {
+        const ready = [...remaining]
+          .map((id) => componentBranchById.get(id))
+          .filter((branch) =>
+            [...remaining].every((otherId) => {
+              const other = componentBranchById.get(otherId);
+              return !other?.precedes?.has(branch.id);
+            }),
+          )
+          .sort(compareStableKeys);
+        if (ready.length === 0) return null;
+        const next = ready[0];
+        ordered.push(next);
+        remaining.delete(next.id);
+      }
+      return ordered;
+    };
+    const solveByPrecedenceOrder = () => {
+      const ordered = topologicalOrder();
+      if (!ordered) return null;
+      const greedyAssignments = new Map();
+      for (const branch of ordered) {
+        let chosen = null;
+        for (const value of sortedDomains.get(branch.id) ?? []) {
+          recordSolverState();
+          let legal = true;
+          for (const [otherId, otherValue] of greedyAssignments) {
+            const otherBranch = componentBranchById.get(otherId);
+            if (
+              !otherBranch ||
+              !isLegalPair(branch, otherBranch, value, otherValue)
+            ) {
+              legal = false;
+              break;
+            }
+          }
+          if (legal) {
+            chosen = value;
+            break;
+          }
+        }
+        if (!Number.isFinite(chosen)) return null;
+        greedyAssignments.set(branch.id, chosen);
+      }
+      return greedyAssignments;
+    };
+    const orderedSolution = solveByPrecedenceOrder();
+    if (orderedSolution) return orderedSolution;
+    if (component.length > 16) {
+      for (const branch of component) branch.precedes = new Set();
+      const spacingSolution = solveByPrecedenceOrder();
+      if (spacingSolution) return spacingSolution;
+    }
     const selectBranch = () => {
       let chosen = null;
       for (const branch of component) {
@@ -898,54 +952,80 @@ export function layoutLifecycleRoutingGraph(
       return false;
     };
     const addDirectedPrecedence = (before, after) => {
-      if (before.id === after.id || hasPrecedencePath(after, before.id)) return;
+      if (before.id === after.id) return true;
+      if (hasPrecedencePath(after, before.id)) return true;
       before.precedes.add(after.id);
+      return true;
     };
-    const addSemanticPrecedence = (left, right, leftY, rightY) => {
-      if (!Number.isFinite(leftY) || !Number.isFinite(rightY)) return;
-      if (Math.abs(leftY - rightY) <= LANE_Y_EPSILON) return;
-      if (leftY < rightY) addDirectedPrecedence(left, right);
-      else addDirectedPrecedence(right, left);
-    };
-    for (let leftIndex = 0; leftIndex < branches.length; leftIndex += 1) {
-      for (
-        let rightIndex = leftIndex + 1;
-        rightIndex < branches.length;
-        rightIndex += 1
-      ) {
-        const left = branches[leftIndex];
-        const right = branches[rightIndex];
-        if (!intervalsOverlap(left, right)) continue;
-        neighbors.get(left.id).add(right.id);
-        neighbors.get(right.id).add(left.id);
-        const firstRank = Math.max(left.sourceRank, right.sourceRank);
-        const lastRank = Math.min(left.targetRank, right.targetRank);
-        for (let rank = firstRank; rank < lastRank; rank += 1) {
-          if (left.sourceRank === rank && right.sourceRank === rank) {
-            addSemanticPrecedence(
-              left,
-              right,
-              left.sourceDockYByRank.get(rank),
-              right.sourceDockYByRank.get(rank),
-            );
-          } else if (left.sourceRank < rank && right.sourceRank < rank) {
-            addSemanticPrecedence(
-              left,
-              right,
-              left.sourceDockYByRank.get(rank),
-              right.sourceDockYByRank.get(rank),
-            );
-          }
-          if (left.targetRank === rank + 1 && right.targetRank === rank + 1) {
-            addSemanticPrecedence(
-              left,
-              right,
-              left.targetDockYByRank.get(rank + 1),
-              right.targetDockYByRank.get(rank + 1),
-            );
-          }
+    const addPrecedenceChain = (ordered) => {
+      for (let index = 1; index < ordered.length; index += 1) {
+        if (!addDirectedPrecedence(ordered[index - 1], ordered[index])) {
+          return false;
         }
       }
+      return true;
+    };
+    const dockSort =
+      (rank, dockForBranch, priorOrder = new Map()) =>
+      (left, right) => {
+        const leftDock = dockForBranch(left);
+        const rightDock = dockForBranch(right);
+        if (
+          Number.isFinite(leftDock) &&
+          Number.isFinite(rightDock) &&
+          Math.abs(leftDock - rightDock) > LANE_Y_EPSILON
+        ) {
+          return leftDock - rightDock;
+        }
+        const leftPrior = priorOrder.get(left.id);
+        const rightPrior = priorOrder.get(right.id);
+        if (Number.isFinite(leftPrior) && Number.isFinite(rightPrior)) {
+          return leftPrior - rightPrior;
+        }
+        if (Number.isFinite(leftPrior)) return -1;
+        if (Number.isFinite(rightPrior)) return 1;
+        return compareStableKeys(left, right);
+      };
+    const minRank = Math.min(...branches.map((branch) => branch.sourceRank));
+    const maxRank = Math.max(...branches.map((branch) => branch.targetRank));
+    let priorOrder = new Map();
+    for (let rank = minRank; rank < maxRank; rank += 1) {
+      const active = branches.filter(
+        (branch) => branch.sourceRank <= rank && rank < branch.targetRank,
+      );
+      for (let leftIndex = 0; leftIndex < active.length; leftIndex += 1) {
+        for (
+          let rightIndex = leftIndex + 1;
+          rightIndex < active.length;
+          rightIndex += 1
+        ) {
+          const left = active[leftIndex];
+          const right = active[rightIndex];
+          neighbors.get(left.id).add(right.id);
+          neighbors.get(right.id).add(left.id);
+        }
+      }
+      const orderedActive = [...active].sort(
+        dockSort(
+          rank,
+          (branch) => branch.sourceDockYByRank.get(rank),
+          priorOrder,
+        ),
+      );
+      if (!addPrecedenceChain(orderedActive)) return null;
+      const ending = active
+        .filter((branch) => branch.targetRank === rank + 1)
+        .sort(
+          dockSort(
+            rank + 1,
+            (branch) => branch.targetDockYByRank.get(rank + 1),
+            priorOrder,
+          ),
+        );
+      if (!addPrecedenceChain(ending)) return null;
+      priorOrder = new Map(
+        orderedActive.map((branch, index) => [branch.id, index]),
+      );
     }
     const components = [];
     const seen = new Set();
