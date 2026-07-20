@@ -10,6 +10,7 @@ export const PER_LANE_VERTICAL_BUDGET = 36;
 export const NODE_LABEL_MAX_WIDTH = 176;
 export const NODE_LABEL_MAX_CHARACTERS_PER_LINE = 22;
 export const RANK_CORRIDOR_HALF_WIDTH = 100;
+export const TRANSITION_CONTROL_OFFSET = 24;
 export const MINIMUM_TRANSITION_WIDTH = 72;
 export const LAYOUT_LEFT_MARGIN = 100;
 export const LAYOUT_RIGHT_MARGIN = 100;
@@ -770,12 +771,17 @@ export function layoutLifecycleRoutingGraph(
     const variables = links
       .map((link) => {
         const rank = link.source.rank;
-        const minX = Number.isFinite(link.source.x1)
-          ? link.source.x1
-          : rankCenterX(rank) - RANK_CORRIDOR_HALF_WIDTH;
-        const maxX = Number.isFinite(link.target.x0)
-          ? link.target.x0
-          : rankCenterX(link.target.rank) + RANK_CORRIDOR_HALF_WIDTH;
+        const exitX = rankCenterX(rank) + RANK_CORRIDOR_HALF_WIDTH;
+        const entryX = rankCenterX(link.target.rank) - RANK_CORRIDOR_HALF_WIDTH;
+        const minX = exitX + TRANSITION_CONTROL_OFFSET;
+        const maxX = entryX - TRANSITION_CONTROL_OFFSET;
+        if (minX > maxX + LANE_Y_EPSILON) {
+          throw new Error(
+            `Lifecycle transition lane control span invariant violated for ${link.id}`,
+          );
+        }
+        // The constant transition lane Y only governs the cubic control span;
+        // source and target runs render at link.y0/link.y1 instead.
         const incidentIds = new Set([link.source.id, link.target.id]);
         const sourceDockY = Number.isFinite(link.y0)
           ? link.y0
@@ -1152,8 +1158,8 @@ export function segmentRoutePrimitives(segment) {
     ? segment.transitionLaneY
     : targetY;
   const p0 = { x: exitX, y: sourceY };
-  const p1 = { x: exitX + 24, y: laneY };
-  const p2 = { x: entryX - 24, y: laneY };
+  const p1 = { x: exitX + TRANSITION_CONTROL_OFFSET, y: laneY };
+  const p2 = { x: entryX - TRANSITION_CONTROL_OFFSET, y: laneY };
   const p3 = { x: entryX, y: targetY };
   return [
     {

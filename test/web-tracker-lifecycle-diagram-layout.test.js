@@ -19,6 +19,7 @@ import {
   MINIMUM_SVG_WIDTH,
   MINIMUM_TRANSITION_WIDTH,
   RANK_CORRIDOR_HALF_WIDTH,
+  TRANSITION_CONTROL_OFFSET,
   ROUTED_NODE_PADDING,
   SANKEY_NODE_WIDTH,
   assignBranchHandles,
@@ -575,11 +576,11 @@ describe("lifecycle diagram render-only routing layout", () => {
         y: segment.y0,
       },
       p1: {
-        x: sourceCenter + RANK_CORRIDOR_HALF_WIDTH + 24,
+        x: sourceCenter + RANK_CORRIDOR_HALF_WIDTH + TRANSITION_CONTROL_OFFSET,
         y: segment.transitionLaneY,
       },
       p2: {
-        x: targetCenter - RANK_CORRIDOR_HALF_WIDTH - 24,
+        x: targetCenter - RANK_CORRIDOR_HALF_WIDTH - TRANSITION_CONTROL_OFFSET,
         y: segment.transitionLaneY,
       },
       p3: {
