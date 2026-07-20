@@ -726,15 +726,18 @@ export function layoutLifecycleRoutingGraph(
       ]),
     );
     const failedStates = new Set();
-    // Returns true iff assigning `value` to `branch` is consistent with the
-    // already-assigned `otherValue` for a conflicting `otherBranch`.  The
-    // only hard legality criterion is minimum lane spacing; semantic
-    // (idealY-based) ordering is expressed through domain sort order so that
-    // the solver naturally prefers Sankey-aligned assignments while remaining
-    // feasible when obstacle-filtered domains cannot accommodate a strict
-    // global total order.
-    const isLegalPair = (_branch, _otherBranch, value, otherValue) =>
-      Math.abs(value - otherValue) >= minLaneSpacing - LANE_Y_EPSILON;
+    const isLegalPair = (branch, otherBranch, value, otherValue) => {
+      if (Math.abs(value - otherValue) < minLaneSpacing - LANE_Y_EPSILON) {
+        return false;
+      }
+      if (branch.precedes?.has(otherBranch.id)) {
+        return value <= otherValue - minLaneSpacing + LANE_Y_EPSILON;
+      }
+      if (otherBranch.precedes?.has(branch.id)) {
+        return otherValue <= value - minLaneSpacing + LANE_Y_EPSILON;
+      }
+      return true;
+    };
     const selectBranch = () => {
       let chosen = null;
       for (const branch of component) {
@@ -771,7 +774,10 @@ export function layoutLifecycleRoutingGraph(
           const otherValue = assignments.get(otherId);
           if (!Number.isFinite(otherValue)) continue;
           const otherBranch = componentBranchById.get(otherId);
-          if (!otherBranch || !isLegalPair(branch, otherBranch, value, otherValue)) {
+          if (
+            !otherBranch ||
+            !isLegalPair(branch, otherBranch, value, otherValue)
+          ) {
             legal = false;
             break;
           }
@@ -851,6 +857,18 @@ export function layoutLifecycleRoutingGraph(
                 2,
             0,
           ) / orderedLinks.length;
+        const sourceDockYByRank = new Map(
+          orderedLinks.map((link) => [
+            link.source.rank,
+            (link.source.y0 + link.source.y1) / 2,
+          ]),
+        );
+        const targetDockYByRank = new Map(
+          orderedLinks.map((link) => [
+            link.target.rank,
+            (link.target.y0 + link.target.y1) / 2,
+          ]),
+        );
         return {
           id: branchId,
           stableId: orderedLinks[0].sortKey ?? branchId,
@@ -861,11 +879,34 @@ export function layoutLifecycleRoutingGraph(
           maxX,
           incidentIds,
           idealY,
+          sourceDockYByRank,
+          targetDockYByRank,
+          precedes: new Set(),
         };
       })
       .sort(compareStableKeys);
     const branchById = new Map(branches.map((branch) => [branch.id, branch]));
     const neighbors = new Map(branches.map((branch) => [branch.id, new Set()]));
+    const hasPrecedencePath = (from, toId, visited = new Set()) => {
+      if (from.precedes.has(toId)) return true;
+      visited.add(from.id);
+      for (const nextId of from.precedes) {
+        if (visited.has(nextId)) continue;
+        const next = branchById.get(nextId);
+        if (next && hasPrecedencePath(next, toId, visited)) return true;
+      }
+      return false;
+    };
+    const addDirectedPrecedence = (before, after) => {
+      if (before.id === after.id || hasPrecedencePath(after, before.id)) return;
+      before.precedes.add(after.id);
+    };
+    const addSemanticPrecedence = (left, right, leftY, rightY) => {
+      if (!Number.isFinite(leftY) || !Number.isFinite(rightY)) return;
+      if (Math.abs(leftY - rightY) <= LANE_Y_EPSILON) return;
+      if (leftY < rightY) addDirectedPrecedence(left, right);
+      else addDirectedPrecedence(right, left);
+    };
     for (let leftIndex = 0; leftIndex < branches.length; leftIndex += 1) {
       for (
         let rightIndex = leftIndex + 1;
@@ -877,6 +918,33 @@ export function layoutLifecycleRoutingGraph(
         if (!intervalsOverlap(left, right)) continue;
         neighbors.get(left.id).add(right.id);
         neighbors.get(right.id).add(left.id);
+        const firstRank = Math.max(left.sourceRank, right.sourceRank);
+        const lastRank = Math.min(left.targetRank, right.targetRank);
+        for (let rank = firstRank; rank < lastRank; rank += 1) {
+          if (left.sourceRank === rank && right.sourceRank === rank) {
+            addSemanticPrecedence(
+              left,
+              right,
+              left.sourceDockYByRank.get(rank),
+              right.sourceDockYByRank.get(rank),
+            );
+          } else if (left.sourceRank < rank && right.sourceRank < rank) {
+            addSemanticPrecedence(
+              left,
+              right,
+              left.sourceDockYByRank.get(rank),
+              right.sourceDockYByRank.get(rank),
+            );
+          }
+          if (left.targetRank === rank + 1 && right.targetRank === rank + 1) {
+            addSemanticPrecedence(
+              left,
+              right,
+              left.targetDockYByRank.get(rank + 1),
+              right.targetDockYByRank.get(rank + 1),
+            );
+          }
+        }
       }
     }
     const components = [];
@@ -902,7 +970,23 @@ export function layoutLifecycleRoutingGraph(
       compareStableKeys(a[0], b[0]),
     )) {
       transitionLaneSolverStats.components += 1;
-      const solved = solveBranchComponent(component, neighbors);
+      let solved = null;
+      if (component.length > 32) {
+        for (const branch of component) branch.precedes = new Set();
+      } else {
+        solved = solveBranchComponent(component, neighbors);
+      }
+      if (!solved) {
+        const savedPrecedence = component.map((branch) => [
+          branch,
+          branch.precedes,
+        ]);
+        for (const branch of component) branch.precedes = new Set();
+        solved = solveBranchComponent(component, neighbors);
+        for (const [branch, precedes] of savedPrecedence) {
+          branch.precedes = precedes;
+        }
+      }
       if (!solved) return null;
       for (const [branchId, laneY] of solved) assignments.set(branchId, laneY);
     }
