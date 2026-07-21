@@ -1487,14 +1487,17 @@ export function layoutLifecycleRoutingGraph(
               ),
             )
           : new Set();
+      const currentRankBranchesInNext = new Set(
+        [...currentBranchIds].filter((id) => nextActiveBranches.has(id)),
+      );
       const nextContinuingOrder = () =>
         placedIds
           .map((id) => byId.get(id)?.branchId)
           .filter((branchId) => nextActiveBranches.has(branchId));
       const search = (lastY) => {
         if (
-          nextActiveBranches.size > 0 &&
-          nextContinuingOrder().length === nextActiveBranches.size
+          currentRankBranchesInNext.size > 0 &&
+          nextContinuingOrder().length === currentRankBranchesInNext.size
         ) {
           const nextStateKey = `${nextRank}:${nextContinuingOrder().join("|")}`;
           if (failedStates.has(nextStateKey)) {
