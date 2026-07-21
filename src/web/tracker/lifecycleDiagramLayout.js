@@ -980,7 +980,10 @@ export function layoutLifecycleRoutingGraph(
       throw error;
     }
   };
-  const solveTransitionLanes = (links) => {
+  const solveTransitionLanes = (
+    links,
+    { forbiddenComponentOrderings = new Map() } = {},
+  ) => {
     const variables = links
       .map((link) => {
         const rank = link.source.rank;
@@ -1197,7 +1200,12 @@ export function layoutLifecycleRoutingGraph(
     }
     const solveGlobal = () => {
       const allBranchIds = [...branchSpans.keys()].sort(compareLifecycleIds);
-      if (!allBranchIds.length) return new Map();
+      if (!allBranchIds.length)
+        return {
+          assignments: new Map(),
+          componentOrderings: new Map(),
+          componentMembers: new Map(),
+        };
 
       // Per-rank active branch sets and per-branch variable lookup
       const activeBranchesAtRank = new Map(
@@ -1308,9 +1316,19 @@ export function layoutLifecycleRoutingGraph(
 
       // Global assignments accumulator
       const globalAssignments = new Map();
+      // Component ordering and membership records for conflict-directed refinement
+      const componentOrderings = new Map();
+      const componentMembers = new Map();
 
       // Solve each connected component independently
       for (const componentBranchIds of componentMap.values()) {
+        // Stable component key: lexicographically smallest branch ID
+        const compMinId = componentBranchIds.reduce((a, b) =>
+          compareLifecycleIds(a, b) < 0 ? a : b,
+        );
+        // Orderings that have already been tried and failed handle placement
+        const componentForbiddenOrderings =
+          forbiddenComponentOrderings.get(compMinId) ?? new Set();
         const compIndegree = new Map(
           componentBranchIds.map((id) => [id, branchIndegree.get(id) ?? 0]),
         );
@@ -1439,6 +1457,11 @@ export function layoutLifecycleRoutingGraph(
           }
 
           if (globalOrder.length === componentBranchIds.length) {
+            // Reject orderings that have already been tried and failed handle placement
+            const orderingKey = globalOrder.join(",");
+            if (componentForbiddenOrderings.has(orderingKey)) {
+              return false;
+            }
             // All component branches placed — compute final centered Y per rank
             for (const rank of sortedRanks) {
               const activeBranches = activeBranchesAtRank.get(rank);
@@ -1541,9 +1564,16 @@ export function layoutLifecycleRoutingGraph(
           error.cause = cause;
           throw error;
         }
+        // Record the solved ordering and membership for conflict-directed refinement
+        componentOrderings.set(compMinId, globalOrder.join(","));
+        componentMembers.set(compMinId, componentBranchIds.slice());
       }
 
-      return globalAssignments;
+      return {
+        assignments: globalAssignments,
+        componentOrderings,
+        componentMembers,
+      };
     };
     return solveGlobal();
   };
@@ -1579,15 +1609,16 @@ export function layoutLifecycleRoutingGraph(
       link.transitionLaneY = baseline.transitionLaneY;
     }
   };
-  try {
-    const transitionLaneAssignments = solveTransitionLanes(graph.links);
-    if (!transitionLaneAssignments) {
-      const error = new Error("Lifecycle transition lane allocation failed");
-      error.cause = laneFailureCause("no-feasible-topological-order");
-      throw error;
-    }
+  const MAX_HANDLE_REFINEMENTS = 16;
+  const forbiddenComponentOrderings = new Map();
+  let lastHandleFailure = null;
+  let solveSuccess = false;
+
+  // Materialize a lane-assignment map onto graph link geometry.
+  // Throws on geometry invariant violations; called inside the refinement loop.
+  const materializeLaneAssignments = (assignments) => {
     for (const link of graph.links) {
-      const laneY = transitionLaneAssignments.get(link.id);
+      const laneY = assignments.get(link.id);
       if (!Number.isFinite(laneY)) {
         throw new Error(
           `Lifecycle transition lane allocation failed for ${link.id}`,
@@ -1595,9 +1626,6 @@ export function layoutLifecycleRoutingGraph(
       }
       link.transitionLaneY = laneY;
     }
-    graph.transitionLaneSolverStats = Object.freeze({
-      ...transitionLaneSolverStats,
-    });
     for (const [node, links] of outgoingByNode) {
       if (node.routing) continue;
       const ordered = [...links].sort(
@@ -1709,24 +1737,99 @@ export function layoutLifecycleRoutingGraph(
         );
       }
     }
-    if (
-      options.transitionLanePhaseOnly &&
-      (process.env.NODE_ENV === "test" || process.env.VITEST === "true")
-    ) {
-      return { graph, dimensions };
-    }
-    const handleCheck = tryAssignBranchHandles(
-      graph.branches,
-      linksByBranch,
-      visibleNodes,
-    );
-    if (!handleCheck.ok) {
-      throw handlePlacementError(handleCheck);
+  };
+
+  try {
+    for (let attempt = 0; attempt < MAX_HANDLE_REFINEMENTS; attempt += 1) {
+      if (attempt > 0) restoreBaseline();
+
+      let laneResult;
+      try {
+        laneResult = solveTransitionLanes(graph.links, {
+          forbiddenComponentOrderings,
+        });
+      } catch (laneError) {
+        if (
+          attempt > 0 &&
+          laneError.cause?.reason === "no-feasible-topological-order"
+        ) {
+          // All lane orderings for the implicated components are exhausted;
+          // emit the last structured handle failure below.
+          break;
+        }
+        throw laneError;
+      }
+
+      const { assignments, componentOrderings, componentMembers } = laneResult;
+      materializeLaneAssignments(assignments);
+
+      if (
+        options.transitionLanePhaseOnly &&
+        (process.env.NODE_ENV === "test" || process.env.VITEST === "true")
+      ) {
+        graph.transitionLaneSolverStats = Object.freeze({
+          ...transitionLaneSolverStats,
+        });
+        return { graph, dimensions };
+      }
+
+      const handleCheck = tryAssignBranchHandles(
+        graph.branches,
+        linksByBranch,
+        visibleNodes,
+      );
+      if (handleCheck.ok) {
+        solveSuccess = true;
+        break;
+      }
+
+      lastHandleFailure = handleCheck;
+
+      // Collect implicated branch IDs from structured diagnostics
+      const implicatedBranchIds = new Set(handleCheck.blockedBranchIds ?? []);
+      if (handleCheck.branchDiagnostics) {
+        for (const diag of handleCheck.branchDiagnostics) {
+          const blocker = diag.nearestRejectedCandidate?.blocker?.branchId;
+          if (blocker) implicatedBranchIds.add(blocker);
+        }
+      }
+      if (handleCheck.component?.branchIds) {
+        for (const id of handleCheck.component.branchIds)
+          implicatedBranchIds.add(id);
+      }
+
+      // Forbid the current ordering of each component containing an implicated branch
+      for (const [compMinId, members] of componentMembers) {
+        if (members.some((id) => implicatedBranchIds.has(id))) {
+          const currentOrdering = componentOrderings.get(compMinId);
+          if (currentOrdering !== undefined) {
+            if (!forbiddenComponentOrderings.has(compMinId))
+              forbiddenComponentOrderings.set(compMinId, new Set());
+            forbiddenComponentOrderings.get(compMinId).add(currentOrdering);
+          }
+        }
+      }
     }
   } catch (error) {
     restoreBaseline();
     throw error;
   }
+
+  if (!solveSuccess) {
+    restoreBaseline();
+    if (lastHandleFailure) {
+      throw handlePlacementError(lastHandleFailure);
+    }
+    const error = new Error(
+      "Lifecycle handle assignment failed after all lane refinement attempts",
+    );
+    error.cause = laneFailureCause("no-feasible-topological-order");
+    throw error;
+  }
+
+  graph.transitionLaneSolverStats = Object.freeze({
+    ...transitionLaneSolverStats,
+  });
   return { graph, dimensions };
 }
 
