@@ -1116,9 +1116,9 @@ export function layoutLifecycleRoutingGraph(
         targetGroups.get(span.semanticTargetId).push(span);
       }
     }
-    // Terminal target order is projected across common active ranks so earlier
-    // continuation choices cannot postpone an unavoidable target-dock conflict.
-    // Source-dock constraints remain local to the rank where strands start.
+    // Endpoint order is projected across common active ranks so earlier
+    // continuation choices cannot postpone an unavoidable dock conflict.
+    addBranchEdges(sourceGroups, "sourceDockY", "source-dock");
     addBranchEdges(targetGroups, "targetDockY", "target-dock");
     const compareStableVariables = (left, right) =>
       compareLifecycleIds(
@@ -1137,12 +1137,7 @@ export function layoutLifecycleRoutingGraph(
         const value = firstLegalAtOrAbove(item.intervals, lower);
         if (
           value === null ||
-          !candidateClearsSpan(
-            item.intervals ? value : value,
-            item.minX,
-            item.maxX,
-            item.incidentIds,
-          )
+          !candidateClearsSpan(value, item.minX, item.maxX, item.incidentIds)
         )
           return null;
         forward.push(value);
@@ -1265,7 +1260,6 @@ export function layoutLifecycleRoutingGraph(
       const priorIndex = new Map(priorOrder.map((id, index) => [id, index]));
       const placedIds = [];
       const placedIdSet = new Set();
-      const placedValues = new Map();
       const failedPrefixes = new Set();
       const currentBranchIds = new Set(
         rankVariables.map((variable) => variable.branchId),
@@ -1314,6 +1308,21 @@ export function layoutLifecycleRoutingGraph(
         }, 0);
       const latestDeadlineFor = (variable) =>
         lastLegalAtOrBelow(variable.intervals, laneBottom);
+      const semanticTargetDockY = (variable) =>
+        branchSpans.get(variable.branchId)?.targetDockY ?? variable.targetDockY;
+      const semanticSourceDockY = (variable) =>
+        branchSpans.get(variable.branchId)?.sourceDockY ?? variable.sourceDockY;
+      const futureEarliestFor = (variable) => {
+        const starts = [firstLegalAtOrAbove(variable.intervals, laneTop)];
+        for (const { variablesByBranch: futureByBranch } of lookaheadRanks) {
+          const futureVariable = futureByBranch.get(variable.branchId);
+          if (!futureVariable) break;
+          starts.push(firstLegalAtOrAbove(futureVariable.intervals, laneTop));
+        }
+        return starts.some((start) => start === null)
+          ? null
+          : Math.max(...starts);
+      };
       const futureDeadlineFor = (variable) => {
         const deadlines = [latestDeadlineFor(variable)];
         for (const { variablesByBranch: futureByBranch } of lookaheadRanks) {
@@ -1431,9 +1440,17 @@ export function layoutLifecycleRoutingGraph(
               `${futureRank}=${quantizeY(lookaheadEnvelopes.get(futureRank) ?? laneTop)}`,
           )
           .join(",");
+        const futureBranchIds = new Set(
+          lookaheadRanks.flatMap(({ variablesByBranch }) => [
+            ...variablesByBranch.keys(),
+          ]),
+        );
+        const placedContinuingIds = placedIds
+          .filter((id) => futureBranchIds.has(byId.get(id)?.branchId))
+          .join("|");
         return [
           rank,
-          placedIds.join("|"),
+          placedContinuingIds,
           quantizeY(lastY ?? laneTop),
           remaining,
           filteredPrior,
@@ -1461,7 +1478,30 @@ export function layoutLifecycleRoutingGraph(
         }
         return scratchPlaced.size === rankVariables.length;
       };
+      const nextRank = sortedRanks.find((candidate) => candidate > rank);
+      const nextActiveBranches =
+        nextRank === rank + 1
+          ? new Set(
+              (variablesByRank.get(nextRank) ?? []).map(
+                (variable) => variable.branchId,
+              ),
+            )
+          : new Set();
+      const nextContinuingOrder = () =>
+        placedIds
+          .map((id) => byId.get(id)?.branchId)
+          .filter((branchId) => nextActiveBranches.has(branchId));
       const search = (lastY) => {
+        if (
+          nextActiveBranches.size > 0 &&
+          nextContinuingOrder().length === nextActiveBranches.size
+        ) {
+          const nextStateKey = `${nextRank}:${nextContinuingOrder().join("|")}`;
+          if (failedStates.has(nextStateKey)) {
+            transitionLaneSolverStats.memoizedFailures += 1;
+            return false;
+          }
+        }
         if (placedIds.length === rankVariables.length) {
           const order = placedIds.map((id) => byId.get(id));
           const solvedById = solveOrder(order, precedence);
@@ -1484,6 +1524,7 @@ export function layoutLifecycleRoutingGraph(
               variable,
               value,
               latest,
+              futureEarliest: futureEarliestFor(variable),
               futureDeadline: futureDeadlineFor(variable),
               slack:
                 value === null || latest === null ? Infinity : latest - value,
@@ -1491,8 +1532,11 @@ export function layoutLifecycleRoutingGraph(
             };
           })
           .filter(
-            ({ value, latest, futureDeadline }) =>
-              value !== null && latest !== null && futureDeadline !== null,
+            ({ value, latest, futureEarliest, futureDeadline }) =>
+              value !== null &&
+              latest !== null &&
+              futureEarliest !== null &&
+              futureDeadline !== null,
           )
           .sort((left, right) => {
             const leftPrior = priorIndex.has(left.variable.branchId)
@@ -1503,10 +1547,13 @@ export function layoutLifecycleRoutingGraph(
               : Infinity;
             return (
               left.futureDeadline - right.futureDeadline ||
+              left.futureEarliest - right.futureEarliest ||
               left.slack - right.slack ||
-              left.variable.targetDockY - right.variable.targetDockY ||
+              semanticTargetDockY(left.variable) -
+                semanticTargetDockY(right.variable) ||
               leftPrior - rightPrior ||
-              left.variable.sourceDockY - right.variable.sourceDockY ||
+              semanticSourceDockY(left.variable) -
+                semanticSourceDockY(right.variable) ||
               compareStableVariables(left.variable, right.variable)
             );
           });
@@ -1525,7 +1572,6 @@ export function layoutLifecycleRoutingGraph(
           if (lookaheadUpdates === null) continue;
           placedIds.push(variable.id);
           placedIdSet.add(variable.id);
-          placedValues.set(variable.id, value);
           applyLookaheadUpdates(lookaheadUpdates);
           for (const toId of outgoing.get(variable.id) ?? []) {
             indegree.set(toId, indegree.get(toId) - 1);
@@ -1560,7 +1606,6 @@ export function layoutLifecycleRoutingGraph(
             indegree.set(toId, indegree.get(toId) + 1);
           }
           restoreLookaheadUpdates(lookaheadUpdates);
-          placedValues.delete(variable.id);
           placedIdSet.delete(variable.id);
           placedIds.pop();
           transitionLaneSolverStats.backtracks += 1;
@@ -1650,13 +1695,24 @@ export function layoutLifecycleRoutingGraph(
       }
       transitionLaneSolverStats.components += 1;
       const acceptSolved = (solvedOrder, solvedById) => {
+        const nextPriorOrder = solvedOrder.map((variable) => variable.branchId);
+        const nextRank = sortedRanks[rankIndex + 1];
+        if (nextRank !== undefined && nextRank === rank + 1) {
+          const nextActiveBranches = new Set(
+            (variablesByRank.get(nextRank) ?? []).map(
+              (variable) => variable.branchId,
+            ),
+          );
+          const nextStateKey = `${nextRank}:${nextPriorOrder
+            .filter((branchId) => nextActiveBranches.has(branchId))
+            .join("|")}`;
+          if (failedStates.has(nextStateKey)) {
+            transitionLaneSolverStats.memoizedFailures += 1;
+            return false;
+          }
+        }
         for (const [id, value] of solvedById) assignments.set(id, value);
-        if (
-          solveRank(
-            rankIndex + 1,
-            solvedOrder.map((variable) => variable.branchId),
-          )
-        ) {
+        if (solveRank(rankIndex + 1, nextPriorOrder)) {
           return true;
         }
         for (const variable of rankVariables) assignments.delete(variable.id);
