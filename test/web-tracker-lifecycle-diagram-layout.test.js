@@ -271,6 +271,71 @@ const transitionDensityProjection = () => {
   return { nodes, links, paths };
 };
 
+const paginationProjection = () => {
+  const origins = LIFECYCLE_DIAGRAM_TAXONOMY.origins.map(({ id }) => id);
+  const milestones = LIFECYCLE_DIAGRAM_TAXONOMY.milestones.map(({ id }) => id);
+  const endpoints = LIFECYCLE_DIAGRAM_TAXONOMY.endpoints
+    .filter(({ id }) => id !== "unknown")
+    .map(({ id }) => id);
+  const nodes = [
+    ...origins.map((id) => ({
+      id: `origin:${id}`,
+      label: id,
+      total: 0,
+      applicationIds: [],
+    })),
+    ...milestones.map((id) => ({
+      id: `milestone:${id}`,
+      label: id,
+      total: 0,
+      applicationIds: [],
+    })),
+    ...endpoints.map((id) => ({
+      id: `endpoint:${id}`,
+      label: id,
+      total: 0,
+      applicationIds: [],
+    })),
+  ];
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const links = [];
+  const paths = [];
+  for (let index = 0; index < 60; index += 1) {
+    const applicationId = `flow-app-${String(index).padStart(2, "0")}`;
+    const origin = origins[index % origins.length];
+    const milestone =
+      milestones[Math.floor(index / origins.length) % milestones.length];
+    const endpoint = endpoints[index % endpoints.length];
+    const nodeIds = [
+      `origin:${origin}`,
+      `milestone:${milestone}`,
+      `endpoint:${endpoint}`,
+    ];
+    for (const nodeId of nodeIds) {
+      nodeById.get(nodeId).total += 1;
+      nodeById.get(nodeId).applicationIds.push(applicationId);
+    }
+    links.push(
+      {
+        id: `link:${applicationId}:origin:${origin}->milestone:${milestone}`,
+        source: `origin:${origin}`,
+        target: `milestone:${milestone}`,
+        value: 1,
+        applicationIds: [applicationId],
+      },
+      {
+        id: `link:${applicationId}:milestone:${milestone}->endpoint:${endpoint}`,
+        source: `milestone:${milestone}`,
+        target: `endpoint:${endpoint}`,
+        value: 1,
+        applicationIds: [applicationId],
+      },
+    );
+    paths.push({ applicationId, endpoint, nodeIds });
+  }
+  return { nodes, links, paths };
+};
+
 describe("transition lane solver", () => {
   it("builds explicit precedence for more than 16 reversed-id strands", () => {
     const continuers = Array.from({ length: 18 }, (_, index) => ({
@@ -630,6 +695,41 @@ describe("transition lane solver", () => {
     const graph = expectSpacingLegal(transitionDensityProjection(), 89);
     expect(graph.transitionLaneSolverStats.statesVisited).toBeLessThanOrEqual(
       graph.transitionLaneSolverStats.stateLimit,
+    );
+  });
+
+  it("paginates 60 applications into 89 lane-only display branches deterministically", () => {
+    const graph = expectSpacingLegal(paginationProjection(), 89);
+    expect(graph.transitionLaneSolverStats.statesVisited).toBeLessThan(100000);
+    const visibleNodes = graph.nodes.filter(
+      (node) => !node.routing && Number(node.total) > 0,
+    );
+    for (const link of graph.links) {
+      expect(Number.isFinite(link.transitionLaneY)).toBe(true);
+      const incidentIds = new Set([link.source.id, link.target.id]);
+      const minX = rankCenterX(link.source.rank) - RANK_CORRIDOR_HALF_WIDTH;
+      const maxX = rankCenterX(link.target.rank) + RANK_CORRIDOR_HALF_WIDTH;
+      for (const node of visibleNodes) {
+        if (incidentIds.has(node.id)) continue;
+        if (node.x1 < minX || node.x0 > maxX) continue;
+        expect(
+          link.transitionLaneY <
+            node.y0 - selectedEnvelopeRadius({ width: 1 }) - 0.25 ||
+            link.transitionLaneY >
+              node.y1 + selectedEnvelopeRadius({ width: 1 }) + 0.25,
+        ).toBe(true);
+      }
+    }
+    const repeated = laneSignature(paginationProjection());
+    const shuffledProjection = paginationProjection();
+    const shuffled = {
+      ...shuffledProjection,
+      nodes: [...shuffledProjection.nodes].reverse(),
+      links: [...shuffledProjection.links].reverse(),
+      paths: [...shuffledProjection.paths].reverse(),
+    };
+    expect(JSON.stringify(laneSignature(shuffled))).toBe(
+      JSON.stringify(repeated),
     );
   });
 

@@ -1116,7 +1116,9 @@ export function layoutLifecycleRoutingGraph(
         targetGroups.get(span.semanticTargetId).push(span);
       }
     }
-    addBranchEdges(sourceGroups, "sourceDockY", "source-dock");
+    // Terminal target order is projected across common active ranks so earlier
+    // continuation choices cannot postpone an unavoidable target-dock conflict.
+    // Source-dock constraints remain local to the rank where strands start.
     addBranchEdges(targetGroups, "targetDockY", "target-dock");
     const compareStableVariables = (left, right) =>
       compareLifecycleIds(
@@ -1133,7 +1135,16 @@ export function layoutLifecycleRoutingGraph(
       for (const item of items) {
         onStateVisited?.();
         const value = firstLegalAtOrAbove(item.intervals, lower);
-        if (value === null) return null;
+        if (
+          value === null ||
+          !candidateClearsSpan(
+            item.intervals ? value : value,
+            item.minX,
+            item.maxX,
+            item.incidentIds,
+          )
+        )
+          return null;
         forward.push(value);
         lower = quantizeY(value + minLaneSpacing + LANE_Y_EPSILON);
       }
@@ -1143,7 +1154,7 @@ export function layoutLifecycleRoutingGraph(
         onStateVisited?.();
         const value = lastLegalAtOrBelow(items[index].intervals, upper);
         if (value === null || value < forward[index] - LANE_Y_EPSILON)
-          return null;
+          return forward;
         backward[index] = value;
         upper = quantizeY(value - minLaneSpacing);
       }
@@ -1164,7 +1175,7 @@ export function layoutLifecycleRoutingGraph(
           upperBound,
           items[index].idealY,
         );
-        if (value === null) return null;
+        if (value === null) return forward;
         if (
           !Number.isFinite(value) ||
           (previous !== null &&
@@ -1256,6 +1267,30 @@ export function layoutLifecycleRoutingGraph(
       const placedIdSet = new Set();
       const placedValues = new Map();
       const failedPrefixes = new Set();
+      const currentBranchIds = new Set(
+        rankVariables.map((variable) => variable.branchId),
+      );
+      const lookaheadRanks = [];
+      let continuingBranchIds = new Set(currentBranchIds);
+      for (const futureRank of sortedRanks.filter(
+        (candidate) => candidate > rank,
+      )) {
+        if (futureRank !== rank + lookaheadRanks.length + 1) break;
+        const futureByBranch = new Map(
+          (variablesByRank.get(futureRank) ?? [])
+            .filter((variable) => continuingBranchIds.has(variable.branchId))
+            .map((variable) => [variable.branchId, variable]),
+        );
+        if (!futureByBranch.size) break;
+        lookaheadRanks.push({
+          rank: futureRank,
+          variablesByBranch: futureByBranch,
+        });
+        continuingBranchIds = new Set(futureByBranch.keys());
+      }
+      const lookaheadEnvelopes = new Map(
+        lookaheadRanks.map(({ rank: futureRank }) => [futureRank, null]),
+      );
       const earliestCandidate = (variable, lowerBound) => {
         const value = firstLegalAtOrAbove(variable.intervals, lowerBound);
         if (
@@ -1277,6 +1312,100 @@ export function layoutLifecycleRoutingGraph(
           if (first > end + LANE_Y_EPSILON) return count;
           return count + 1;
         }, 0);
+      const latestDeadlineFor = (variable) =>
+        lastLegalAtOrBelow(variable.intervals, laneBottom);
+      const futureDeadlineFor = (variable) => {
+        const deadlines = [latestDeadlineFor(variable)];
+        for (const { variablesByBranch: futureByBranch } of lookaheadRanks) {
+          const futureVariable = futureByBranch.get(variable.branchId);
+          if (!futureVariable) break;
+          deadlines.push(latestDeadlineFor(futureVariable));
+        }
+        return deadlines.some((deadline) => deadline === null)
+          ? null
+          : Math.min(...deadlines);
+      };
+      const projectedBranchEdgeActiveAt = (edge, futureRank) => {
+        const fromSpan = branchSpans.get(edge.fromBranchId);
+        const toSpan = branchSpans.get(edge.toBranchId);
+        return (
+          fromSpan &&
+          toSpan &&
+          futureRank >= fromSpan.startRank &&
+          futureRank < fromSpan.endRank &&
+          futureRank >= toSpan.startRank &&
+          futureRank < toSpan.endRank
+        );
+      };
+      const lookaheadUpdatesFor = (variable) => {
+        const updates = [];
+        for (const {
+          rank: futureRank,
+          variablesByBranch: futureByBranch,
+        } of lookaheadRanks) {
+          const futureVariable = futureByBranch.get(variable.branchId);
+          if (!futureVariable) break;
+          for (const placedId of placedIds) {
+            const placedBranchId = byId.get(placedId)?.branchId;
+            if (!placedBranchId || !futureByBranch.has(placedBranchId))
+              continue;
+            const contradictsPlacedPrefix = branchPrecedenceEdges.some(
+              (edge) =>
+                edge.fromBranchId === variable.branchId &&
+                edge.toBranchId === placedBranchId &&
+                projectedBranchEdgeActiveAt(edge, futureRank),
+            );
+            if (contradictsPlacedPrefix) return null;
+          }
+          const previousEnvelope = lookaheadEnvelopes.get(futureRank);
+          const lowerBound =
+            previousEnvelope === null
+              ? laneTop
+              : quantizeY(previousEnvelope + minLaneSpacing + LANE_Y_EPSILON);
+          const value = earliestCandidate(futureVariable, lowerBound);
+          if (value === null) return null;
+          updates.push({ rank: futureRank, previousEnvelope, value });
+        }
+        return updates;
+      };
+      const applyLookaheadUpdates = (updates) => {
+        for (const update of updates) {
+          lookaheadEnvelopes.set(update.rank, update.value);
+        }
+      };
+      const restoreLookaheadUpdates = (updates) => {
+        for (let index = updates.length - 1; index >= 0; index -= 1) {
+          const update = updates[index];
+          lookaheadEnvelopes.set(update.rank, update.previousEnvelope);
+        }
+      };
+      const lookaheadCapacityOk = () =>
+        lookaheadRanks.every(
+          ({ rank: futureRank, variablesByBranch: futureByBranch }) => {
+            const envelope = lookaheadEnvelopes.get(futureRank);
+            const lowerBound =
+              envelope === null
+                ? laneTop
+                : quantizeY(envelope + minLaneSpacing + LANE_Y_EPSILON);
+            const deadlines = rankVariables
+              .filter(
+                (candidate) =>
+                  !placedIdSet.has(candidate.id) &&
+                  futureByBranch.has(candidate.branchId),
+              )
+              .map((candidate) =>
+                latestDeadlineFor(futureByBranch.get(candidate.branchId)),
+              );
+            if (deadlines.some((deadline) => deadline === null)) return false;
+            return deadlines
+              .sort((left, right) => left - right)
+              .every(
+                (deadline, index) =>
+                  deadline + LANE_Y_EPSILON >=
+                  lowerBound + index * minLaneSpacing,
+              );
+          },
+        );
       const currentReady = () =>
         rankVariables.filter(
           (variable) =>
@@ -1296,12 +1425,19 @@ export function layoutLifecycleRoutingGraph(
             ),
           )
           .join("|");
+        const lookaheadSignature = lookaheadRanks
+          .map(
+            ({ rank: futureRank }) =>
+              `${futureRank}=${quantizeY(lookaheadEnvelopes.get(futureRank) ?? laneTop)}`,
+          )
+          .join(",");
         return [
           rank,
           placedIds.join("|"),
           quantizeY(lastY ?? laneTop),
           remaining,
           filteredPrior,
+          lookaheadSignature,
         ].join(":");
       };
       const hasAcyclicCompletion = () => {
@@ -1328,47 +1464,8 @@ export function layoutLifecycleRoutingGraph(
       const search = (lastY) => {
         if (placedIds.length === rankVariables.length) {
           const order = placedIds.map((id) => byId.get(id));
-          const solvedById = new Map(
-            order.map((variable) => [
-              variable.id,
-              placedValues.get(variable.id),
-            ]),
-          );
-          let valid = true;
-          for (let index = 0; index < order.length; index += 1) {
-            const variable = order[index];
-            const value = solvedById.get(variable.id);
-            const previous =
-              index > 0 ? solvedById.get(order[index - 1].id) : null;
-            if (
-              !Number.isFinite(value) ||
-              (previous !== null &&
-                value < previous + minLaneSpacing - LANE_Y_EPSILON) ||
-              firstLegalAtOrAbove(
-                variable.intervals,
-                value - LANE_Y_EPSILON,
-              ) === null ||
-              !candidateClearsSpan(
-                value,
-                variable.minX,
-                variable.maxX,
-                variable.incidentIds,
-              )
-            ) {
-              valid = false;
-              break;
-            }
-          }
-          for (const edge of precedence.edges) {
-            if (
-              solvedById.get(edge.toId) - solvedById.get(edge.fromId) <
-              minLaneSpacing - LANE_Y_EPSILON
-            ) {
-              valid = false;
-              break;
-            }
-          }
-          return valid ? accept(order, solvedById) : false;
+          const solvedById = solveOrder(order, precedence);
+          return solvedById ? accept(order, solvedById) : false;
         }
         const signature = prefixSignature(lastY);
         if (failedPrefixes.has(signature)) {
@@ -1387,12 +1484,16 @@ export function layoutLifecycleRoutingGraph(
               variable,
               value,
               latest,
+              futureDeadline: futureDeadlineFor(variable),
               slack:
                 value === null || latest === null ? Infinity : latest - value,
               candidateCount: remainingCandidateCount(variable, lowerBound),
             };
           })
-          .filter(({ value, latest }) => value !== null && latest !== null)
+          .filter(
+            ({ value, latest, futureDeadline }) =>
+              value !== null && latest !== null && futureDeadline !== null,
+          )
           .sort((left, right) => {
             const leftPrior = priorIndex.has(left.variable.branchId)
               ? priorIndex.get(left.variable.branchId)
@@ -1401,11 +1502,11 @@ export function layoutLifecycleRoutingGraph(
               ? priorIndex.get(right.variable.branchId)
               : Infinity;
             return (
-              left.latest - right.latest ||
+              left.futureDeadline - right.futureDeadline ||
               left.slack - right.slack ||
+              left.variable.targetDockY - right.variable.targetDockY ||
               leftPrior - rightPrior ||
               left.variable.sourceDockY - right.variable.sourceDockY ||
-              left.variable.targetDockY - right.variable.targetDockY ||
               compareStableVariables(left.variable, right.variable)
             );
           });
@@ -1420,9 +1521,12 @@ export function layoutLifecycleRoutingGraph(
             linkIds: rankVariables.map((item) => item.id),
             edgeKinds: precedence.edges.map((edge) => edge.kind),
           });
+          const lookaheadUpdates = lookaheadUpdatesFor(variable);
+          if (lookaheadUpdates === null) continue;
           placedIds.push(variable.id);
           placedIdSet.add(variable.id);
           placedValues.set(variable.id, value);
+          applyLookaheadUpdates(lookaheadUpdates);
           for (const toId of outgoing.get(variable.id) ?? []) {
             indegree.set(toId, indegree.get(toId) - 1);
           }
@@ -1446,6 +1550,7 @@ export function layoutLifecycleRoutingGraph(
           const forwardOk =
             fits &&
             capacityOk &&
+            lookaheadCapacityOk() &&
             rankVariables.every((candidate) => {
               if (placedIdSet.has(candidate.id)) return true;
               return earliestCandidate(candidate, nextLower) !== null;
@@ -1454,6 +1559,7 @@ export function layoutLifecycleRoutingGraph(
           for (const toId of outgoing.get(variable.id) ?? []) {
             indegree.set(toId, indegree.get(toId) + 1);
           }
+          restoreLookaheadUpdates(lookaheadUpdates);
           placedValues.delete(variable.id);
           placedIdSet.delete(variable.id);
           placedIds.pop();
