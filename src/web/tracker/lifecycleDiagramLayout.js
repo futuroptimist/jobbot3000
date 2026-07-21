@@ -958,12 +958,16 @@ export function layoutLifecycleRoutingGraph(
     });
   // A deterministic solver state is one attempted prefix-variable placement
   // or one fixed-order interval item visit during forward/backward/rebuild.
+  // Each solveTransitionLanes call gets its own fresh stateLimit budget so that
+  // cumulative state counts from earlier refinement attempts do not reduce the
+  // budget available to later attempts. solveCallBaseStates is reset before
+  // each call and the per-call count is what is checked against stateLimit.
+  let solveCallBaseStates = 0;
   const recordSolverState = (context = {}) => {
     transitionLaneSolverStats.statesVisited += 1;
-    if (
-      transitionLaneSolverStats.statesVisited >
-      transitionLaneSolverStats.stateLimit
-    ) {
+    const callStates =
+      transitionLaneSolverStats.statesVisited - solveCallBaseStates;
+    if (callStates > transitionLaneSolverStats.stateLimit) {
       const cause = laneFailureCause("state-limit", context ?? {});
       const firstId = cause.linkIds[0] ?? cause.branchIds[0] ?? "unknown";
       const error = new Error(
@@ -1337,7 +1341,7 @@ export function layoutLifecycleRoutingGraph(
         const globalOrderSet = new Set();
         const failedStateKeys = new Set();
         const compAssignments = new Map();
-        transitionLaneSolverStats.components += 1;
+        // components is counted once in the caller after the first solve.
 
         // Minimum deadline for a branch across all its active ranks
         const branchDeadline = (branchId) => {
@@ -1611,10 +1615,12 @@ export function layoutLifecycleRoutingGraph(
       link.transitionLaneY = baseline.transitionLaneY;
     }
   };
-  const MAX_HANDLE_REFINEMENTS = 16;
   const forbiddenComponentOrderings = new Map();
   let lastHandleFailure = null;
   let solveSuccess = false;
+  // Set to false after the first successful solveTransitionLanes call so that
+  // restoreBaseline() is called on every subsequent attempt.
+  let isFirstLaneAttempt = true;
 
   // Materialize a lane-assignment map onto graph link geometry.
   // Throws on geometry invariant violations; called inside the refinement loop.
@@ -1742,27 +1748,37 @@ export function layoutLifecycleRoutingGraph(
   };
 
   try {
-    for (let attempt = 0; attempt < MAX_HANDLE_REFINEMENTS; attempt += 1) {
-      if (attempt > 0) restoreBaseline();
+    while (true) {
+      if (!isFirstLaneAttempt) restoreBaseline();
 
       let laneResult;
       try {
+        solveCallBaseStates = transitionLaneSolverStats.statesVisited;
         laneResult = solveTransitionLanes(graph.links, {
           forbiddenComponentOrderings,
         });
       } catch (laneError) {
         if (
-          attempt > 0 &&
-          laneError.cause?.reason === "no-feasible-topological-order"
+          !isFirstLaneAttempt &&
+          (laneError.cause?.reason === "no-feasible-topological-order" ||
+            laneError.cause?.reason === "state-limit")
         ) {
-          // All lane orderings for the implicated components are exhausted;
-          // emit the last structured handle failure below.
+          // All orderings exhausted, or per-call state budget depleted on a
+          // refinement attempt; emit the last structured handle failure below.
           break;
         }
         throw laneError;
       }
 
       const { assignments, componentOrderings, componentMembers } = laneResult;
+
+      // Count connected lane components exactly once (on the first solve) so
+      // that repeated refinement attempts do not recount the same components.
+      if (isFirstLaneAttempt) {
+        transitionLaneSolverStats.components = componentMembers.size;
+        isFirstLaneAttempt = false;
+      }
+
       materializeLaneAssignments(assignments);
 
       if (
@@ -1787,29 +1803,33 @@ export function layoutLifecycleRoutingGraph(
 
       lastHandleFailure = handleCheck;
 
-      // Collect implicated branch IDs from structured diagnostics
-      const implicatedBranchIds = new Set(handleCheck.blockedBranchIds ?? []);
-      if (handleCheck.branchDiagnostics) {
-        for (const diag of handleCheck.branchDiagnostics) {
-          const blocker = diag.nearestRejectedCandidate?.blocker?.branchId;
-          if (blocker) implicatedBranchIds.add(blocker);
-        }
-      }
-      if (handleCheck.component?.branchIds) {
-        for (const id of handleCheck.component.branchIds)
-          implicatedBranchIds.add(id);
-      }
-
-      // Forbid the current ordering of each component containing an implicated branch
-      for (const [compMinId, members] of componentMembers) {
-        if (members.some((id) => implicatedBranchIds.has(id))) {
-          const currentOrdering = componentOrderings.get(compMinId);
-          if (currentOrdering !== undefined) {
-            if (!forbiddenComponentOrderings.has(compMinId))
-              forbiddenComponentOrderings.set(compMinId, new Set());
-            forbiddenComponentOrderings.get(compMinId).add(currentOrdering);
+      // Ban the ordering of the single component that contains the primary
+      // blocked branch. A handle conflict arises from the combined lane
+      // assignment across all components; independently banning every
+      // component that touches an implicated branch over-prunes: it discards
+      // (ordering, Y) combinations where only the secondary component needed
+      // to change. Banning one component per attempt lets the search pair each
+      // new primary-component ordering with all valid secondary orderings
+      // before the primary component's orderings are exhausted.
+      const primaryBlockedId = handleCheck.blockedBranchIds?.[0];
+      let bannedPrimaryComponent = false;
+      if (primaryBlockedId !== undefined) {
+        for (const [compMinId, members] of componentMembers) {
+          if (members.includes(primaryBlockedId)) {
+            const currentOrdering = componentOrderings.get(compMinId);
+            if (currentOrdering !== undefined) {
+              if (!forbiddenComponentOrderings.has(compMinId))
+                forbiddenComponentOrderings.set(compMinId, new Set());
+              forbiddenComponentOrderings.get(compMinId).add(currentOrdering);
+              bannedPrimaryComponent = true;
+            }
+            break;
           }
         }
+      }
+      if (!bannedPrimaryComponent) {
+        // Cannot determine which ordering to advance; treat as exhausted.
+        break;
       }
     }
   } catch (error) {
