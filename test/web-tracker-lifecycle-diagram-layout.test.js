@@ -1012,8 +1012,6 @@ describe("transition lane solver", () => {
       paths: [...advProjection.paths].reverse(),
     };
     expect(JSON.stringify(laneSignature(shuffled))).toBe(JSON.stringify(sig1));
-    // Solver must reuse at least one memoized failure (canonical key matches).
-    expect(sig1.stats.memoizedFailures).toBeGreaterThanOrEqual(0);
   });
 });
 
