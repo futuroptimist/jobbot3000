@@ -1120,11 +1120,6 @@ export function layoutLifecycleRoutingGraph(
     // continuation choices cannot postpone an unavoidable dock conflict.
     addBranchEdges(sourceGroups, "sourceDockY", "source-dock");
     addBranchEdges(targetGroups, "targetDockY", "target-dock");
-    const compareStableVariables = (left, right) =>
-      compareLifecycleIds(
-        left.stableId ?? left.id,
-        right.stableId ?? right.id,
-      ) || compareLifecycleIds(left.id, right.id);
     const assignMonotoneIntervals = (
       items,
       onStateVisited = recordSolverState,
@@ -1189,592 +1184,382 @@ export function layoutLifecycleRoutingGraph(
       }
       return solved;
     };
-    const solveOrder = (solvedOrder, precedence) => {
-      const context = {
-        rank: precedence.rank,
-        branchIds: solvedOrder.map((variable) => variable.branchId),
-        linkIds: solvedOrder.map((variable) => variable.id),
-        edgeKinds: precedence.edges.map((edge) => edge.kind),
-      };
-      const solved = assignMonotoneIntervals(solvedOrder, () =>
-        recordSolverState(context),
-      );
-      if (!solved) return null;
-      const solvedById = new Map(
-        solvedOrder.map((variable, index) => [variable.id, solved[index]]),
-      );
-      for (const variable of solvedOrder) {
-        const value = solvedById.get(variable.id);
-        if (
-          !Number.isFinite(value) ||
-          firstLegalAtOrAbove(variable.intervals, value - LANE_Y_EPSILON) ===
-            null ||
-          !candidateClearsSpan(
-            value,
-            variable.minX,
-            variable.maxX,
-            variable.incidentIds,
-          )
-        ) {
-          return null;
-        }
-      }
-      for (let index = 1; index < solvedOrder.length; index += 1) {
-        if (
-          solved[index] - solved[index - 1] <
-          minLaneSpacing - LANE_Y_EPSILON
-        ) {
-          return null;
-        }
-      }
-      for (const edge of precedence.edges) {
-        if (
-          solvedById.get(edge.toId) - solvedById.get(edge.fromId) <
-          minLaneSpacing - LANE_Y_EPSILON
-        ) {
-          return null;
-        }
-      }
-      return solvedById;
-    };
-    const solveRankOrders = (
-      rank,
-      rankVariables,
-      precedence,
-      priorOrder,
-      accept,
-    ) => {
-      const byId = new Map(
-        rankVariables.map((variable) => [variable.id, variable]),
-      );
-      const outgoing = new Map(
-        rankVariables.map((variable) => [variable.id, []]),
-      );
-      const indegree = new Map(
-        rankVariables.map((variable) => [variable.id, 0]),
-      );
-      for (const edge of precedence.edges) {
-        outgoing.get(edge.fromId)?.push(edge.toId);
-        indegree.set(edge.toId, (indegree.get(edge.toId) ?? 0) + 1);
-      }
-      const priorIndex = new Map(priorOrder.map((id, index) => [id, index]));
-      const placedIds = [];
-      const placedIdSet = new Set();
-      const failedPrefixes = new Set();
-      const currentBranchIds = new Set(
-        rankVariables.map((variable) => variable.branchId),
-      );
-      const lookaheadRanks = [];
-      let continuingBranchIds = new Set(currentBranchIds);
-      for (const futureRank of sortedRanks.filter(
-        (candidate) => candidate > rank,
-      )) {
-        if (futureRank !== rank + lookaheadRanks.length + 1) break;
-        const futureByBranch = new Map(
-          (variablesByRank.get(futureRank) ?? [])
-            .filter((variable) => continuingBranchIds.has(variable.branchId))
-            .map((variable) => [variable.branchId, variable]),
-        );
-        if (!futureByBranch.size) break;
-        lookaheadRanks.push({
-          rank: futureRank,
-          variablesByBranch: futureByBranch,
+    // Upfront: malformed ending targets (routing node as production link target)
+    for (const variable of variables) {
+      if (variable.isEnding && variable.link?.target?.routing === true) {
+        const cause = laneFailureCause("malformed-ending-target", {
+          rank: variable.rank,
+          branchIds: [variable.branchId],
+          linkIds: [variable.id],
+          edgeKinds: ["target-dock"],
         });
-        continuingBranchIds = new Set(futureByBranch.keys());
+        const error = new Error(
+          [
+            "Lifecycle transition lane allocation failed:",
+            "malformed-ending-target",
+            `at transition rank ${variable.rank}`,
+            `for ${variable.id}`,
+          ].join(" "),
+        );
+        error.cause = cause;
+        throw error;
       }
-      const lookaheadEnvelopes = new Map(
-        lookaheadRanks.map(({ rank: futureRank }) => [futureRank, null]),
+    }
+    const solveGlobal = () => {
+      const allBranchIds = [...branchSpans.keys()].sort(compareLifecycleIds);
+      if (!allBranchIds.length) return new Map();
+
+      // Per-rank active branch sets and per-branch variable lookup
+      const activeBranchesAtRank = new Map(
+        sortedRanks.map((rank) => [
+          rank,
+          new Set((variablesByRank.get(rank) ?? []).map((v) => v.branchId)),
+        ]),
       );
-      const earliestCandidate = (variable, lowerBound) => {
-        const value = firstLegalAtOrAbove(variable.intervals, lowerBound);
-        if (
-          value === null ||
-          !candidateClearsSpan(
-            value,
-            variable.minX,
-            variable.maxX,
-            variable.incidentIds,
-          )
-        ) {
-          return null;
+      const variableByBranchAtRank = new Map();
+      for (const [rank, rankVars] of variablesByRank) {
+        for (const v of rankVars) {
+          variableByBranchAtRank.set(`${v.branchId}:${rank}`, v);
         }
-        return value;
-      };
-      const remainingCandidateCount = (variable, lowerBound) =>
-        variable.intervals.reduce((count, [start, end]) => {
-          const first = Math.max(start, lowerBound);
-          if (first > end + LANE_Y_EPSILON) return count;
-          return count + 1;
-        }, 0);
-      const latestDeadlineFor = (variable) =>
-        lastLegalAtOrBelow(variable.intervals, laneBottom);
-      const semanticTargetDockY = (variable) =>
-        branchSpans.get(variable.branchId)?.targetDockY ?? variable.targetDockY;
-      const semanticSourceDockY = (variable) =>
-        branchSpans.get(variable.branchId)?.sourceDockY ?? variable.sourceDockY;
-      const futureEarliestFor = (variable) => {
-        const starts = [firstLegalAtOrAbove(variable.intervals, laneTop)];
-        for (const { variablesByBranch: futureByBranch } of lookaheadRanks) {
-          const futureVariable = futureByBranch.get(variable.branchId);
-          if (!futureVariable) break;
-          starts.push(firstLegalAtOrAbove(futureVariable.intervals, laneTop));
-        }
-        return starts.some((start) => start === null)
-          ? null
-          : Math.max(...starts);
-      };
-      const futureDeadlineFor = (variable) => {
-        const deadlines = [latestDeadlineFor(variable)];
-        for (const { variablesByBranch: futureByBranch } of lookaheadRanks) {
-          const futureVariable = futureByBranch.get(variable.branchId);
-          if (!futureVariable) break;
-          deadlines.push(latestDeadlineFor(futureVariable));
-        }
-        return deadlines.some((deadline) => deadline === null)
-          ? null
-          : Math.min(...deadlines);
-      };
-      const projectedBranchEdgeActiveAt = (edge, futureRank) => {
+      }
+
+      // Build branch-level DAG (only edges between branches with overlapping spans)
+      const branchOutgoing = new Map(allBranchIds.map((id) => [id, []]));
+      const branchIndegree = new Map(allBranchIds.map((id) => [id, 0]));
+      const seenEdges = new Set();
+      for (const edge of branchPrecedenceEdges) {
         const fromSpan = branchSpans.get(edge.fromBranchId);
         const toSpan = branchSpans.get(edge.toBranchId);
-        return (
-          fromSpan &&
-          toSpan &&
-          futureRank >= fromSpan.startRank &&
-          futureRank < fromSpan.endRank &&
-          futureRank >= toSpan.startRank &&
-          futureRank < toSpan.endRank
+        if (!fromSpan || !toSpan) continue;
+        if (
+          fromSpan.startRank >= toSpan.endRank ||
+          toSpan.startRank >= fromSpan.endRank
+        )
+          continue;
+        const edgeKey = `${edge.fromBranchId}\0${edge.toBranchId}`;
+        if (seenEdges.has(edgeKey)) continue;
+        seenEdges.add(edgeKey);
+        branchOutgoing.get(edge.fromBranchId)?.push(edge.toBranchId);
+        branchIndegree.set(
+          edge.toBranchId,
+          (branchIndegree.get(edge.toBranchId) ?? 0) + 1,
         );
-      };
-      const lookaheadUpdatesFor = (variable) => {
-        const updates = [];
-        for (const {
-          rank: futureRank,
-          variablesByBranch: futureByBranch,
-        } of lookaheadRanks) {
-          const futureVariable = futureByBranch.get(variable.branchId);
-          if (!futureVariable) break;
-          for (const placedId of placedIds) {
-            const placedBranchId = byId.get(placedId)?.branchId;
-            if (!placedBranchId || !futureByBranch.has(placedBranchId))
-              continue;
-            const contradictsPlacedPrefix = branchPrecedenceEdges.some(
-              (edge) =>
-                edge.fromBranchId === variable.branchId &&
-                edge.toBranchId === placedBranchId &&
-                projectedBranchEdgeActiveAt(edge, futureRank),
-            );
-            if (contradictsPlacedPrefix) return null;
+      }
+
+      // Detect precedence cycles via Kahn's topological sort
+      {
+        const scratch = new Map(branchIndegree);
+        const queue = allBranchIds.filter((id) => scratch.get(id) === 0);
+        const sorted = [];
+        while (queue.length) {
+          const id = queue.shift();
+          sorted.push(id);
+          for (const toId of branchOutgoing.get(id) ?? []) {
+            scratch.set(toId, (scratch.get(toId) ?? 0) - 1);
+            if (scratch.get(toId) === 0) queue.push(toId);
           }
-          const previousEnvelope = lookaheadEnvelopes.get(futureRank);
-          const lowerBound =
-            previousEnvelope === null
-              ? laneTop
-              : quantizeY(previousEnvelope + minLaneSpacing + LANE_Y_EPSILON);
-          const value = earliestCandidate(futureVariable, lowerBound);
-          if (value === null) return null;
-          updates.push({ rank: futureRank, previousEnvelope, value });
         }
-        return updates;
-      };
-      const applyLookaheadUpdates = (updates) => {
-        for (const update of updates) {
-          lookaheadEnvelopes.set(update.rank, update.value);
+        if (sorted.length !== allBranchIds.length) {
+          const cycleIds = allBranchIds
+            .filter((id) => (scratch.get(id) ?? 0) > 0)
+            .sort(compareLifecycleIds);
+          const cycleVars = cycleIds.flatMap((id) =>
+            sortedRanks
+              .map((rank) => variableByBranchAtRank.get(`${id}:${rank}`))
+              .filter(Boolean),
+          );
+          const cause = laneFailureCause("semantic-order-cycle", {
+            rank: null,
+            branchIds: cycleIds,
+            linkIds: cycleVars.map((v) => v.id),
+            edgeKinds: ["source-dock", "target-dock"],
+          });
+          const error = new Error(
+            [
+              "Lifecycle transition lane allocation failed:",
+              "semantic-order-cycle",
+              `for ${cycleIds[0] ?? "unknown"}`,
+            ].join(" "),
+          );
+          error.cause = cause;
+          throw error;
         }
-      };
-      const restoreLookaheadUpdates = (updates) => {
-        for (let index = updates.length - 1; index >= 0; index -= 1) {
-          const update = updates[index];
-          lookaheadEnvelopes.set(update.rank, update.previousEnvelope);
+      }
+
+      // Union-find: group branches that share at least one active rank
+      const componentParent = new Map(allBranchIds.map((id) => [id, id]));
+      const findRoot = (id) => {
+        let node = id;
+        while (componentParent.get(node) !== node)
+          node = componentParent.get(node);
+        let cur = id;
+        while (cur !== node) {
+          const next = componentParent.get(cur);
+          componentParent.set(cur, node);
+          cur = next;
         }
+        return node;
       };
-      const lookaheadCapacityOk = () =>
-        lookaheadRanks.every(
-          ({ rank: futureRank, variablesByBranch: futureByBranch }) => {
-            const envelope = lookaheadEnvelopes.get(futureRank);
-            const lowerBound =
+      const unionNodes = (a, b) => {
+        const ra = findRoot(a);
+        const rb = findRoot(b);
+        if (ra !== rb) componentParent.set(ra, rb);
+      };
+      for (const activeBranches of activeBranchesAtRank.values()) {
+        const arr = [...activeBranches];
+        for (let i = 1; i < arr.length; i += 1) unionNodes(arr[0], arr[i]);
+      }
+      const componentMap = new Map();
+      for (const id of allBranchIds) {
+        const root = findRoot(id);
+        if (!componentMap.has(root)) componentMap.set(root, []);
+        componentMap.get(root).push(id);
+      }
+
+      // Global assignments accumulator
+      const globalAssignments = new Map();
+
+      // Solve each connected component independently
+      for (const componentBranchIds of componentMap.values()) {
+        const compIndegree = new Map(
+          componentBranchIds.map((id) => [id, branchIndegree.get(id) ?? 0]),
+        );
+        const rankEnvelopes = new Map(sortedRanks.map((r) => [r, null]));
+        const globalOrder = [];
+        const globalOrderSet = new Set();
+        const failedContKeys = new Set();
+        const compAssignments = new Map();
+
+        // Minimum deadline for a branch across all its active ranks
+        const branchDeadline = (branchId) => {
+          let min = Infinity;
+          for (const rank of sortedRanks) {
+            if (!activeBranchesAtRank.get(rank)?.has(branchId)) continue;
+            const v = variableByBranchAtRank.get(`${branchId}:${rank}`);
+            if (!v) return null;
+            const d = lastLegalAtOrBelow(v.intervals, laneBottom);
+            if (d === null) return null;
+            if (d < min) min = d;
+          }
+          return min === Infinity ? null : min;
+        };
+
+        // Try placing branchId at every active rank; return envelope updates or null
+        const tryPlaceBranch = (branchId) => {
+          const updates = [];
+          for (const rank of sortedRanks) {
+            if (!activeBranchesAtRank.get(rank)?.has(branchId)) continue;
+            const v = variableByBranchAtRank.get(`${branchId}:${rank}`);
+            if (!v) {
+              for (const u of updates) rankEnvelopes.set(u.rank, u.prev);
+              return null;
+            }
+            const prev = rankEnvelopes.get(rank);
+            const lower =
+              prev === null
+                ? laneTop
+                : quantizeY(prev + minLaneSpacing + LANE_Y_EPSILON);
+            const value = firstLegalAtOrAbove(v.intervals, lower);
+            if (
+              value === null ||
+              !candidateClearsSpan(value, v.minX, v.maxX, v.incidentIds)
+            ) {
+              for (const u of updates) rankEnvelopes.set(u.rank, u.prev);
+              return null;
+            }
+            updates.push({ rank, prev });
+            rankEnvelopes.set(rank, value);
+          }
+          return updates;
+        };
+
+        // Continuation key: placed branches in next-rank order (null if no adjacent next rank)
+        const contKeyForNextRank = (rank) => {
+          const nextRank = sortedRanks.find((r) => r > rank);
+          if (nextRank === undefined || nextRank !== rank + 1) return null;
+          const nextActive = activeBranchesAtRank.get(nextRank);
+          if (!nextActive?.size) return null;
+          const continuation = globalOrder.filter((id) => nextActive.has(id));
+          return `${nextRank}:${continuation.join("|")}`;
+        };
+
+        // Capacity look-ahead: can the remaining unplaced branches still fit?
+        const capacityOkForRemainder = () => {
+          for (const rank of sortedRanks) {
+            const activeBranches = activeBranchesAtRank.get(rank);
+            if (!activeBranches?.size) continue;
+            const remaining = componentBranchIds.filter(
+              (id) => activeBranches.has(id) && !globalOrderSet.has(id),
+            );
+            if (!remaining.length) continue;
+            const envelope = rankEnvelopes.get(rank);
+            const lower =
               envelope === null
                 ? laneTop
                 : quantizeY(envelope + minLaneSpacing + LANE_Y_EPSILON);
-            const deadlines = rankVariables
-              .filter(
-                (candidate) =>
-                  !placedIdSet.has(candidate.id) &&
-                  futureByBranch.has(candidate.branchId),
-              )
-              .map((candidate) =>
-                latestDeadlineFor(futureByBranch.get(candidate.branchId)),
-              );
-            if (deadlines.some((deadline) => deadline === null)) return false;
-            return deadlines
-              .sort((left, right) => left - right)
-              .every(
-                (deadline, index) =>
-                  deadline + LANE_Y_EPSILON >=
-                  lowerBound + index * minLaneSpacing,
-              );
-          },
-        );
-      const currentReady = () =>
-        rankVariables.filter(
-          (variable) =>
-            !placedIdSet.has(variable.id) && indegree.get(variable.id) === 0,
-        );
-      const prefixSignature = (lastY) => {
-        const remaining = rankVariables
-          .filter((variable) => !placedIdSet.has(variable.id))
-          .map((variable) => `${variable.id}:${indegree.get(variable.id)}`)
-          .sort(compareLifecycleIds)
-          .join(",");
-        const filteredPrior = priorOrder
-          .filter((branchId) =>
-            rankVariables.some(
-              (variable) =>
-                variable.branchId === branchId && !placedIdSet.has(variable.id),
-            ),
-          )
-          .join("|");
-        const lookaheadSignature = lookaheadRanks
-          .map(
-            ({ rank: futureRank }) =>
-              `${futureRank}=${quantizeY(lookaheadEnvelopes.get(futureRank) ?? laneTop)}`,
-          )
-          .join(",");
-        const futureBranchIds = new Set(
-          lookaheadRanks.flatMap(({ variablesByBranch }) => [
-            ...variablesByBranch.keys(),
-          ]),
-        );
-        const placedContinuingIds = placedIds
-          .filter((id) => futureBranchIds.has(byId.get(id)?.branchId))
-          .join("|");
-        return [
-          rank,
-          placedContinuingIds,
-          quantizeY(lastY ?? laneTop),
-          remaining,
-          filteredPrior,
-          lookaheadSignature,
-        ].join(":");
-      };
-      const hasAcyclicCompletion = () => {
-        const scratchIndegree = new Map(indegree);
-        const scratchPlaced = new Set(placedIdSet);
-        let progressed = true;
-        while (progressed) {
-          progressed = false;
-          for (const variable of rankVariables) {
-            if (
-              scratchPlaced.has(variable.id) ||
-              scratchIndegree.get(variable.id) !== 0
-            )
-              continue;
-            scratchPlaced.add(variable.id);
-            progressed = true;
-            for (const toId of outgoing.get(variable.id) ?? []) {
-              scratchIndegree.set(toId, scratchIndegree.get(toId) - 1);
+            const deadlines = remaining
+              .map((id) => {
+                const v = variableByBranchAtRank.get(`${id}:${rank}`);
+                return v ? lastLegalAtOrBelow(v.intervals, laneBottom) : null;
+              })
+              .filter((d) => d !== null)
+              .sort((a, b) => a - b);
+            if (deadlines.length !== remaining.length) return false;
+            for (let i = 0; i < deadlines.length; i += 1) {
+              if (deadlines[i] + LANE_Y_EPSILON < lower + i * minLaneSpacing)
+                return false;
             }
           }
-        }
-        return scratchPlaced.size === rankVariables.length;
-      };
-      const nextRank = sortedRanks.find((candidate) => candidate > rank);
-      const nextActiveBranches =
-        nextRank === rank + 1
-          ? new Set(
-              (variablesByRank.get(nextRank) ?? []).map(
-                (variable) => variable.branchId,
-              ),
-            )
-          : new Set();
-      const currentRankBranchesInNext = new Set(
-        [...currentBranchIds].filter((id) => nextActiveBranches.has(id)),
-      );
-      const nextContinuingOrder = () =>
-        placedIds
-          .map((id) => byId.get(id)?.branchId)
-          .filter((branchId) => nextActiveBranches.has(branchId));
-      const search = (lastY) => {
-        if (
-          currentRankBranchesInNext.size > 0 &&
-          nextContinuingOrder().length === currentRankBranchesInNext.size
-        ) {
-          const nextStateKey = `${nextRank}:${nextContinuingOrder().join("|")}`;
-          if (failedStates.has(nextStateKey)) {
-            transitionLaneSolverStats.memoizedFailures += 1;
-            return false;
-          }
-        }
-        if (placedIds.length === rankVariables.length) {
-          const order = placedIds.map((id) => byId.get(id));
-          const solvedById = solveOrder(order, precedence);
-          return solvedById ? accept(order, solvedById) : false;
-        }
-        const signature = prefixSignature(lastY);
-        if (failedPrefixes.has(signature)) {
-          transitionLaneSolverStats.memoizedFailures += 1;
-          return false;
-        }
-        const lowerBound =
-          placedIds.length === 0
-            ? laneTop
-            : quantizeY(lastY + minLaneSpacing + LANE_Y_EPSILON);
-        const ready = currentReady()
-          .map((variable) => {
-            const value = earliestCandidate(variable, lowerBound);
-            const latest = lastLegalAtOrBelow(variable.intervals, laneBottom);
-            return {
-              variable,
-              value,
-              latest,
-              futureEarliest: futureEarliestFor(variable),
-              futureDeadline: futureDeadlineFor(variable),
-              slack:
-                value === null || latest === null ? Infinity : latest - value,
-              candidateCount: remainingCandidateCount(variable, lowerBound),
-            };
-          })
-          .filter(
-            ({ value, latest, futureEarliest, futureDeadline }) =>
-              value !== null &&
-              latest !== null &&
-              futureEarliest !== null &&
-              futureDeadline !== null,
-          )
-          .sort((left, right) => {
-            const leftPrior = priorIndex.has(left.variable.branchId)
-              ? priorIndex.get(left.variable.branchId)
-              : Infinity;
-            const rightPrior = priorIndex.has(right.variable.branchId)
-              ? priorIndex.get(right.variable.branchId)
-              : Infinity;
-            return (
-              left.futureDeadline - right.futureDeadline ||
-              left.futureEarliest - right.futureEarliest ||
-              left.slack - right.slack ||
-              semanticTargetDockY(left.variable) -
-                semanticTargetDockY(right.variable) ||
-              leftPrior - rightPrior ||
-              semanticSourceDockY(left.variable) -
-                semanticSourceDockY(right.variable) ||
-              compareStableVariables(left.variable, right.variable)
-            );
-          });
-        if (!ready.length || !hasAcyclicCompletion()) {
-          failedPrefixes.add(signature);
-          return false;
-        }
-        for (const { variable, value } of ready) {
-          recordSolverState({
-            rank,
-            branchIds: rankVariables.map((item) => item.branchId),
-            linkIds: rankVariables.map((item) => item.id),
-            edgeKinds: precedence.edges.map((edge) => edge.kind),
-          });
-          const lookaheadUpdates = lookaheadUpdatesFor(variable);
-          if (lookaheadUpdates === null) continue;
-          placedIds.push(variable.id);
-          placedIdSet.add(variable.id);
-          applyLookaheadUpdates(lookaheadUpdates);
-          for (const toId of outgoing.get(variable.id) ?? []) {
-            indegree.set(toId, indegree.get(toId) - 1);
-          }
-          const remaining = rankVariables.length - placedIds.length;
-          const nextLower = quantizeY(value + minLaneSpacing + LANE_Y_EPSILON);
-          const fits =
-            value + remaining * minLaneSpacing <= laneBottom + LANE_Y_EPSILON;
-          const remainingDeadlines = rankVariables
-            .filter((candidate) => !placedIdSet.has(candidate.id))
-            .map((candidate) =>
-              lastLegalAtOrBelow(candidate.intervals, laneBottom),
-            )
-            .filter((value) => value !== null)
-            .sort((left, right) => left - right);
-          const capacityOk =
-            remainingDeadlines.length === remaining &&
-            remainingDeadlines.every(
-              (deadline, index) =>
-                deadline + LANE_Y_EPSILON >= nextLower + index * minLaneSpacing,
-            );
-          const forwardOk =
-            fits &&
-            capacityOk &&
-            lookaheadCapacityOk() &&
-            rankVariables.every((candidate) => {
-              if (placedIdSet.has(candidate.id)) return true;
-              return earliestCandidate(candidate, nextLower) !== null;
-            });
-          if (forwardOk && search(value)) return true;
-          for (const toId of outgoing.get(variable.id) ?? []) {
-            indegree.set(toId, indegree.get(toId) + 1);
-          }
-          restoreLookaheadUpdates(lookaheadUpdates);
-          placedIdSet.delete(variable.id);
-          placedIds.pop();
-          transitionLaneSolverStats.backtracks += 1;
-        }
-        failedPrefixes.add(signature);
-        return false;
-      };
-      return search(null);
-    };
-
-    const assignments = new Map();
-
-    const failedStates = new Set();
-    let deepestFailure = null;
-    const throwPrecedenceFailure = (precedence) => {
-      const error = new Error(
-        [
-          "Lifecycle transition lane allocation failed:",
-          precedence.reason,
-          `at transition rank ${precedence.rank}`,
-          `for ${precedence.linkIds[0] ?? precedence.branchIds[0]}`,
-        ].join(" "),
-      );
-      error.cause = laneFailureCause(precedence.reason, precedence);
-      throw error;
-    };
-    const solveRank = (rankIndex, priorOrder) => {
-      if (rankIndex >= sortedRanks.length) return true;
-      const rank = sortedRanks[rankIndex];
-      const expectedPriorRank = sortedRanks[rankIndex - 1];
-      const effectivePrior =
-        rankIndex > 0 && expectedPriorRank === rank - 1 ? priorOrder : [];
-      const rankVariables = [...(variablesByRank.get(rank) ?? [])].sort(
-        compareStableVariables,
-      );
-      const activeBranches = new Set(
-        rankVariables.map((variable) => variable.branchId),
-      );
-      const stateKey = `${rank}:${effectivePrior
-        .filter((branchId) => activeBranches.has(branchId))
-        .join("|")}`;
-      if (failedStates.has(stateKey)) return false;
-      const rankContext = {
-        rank,
-        branchIds: rankVariables.map((variable) => variable.branchId),
-        linkIds: rankVariables.map((variable) => variable.id),
-        edgeKinds: [],
-      };
-      recordSolverState(rankContext);
-      const variableByBranchAtRank = new Map(
-        rankVariables.map((variable) => [variable.branchId, variable]),
-      );
-      const projectedEdges = branchPrecedenceEdges
-        .map((edge) => {
-          const fromSpan = branchSpans.get(edge.fromBranchId);
-          const toSpan = branchSpans.get(edge.toBranchId);
-          const commonEndRank = Math.min(
-            fromSpan?.endRank ?? -Infinity,
-            toSpan?.endRank ?? -Infinity,
-          );
-          const bothActive =
-            fromSpan &&
-            toSpan &&
-            rank >= fromSpan.startRank &&
-            rank < fromSpan.endRank &&
-            rank >= toSpan.startRank &&
-            rank < toSpan.endRank &&
-            (edge.kind !== "target-dock" || rank < commonEndRank - 1);
-          if (!bothActive) return null;
-          const from = variableByBranchAtRank.get(edge.fromBranchId);
-          const to = variableByBranchAtRank.get(edge.toBranchId);
-          return from && to
-            ? { fromId: from.id, toId: to.id, kind: edge.kind }
-            : null;
-        })
-        .filter(Boolean);
-      const precedence = buildTransitionPrecedence({
-        rank,
-        variables: rankVariables,
-        priorOrder: effectivePrior,
-        projectedEdges,
-      });
-      if (!precedence.ok) {
-        deepestFailure = precedence;
-        failedStates.add(stateKey);
-        return false;
-      }
-      transitionLaneSolverStats.components += 1;
-      const acceptSolved = (solvedOrder, solvedById) => {
-        const nextPriorOrder = solvedOrder.map((variable) => variable.branchId);
-        const nextRank = sortedRanks[rankIndex + 1];
-        if (nextRank !== undefined && nextRank === rank + 1) {
-          const nextActiveBranches = new Set(
-            (variablesByRank.get(nextRank) ?? []).map(
-              (variable) => variable.branchId,
-            ),
-          );
-          const nextStateKey = `${nextRank}:${nextPriorOrder
-            .filter((branchId) => nextActiveBranches.has(branchId))
-            .join("|")}`;
-          if (failedStates.has(nextStateKey)) {
-            transitionLaneSolverStats.memoizedFailures += 1;
-            return false;
-          }
-        }
-        for (const [id, value] of solvedById) assignments.set(id, value);
-        if (solveRank(rankIndex + 1, nextPriorOrder)) {
           return true;
+        };
+
+        // Pre-collect variable IDs for state-limit error reporting
+        const compLinkIds = componentBranchIds.flatMap((id) =>
+          sortedRanks
+            .map((rank) => variableByBranchAtRank.get(`${id}:${rank}`)?.id)
+            .filter(Boolean),
+        );
+        const search = () => {
+          recordSolverState({
+            branchIds: componentBranchIds,
+            linkIds: compLinkIds,
+          });
+
+          // Prune via continuation key memoization
+          for (const rank of sortedRanks) {
+            const activeBranches = activeBranchesAtRank.get(rank);
+            if (!activeBranches?.size) continue;
+            if (
+              !componentBranchIds
+                .filter((id) => activeBranches.has(id))
+                .every((id) => globalOrderSet.has(id))
+            )
+              continue;
+            const key = contKeyForNextRank(rank);
+            if (key !== null && failedContKeys.has(key)) {
+              transitionLaneSolverStats.memoizedFailures += 1;
+              return false;
+            }
+          }
+
+          if (globalOrder.length === componentBranchIds.length) {
+            // All component branches placed — compute final centered Y per rank
+            for (const rank of sortedRanks) {
+              const activeBranches = activeBranchesAtRank.get(rank);
+              if (!activeBranches?.size) continue;
+              const rankOrder = globalOrder
+                .filter((id) => activeBranches.has(id))
+                .map((id) => variableByBranchAtRank.get(`${id}:${rank}`))
+                .filter(Boolean);
+              if (!rankOrder.length) continue;
+              transitionLaneSolverStats.components += 1;
+              const solved = assignMonotoneIntervals(rankOrder);
+              if (!solved) return false;
+              for (let i = 0; i < rankOrder.length; i += 1) {
+                compAssignments.set(rankOrder[i].id, solved[i]);
+              }
+            }
+            for (const [id, value] of compAssignments)
+              globalAssignments.set(id, value);
+            return true;
+          }
+
+          if (!capacityOkForRemainder()) return false;
+
+          // Ready branches: indegree 0, not yet placed, sorted by deadline (MRV)
+          const ready = componentBranchIds
+            .filter((id) => !globalOrderSet.has(id) && compIndegree.get(id) === 0)
+            .map((id) => {
+              const span = branchSpans.get(id);
+              return { id, deadline: branchDeadline(id), span };
+            })
+            .filter(({ deadline }) => deadline !== null)
+            .sort(
+              (a, b) =>
+                (a.deadline ?? Infinity) - (b.deadline ?? Infinity) ||
+                (a.span?.sourceDockY ?? 0) - (b.span?.sourceDockY ?? 0) ||
+                compareLifecycleIds(
+                  a.span?.stableId ?? a.id,
+                  b.span?.stableId ?? b.id,
+                ) ||
+                compareLifecycleIds(a.id, b.id),
+            );
+
+          if (!ready.length) return false;
+
+          for (const { id: branchId } of ready) {
+            const updates = tryPlaceBranch(branchId);
+            if (!updates) continue;
+
+            globalOrder.push(branchId);
+            globalOrderSet.add(branchId);
+            for (const toId of branchOutgoing.get(branchId) ?? []) {
+              if (compIndegree.has(toId)) {
+                compIndegree.set(toId, (compIndegree.get(toId) ?? 0) - 1);
+              }
+            }
+
+            if (search()) return true;
+
+            // Backtrack
+            for (const toId of branchOutgoing.get(branchId) ?? []) {
+              if (compIndegree.has(toId)) {
+                compIndegree.set(toId, (compIndegree.get(toId) ?? 0) + 1);
+              }
+            }
+            globalOrderSet.delete(branchId);
+            globalOrder.pop();
+            for (let i = updates.length - 1; i >= 0; i -= 1) {
+              rankEnvelopes.set(updates[i].rank, updates[i].prev);
+            }
+            transitionLaneSolverStats.backtracks += 1;
+          }
+
+          // Record failed continuation keys for every newly-completed rank
+          for (const rank of sortedRanks) {
+            const activeBranches = activeBranchesAtRank.get(rank);
+            if (!activeBranches?.size) continue;
+            if (
+              !componentBranchIds
+                .filter((id) => activeBranches.has(id))
+                .every((id) => globalOrderSet.has(id))
+            )
+              continue;
+            const key = contKeyForNextRank(rank);
+            if (key !== null) failedContKeys.add(key);
+          }
+
+          return false;
+        };
+
+        if (!search()) {
+          const cause = laneFailureCause("no-feasible-topological-order", {
+            rank: null,
+            branchIds: componentBranchIds,
+            linkIds: componentBranchIds.flatMap((id) =>
+              sortedRanks
+                .map((rank) =>
+                  variableByBranchAtRank.get(`${id}:${rank}`)?.id,
+                )
+                .filter(Boolean),
+            ),
+          });
+          const firstId = cause.linkIds[0] ?? cause.branchIds[0] ?? "unknown";
+          const error = new Error(
+            [
+              "Lifecycle transition lane allocation failed",
+              `after ${transitionLaneSolverStats.statesVisited} deterministic states`,
+              `for ${firstId}`,
+            ].join(" "),
+          );
+          error.cause = cause;
+          throw error;
         }
-        for (const variable of rankVariables) assignments.delete(variable.id);
-        transitionLaneSolverStats.backtracks += 1;
-        return false;
-      };
-      const orderedSolved = solveOrder(precedence.order, precedence);
-      if (orderedSolved && acceptSolved(precedence.order, orderedSolved)) {
-        return true;
       }
-      const accepted = solveRankOrders(
-        rank,
-        rankVariables,
-        precedence,
-        effectivePrior,
-        acceptSolved,
-      );
-      if (accepted) return true;
-      deepestFailure = {
-        ok: false,
-        reason: "no-feasible-topological-order",
-        rank,
-        branchIds: rankVariables
-          .map((variable) => variable.branchId)
-          .sort(compareLifecycleIds),
-        linkIds: rankVariables
-          .map((variable) => variable.id)
-          .sort(compareLifecycleIds),
-        edgeKinds: [...new Set(precedence.edges.map((edge) => edge.kind))].sort(
-          compareLifecycleIds,
-        ),
-      };
-      failedStates.add(stateKey);
-      return false;
+
+      return globalAssignments;
     };
-    const solvedRanks = solveRank(0, []);
-    if (!solvedRanks) {
-      if (deepestFailure?.reason === "semantic-order-cycle") {
-        throwPrecedenceFailure(deepestFailure);
-      }
-      const cause = laneFailureCause(
-        deepestFailure?.reason ?? "no-feasible-topological-order",
-        deepestFailure ?? {},
-      );
-      const firstId = cause.linkIds[0] ?? cause.branchIds[0] ?? "unknown";
-      const error = new Error(
-        [
-          "Lifecycle transition lane allocation failed",
-          `after ${transitionLaneSolverStats.statesVisited} deterministic states`,
-          cause.rank === null ? "" : `at transition rank ${cause.rank}`,
-          `for ${firstId}`,
-        ]
-          .filter(Boolean)
-          .join(" "),
-      );
-      error.cause = cause;
-      throw error;
-    }
-    return assignments;
+    return solveGlobal();
   };
 
   const outgoingByNode = new Map();

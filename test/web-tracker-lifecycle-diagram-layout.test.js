@@ -698,8 +698,8 @@ describe("transition lane solver", () => {
     );
   });
 
-  it("paginates 60 applications into 89 lane-only display branches deterministically", () => {
-    const graph = expectSpacingLegal(paginationProjection(), 89);
+  it("paginates 60 applications into 120 lane-only display branches deterministically", () => {
+    const graph = expectSpacingLegal(paginationProjection(), 120);
     expect(graph.transitionLaneSolverStats.statesVisited).toBeLessThan(100000);
     const visibleNodes = graph.nodes.filter(
       (node) => !node.routing && Number(node.total) > 0,
