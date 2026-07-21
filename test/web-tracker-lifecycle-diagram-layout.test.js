@@ -337,6 +337,146 @@ describe("transition lane solver", () => {
     expect(JSON.stringify(shuffled)).toBe(JSON.stringify(result));
   });
 
+  it("creates target-dock edges for production-shaped ending links", () => {
+    const target = { id: "endpoint:shared", routing: false };
+    const variables = [
+      {
+        id: "link:later",
+        branchId: "branch:later",
+        stableId: "branch:later",
+        rank: 3,
+        sourceDockY: 240,
+        targetDockY: 240,
+        isEnding: true,
+        link: { id: "link:later", target },
+      },
+      {
+        id: "link:earlier",
+        branchId: "branch:earlier",
+        stableId: "branch:earlier",
+        rank: 3,
+        sourceDockY: 120,
+        targetDockY: 120,
+        isEnding: true,
+        link: { id: "link:earlier", target },
+      },
+    ];
+    const result = buildTransitionPrecedence({ rank: 3, variables });
+    expect(result.ok).toBe(true);
+    expect(result.edges).toEqual([
+      {
+        fromId: "link:earlier",
+        toId: "link:later",
+        kind: "target-dock",
+        rank: 3,
+      },
+    ]);
+    expect(result.order.map((variable) => variable.id)).toEqual([
+      "link:earlier",
+      "link:later",
+    ]);
+  });
+
+  it("treats raw-string and D3-object ending targets identically", () => {
+    const rawVariables = [
+      {
+        id: "link:top",
+        branchId: "branch:top",
+        stableId: "branch:top",
+        rank: 4,
+        sourceDockY: 100,
+        targetDockY: 100,
+        isEnding: true,
+        link: { id: "link:top", target: "endpoint:shared" },
+      },
+      {
+        id: "link:bottom",
+        branchId: "branch:bottom",
+        stableId: "branch:bottom",
+        rank: 4,
+        sourceDockY: 200,
+        targetDockY: 200,
+        isEnding: true,
+        link: { id: "link:bottom", target: "endpoint:shared" },
+      },
+    ];
+    const d3Variables = rawVariables.map((variable) => ({
+      ...variable,
+      link: {
+        ...variable.link,
+        target: { id: variable.link.target, routing: false },
+      },
+    }));
+    const signature = (result) => ({
+      ok: result.ok,
+      order: result.order.map((variable) => variable.id),
+      edges: result.edges,
+    });
+    expect(
+      signature(buildTransitionPrecedence({ rank: 4, variables: d3Variables })),
+    ).toEqual(
+      signature(
+        buildTransitionPrecedence({ rank: 4, variables: rawVariables }),
+      ),
+    );
+  });
+
+  it("does not add target precedence across different semantic targets", () => {
+    const variables = [
+      {
+        id: "link:a",
+        branchId: "branch:a",
+        stableId: "branch:a",
+        rank: 5,
+        sourceDockY: 100,
+        targetDockY: 100,
+        isEnding: true,
+        link: { id: "link:a", target: { id: "endpoint:a", routing: false } },
+      },
+      {
+        id: "link:b",
+        branchId: "branch:b",
+        stableId: "branch:b",
+        rank: 5,
+        sourceDockY: 200,
+        targetDockY: 200,
+        isEnding: true,
+        link: { id: "link:b", target: { id: "endpoint:b", routing: false } },
+      },
+    ];
+    const result = buildTransitionPrecedence({ rank: 5, variables });
+    expect(result.ok).toBe(true);
+    expect(result.edges.filter((edge) => edge.kind === "target-dock")).toEqual(
+      [],
+    );
+  });
+
+  it("reports malformed ending production links that still target routing nodes", () => {
+    const variables = [
+      {
+        id: "link:routing-target",
+        branchId: "branch:routing-target",
+        stableId: "branch:routing-target",
+        rank: 2,
+        sourceDockY: 100,
+        targetDockY: 100,
+        isEnding: true,
+        link: {
+          id: "link:routing-target",
+          target: { id: "routing:private", routing: true },
+        },
+      },
+    ];
+    expect(buildTransitionPrecedence({ rank: 2, variables })).toEqual({
+      ok: false,
+      reason: "malformed-ending-target",
+      rank: 2,
+      branchIds: ["branch:routing-target"],
+      linkIds: ["link:routing-target"],
+      edgeKinds: ["target-dock"],
+    });
+  });
+
   it("reports semantic-order-cycle diagnostics deterministically", () => {
     const variables = [
       {

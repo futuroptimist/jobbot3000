@@ -115,16 +115,22 @@ export const buildTransitionPrecedence = ({
       addEdge(sourceStarters[index - 1], sourceStarters[index], "source-dock");
     }
   }
+  const variableById = new Map(
+    variables.map((variable) => [variable.id, variable]),
+  );
   for (const edge of projectedEdges) {
-    const from = variables.find((variable) => variable.id === edge.fromId);
-    const to = variables.find((variable) => variable.id === edge.toId);
+    const from = variableById.get(edge.fromId);
+    const to = variableById.get(edge.toId);
     if (from && to) addEdge(from, to, edge.kind);
   }
+  const semanticTargetIdFor = (variable) => {
+    if (variable.targetId) return variable.targetId;
+    const linkTarget = variable.link?.target;
+    if (typeof linkTarget === "string") return linkTarget;
+    return linkTarget?.id;
+  };
   const endingByTarget = new Map();
   for (const variable of variables.filter((candidate) => candidate.isEnding)) {
-    if (variable.link) continue;
-    const targetId = variable.targetId ?? variable.link?.target?.id;
-    if (!targetId) continue;
     if (variable.link?.target?.routing === true) {
       return {
         ok: false,
@@ -135,6 +141,8 @@ export const buildTransitionPrecedence = ({
         edgeKinds: ["target-dock"],
       };
     }
+    const targetId = semanticTargetIdFor(variable);
+    if (!targetId) continue;
     if (!endingByTarget.has(targetId)) endingByTarget.set(targetId, []);
     endingByTarget.get(targetId).push(variable);
   }
@@ -1070,7 +1078,7 @@ export function layoutLifecycleRoutingGraph(
         semanticSourceId: first.sourceId,
         semanticTargetId: last.targetId,
         startRank: first.rank,
-        endRank: last.rank,
+        endRank: last.rank + 1,
         sourceDockY: first.sourceDockY,
         targetDockY: last.targetDockY,
         stableId: first.stableId ?? first.id,
@@ -1109,8 +1117,7 @@ export function layoutLifecycleRoutingGraph(
       }
     }
     addBranchEdges(sourceGroups, "sourceDockY", "source-dock");
-    // Target-dock lookahead is enforced at terminal ranks; projecting it
-    // across unrelated source groups can overconstrain valid multi-source flows.
+    addBranchEdges(targetGroups, "targetDockY", "target-dock");
     const compareStableVariables = (left, right) =>
       compareLifecycleIds(
         left.stableId ?? left.id,
@@ -1497,14 +1504,28 @@ export function layoutLifecycleRoutingGraph(
         edgeKinds: [],
       };
       recordSolverState(rankContext);
+      const variableByBranchAtRank = new Map(
+        rankVariables.map((variable) => [variable.branchId, variable]),
+      );
       const projectedEdges = branchPrecedenceEdges
         .map((edge) => {
-          const from = rankVariables.find(
-            (variable) => variable.branchId === edge.fromBranchId,
+          const fromSpan = branchSpans.get(edge.fromBranchId);
+          const toSpan = branchSpans.get(edge.toBranchId);
+          const commonEndRank = Math.min(
+            fromSpan?.endRank ?? -Infinity,
+            toSpan?.endRank ?? -Infinity,
           );
-          const to = rankVariables.find(
-            (variable) => variable.branchId === edge.toBranchId,
-          );
+          const bothActive =
+            fromSpan &&
+            toSpan &&
+            rank >= fromSpan.startRank &&
+            rank < fromSpan.endRank &&
+            rank >= toSpan.startRank &&
+            rank < toSpan.endRank &&
+            (edge.kind !== "target-dock" || rank < commonEndRank - 1);
+          if (!bothActive) return null;
+          const from = variableByBranchAtRank.get(edge.fromBranchId);
+          const to = variableByBranchAtRank.get(edge.toBranchId);
           return from && to
             ? { fromId: from.id, toId: to.id, kind: edge.kind }
             : null;
