@@ -670,6 +670,7 @@ describe("transition lane solver", () => {
 
   it("assigns spacing-legal lanes for 55-branch multi-source dense graph", () => {
     const graph = expectSpacingLegal(denseBranchProjection(), 55);
+    expect(graph.transitionLaneSolverStats.components).toBe(1);
     expect(graph.transitionLaneSolverStats.statesVisited).toBeLessThan(10000);
     const repeated = laneSignature(denseBranchProjection());
     const shuffledProjection = denseBranchProjection();
@@ -918,16 +919,32 @@ describe("transition lane solver", () => {
     // rank-5 state, preventing this conflation.  The resulting 7 branches
     // are: 2 single-rank O→M1 branches (component 1) plus 2 multi-rank
     // M1→E branches and 3 multi-rank M2→E branches (component 2).
-    const origins = LIFECYCLE_DIAGRAM_TAXONOMY.origins.slice(0, 1).map(({ id }) => id);
-    const milestones = LIFECYCLE_DIAGRAM_TAXONOMY.milestones.slice(0, 1).map(({ id }) => id);
-    const techMilestone = LIFECYCLE_DIAGRAM_TAXONOMY.milestones.slice(1, 2).map(({ id }) => id);
+    const origins = LIFECYCLE_DIAGRAM_TAXONOMY.origins
+      .slice(0, 1)
+      .map(({ id }) => id);
+    const milestones = LIFECYCLE_DIAGRAM_TAXONOMY.milestones
+      .slice(0, 1)
+      .map(({ id }) => id);
+    const techMilestone = LIFECYCLE_DIAGRAM_TAXONOMY.milestones
+      .slice(1, 2)
+      .map(({ id }) => id);
     const endpoints = LIFECYCLE_DIAGRAM_TAXONOMY.endpoints
       .filter(({ id }) => id !== "unknown")
       .slice(0, 5)
       .map(({ id }) => id);
     const nodes = [
-      { id: `origin:${origins[0]}`, label: origins[0], total: 0, applicationIds: [] },
-      { id: `milestone:${milestones[0]}`, label: milestones[0], total: 0, applicationIds: [] },
+      {
+        id: `origin:${origins[0]}`,
+        label: origins[0],
+        total: 0,
+        applicationIds: [],
+      },
+      {
+        id: `milestone:${milestones[0]}`,
+        label: milestones[0],
+        total: 0,
+        applicationIds: [],
+      },
       {
         id: `milestone:${techMilestone[0]}`,
         label: techMilestone[0],
@@ -973,7 +990,11 @@ describe("transition lane solver", () => {
       paths.push({
         applicationId: appId,
         endpoint: endpointId,
-        nodeIds: [`origin:${origins[0]}`, `milestone:${milestones[0]}`, `endpoint:${endpointId}`],
+        nodeIds: [
+          `origin:${origins[0]}`,
+          `milestone:${milestones[0]}`,
+          `endpoint:${endpointId}`,
+        ],
       });
     }
     // Three applications travel milestone_1 → endpoint only (1-rank branches C, D, E)

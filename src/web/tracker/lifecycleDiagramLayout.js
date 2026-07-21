@@ -1337,6 +1337,7 @@ export function layoutLifecycleRoutingGraph(
         const globalOrderSet = new Set();
         const failedStateKeys = new Set();
         const compAssignments = new Map();
+        transitionLaneSolverStats.components += 1;
 
         // Minimum deadline for a branch across all its active ranks
         const branchDeadline = (branchId) => {
@@ -1424,15 +1425,17 @@ export function layoutLifecycleRoutingGraph(
           for (const rank of sortedRanks) {
             const activeBranches = activeBranchesAtRank.get(rank);
             if (!activeBranches?.size) continue;
-            const compActive = componentBranchIds.filter(
-              (id) => activeBranches.has(id),
+            const compActive = componentBranchIds.filter((id) =>
+              activeBranches.has(id),
             );
             if (compActive.every((id) => globalOrderSet.has(id))) continue;
             const continuation = globalOrder.filter((id) =>
               activeBranches.has(id),
             );
             const envelope = rankEnvelopes.get(rank);
-            parts.push(`${rank}:${envelope ?? "null"}:${continuation.join("|")}`);
+            parts.push(
+              `${rank}:${envelope ?? "null"}:${continuation.join("|")}`,
+            );
           }
           return parts.length ? parts.join(";") : null;
         };
@@ -1471,7 +1474,6 @@ export function layoutLifecycleRoutingGraph(
                 .map((id) => variableByBranchAtRank.get(`${id}:${rank}`))
                 .filter(Boolean);
               if (!rankOrder.length) continue;
-              transitionLaneSolverStats.components += 1;
               const solved = assignMonotoneIntervals(rankOrder);
               if (!solved) return false;
               for (let i = 0; i < rankOrder.length; i += 1) {
@@ -1487,7 +1489,9 @@ export function layoutLifecycleRoutingGraph(
 
           // Ready branches: indegree 0, not yet placed, sorted by deadline (MRV)
           const ready = componentBranchIds
-            .filter((id) => !globalOrderSet.has(id) && compIndegree.get(id) === 0)
+            .filter(
+              (id) => !globalOrderSet.has(id) && compIndegree.get(id) === 0,
+            )
             .map((id) => {
               const span = branchSpans.get(id);
               return { id, deadline: branchDeadline(id), span };
@@ -1547,9 +1551,7 @@ export function layoutLifecycleRoutingGraph(
             branchIds: componentBranchIds,
             linkIds: componentBranchIds.flatMap((id) =>
               sortedRanks
-                .map((rank) =>
-                  variableByBranchAtRank.get(`${id}:${rank}`)?.id,
-                )
+                .map((rank) => variableByBranchAtRank.get(`${id}:${rank}`)?.id)
                 .filter(Boolean),
             ),
           });
