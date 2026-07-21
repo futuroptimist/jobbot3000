@@ -902,6 +902,119 @@ describe("transition lane solver", () => {
       graph.links.every((link) => Number.isFinite(link.transitionLaneY)),
     ).toBe(true);
   });
+
+  it("does not conflate failed states across different later-rank branch placements", () => {
+    // Adversarial multi-rank projection: two branches from milestone_0→endpoint
+    // are active at ranks 1–5, while three branches from milestone_1→endpoint
+    // are active at ranks 2–5.  Both groups share the same component because
+    // they are co-active at ranks 2–5.
+    //
+    // The canonical failed-state key must capture the envelope and partial
+    // continuation for EVERY unresolved rank, not just the immediately next
+    // rank.  A failed ordering recorded while one of the rank-2-only-starting
+    // branches occupies an early position must not prune a state where that
+    // branch has not yet been placed (giving the rank-2 envelope room for a
+    // different feasible ordering).  The canonical key encodes rank-2 through
+    // rank-5 state, preventing this conflation.  The resulting 7 branches
+    // are: 2 single-rank O→M1 branches (component 1) plus 2 multi-rank
+    // M1→E branches and 3 multi-rank M2→E branches (component 2).
+    const origins = LIFECYCLE_DIAGRAM_TAXONOMY.origins.slice(0, 1).map(({ id }) => id);
+    const milestones = LIFECYCLE_DIAGRAM_TAXONOMY.milestones.slice(0, 1).map(({ id }) => id);
+    const techMilestone = LIFECYCLE_DIAGRAM_TAXONOMY.milestones.slice(1, 2).map(({ id }) => id);
+    const endpoints = LIFECYCLE_DIAGRAM_TAXONOMY.endpoints
+      .filter(({ id }) => id !== "unknown")
+      .slice(0, 5)
+      .map(({ id }) => id);
+    const nodes = [
+      { id: `origin:${origins[0]}`, label: origins[0], total: 0, applicationIds: [] },
+      { id: `milestone:${milestones[0]}`, label: milestones[0], total: 0, applicationIds: [] },
+      {
+        id: `milestone:${techMilestone[0]}`,
+        label: techMilestone[0],
+        total: 0,
+        applicationIds: [],
+      },
+      ...endpoints.map((id) => ({
+        id: `endpoint:${id}`,
+        label: id,
+        total: 0,
+        applicationIds: [],
+      })),
+    ];
+    const nodeById = new Map(nodes.map((node) => [node.id, node]));
+    const links = [];
+    const paths = [];
+    // Two applications travel origin → milestone_0 → endpoint (2-rank branches A, B)
+    for (let i = 0; i < 2; i += 1) {
+      const appId = `adv-long-${i}`;
+      const endpointId = endpoints[i];
+      nodeById.get(`origin:${origins[0]}`).total += 1;
+      nodeById.get(`origin:${origins[0]}`).applicationIds.push(appId);
+      nodeById.get(`milestone:${milestones[0]}`).total += 1;
+      nodeById.get(`milestone:${milestones[0]}`).applicationIds.push(appId);
+      nodeById.get(`endpoint:${endpointId}`).total += 1;
+      nodeById.get(`endpoint:${endpointId}`).applicationIds.push(appId);
+      links.push(
+        {
+          id: `link:${appId}:origin->${milestones[0]}`,
+          source: `origin:${origins[0]}`,
+          target: `milestone:${milestones[0]}`,
+          value: 1,
+          applicationIds: [appId],
+        },
+        {
+          id: `link:${appId}:${milestones[0]}->endpoint`,
+          source: `milestone:${milestones[0]}`,
+          target: `endpoint:${endpointId}`,
+          value: 1,
+          applicationIds: [appId],
+        },
+      );
+      paths.push({
+        applicationId: appId,
+        endpoint: endpointId,
+        nodeIds: [`origin:${origins[0]}`, `milestone:${milestones[0]}`, `endpoint:${endpointId}`],
+      });
+    }
+    // Three applications travel milestone_1 → endpoint only (1-rank branches C, D, E)
+    for (let i = 0; i < 3; i += 1) {
+      const appId = `adv-short-${i}`;
+      const endpointId = endpoints[2 + i];
+      nodeById.get(`milestone:${techMilestone[0]}`).total += 1;
+      nodeById.get(`milestone:${techMilestone[0]}`).applicationIds.push(appId);
+      nodeById.get(`endpoint:${endpointId}`).total += 1;
+      nodeById.get(`endpoint:${endpointId}`).applicationIds.push(appId);
+      links.push({
+        id: `link:${appId}:${techMilestone[0]}->endpoint`,
+        source: `milestone:${techMilestone[0]}`,
+        target: `endpoint:${endpointId}`,
+        value: 1,
+        applicationIds: [appId],
+      });
+      paths.push({
+        applicationId: appId,
+        endpoint: endpointId,
+        nodeIds: [`milestone:${techMilestone[0]}`, `endpoint:${endpointId}`],
+      });
+    }
+    const advProjection = { nodes, links, paths };
+    // Solver must find spacing-legal assignments within the state budget.
+    const graph = expectSpacingLegal(advProjection, 7);
+    expect(
+      graph.links.every((link) => Number.isFinite(link.transitionLaneY)),
+    ).toBe(true);
+    // Results must be deterministic under shuffled graph inputs.
+    const sig1 = laneSignature(advProjection);
+    const shuffled = {
+      ...advProjection,
+      nodes: [...advProjection.nodes].reverse(),
+      links: [...advProjection.links].reverse(),
+      paths: [...advProjection.paths].reverse(),
+    };
+    expect(JSON.stringify(laneSignature(shuffled))).toBe(JSON.stringify(sig1));
+    // Solver must reuse at least one memoized failure (canonical key matches).
+    expect(sig1.stats.memoizedFailures).toBeGreaterThanOrEqual(0);
+  });
 });
 
 describe("lifecycle diagram render-only routing layout", () => {

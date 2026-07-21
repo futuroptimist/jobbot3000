@@ -1023,16 +1023,6 @@ export function layoutLifecycleRoutingGraph(
           minX: clearanceMinX,
           maxX: clearanceMaxX,
           incidentIds,
-          domain: laneDomainForSpan({
-            minX: clearanceMinX,
-            maxX: clearanceMaxX,
-            incidentIds,
-            idealY,
-          }).sort(
-            (left, right) =>
-              Math.abs(left - idealY) - Math.abs(right - idealY) ||
-              left - right,
-          ),
           intervals: legalIntervalsForSpan(
             clearanceMinX,
             clearanceMaxX,
@@ -1327,7 +1317,7 @@ export function layoutLifecycleRoutingGraph(
         const rankEnvelopes = new Map(sortedRanks.map((r) => [r, null]));
         const globalOrder = [];
         const globalOrderSet = new Set();
-        const failedContKeys = new Set();
+        const failedStateKeys = new Set();
         const compAssignments = new Map();
 
         // Minimum deadline for a branch across all its active ranks
@@ -1373,16 +1363,6 @@ export function layoutLifecycleRoutingGraph(
           return updates;
         };
 
-        // Continuation key: placed branches in next-rank order (null if no adjacent next rank)
-        const contKeyForNextRank = (rank) => {
-          const nextRank = sortedRanks.find((r) => r > rank);
-          if (nextRank === undefined || nextRank !== rank + 1) return null;
-          const nextActive = activeBranchesAtRank.get(nextRank);
-          if (!nextActive?.size) return null;
-          const continuation = globalOrder.filter((id) => nextActive.has(id));
-          return `${nextRank}:${continuation.join("|")}`;
-        };
-
         // Capacity look-ahead: can the remaining unplaced branches still fit?
         const capacityOkForRemainder = () => {
           for (const rank of sortedRanks) {
@@ -1413,6 +1393,32 @@ export function layoutLifecycleRoutingGraph(
           return true;
         };
 
+        // Canonical failed-state signature: for each rank that still has
+        // unplaced active component branches, capture the current envelope
+        // and the ordered continuation of already-placed branches active there.
+        // State-equivalence invariant: two search states share an identical
+        // future subtree iff every unresolved rank has the same envelope
+        // (committed Y floor) and the same partial continuation order; the
+        // canonical key encodes both so a memoized failure is only reused for
+        // truly equivalent states.
+        const canonicalStateKey = () => {
+          const parts = [];
+          for (const rank of sortedRanks) {
+            const activeBranches = activeBranchesAtRank.get(rank);
+            if (!activeBranches?.size) continue;
+            const compActive = componentBranchIds.filter(
+              (id) => activeBranches.has(id),
+            );
+            if (compActive.every((id) => globalOrderSet.has(id))) continue;
+            const continuation = globalOrder.filter((id) =>
+              activeBranches.has(id),
+            );
+            const envelope = rankEnvelopes.get(rank);
+            parts.push(`${rank}:${envelope ?? "null"}:${continuation.join("|")}`);
+          }
+          return parts.length ? parts.join(";") : null;
+        };
+
         // Pre-collect variable IDs for state-limit error reporting
         const compLinkIds = componentBranchIds.flatMap((id) =>
           sortedRanks
@@ -1425,21 +1431,11 @@ export function layoutLifecycleRoutingGraph(
             linkIds: compLinkIds,
           });
 
-          // Prune via continuation key memoization
-          for (const rank of sortedRanks) {
-            const activeBranches = activeBranchesAtRank.get(rank);
-            if (!activeBranches?.size) continue;
-            if (
-              !componentBranchIds
-                .filter((id) => activeBranches.has(id))
-                .every((id) => globalOrderSet.has(id))
-            )
-              continue;
-            const key = contKeyForNextRank(rank);
-            if (key !== null && failedContKeys.has(key)) {
-              transitionLaneSolverStats.memoizedFailures += 1;
-              return false;
-            }
+          // Prune via canonical failed-state memoization
+          const key = canonicalStateKey();
+          if (key !== null && failedStateKeys.has(key)) {
+            transitionLaneSolverStats.memoizedFailures += 1;
+            return false;
           }
 
           if (globalOrder.length === componentBranchIds.length) {
@@ -1515,19 +1511,9 @@ export function layoutLifecycleRoutingGraph(
             transitionLaneSolverStats.backtracks += 1;
           }
 
-          // Record failed continuation keys for every newly-completed rank
-          for (const rank of sortedRanks) {
-            const activeBranches = activeBranchesAtRank.get(rank);
-            if (!activeBranches?.size) continue;
-            if (
-              !componentBranchIds
-                .filter((id) => activeBranches.has(id))
-                .every((id) => globalOrderSet.has(id))
-            )
-              continue;
-            const key = contKeyForNextRank(rank);
-            if (key !== null) failedContKeys.add(key);
-          }
+          // Record the canonical failed state so equivalent future searches
+          // can be pruned without re-exploring.
+          if (key !== null) failedStateKeys.add(key);
 
           return false;
         };
