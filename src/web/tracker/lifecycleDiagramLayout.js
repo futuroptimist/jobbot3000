@@ -1332,16 +1332,341 @@ export function layoutLifecycleRoutingGraph(
       // Convert component map to an array so recursive index-based traversal works.
       const componentList = [...componentMap.values()];
 
+      // Every active rank's branches all belong to exactly one component (the
+      // union-find above groups branches that share a rank), so once every
+      // component has committed a centered per-rank assignment this map holds
+      // the complete graph's {rankOrder, cen} data — the input global
+      // coordinate refinement (below) reads once at the full leaf.
+      const rankRefinementInfo = new Map();
+      const allLinkIds = allBranchIds.flatMap((id) =>
+        sortedRanks
+          .map((rank) => variableByBranchAtRank.get(`${id}:${rank}`)?.id)
+          .filter(Boolean),
+      );
+
+      // Global coordinate refinement: runs once per complete cross-component
+      // topology, after the fully-centered globalAssignments has already been
+      // rejected by candidateCallback at the base case below. Unlike the
+      // former per-component design, this never re-invokes solveFromComponent
+      // — candidateCallback is a flat leaf check (materialize geometry, then
+      // strict handle placement) — so trying many alternative coordinates
+      // here costs one handle-solve per candidate, not a full re-solve of
+      // every downstream component. This lets refinement search implicated
+      // variables from *any* component jointly, without the exponential
+      // blowup that motivated the earlier isLastComponent/MAX_COORD_VARS/
+      // coordDepthLimit restrictions (removed).
+      const refineGlobalLaneCoordinates = () => {
+        const blocked = lastHandleFailure?.blockedBranchIds ?? [];
+        const routeBlockerIds = (lastHandleFailure?.branchDiagnostics ?? [])
+          .map((diagnostic) => diagnostic?.nearestRejectedCandidate?.blocker)
+          .filter((blocker) => blocker?.kind === "route")
+          .map((blocker) => blocker.branchId);
+        const conflictPairIds = (
+          lastHandleFailure?.component?.conflictingBranchPairs ?? []
+        ).flat();
+        const implicatedIds = new Set([
+          ...blocked,
+          ...routeBlockerIds,
+          ...conflictPairIds,
+        ]);
+        if (!implicatedIds.size) return false;
+
+        const blockedSet = new Set(blocked);
+        // (branchId -> Set<rank>) targeted pairs, narrowed by diagnostics so
+        // the search only considers ranks where a move could plausibly help.
+        const implicatedPairsByBranch = new Map();
+
+        // Route-blocker diagnostics: specific (branch, rank) pairs — the
+        // blocked branch at its handle transition rank, and the blocking
+        // route at its own transition rank.
+        for (const diagnostic of lastHandleFailure?.branchDiagnostics ?? []) {
+          const id = diagnostic?.branchId;
+          if (!id) continue;
+          const cand = diagnostic.nearestRejectedCandidate;
+          if (!cand || cand.blocker?.kind !== "route") continue;
+          if (Number.isInteger(cand.transitionRank)) {
+            if (!implicatedPairsByBranch.has(id))
+              implicatedPairsByBranch.set(id, new Set());
+            implicatedPairsByBranch.get(id).add(cand.transitionRank);
+          }
+          const blockerId = cand.blocker.branchId;
+          const blockerRank = cand.blocker.transitionRank;
+          if (blockerId && Number.isInteger(blockerRank)) {
+            if (!implicatedPairsByBranch.has(blockerId))
+              implicatedPairsByBranch.set(blockerId, new Set());
+            implicatedPairsByBranch.get(blockerId).add(blockerRank);
+          }
+        }
+
+        // Conflict pairs: both members at every rank where they are
+        // co-active, but only for pairs involving a directly-blocked branch.
+        for (const [leftId, rightId] of lastHandleFailure?.component
+          ?.conflictingBranchPairs ?? []) {
+          if (!blockedSet.has(leftId) && !blockedSet.has(rightId)) continue;
+          for (const [pId, otherId] of [
+            [leftId, rightId],
+            [rightId, leftId],
+          ]) {
+            for (const rank of sortedRanks) {
+              const aB = activeBranchesAtRank.get(rank);
+              if (aB?.has(pId) && aB?.has(otherId)) {
+                if (!implicatedPairsByBranch.has(pId))
+                  implicatedPairsByBranch.set(pId, new Set());
+                implicatedPairsByBranch.get(pId).add(rank);
+              }
+            }
+          }
+        }
+
+        // Fallback: every implicated branch at every rank it is active,
+        // when no diagnostic source supplied rank information.
+        if (!implicatedPairsByBranch.size) {
+          for (const branchId of implicatedIds) {
+            const rankSet = new Set();
+            for (const rank of sortedRanks) {
+              if (activeBranchesAtRank.get(rank)?.has(branchId))
+                rankSet.add(rank);
+            }
+            if (rankSet.size) implicatedPairsByBranch.set(branchId, rankSet);
+          }
+        }
+
+        // Build a finite critical-value domain for every targeted
+        // (branchId, rank) variable: interval boundaries, forward minimum,
+        // backward maximum, and nearest-ideal within the neighbour-
+        // constrained envelope, plus the centred value itself (so a
+        // variable may legally choose to stay put while others move).
+        //
+        // The envelope is only clamped against a neighbour's centred value
+        // when that neighbour is *not* itself implicated. When an adjacent
+        // variable is also implicated it may move in the same combination,
+        // so clamping against its stale centred value would exclude legal
+        // solutions requiring the two to move together; the neighbour's own
+        // domain plus the full spacing validation below jointly guarantee
+        // correctness regardless of envelope width.
+        const vars = [];
+        for (const [branchId, rankSet] of implicatedPairsByBranch) {
+          for (const rank of rankSet) {
+            const info = rankRefinementInfo.get(rank);
+            if (!info) continue;
+            const { rankOrder, cen } = info;
+            const idx = rankOrder.findIndex((v) => v.branchId === branchId);
+            if (idx < 0) continue;
+            const v = rankOrder[idx];
+            const leftNeighborImplicated =
+              idx > 0 && implicatedIds.has(rankOrder[idx - 1].branchId);
+            const rightNeighborImplicated =
+              idx < rankOrder.length - 1 &&
+              implicatedIds.has(rankOrder[idx + 1].branchId);
+            const lo =
+              idx > 0 && !leftNeighborImplicated
+                ? quantizeY(cen[idx - 1] + minLaneSpacing + LANE_Y_EPSILON)
+                : laneTop;
+            const hi =
+              idx < rankOrder.length - 1 && !rightNeighborImplicated
+                ? quantizeY(cen[idx + 1] - minLaneSpacing)
+                : laneBottom;
+            const domainSet = new Set([cen[idx]]);
+            const yFwd = firstLegalAtOrAbove(v.intervals, lo);
+            if (yFwd !== null && yFwd <= hi + LANE_Y_EPSILON)
+              domainSet.add(yFwd);
+            const yBwd = lastLegalAtOrBelow(v.intervals, hi);
+            if (yBwd !== null && yBwd >= lo - LANE_Y_EPSILON)
+              domainSet.add(yBwd);
+            const yIdeal = legalNearestInEnvelope(
+              v.intervals,
+              lo,
+              hi,
+              v.idealY,
+            );
+            if (yIdeal !== null) domainSet.add(yIdeal);
+            for (const [iLo, iHi] of v.intervals) {
+              for (const boundary of [iLo, iHi]) {
+                const q = quantizeY(boundary);
+                if (
+                  q >= lo - LANE_Y_EPSILON &&
+                  q <= hi + LANE_Y_EPSILON &&
+                  candidateClearsSpan(q, v.minX, v.maxX, v.incidentIds)
+                )
+                  domainSet.add(q);
+              }
+            }
+            const alternatives = [...domainSet].sort(
+              (a, b) =>
+                Math.abs(a - v.idealY) - Math.abs(b - v.idealY) || a - b,
+            );
+            vars.push({
+              key: `${rank}:${idx}`,
+              rank,
+              idx,
+              id: v.id,
+              branchId,
+              alternatives,
+            });
+          }
+        }
+
+        if (!vars.length) return false;
+
+        // Deterministic MRV-style ordering: fewest legal alternatives first
+        // (most constrained variable), then stable rank/branch identity.
+        vars.sort(
+          (a, b) =>
+            a.alternatives.length - b.alternatives.length ||
+            a.rank - b.rank ||
+            compareLifecycleIds(a.branchId, b.branchId),
+        );
+        const varByKey = new Map(vars.map((entry) => [entry.key, entry]));
+        const chosen = new Map(); // "rank:idx" -> tentative y
+
+        const valueAt = (rank, idx) => {
+          const key = `${rank}:${idx}`;
+          if (chosen.has(key)) return chosen.get(key);
+          return rankRefinementInfo.get(rank).cen[idx];
+        };
+
+        // Immediate legality against neighbours that are already decided
+        // (fixed centred value, or already chosen this attempt). A neighbour
+        // that is itself implicated but not yet chosen is left unconstrained
+        // here; the full spacing validation at each complete leaf is the
+        // authoritative correctness check regardless of this ordering.
+        const spacingLegal = (rank, idx, y) => {
+          const { rankOrder } = rankRefinementInfo.get(rank);
+          if (idx > 0) {
+            const leftKey = `${rank}:${idx - 1}`;
+            if (!varByKey.has(leftKey) || chosen.has(leftKey)) {
+              if (
+                y <
+                valueAt(rank, idx - 1) + minLaneSpacing - LANE_Y_EPSILON
+              )
+                return false;
+            }
+          }
+          if (idx < rankOrder.length - 1) {
+            const rightKey = `${rank}:${idx + 1}`;
+            if (!varByKey.has(rightKey) || chosen.has(rightKey)) {
+              if (
+                y >
+                valueAt(rank, idx + 1) - minLaneSpacing + LANE_Y_EPSILON
+              )
+                return false;
+            }
+          }
+          return true;
+        };
+
+        // Forward check: every not-yet-assigned implicated neighbour must
+        // retain at least one legal alternative given this tentative
+        // assignment before descending further.
+        const forwardCheckOk = (rank, idx) => {
+          for (const neighborIdx of [idx - 1, idx + 1]) {
+            const neighborKey = `${rank}:${neighborIdx}`;
+            if (chosen.has(neighborKey)) continue;
+            const neighbor = varByKey.get(neighborKey);
+            if (!neighbor) continue;
+            const feasible = neighbor.alternatives.some((y) =>
+              spacingLegal(rank, neighborIdx, y),
+            );
+            if (!feasible) return false;
+          }
+          return true;
+        };
+
+        // Authoritative correctness check at a complete candidate: full
+        // per-rank monotone-spacing validation across every active rank in
+        // the whole graph (not only the implicated pairs), mirroring the
+        // legality guarantee the removed per-component buildFromChosen once
+        // provided.
+        const validateFull = () => {
+          for (const [rank, info] of rankRefinementInfo) {
+            const { rankOrder, cen } = info;
+            let prev = null;
+            for (let i = 0; i < rankOrder.length; i += 1) {
+              const key = `${rank}:${i}`;
+              const val = chosen.has(key) ? chosen.get(key) : cen[i];
+              if (
+                prev !== null &&
+                val < prev + minLaneSpacing - LANE_Y_EPSILON
+              )
+                return false;
+              prev = val;
+            }
+          }
+          return true;
+        };
+
+        const applyChosen = () => {
+          for (const [key, y] of chosen) {
+            globalAssignments.set(varByKey.get(key).id, y);
+          }
+        };
+        const revertChosen = () => {
+          for (const key of chosen.keys()) {
+            const entry = varByKey.get(key);
+            globalAssignments.set(
+              entry.id,
+              rankRefinementInfo.get(entry.rank).cen[entry.idx],
+            );
+          }
+        };
+
+        // Seed dedup with the already-tried, already-rejected all-centred
+        // signature so an all-no-op combination is recognized without a
+        // wasted handle-solve.
+        const triedCoordSigs = new Set([
+          allLinkIds.map((id) => globalAssignments.get(id) ?? "").join(","),
+        ]);
+
+        const search = (position) => {
+          recordSolverState({
+            branchIds: [...implicatedIds],
+            linkIds: allLinkIds,
+          });
+          if (position === vars.length) {
+            if (!validateFull()) return false;
+            applyChosen();
+            const sig = allLinkIds
+              .map((id) => globalAssignments.get(id) ?? "")
+              .join(",");
+            if (triedCoordSigs.has(sig)) {
+              revertChosen();
+              return false;
+            }
+            triedCoordSigs.add(sig);
+            if (candidateCallback(globalAssignments)) return true;
+            revertChosen();
+            return false;
+          }
+          const entry = vars[position];
+          for (const y of entry.alternatives) {
+            recordSolverState({
+              branchIds: [...implicatedIds],
+              linkIds: allLinkIds,
+            });
+            if (!spacingLegal(entry.rank, entry.idx, y)) continue;
+            chosen.set(entry.key, y);
+            if (forwardCheckOk(entry.rank, entry.idx) && search(position + 1))
+              return true;
+            chosen.delete(entry.key);
+          }
+          return false;
+        };
+
+        return search(0);
+      };
+
       // Recursively solve each connected component, then check handle-feasibility.
       // When candidateCallback is provided, it is called with globalAssignments once
       // all components have placed their branches; it returns true to commit (and stop
-      // the search) or false to continue searching for a different assignment.
+      // the search) or false to continue searching for a different assignment. If the
+      // centred assignment is rejected, global coordinate refinement (above) searches
+      // for an alternative before this ordering combination is abandoned.
       const solveFromComponent = (componentIndex) => {
         if (componentIndex >= componentList.length) {
           // All components placed; evaluate this global candidate.
-          return candidateCallback
-            ? candidateCallback(globalAssignments)
-            : true;
+          if (!candidateCallback) return true;
+          if (candidateCallback(globalAssignments)) return true;
+          return refineGlobalLaneCoordinates();
         }
 
         const componentBranchIds = componentList[componentIndex];
@@ -1481,20 +1806,26 @@ export function layoutLifecycleRoutingGraph(
           }
 
           if (globalOrder.length === componentBranchIds.length) {
-            // Skip orderings whose complete coordinate space has been exhausted.
+            // Skip orderings whose centred assignment (combined with every
+            // downstream component's own search, including one global
+            // coordinate-refinement attempt at the full leaf) has already
+            // been exhausted.
             const orderingKey = globalOrder.join(",");
             if (failedCompleteOrderings.has(orderingKey)) return false;
 
-            // Compute centered assignment per active rank.  State charges
-            // happen only here (one per active rank variable) so the
-            // aggregate budget counts ordering evaluations fairly.  Only the
-            // centered pass is computed: forward/backward envelopes are not
-            // read anywhere below, so computing them here was pure wasted
-            // work repeated on every ordering the search reaches.
+            // Compute the centered assignment for this component's active
+            // ranks and publish it to the shared rankRefinementInfo map so
+            // global coordinate refinement (run once at the full leaf, after
+            // every component has committed an ordering) can read it without
+            // recomputing. State charges happen only here (one per active
+            // rank variable) so the aggregate budget counts ordering
+            // evaluations fairly.
             const perRankPC = new Map(); // rank -> {rankOrder, cen}
             for (const rank of sortedRanks) {
               const activeBranches = activeBranchesAtRank.get(rank);
               if (!activeBranches?.size) continue;
+              if (!componentBranchIds.some((id) => activeBranches.has(id)))
+                continue;
               const rankOrder = globalOrder
                 .filter((id) => activeBranches.has(id))
                 .map((id) => variableByBranchAtRank.get(`${id}:${rank}`))
@@ -1512,387 +1843,23 @@ export function layoutLifecycleRoutingGraph(
               perRankPC.set(rank, { rankOrder, cen });
             }
 
-            const activeRanks = [...perRankPC.keys()];
-            const compBranchSet = new Set(componentBranchIds);
+            const va = new Map();
+            for (const [rank, { rankOrder, cen }] of perRankPC) {
+              for (let i = 0; i < rankOrder.length; i += 1)
+                va.set(rankOrder[i].id, cen[i]);
+              rankRefinementInfo.set(rank, { rankOrder, cen });
+            }
 
-            // Build a global link assignment from per-rank value arrays.
-            // Returns null when the Y-signature duplicates one already tried.
-            const triedCoordSigs = new Set();
-            const buildAssignment = (valuesFn) => {
-              const va = new Map();
-              for (const rank of activeRanks) {
-                const { rankOrder } = perRankPC.get(rank);
-                const values = valuesFn(rank);
-                for (let i = 0; i < rankOrder.length; i += 1) {
-                  va.set(rankOrder[i].id, values[i]);
-                }
-              }
-              const sig = compLinkIds.map((id) => va.get(id) ?? "").join(",");
-              if (triedCoordSigs.has(sig)) return null;
-              triedCoordSigs.add(sig);
-              return va;
-            };
-
-            // Try one candidate assignment; commit on success, restore on failure.
-            const evaluateCandidate = (va) => {
-              if (!va) return false;
-              for (const [id, value] of va) globalAssignments.set(id, value);
-              if (solveFromComponent(componentIndex + 1)) {
-                componentOrderings.set(compMinId, orderingKey);
-                componentMembers.set(compMinId, componentBranchIds.slice());
-                return true;
-              }
-              for (const id of va.keys()) globalAssignments.delete(id);
-              return false;
-            };
-
-            // Candidate 1: all-centered (most likely to succeed).
-            if (evaluateCandidate(buildAssignment((r) => perRankPC.get(r).cen)))
+            for (const [id, value] of va) globalAssignments.set(id, value);
+            if (solveFromComponent(componentIndex + 1)) {
+              componentOrderings.set(compMinId, orderingKey);
+              componentMembers.set(compMinId, componentBranchIds.slice());
               return true;
-
-            // Use handle diagnostics to identify implicated (branch, rank)
-            // variables: branches the handle solver directly blocked, the
-            // unrelated routes those rejections were measured against, and
-            // branches sharing a candidate-box conflict. When none of these
-            // fall in this component, coordinate changes here cannot help
-            // and the ordering is exhausted.
-            const blocked = lastHandleFailure?.blockedBranchIds ?? [];
-            const routeBlockerIds = (lastHandleFailure?.branchDiagnostics ?? [])
-              .map((diagnostic) => diagnostic?.nearestRejectedCandidate?.blocker)
-              .filter((blocker) => blocker?.kind === "route")
-              .map((blocker) => blocker.branchId);
-            const conflictPairIds = (
-              lastHandleFailure?.component?.conflictingBranchPairs ?? []
-            ).flat();
-            const implicatedIds = new Set([
-              ...blocked,
-              ...routeBlockerIds,
-              ...conflictPairIds,
-            ]);
-            const blockedInComp = [...implicatedIds].filter((id) =>
-              compBranchSet.has(id),
-            );
-
-            if (!blockedInComp.length) {
-              failedCompleteOrderings.add(orderingKey);
-              return false;
             }
-
-            // Build a targeted set of (branchId, rank) pairs from handle
-            // diagnostics so the iterative-deepening search stays bounded.
-            //
-            // Route-blocker diagnostics (no-candidates failures) pinpoint
-            // the exact transition ranks where lane moves resolve the block:
-            // the blocked branch at its handle transitionRank, and the
-            // blocking route at its own transitionRank.  Conflict-pair
-            // diagnostics (handle-overlap failures) narrow to ranks where
-            // a directly-blocked branch and its conflict partner are both
-            // active.  When neither source provides rank information, fall
-            // back to (blockedInComp × activeRanks) so the solver always
-            // has something to try.
-            //
-            // Keeping varDomains small means the iterative-deepening depth
-            // cap below keeps cost well within the 200 000-state budget;
-            // deeper combinations (three or more simultaneous moves) are
-            // extremely rare in practice and would require depth > 2 to
-            // find — those orderings are simply not memoized as exhausted
-            // so the solver can try alternative topological orderings.
-            const implicatedPairsByBranch = new Map(); // branchId → Set<rank>
-            const blockedBranchSet = new Set(blocked);
-
-            // Route-blocker diagnostics: specific (branch, rank) pairs.
-            for (const diagnostic of lastHandleFailure?.branchDiagnostics ??
-              []) {
-              const id = diagnostic?.branchId;
-              if (!id || !compBranchSet.has(id)) continue;
-              const cand = diagnostic.nearestRejectedCandidate;
-              if (!cand || cand.blocker?.kind !== "route") continue;
-              if (Number.isInteger(cand.transitionRank)) {
-                if (!implicatedPairsByBranch.has(id))
-                  implicatedPairsByBranch.set(id, new Set());
-                implicatedPairsByBranch.get(id).add(cand.transitionRank);
-              }
-              const blockerId = cand.blocker.branchId;
-              const blockerRank = cand.blocker.transitionRank;
-              if (
-                blockerId &&
-                compBranchSet.has(blockerId) &&
-                Number.isInteger(blockerRank)
-              ) {
-                if (!implicatedPairsByBranch.has(blockerId))
-                  implicatedPairsByBranch.set(blockerId, new Set());
-                implicatedPairsByBranch.get(blockerId).add(blockerRank);
-              }
-            }
-
-            // Conflict pairs: both members at every rank where they are
-            // co-active, but only for pairs involving a directly-blocked
-            // branch (avoids enumerating every pair in the component).
-            for (const [leftId, rightId] of lastHandleFailure?.component
-              ?.conflictingBranchPairs ?? []) {
-              if (
-                !blockedBranchSet.has(leftId) &&
-                !blockedBranchSet.has(rightId)
-              )
-                continue;
-              for (const [pId, otherId] of [
-                [leftId, rightId],
-                [rightId, leftId],
-              ]) {
-                if (!compBranchSet.has(pId)) continue;
-                for (const rank of activeRanks) {
-                  const aB = activeBranchesAtRank.get(rank);
-                  if (aB?.has(pId) && aB?.has(otherId)) {
-                    if (!implicatedPairsByBranch.has(pId))
-                      implicatedPairsByBranch.set(pId, new Set());
-                    implicatedPairsByBranch.get(pId).add(rank);
-                  }
-                }
-              }
-            }
-
-            // Fallback: all (blockedInComp × activeRanks) when no rank
-            // information is available from any diagnostic source.
-            if (!implicatedPairsByBranch.size) {
-              for (const branchId of blockedInComp) {
-                implicatedPairsByBranch.set(branchId, new Set(activeRanks));
-              }
-            }
-
-            // For each targeted (branchId, rank) pair build a finite
-            // critical domain: interval boundaries within the
-            // neighbour-constrained envelope [lo, hi], forward minimum,
-            // backward maximum, and nearest-ideal — all distinct from the
-            // centred value already tried.
-            //
-            // The envelope is only clamped against a neighbour's centred
-            // value when that neighbour is *not* itself implicated. When an
-            // adjacent variable is also implicated it may move in the same
-            // combination (tryCombination can select both), so clamping
-            // against its stale centred value would exclude legal solutions
-            // requiring the two to move together; the neighbour's own
-            // domain and the monotone-spacing check in buildFromChosen
-            // jointly guarantee correctness regardless of envelope width.
-            const varDomains = [];
-            for (const [branchId, rankSet] of implicatedPairsByBranch) {
-              for (const rank of rankSet) {
-                if (!perRankPC.has(rank)) continue;
-                const { rankOrder, cen } = perRankPC.get(rank);
-                const idx = rankOrder.findIndex(
-                  (v) => v.branchId === branchId,
-                );
-                if (idx < 0) continue;
-                const v = rankOrder[idx];
-                const leftNeighborImplicated =
-                  idx > 0 && implicatedIds.has(rankOrder[idx - 1].branchId);
-                const rightNeighborImplicated =
-                  idx < rankOrder.length - 1 &&
-                  implicatedIds.has(rankOrder[idx + 1].branchId);
-                const lo =
-                  idx > 0 && !leftNeighborImplicated
-                    ? quantizeY(cen[idx - 1] + minLaneSpacing + LANE_Y_EPSILON)
-                    : laneTop;
-                const hi =
-                  idx < rankOrder.length - 1 && !rightNeighborImplicated
-                    ? quantizeY(cen[idx + 1] - minLaneSpacing)
-                    : laneBottom;
-                const domainSet = new Set();
-                const yFwd = firstLegalAtOrAbove(v.intervals, lo);
-                if (yFwd !== null && yFwd <= hi + LANE_Y_EPSILON)
-                  domainSet.add(yFwd);
-                const yBwd = lastLegalAtOrBelow(v.intervals, hi);
-                if (yBwd !== null && yBwd >= lo - LANE_Y_EPSILON)
-                  domainSet.add(yBwd);
-                const yIdeal = legalNearestInEnvelope(
-                  v.intervals,
-                  lo,
-                  hi,
-                  v.idealY,
-                );
-                if (yIdeal !== null) domainSet.add(yIdeal);
-                for (const [iLo, iHi] of v.intervals) {
-                  for (const boundary of [iLo, iHi]) {
-                    const q = quantizeY(boundary);
-                    if (
-                      q >= lo - LANE_Y_EPSILON &&
-                      q <= hi + LANE_Y_EPSILON &&
-                      candidateClearsSpan(q, v.minX, v.maxX, v.incidentIds)
-                    )
-                      domainSet.add(q);
-                  }
-                }
-                domainSet.delete(cen[idx]);
-                if (!domainSet.size) continue;
-                const alternatives = [...domainSet].sort(
-                  (a, b) =>
-                    Math.abs(a - v.idealY) - Math.abs(b - v.idealY) || a - b,
-                );
-                varDomains.push({ rank, idx, alternatives });
-              }
-            }
-
-            if (!varDomains.length) {
-              failedCompleteOrderings.add(orderingKey);
-              return false;
-            }
-
-            // Coordinate-refinement DFS is only safe for the final lane
-            // component. For earlier components each coord-DFS leaf calls
-            // solveFromComponent(componentIndex + 1), which re-runs the full
-            // solver for every subsequent component from scratch. With
-            // C(varDomains, 2) × k² leaves that fan-out is exponential and
-            // easily exhausts the 200 000-state budget even for modest fixture
-            // sizes. Skipping coord DFS for non-final components is correct:
-            // the only path where a coord move in component K helps handle
-            // placement is the one already tried (the centred assignment
-            // above). Any remaining handle-placement failures in component K
-            // are better resolved by a different topological ordering (MRV
-            // backtracking), which respects the shared state budget.
-            const isLastComponent =
-              componentIndex === componentList.length - 1;
-            if (!isLastComponent) {
-              failedCompleteOrderings.add(orderingKey);
-              return false;
-            }
-
-            // Build a complete assignment from a flat list of chosen variable
-            // overrides. Returns null when monotone spacing is violated or the
-            // Y-signature duplicates one already tried for this ordering.
-            const buildFromChosen = (chosen) => {
-              const overridesByRank = new Map();
-              for (const { rank, idx, y } of chosen) {
-                if (!overridesByRank.has(rank))
-                  overridesByRank.set(rank, new Map());
-                overridesByRank.get(rank).set(idx, y);
-              }
-              const va = new Map();
-              for (const rank of activeRanks) {
-                const { rankOrder, cen } = perRankPC.get(rank);
-                const rankOv = overridesByRank.get(rank);
-                const values = [...cen];
-                if (rankOv) {
-                  for (const [oidx, oy] of rankOv) values[oidx] = oy;
-                  for (let i = 1; i < values.length; i += 1) {
-                    if (
-                      values[i] <
-                      values[i - 1] + minLaneSpacing - LANE_Y_EPSILON
-                    )
-                      return null;
-                  }
-                }
-                for (let i = 0; i < rankOrder.length; i += 1)
-                  va.set(rankOrder[i].id, values[i]);
-              }
-              const sig = compLinkIds.map((id) => va.get(id) ?? "").join(",");
-              if (triedCoordSigs.has(sig)) return null;
-              triedCoordSigs.add(sig);
-              return va;
-            };
-
-            // Hard variable cap: even after diagnostic narrowing the
-            // conflict-pair expansion for dense fixtures can produce dozens
-            // of (branch, rank) pairs. Cap the list so that the DFS cost
-            // per ordering stays predictable: C(MAX_COORD_VARS, 2) × k^2
-            // states — with MAX_COORD_VARS = 12 and k = 3 that is ≈500
-            // states per ordering versus ≈57 000 for 90 variables. Entries
-            // are already ordered by diagnostic priority (route-blocker
-            // pairs first, then conflict pairs, then fallback), so the most
-            // targeted variables are always included within the cap.
-            // When the cap truncates the list the ordering is not memoized
-            // as exhausted (coordDepthLimit >= varDomains.length is false)
-            // so other topological orderings are free to try alternative
-            // variable subsets.
-            const MAX_COORD_VARS = 12;
-            if (varDomains.length > MAX_COORD_VARS)
-              varDomains.length = MAX_COORD_VARS;
-
-            // Search coordinated overrides by iterative deepening on the
-            // number of variables moved away from centred: try the smallest
-            // coordinated moves first (the realistic case — one or two
-            // blocked handles usually need one or two variables to move),
-            // escalating combination size only once every smaller
-            // combination is exhausted. `chosen` is one mutable array pushed
-            // and popped in place (no per-node Map cloning) so the only
-            // allocation per candidate leaf is the assignment Map built by
-            // buildFromChosen, immediately after one lane state is charged.
-            // A thrown state-limit error propagates straight out of this
-            // search, so failedCompleteOrderings below is only reached once
-            // every depth has completed without a budget exception — true
-            // exhaustion, never budget exhaustion. Every recursive node in
-            // both the variable-selection (tryCombination) and value-choice
-            // (tryValues) trees charges one state before doing its own work
-            // (array mutation, or the leaf's assignment build/evaluation),
-            // so the aggregate budget bounds the full traversal — not only
-            // completed evaluateCandidate leaves.
-            const chosen = [];
-            const tryValues = (position) => {
-              recordSolverState({
-                branchIds: componentBranchIds,
-                linkIds: compLinkIds,
-              });
-              if (position === chosen.length) {
-                const va = buildFromChosen(chosen);
-                return va ? evaluateCandidate(va) : false;
-              }
-              const slot = chosen[position];
-              for (const y of slot.alternatives) {
-                slot.y = y;
-                if (tryValues(position + 1)) return true;
-              }
-              return false;
-            };
-            const tryCombination = (startIdx, remaining) => {
-              if (remaining === 0) return tryValues(0);
-              for (
-                let i = startIdx;
-                i <= varDomains.length - remaining;
-                i += 1
-              ) {
-                recordSolverState({
-                  branchIds: componentBranchIds,
-                  linkIds: compLinkIds,
-                });
-                chosen.push({
-                  rank: varDomains[i].rank,
-                  idx: varDomains[i].idx,
-                  alternatives: varDomains[i].alternatives,
-                  y: null,
-                });
-                if (tryCombination(i + 1, remaining - 1)) return true;
-                chosen.pop();
-              }
-              return false;
-            };
-            // Iterative deepening over coordinated variable overrides.
-            // Cap at depth 2 so cost stays bounded within the aggregate
-            // lane/refinement budget regardless of varDomains size: at
-            // depth d over n variables each with at most k alternatives
-            // the worst-case node count is C(n,d)×k^d — depth 2 over the
-            // 12-variable cap gives ≈500 states per ordering, leaving ample
-            // budget for hundreds of MRV orderings.
-            // Depth 2 covers every realistic case (the common failure modes
-            // — a route clearance block and its blocking route, or two
-            // conflicting handles — each need at most two variables to move
-            // simultaneously); deeper coordination is addressed by trying a
-            // different topological ordering instead.
-            //
-            // A state-limit throw propagates straight out so budget
-            // exhaustion is always distinct from proven infeasibility.
-            // Mark failedCompleteOrderings only when the cap covers the
-            // entire variable set (genuinely exhausted, not truncated): if
-            // varDomains has more entries than the cap, other topological
-            // orderings may succeed where this one cannot within the budget.
-            const coordDepthLimit = Math.min(varDomains.length, 2);
-            for (let depth = 1; depth <= coordDepthLimit; depth += 1) {
-              if (tryCombination(0, depth)) return true;
-            }
-
-            if (coordDepthLimit >= varDomains.length) {
-              // Every depth over every variable combination was tried
-              // without a budget exception: this ordering's coordinate
-              // space is genuinely infeasible.
-              failedCompleteOrderings.add(orderingKey);
-            }
+            for (const id of va.keys()) globalAssignments.delete(id);
+            for (const rank of perRankPC.keys())
+              rankRefinementInfo.delete(rank);
+            failedCompleteOrderings.add(orderingKey);
             return false;
           }
 
