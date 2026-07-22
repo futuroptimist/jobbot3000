@@ -958,16 +958,15 @@ export function layoutLifecycleRoutingGraph(
     });
   // A deterministic solver state is one attempted prefix-variable placement
   // or one fixed-order interval item visit during forward/backward/rebuild.
-  // Each solveTransitionLanes call gets its own fresh stateLimit budget so that
-  // cumulative state counts from earlier refinement attempts do not reduce the
-  // budget available to later attempts. solveCallBaseStates is reset before
-  // each call and the per-call count is what is checked against stateLimit.
-  let solveCallBaseStates = 0;
+  // All ordering, coordinate-variant, and handle-refinement work is charged
+  // against one aggregate bound so that budget exhaustion remains
+  // distinguishable from proving lane or handle infeasibility.
   const recordSolverState = (context = {}) => {
     transitionLaneSolverStats.statesVisited += 1;
-    const callStates =
-      transitionLaneSolverStats.statesVisited - solveCallBaseStates;
-    if (callStates > transitionLaneSolverStats.stateLimit) {
+    if (
+      transitionLaneSolverStats.statesVisited >
+      transitionLaneSolverStats.stateLimit
+    ) {
       const cause = laneFailureCause("state-limit", context ?? {});
       const firstId = cause.linkIds[0] ?? cause.branchIds[0] ?? "unknown";
       const error = new Error(
@@ -984,10 +983,7 @@ export function layoutLifecycleRoutingGraph(
       throw error;
     }
   };
-  const solveTransitionLanes = (
-    links,
-    { forbiddenComponentOrderings = new Map() } = {},
-  ) => {
+  const solveTransitionLanes = (links, { candidateCallback } = {}) => {
     const variables = links
       .map((link) => {
         const rank = link.source.rank;
@@ -1117,9 +1113,13 @@ export function layoutLifecycleRoutingGraph(
     // continuation choices cannot postpone an unavoidable dock conflict.
     addBranchEdges(sourceGroups, "sourceDockY", "source-dock");
     addBranchEdges(targetGroups, "targetDockY", "target-dock");
+    // variant: "forward" returns minimum-Y assignment; "backward" returns maximum-Y
+    // assignment (null when infeasible from that direction); "centered" (default)
+    // returns the DP-centered assignment, falling back to "forward" when needed.
     const assignMonotoneIntervals = (
       items,
       onStateVisited = recordSolverState,
+      variant = "centered",
     ) => {
       if (!items.length) return [];
       const forward = [];
@@ -1135,16 +1135,19 @@ export function layoutLifecycleRoutingGraph(
         forward.push(value);
         lower = quantizeY(value + minLaneSpacing + LANE_Y_EPSILON);
       }
+      if (variant === "forward") return forward;
       const backward = Array(items.length);
       let upper = laneBottom;
       for (let index = items.length - 1; index >= 0; index -= 1) {
         onStateVisited?.();
         const value = lastLegalAtOrBelow(items[index].intervals, upper);
-        if (value === null || value < forward[index] - LANE_Y_EPSILON)
-          return forward;
+        if (value === null || value < forward[index] - LANE_Y_EPSILON) {
+          return variant === "backward" ? null : forward;
+        }
         backward[index] = value;
         upper = quantizeY(value - minLaneSpacing);
       }
+      if (variant === "backward") return backward;
       const solved = [];
       let previous = null;
       for (let index = 0; index < items.length; index += 1) {
@@ -1318,21 +1321,29 @@ export function layoutLifecycleRoutingGraph(
         componentMap.get(root).push(id);
       }
 
-      // Global assignments accumulator
+      // Global assignments accumulator; component records for diagnostics.
       const globalAssignments = new Map();
-      // Component ordering and membership records for conflict-directed refinement
       const componentOrderings = new Map();
       const componentMembers = new Map();
 
-      // Solve each connected component independently
-      for (const componentBranchIds of componentMap.values()) {
+      // Convert component map to an array so recursive index-based traversal works.
+      const componentList = [...componentMap.values()];
+
+      // Recursively solve each connected component, then check handle-feasibility.
+      // When candidateCallback is provided, it is called with globalAssignments once
+      // all components have placed their branches; it returns true to commit (and stop
+      // the search) or false to continue searching for a different assignment.
+      const solveFromComponent = (componentIndex) => {
+        if (componentIndex >= componentList.length) {
+          // All components placed; evaluate this global candidate.
+          return candidateCallback ? candidateCallback(globalAssignments) : true;
+        }
+
+        const componentBranchIds = componentList[componentIndex];
         // Stable component key: lexicographically smallest branch ID
         const compMinId = componentBranchIds.reduce((a, b) =>
           compareLifecycleIds(a, b) < 0 ? a : b,
         );
-        // Orderings that have already been tried and failed handle placement
-        const componentForbiddenOrderings =
-          forbiddenComponentOrderings.get(compMinId) ?? new Set();
         const compIndegree = new Map(
           componentBranchIds.map((id) => [id, branchIndegree.get(id) ?? 0]),
         );
@@ -1340,8 +1351,9 @@ export function layoutLifecycleRoutingGraph(
         const globalOrder = [];
         const globalOrderSet = new Set();
         const failedStateKeys = new Set();
-        const compAssignments = new Map();
-        // components is counted once in the caller after the first solve.
+        // Track complete orderings exhausted across all coordinate variants so the
+        // search never re-explores the same (ordering, variant space) at this level.
+        const failedCompleteOrderings = new Set();
 
         // Minimum deadline for a branch across all its active ranks
         const branchDeadline = (branchId) => {
@@ -1464,29 +1476,61 @@ export function layoutLifecycleRoutingGraph(
           }
 
           if (globalOrder.length === componentBranchIds.length) {
-            // Reject orderings that have already been tried and failed handle placement
+            // Skip orderings whose complete variant space has already been exhausted.
             const orderingKey = globalOrder.join(",");
-            if (componentForbiddenOrderings.has(orderingKey)) {
-              return false;
-            }
-            // All component branches placed — compute final centered Y per rank
-            for (const rank of sortedRanks) {
-              const activeBranches = activeBranchesAtRank.get(rank);
-              if (!activeBranches?.size) continue;
-              const rankOrder = globalOrder
-                .filter((id) => activeBranches.has(id))
-                .map((id) => variableByBranchAtRank.get(`${id}:${rank}`))
-                .filter(Boolean);
-              if (!rankOrder.length) continue;
-              const solved = assignMonotoneIntervals(rankOrder);
-              if (!solved) return false;
-              for (let i = 0; i < rankOrder.length; i += 1) {
-                compAssignments.set(rankOrder[i].id, solved[i]);
+            if (failedCompleteOrderings.has(orderingKey)) return false;
+
+            // Try three coordinate variants (forward/centered/backward) for this
+            // ordering. Deduplicate identical assignments to avoid re-checking the
+            // same candidate via the handle callback. Each variant is independent per
+            // rank, so we compute them across ranks and merge.
+            const seenSigs = new Set();
+            for (const variant of ["forward", "centered", "backward"]) {
+              const variantAssignments = new Map();
+              let variantValid = true;
+              for (const rank of sortedRanks) {
+                const activeBranches = activeBranchesAtRank.get(rank);
+                if (!activeBranches?.size) continue;
+                const rankOrder = globalOrder
+                  .filter((id) => activeBranches.has(id))
+                  .map((id) => variableByBranchAtRank.get(`${id}:${rank}`))
+                  .filter(Boolean);
+                if (!rankOrder.length) continue;
+                const solved = assignMonotoneIntervals(
+                  rankOrder,
+                  recordSolverState,
+                  variant,
+                );
+                if (!solved) {
+                  variantValid = false;
+                  break;
+                }
+                for (let i = 0; i < rankOrder.length; i += 1) {
+                  variantAssignments.set(rankOrder[i].id, solved[i]);
+                }
               }
+              if (!variantValid) continue;
+              // Deduplicate by Y-value signature across all link IDs
+              const sig = compLinkIds
+                .map((id) => variantAssignments.get(id) ?? "")
+                .join(",");
+              if (seenSigs.has(sig)) continue;
+              seenSigs.add(sig);
+              // Tentatively extend globalAssignments with this component's candidate
+              for (const [id, value] of variantAssignments)
+                globalAssignments.set(id, value);
+              if (solveFromComponent(componentIndex + 1)) {
+                componentOrderings.set(compMinId, orderingKey);
+                componentMembers.set(compMinId, componentBranchIds.slice());
+                return true;
+              }
+              // Restore this component's tentative entries
+              for (const id of variantAssignments.keys())
+                globalAssignments.delete(id);
             }
-            for (const [id, value] of compAssignments)
-              globalAssignments.set(id, value);
-            return true;
+            // All coordinate variants for this ordering have been tried
+            failedCompleteOrderings.add(orderingKey);
+            return false;
           }
 
           if (!capacityOkForRemainder()) return false;
@@ -1549,30 +1593,30 @@ export function layoutLifecycleRoutingGraph(
           return false;
         };
 
-        if (!search()) {
-          const cause = laneFailureCause("no-feasible-topological-order", {
-            rank: null,
-            branchIds: componentBranchIds,
-            linkIds: componentBranchIds.flatMap((id) =>
-              sortedRanks
-                .map((rank) => variableByBranchAtRank.get(`${id}:${rank}`)?.id)
-                .filter(Boolean),
-            ),
-          });
-          const firstId = cause.linkIds[0] ?? cause.branchIds[0] ?? "unknown";
-          const error = new Error(
-            [
-              "Lifecycle transition lane allocation failed",
-              `after ${transitionLaneSolverStats.statesVisited} deterministic states`,
-              `for ${firstId}`,
-            ].join(" "),
-          );
-          error.cause = cause;
-          throw error;
-        }
-        // Record the solved ordering and membership for conflict-directed refinement
-        componentOrderings.set(compMinId, globalOrder.join(","));
-        componentMembers.set(compMinId, componentBranchIds.slice());
+        return search();
+      };
+
+      if (!solveFromComponent(0)) {
+        const allBranchIds = componentList.flat();
+        const cause = laneFailureCause("no-feasible-topological-order", {
+          rank: null,
+          branchIds: allBranchIds,
+          linkIds: allBranchIds.flatMap((id) =>
+            sortedRanks
+              .map((rank) => variableByBranchAtRank.get(`${id}:${rank}`)?.id)
+              .filter(Boolean),
+          ),
+        });
+        const firstId = cause.linkIds[0] ?? cause.branchIds[0] ?? "unknown";
+        const error = new Error(
+          [
+            "Lifecycle transition lane allocation failed",
+            `after ${transitionLaneSolverStats.statesVisited} deterministic states`,
+            `for ${firstId}`,
+          ].join(" "),
+        );
+        error.cause = cause;
+        throw error;
       }
 
       return {
@@ -1615,15 +1659,8 @@ export function layoutLifecycleRoutingGraph(
       link.transitionLaneY = baseline.transitionLaneY;
     }
   };
-  const forbiddenComponentOrderings = new Map();
-  let lastHandleFailure = null;
-  let solveSuccess = false;
-  // Set to false after the first successful solveTransitionLanes call so that
-  // restoreBaseline() is called on every subsequent attempt.
-  let isFirstLaneAttempt = true;
-
   // Materialize a lane-assignment map onto graph link geometry.
-  // Throws on geometry invariant violations; called inside the refinement loop.
+  // Throws on geometry invariant violations; called inside the candidate callback.
   const materializeLaneAssignments = (assignments) => {
     for (const link of graph.links) {
       const laneY = assignments.get(link.id);
@@ -1747,108 +1784,59 @@ export function layoutLifecycleRoutingGraph(
     }
   };
 
-  try {
-    while (true) {
-      if (!isFirstLaneAttempt) restoreBaseline();
+  let lastHandleFailure = null;
 
-      let laneResult;
-      try {
-        solveCallBaseStates = transitionLaneSolverStats.statesVisited;
-        laneResult = solveTransitionLanes(graph.links, {
-          forbiddenComponentOrderings,
-        });
-      } catch (laneError) {
-        if (
-          !isFirstLaneAttempt &&
-          (laneError.cause?.reason === "no-feasible-topological-order" ||
-            laneError.cause?.reason === "state-limit")
-        ) {
-          // All orderings exhausted, or per-call state budget depleted on a
-          // refinement attempt; emit the last structured handle failure below.
-          break;
-        }
-        throw laneError;
-      }
-
-      const { assignments, componentOrderings, componentMembers } = laneResult;
-
-      // Count connected lane components exactly once (on the first solve) so
-      // that repeated refinement attempts do not recount the same components.
-      if (isFirstLaneAttempt) {
-        transitionLaneSolverStats.components = componentMembers.size;
-        isFirstLaneAttempt = false;
-      }
-
-      materializeLaneAssignments(assignments);
-
-      if (
-        options.transitionLanePhaseOnly &&
-        (process.env.NODE_ENV === "test" || process.env.VITEST === "true")
-      ) {
-        graph.transitionLaneSolverStats = Object.freeze({
-          ...transitionLaneSolverStats,
-        });
-        return { graph, dimensions };
-      }
-
-      const handleCheck = tryAssignBranchHandles(
-        graph.branches,
-        linksByBranch,
-        visibleNodes,
-      );
-      if (handleCheck.ok) {
-        solveSuccess = true;
-        break;
-      }
-
-      lastHandleFailure = handleCheck;
-
-      // Ban the ordering of the single component that contains the primary
-      // blocked branch. A handle conflict arises from the combined lane
-      // assignment across all components; independently banning every
-      // component that touches an implicated branch over-prunes: it discards
-      // (ordering, Y) combinations where only the secondary component needed
-      // to change. Banning one component per attempt lets the search pair each
-      // new primary-component ordering with all valid secondary orderings
-      // before the primary component's orderings are exhausted.
-      const primaryBlockedId = handleCheck.blockedBranchIds?.[0];
-      let bannedPrimaryComponent = false;
-      if (primaryBlockedId !== undefined) {
-        for (const [compMinId, members] of componentMembers) {
-          if (members.includes(primaryBlockedId)) {
-            const currentOrdering = componentOrderings.get(compMinId);
-            if (currentOrdering !== undefined) {
-              if (!forbiddenComponentOrderings.has(compMinId))
-                forbiddenComponentOrderings.set(compMinId, new Set());
-              forbiddenComponentOrderings.get(compMinId).add(currentOrdering);
-              bannedPrimaryComponent = true;
-            }
-            break;
-          }
-        }
-      }
-      if (!bannedPrimaryComponent) {
-        // Cannot determine which ordering to advance; treat as exhausted.
-        break;
-      }
+  // Candidate evaluation callback: materialize the lane assignment, check
+  // handle-feasibility, and return true to commit or false to continue the
+  // search. Each call restores link geometry to the baseline before
+  // materializing so that a failed candidate cannot corrupt later tries.
+  const candidateCallback = (globalAssignments) => {
+    restoreBaseline();
+    try {
+      materializeLaneAssignments(globalAssignments);
+    } catch {
+      // Geometry invariant violated for this candidate; skip it.
+      return false;
     }
-  } catch (error) {
-    restoreBaseline();
-    throw error;
-  }
+    if (
+      options.transitionLanePhaseOnly &&
+      (process.env.NODE_ENV === "test" || process.env.VITEST === "true")
+    ) {
+      // Test-only lane-phase exit: accept the first geometrically valid assignment.
+      return true;
+    }
+    const handleCheck = tryAssignBranchHandles(
+      graph.branches,
+      linksByBranch,
+      visibleNodes,
+    );
+    if (handleCheck.ok) return true;
+    lastHandleFailure = handleCheck;
+    return false;
+  };
 
-  if (!solveSuccess) {
+  let laneResult;
+  try {
+    laneResult = solveTransitionLanes(graph.links, { candidateCallback });
+  } catch (error) {
+    // Ensure link geometry is fully restored. Geometry invariant errors from
+    // materializeLaneAssignments are caught inside the callback; errors here
+    // come from the lane solver (state-limit, no-feasible-order, etc.).
     restoreBaseline();
-    if (lastHandleFailure) {
+    // When all orderings × coordinate variants were lane-feasible but handle
+    // placement failed for every one, report the structured handle failure
+    // rather than lane infeasibility.
+    if (
+      error.cause?.reason === "no-feasible-topological-order" &&
+      lastHandleFailure
+    ) {
       throw handlePlacementError(lastHandleFailure);
     }
-    const error = new Error(
-      "Lifecycle handle assignment failed after all lane refinement attempts",
-    );
-    error.cause = laneFailureCause("no-feasible-topological-order");
     throw error;
   }
 
+  // The callback committed a valid lane assignment (already materialized on the graph).
+  transitionLaneSolverStats.components = laneResult.componentMembers.size;
   graph.transitionLaneSolverStats = Object.freeze({
     ...transitionLaneSolverStats,
   });
