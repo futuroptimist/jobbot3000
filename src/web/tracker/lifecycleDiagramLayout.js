@@ -1956,6 +1956,41 @@ export function layoutLifecycleRoutingGraph(
           return false;
         };
 
+        // Upfront infeasibility check: a branch whose deadline is null has
+        // no legal Y at some active rank regardless of ordering (see
+        // branchDeadline above). The `ready` filter below drops such a
+        // branch from consideration entirely, so completion
+        // (globalOrder.length === componentBranchIds.length) becomes
+        // permanently unreachable once one exists — the recursive MRV search
+        // would otherwise explore every permutation of the remaining
+        // placeable branches before exhausting the shared state budget and
+        // misreporting a proven infeasibility as budget exhaustion. Detect
+        // it here, before recursing, so the failure is immediate and
+        // deterministic instead.
+        for (const branchId of componentBranchIds) {
+          if (branchDeadline(branchId) !== null) continue;
+          const linkIds = sortedRanks
+            .map(
+              (rank) => variableByBranchAtRank.get(`${branchId}:${rank}`)?.id,
+            )
+            .filter(Boolean);
+          const cause = laneFailureCause("no-feasible-topological-order", {
+            rank: null,
+            branchIds: [branchId],
+            linkIds,
+          });
+          const firstId = cause.linkIds[0] ?? cause.branchIds[0] ?? "unknown";
+          const error = new Error(
+            [
+              "Lifecycle transition lane allocation failed",
+              `after ${transitionLaneSolverStats.statesVisited} deterministic states`,
+              `for ${firstId}`,
+            ].join(" "),
+          );
+          error.cause = cause;
+          throw error;
+        }
+
         return search();
       };
 
