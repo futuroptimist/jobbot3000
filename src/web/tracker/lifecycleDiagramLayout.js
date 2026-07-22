@@ -1485,12 +1485,13 @@ export function layoutLifecycleRoutingGraph(
             const orderingKey = globalOrder.join(",");
             if (failedCompleteOrderings.has(orderingKey)) return false;
 
-            // Compute centered assignment per active rank.  State charges happen
-            // only here (one per active rank variable) so the aggregate budget
-            // counts ordering evaluations fairly.  Forward/backward envelopes are
-            // derived without additional state charges and reused at zero cost
-            // for every subsequent candidate tried for this ordering.
-            const perRankPC = new Map(); // rank -> {rankOrder, cen, fwd, bwd}
+            // Compute centered assignment per active rank.  State charges
+            // happen only here (one per active rank variable) so the
+            // aggregate budget counts ordering evaluations fairly.  Only the
+            // centered pass is computed: forward/backward envelopes are not
+            // read anywhere below, so computing them here was pure wasted
+            // work repeated on every ordering the search reaches.
+            const perRankPC = new Map(); // rank -> {rankOrder, cen}
             for (const rank of sortedRanks) {
               const activeBranches = activeBranchesAtRank.get(rank);
               if (!activeBranches?.size) continue;
@@ -1499,7 +1500,6 @@ export function layoutLifecycleRoutingGraph(
                 .map((id) => variableByBranchAtRank.get(`${id}:${rank}`))
                 .filter(Boolean);
               if (!rankOrder.length) continue;
-              // Centered charges states; forward/backward use null (no charge).
               const cen = assignMonotoneIntervals(
                 rankOrder,
                 recordSolverState,
@@ -1509,11 +1509,7 @@ export function layoutLifecycleRoutingGraph(
                 failedCompleteOrderings.add(orderingKey);
                 return false;
               }
-              const fwd =
-                assignMonotoneIntervals(rankOrder, null, "forward") ?? cen;
-              const bwd =
-                assignMonotoneIntervals(rankOrder, null, "backward") ?? cen;
-              perRankPC.set(rank, { rankOrder, cen, fwd, bwd });
+              perRankPC.set(rank, { rankOrder, cen });
             }
 
             const activeRanks = [...perRankPC.keys()];
@@ -1588,6 +1584,17 @@ export function layoutLifecycleRoutingGraph(
             // all distinct from the centred value already tried. Every
             // implicated variable is included; the search below bounds cost
             // through iterative deepening rather than a fixed variable cap.
+            //
+            // The envelope is only clamped against a neighbour's centred
+            // value when that neighbour is *not* itself implicated. When an
+            // adjacent variable is also implicated, it may move away from
+            // its centred value in the same combination (tryCombination can
+            // select both), so clamping this variable's domain against the
+            // neighbour's stale centred value would exclude legal solutions
+            // that require the two to move together; the neighbour's own
+            // domain and the final monotone-spacing check in
+            // buildFromChosen jointly guarantee correctness regardless of
+            // how wide this envelope is.
             const varDomains = [];
             for (const branchId of blockedInComp) {
               for (const rank of activeRanks) {
@@ -1597,12 +1604,17 @@ export function layoutLifecycleRoutingGraph(
                 );
                 if (idx < 0) continue;
                 const v = rankOrder[idx];
+                const leftNeighborImplicated =
+                  idx > 0 && implicatedIds.has(rankOrder[idx - 1].branchId);
+                const rightNeighborImplicated =
+                  idx < rankOrder.length - 1 &&
+                  implicatedIds.has(rankOrder[idx + 1].branchId);
                 const lo =
-                  idx > 0
+                  idx > 0 && !leftNeighborImplicated
                     ? quantizeY(cen[idx - 1] + minLaneSpacing + LANE_Y_EPSILON)
                     : laneTop;
                 const hi =
-                  idx < rankOrder.length - 1
+                  idx < rankOrder.length - 1 && !rightNeighborImplicated
                     ? quantizeY(cen[idx + 1] - minLaneSpacing)
                     : laneBottom;
                 const domainSet = new Set();
@@ -1691,14 +1703,19 @@ export function layoutLifecycleRoutingGraph(
             // A thrown state-limit error propagates straight out of this
             // search, so failedCompleteOrderings below is only reached once
             // every depth has completed without a budget exception — true
-            // exhaustion, never budget exhaustion.
+            // exhaustion, never budget exhaustion. Every recursive node in
+            // both the variable-selection (tryCombination) and value-choice
+            // (tryValues) trees charges one state before doing its own work
+            // (array mutation, or the leaf's assignment build/evaluation),
+            // so the aggregate budget bounds the full traversal — not only
+            // completed evaluateCandidate leaves.
             const chosen = [];
             const tryValues = (position) => {
+              recordSolverState({
+                branchIds: componentBranchIds,
+                linkIds: compLinkIds,
+              });
               if (position === chosen.length) {
-                recordSolverState({
-                  branchIds: componentBranchIds,
-                  linkIds: compLinkIds,
-                });
                 const va = buildFromChosen(chosen);
                 return va ? evaluateCandidate(va) : false;
               }
@@ -1716,6 +1733,10 @@ export function layoutLifecycleRoutingGraph(
                 i <= varDomains.length - remaining;
                 i += 1
               ) {
+                recordSolverState({
+                  branchIds: componentBranchIds,
+                  linkIds: compLinkIds,
+                });
                 chosen.push({
                   rank: varDomains[i].rank,
                   idx: varDomains[i].idx,
