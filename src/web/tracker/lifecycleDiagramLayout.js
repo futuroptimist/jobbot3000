@@ -354,7 +354,9 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
   const rankLayers = [...new Set(graph.nodes.map((node) => node.rank))].sort(
     (left, right) => left - right,
   );
-  const layerByRank = new Map(rankLayers.map((rank, index) => [rank, index]));
+  const layerByRank = new Map(
+    rankLayers.map((rank, index) => [rank, index]),
+  );
   const layout = sankey()
     .nodeId((d) => d.id)
     .nodeAlign((node) => layerByRank.get(node.rank) ?? 0)
@@ -435,7 +437,10 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
   const routeEnvelopeRadius = selectedEnvelopeRadius({ width: 1 });
   const clearancePad = routeEnvelopeRadius + 0.25 + LANE_Y_EPSILON;
   const minLaneSpacing =
-    BRANCH_HANDLE_RADIUS * 2 + routeEnvelopeRadius * 2 + 0.25 + LANE_Y_EPSILON;
+    BRANCH_HANDLE_RADIUS * 2 +
+    routeEnvelopeRadius * 2 +
+    0.25 +
+    LANE_Y_EPSILON;
   const quantizeY = (value) => Math.round(value * 1000) / 1000;
   const clampLaneY = (value) =>
     quantizeY(Math.min(laneBottom, Math.max(laneTop, value)));
@@ -445,14 +450,14 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
       : laneTop + ((laneBottom - laneTop) * index) / (count - 1);
   const candidateClearsSpan = (y, minX, maxX, incidentIds = new Set()) =>
     laneObstacles.every((box) => {
-      if (incidentIds.has(box.id)) return true;
+      if (incidentIds.has(box.id) && box.kind !== "label") return true;
       if (box.x + box.width < minX || box.x > maxX) return true;
       return y < box.y - clearancePad || y > box.y + box.height + clearancePad;
     });
   const blockedIntervalsForSpan = (minX, maxX, incidentIds = new Set()) => {
     const intervals = laneObstacles
       .filter((box) => {
-        if (incidentIds.has(box.id)) return false;
+        if (incidentIds.has(box.id) && box.kind !== "label") return false;
         return !(box.x + box.width < minX || box.x > maxX);
       })
       .map((box) => [
@@ -551,19 +556,11 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
       idealY,
     )}`;
     if (!laneDomainCache.has(key)) {
-      laneDomainCache.set(
-        key,
-        laneCandidatesForSpan({ minX, maxX, incidentIds, idealY }),
-      );
+      laneDomainCache.set(key, laneCandidatesForSpan({ minX, maxX, incidentIds, idealY }));
     }
     return laneDomainCache.get(key) ?? [];
   };
-  const assignMonotone = (
-    items,
-    domainFor,
-    idealFor,
-    spacing = minLaneSpacing,
-  ) => {
+  const assignMonotone = (items, domainFor, idealFor) => {
     // Return [] for a successful no-op placement when there are no items.
     if (!items.length) return [];
     const ideals = items.map((item, index) => {
@@ -596,7 +593,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
         const candidate = currentDomain[candidateIndex];
         while (
           pointer < previousDomain.length &&
-          previousDomain[pointer] <= candidate - spacing
+          previousDomain[pointer] <= candidate - minLaneSpacing
         ) {
           const cost = previousCosts[pointer];
           // Lower predecessor indexes keep equal-cost paths deterministic.
@@ -693,31 +690,19 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
       const links = [...(transitionLinks.get(rank) ?? [])].sort(
         compareBranchLinks,
       );
-      const domainForTransitionLink = (link, idealY) => {
-        const minX = rankCenterX(link.source.rank) - RANK_CORRIDOR_HALF_WIDTH;
-        const maxX = rankCenterX(link.target.rank) + RANK_CORRIDOR_HALF_WIDTH;
-        const incidentIds = new Set([link.source.id, link.target.id]);
-        return laneDomainForSpan({ minX, maxX, incidentIds, idealY });
-      };
-      const idealForTransitionLink = (link, index, count) => {
-        const semanticMidpoint =
+      const assignment = assignMonotone(
+        links,
+        (link, idealY) => {
+          const minX = rankCenterX(link.source.rank) - RANK_CORRIDOR_HALF_WIDTH;
+          const maxX = rankCenterX(link.target.rank) + RANK_CORRIDOR_HALF_WIDTH;
+          const incidentIds = new Set([link.source.id, link.target.id]);
+          return laneDomainForSpan({ minX, maxX, incidentIds, idealY });
+        },
+        (link) =>
           ((link.source.y0 + link.source.y1) / 2 +
             (link.target.y0 + link.target.y1) / 2) /
-          2;
-        return (semanticMidpoint + spreadLane(index, count)) / 2;
-      };
-      const assignment =
-        assignMonotone(
-          links,
-          domainForTransitionLink,
-          idealForTransitionLink,
-        ) ??
-        assignMonotone(
-          links,
-          domainForTransitionLink,
-          idealForTransitionLink,
-          routeEnvelopeRadius * 2 + 0.25 + LANE_Y_EPSILON,
-        );
+          2,
+      );
       if (!assignment) {
         throw new Error(
           `Lifecycle transition lane allocation failed for transition rank ${rank}`,
@@ -838,7 +823,18 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
         );
       }
     }
-    assignBranchHandles(graph.branches, linksByBranch, visibleNodes);
+    const handleCheck = tryAssignBranchHandles(
+      graph.branches,
+      linksByBranch,
+      visibleNodes,
+    );
+    if (!handleCheck.ok) {
+      const blockedBranchId =
+        handleCheck.blockedBranchIds[0] ?? "unknown branch";
+      throw new Error(
+        `Lifecycle diagram handle placement invariant violated for ${blockedBranchId}`,
+      );
+    }
   } catch (error) {
     restoreBaseline();
     throw error;
@@ -1298,26 +1294,18 @@ const boxesOverlap = (a, b) =>
   a.x + a.width > b.x &&
   a.y < b.y + b.height &&
   a.y + a.height > b.y;
-export const BRANCH_HANDLE_CANDIDATE_T_VALUES = Object.freeze([
-  0.5, 0.35, 0.65, 0.25, 0.75, 0.15, 0.85, 0.1, 0.9, 0.2, 0.8, 0.3, 0.7,
-  0.4, 0.6, 0.05, 0.95, 0.45, 0.55,
-]);
 const tryAssignBranchHandles = (
   branches,
   segmentsByBranch,
   visibleNodes = [],
 ) => {
   const nodeBoxes = visibleNodes.map((node) => ({
-    id: node.id,
     x: node.x0,
     y: node.y0,
     width: node.x1 - node.x0,
     height: node.y1 - node.y0,
   }));
-  const labelBoxes = visibleNodes.map((node) => ({
-    id: node.id,
-    ...labelBoxForNode(node),
-  }));
+  const labelBoxes = visibleNodes.map(labelBoxForNode);
   const routeEdges = [];
   for (const [branchId, segments] of segmentsByBranch) {
     for (const segment of segments) {
@@ -1337,26 +1325,12 @@ const tryAssignBranchHandles = (
   }
   const hitBoxes = visibleNodes.map(rendererHitBoxForNode);
   const fixedGeometry = [...nodeBoxes, ...labelBoxes, ...hitBoxes];
-  const fixedGeometryBlocksCandidate = (branch, box) =>
-    fixedGeometry.some(
-      (b) =>
-        b.id !== branch.source &&
-        b.id !== branch.target &&
-        boxesOverlap(box, b),
-    );
+  const fixedGeometryBlocksCandidate = (box) =>
+    fixedGeometry.some((b) => boxesOverlap(box, b));
   const renderedBranchClearanceMargin = (branch, x, y) => {
     let margin = Number.POSITIVE_INFINITY;
     for (const edge of routeEdges) {
       if (edge.branchId === branch.id) continue;
-      const edgeBranch = branchById.get(edge.branchId);
-      if (
-        edgeBranch &&
-        (edgeBranch.source === branch.source ||
-          edgeBranch.source === branch.target ||
-          edgeBranch.target === branch.source ||
-          edgeBranch.target === branch.target)
-      )
-        continue;
       const required =
         BRANCH_HANDLE_RADIUS + edge.envelopeRadius + 0.25 + LANE_Y_EPSILON;
       const distance = pointToSegmentDistance({ x, y }, edge);
@@ -1366,9 +1340,6 @@ const tryAssignBranchHandles = (
     return margin;
   };
   const orderedBranches = [...branches].sort(compareBranches);
-  const branchById = new Map(
-    orderedBranches.map((branch) => [branch.id, branch]),
-  );
   const candidateSets = new Map();
   for (const branch of orderedBranches) {
     const segments = [...(segmentsByBranch.get(branch.id) ?? [])].sort(
@@ -1390,7 +1361,7 @@ const tryAssignBranchHandles = (
       const targetCenter = rankCenterX(segment.target.rank);
       const exitX = sourceCenter + RANK_CORRIDOR_HALF_WIDTH;
       const entryX = targetCenter - RANK_CORRIDOR_HALF_WIDTH;
-      for (const t of BRANCH_HANDLE_CANDIDATE_T_VALUES) {
+      for (const t of [0.5, 0.35, 0.65]) {
         const { x, y } = cubicTransitionPoint(segment, t);
         const box = {
           x: x - BRANCH_HANDLE_RADIUS,
@@ -1398,7 +1369,7 @@ const tryAssignBranchHandles = (
           width: BRANCH_HANDLE_RADIUS * 2,
           height: BRANCH_HANDLE_RADIUS * 2,
         };
-        if (fixedGeometryBlocksCandidate(branch, box)) continue;
+        if (fixedGeometryBlocksCandidate(box)) continue;
         if (
           x - BRANCH_HANDLE_RADIUS < exitX ||
           x + BRANCH_HANDLE_RADIUS > entryX
@@ -1436,34 +1407,32 @@ const tryAssignBranchHandles = (
     };
   const selected = new Map();
   let visitedHandleStates = 0;
-  const MAX_HANDLE_SEARCH_STATES = 1048576;
+  const MAX_HANDLE_SEARCH_STATES = 32768;
   const chooseHandles = () => {
-    if (selected.size >= orderedBranches.length) return true;
-    if (visitedHandleStates++ >= MAX_HANDLE_SEARCH_STATES) return false;
-    const selectedHandles = [...selected.values()];
-    const next = orderedBranches
-      .filter((candidateBranch) => !selected.has(candidateBranch.id))
-      .map((candidateBranch) => {
-        const candidates = (candidateSets.get(candidateBranch.id) ?? []).filter(
-          (candidate) =>
-            !selectedHandles.some((handle) =>
-              boxesOverlap(candidate.box, handle.box),
-            ),
-        );
-        return { branch: candidateBranch, candidates };
-      })
-      .sort(
-        (a, b) =>
-          a.candidates.length - b.candidates.length ||
-          compareBranches(a.branch, b.branch),
-      )[0];
-    if (!next || next.candidates.length === 0) return false;
-    for (const candidate of next.candidates) {
-      selected.set(next.branch.id, candidate);
-      if (chooseHandles()) return true;
-      selected.delete(next.branch.id);
+    while (selected.size < orderedBranches.length) {
+      if (visitedHandleStates++ >= MAX_HANDLE_SEARCH_STATES) return false;
+      const next = orderedBranches
+        .filter((candidateBranch) => !selected.has(candidateBranch.id))
+        .map((candidateBranch) => {
+          const candidates = (
+            candidateSets.get(candidateBranch.id) ?? []
+          ).filter(
+            (candidate) =>
+              ![...selected.values()].some((handle) =>
+                boxesOverlap(candidate.box, handle.box),
+              ),
+          );
+          return { branch: candidateBranch, candidates };
+        })
+        .sort(
+          (a, b) =>
+            a.candidates.length - b.candidates.length ||
+            compareBranches(a.branch, b.branch),
+        )[0];
+      if (!next || next.candidates.length === 0) return false;
+      selected.set(next.branch.id, next.candidates[0]);
     }
-    return false;
+    return true;
   };
   if (!chooseHandles())
     return {
@@ -1494,36 +1463,6 @@ export function assignBranchHandles(
     visibleNodes,
   );
   if (result.ok) return result.handles;
-  const selected = [];
-  if (result.reason === "handle-overlap" || result.reason === "state-limit") {
-    const remaining = [...branches].sort(compareBranches);
-    while (remaining.length) {
-      const selectedHandles = selected;
-      const next = remaining
-        .map((branch) => ({
-          branch,
-          candidates: (result.candidateSets.get(branch.id) ?? []).filter(
-            (item) =>
-              !selectedHandles.some((handle) =>
-                boxesOverlap(item.box, handle.box),
-              ),
-          ),
-        }))
-        .sort(
-          (a, b) =>
-            a.candidates.length - b.candidates.length ||
-            compareBranches(a.branch, b.branch),
-        )[0];
-      const candidate = next?.candidates[0];
-      if (!candidate) break;
-      selected.push(candidate);
-      remaining.splice(
-        remaining.findIndex((branch) => branch.id === next.branch.id),
-        1,
-      );
-    }
-    if (selected.length === branches.length) return selected;
-  }
   const branchId = result.blockedBranchIds[0];
   throw new Error(
     branchId
