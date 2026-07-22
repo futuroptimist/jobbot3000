@@ -20,9 +20,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
-      contents: write
-      pull-requests: write
-      issues: write
+      contents: read
+      pull-requests: read
+      issues: read
       actions: read
       id-token: write
     steps:
@@ -46,6 +46,7 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
+          persist-credentials: false
 
       - name: Run Claude Code
         id: claude
@@ -53,12 +54,11 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
 
-          # Job-level actions: read scopes GITHUB_TOKEN; this requests Actions access
-          # for Claude's separate OIDC-issued GitHub App token.
+          # Invariant: GITHUB_TOKEN stays read-only; Claude's short-lived App token
+          # handles ordinary branch/commit operations; workflow edits require review.
           additional_permissions: |
             actions: read
-            workflows: write
 
           claude_args: >-
-            --allowedTools "Bash"
+            --allowedTools "Bash(npm ci),Bash(npm run lint),Bash(npm run lint:fix),Bash(npm run format:check),Bash(npm run format:fix),Bash(npm run typecheck),Bash(npm run test:ci),Bash(npm run build),Bash(npx vitest run:*)"
             --disallowedTools "Bash(git push:*),Bash(git reset --hard:*),Bash(git clean:*)"
