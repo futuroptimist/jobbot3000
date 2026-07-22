@@ -1034,9 +1034,47 @@ describe("transition lane solver", () => {
     };
     expect(JSON.stringify(laneSignature(shuffled))).toBe(JSON.stringify(sig1));
   });
-});
+  // eslint-disable-next-line max-len
+  it("exposes candidateEvaluations, handleStatesVisited, and handleStateLimit in solver stats", () => {
+    const { graph } = layoutLifecycleRoutingGraph(projection(), 1850);
+    const stats = graph.transitionLaneSolverStats;
+    expect(typeof stats.candidateEvaluations).toBe("number");
+    expect(stats.candidateEvaluations).toBeGreaterThanOrEqual(1);
+    expect(typeof stats.handleStatesVisited).toBe("number");
+    expect(stats.handleStatesVisited).toBeGreaterThanOrEqual(0);
+    expect(stats.handleStateLimit).toBe(32768);
+    expect(stats.handleStatesVisited).toBeLessThanOrEqual(stats.handleStateLimit);
+  });
 
-describe("lifecycle diagram render-only routing layout", () => {
+  it("shares a single handle budget across all candidate callbacks without resetting", () => {
+    // The dense 89-branch projection exercises multiple candidate callbacks.
+    // With a shared budget, handleStatesVisited must equal the total across
+    // all callbacks and must never exceed the per-invocation limit.
+    const { graph } = layoutLifecycleRoutingGraph(
+      transitionDensityProjection(),
+      1850,
+    );
+    const stats = graph.transitionLaneSolverStats;
+    expect(stats.candidateEvaluations).toBeGreaterThanOrEqual(1);
+    expect(stats.handleStatesVisited).toBeLessThanOrEqual(32768);
+    expect(stats.handleStateLimit).toBe(32768);
+    // Verify shuffle-stability of the handle stats.
+    const p = transitionDensityProjection();
+    const shuffled = {
+      ...p,
+      nodes: [...p.nodes].reverse(),
+      links: [...p.links].reverse(),
+      paths: [...p.paths].reverse(),
+    };
+    const { graph: shuffledGraph } = layoutLifecycleRoutingGraph(shuffled, 1850);
+    expect(shuffledGraph.transitionLaneSolverStats.candidateEvaluations).toBe(
+      stats.candidateEvaluations,
+    );
+    expect(shuffledGraph.transitionLaneSolverStats.handleStatesVisited).toBe(
+      stats.handleStatesVisited,
+    );
+  });
+
   it("assigns handles across independent conflict components deterministically", () => {
     const makeSegment = (id, y) => ({
       id: `${id}:segment:0`,
