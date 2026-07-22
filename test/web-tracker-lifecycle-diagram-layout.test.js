@@ -841,6 +841,58 @@ describe("transition lane solver", () => {
     ).toEqual(before);
   });
 
+  it("propagates a hard materialization invariant instead of swallowing it as lane infeasibility", () => {
+    // denseBranchProjection() spans 55 origin->endpoint branches across the
+    // full rank width, so every intermediate rank hosts 55 private routing
+    // nodes that materializeLaneAssignments must anchor. Corrupting one
+    // routing node's branchId to reference a nonexistent branch forces the
+    // routing-anchor comparator's "missing branch metadata" invariant
+    // (distinct from the recoverable "routing-anchor-infeasible" cause),
+    // proving candidateCallback re-throws unknown/hard invariants rather
+    // than silently treating them as ordinary candidate rejection.
+    const p = denseBranchProjection();
+    const { graph } = layoutLifecycleRoutingGraph(p, 1850, {
+      transitionLanePhaseOnly: true,
+    });
+    const routingByRank = new Map();
+    for (const node of graph.nodes) {
+      if (!node.routing) continue;
+      if (!routingByRank.has(node.rank)) routingByRank.set(node.rank, []);
+      routingByRank.get(node.rank).push(node);
+    }
+    const sharedRankNodes = [...routingByRank.values()].find(
+      (list) => list.length >= 2,
+    );
+    expect(sharedRankNodes?.length ?? 0).toBeGreaterThanOrEqual(2);
+    const corruptedId = sharedRankNodes[0].id;
+    const corrupted = {
+      ...graph,
+      nodes: graph.nodes.map((node) =>
+        node.id === corruptedId
+          ? { ...node, branchId: "branch:does-not-exist" }
+          : node,
+      ),
+    };
+    let thrown;
+    try {
+      layoutLifecycleRoutingGraph(p, 1850, {
+        routingGraph: corrupted,
+        transitionLanePhaseOnly: true,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown?.message).toMatch(
+      /Lifecycle routing-node invariant violated for rank/u,
+    );
+    // A hard/unexpected materialization invariant carries no lane-order
+    // cause at all; it must not be reported as "no-feasible-topological-
+    // order" (or any other structured lane-solver failure), which is the
+    // classification reserved for genuine ordering/state-budget failures.
+    expect(thrown?.cause?.reason).not.toBe("no-feasible-topological-order");
+    expect(thrown?.cause).toBeUndefined();
+  });
+
   it("uses deterministic state bounds without unchecked candidate fallback", () => {
     const graph = expectSpacingLegal(transitionDensityProjection(), 89);
     expect(graph.transitionLaneSolverStats.stateLimit).toBe(200000);

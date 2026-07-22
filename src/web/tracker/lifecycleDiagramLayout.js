@@ -2113,9 +2113,22 @@ export function layoutLifecycleRoutingGraph(
         },
       );
       if (!assignment) {
-        throw new Error(
+        // Routing-anchor feasibility depends on the incident links' lane Y
+        // values (the anchor's ideal is their average), so a miss here is a
+        // deliberately recoverable, candidate-specific failure — a different
+        // lane-coordinate candidate for the same ordering may anchor this
+        // rank successfully. Tag it distinctly from the hard invariants
+        // below so candidateCallback can classify it instead of treating it
+        // as an unexpected geometry bug.
+        const anchorError = new Error(
           `Lifecycle routing anchor allocation failed for transition rank ${rank}`,
         );
+        anchorError.cause = Object.freeze({
+          type: "lifecycle-routing-anchor-allocation",
+          reason: "routing-anchor-infeasible",
+          rank,
+        });
+        throw anchorError;
       }
       nodes.forEach((node, index) => {
         const anchorY = assignment[index];
@@ -2150,12 +2163,20 @@ export function layoutLifecycleRoutingGraph(
   };
 
   let lastHandleFailure = null;
+  // Latest deliberately recoverable routing-anchor materialization failure
+  // (see the "lifecycle-routing-anchor-allocation" cause above), retained so
+  // the final error can surface it instead of a generic topology-cycle
+  // message when every candidate failed materialization before ever
+  // reaching handle placement. Kept distinct from lastHandleFailure because
+  // the two describe different phases of a candidate's evaluation.
+  let lastRoutingAnchorFailure = null;
   let candidateEvaluations = 0;
   const handleBudget = { statesVisited: 0, stateLimit: 32768 };
-  // Layout-wide cache of full-geometry signatures already proven
-  // handle-infeasible, so distinct search paths (different orderings or
-  // coordinate choices) that happen to land on identical committed lane
-  // Y values never re-run the handle solver for the same geometry.
+  // Layout-wide cache of full-geometry signatures already proven infeasible
+  // (routing-anchor materialization failure or handle-placement failure), so
+  // distinct search paths (different orderings or coordinate choices) that
+  // happen to land on identical committed lane Y values never repeat the
+  // same doomed materialization or handle solve.
   const failedGeometrySignatures = new Set();
 
   // Candidate evaluation callback: materialize the lane assignment, check
@@ -2165,12 +2186,35 @@ export function layoutLifecycleRoutingGraph(
   const candidateCallback = (globalAssignments) => {
     restoreBaseline();
     candidateEvaluations += 1;
+    const geometrySignature = [...globalAssignments.entries()]
+      .sort(([a], [b]) => compareLifecycleIds(a, b))
+      .map(([id, y]) => `${id}=${y}`)
+      .join(",");
+    if (failedGeometrySignatures.has(geometrySignature)) return false;
     try {
       materializeLaneAssignments(globalAssignments);
-    } catch {
-      // Geometry invariant violated for this candidate; skip it.
-      return false;
+    } catch (error) {
+      if (error.cause?.type === "lifecycle-routing-anchor-allocation") {
+        // Recoverable, candidate-specific failure: retain the evidence for
+        // final-error diagnostics, clear any stale handle-placement failure
+        // from an earlier (unrelated) candidate so refineGlobalLaneCoordinates
+        // does not act on diagnostics that do not describe this leaf, and
+        // let the search continue with another candidate.
+        lastRoutingAnchorFailure = error;
+        lastHandleFailure = null;
+        failedGeometrySignatures.add(geometrySignature);
+        return false;
+      }
+      // Hard or unexpected materialization invariant (incomplete/non-finite
+      // lane assignment, missing routing-branch mapping, non-finite route
+      // coordinates, or a routing-continuity violation): propagate
+      // immediately with its original evidence rather than silently
+      // rejecting the candidate as if it were ordinary infeasibility.
+      throw error;
     }
+    // Materialization succeeded: this candidate is no longer implicated by
+    // an earlier routing-anchor failure.
+    lastRoutingAnchorFailure = null;
     if (
       options.transitionLanePhaseOnly &&
       (process.env.NODE_ENV === "test" || process.env.VITEST === "true")
@@ -2178,11 +2222,6 @@ export function layoutLifecycleRoutingGraph(
       // Test-only lane-phase exit: accept the first geometrically valid assignment.
       return true;
     }
-    const geometrySignature = [...globalAssignments.entries()]
-      .sort(([a], [b]) => compareLifecycleIds(a, b))
-      .map(([id, y]) => `${id}=${y}`)
-      .join(",");
-    if (failedGeometrySignatures.has(geometrySignature)) return false;
     const handleCheck = tryAssignBranchHandles(
       graph.branches,
       linksByBranch,
@@ -2220,9 +2259,12 @@ export function layoutLifecycleRoutingGraph(
   try {
     laneResult = solveTransitionLanes(graph.links, { candidateCallback });
   } catch (error) {
-    // Ensure link geometry is fully restored. Geometry invariant errors from
-    // materializeLaneAssignments are caught inside the callback; errors here
-    // come from the lane solver (state-limit, no-feasible-order, etc.).
+    // Ensure link geometry is fully restored. Recoverable routing-anchor
+    // materialization failures are caught and classified inside the
+    // callback; hard/unexpected materialization invariants are re-thrown
+    // from the callback unchanged; errors reaching here come from the lane
+    // solver itself (state-limit, no-feasible-order, etc.) or an
+    // unrecovered hard invariant.
     restoreBaseline();
     // When all orderings × coordinate variants were lane-feasible but handle
     // placement failed for every one, report the structured handle failure
@@ -2232,6 +2274,26 @@ export function layoutLifecycleRoutingGraph(
       lastHandleFailure
     ) {
       throw handlePlacementError(lastHandleFailure);
+    }
+    // Exhaustive search proved every viable candidate failed routing-anchor
+    // materialization (no candidate ever reached handle placement): surface
+    // that deterministic evidence instead of the generic topology-cycle
+    // message, which would misattribute the cause.
+    if (
+      error.cause?.reason === "no-feasible-topological-order" &&
+      lastRoutingAnchorFailure
+    ) {
+      throw lastRoutingAnchorFailure;
+    }
+    // The lane-state budget was exhausted before search completed: keep
+    // "state-limit" as the primary reason, but attach the latest
+    // routing-anchor rejection as diagnostic context for why candidates
+    // kept failing before the budget ran out.
+    if (error.cause?.reason === "state-limit" && lastRoutingAnchorFailure) {
+      error.cause = Object.freeze({
+        ...error.cause,
+        routingAnchorEvidence: lastRoutingAnchorFailure.cause,
+      });
     }
     throw error;
   }
