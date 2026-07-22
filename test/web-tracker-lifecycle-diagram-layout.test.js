@@ -31,6 +31,7 @@ import {
   calculateLifecycleDiagramLayout,
   compareBranches,
   compareLifecycleIds,
+  createLaneGeometryFailureCache,
   cubicTransitionPoint,
   endpointColor,
   layoutLifecycleRoutingGraph,
@@ -841,7 +842,7 @@ describe("transition lane solver", () => {
     ).toEqual(before);
   });
 
-  it("propagates a hard materialization invariant instead of swallowing it as lane infeasibility", () => {
+  it("propagates a hard materialization invariant rather than lane infeasibility", () => {
     // denseBranchProjection() spans 55 origin->endpoint branches across the
     // full rank width, so every intermediate rank hosts 55 private routing
     // nodes that materializeLaneAssignments must anchor. Corrupting one
@@ -1125,6 +1126,134 @@ describe("transition lane solver", () => {
     expect(shuffledGraph.transitionLaneSolverStats.handleStatesVisited).toBe(
       stats.handleStatesVisited,
     );
+  });
+});
+
+describe("createLaneGeometryFailureCache", () => {
+  // layoutLifecycleRoutingGraph's candidateCallback calls this exact factory
+  // (not a copy) to classify why a full-geometry signature was rejected, so
+  // a later cache hit for an identical signature can restore that
+  // signature's own diagnostics instead of leaving whatever an unrelated,
+  // more-recently evaluated candidate last set on
+  // lastRoutingAnchorFailure/lastHandleFailure. These tests exercise that
+  // typed replay contract directly.
+
+  it("returns null for a signature that has never been recorded", () => {
+    const cache = createLaneGeometryFailureCache();
+    expect(cache.get("unseen-signature")).toBeNull();
+    expect(cache.size).toBe(0);
+  });
+
+  it("classifies a recoverable routing-anchor failure and preserves its rank", () => {
+    const cache = createLaneGeometryFailureCache();
+    const anchorError = new Error(
+      "Lifecycle routing anchor allocation failed for transition rank 3",
+    );
+    anchorError.cause = Object.freeze({
+      type: "lifecycle-routing-anchor-allocation",
+      reason: "routing-anchor-infeasible",
+      rank: 3,
+    });
+    cache.recordRoutingAnchorFailure("sig-a", anchorError);
+    const cached = cache.get("sig-a");
+    expect(cached.kind).toBe("routing-anchor");
+    // Preserved unchanged: same error object, same frozen cause, same rank.
+    expect(cached.error).toBe(anchorError);
+    expect(cached.error.cause.rank).toBe(3);
+    const type = "lifecycle-routing-anchor-allocation";
+    expect(cached.error.cause.type).toBe(type);
+  });
+
+  it("classifies a handle-placement failure with its own evidence", () => {
+    const cache = createLaneGeometryFailureCache();
+    const handleCheck = Object.freeze({
+      ok: false,
+      reason: "no-candidates",
+      blockedBranchIds: Object.freeze(["branch:x"]),
+    });
+    cache.recordHandleFailure("sig-b", handleCheck);
+    const cached = cache.get("sig-b");
+    expect(cached.kind).toBe("handle");
+    expect(cached.handleCheck).toBe(handleCheck);
+    expect(cached.handleCheck.blockedBranchIds).toEqual(["branch:x"]);
+  });
+
+  it("isolates diagnostics across signatures instead of leaking stale state", () => {
+    // This is the literal bug this cache fixes: candidateCallback previously
+    // left lastRoutingAnchorFailure/lastHandleFailure untouched on a cache
+    // hit, so whichever kind was evaluated *most recently* (regardless of
+    // which signature it belonged to) leaked into an unrelated signature's
+    // replay. Recording in one order and reading back in a different order
+    // proves each signature's own classification survives independently.
+    const cache = createLaneGeometryFailureCache();
+    const anchorError = new Error("anchor failed at rank 1");
+    anchorError.cause = Object.freeze({
+      type: "lifecycle-routing-anchor-allocation",
+      reason: "routing-anchor-infeasible",
+      rank: 1,
+    });
+    const handleCheck = Object.freeze({
+      ok: false,
+      reason: "handle-overlap",
+      blockedBranchIds: Object.freeze(["branch:y"]),
+    });
+    cache.recordRoutingAnchorFailure("sig-anchor", anchorError);
+    cache.recordHandleFailure("sig-handle", handleCheck);
+    // Read back out of insertion order: the handle signature first, then
+    // the routing-anchor signature.
+    const cachedHandle = cache.get("sig-handle");
+    expect(cachedHandle.kind).toBe("handle");
+    expect(cachedHandle.handleCheck).toBe(handleCheck);
+    const cachedAnchor = cache.get("sig-anchor");
+    expect(cachedAnchor.kind).toBe("routing-anchor");
+    expect(cachedAnchor.error).toBe(anchorError);
+    expect(cachedAnchor.error.cause.rank).toBe(1);
+    // Re-reading the handle signature again afterward must still return its
+    // own classification, not the anchor signature's.
+    expect(cache.get("sig-handle").kind).toBe("handle");
+  });
+
+  it("replays a duplicate candidate's cached classification without new work", () => {
+    const cache = createLaneGeometryFailureCache();
+    const anchorError = new Error("anchor failed at rank 2");
+    anchorError.cause = Object.freeze({
+      type: "lifecycle-routing-anchor-allocation",
+      reason: "routing-anchor-infeasible",
+      rank: 2,
+    });
+    cache.recordRoutingAnchorFailure("sig-dup", anchorError);
+    expect(cache.size).toBe(1);
+    const first = cache.get("sig-dup");
+    const second = cache.get("sig-dup");
+    // Identical object identity: replaying the same signature never
+    // recomputes or reclassifies, it returns the exact recorded result.
+    expect(second).toBe(first);
+    expect(cache.size).toBe(1);
+  });
+
+  it("keeps recording bounded: re-recording the same signature does not grow the cache", () => {
+    const cache = createLaneGeometryFailureCache();
+    const firstError = new Error("first anchor failure");
+    firstError.cause = Object.freeze({
+      type: "lifecycle-routing-anchor-allocation",
+      reason: "routing-anchor-infeasible",
+      rank: 4,
+    });
+    cache.recordRoutingAnchorFailure("sig-bounded", firstError);
+    expect(cache.size).toBe(1);
+    const laterHandleCheck = Object.freeze({
+      ok: false,
+      reason: "no-candidates",
+      blockedBranchIds: Object.freeze([]),
+    });
+    // A distinct signature increments size...
+    cache.recordHandleFailure("sig-bounded-2", laterHandleCheck);
+    expect(cache.size).toBe(2);
+    // ...but re-recording an already-known signature only overwrites its
+    // entry rather than adding a new one.
+    cache.recordHandleFailure("sig-bounded", laterHandleCheck);
+    expect(cache.size).toBe(2);
+    expect(cache.get("sig-bounded").kind).toBe("handle");
   });
 });
 

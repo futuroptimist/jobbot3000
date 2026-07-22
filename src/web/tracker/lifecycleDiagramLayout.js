@@ -554,6 +554,39 @@ export const rankCenterX = (rank) =>
   SANKEY_NODE_WIDTH / 2 +
   rank * MINIMUM_RANK_CENTER_SPACING;
 
+// Layout-wide cache of full-geometry signatures already proven infeasible by
+// layoutLifecycleRoutingGraph's candidateCallback, keyed to the specific
+// classification recorded when that signature was first evaluated
+// ("routing-anchor" materialization failure or "handle" placement failure)
+// plus its evidence. Distinct search paths (different topological orderings
+// or coordinate-refinement choices) that happen to land on identical
+// committed lane Y values across the whole graph replay the recorded
+// classification instead of redoing the doomed materialization or handle
+// solve. Exported (rather than kept as a Set literal inline) so its typed
+// replay semantics — restoring only the diagnostics that belong to the
+// exact geometry being replayed, instead of leaving whatever an unrelated,
+// more-recently-evaluated candidate last left behind — can be verified
+// directly; candidateCallback below calls this same implementation, not a
+// copy. State-limit rejections are never recorded here — budget exhaustion
+// is not proof that a geometry is infeasible.
+export function createLaneGeometryFailureCache() {
+  const results = new Map();
+  return {
+    get(signature) {
+      return results.get(signature) ?? null;
+    },
+    recordRoutingAnchorFailure(signature, error) {
+      results.set(signature, { kind: "routing-anchor", error });
+    },
+    recordHandleFailure(signature, handleCheck) {
+      results.set(signature, { kind: "handle", handleCheck });
+    },
+    get size() {
+      return results.size;
+    },
+  };
+}
+
 export function layoutLifecycleRoutingGraph(
   projection,
   availableWidth,
@@ -2172,12 +2205,15 @@ export function layoutLifecycleRoutingGraph(
   let lastRoutingAnchorFailure = null;
   let candidateEvaluations = 0;
   const handleBudget = { statesVisited: 0, stateLimit: 32768 };
-  // Layout-wide cache of full-geometry signatures already proven infeasible
-  // (routing-anchor materialization failure or handle-placement failure), so
-  // distinct search paths (different orderings or coordinate choices) that
-  // happen to land on identical committed lane Y values never repeat the
-  // same doomed materialization or handle solve.
-  const failedGeometrySignatures = new Set();
+  // See createLaneGeometryFailureCache() above for why a typed cache (rather
+  // than a plain membership Set) is required: on a cache hit the callback
+  // must still restore lastRoutingAnchorFailure/lastHandleFailure to
+  // describe *this* geometry before returning, otherwise
+  // refineGlobalLaneCoordinates() (which reads lastHandleFailure immediately
+  // after a rejection) and the outer error classification would act on
+  // whatever an unrelated, more-recently evaluated candidate last left
+  // behind.
+  const geometryFailureCache = createLaneGeometryFailureCache();
 
   // Candidate evaluation callback: materialize the lane assignment, check
   // handle-feasibility, and return true to commit or false to continue the
@@ -2190,7 +2226,19 @@ export function layoutLifecycleRoutingGraph(
       .sort(([a], [b]) => compareLifecycleIds(a, b))
       .map(([id, y]) => `${id}=${y}`)
       .join(",");
-    if (failedGeometrySignatures.has(geometrySignature)) return false;
+    const cachedResult = geometryFailureCache.get(geometrySignature);
+    if (cachedResult) {
+      // Replay this exact geometry's own recorded classification rather than
+      // leaving whatever an intervening, unrelated candidate last set.
+      if (cachedResult.kind === "routing-anchor") {
+        lastRoutingAnchorFailure = cachedResult.error;
+        lastHandleFailure = null;
+      } else {
+        lastHandleFailure = cachedResult.handleCheck;
+        lastRoutingAnchorFailure = null;
+      }
+      return false;
+    }
     try {
       materializeLaneAssignments(globalAssignments);
     } catch (error) {
@@ -2202,14 +2250,18 @@ export function layoutLifecycleRoutingGraph(
         // let the search continue with another candidate.
         lastRoutingAnchorFailure = error;
         lastHandleFailure = null;
-        failedGeometrySignatures.add(geometrySignature);
+        geometryFailureCache.recordRoutingAnchorFailure(
+          geometrySignature,
+          error,
+        );
         return false;
       }
       // Hard or unexpected materialization invariant (incomplete/non-finite
       // lane assignment, missing routing-branch mapping, non-finite route
       // coordinates, or a routing-continuity violation): propagate
       // immediately with its original evidence rather than silently
-      // rejecting the candidate as if it were ordinary infeasibility.
+      // rejecting the candidate as if it were ordinary infeasibility. Never
+      // cached — it is not a recoverable, candidate-specific rejection.
       throw error;
     }
     // Materialization succeeded: this candidate is no longer implicated by
@@ -2231,7 +2283,8 @@ export function layoutLifecycleRoutingGraph(
     if (handleCheck.ok) return true;
     if (handleCheck.reason === "state-limit") {
       // Handle budget exhausted: stop the lane search immediately so the
-      // budget-limit is reported rather than misreported as lane infeasibility.
+      // budget-limit is reported rather than misreported as lane
+      // infeasibility. Not cached — exhaustion is not proof of infeasibility.
       restoreBaseline();
       const handleError = new Error(
         `Lifecycle handle search exceeded ${handleBudget.stateLimit} states`,
@@ -2251,7 +2304,7 @@ export function layoutLifecycleRoutingGraph(
       throw handleError;
     }
     lastHandleFailure = handleCheck;
-    failedGeometrySignatures.add(geometrySignature);
+    geometryFailureCache.recordHandleFailure(geometrySignature, handleCheck);
     return false;
   };
 
