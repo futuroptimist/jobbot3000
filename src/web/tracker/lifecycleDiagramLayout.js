@@ -1476,59 +1476,169 @@ export function layoutLifecycleRoutingGraph(
           }
 
           if (globalOrder.length === componentBranchIds.length) {
-            // Skip orderings whose complete variant space has already been exhausted.
+            // Skip orderings whose complete coordinate space has been exhausted.
             const orderingKey = globalOrder.join(",");
             if (failedCompleteOrderings.has(orderingKey)) return false;
 
-            // Try three coordinate variants (forward/centered/backward) for this
-            // ordering. Deduplicate identical assignments to avoid re-checking the
-            // same candidate via the handle callback. Each variant is independent per
-            // rank, so we compute them across ranks and merge.
-            const seenSigs = new Set();
-            for (const variant of ["forward", "centered", "backward"]) {
-              const variantAssignments = new Map();
-              let variantValid = true;
-              for (const rank of sortedRanks) {
-                const activeBranches = activeBranchesAtRank.get(rank);
-                if (!activeBranches?.size) continue;
-                const rankOrder = globalOrder
-                  .filter((id) => activeBranches.has(id))
-                  .map((id) => variableByBranchAtRank.get(`${id}:${rank}`))
-                  .filter(Boolean);
-                if (!rankOrder.length) continue;
-                const solved = assignMonotoneIntervals(
-                  rankOrder,
-                  recordSolverState,
-                  variant,
-                );
-                if (!solved) {
-                  variantValid = false;
-                  break;
-                }
+            // Pre-compute forward/backward/centered per active rank for this
+            // ordering. All state charges happen here (once per ordering); the
+            // cached arrays are reused for every coordinate candidate below at
+            // zero additional cost so the aggregate state budget is not inflated
+            // by the number of candidates tried.
+            const perRankPC = new Map(); // rank -> {rankOrder, fwd, cen, bwd}
+            for (const rank of sortedRanks) {
+              const activeBranches = activeBranchesAtRank.get(rank);
+              if (!activeBranches?.size) continue;
+              const rankOrder = globalOrder
+                .filter((id) => activeBranches.has(id))
+                .map((id) => variableByBranchAtRank.get(`${id}:${rank}`))
+                .filter(Boolean);
+              if (!rankOrder.length) continue;
+              const fwd = assignMonotoneIntervals(
+                rankOrder,
+                recordSolverState,
+                "forward",
+              );
+              if (!fwd) {
+                // This ordering is infeasible at this rank; no candidates exist.
+                failedCompleteOrderings.add(orderingKey);
+                return false;
+              }
+              const bwd = assignMonotoneIntervals(
+                rankOrder,
+                recordSolverState,
+                "backward",
+              );
+              const cen = assignMonotoneIntervals(
+                rankOrder,
+                recordSolverState,
+                "centered",
+              );
+              perRankPC.set(rank, {
+                rankOrder,
+                fwd,
+                cen: cen ?? fwd,
+                bwd: bwd ?? fwd,
+              });
+            }
+
+            const activeRanks = [...perRankPC.keys()];
+            const compBranchSet = new Set(componentBranchIds);
+
+            // Build a global link assignment from a per-rank mode selection using
+            // cached arrays (no additional state charges).  Returns null when the
+            // resulting Y-signature duplicates one already tried.
+            const triedCoordSigs = new Set();
+            const buildFromModes = (rankModeMap) => {
+              const va = new Map();
+              for (const rank of activeRanks) {
+                const { rankOrder, fwd, cen, bwd } = perRankPC.get(rank);
+                const mode = rankModeMap.get(rank) ?? "cen";
+                const solved =
+                  mode === "fwd" ? fwd : mode === "bwd" ? bwd : cen;
                 for (let i = 0; i < rankOrder.length; i += 1) {
-                  variantAssignments.set(rankOrder[i].id, solved[i]);
+                  va.set(rankOrder[i].id, solved[i]);
                 }
               }
-              if (!variantValid) continue;
-              // Deduplicate by Y-value signature across all link IDs
               const sig = compLinkIds
-                .map((id) => variantAssignments.get(id) ?? "")
+                .map((id) => va.get(id) ?? "")
                 .join(",");
-              if (seenSigs.has(sig)) continue;
-              seenSigs.add(sig);
-              // Tentatively extend globalAssignments with this component's candidate
-              for (const [id, value] of variantAssignments)
-                globalAssignments.set(id, value);
+              if (triedCoordSigs.has(sig)) return null;
+              triedCoordSigs.add(sig);
+              return va;
+            };
+
+            // Try one candidate assignment; commit on success, restore on failure.
+            const evaluateCandidate = (va) => {
+              if (!va) return false;
+              for (const [id, value] of va) globalAssignments.set(id, value);
               if (solveFromComponent(componentIndex + 1)) {
                 componentOrderings.set(compMinId, orderingKey);
                 componentMembers.set(compMinId, componentBranchIds.slice());
                 return true;
               }
-              // Restore this component's tentative entries
-              for (const id of variantAssignments.keys())
-                globalAssignments.delete(id);
+              for (const id of va.keys()) globalAssignments.delete(id);
+              return false;
+            };
+
+            // Derive ranks implicated by the last handle failure for this
+            // component.  When blocked branches belong to other components (or
+            // no failure is recorded yet), fall back to all active ranks so
+            // cross-component Y interactions are also explored.
+            const getImplicatedRanks = () => {
+              const blocked = lastHandleFailure?.blockedBranchIds;
+              if (!blocked?.length) return activeRanks;
+              const compBlocked = blocked.filter((id) =>
+                compBranchSet.has(id),
+              );
+              if (!compBlocked.length) return activeRanks;
+              const blockedSet = new Set(compBlocked);
+              return activeRanks.filter((r) =>
+                perRankPC.get(r).rankOrder.some((v) =>
+                  blockedSet.has(v.branchId),
+                ),
+              );
+            };
+
+            // Maximum coordinate candidates per ordering.  Each candidate is
+            // built from cached arrays and charged no additional solver states.
+            // Kept small so infeasible orderings are discarded quickly.
+            const MAX_COORD = 15;
+            let coordCount = 0;
+
+            // Candidate 1: all-centered (balanced, most likely to succeed).
+            const cenMap = new Map(activeRanks.map((r) => [r, "cen"]));
+            if (evaluateCandidate(buildFromModes(cenMap))) return true;
+            coordCount += 1;
+
+            // Re-derive implicated ranks after the first attempt.
+            const searchRanks = getImplicatedRanks();
+
+            // Level 1: vary one rank at a time within searchRanks.
+            for (const rank of searchRanks) {
+              if (coordCount >= MAX_COORD) break;
+              for (const mode of ["fwd", "bwd"]) {
+                if (coordCount >= MAX_COORD) break;
+                const modeMap = new Map(cenMap);
+                modeMap.set(rank, mode);
+                if (evaluateCandidate(buildFromModes(modeMap))) return true;
+                coordCount += 1;
+              }
             }
-            // All coordinate variants for this ordering have been tried
+
+            // Level 2: vary pairs of searchRanks.
+            for (
+              let i = 0;
+              i < searchRanks.length && coordCount < MAX_COORD;
+              i += 1
+            ) {
+              for (
+                let j = i + 1;
+                j < searchRanks.length && coordCount < MAX_COORD;
+                j += 1
+              ) {
+                for (const m1 of ["fwd", "bwd"]) {
+                  for (const m2 of ["fwd", "bwd"]) {
+                    if (coordCount >= MAX_COORD) break;
+                    const modeMap = new Map(cenMap);
+                    modeMap.set(searchRanks[i], m1);
+                    modeMap.set(searchRanks[j], m2);
+                    if (evaluateCandidate(buildFromModes(modeMap))) return true;
+                    coordCount += 1;
+                  }
+                }
+              }
+            }
+
+            // Fallback: globally consistent forward / backward shapes.
+            for (const mode of ["fwd", "bwd"]) {
+              if (coordCount >= MAX_COORD) break;
+              const modeMap = new Map(activeRanks.map((r) => [r, mode]));
+              if (evaluateCandidate(buildFromModes(modeMap))) return true;
+              coordCount += 1;
+            }
+
+            // All coordinate combinations for this ordering exhausted.
             failedCompleteOrderings.add(orderingKey);
             return false;
           }
