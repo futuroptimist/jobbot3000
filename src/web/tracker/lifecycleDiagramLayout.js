@@ -1578,26 +1578,105 @@ export function layoutLifecycleRoutingGraph(
               return false;
             }
 
-            // For each implicated variable build a finite critical domain:
-            // interval boundaries within the neighbour-constrained envelope
-            // [lo, hi], forward minimum, backward maximum, and nearest-ideal —
-            // all distinct from the centred value already tried. Every
-            // implicated variable is included; the search below bounds cost
-            // through iterative deepening rather than a fixed variable cap.
+            // Build a targeted set of (branchId, rank) pairs from handle
+            // diagnostics so the iterative-deepening search stays bounded.
+            //
+            // Route-blocker diagnostics (no-candidates failures) pinpoint
+            // the exact transition ranks where lane moves resolve the block:
+            // the blocked branch at its handle transitionRank, and the
+            // blocking route at its own transitionRank.  Conflict-pair
+            // diagnostics (handle-overlap failures) narrow to ranks where
+            // a directly-blocked branch and its conflict partner are both
+            // active.  When neither source provides rank information, fall
+            // back to (blockedInComp × activeRanks) so the solver always
+            // has something to try.
+            //
+            // Keeping varDomains small means the iterative-deepening depth
+            // cap below keeps cost well within the 200 000-state budget;
+            // deeper combinations (three or more simultaneous moves) are
+            // extremely rare in practice and would require depth > 2 to
+            // find — those orderings are simply not memoized as exhausted
+            // so the solver can try alternative topological orderings.
+            const implicatedPairsByBranch = new Map(); // branchId → Set<rank>
+            const blockedBranchSet = new Set(blocked);
+
+            // Route-blocker diagnostics: specific (branch, rank) pairs.
+            for (const diagnostic of lastHandleFailure?.branchDiagnostics ??
+              []) {
+              const id = diagnostic?.branchId;
+              if (!id || !compBranchSet.has(id)) continue;
+              const cand = diagnostic.nearestRejectedCandidate;
+              if (!cand || cand.blocker?.kind !== "route") continue;
+              if (Number.isInteger(cand.transitionRank)) {
+                if (!implicatedPairsByBranch.has(id))
+                  implicatedPairsByBranch.set(id, new Set());
+                implicatedPairsByBranch.get(id).add(cand.transitionRank);
+              }
+              const blockerId = cand.blocker.branchId;
+              const blockerRank = cand.blocker.transitionRank;
+              if (
+                blockerId &&
+                compBranchSet.has(blockerId) &&
+                Number.isInteger(blockerRank)
+              ) {
+                if (!implicatedPairsByBranch.has(blockerId))
+                  implicatedPairsByBranch.set(blockerId, new Set());
+                implicatedPairsByBranch.get(blockerId).add(blockerRank);
+              }
+            }
+
+            // Conflict pairs: both members at every rank where they are
+            // co-active, but only for pairs involving a directly-blocked
+            // branch (avoids enumerating every pair in the component).
+            for (const [leftId, rightId] of lastHandleFailure?.component
+              ?.conflictingBranchPairs ?? []) {
+              if (
+                !blockedBranchSet.has(leftId) &&
+                !blockedBranchSet.has(rightId)
+              )
+                continue;
+              for (const [pId, otherId] of [
+                [leftId, rightId],
+                [rightId, leftId],
+              ]) {
+                if (!compBranchSet.has(pId)) continue;
+                for (const rank of activeRanks) {
+                  const aB = activeBranchesAtRank.get(rank);
+                  if (aB?.has(pId) && aB?.has(otherId)) {
+                    if (!implicatedPairsByBranch.has(pId))
+                      implicatedPairsByBranch.set(pId, new Set());
+                    implicatedPairsByBranch.get(pId).add(rank);
+                  }
+                }
+              }
+            }
+
+            // Fallback: all (blockedInComp × activeRanks) when no rank
+            // information is available from any diagnostic source.
+            if (!implicatedPairsByBranch.size) {
+              for (const branchId of blockedInComp) {
+                implicatedPairsByBranch.set(branchId, new Set(activeRanks));
+              }
+            }
+
+            // For each targeted (branchId, rank) pair build a finite
+            // critical domain: interval boundaries within the
+            // neighbour-constrained envelope [lo, hi], forward minimum,
+            // backward maximum, and nearest-ideal — all distinct from the
+            // centred value already tried.
             //
             // The envelope is only clamped against a neighbour's centred
             // value when that neighbour is *not* itself implicated. When an
-            // adjacent variable is also implicated, it may move away from
-            // its centred value in the same combination (tryCombination can
-            // select both), so clamping this variable's domain against the
-            // neighbour's stale centred value would exclude legal solutions
-            // that require the two to move together; the neighbour's own
-            // domain and the final monotone-spacing check in
-            // buildFromChosen jointly guarantee correctness regardless of
-            // how wide this envelope is.
+            // adjacent variable is also implicated it may move in the same
+            // combination (tryCombination can select both), so clamping
+            // against its stale centred value would exclude legal solutions
+            // requiring the two to move together; the neighbour's own
+            // domain and the monotone-spacing check in buildFromChosen
+            // jointly guarantee correctness regardless of envelope width.
             const varDomains = [];
-            for (const branchId of blockedInComp) {
-              for (const rank of activeRanks) {
+            for (const [branchId, rankSet] of implicatedPairsByBranch) {
+              for (const rank of rankSet) {
+                if (!perRankPC.has(rank)) continue;
                 const { rankOrder, cen } = perRankPC.get(rank);
                 const idx = rankOrder.findIndex(
                   (v) => v.branchId === branchId,
@@ -1657,6 +1736,25 @@ export function layoutLifecycleRoutingGraph(
               return false;
             }
 
+            // Coordinate-refinement DFS is only safe for the final lane
+            // component. For earlier components each coord-DFS leaf calls
+            // solveFromComponent(componentIndex + 1), which re-runs the full
+            // solver for every subsequent component from scratch. With
+            // C(varDomains, 2) × k² leaves that fan-out is exponential and
+            // easily exhausts the 200 000-state budget even for modest fixture
+            // sizes. Skipping coord DFS for non-final components is correct:
+            // the only path where a coord move in component K helps handle
+            // placement is the one already tried (the centred assignment
+            // above). Any remaining handle-placement failures in component K
+            // are better resolved by a different topological ordering (MRV
+            // backtracking), which respects the shared state budget.
+            const isLastComponent =
+              componentIndex === componentList.length - 1;
+            if (!isLastComponent) {
+              failedCompleteOrderings.add(orderingKey);
+              return false;
+            }
+
             // Build a complete assignment from a flat list of chosen variable
             // overrides. Returns null when monotone spacing is violated or the
             // Y-signature duplicates one already tried for this ordering.
@@ -1690,6 +1788,23 @@ export function layoutLifecycleRoutingGraph(
               triedCoordSigs.add(sig);
               return va;
             };
+
+            // Hard variable cap: even after diagnostic narrowing the
+            // conflict-pair expansion for dense fixtures can produce dozens
+            // of (branch, rank) pairs. Cap the list so that the DFS cost
+            // per ordering stays predictable: C(MAX_COORD_VARS, 2) × k^2
+            // states — with MAX_COORD_VARS = 12 and k = 3 that is ≈500
+            // states per ordering versus ≈57 000 for 90 variables. Entries
+            // are already ordered by diagnostic priority (route-blocker
+            // pairs first, then conflict pairs, then fallback), so the most
+            // targeted variables are always included within the cap.
+            // When the cap truncates the list the ordering is not memoized
+            // as exhausted (coordDepthLimit >= varDomains.length is false)
+            // so other topological orderings are free to try alternative
+            // variable subsets.
+            const MAX_COORD_VARS = 12;
+            if (varDomains.length > MAX_COORD_VARS)
+              varDomains.length = MAX_COORD_VARS;
 
             // Search coordinated overrides by iterative deepening on the
             // number of variables moved away from centred: try the smallest
@@ -1748,12 +1863,36 @@ export function layoutLifecycleRoutingGraph(
               }
               return false;
             };
-            for (let depth = 1; depth <= varDomains.length; depth += 1) {
+            // Iterative deepening over coordinated variable overrides.
+            // Cap at depth 2 so cost stays bounded within the aggregate
+            // lane/refinement budget regardless of varDomains size: at
+            // depth d over n variables each with at most k alternatives
+            // the worst-case node count is C(n,d)×k^d — depth 2 over the
+            // 12-variable cap gives ≈500 states per ordering, leaving ample
+            // budget for hundreds of MRV orderings.
+            // Depth 2 covers every realistic case (the common failure modes
+            // — a route clearance block and its blocking route, or two
+            // conflicting handles — each need at most two variables to move
+            // simultaneously); deeper coordination is addressed by trying a
+            // different topological ordering instead.
+            //
+            // A state-limit throw propagates straight out so budget
+            // exhaustion is always distinct from proven infeasibility.
+            // Mark failedCompleteOrderings only when the cap covers the
+            // entire variable set (genuinely exhausted, not truncated): if
+            // varDomains has more entries than the cap, other topological
+            // orderings may succeed where this one cannot within the budget.
+            const coordDepthLimit = Math.min(varDomains.length, 2);
+            for (let depth = 1; depth <= coordDepthLimit; depth += 1) {
               if (tryCombination(0, depth)) return true;
             }
 
-            // Every depth exhausted without a budget exception: mark done.
-            failedCompleteOrderings.add(orderingKey);
+            if (coordDepthLimit >= varDomains.length) {
+              // Every depth over every variable combination was tried
+              // without a budget exception: this ordering's coordinate
+              // space is genuinely infeasible.
+              failedCompleteOrderings.add(orderingKey);
+            }
             return false;
           }
 
