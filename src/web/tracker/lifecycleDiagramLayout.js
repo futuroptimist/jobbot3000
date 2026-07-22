@@ -1555,10 +1555,27 @@ export function layoutLifecycleRoutingGraph(
               return true;
 
             // Use handle diagnostics to identify implicated (branch, rank)
-            // variables.  When no blocked branches fall in this component,
-            // coordinate changes cannot help and the ordering is exhausted.
+            // variables: branches the handle solver directly blocked, the
+            // unrelated routes those rejections were measured against, and
+            // branches sharing a candidate-box conflict. When none of these
+            // fall in this component, coordinate changes here cannot help
+            // and the ordering is exhausted.
             const blocked = lastHandleFailure?.blockedBranchIds ?? [];
-            const blockedInComp = blocked.filter((id) => compBranchSet.has(id));
+            const routeBlockerIds = (lastHandleFailure?.branchDiagnostics ?? [])
+              .map((diagnostic) => diagnostic?.nearestRejectedCandidate?.blocker)
+              .filter((blocker) => blocker?.kind === "route")
+              .map((blocker) => blocker.branchId);
+            const conflictPairIds = (
+              lastHandleFailure?.component?.conflictingBranchPairs ?? []
+            ).flat();
+            const implicatedIds = new Set([
+              ...blocked,
+              ...routeBlockerIds,
+              ...conflictPairIds,
+            ]);
+            const blockedInComp = [...implicatedIds].filter((id) =>
+              compBranchSet.has(id),
+            );
 
             if (!blockedInComp.length) {
               failedCompleteOrderings.add(orderingKey);
@@ -1568,13 +1585,12 @@ export function layoutLifecycleRoutingGraph(
             // For each implicated variable build a finite critical domain:
             // interval boundaries within the neighbour-constrained envelope
             // [lo, hi], forward minimum, backward maximum, and nearest-ideal —
-            // all distinct from the centred value already tried.
-            // Cap at COORD_DFS_VAR_LIMIT so the DFS remains tractable.
-            const COORD_DFS_VAR_LIMIT = 8;
+            // all distinct from the centred value already tried. Every
+            // implicated variable is included; the search below bounds cost
+            // through iterative deepening rather than a fixed variable cap.
             const varDomains = [];
-            outer: for (const branchId of blockedInComp) {
+            for (const branchId of blockedInComp) {
               for (const rank of activeRanks) {
-                if (varDomains.length >= COORD_DFS_VAR_LIMIT) break outer;
                 const { rankOrder, cen } = perRankPC.get(rank);
                 const idx = rankOrder.findIndex(
                   (v) => v.branchId === branchId,
@@ -1620,7 +1636,7 @@ export function layoutLifecycleRoutingGraph(
                   (a, b) =>
                     Math.abs(a - v.idealY) - Math.abs(b - v.idealY) || a - b,
                 );
-                varDomains.push({ rank, idx, cen, rankOrder, alternatives });
+                varDomains.push({ rank, idx, alternatives });
               }
             }
 
@@ -1629,14 +1645,20 @@ export function layoutLifecycleRoutingGraph(
               return false;
             }
 
-            // Build a complete assignment from per-rank index overrides.
-            // Returns null when monotone spacing is violated or the Y-signature
-            // duplicates one already tried for this ordering.
-            const buildWithOverrides = (overrides) => {
+            // Build a complete assignment from a flat list of chosen variable
+            // overrides. Returns null when monotone spacing is violated or the
+            // Y-signature duplicates one already tried for this ordering.
+            const buildFromChosen = (chosen) => {
+              const overridesByRank = new Map();
+              for (const { rank, idx, y } of chosen) {
+                if (!overridesByRank.has(rank))
+                  overridesByRank.set(rank, new Map());
+                overridesByRank.get(rank).set(idx, y);
+              }
               const va = new Map();
               for (const rank of activeRanks) {
                 const { rankOrder, cen } = perRankPC.get(rank);
-                const rankOv = overrides.get(rank);
+                const rankOv = overridesByRank.get(rank);
                 const values = [...cen];
                 if (rankOv) {
                   for (const [oidx, oy] of rankOv) values[oidx] = oy;
@@ -1657,39 +1679,59 @@ export function layoutLifecycleRoutingGraph(
               return va;
             };
 
-            // DFS over per-variable overrides.  Each variable may keep its
-            // centred value (skip) or take one value from its critical domain.
-            // One lane state is charged per leaf evaluated so budget exhaustion
-            // is distinguishable from true coordinate infeasibility; the
-            // failedCompleteOrderings mark is set only when the DFS terminates
-            // normally (no budget exception).
-            const dfsCoord = (varIdx, overrides) => {
-              if (varIdx >= varDomains.length) {
-                const va = buildWithOverrides(overrides);
-                if (!va) return false;
+            // Search coordinated overrides by iterative deepening on the
+            // number of variables moved away from centred: try the smallest
+            // coordinated moves first (the realistic case — one or two
+            // blocked handles usually need one or two variables to move),
+            // escalating combination size only once every smaller
+            // combination is exhausted. `chosen` is one mutable array pushed
+            // and popped in place (no per-node Map cloning) so the only
+            // allocation per candidate leaf is the assignment Map built by
+            // buildFromChosen, immediately after one lane state is charged.
+            // A thrown state-limit error propagates straight out of this
+            // search, so failedCompleteOrderings below is only reached once
+            // every depth has completed without a budget exception — true
+            // exhaustion, never budget exhaustion.
+            const chosen = [];
+            const tryValues = (position) => {
+              if (position === chosen.length) {
                 recordSolverState({
                   branchIds: componentBranchIds,
                   linkIds: compLinkIds,
                 });
-                return evaluateCandidate(va);
+                const va = buildFromChosen(chosen);
+                return va ? evaluateCandidate(va) : false;
               }
-              const { rank, idx, alternatives } = varDomains[varIdx];
-              // Skip: keep centred for this variable.
-              if (dfsCoord(varIdx + 1, overrides)) return true;
-              // Override: try each alternative in domain order.
-              for (const y of alternatives) {
-                const rankOv = new Map(overrides.get(rank) ?? []);
-                rankOv.set(idx, y);
-                const newOverrides = new Map(overrides);
-                newOverrides.set(rank, rankOv);
-                if (dfsCoord(varIdx + 1, newOverrides)) return true;
+              const slot = chosen[position];
+              for (const y of slot.alternatives) {
+                slot.y = y;
+                if (tryValues(position + 1)) return true;
               }
               return false;
             };
+            const tryCombination = (startIdx, remaining) => {
+              if (remaining === 0) return tryValues(0);
+              for (
+                let i = startIdx;
+                i <= varDomains.length - remaining;
+                i += 1
+              ) {
+                chosen.push({
+                  rank: varDomains[i].rank,
+                  idx: varDomains[i].idx,
+                  alternatives: varDomains[i].alternatives,
+                  y: null,
+                });
+                if (tryCombination(i + 1, remaining - 1)) return true;
+                chosen.pop();
+              }
+              return false;
+            };
+            for (let depth = 1; depth <= varDomains.length; depth += 1) {
+              if (tryCombination(0, depth)) return true;
+            }
 
-            if (dfsCoord(0, new Map())) return true;
-
-            // DFS exhausted without budget exception: mark ordering done.
+            // Every depth exhausted without a budget exception: mark done.
             failedCompleteOrderings.add(orderingKey);
             return false;
           }
@@ -1948,6 +1990,11 @@ export function layoutLifecycleRoutingGraph(
   let lastHandleFailure = null;
   let candidateEvaluations = 0;
   const handleBudget = { statesVisited: 0, stateLimit: 32768 };
+  // Layout-wide cache of full-geometry signatures already proven
+  // handle-infeasible, so distinct search paths (different orderings or
+  // coordinate choices) that happen to land on identical committed lane
+  // Y values never re-run the handle solver for the same geometry.
+  const failedGeometrySignatures = new Set();
 
   // Candidate evaluation callback: materialize the lane assignment, check
   // handle-feasibility, and return true to commit or false to continue the
@@ -1969,6 +2016,11 @@ export function layoutLifecycleRoutingGraph(
       // Test-only lane-phase exit: accept the first geometrically valid assignment.
       return true;
     }
+    const geometrySignature = [...globalAssignments.entries()]
+      .sort(([a], [b]) => compareLifecycleIds(a, b))
+      .map(([id, y]) => `${id}=${y}`)
+      .join(",");
+    if (failedGeometrySignatures.has(geometrySignature)) return false;
     const handleCheck = tryAssignBranchHandles(
       graph.branches,
       linksByBranch,
@@ -1998,6 +2050,7 @@ export function layoutLifecycleRoutingGraph(
       throw handleError;
     }
     lastHandleFailure = handleCheck;
+    failedGeometrySignatures.add(geometrySignature);
     return false;
   };
 

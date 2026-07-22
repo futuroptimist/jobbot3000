@@ -1074,7 +1074,9 @@ describe("transition lane solver", () => {
       stats.handleStatesVisited,
     );
   });
+});
 
+describe("lifecycle diagram render-only routing layout", () => {
   it("assigns handles across independent conflict components deterministically", () => {
     const makeSegment = (id, y) => ({
       id: `${id}:segment:0`,
