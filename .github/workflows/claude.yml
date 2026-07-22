@@ -59,6 +59,13 @@ jobs:
           additional_permissions: |
             actions: read
 
+          # Implementation sessions should checkpoint coherent work before lengthy
+          # validation so environmental or timed-out checks do not erase safe changes.
+          # File-editing tools and validation commands are narrow, additive grants.
+          # Bash Git mutation is denied; the action-native signed commit path remains
+          # available for branch updates while workflow edits still require review.
           claude_args: >-
-            --allowedTools "Bash(npm ci),Bash(npm run lint),Bash(npm run lint:fix),Bash(npm run format:check),Bash(npm run format:fix),Bash(npm run typecheck),Bash(npm run test:ci),Bash(npm run build),Bash(npx vitest run:*)"
-            --disallowedTools "Bash(git push:*),Bash(git reset --hard:*),Bash(git clean:*)"
+            --max-turns 120
+            --append-system-prompt 'When the triggering request asks for repository changes, producing a remote commit is a required deliverable unless a concrete correctness or security blocker prevents it. Make and push the first coherent, reviewable checkpoint commit early: after focused validation or syntax checks, before lengthy or full validation, and before the final third of the session. Use the action-native signed commit and push mechanism; never use Bash for git add, git commit, or git push. Continue with follow-up commits when needed, and do not hold all work locally until every possible test finishes. A failure introduced by the new code must be fixed before finalizing. A pre-existing, environmental, unavailable, blocked, or timed-out check should be reported honestly but must not cause otherwise coherent and safe requested changes to disappear. Reserve the final ten turns for reviewing the diff, checking status, running the narrowest remaining verification, committing and pushing, and reporting results. Before ending, inspect the working tree and either commit and push the requested safe changes or state the exact correctness, security, or commit-mechanism blocker. Do not fabricate commits for analysis-only or no-op requests, and never commit secrets, temporary debugging, generated junk, or code known to introduce a new failure. A checkpoint commit does not make failing CI mergeable.'
+            --allowedTools "Read,Edit,Write,Glob,Grep,Bash(npm ci),Bash(npm run lint *),Bash(npm run lint:fix *),Bash(npm run format:check *),Bash(npm run format:fix *),Bash(npm run typecheck *),Bash(npm run test:ci *),Bash(npm run build *),Bash(npx vitest run *),Bash(npx prettier --check *),Bash(node --check *),Bash(git diff --check),Bash(git status --short)"
+            --disallowedTools "WebFetch,WebSearch,Bash(git add *),Bash(git commit *),Bash(git push *),Bash(git reset *),Bash(git clean *),Bash(git rm *),Bash(gh pr merge *),Bash(gh pr edit *),Bash(gh pr close *),Bash(gh pr ready *),Bash(gh issue edit *),Bash(gh issue close *),Bash(gh api *),Bash(gh workflow *),Bash(gh run *),Bash(gh auth *),Bash(gh secret *),Bash(gh variable *),Bash(gh release *),Bash(gh repo *)"
