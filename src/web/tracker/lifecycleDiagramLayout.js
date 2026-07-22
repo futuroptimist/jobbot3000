@@ -940,6 +940,9 @@ export function layoutLifecycleRoutingGraph(
     stateLimit: options.transitionLaneStateLimit ?? 200000,
     backtracks: 0,
     memoizedFailures: 0,
+    candidateEvaluations: 0,
+    handleStatesVisited: 0,
+    handleStateLimit: 0,
   };
   const sortedUnique = (values) =>
     [...new Set(values.filter(Boolean))].sort(compareLifecycleIds);
@@ -1551,90 +1554,142 @@ export function layoutLifecycleRoutingGraph(
             if (evaluateCandidate(buildAssignment((r) => perRankPC.get(r).cen)))
               return true;
 
-            // Use handle diagnostics to guide subsequent candidates.
+            // Use handle diagnostics to identify implicated (branch, rank)
+            // variables.  When no blocked branches fall in this component,
+            // coordinate changes cannot help and the ordering is exhausted.
             const blocked = lastHandleFailure?.blockedBranchIds ?? [];
             const blockedInComp = blocked.filter((id) => compBranchSet.has(id));
 
-            // Per-variable critical candidates: for each blocked (branch, rank)
-            // variable, try moving only that variable to the forward and backward
-            // endpoints of its feasible range given its neighbours' centred
-            // values.  All other variables stay at centred.  The bounds are
-            // derived from adjacent centred neighbours so monotone ordering is
-            // preserved by construction; no full re-solve is needed.
-            for (const branchId of blockedInComp) {
+            if (!blockedInComp.length) {
+              failedCompleteOrderings.add(orderingKey);
+              return false;
+            }
+
+            // For each implicated variable build a finite critical domain:
+            // interval boundaries within the neighbour-constrained envelope
+            // [lo, hi], forward minimum, backward maximum, and nearest-ideal —
+            // all distinct from the centred value already tried.
+            // Cap at COORD_DFS_VAR_LIMIT so the DFS remains tractable.
+            const COORD_DFS_VAR_LIMIT = 8;
+            const varDomains = [];
+            outer: for (const branchId of blockedInComp) {
               for (const rank of activeRanks) {
+                if (varDomains.length >= COORD_DFS_VAR_LIMIT) break outer;
                 const { rankOrder, cen } = perRankPC.get(rank);
-                const idx = rankOrder.findIndex((v) => v.branchId === branchId);
+                const idx = rankOrder.findIndex(
+                  (v) => v.branchId === branchId,
+                );
                 if (idx < 0) continue;
                 const v = rankOrder[idx];
-                const lowerBound =
+                const lo =
                   idx > 0
                     ? quantizeY(cen[idx - 1] + minLaneSpacing + LANE_Y_EPSILON)
                     : laneTop;
-                const upperBound =
+                const hi =
                   idx < rankOrder.length - 1
                     ? quantizeY(cen[idx + 1] - minLaneSpacing)
                     : laneBottom;
-                const yFwd = firstLegalAtOrAbove(v.intervals, lowerBound);
-                const yBwd = lastLegalAtOrBelow(v.intervals, upperBound);
-                for (const yAlt of [yFwd, yBwd]) {
-                  if (
-                    yAlt === null ||
-                    Math.abs(yAlt - cen[idx]) <= LANE_Y_EPSILON
-                  )
-                    continue;
-                  if (
-                    evaluateCandidate(
-                      buildAssignment((r) => {
-                        if (r !== rank) return perRankPC.get(r).cen;
-                        const vals = [...cen];
-                        vals[idx] = yAlt;
-                        return vals;
-                      }),
+                const domainSet = new Set();
+                const yFwd = firstLegalAtOrAbove(v.intervals, lo);
+                if (yFwd !== null && yFwd <= hi + LANE_Y_EPSILON)
+                  domainSet.add(yFwd);
+                const yBwd = lastLegalAtOrBelow(v.intervals, hi);
+                if (yBwd !== null && yBwd >= lo - LANE_Y_EPSILON)
+                  domainSet.add(yBwd);
+                const yIdeal = legalNearestInEnvelope(
+                  v.intervals,
+                  lo,
+                  hi,
+                  v.idealY,
+                );
+                if (yIdeal !== null) domainSet.add(yIdeal);
+                for (const [iLo, iHi] of v.intervals) {
+                  for (const boundary of [iLo, iHi]) {
+                    const q = quantizeY(boundary);
+                    if (
+                      q >= lo - LANE_Y_EPSILON &&
+                      q <= hi + LANE_Y_EPSILON &&
+                      candidateClearsSpan(q, v.minX, v.maxX, v.incidentIds)
                     )
-                  )
-                    return true;
+                      domainSet.add(q);
+                  }
                 }
+                domainSet.delete(cen[idx]);
+                if (!domainSet.size) continue;
+                const alternatives = [...domainSet].sort(
+                  (a, b) =>
+                    Math.abs(a - v.idealY) - Math.abs(b - v.idealY) || a - b,
+                );
+                varDomains.push({ rank, idx, cen, rankOrder, alternatives });
               }
             }
 
-            // Rank-level candidates: shift implicated ranks to forward/backward
-            // while keeping all other ranks at centred.
-            const implicatedSet = new Set(blockedInComp);
-            const searchRanks =
-              implicatedSet.size > 0
-                ? activeRanks.filter((r) =>
-                    perRankPC
-                      .get(r)
-                      .rankOrder.some((v) => implicatedSet.has(v.branchId)),
-                  )
-                : activeRanks;
-            for (const rank of searchRanks) {
-              for (const mode of ["fwd", "bwd"]) {
-                if (
-                  evaluateCandidate(
-                    buildAssignment((r) =>
-                      r === rank
-                        ? perRankPC.get(r)[mode]
-                        : perRankPC.get(r).cen,
-                    ),
-                  )
-                )
-                  return true;
+            if (!varDomains.length) {
+              failedCompleteOrderings.add(orderingKey);
+              return false;
+            }
+
+            // Build a complete assignment from per-rank index overrides.
+            // Returns null when monotone spacing is violated or the Y-signature
+            // duplicates one already tried for this ordering.
+            const buildWithOverrides = (overrides) => {
+              const va = new Map();
+              for (const rank of activeRanks) {
+                const { rankOrder, cen } = perRankPC.get(rank);
+                const rankOv = overrides.get(rank);
+                const values = [...cen];
+                if (rankOv) {
+                  for (const [oidx, oy] of rankOv) values[oidx] = oy;
+                  for (let i = 1; i < values.length; i += 1) {
+                    if (
+                      values[i] <
+                      values[i - 1] + minLaneSpacing - LANE_Y_EPSILON
+                    )
+                      return null;
+                  }
+                }
+                for (let i = 0; i < rankOrder.length; i += 1)
+                  va.set(rankOrder[i].id, values[i]);
               }
-            }
+              const sig = compLinkIds.map((id) => va.get(id) ?? "").join(",");
+              if (triedCoordSigs.has(sig)) return null;
+              triedCoordSigs.add(sig);
+              return va;
+            };
 
-            // Global fallbacks: all-forward and all-backward.
-            for (const mode of ["fwd", "bwd"]) {
-              if (
-                evaluateCandidate(
-                  buildAssignment((r) => perRankPC.get(r)[mode]),
-                )
-              )
-                return true;
-            }
+            // DFS over per-variable overrides.  Each variable may keep its
+            // centred value (skip) or take one value from its critical domain.
+            // One lane state is charged per leaf evaluated so budget exhaustion
+            // is distinguishable from true coordinate infeasibility; the
+            // failedCompleteOrderings mark is set only when the DFS terminates
+            // normally (no budget exception).
+            const dfsCoord = (varIdx, overrides) => {
+              if (varIdx >= varDomains.length) {
+                const va = buildWithOverrides(overrides);
+                if (!va) return false;
+                recordSolverState({
+                  branchIds: componentBranchIds,
+                  linkIds: compLinkIds,
+                });
+                return evaluateCandidate(va);
+              }
+              const { rank, idx, alternatives } = varDomains[varIdx];
+              // Skip: keep centred for this variable.
+              if (dfsCoord(varIdx + 1, overrides)) return true;
+              // Override: try each alternative in domain order.
+              for (const y of alternatives) {
+                const rankOv = new Map(overrides.get(rank) ?? []);
+                rankOv.set(idx, y);
+                const newOverrides = new Map(overrides);
+                newOverrides.set(rank, rankOv);
+                if (dfsCoord(varIdx + 1, newOverrides)) return true;
+              }
+              return false;
+            };
 
-            // All coordinate candidates for this ordering exhausted.
+            if (dfsCoord(0, new Map())) return true;
+
+            // DFS exhausted without budget exception: mark ordering done.
             failedCompleteOrderings.add(orderingKey);
             return false;
           }
@@ -1891,6 +1946,8 @@ export function layoutLifecycleRoutingGraph(
   };
 
   let lastHandleFailure = null;
+  let candidateEvaluations = 0;
+  const handleBudget = { statesVisited: 0, stateLimit: 32768 };
 
   // Candidate evaluation callback: materialize the lane assignment, check
   // handle-feasibility, and return true to commit or false to continue the
@@ -1898,6 +1955,7 @@ export function layoutLifecycleRoutingGraph(
   // materializing so that a failed candidate cannot corrupt later tries.
   const candidateCallback = (globalAssignments) => {
     restoreBaseline();
+    candidateEvaluations += 1;
     try {
       materializeLaneAssignments(globalAssignments);
     } catch {
@@ -1915,8 +1973,30 @@ export function layoutLifecycleRoutingGraph(
       graph.branches,
       linksByBranch,
       visibleNodes,
+      { sharedBudget: handleBudget },
     );
     if (handleCheck.ok) return true;
+    if (handleCheck.reason === "state-limit") {
+      // Handle budget exhausted: stop the lane search immediately so the
+      // budget-limit is reported rather than misreported as lane infeasibility.
+      restoreBaseline();
+      const handleError = new Error(
+        `Lifecycle handle search exceeded ${handleBudget.stateLimit} states`,
+      );
+      handleError.cause = Object.freeze({
+        type: "lifecycle-transition-lane-order",
+        reason: "state-limit",
+        rank: null,
+        branchIds: Object.freeze([]),
+        linkIds: Object.freeze([]),
+        edgeKinds: Object.freeze([]),
+        statesVisited: handleBudget.statesVisited,
+        stateLimit: handleBudget.stateLimit,
+        backtracks: 0,
+        memoizedFailures: 0,
+      });
+      throw handleError;
+    }
     lastHandleFailure = handleCheck;
     return false;
   };
@@ -1943,6 +2023,9 @@ export function layoutLifecycleRoutingGraph(
 
   // The callback committed a valid lane assignment (already materialized on the graph).
   transitionLaneSolverStats.components = laneResult.componentMembers.size;
+  transitionLaneSolverStats.candidateEvaluations = candidateEvaluations;
+  transitionLaneSolverStats.handleStatesVisited = handleBudget.statesVisited;
+  transitionLaneSolverStats.handleStateLimit = handleBudget.stateLimit;
   graph.transitionLaneSolverStats = Object.freeze({
     ...transitionLaneSolverStats,
   });
@@ -2412,7 +2495,7 @@ const deepFreezePlain = (value) => {
 export const solveHandleCandidateSets = (
   branches,
   candidateSets,
-  { maxStates = 32768 } = {},
+  { maxStates = 32768, sharedBudget = null } = {},
 ) => {
   const orderedBranches = [...branches].sort(compareBranches);
   const branchById = new Map(
@@ -2473,7 +2556,7 @@ export const solveHandleCandidateSets = (
     components.push(component.sort(compareBranches));
   }
   const selected = new Map();
-  let visitedStates = 0;
+  const budget = sharedBudget ?? { statesVisited: 0, stateLimit: maxStates };
   const componentSummary = (component) => ({
     branchIds: component.map((branch) => branch.id).sort(compareLifecycleIds),
     candidateCounts: Object.fromEntries(
@@ -2484,8 +2567,8 @@ export const solveHandleCandidateSets = (
     conflictingBranchPairs: conflictingBranchPairs.filter(([left, right]) =>
       component.some((branch) => branch.id === left || branch.id === right),
     ),
-    visitedStates,
-    stateLimit: maxStates,
+    visitedStates: budget.statesVisited,
+    stateLimit: budget.stateLimit,
   });
   const solveComponent = (component) => {
     const assignments = new Map();
@@ -2530,8 +2613,8 @@ export const solveHandleCandidateSets = (
         return false;
       }
       for (const candidate of next.candidates) {
-        if (visitedStates >= maxStates) return "state-limit";
-        visitedStates += 1;
+        if (budget.statesVisited >= budget.stateLimit) return "state-limit";
+        budget.statesVisited += 1;
         assignments.set(next.branch.id, candidate);
         let forwardOk = true;
         for (const branch of component) {
@@ -2598,6 +2681,7 @@ const tryAssignBranchHandles = (
   branches,
   segmentsByBranch,
   visibleNodes = [],
+  { sharedBudget = null } = {},
 ) => {
   const nodeBoxes = visibleNodes.map((node) => ({
     x: node.x0,
@@ -2836,6 +2920,7 @@ const tryAssignBranchHandles = (
   const handleAssignment = solveHandleCandidateSets(
     orderedBranches,
     candidateSets,
+    { sharedBudget },
   );
   if (!handleAssignment.ok)
     return {
