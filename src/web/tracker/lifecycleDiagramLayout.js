@@ -247,6 +247,27 @@ const collator = new Intl.Collator(undefined, { numeric: true });
 export const compareLifecycleIds = (a, b) =>
   collator.compare(String(a), String(b));
 
+// Yields every k-element subset of {0, ..., n - 1} as an ascending index
+// array, in lexicographic order. Used to enumerate variable-combinations by
+// increasing cardinality so a coordinate search can try small coordinated
+// moves before large ones without relying on incidental value-sort order.
+export function* combinationsOfSize(n, k) {
+  if (k === 0) {
+    yield [];
+    return;
+  }
+  if (k > n || k < 0) return;
+  const combo = Array.from({ length: k }, (_, i) => i);
+  for (;;) {
+    yield combo.slice();
+    let i = k - 1;
+    while (i >= 0 && combo[i] === n - k + i) i -= 1;
+    if (i < 0) return;
+    combo[i] += 1;
+    for (let j = i + 1; j < k; j += 1) combo[j] = combo[i] + (j - i);
+  }
+}
+
 export const ENDPOINT_ORDER = new Map(
   LIFECYCLE_DIAGRAM_TAXONOMY.endpoints.map((item, index) => [item.id, index]),
 );
@@ -1524,50 +1545,76 @@ export function layoutLifecycleRoutingGraph(
                   domainSet.add(q);
               }
             }
-            const alternatives = [...domainSet].sort(
-              (a, b) =>
-                Math.abs(a - v.idealY) - Math.abs(b - v.idealY) || a - b,
-            );
+            const centeredValue = cen[idx];
+            // moveAlternatives excludes the centred value itself: a variable
+            // included in a refinement combination below is being tested for
+            // an actual deviation from centred, not a no-op re-selection of
+            // its current value. Sorted by distance from ideal Y so a
+            // combination's cartesian search tries the most plausible
+            // deviation for each variable first.
+            const moveAlternatives = [...domainSet]
+              .filter((y) => y !== centeredValue)
+              .sort(
+                (a, b) =>
+                  Math.abs(a - v.idealY) - Math.abs(b - v.idealY) || a - b,
+              );
             vars.push({
               key: `${rank}:${idx}`,
               rank,
               idx,
               id: v.id,
               branchId,
-              alternatives,
+              centeredValue,
+              moveAlternatives,
             });
           }
         }
 
         if (!vars.length) return false;
 
-        // Deterministic MRV-style ordering: fewest legal alternatives first
-        // (most constrained variable), then stable rank/branch identity.
+        // Deterministic MRV-style ordering: fewest legal non-centred moves
+        // first (most constrained variable), then stable rank/branch
+        // identity. Combinations below are chosen as index subsets of this
+        // array, so smaller-index combinations naturally favor the most
+        // constrained variables first.
         vars.sort(
           (a, b) =>
-            a.alternatives.length - b.alternatives.length ||
+            a.moveAlternatives.length - b.moveAlternatives.length ||
             a.rank - b.rank ||
             compareLifecycleIds(a.branchId, b.branchId),
         );
         const varByKey = new Map(vars.map((entry) => [entry.key, entry]));
-        const chosen = new Map(); // "rank:idx" -> tentative y
+
+        // chosenValues always holds a complete assignment for every
+        // implicated variable: it starts (and, for any variable outside the
+        // combination currently under search, remains) at that variable's
+        // centred value, and is overridden only for variables selected into
+        // the combination being attempted. This lets validateFull() below
+        // always read a fully-resolved candidate regardless of combination
+        // size, and lets valueAt()/spacingLegal() treat every variable
+        // uniformly instead of branching on whether it happens to be
+        // implicated at all.
+        const chosenValues = new Map(vars.map((v) => [v.key, v.centeredValue]));
+        // Keys of variables that are part of the combination currently being
+        // searched but have not yet been resolved this attempt (i.e. still
+        // sitting at their default centred value pending a decision later in
+        // this same combination's DFS). Neighbour legality checks must not
+        // constrain against a pending value, since it may still change to
+        // satisfy spacing once resolved; the authoritative check is
+        // validateFull() at each complete leaf.
+        const pendingKeys = new Set();
 
         const valueAt = (rank, idx) => {
           const key = `${rank}:${idx}`;
-          if (chosen.has(key)) return chosen.get(key);
+          if (chosenValues.has(key)) return chosenValues.get(key);
           return rankRefinementInfo.get(rank).cen[idx];
         };
 
-        // Immediate legality against neighbours that are already decided
-        // (fixed centred value, or already chosen this attempt). A neighbour
-        // that is itself implicated but not yet chosen is left unconstrained
-        // here; the full spacing validation at each complete leaf is the
-        // authoritative correctness check regardless of this ordering.
         const spacingLegal = (rank, idx, y) => {
           const { rankOrder } = rankRefinementInfo.get(rank);
           if (idx > 0) {
             const leftKey = `${rank}:${idx - 1}`;
-            if (!varByKey.has(leftKey) || chosen.has(leftKey)) {
+            if (!pendingKeys.has(leftKey)) {
               if (
                 y <
                 valueAt(rank, idx - 1) + minLaneSpacing - LANE_Y_EPSILON
@@ -1577,7 +1624,7 @@ export function layoutLifecycleRoutingGraph(
           }
           if (idx < rankOrder.length - 1) {
             const rightKey = `${rank}:${idx + 1}`;
-            if (!varByKey.has(rightKey) || chosen.has(rightKey)) {
+            if (!pendingKeys.has(rightKey)) {
               if (
                 y >
                 valueAt(rank, idx + 1) - minLaneSpacing + LANE_Y_EPSILON
@@ -1588,16 +1635,15 @@ export function layoutLifecycleRoutingGraph(
           return true;
         };
 
-        // Forward check: every not-yet-assigned implicated neighbour must
-        // retain at least one legal alternative given this tentative
-        // assignment before descending further.
+        // Forward check: every not-yet-resolved combination neighbour must
+        // retain at least one legal non-centred alternative given this
+        // tentative assignment before descending further.
         const forwardCheckOk = (rank, idx) => {
           for (const neighborIdx of [idx - 1, idx + 1]) {
             const neighborKey = `${rank}:${neighborIdx}`;
-            if (chosen.has(neighborKey)) continue;
+            if (!pendingKeys.has(neighborKey)) continue;
             const neighbor = varByKey.get(neighborKey);
-            if (!neighbor) continue;
-            const feasible = neighbor.alternatives.some((y) =>
+            const feasible = neighbor.moveAlternatives.some((y) =>
               spacingLegal(rank, neighborIdx, y),
             );
             if (!feasible) return false;
@@ -1616,7 +1662,9 @@ export function layoutLifecycleRoutingGraph(
             let prev = null;
             for (let i = 0; i < rankOrder.length; i += 1) {
               const key = `${rank}:${i}`;
-              const val = chosen.has(key) ? chosen.get(key) : cen[i];
+              const val = chosenValues.has(key)
+                ? chosenValues.get(key)
+                : cen[i];
               if (
                 prev !== null &&
                 val < prev + minLaneSpacing - LANE_Y_EPSILON
@@ -1628,18 +1676,16 @@ export function layoutLifecycleRoutingGraph(
           return true;
         };
 
-        const applyChosen = () => {
-          for (const [key, y] of chosen) {
-            globalAssignments.set(varByKey.get(key).id, y);
+        const applyCombo = (comboIndices) => {
+          for (const idx of comboIndices) {
+            const entry = vars[idx];
+            globalAssignments.set(entry.id, chosenValues.get(entry.key));
           }
         };
-        const revertChosen = () => {
-          for (const key of chosen.keys()) {
-            const entry = varByKey.get(key);
-            globalAssignments.set(
-              entry.id,
-              rankRefinementInfo.get(entry.rank).cen[entry.idx],
-            );
+        const revertCombo = (comboIndices) => {
+          for (const idx of comboIndices) {
+            const entry = vars[idx];
+            globalAssignments.set(entry.id, entry.centeredValue);
           }
         };
 
@@ -1650,42 +1696,75 @@ export function layoutLifecycleRoutingGraph(
           allLinkIds.map((id) => globalAssignments.get(id) ?? "").join(","),
         ]);
 
-        const search = (position) => {
+        // Assigns values to the variables in comboIndices (an exact subset of
+        // vars selected to deviate from centred), in order, trying every
+        // non-centred alternative for each before backtracking. All variables
+        // outside comboIndices remain at their centred default throughout.
+        const assignCombo = (comboIndices, position) => {
           recordSolverState({
             branchIds: [...implicatedIds],
             linkIds: allLinkIds,
           });
-          if (position === vars.length) {
+          if (position === comboIndices.length) {
             if (!validateFull()) return false;
-            applyChosen();
+            applyCombo(comboIndices);
             const sig = allLinkIds
               .map((id) => globalAssignments.get(id) ?? "")
               .join(",");
             if (triedCoordSigs.has(sig)) {
-              revertChosen();
+              revertCombo(comboIndices);
               return false;
             }
             triedCoordSigs.add(sig);
             if (candidateCallback(globalAssignments)) return true;
-            revertChosen();
+            revertCombo(comboIndices);
             return false;
           }
-          const entry = vars[position];
-          for (const y of entry.alternatives) {
+          const entry = vars[comboIndices[position]];
+          for (const y of entry.moveAlternatives) {
             recordSolverState({
               branchIds: [...implicatedIds],
               linkIds: allLinkIds,
             });
             if (!spacingLegal(entry.rank, entry.idx, y)) continue;
-            chosen.set(entry.key, y);
-            if (forwardCheckOk(entry.rank, entry.idx) && search(position + 1))
+            chosenValues.set(entry.key, y);
+            pendingKeys.delete(entry.key);
+            if (
+              forwardCheckOk(entry.rank, entry.idx) &&
+              assignCombo(comboIndices, position + 1)
+            )
               return true;
-            chosen.delete(entry.key);
+            pendingKeys.add(entry.key);
+            chosenValues.set(entry.key, entry.centeredValue);
           }
           return false;
         };
 
-        return search(0);
+        // Iterative deepening by combination cardinality: every unique subset
+        // of implicated variables is tried, in order of increasing size, so a
+        // solution requiring few coordinated moves is found long before one
+        // requiring many. This remains complete (bounded only by the shared
+        // state budget) because every subset of every size is eventually
+        // reachable — there is no depth cutoff.
+        for (let size = 1; size <= vars.length; size += 1) {
+          for (const comboIndices of combinationsOfSize(vars.length, size)) {
+            // A variable forced into the combination but with no legal
+            // non-centred value can never satisfy this exact combination;
+            // skip without charging a search state, since no assignment
+            // attempt is possible.
+            if (
+              comboIndices.some(
+                (idx) => vars[idx].moveAlternatives.length === 0,
+              )
+            )
+              continue;
+            for (const idx of comboIndices) pendingKeys.add(vars[idx].key);
+            const found = assignCombo(comboIndices, 0);
+            for (const idx of comboIndices) pendingKeys.delete(vars[idx].key);
+            if (found) return true;
+          }
+        }
+        return false;
       };
 
       // Recursively solve each connected component, then check handle-feasibility.

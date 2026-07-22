@@ -29,6 +29,7 @@ import {
   buildLifecycleRouteModel,
   buildLifecycleRoutingGraph,
   calculateLifecycleDiagramLayout,
+  combinationsOfSize,
   compareBranches,
   compareLifecycleIds,
   createLaneGeometryFailureCache,
@@ -1126,6 +1127,56 @@ describe("transition lane solver", () => {
     expect(shuffledGraph.transitionLaneSolverStats.handleStatesVisited).toBe(
       stats.handleStatesVisited,
     );
+  });
+});
+
+describe("combinationsOfSize", () => {
+  it("yields the empty combination once for k = 0 and nothing for k > n", () => {
+    expect([...combinationsOfSize(3, 0)]).toEqual([[]]);
+    expect([...combinationsOfSize(3, 4)]).toEqual([]);
+  });
+
+  // eslint-disable-next-line max-len
+  it("enumerates every k-subset of {0, ..., n - 1} exactly once, in ascending lexicographic order", () => {
+    expect([...combinationsOfSize(4, 2)]).toEqual([
+      [0, 1],
+      [0, 2],
+      [0, 3],
+      [1, 2],
+      [1, 3],
+      [2, 3],
+    ]);
+    expect([...combinationsOfSize(3, 1)]).toEqual([[0], [1], [2]]);
+    expect([...combinationsOfSize(3, 3)]).toEqual([[0, 1, 2]]);
+  });
+
+  // eslint-disable-next-line max-len
+  it("produces strictly increasing, duplicate-free subsets whose count matches the binomial coefficient", () => {
+    // The global coordinate-refinement search relies on this generator to try
+    // every distinct subset of implicated variables exactly once per size, in
+    // increasing order of combination cardinality, so a solution requiring
+    // few coordinated moves is always found before one requiring many.
+    const nCr = (n, k) => {
+      let result = 1;
+      for (let i = 0; i < k; i += 1) result = (result * (n - i)) / (i + 1);
+      return Math.round(result);
+    };
+    const n = 6;
+    for (let k = 0; k <= n; k += 1) {
+      const combos = [...combinationsOfSize(n, k)];
+      expect(combos).toHaveLength(nCr(n, k));
+      const seen = new Set(combos.map((combo) => combo.join(",")));
+      expect(seen.size).toBe(combos.length);
+      for (const combo of combos) {
+        expect(combo).toHaveLength(k);
+        expect(combo).toEqual([...combo].sort((a, b) => a - b));
+        expect(new Set(combo).size).toBe(combo.length);
+        for (const index of combo) {
+          expect(index).toBeGreaterThanOrEqual(0);
+          expect(index).toBeLessThan(n);
+        }
+      }
+    }
   });
 });
 
