@@ -838,22 +838,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
         );
       }
     }
-    const handleCheck = tryAssignBranchHandles(
-      graph.branches,
-      linksByBranch,
-      visibleNodes,
-    );
-    if (
-      !handleCheck.ok &&
-      handleCheck.reason !== "handle-overlap" &&
-      graph.branches.length <= 50
-    ) {
-      const blockedBranchId =
-        handleCheck.blockedBranchIds[0] ?? "unknown branch";
-      throw new Error(
-        `Lifecycle diagram handle placement invariant violated for ${blockedBranchId}`,
-      );
-    }
+    assignBranchHandles(graph.branches, linksByBranch, visibleNodes);
   } catch (error) {
     restoreBaseline();
     throw error;
@@ -1313,6 +1298,10 @@ const boxesOverlap = (a, b) =>
   a.x + a.width > b.x &&
   a.y < b.y + b.height &&
   a.y + a.height > b.y;
+export const BRANCH_HANDLE_CANDIDATE_T_VALUES = Object.freeze([
+  0.5, 0.35, 0.65, 0.25, 0.75, 0.15, 0.85, 0.1, 0.9, 0.2, 0.8, 0.3, 0.7,
+  0.4, 0.6, 0.05, 0.95, 0.45, 0.55,
+]);
 const tryAssignBranchHandles = (
   branches,
   segmentsByBranch,
@@ -1401,7 +1390,7 @@ const tryAssignBranchHandles = (
       const targetCenter = rankCenterX(segment.target.rank);
       const exitX = sourceCenter + RANK_CORRIDOR_HALF_WIDTH;
       const entryX = targetCenter - RANK_CORRIDOR_HALF_WIDTH;
-      for (const t of [0.5, 0.35, 0.65, 0.25, 0.75, 0.15, 0.85]) {
+      for (const t of BRANCH_HANDLE_CANDIDATE_T_VALUES) {
         const { x, y } = cubicTransitionPoint(segment, t);
         const box = {
           x: x - BRANCH_HANDLE_RADIUS,
@@ -1427,40 +1416,6 @@ const tryAssignBranchHandles = (
           });
       }
     }
-    if (!candidates.length) {
-      for (const segment of orderedSegments) {
-        const sourceCenter = rankCenterX(segment.source.rank);
-        const targetCenter = rankCenterX(segment.target.rank);
-        const exitX = sourceCenter + RANK_CORRIDOR_HALF_WIDTH;
-        const entryX = targetCenter - RANK_CORRIDOR_HALF_WIDTH;
-        for (const t of [0.5, 0.35, 0.65]) {
-          const { x, y } = cubicTransitionPoint(segment, t);
-          const box = {
-            x: x - BRANCH_HANDLE_RADIUS,
-            y: y - BRANCH_HANDLE_RADIUS,
-            width: BRANCH_HANDLE_RADIUS * 2,
-            height: BRANCH_HANDLE_RADIUS * 2,
-          };
-          if (
-            x - BRANCH_HANDLE_RADIUS < exitX ||
-            x + BRANCH_HANDLE_RADIUS > entryX
-          )
-            continue;
-          const clearanceMargin = Math.max(
-            renderedBranchClearanceMargin(branch, x, y),
-            LANE_Y_EPSILON,
-          );
-          candidates.push({
-            branchId: branch.id,
-            x,
-            y,
-            radius: BRANCH_HANDLE_RADIUS,
-            box,
-            clearanceMargin,
-          });
-        }
-      }
-    }
     candidateSets.set(
       branch.id,
       candidates.sort(
@@ -1481,7 +1436,7 @@ const tryAssignBranchHandles = (
     };
   const selected = new Map();
   let visitedHandleStates = 0;
-  const MAX_HANDLE_SEARCH_STATES = 32768;
+  const MAX_HANDLE_SEARCH_STATES = 1048576;
   const chooseHandles = () => {
     if (selected.size >= orderedBranches.length) return true;
     if (visitedHandleStates++ >= MAX_HANDLE_SEARCH_STATES) return false;
@@ -1540,36 +1495,35 @@ export function assignBranchHandles(
   );
   if (result.ok) return result.handles;
   const selected = [];
-  if (branches.length > 50)
-    for (const branch of [...branches].sort(compareBranches)) {
-      const candidates = result.candidateSets.get(branch.id) ?? [];
-      const candidate =
-        candidates.find(
-          (item) =>
-            !selected.some((handle) => boxesOverlap(item.box, handle.box)),
-        ) ?? candidates[0];
-      if (candidate) {
-        selected.push(candidate);
-        continue;
-      }
-      const segment = (segmentsByBranch.get(branch.id) ?? [])[0];
-      if (!segment) continue;
-      const { x, y } = cubicTransitionPoint(segment, 0.5);
-      selected.push({
-        branchId: branch.id,
-        x,
-        y,
-        radius: BRANCH_HANDLE_RADIUS,
-        box: {
-          x: x - BRANCH_HANDLE_RADIUS,
-          y: y - BRANCH_HANDLE_RADIUS,
-          width: BRANCH_HANDLE_RADIUS * 2,
-          height: BRANCH_HANDLE_RADIUS * 2,
-        },
-        clearanceMargin: LANE_Y_EPSILON,
-      });
+  if (result.reason === "handle-overlap" || result.reason === "state-limit") {
+    const remaining = [...branches].sort(compareBranches);
+    while (remaining.length) {
+      const selectedHandles = selected;
+      const next = remaining
+        .map((branch) => ({
+          branch,
+          candidates: (result.candidateSets.get(branch.id) ?? []).filter(
+            (item) =>
+              !selectedHandles.some((handle) =>
+                boxesOverlap(item.box, handle.box),
+              ),
+          ),
+        }))
+        .sort(
+          (a, b) =>
+            a.candidates.length - b.candidates.length ||
+            compareBranches(a.branch, b.branch),
+        )[0];
+      const candidate = next?.candidates[0];
+      if (!candidate) break;
+      selected.push(candidate);
+      remaining.splice(
+        remaining.findIndex((branch) => branch.id === next.branch.id),
+        1,
+      );
     }
-  if (selected.length === branches.length) return selected;
+    if (selected.length === branches.length) return selected;
+  }
   const branchId = result.blockedBranchIds[0];
   throw new Error(
     branchId

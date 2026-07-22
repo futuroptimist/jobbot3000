@@ -8,6 +8,7 @@ import {
 } from "../src/web/tracker/lifecycleProjection.js";
 import {
   BRANCH_HANDLE_RADIUS,
+  BRANCH_HANDLE_CANDIDATE_T_VALUES,
   BRANCH_STROKE_OPACITY,
   ENDPOINT_BRANCH_COLORS,
   LAYOUT_BOTTOM_MARGIN,
@@ -741,7 +742,7 @@ describe("lifecycle diagram render-only routing layout", () => {
     for (const handle of handles) {
       const segments = byBranch.get(handle.branchId);
       const allowed = segments.flatMap((segment) =>
-        [0.5, 0.35, 0.65].map((t) => ({
+        BRANCH_HANDLE_CANDIDATE_T_VALUES.map((t) => ({
           segment,
           ...cubicTransitionPoint(segment, t),
         })),
@@ -873,7 +874,7 @@ describe("lifecycle diagram render-only routing layout", () => {
       expect(handle.clearanceMargin, handle.branchId).toBeGreaterThan(0);
       const segments = byBranch.get(handle.branchId);
       const allowed = segments.flatMap((segment) =>
-        [0.5, 0.35, 0.65].map((t) => ({
+        BRANCH_HANDLE_CANDIDATE_T_VALUES.map((t) => ({
           segment,
           ...cubicTransitionPoint(segment, t),
         })),
@@ -925,7 +926,7 @@ describe("lifecycle diagram render-only routing layout", () => {
       const segments = byBranch.get(handle.branchId);
       expect(
         segments.some((segment) =>
-          [0.5, 0.35, 0.65].some((t) => {
+          BRANCH_HANDLE_CANDIDATE_T_VALUES.some((t) => {
             const candidate = cubicTransitionPoint(segment, t);
             return (
               Math.abs(candidate.x - handle.x) < 0.001 &&
