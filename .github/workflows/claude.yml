@@ -13,10 +13,10 @@ on:
 jobs:
   claude:
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude') && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude') && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude') && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.review.author_association)) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')) && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association))
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -26,6 +26,30 @@ jobs:
       actions: read
       id-token: write
     steps:
+      - name: Authorize trusted Claude actor
+        env:
+          ACTOR: ${{ github.actor }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          TRUSTED_ACTORS: ${{ vars.CLAUDE_TRUSTED_ACTORS }}
+        run: |
+          set -euo pipefail
+
+          if [ "${ACTOR}" = "${REPOSITORY_OWNER}" ]; then
+            exit 0
+          fi
+
+          IFS=',' read -r -a trusted <<< "${TRUSTED_ACTORS:-}"
+          for login in "${trusted[@]}"; do
+            login="${login//[[:space:]]/}"
+            if [ -n "${login}" ] && [ "${ACTOR}" = "${login}" ]; then
+              exit 0
+            fi
+          done
+
+          echo "Refusing to run privileged Claude workflow for untrusted actor ${ACTOR}." >&2
+          echo "Configure trusted actors in the CLAUDE_TRUSTED_ACTORS repository variable." >&2
+          exit 1
+
       - name: Reject fork pull requests
         if: ${{ (github.event_name == 'issue_comment' && github.event.issue.pull_request) || github.event_name == 'pull_request_review_comment' || github.event_name == 'pull_request_review' }}
         env:
@@ -48,11 +72,22 @@ jobs:
           fetch-tags: true
           persist-credentials: false
 
+      - name: Install trusted Claude validation wrapper
+        run: |
+          set -euo pipefail
+          install -m 0755 .github/scripts/jobbot-claude-validate.sh /tmp/jobbot-claude-validate
+
       - name: Run Claude Code
         id: claude
         uses: anthropics/claude-code-action@fa7e2f0a29a126f0b81cdcf360561b36e44cf608 # v1
+        env:
+          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          include_comments_by_actor: ${{ github.repository_owner }}${{ vars.CLAUDE_TRUSTED_ACTORS != '' && format(',{0}', vars.CLAUDE_TRUSTED_ACTORS) || '' }},github-actions[bot],claude[bot]
+          display_report: "false"
+          show_full_output: "false"
+          settings: .github/claude-code-settings.json
 
           # Invariant: GITHUB_TOKEN stays read-only; Claude's short-lived App token
           # handles ordinary branch/commit operations; workflow edits require review.
@@ -70,6 +105,91 @@ jobs:
           use_commit_signing: true
           claude_args: |
             --max-turns 120
-            --append-system-prompt "When the triggering request asks for repository changes, producing a remote commit is a required deliverable unless a concrete correctness or security blocker prevents it. Make and push the first coherent, reviewable checkpoint commit early: after focused validation or syntax checks, before lengthy or full validation, and before the final third of the session. Use the API commit signing mechanism; never use Bash for git add, git commit, or git push. Continue with follow-up commits when needed, and do not hold all work locally until every possible test finishes. A failure introduced by the new code must be fixed before finalizing. A pre-existing, environmental, unavailable, blocked, or timed-out check should be reported honestly but must not cause otherwise coherent and safe requested changes to disappear. Reserve the final ten turns for reviewing the diff, checking status, running the narrowest remaining verification, committing and pushing, and reporting results. Before ending, inspect the working tree and either commit and push the requested safe changes or state the exact correctness, security, or commit-mechanism blocker. Do not fabricate commits for analysis-only or no-op requests, and never commit secrets, temporary debugging, generated junk, or code known to introduce a new failure. A checkpoint commit does not make failing CI mergeable."
-            --allowedTools "Read,Glob,Grep,Bash(npm ci),Bash(npm run lint),Bash(npm run lint:fix),Bash(npm run format:check),Bash(npm run format:fix),Bash(npm run typecheck),Bash(npm run test:ci),Bash(npm run build),Bash(npx vitest run),Bash(npx vitest run *),Bash(npx prettier --check *),Bash(node --check *),Bash(git diff --check),Bash(git status --short)"
-            --disallowedTools "WebFetch,WebSearch,Bash(git add),Bash(git add *),Bash(git commit),Bash(git commit *),Bash(git push),Bash(git push *),Bash(git reset),Bash(git reset *),Bash(git clean),Bash(git clean *),Bash(git rm),Bash(git rm *),Bash(gh),Bash(gh *)"
+            --append-system-prompt "Use only existing Actions results and the trusted validation wrapper for local validation. The only validation commands you may ask Bash to run are: /tmp/jobbot-claude-validate prepare, /tmp/jobbot-claude-validate lint, /tmp/jobbot-claude-validate format-check, /tmp/jobbot-claude-validate typecheck, /tmp/jobbot-claude-validate test-ci, /tmp/jobbot-claude-validate build, /tmp/jobbot-claude-validate node-check <repo-js-file>, git diff --check, and git status --short. Do not retry prohibited npm, npx, node, python, curl, wget, gh, or git mutation commands. If a validation command is denied, skipped, blocked, or unavailable, say so explicitly and do not claim validation succeeded. A successful Claude action result is not proof that validation ran; report the specific validation operations and outcomes. When the triggering request asks for repository changes, producing a remote commit is a required deliverable unless a concrete correctness or security blocker prevents it. Make and push the first coherent, reviewable checkpoint commit early: after focused validation or syntax checks, before lengthy or full validation, and before the final third of the session. Use the API commit signing mechanism; never use Bash for git add, git commit, or git push. Continue with follow-up commits when needed, and do not hold all work locally until every possible test finishes. A failure introduced by the new code must be fixed before finalizing. A pre-existing, environmental, unavailable, blocked, or timed-out check should be reported honestly but must not cause otherwise coherent and safe requested changes to disappear. Reserve the final ten turns for reviewing the diff, checking status, running the narrowest remaining verification, committing and pushing, and reporting results. Before ending, inspect the working tree and either commit and push the requested safe changes or state the exact correctness, security, or commit-mechanism blocker. Do not fabricate commits for analysis-only or no-op requests, and never commit secrets, temporary debugging, generated junk, or code known to introduce a new failure. A checkpoint commit does not make failing CI mergeable."
+            --allowedTools "Read,Glob,Grep,Bash(/tmp/jobbot-claude-validate prepare),Bash(/tmp/jobbot-claude-validate lint),Bash(/tmp/jobbot-claude-validate format-check),Bash(/tmp/jobbot-claude-validate typecheck),Bash(/tmp/jobbot-claude-validate test-ci),Bash(/tmp/jobbot-claude-validate build),Bash(/tmp/jobbot-claude-validate node-check *),Bash(git diff --check),Bash(git status --short)"
+            --disallowedTools "WebFetch,WebSearch,Bash(gh),Bash(gh *),Bash(git add),Bash(git add *),Bash(git commit),Bash(git commit *),Bash(git push),Bash(git push *),Bash(git reset),Bash(git reset *),Bash(git clean),Bash(git clean *),Bash(git rm),Bash(git rm *),Bash(rm -rf *),Bash(sudo *),Bash(curl *),Bash(wget *),Bash(npm *),Bash(npx *),Bash(node *),Bash(python *),Bash(python3 *)"
+
+  claude-validation:
+    name: Claude validation interface
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    steps:
+      - name: Authorize trusted validation actor
+        env:
+          ACTOR: ${{ github.actor }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          TRUSTED_ACTORS: ${{ vars.CLAUDE_TRUSTED_ACTORS }}
+        run: |
+          set -euo pipefail
+          if [ "${ACTOR}" = "${REPOSITORY_OWNER}" ]; then exit 0; fi
+          IFS=',' read -r -a trusted <<< "${TRUSTED_ACTORS:-}"
+          for login in "${trusted[@]}"; do
+            login="${login//[[:space:]]/}"
+            if [ -n "${login}" ] && [ "${ACTOR}" = "${login}" ]; then exit 0; fi
+          done
+          echo "Skipping validation for untrusted actor ${ACTOR}." >&2
+          exit 1
+
+      - name: Resolve pull request head
+        id: pr
+        if: ${{ (github.event_name == 'issue_comment' && github.event.issue.pull_request) || github.event_name == 'pull_request_review_comment' || github.event_name == 'pull_request_review' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          pr_json="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")"
+          head_repo="$(jq -r '.head.repo.full_name' <<< "${pr_json}")"
+          if [ "${head_repo}" != "${REPOSITORY}" ]; then
+            echo "Refusing validation for fork PR ${PR_NUMBER} from ${head_repo}." >&2
+            exit 1
+          fi
+          jq -r '.head.sha | "sha=\(.)"' <<< "${pr_json}" >> "${GITHUB_OUTPUT}"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies without lifecycle scripts
+        run: .github/scripts/jobbot-claude-validate.sh prepare
+
+      - name: Block outbound network for repository validation
+        run: |
+          set -euo pipefail
+          sudo iptables -P OUTPUT DROP
+          sudo iptables -A OUTPUT -o lo -j ACCEPT
+          sudo ip6tables -P OUTPUT DROP
+          sudo ip6tables -A OUTPUT -o lo -j ACCEPT
+
+      - name: Lint
+        run: .github/scripts/jobbot-claude-validate.sh lint
+
+      - name: Format check
+        run: .github/scripts/jobbot-claude-validate.sh format-check
+
+      - name: Typecheck
+        run: .github/scripts/jobbot-claude-validate.sh typecheck
+
+      - name: Test
+        run: .github/scripts/jobbot-claude-validate.sh test-ci
+
+      - name: Build
+        run: .github/scripts/jobbot-claude-validate.sh build

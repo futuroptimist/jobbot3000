@@ -34,7 +34,8 @@
     "build": "node scripts/build-static.js",
     "start:static": "node scripts/static-server.js",
     "smoke:container": "bash scripts/smoke-container.sh",
-    "smoke:promotion": "node scripts/promotion-smoke.js"
+    "smoke:promotion": "node scripts/promotion-smoke.js",
+    "test:claude-workflow-security": "vitest run test/claude-workflow-security.test.js"
   },
   "engines": {
     "node": ">=20"

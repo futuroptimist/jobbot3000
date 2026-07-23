@@ -1,0 +1,102 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Bash(/tmp/jobbot-claude-validate prepare)",
+      "Bash(/tmp/jobbot-claude-validate lint)",
+      "Bash(/tmp/jobbot-claude-validate format-check)",
+      "Bash(/tmp/jobbot-claude-validate typecheck)",
+      "Bash(/tmp/jobbot-claude-validate test-ci)",
+      "Bash(/tmp/jobbot-claude-validate build)",
+      "Bash(/tmp/jobbot-claude-validate node-check *)",
+      "Bash(git diff --check)",
+      "Bash(git status --short)"
+    ],
+    "deny": [
+      "WebFetch",
+      "WebSearch",
+      "Bash(gh)",
+      "Bash(gh *)",
+      "Bash(git add)",
+      "Bash(git add *)",
+      "Bash(git commit)",
+      "Bash(git commit *)",
+      "Bash(git push)",
+      "Bash(git push *)",
+      "Bash(git reset)",
+      "Bash(git reset *)",
+      "Bash(git clean)",
+      "Bash(git clean *)",
+      "Bash(git rm)",
+      "Bash(git rm *)",
+      "Bash(rm -rf *)",
+      "Bash(sudo *)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Bash(python *)",
+      "Bash(python3 *)"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false,
+    "autoAllowBashIfSandboxed": false,
+    "filesystem": {
+      "denyRead": [
+        "~/",
+        "/home/runner/.config/gh",
+        "/home/runner/.docker",
+        "/home/runner/.git-credentials",
+        "/home/runner/.netrc",
+        "/home/runner/.ssh",
+        "/home/runner/.npmrc",
+        "/home/runner/work/_temp/_github_home",
+        "/home/runner/work/_temp/_runner_file_commands"
+      ],
+      "allowRead": ["."],
+      "denyWrite": [
+        "/home/runner/.config/gh",
+        "/home/runner/.docker",
+        "/home/runner/.git-credentials",
+        "/home/runner/.netrc",
+        "/home/runner/.ssh",
+        "/home/runner/.npmrc",
+        "/home/runner/work/_temp/_github_home",
+        "/home/runner/work/_temp/_runner_file_commands"
+      ]
+    },
+    "network": {
+      "allowedDomains": [],
+      "deniedDomains": ["*"]
+    },
+    "credentials": {
+      "files": [
+        { "path": "~/.config/gh", "mode": "deny" },
+        { "path": "~/.docker", "mode": "deny" },
+        { "path": "~/.git-credentials", "mode": "deny" },
+        { "path": "~/.netrc", "mode": "deny" },
+        { "path": "~/.ssh", "mode": "deny" },
+        { "path": "~/.npmrc", "mode": "deny" },
+        { "path": "/home/runner/work/_temp/_github_home", "mode": "deny" },
+        {
+          "path": "/home/runner/work/_temp/_runner_file_commands",
+          "mode": "deny"
+        }
+      ],
+      "envVars": [
+        { "name": "ACTIONS_ID_TOKEN_REQUEST_TOKEN", "mode": "deny" },
+        { "name": "ANTHROPIC_API_KEY", "mode": "deny" },
+        { "name": "CLAUDE_CODE_OAUTH_TOKEN", "mode": "deny" },
+        { "name": "GH_TOKEN", "mode": "deny" },
+        { "name": "GITHUB_TOKEN", "mode": "deny" },
+        { "name": "NPM_TOKEN", "mode": "deny" }
+      ]
+    }
+  }
+}
