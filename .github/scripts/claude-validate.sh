@@ -59,6 +59,8 @@ run_in_network_sandbox() {
     --setenv CI "true" \
     --setenv NODE_ENV "test" \
     --setenv PLAYWRIGHT_BROWSERS_PATH "$workspace/.cache/ms-playwright" \
+    --setenv PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD "1" \
+    --setenv JOBBOT_PREPARED_PLAYWRIGHT "1" \
     --setenv npm_config_cache "$workspace/.npm" \
     --setenv CLAUDE_VALIDATION_WORKSPACE "$workspace" \
     --setenv JOBBOT_CLAUDE_VALIDATE_INTERNAL "network-sandbox" \
@@ -127,6 +129,8 @@ case "$op" in
   test-ci)
     require_no_extra_args "$@"
     run_in_network_sandbox "$@"
+    export JOBBOT_PREPARED_PLAYWRIGHT=1
+    export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
     exec npm run test:ci
     ;;
   build)

@@ -1,8 +1,10 @@
 import { spawnSync } from "node:child_process";
 import {
   chmodSync,
+  copyFileSync,
   mkdtempSync,
   mkdirSync,
+  readFileSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -29,6 +31,7 @@ function fixture() {
   writeFileSync(
     join(dir, "bin", "bwrap"),
     `#!/usr/bin/env bash
+printf '%s\n' "$@" >> "\${BWRAP_LOG:-/dev/null}"
 if printf '%s\\n' "$@" | grep -qx -- network-probe; then exit 7; fi
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -63,6 +66,54 @@ done
   return dir;
 }
 
+function testCiFixture() {
+  const dir = mkdtempSync(join(tmpdir(), "test-ci-"));
+  mkdirSync(join(dir, "scripts"), { recursive: true });
+  mkdirSync(join(dir, "node_modules", "playwright-core"), { recursive: true });
+  mkdirSync(join(dir, "bin"), { recursive: true });
+  copyFileSync(
+    new URL("../scripts/test-ci.js", import.meta.url),
+    join(dir, "scripts", "test-ci.js"),
+  );
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ type: "module" }));
+  writeFileSync(
+    join(dir, "node_modules", "playwright-core", "browsers.json"),
+    JSON.stringify({
+      browsers: [
+        { name: "chromium", revision: "111" },
+        { name: "chromium-headless-shell", revision: "222" },
+      ],
+    }),
+  );
+  for (const command of ["curl", "unzip", "npx", "vitest", "playwright"]) {
+    writeFileSync(
+      join(dir, "bin", command),
+      `#!/usr/bin/env bash
+echo ${command}:$* >> ${join(dir, "commands.log")}
+exit 0
+`,
+    );
+    chmodSync(join(dir, "bin", command), 0o755);
+  }
+  return dir;
+}
+
+function runTestCi(dir, env = {}) {
+  const childEnv = { ...process.env };
+  delete childEnv.PLAYWRIGHT_BROWSERS_PATH;
+  delete childEnv.PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD;
+  delete childEnv.JOBBOT_PREPARED_PLAYWRIGHT;
+  return spawnSync(process.execPath, [join(dir, "scripts", "test-ci.js")], {
+    cwd: dir,
+    env: {
+      ...childEnv,
+      PATH: `${join(dir, "bin")}:${process.env.PATH}`,
+      ...env,
+    },
+    encoding: "utf8",
+  });
+}
+
 function run(args, cwd, env = {}) {
   return spawnSync("bash", [wrapper, ...args], {
     cwd,
@@ -75,6 +126,50 @@ function run(args, cwd, env = {}) {
     encoding: "utf8",
   });
 }
+
+describe("test-ci prepared Playwright mode", () => {
+  it("rejects missing prepared browser artifacts", () => {
+    const dir = testCiFixture();
+    const result = runTestCi(dir, { JOBBOT_PREPARED_PLAYWRIGHT: "1" });
+    expect(result.status).not.toBe(0);
+    expect(`${result.stderr}${result.stdout}`).toContain(
+      "Prepared Playwright artifacts are missing",
+    );
+  });
+
+  it("uses prepared artifacts without downloads, npx, or install-deps", () => {
+    const dir = testCiFixture();
+    mkdirSync(join(dir, ".cache", "ms-playwright", "chromium-111"), {
+      recursive: true,
+    });
+    mkdirSync(
+      join(dir, ".cache", "ms-playwright", "chromium_headless_shell-222"),
+      { recursive: true },
+    );
+
+    const result = runTestCi(dir, { JOBBOT_PREPARED_PLAYWRIGHT: "1" });
+    expect(result.status).toBe(0);
+    const log = readFileSync(join(dir, "commands.log"), "utf8");
+    expect(log).toContain("vitest:run");
+    expect(log).toContain("playwright:test");
+    expect(log).not.toContain("curl:");
+    expect(log).not.toContain("unzip:");
+    expect(log).not.toContain("npx:");
+    expect(log).not.toContain("install-deps");
+  });
+
+  it("retains the normal preparation path outside prepared mode", () => {
+    const dir = testCiFixture();
+    const result = runTestCi(dir);
+    expect(result.status).toBe(0);
+    const log = readFileSync(join(dir, "commands.log"), "utf8");
+    expect(log).toContain("curl:-fL");
+    expect(log).toContain("unzip:-q");
+    expect(log).toContain("npx:playwright install-deps chromium");
+    expect(log).toContain("vitest:run");
+    expect(log).toContain("playwright:test");
+  });
+});
 
 describe("claude validation wrapper", () => {
   it("rejects unsafe operations and arguments", () => {
@@ -142,6 +237,22 @@ exit 0
   it("fails outbound probes inside the same network boundary", () => {
     const dir = fixture();
     expect(run(["network-probe"], dir).status).not.toBe(0);
+  });
+
+  it("constructs prepared-mode environment for contained test-ci only", () => {
+    const dir = fixture();
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ scripts: { "test:ci": "echo test-ci" } }),
+    );
+    const bwrapLog = join(dir, "bwrap.log");
+    const result = run(["test-ci"], dir, { BWRAP_LOG: bwrapLog });
+    expect(result.status).toBe(0);
+    const log = readFileSync(bwrapLog, "utf8");
+    expect(log).toContain("JOBBOT_PREPARED_PLAYWRIGHT");
+    expect(log).toContain("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD");
+    expect(run(["test-ci", "--prepared"], dir).status).not.toBe(0);
+    expect(run(["test-ci; npm run evil"], dir).status).not.toBe(0);
   });
 });
 
