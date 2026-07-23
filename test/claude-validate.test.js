@@ -455,11 +455,62 @@ describe("claude workflow trust boundaries", () => {
     const text = readWorkflow();
     expect(text).toContain("REPOSITORY_OWNER");
     expect(text).toContain("TRUSTED_CLAUDE_ACTORS");
+    expect(text).toContain("ACTOR: ${{ github.actor }}");
+    expect(text).toContain("issues:");
+    expect(text).toContain("types: [opened, assigned]");
+    expect(text).not.toContain("github.event.issue.user.login");
+    expect(text).toContain(
+      "authorized_actor: ${{ steps.auth.outputs.authorized_actor }}",
+    );
+    expect(text).toContain(
+      'echo "authorized_actor=${ACTOR}" >> "$GITHUB_OUTPUT"',
+    );
     expect(text).toContain("Ignoring @claude request from untrusted actor");
     expect(text).toContain(
       "Refusing to run executable Claude tooling for fork PR",
     );
     expect(text).toContain("tolower($0)");
     expect(text).toContain("trusted_actors=${trusted_actors}");
+  });
+
+  it("passes the gated actor and short-lived App token to the pinned Claude action", () => {
+    const text = readWorkflow();
+    const tokenStep = text.indexOf("Mint Claude GitHub App token");
+    const checkout = text.indexOf("Checkout repository", tokenStep);
+    const action = text.indexOf(
+      "uses: anthropics/claude-code-action@",
+      checkout,
+    );
+    const actionBlock = text.slice(
+      action,
+      text.indexOf("          claude_args:", action),
+    );
+
+    expect(tokenStep).toBeGreaterThanOrEqual(0);
+    expect(tokenStep).toBeLessThan(checkout);
+    expect(text).toContain("audience=claude-code-github-action");
+    expect(text).toContain("github-app-token-exchange");
+    expect(text).toContain('"contents":"write"');
+    expect(text).toContain('"pull_requests":"write"');
+    expect(text).toContain('"issues":"write"');
+    expect(text).toContain('"actions":"read"');
+    expect(text).toContain('data.get("token") or data.get("app_token")');
+    expect(text).toContain("::add-mask::$oidc_token");
+    expect(text).toContain("::add-mask::$app_token");
+    expect(text).toContain('echo "token=${app_token}" >> "$GITHUB_OUTPUT"');
+    expect(text).not.toContain("OVERRIDE_GITHUB_TOKEN");
+    expect(text).not.toContain("secrets.GITHUB_TOKEN");
+    expect(text).not.toContain("github_token: ${{ github.token }}");
+
+    expect(actionBlock).toContain(
+      "github_token: ${{ steps.claude-app-token.outputs.token }}",
+    );
+    expect(actionBlock).toContain(
+      "allowed_non_write_users: ${{ needs.authorize.outputs.authorized_actor }}",
+    );
+    expect(actionBlock).toContain(
+      "include_comments_by_actor: ${{ needs.authorize.outputs.trusted_actors }}",
+    );
+    expect(actionBlock).toContain("use_commit_signing: true");
   });
 });

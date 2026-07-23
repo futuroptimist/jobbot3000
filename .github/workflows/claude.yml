@@ -6,7 +6,7 @@ on:
   pull_request_review_comment:
     types: [created]
   issues:
-    types: [opened]
+    types: [opened, assigned]
   pull_request_review:
     types: [submitted]
 
@@ -26,6 +26,7 @@ jobs:
     outputs:
       authorized: ${{ steps.auth.outputs.authorized }}
       trusted_actors: ${{ steps.auth.outputs.trusted_actors }}
+      authorized_actor: ${{ steps.auth.outputs.authorized_actor }}
       pr_number: ${{ steps.auth.outputs.pr_number }}
       head_sha: ${{ steps.auth.outputs.head_sha }}
       is_pr: ${{ steps.auth.outputs.is_pr }}
@@ -42,7 +43,7 @@ jobs:
           REVIEW_BODY: ${{ github.event.review.body || '' }}
           ISSUE_TITLE: ${{ github.event.issue.title || '' }}
           ISSUE_BODY: ${{ github.event.issue.body || '' }}
-          ACTOR: ${{ github.event.comment.user.login || github.event.review.user.login || github.event.issue.user.login }}
+          ACTOR: ${{ github.actor }}
           ISSUE_PR_URL: ${{ github.event.issue.pull_request.url || '' }}
           ISSUE_NUMBER: ${{ github.event.issue.number || '' }}
           REVIEW_PR_NUMBER: ${{ github.event.pull_request.number || '' }}
@@ -99,6 +100,7 @@ jobs:
             echo "head_sha=$(jq -r '.head.sha' <<< "$pr_json")" >> "$GITHUB_OUTPUT"
           fi
 
+          echo "authorized_actor=${ACTOR}" >> "$GITHUB_OUTPUT"
           echo "authorized=true" >> "$GITHUB_OUTPUT"
 
   claude-validation:
@@ -221,6 +223,31 @@ jobs:
           set -euo pipefail
           sudo install -o root -g root -m 0555 trusted-workflow/.github/scripts/claude-validate.sh /usr/local/bin/jobbot-claude-validate
 
+      - name: Mint Claude GitHub App token
+        id: claude-app-token
+        run: |
+          set -euo pipefail
+          oidc_response="$(curl -fsSL -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=claude-code-github-action")"
+          oidc_token="$(python -c 'import json,sys; print(json.load(sys.stdin).get("value", ""))' <<< "$oidc_response")"
+          if [[ -z "$oidc_token" ]]; then
+            echo "GitHub OIDC response did not include a token." >&2
+            exit 1
+          fi
+          echo "::add-mask::$oidc_token"
+
+          app_response="$(curl -fsSL -X POST \
+            -H "Authorization: Bearer ${oidc_token}" \
+            -H "Content-Type: application/json" \
+            --data '{"permissions":{"contents":"write","pull_requests":"write","issues":"write","actions":"read"}}' \
+            https://api.anthropic.com/api/github/github-app-token-exchange)"
+          app_token="$(python -c 'import json,sys; data=json.load(sys.stdin); print(data.get("token") or data.get("app_token") or "")' <<< "$app_response")"
+          if [[ -z "$app_token" ]]; then
+            echo "Claude GitHub App token exchange did not return token or app_token." >&2
+            exit 1
+          fi
+          echo "::add-mask::$app_token"
+          echo "token=${app_token}" >> "$GITHUB_OUTPUT"
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
@@ -319,6 +346,8 @@ jobs:
         uses: anthropics/claude-code-action@fa7e2f0a29a126f0b81cdcf360561b36e44cf608 # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ steps.claude-app-token.outputs.token }}
+          allowed_non_write_users: ${{ needs.authorize.outputs.authorized_actor }}
           include_comments_by_actor: ${{ needs.authorize.outputs.trusted_actors }}
           additional_permissions: |
             actions: read
