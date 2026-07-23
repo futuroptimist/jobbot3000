@@ -1575,56 +1575,42 @@ export function layoutLifecycleRoutingGraph(
 
         if (!vars.length) return false;
 
-        // Deterministic MRV-style ordering: fewest legal non-centred moves
-        // first (most constrained variable), then stable rank/branch
-        // identity. Combinations below are chosen as index subsets of this
-        // array, so smaller-index combinations naturally favor the most
-        // constrained variables first.
+        // Stable base ordering (rank, then branch identity) purely so MRV
+        // tie-breaks below are deterministic. Real variable selection is
+        // recomputed at every recursion step (see selectVar), mirroring
+        // selectBranch() in solveHandleCandidateSets/solveComponent.
         vars.sort(
           (a, b) =>
-            a.moveAlternatives.length - b.moveAlternatives.length ||
-            a.rank - b.rank ||
-            compareLifecycleIds(a.branchId, b.branchId),
+            a.rank - b.rank || compareLifecycleIds(a.branchId, b.branchId),
         );
-        const varByKey = new Map(vars.map((entry) => [entry.key, entry]));
+        for (const entry of vars) {
+          entry.domain = [entry.centeredValue, ...entry.moveAlternatives];
+        }
 
-        // A variable with zero legal non-centred alternatives can never
-        // participate in a combination — it can only ever stay at its
-        // centred value, which the caller already tried and rejected before
-        // invoking this function. Restricting the subset-enumeration
-        // dimension to only movable variables (rather than filtering
-        // combinations of *all* implicated variables after the fact) keeps
-        // the combination count at 2^m, where m is the number of variables
-        // that can actually change, instead of 2^n over every implicated
-        // variable. Diagnostics routinely implicate far more variables than
-        // can legally move (e.g. every co-active branch in a conflict pair),
-        // so without this the generator below was enumerating and discarding
-        // an exponential number of combinations that could never succeed,
-        // burning wall-clock time long before the charged state budget was
-        // reached.
-        const movableVarIndices = vars
-          .map((_, idx) => idx)
-          .filter((idx) => vars[idx].moveAlternatives.length > 0);
-        if (!movableVarIndices.length) return false;
+        // A variable with zero legal non-centred alternatives can only ever
+        // stay at its centred value, which the caller already tried and
+        // rejected before invoking this function, so it is never a decision
+        // variable for this search — it simply remains centred throughout.
+        const decisionVars = vars.filter((v) => v.moveAlternatives.length > 0);
+        if (!decisionVars.length) return false;
+        const decisionVarByKey = new Map(decisionVars.map((v) => [v.key, v]));
 
         // chosenValues always holds a complete assignment for every
-        // implicated variable: it starts (and, for any variable outside the
-        // combination currently under search, remains) at that variable's
-        // centred value, and is overridden only for variables selected into
-        // the combination being attempted. This lets validateFull() below
-        // always read a fully-resolved candidate regardless of combination
-        // size, and lets valueAt()/spacingLegal() treat every variable
-        // uniformly instead of branching on whether it happens to be
-        // implicated at all.
+        // implicated variable: it starts (and, for any decision variable not
+        // yet resolved on the current DFS path, remains) at that variable's
+        // centred value. This lets validateFull() below always read a
+        // fully-resolved candidate regardless of search depth, and lets
+        // valueAt()/spacingLegal() treat every variable uniformly instead of
+        // branching on whether it happens to be a decision variable.
         const chosenValues = new Map(vars.map((v) => [v.key, v.centeredValue]));
-        // Keys of variables that are part of the combination currently being
-        // searched but have not yet been resolved this attempt (i.e. still
-        // sitting at their default centred value pending a decision later in
-        // this same combination's DFS). Neighbour legality checks must not
-        // constrain against a pending value, since it may still change to
-        // satisfy spacing once resolved; the authoritative check is
+        // Keys of decision variables resolved on the current DFS path.
+        // Neighbour legality checks must not constrain against an
+        // unresolved decision variable's default centred value, since it may
+        // still move once resolved; the authoritative check is
         // validateFull() at each complete leaf.
-        const pendingKeys = new Set();
+        const resolvedKeys = new Set();
+        const isPending = (key) =>
+          decisionVarByKey.has(key) && !resolvedKeys.has(key);
 
         const valueAt = (rank, idx) => {
           const key = `${rank}:${idx}`;
@@ -1636,36 +1622,31 @@ export function layoutLifecycleRoutingGraph(
           const { rankOrder } = rankRefinementInfo.get(rank);
           if (idx > 0) {
             const leftKey = `${rank}:${idx - 1}`;
-            if (!pendingKeys.has(leftKey)) {
-              if (
-                y <
-                valueAt(rank, idx - 1) + minLaneSpacing - LANE_Y_EPSILON
-              )
+            if (!isPending(leftKey)) {
+              if (y < valueAt(rank, idx - 1) + minLaneSpacing - LANE_Y_EPSILON)
                 return false;
             }
           }
           if (idx < rankOrder.length - 1) {
             const rightKey = `${rank}:${idx + 1}`;
-            if (!pendingKeys.has(rightKey)) {
-              if (
-                y >
-                valueAt(rank, idx + 1) - minLaneSpacing + LANE_Y_EPSILON
-              )
+            if (!isPending(rightKey)) {
+              if (y > valueAt(rank, idx + 1) - minLaneSpacing + LANE_Y_EPSILON)
                 return false;
             }
           }
           return true;
         };
 
-        // Forward check: every not-yet-resolved combination neighbour must
-        // retain at least one legal non-centred alternative given this
-        // tentative assignment before descending further.
+        // Forward check: every not-yet-resolved neighbour must retain at
+        // least one legal value — its own centred value or a non-centred
+        // alternative — given this tentative assignment before descending
+        // further.
         const forwardCheckOk = (rank, idx) => {
           for (const neighborIdx of [idx - 1, idx + 1]) {
             const neighborKey = `${rank}:${neighborIdx}`;
-            if (!pendingKeys.has(neighborKey)) continue;
-            const neighbor = varByKey.get(neighborKey);
-            const feasible = neighbor.moveAlternatives.some((y) =>
+            if (!isPending(neighborKey)) continue;
+            const neighbor = decisionVarByKey.get(neighborKey);
+            const feasible = neighbor.domain.some((y) =>
               spacingLegal(rank, neighborIdx, y),
             );
             if (!feasible) return false;
@@ -1687,10 +1668,7 @@ export function layoutLifecycleRoutingGraph(
               const val = chosenValues.has(key)
                 ? chosenValues.get(key)
                 : cen[i];
-              if (
-                prev !== null &&
-                val < prev + minLaneSpacing - LANE_Y_EPSILON
-              )
+              if (prev !== null && val < prev + minLaneSpacing - LANE_Y_EPSILON)
                 return false;
               prev = val;
             }
@@ -1698,93 +1676,127 @@ export function layoutLifecycleRoutingGraph(
           return true;
         };
 
-        const applyCombo = (comboIndices) => {
-          for (const idx of comboIndices) {
-            const entry = vars[idx];
+        const applyChosenValues = () => {
+          for (const entry of decisionVars) {
             globalAssignments.set(entry.id, chosenValues.get(entry.key));
           }
         };
-        const revertCombo = (comboIndices) => {
-          for (const idx of comboIndices) {
-            const entry = vars[idx];
+        const revertChosenValues = () => {
+          for (const entry of decisionVars) {
             globalAssignments.set(entry.id, entry.centeredValue);
           }
         };
 
         // Seed dedup with the already-tried, already-rejected all-centred
-        // signature so an all-no-op combination is recognized without a
-        // wasted handle-solve.
+        // signature so the first (all-centred) DFS leaf is recognized
+        // without a wasted handle-solve.
         const triedCoordSigs = new Set([
           allLinkIds.map((id) => globalAssignments.get(id) ?? "").join(","),
         ]);
 
-        // Assigns values to the variables in comboIndices (an exact subset of
-        // vars selected to deviate from centred), in order, trying every
-        // non-centred alternative for each before backtracking. All variables
-        // outside comboIndices remain at their centred default throughout.
-        const assignCombo = (comboIndices, position) => {
+        // Canonical fingerprint of the decision variables resolved so far on
+        // this DFS path, used to prune re-exploration of an equivalent
+        // partial assignment reached via a different variable order.
+        const failedStates = new Set();
+        const stateSignature = () =>
+          [...resolvedKeys]
+            .sort()
+            .map((key) => `${key}:${chosenValues.get(key)}`)
+            .join("|");
+
+        // Most-constrained-variable selection: among unresolved decision
+        // variables, pick the one with fewest currently-legal domain values
+        // (recomputed every call, since earlier choices on this path narrow
+        // what remains legal for later ones).
+        const selectVar = () => {
+          let chosen = null;
+          let chosenCount = Infinity;
+          for (const entry of decisionVars) {
+            if (resolvedKeys.has(entry.key)) continue;
+            const legalCount = entry.domain.filter((y) =>
+              spacingLegal(entry.rank, entry.idx, y),
+            ).length;
+            if (legalCount < chosenCount) {
+              chosen = entry;
+              chosenCount = legalCount;
+              if (chosenCount === 0) break;
+            }
+          }
+          return chosen;
+        };
+
+        // Unified backtracking DFS directly over variable values (domain is
+        // [centeredValue, ...moveAlternatives] per variable), replacing the
+        // former subset-then-value enumeration: that approach paid an
+        // exponential (2^m, m = movable variables) up-front cost to choose
+        // *which* variables would deviate from centred before ever
+        // searching their values, which exhausted the shared state budget
+        // on dense fixtures long before a coordinated candidate was found.
+        // There is no separate move-count budget here: domain order
+        // ([centeredValue, ...moveAlternatives]) already means every DFS
+        // path tries "stay centred" before any deviation, so backtracking
+        // naturally reaches shallow-deviation leaves first — a solution
+        // requiring few coordinated moves surfaces before one requiring
+        // many, without pre-enumerating which variables move. An earlier
+        // version of this search added an explicit per-pass move-count cap
+        // (iterative deepening over "how many variables may deviate"); that
+        // cap forced most variables to lock in at their centred value
+        // before an adjacent decision variable ever got a chance to be
+        // explored jointly with it, which made genuinely-coordinated
+        // adjacent-pair moves unreachable. Plain MRV + forward-checking +
+        // failed-state memoization (mirroring solveComponent below) does
+        // not have that failure mode and remains complete because every
+        // value of every decision variable stays reachable via ordinary
+        // backtracking — there is no depth or combination-size cutoff.
+        // Computed once: recordSolverState's context is only ever read when
+        // the shared budget is actually exceeded, but every state charge
+        // was re-spreading this Set into a fresh array regardless — costly
+        // at the state counts a dense fixture's search can reach.
+        const implicatedIdsArray = [...implicatedIds];
+        const backtrack = () => {
           recordSolverState({
-            branchIds: [...implicatedIds],
+            branchIds: implicatedIdsArray,
             linkIds: allLinkIds,
           });
-          if (position === comboIndices.length) {
+          const next = selectVar();
+          if (!next) {
             if (!validateFull()) return false;
-            applyCombo(comboIndices);
+            applyChosenValues();
             const sig = allLinkIds
               .map((id) => globalAssignments.get(id) ?? "")
               .join(",");
             if (triedCoordSigs.has(sig)) {
-              revertCombo(comboIndices);
+              revertChosenValues();
               return false;
             }
             triedCoordSigs.add(sig);
             if (candidateCallback(globalAssignments)) return true;
-            revertCombo(comboIndices);
+            revertChosenValues();
             return false;
           }
-          const entry = vars[comboIndices[position]];
-          for (const y of entry.moveAlternatives) {
+          const signature = stateSignature();
+          if (failedStates.has(signature)) {
+            transitionLaneSolverStats.memoizedFailures += 1;
+            return false;
+          }
+          for (const y of next.domain) {
             recordSolverState({
-              branchIds: [...implicatedIds],
+              branchIds: implicatedIdsArray,
               linkIds: allLinkIds,
             });
-            if (!spacingLegal(entry.rank, entry.idx, y)) continue;
-            chosenValues.set(entry.key, y);
-            pendingKeys.delete(entry.key);
-            if (
-              forwardCheckOk(entry.rank, entry.idx) &&
-              assignCombo(comboIndices, position + 1)
-            )
-              return true;
-            pendingKeys.add(entry.key);
-            chosenValues.set(entry.key, entry.centeredValue);
+            if (!spacingLegal(next.rank, next.idx, y)) continue;
+            chosenValues.set(next.key, y);
+            resolvedKeys.add(next.key);
+            if (forwardCheckOk(next.rank, next.idx) && backtrack()) return true;
+            resolvedKeys.delete(next.key);
+            chosenValues.set(next.key, next.centeredValue);
+            transitionLaneSolverStats.backtracks += 1;
           }
+          failedStates.add(signature);
           return false;
         };
 
-        // Iterative deepening by combination cardinality: every unique subset
-        // of *movable* variables is tried, in order of increasing size, so a
-        // solution requiring few coordinated moves is found long before one
-        // requiring many. This remains complete (bounded only by the shared
-        // state budget) because every subset of every size is eventually
-        // reachable — there is no depth cutoff. The enumeration dimension is
-        // movableVarIndices.length, not vars.length, so immovable implicated
-        // variables never expand the combination space (see comment above).
-        for (let size = 1; size <= movableVarIndices.length; size += 1) {
-          for (const comboPositions of combinationsOfSize(
-            movableVarIndices.length,
-            size,
-          )) {
-            const comboIndices = comboPositions.map(
-              (pos) => movableVarIndices[pos],
-            );
-            for (const idx of comboIndices) pendingKeys.add(vars[idx].key);
-            const found = assignCombo(comboIndices, 0);
-            for (const idx of comboIndices) pendingKeys.delete(vars[idx].key);
-            if (found) return true;
-          }
-        }
-        return false;
+        return backtrack();
       };
 
       // Recursively solve each connected component, then check handle-feasibility.
@@ -2303,6 +2315,29 @@ export function layoutLifecycleRoutingGraph(
   // the two describe different phases of a candidate's evaluation.
   let lastRoutingAnchorFailure = null;
   let candidateEvaluations = 0;
+  // Each candidateCallback invocation does a full handle-placement check —
+  // roughly O(branches^2) route-clearance work over every flattened route
+  // segment — orders of magnitude more expensive than one backtracking
+  // step charged against the shared transitionLaneSolverStats state
+  // budget, and its cost varies enormously by fixture (dense multi-rank
+  // routing multiplies the number of segments checked). A raw call-count
+  // cap can't account for that variance: a count generous enough for an
+  // expensive fixture is far too generous (many seconds) for a cheap one,
+  // and a count tuned to a cheap fixture cuts off a legitimate search on
+  // an expensive one. Bounding wall-clock time directly avoids tuning to
+  // any particular fixture's per-call cost. A legitimate fix (whether the
+  // centred assignment itself, or one found by global coordinate
+  // refinement) is found within a handful of candidates and well under a
+  // second of this budget in every fixture measured; this deadline is
+  // headroom far beyond that, not a tuned-to-fit limit. Once elapsed,
+  // every remaining candidate this layout call considers — across every
+  // branch ordering solveFromComponent still tries, and every coordinate
+  // variant refineGlobalLaneCoordinates still tries — is rejected without
+  // paying handle-check cost, so a search that cannot resolve a genuine
+  // handle conflict (no candidate anywhere in the space would clear it)
+  // unwinds via the cheap shared state budget instead of doing full
+  // handle-check work at every one of potentially thousands of leaves.
+  const candidateSearchDeadline = Date.now() + 5000;
   const handleBudget = { statesVisited: 0, stateLimit: 32768 };
   // See createLaneGeometryFailureCache() above for why a typed cache (rather
   // than a plain membership Set) is required: on a cache hit the callback
@@ -2319,6 +2354,16 @@ export function layoutLifecycleRoutingGraph(
   // search. Each call restores link geometry to the baseline before
   // materializing so that a failed candidate cannot corrupt later tries.
   const candidateCallback = (globalAssignments) => {
+    if (candidateEvaluations > 0 && Date.now() > candidateSearchDeadline) {
+      // Surface the last real handle-check evidence directly rather than
+      // continuing to explore cheaply (now that further candidates are
+      // rejected without doing the expensive check) until the unrelated
+      // backtracking-step budget happens to run out on its own — that
+      // would report generic state-limit exhaustion instead of the
+      // specific handle conflict this search actually ran into.
+      if (lastHandleFailure) throw handlePlacementError(lastHandleFailure);
+      return false;
+    }
     restoreBaseline();
     candidateEvaluations += 1;
     const geometrySignature = [...globalAssignments.entries()]
