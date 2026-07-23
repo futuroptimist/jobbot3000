@@ -1588,6 +1588,25 @@ export function layoutLifecycleRoutingGraph(
         );
         const varByKey = new Map(vars.map((entry) => [entry.key, entry]));
 
+        // A variable with zero legal non-centred alternatives can never
+        // participate in a combination — it can only ever stay at its
+        // centred value, which the caller already tried and rejected before
+        // invoking this function. Restricting the subset-enumeration
+        // dimension to only movable variables (rather than filtering
+        // combinations of *all* implicated variables after the fact) keeps
+        // the combination count at 2^m, where m is the number of variables
+        // that can actually change, instead of 2^n over every implicated
+        // variable. Diagnostics routinely implicate far more variables than
+        // can legally move (e.g. every co-active branch in a conflict pair),
+        // so without this the generator below was enumerating and discarding
+        // an exponential number of combinations that could never succeed,
+        // burning wall-clock time long before the charged state budget was
+        // reached.
+        const movableVarIndices = vars
+          .map((_, idx) => idx)
+          .filter((idx) => vars[idx].moveAlternatives.length > 0);
+        if (!movableVarIndices.length) return false;
+
         // chosenValues always holds a complete assignment for every
         // implicated variable: it starts (and, for any variable outside the
         // combination currently under search, remains) at that variable's
@@ -1744,23 +1763,21 @@ export function layoutLifecycleRoutingGraph(
         };
 
         // Iterative deepening by combination cardinality: every unique subset
-        // of implicated variables is tried, in order of increasing size, so a
+        // of *movable* variables is tried, in order of increasing size, so a
         // solution requiring few coordinated moves is found long before one
         // requiring many. This remains complete (bounded only by the shared
         // state budget) because every subset of every size is eventually
-        // reachable — there is no depth cutoff.
-        for (let size = 1; size <= vars.length; size += 1) {
-          for (const comboIndices of combinationsOfSize(vars.length, size)) {
-            // A variable forced into the combination but with no legal
-            // non-centred value can never satisfy this exact combination;
-            // skip without charging a search state, since no assignment
-            // attempt is possible.
-            if (
-              comboIndices.some(
-                (idx) => vars[idx].moveAlternatives.length === 0,
-              )
-            )
-              continue;
+        // reachable — there is no depth cutoff. The enumeration dimension is
+        // movableVarIndices.length, not vars.length, so immovable implicated
+        // variables never expand the combination space (see comment above).
+        for (let size = 1; size <= movableVarIndices.length; size += 1) {
+          for (const comboPositions of combinationsOfSize(
+            movableVarIndices.length,
+            size,
+          )) {
+            const comboIndices = comboPositions.map(
+              (pos) => movableVarIndices[pos],
+            );
             for (const idx of comboIndices) pendingKeys.add(vars[idx].key);
             const found = assignCombo(comboIndices, 0);
             for (const idx of comboIndices) pendingKeys.delete(vars[idx].key);
