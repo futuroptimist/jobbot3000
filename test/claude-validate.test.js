@@ -151,12 +151,31 @@ describe("claude workflow trust boundaries", () => {
   const readWorkflow = () =>
     spawnSync("cat", [workflow], { encoding: "utf8" }).stdout;
 
-  it("installs the trusted wrapper before PR checkout and uses immutable head_sha", () => {
+  it("installs trusted wrappers before event or PR checkouts and uses immutable head_sha", () => {
     const text = readWorkflow();
+    const trustedInstall = [
+      "sudo install -o root -g root -m 0555",
+      "trusted-workflow/.github/scripts/claude-validate.sh",
+      "/usr/local/bin/jobbot-claude-validate",
+    ].join(" ");
+    const validationInstall = text.indexOf(trustedInstall);
+    const validationPrCheckout = text.indexOf(
+      "Checkout same-repository PR commit",
+    );
+    const claudeJob = text.indexOf("  claude:");
+    const claudeTrustedCheckout = text.indexOf(
+      "Checkout trusted workflow revision",
+      claudeJob,
+    );
+    const claudeInstall = text.indexOf(trustedInstall, claudeJob);
+    const eventCheckout = text.indexOf("Checkout repository", claudeJob);
+
     expect(text).toContain("ref: ${{ github.workflow_sha }}");
-    expect(
-      text.indexOf("trusted-workflow/.github/scripts/claude-validate.sh"),
-    ).toBeLessThan(text.indexOf("Checkout same-repository PR commit"));
+    expect(validationInstall).toBeGreaterThanOrEqual(0);
+    expect(validationInstall).toBeLessThan(validationPrCheckout);
+    expect(claudeTrustedCheckout).toBeGreaterThanOrEqual(0);
+    expect(claudeInstall).toBeGreaterThan(claudeTrustedCheckout);
+    expect(claudeInstall).toBeLessThan(eventCheckout);
     expect(text).toContain("ref: ${{ needs.authorize.outputs.head_sha }}");
     expect(text).not.toContain(
       ["needs.authorize.outputs", "head_ref"].join("."),
@@ -174,6 +193,30 @@ describe("claude workflow trust boundaries", () => {
     expect(text).not.toContain(["iptables", "-P", "OUTPUT"].join(" "));
     expect(text).toContain("/usr/local/bin/jobbot-claude-validate lint");
     expect(text).toContain("TRUSTED_PLAYWRIGHT_WORKSPACE");
+    expect(text).toContain("use_commit_signing: true");
+    expect(text).toContain("Bash(/usr/local/bin/jobbot-claude-validate lint)");
+  });
+
+  it("denies Claude built-in Read access to runner credentials and configuration", () => {
+    const text = readWorkflow();
+    for (const path of [
+      "home/runner/.config/**",
+      "home/runner/.docker/**",
+      "home/runner/.gitconfig",
+      "home/runner/.npmrc",
+      "home/runner/.ssh/**",
+      "home/runner/.aws/**",
+      "home/runner/.azure/**",
+      "home/runner/.claude.json",
+      "home/runner/work/_actions/**",
+      "home/runner/work/_temp/_github_token",
+      "home/runner/work/_temp/_runner_file_commands/**",
+    ]) {
+      expect(text).toContain(`Read(//${path})`);
+    }
+    expect(text).toContain('"permissions"');
+    expect(text).toContain('"deny"');
+    expect(text).toContain('"disableBypassPermissionsMode": true');
   });
 
   it("covers trusted, unauthorized, and fork authorization paths", () => {

@@ -209,17 +209,24 @@ jobs:
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
 
+      - name: Checkout trusted workflow revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          path: trusted-workflow
+
+      - name: Create trusted Claude validation wrapper
+        run: |
+          set -euo pipefail
+          sudo install -o root -g root -m 0555 trusted-workflow/.github/scripts/claude-validate.sh /usr/local/bin/jobbot-claude-validate
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
-
-      - name: Create trusted Claude validation wrapper
-        run: |
-          set -euo pipefail
-          sudo install -o root -g root -m 0555 .github/scripts/claude-validate.sh /usr/local/bin/jobbot-claude-validate
 
       - name: Restore prepared dependency artifact
         if: needs.authorize.outputs.is_pr == 'true'
@@ -269,7 +276,23 @@ jobs:
                   { "name": "NPM_TOKEN", "mode": "deny" }
                 ]
               }
-            }
+            },
+            "permissions": {
+              "deny": [
+                "Read(//home/runner/.config/**)",
+                "Read(//home/runner/.docker/**)",
+                "Read(//home/runner/.gitconfig)",
+                "Read(//home/runner/.npmrc)",
+                "Read(//home/runner/.ssh/**)",
+                "Read(//home/runner/.aws/**)",
+                "Read(//home/runner/.azure/**)",
+                "Read(//home/runner/.claude.json)",
+                "Read(//home/runner/work/_actions/**)",
+                "Read(//home/runner/work/_temp/_github_token)",
+                "Read(//home/runner/work/_temp/_runner_file_commands/**)"
+              ]
+            },
+            "disableBypassPermissionsMode": true
           }
           JSON
           echo "CLAUDE_SETTINGS=$CLAUDE_SETTINGS" >> "$GITHUB_ENV"
