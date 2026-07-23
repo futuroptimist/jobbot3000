@@ -129,6 +129,10 @@ jobs:
           set -euo pipefail
           sudo install -o root -g root -m 0555 trusted-workflow/.github/scripts/claude-validate.sh /usr/local/bin/jobbot-claude-validate
 
+      - name: Install trusted Playwright tooling
+        working-directory: trusted-workflow
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
       - name: Checkout same-repository PR commit
         uses: actions/checkout@v4
         with:
@@ -142,6 +146,8 @@ jobs:
 
       - name: Install Playwright artifacts before network lockdown
         working-directory: pr-workspace
+        env:
+          TRUSTED_PLAYWRIGHT_WORKSPACE: ${{ github.workspace }}/trusted-workflow
         run: /usr/local/bin/jobbot-claude-validate install-playwright-artifacts
 
       - name: Prove validation sandbox denies outbound network
