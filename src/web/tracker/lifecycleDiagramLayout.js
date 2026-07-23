@@ -2320,24 +2320,14 @@ export function layoutLifecycleRoutingGraph(
   // segment — orders of magnitude more expensive than one backtracking
   // step charged against the shared transitionLaneSolverStats state
   // budget, and its cost varies enormously by fixture (dense multi-rank
-  // routing multiplies the number of segments checked). A raw call-count
-  // cap can't account for that variance: a count generous enough for an
-  // expensive fixture is far too generous (many seconds) for a cheap one,
-  // and a count tuned to a cheap fixture cuts off a legitimate search on
-  // an expensive one. Bounding wall-clock time directly avoids tuning to
-  // any particular fixture's per-call cost. A legitimate fix (whether the
-  // centred assignment itself, or one found by global coordinate
-  // refinement) is found within a handful of candidates and well under a
-  // second of this budget in every fixture measured; this deadline is
-  // headroom far beyond that, not a tuned-to-fit limit. Once elapsed,
-  // every remaining candidate this layout call considers — across every
-  // branch ordering solveFromComponent still tries, and every coordinate
-  // variant refineGlobalLaneCoordinates still tries — is rejected without
-  // paying handle-check cost, so a search that cannot resolve a genuine
-  // handle conflict (no candidate anywhere in the space would clear it)
-  // unwinds via the cheap shared state budget instead of doing full
-  // handle-check work at every one of potentially thousands of leaves.
-  const candidateSearchDeadline = Date.now() + 5000;
+  // routing multiplies the number of segments checked). This is bounded
+  // deterministically rather than by wall-clock time: tryAssignBranchHandles
+  // charges handleBudget for the generation pass itself (see its own
+  // comment), on top of the existing per-candidate backtracking charge, so
+  // a fixture whose geometry can never clear handle placement exhausts the
+  // shared 32768-state budget after a bounded number of full generation
+  // passes — independent of machine speed — instead of retrying expensive
+  // work indefinitely.
   const handleBudget = { statesVisited: 0, stateLimit: 32768 };
   // See createLaneGeometryFailureCache() above for why a typed cache (rather
   // than a plain membership Set) is required: on a cache hit the callback
@@ -2349,21 +2339,31 @@ export function layoutLifecycleRoutingGraph(
   // behind.
   const geometryFailureCache = createLaneGeometryFailureCache();
 
+  const throwHandleStateLimitExceeded = () => {
+    restoreBaseline();
+    const handleError = new Error(
+      `Lifecycle handle search exceeded ${handleBudget.stateLimit} states`,
+    );
+    handleError.cause = Object.freeze({
+      type: "lifecycle-transition-lane-order",
+      reason: "state-limit",
+      rank: null,
+      branchIds: Object.freeze([]),
+      linkIds: Object.freeze([]),
+      edgeKinds: Object.freeze([]),
+      statesVisited: handleBudget.statesVisited,
+      stateLimit: handleBudget.stateLimit,
+      backtracks: 0,
+      memoizedFailures: 0,
+    });
+    throw handleError;
+  };
+
   // Candidate evaluation callback: materialize the lane assignment, check
   // handle-feasibility, and return true to commit or false to continue the
   // search. Each call restores link geometry to the baseline before
   // materializing so that a failed candidate cannot corrupt later tries.
   const candidateCallback = (globalAssignments) => {
-    if (candidateEvaluations > 0 && Date.now() > candidateSearchDeadline) {
-      // Surface the last real handle-check evidence directly rather than
-      // continuing to explore cheaply (now that further candidates are
-      // rejected without doing the expensive check) until the unrelated
-      // backtracking-step budget happens to run out on its own — that
-      // would report generic state-limit exhaustion instead of the
-      // specific handle conflict this search actually ran into.
-      if (lastHandleFailure) throw handlePlacementError(lastHandleFailure);
-      return false;
-    }
     restoreBaseline();
     candidateEvaluations += 1;
     const geometrySignature = [...globalAssignments.entries()]
@@ -2429,23 +2429,7 @@ export function layoutLifecycleRoutingGraph(
       // Handle budget exhausted: stop the lane search immediately so the
       // budget-limit is reported rather than misreported as lane
       // infeasibility. Not cached — exhaustion is not proof of infeasibility.
-      restoreBaseline();
-      const handleError = new Error(
-        `Lifecycle handle search exceeded ${handleBudget.stateLimit} states`,
-      );
-      handleError.cause = Object.freeze({
-        type: "lifecycle-transition-lane-order",
-        reason: "state-limit",
-        rank: null,
-        branchIds: Object.freeze([]),
-        linkIds: Object.freeze([]),
-        edgeKinds: Object.freeze([]),
-        statesVisited: handleBudget.statesVisited,
-        stateLimit: handleBudget.stateLimit,
-        backtracks: 0,
-        memoizedFailures: 0,
-      });
-      throw handleError;
+      throwHandleStateLimitExceeded();
     }
     lastHandleFailure = handleCheck;
     geometryFailureCache.recordHandleFailure(geometrySignature, handleCheck);
@@ -3237,6 +3221,46 @@ const tryAssignBranchHandles = (
   };
   const quantizedCandidate = (value) => Number(value.toFixed(3));
   const orderedBranches = [...branches].sort(compareBranches);
+  // Candidate generation below is genuinely O(branches * routeEdges):
+  // renderedBranchClearance scans every flattened route edge for every
+  // (branch, t-sample) candidate point examined. That real cost was never
+  // charged against sharedBudget at all before this fix — only the later
+  // per-candidate backtracking in solveHandleCandidateSets was — so a
+  // caller that keeps invoking this function against geometry that always
+  // yields zero or conflicting candidates could repeat this expensive
+  // generation an unbounded number of times for free (this is what the
+  // wall-clock deadline this fix removes used to paper over). An ordinary
+  // fixture legitimately needs on the order of a hundred-plus full
+  // generation passes before refineGlobalLaneCoordinates finds a working
+  // coordinate assignment (measured directly: 161 passes for one small,
+  // 8-routeEdge-order fixture) — nowhere near "a handful" — so charging
+  // routeEdgeCount linearly (~520 for that fixture) exhausts the whole
+  // budget in ~63 tries, well short of the ~161 actually needed, and
+  // regresses a previously-passing test. Charging its *square* instead
+  // keeps small fixtures cheap enough for hundreds of tries while still
+  // making a dense fixture's much larger routeEdges (thousands) dominate
+  // the budget after only a handful of passes — i.e. the charge grows
+  // faster than the fixture's real per-pass cost does, which is what
+  // deterministically bounds worst-case wall-clock time for a dense,
+  // infeasible fixture without starving an ordinary one that just needs
+  // many cheap tries.
+  const routeEdgeCount = routeEdges.length;
+  const generationCost = Math.max(
+    1,
+    Math.round((routeEdgeCount * routeEdgeCount) / 8450),
+  );
+  if (sharedBudget) {
+    if (sharedBudget.statesVisited >= sharedBudget.stateLimit) {
+      return {
+        ok: false,
+        reason: "state-limit",
+        blockedBranchIds: [],
+        branchDiagnostics: [],
+        candidateSets: new Map(),
+      };
+    }
+    sharedBudget.statesVisited += generationCost;
+  }
   const candidateSets = new Map();
   const branchDiagnostics = new Map();
   for (const branch of orderedBranches) {

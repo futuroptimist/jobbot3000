@@ -740,10 +740,22 @@ describe("lifecycle diagram view", () => {
       // a meaningful assertion — this fixture's dense fan-in genuinely has
       // no handle-clearance-feasible arrangement for the lane-coordinate
       // search to find (see the transition lane solver test file for the
-      // root-cause analysis), so only the error's type is pinned here.
+      // root-cause analysis), so only the error's type is pinned here. Which
+      // of the two deterministic failure modes surfaces — a specific
+      // handle-placement rejection, or the shared handle-state budget
+      // exhausting first — depends on exactly how many coordinate variants
+      // get tried before either happens; both are legitimate, bounded
+      // outcomes (never a hang), so either message is accepted here.
+      const deterministicFailure = new RegExp(
+        [
+          "^(Lifecycle diagram handle placement invariant violated for ",
+          "|Lifecycle handle search exceeded \\d+ states)",
+        ].join(""),
+        "u",
+      );
       expect(() =>
         lifecycleLayout.layoutLifecycleRoutingGraph(dense.snapshot, 1850),
-      ).toThrow(/^Lifecycle diagram handle placement invariant violated for /u);
+      ).toThrow(deterministicFailure);
       return;
     }
     expect(nodesById.get("origin:application_submitted").x).toBeCloseTo(100);
