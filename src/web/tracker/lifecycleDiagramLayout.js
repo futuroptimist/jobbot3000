@@ -1455,6 +1455,22 @@ export function layoutLifecycleRoutingGraph(
           }
         }
 
+        // Route-crossing diagnostics: both branches in a rejected
+        // proper-crossing/coincidence finding, at the specific rank the
+        // finding occurred — narrower and more actionable than falling
+        // through to "every rank this branch is active" below.
+        for (const finding of lastHandleFailure?.routeFindings ?? []) {
+          const rank = finding.transitionRank;
+          if (!Number.isInteger(rank)) continue;
+          const ids =
+            finding.branchIds ?? (finding.branchId ? [finding.branchId] : []);
+          for (const id of ids) {
+            if (!implicatedPairsByBranch.has(id))
+              implicatedPairsByBranch.set(id, new Set());
+            implicatedPairsByBranch.get(id).add(rank);
+          }
+        }
+
         // Conflict pairs: both members at every rank where they are
         // co-active, but only for pairs involving a directly-blocked branch.
         for (const [leftId, rightId] of lastHandleFailure?.component
@@ -1770,7 +1786,8 @@ export function layoutLifecycleRoutingGraph(
               return false;
             }
             triedCoordSigs.add(sig);
-            if (candidateCallback(globalAssignments)) return true;
+            if (candidateCallback(globalAssignments, rankRefinementInfo))
+              return true;
             revertChosenValues();
             return false;
           }
@@ -1809,7 +1826,8 @@ export function layoutLifecycleRoutingGraph(
         if (componentIndex >= componentList.length) {
           // All components placed; evaluate this global candidate.
           if (!candidateCallback) return true;
-          if (candidateCallback(globalAssignments)) return true;
+          if (candidateCallback(globalAssignments, rankRefinementInfo))
+            return true;
           return refineGlobalLaneCoordinates();
         }
 
@@ -2009,7 +2027,20 @@ export function layoutLifecycleRoutingGraph(
 
           if (!capacityOkForRemainder()) return false;
 
-          // Ready branches: indegree 0, not yet placed, sorted by deadline (MRV)
+          // Ready branches: indegree 0, not yet placed, sorted by deadline
+          // (MRV) first — that ordering is load-bearing for feasibility
+          // (it's what keeps this DFS from needing to backtrack across
+          // exponentially many orderings) and must not change. Among
+          // branches tied on deadline, prefer compareBranches order (the
+          // same endpoint-index-first criterion nodeSort/linkSort use for
+          // the base d3-sankey layout) before falling back to the finer
+          // dock-position tie-break below. Without this, globalOrder (and
+          // so rankOrder, which the transition-lane search treats as
+          // authoritative) can end up in a different relative order than
+          // the base layout for branches the deadline ordering doesn't
+          // otherwise distinguish, which is a documented source of route
+          // crossings no amount of lane-Y tuning can fix — see
+          // docs/design/lifecycle-diagram-layout-algorithm.md.
           const ready = componentBranchIds
             .filter(
               (id) => !globalOrderSet.has(id) && compIndegree.get(id) === 0,
@@ -2022,6 +2053,7 @@ export function layoutLifecycleRoutingGraph(
             .sort(
               (a, b) =>
                 (a.deadline ?? Infinity) - (b.deadline ?? Infinity) ||
+                compareBranches(branchById.get(a.id), branchById.get(b.id)) ||
                 (a.span?.sourceDockY ?? 0) - (b.span?.sourceDockY ?? 0) ||
                 compareLifecycleIds(
                   a.span?.stableId ?? a.id,
@@ -2170,7 +2202,7 @@ export function layoutLifecycleRoutingGraph(
   };
   // Materialize a lane-assignment map onto graph link geometry.
   // Throws on geometry invariant violations; called inside the candidate callback.
-  const materializeLaneAssignments = (assignments) => {
+  const materializeLaneAssignments = (assignments, rankRefinementInfo) => {
     for (const link of graph.links) {
       const laneY = assignments.get(link.id);
       if (!Number.isFinite(laneY)) {
@@ -2225,36 +2257,75 @@ export function layoutLifecycleRoutingGraph(
       routingNodesByRank.get(node.rank).push(node);
     }
     for (const rank of [...routingNodesByRank.keys()].sort((a, b) => a - b)) {
-      const nodes = [...(routingNodesByRank.get(rank) ?? [])].sort(
-        (left, right) => {
-          const leftBranch = branchById.get(left.branchId);
-          const rightBranch = branchById.get(right.branchId);
-          if (!leftBranch || !rightBranch) {
-            throw new Error(
-              `Lifecycle routing-node invariant violated for rank ${rank}`,
-            );
-          }
-          return (
-            compareBranches(leftBranch, rightBranch) ||
-            compareLifecycleIds(left.id, right.id)
-          );
-        },
+      const rankNodes = routingNodesByRank.get(rank) ?? [];
+      const nodeIdealY = (node) => {
+        const lanes = [
+          ...(incomingByNode.get(node) ?? []),
+          ...(outgoingByNode.get(node) ?? []),
+        ]
+          .map((link) => link.transitionLaneY)
+          .filter((value) => Number.isFinite(value));
+        if (!lanes.length) return (laneTop + laneBottom) / 2;
+        return lanes.reduce((sum, value) => sum + value, 0) / lanes.length;
+      };
+      const idealByNode = new Map(
+        rankNodes.map((node) => [node, nodeIdealY(node)]),
       );
+      // Order routing nodes at this rank by their branch's position in
+      // rankOrder — the same authoritative, globally-consistent per-rank
+      // order the lane-coordinate search (refineGlobalLaneCoordinates) uses
+      // and keeps crossing-free by construction — rather than the unrelated
+      // static branch comparator this used before. assignMonotone enforces
+      // strictly increasing Y in *array* order, so whichever order this
+      // sort produces becomes each node's final relative position: sorting
+      // by branch identity/endpoint instead of by rankOrder let the anchor
+      // assignment invert the relative order the search already established
+      // at the branches' non-routing ranks. See
+      // docs/design/lifecycle-diagram-layout-algorithm.md — this fix only
+      // holds once globalOrder's own DFS tie-break (in solveFromComponent)
+      // prefers compareBranches order too; applied alone it previously
+      // regressed the total crossing count on the routing fixture from 5 to
+      // 10 by disagreeing with the base d3-sankey layout more than
+      // compareBranches did. The ideal-Y-based ordering below is a fallback
+      // only for a rank rankRefinementInfo has no entry for (should not
+      // happen in practice, since every routing-node rank is also a
+      // transition-lane rank); compareBranches remains only as a final
+      // deterministic tie-break.
+      const branchIndexAtRank = (branchId) => {
+        const info = rankRefinementInfo?.get(rank);
+        if (!info) return null;
+        const idx = info.rankOrder.findIndex((v) => v.branchId === branchId);
+        return idx < 0 ? null : idx;
+      };
+      const nodes = [...rankNodes].sort((left, right) => {
+        const leftBranch = branchById.get(left.branchId);
+        const rightBranch = branchById.get(right.branchId);
+        if (!leftBranch || !rightBranch) {
+          throw new Error(
+            `Lifecycle routing-node invariant violated for rank ${rank}`,
+          );
+        }
+        const leftIndex = branchIndexAtRank(left.branchId);
+        const rightIndex = branchIndexAtRank(right.branchId);
+        if (
+          leftIndex !== null &&
+          rightIndex !== null &&
+          leftIndex !== rightIndex
+        ) {
+          return leftIndex - rightIndex;
+        }
+        return (
+          idealByNode.get(left) - idealByNode.get(right) ||
+          compareBranches(leftBranch, rightBranch) ||
+          compareLifecycleIds(left.id, right.id)
+        );
+      });
       const centerX = rankCenterX(rank);
       const assignment = assignMonotone(
         nodes,
         (_, idealY) =>
           laneDomainForSpan({ minX: centerX, maxX: centerX, idealY }),
-        (node) => {
-          const lanes = [
-            ...(incomingByNode.get(node) ?? []),
-            ...(outgoingByNode.get(node) ?? []),
-          ]
-            .map((link) => link.transitionLaneY)
-            .filter((value) => Number.isFinite(value));
-          if (!lanes.length) return (laneTop + laneBottom) / 2;
-          return lanes.reduce((sum, value) => sum + value, 0) / lanes.length;
-        },
+        (node) => idealByNode.get(node),
       );
       if (!assignment) {
         // Routing-anchor feasibility depends on the incident links' lane Y
@@ -2363,7 +2434,7 @@ export function layoutLifecycleRoutingGraph(
   // handle-feasibility, and return true to commit or false to continue the
   // search. Each call restores link geometry to the baseline before
   // materializing so that a failed candidate cannot corrupt later tries.
-  const candidateCallback = (globalAssignments) => {
+  const candidateCallback = (globalAssignments, rankRefinementInfo) => {
     restoreBaseline();
     candidateEvaluations += 1;
     const geometrySignature = [...globalAssignments.entries()]
@@ -2384,7 +2455,7 @@ export function layoutLifecycleRoutingGraph(
       return false;
     }
     try {
-      materializeLaneAssignments(globalAssignments);
+      materializeLaneAssignments(globalAssignments, rankRefinementInfo);
     } catch (error) {
       if (error.cause?.type === "lifecycle-routing-anchor-allocation") {
         // Recoverable, candidate-specific failure: retain the evidence for
@@ -2424,7 +2495,57 @@ export function layoutLifecycleRoutingGraph(
       visibleNodes,
       { sharedBudget: handleBudget },
     );
-    if (handleCheck.ok) return true;
+    if (handleCheck.ok) {
+      // Handle placement only checks each branch's own handle box against
+      // fixed geometry, other branches' routes, and other handles — it has
+      // no notion of two different branches' *routes* crossing or
+      // coinciding with one another at a shared rank. Route-level safety is
+      // a distinct, stricter contract (the same one
+      // auditLifecycleRouteGeometry enforces for the renderer and the
+      // Playwright collision audit exercises end-to-end), so a
+      // handle-feasible candidate must still pass it before being accepted.
+      // Without this, improving branch ordering elsewhere (see
+      // docs/design/lifecycle-diagram-layout-algorithm.md) can shift which
+      // candidate clears the handle-box check without any guarantee it's
+      // actually crossing-free — confirmed directly: one fixture "passed"
+      // handle placement on its very first (centered) candidate while
+      // auditing that same geometry found 33 fatal route crossings.
+      // Charged against the same shared budget as generation (see
+      // tryAssignBranchHandles), scaled the same way (routeEdges squared)
+      // since the audit's own cost is comparably driven by edge count — its
+      // pairwise crossing check is O(edges-within-rank^2).
+      if (handleBudget.statesVisited >= handleBudget.stateLimit)
+        throwHandleStateLimitExceeded();
+      const auditRouteEdgeCount = handleCheck.routeEdgeCount ?? 1;
+      handleBudget.statesVisited += Math.max(
+        1,
+        Math.round((auditRouteEdgeCount * auditRouteEdgeCount) / 8450),
+      );
+      const routeAudit = auditLifecycleRouteGeometry({
+        graph,
+        dimensions,
+        handles: handleCheck.handles,
+      });
+      if (routeAudit.fatalFindings.length === 0) return true;
+      const blockedBranchIds = [
+        ...new Set(
+          routeAudit.fatalFindings.flatMap(
+            (finding) =>
+              finding.branchIds ?? (finding.branchId ? [finding.branchId] : []),
+          ),
+        ),
+      ].sort(compareLifecycleIds);
+      const routeFailure = {
+        ok: false,
+        reason: "route-crossing",
+        blockedBranchIds,
+        branchDiagnostics: [],
+        routeFindings: routeAudit.fatalFindings,
+      };
+      lastHandleFailure = routeFailure;
+      geometryFailureCache.recordHandleFailure(geometrySignature, routeFailure);
+      return false;
+    }
     if (handleCheck.reason === "state-limit") {
       // Handle budget exhausted: stop the lane search immediately so the
       // budget-limit is reported rather than misreported as lane
@@ -3414,6 +3535,7 @@ const tryAssignBranchHandles = (
         branchDiagnostics.get(id),
       ),
       candidateSets,
+      routeEdgeCount,
     };
   const handleAssignment = solveHandleCandidateSets(
     orderedBranches,
@@ -3432,6 +3554,7 @@ const tryAssignBranchHandles = (
       ),
       candidateSets,
       component: handleAssignment.component,
+      routeEdgeCount,
     };
   return {
     ok: true,
@@ -3439,6 +3562,7 @@ const tryAssignBranchHandles = (
       handleAssignment.selected.get(branch.id),
     ),
     candidateSets,
+    routeEdgeCount,
   };
 };
 

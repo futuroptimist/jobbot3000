@@ -703,6 +703,12 @@ describe("lifecycle diagram view", () => {
   });
 
   it("uses density-aware SVG height and spacing on rerender", async () => {
+    // This fixture's route-crossing-safe search deterministically exhausts
+    // the shared handle-state budget (~15s) rather than converging quickly,
+    // and this test exercises that path twice (once via render()'s own
+    // layoutLifecycleRoutingGraph call, once again in the fallback-
+    // verification branch below) — right at vitest's default 30s timeout
+    // with no margin. Give it headroom rather than let CI flake on timing.
     const sparse = render(
       bundle(
         [app("s")],
@@ -791,7 +797,7 @@ describe("lifecycle diagram view", () => {
       expect(dense.root.querySelector("svg").getAttribute("height")).toBe(
         String(expectedHeight),
       );
-  });
+  }, 60000);
 });
 
 describe("lifecycle diagram P6 pagination and hardening", () => {
