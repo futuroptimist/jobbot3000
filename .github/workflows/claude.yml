@@ -10,13 +10,186 @@ on:
   pull_request_review:
     types: [submitted]
 
+env:
+  # Trusted configuration lives in the base workflow. Extend only from the
+  # repository variable CLAUDE_TRUSTED_ACTORS, never from PR-controlled files.
+  CLAUDE_TRUSTED_ACTORS: ${{ vars.CLAUDE_TRUSTED_ACTORS || '' }}
+
 jobs:
+  authorize:
+    name: Authorize Claude trigger
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      authorized: ${{ steps.authorize.outputs.authorized }}
+      trusted_actors: ${{ steps.authorize.outputs.trusted_actors }}
+      pr_number: ${{ steps.authorize.outputs.pr_number }}
+      is_pr: ${{ steps.authorize.outputs.is_pr }}
+    steps:
+      - name: Authorize actor before checkout or secrets
+        id: authorize
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          REPOSITORY: ${{ github.repository }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          ACTOR: >-
+            ${{ github.event.comment.user.login || github.event.review.user.login || github.event.issue.user.login }}
+          COMMENT_BODY: ${{ github.event.comment.body || '' }}
+          REVIEW_BODY: ${{ github.event.review.body || '' }}
+          ISSUE_BODY: ${{ github.event.issue.body || '' }}
+          ISSUE_TITLE: ${{ github.event.issue.title || '' }}
+          ISSUE_IS_PR: ${{ github.event.issue.pull_request && 'true' || 'false' }}
+          ISSUE_NUMBER: ${{ github.event.issue.number || '' }}
+          REVIEW_PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          CONFIGURED_TRUSTED_ACTORS: ${{ env.CLAUDE_TRUSTED_ACTORS }}
+        run: |
+          set -euo pipefail
+
+          body=""
+          pr_number=""
+          is_pr="false"
+          case "${EVENT_NAME}" in
+            issue_comment)
+              body="${COMMENT_BODY}"
+              if [ "${ISSUE_IS_PR}" = "true" ]; then
+                is_pr="true"
+                pr_number="${ISSUE_NUMBER}"
+              fi
+              ;;
+            pull_request_review_comment)
+              body="${COMMENT_BODY}"
+              is_pr="true"
+              pr_number="${REVIEW_PR_NUMBER}"
+              ;;
+            pull_request_review)
+              body="${REVIEW_BODY}"
+              is_pr="true"
+              pr_number="${REVIEW_PR_NUMBER}"
+              ;;
+            issues)
+              body="${ISSUE_TITLE}
+          ${ISSUE_BODY}"
+              ;;
+          esac
+
+          authorized="false"
+          trusted_csv="${REPOSITORY_OWNER}"
+          if [ -n "${CONFIGURED_TRUSTED_ACTORS}" ]; then
+            trusted_csv="${trusted_csv},${CONFIGURED_TRUSTED_ACTORS}"
+          fi
+
+          if [[ "${body}" == *"@claude"* ]]; then
+            IFS=',' read -ra trusted_actors <<< "${trusted_csv}"
+            for trusted_actor in "${trusted_actors[@]}"; do
+              trusted_actor="$(printf '%s' "${trusted_actor}" | xargs)"
+              if [ -n "${trusted_actor}" ] && [ "${ACTOR}" = "${trusted_actor}" ]; then
+                authorized="true"
+              fi
+            done
+          fi
+
+          if [ "${authorized}" = "true" ] && [ "${is_pr}" = "true" ]; then
+            head_repo="$(gh api "repos/${REPOSITORY}/pulls/${pr_number}" --jq '.head.repo.full_name')"
+            if [[ "${head_repo}" != "${REPOSITORY}" ]]; then
+              echo "Refusing to run executable Claude tooling for fork PR ${pr_number} from ${head_repo}."
+              authorized="false"
+            fi
+          fi
+
+          {
+            echo "authorized=${authorized}"
+            echo "trusted_actors=${trusted_csv}"
+            echo "pr_number=${pr_number}"
+            echo "is_pr=${is_pr}"
+          } >> "${GITHUB_OUTPUT}"
+
+          if [ "${authorized}" != "true" ]; then
+            echo "Claude request ignored: actor is not the repository owner or explicitly configured in CLAUDE_TRUSTED_ACTORS, trigger is absent, or PR is from a fork."
+          fi
+
+  claude-validation:
+    name: Claude validation interface smoke test
+    needs: authorize
+    if: needs.authorize.outputs.authorized == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository without credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Create trusted validation wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/jobbot3000-claude-tools"
+          cat > "${RUNNER_TEMP}/jobbot3000-claude-tools/validate" <<'SCRIPT'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          if [ "$#" -ne 1 ] && { [ "$#" -ne 2 ] || [ "${1:-}" != "node-check" ]; }; then
+            echo "usage: validate <prepare|lint|format-check|typecheck|test-ci|build|node-check <source-file>>" >&2
+            exit 64
+          fi
+          workspace="$(realpath "${GITHUB_WORKSPACE:?}")"
+          cd "${workspace}"
+          case "${1}" in
+            prepare) npm ci --ignore-scripts --no-audit --no-fund ;;
+            lint) npm run lint ;;
+            format-check) npm run format:check ;;
+            typecheck) npm run typecheck ;;
+            test-ci) npm run test:ci ;;
+            build) npm run build ;;
+            node-check)
+              path="${2:-}"
+              if [ -z "${path}" ] || [[ "${path}" == -* ]]; then
+                echo "node-check requires a non-option source path" >&2
+                exit 64
+              fi
+              resolved="$(realpath -m -- "${workspace}/${path}")"
+              case "${resolved}" in "${workspace}"/*) ;; *) echo "path escapes workspace" >&2; exit 64 ;; esac
+              [ -f "${resolved}" ] || { echo "path is not a regular file" >&2; exit 64; }
+              case "${resolved}" in *.js|*.mjs|*.cjs) ;; *) echo "path is not a JavaScript source file" >&2; exit 64 ;; esac
+              node --check -- "${resolved}"
+              ;;
+            *) echo "unknown validation operation: ${1}" >&2; exit 64 ;;
+          esac
+          SCRIPT
+          chmod 0755 "${RUNNER_TEMP}/jobbot3000-claude-tools/validate"
+
+      - name: Verify trusted validation interface rejects unsafe input
+        shell: bash
+        env:
+          VALIDATE: ${{ runner.temp }}/jobbot3000-claude-tools/validate
+        run: |
+          set -euo pipefail
+          reject() {
+            if "${VALIDATE}" "$@" >/tmp/validate.out 2>&1; then
+              echo "validate unexpectedly accepted: $*" >&2
+              cat /tmp/validate.out >&2
+              exit 1
+            fi
+          }
+          reject unknown
+          reject lint -- --fix
+          reject 'lint; npx env'
+          reject node-check ../package.json
+          reject node-check --require
+          reject node-check --require ./src/index.js
+          reject node-check --eval
+          reject npx vitest run
+
   claude:
-    if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude') && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude') && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.comment.author_association)) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude') && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.review.author_association)) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')) && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association))
+    name: Claude Code
+    needs: [authorize, claude-validation]
+    if: needs.authorize.outputs.authorized == 'true' && needs.claude-validation.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -25,21 +198,46 @@ jobs:
       issues: read
       actions: read
       id-token: write
+    env:
+      CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"
     steps:
-      - name: Reject fork pull requests
-        if: ${{ (github.event_name == 'issue_comment' && github.event.issue.pull_request) || github.event_name == 'pull_request_review_comment' || github.event_name == 'pull_request_review' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+      - name: Create trusted validation wrapper
+        shell: bash
         run: |
           set -euo pipefail
-
-          head_repo="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.repo.full_name')"
-          if [[ "${head_repo}" != "${REPOSITORY}" ]]; then
-            echo "Refusing to run executable Claude tooling for fork PR ${PR_NUMBER} from ${head_repo}."
-            exit 1
+          mkdir -p "${RUNNER_TEMP}/jobbot3000-claude-tools"
+          cat > "${RUNNER_TEMP}/jobbot3000-claude-tools/validate" <<'SCRIPT'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          if [ "$#" -ne 1 ] && { [ "$#" -ne 2 ] || [ "${1:-}" != "node-check" ]; }; then
+            echo "usage: validate <prepare|lint|format-check|typecheck|test-ci|build|node-check <source-file>>" >&2
+            exit 64
           fi
+          workspace="$(realpath "${GITHUB_WORKSPACE:?}")"
+          cd "${workspace}"
+          case "${1}" in
+            prepare) npm ci --ignore-scripts --no-audit --no-fund ;;
+            lint) npm run lint ;;
+            format-check) npm run format:check ;;
+            typecheck) npm run typecheck ;;
+            test-ci) npm run test:ci ;;
+            build) npm run build ;;
+            node-check)
+              path="${2:-}"
+              if [ -z "${path}" ] || [[ "${path}" == -* ]]; then
+                echo "node-check requires a non-option source path" >&2
+                exit 64
+              fi
+              resolved="$(realpath -m -- "${workspace}/${path}")"
+              case "${resolved}" in "${workspace}"/*) ;; *) echo "path escapes workspace" >&2; exit 64 ;; esac
+              [ -f "${resolved}" ] || { echo "path is not a regular file" >&2; exit 64; }
+              case "${resolved}" in *.js|*.mjs|*.cjs) ;; *) echo "path is not a JavaScript source file" >&2; exit 64 ;; esac
+              node --check -- "${resolved}"
+              ;;
+            *) echo "unknown validation operation: ${1}" >&2; exit 64 ;;
+          esac
+          SCRIPT
+          chmod 0755 "${RUNNER_TEMP}/jobbot3000-claude-tools/validate"
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -53,23 +251,42 @@ jobs:
         uses: anthropics/claude-code-action@fa7e2f0a29a126f0b81cdcf360561b36e44cf608 # v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          include_comments_by_actor: ${{ needs.authorize.outputs.trusted_actors }},claude[bot],github-actions[bot]
+          show_full_output: false
+          display_report: false
 
           # Invariant: GITHUB_TOKEN stays read-only; Claude's short-lived App token
           # handles ordinary branch/commit operations; workflow edits require review.
           additional_permissions: |
             actions: read
 
-          # Implementation sessions must checkpoint before lengthy validation so
-          # coherent, reviewable work is not lost to runner timeouts or unavailable
-          # local tooling; disclose blocked checks instead of erasing safe changes.
-          # Tag mode already enables workspace-scoped acceptEdits; avoid bare
-          # Edit/Write grants because they would allow writes outside the checkout.
-          # Validation-tool grants are narrow and additive to default workspace edits.
-          # API commit signing keeps checkpoint commits available without granting
-          # Bash-based Git mutation on the runner.
           use_commit_signing: true
+          settings: |
+            {
+              "env": {
+                "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1"
+              },
+              "sandbox": {
+                "enabled": true,
+                "failIfUnavailable": true,
+                "allowUnsandboxedCommands": false,
+                "autoAllowBashIfSandboxed": false,
+                "network": { "allow": [] },
+                "deny": [
+                  "$HOME/.config/**",
+                  "$HOME/.cache/**",
+                  "$HOME/.ssh/**",
+                  "$RUNNER_TEMP/**",
+                  "/home/runner/.config/**",
+                  "/home/runner/.cache/**",
+                  "/home/runner/.ssh/**",
+                  "/github/home/.config/**",
+                  "/github/home/.ssh/**"
+                ]
+              }
+            }
           claude_args: |
             --max-turns 120
-            --append-system-prompt "When the triggering request asks for repository changes, producing a remote commit is a required deliverable unless a concrete correctness or security blocker prevents it. Make and push the first coherent, reviewable checkpoint commit early: after focused validation or syntax checks, before lengthy or full validation, and before the final third of the session. Use the API commit signing mechanism; never use Bash for git add, git commit, or git push. Continue with follow-up commits when needed, and do not hold all work locally until every possible test finishes. A failure introduced by the new code must be fixed before finalizing. A pre-existing, environmental, unavailable, blocked, or timed-out check should be reported honestly but must not cause otherwise coherent and safe requested changes to disappear. Reserve the final ten turns for reviewing the diff, checking status, running the narrowest remaining verification, committing and pushing, and reporting results. Before ending, inspect the working tree and either commit and push the requested safe changes or state the exact correctness, security, or commit-mechanism blocker. Do not fabricate commits for analysis-only or no-op requests, and never commit secrets, temporary debugging, generated junk, or code known to introduce a new failure. A checkpoint commit does not make failing CI mergeable."
-            --allowedTools "Read,Glob,Grep,Bash(npm ci),Bash(npm run lint),Bash(npm run lint:fix),Bash(npm run format:check),Bash(npm run format:fix),Bash(npm run typecheck),Bash(npm run test:ci),Bash(npm run build),Bash(npx vitest run),Bash(npx vitest run *),Bash(npx prettier --check *),Bash(node --check *),Bash(git diff --check),Bash(git status --short)"
-            --disallowedTools "WebFetch,WebSearch,Bash(git add),Bash(git add *),Bash(git commit),Bash(git commit *),Bash(git push),Bash(git push *),Bash(git reset),Bash(git reset *),Bash(git clean),Bash(git clean *),Bash(git rm),Bash(git rm *),Bash(gh),Bash(gh *)"
+            --append-system-prompt "When the triggering request asks for repository changes, producing a remote commit is a required deliverable unless a concrete correctness or security blocker prevents it. Make and push the first coherent, reviewable checkpoint commit early: after focused validation or syntax checks, before lengthy or full validation, and before the final third of the session. Use the API commit signing mechanism; never use Bash for git add, git commit, or git push. Continue with follow-up commits when needed, and do not hold all work locally until every possible test finishes. A failure introduced by the new code must be fixed before finalizing. A pre-existing, environmental, unavailable, blocked, or timed-out check should be reported honestly but must not cause otherwise coherent and safe requested changes to disappear. Use only the trusted validation command ${RUNNER_TEMP}/jobbot3000-claude-tools/validate for local validation: prepare, lint, format-check, typecheck, test-ci, build, or node-check <repo-js-file>. Do not run npm, npx, node, Python, curl, wget, gh, or git mutation commands directly through Bash. If a validation operation is denied, unavailable, skipped, or omitted, say so explicitly and do not claim that operation succeeded. Treat existing GitHub Actions check results as the canonical full-CI signal; a successful Claude action only means the agent completed, not that validation passed. Reserve the final ten turns for reviewing the diff, checking status, running the narrowest remaining verification through the trusted validation interface, committing and pushing, and reporting results. Before ending, inspect the working tree and either commit and push the requested safe changes or state the exact correctness, security, or commit-mechanism blocker. Do not fabricate commits for analysis-only or no-op requests, and never commit secrets, temporary debugging, generated junk, or code known to introduce a new failure. A checkpoint commit does not make failing CI mergeable."
+            --allowedTools "Read,Glob,Grep,Bash(${RUNNER_TEMP}/jobbot3000-claude-tools/validate prepare),Bash(${RUNNER_TEMP}/jobbot3000-claude-tools/validate lint),Bash(${RUNNER_TEMP}/jobbot3000-claude-tools/validate format-check),Bash(${RUNNER_TEMP}/jobbot3000-claude-tools/validate typecheck),Bash(${RUNNER_TEMP}/jobbot3000-claude-tools/validate test-ci),Bash(${RUNNER_TEMP}/jobbot3000-claude-tools/validate build),Bash(${RUNNER_TEMP}/jobbot3000-claude-tools/validate node-check *),Bash(git diff --check),Bash(git status --short)"
+            --disallowedTools "WebFetch,WebSearch,Bash(npm *),Bash(npx *),Bash(node *),Bash(python *),Bash(python3 *),Bash(curl *),Bash(wget *),Bash(gh),Bash(gh *),Bash(git add),Bash(git add *),Bash(git commit),Bash(git commit *),Bash(git push),Bash(git push *),Bash(git reset),Bash(git reset *),Bash(git clean),Bash(git clean *),Bash(git rm),Bash(git rm *),Bash(rm -rf *),Bash(sudo *),Bash(chmod *),Bash(chown *)"
