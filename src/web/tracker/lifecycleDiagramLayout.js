@@ -1234,7 +1234,10 @@ export function layoutLifecycleRoutingGraph(
             items[index].incidentIds,
           )
         ) {
-          return null;
+          // The centered candidate is only a preference; `forward` was
+          // already validated above (clearance + spacing) and remains a
+          // legal fallback when the ideal-centered value is unusable.
+          return forward;
         }
         solved.push(value);
         previous = value;
