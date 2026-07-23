@@ -197,26 +197,65 @@ describe("claude workflow trust boundaries", () => {
     expect(text).toContain("Bash(/usr/local/bin/jobbot-claude-validate lint)");
   });
 
-  it("denies Claude built-in Read access to runner credentials and configuration", () => {
+  it("parses fail-closed Claude settings and denies built-in credential reads", () => {
     const text = readWorkflow();
-    for (const path of [
-      "home/runner/.config/**",
-      "home/runner/.docker/**",
-      "home/runner/.gitconfig",
-      "home/runner/.npmrc",
-      "home/runner/.ssh/**",
-      "home/runner/.aws/**",
-      "home/runner/.azure/**",
-      "home/runner/.claude.json",
-      "home/runner/work/_actions/**",
-      "home/runner/work/_temp/_github_token",
-      "home/runner/work/_temp/_runner_file_commands/**",
-    ]) {
-      expect(text).toContain(`Read(//${path})`);
-    }
-    expect(text).toContain('"permissions"');
-    expect(text).toContain('"deny"');
-    expect(text).toContain('"disableBypassPermissionsMode": true');
+    const settingsPattern = new RegExp(
+      String.raw`cat > "\$CLAUDE_SETTINGS" <<'JSON'\n(?<json>[\s\S]*?)\n {10}JSON`,
+    );
+    const match = text.match(settingsPattern);
+    expect(match?.groups?.json).toBeTruthy();
+    const settings = JSON.parse(
+      match.groups.json
+        .split("\n")
+        .map((line) => line.replace(/^ {10}/u, ""))
+        .join("\n"),
+    );
+
+    expect(settings.permissions.disableBypassPermissionsMode).toBe("disable");
+    expect(settings).not.toHaveProperty("disableBypassPermissionsMode");
+    expect(settings.sandbox.enabled).toBe(true);
+    expect(settings.sandbox.failIfUnavailable).toBe(true);
+    expect(settings.sandbox.allowUnsandboxedCommands).toBe(false);
+    expect(settings.sandbox.autoAllowBashIfSandboxed).toBe(false);
+    expect(settings.sandbox.network.allowedDomains).toEqual([]);
+    expect(settings.sandbox.network.deniedDomains).toEqual(["*"]);
+    expect(text).toContain('CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"');
+
+    expect(settings.permissions.deny).toEqual(
+      expect.arrayContaining([
+        "Read(//proc/*/environ)",
+        "Read(//proc/*/task/*/environ)",
+        "Read(//home/runner/.config/**)",
+        "Read(//home/runner/.docker/**)",
+        "Read(//home/runner/.gitconfig)",
+        "Read(//home/runner/.npmrc)",
+        "Read(//home/runner/.ssh/**)",
+        "Read(//home/runner/.aws/**)",
+        "Read(//home/runner/.azure/**)",
+        "Read(//home/runner/.claude/**)",
+        "Read(//home/runner/.claude.json)",
+        "Read(//home/runner/.git-credentials)",
+        "Read(//home/runner/work/_actions/**)",
+        "Read(//home/runner/work/_temp/_github_token)",
+        "Read(//home/runner/work/_temp/_runner_file_commands/**)",
+      ]),
+    );
+    expect(settings.sandbox.filesystem.denyRead).toEqual(
+      expect.arrayContaining([
+        "/home/runner/.config",
+        "/home/runner/.docker",
+        "/home/runner/.gitconfig",
+        "/home/runner/.npmrc",
+        "/home/runner/.ssh",
+        "/home/runner/work/_actions",
+      ]),
+    );
+    expect(settings.sandbox.credentials.files).toEqual(
+      expect.arrayContaining([
+        { path: "~/.git-credentials", mode: "deny" },
+        { path: "/home/runner/work/_temp/_github_token", mode: "deny" },
+      ]),
+    );
   });
 
   it("covers trusted, unauthorized, and fork authorization paths", () => {

@@ -278,7 +278,10 @@ jobs:
               }
             },
             "permissions": {
+              "disableBypassPermissionsMode": "disable",
               "deny": [
+                "Read(//proc/*/environ)",
+                "Read(//proc/*/task/*/environ)",
                 "Read(//home/runner/.config/**)",
                 "Read(//home/runner/.docker/**)",
                 "Read(//home/runner/.gitconfig)",
@@ -286,13 +289,14 @@ jobs:
                 "Read(//home/runner/.ssh/**)",
                 "Read(//home/runner/.aws/**)",
                 "Read(//home/runner/.azure/**)",
+                "Read(//home/runner/.claude/**)",
                 "Read(//home/runner/.claude.json)",
+                "Read(//home/runner/.git-credentials)",
                 "Read(//home/runner/work/_actions/**)",
                 "Read(//home/runner/work/_temp/_github_token)",
                 "Read(//home/runner/work/_temp/_runner_file_commands/**)"
               ]
-            },
-            "disableBypassPermissionsMode": true
+            }
           }
           JSON
           echo "CLAUDE_SETTINGS=$CLAUDE_SETTINGS" >> "$GITHUB_ENV"
