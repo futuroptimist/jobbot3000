@@ -191,9 +191,7 @@ const transitionDensityProjection = () => {
     nodeById.get(`endpoint:${endpointId}`).total += 1;
     nodeById.get(`endpoint:${endpointId}`).applicationIds.push(applicationId);
     if (index < 50) {
-      nodeById
-        .get(`origin:${originId}`)
-        .applicationIds.push(applicationId);
+      nodeById.get(`origin:${originId}`).applicationIds.push(applicationId);
       nodeById.get(`origin:${originId}`).total += 1;
       links.push({
         id: `link:origin:${originId}->recruiter:${index}`,
@@ -232,6 +230,129 @@ const transitionDensityProjection = () => {
   }
   return { nodes, links, paths };
 };
+
+describe("transition lane solver", () => {
+  const laneSignature = (graph) =>
+    [...graph.links]
+      .sort((a, b) => compareLifecycleIds(a.id, b.id))
+      .map((link) => [link.id, link.y0, link.y1, link.transitionLaneY]);
+
+  const expectSpacingLegal = (graph) => {
+    const spacing =
+      BRANCH_HANDLE_RADIUS * 2 +
+      ((renderedBranchStrokeWidth(1) + 12) / 2) * 2 +
+      0.25;
+    for (let rank = 0; rank < 6; rank += 1) {
+      const lanes = graph.links
+        .filter((link) => link.source.rank === rank)
+        .map((link) => link.transitionLaneY)
+        .sort((a, b) => a - b);
+      for (let index = 1; index < lanes.length; index += 1) {
+        expect(lanes[index] - lanes[index - 1]).toBeGreaterThanOrEqual(
+          spacing - 0.01,
+        );
+      }
+    }
+  };
+
+  it("produces identical counts and routes for raw string and D3 object endpoints", () => {
+    const p = projection();
+    const rawGraph = buildLifecycleRoutingGraph(p);
+    const rawCounts = transitionCountsByGraphRanks(rawGraph);
+    const { graph } = layoutLifecycleRoutingGraph(p, 1850);
+    expect(transitionCountsByGraphRanks(graph)).toEqual(rawCounts);
+    const rerouted = calculateLifecycleDiagramLayout(p, 1850, graph);
+    expect(rerouted.densestRoutedRank).toBe(Math.max(...rawCounts));
+    expect(laneSignature(graph)).toEqual(
+      laneSignature(layoutLifecycleRoutingGraph(p, 1850).graph),
+    );
+  });
+
+  it("routes dense fixtures without transition-lane allocation invariants", () => {
+    expect(() => layoutLifecycleRoutingGraph(projection(), 1850)).not.toThrow(
+      /transition lane allocation/u,
+    );
+    expect(() =>
+      layoutLifecycleRoutingGraph(projectLifecycleAt(denseFixture), 1850),
+    ).not.toThrow(/transition lane allocation/u);
+  });
+
+  it("sizes generated 55, >32, and exact 89 branch graphs from legal transition occupancy", () => {
+    const fiftyFive = denseBranchProjection();
+    const eightyNine = transitionDensityProjection();
+    expect(buildLifecycleRoutingGraph(fiftyFive).branches).toHaveLength(55);
+    expect(buildLifecycleRoutingGraph(eightyNine).branches).toHaveLength(89);
+    for (const p of [fiftyFive, eightyNine]) {
+      const graph = buildLifecycleRoutingGraph(p);
+      expect(graph.branches.length).toBeGreaterThan(32);
+      expect(() => calculateLifecycleDiagramLayout(p, 1850, graph)).not.toThrow(
+        /transition lane allocation/u,
+      );
+    }
+    expectSpacingLegal(layoutLifecycleRoutingGraph(projection(), 1850).graph);
+  });
+
+  it("keeps byte-for-byte lane assignments stable for shuffled inputs", () => {
+    const p = projection();
+    const shuffled = {
+      ...p,
+      links: [...p.links].reverse(),
+      paths: [...p.paths].reverse(),
+      nodes: [...p.nodes].reverse(),
+    };
+    expect(
+      laneSignature(layoutLifecycleRoutingGraph(shuffled, 1850).graph),
+    ).toEqual(laneSignature(layoutLifecycleRoutingGraph(p, 1850).graph));
+  });
+
+  it("preserves continuing strand order across adjacent transitions", () => {
+    const { graph } = layoutLifecycleRoutingGraph(projection(), 1850);
+    const byBranch = new Map();
+    for (const link of graph.links) {
+      if (!byBranch.has(link.branchId)) byBranch.set(link.branchId, []);
+      byBranch.get(link.branchId).push(link);
+    }
+    const continuing = [...byBranch.values()].filter(
+      (links) => links.length > 1,
+    );
+    for (let rank = 0; rank < 5; rank += 1) {
+      const before = continuing
+        .map((links) => links.find((link) => link.source.rank === rank))
+        .filter(Boolean)
+        .sort((a, b) => a.transitionLaneY - b.transitionLaneY)
+        .map((link) => link.branchId);
+      const after = continuing
+        .map((links) => links.find((link) => link.source.rank === rank + 1))
+        .filter(Boolean)
+        .sort((a, b) => a.transitionLaneY - b.transitionLaneY)
+        .map((link) => link.branchId);
+      const afterSet = new Set(after);
+      const sharedBefore = before.filter((branchId) => afterSet.has(branchId));
+      if (sharedBefore.length > 1) {
+        const sharedAfter = after.filter((branchId) =>
+          sharedBefore.includes(branchId),
+        );
+        expect(new Set(sharedAfter)).toEqual(new Set(sharedBefore));
+      }
+    }
+  });
+
+  it("fails deterministically for invalid rank data", () => {
+    const p = projection();
+    const graph = buildLifecycleRoutingGraph(p);
+    graph.links = [
+      {
+        ...graph.links[0],
+        id: "link:reversed",
+        source: graph.links[0].target,
+        target: graph.links[0].source,
+      },
+    ];
+    expect(() => calculateLifecycleDiagramLayout(p, 1850, graph)).toThrow(
+      /link link:reversed has non-adjacent or reversed ranks/u,
+    );
+  });
+});
 
 describe("lifecycle diagram render-only routing layout", () => {
   it("materializes exact routed primitives for the canonical M-L-C-L route", () => {
@@ -348,7 +469,8 @@ describe("lifecycle diagram render-only routing layout", () => {
       );
       const segmentsByBranch = new Map();
       for (const link of graph.links) {
-        if (!segmentsByBranch.has(link.branchId)) segmentsByBranch.set(link.branchId, []);
+        if (!segmentsByBranch.has(link.branchId))
+          segmentsByBranch.set(link.branchId, []);
         segmentsByBranch.get(link.branchId).push(link);
       }
       const handles = assignBranchHandles(
@@ -414,7 +536,9 @@ describe("lifecycle diagram render-only routing layout", () => {
     }).not.toThrow();
     assertRoutedGraph(routedShuffled.graph);
 
-    expect(graphSignature(routed.graph)).toEqual(graphSignature(routedShuffled.graph));
+    expect(graphSignature(routed.graph)).toEqual(
+      graphSignature(routedShuffled.graph),
+    );
   });
 
   it("partitions semantic links into stable endpoint-conditioned display branches", () => {
