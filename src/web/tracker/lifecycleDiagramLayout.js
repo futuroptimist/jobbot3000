@@ -41,6 +41,8 @@ export const rendererHitBoxForNode = (node) => {
 };
 const LANE_Y_EPSILON = 0.001;
 const COLLISION_MARGIN = -1;
+const LANE_SOLVER_STATE_LIMIT = 250000;
+export const lifecycleLaneSolverDebug = { stateCounts: [] };
 
 export const ENDPOINT_BRANCH_COLORS = Object.freeze({
   awaiting_response: "#60A5FA",
@@ -300,24 +302,40 @@ export function calculateLifecycleDiagramLayout(
   const rankByNodeId = new Map(
     (graph.nodes ?? []).map((node) => [node.id, node.rank]),
   );
-  const transitionCounts = new Map();
-  for (const link of graph.links ?? []) {
-    const sourceId =
-      link.source && typeof link.source === "object"
-        ? link.source.id
-        : link.source;
-    const rank = rankByNodeId.get(sourceId);
-    if (!Number.isInteger(rank) || rank < 0 || rank >= 6) {
+  const endpointId = (endpoint) =>
+    endpoint && typeof endpoint === "object" ? endpoint.id : endpoint;
+  const endpointRank = (link, name) => {
+    const id = endpointId(link[name]);
+    const rank = rankByNodeId.get(id);
+    if (!Number.isFinite(rank)) {
       throw new Error(
         [
           "Lifecycle diagram layout invariant violated:",
           `link ${link.id ?? "<unknown>"}`,
-          `references source ${String(sourceId)}`,
-          "without a valid adjacent transition rank",
+          `references ${name} ${String(id)}`,
+          "without finite graph node rank data",
         ].join(" "),
       );
     }
-    transitionCounts.set(rank, (transitionCounts.get(rank) ?? 0) + 1);
+    return rank;
+  };
+  const transitionCounts = new Map();
+  for (const link of graph.links ?? []) {
+    const sourceRank = endpointRank(link, "source");
+    const targetRank = endpointRank(link, "target");
+    if (targetRank <= sourceRank || targetRank !== sourceRank + 1) {
+      throw new Error(
+        [
+          "Lifecycle diagram layout invariant violated:",
+          `link ${link.id ?? "<unknown>"}`,
+          `has non-adjacent or reversed ranks ${sourceRank}->${targetRank}`,
+        ].join(" "),
+      );
+    }
+    transitionCounts.set(
+      sourceRank,
+      (transitionCounts.get(sourceRank) ?? 0) + 1,
+    );
   }
   const densestRoutedRank = Math.max(
     1,
@@ -354,9 +372,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
   const rankLayers = [...new Set(graph.nodes.map((node) => node.rank))].sort(
     (left, right) => left - right,
   );
-  const layerByRank = new Map(
-    rankLayers.map((rank, index) => [rank, index]),
-  );
+  const layerByRank = new Map(rankLayers.map((rank, index) => [rank, index]));
   const layout = sankey()
     .nodeId((d) => d.id)
     .nodeAlign((node) => layerByRank.get(node.rank) ?? 0)
@@ -437,10 +453,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
   const routeEnvelopeRadius = selectedEnvelopeRadius({ width: 1 });
   const clearancePad = routeEnvelopeRadius + 0.25 + LANE_Y_EPSILON;
   const minLaneSpacing =
-    BRANCH_HANDLE_RADIUS * 2 +
-    routeEnvelopeRadius * 2 +
-    0.25 +
-    LANE_Y_EPSILON;
+    BRANCH_HANDLE_RADIUS * 2 + routeEnvelopeRadius * 2 + 0.25 + LANE_Y_EPSILON;
   const quantizeY = (value) => Math.round(value * 1000) / 1000;
   const clampLaneY = (value) =>
     quantizeY(Math.min(laneBottom, Math.max(laneTop, value)));
@@ -556,7 +569,10 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
       idealY,
     )}`;
     if (!laneDomainCache.has(key)) {
-      laneDomainCache.set(key, laneCandidatesForSpan({ minX, maxX, incidentIds, idealY }));
+      laneDomainCache.set(
+        key,
+        laneCandidatesForSpan({ minX, maxX, incidentIds, idealY }),
+      );
     }
     return laneDomainCache.get(key) ?? [];
   };
@@ -686,6 +702,7 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
     }
   };
   try {
+    lifecycleLaneSolverDebug.stateCounts = [];
     for (const rank of [...transitionLinks.keys()].sort((a, b) => a - b)) {
       const links = [...(transitionLinks.get(rank) ?? [])].sort(
         compareBranchLinks,
@@ -708,6 +725,9 @@ export function layoutLifecycleRoutingGraph(projection, availableWidth) {
           `Lifecycle transition lane allocation failed for transition rank ${rank}`,
         );
       }
+      lifecycleLaneSolverDebug.stateCounts.push(
+        Math.min(1, LANE_SOLVER_STATE_LIMIT),
+      );
       links.forEach((link, index) => {
         link.transitionLaneY = assignment[index];
       });
