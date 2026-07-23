@@ -150,6 +150,16 @@ jobs:
           TRUSTED_PLAYWRIGHT_WORKSPACE: ${{ github.workspace }}/trusted-workflow
         run: /usr/local/bin/jobbot-claude-validate install-playwright-artifacts
 
+      - name: Publish prepared dependency artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-prepared-deps-${{ needs.authorize.outputs.head_sha }}
+          path: |
+            pr-workspace/node_modules
+            pr-workspace/.cache/ms-playwright
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Prove validation sandbox denies outbound network
         working-directory: pr-workspace
         run: |
@@ -175,20 +185,10 @@ jobs:
         working-directory: pr-workspace
         run: /usr/local/bin/jobbot-claude-validate build
 
-      - name: Publish prepared dependency artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: claude-prepared-deps-${{ needs.authorize.outputs.head_sha }}
-          path: |
-            pr-workspace/node_modules
-            pr-workspace/.cache/ms-playwright
-          if-no-files-found: error
-          retention-days: 1
-
   claude:
     name: Claude Code
     needs: [authorize, claude-validation]
-    if: always() && needs.authorize.outputs.authorized == 'true' && (needs.authorize.outputs.is_pr != 'true' || needs.claude-validation.result == 'success')
+    if: always() && needs.authorize.outputs.authorized == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -229,11 +229,24 @@ jobs:
           persist-credentials: false
 
       - name: Restore prepared dependency artifact
+        id: restore-prepared-deps
         if: needs.authorize.outputs.is_pr == 'true'
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: claude-prepared-deps-${{ needs.authorize.outputs.head_sha }}
           path: .
+
+      - name: Warn when prepared dependencies are unavailable
+        if: needs.authorize.outputs.is_pr == 'true' && steps.restore-prepared-deps.outcome == 'failure'
+        run: |
+          set -euo pipefail
+          echo "::warning::Prepared dependencies are unavailable; the separate Claude validation commands check remains authoritative."
+          cat >> "$GITHUB_STEP_SUMMARY" <<'MARKDOWN'
+          ## Prepared dependencies unavailable
+
+          The prepared dependency artifact could not be restored for this Claude repair session. The separate **Claude validation commands** check remains authoritative for validation results; a successful Claude action conclusion is not proof that validation ran or passed.
+          MARKDOWN
 
       - name: Create strict Claude settings
         env:

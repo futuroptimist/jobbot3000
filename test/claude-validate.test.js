@@ -182,6 +182,88 @@ describe("claude workflow trust boundaries", () => {
     );
   });
 
+  it("publishes prepared artifacts before fallible validation operations", () => {
+    const text = readWorkflow();
+    const publish = text.indexOf("Publish prepared dependency artifact");
+    expect(publish).toBeGreaterThan(
+      text.indexOf("Install Playwright artifacts before network lockdown"),
+    );
+    for (const step of [
+      "Prove validation sandbox denies outbound network",
+      "- name: Lint",
+      "- name: Format check",
+      "- name: Typecheck",
+      "- name: Test CI",
+      "- name: Build",
+    ]) {
+      expect(publish).toBeLessThan(text.indexOf(step));
+    }
+    expect(text).toContain("if-no-files-found: error");
+    expect(text).toContain(
+      "name: claude-prepared-deps-${{ needs.authorize.outputs.head_sha }}",
+    );
+  });
+
+  it("allows authorized Claude sessions after validation completes", () => {
+    const text = readWorkflow();
+    const claudeJob = text.indexOf("  claude:");
+    const condition = text.slice(
+      claudeJob,
+      text.indexOf("    runs-on:", claudeJob),
+    );
+    expect(condition).toContain("needs: [authorize, claude-validation]");
+    expect(condition).toContain(
+      "if: always() && needs.authorize.outputs.authorized == 'true'",
+    );
+    expect(condition).not.toContain("claude-validation.result == 'success'");
+    expect(text).toContain(
+      "A successful Claude action conclusion alone is not proof that validation ran.",
+    );
+  });
+
+  it("warns when prepared artifacts are missing without failing", () => {
+    const text = readWorkflow();
+    const restore = text.indexOf("Restore prepared dependency artifact");
+    const warning = text.indexOf(
+      "Warn when prepared dependencies are unavailable",
+    );
+    expect(restore).toBeGreaterThanOrEqual(0);
+    expect(warning).toBeGreaterThan(restore);
+    expect(text.slice(restore, warning)).toContain("id: restore-prepared-deps");
+    expect(text.slice(restore, warning)).toContain("continue-on-error: true");
+    expect(text).toContain("steps.restore-prepared-deps.outcome == 'failure'");
+    expect(text).toContain("Prepared dependencies are unavailable");
+    expect(text).toContain(
+      "separate Claude validation commands check remains authoritative",
+    );
+  });
+
+  it("keeps validation operations fail-closed", () => {
+    const text = readWorkflow();
+    const validationJob = text.slice(
+      text.indexOf("  claude-validation:"),
+      text.indexOf("  claude:"),
+    );
+    expect(validationJob).not.toContain("continue-on-error");
+    for (const step of [
+      "Prove validation sandbox denies outbound network",
+      "- name: Lint",
+      "- name: Format check",
+      "- name: Typecheck",
+      "- name: Test CI",
+      "- name: Build",
+    ]) {
+      const stepIndex = validationJob.indexOf(step);
+      expect(stepIndex).toBeGreaterThanOrEqual(0);
+      const nextStep = validationJob.indexOf("\n      - name:", stepIndex + 1);
+      const stepText = validationJob.slice(
+        stepIndex,
+        nextStep === -1 ? validationJob.length : nextStep,
+      );
+      expect(stepText).not.toContain("continue-on-error");
+    }
+  });
+
   it("does not execute the PR-checkout wrapper or mutate runner-wide firewall policy", () => {
     const text = readWorkflow();
     expect(text).not.toContain(
