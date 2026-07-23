@@ -6,13 +6,13 @@ usage() {
 Usage: claude-validate.sh <operation>
        claude-validate.sh node-check <repo-relative-source-file>
 
-Operations: prepare-deps, lint, format-check, typecheck, test-ci, build, node-check.
+Operations: prepare-deps, install-playwright-artifacts, lint, format-check, typecheck, test-ci, build, node-check.
 This trusted wrapper accepts fixed operations only; it rejects extra flags and
 never evals caller-controlled command strings.
 USAGE
 }
 
-workspace="${GITHUB_WORKSPACE:-$(pwd)}"
+workspace="${CLAUDE_VALIDATION_WORKSPACE:-${GITHUB_WORKSPACE:-$(pwd)}}"
 workspace="$(cd "$workspace" && pwd -P)"
 cd "$workspace"
 
@@ -21,6 +21,11 @@ case "$op" in
   prepare-deps)
     [ "$#" -eq 1 ] || { usage; exit 64; }
     exec npm ci --ignore-scripts --no-audit --no-fund
+    ;;
+  install-playwright-artifacts)
+    [ "$#" -eq 1 ] || { usage; exit 64; }
+    export PLAYWRIGHT_BROWSERS_PATH="$workspace/.cache/ms-playwright"
+    exec npx playwright install --with-deps chromium
     ;;
   lint)
     [ "$#" -eq 1 ] || { usage; exit 64; }

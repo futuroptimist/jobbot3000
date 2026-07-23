@@ -28,6 +28,7 @@ jobs:
       trusted_actors: ${{ steps.auth.outputs.trusted_actors }}
       pr_number: ${{ steps.auth.outputs.pr_number }}
       head_ref: ${{ steps.auth.outputs.head_ref }}
+      head_sha: ${{ steps.auth.outputs.head_sha }}
       is_pr: ${{ steps.auth.outputs.is_pr }}
     steps:
       - name: Verify trusted actor and same-repository PR
@@ -96,6 +97,7 @@ jobs:
               exit 1
             fi
             echo "head_ref=$(jq -r '.head.ref' <<< "$pr_json")" >> "$GITHUB_OUTPUT"
+            echo "head_sha=$(jq -r '.head.sha' <<< "$pr_json")" >> "$GITHUB_OUTPUT"
           fi
 
           echo "authorized=true" >> "$GITHUB_OUTPUT"
@@ -107,15 +109,38 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      CLAUDE_VALIDATION_WORKSPACE: ${{ github.workspace }}/pr-workspace
     steps:
-      - name: Checkout same-repository PR branch
+      - name: Checkout trusted workflow revision
         uses: actions/checkout@v4
         with:
-          ref: ${{ needs.authorize.outputs.head_ref }}
+          ref: ${{ github.workflow_sha }}
           persist-credentials: false
+          path: trusted-workflow
+
+      - name: Create trusted validation wrapper
+        env:
+          TRUSTED_WRAPPER: ${{ runner.temp }}/claude-validate
+        run: |
+          set -euo pipefail
+          install -m 0755 trusted-workflow/.github/scripts/claude-validate.sh "$TRUSTED_WRAPPER"
+          echo "TRUSTED_WRAPPER=$TRUSTED_WRAPPER" >> "$GITHUB_ENV"
+
+      - name: Checkout same-repository PR commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.authorize.outputs.head_sha }}
+          persist-credentials: false
+          path: pr-workspace
 
       - name: Install dependencies without lifecycle scripts
-        run: .github/scripts/claude-validate.sh prepare-deps
+        working-directory: pr-workspace
+        run: $TRUSTED_WRAPPER prepare-deps
+
+      - name: Install Playwright artifacts before network lockdown
+        working-directory: pr-workspace
+        run: $TRUSTED_WRAPPER install-playwright-artifacts
 
       - name: Block outbound network for PR-controlled validation scripts
         run: |
@@ -125,15 +150,20 @@ jobs:
           sudo iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
       - name: Lint
-        run: .github/scripts/claude-validate.sh lint
+        working-directory: pr-workspace
+        run: $TRUSTED_WRAPPER lint
       - name: Format check
-        run: .github/scripts/claude-validate.sh format-check
+        working-directory: pr-workspace
+        run: $TRUSTED_WRAPPER format-check
       - name: Typecheck
-        run: .github/scripts/claude-validate.sh typecheck
+        working-directory: pr-workspace
+        run: $TRUSTED_WRAPPER typecheck
       - name: Test CI
-        run: .github/scripts/claude-validate.sh test-ci
+        working-directory: pr-workspace
+        run: $TRUSTED_WRAPPER test-ci
       - name: Build
-        run: .github/scripts/claude-validate.sh build
+        working-directory: pr-workspace
+        run: $TRUSTED_WRAPPER build
 
   claude:
     name: Claude Code

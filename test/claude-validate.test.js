@@ -35,6 +35,9 @@ describe("claude validation wrapper", () => {
     expect(run(["lint", "--", "extra"], dir).status).not.toBe(0);
     expect(run(["lint; npx evil"], dir).status).not.toBe(0);
     expect(run(["npx", "vitest"], dir).status).not.toBe(0);
+    expect(
+      run(["install-playwright-artifacts", "--with-deps"], dir).status,
+    ).not.toBe(0);
   });
 
   it("runs node syntax checks only for regular in-workspace JavaScript files", () => {
