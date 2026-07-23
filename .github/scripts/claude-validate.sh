@@ -43,28 +43,61 @@ run_in_network_sandbox() {
     exit 70
   }
   node_dir="$(dirname "$(command -v node)")"
+  node_prefix="$(dirname "$node_dir")"
+  node_mount_args=()
+  case "$node_prefix" in
+    /home/*|/root/*|/run/*|/var/run/*) sandbox_path="/usr/local/bin:/usr/bin:/bin" ;;
+    /usr|/usr/*|/bin|/bin/*|/sbin|/sbin/*) sandbox_path="$node_dir:/usr/local/bin:/usr/bin:/bin" ;;
+    *)
+      sandbox_path="$node_dir:/usr/local/bin:/usr/bin:/bin"
+      node_mount_args=(--ro-bind-try "$node_prefix" "$node_prefix")
+      ;;
+  esac
+  script_path="$(realpath -e -- "$0")"
+  sandbox_workspace="/workspace"
+  sandbox_wrapper="/usr/local/bin/jobbot-claude-validate"
+  # Invariant: PR-controlled validation must never receive the host root or
+  # host service sockets; only the runtime allowlist below and workspace bind
+  # are visible inside the fail-closed sandbox.
   exec bwrap \
     --unshare-net \
+    --unshare-pid \
+    --unshare-ipc \
+    --unshare-uts \
     --die-with-parent \
     --new-session \
+    --close-fds \
     --clearenv \
-    --ro-bind / / \
-    --bind "$workspace" "$workspace" \
+    --ro-bind-try /usr /usr \
+    --ro-bind-try /bin /bin \
+    --ro-bind-try /lib /lib \
+    --ro-bind-try /lib64 /lib64 \
+    --ro-bind-try /sbin /sbin \
+    --ro-bind-try /etc/ssl /etc/ssl \
+    --ro-bind-try /etc/ca-certificates /etc/ca-certificates \
+    --ro-bind-try /etc/resolv.conf /etc/resolv.conf \
+    "${node_mount_args[@]}" \
+    --ro-bind "$script_path" "$sandbox_wrapper" \
+    --bind "$workspace" "$sandbox_workspace" \
     --dev /dev \
     --proc /proc \
     --tmpfs /tmp \
-    --chdir "$workspace" \
-    --setenv HOME "$workspace/.home" \
-    --setenv PATH "$node_dir:/usr/local/bin:/usr/bin:/bin" \
+    --tmpfs /run \
+    --dir "$sandbox_workspace/.home" \
+    --dir "$sandbox_workspace/.npm" \
+    --dir "$sandbox_workspace/.cache" \
+    --chdir "$sandbox_workspace" \
+    --setenv HOME "$sandbox_workspace/.home" \
+    --setenv PATH "$sandbox_path" \
     --setenv CI "true" \
     --setenv NODE_ENV "test" \
-    --setenv PLAYWRIGHT_BROWSERS_PATH "$workspace/.cache/ms-playwright" \
+    --setenv PLAYWRIGHT_BROWSERS_PATH "$sandbox_workspace/.cache/ms-playwright" \
     --setenv PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD "1" \
     --setenv JOBBOT_PREPARED_PLAYWRIGHT "1" \
-    --setenv npm_config_cache "$workspace/.npm" \
-    --setenv CLAUDE_VALIDATION_WORKSPACE "$workspace" \
+    --setenv npm_config_cache "$sandbox_workspace/.npm" \
+    --setenv CLAUDE_VALIDATION_WORKSPACE "$sandbox_workspace" \
     --setenv JOBBOT_CLAUDE_VALIDATE_INTERNAL "network-sandbox" \
-    "$0" __jobbot_contained__ "$@"
+    "$sandbox_wrapper" __jobbot_contained__ "$@"
 }
 
 validate_lockfile_registry_policy() {

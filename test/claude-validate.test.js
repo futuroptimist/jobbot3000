@@ -35,10 +35,19 @@ printf '%s\n' "$@" >> "\${BWRAP_LOG:-/dev/null}"
 if printf '%s\\n' "$@" | grep -qx -- network-probe; then exit 7; fi
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --setenv) export "$2=$3"; shift 3 ;;
-    --unshare-net|--die-with-parent|--new-session|--clearenv) shift ;;
-    --ro-bind|--bind) shift 3 ;;
-    --dev|--proc|--tmpfs|--chdir) shift 2 ;;
+    --setenv)
+      if [[ "$2" == "CLAUDE_VALIDATION_WORKSPACE" && "$3" == "/workspace" ]]; then
+        export "$2=${dir}"
+      elif [[ "$2" != "PATH" ]]; then
+        export "$2=$3"
+      fi
+      shift 3
+      ;;
+    --unshare-net|--unshare-pid|--unshare-ipc|--unshare-uts) shift ;;
+    --die-with-parent|--new-session|--close-fds|--clearenv) shift ;;
+    --ro-bind|--ro-bind-try|--bind) shift 3 ;;
+    --dev|--proc|--tmpfs|--chdir|--dir) shift 2 ;;
+    /usr/local/bin/jobbot-claude-validate) shift; exec bash ${wrapper} "$@" ;;
     *) exec "$@" ;;
   esac
 done
@@ -237,6 +246,51 @@ exit 0
   it("fails outbound probes inside the same network boundary", () => {
     const dir = fixture();
     expect(run(["network-probe"], dir).status).not.toBe(0);
+  });
+
+  it("builds a narrow bubblewrap mount and namespace contract", () => {
+    const dir = fixture();
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ scripts: { lint: "echo lint" } }),
+    );
+    const bwrapLog = join(dir, "bwrap-contract.log");
+    const result = run(["lint"], dir, { BWRAP_LOG: bwrapLog });
+    expect(result.status).toBe(0);
+    const args = readFileSync(bwrapLog, "utf8").trim().split("\n");
+    const joined = args.join("\n");
+
+    expect(joined).not.toContain("--ro-bind\n/\n/");
+    expect(joined).not.toContain("--dev-bind\n/\n/");
+    expect(args).toEqual(
+      expect.arrayContaining([
+        "--unshare-net",
+        "--unshare-pid",
+        "--unshare-ipc",
+        "--unshare-uts",
+        "--close-fds",
+        "--clearenv",
+      ]),
+    );
+    expect(joined).toContain("--bind\n" + dir + "\n/workspace");
+    expect(joined).toContain("--tmpfs\n/run");
+    expect(joined).toContain("--dev\n/dev");
+    expect(joined).toContain("--proc\n/proc");
+    expect(joined).toContain("--tmpfs\n/tmp");
+    expect(joined).toContain(
+      "--setenv\nCLAUDE_VALIDATION_WORKSPACE\n/workspace",
+    );
+    expect(joined).toContain("--setenv\nHOME\n/workspace/.home");
+    expect(joined).toContain(
+      "--setenv\nPLAYWRIGHT_BROWSERS_PATH\n/workspace/.cache/ms-playwright",
+    );
+    expect(joined).not.toContain("/var/run");
+    expect(joined).not.toContain("/home/runner");
+    expect(joined).not.toContain("/root");
+    expect(joined).not.toContain("docker.sock");
+    expect(joined).not.toContain("GITHUB_ENV");
+    expect(joined).not.toContain("GITHUB_OUTPUT");
+    expect(joined).not.toContain("ACTIONS_ID_TOKEN");
   });
 
   it("constructs prepared-mode environment for contained test-ci only", () => {
@@ -457,7 +511,8 @@ describe("claude workflow trust boundaries", () => {
     expect(text).toContain("TRUSTED_CLAUDE_ACTORS");
     expect(text).toContain("ACTOR: ${{ github.actor }}");
     expect(text).toContain("issues:");
-    expect(text).toContain("types: [opened, assigned]");
+    expect(text).toContain("types: [opened]");
+    expect(text).not.toContain("types: [opened, assigned]");
     expect(text).not.toContain("github.event.issue.user.login");
     expect(text).toContain(
       "authorized_actor: ${{ steps.auth.outputs.authorized_actor }}",
