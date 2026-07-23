@@ -259,9 +259,38 @@ exit 0
     expect(result.status).toBe(0);
     const args = readFileSync(bwrapLog, "utf8").trim().split("\n");
     const joined = args.join("\n");
+    const bindTuples = [];
+    for (let index = 0; index < args.length - 2; index += 1) {
+      if (
+        ["--ro-bind", "--ro-bind-try", "--bind", "--dev-bind"].includes(
+          args[index],
+        )
+      ) {
+        bindTuples.push({
+          op: args[index],
+          source: args[index + 1],
+          target: args[index + 2],
+        });
+        index += 2;
+      }
+    }
+    const wrapperBind = {
+      op: "--ro-bind",
+      source: wrapper,
+      target: "/usr/local/bin/jobbot-claude-validate",
+    };
 
-    expect(joined).not.toContain("--ro-bind\n/\n/");
-    expect(joined).not.toContain("--dev-bind\n/\n/");
+    expect(bindTuples).not.toContainEqual({
+      op: "--ro-bind",
+      source: "/",
+      target: "/",
+    });
+    expect(bindTuples).not.toContainEqual({
+      op: "--dev-bind",
+      source: "/",
+      target: "/",
+    });
+    expect(bindTuples).toContainEqual(wrapperBind);
     expect(args).toEqual(
       expect.arrayContaining([
         "--unshare-net",
@@ -272,7 +301,11 @@ exit 0
         "--clearenv",
       ]),
     );
-    expect(joined).toContain("--bind\n" + dir + "\n/workspace");
+    expect(bindTuples).toContainEqual({
+      op: "--bind",
+      source: dir,
+      target: "/workspace",
+    });
     expect(joined).toContain("--tmpfs\n/run");
     expect(joined).toContain("--dev\n/dev");
     expect(joined).toContain("--proc\n/proc");
@@ -284,9 +317,42 @@ exit 0
     expect(joined).toContain(
       "--setenv\nPLAYWRIGHT_BROWSERS_PATH\n/workspace/.cache/ms-playwright",
     );
-    expect(joined).not.toContain("/var/run");
-    expect(joined).not.toContain("/home/runner");
-    expect(joined).not.toContain("/root");
+    for (const tuple of bindTuples) {
+      const isExpectedWrapperBind =
+        tuple.op === wrapperBind.op &&
+        tuple.source === wrapperBind.source &&
+        tuple.target === wrapperBind.target;
+      const isExpectedWorkspaceBind =
+        tuple.op === "--bind" &&
+        tuple.source === dir &&
+        tuple.target === "/workspace";
+      const paths = [tuple.source, tuple.target];
+      expect(paths).not.toContain("/run");
+      expect(paths).not.toContain("/var/run");
+      expect(paths).not.toContain("/root");
+      expect(paths).not.toContain("/home/runner");
+      expect(
+        isExpectedWrapperBind ||
+          isExpectedWorkspaceBind ||
+          tuple.op !== "--bind",
+      ).toBe(true);
+      if (!isExpectedWrapperBind) {
+        expect(paths.some((path) => path.startsWith("/home/runner/"))).toBe(
+          false,
+        );
+      }
+      expect(paths.some((path) => path.startsWith("/run/"))).toBe(false);
+      expect(paths.some((path) => path.startsWith("/var/run/"))).toBe(false);
+      expect(paths.some((path) => path.startsWith("/root/"))).toBe(false);
+      expect(paths.some((path) => path.includes("docker.sock"))).toBe(false);
+      expect(paths.some((path) => path.includes("containerd"))).toBe(false);
+      expect(paths.some((path) => path.includes("dbus"))).toBe(false);
+      expect(paths.some((path) => path.includes("ssh"))).toBe(false);
+      expect(paths.some((path) => path.includes("_runner_file_commands"))).toBe(
+        false,
+      );
+      expect(paths.some((path) => path.includes("_github_token"))).toBe(false);
+    }
     expect(joined).not.toContain("docker.sock");
     expect(joined).not.toContain("GITHUB_ENV");
     expect(joined).not.toContain("GITHUB_OUTPUT");
