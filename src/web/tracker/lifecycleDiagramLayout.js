@@ -2033,10 +2033,13 @@ export function layoutLifecycleRoutingGraph(
             }
 
             const va = new Map();
-            for (const [rank, { rankOrder, cen }] of perRankPC) {
+            for (const [
+              rank,
+              { rankOrder, cen, minLaneSpacing },
+            ] of perRankPC) {
               for (let i = 0; i < rankOrder.length; i += 1)
                 va.set(rankOrder[i].id, cen[i]);
-              rankRefinementInfo.set(rank, { rankOrder, cen });
+              rankRefinementInfo.set(rank, { rankOrder, cen, minLaneSpacing });
             }
 
             for (const [id, value] of va) globalAssignments.set(id, value);
@@ -2633,6 +2636,8 @@ export function layoutLifecycleRoutingGraph(
         1,
         Math.round((auditRouteEdgeCount * auditRouteEdgeCount) / 8450),
       );
+      if (handleBudget.statesVisited >= handleBudget.stateLimit)
+        throwHandleStateLimitExceeded();
       const routeAudit = auditLifecycleRouteGeometry({
         graph,
         dimensions,
@@ -2836,6 +2841,7 @@ export function testOnlyDiagnoseLifecycleLayoutAttempt(
         return {
           rank,
           branchOrder,
+          minLaneSpacing: info.minLaneSpacing ?? 0,
           nodePositions: graph.nodes
             .filter((node) => node.rank === rank)
             .sort(
@@ -3699,6 +3705,16 @@ const tryAssignBranchHandles = (
       };
     }
     sharedBudget.statesVisited += generationCost;
+    if (sharedBudget.statesVisited >= sharedBudget.stateLimit) {
+      return {
+        ok: false,
+        reason: "state-limit",
+        blockedBranchIds: [],
+        branchDiagnostics: [],
+        candidateSets: new Map(),
+        routeEdgeCount,
+      };
+    }
   }
   const candidateSets = new Map();
   const branchDiagnostics = new Map();

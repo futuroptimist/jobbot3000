@@ -1325,6 +1325,40 @@ describe("test-only lifecycle layout diagnostics", () => {
     ).toBe(true);
   });
 
+  it("reports centered assignment feasibility with rank lane spacing", () => {
+    const snapshots = [];
+    layoutLifecycleRoutingGraph(projectLifecycleAt(routingFixture), 1850, {
+      testOnlyDiagnosticSink: (snapshot) => snapshots.push(snapshot),
+    });
+    const diagnostic = testOnlyDiagnoseLifecycleLayoutAttempt(
+      projectLifecycleAt(routingFixture),
+      1850,
+      { transitionLanePhaseOnly: true },
+    );
+    expect(snapshots.length).toBeGreaterThan(0);
+    const rankInfoByRank = snapshots[0].rankRefinementInfo;
+    expect(rankInfoByRank).toBeInstanceOf(Map);
+
+    for (const rank of diagnostic.ranks) {
+      const rawRankInfo = rankInfoByRank.get(rank.rank);
+      expect(rawRankInfo?.minLaneSpacing).toBeGreaterThan(0);
+      expect(rank.minLaneSpacing).toBe(rawRankInfo.minLaneSpacing);
+      const recomputed = rawRankInfo.cen.every((value, index) => {
+        const intervals = rawRankInfo.rankOrder[index].intervals;
+        const inDomain = intervals.some(
+          ([lo, hi]) => value >= lo - 1e-6 && value <= hi + 1e-6,
+        );
+        if (!inDomain) return false;
+        if (index === 0) return true;
+        return (
+          value >=
+          rawRankInfo.cen[index - 1] + rawRankInfo.minLaneSpacing - 1e-6
+        );
+      });
+      expect(rank.centeredAssignmentFeasible).toBe(recomputed);
+    }
+  });
+
   it("identifies the invariant violated by a second base pass", () => {
     const baseline = testOnlyDiagnoseLifecycleLayoutAttempt(
       projectLifecycleAt(routingFixture),
@@ -2420,6 +2454,6 @@ describe("lifecycle diagram render-only routing layout", () => {
     });
     expect(thrown?.cause?.statesVisited).toBeGreaterThanOrEqual(32768);
     expect(thrown?.cause?.routeEdgeCount).toBeGreaterThan(0);
-    expect(Date.now() - start).toBeLessThan(90000);
-  }, 90000);
+    expect(Date.now() - start).toBeLessThan(30000);
+  });
 });
