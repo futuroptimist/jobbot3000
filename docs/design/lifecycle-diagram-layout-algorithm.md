@@ -273,17 +273,18 @@ The follow-up diagnosis isolated the coupling to a concrete invariant rather tha
 ordering itself: a second D3-Sankey pass that changes real-node geometry also changes every
 geometry-derived input to the lane/handle lifecycle. Those inputs include baseline link docks,
 visible node/label/hit boxes, lane obstacles, legal intervals, centered assignments, routing-anchor
-domains, handle candidate sets, budgets, and rejection diagnostics. The reverted attempt changed
-real-node `y0`/`y1` positions but then let later phases reason about a mixture of old closures and
-new geometry. The resulting rank orders remained topologically valid and their centered lane
-assignments still had non-empty per-rank domains, but the first failing invariant moved downstream:
-handle placement found no legal candidates for the changed real-node geometry and then consumed the
-shared deterministic budget near 32,768 states while retrying lane candidates that could not satisfy
-that geometry.
+domains, handle candidate sets, budgets, and rejection diagnostics. The focused fresh-attempt tests
+added in this step do **not** demonstrate a stale-closure or reused-state defect; each diagnostic
+attempt rebuilds the projection and layout state from scratch. What they verify is the first-rank
+invariant for changed base geometry: the rank orders can remain topologically valid, with non-empty
+0.001-quantized interval domains and centered assignments that satisfy the minimum lane-spacing
+contract, while the first full-layout rejection still moves downstream to structured handle
+placement evidence for rank 0 (`reason: "no-candidates"`).
 
-The important finding is therefore **not** "barycenter order is impossible"; it is that base-layout
-order and lane/handle state are coupled through real-node coordinates. A safe rankOrder-aware second
-pass must treat the second D3 call as a completely fresh layout attempt:
+The important finding is therefore **not** "barycenter order is impossible" or "stale state was
+proven here"; it is that base-layout order and lane/handle state are coupled through real-node
+coordinates. A safe rankOrder-aware second pass must treat the second D3 call as a completely fresh
+layout attempt and continue to reject at the first structured invariant violation:
 
 - rebuild or restore baseline link coordinates before materializing any candidate;
 - recompute visible nodes plus label and renderer hit boxes from the current D3 geometry;

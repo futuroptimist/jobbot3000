@@ -2,7 +2,8 @@ import { sankey } from "d3-sankey";
 import { LIFECYCLE_DIAGRAM_TAXONOMY } from "./lifecycleProjection.js";
 
 const isLifecycleLayoutTestEnvironment = () =>
-  process.env.NODE_ENV === "test" || process.env.VITEST === "true";
+  typeof process !== "undefined" &&
+  (process.env.NODE_ENV === "test" || process.env.VITEST === "true");
 
 export const SANKEY_NODE_WIDTH = 18;
 export const MINIMUM_SVG_HEIGHT = 360;
@@ -2025,7 +2026,7 @@ export function layoutLifecycleRoutingGraph(
                 failedCompleteOrderings.add(orderingKey);
                 return false;
               }
-              perRankPC.set(rank, { rankOrder, cen });
+              perRankPC.set(rank, { rankOrder, cen, minLaneSpacing });
             }
 
             const va = new Map();
@@ -2555,6 +2556,16 @@ export function layoutLifecycleRoutingGraph(
         // let the search continue with another candidate.
         lastRoutingAnchorFailure = error;
         lastHandleFailure = null;
+        if (isLifecycleLayoutTestEnvironment()) {
+          options.testOnlyDiagnosticSink?.({
+            phase: "routing-anchor",
+            reason: error.cause,
+            rankRefinementInfo,
+            graph,
+            handleBudget,
+            transitionLaneSolverStats,
+          });
+        }
         geometryFailureCache.recordRoutingAnchorFailure(
           geometrySignature,
           error,
@@ -2753,6 +2764,45 @@ export function testOnlyDiagnoseLifecycleLayoutAttempt(
         ]),
       )
     : undefined;
+  const quantizedIntervalValueCount = (intervals) =>
+    intervals.reduce((sum, [lo, hi]) => {
+      const start = Math.ceil((lo - LANE_Y_EPSILON) * 1000);
+      const end = Math.floor((hi + LANE_Y_EPSILON) * 1000);
+      return sum + Math.max(0, end - start + 1);
+    }, 0);
+  const intervalContains = (intervals, value) =>
+    intervals.some(
+      ([lo, hi]) =>
+        value >= lo - LANE_Y_EPSILON && value <= hi + LANE_Y_EPSILON,
+    );
+  const structuredReason = (phase, reason, ranks = []) => {
+    if (!reason) return null;
+    const affectedRanks = [
+      reason.rank,
+      ...(reason.routeFindings ?? []).map((finding) => finding.rank),
+      ...(reason.branchDiagnostics ?? []).map((diagnostic) => diagnostic.rank),
+    ].filter((rank) => Number.isFinite(rank));
+    if (!affectedRanks.length && reason.blockedBranchIds?.length) {
+      const blocked = new Set(reason.blockedBranchIds);
+      for (const rank of ranks) {
+        if (rank.branchOrder.some((branchId) => blocked.has(branchId))) {
+          affectedRanks.push(rank.rank);
+        }
+      }
+    }
+    return {
+      reason: reason.reason ?? String(reason),
+      firstAffectedRank: affectedRanks.length
+        ? Math.min(...affectedRanks)
+        : null,
+      evidence: {
+        type: reason.type ?? null,
+        blockedBranchIds: reason.blockedBranchIds ?? [],
+        routeFindingCount: reason.routeFindings?.length ?? 0,
+        branchDiagnosticCount: reason.branchDiagnostics?.length ?? 0,
+      },
+    };
+  };
   const summarize = ({
     phase,
     reason,
@@ -2767,8 +2817,13 @@ export function testOnlyDiagnoseLifecycleLayoutAttempt(
         const branchOrder = info.rankOrder.map((entry) => entry.branchId);
         const centeredAssignmentFeasible = info.cen.every((value, index) => {
           if (!Number.isFinite(value)) return false;
+          if (!intervalContains(info.rankOrder[index].intervals, value))
+            return false;
           if (index === 0) return true;
-          return value > info.cen[index - 1];
+          return (
+            value >=
+            info.cen[index - 1] + (info.minLaneSpacing ?? 0) - LANE_Y_EPSILON
+          );
         });
         return {
           rank,
@@ -2778,10 +2833,12 @@ export function testOnlyDiagnoseLifecycleLayoutAttempt(
             .sort(
               (left, right) =>
                 (left.y0 + left.y1) / 2 - (right.y0 + right.y1) / 2 ||
+                Number(left.routing) - Number(right.routing) ||
                 compareLifecycleIds(left.id, right.id),
             )
             .map((node) => ({
               id: node.id,
+              kind: node.routing ? "routing" : "real",
               routing: Boolean(node.routing),
               y0: node.y0,
               y1: node.y1,
@@ -2790,18 +2847,20 @@ export function testOnlyDiagnoseLifecycleLayoutAttempt(
             linkId: entry.id,
             branchId: entry.branchId,
             intervalCount: entry.intervals.length,
-            domainSize: entry.intervals.reduce(
-              (sum, [lo, hi]) => sum + Math.max(0, Math.floor(hi - lo) + 1),
-              0,
-            ),
+            domainSize: quantizedIntervalValueCount(entry.intervals),
             centeredY: info.cen[index],
+            centeredInDomain: intervalContains(
+              entry.intervals,
+              info.cen[index],
+            ),
           })),
           centeredAssignmentFeasible,
         };
       });
     snapshots.push({
       firstRejectedPhase: phase === "accepted" ? null : phase,
-      firstRejectedReason: reason?.reason ?? null,
+      firstRejectedReason:
+        phase === "accepted" ? null : structuredReason(phase, reason, ranks),
       ranks,
       states: {
         transition: transitionLaneSolverStats.statesVisited,
@@ -2814,8 +2873,7 @@ export function testOnlyDiagnoseLifecycleLayoutAttempt(
       ...options,
       testOnlyBaseNodeOrderByRank: orderByRank,
       testOnlyDiagnosticSink: (snapshot) => {
-        if (!snapshots.length || snapshot.phase === "accepted")
-          summarize(snapshot);
+        if (!snapshots.length) summarize(snapshot);
       },
     });
   } catch (error) {
@@ -2836,7 +2894,11 @@ export function testOnlyDiagnoseLifecycleLayoutAttempt(
       })();
       snapshots.push({
         firstRejectedPhase,
-        firstRejectedReason: cause?.reason ?? error.message,
+        firstRejectedReason: structuredReason(firstRejectedPhase, cause) ?? {
+          reason: error.message,
+          firstAffectedRank: null,
+          evidence: {},
+        },
         ranks: [],
         states: {
           transition: error.cause?.statesVisited ?? null,

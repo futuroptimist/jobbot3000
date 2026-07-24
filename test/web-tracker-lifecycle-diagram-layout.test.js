@@ -1337,7 +1337,11 @@ describe("test-only lifecycle layout diagnostics", () => {
       { baseNodeOrderByRank: reversedBaseOrderFrom(baseline) },
     );
     expect(reversed.firstRejectedPhase).toBe("handle");
-    expect(reversed.firstRejectedReason).toBe("no-candidates");
+    expect(reversed.firstRejectedReason).toMatchObject({
+      reason: "no-candidates",
+      firstAffectedRank: 0,
+      evidence: { branchDiagnosticCount: 3 },
+    });
     expect(reversed.ranks[0].centeredAssignmentFeasible).toBe(true);
     expect(
       reversed.ranks[0].domains.every((domain) => domain.domainSize > 0),
