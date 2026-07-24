@@ -1,6 +1,9 @@
 import { sankey } from "d3-sankey";
 import { LIFECYCLE_DIAGRAM_TAXONOMY } from "./lifecycleProjection.js";
 
+const isLifecycleLayoutTestEnvironment = () =>
+  process.env.NODE_ENV === "test" || process.env.VITEST === "true";
+
 export const SANKEY_NODE_WIDTH = 18;
 export const MINIMUM_SVG_HEIGHT = 360;
 export const LAYOUT_TOP_MARGIN = 64;
@@ -639,16 +642,22 @@ export function layoutLifecycleRoutingGraph(
     .nodeWidth(SANKEY_NODE_WIDTH)
     .nodePadding(ROUTED_NODE_PADDING)
     .nodeSort((left, right) => {
-      const order = options.testOnlyBaseNodeOrderByRank?.get?.(left.rank);
-      if (order) {
-        const leftIndex = order.get(left.id);
-        const rightIndex = order.get(right.id);
-        if (
-          Number.isInteger(leftIndex) &&
-          Number.isInteger(rightIndex) &&
-          leftIndex !== rightIndex
-        ) {
-          return leftIndex - rightIndex;
+      if (
+        isLifecycleLayoutTestEnvironment() &&
+        left.rank === right.rank &&
+        options.testOnlyBaseNodeOrderByRank
+      ) {
+        const order = options.testOnlyBaseNodeOrderByRank.get?.(left.rank);
+        if (order) {
+          const leftIndex = order.get(left.id);
+          const rightIndex = order.get(right.id);
+          if (
+            Number.isInteger(leftIndex) &&
+            Number.isInteger(rightIndex) &&
+            leftIndex !== rightIndex
+          ) {
+            return leftIndex - rightIndex;
+          }
         }
       }
       return nodeSort(left, right);
@@ -2563,10 +2572,7 @@ export function layoutLifecycleRoutingGraph(
     // Materialization succeeded: this candidate is no longer implicated by
     // an earlier routing-anchor failure.
     lastRoutingAnchorFailure = null;
-    if (
-      options.transitionLanePhaseOnly &&
-      (process.env.NODE_ENV === "test" || process.env.VITEST === "true")
-    ) {
+    if (options.transitionLanePhaseOnly && isLifecycleLayoutTestEnvironment()) {
       options.testOnlyDiagnosticSink?.({
         phase: "accepted",
         rankRefinementInfo,
@@ -2614,7 +2620,18 @@ export function layoutLifecycleRoutingGraph(
         dimensions,
         handles: handleCheck.handles,
       });
-      if (routeAudit.fatalFindings.length === 0) return true;
+      if (routeAudit.fatalFindings.length === 0) {
+        if (isLifecycleLayoutTestEnvironment()) {
+          options.testOnlyDiagnosticSink?.({
+            phase: "accepted",
+            rankRefinementInfo,
+            graph,
+            handleBudget,
+            transitionLaneSolverStats,
+          });
+        }
+        return true;
+      }
       const blockedBranchIds = [
         ...new Set(
           routeAudit.fatalFindings.flatMap(
@@ -2631,14 +2648,16 @@ export function layoutLifecycleRoutingGraph(
         routeFindings: routeAudit.fatalFindings,
       };
       lastHandleFailure = routeFailure;
-      options.testOnlyDiagnosticSink?.({
-        phase: "route-crossing",
-        reason: routeFailure,
-        rankRefinementInfo,
-        graph,
-        handleBudget,
-        transitionLaneSolverStats,
-      });
+      if (isLifecycleLayoutTestEnvironment()) {
+        options.testOnlyDiagnosticSink?.({
+          phase: "route-crossing",
+          reason: routeFailure,
+          rankRefinementInfo,
+          graph,
+          handleBudget,
+          transitionLaneSolverStats,
+        });
+      }
       geometryFailureCache.recordHandleFailure(geometrySignature, routeFailure);
       return false;
     }
@@ -2649,14 +2668,16 @@ export function layoutLifecycleRoutingGraph(
       throwHandleStateLimitExceeded();
     }
     lastHandleFailure = handleCheck;
-    options.testOnlyDiagnosticSink?.({
-      phase: "handle",
-      reason: handleCheck,
-      rankRefinementInfo,
-      graph,
-      handleBudget,
-      transitionLaneSolverStats,
-    });
+    if (isLifecycleLayoutTestEnvironment()) {
+      options.testOnlyDiagnosticSink?.({
+        phase: "handle",
+        reason: handleCheck,
+        rankRefinementInfo,
+        graph,
+        handleBudget,
+        transitionLaneSolverStats,
+      });
+    }
     geometryFailureCache.recordHandleFailure(geometrySignature, handleCheck);
     return false;
   };
@@ -2720,7 +2741,7 @@ export function testOnlyDiagnoseLifecycleLayoutAttempt(
   availableWidth,
   options = {},
 ) {
-  if (process.env.NODE_ENV !== "test" && process.env.VITEST !== "true") {
+  if (!isLifecycleLayoutTestEnvironment()) {
     throw new Error("Lifecycle layout diagnostics are available only in tests");
   }
   const snapshots = [];
@@ -2799,9 +2820,23 @@ export function testOnlyDiagnoseLifecycleLayoutAttempt(
     });
   } catch (error) {
     if (!snapshots.length) {
+      const cause = error.cause;
+      const firstRejectedPhase = (() => {
+        if (typeof cause?.phase === "string") return cause.phase;
+        if (cause?.type === "lifecycle-handle-placement") {
+          return cause.reason === "route-crossing"
+            ? "route-crossing"
+            : "handle";
+        }
+        if (cause?.type === "lifecycle-routing-anchor-allocation") {
+          return "routing-anchor";
+        }
+        if (cause?.reason === "state-limit") return "transition";
+        return "throw";
+      })();
       snapshots.push({
-        firstRejectedPhase: error.cause?.reason ?? "throw",
-        firstRejectedReason: error.cause ?? { message: error.message },
+        firstRejectedPhase,
+        firstRejectedReason: cause?.reason ?? error.message,
         ranks: [],
         states: {
           transition: error.cause?.statesVisited ?? null,

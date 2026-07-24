@@ -1237,6 +1237,66 @@ describe("test-only lifecycle layout diagnostics", () => {
       ]),
     );
 
+  it("ignores diagnostic hooks outside the test environment", () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalVitest = process.env.VITEST;
+    process.env.NODE_ENV = "production";
+    delete process.env.VITEST;
+    try {
+      expect(() =>
+        testOnlyDiagnoseLifecycleLayoutAttempt(
+          projectLifecycleAt(routingFixture),
+          1850,
+        ),
+      ).toThrow("Lifecycle layout diagnostics are available only in tests");
+
+      const baseline = layoutLifecycleRoutingGraph(
+        projectLifecycleAt(routingFixture),
+        1850,
+      ).graph;
+      const ignoredOrder = new Map(
+        [...new Set(baseline.nodes.map((node) => node.rank))].map((rank) => [
+          rank,
+          new Map(
+            baseline.nodes
+              .filter((node) => node.rank === rank)
+              .sort((left, right) => left.y0 - right.y0)
+              .map((node) => node.id)
+              .reverse()
+              .map((id, index) => [id, index]),
+          ),
+        ]),
+      );
+      const diagnosticCalls = [];
+      const diagnosticSink = (snapshot) => diagnosticCalls.push(snapshot);
+      const withIgnoredHooks = layoutLifecycleRoutingGraph(
+        projectLifecycleAt(routingFixture),
+        1850,
+        {
+          testOnlyBaseNodeOrderByRank: ignoredOrder,
+          testOnlyDiagnosticSink: diagnosticSink,
+        },
+      ).graph;
+
+      expect(diagnosticCalls).toEqual([]);
+      expect(
+        withIgnoredHooks.nodes.map((node) => [
+          node.id,
+          node.rank,
+          node.y0,
+          node.y1,
+        ]),
+      ).toEqual(
+        baseline.nodes.map((node) => [node.id, node.rank, node.y0, node.y1]),
+      );
+    } finally {
+      if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = originalNodeEnv;
+      if (originalVitest === undefined) delete process.env.VITEST;
+      else process.env.VITEST = originalVitest;
+    }
+  });
+
   it("keeps routing-v2 route auditing clean while exposing deterministic rank diagnostics", () => {
     const p = projection();
     const { graph, dimensions } = layoutLifecycleRoutingGraph(p, 1850);
