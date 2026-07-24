@@ -304,7 +304,7 @@ Responsive behavior remains horizontal-only inside the diagram scroller. P6-F2 d
 
 P6-F3 makes the render layer authoritative for diagram geometry while preserving the P4 lifecycle projection as the only semantic data source. Projection nodes, links, paths, warnings, historical snapshots, import/export payloads, and persistence remain unchanged; hidden routing nodes are constructed only in memory immediately before d3-sankey layout.
 
-For the deterministic lane/handle-placement solver's internals — including a known, documented gap where the routing regression fixture (referenced below) currently produces route crossings this contract forbids — see [lifecycle-diagram-layout-algorithm.md](./lifecycle-diagram-layout-algorithm.md).
+For the deterministic lane/handle-placement solver's internals, see [lifecycle-diagram-layout-algorithm.md](./lifecycle-diagram-layout-algorithm.md). Current route auditing rejects unsafe layouts, and the reference routing fixture is crossing-safe; the deferred limitation is making the D3-Sankey base layout `rankOrder`-aware for known-infeasible dense fixtures, which currently fail safely through the existing fallback.
 
 The renderer partitions each aggregate projection link into endpoint-conditioned display branches using the stable ID `branch:${semanticLinkId}:endpoint:${endpointId}`. A branch is colored by its terminal endpoint and carries the exact sorted application IDs for that endpoint-conditioned slice. The Flows table uses the same display-branch model as the SVG, so selecting a row selects the exact colored branch rather than the unsplit semantic parent link.
 
