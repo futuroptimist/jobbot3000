@@ -2041,6 +2041,32 @@ export function layoutLifecycleRoutingGraph(
           // otherwise distinguish, which is a documented source of route
           // crossings no amount of lane-Y tuning can fix — see
           // docs/design/lifecycle-diagram-layout-algorithm.md.
+          //
+          // One exception: nodeSort fixes real *origin* (rank 0) node
+          // positions by taxonomy order, not endpointIndex — unlike ranks
+          // 1-5, where nodeSort's own ordering (weightedEndpointMedian for
+          // real milestone nodes, endpointIndex directly for routing nodes)
+          // already roughly tracks compareBranches. So two branches that
+          // both depart directly from an origin must respect that fixed
+          // taxonomy order first; only branches sharing the very same
+          // source (where taxonomy order can't discriminate) fall through
+          // to compareBranches, which is what resolves sibling-branch
+          // crossings at a shared dock. Getting this backwards for the
+          // origin case reintroduces crossings between branches from
+          // different origins whenever taxonomy order and endpoint-index
+          // order disagree (confirmed directly, and confirmed that
+          // widening this exception to every rank — not just rank 0 —
+          // regresses everything else, since ranks 1-5 need
+          // compareBranches first).
+          const compareBranchesForGlobalOrder = (left, right) => {
+            if (!left || !right) return 0;
+            if (left.sourceRank === 0 && right.sourceRank === 0) {
+              const taxonomyDiff =
+                taxonomyOrder(left.source) - taxonomyOrder(right.source);
+              if (taxonomyDiff !== 0) return taxonomyDiff;
+            }
+            return compareBranches(left, right);
+          };
           const ready = componentBranchIds
             .filter(
               (id) => !globalOrderSet.has(id) && compIndegree.get(id) === 0,
@@ -2053,7 +2079,10 @@ export function layoutLifecycleRoutingGraph(
             .sort(
               (a, b) =>
                 (a.deadline ?? Infinity) - (b.deadline ?? Infinity) ||
-                compareBranches(branchById.get(a.id), branchById.get(b.id)) ||
+                compareBranchesForGlobalOrder(
+                  branchById.get(a.id),
+                  branchById.get(b.id),
+                ) ||
                 (a.span?.sourceDockY ?? 0) - (b.span?.sourceDockY ?? 0) ||
                 compareLifecycleIds(
                   a.span?.stableId ?? a.id,

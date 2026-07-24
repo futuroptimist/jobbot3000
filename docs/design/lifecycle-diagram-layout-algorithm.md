@@ -150,6 +150,38 @@ on that consistency more than on `globalOrder`'s feasibility ordering. Fixing `g
 first (item 1) was the missing piece; recorded here so this exact incremental step isn't retried in
 isolation and rediscovered as a regression.
 
+## A fourth ordering gap: origin nodes vs. endpoint-index order
+
+A follow-up investigation (using the real, much smaller `test/fixtures/tracker-lifecycle-diagram-v2.json`
+fixture — 21 nodes, 24 links, 16 applications) found a related but distinct gap: `nodeSort`'s rank-0
+special case fixes real **origin** node positions by pure taxonomy order (`taxonomyOrder(a.id)`), not
+`endpointIndex`. `globalOrder`'s tie-break (fix 1 above) prefers `compareBranches`, whose _primary_ key
+is `endpointIndex` — so whenever two branches from **different** origins need to be ordered, and
+taxonomy order and endpoint-index order disagree for those origins (an ordinary scenario with several
+origins fanning out to several different endpoints — not a narrow edge case), you get origin-level
+crossings fix 1 doesn't address, since it never touches origin-vs-origin ordering specifically.
+
+This was fixed narrowly: `compareBranchesForGlobalOrder` (in `solveFromComponent`'s ready-branch sort)
+now checks, only when **both** branches' `sourceRank === 0` (both depart directly from an origin),
+`taxonomyOrder(source)` first, before falling through to the unchanged `compareBranches`. This is
+scoped deliberately to rank 0: ranks 1-5's own `nodeSort` ordering (`weightedEndpointMedian` for real
+milestone nodes, `endpointIndex` directly for routing nodes) already roughly tracks `compareBranches`,
+so widening this exception to every rank — tried first, as the more "obvious" fix — regressed
+_everything_: it raised `tracker-lifecycle-diagram-v2.json`'s initial (centered) crossing count from
+37 to 113, and reintroduced crossings on the reference routing fixture that fix 1 alone had already
+resolved (back to a `state-limit` failure instead of 0 findings). The scoped, rank-0-only version does
+not regress anything (reference fixture stays at 0 findings; full suite: 146/146 files, 1189/1189
+non-skipped tests pass) and is a real, validated improvement — but **it alone is not sufficient** to
+make `tracker-lifecycle-diagram-v2.json` itself render: that fixture's initial crossing count only
+drops from 37 to comparable levels the origin-only fix can reach, while the search still exhausts the
+32768-state handle budget deterministically (confirmed: `statesVisited` in the low 32000s both before
+and after this fix). The remaining crossings are dominated by the [real-node-vs-routing-node
+gap](#remaining-gap-real-nodes-vs-routing-nodes-at-a-shared-rank) below (e.g. `recruiter_screen` is a
+convergence point for three different origins' branches, each continuing to different downstream
+milestones) — a separate contributor this fix doesn't touch. Fully rendering that fixture needs both
+this fix _and_ a resolution to the real-node-vs-routing-node gap, i.e. effectively all of
+[deferred Option 2](#deferred-making-the-base-d3-sankey-layout-rankorder-aware), not a scoped patch.
+
 ## Remaining gap: real nodes vs. routing nodes at a shared rank
 
 After the fix above, the reference fixture still had 2 residual crossings (down from 5) before fix 3
