@@ -2265,5 +2265,79 @@ describe("lifecycle diagram render-only routing layout", () => {
       layoutLifecycleRoutingGraph(denseBranchProjection(), 1850),
     ).toThrow(deterministicFailure);
     expect(Date.now() - start).toBeLessThan(90000);
+  }, 90000);
+});
+
+describe("rank-order layout coupling diagnostics", () => {
+  const rankDiagnosticSignature = (value) =>
+    value.map((rank) => ({
+      rank: rank.rank,
+      branchOrder: rank.branchOrder,
+      realNodePositions: rank.realNodePositions.map((node) => [
+        node.id,
+        Number(node.centerY.toFixed(3)),
+      ]),
+      routingNodePositions: rank.routingNodePositions.map((node) => [
+        node.id,
+        node.y === null ? null : Number(node.y.toFixed(3)),
+      ]),
+      domainSizes: rank.domainSizes.map((domain) => [
+        domain.linkId,
+        domain.intervals,
+        domain.legalValues,
+      ]),
+      centeredAssignmentFeasible: rank.centeredAssignmentFeasible,
+      firstRejected: rank.firstRejected,
+      statesVisited: rank.statesVisited,
+      handleStatesVisited: rank.handleStatesVisited,
+    }));
+
+  it("records deterministic per-rank coupling diagnostics for the routing fixture", () => {
+    const { graph, dimensions } = layoutLifecycleRoutingGraph(
+      projection(),
+      1850,
+      {
+        __collectRankDiagnostics: true,
+      },
+    );
+    const baseProjection = projection();
+    const shuffledProjection = {
+      ...baseProjection,
+      nodes: [...baseProjection.nodes].reverse(),
+      links: [...baseProjection.links].reverse(),
+      paths: [...baseProjection.paths].reverse(),
+    };
+    const { graph: shuffledGraph } = layoutLifecycleRoutingGraph(
+      shuffledProjection,
+      1850,
+      { __collectRankDiagnostics: true },
+    );
+
+    expect(graph.__rankDiagnostics.length).toBeGreaterThan(0);
+    expect(rankDiagnosticSignature(graph.__rankDiagnostics)).toEqual(
+      rankDiagnosticSignature(shuffledGraph.__rankDiagnostics),
+    );
+    expect(
+      graph.__rankDiagnostics.every((rank) =>
+        rank.positions.every(
+          (position) =>
+            Number.isFinite(position.sourceY) &&
+            Number.isFinite(position.targetY) &&
+            Number.isFinite(position.laneY),
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      auditLifecycleRouteGeometry({ graph, dimensions, handles: [] })
+        .fatalFindings,
+    ).toEqual([]);
   });
+
+  it("identifies the dense fixture's first invariant as handle state exhaustion", () => {
+    expect(() =>
+      layoutLifecycleRoutingGraph(projectLifecycleAt(denseFixture), 1850, {
+        __collectRankDiagnostics: true,
+      }),
+    ).toThrow(/Lifecycle handle search exceeded 32768 states/u);
+  }, 90000);
 });
