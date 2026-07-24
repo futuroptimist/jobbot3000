@@ -614,6 +614,19 @@ export function layoutLifecycleRoutingGraph(
   options = {},
 ) {
   const graph = options.routingGraph ?? buildLifecycleRoutingGraph(projection);
+  const testDiagnosticsEnabled =
+    options.collectRankOrderDiagnostics === true &&
+    (process.env.NODE_ENV === "test" || process.env.VITEST === "true");
+  const rankOrderDiagnostics = [];
+  const rankOrderDiagnosticKeys = new Set();
+  const recordRankOrderDiagnostic = (entry) => {
+    if (!testDiagnosticsEnabled) return;
+    const phase = entry.firstRejectedPhase ?? "accepted";
+    const key = `${entry.rank}:${entry.linkOrder?.join("|") ?? ""}:${phase}`;
+    if (rankOrderDiagnosticKeys.has(key)) return;
+    rankOrderDiagnosticKeys.add(key);
+    rankOrderDiagnostics.push(entry);
+  };
   const baselineLinks = new Map(
     graph.links.map((link) => [
       link.id,
@@ -1098,6 +1111,7 @@ export function layoutLifecycleRoutingGraph(
           compareLifecycleIds(a.id, b.id),
       );
     const variablesByRank = new Map();
+    const rankDiagnosticBase = new Map();
     const ranks = new Set();
     for (const variable of variables) {
       if (!variablesByRank.has(variable.rank))
@@ -1106,6 +1120,35 @@ export function layoutLifecycleRoutingGraph(
       ranks.add(variable.rank);
     }
     const sortedRanks = [...ranks].sort((a, b) => a - b);
+    if (testDiagnosticsEnabled) {
+      for (const rank of sortedRanks) {
+        const rankVars = (variablesByRank.get(rank) ?? []).sort(
+          (a, b) =>
+            compareLifecycleIds(a.branchId, b.branchId) ||
+            compareLifecycleIds(a.id, b.id),
+        );
+        rankDiagnosticBase.set(rank, {
+          rank,
+          intervalCountsByLink: Object.fromEntries(
+            rankVars.map((variable) => [
+              variable.id,
+              variable.intervals.length,
+            ]),
+          ),
+          domainSizesByLink: Object.fromEntries(
+            rankVars.map((variable) => [
+              variable.id,
+              laneCandidatesForSpan({
+                minX: variable.minX,
+                maxX: variable.maxX,
+                incidentIds: variable.incidentIds,
+                idealY: variable.idealY,
+              }).length,
+            ]),
+          ),
+        });
+      }
+    }
     for (const variable of variables) {
       variable.isEnding = !variables.some(
         (candidate) =>
@@ -1998,6 +2041,27 @@ export function layoutLifecycleRoutingGraph(
                 recordSolverState,
                 "centered",
               );
+              if (testDiagnosticsEnabled && !cen) {
+                const base = rankDiagnosticBase.get(rank) ?? { rank };
+                recordRankOrderDiagnostic({
+                  ...base,
+                  branchOrder: rankOrder.map((variable) => variable.branchId),
+                  linkOrder: rankOrder.map((variable) => variable.id),
+                  realNodePositions: graph.nodes
+                    .filter((node) => !node.routing && node.rank === rank)
+                    .sort((a, b) => compareLifecycleIds(a.id, b.id))
+                    .map((node) => ({ id: node.id, y0: node.y0, y1: node.y1 })),
+                  routingNodePositions: graph.nodes
+                    .filter((node) => node.routing && node.rank === rank)
+                    .sort((a, b) => compareLifecycleIds(a.id, b.id))
+                    .map((node) => ({ id: node.id, y0: node.y0, y1: node.y1 })),
+                  centeredAssignmentFeasible: false,
+                  firstRejectedPhase: "centered-assignment",
+                  firstRejectedReason: { reason: "no-centered-assignment" },
+                  statesVisited: transitionLaneSolverStats.statesVisited,
+                  handleStatesVisited: 0,
+                });
+              }
               if (!cen) {
                 failedCompleteOrderings.add(orderingKey);
                 return false;
@@ -2010,6 +2074,33 @@ export function layoutLifecycleRoutingGraph(
               for (let i = 0; i < rankOrder.length; i += 1)
                 va.set(rankOrder[i].id, cen[i]);
               rankRefinementInfo.set(rank, { rankOrder, cen });
+              if (testDiagnosticsEnabled) {
+                const base = rankDiagnosticBase.get(rank) ?? { rank };
+                recordRankOrderDiagnostic({
+                  ...base,
+                  branchOrder: rankOrder.map((variable) => variable.branchId),
+                  linkOrder: rankOrder.map((variable) => variable.id),
+                  realNodePositions: graph.nodes
+                    .filter((node) => !node.routing && node.rank === rank)
+                    .sort((a, b) => compareLifecycleIds(a.id, b.id))
+                    .map((node) => ({ id: node.id, y0: node.y0, y1: node.y1 })),
+                  routingNodePositions: graph.nodes
+                    .filter((node) => node.routing && node.rank === rank)
+                    .sort((a, b) => compareLifecycleIds(a.id, b.id))
+                    .map((node) => ({ id: node.id, y0: node.y0, y1: node.y1 })),
+                  centeredAssignmentFeasible: true,
+                  centeredAssignments: Object.fromEntries(
+                    rankOrder.map((variable, index) => [
+                      variable.id,
+                      cen[index],
+                    ]),
+                  ),
+                  firstRejectedPhase: null,
+                  firstRejectedReason: null,
+                  statesVisited: transitionLaneSolverStats.statesVisited,
+                  handleStatesVisited: handleBudget.statesVisited,
+                });
+              }
             }
 
             for (const [id, value] of va) globalAssignments.set(id, value);
@@ -2675,6 +2766,20 @@ export function layoutLifecycleRoutingGraph(
   graph.transitionLaneSolverStats = Object.freeze({
     ...transitionLaneSolverStats,
   });
+  if (testDiagnosticsEnabled) {
+    graph.rankOrderDiagnostics = Object.freeze(
+      rankOrderDiagnostics
+        .map((entry) => Object.freeze(entry))
+        .sort(
+          (a, b) =>
+            a.rank - b.rank ||
+            compareLifecycleIds(
+              a.linkOrder?.join("|") ?? "",
+              b.linkOrder?.join("|") ?? "",
+            ),
+        ),
+    );
+  }
   return { graph, dimensions };
 }
 

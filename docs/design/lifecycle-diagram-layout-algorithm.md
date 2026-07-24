@@ -267,6 +267,21 @@ destabilizes the DFS — e.g. by diffing `assignMonotoneIntervals`'s per-rank do
 where availability collapses — rather than iterating on the ordering logic itself again, which is
 what this and prior sessions already tried repeatedly without success.
 
+### Verified root cause for safe re-attempt groundwork
+
+The current groundwork deliberately does **not** ship a rankOrder-aware base `nodeSort`/`linkSort` second pass. The confirmed coupling is that a base D3 pass fixes real-node boxes before `solveTransitionLanes` builds its geometry-dependent domains. When a proposed second pass changes real-node order, it also changes real-node `y0`/`y1`, label boxes, hit boxes, blocked intervals, legal interval counts, lane candidate domains, routing-anchor singleton constraints for same-rank real nodes, and the route-audit/handle-placement search space. Treating the second pass as a pure topological reorder while reusing any closure or cache from the first pass is therefore unsound: the solver may keep reasoning against the old obstacle/domain geometry while materialization and auditing see the new node positions, which presents as deterministic exhaustion of the shared handle-state budget near 32,768 states rather than as a local sort comparator failure.
+
+The regression seam added for this investigation is intentionally test-only (`collectRankOrderDiagnostics` is only honored under Vitest/test env). It records deterministic per-rank order, real/routing node positions, interval/domain sizes, centered-assignment feasibility, first rejected phase/reason, and state counts. Running that seam against both `tracker-lifecycle-diagram-routing-v2.json` and `tracker-lifecycle-diagram-v2.json` under reversed node/link/path input verifies the diagnostic data is stable and that the relevant invariant to preserve is geometry freshness, not just branch-order stability.
+
+A safe future second base-layout pass must preserve these invariants exactly:
+
+1. Re-run D3 from a clean graph/base-layout state; do not reuse mutated link coordinates from the prior attempt.
+2. Rebuild baseline link coordinates after the D3 pass that owns the attempt.
+3. Rebuild visible-node boxes, label boxes, renderer hit boxes, and lane obstacles from that same attempt's node coordinates.
+4. Rebuild legal intervals, lane domains, lane-domain caches, handle candidate sets, geometry-failure caches, shared budgets, and diagnostics from that same attempt's geometry.
+5. Preserve the existing `materializeLaneAssignments` real-node coordination: same-rank real nodes remain fixed singleton-domain entries in routing-anchor assignment unless a later patch proves and replaces that invariant.
+6. Reject or report the first infeasible rank/phase from the attempt that produced it; never replay a rejection reason captured under another D3 pass.
+
 ## Separately: the deterministic-budget fix
 
 Unrelated to the ordering-systems problem above (shipped first, in an earlier commit on this same
