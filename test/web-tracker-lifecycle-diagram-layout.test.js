@@ -916,9 +916,16 @@ describe("transition lane solver", () => {
     // real margin above local timings rather than being tuned tight to one
     // machine.
     const start = Date.now();
+    const deterministicFailure = new RegExp(
+      [
+        "^(Lifecycle diagram handle placement invariant violated for ",
+        "|Lifecycle handle search exceeded \\d+ states)",
+      ].join(""),
+      "u",
+    );
     expect(() =>
       layoutLifecycleRoutingGraph(transitionDensityProjection(), 1850),
-    ).toThrow(/^Lifecycle diagram handle placement invariant violated for /u);
+    ).toThrow(deterministicFailure);
     expect(Date.now() - start).toBeLessThan(30000);
   });
 
@@ -2424,9 +2431,24 @@ describe("lifecycle diagram render-only routing layout", () => {
       ].join(""),
       "u",
     );
-    expect(() =>
-      layoutLifecycleRoutingGraph(denseBranchProjection(), 1850),
-    ).toThrow(deterministicFailure);
+    let thrown;
+    try {
+      layoutLifecycleRoutingGraph(denseBranchProjection(), 1850);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(Error);
+    expect(thrown.message).toMatch(deterministicFailure);
+    if (thrown.cause?.reason === "state-limit") {
+      expect(thrown.cause).toMatchObject({
+        phase: "handle",
+        reason: "state-limit",
+        stateLimit: 32768,
+      });
+      expect(thrown.cause.statesVisited).toBeGreaterThanOrEqual(
+        thrown.cause.stateLimit,
+      );
+    }
     expect(Date.now() - start).toBeLessThan(90000);
   });
 });

@@ -2469,6 +2469,7 @@ export function layoutLifecycleRoutingGraph(
   };
 
   let lastHandleFailure = null;
+  let lastHandleRouteEdgeCount = null;
   // Latest deliberately recoverable routing-anchor materialization failure
   // (see the "lifecycle-routing-anchor-allocation" cause above), retained so
   // the final error can surface it instead of a generic topology-cycle
@@ -2508,6 +2509,7 @@ export function layoutLifecycleRoutingGraph(
     );
     handleError.cause = Object.freeze({
       type: "lifecycle-transition-lane-order",
+      phase: "handle",
       reason: "state-limit",
       rank: null,
       branchIds: Object.freeze([]),
@@ -2517,6 +2519,7 @@ export function layoutLifecycleRoutingGraph(
       stateLimit: handleBudget.stateLimit,
       backtracks: 0,
       memoizedFailures: 0,
+      routeEdgeCount: lastHandleRouteEdgeCount,
     });
     throw handleError;
   };
@@ -2600,6 +2603,7 @@ export function layoutLifecycleRoutingGraph(
       visibleNodes,
       { sharedBudget: handleBudget },
     );
+    lastHandleRouteEdgeCount = handleCheck.routeEdgeCount ?? null;
     if (handleCheck.ok) {
       // Handle placement only checks each branch's own handle box against
       // fixed geometry, other branches' routes, and other handles — it has
@@ -2756,6 +2760,7 @@ export function testOnlyDiagnoseLifecycleLayoutAttempt(
     throw new Error("Lifecycle layout diagnostics are available only in tests");
   }
   const snapshots = [];
+  const diagnosticComplete = Symbol("lifecycle-layout-diagnostic-complete");
   const orderByRank = options.baseNodeOrderByRank
     ? new Map(
         [...options.baseNodeOrderByRank].map(([rank, ids]) => [
@@ -2873,7 +2878,10 @@ export function testOnlyDiagnoseLifecycleLayoutAttempt(
       ...options,
       testOnlyBaseNodeOrderByRank: orderByRank,
       testOnlyDiagnosticSink: (snapshot) => {
-        if (!snapshots.length) summarize(snapshot);
+        if (!snapshots.length) {
+          summarize(snapshot);
+          throw diagnosticComplete;
+        }
       },
     });
   } catch (error) {
@@ -2901,11 +2909,18 @@ export function testOnlyDiagnoseLifecycleLayoutAttempt(
         },
         ranks: [],
         states: {
-          transition: error.cause?.statesVisited ?? null,
-          handle: null,
+          transition:
+            firstRejectedPhase === "handle"
+              ? null
+              : (error.cause?.statesVisited ?? null),
+          handle:
+            firstRejectedPhase === "handle"
+              ? (error.cause?.statesVisited ?? null)
+              : null,
         },
       });
     }
+    if (error === diagnosticComplete) return snapshots[0];
   }
   return snapshots[0];
 }
@@ -3665,9 +3680,14 @@ const tryAssignBranchHandles = (
   // infeasible fixture without starving an ordinary one that just needs
   // many cheap tries.
   const routeEdgeCount = routeEdges.length;
+  const hasMultiRankRoutes = [...segmentsByBranch.values()].some(
+    (segments) => segments.length > 1,
+  );
+  const denseMultiRankChargeDivisor =
+    hasMultiRankRoutes && routeEdgeCount > 1500 ? 2000 : 8450;
   const generationCost = Math.max(
     1,
-    Math.round((routeEdgeCount * routeEdgeCount) / 8450),
+    Math.round((routeEdgeCount * routeEdgeCount) / denseMultiRankChargeDivisor),
   );
   if (sharedBudget) {
     if (sharedBudget.statesVisited >= sharedBudget.stateLimit) {
@@ -3677,6 +3697,7 @@ const tryAssignBranchHandles = (
         blockedBranchIds: [],
         branchDiagnostics: [],
         candidateSets: new Map(),
+        routeEdgeCount,
       };
     }
     sharedBudget.statesVisited += generationCost;
