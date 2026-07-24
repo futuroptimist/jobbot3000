@@ -267,6 +267,39 @@ destabilizes the DFS — e.g. by diffing `assignMonotoneIntervals`'s per-rank do
 where availability collapses — rather than iterating on the ordering logic itself again, which is
 what this and prior sessions already tried repeatedly without success.
 
+## Verified root cause of the reverted second-pass ordering attempt
+
+The follow-up diagnosis isolated the coupling to a concrete invariant rather than to barycenter
+ordering itself: a second D3-Sankey pass that changes real-node geometry also changes every
+geometry-derived input to the lane/handle lifecycle. Those inputs include baseline link docks,
+visible node/label/hit boxes, lane obstacles, legal intervals, centered assignments, routing-anchor
+domains, handle candidate sets, budgets, and rejection diagnostics. The focused fresh-attempt tests
+added in this step do **not** demonstrate a stale-closure or reused-state defect; each diagnostic
+attempt rebuilds the projection and layout state from scratch. What they verify is the first-rank
+invariant for changed base geometry: the rank orders can remain topologically valid, with non-empty
+0.001-quantized interval domains and centered assignments that satisfy the minimum lane-spacing
+contract, while the first full-layout rejection still moves downstream to structured handle
+placement evidence for rank 0 (`reason: "no-candidates"`).
+
+The important finding is therefore **not** "barycenter order is impossible" or "stale state was
+proven here"; it is that base-layout order and lane/handle state are coupled through real-node
+coordinates. A safe rankOrder-aware second pass must treat the second D3 call as a completely fresh
+layout attempt and continue to reject at the first structured invariant violation:
+
+- rebuild or restore baseline link coordinates before materializing any candidate;
+- recompute visible nodes plus label and renderer hit boxes from the current D3 geometry;
+- rebuild lane obstacles, legal intervals, centered assignments, routing-anchor domains, handle
+  candidate sets, shared budgets, failure caches, and diagnostics from that same geometry;
+- keep real nodes in the routing-anchor monotone assignment as fixed singleton-domain entries, so
+  routing nodes cannot move to the wrong side of fixed real-node boxes at the same rank;
+- reject the attempt at the first structured invariant violation instead of reusing stale rejection
+  evidence from a prior base pass.
+
+The test-only diagnostic seam added for this diagnosis records, per rank, the branch order,
+real/routing-node positions, interval/domain sizes, centered-assignment feasibility, first rejected
+phase/reason, and deterministic state counts. It is intentionally not a production debugging API and
+does not log to the console.
+
 ## Separately: the deterministic-budget fix
 
 Unrelated to the ordering-systems problem above (shipped first, in an earlier commit on this same
