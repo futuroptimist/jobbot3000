@@ -614,7 +614,7 @@ export function layoutLifecycleRoutingGraph(
   options = {},
 ) {
   const graph = options.routingGraph ?? buildLifecycleRoutingGraph(projection);
-  const baselineLinks = new Map(
+  const preLayoutBaselineLinks = new Map(
     graph.links.map((link) => [
       link.id,
       {
@@ -623,6 +623,12 @@ export function layoutLifecycleRoutingGraph(
         transitionLaneY: link.transitionLaneY,
       },
     ]),
+  );
+  const hasReusableLinkBaseline = [...preLayoutBaselineLinks.values()].every(
+    (link) =>
+      Number.isFinite(link.y0) &&
+      Number.isFinite(link.y1) &&
+      Number.isFinite(link.transitionLaneY),
   );
   const dimensions = calculateLifecycleDiagramLayout(
     projection,
@@ -657,6 +663,20 @@ export function layoutLifecycleRoutingGraph(
     }
   }
   layout.update(graph);
+
+  const sankeyBaselineLinks = new Map(
+    graph.links.map((link) => [
+      link.id,
+      {
+        y0: link.y0,
+        y1: link.y1,
+        transitionLaneY: link.transitionLaneY,
+      },
+    ]),
+  );
+  const baselineLinks = hasReusableLinkBaseline
+    ? preLayoutBaselineLinks
+    : sankeyBaselineLinks;
 
   const orderedBranches = [...graph.branches].sort(compareBranches);
   const branchById = new Map(
@@ -2467,6 +2487,86 @@ export function layoutLifecycleRoutingGraph(
   // passes — independent of machine speed — instead of retrying expensive
   // work indefinitely.
   const handleBudget = { statesVisited: 0, stateLimit: 32768 };
+  const rankDiagnostics = [];
+  const snapshotRankDiagnostics = (
+    rankRefinementInfo,
+    firstRejected = null,
+  ) => {
+    if (!options.__collectRankDiagnostics) return;
+    const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+    const linkById = new Map(graph.links.map((link) => [link.id, link]));
+    rankDiagnostics.length = 0;
+    for (const [rank, info] of [...rankRefinementInfo.entries()].sort(
+      ([left], [right]) => left - right,
+    )) {
+      const branchOrder = info.rankOrder.map((item) => item.branchId);
+      const routingNodeIds = graph.nodes
+        .filter((node) => node.routing && node.rank === rank)
+        .sort((left, right) => compareLifecycleIds(left.id, right.id))
+        .map((node) => node.id);
+      rankDiagnostics.push(
+        Object.freeze({
+          rank,
+          branchOrder: Object.freeze(branchOrder),
+          positions: Object.freeze(
+            [...info.rankOrder].map((item, index) => {
+              const link = linkById.get(item.id);
+              return Object.freeze({
+                branchId: item.branchId,
+                linkId: item.id,
+                laneY: info.cen[index] ?? null,
+                sourceY: link?.y0 ?? null,
+                targetY: link?.y1 ?? null,
+              });
+            }),
+          ),
+          realNodePositions: Object.freeze(
+            graph.nodes
+              .filter((node) => !node.routing && node.rank === rank)
+              .sort((left, right) => nodeSort(left, right))
+              .map((node) =>
+                Object.freeze({
+                  id: node.id,
+                  y0: node.y0,
+                  y1: node.y1,
+                  centerY: (node.y0 + node.y1) / 2,
+                }),
+              ),
+          ),
+          routingNodePositions: Object.freeze(
+            routingNodeIds.map((id) => {
+              const node = nodeById.get(id);
+              const incoming = incomingByNode.get(node)?.[0];
+              const outgoing = outgoingByNode.get(node)?.[0];
+              return Object.freeze({
+                id,
+                branchId: node.branchId,
+                y: incoming?.y1 ?? outgoing?.y0 ?? null,
+              });
+            }),
+          ),
+          domainSizes: Object.freeze(
+            info.rankOrder.map((item) =>
+              Object.freeze({
+                linkId: item.id,
+                branchId: item.branchId,
+                intervals: item.intervals.length,
+                legalValues: item.intervals.reduce(
+                  (sum, [start, end]) =>
+                    sum + Math.max(0, Math.floor((end - start) * 1000) + 1),
+                  0,
+                ),
+              }),
+            ),
+          ),
+          centeredAssignmentFeasible: info.cen.length === info.rankOrder.length,
+          firstRejected,
+          statesVisited: transitionLaneSolverStats.statesVisited,
+          handleStatesVisited: handleBudget.statesVisited,
+        }),
+      );
+    }
+  };
   // See createLaneGeometryFailureCache() above for why a typed cache (rather
   // than a plain membership Set) is required: on a cache hit the callback
   // must still restore lastRoutingAnchorFailure/lastHandleFailure to
@@ -2522,7 +2622,9 @@ export function layoutLifecycleRoutingGraph(
       return false;
     }
     try {
+      snapshotRankDiagnostics(rankRefinementInfo);
       materializeLaneAssignments(globalAssignments, rankRefinementInfo);
+      snapshotRankDiagnostics(rankRefinementInfo);
     } catch (error) {
       if (error.cause?.type === "lifecycle-routing-anchor-allocation") {
         // Recoverable, candidate-specific failure: retain the evidence for
@@ -2532,6 +2634,11 @@ export function layoutLifecycleRoutingGraph(
         // let the search continue with another candidate.
         lastRoutingAnchorFailure = error;
         lastHandleFailure = null;
+        snapshotRankDiagnostics(rankRefinementInfo, {
+          phase: "routing-anchor",
+          reason: error.cause?.reason ?? "unknown",
+          rank: error.cause?.rank ?? null,
+        });
         geometryFailureCache.recordRoutingAnchorFailure(
           geometrySignature,
           error,
@@ -2610,6 +2717,11 @@ export function layoutLifecycleRoutingGraph(
         routeFindings: routeAudit.fatalFindings,
       };
       lastHandleFailure = routeFailure;
+      snapshotRankDiagnostics(rankRefinementInfo, {
+        phase: "route-audit",
+        reason: routeFailure.reason,
+        branchIds: blockedBranchIds,
+      });
       geometryFailureCache.recordHandleFailure(geometrySignature, routeFailure);
       return false;
     }
@@ -2620,6 +2732,10 @@ export function layoutLifecycleRoutingGraph(
       throwHandleStateLimitExceeded();
     }
     lastHandleFailure = handleCheck;
+    snapshotRankDiagnostics(rankRefinementInfo, {
+      phase: "handle",
+      reason: handleCheck.reason ?? "unknown",
+    });
     geometryFailureCache.recordHandleFailure(geometrySignature, handleCheck);
     return false;
   };
@@ -2675,6 +2791,9 @@ export function layoutLifecycleRoutingGraph(
   graph.transitionLaneSolverStats = Object.freeze({
     ...transitionLaneSolverStats,
   });
+  if (options.__collectRankDiagnostics) {
+    graph.__rankDiagnostics = Object.freeze([...rankDiagnostics]);
+  }
   return { graph, dimensions };
 }
 

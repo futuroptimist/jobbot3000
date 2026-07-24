@@ -267,6 +267,43 @@ destabilizes the DFS — e.g. by diffing `assignMonotoneIntervals`'s per-rank do
 where availability collapses — rather than iterating on the ordering logic itself again, which is
 what this and prior sessions already tried repeatedly without success.
 
+## Verified base-layout/solver coupling root cause (2026-07-24)
+
+The safe foundation for the deferred rankOrder-aware base-layout work is to treat a base D3-Sankey
+pass and every transition-lane attempt as geometry-isolated phases. The latest investigation found a
+concrete stale-state defect in that boundary: `layoutLifecycleRoutingGraph` captured its link
+baseline before the D3-Sankey pass, so a clean candidate retry could restore `link.y0`/`link.y1` to
+pre-layout values instead of the base-layout coordinates that the lane solver's domains were derived
+from. A previously materialized graph passed back through `options.routingGraph` masked this by
+already having finite coordinates, while a fresh graph could make candidate attempts depend on
+closures and geometry from the wrong phase. The fix is intentionally narrow: keep the user-visible
+layout behavior unchanged, but capture the reusable baseline from an already-materialized graph when
+one is supplied and otherwise capture it immediately after the base Sankey layout/update pass.
+
+A rankOrder-directed second base-layout pass must preserve these invariants before it is safe to ship:
+
+- Re-run D3-Sankey from a clean graph state; do not reuse link coordinates, visible-node lists, label
+  boxes, hit boxes, lane obstacles, legal interval closures, domain caches, candidate caches, handle
+  budgets, or diagnostics from the prior pass.
+- Capture baseline link coordinates only after the base pass whose node positions define the domains
+  for the following lane attempt, unless the caller deliberately supplies an already-materialized
+  routing graph whose finite link coordinates are the baseline being protected.
+- Rebuild `rankRefinementInfo` per attempt; it is not a stable input to D3 until a lane attempt has
+  produced it, and any second pass that consumes it must re-solve lanes against the new real-node
+  geometry.
+- Keep real nodes in the routing-anchor monotone assignment as fixed singleton-domain entries. This
+  existing coordination is part of the current correctness envelope; removing or duplicating it would
+  change the real-node/routing-node invariant rather than isolating the base-layout coupling.
+- Preserve deterministic diagnostics for every rejected attempt: the first rejected phase and reason,
+  per-rank branch order, real/routing-node positions, legal interval/domain sizes, centered-assignment
+  feasibility, and deterministic state counts must all be derived from the same geometry snapshot.
+
+With those invariants, the known `tracker-lifecycle-diagram-routing-v2.json` fixture remains a
+zero-fatal-finding route-audit case, while `tracker-lifecycle-diagram-v2.json` still identifies the
+first failing invariant as deterministic handle-state exhaustion rather than a route-audit success or
+an unbounded search. That distinction is important: this step does not ship barycenter ordering or a
+rankOrder-driven heuristic; it only makes the phase boundary safe enough to investigate one later.
+
 ## Separately: the deterministic-budget fix
 
 Unrelated to the ordering-systems problem above (shipped first, in an earlier commit on this same
