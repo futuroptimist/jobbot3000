@@ -612,7 +612,7 @@ export function createLaneGeometryFailureCache() {
   };
 }
 
-export function layoutLifecycleRoutingGraph(
+function layoutLifecycleRoutingGraphAttempt(
   projection,
   availableWidth,
   options = {},
@@ -624,6 +624,7 @@ export function layoutLifecycleRoutingGraph(
   const testOnlyDiagnosticSink = enableTestDiagnostics
     ? options.testOnlyDiagnosticSink
     : null;
+  const authoritativeRankOrder = options.authoritativeRankOrder ?? null;
   const graph = options.routingGraph ?? buildLifecycleRoutingGraph(projection);
   const baselineLinks = new Map(
     graph.links.map((link) => [
@@ -650,6 +651,17 @@ export function layoutLifecycleRoutingGraph(
     .nodeWidth(SANKEY_NODE_WIDTH)
     .nodePadding(ROUTED_NODE_PADDING)
     .nodeSort((left, right) => {
+      if (authoritativeRankOrder && left.rank === right.rank) {
+        const order = authoritativeRankOrder.nodeOrderByRank.get(left.rank);
+        const leftIndex = order?.get(left.id);
+        const rightIndex = order?.get(right.id);
+        if (
+          Number.isInteger(leftIndex) &&
+          Number.isInteger(rightIndex) &&
+          leftIndex !== rightIndex
+        )
+          return leftIndex - rightIndex;
+      }
       if (testOnlyBaseNodeOrderByRank && left.rank === right.rank) {
         const order = testOnlyBaseNodeOrderByRank.get?.(left.rank);
         if (order) {
@@ -666,7 +678,20 @@ export function layoutLifecycleRoutingGraph(
       }
       return nodeSort(left, right);
     })
-    .linkSort(linkSort)
+    .linkSort((left, right) => {
+      if (authoritativeRankOrder) {
+        const order = authoritativeRankOrder.globalBranchOrder;
+        const leftIndex = order?.get(left.branchId);
+        const rightIndex = order?.get(right.branchId);
+        if (
+          Number.isInteger(leftIndex) &&
+          Number.isInteger(rightIndex) &&
+          leftIndex !== rightIndex
+        )
+          return leftIndex - rightIndex;
+      }
+      return linkSort(left, right);
+    })
     .extent([
       [LAYOUT_LEFT_MARGIN, LAYOUT_TOP_MARGIN],
       [
@@ -2097,6 +2122,16 @@ export function layoutLifecycleRoutingGraph(
             }
             return compareBranches(left, right);
           };
+          const authoritativeBranchPosition = (branchId) => {
+            if (!authoritativeRankOrder) return Infinity;
+            let position = Infinity;
+            for (const order of authoritativeRankOrder.branchOrderByRank.values()) {
+              const candidate = order.get(branchId);
+              if (Number.isInteger(candidate))
+                position = Math.min(position, candidate);
+            }
+            return position;
+          };
           const ready = componentBranchIds
             .filter(
               (id) => !globalOrderSet.has(id) && compIndegree.get(id) === 0,
@@ -2108,7 +2143,10 @@ export function layoutLifecycleRoutingGraph(
             .filter(({ deadline }) => deadline !== null)
             .sort(
               (a, b) =>
-                (a.deadline ?? Infinity) - (b.deadline ?? Infinity) ||
+                (authoritativeRankOrder
+                  ? authoritativeBranchPosition(a.id) -
+                    authoritativeBranchPosition(b.id)
+                  : (a.deadline ?? Infinity) - (b.deadline ?? Infinity)) ||
                 compareBranchesForGlobalOrder(
                   branchById.get(a.id),
                   branchById.get(b.id),
@@ -2403,14 +2441,66 @@ export function layoutLifecycleRoutingGraph(
       const realNodeY = new Map(
         realNodesAtRank.map((node) => [node, (node.y0 + node.y1) / 2]),
       );
+      const info = rankRefinementInfo?.get(rank);
+      const branchPosition = new Map(
+        (info?.rankOrder ?? []).map((entry, index) => [entry.branchId, index]),
+      );
+      const orderedIncidentPositions = (node) =>
+        [
+          ...(incomingByNode.get(node) ?? []),
+          ...(outgoingByNode.get(node) ?? []),
+        ]
+          .map((link) => {
+            const relevantInfo = rankRefinementInfo?.get(link.source.rank);
+            return relevantInfo?.rankOrder.findIndex(
+              (entry) => entry.branchId === link.branchId,
+            );
+          })
+          .map((position) => (position === -1 ? null : position))
+          .filter(Number.isInteger)
+          .sort((a, b) => a - b);
+      const comparePositionLists = (left, right) => {
+        const length = Math.min(left.length, right.length);
+        for (let index = 0; index < length; index += 1) {
+          if (left[index] !== right[index]) return left[index] - right[index];
+        }
+        return left.length - right.length;
+      };
+      const positionsByNode = new Map(
+        [...rankNodes, ...realNodesAtRank].map((node) => [
+          node,
+          node.routing
+            ? [branchPosition.get(node.branchId)].filter(Number.isInteger)
+            : orderedIncidentPositions(node),
+        ]),
+      );
       const entries = [
         ...routingNodes.map((node) => ({ node, fixed: false })),
         ...realNodesAtRank.map((node) => ({ node, fixed: true })),
-      ].sort(
-        (a, b) =>
-          (a.fixed ? realNodeY.get(a.node) : idealByNode.get(a.node)) -
-          (b.fixed ? realNodeY.get(b.node) : idealByNode.get(b.node)),
-      );
+      ].sort((a, b) => {
+        if (!options.discoveryPhase && !authoritativeRankOrder)
+          return (
+            (a.fixed ? realNodeY.get(a.node) : idealByNode.get(a.node)) -
+            (b.fixed ? realNodeY.get(b.node) : idealByNode.get(b.node))
+          );
+        const authoritativeNodes =
+          authoritativeRankOrder?.nodeOrderByRank.get(rank);
+        const leftNodeIndex = authoritativeNodes?.get(a.node.id);
+        const rightNodeIndex = authoritativeNodes?.get(b.node.id);
+        return (
+          (Number.isInteger(leftNodeIndex) &&
+          Number.isInteger(rightNodeIndex) &&
+          leftNodeIndex !== rightNodeIndex
+            ? leftNodeIndex - rightNodeIndex
+            : 0) ||
+          comparePositionLists(
+            positionsByNode.get(a.node),
+            positionsByNode.get(b.node),
+          ) ||
+          taxonomyOrder(a.node.id) - taxonomyOrder(b.node.id) ||
+          compareLifecycleIds(a.node.id, b.node.id)
+        );
+      });
       const centerX = rankCenterX(rank);
       const assignment = assignMonotone(
         entries,
@@ -2475,6 +2565,15 @@ export function layoutLifecycleRoutingGraph(
   };
 
   let lastHandleFailure = null;
+  let acceptedRankOrder = null;
+  const captureAcceptedRankOrder = (rankRefinementInfo) => {
+    acceptedRankOrder = new Map(
+      [...rankRefinementInfo].map(([rank, info]) => [
+        rank,
+        Object.freeze(info.rankOrder.map((entry) => entry.branchId)),
+      ]),
+    );
+  };
   let lastHandleRouteEdgeCount = null;
   // Latest deliberately recoverable routing-anchor materialization failure
   // (see the "lifecycle-routing-anchor-allocation" cause above), retained so
@@ -2592,7 +2691,11 @@ export function layoutLifecycleRoutingGraph(
     // Materialization succeeded: this candidate is no longer implicated by
     // an earlier routing-anchor failure.
     lastRoutingAnchorFailure = null;
-    if (options.transitionLanePhaseOnly && enableTestDiagnostics) {
+    if (
+      options.discoveryPhase ||
+      (options.transitionLanePhaseOnly && enableTestDiagnostics)
+    ) {
+      captureAcceptedRankOrder(rankRefinementInfo);
       testOnlyDiagnosticSink?.({
         phase: "accepted",
         rankRefinementInfo,
@@ -2644,6 +2747,7 @@ export function layoutLifecycleRoutingGraph(
         handles: handleCheck.handles,
       });
       if (routeAudit.fatalFindings.length === 0) {
+        captureAcceptedRankOrder(rankRefinementInfo);
         if (testOnlyDiagnosticSink) {
           testOnlyDiagnosticSink({
             phase: "accepted",
@@ -2756,7 +2860,205 @@ export function layoutLifecycleRoutingGraph(
   graph.transitionLaneSolverStats = Object.freeze({
     ...transitionLaneSolverStats,
   });
+  graph.authoritativeRankOrder = Object.freeze(
+    Object.fromEntries(
+      [...(acceptedRankOrder ?? [])].map(([rank, branchIds]) => [
+        rank,
+        branchIds,
+      ]),
+    ),
+  );
   return { graph, dimensions };
+}
+
+const clonePristineRoutingGraph = (graph) => ({
+  nodes: graph.nodes.map((node) => ({
+    ...node,
+    applicationIds: [...(node.applicationIds ?? [])],
+  })),
+  links: graph.links.map((link) => ({
+    ...link,
+    source:
+      link.source && typeof link.source === "object"
+        ? link.source.id
+        : link.source,
+    target:
+      link.target && typeof link.target === "object"
+        ? link.target.id
+        : link.target,
+    applicationIds: [...(link.applicationIds ?? [])],
+  })),
+  branches: graph.branches.map((branch) => ({
+    ...branch,
+    applicationIds: [...(branch.applicationIds ?? [])],
+  })),
+});
+
+const deriveAuthoritativeLayoutOrder = (graph, discoveredOrder) => {
+  const branchOrderByRank = new Map(
+    Object.entries(discoveredOrder).map(([rank, branchIds]) => [
+      Number(rank),
+      new Map(branchIds.map((branchId, index) => [branchId, index])),
+    ]),
+  );
+  const branchById = new Map(
+    graph.branches.map((branch) => [branch.id, branch]),
+  );
+  const outgoing = new Map(
+    graph.branches.map((branch) => [branch.id, new Set()]),
+  );
+  const indegree = new Map(graph.branches.map((branch) => [branch.id, 0]));
+  for (const ids of Object.values(discoveredOrder)) {
+    for (let index = 1; index < ids.length; index += 1) {
+      const from = ids[index - 1];
+      const to = ids[index];
+      if (!outgoing.get(from)?.has(to)) {
+        outgoing.get(from)?.add(to);
+        indegree.set(to, (indegree.get(to) ?? 0) + 1);
+      }
+    }
+  }
+  const ready = [...indegree]
+    .filter(([, value]) => value === 0)
+    .map(([id]) => id);
+  const globalIds = [];
+  while (ready.length) {
+    ready.sort(
+      (left, right) =>
+        compareBranches(branchById.get(left), branchById.get(right)) ||
+        compareLifecycleIds(left, right),
+    );
+    const id = ready.shift();
+    globalIds.push(id);
+    for (const target of outgoing.get(id) ?? []) {
+      indegree.set(target, indegree.get(target) - 1);
+      if (indegree.get(target) === 0) ready.push(target);
+    }
+  }
+  if (globalIds.length !== graph.branches.length) {
+    const error = new Error("Lifecycle discovered rank order contains a cycle");
+    error.cause = Object.freeze({
+      type: "lifecycle-rank-order-disagreement",
+      reason: "discovered-order-cycle",
+    });
+    throw error;
+  }
+  const globalBranchOrder = new Map(globalIds.map((id, index) => [id, index]));
+  const linksByNodeId = new Map();
+  for (const link of graph.links) {
+    for (const endpoint of [link.source, link.target]) {
+      const id =
+        endpoint && typeof endpoint === "object" ? endpoint.id : endpoint;
+      if (!linksByNodeId.has(id)) linksByNodeId.set(id, []);
+      linksByNodeId.get(id).push(link);
+    }
+  }
+  const compareLists = (left, right) => {
+    for (let index = 0; index < Math.min(left.length, right.length); index += 1)
+      if (left[index] !== right[index]) return left[index] - right[index];
+    return left.length - right.length;
+  };
+  const nodeOrderByRank = new Map();
+  for (const rank of [...new Set(graph.nodes.map((node) => node.rank))].sort(
+    (a, b) => a - b,
+  )) {
+    const nodeKey = (node) => {
+      if (node.routing) return [globalBranchOrder.get(node.branchId) ?? 999999];
+      return (linksByNodeId.get(node.id) ?? [])
+        .map((link) => globalBranchOrder.get(link.branchId))
+        .filter(Number.isInteger)
+        .sort((a, b) => a - b);
+    };
+    const ordered = graph.nodes
+      .filter((node) => node.rank === rank)
+      .sort((left, right) => {
+        // Origins and endpoints remain taxonomy anchored; their incident
+        // branch keys still deterministically order any taxonomy ties.
+        if (rank === 0 || rank === 6) {
+          const taxonomy = taxonomyOrder(left.id) - taxonomyOrder(right.id);
+          if (taxonomy) return taxonomy;
+        }
+        return (
+          compareLists(nodeKey(left), nodeKey(right)) ||
+          taxonomyOrder(left.id) - taxonomyOrder(right.id) ||
+          compareLifecycleIds(left.id, right.id)
+        );
+      });
+    nodeOrderByRank.set(
+      rank,
+      new Map(ordered.map((node, index) => [node.id, index])),
+    );
+  }
+  return { branchOrderByRank, nodeOrderByRank, globalBranchOrder };
+};
+
+export function layoutLifecycleRoutingGraph(
+  projection,
+  availableWidth,
+  options = {},
+) {
+  // Test diagnostics intentionally exercise a single attempt. Production
+  // layouts use exactly two attempts: a lane-only discovery pass, followed
+  // by a pristine, fully audited pass whose D3 comparators use that order.
+  if (options.transitionLanePhaseOnly || options.discoveryPhase)
+    return layoutLifecycleRoutingGraphAttempt(
+      projection,
+      availableWidth,
+      options,
+    );
+
+  const initialGraph =
+    options.routingGraph ?? buildLifecycleRoutingGraph(projection);
+  const discovery = layoutLifecycleRoutingGraphAttempt(
+    projection,
+    availableWidth,
+    {
+      ...options,
+      routingGraph: clonePristineRoutingGraph(initialGraph),
+      discoveryPhase: true,
+    },
+  );
+  const authoritativeOrder = deriveAuthoritativeLayoutOrder(
+    initialGraph,
+    discovery.graph.authoritativeRankOrder,
+  );
+  const final = layoutLifecycleRoutingGraphAttempt(projection, availableWidth, {
+    ...options,
+    routingGraph: clonePristineRoutingGraph(initialGraph),
+    authoritativeRankOrder: authoritativeOrder,
+  });
+  const finalOrder = final.graph.authoritativeRankOrder;
+  if (
+    JSON.stringify(finalOrder) !==
+    JSON.stringify(discovery.graph.authoritativeRankOrder)
+  ) {
+    const error = new Error(
+      "Lifecycle layout authoritative rank order changed after the bounded D3 rerun",
+    );
+    error.cause = Object.freeze({
+      type: "lifecycle-rank-order-disagreement",
+      reason: "final-order-disagrees-with-discovery",
+    });
+    throw error;
+  }
+  const summarizeAttempt = (phase, stats) =>
+    Object.freeze({
+      phase,
+      statesVisited: stats.statesVisited,
+      stateLimit: stats.stateLimit,
+      handleStatesVisited: stats.handleStatesVisited,
+      handleStateLimit: stats.handleStateLimit,
+      candidateEvaluations: stats.candidateEvaluations,
+    });
+  final.graph.transitionLaneSolverStats = Object.freeze({
+    ...final.graph.transitionLaneSolverStats,
+    layoutAttemptCount: 2,
+    layoutAttempts: Object.freeze([
+      summarizeAttempt("discovery", discovery.graph.transitionLaneSolverStats),
+      summarizeAttempt("final", final.graph.transitionLaneSolverStats),
+    ]),
+  });
+  return final;
 }
 
 export function testOnlyDiagnoseLifecycleLayoutAttempt(
@@ -2883,7 +3185,7 @@ export function testOnlyDiagnoseLifecycleLayoutAttempt(
     });
   };
   try {
-    layoutLifecycleRoutingGraph(projection, availableWidth, {
+    layoutLifecycleRoutingGraphAttempt(projection, availableWidth, {
       ...options,
       testOnlyBaseNodeOrderByRank: orderByRank,
       testOnlyDiagnosticSink: (snapshot) => {
