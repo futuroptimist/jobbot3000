@@ -222,6 +222,51 @@ for one diagnosed pair) before trusting a candidate fix — then run the _entire
 files, 1189+ tests as of this writing), since a change to base layout ordering can shift geometry for
 every fixture, not just the one under investigation.
 
+## Attempted and reverted: barycenter-based `nodeSort`/`linkSort`
+
+A follow-up session attempted the deferred fix above directly: a `computeBarycenterOrder(nodes,
+links)` function implementing the classic Sugiyama-style barycenter heuristic (iteratively
+repositioning each node to the average position of its neighbors in the adjacent rank, sweeping
+down then up a fixed number of times, operating purely on graph topology before any geometry
+exists). This part worked correctly in isolation — verified against a hand-built toy graph with a
+known crossing (`A→Y, B→X` with `A,B` at rank 0 and `X,Y` at rank 1), where it correctly reordered
+rank 1 to `[Y, X]` to eliminate the crossing — and produced a plausible-looking order on the real
+reference fixture too: `recruiter_screen`'s two children branches (`->interviewing` and
+`->technical_interview`) were consistently ordered the same way (interviewing-bound first) across
+every rank they both touch, which is exactly the consistency the originally-diagnosed crossing was
+missing.
+
+Wiring it in (via `buildLifecycleRoutingGraph` attaching a `barycenterOrder` map to the graph, then
+using it as `nodeSort`/`linkSort`'s preferred tie-break — both in the graph's own initial array sort
+and, critically, in `layoutLifecycleRoutingGraph`'s `sankey().nodeSort()/.linkSort()` config, which
+is what actually affects real node `y0`/`y1`) regressed the reference fixture from 0 fatal findings
+to a deterministic `state-limit` failure — even after also updating `globalOrder`'s DFS tie-break
+(`compareBranchesForGlobalOrder`) to read the same `barycenterOrder` map instead of
+`taxonomyOrder`/`compareBranches`, generalized to any rank (not just rank 0) since barycenter order,
+unlike `taxonomyOrder`, is comparable and meaningful for every rank. Every combination tried (just
+`nodeSort`/`linkSort`; that plus the `globalOrder` tie-break update) failed identically, with
+`transitionLaneSolverStats.statesVisited` landing suspiciously close to the 32768 ceiling every
+time (32771, 32780, 32936) — the signature of the search exhausting its _entire_ budget rather than
+being just barely insufficient.
+
+This was **not** root-caused before reverting. The barycenter order looked correct by every check
+applied to it directly, which points somewhere more subtle: changing real nodes' actual `y0`/`y1`
+_positions_ (not just their relative order) via a different `nodeSort` changes the geometry
+`assignMonotoneIntervals`/the deadline-based DFS (`solveFromComponent`) reasons about — spacing,
+available intervals, `branchDeadline`/`capacityOkForRemainder` outcomes — in ways not yet understood.
+Given every ordering change explored in this investigation that touched the DFS or base layout
+either regressed something or needed to be paired with 1-2 other changes just to avoid regressing
+(see "what didn't work alone" above), this suggests the deadline-based DFS's feasibility guarantees
+are more tightly coupled to the _current_ `nodeSort`/`linkSort`'s specific behavior than a purely
+topological analysis would suggest. Reverted in full to protect the shipped, validated state
+(fixes 1-3 above, plus the routing-node-vs-real-node fix, all still in place and unaffected).
+
+**Before retrying this**, whoever picks it up should first understand _why_ a node-position change
+destabilizes the DFS — e.g. by diffing `assignMonotoneIntervals`'s per-rank domains (`intervals`,
+`cen`) between the old and new `nodeSort` for the reference fixture, rank by rank, to find exactly
+where availability collapses — rather than iterating on the ordering logic itself again, which is
+what this and prior sessions already tried repeatedly without success.
+
 ## Separately: the deterministic-budget fix
 
 Unrelated to the ordering-systems problem above (shipped first, in an earlier commit on this same
