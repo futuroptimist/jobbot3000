@@ -293,17 +293,54 @@ edge count (its pairwise crossing check is `O(edges-within-rank^2)`).
 - `test/web-tracker-lifecycle-diagram-layout.test.js`'s `projection()` (built from
   `tracker-lifecycle-diagram-routing-v2.json`) is the smallest fixture that reproduces real
   crossings — prefer it over the synthetic dense fixtures for fast iteration.
-- The 4 still-skipped tests (`shares a single handle budget...`, `lays out dense fixture...`,
-  `keeps handle invariants with more than 32...`, `paginates more than 50...`) and their skip
-  comments describe fixtures with a genuinely infeasible crossing-free arrangement in the _current_
-  domain (Y-position search within a fixed rank order) — not bugs this fix addresses. Solving those
-  needs the [deferred D3-Sankey reconciliation](#deferred-making-the-base-d3-sankey-layout-rankorder-aware)
-  above, or a constructive (rather than retry-based) placement strategy.
-- 4 Playwright specs referencing `tracker-lifecycle-diagram-v2.json` (`renders seeded
-current/historical states...`, `audits routed branch collisions for
-tracker-lifecycle-diagram-v2.json...`, `uses a real touch mobile context...`, and
-  `static-smoke.spec.js`'s `renders lifecycle Diagram from deterministic data...`) fail for a
-  _separate, pre-existing, unrelated_ reason: that fixture's crossing-free search now deterministically
-  takes ~15s, but these tests wait only Playwright's default 5s for the SVG to appear. This is a test
-  timeout mismatch, not a route-crossing or correctness bug — confirmed pre-existing before any of the
-  ordering work in this document (same failures reproduce checking out the commit before these fixes).
+- `test/fixtures/tracker-lifecycle-diagram-v2.json` is the smallest fixture that reproduces the
+  _origin-ordering_ gap specifically (21 nodes, 16 applications) — smaller and faster to iterate on
+  than the synthetic dense fixtures for that specific class of bug, even though it's currently
+  infeasible end-to-end for the different (milestone-convergence) reason described above.
+
+## Outstanding follow-up work (as of this writing)
+
+This is the authoritative, current list — cross-check against the code before trusting it, since
+skip states and test names can drift. `grep -rn "it\.skip(\|test\.skip(" test/` finds all of them.
+
+1. **Deferred: make the base D3-Sankey layout `rankOrder`-aware** (a.k.a. "Option 2" above) — the
+   real fix for every remaining item below. Two attempts already tried and reverted (see
+   [what didn't work alone](#what-didnt-work-alone) and
+   [attempted and reverted: barycenter](#attempted-and-reverted-barycenter-based-nodesortlinksort));
+   read both before starting a third. The barycenter attempt's unsolved mystery (node-position
+   changes destabilizing the deadline-based DFS in an unexplained way) is the most likely blocker
+   and should be root-caused first — see that section's closing paragraph for where to start
+   looking.
+2. **4 unit tests remain `it.skip`ed**, all for the same reason (a genuinely infeasible
+   crossing-free arrangement in the current domain, not a bug this document's fixes address):
+   - `test/web-tracker-lifecycle-diagram-layout.test.js`: `"shares a single handle budget across
+all candidate callbacks without resetting"`, `"lays out dense fixture with bounded semantic
+docks and safe handles"`, `"keeps handle invariants with more than 32 display branches"`
+   - `test/web-tracker-lifecycle-diagram.test.js`: `"paginates more than 50 endpoint-conditioned
+flow rows without losing reachability"`
+   - Each has its own skip comment with the specific fixture and root-cause analysis. Un-skipping
+     these requires item 1 above (or a constructive, non-retry-based placement strategy).
+3. **4 Playwright specs remain `test.skip`ed**, same root cause as item 2 (confirmed directly: the
+   component renders the "Unable to lay out lifecycle diagram." fallback for
+   `tracker-lifecycle-diagram-v2.json`, not a slow-but-eventually-successful render — this was
+   originally misdiagnosed as a timeout mismatch before being properly root-caused):
+   - `test/playwright/lifecycle-diagram.spec.js`: `"renders seeded current/historical states with
+semantic tables and selection"`, `"uses a real touch mobile context without page overflow"`,
+     and the `tracker-lifecycle-diagram-v2.json` iteration only of the parametrized `"audits routed
+branch collisions for ${fixture} on desktop and touch"` (the `tracker-lifecycle-diagram-routing-v2.json`
+     iteration is unaffected and still runs, passing in ~2s)
+   - `test/playwright/static-smoke.spec.js`: `"renders lifecycle Diagram from deterministic data
+without external requests"`
+   - Un-skipping these also requires item 1, since they exercise the same fixture and failure mode.
+4. **Real-node-vs-routing-node coordination** (its own section above) — a narrower, more scoped
+   piece of item 1 that's already covered by fix 3's audit-and-reject safety net (so current
+   behavior is _correct_, just not cheap for fixtures that hit it). Worth doing on its own if item 1
+   in full turns out to be too large a single change.
+5. **Visual/manual verification was done for this PR**, not automated: a real browser session
+   (Chrome, imported `tracker-lifecycle-diagram-routing-v2.json` — 25 applications) confirmed the
+   diagram renders with distinct per-outcome colors and no overlapping branches, and that importing
+   the union of both fixtures (41 applications, including the known-infeasible data) degrades
+   gracefully to the "Unable to lay out lifecycle diagram." fallback rather than a broken or
+   overlapping render. There is no automated end-to-end test asserting "the diagram is visually
+   readable" beyond `auditLifecycleRouteGeometry`'s structural checks — worth considering as a
+   follow-up if visual regressions become a recurring concern.
