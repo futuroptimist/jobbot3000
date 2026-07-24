@@ -44,6 +44,7 @@ import {
   segmentRoutePrimitives,
   selectedEnvelopeRadius,
   solveHandleCandidateSets,
+  testOnlyDiagnoseLifecycleLayoutAttempt,
   wrapLifecycleLabel,
 } from "../src/web/tracker/lifecycleDiagramLayout.js";
 
@@ -1214,6 +1215,104 @@ describe("combinationsOfSize", () => {
         }
       }
     }
+  });
+});
+
+describe("test-only lifecycle layout diagnostics", () => {
+  const shuffledProjection = (fixture) => {
+    const p = projectLifecycleAt(fixture);
+    return {
+      ...p,
+      nodes: [...p.nodes].reverse(),
+      links: [...p.links].reverse(),
+      paths: [...p.paths].reverse(),
+    };
+  };
+
+  const reversedBaseOrderFrom = (diagnostic) =>
+    new Map(
+      diagnostic.ranks.map((rank) => [
+        rank.rank,
+        rank.nodePositions.map((node) => node.id).reverse(),
+      ]),
+    );
+
+  it("keeps routing-v2 route auditing clean while exposing deterministic rank diagnostics", () => {
+    const p = projection();
+    const { graph, dimensions } = layoutLifecycleRoutingGraph(p, 1850);
+    expect(
+      auditLifecycleRouteGeometry({ graph, dimensions, handles: [] })
+        .fatalFindings,
+    ).toEqual([]);
+
+    const baseline = testOnlyDiagnoseLifecycleLayoutAttempt(p, 1850, {
+      transitionLanePhaseOnly: true,
+    });
+    const shuffled = testOnlyDiagnoseLifecycleLayoutAttempt(
+      shuffledProjection(routingFixture),
+      1850,
+      { transitionLanePhaseOnly: true },
+    );
+    expect(shuffled).toEqual(baseline);
+    expect(baseline.firstRejectedPhase).toBeNull();
+    expect(baseline.ranks.map((rank) => rank.rank)).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(
+      baseline.ranks.every(
+        (rank) =>
+          rank.centeredAssignmentFeasible &&
+          rank.domains.every((domain) => domain.domainSize > 0),
+      ),
+    ).toBe(true);
+  });
+
+  it("identifies the invariant violated by a second base pass", () => {
+    const baseline = testOnlyDiagnoseLifecycleLayoutAttempt(
+      projectLifecycleAt(routingFixture),
+      1850,
+      { transitionLanePhaseOnly: true },
+    );
+    const reversed = testOnlyDiagnoseLifecycleLayoutAttempt(
+      projectLifecycleAt(routingFixture),
+      1850,
+      { baseNodeOrderByRank: reversedBaseOrderFrom(baseline) },
+    );
+    expect(reversed.firstRejectedPhase).toBe("handle");
+    expect(reversed.firstRejectedReason).toBe("no-candidates");
+    expect(reversed.ranks[0].centeredAssignmentFeasible).toBe(true);
+    expect(
+      reversed.ranks[0].domains.every((domain) => domain.domainSize > 0),
+    ).toBe(true);
+    expect(reversed.states.handle).toBeGreaterThan(0);
+  });
+
+  it("reproduces dense fixture diagnostics under a second base pass", () => {
+    const baseline = testOnlyDiagnoseLifecycleLayoutAttempt(
+      projectLifecycleAt(denseFixture),
+      1850,
+      { transitionLanePhaseOnly: true },
+    );
+    const reversedOrder = reversedBaseOrderFrom(baseline);
+    const reversed = testOnlyDiagnoseLifecycleLayoutAttempt(
+      projectLifecycleAt(denseFixture),
+      1850,
+      {
+        baseNodeOrderByRank: reversedOrder,
+        transitionLanePhaseOnly: true,
+      },
+    );
+    const shuffled = testOnlyDiagnoseLifecycleLayoutAttempt(
+      shuffledProjection(denseFixture),
+      1850,
+      {
+        baseNodeOrderByRank: reversedOrder,
+        transitionLanePhaseOnly: true,
+      },
+    );
+    expect(shuffled).toEqual(reversed);
+    expect(reversed.firstRejectedPhase).toBeNull();
+    expect(
+      reversed.ranks[0].domains.every((domain) => domain.domainSize > 0),
+    ).toBe(true);
   });
 });
 

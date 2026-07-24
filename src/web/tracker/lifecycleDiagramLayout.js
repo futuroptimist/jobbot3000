@@ -638,7 +638,21 @@ export function layoutLifecycleRoutingGraph(
     .nodeAlign((node) => layerByRank.get(node.rank) ?? 0)
     .nodeWidth(SANKEY_NODE_WIDTH)
     .nodePadding(ROUTED_NODE_PADDING)
-    .nodeSort(nodeSort)
+    .nodeSort((left, right) => {
+      const order = options.testOnlyBaseNodeOrderByRank?.get?.(left.rank);
+      if (order) {
+        const leftIndex = order.get(left.id);
+        const rightIndex = order.get(right.id);
+        if (
+          Number.isInteger(leftIndex) &&
+          Number.isInteger(rightIndex) &&
+          leftIndex !== rightIndex
+        ) {
+          return leftIndex - rightIndex;
+        }
+      }
+      return nodeSort(left, right);
+    })
     .linkSort(linkSort)
     .extent([
       [LAYOUT_LEFT_MARGIN, LAYOUT_TOP_MARGIN],
@@ -2553,6 +2567,13 @@ export function layoutLifecycleRoutingGraph(
       options.transitionLanePhaseOnly &&
       (process.env.NODE_ENV === "test" || process.env.VITEST === "true")
     ) {
+      options.testOnlyDiagnosticSink?.({
+        phase: "accepted",
+        rankRefinementInfo,
+        graph,
+        handleBudget,
+        transitionLaneSolverStats,
+      });
       // Test-only lane-phase exit: accept the first geometrically valid assignment.
       return true;
     }
@@ -2610,6 +2631,14 @@ export function layoutLifecycleRoutingGraph(
         routeFindings: routeAudit.fatalFindings,
       };
       lastHandleFailure = routeFailure;
+      options.testOnlyDiagnosticSink?.({
+        phase: "route-crossing",
+        reason: routeFailure,
+        rankRefinementInfo,
+        graph,
+        handleBudget,
+        transitionLaneSolverStats,
+      });
       geometryFailureCache.recordHandleFailure(geometrySignature, routeFailure);
       return false;
     }
@@ -2620,6 +2649,14 @@ export function layoutLifecycleRoutingGraph(
       throwHandleStateLimitExceeded();
     }
     lastHandleFailure = handleCheck;
+    options.testOnlyDiagnosticSink?.({
+      phase: "handle",
+      reason: handleCheck,
+      rankRefinementInfo,
+      graph,
+      handleBudget,
+      transitionLaneSolverStats,
+    });
     geometryFailureCache.recordHandleFailure(geometrySignature, handleCheck);
     return false;
   };
@@ -2676,6 +2713,104 @@ export function layoutLifecycleRoutingGraph(
     ...transitionLaneSolverStats,
   });
   return { graph, dimensions };
+}
+
+export function testOnlyDiagnoseLifecycleLayoutAttempt(
+  projection,
+  availableWidth,
+  options = {},
+) {
+  if (process.env.NODE_ENV !== "test" && process.env.VITEST !== "true") {
+    throw new Error("Lifecycle layout diagnostics are available only in tests");
+  }
+  const snapshots = [];
+  const orderByRank = options.baseNodeOrderByRank
+    ? new Map(
+        [...options.baseNodeOrderByRank].map(([rank, ids]) => [
+          rank,
+          new Map(ids.map((id, index) => [id, index])),
+        ]),
+      )
+    : undefined;
+  const summarize = ({
+    phase,
+    reason,
+    rankRefinementInfo,
+    graph,
+    handleBudget,
+    transitionLaneSolverStats,
+  }) => {
+    const ranks = [...rankRefinementInfo.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([rank, info]) => {
+        const branchOrder = info.rankOrder.map((entry) => entry.branchId);
+        const centeredAssignmentFeasible = info.cen.every((value, index) => {
+          if (!Number.isFinite(value)) return false;
+          if (index === 0) return true;
+          return value > info.cen[index - 1];
+        });
+        return {
+          rank,
+          branchOrder,
+          nodePositions: graph.nodes
+            .filter((node) => node.rank === rank)
+            .sort(
+              (left, right) =>
+                (left.y0 + left.y1) / 2 - (right.y0 + right.y1) / 2 ||
+                compareLifecycleIds(left.id, right.id),
+            )
+            .map((node) => ({
+              id: node.id,
+              routing: Boolean(node.routing),
+              y0: node.y0,
+              y1: node.y1,
+            })),
+          domains: info.rankOrder.map((entry, index) => ({
+            linkId: entry.id,
+            branchId: entry.branchId,
+            intervalCount: entry.intervals.length,
+            domainSize: entry.intervals.reduce(
+              (sum, [lo, hi]) => sum + Math.max(0, Math.floor(hi - lo) + 1),
+              0,
+            ),
+            centeredY: info.cen[index],
+          })),
+          centeredAssignmentFeasible,
+        };
+      });
+    snapshots.push({
+      firstRejectedPhase: phase === "accepted" ? null : phase,
+      firstRejectedReason: reason?.reason ?? null,
+      ranks,
+      states: {
+        transition: transitionLaneSolverStats.statesVisited,
+        handle: handleBudget.statesVisited,
+      },
+    });
+  };
+  try {
+    layoutLifecycleRoutingGraph(projection, availableWidth, {
+      ...options,
+      testOnlyBaseNodeOrderByRank: orderByRank,
+      testOnlyDiagnosticSink: (snapshot) => {
+        if (!snapshots.length || snapshot.phase === "accepted")
+          summarize(snapshot);
+      },
+    });
+  } catch (error) {
+    if (!snapshots.length) {
+      snapshots.push({
+        firstRejectedPhase: error.cause?.reason ?? "throw",
+        firstRejectedReason: error.cause ?? { message: error.message },
+        ranks: [],
+        states: {
+          transition: error.cause?.statesVisited ?? null,
+          handle: null,
+        },
+      });
+    }
+  }
+  return snapshots[0];
 }
 
 const point = (x, y) => `${Number(x).toFixed(3)},${Number(y).toFixed(3)}`;
