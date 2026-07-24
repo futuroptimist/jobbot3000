@@ -3610,6 +3610,26 @@ const tryAssignBranchHandles = (
     }
   }
   const hitBoxes = visibleNodes.map(rendererHitBoxForNode);
+  const routeEdgesByTransitionRank = new Map();
+  for (const edge of routeEdges) {
+    const rank = edge.transitionRank ?? null;
+    if (!routeEdgesByTransitionRank.has(rank)) {
+      routeEdgesByTransitionRank.set(rank, {
+        edges: [],
+        minX: Number.POSITIVE_INFINITY,
+        maxX: Number.NEGATIVE_INFINITY,
+        maxRequired: 0,
+      });
+    }
+    const group = routeEdgesByTransitionRank.get(rank);
+    group.edges.push(edge);
+    group.minX = Math.min(group.minX, edge.p0.x, edge.p1.x);
+    group.maxX = Math.max(group.maxX, edge.p0.x, edge.p1.x);
+    group.maxRequired = Math.max(
+      group.maxRequired,
+      BRANCH_HANDLE_RADIUS + edge.envelopeRadius + 0.25 + LANE_Y_EPSILON,
+    );
+  }
   const fixedGeometry = [
     ...nodeBoxes.map((box, index) => ({
       ...box,
@@ -3635,31 +3655,41 @@ const tryAssignBranchHandles = (
           compareLifecycleIds(a.kind, b.kind) ||
           compareLifecycleIds(a.id ?? "", b.id ?? ""),
       )[0] ?? null;
-  const renderedBranchClearance = (branch, x, y) => {
+  const renderedBranchClearance = (branch, transitionRank, x, y) => {
     let best = { margin: Number.POSITIVE_INFINITY, blocker: null };
-    for (const edge of routeEdges) {
-      if (edge.branchId === branch.id) continue;
-      const required =
-        BRANCH_HANDLE_RADIUS + edge.envelopeRadius + 0.25 + LANE_Y_EPSILON;
-      const distance = pointToSegmentDistance({ x, y }, edge);
-      const margin = distance - required;
-      if (
-        margin < best.margin - LANE_Y_EPSILON ||
-        (Math.abs(margin - best.margin) <= LANE_Y_EPSILON &&
-          compareLifecycleIds(edge.branchId, best.blocker?.branchId ?? "") < 0)
-      ) {
-        best = {
-          margin,
-          blocker: {
-            kind: "route",
-            id: edge.segmentId,
-            branchId: edge.branchId,
-            segmentId: edge.segmentId,
-            transitionRank: edge.transitionRank,
-            zone: edge.zone,
-          },
-        };
+    const inspectGroup = (group) => {
+      const xDistance = Math.max(group.minX - x, 0, x - group.maxX);
+      if (xDistance - group.maxRequired > best.margin + LANE_Y_EPSILON) return;
+      for (const edge of group.edges) {
+        if (edge.branchId === branch.id) continue;
+        const required =
+          BRANCH_HANDLE_RADIUS + edge.envelopeRadius + 0.25 + LANE_Y_EPSILON;
+        const distance = pointToSegmentDistance({ x, y }, edge);
+        const margin = distance - required;
+        if (
+          margin < best.margin - LANE_Y_EPSILON ||
+          (Math.abs(margin - best.margin) <= LANE_Y_EPSILON &&
+            compareLifecycleIds(edge.branchId, best.blocker?.branchId ?? "") <
+              0)
+        ) {
+          best = {
+            margin,
+            blocker: {
+              kind: "route",
+              id: edge.segmentId,
+              branchId: edge.branchId,
+              segmentId: edge.segmentId,
+              transitionRank: edge.transitionRank,
+              zone: edge.zone,
+            },
+          };
+        }
       }
+    };
+    const currentGroup = routeEdgesByTransitionRank.get(transitionRank);
+    if (currentGroup) inspectGroup(currentGroup);
+    for (const [rank, group] of routeEdgesByTransitionRank) {
+      if (rank !== transitionRank) inspectGroup(group);
     }
     return best;
   };
@@ -3826,7 +3856,12 @@ const tryAssignBranchHandles = (
           });
           continue;
         }
-        const clearance = renderedBranchClearance(branch, x, y);
+        const clearance = renderedBranchClearance(
+          branch,
+          segment.source?.rank,
+          x,
+          y,
+        );
         const clearanceMargin = clearance.margin;
         if (clearanceMargin > 0) {
           diagnostic.accepted += 1;
