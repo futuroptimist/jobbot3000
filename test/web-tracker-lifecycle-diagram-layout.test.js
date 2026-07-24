@@ -34,6 +34,7 @@ import {
   compareLifecycleIds,
   createLaneGeometryFailureCache,
   cubicTransitionPoint,
+  diagnoseLifecycleLayoutForTest,
   endpointColor,
   layoutLifecycleRoutingGraph,
   labelBoxForNode,
@@ -668,6 +669,52 @@ describe("transition lane solver", () => {
         transitionLanePhaseOnly: true,
       }).graph,
     ).toBeTruthy();
+  });
+
+  it("diagnoses rank-order-directed base-layout passes deterministically", () => {
+    const reverseWithinRank = (left, right) =>
+      left.rank === right.rank ? -nodeSort(left, right) : nodeSort(left, right);
+    const shuffledProjection = {
+      ...projection(),
+      nodes: [...projection().nodes].reverse(),
+      links: [...projection().links].reverse(),
+      paths: [...projection().paths].reverse(),
+    };
+    const base = diagnoseLifecycleLayoutForTest(projection(), 1850);
+    const shuffled = diagnoseLifecycleLayoutForTest(shuffledProjection, 1850);
+    const reversed = diagnoseLifecycleLayoutForTest(projection(), 1850, {
+      testNodeSort: reverseWithinRank,
+    });
+
+    expect(JSON.stringify(shuffled)).toBe(JSON.stringify(base));
+    expect(base.firstRejectedPhase).toBe("route-audit");
+    expect(base.structuredReason.transitionRank).toBe(2);
+    expect(reversed.firstRejectedPhase).toBe("route-audit");
+    expect(reversed.structuredReason.transitionRank).toBe(0);
+    expect(reversed.ranks[1].nodePositions.map((node) => node.id)).not.toEqual(
+      base.ranks[1].nodePositions.map((node) => node.id),
+    );
+    expect(reversed.states.statesVisited).toBeGreaterThan(0);
+  });
+
+  it("diagnoses dense fixture base-layout coupling without raising budgets", () => {
+    const reverseWithinRank = (left, right) =>
+      left.rank === right.rank ? -nodeSort(left, right) : nodeSort(left, right);
+    const denseProjection = projectLifecycleAt(denseFixture);
+    const base = diagnoseLifecycleLayoutForTest(denseProjection, 1850);
+    const reversed = diagnoseLifecycleLayoutForTest(denseProjection, 1850, {
+      testNodeSort: reverseWithinRank,
+    });
+
+    expect(base.firstRejectedPhase).toBe("route-audit");
+    expect(base.structuredReason.transitionRank).toBe(0);
+    expect(reversed.firstRejectedPhase).toBe("route-audit");
+    expect(reversed.structuredReason.transitionRank).toBe(0);
+    expect(reversed.ranks[0].nodePositions.map((node) => node.id)).not.toEqual(
+      base.ranks[0].nodePositions.map((node) => node.id),
+    );
+    expect(base.states.stateLimit).toBe(200000);
+    expect(reversed.states.stateLimit).toBe(200000);
   });
 
   it("assigns spacing-legal lanes for 55-branch multi-source dense graph", () => {
