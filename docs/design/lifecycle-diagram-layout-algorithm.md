@@ -377,3 +377,26 @@ without external requests"`
    overlapping render. There is no automated end-to-end test asserting "the diagram is visually
    readable" beyond `auditLifecycleRouteGeometry`'s structural checks — worth considering as a
    follow-up if visual regressions become a recurring concern.
+
+## Bounded authoritative-order pipeline
+
+The production layout now uses exactly two fresh layout attempts. The first is a
+rank-order discovery phase: it runs the deterministic transition-lane solver and
+captures its per-transition-rank branch order, but its partially materialized
+geometry is always discarded. The second rebuilds the routing graph from the
+projection, reruns D3-Sankey with link and combined real/routing-node comparators
+derived from that order, and then performs the complete lane, handle, and route
+audit pipeline with new obstacles, domains, caches, baselines, and budgets.
+
+Origin and endpoint ranks retain their taxonomy anchoring. At intermediate
+ranks, routing nodes use their branch position and real nodes use the ordered
+positions of all incident branches, followed by stable node-kind, taxonomy, and
+ID tie-breaks. Routing-anchor materialization consumes that same combined order
+rather than re-sorting fixed and movable entries by ideal Y.
+
+The final graph exposes frozen `layoutAttempts` statistics (discovery followed
+by final) and `layoutAttemptCount: 2`. Each attempt retains its independent
+transition and handle state counts and the unchanged 200,000/32,768 limits. A
+final solver order that differs from discovery is rejected with the typed
+`lifecycle-authoritative-rank-order` / `order-disagreement` failure; there is no
+convergence retry or wall-clock deadline.
