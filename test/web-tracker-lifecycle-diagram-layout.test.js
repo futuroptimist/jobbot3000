@@ -657,6 +657,52 @@ describe("transition lane solver", () => {
     expect(d3Signature).toEqual(rawSignature);
   });
 
+  it("collects deterministic rank-order diagnostics for base layout coupling", () => {
+    const diagnosticSignature = (projectionValue) => {
+      const { graph } = layoutLifecycleRoutingGraph(projectionValue, 1850, {
+        transitionLanePhaseOnly: true,
+        collectRankOrderDiagnostics: true,
+      });
+      return graph.rankOrderDiagnostics.map((entry) => ({
+        rank: entry.rank,
+        branchOrder: entry.branchOrder,
+        realNodePositions: entry.realNodePositions,
+        routingNodePositions: entry.routingNodePositions,
+        intervalCountsByLink: entry.intervalCountsByLink,
+        domainSizesByLink: entry.domainSizesByLink,
+        centeredAssignmentFeasible: entry.centeredAssignmentFeasible,
+        firstRejectedPhase: entry.firstRejectedPhase,
+        firstRejectedReason: entry.firstRejectedReason,
+        statesVisited: entry.statesVisited,
+        handleStatesVisited: entry.handleStatesVisited,
+      }));
+    };
+
+    const routing = projection();
+    const routingShuffled = {
+      ...routing,
+      nodes: [...routing.nodes].reverse(),
+      links: [...routing.links].reverse(),
+      paths: [...routing.paths].reverse(),
+    };
+    expect(JSON.stringify(diagnosticSignature(routingShuffled))).toBe(
+      JSON.stringify(diagnosticSignature(routing)),
+    );
+
+    const dense = projectLifecycleAt(denseFixture);
+    const denseShuffled = {
+      ...dense,
+      nodes: [...dense.nodes].reverse(),
+      links: [...dense.links].reverse(),
+      paths: [...dense.paths].reverse(),
+    };
+    const denseDiagnostics = diagnosticSignature(dense);
+    expect(denseDiagnostics.length).toBeGreaterThan(0);
+    expect(JSON.stringify(diagnosticSignature(denseShuffled))).toBe(
+      JSON.stringify(denseDiagnostics),
+    );
+  });
+
   it("routes dense fixtures without transition-lane allocation invariants", () => {
     expect(
       layoutLifecycleRoutingGraph(projection(), 1850, {
@@ -2265,5 +2311,5 @@ describe("lifecycle diagram render-only routing layout", () => {
       layoutLifecycleRoutingGraph(denseBranchProjection(), 1850),
     ).toThrow(deterministicFailure);
     expect(Date.now() - start).toBeLessThan(90000);
-  });
+  }, 90000);
 });
