@@ -2326,7 +2326,7 @@ export function layoutLifecycleRoutingGraph(
         const idx = info.rankOrder.findIndex((v) => v.branchId === branchId);
         return idx < 0 ? null : idx;
       };
-      const nodes = [...rankNodes].sort((left, right) => {
+      const routingNodes = [...rankNodes].sort((left, right) => {
         const leftBranch = branchById.get(left.branchId);
         const rightBranch = branchById.get(right.branchId);
         if (!leftBranch || !rightBranch) {
@@ -2349,12 +2349,47 @@ export function layoutLifecycleRoutingGraph(
           compareLifecycleIds(left.id, right.id)
         );
       });
+      // Real (non-routing) nodes at this same rank have their own y0/y1
+      // already fixed by d3-sankey's initial layout — but assignMonotone
+      // above only ever saw routing nodes, so it could place one anywhere
+      // in the lane space with no awareness that a real node's position
+      // constrains where it may legally sit relative to it. Candidate
+      // *domains* already exclude a real node's box as an obstacle
+      // (laneDomainForSpan/candidateClearsSpan below), so a routing-node
+      // anchor was never placed *on top of* a real node — but nothing
+      // stopped it landing on the *wrong side* of one relative to the
+      // order the lane-coordinate search intends, which is a route
+      // crossing no amount of domain-obstacle-avoidance catches (confirmed
+      // directly: a routing-node anchor ended up below a real milestone
+      // node whose own incident branch needed to be above it). Folding real
+      // nodes in as fixed (singleton-domain) entries in the same monotone
+      // assignment makes their relative order an explicit constraint
+      // routing nodes must respect, using the exact same DP that already
+      // guarantees monotone spacing among routing nodes alone. See
+      // docs/design/lifecycle-diagram-layout-algorithm.md.
+      const realNodesAtRank = graph.nodes.filter(
+        (node) => !node.routing && node.rank === rank,
+      );
+      const realNodeY = new Map(
+        realNodesAtRank.map((node) => [node, (node.y0 + node.y1) / 2]),
+      );
+      const entries = [
+        ...routingNodes.map((node) => ({ node, fixed: false })),
+        ...realNodesAtRank.map((node) => ({ node, fixed: true })),
+      ].sort(
+        (a, b) =>
+          (a.fixed ? realNodeY.get(a.node) : idealByNode.get(a.node)) -
+          (b.fixed ? realNodeY.get(b.node) : idealByNode.get(b.node)),
+      );
       const centerX = rankCenterX(rank);
       const assignment = assignMonotone(
-        nodes,
-        (_, idealY) =>
-          laneDomainForSpan({ minX: centerX, maxX: centerX, idealY }),
-        (node) => idealByNode.get(node),
+        entries,
+        (entry, idealY) =>
+          entry.fixed
+            ? [clampLaneY(realNodeY.get(entry.node))]
+            : laneDomainForSpan({ minX: centerX, maxX: centerX, idealY }),
+        (entry) =>
+          entry.fixed ? realNodeY.get(entry.node) : idealByNode.get(entry.node),
       );
       if (!assignment) {
         // Routing-anchor feasibility depends on the incident links' lane Y
@@ -2374,10 +2409,13 @@ export function layoutLifecycleRoutingGraph(
         });
         throw anchorError;
       }
-      nodes.forEach((node, index) => {
+      entries.forEach((entry, index) => {
+        if (entry.fixed) return;
         const anchorY = assignment[index];
-        for (const link of incomingByNode.get(node) ?? []) link.y1 = anchorY;
-        for (const link of outgoingByNode.get(node) ?? []) link.y0 = anchorY;
+        for (const link of incomingByNode.get(entry.node) ?? [])
+          link.y1 = anchorY;
+        for (const link of outgoingByNode.get(entry.node) ?? [])
+          link.y0 = anchorY;
       });
     }
     for (const link of graph.links) {
