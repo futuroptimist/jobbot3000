@@ -44,6 +44,7 @@ import {
   segmentRoutePrimitives,
   selectedEnvelopeRadius,
   solveHandleCandidateSets,
+  testOnlyDiagnoseLifecycleLayoutAttempt,
   wrapLifecycleLabel,
 } from "../src/web/tracker/lifecycleDiagramLayout.js";
 
@@ -1217,6 +1218,202 @@ describe("combinationsOfSize", () => {
   });
 });
 
+describe("test-only lifecycle layout diagnostics", () => {
+  const shuffledProjection = (fixture) => {
+    const p = projectLifecycleAt(fixture);
+    return {
+      ...p,
+      nodes: [...p.nodes].reverse(),
+      links: [...p.links].reverse(),
+      paths: [...p.paths].reverse(),
+    };
+  };
+
+  const reversedBaseOrderFrom = (diagnostic) =>
+    new Map(
+      diagnostic.ranks.map((rank) => [
+        rank.rank,
+        rank.nodePositions.map((node) => node.id).reverse(),
+      ]),
+    );
+
+  it("ignores diagnostic hooks outside the test environment", () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalVitest = process.env.VITEST;
+    process.env.NODE_ENV = "production";
+    delete process.env.VITEST;
+    try {
+      expect(() =>
+        testOnlyDiagnoseLifecycleLayoutAttempt(
+          projectLifecycleAt(routingFixture),
+          1850,
+        ),
+      ).toThrow("Lifecycle layout diagnostics are available only in tests");
+
+      const baseline = layoutLifecycleRoutingGraph(
+        projectLifecycleAt(routingFixture),
+        1850,
+      ).graph;
+      const ignoredOrder = new Map(
+        [...new Set(baseline.nodes.map((node) => node.rank))].map((rank) => [
+          rank,
+          new Map(
+            baseline.nodes
+              .filter((node) => node.rank === rank)
+              .sort((left, right) => left.y0 - right.y0)
+              .map((node) => node.id)
+              .reverse()
+              .map((id, index) => [id, index]),
+          ),
+        ]),
+      );
+      const diagnosticCalls = [];
+      const diagnosticSink = (snapshot) => diagnosticCalls.push(snapshot);
+      const withIgnoredHooks = layoutLifecycleRoutingGraph(
+        projectLifecycleAt(routingFixture),
+        1850,
+        {
+          testOnlyBaseNodeOrderByRank: ignoredOrder,
+          testOnlyDiagnosticSink: diagnosticSink,
+        },
+      ).graph;
+
+      expect(diagnosticCalls).toEqual([]);
+      expect(
+        withIgnoredHooks.nodes.map((node) => [
+          node.id,
+          node.rank,
+          node.y0,
+          node.y1,
+        ]),
+      ).toEqual(
+        baseline.nodes.map((node) => [node.id, node.rank, node.y0, node.y1]),
+      );
+    } finally {
+      if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = originalNodeEnv;
+      if (originalVitest === undefined) delete process.env.VITEST;
+      else process.env.VITEST = originalVitest;
+    }
+  });
+
+  it("keeps routing-v2 route auditing clean while exposing deterministic rank diagnostics", () => {
+    const p = projection();
+    const { graph, dimensions } = layoutLifecycleRoutingGraph(p, 1850);
+    expect(
+      auditLifecycleRouteGeometry({ graph, dimensions, handles: [] })
+        .fatalFindings,
+    ).toEqual([]);
+
+    const baseline = testOnlyDiagnoseLifecycleLayoutAttempt(p, 1850, {
+      transitionLanePhaseOnly: true,
+    });
+    const shuffled = testOnlyDiagnoseLifecycleLayoutAttempt(
+      shuffledProjection(routingFixture),
+      1850,
+      { transitionLanePhaseOnly: true },
+    );
+    expect(shuffled).toEqual(baseline);
+    expect(baseline.firstRejectedPhase).toBeNull();
+    expect(baseline.ranks.map((rank) => rank.rank)).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(
+      baseline.ranks.every(
+        (rank) =>
+          rank.centeredAssignmentFeasible &&
+          rank.domains.every((domain) => domain.domainSize > 0),
+      ),
+    ).toBe(true);
+  });
+
+  it("reports centered assignment feasibility with rank lane spacing", () => {
+    const snapshots = [];
+    layoutLifecycleRoutingGraph(projectLifecycleAt(routingFixture), 1850, {
+      testOnlyDiagnosticSink: (snapshot) => snapshots.push(snapshot),
+    });
+    const diagnostic = testOnlyDiagnoseLifecycleLayoutAttempt(
+      projectLifecycleAt(routingFixture),
+      1850,
+      { transitionLanePhaseOnly: true },
+    );
+    expect(snapshots.length).toBeGreaterThan(0);
+    const rankInfoByRank = snapshots[0].rankRefinementInfo;
+    expect(rankInfoByRank).toBeInstanceOf(Map);
+
+    for (const rank of diagnostic.ranks) {
+      const rawRankInfo = rankInfoByRank.get(rank.rank);
+      expect(rawRankInfo?.minLaneSpacing).toBeGreaterThan(0);
+      expect(rank.minLaneSpacing).toBe(rawRankInfo.minLaneSpacing);
+      const recomputed = rawRankInfo.cen.every((value, index) => {
+        const intervals = rawRankInfo.rankOrder[index].intervals;
+        const inDomain = intervals.some(
+          ([lo, hi]) => value >= lo - 1e-6 && value <= hi + 1e-6,
+        );
+        if (!inDomain) return false;
+        if (index === 0) return true;
+        return (
+          value >=
+          rawRankInfo.cen[index - 1] + rawRankInfo.minLaneSpacing - 1e-6
+        );
+      });
+      expect(rank.centeredAssignmentFeasible).toBe(recomputed);
+    }
+  });
+
+  it("identifies the invariant violated by a second base pass", () => {
+    const baseline = testOnlyDiagnoseLifecycleLayoutAttempt(
+      projectLifecycleAt(routingFixture),
+      1850,
+      { transitionLanePhaseOnly: true },
+    );
+    const reversed = testOnlyDiagnoseLifecycleLayoutAttempt(
+      projectLifecycleAt(routingFixture),
+      1850,
+      { baseNodeOrderByRank: reversedBaseOrderFrom(baseline) },
+    );
+    expect(reversed.firstRejectedPhase).toBe("handle");
+    expect(reversed.firstRejectedReason).toMatchObject({
+      reason: "no-candidates",
+      firstAffectedRank: 0,
+      evidence: { branchDiagnosticCount: 3 },
+    });
+    expect(reversed.ranks[0].centeredAssignmentFeasible).toBe(true);
+    expect(
+      reversed.ranks[0].domains.every((domain) => domain.domainSize > 0),
+    ).toBe(true);
+    expect(reversed.states.handle).toBeGreaterThan(0);
+  });
+
+  it("reproduces dense fixture diagnostics under a second base pass", () => {
+    const baseline = testOnlyDiagnoseLifecycleLayoutAttempt(
+      projectLifecycleAt(denseFixture),
+      1850,
+      { transitionLanePhaseOnly: true },
+    );
+    const reversedOrder = reversedBaseOrderFrom(baseline);
+    const reversed = testOnlyDiagnoseLifecycleLayoutAttempt(
+      projectLifecycleAt(denseFixture),
+      1850,
+      {
+        baseNodeOrderByRank: reversedOrder,
+        transitionLanePhaseOnly: true,
+      },
+    );
+    const shuffled = testOnlyDiagnoseLifecycleLayoutAttempt(
+      shuffledProjection(denseFixture),
+      1850,
+      {
+        baseNodeOrderByRank: reversedOrder,
+        transitionLanePhaseOnly: true,
+      },
+    );
+    expect(shuffled).toEqual(reversed);
+    expect(reversed.firstRejectedPhase).toBeNull();
+    expect(
+      reversed.ranks[0].domains.every((domain) => domain.domainSize > 0),
+    ).toBe(true);
+  });
+});
+
 describe("createLaneGeometryFailureCache", () => {
   // layoutLifecycleRoutingGraph's candidateCallback calls this exact factory
   // (not a copy) to classify why a full-geometry signature was rejected, so
@@ -2237,33 +2434,26 @@ describe("lifecycle diagram render-only routing layout", () => {
   it("resolves un-phased dense multi-rank fan-in fast, without exponential blowup", () => {
     // denseBranchProjection()'s multi-rank routing has no
     // handle-clearance-feasible lane arrangement (see the skipped test
-    // above for the root-cause analysis), so this always throws — but the
-    // point of this regression test is that it must do so FAST, the same
-    // way the previous test guards transitionDensityProjection(). This
-    // fixture spans multiple ranks (more, larger-domain decision variables
-    // than the single-rank fan-in above), so it separately exercises that
-    // the fix holds under a different variable/domain shape. Which of the
-    // two deterministic failure modes surfaces — a specific handle-
-    // placement rejection, or the shared handle-state budget exhausting
-    // first — depends on exactly how many coordinate variants get tried
-    // before either happens; both are legitimate, bounded outcomes (never
-    // a hang), so either message is accepted here. This fixture's search
-    // also now runs the route-crossing audit (a real, if bounded, added
-    // cost — see docs/design/lifecycle-diagram-layout-algorithm.md), so the
-    // threshold below has real margin above local timings, not just CI
-    // variance: shared CI runners measured ~1.4x slower than local dev
-    // hardware for this exact deterministic budget-exhaustion search.
+    // above for the root-cause analysis), so this direct production-path
+    // regression must fail with deterministic handle-phase evidence while
+    // staying bounded.
     const start = Date.now();
-    const deterministicFailure = new RegExp(
-      [
-        "^(Lifecycle diagram handle placement invariant violated for ",
-        "|Lifecycle handle search exceeded \\d+ states)",
-      ].join(""),
-      "u",
+    let thrown;
+    try {
+      layoutLifecycleRoutingGraph(denseBranchProjection(), 1850);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown?.message).toBe(
+      "Lifecycle handle search exceeded 32768 states",
     );
-    expect(() =>
-      layoutLifecycleRoutingGraph(denseBranchProjection(), 1850),
-    ).toThrow(deterministicFailure);
-    expect(Date.now() - start).toBeLessThan(90000);
+    expect(thrown?.cause).toMatchObject({
+      reason: "state-limit",
+      phase: "handle",
+      stateLimit: 32768,
+    });
+    expect(thrown?.cause?.statesVisited).toBeGreaterThanOrEqual(32768);
+    expect(thrown?.cause?.routeEdgeCount).toBeGreaterThan(0);
+    expect(Date.now() - start).toBeLessThan(30000);
   });
 });

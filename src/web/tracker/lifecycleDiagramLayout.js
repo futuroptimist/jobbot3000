@@ -1,6 +1,10 @@
 import { sankey } from "d3-sankey";
 import { LIFECYCLE_DIAGRAM_TAXONOMY } from "./lifecycleProjection.js";
 
+const isLifecycleLayoutTestEnvironment = () =>
+  typeof process !== "undefined" &&
+  (process.env.NODE_ENV === "test" || process.env.VITEST === "true");
+
 export const SANKEY_NODE_WIDTH = 18;
 export const MINIMUM_SVG_HEIGHT = 360;
 export const LAYOUT_TOP_MARGIN = 64;
@@ -613,6 +617,13 @@ export function layoutLifecycleRoutingGraph(
   availableWidth,
   options = {},
 ) {
+  const enableTestDiagnostics = isLifecycleLayoutTestEnvironment();
+  const testOnlyBaseNodeOrderByRank = enableTestDiagnostics
+    ? options.testOnlyBaseNodeOrderByRank
+    : null;
+  const testOnlyDiagnosticSink = enableTestDiagnostics
+    ? options.testOnlyDiagnosticSink
+    : null;
   const graph = options.routingGraph ?? buildLifecycleRoutingGraph(projection);
   const baselineLinks = new Map(
     graph.links.map((link) => [
@@ -638,7 +649,23 @@ export function layoutLifecycleRoutingGraph(
     .nodeAlign((node) => layerByRank.get(node.rank) ?? 0)
     .nodeWidth(SANKEY_NODE_WIDTH)
     .nodePadding(ROUTED_NODE_PADDING)
-    .nodeSort(nodeSort)
+    .nodeSort((left, right) => {
+      if (testOnlyBaseNodeOrderByRank && left.rank === right.rank) {
+        const order = testOnlyBaseNodeOrderByRank.get?.(left.rank);
+        if (order) {
+          const leftIndex = order.get(left.id);
+          const rightIndex = order.get(right.id);
+          if (
+            Number.isInteger(leftIndex) &&
+            Number.isInteger(rightIndex) &&
+            leftIndex !== rightIndex
+          ) {
+            return leftIndex - rightIndex;
+          }
+        }
+      }
+      return nodeSort(left, right);
+    })
     .linkSort(linkSort)
     .extent([
       [LAYOUT_LEFT_MARGIN, LAYOUT_TOP_MARGIN],
@@ -2002,14 +2029,17 @@ export function layoutLifecycleRoutingGraph(
                 failedCompleteOrderings.add(orderingKey);
                 return false;
               }
-              perRankPC.set(rank, { rankOrder, cen });
+              perRankPC.set(rank, { rankOrder, cen, minLaneSpacing });
             }
 
             const va = new Map();
-            for (const [rank, { rankOrder, cen }] of perRankPC) {
+            for (const [
+              rank,
+              { rankOrder, cen, minLaneSpacing },
+            ] of perRankPC) {
               for (let i = 0; i < rankOrder.length; i += 1)
                 va.set(rankOrder[i].id, cen[i]);
-              rankRefinementInfo.set(rank, { rankOrder, cen });
+              rankRefinementInfo.set(rank, { rankOrder, cen, minLaneSpacing });
             }
 
             for (const [id, value] of va) globalAssignments.set(id, value);
@@ -2445,6 +2475,7 @@ export function layoutLifecycleRoutingGraph(
   };
 
   let lastHandleFailure = null;
+  let lastHandleRouteEdgeCount = null;
   // Latest deliberately recoverable routing-anchor materialization failure
   // (see the "lifecycle-routing-anchor-allocation" cause above), retained so
   // the final error can surface it instead of a generic topology-cycle
@@ -2484,6 +2515,7 @@ export function layoutLifecycleRoutingGraph(
     );
     handleError.cause = Object.freeze({
       type: "lifecycle-transition-lane-order",
+      phase: "handle",
       reason: "state-limit",
       rank: null,
       branchIds: Object.freeze([]),
@@ -2493,6 +2525,7 @@ export function layoutLifecycleRoutingGraph(
       stateLimit: handleBudget.stateLimit,
       backtracks: 0,
       memoizedFailures: 0,
+      routeEdgeCount: lastHandleRouteEdgeCount,
     });
     throw handleError;
   };
@@ -2532,6 +2565,16 @@ export function layoutLifecycleRoutingGraph(
         // let the search continue with another candidate.
         lastRoutingAnchorFailure = error;
         lastHandleFailure = null;
+        if (testOnlyDiagnosticSink) {
+          testOnlyDiagnosticSink({
+            phase: "routing-anchor",
+            reason: error.cause,
+            rankRefinementInfo,
+            graph,
+            handleBudget,
+            transitionLaneSolverStats,
+          });
+        }
         geometryFailureCache.recordRoutingAnchorFailure(
           geometrySignature,
           error,
@@ -2549,10 +2592,14 @@ export function layoutLifecycleRoutingGraph(
     // Materialization succeeded: this candidate is no longer implicated by
     // an earlier routing-anchor failure.
     lastRoutingAnchorFailure = null;
-    if (
-      options.transitionLanePhaseOnly &&
-      (process.env.NODE_ENV === "test" || process.env.VITEST === "true")
-    ) {
+    if (options.transitionLanePhaseOnly && enableTestDiagnostics) {
+      testOnlyDiagnosticSink?.({
+        phase: "accepted",
+        rankRefinementInfo,
+        graph,
+        handleBudget,
+        transitionLaneSolverStats,
+      });
       // Test-only lane-phase exit: accept the first geometrically valid assignment.
       return true;
     }
@@ -2562,6 +2609,7 @@ export function layoutLifecycleRoutingGraph(
       visibleNodes,
       { sharedBudget: handleBudget },
     );
+    lastHandleRouteEdgeCount = handleCheck.routeEdgeCount ?? null;
     if (handleCheck.ok) {
       // Handle placement only checks each branch's own handle box against
       // fixed geometry, other branches' routes, and other handles — it has
@@ -2588,12 +2636,25 @@ export function layoutLifecycleRoutingGraph(
         1,
         Math.round((auditRouteEdgeCount * auditRouteEdgeCount) / 8450),
       );
+      if (handleBudget.statesVisited >= handleBudget.stateLimit)
+        throwHandleStateLimitExceeded();
       const routeAudit = auditLifecycleRouteGeometry({
         graph,
         dimensions,
         handles: handleCheck.handles,
       });
-      if (routeAudit.fatalFindings.length === 0) return true;
+      if (routeAudit.fatalFindings.length === 0) {
+        if (testOnlyDiagnosticSink) {
+          testOnlyDiagnosticSink({
+            phase: "accepted",
+            rankRefinementInfo,
+            graph,
+            handleBudget,
+            transitionLaneSolverStats,
+          });
+        }
+        return true;
+      }
       const blockedBranchIds = [
         ...new Set(
           routeAudit.fatalFindings.flatMap(
@@ -2610,6 +2671,16 @@ export function layoutLifecycleRoutingGraph(
         routeFindings: routeAudit.fatalFindings,
       };
       lastHandleFailure = routeFailure;
+      if (testOnlyDiagnosticSink) {
+        testOnlyDiagnosticSink({
+          phase: "route-crossing",
+          reason: routeFailure,
+          rankRefinementInfo,
+          graph,
+          handleBudget,
+          transitionLaneSolverStats,
+        });
+      }
       geometryFailureCache.recordHandleFailure(geometrySignature, routeFailure);
       return false;
     }
@@ -2620,6 +2691,16 @@ export function layoutLifecycleRoutingGraph(
       throwHandleStateLimitExceeded();
     }
     lastHandleFailure = handleCheck;
+    if (testOnlyDiagnosticSink) {
+      testOnlyDiagnosticSink({
+        phase: "handle",
+        reason: handleCheck,
+        rankRefinementInfo,
+        graph,
+        handleBudget,
+        transitionLaneSolverStats,
+      });
+    }
     geometryFailureCache.recordHandleFailure(geometrySignature, handleCheck);
     return false;
   };
@@ -2676,6 +2757,181 @@ export function layoutLifecycleRoutingGraph(
     ...transitionLaneSolverStats,
   });
   return { graph, dimensions };
+}
+
+export function testOnlyDiagnoseLifecycleLayoutAttempt(
+  projection,
+  availableWidth,
+  options = {},
+) {
+  if (!isLifecycleLayoutTestEnvironment()) {
+    throw new Error("Lifecycle layout diagnostics are available only in tests");
+  }
+  const snapshots = [];
+  const diagnosticComplete = Symbol("lifecycle-layout-diagnostic-complete");
+  const orderByRank = options.baseNodeOrderByRank
+    ? new Map(
+        [...options.baseNodeOrderByRank].map(([rank, ids]) => [
+          rank,
+          new Map(ids.map((id, index) => [id, index])),
+        ]),
+      )
+    : undefined;
+  const quantizedIntervalValueCount = (intervals) =>
+    intervals.reduce((sum, [lo, hi]) => {
+      const start = Math.ceil((lo - LANE_Y_EPSILON) * 1000);
+      const end = Math.floor((hi + LANE_Y_EPSILON) * 1000);
+      return sum + Math.max(0, end - start + 1);
+    }, 0);
+  const intervalContains = (intervals, value) =>
+    intervals.some(
+      ([lo, hi]) =>
+        value >= lo - LANE_Y_EPSILON && value <= hi + LANE_Y_EPSILON,
+    );
+  const structuredReason = (phase, reason, ranks = []) => {
+    if (!reason) return null;
+    const affectedRanks = [
+      reason.rank,
+      ...(reason.routeFindings ?? []).map((finding) => finding.rank),
+      ...(reason.branchDiagnostics ?? []).map((diagnostic) => diagnostic.rank),
+    ].filter((rank) => Number.isFinite(rank));
+    if (!affectedRanks.length && reason.blockedBranchIds?.length) {
+      const blocked = new Set(reason.blockedBranchIds);
+      for (const rank of ranks) {
+        if (rank.branchOrder.some((branchId) => blocked.has(branchId))) {
+          affectedRanks.push(rank.rank);
+        }
+      }
+    }
+    return {
+      reason: reason.reason ?? String(reason),
+      firstAffectedRank: affectedRanks.length
+        ? Math.min(...affectedRanks)
+        : null,
+      evidence: {
+        type: reason.type ?? null,
+        blockedBranchIds: reason.blockedBranchIds ?? [],
+        routeFindingCount: reason.routeFindings?.length ?? 0,
+        branchDiagnosticCount: reason.branchDiagnostics?.length ?? 0,
+      },
+    };
+  };
+  const summarize = ({
+    phase,
+    reason,
+    rankRefinementInfo,
+    graph,
+    handleBudget,
+    transitionLaneSolverStats,
+  }) => {
+    const ranks = [...rankRefinementInfo.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([rank, info]) => {
+        const branchOrder = info.rankOrder.map((entry) => entry.branchId);
+        const centeredAssignmentFeasible = info.cen.every((value, index) => {
+          if (!Number.isFinite(value)) return false;
+          if (!intervalContains(info.rankOrder[index].intervals, value))
+            return false;
+          if (index === 0) return true;
+          return (
+            value >=
+            info.cen[index - 1] + (info.minLaneSpacing ?? 0) - LANE_Y_EPSILON
+          );
+        });
+        return {
+          rank,
+          branchOrder,
+          minLaneSpacing: info.minLaneSpacing ?? 0,
+          nodePositions: graph.nodes
+            .filter((node) => node.rank === rank)
+            .sort(
+              (left, right) =>
+                (left.y0 + left.y1) / 2 - (right.y0 + right.y1) / 2 ||
+                Number(left.routing) - Number(right.routing) ||
+                compareLifecycleIds(left.id, right.id),
+            )
+            .map((node) => ({
+              id: node.id,
+              kind: node.routing ? "routing" : "real",
+              routing: Boolean(node.routing),
+              y0: node.y0,
+              y1: node.y1,
+            })),
+          domains: info.rankOrder.map((entry, index) => ({
+            linkId: entry.id,
+            branchId: entry.branchId,
+            intervalCount: entry.intervals.length,
+            domainSize: quantizedIntervalValueCount(entry.intervals),
+            centeredY: info.cen[index],
+            centeredInDomain: intervalContains(
+              entry.intervals,
+              info.cen[index],
+            ),
+          })),
+          centeredAssignmentFeasible,
+        };
+      });
+    snapshots.push({
+      firstRejectedPhase: phase === "accepted" ? null : phase,
+      firstRejectedReason:
+        phase === "accepted" ? null : structuredReason(phase, reason, ranks),
+      ranks,
+      states: {
+        transition: transitionLaneSolverStats.statesVisited,
+        handle: handleBudget.statesVisited,
+      },
+    });
+  };
+  try {
+    layoutLifecycleRoutingGraph(projection, availableWidth, {
+      ...options,
+      testOnlyBaseNodeOrderByRank: orderByRank,
+      testOnlyDiagnosticSink: (snapshot) => {
+        if (!snapshots.length) {
+          summarize(snapshot);
+          throw diagnosticComplete;
+        }
+      },
+    });
+  } catch (error) {
+    if (!snapshots.length) {
+      const cause = error.cause;
+      const firstRejectedPhase = (() => {
+        if (typeof cause?.phase === "string") return cause.phase;
+        if (cause?.type === "lifecycle-handle-placement") {
+          return cause.reason === "route-crossing"
+            ? "route-crossing"
+            : "handle";
+        }
+        if (cause?.type === "lifecycle-routing-anchor-allocation") {
+          return "routing-anchor";
+        }
+        if (cause?.reason === "state-limit") return "transition";
+        return "throw";
+      })();
+      snapshots.push({
+        firstRejectedPhase,
+        firstRejectedReason: structuredReason(firstRejectedPhase, cause) ?? {
+          reason: error.message,
+          firstAffectedRank: null,
+          evidence: {},
+        },
+        ranks: [],
+        states: {
+          transition:
+            firstRejectedPhase === "handle"
+              ? null
+              : (error.cause?.statesVisited ?? null),
+          handle:
+            firstRejectedPhase === "handle"
+              ? (error.cause?.statesVisited ?? null)
+              : null,
+        },
+      });
+    }
+    if (error === diagnosticComplete) return snapshots[0];
+  }
+  return snapshots[0];
 }
 
 const point = (x, y) => `${Number(x).toFixed(3)},${Number(y).toFixed(3)}`;
@@ -3445,9 +3701,20 @@ const tryAssignBranchHandles = (
         blockedBranchIds: [],
         branchDiagnostics: [],
         candidateSets: new Map(),
+        routeEdgeCount,
       };
     }
     sharedBudget.statesVisited += generationCost;
+    if (sharedBudget.statesVisited >= sharedBudget.stateLimit) {
+      return {
+        ok: false,
+        reason: "state-limit",
+        blockedBranchIds: [],
+        branchDiagnostics: [],
+        candidateSets: new Map(),
+        routeEdgeCount,
+      };
+    }
   }
   const candidateSets = new Map();
   const branchDiagnostics = new Map();
