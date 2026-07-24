@@ -633,13 +633,19 @@ export function layoutLifecycleRoutingGraph(
     (left, right) => left - right,
   );
   const layerByRank = new Map(rankLayers.map((rank, index) => [rank, index]));
+  const allowTestLayoutOverrides =
+    process.env.NODE_ENV === "test" || process.env.VITEST === "true";
   const layout = sankey()
     .nodeId((d) => d.id)
     .nodeAlign((node) => layerByRank.get(node.rank) ?? 0)
     .nodeWidth(SANKEY_NODE_WIDTH)
     .nodePadding(ROUTED_NODE_PADDING)
-    .nodeSort(nodeSort)
-    .linkSort(linkSort)
+    .nodeSort(
+      allowTestLayoutOverrides ? (options.testNodeSort ?? nodeSort) : nodeSort,
+    )
+    .linkSort(
+      allowTestLayoutOverrides ? (options.testLinkSort ?? linkSort) : linkSort,
+    )
     .extent([
       [LAYOUT_LEFT_MARGIN, LAYOUT_TOP_MARGIN],
       [
@@ -2676,6 +2682,101 @@ export function layoutLifecycleRoutingGraph(
     ...transitionLaneSolverStats,
   });
   return { graph, dimensions };
+}
+
+export function diagnoseLifecycleLayoutForTest(
+  projection,
+  availableWidth,
+  options = {},
+) {
+  if (process.env.NODE_ENV !== "test" && process.env.VITEST !== "true") {
+    throw new Error("Lifecycle layout diagnostics are only available in tests");
+  }
+  const result = {
+    ok: false,
+    firstRejectedPhase: null,
+    structuredReason: null,
+    states: null,
+    ranks: [],
+  };
+  try {
+    const { graph, dimensions } = layoutLifecycleRoutingGraph(
+      projection,
+      availableWidth,
+      {
+        ...options,
+        transitionLanePhaseOnly: true,
+      },
+    );
+    const audit = auditLifecycleRouteGeometry({
+      graph,
+      dimensions,
+      handles: [],
+    });
+    result.ok = audit.fatalFindings.length === 0;
+    result.firstRejectedPhase = audit.fatalFindings.length
+      ? "route-audit"
+      : null;
+    result.structuredReason = audit.fatalFindings[0] ?? null;
+    result.states = graph.transitionLaneSolverStats;
+    const linksByRank = new Map();
+    for (const link of graph.links) {
+      const rank = link.source?.rank;
+      if (!linksByRank.has(rank)) linksByRank.set(rank, []);
+      linksByRank.get(rank).push(link);
+    }
+    const ranks = [...linksByRank.keys()].sort((a, b) => a - b);
+    result.ranks = ranks.map((rank) => {
+      const links = [...(linksByRank.get(rank) ?? [])].sort(
+        (a, b) =>
+          a.transitionLaneY - b.transitionLaneY ||
+          compareLifecycleIds(a.branchId, b.branchId) ||
+          compareLifecycleIds(a.id, b.id),
+      );
+      const nodes = graph.nodes
+        .filter((node) => node.rank === rank)
+        .sort(
+          (a, b) =>
+            (a.y0 + a.y1) / 2 - (b.y0 + b.y1) / 2 ||
+            compareLifecycleIds(a.id, b.id),
+        )
+        .map((node) => ({
+          id: node.id,
+          branchId: node.branchId ?? null,
+          routing: node.routing === true,
+          y0: node.y0,
+          y1: node.y1,
+        }));
+      return {
+        rank,
+        branchOrder: links.map((link) => link.branchId),
+        linkOrder: links.map((link) => link.id),
+        nodePositions: nodes,
+        lanePositions: links.map((link) => ({
+          id: link.id,
+          branchId: link.branchId,
+          sourceY: link.y0,
+          targetY: link.y1,
+          laneY: link.transitionLaneY,
+          domainSize: Number.isFinite(link.transitionLaneY) ? 1 : 0,
+          centeredFeasible: Number.isFinite(link.transitionLaneY),
+        })),
+      };
+    });
+  } catch (error) {
+    result.firstRejectedPhase =
+      error.cause?.reason === "state-limit" ? "state-limit" : "layout";
+    result.structuredReason = error.cause ?? { message: error.message };
+    result.states = error.cause
+      ? {
+          statesVisited: error.cause.statesVisited ?? null,
+          stateLimit: error.cause.stateLimit ?? null,
+          backtracks: error.cause.backtracks ?? null,
+          memoizedFailures: error.cause.memoizedFailures ?? null,
+        }
+      : null;
+  }
+  return JSON.parse(JSON.stringify(result));
 }
 
 const point = (x, y) => `${Number(x).toFixed(3)},${Number(y).toFixed(3)}`;

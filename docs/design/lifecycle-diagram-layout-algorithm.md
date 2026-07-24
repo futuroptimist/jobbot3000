@@ -344,3 +344,35 @@ without external requests"`
    overlapping render. There is no automated end-to-end test asserting "the diagram is visually
    readable" beyond `auditLifecycleRouteGeometry`'s structural checks — worth considering as a
    follow-up if visual regressions become a recurring concern.
+
+## Verified base-layout/solver coupling root cause
+
+The follow-up base-layout investigation isolated the previous deterministic budget exhaustion to the
+fact that a second D3 pass is not a pure topological reorder. Re-running Sankey with a different
+`nodeSort` changes the real nodes' concrete `y0`/`y1` geometry. The transition-lane solver then
+rebuilds legal intervals, centered assignments, routing-node anchors, handle candidates, and route
+audit inputs from those new real-node positions. In other words, the solver budget was exhausted
+because the second pass changed the geometry-dependent domains the solver was searching, not because
+the candidate rank order was merely shuffled.
+
+A test-only diagnostic pass now reproduces this without changing production layout behavior. On
+`tracker-lifecycle-diagram-routing-v2.json`, the existing base layout's first route-audit rejection is
+at transition rank 2, while a rank-local reversed base Sankey order moves the first rejection to rank 0. On `tracker-lifecycle-diagram-v2.json`, both the existing and reversed base layouts reject first at
+rank 0, but with different real-node positions. These deterministic differences persist even when the
+fixture's nodes, links, and paths are reversed before graph construction, which confirms that the
+observable difference comes from the requested base-layout order rather than incidental input order.
+
+Safe rankOrder-aware second-pass work must preserve these invariants:
+
+1. Each attempt must start from a fresh base Sankey geometry for its own node/link order.
+2. Baseline link coordinates, visible nodes, label boxes, renderer hit boxes, lane obstacles, legal
+   intervals, lane-domain caches, handle-candidate caches, shared budgets, and diagnostics must be
+   rebuilt for that attempt only.
+3. No closure derived from a prior D3 pass may be reused by a later pass; this includes obstacle
+   predicates, lane-domain caches, routing-anchor domains, and handle/audit inputs.
+4. Real nodes at a rank must remain coordinated with routing nodes through the existing fixed
+   singleton-domain entries in `materializeLaneAssignments`; do not duplicate or remove that behavior
+   unless a replacement proves the same real-vs-routing ordering constraint.
+5. A second pass must be accepted only if the full route audit and handle placement pass with the
+   existing budgets and auditing rules. Budget increases, relaxed route auditing, and skipped-test
+   changes would hide the same coupling instead of fixing it.
