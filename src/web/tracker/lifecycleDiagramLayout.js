@@ -617,6 +617,13 @@ export function layoutLifecycleRoutingGraph(
   availableWidth,
   options = {},
 ) {
+  const enableTestDiagnostics = isLifecycleLayoutTestEnvironment();
+  const testOnlyBaseNodeOrderByRank = enableTestDiagnostics
+    ? options.testOnlyBaseNodeOrderByRank
+    : null;
+  const testOnlyDiagnosticSink = enableTestDiagnostics
+    ? options.testOnlyDiagnosticSink
+    : null;
   const graph = options.routingGraph ?? buildLifecycleRoutingGraph(projection);
   const baselineLinks = new Map(
     graph.links.map((link) => [
@@ -643,12 +650,8 @@ export function layoutLifecycleRoutingGraph(
     .nodeWidth(SANKEY_NODE_WIDTH)
     .nodePadding(ROUTED_NODE_PADDING)
     .nodeSort((left, right) => {
-      if (
-        isLifecycleLayoutTestEnvironment() &&
-        left.rank === right.rank &&
-        options.testOnlyBaseNodeOrderByRank
-      ) {
-        const order = options.testOnlyBaseNodeOrderByRank.get?.(left.rank);
+      if (testOnlyBaseNodeOrderByRank && left.rank === right.rank) {
+        const order = testOnlyBaseNodeOrderByRank.get?.(left.rank);
         if (order) {
           const leftIndex = order.get(left.id);
           const rightIndex = order.get(right.id);
@@ -2559,8 +2562,8 @@ export function layoutLifecycleRoutingGraph(
         // let the search continue with another candidate.
         lastRoutingAnchorFailure = error;
         lastHandleFailure = null;
-        if (isLifecycleLayoutTestEnvironment()) {
-          options.testOnlyDiagnosticSink?.({
+        if (testOnlyDiagnosticSink) {
+          testOnlyDiagnosticSink({
             phase: "routing-anchor",
             reason: error.cause,
             rankRefinementInfo,
@@ -2586,8 +2589,8 @@ export function layoutLifecycleRoutingGraph(
     // Materialization succeeded: this candidate is no longer implicated by
     // an earlier routing-anchor failure.
     lastRoutingAnchorFailure = null;
-    if (options.transitionLanePhaseOnly && isLifecycleLayoutTestEnvironment()) {
-      options.testOnlyDiagnosticSink?.({
+    if (options.transitionLanePhaseOnly && enableTestDiagnostics) {
+      testOnlyDiagnosticSink?.({
         phase: "accepted",
         rankRefinementInfo,
         graph,
@@ -2636,8 +2639,8 @@ export function layoutLifecycleRoutingGraph(
         handles: handleCheck.handles,
       });
       if (routeAudit.fatalFindings.length === 0) {
-        if (isLifecycleLayoutTestEnvironment()) {
-          options.testOnlyDiagnosticSink?.({
+        if (testOnlyDiagnosticSink) {
+          testOnlyDiagnosticSink({
             phase: "accepted",
             rankRefinementInfo,
             graph,
@@ -2663,8 +2666,8 @@ export function layoutLifecycleRoutingGraph(
         routeFindings: routeAudit.fatalFindings,
       };
       lastHandleFailure = routeFailure;
-      if (isLifecycleLayoutTestEnvironment()) {
-        options.testOnlyDiagnosticSink?.({
+      if (testOnlyDiagnosticSink) {
+        testOnlyDiagnosticSink({
           phase: "route-crossing",
           reason: routeFailure,
           rankRefinementInfo,
@@ -2683,8 +2686,8 @@ export function layoutLifecycleRoutingGraph(
       throwHandleStateLimitExceeded();
     }
     lastHandleFailure = handleCheck;
-    if (isLifecycleLayoutTestEnvironment()) {
-      options.testOnlyDiagnosticSink?.({
+    if (testOnlyDiagnosticSink) {
+      testOnlyDiagnosticSink({
         phase: "handle",
         reason: handleCheck,
         rankRefinementInfo,

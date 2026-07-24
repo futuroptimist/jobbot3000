@@ -2400,23 +2400,26 @@ describe("lifecycle diagram render-only routing layout", () => {
   it("resolves un-phased dense multi-rank fan-in fast, without exponential blowup", () => {
     // denseBranchProjection()'s multi-rank routing has no
     // handle-clearance-feasible lane arrangement (see the skipped test
-    // above for the root-cause analysis). This regression uses the
-    // test-only diagnostic seam so it exercises the same first rejected
-    // handle-placement contract without spending Vitest's entire per-test
-    // timeout on later candidate attempts that the diagnostic result does
-    // not report.
+    // above for the root-cause analysis), so this direct production-path
+    // regression must fail with deterministic handle-phase evidence while
+    // staying bounded.
     const start = Date.now();
-    const diagnostic = testOnlyDiagnoseLifecycleLayoutAttempt(
-      denseBranchProjection(),
-      1850,
+    let thrown;
+    try {
+      layoutLifecycleRoutingGraph(denseBranchProjection(), 1850);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown?.message).toBe(
+      "Lifecycle handle search exceeded 32768 states",
     );
-    expect(diagnostic.firstRejectedPhase).toBe("handle");
-    expect(diagnostic.firstRejectedReason).toMatchObject({
-      reason: "no-candidates",
-      firstAffectedRank: 0,
-      evidence: { branchDiagnosticCount: 14 },
+    expect(thrown?.cause).toMatchObject({
+      reason: "state-limit",
+      phase: "handle",
+      stateLimit: 32768,
     });
-    expect(diagnostic.states.handle).toBeGreaterThan(0);
+    expect(thrown?.cause?.statesVisited).toBeGreaterThanOrEqual(32768);
+    expect(thrown?.cause?.routeEdgeCount).toBeGreaterThan(0);
     expect(Date.now() - start).toBeLessThan(90000);
-  });
+  }, 90000);
 });
