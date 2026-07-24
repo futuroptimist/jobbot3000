@@ -3680,14 +3680,9 @@ const tryAssignBranchHandles = (
   // infeasible fixture without starving an ordinary one that just needs
   // many cheap tries.
   const routeEdgeCount = routeEdges.length;
-  const hasMultiRankRoutes = [...segmentsByBranch.values()].some(
-    (segments) => segments.length > 1,
-  );
-  const denseMultiRankChargeDivisor =
-    hasMultiRankRoutes && routeEdgeCount > 1500 ? 2000 : 8450;
   const generationCost = Math.max(
     1,
-    Math.round((routeEdgeCount * routeEdgeCount) / denseMultiRankChargeDivisor),
+    Math.round((routeEdgeCount * routeEdgeCount) / 8450),
   );
   if (sharedBudget) {
     if (sharedBudget.statesVisited >= sharedBudget.stateLimit) {

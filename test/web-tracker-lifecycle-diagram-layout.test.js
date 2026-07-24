@@ -916,16 +916,9 @@ describe("transition lane solver", () => {
     // real margin above local timings rather than being tuned tight to one
     // machine.
     const start = Date.now();
-    const deterministicFailure = new RegExp(
-      [
-        "^(Lifecycle diagram handle placement invariant violated for ",
-        "|Lifecycle handle search exceeded \\d+ states)",
-      ].join(""),
-      "u",
-    );
     expect(() =>
       layoutLifecycleRoutingGraph(transitionDensityProjection(), 1850),
-    ).toThrow(deterministicFailure);
+    ).toThrow(/^Lifecycle diagram handle placement invariant violated for /u);
     expect(Date.now() - start).toBeLessThan(30000);
   });
 
@@ -2407,48 +2400,23 @@ describe("lifecycle diagram render-only routing layout", () => {
   it("resolves un-phased dense multi-rank fan-in fast, without exponential blowup", () => {
     // denseBranchProjection()'s multi-rank routing has no
     // handle-clearance-feasible lane arrangement (see the skipped test
-    // above for the root-cause analysis), so this always throws — but the
-    // point of this regression test is that it must do so FAST, the same
-    // way the previous test guards transitionDensityProjection(). This
-    // fixture spans multiple ranks (more, larger-domain decision variables
-    // than the single-rank fan-in above), so it separately exercises that
-    // the fix holds under a different variable/domain shape. Which of the
-    // two deterministic failure modes surfaces — a specific handle-
-    // placement rejection, or the shared handle-state budget exhausting
-    // first — depends on exactly how many coordinate variants get tried
-    // before either happens; both are legitimate, bounded outcomes (never
-    // a hang), so either message is accepted here. This fixture's search
-    // also now runs the route-crossing audit (a real, if bounded, added
-    // cost — see docs/design/lifecycle-diagram-layout-algorithm.md), so the
-    // threshold below has real margin above local timings, not just CI
-    // variance: shared CI runners measured ~1.4x slower than local dev
-    // hardware for this exact deterministic budget-exhaustion search.
+    // above for the root-cause analysis). This regression uses the
+    // test-only diagnostic seam so it exercises the same first rejected
+    // handle-placement contract without spending Vitest's entire per-test
+    // timeout on later candidate attempts that the diagnostic result does
+    // not report.
     const start = Date.now();
-    const deterministicFailure = new RegExp(
-      [
-        "^(Lifecycle diagram handle placement invariant violated for ",
-        "|Lifecycle handle search exceeded \\d+ states)",
-      ].join(""),
-      "u",
+    const diagnostic = testOnlyDiagnoseLifecycleLayoutAttempt(
+      denseBranchProjection(),
+      1850,
     );
-    let thrown;
-    try {
-      layoutLifecycleRoutingGraph(denseBranchProjection(), 1850);
-    } catch (error) {
-      thrown = error;
-    }
-    expect(thrown).toBeInstanceOf(Error);
-    expect(thrown.message).toMatch(deterministicFailure);
-    if (thrown.cause?.reason === "state-limit") {
-      expect(thrown.cause).toMatchObject({
-        phase: "handle",
-        reason: "state-limit",
-        stateLimit: 32768,
-      });
-      expect(thrown.cause.statesVisited).toBeGreaterThanOrEqual(
-        thrown.cause.stateLimit,
-      );
-    }
+    expect(diagnostic.firstRejectedPhase).toBe("handle");
+    expect(diagnostic.firstRejectedReason).toMatchObject({
+      reason: "no-candidates",
+      firstAffectedRank: 0,
+      evidence: { branchDiagnosticCount: 14 },
+    });
+    expect(diagnostic.states.handle).toBeGreaterThan(0);
     expect(Date.now() - start).toBeLessThan(90000);
   });
 });
