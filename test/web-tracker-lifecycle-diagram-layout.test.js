@@ -1414,11 +1414,10 @@ describe("test-only lifecycle layout diagnostics", () => {
     expect(reversed.firstRejectedReason).toMatchObject({
       reason: "no-candidates",
       firstAffectedRank: 0,
-      // The wider handle-candidate fallback search now finds a legal point
-      // for one of the three branches this reversed order used to block
-      // outright with only three sample points; two remain genuinely
-      // handle-infeasible under this reversed order.
-      evidence: { branchDiagnosticCount: 2 },
+      // Denser sampling remains subject to the standard rank corridor, so
+      // all three branches remain handle-infeasible under this reversed
+      // order rather than accepting a candidate outside that invariant.
+      evidence: { branchDiagnosticCount: 3 },
     });
     expect(reversed.ranks[0].centeredAssignmentFeasible).toBe(true);
     expect(
@@ -1626,7 +1625,7 @@ describe("lifecycle diagram render-only routing layout", () => {
     }
   });
 
-  it("surfaces structured handle diagnostics for all blocked candidates", () => {
+  it("keeps fallback handle candidates inside the standard rank corridor", () => {
     const makeSegment = (id, y) => ({
       id: `${id}:segment:0`,
       branchId: id,
@@ -1661,9 +1660,9 @@ describe("lifecycle diagram render-only routing layout", () => {
               branchId: "branch:blocked",
               // Both branches occupy the exact same y, at every x, so this
               // branch stays blocked through the full escalating candidate
-              // search (primary + fallback t-values, standard + fallback
-              // corridor) -- 3 + 8 + 8 attempts.
-              attempts: 19,
+              // search (3 primary + 8 fallback t-values), all constrained
+              // by the standard rank corridor.
+              attempts: 11,
               accepted: 0,
               rejected: expect.objectContaining({
                 fixedGeometry: 0,
@@ -1686,6 +1685,7 @@ describe("lifecycle diagram render-only routing layout", () => {
     expect(
       diagnostic.nearestRejectedCandidate.clearanceMargin,
     ).toBeLessThanOrEqual(0);
+    expect(diagnostic.rejected.outsideTransitionCorridor).toBeGreaterThan(0);
   });
 
   it("identifies fixed geometry blockers in handle diagnostics", () => {
@@ -1726,10 +1726,10 @@ describe("lifecycle diagram render-only routing layout", () => {
             expect.objectContaining({
               // The 44px-wide handle box can't clear a centrally-placed
               // obstacle from any point in this segment's corridor, so
-              // every attempt across the escalating fallback search (3 +
-              // 8 + 8 t-values) hits it too.
-              attempts: 19,
-              rejected: expect.objectContaining({ fixedGeometry: 19 }),
+              // every attempt across the primary and fallback search (3 +
+              // 8 t-values) hits it too.
+              attempts: 11,
+              rejected: expect.objectContaining({ fixedGeometry: 11 }),
               nearestRejectedCandidate: expect.objectContaining({
                 blocker: expect.objectContaining({
                   kind: "hit-region",

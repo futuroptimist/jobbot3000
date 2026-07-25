@@ -84,18 +84,6 @@ const HANDLE_FALLBACK_CANDIDATE_T_VALUES = Object.freeze(
     (_, index) => Math.round((0.05 + index * 0.1) * 1000) / 1000,
   ).filter((t) => ![0.5, 0.35, 0.65].includes(t)),
 );
-// Last-resort corridor buffer for handle placement only, used solely when
-// both t-value sets above are exhausted for the standard
-// RANK_CORRIDOR_HALF_WIDTH corridor. RANK_CORRIDOR_HALF_WIDTH keeps handles
-// away from a node's edge for visual clarity, but the actual safety
-// boundary against overlapping node/label/hit geometry is
-// fixedGeometryBlockerForCandidate, which this narrower buffer does not
-// bypass -- confirmed directly that points just inside the standard
-// corridor's excluded zone, near a shared convergent target, still clear
-// fixed geometry cleanly. Relaxing this cosmetic buffer only as a final
-// fallback cannot weaken the actual collision envelope.
-const HANDLE_FALLBACK_CORRIDOR_HALF_WIDTH = 40;
-
 export const buildTransitionPrecedence = ({
   rank,
   variables,
@@ -4415,12 +4403,6 @@ const tryAssignBranchHandles = (
       sweepCorridor(
         HANDLE_FALLBACK_CANDIDATE_T_VALUES,
         RANK_CORRIDOR_HALF_WIDTH,
-      );
-    }
-    if (!candidates.length) {
-      sweepCorridor(
-        HANDLE_FALLBACK_CANDIDATE_T_VALUES,
-        HANDLE_FALLBACK_CORRIDOR_HALF_WIDTH,
       );
     }
     candidateSets.set(

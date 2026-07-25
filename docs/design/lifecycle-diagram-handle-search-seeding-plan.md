@@ -270,11 +270,11 @@ Two independent, verified, low-risk fixes are already committed and pushed to
 `codex/implement-rankorder-aware-base-layout`:
 
 1. **Sparse handle-candidate sampling** — `tryAssignBranchHandles` only ever sampled 3
-   fixed `t` values per route segment. Added an escalating fallback (denser grid, then
-   a narrower handle-only corridor buffer) that only engages when the primary 3 find
-   nothing, so it can't change behavior for fixtures that already worked. See
-   `HANDLE_CANDIDATE_T_VALUES`/`HANDLE_FALLBACK_CANDIDATE_T_VALUES`/
-   `HANDLE_FALLBACK_CORRIDOR_HALF_WIDTH` in `lifecycleDiagramLayout.js`.
+   fixed `t` values per route segment. Added a denser fallback grid that only engages
+   when the primary 3 find nothing and remains within the standard rank corridor, so
+   it can't change behavior for fixtures that already worked. See
+   `HANDLE_CANDIDATE_T_VALUES`/`HANDLE_FALLBACK_CANDIDATE_T_VALUES` in
+   `lifecycleDiagramLayout.js`.
 2. **Zero minimum port spacing** — D3-sankey docks a node's incident links purely
    proportional to link value, with no minimum gap; for a node where several
    low-value branches converge, adjacent docks can land only a few pixels apart, far
