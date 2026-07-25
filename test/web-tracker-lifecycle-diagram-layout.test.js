@@ -2504,3 +2504,110 @@ describe("lifecycle diagram render-only routing layout", () => {
     expect(Date.now() - start).toBeLessThan(30000);
   });
 });
+
+// The routing fixture (unlike the dense v2 fixture and denseBranchProjection,
+// both of which have a pre-existing, already-documented handle-clearance
+// infeasibility -- see the two it.skip blocks above) has a handle-feasible
+// geometry, so it is the real production regression coverage for the
+// seeded-replay two-pass architecture: discovery fully validates a candidate
+// (lane assignment + handle placement + zero fatal audit findings) and final
+// replays that exact candidate instead of re-searching from scratch.
+describe("seeded-replay production layout (routing fixture)", () => {
+  const reversedProjection = () => {
+    const p = projectLifecycleAt(routingFixture);
+    return {
+      ...p,
+      nodes: [...p.nodes].reverse(),
+      links: [...p.links].reverse(),
+      paths: [...p.paths].reverse(),
+    };
+  };
+  const directions = [
+    ["normal", () => projectLifecycleAt(routingFixture)],
+    ["reversed", reversedProjection],
+  ];
+
+  const handlesFor = (graph) => {
+    const visibleNodes = graph.nodes.filter(
+      (node) => !node.routing && node.total > 0,
+    );
+    const byBranch = new Map();
+    for (const link of graph.links) {
+      if (!byBranch.has(link.branchId)) byBranch.set(link.branchId, []);
+      byBranch.get(link.branchId).push(link);
+    }
+    return assignBranchHandles(graph.branches, byBranch, visibleNodes);
+  };
+
+  for (const [label, makeProjection] of directions) {
+    // eslint-disable-next-line max-len
+    it(`lays out successfully in two bounded passes with one valid handle per branch and zero fatal audit findings (${label})`, () => {
+      const { graph, dimensions } = layoutLifecycleRoutingGraph(
+        makeProjection(),
+        1850,
+      );
+      const stats = graph.transitionLaneSolverStats;
+      expect(stats.layoutAttemptCount).toBe(2);
+      expect(stats.layoutAttempts).toHaveLength(2);
+      expect(stats.layoutAttempts.map((attempt) => attempt.phase)).toEqual([
+        "discovery",
+        "final",
+      ]);
+      expect(stats.statesVisited).toBeLessThanOrEqual(stats.stateLimit);
+      expect(stats.handleStatesVisited).toBeLessThanOrEqual(
+        stats.handleStateLimit,
+      );
+
+      const handles = handlesFor(graph);
+      expect(handles).toHaveLength(graph.branches.length);
+      expect(new Set(handles.map((handle) => handle.branchId)).size).toBe(
+        graph.branches.length,
+      );
+      for (const handle of handles) {
+        expect(Number.isFinite(handle.x), handle.branchId).toBe(true);
+        expect(Number.isFinite(handle.y), handle.branchId).toBe(true);
+      }
+
+      const model = buildLifecycleRouteModel(graph, dimensions);
+      const audit = auditLifecycleRouteGeometry({ model, handles });
+      expect(audit.fatalFindings).toEqual([]);
+    });
+  }
+
+  it("derives identical authoritative rank ordering for normal and reversed input", () => {
+    const { graph: normal } = layoutLifecycleRoutingGraph(
+      projectLifecycleAt(routingFixture),
+      1850,
+    );
+    const { graph: reversed } = layoutLifecycleRoutingGraph(
+      reversedProjection(),
+      1850,
+    );
+    expect(reversed.transitionLaneRankOrder).toBeInstanceOf(Map);
+    expect([...reversed.transitionLaneRankOrder.entries()]).toEqual([
+      ...normal.transitionLaneRankOrder.entries(),
+    ]);
+  });
+
+  // eslint-disable-next-line max-len
+  it("produces stable-ID-normalized equivalent geometry/stats for normal and reversed input", () => {
+    const signatureFor = (proj) => {
+      const { graph } = layoutLifecycleRoutingGraph(proj, 1850);
+      const stats = graph.transitionLaneSolverStats;
+      return {
+        lanes: [...graph.links]
+          .sort((a, b) => compareLifecycleIds(a.id, b.id))
+          .map((link) => [link.id, link.transitionLaneY, link.y0, link.y1]),
+        stats: {
+          layoutAttemptCount: stats.layoutAttemptCount,
+          statesVisited: stats.statesVisited,
+          handleStatesVisited: stats.handleStatesVisited,
+          candidateEvaluations: stats.candidateEvaluations,
+        },
+      };
+    };
+    const normal = signatureFor(projectLifecycleAt(routingFixture));
+    const reversed = signatureFor(reversedProjection());
+    expect(reversed).toEqual(normal);
+  });
+});

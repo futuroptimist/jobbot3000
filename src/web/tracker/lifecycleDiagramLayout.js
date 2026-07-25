@@ -72,12 +72,12 @@ const HANDLE_CANDIDATE_T_VALUES = Object.freeze([0.5, 0.35, 0.65]);
 // confirmed directly against a real dense production fixture where a finer
 // sweep found a legal point the primary three simply never sampled. This
 // finer grid is tried only once the primary set finds nothing, so it never
-// changes which candidate an already-working branch selects.
-// A systematic fine grid rather than a hand-picked list: a legal window
-// between where a route clears nonincident branches and where it enters a
-// node's own fixed geometry (label/hit box) can be only a few hundredths of
-// t wide (confirmed directly), so a sparser or hand-picked fallback set can
-// straddle it and still find nothing.
+// changes which candidate an already-working branch selects. A systematic
+// grid rather than a hand-picked list: a legal window between where a route
+// clears nonincident branches and where it enters a node's own fixed
+// geometry (label/hit box) can be only a few hundredths of t wide (confirmed
+// directly), so a sparser or hand-picked fallback set can straddle it and
+// still find nothing.
 const HANDLE_FALLBACK_CANDIDATE_T_VALUES = Object.freeze(
   Array.from(
     { length: 10 },
@@ -722,13 +722,11 @@ const requiredPortSpan = (incidentCount) =>
   Math.max(0, incidentCount - 1) * MINIMUM_PORT_SPACING;
 
 // Node boxes are set once by D3 and never touched again outside this
-// function (link dock positions, by contrast, get recomputed by
-// materializeLaneAssignments on every candidate -- see
-// enforceLinkDockSpacing below). Grow each real node's box just enough to
-// let its most crowded side fit minimum-spaced docks, then compact same-
-// rank neighbors (real or routing) downward to clear any growth, shifting
-// each moved node's own incident dock positions along with it so link
-// geometry stays consistent with its endpoints.
+// function. Grow each real node's box just enough to let its most crowded
+// side fit minimum-spaced docks, then compact same-rank neighbors (real or
+// routing) downward to clear any growth, shifting each moved node's own
+// incident dock positions along with it so link geometry stays consistent
+// with its endpoints.
 const enforceMinimumPortSpacing = (graph, dimensions) => {
   const nodesByRank = new Map();
   for (const node of graph.nodes) {
@@ -773,57 +771,6 @@ const enforceMinimumPortSpacing = (graph, dimensions) => {
     }
   }
   return maxOverflow > 0 ? Math.ceil(maxOverflow) : 0;
-};
-
-// materializeLaneAssignments blends each real node's per-link dock position
-// toward that candidate's transition-lane assignment (see its evenY/laneY
-// blend), which can pull adjacent docks back together even after
-// enforceMinimumPortSpacing has grown the node to fit them evenly spaced.
-// Run once per candidate, immediately after that blend, as the final,
-// authoritative word on real-node dock spacing: nudge apart only the docks
-// on each side that are closer than MINIMUM_PORT_SPACING, keeping every
-// dock as close as possible to its original blended position (a forward
-// pass that only pushes a dock later than its predecessor when it must,
-// rather than recentering the whole side) so this perturbs the
-// order-consistent geometry the lane solver and D3 already agreed on as
-// little as possible. Routing nodes are untouched -- they always have
-// exactly one link per side.
-const enforceLinkDockSpacing = (graph) => {
-  const realNodes = graph.nodes.filter(
-    (node) => !node.routing && Number(node.total) > 0,
-  );
-  const round = (value) => Math.round(value * 1000) / 1000;
-  const redistribute = (links, dockKey, node) => {
-    if (links.length < 2) return;
-    links.sort((left, right) => left[dockKey] - right[dockKey]);
-    for (let index = 1; index < links.length; index += 1) {
-      const minY = links[index - 1][dockKey] + MINIMUM_PORT_SPACING;
-      if (links[index][dockKey] < minY) links[index][dockKey] = minY;
-    }
-    const last = links.at(-1);
-    if (last[dockKey] > node.y1) {
-      const shift = last[dockKey] - node.y1;
-      for (const link of links) link[dockKey] -= shift;
-    }
-    const first = links[0];
-    if (first[dockKey] < node.y0) {
-      const shift = node.y0 - first[dockKey];
-      for (const link of links) link[dockKey] += shift;
-    }
-    for (const link of links) link[dockKey] = round(link[dockKey]);
-  };
-  for (const node of realNodes) {
-    redistribute(
-      graph.links.filter((link) => link.target === node),
-      "y1",
-      node,
-    );
-    redistribute(
-      graph.links.filter((link) => link.source === node),
-      "y0",
-      node,
-    );
-  }
 };
 
 function layoutLifecycleRoutingGraphPass(
@@ -915,20 +862,17 @@ function layoutLifecycleRoutingGraphPass(
   }
   layout.update(graph);
 
-  // Discovery only needs the transition-lane solver's deterministic order
-  // decision, not correct final geometry (see the discoveryPhase branch of
-  // candidateCallback below) — running this here would shift link dock
-  // positions the solver's own idealY seeding reads before it ever makes
-  // that decision, changing which order it finds rather than just fixing
-  // geometry, which can produce an order the final pass's real-node
-  // topological derivation cannot reconcile (confirmed directly). Keep
-  // discovery's input geometry exactly as D3 produced it. The same applies
-  // to transitionLanePhaseOnly, a test-only diagnostic mode that exercises
-  // the lane solver's own ordering search in isolation (never used in
-  // production) — shifting dock positions before that search runs changes
-  // how many states it needs to reach a lane-legal order, unrelated to the
+  // Discovery now requires the same full handle-placement and route-audit
+  // validation as the final pass before it may publish a seed (see the
+  // discoveryPhase branch of candidateCallback below), so its own geometry
+  // must actually be handle-feasible too -- port spacing has to run here.
+  // transitionLanePhaseOnly stays excluded: it's a test-only diagnostic
+  // mode (never used in production) that exercises the lane solver's own
+  // ordering search in isolation without ever reaching handle placement, so
+  // shifting dock positions before that search runs would only change how
+  // many states it needs to reach a lane-legal order, unrelated to the
   // handle-clearance problem this fix targets.
-  if (!options.discoveryPhase && !options.transitionLanePhaseOnly) {
+  if (!options.transitionLanePhaseOnly) {
     const portSpacingOverflow = enforceMinimumPortSpacing(graph, dimensions);
     if (portSpacingOverflow > 0) {
       dimensions = {
@@ -2449,6 +2393,129 @@ function layoutLifecycleRoutingGraphPass(
         return search();
       };
 
+      // A pristine final pass can replay discovery's already-proven
+      // assignment instead of re-deriving it via a second independent
+      // search — discovery only ever publishes a seed after that exact
+      // candidate cleared full handle placement and route-crossing audit
+      // validation (see the discoveryPhase branch of candidateCallback
+      // above), so replaying it here is a verify, not a search. Every
+      // reused value is still validated against *this* pass's own fresh
+      // variables/intervals/components (all rebuilt above from this pass's
+      // pristine graph) before being trusted — nothing from discovery's own
+      // geometry, obstacles, or caches is reused. See
+      // docs/design/lifecycle-diagram-handle-search-seeding-plan.md.
+      if (options.seedAssignments && options.seedRankOrderByRank) {
+        const throwSeedReplayFailed = (detail, rank = null) => {
+          const error = new Error(
+            `Lifecycle authoritative rank order seed replay failed: ${detail}`,
+          );
+          error.cause = Object.freeze({
+            type: "lifecycle-authoritative-rank-order",
+            reason: "seed-replay-failed",
+            detail,
+            rank,
+          });
+          throw error;
+        };
+        const seedIds = new Set(options.seedAssignments.keys());
+        const allIdsSet = new Set(allLinkIds);
+        const idsMatch =
+          seedIds.size === allIdsSet.size &&
+          [...allIdsSet].every((id) => seedIds.has(id));
+        if (!idsMatch) throwSeedReplayFailed("link-id-coverage-mismatch");
+        for (const rank of sortedRanks) {
+          const rankVars = variablesByRank.get(rank) ?? [];
+          if (!rankVars.length) continue;
+          const seedOrderAtRank = options.seedRankOrderByRank.get(rank);
+          if (!seedOrderAtRank)
+            throwSeedReplayFailed("missing-rank-order", rank);
+          const varByBranch = new Map(rankVars.map((v) => [v.branchId, v]));
+          const rankOrder = seedOrderAtRank
+            .filter((branchId) => varByBranch.has(branchId))
+            .map((branchId) => varByBranch.get(branchId));
+          if (rankOrder.length !== rankVars.length)
+            throwSeedReplayFailed("rank-order-coverage-mismatch", rank);
+          const authoritativeOrderAtRank =
+            options.authoritativeBranchOrderByRank?.get(rank);
+          for (let index = 0; index < rankOrder.length; index += 1) {
+            if (index > 0 && authoritativeOrderAtRank) {
+              const previousIndex = authoritativeOrderAtRank.get(
+                rankOrder[index - 1].branchId,
+              );
+              const currentIndex = authoritativeOrderAtRank.get(
+                rankOrder[index].branchId,
+              );
+              if (
+                Number.isInteger(previousIndex) &&
+                Number.isInteger(currentIndex) &&
+                previousIndex > currentIndex
+              )
+                throwSeedReplayFailed("authoritative-order-mismatch", rank);
+            }
+          }
+          const cen = rankOrder.map((variable) => {
+            const y = options.seedAssignments.get(variable.id);
+            if (!Number.isFinite(y))
+              throwSeedReplayFailed("non-finite-seed-value", rank);
+            return y;
+          });
+          for (let index = 0; index < rankOrder.length; index += 1) {
+            const variable = rankOrder[index];
+            const y = cen[index];
+            // Charge one state per seed value verified against this pass's
+            // own fresh domain, at the same granularity assignMonotoneIntervals
+            // uses for an ordinary search item -- replay is real, bounded
+            // verification work, not a free pass on the 200,000-state limit.
+            recordSolverState({
+              rank,
+              branchIds: [variable.branchId],
+              linkIds: [variable.id],
+            });
+            const withinFreshInterval = variable.intervals.some(
+              ([start, end]) =>
+                y >= start - LANE_Y_EPSILON && y <= end + LANE_Y_EPSILON,
+            );
+            if (
+              !withinFreshInterval ||
+              !candidateClearsSpan(
+                y,
+                variable.minX,
+                variable.maxX,
+                variable.incidentIds,
+              )
+            ) {
+              throwSeedReplayFailed("seed-value-illegal", rank);
+            }
+            if (
+              index > 0 &&
+              y < cen[index - 1] + minLaneSpacing - LANE_Y_EPSILON
+            )
+              throwSeedReplayFailed("seed-spacing-violated", rank);
+          }
+          rankRefinementInfo.set(rank, { rankOrder, cen, minLaneSpacing });
+          for (let index = 0; index < rankOrder.length; index += 1)
+            globalAssignments.set(rankOrder[index].id, cen[index]);
+        }
+        for (const branchIds of componentList) {
+          const compMinId = branchIds.reduce((a, b) =>
+            compareLifecycleIds(a, b) < 0 ? a : b,
+          );
+          componentMembers.set(compMinId, branchIds.slice());
+        }
+        if (
+          !candidateCallback ||
+          !candidateCallback(globalAssignments, rankRefinementInfo)
+        ) {
+          throwSeedReplayFailed("handle-or-audit-rejected");
+        }
+        return {
+          assignments: globalAssignments,
+          componentOrderings,
+          componentMembers,
+          rankRefinementInfo,
+        };
+      }
+
       if (!solveFromComponent(0)) {
         const allBranchIds = componentList.flat();
         const cause = laneFailureCause("no-feasible-topological-order", {
@@ -2733,7 +2800,25 @@ function layoutLifecycleRoutingGraphPass(
         );
       }
     }
-    enforceLinkDockSpacing(graph);
+    // Routing-node anchors are their own monotone-assignment DP, seeded
+    // from (but not equal to) the transitionLaneY values above -- distinct
+    // legal anchor positions can score identically in that DP, so it is
+    // not provably deterministic across otherwise-identical passes
+    // (confirmed directly: a fresh replay of discovery's exact seeded lane
+    // values still produced a routing anchor a few hundredths of a pixel
+    // off from discovery's own, which was enough to fail the
+    // route-crossing audit discovery's own geometry had already cleared).
+    // When the caller supplies discovery's own final dock positions,
+    // reproduce them exactly instead of trusting a second DP solve to land
+    // on the same one.
+    if (options.seedLinkDocks) {
+      for (const link of graph.links) {
+        const dock = options.seedLinkDocks.get(link.id);
+        if (!dock) continue;
+        link.y0 = dock.y0;
+        link.y1 = dock.y1;
+      }
+    }
   };
 
   let lastHandleFailure = null;
@@ -2799,14 +2884,6 @@ function layoutLifecycleRoutingGraphPass(
   const candidateCallback = (globalAssignments, rankRefinementInfo) => {
     restoreBaseline();
     candidateEvaluations += 1;
-    if (options.discoveryPhase) {
-      options.discoverySink?.(rankRefinementInfo);
-      // Discovery only needs the solver's deterministic order. Avoid
-      // materializing geometry that will immediately be discarded; besides
-      // eliminating misleading intermediate diagnostics, this keeps the
-      // additional pass inside the production layout's latency bound.
-      return true;
-    }
     const geometrySignature = [...globalAssignments.entries()]
       .sort(([a], [b]) => compareLifecycleIds(a, b))
       .map(([id, y]) => `${id}=${y}`)
@@ -2877,7 +2954,7 @@ function layoutLifecycleRoutingGraphPass(
       graph.branches,
       linksByBranch,
       visibleNodes,
-      { sharedBudget: handleBudget },
+      { sharedBudget: handleBudget, seedHandles: options.seedHandles },
     );
     lastHandleRouteEdgeCount = handleCheck.routeEdgeCount ?? null;
     if (handleCheck.ok) {
@@ -2925,6 +3002,34 @@ function layoutLifecycleRoutingGraphPass(
             handleBudget,
             transitionLaneSolverStats,
           });
+        }
+        if (options.discoveryPhase) {
+          // Discovery may only publish a seed for the final pass to replay
+          // once this exact candidate has cleared the same full bar
+          // (materialized lane assignment, successful handle placement,
+          // zero fatal route-audit findings) the final pass itself
+          // requires — accepting the first merely lane-legal candidate let
+          // discovery hand the final pass an order a real dense fixture
+          // could never satisfy, since handle placement is exactly where
+          // dense convergent geometry fails. See
+          // docs/design/lifecycle-diagram-handle-search-seeding-plan.md.
+          //
+          // Handle positions are part of the seed too, not just lane
+          // geometry: solveHandleCandidateSets' multi-branch backtracking
+          // can have more than one legal global assignment for identical
+          // lane geometry, and which one it lands on depends on the shared
+          // budget's accumulated state (discovery has already spent many
+          // states on earlier rejected candidates; a fresh final pass
+          // starts near zero) -- confirmed directly, a small fixture's
+          // discovery run picked a different (still individually legal)
+          // handle for a multi-segment branch than a fresh run of the exact
+          // same lane geometry did, and the fresh pick failed the
+          // route-crossing audit discovery's own pick had already cleared.
+          options.discoverySink?.(
+            rankRefinementInfo,
+            globalAssignments,
+            handleCheck.handles,
+          );
         }
         return true;
       }
@@ -3199,6 +3304,21 @@ export function layoutLifecycleRoutingGraph(
     return layoutLifecycleRoutingGraphPass(projection, availableWidth, options);
 
   let discoveredRankOrder = null;
+  // The exact lane-Y value discovery chose for each link, captured only
+  // once that candidate has cleared full handle placement and route-audit
+  // validation (see the discoveryPhase branch of candidateCallback) — the
+  // final pass replays this directly instead of re-deriving it via a
+  // second independent search. See
+  // docs/design/lifecycle-diagram-handle-search-seeding-plan.md.
+  let discoveredAssignments = null;
+  // The exact handle positions discovery's own tryAssignBranchHandles chose
+  // for this same, already-validated candidate -- replayed directly by the
+  // final pass instead of re-searching, since solveHandleCandidateSets' own
+  // backtracking can land on a different (individually legal) global
+  // assignment for identical lane geometry depending on the shared budget's
+  // accumulated state (confirmed directly). See
+  // docs/design/lifecycle-diagram-handle-search-seeding-plan.md.
+  let discoveredHandles = null;
   // D3 mutates both endpoint references and geometry. Clone a supplied graph
   // for each pass so the option is honored without allowing discovery output
   // to contaminate the final attempt or the caller's graph.
@@ -3212,27 +3332,69 @@ export function layoutLifecycleRoutingGraph(
       routingGraph: freshRoutingGraph(),
       debugOrder: false,
       discoveryPhase: true,
-      discoverySink(info) {
+      discoverySink(info, assignments, handles) {
         discoveredRankOrder = new Map(
           [...info].map(([rank, value]) => [
             rank,
             Object.freeze(value.rankOrder.map((entry) => entry.branchId)),
           ]),
         );
+        discoveredAssignments = Object.freeze(new Map(assignments));
+        discoveredHandles = Object.freeze(
+          new Map(handles.map((handle) => [handle.branchId, handle])),
+        );
       },
     },
   );
-  if (!discoveredRankOrder)
+  if (!discoveredRankOrder || !discoveredAssignments || !discoveredHandles)
     throw new Error("Lifecycle rank-order discovery produced no order");
   const orders = deriveAuthoritativeLayoutOrders(
     discovery.graph,
     discoveredRankOrder,
   );
+  // deriveAuthoritativeLayoutOrders' nodeOrderByRank resolves a node's
+  // incoming/outgoing branch positions into a single combined order, which
+  // is a *different* sorting criterion than the endpoint-median heuristic
+  // nodeSort itself used to arrange discovery's own (unconstrained) D3
+  // layout -- the two usually agree but can diverge (confirmed directly: a
+  // seed replay failed "seed-value-illegal" for the small routing fixture
+  // because the combined order placed a rank-1 node differently than
+  // discovery's own layout had it, shifting the obstacle a seed value from
+  // discovery's own geometry needed to stay clear of). Since seed replay's
+  // whole point is reproducing discovery's *exact* geometry, not
+  // re-deriving a merged order, drive the final pass's D3 nodeSort from
+  // discovery's own resulting node positions directly.
+  const discoveredNodeOrderByRank = new Map();
+  const discoveredNodesByRank = new Map();
+  for (const node of discovery.graph.nodes) {
+    if (!discoveredNodesByRank.has(node.rank))
+      discoveredNodesByRank.set(node.rank, []);
+    discoveredNodesByRank.get(node.rank).push(node);
+  }
+  for (const [rank, nodes] of discoveredNodesByRank) {
+    const sorted = [...nodes].sort(
+      (a, b) => a.y0 - b.y0 || compareLifecycleIds(a.id, b.id),
+    );
+    discoveredNodeOrderByRank.set(
+      rank,
+      new Map(sorted.map((node, index) => [node.id, index])),
+    );
+  }
+  const discoveredLinkDocks = new Map(
+    discovery.graph.links.map((link) => [
+      link.id,
+      { y0: link.y0, y1: link.y1 },
+    ]),
+  );
   const result = layoutLifecycleRoutingGraphPass(projection, availableWidth, {
     ...options,
     routingGraph: freshRoutingGraph(),
     authoritativeBranchOrderByRank: orders.branchOrderByRank,
-    authoritativeNodeOrderByRank: orders.nodeOrderByRank,
+    authoritativeNodeOrderByRank: discoveredNodeOrderByRank,
+    seedAssignments: discoveredAssignments,
+    seedRankOrderByRank: discoveredRankOrder,
+    seedHandles: discoveredHandles,
+    seedLinkDocks: discoveredLinkDocks,
   });
   const finalOrder = result.graph.transitionLaneRankOrder;
   if (finalOrder) {
@@ -4094,7 +4256,7 @@ const tryAssignBranchHandles = (
   branches,
   segmentsByBranch,
   visibleNodes = [],
-  { sharedBudget = null } = {},
+  { sharedBudget = null, seedHandles = null } = {},
 ) => {
   const nodeBoxes = visibleNodes.map((node) => ({
     x: node.x0,
@@ -4258,6 +4420,97 @@ const tryAssignBranchHandles = (
         routeEdgeCount,
       };
     }
+  }
+  // solveHandleCandidateSets' multi-branch backtracking can have more than
+  // one legal global handle assignment for identical lane geometry, and
+  // which one it lands on depends on the shared budget's accumulated state
+  // (discovery has already spent many states on earlier rejected
+  // candidates; a fresh pass starts near zero) -- confirmed directly, a
+  // fresh search over the exact same lane geometry discovery already
+  // proved handle-feasible can still pick a different (individually legal)
+  // assignment that fails the stricter route-crossing audit discovery's
+  // own pick had already cleared. When the caller supplies discovery's own
+  // proven handle positions, verify each one directly against this pass's
+  // own fresh route edges and fixed geometry (the same checks every
+  // ordinary candidate must pass) instead of re-searching for one.
+  if (seedHandles) {
+    const blockedBranchIds = [];
+    for (const branch of orderedBranches) {
+      const seeded = seedHandles.get(branch.id);
+      if (!seeded || !Number.isFinite(seeded.x) || !Number.isFinite(seeded.y)) {
+        blockedBranchIds.push(branch.id);
+        continue;
+      }
+      const box = {
+        x: seeded.x - BRANCH_HANDLE_RADIUS,
+        y: seeded.y - BRANCH_HANDLE_RADIUS,
+        width: BRANCH_HANDLE_RADIUS * 2,
+        height: BRANCH_HANDLE_RADIUS * 2,
+      };
+      const fixedBlocker = fixedGeometryBlockerForCandidate(box);
+      if (fixedBlocker) {
+        blockedBranchIds.push(branch.id);
+        continue;
+      }
+      const clearance = renderedBranchClearance(
+        branch,
+        null,
+        seeded.x,
+        seeded.y,
+      );
+      if (clearance.margin <= 0) {
+        blockedBranchIds.push(branch.id);
+      }
+    }
+    if (blockedBranchIds.length) {
+      return {
+        ok: false,
+        reason: "no-candidates",
+        blockedBranchIds,
+        branchDiagnostics: [],
+        candidateSets: new Map(),
+        routeEdgeCount,
+      };
+    }
+    const seededHandles = orderedBranches.map((branch) => {
+      const seeded = seedHandles.get(branch.id);
+      return {
+        branchId: branch.id,
+        x: seeded.x,
+        y: seeded.y,
+        radius: BRANCH_HANDLE_RADIUS,
+        box: {
+          x: seeded.x - BRANCH_HANDLE_RADIUS,
+          y: seeded.y - BRANCH_HANDLE_RADIUS,
+          width: BRANCH_HANDLE_RADIUS * 2,
+          height: BRANCH_HANDLE_RADIUS * 2,
+        },
+        clearanceMargin: seeded.clearanceMargin ?? 0,
+      };
+    });
+    for (let left = 0; left < seededHandles.length; left += 1) {
+      for (let right = left + 1; right < seededHandles.length; right += 1) {
+        if (boxesOverlap(seededHandles[left].box, seededHandles[right].box)) {
+          return {
+            ok: false,
+            reason: "handle-overlap",
+            blockedBranchIds: [
+              seededHandles[left].branchId,
+              seededHandles[right].branchId,
+            ].sort(compareLifecycleIds),
+            branchDiagnostics: [],
+            candidateSets: new Map(),
+            routeEdgeCount,
+          };
+        }
+      }
+    }
+    return {
+      ok: true,
+      handles: seededHandles,
+      candidateSets: new Map(),
+      routeEdgeCount,
+    };
   }
   const candidateSets = new Map();
   const branchDiagnostics = new Map();

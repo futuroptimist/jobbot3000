@@ -343,7 +343,15 @@ skip states and test names can drift. `grep -rn "it\.skip(\|test\.skip(" test/` 
    read both before starting a third. The barycenter attempt's unsolved mystery (node-position
    changes destabilizing the deadline-based DFS in an unexplained way) is the most likely blocker
    and should be root-caused first — see that section's closing paragraph for where to start
-   looking.
+   looking. Re-confirmed independently by a later session that built the seeded-replay pipeline
+   above: even with final's redundant search eliminated, discovery's own one-time combined
+   lane+handle search for `tracker-lifecycle-diagram-v2.json` never finds a working assignment —
+   raising the handle-search budget from 32,768 to 2,000,000 states (diagnostic only, not shipped)
+   still failed after 100+ seconds, and the same ~3 branches were blocked (`reason: "no-candidates"`)
+   across every one of the 98 distinct lane-order candidates tried before hitting the normal
+   budget. This rules out "the search just needs to be more efficient" and confirms the gap really
+   is what this section already says: a constructive/greedy placement strategy, not a search
+   or plumbing fix.
 2. **4 unit tests remain `it.skip`ed**, all for the same reason (a genuinely infeasible
    crossing-free arrangement in the current domain, not a bug this document's fixes address):
    - `test/web-tracker-lifecycle-diagram-layout.test.js`: `"shares a single handle budget across
@@ -380,26 +388,76 @@ without external requests"`
 
 ## Bounded authoritative-order pipeline
 
-The production layout now uses exactly two fresh layout attempts. The first is a
-rank-order discovery phase: it runs the deterministic transition-lane solver and
-captures its per-transition-rank branch order, but its partially materialized
-geometry is always discarded. The second rebuilds the routing graph from the
-projection, reruns D3-Sankey with link and combined real/routing-node comparators
-derived from that order, and then performs the complete lane, handle, and route
-audit pipeline with new obstacles, domains, caches, baselines, and budgets.
+The production layout uses exactly two fresh layout attempts. The first is a rank-order
+discovery phase: it runs the deterministic transition-lane solver on a pristine graph
+clone with no order constraints, but — unlike an earlier version of this mechanism — it
+does not stop at the first lane-legal candidate. It runs the same materialization,
+handle-placement, and route-crossing-audit checks the final pass runs, and only
+publishes a result once a candidate clears all three with zero fatal audit findings.
+That candidate's authoritative per-rank branch order, lane assignments, node order (by
+real Y position within each rank), branch handle positions, and per-link dock (`y0`/`y1`)
+positions are all captured as an immutable seed, keyed by stable branch/link IDs — never
+by array position, since normal and reversed input must seed and replay identically.
 
-Origin and endpoint ranks retain their taxonomy anchoring. At intermediate
-ranks, routing nodes retain both their incoming and outgoing branch positions,
-and real nodes retain every ordered incident branch. Incoming and outgoing
-positions remain separate rank/side contexts: the combined order is a stable
-topological merge of those contextual requirements, not a comparison of bare
-integers from different rank-local orders. Conflicting requirements produce a
-typed order-disagreement failure. Routing-anchor materialization consumes that
-same combined order rather than re-sorting fixed and movable entries by ideal Y.
+The second pass rebuilds the routing graph from the projection from scratch, reruns
+D3-Sankey with comparators derived from the seed's order (so rendering stays consistent
+with the geometry it's about to replay), and reconstructs every obstacle, legal
+interval, domain, cache, and budget fresh — exactly as it always did. But instead of
+re-running the transition-lane solver's own backtracking search a second time, it
+validates the seed against this fresh graph (exact ID coverage, finite values, legal
+intervals, monotone spacing, agreement with the freshly-derived authoritative order) and
+invokes the candidate-acceptance callback exactly once with the seed's own values. If
+that single validated replay is rejected — which determinism says should never happen —
+the pass throws a typed `lifecycle-authoritative-rank-order` / `seed-replay-failed`
+error rather than silently falling back to a fresh search; a silent fallback would hide
+a real bug in the mechanism and reintroduce the unbounded final-pass search cost this
+change exists to remove.
 
-The final graph exposes frozen, explicitly phase-labelled `layoutAttempts`
-statistics (`discovery` followed by `final`) and `layoutAttemptCount: 2`. Each attempt retains its independent
-transition and handle state counts and the unchanged 200,000/32,768 limits. A
-final solver order that differs from discovery is rejected with the typed
-`lifecycle-authoritative-rank-order` / `order-disagreement` failure; there is no
-convergence retry or wall-clock deadline.
+This closes two determinism gaps discovered while building it, both handled by seeding
+values the fresh final pass would otherwise have to re-derive on its own:
+
+- **Handle placement is not a pure function of lane geometry.** `tryAssignBranchHandles`'
+  multi-branch backtracking can have more than one legal global assignment for identical
+  lane geometry, and which one it lands on depends on the shared search budget's
+  accumulated state — a fresh pass starting near zero can pick a different (still
+  individually legal) handle than a pass that arrived at the same geometry after already
+  spending states on rejected candidates. Confirmed directly: replaying discovery's exact
+  lane values into a fresh handle search sometimes picked a different, still-legal handle
+  that failed the stricter route-crossing audit discovery's own pick had already cleared.
+  Fixed by seeding handle positions too and verifying each one directly against the final
+  pass's own fresh route edges and fixed geometry, instead of re-searching for one.
+- **Routing-node anchor Y positions are their own monotone-assignment DP**, seeded from
+  but not equal to the lane assignments above — distinct legal anchor positions can score
+  identically in that DP, so it is not provably deterministic across otherwise-identical
+  passes. Confirmed directly: a fresh replay of discovery's exact seeded lane values still
+  produced a routing anchor a few hundredths of a pixel off from discovery's own, enough
+  to fail the route-crossing audit discovery's own geometry had already cleared. Fixed by
+  reproducing discovery's own final link dock (`y0`/`y1`) positions exactly when the
+  caller supplies them, instead of trusting a second DP solve to land on the same one.
+
+Origin and endpoint ranks retain their taxonomy anchoring. At intermediate ranks, routing
+nodes retain both their incoming and outgoing branch positions, and real nodes retain
+every ordered incident branch. Incoming and outgoing positions remain separate rank/side
+contexts: the combined order used to drive D3's comparators is a stable topological merge
+of those contextual requirements, not a comparison of bare integers from different
+rank-local orders — except for node order specifically, which the final pass derives
+directly from discovery's own real Y positions per rank rather than through that
+topological merge, since the two can legitimately disagree (the merge and D3's own
+`nodeSort` are different heuristics over the same graph) and only discovery's own order is
+guaranteed to reproduce discovery's own already-validated geometry.
+
+The final graph exposes frozen, explicitly phase-labelled `layoutAttempts` statistics
+(`discovery` followed by `final`) and `layoutAttemptCount: 2`. Each attempt retains its
+independent transition and handle state counts and the unchanged 200,000/32,768 limits.
+Because the final pass replays rather than re-searches, its own state counts are now a
+handful of states (materialize + one handle check + one audit) rather than a search that
+could itself approach either budget. A final solver order that differs from discovery is
+still rejected with the typed `lifecycle-authoritative-rank-order` / `order-disagreement`
+failure; there is no convergence retry or wall-clock deadline.
+
+This mechanism does not change whether a fixture's geometry is handle-feasible in the
+first place — see [Outstanding follow-up work](#outstanding-follow-up-work-as-of-this-writing)
+item 1 below for that gap and why `tracker-lifecycle-diagram-v2.json` specifically is
+still infeasible even under this pipeline. It only removes the wasted, unguided
+second search final used to run against a problem discovery had already spent its own
+budget solving (or, for that fixture, failing to solve — see below).
