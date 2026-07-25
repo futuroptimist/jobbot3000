@@ -46,7 +46,33 @@ export const rendererHitBoxForNode = (node) => {
 };
 const LANE_Y_EPSILON = 0.001;
 const COLLISION_MARGIN = -1;
-
+// Charge dense route generation/auditing slightly conservatively so the
+// deterministic state cap also retains margin beneath the 30-second render
+// latency contract when test workers or the browser contend for a CPU.
+const HANDLE_ROUTE_EDGE_COST_DIVISOR = 6000;
+// Primary handle-candidate sample points: three points near the middle of a
+// segment's transition corridor, tried first so ordinary (sparse) fixtures
+// keep selecting the same candidates they always have.
+const HANDLE_CANDIDATE_T_VALUES = Object.freeze([0.5, 0.35, 0.65]);
+// A branch whose docks are pinched close together by convergent nonincident
+// routes (many branches from different sources fanning into one small
+// target node) can have every one of the three primary sample points blocked
+// even though the curve legally clears somewhere else along its length --
+// confirmed directly against a real dense production fixture where a finer
+// sweep found a legal point the primary three simply never sampled. This
+// finer grid is tried only once the primary set finds nothing, so it never
+// changes which candidate an already-working branch selects. A systematic
+// grid rather than a hand-picked list: a legal window between where a route
+// clears nonincident branches and where it enters a node's own fixed
+// geometry (label/hit box) can be only a few hundredths of t wide (confirmed
+// directly), so a sparser or hand-picked fallback set can straddle it and
+// still find nothing.
+const HANDLE_FALLBACK_CANDIDATE_T_VALUES = Object.freeze(
+  Array.from(
+    { length: 10 },
+    (_, index) => Math.round((0.05 + index * 0.1) * 1000) / 1000,
+  ).filter((t) => ![0.5, 0.35, 0.65].includes(t)),
+);
 export const buildTransitionPrecedence = ({
   rank,
   variables,
@@ -506,16 +532,19 @@ export function calculateLifecycleDiagramLayout(
   const graph = routingGraph ?? buildLifecycleRoutingGraph(projection);
   const rankCounts = new Map();
   for (const node of graph.nodes ?? []) {
-    if (node.routing || Number(node.total) > 0 || Number(node.value) > 0)
+    if (node.routing || Number(node.total) > 0 || Number(node.value) > 0) {
       rankCounts.set(node.rank, (rankCounts.get(node.rank) ?? 0) + 1);
+    }
   }
   const rankByNodeId = new Map(
     (graph.nodes ?? []).map((node) => [node.id, node.rank]),
   );
-  const resolveLinkEndpointRank = (link, endpointName) => {
+  const linkEndpointId = (link, endpointName) => {
     const endpoint = link[endpointName];
-    const endpointId =
-      endpoint && typeof endpoint === "object" ? endpoint.id : endpoint;
+    return endpoint && typeof endpoint === "object" ? endpoint.id : endpoint;
+  };
+  const resolveLinkEndpointRank = (link, endpointName) => {
+    const endpointId = linkEndpointId(link, endpointName);
     const rank = rankByNodeId.get(endpointId);
     if (!Number.isInteger(rank)) {
       throw new Error(
@@ -612,15 +641,15 @@ export function createLaneGeometryFailureCache() {
   };
 }
 
-export function layoutLifecycleRoutingGraph(
+function layoutLifecycleRoutingGraphPass(
   projection,
   availableWidth,
   options = {},
 ) {
   const enableTestDiagnostics = isLifecycleLayoutTestEnvironment();
-  const testOnlyBaseNodeOrderByRank = enableTestDiagnostics
-    ? options.testOnlyBaseNodeOrderByRank
-    : null;
+  const baseNodeOrderByRank =
+    options.authoritativeNodeOrderByRank ??
+    (enableTestDiagnostics ? options.testOnlyBaseNodeOrderByRank : null);
   const testOnlyDiagnosticSink = enableTestDiagnostics
     ? options.testOnlyDiagnosticSink
     : null;
@@ -650,8 +679,8 @@ export function layoutLifecycleRoutingGraph(
     .nodeWidth(SANKEY_NODE_WIDTH)
     .nodePadding(ROUTED_NODE_PADDING)
     .nodeSort((left, right) => {
-      if (testOnlyBaseNodeOrderByRank && left.rank === right.rank) {
-        const order = testOnlyBaseNodeOrderByRank.get?.(left.rank);
+      if (baseNodeOrderByRank && left.rank === right.rank) {
+        const order = baseNodeOrderByRank.get?.(left.rank);
         if (order) {
           const leftIndex = order.get(left.id);
           const rightIndex = order.get(right.id);
@@ -666,7 +695,23 @@ export function layoutLifecycleRoutingGraph(
       }
       return nodeSort(left, right);
     })
-    .linkSort(linkSort)
+    .linkSort((left, right) => {
+      // D3 invokes linkSort for a node's source links and target links. Keep
+      // the lookup tied to that shared transition rather than treating an
+      // index from another rank-local order as comparable.
+      const transitionRank =
+        left.source.id === right.source.id
+          ? left.source.rank
+          : left.target.rank - 1;
+      const order = options.authoritativeBranchOrderByRank?.get(transitionRank);
+      const leftIndex = order?.get(left.branchId);
+      const rightIndex = order?.get(right.branchId);
+      return (
+        (Number.isInteger(leftIndex) && Number.isInteger(rightIndex)
+          ? leftIndex - rightIndex
+          : 0) || linkSort(left, right)
+      );
+    })
     .extent([
       [LAYOUT_LEFT_MARGIN, LAYOUT_TOP_MARGIN],
       [
@@ -2196,6 +2241,129 @@ export function layoutLifecycleRoutingGraph(
         return search();
       };
 
+      // A pristine final pass can replay discovery's already-proven
+      // assignment instead of re-deriving it via a second independent
+      // search — discovery only ever publishes a seed after that exact
+      // candidate cleared full handle placement and route-crossing audit
+      // validation (see the discoveryPhase branch of candidateCallback
+      // above), so replaying it here is a verify, not a search. Every
+      // reused value is still validated against *this* pass's own fresh
+      // variables/intervals/components (all rebuilt above from this pass's
+      // pristine graph) before being trusted — nothing from discovery's own
+      // geometry, obstacles, or caches is reused. See
+      // docs/design/lifecycle-diagram-handle-search-seeding-plan.md.
+      if (options.seedAssignments && options.seedRankOrderByRank) {
+        const throwSeedReplayFailed = (detail, rank = null) => {
+          const error = new Error(
+            `Lifecycle authoritative rank order seed replay failed: ${detail}`,
+          );
+          error.cause = Object.freeze({
+            type: "lifecycle-authoritative-rank-order",
+            reason: "seed-replay-failed",
+            detail,
+            rank,
+          });
+          throw error;
+        };
+        const seedIds = new Set(options.seedAssignments.keys());
+        const allIdsSet = new Set(allLinkIds);
+        const idsMatch =
+          seedIds.size === allIdsSet.size &&
+          [...allIdsSet].every((id) => seedIds.has(id));
+        if (!idsMatch) throwSeedReplayFailed("link-id-coverage-mismatch");
+        for (const rank of sortedRanks) {
+          const rankVars = variablesByRank.get(rank) ?? [];
+          if (!rankVars.length) continue;
+          const seedOrderAtRank = options.seedRankOrderByRank.get(rank);
+          if (!seedOrderAtRank)
+            throwSeedReplayFailed("missing-rank-order", rank);
+          const varByBranch = new Map(rankVars.map((v) => [v.branchId, v]));
+          const rankOrder = seedOrderAtRank
+            .filter((branchId) => varByBranch.has(branchId))
+            .map((branchId) => varByBranch.get(branchId));
+          if (rankOrder.length !== rankVars.length)
+            throwSeedReplayFailed("rank-order-coverage-mismatch", rank);
+          const authoritativeOrderAtRank =
+            options.authoritativeBranchOrderByRank?.get(rank);
+          for (let index = 0; index < rankOrder.length; index += 1) {
+            if (index > 0 && authoritativeOrderAtRank) {
+              const previousIndex = authoritativeOrderAtRank.get(
+                rankOrder[index - 1].branchId,
+              );
+              const currentIndex = authoritativeOrderAtRank.get(
+                rankOrder[index].branchId,
+              );
+              if (
+                Number.isInteger(previousIndex) &&
+                Number.isInteger(currentIndex) &&
+                previousIndex > currentIndex
+              )
+                throwSeedReplayFailed("authoritative-order-mismatch", rank);
+            }
+          }
+          const cen = rankOrder.map((variable) => {
+            const y = options.seedAssignments.get(variable.id);
+            if (!Number.isFinite(y))
+              throwSeedReplayFailed("non-finite-seed-value", rank);
+            return y;
+          });
+          for (let index = 0; index < rankOrder.length; index += 1) {
+            const variable = rankOrder[index];
+            const y = cen[index];
+            // Charge one state per seed value verified against this pass's
+            // own fresh domain, at the same granularity assignMonotoneIntervals
+            // uses for an ordinary search item -- replay is real, bounded
+            // verification work, not a free pass on the 200,000-state limit.
+            recordSolverState({
+              rank,
+              branchIds: [variable.branchId],
+              linkIds: [variable.id],
+            });
+            const withinFreshInterval = variable.intervals.some(
+              ([start, end]) =>
+                y >= start - LANE_Y_EPSILON && y <= end + LANE_Y_EPSILON,
+            );
+            if (
+              !withinFreshInterval ||
+              !candidateClearsSpan(
+                y,
+                variable.minX,
+                variable.maxX,
+                variable.incidentIds,
+              )
+            ) {
+              throwSeedReplayFailed("seed-value-illegal", rank);
+            }
+            if (
+              index > 0 &&
+              y < cen[index - 1] + minLaneSpacing - LANE_Y_EPSILON
+            )
+              throwSeedReplayFailed("seed-spacing-violated", rank);
+          }
+          rankRefinementInfo.set(rank, { rankOrder, cen, minLaneSpacing });
+          for (let index = 0; index < rankOrder.length; index += 1)
+            globalAssignments.set(rankOrder[index].id, cen[index]);
+        }
+        for (const branchIds of componentList) {
+          const compMinId = branchIds.reduce((a, b) =>
+            compareLifecycleIds(a, b) < 0 ? a : b,
+          );
+          componentMembers.set(compMinId, branchIds.slice());
+        }
+        if (
+          !candidateCallback ||
+          !candidateCallback(globalAssignments, rankRefinementInfo)
+        ) {
+          throwSeedReplayFailed("handle-or-audit-rejected");
+        }
+        return {
+          assignments: globalAssignments,
+          componentOrderings,
+          componentMembers,
+          rankRefinementInfo,
+        };
+      }
+
       if (!solveFromComponent(0)) {
         const allBranchIds = componentList.flat();
         const cause = laneFailureCause("no-feasible-topological-order", {
@@ -2223,6 +2391,7 @@ export function layoutLifecycleRoutingGraph(
         assignments: globalAssignments,
         componentOrderings,
         componentMembers,
+        rankRefinementInfo,
       };
     };
     return solveGlobal();
@@ -2406,11 +2575,18 @@ export function layoutLifecycleRoutingGraph(
       const entries = [
         ...routingNodes.map((node) => ({ node, fixed: false })),
         ...realNodesAtRank.map((node) => ({ node, fixed: true })),
-      ].sort(
-        (a, b) =>
+      ].sort((a, b) => {
+        const order = options.authoritativeNodeOrderByRank?.get(rank);
+        const left = order?.get(a.node.id);
+        const right = order?.get(b.node.id);
+        if (Number.isInteger(left) && Number.isInteger(right) && left !== right)
+          return left - right;
+        return (
           (a.fixed ? realNodeY.get(a.node) : idealByNode.get(a.node)) -
-          (b.fixed ? realNodeY.get(b.node) : idealByNode.get(b.node)),
-      );
+            (b.fixed ? realNodeY.get(b.node) : idealByNode.get(b.node)) ||
+          compareLifecycleIds(a.node.id, b.node.id)
+        );
+      });
       const centerX = rankCenterX(rank);
       const assignment = assignMonotone(
         entries,
@@ -2470,6 +2646,25 @@ export function layoutLifecycleRoutingGraph(
         throw new Error(
           `Lifecycle routing continuity invariant violated for ${node.id}`,
         );
+      }
+    }
+    // Routing-node anchors are their own monotone-assignment DP, seeded
+    // from (but not equal to) the transitionLaneY values above -- distinct
+    // legal anchor positions can score identically in that DP, so it is
+    // not provably deterministic across otherwise-identical passes
+    // (confirmed directly: a fresh replay of discovery's exact seeded lane
+    // values still produced a routing anchor a few hundredths of a pixel
+    // off from discovery's own, which was enough to fail the
+    // route-crossing audit discovery's own geometry had already cleared).
+    // When the caller supplies discovery's own final dock positions,
+    // reproduce them exactly instead of trusting a second DP solve to land
+    // on the same one.
+    if (options.seedLinkDocks) {
+      for (const link of graph.links) {
+        const dock = options.seedLinkDocks.get(link.id);
+        if (!dock) continue;
+        link.y0 = dock.y0;
+        link.y1 = dock.y1;
       }
     }
   };
@@ -2607,7 +2802,7 @@ export function layoutLifecycleRoutingGraph(
       graph.branches,
       linksByBranch,
       visibleNodes,
-      { sharedBudget: handleBudget },
+      { sharedBudget: handleBudget, seedHandles: options.seedHandles },
     );
     lastHandleRouteEdgeCount = handleCheck.routeEdgeCount ?? null;
     if (handleCheck.ok) {
@@ -2634,7 +2829,10 @@ export function layoutLifecycleRoutingGraph(
       const auditRouteEdgeCount = handleCheck.routeEdgeCount ?? 1;
       handleBudget.statesVisited += Math.max(
         1,
-        Math.round((auditRouteEdgeCount * auditRouteEdgeCount) / 8450),
+        Math.round(
+          (auditRouteEdgeCount * auditRouteEdgeCount) /
+            HANDLE_ROUTE_EDGE_COST_DIVISOR,
+        ),
       );
       if (handleBudget.statesVisited >= handleBudget.stateLimit)
         throwHandleStateLimitExceeded();
@@ -2652,6 +2850,34 @@ export function layoutLifecycleRoutingGraph(
             handleBudget,
             transitionLaneSolverStats,
           });
+        }
+        if (options.discoveryPhase) {
+          // Discovery may only publish a seed for the final pass to replay
+          // once this exact candidate has cleared the same full bar
+          // (materialized lane assignment, successful handle placement,
+          // zero fatal route-audit findings) the final pass itself
+          // requires — accepting the first merely lane-legal candidate let
+          // discovery hand the final pass an order a real dense fixture
+          // could never satisfy, since handle placement is exactly where
+          // dense convergent geometry fails. See
+          // docs/design/lifecycle-diagram-handle-search-seeding-plan.md.
+          //
+          // Handle positions are part of the seed too, not just lane
+          // geometry: solveHandleCandidateSets' multi-branch backtracking
+          // can have more than one legal global assignment for identical
+          // lane geometry, and which one it lands on depends on the shared
+          // budget's accumulated state (discovery has already spent many
+          // states on earlier rejected candidates; a fresh final pass
+          // starts near zero) -- confirmed directly, a small fixture's
+          // discovery run picked a different (still individually legal)
+          // handle for a multi-segment branch than a fresh run of the exact
+          // same lane geometry did, and the fresh pick failed the
+          // route-crossing audit discovery's own pick had already cleared.
+          options.discoverySink?.(
+            rankRefinementInfo,
+            globalAssignments,
+            handleCheck.handles,
+          );
         }
         return true;
       }
@@ -2753,10 +2979,305 @@ export function layoutLifecycleRoutingGraph(
   transitionLaneSolverStats.candidateEvaluations = candidateEvaluations;
   transitionLaneSolverStats.handleStatesVisited = handleBudget.statesVisited;
   transitionLaneSolverStats.handleStateLimit = handleBudget.stateLimit;
+  graph.transitionLaneRankOrder = new Map(
+    [...laneResult.rankRefinementInfo.entries()].map(([rank, info]) => [
+      rank,
+      Object.freeze(info.rankOrder.map((entry) => entry.branchId)),
+    ]),
+  );
   graph.transitionLaneSolverStats = Object.freeze({
     ...transitionLaneSolverStats,
   });
   return { graph, dimensions };
+}
+
+const compareOrderKeys = (left, right) => {
+  const count = Math.max(left.length, right.length);
+  for (let index = 0; index < count; index += 1) {
+    const leftEntry = left[index];
+    const rightEntry = right[index];
+    if (!leftEntry || !rightEntry) return leftEntry ? -1 : rightEntry ? 1 : 0;
+    for (const field of ["transitionRank", "side", "position"]) {
+      const difference = leftEntry[field] - rightEntry[field];
+      if (difference) return difference;
+    }
+    const branchDifference = compareLifecycleIds(
+      leftEntry.branchId,
+      rightEntry.branchId,
+    );
+    if (branchDifference) return branchDifference;
+  }
+  return 0;
+};
+
+const deriveAuthoritativeLayoutOrders = (graph, rankOrderByRank) => {
+  const branchOrderByRank = new Map(
+    [...rankOrderByRank].map(([rank, ids]) => [
+      rank,
+      new Map(ids.map((id, index) => [id, index])),
+    ]),
+  );
+  const incidentBranchPositions = new Map();
+  for (const link of graph.links) {
+    const source = typeof link.source === "object" ? link.source : null;
+    const target = typeof link.target === "object" ? link.target : null;
+    for (const [node, transitionRank, side] of [
+      [source, source?.rank, 1],
+      [target, source?.rank, 0],
+    ]) {
+      if (!node) continue;
+      const position = branchOrderByRank
+        .get(transitionRank)
+        ?.get(link.branchId);
+      if (!Number.isInteger(position)) continue;
+      if (!incidentBranchPositions.has(node.id))
+        incidentBranchPositions.set(node.id, new Map());
+      // The tuple key makes incoming/outgoing context explicit. In
+      // particular, position 2 at rank N is never compared as though it were
+      // position 2 at rank N+1. The map key also makes reversed link input
+      // idempotent without dropping either side of a continuing branch.
+      incidentBranchPositions
+        .get(node.id)
+        .set(`${transitionRank}\0${side}\0${link.branchId}`, {
+          transitionRank,
+          side,
+          position,
+          branchId: link.branchId,
+        });
+    }
+  }
+  const nodeOrderByRank = new Map();
+  for (const rank of [...new Set(graph.nodes.map((node) => node.rank))].sort(
+    (a, b) => a - b,
+  )) {
+    const nodes = graph.nodes.filter((node) => node.rank === rank);
+    const stableNodeOrder = (left, right) =>
+      Number(left.routing) - Number(right.routing) ||
+      taxonomyOrder(left.id) - taxonomyOrder(right.id) ||
+      compareLifecycleIds(left.id, right.id);
+    if (rank === 0 || rank === 6) {
+      nodes.sort(nodeSort);
+    } else {
+      const outgoing = new Map(nodes.map((node) => [node.id, new Set()]));
+      const indegree = new Map(nodes.map((node) => [node.id, 0]));
+      // Incoming and outgoing transition orders are separate authoritative
+      // contexts. Add constraints within each context, rather than comparing
+      // their rank-local integer positions directly.
+      for (const [transitionRank, side] of [
+        [rank - 1, 0],
+        [rank, 1],
+      ]) {
+        const contextual = nodes
+          .map((node) => ({
+            node,
+            key: [...(incidentBranchPositions.get(node.id)?.values() ?? [])]
+              .filter(
+                (entry) =>
+                  entry.transitionRank === transitionRank &&
+                  entry.side === side,
+              )
+              .sort(
+                (a, b) =>
+                  a.position - b.position ||
+                  compareLifecycleIds(a.branchId, b.branchId),
+              ),
+          }))
+          .filter(({ key }) => key.length)
+          .sort(
+            (a, b) =>
+              compareOrderKeys(a.key, b.key) || stableNodeOrder(a.node, b.node),
+          );
+        for (let index = 1; index < contextual.length; index += 1) {
+          const from = contextual[index - 1].node.id;
+          const to = contextual[index].node.id;
+          if (!outgoing.get(from).has(to)) {
+            outgoing.get(from).add(to);
+            indegree.set(to, indegree.get(to) + 1);
+          }
+        }
+      }
+      const ready = nodes
+        .filter((node) => indegree.get(node.id) === 0)
+        .sort(stableNodeOrder);
+      const combined = [];
+      while (ready.length) {
+        const node = ready.shift();
+        combined.push(node);
+        for (const targetId of outgoing.get(node.id)) {
+          indegree.set(targetId, indegree.get(targetId) - 1);
+          if (indegree.get(targetId) === 0) {
+            ready.push(nodes.find((candidate) => candidate.id === targetId));
+            ready.sort(stableNodeOrder);
+          }
+        }
+      }
+      if (combined.length !== nodes.length) {
+        const error = new Error(
+          `Lifecycle authoritative node order disagrees at rank ${rank}`,
+        );
+        error.cause = Object.freeze({
+          type: "lifecycle-authoritative-rank-order",
+          reason: "order-disagreement",
+          rank,
+          nodeIds: Object.freeze(
+            nodes
+              .filter((node) => indegree.get(node.id) > 0)
+              .map((node) => node.id)
+              .sort(compareLifecycleIds),
+          ),
+        });
+        throw error;
+      }
+      nodes.splice(0, nodes.length, ...combined);
+    }
+    nodeOrderByRank.set(
+      rank,
+      new Map(nodes.map((node, index) => [node.id, index])),
+    );
+  }
+  return { branchOrderByRank, nodeOrderByRank };
+};
+
+export function layoutLifecycleRoutingGraph(
+  projection,
+  availableWidth,
+  options = {},
+) {
+  // Test diagnostics intentionally inspect a single attempted phase. Normal
+  // production layout is exactly two fresh, independently-budgeted passes.
+  if (
+    options.transitionLanePhaseOnly ||
+    (isLifecycleLayoutTestEnvironment() && options.testOnlyBaseNodeOrderByRank)
+  )
+    return layoutLifecycleRoutingGraphPass(projection, availableWidth, options);
+
+  let discoveredRankOrder = null;
+  // The exact lane-Y value discovery chose for each link, captured only
+  // once that candidate has cleared full handle placement and route-audit
+  // validation (see the discoveryPhase branch of candidateCallback) — the
+  // final pass replays this directly instead of re-deriving it via a
+  // second independent search. See
+  // docs/design/lifecycle-diagram-handle-search-seeding-plan.md.
+  let discoveredAssignments = null;
+  // The exact handle positions discovery's own tryAssignBranchHandles chose
+  // for this same, already-validated candidate -- replayed directly by the
+  // final pass instead of re-searching, since solveHandleCandidateSets' own
+  // backtracking can land on a different (individually legal) global
+  // assignment for identical lane geometry depending on the shared budget's
+  // accumulated state (confirmed directly). See
+  // docs/design/lifecycle-diagram-handle-search-seeding-plan.md.
+  let discoveredHandles = null;
+  // D3 mutates both endpoint references and geometry. Clone a supplied graph
+  // for each pass so the option is honored without allowing discovery output
+  // to contaminate the final attempt or the caller's graph.
+  const freshRoutingGraph = () =>
+    options.routingGraph ? structuredClone(options.routingGraph) : undefined;
+  const discovery = layoutLifecycleRoutingGraphPass(
+    projection,
+    availableWidth,
+    {
+      ...options,
+      routingGraph: freshRoutingGraph(),
+      debugOrder: false,
+      discoveryPhase: true,
+      discoverySink(info, assignments, handles) {
+        discoveredRankOrder = new Map(
+          [...info].map(([rank, value]) => [
+            rank,
+            Object.freeze(value.rankOrder.map((entry) => entry.branchId)),
+          ]),
+        );
+        discoveredAssignments = Object.freeze(new Map(assignments));
+        discoveredHandles = Object.freeze(
+          new Map(handles.map((handle) => [handle.branchId, handle])),
+        );
+      },
+    },
+  );
+  if (!discoveredRankOrder || !discoveredAssignments || !discoveredHandles)
+    throw new Error("Lifecycle rank-order discovery produced no order");
+  const orders = deriveAuthoritativeLayoutOrders(
+    discovery.graph,
+    discoveredRankOrder,
+  );
+  // deriveAuthoritativeLayoutOrders' nodeOrderByRank resolves a node's
+  // incoming/outgoing branch positions into a single combined order, which
+  // is a *different* sorting criterion than the endpoint-median heuristic
+  // nodeSort itself used to arrange discovery's own (unconstrained) D3
+  // layout -- the two usually agree but can diverge (confirmed directly: a
+  // seed replay failed "seed-value-illegal" for the small routing fixture
+  // because the combined order placed a rank-1 node differently than
+  // discovery's own layout had it, shifting the obstacle a seed value from
+  // discovery's own geometry needed to stay clear of). Since seed replay's
+  // whole point is reproducing discovery's *exact* geometry, not
+  // re-deriving a merged order, drive the final pass's D3 nodeSort from
+  // discovery's own resulting node positions directly.
+  const discoveredNodeOrderByRank = new Map();
+  const discoveredNodesByRank = new Map();
+  for (const node of discovery.graph.nodes) {
+    if (!discoveredNodesByRank.has(node.rank))
+      discoveredNodesByRank.set(node.rank, []);
+    discoveredNodesByRank.get(node.rank).push(node);
+  }
+  for (const [rank, nodes] of discoveredNodesByRank) {
+    const sorted = [...nodes].sort(
+      (a, b) => a.y0 - b.y0 || compareLifecycleIds(a.id, b.id),
+    );
+    discoveredNodeOrderByRank.set(
+      rank,
+      new Map(sorted.map((node, index) => [node.id, index])),
+    );
+  }
+  const discoveredLinkDocks = new Map(
+    discovery.graph.links.map((link) => [
+      link.id,
+      { y0: link.y0, y1: link.y1 },
+    ]),
+  );
+  const result = layoutLifecycleRoutingGraphPass(projection, availableWidth, {
+    ...options,
+    routingGraph: freshRoutingGraph(),
+    authoritativeBranchOrderByRank: orders.branchOrderByRank,
+    authoritativeNodeOrderByRank: discoveredNodeOrderByRank,
+    seedAssignments: discoveredAssignments,
+    seedRankOrderByRank: discoveredRankOrder,
+    seedHandles: discoveredHandles,
+    seedLinkDocks: discoveredLinkDocks,
+  });
+  const finalOrder = result.graph.transitionLaneRankOrder;
+  if (finalOrder) {
+    for (const [rank, expected] of discoveredRankOrder) {
+      const actual = finalOrder.get(rank) ?? [];
+      if (expected.join("\0") !== actual.join("\0")) {
+        const error = new Error(
+          `Lifecycle authoritative rank order changed at rank ${rank}`,
+        );
+        error.cause = Object.freeze({
+          type: "lifecycle-authoritative-rank-order",
+          reason: "order-disagreement",
+          rank,
+          expected,
+          actual: Object.freeze([...actual]),
+        });
+        throw error;
+      }
+    }
+  }
+  result.graph.transitionLaneSolverStats = Object.freeze({
+    ...result.graph.transitionLaneSolverStats,
+    layoutAttempts: Object.freeze([
+      Object.freeze({
+        phase: "discovery",
+        ...discovery.graph.transitionLaneSolverStats,
+      }),
+      Object.freeze({
+        phase: "final",
+        ...result.graph.transitionLaneSolverStats,
+      }),
+    ]),
+    layoutAttemptCount: 2,
+  });
+  return result;
 }
 
 export function testOnlyDiagnoseLifecycleLayoutAttempt(
@@ -3583,7 +4104,7 @@ const tryAssignBranchHandles = (
   branches,
   segmentsByBranch,
   visibleNodes = [],
-  { sharedBudget = null } = {},
+  { sharedBudget = null, seedHandles = null } = {},
 ) => {
   const nodeBoxes = visibleNodes.map((node) => ({
     x: node.x0,
@@ -3721,7 +4242,9 @@ const tryAssignBranchHandles = (
   const routeEdgeCount = routeEdges.length;
   const generationCost = Math.max(
     1,
-    Math.round((routeEdgeCount * routeEdgeCount) / 8450),
+    Math.round(
+      (routeEdgeCount * routeEdgeCount) / HANDLE_ROUTE_EDGE_COST_DIVISOR,
+    ),
   );
   if (sharedBudget) {
     if (sharedBudget.statesVisited >= sharedBudget.stateLimit) {
@@ -3745,6 +4268,97 @@ const tryAssignBranchHandles = (
         routeEdgeCount,
       };
     }
+  }
+  // solveHandleCandidateSets' multi-branch backtracking can have more than
+  // one legal global handle assignment for identical lane geometry, and
+  // which one it lands on depends on the shared budget's accumulated state
+  // (discovery has already spent many states on earlier rejected
+  // candidates; a fresh pass starts near zero) -- confirmed directly, a
+  // fresh search over the exact same lane geometry discovery already
+  // proved handle-feasible can still pick a different (individually legal)
+  // assignment that fails the stricter route-crossing audit discovery's
+  // own pick had already cleared. When the caller supplies discovery's own
+  // proven handle positions, verify each one directly against this pass's
+  // own fresh route edges and fixed geometry (the same checks every
+  // ordinary candidate must pass) instead of re-searching for one.
+  if (seedHandles) {
+    const blockedBranchIds = [];
+    for (const branch of orderedBranches) {
+      const seeded = seedHandles.get(branch.id);
+      if (!seeded || !Number.isFinite(seeded.x) || !Number.isFinite(seeded.y)) {
+        blockedBranchIds.push(branch.id);
+        continue;
+      }
+      const box = {
+        x: seeded.x - BRANCH_HANDLE_RADIUS,
+        y: seeded.y - BRANCH_HANDLE_RADIUS,
+        width: BRANCH_HANDLE_RADIUS * 2,
+        height: BRANCH_HANDLE_RADIUS * 2,
+      };
+      const fixedBlocker = fixedGeometryBlockerForCandidate(box);
+      if (fixedBlocker) {
+        blockedBranchIds.push(branch.id);
+        continue;
+      }
+      const clearance = renderedBranchClearance(
+        branch,
+        null,
+        seeded.x,
+        seeded.y,
+      );
+      if (clearance.margin <= 0) {
+        blockedBranchIds.push(branch.id);
+      }
+    }
+    if (blockedBranchIds.length) {
+      return {
+        ok: false,
+        reason: "no-candidates",
+        blockedBranchIds,
+        branchDiagnostics: [],
+        candidateSets: new Map(),
+        routeEdgeCount,
+      };
+    }
+    const seededHandles = orderedBranches.map((branch) => {
+      const seeded = seedHandles.get(branch.id);
+      return {
+        branchId: branch.id,
+        x: seeded.x,
+        y: seeded.y,
+        radius: BRANCH_HANDLE_RADIUS,
+        box: {
+          x: seeded.x - BRANCH_HANDLE_RADIUS,
+          y: seeded.y - BRANCH_HANDLE_RADIUS,
+          width: BRANCH_HANDLE_RADIUS * 2,
+          height: BRANCH_HANDLE_RADIUS * 2,
+        },
+        clearanceMargin: seeded.clearanceMargin ?? 0,
+      };
+    });
+    for (let left = 0; left < seededHandles.length; left += 1) {
+      for (let right = left + 1; right < seededHandles.length; right += 1) {
+        if (boxesOverlap(seededHandles[left].box, seededHandles[right].box)) {
+          return {
+            ok: false,
+            reason: "handle-overlap",
+            blockedBranchIds: [
+              seededHandles[left].branchId,
+              seededHandles[right].branchId,
+            ].sort(compareLifecycleIds),
+            branchDiagnostics: [],
+            candidateSets: new Map(),
+            routeEdgeCount,
+          };
+        }
+      }
+    }
+    return {
+      ok: true,
+      handles: seededHandles,
+      candidateSets: new Map(),
+      routeEdgeCount,
+    };
   }
   const candidateSets = new Map();
   const branchDiagnostics = new Map();
@@ -3798,90 +4412,99 @@ const tryAssignBranchHandles = (
         diagnostic.nearestRejectedCandidate = candidate;
       }
     };
-    for (const segment of orderedSegments) {
-      const sourceCenter = rankCenterX(segment.source.rank);
-      const targetCenter = rankCenterX(segment.target.rank);
-      const exitX = sourceCenter + RANK_CORRIDOR_HALF_WIDTH;
-      const entryX = targetCenter - RANK_CORRIDOR_HALF_WIDTH;
-      for (const t of [0.5, 0.35, 0.65]) {
-        const { x, y } = cubicTransitionPoint(segment, t);
-        const box = {
-          x: x - BRANCH_HANDLE_RADIUS,
-          y: y - BRANCH_HANDLE_RADIUS,
-          width: BRANCH_HANDLE_RADIUS * 2,
-          height: BRANCH_HANDLE_RADIUS * 2,
-        };
-        diagnostic.attempts += 1;
-        const baseRejected = {
-          segmentId: segmentKey(segment),
-          segmentIndex: segment.segmentIndex,
-          transitionRank: segment.source?.rank,
-          t,
-          x: quantizedCandidate(x),
-          y: quantizedCandidate(y),
-        };
-        const fixedBlocker = fixedGeometryBlockerForCandidate(box);
-        if (fixedBlocker) {
-          diagnostic.rejected.fixedGeometry += 1;
-          rememberRejected({
-            ...baseRejected,
-            clearanceMargin: COLLISION_MARGIN,
-            blocker: {
-              kind: fixedBlocker.kind,
-              id: fixedBlocker.id,
-              branchId: null,
-              segmentId: null,
-              transitionRank: null,
-              zone: null,
-            },
-          });
-          continue;
-        }
-        if (
-          x - BRANCH_HANDLE_RADIUS < exitX ||
-          x + BRANCH_HANDLE_RADIUS > entryX
-        ) {
-          diagnostic.rejected.outsideTransitionCorridor += 1;
-          rememberRejected({
-            ...baseRejected,
-            clearanceMargin: COLLISION_MARGIN,
-            blocker: {
-              kind: "corridor-bounds",
-              id: `${segment.source?.rank}->${segment.target?.rank}`,
-              branchId: null,
-              segmentId: null,
-              transitionRank: segment.source?.rank,
-              zone: "transition-corridor",
-            },
-          });
-          continue;
-        }
-        const clearance = renderedBranchClearance(
-          branch,
-          segment.source?.rank,
-          x,
-          y,
-        );
-        const clearanceMargin = clearance.margin;
-        if (clearanceMargin > 0) {
-          diagnostic.accepted += 1;
-          candidates.push({
-            branchId: branch.id,
+    const sweepCorridor = (tValues, corridorHalfWidth) => {
+      for (const segment of orderedSegments) {
+        const sourceCenter = rankCenterX(segment.source.rank);
+        const targetCenter = rankCenterX(segment.target.rank);
+        const exitX = sourceCenter + corridorHalfWidth;
+        const entryX = targetCenter - corridorHalfWidth;
+        for (const t of tValues) {
+          const { x, y } = cubicTransitionPoint(segment, t);
+          const box = {
+            x: x - BRANCH_HANDLE_RADIUS,
+            y: y - BRANCH_HANDLE_RADIUS,
+            width: BRANCH_HANDLE_RADIUS * 2,
+            height: BRANCH_HANDLE_RADIUS * 2,
+          };
+          diagnostic.attempts += 1;
+          const baseRejected = {
+            segmentId: segmentKey(segment),
+            segmentIndex: segment.segmentIndex,
+            transitionRank: segment.source?.rank,
+            t,
+            x: quantizedCandidate(x),
+            y: quantizedCandidate(y),
+          };
+          const fixedBlocker = fixedGeometryBlockerForCandidate(box);
+          if (fixedBlocker) {
+            diagnostic.rejected.fixedGeometry += 1;
+            rememberRejected({
+              ...baseRejected,
+              clearanceMargin: COLLISION_MARGIN,
+              blocker: {
+                kind: fixedBlocker.kind,
+                id: fixedBlocker.id,
+                branchId: null,
+                segmentId: null,
+                transitionRank: null,
+                zone: null,
+              },
+            });
+            continue;
+          }
+          if (
+            x - BRANCH_HANDLE_RADIUS < exitX ||
+            x + BRANCH_HANDLE_RADIUS > entryX
+          ) {
+            diagnostic.rejected.outsideTransitionCorridor += 1;
+            rememberRejected({
+              ...baseRejected,
+              clearanceMargin: COLLISION_MARGIN,
+              blocker: {
+                kind: "corridor-bounds",
+                id: `${segment.source?.rank}->${segment.target?.rank}`,
+                branchId: null,
+                segmentId: null,
+                transitionRank: segment.source?.rank,
+                zone: "transition-corridor",
+              },
+            });
+            continue;
+          }
+          const clearance = renderedBranchClearance(
+            branch,
+            segment.source?.rank,
             x,
             y,
-            radius: BRANCH_HANDLE_RADIUS,
-            box,
-            clearanceMargin,
-          });
-        } else {
-          diagnostic.rejected.nonincidentRouteClearance += 1;
-          rememberRejected({
-            ...baseRejected,
-            clearanceMargin: quantizedCandidate(clearanceMargin),
-            blocker: clearance.blocker,
-          });
+          );
+          const clearanceMargin = clearance.margin;
+          if (clearanceMargin > 0) {
+            diagnostic.accepted += 1;
+            candidates.push({
+              branchId: branch.id,
+              x,
+              y,
+              radius: BRANCH_HANDLE_RADIUS,
+              box,
+              clearanceMargin,
+            });
+          } else {
+            diagnostic.rejected.nonincidentRouteClearance += 1;
+            rememberRejected({
+              ...baseRejected,
+              clearanceMargin: quantizedCandidate(clearanceMargin),
+              blocker: clearance.blocker,
+            });
+          }
         }
       }
+    };
+    sweepCorridor(HANDLE_CANDIDATE_T_VALUES, RANK_CORRIDOR_HALF_WIDTH);
+    if (!candidates.length) {
+      sweepCorridor(
+        HANDLE_FALLBACK_CANDIDATE_T_VALUES,
+        RANK_CORRIDOR_HALF_WIDTH,
+      );
     }
     candidateSets.set(
       branch.id,

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 // eslint-disable-next-line max-len
 import routingFixture from "./fixtures/tracker-lifecycle-diagram-routing-v2.json" with { type: "json" };
 import denseFixture from "./fixtures/tracker-lifecycle-diagram-v2.json" with { type: "json" };
@@ -340,6 +340,27 @@ const paginationProjection = () => {
 };
 
 describe("transition lane solver", () => {
+  it("honors and preserves a supplied routing graph across both passes", () => {
+    const p = projection();
+    const routingGraph = buildLifecycleRoutingGraph(p);
+    routingGraph.links[0].target = routingGraph.links[0].source;
+    const before = structuredClone(routingGraph);
+
+    expect(() =>
+      layoutLifecycleRoutingGraph(p, 1850, { routingGraph }),
+    ).toThrow(/non-adjacent or reversed ranks/u);
+    expect(routingGraph).toEqual(before);
+  });
+
+  it("does not emit production order diagnostics", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      layoutLifecycleRoutingGraph(projection(), 1850, { debugOrder: true });
+      expect(error).not.toHaveBeenCalled();
+    } finally {
+      error.mockRestore();
+    }
+  });
   it("builds explicit precedence for more than 16 reversed-id strands", () => {
     const continuers = Array.from({ length: 18 }, (_, index) => ({
       id: `link:${String(99 - index).padStart(2, "0")}`,
@@ -915,10 +936,29 @@ describe("transition lane solver", () => {
     // exact deterministic budget-exhaustion search, so this threshold has
     // real margin above local timings rather than being tuned tight to one
     // machine.
+    //
+    // The wider handle-candidate fallback search (added to fix real dense
+    // fixtures whose primary three sample points miss a legal point that
+    // exists elsewhere on the curve) gives this synthetic 50-branch
+    // fan-in's candidateCallback attempts a larger per-attempt cost, so the
+    // shared state budget is now what ends the search first rather than a
+    // clean handle-placement conflict; both are equally legitimate
+    // deterministic, bounded failures.
     const start = Date.now();
-    expect(() =>
-      layoutLifecycleRoutingGraph(transitionDensityProjection(), 1850),
-    ).toThrow(/^Lifecycle diagram handle placement invariant violated for /u);
+    let thrown;
+    try {
+      layoutLifecycleRoutingGraph(transitionDensityProjection(), 1850);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown?.message).toBe(
+      "Lifecycle handle search exceeded 32768 states",
+    );
+    expect(thrown?.cause).toMatchObject({
+      reason: "state-limit",
+      phase: "handle",
+      stateLimit: 32768,
+    });
     expect(Date.now() - start).toBeLessThan(30000);
   });
 
@@ -1374,6 +1414,9 @@ describe("test-only lifecycle layout diagnostics", () => {
     expect(reversed.firstRejectedReason).toMatchObject({
       reason: "no-candidates",
       firstAffectedRank: 0,
+      // Denser sampling remains subject to the standard rank corridor, so
+      // all three branches remain handle-infeasible under this reversed
+      // order rather than accepting a candidate outside that invariant.
       evidence: { branchDiagnosticCount: 3 },
     });
     expect(reversed.ranks[0].centeredAssignmentFeasible).toBe(true);
@@ -1582,7 +1625,7 @@ describe("lifecycle diagram render-only routing layout", () => {
     }
   });
 
-  it("surfaces structured handle diagnostics for all blocked candidates", () => {
+  it("keeps fallback handle candidates inside the standard rank corridor", () => {
     const makeSegment = (id, y) => ({
       id: `${id}:segment:0`,
       branchId: id,
@@ -1615,19 +1658,17 @@ describe("lifecycle diagram render-only routing layout", () => {
           branches: [
             expect.objectContaining({
               branchId: "branch:blocked",
-              attempts: 3,
+              // Both branches occupy the exact same y, at every x, so this
+              // branch stays blocked through the full escalating candidate
+              // search (3 primary + 8 fallback t-values), all constrained
+              // by the standard rank corridor.
+              attempts: 11,
               accepted: 0,
               rejected: expect.objectContaining({
                 fixedGeometry: 0,
-                outsideTransitionCorridor: 0,
-                nonincidentRouteClearance: 3,
               }),
               nearestRejectedCandidate: expect.objectContaining({
                 clearanceMargin: expect.any(Number),
-                blocker: expect.objectContaining({
-                  kind: "route",
-                  branchId: "branch:blocker",
-                }),
               }),
             }),
           ],
@@ -1644,6 +1685,7 @@ describe("lifecycle diagram render-only routing layout", () => {
     expect(
       diagnostic.nearestRejectedCandidate.clearanceMargin,
     ).toBeLessThanOrEqual(0);
+    expect(diagnostic.rejected.outsideTransitionCorridor).toBeGreaterThan(0);
   });
 
   it("identifies fixed geometry blockers in handle diagnostics", () => {
@@ -1682,7 +1724,12 @@ describe("lifecycle diagram render-only routing layout", () => {
           reason: "no-candidates",
           branches: [
             expect.objectContaining({
-              rejected: expect.objectContaining({ fixedGeometry: 3 }),
+              // The 44px-wide handle box can't clear a centrally-placed
+              // obstacle from any point in this segment's corridor, so
+              // every attempt across the primary and fallback search (3 +
+              // 8 t-values) hits it too.
+              attempts: 11,
+              rejected: expect.objectContaining({ fixedGeometry: 11 }),
               nearestRejectedCandidate: expect.objectContaining({
                 blocker: expect.objectContaining({
                   kind: "hit-region",
@@ -2455,5 +2502,112 @@ describe("lifecycle diagram render-only routing layout", () => {
     expect(thrown?.cause?.statesVisited).toBeGreaterThanOrEqual(32768);
     expect(thrown?.cause?.routeEdgeCount).toBeGreaterThan(0);
     expect(Date.now() - start).toBeLessThan(30000);
+  });
+});
+
+// The routing fixture (unlike the dense v2 fixture and denseBranchProjection,
+// both of which have a pre-existing, already-documented handle-clearance
+// infeasibility -- see the two it.skip blocks above) has a handle-feasible
+// geometry, so it is the real production regression coverage for the
+// seeded-replay two-pass architecture: discovery fully validates a candidate
+// (lane assignment + handle placement + zero fatal audit findings) and final
+// replays that exact candidate instead of re-searching from scratch.
+describe("seeded-replay production layout (routing fixture)", () => {
+  const reversedProjection = () => {
+    const p = projectLifecycleAt(routingFixture);
+    return {
+      ...p,
+      nodes: [...p.nodes].reverse(),
+      links: [...p.links].reverse(),
+      paths: [...p.paths].reverse(),
+    };
+  };
+  const directions = [
+    ["normal", () => projectLifecycleAt(routingFixture)],
+    ["reversed", reversedProjection],
+  ];
+
+  const handlesFor = (graph) => {
+    const visibleNodes = graph.nodes.filter(
+      (node) => !node.routing && node.total > 0,
+    );
+    const byBranch = new Map();
+    for (const link of graph.links) {
+      if (!byBranch.has(link.branchId)) byBranch.set(link.branchId, []);
+      byBranch.get(link.branchId).push(link);
+    }
+    return assignBranchHandles(graph.branches, byBranch, visibleNodes);
+  };
+
+  for (const [label, makeProjection] of directions) {
+    // eslint-disable-next-line max-len
+    it(`lays out successfully in two bounded passes with one valid handle per branch and zero fatal audit findings (${label})`, () => {
+      const { graph, dimensions } = layoutLifecycleRoutingGraph(
+        makeProjection(),
+        1850,
+      );
+      const stats = graph.transitionLaneSolverStats;
+      expect(stats.layoutAttemptCount).toBe(2);
+      expect(stats.layoutAttempts).toHaveLength(2);
+      expect(stats.layoutAttempts.map((attempt) => attempt.phase)).toEqual([
+        "discovery",
+        "final",
+      ]);
+      expect(stats.statesVisited).toBeLessThanOrEqual(stats.stateLimit);
+      expect(stats.handleStatesVisited).toBeLessThanOrEqual(
+        stats.handleStateLimit,
+      );
+
+      const handles = handlesFor(graph);
+      expect(handles).toHaveLength(graph.branches.length);
+      expect(new Set(handles.map((handle) => handle.branchId)).size).toBe(
+        graph.branches.length,
+      );
+      for (const handle of handles) {
+        expect(Number.isFinite(handle.x), handle.branchId).toBe(true);
+        expect(Number.isFinite(handle.y), handle.branchId).toBe(true);
+      }
+
+      const model = buildLifecycleRouteModel(graph, dimensions);
+      const audit = auditLifecycleRouteGeometry({ model, handles });
+      expect(audit.fatalFindings).toEqual([]);
+    });
+  }
+
+  it("derives identical authoritative rank ordering for normal and reversed input", () => {
+    const { graph: normal } = layoutLifecycleRoutingGraph(
+      projectLifecycleAt(routingFixture),
+      1850,
+    );
+    const { graph: reversed } = layoutLifecycleRoutingGraph(
+      reversedProjection(),
+      1850,
+    );
+    expect(reversed.transitionLaneRankOrder).toBeInstanceOf(Map);
+    expect([...reversed.transitionLaneRankOrder.entries()]).toEqual([
+      ...normal.transitionLaneRankOrder.entries(),
+    ]);
+  });
+
+  // eslint-disable-next-line max-len
+  it("produces stable-ID-normalized equivalent geometry/stats for normal and reversed input", () => {
+    const signatureFor = (proj) => {
+      const { graph } = layoutLifecycleRoutingGraph(proj, 1850);
+      const stats = graph.transitionLaneSolverStats;
+      return {
+        lanes: [...graph.links]
+          .sort((a, b) => compareLifecycleIds(a.id, b.id))
+          .map((link) => [link.id, link.transitionLaneY, link.y0, link.y1]),
+        stats: {
+          layoutAttemptCount: stats.layoutAttemptCount,
+          statesVisited: stats.statesVisited,
+          handleStatesVisited: stats.handleStatesVisited,
+          candidateEvaluations: stats.candidateEvaluations,
+        },
+      };
+    };
+    const normal = signatureFor(projectLifecycleAt(routingFixture));
+    const reversed = signatureFor(reversedProjection());
+    expect(reversed).toEqual(normal);
   });
 });
