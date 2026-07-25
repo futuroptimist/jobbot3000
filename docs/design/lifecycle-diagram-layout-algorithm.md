@@ -389,13 +389,16 @@ derived from that order, and then performs the complete lane, handle, and route
 audit pipeline with new obstacles, domains, caches, baselines, and budgets.
 
 Origin and endpoint ranks retain their taxonomy anchoring. At intermediate
-ranks, routing nodes use their branch position and real nodes use the ordered
-positions of all incident branches, followed by stable node-kind, taxonomy, and
-ID tie-breaks. Routing-anchor materialization consumes that same combined order
-rather than re-sorting fixed and movable entries by ideal Y.
+ranks, routing nodes retain both their incoming and outgoing branch positions,
+and real nodes retain every ordered incident branch. Incoming and outgoing
+positions remain separate rank/side contexts: the combined order is a stable
+topological merge of those contextual requirements, not a comparison of bare
+integers from different rank-local orders. Conflicting requirements produce a
+typed order-disagreement failure. Routing-anchor materialization consumes that
+same combined order rather than re-sorting fixed and movable entries by ideal Y.
 
-The final graph exposes frozen `layoutAttempts` statistics (discovery followed
-by final) and `layoutAttemptCount: 2`. Each attempt retains its independent
+The final graph exposes frozen, explicitly phase-labelled `layoutAttempts`
+statistics (`discovery` followed by `final`) and `layoutAttemptCount: 2`. Each attempt retains its independent
 transition and handle state counts and the unchanged 200,000/32,768 limits. A
 final solver order that differs from discovery is rejected with the typed
 `lifecycle-authoritative-rank-order` / `order-disagreement` failure; there is no

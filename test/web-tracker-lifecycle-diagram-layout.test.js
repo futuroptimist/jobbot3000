@@ -352,12 +352,11 @@ describe("transition lane solver", () => {
     expect(routingGraph).toEqual(before);
   });
 
-  it("prints debug order only for the final pass", () => {
+  it("does not emit production order diagnostics", () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       layoutLifecycleRoutingGraph(projection(), 1850, { debugOrder: true });
-      expect(error).toHaveBeenCalledTimes(1);
-      expect(error.mock.calls[0][0]).toBe("ORDER");
+      expect(error).not.toHaveBeenCalled();
     } finally {
       error.mockRestore();
     }

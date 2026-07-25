@@ -671,9 +671,14 @@ function layoutLifecycleRoutingGraphPass(
       return nodeSort(left, right);
     })
     .linkSort((left, right) => {
-      const order = options.authoritativeBranchOrderByRank?.get(
-        left.source.rank,
-      );
+      // D3 invokes linkSort for a node's source links and target links. Keep
+      // the lookup tied to that shared transition rather than treating an
+      // index from another rank-local order as comparable.
+      const transitionRank =
+        left.source.id === right.source.id
+          ? left.source.rank
+          : left.target.rank - 1;
+      const order = options.authoritativeBranchOrderByRank?.get(transitionRank);
       const leftIndex = order?.get(left.branchId);
       const rightIndex = order?.get(right.branchId);
       return (
@@ -2560,16 +2565,6 @@ function layoutLifecycleRoutingGraphPass(
   const candidateCallback = (globalAssignments, rankRefinementInfo) => {
     restoreBaseline();
     candidateEvaluations += 1;
-    if (options.debugOrder && candidateEvaluations === 1)
-      console.error(
-        "ORDER",
-        JSON.stringify(
-          [...rankRefinementInfo].map(([rank, info]) => [
-            rank,
-            info.rankOrder.map((entry) => entry.branchId),
-          ]),
-        ),
-      );
     if (options.discoveryPhase) {
       options.discoverySink?.(rankRefinementInfo);
       // Discovery only needs the solver's deterministic order. Avoid
@@ -2812,10 +2807,18 @@ function layoutLifecycleRoutingGraphPass(
 const compareOrderKeys = (left, right) => {
   const count = Math.max(left.length, right.length);
   for (let index = 0; index < count; index += 1) {
-    const difference =
-      (left[index] ?? Number.MAX_SAFE_INTEGER) -
-      (right[index] ?? Number.MAX_SAFE_INTEGER);
-    if (difference) return difference;
+    const leftEntry = left[index];
+    const rightEntry = right[index];
+    if (!leftEntry || !rightEntry) return leftEntry ? -1 : rightEntry ? 1 : 0;
+    for (const field of ["transitionRank", "side", "position"]) {
+      const difference = leftEntry[field] - rightEntry[field];
+      if (difference) return difference;
+    }
+    const branchDifference = compareLifecycleIds(
+      leftEntry.branchId,
+      rightEntry.branchId,
+    );
+    if (branchDifference) return branchDifference;
   }
   return 0;
 };
@@ -2827,24 +2830,33 @@ const deriveAuthoritativeLayoutOrders = (graph, rankOrderByRank) => {
       new Map(ids.map((id, index) => [id, index])),
     ]),
   );
-  const incidentBranchRanks = new Map();
+  const incidentBranchPositions = new Map();
   for (const link of graph.links) {
     const source = typeof link.source === "object" ? link.source : null;
     const target = typeof link.target === "object" ? link.target : null;
-    for (const [node, rank] of [
-      [source, source?.rank],
-      [target, source?.rank],
+    for (const [node, transitionRank, side] of [
+      [source, source?.rank, 1],
+      [target, source?.rank, 0],
     ]) {
       if (!node) continue;
-      if (!incidentBranchRanks.has(node.id))
-        incidentBranchRanks.set(node.id, new Map());
-      const branchRanks = incidentBranchRanks.get(node.id);
-      if (!branchRanks.has(link.branchId))
-        branchRanks.set(link.branchId, new Set());
-      // A continuing node is incident to this branch at both the incoming
-      // and outgoing transition ranks. Retain both positions rather than
-      // allowing link iteration order to overwrite one of them.
-      branchRanks.get(link.branchId).add(rank);
+      const position = branchOrderByRank
+        .get(transitionRank)
+        ?.get(link.branchId);
+      if (!Number.isInteger(position)) continue;
+      if (!incidentBranchPositions.has(node.id))
+        incidentBranchPositions.set(node.id, new Map());
+      // The tuple key makes incoming/outgoing context explicit. In
+      // particular, position 2 at rank N is never compared as though it were
+      // position 2 at rank N+1. The map key also makes reversed link input
+      // idempotent without dropping either side of a continuing branch.
+      incidentBranchPositions
+        .get(node.id)
+        .set(`${transitionRank}\0${side}\0${link.branchId}`, {
+          transitionRank,
+          side,
+          position,
+          branchId: link.branchId,
+        });
     }
   }
   const nodeOrderByRank = new Map();
@@ -2852,30 +2864,85 @@ const deriveAuthoritativeLayoutOrders = (graph, rankOrderByRank) => {
     (a, b) => a - b,
   )) {
     const nodes = graph.nodes.filter((node) => node.rank === rank);
-    nodes.sort((left, right) => {
-      // Keep the product's origin/endpoint anchoring contract while using the
-      // solver order for every unanchored rank.
-      if (rank === 0 || rank === 6) return nodeSort(left, right);
-      const key = (node) =>
-        [...(incidentBranchRanks.get(node.id) ?? [])]
-          .flatMap(([id, transitionRanks]) =>
-            [...transitionRanks]
-              .sort((a, b) => a - b)
-              .map((transitionRank) =>
-                branchOrderByRank.get(transitionRank)?.get(id),
+    const stableNodeOrder = (left, right) =>
+      Number(left.routing) - Number(right.routing) ||
+      taxonomyOrder(left.id) - taxonomyOrder(right.id) ||
+      compareLifecycleIds(left.id, right.id);
+    if (rank === 0 || rank === 6) {
+      nodes.sort(nodeSort);
+    } else {
+      const outgoing = new Map(nodes.map((node) => [node.id, new Set()]));
+      const indegree = new Map(nodes.map((node) => [node.id, 0]));
+      // Incoming and outgoing transition orders are separate authoritative
+      // contexts. Add constraints within each context, rather than comparing
+      // their rank-local integer positions directly.
+      for (const [transitionRank, side] of [
+        [rank - 1, 0],
+        [rank, 1],
+      ]) {
+        const contextual = nodes
+          .map((node) => ({
+            node,
+            key: [...(incidentBranchPositions.get(node.id)?.values() ?? [])]
+              .filter(
+                (entry) =>
+                  entry.transitionRank === transitionRank &&
+                  entry.side === side,
+              )
+              .sort(
+                (a, b) =>
+                  a.position - b.position ||
+                  compareLifecycleIds(a.branchId, b.branchId),
               ),
-          )
-          .filter(Number.isInteger)
-          .sort((a, b) => a - b);
-      const leftKey = key(left);
-      const rightKey = key(right);
-      return (
-        compareOrderKeys(leftKey, rightKey) ||
-        Number(left.routing) - Number(right.routing) ||
-        taxonomyOrder(left.id) - taxonomyOrder(right.id) ||
-        compareLifecycleIds(left.id, right.id)
-      );
-    });
+          }))
+          .filter(({ key }) => key.length)
+          .sort(
+            (a, b) =>
+              compareOrderKeys(a.key, b.key) || stableNodeOrder(a.node, b.node),
+          );
+        for (let index = 1; index < contextual.length; index += 1) {
+          const from = contextual[index - 1].node.id;
+          const to = contextual[index].node.id;
+          if (!outgoing.get(from).has(to)) {
+            outgoing.get(from).add(to);
+            indegree.set(to, indegree.get(to) + 1);
+          }
+        }
+      }
+      const ready = nodes
+        .filter((node) => indegree.get(node.id) === 0)
+        .sort(stableNodeOrder);
+      const combined = [];
+      while (ready.length) {
+        const node = ready.shift();
+        combined.push(node);
+        for (const targetId of outgoing.get(node.id)) {
+          indegree.set(targetId, indegree.get(targetId) - 1);
+          if (indegree.get(targetId) === 0) {
+            ready.push(nodes.find((candidate) => candidate.id === targetId));
+            ready.sort(stableNodeOrder);
+          }
+        }
+      }
+      if (combined.length !== nodes.length) {
+        const error = new Error(
+          `Lifecycle authoritative node order disagrees at rank ${rank}`,
+        );
+        error.cause = Object.freeze({
+          type: "lifecycle-authoritative-rank-order",
+          reason: "order-disagreement",
+          rank,
+          nodeIds: Object.freeze(
+            nodes
+              .filter((node) => indegree.get(node.id) > 0)
+              .map((node) => node.id)
+              .sort(compareLifecycleIds),
+          ),
+        });
+        throw error;
+      }
+      nodes.splice(0, nodes.length, ...combined);
+    }
     nodeOrderByRank.set(
       rank,
       new Map(nodes.map((node, index) => [node.id, index])),
@@ -2955,8 +3022,14 @@ export function layoutLifecycleRoutingGraph(
   result.graph.transitionLaneSolverStats = Object.freeze({
     ...result.graph.transitionLaneSolverStats,
     layoutAttempts: Object.freeze([
-      Object.freeze({ ...discovery.graph.transitionLaneSolverStats }),
-      Object.freeze({ ...result.graph.transitionLaneSolverStats }),
+      Object.freeze({
+        phase: "discovery",
+        ...discovery.graph.transitionLaneSolverStats,
+      }),
+      Object.freeze({
+        phase: "final",
+        ...result.graph.transitionLaneSolverStats,
+      }),
     ]),
     layoutAttemptCount: 2,
   });
