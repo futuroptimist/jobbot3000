@@ -945,9 +945,20 @@ describe("transition lane solver", () => {
     // clean handle-placement conflict; both are equally legitimate
     // deterministic, bounded failures.
     const start = Date.now();
-    expect(() =>
-      layoutLifecycleRoutingGraph(transitionDensityProjection(), 1850),
-    ).toThrow(/^Lifecycle handle search exceeded \d+ states$/u);
+    let thrown;
+    try {
+      layoutLifecycleRoutingGraph(transitionDensityProjection(), 1850);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown?.message).toBe(
+      "Lifecycle handle search exceeded 32768 states",
+    );
+    expect(thrown?.cause).toMatchObject({
+      reason: "state-limit",
+      phase: "handle",
+      stateLimit: 32768,
+    });
     expect(Date.now() - start).toBeLessThan(30000);
   });
 
@@ -1403,11 +1414,11 @@ describe("test-only lifecycle layout diagnostics", () => {
     expect(reversed.firstRejectedReason).toMatchObject({
       reason: "no-candidates",
       firstAffectedRank: 0,
-      // The wider handle-candidate fallback search now finds legal points
-      // for two of the three branches this reversed order used to block
-      // outright with only three sample points; one branch remains
-      // genuinely handle-infeasible under this reversed order.
-      evidence: { branchDiagnosticCount: 1 },
+      // The wider handle-candidate fallback search now finds a legal point
+      // for one of the three branches this reversed order used to block
+      // outright with only three sample points; two remain genuinely
+      // handle-infeasible under this reversed order.
+      evidence: { branchDiagnosticCount: 2 },
     });
     expect(reversed.ranks[0].centeredAssignmentFeasible).toBe(true);
     expect(
@@ -1651,8 +1662,8 @@ describe("lifecycle diagram render-only routing layout", () => {
               // Both branches occupy the exact same y, at every x, so this
               // branch stays blocked through the full escalating candidate
               // search (primary + fallback t-values, standard + fallback
-              // corridor) -- 3 + 18 + 18 attempts.
-              attempts: 39,
+              // corridor) -- 3 + 8 + 8 attempts.
+              attempts: 19,
               accepted: 0,
               rejected: expect.objectContaining({
                 fixedGeometry: 0,
@@ -1716,9 +1727,9 @@ describe("lifecycle diagram render-only routing layout", () => {
               // The 44px-wide handle box can't clear a centrally-placed
               // obstacle from any point in this segment's corridor, so
               // every attempt across the escalating fallback search (3 +
-              // 18 + 18 t-values) hits it too.
-              attempts: 39,
-              rejected: expect.objectContaining({ fixedGeometry: 39 }),
+              // 8 + 8 t-values) hits it too.
+              attempts: 19,
+              rejected: expect.objectContaining({ fixedGeometry: 19 }),
               nearestRejectedCandidate: expect.objectContaining({
                 blocker: expect.objectContaining({
                   kind: "hit-region",
