@@ -1,19 +1,5 @@
 # Lifecycle diagram layout algorithm: internals and known gaps
 
-## Constructive dense-port geometry
-
-Dense real nodes reserve interaction geometry before lane domains, cache
-signatures, or replay seeds are computed. The larger side count determines
-the node height. Each side follows authoritative transition-lane order at a
-deterministic 96px pitch. `MINIMUM_PORT_SPACING` exposes the checked 60px
-floor: the 44px handle target plus route envelope, margin, and quantization.
-
-The same pitch separates transition lanes, creating ordered handle-clearance
-bays on rendered cubics rather than adding blind samples. Incident routes may
-converge at their shared semantic node; nonincident routes retain full
-clearance and audit checks. Redistributed docks are materialized before cache
-signatures and are included in stable-ID-keyed link-dock replay.
-
 **Status:** Engineering reference for `src/web/tracker/lifecycleDiagramLayout.js`. Not a product
 design contract (see [application-lifecycle-diagram.md](./application-lifecycle-diagram.md) for
 that). This document exists so the next person debugging the solver — including a future instance
