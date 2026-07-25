@@ -50,6 +50,33 @@ const COLLISION_MARGIN = -1;
 // deterministic state cap also retains margin beneath the 30-second render
 // latency contract when test workers or the browser contend for a CPU.
 const HANDLE_ROUTE_EDGE_COST_DIVISOR = 6000;
+// Primary handle-candidate sample points: three points near the middle of a
+// segment's transition corridor, tried first so ordinary (sparse) fixtures
+// keep selecting the same candidates they always have.
+const HANDLE_CANDIDATE_T_VALUES = Object.freeze([0.5, 0.35, 0.65]);
+// A branch whose docks are pinched close together by convergent nonincident
+// routes (many branches from different sources fanning into one small
+// target node) can have every one of the three primary sample points blocked
+// even though the curve legally clears somewhere else along its length --
+// confirmed directly against a real dense production fixture where a finer
+// sweep found a legal point the primary three simply never sampled. This
+// finer grid is tried only once the primary set finds nothing, so it never
+// changes which candidate an already-working branch selects.
+const HANDLE_FALLBACK_CANDIDATE_T_VALUES = Object.freeze([
+  0.1, 0.15, 0.2, 0.25, 0.275, 0.3, 0.4, 0.425, 0.45, 0.55, 0.575, 0.6, 0.7,
+  0.725, 0.75, 0.8, 0.85, 0.9,
+]);
+// Last-resort corridor buffer for handle placement only, used solely when
+// both t-value sets above are exhausted for the standard
+// RANK_CORRIDOR_HALF_WIDTH corridor. RANK_CORRIDOR_HALF_WIDTH keeps handles
+// away from a node's edge for visual clarity, but the actual safety
+// boundary against overlapping node/label/hit geometry is
+// fixedGeometryBlockerForCandidate, which this narrower buffer does not
+// bypass -- confirmed directly that points just inside the standard
+// corridor's excluded zone, near a shared convergent target, still clear
+// fixed geometry cleanly. Relaxing this cosmetic buffer only as a final
+// fallback cannot weaken the actual collision envelope.
+const HANDLE_FALLBACK_CORRIDOR_HALF_WIDTH = 40;
 
 export const buildTransitionPrecedence = ({
   rank,
@@ -4077,90 +4104,105 @@ const tryAssignBranchHandles = (
         diagnostic.nearestRejectedCandidate = candidate;
       }
     };
-    for (const segment of orderedSegments) {
-      const sourceCenter = rankCenterX(segment.source.rank);
-      const targetCenter = rankCenterX(segment.target.rank);
-      const exitX = sourceCenter + RANK_CORRIDOR_HALF_WIDTH;
-      const entryX = targetCenter - RANK_CORRIDOR_HALF_WIDTH;
-      for (const t of [0.5, 0.35, 0.65]) {
-        const { x, y } = cubicTransitionPoint(segment, t);
-        const box = {
-          x: x - BRANCH_HANDLE_RADIUS,
-          y: y - BRANCH_HANDLE_RADIUS,
-          width: BRANCH_HANDLE_RADIUS * 2,
-          height: BRANCH_HANDLE_RADIUS * 2,
-        };
-        diagnostic.attempts += 1;
-        const baseRejected = {
-          segmentId: segmentKey(segment),
-          segmentIndex: segment.segmentIndex,
-          transitionRank: segment.source?.rank,
-          t,
-          x: quantizedCandidate(x),
-          y: quantizedCandidate(y),
-        };
-        const fixedBlocker = fixedGeometryBlockerForCandidate(box);
-        if (fixedBlocker) {
-          diagnostic.rejected.fixedGeometry += 1;
-          rememberRejected({
-            ...baseRejected,
-            clearanceMargin: COLLISION_MARGIN,
-            blocker: {
-              kind: fixedBlocker.kind,
-              id: fixedBlocker.id,
-              branchId: null,
-              segmentId: null,
-              transitionRank: null,
-              zone: null,
-            },
-          });
-          continue;
-        }
-        if (
-          x - BRANCH_HANDLE_RADIUS < exitX ||
-          x + BRANCH_HANDLE_RADIUS > entryX
-        ) {
-          diagnostic.rejected.outsideTransitionCorridor += 1;
-          rememberRejected({
-            ...baseRejected,
-            clearanceMargin: COLLISION_MARGIN,
-            blocker: {
-              kind: "corridor-bounds",
-              id: `${segment.source?.rank}->${segment.target?.rank}`,
-              branchId: null,
-              segmentId: null,
-              transitionRank: segment.source?.rank,
-              zone: "transition-corridor",
-            },
-          });
-          continue;
-        }
-        const clearance = renderedBranchClearance(
-          branch,
-          segment.source?.rank,
-          x,
-          y,
-        );
-        const clearanceMargin = clearance.margin;
-        if (clearanceMargin > 0) {
-          diagnostic.accepted += 1;
-          candidates.push({
-            branchId: branch.id,
+    const sweepCorridor = (tValues, corridorHalfWidth) => {
+      for (const segment of orderedSegments) {
+        const sourceCenter = rankCenterX(segment.source.rank);
+        const targetCenter = rankCenterX(segment.target.rank);
+        const exitX = sourceCenter + corridorHalfWidth;
+        const entryX = targetCenter - corridorHalfWidth;
+        for (const t of tValues) {
+          const { x, y } = cubicTransitionPoint(segment, t);
+          const box = {
+            x: x - BRANCH_HANDLE_RADIUS,
+            y: y - BRANCH_HANDLE_RADIUS,
+            width: BRANCH_HANDLE_RADIUS * 2,
+            height: BRANCH_HANDLE_RADIUS * 2,
+          };
+          diagnostic.attempts += 1;
+          const baseRejected = {
+            segmentId: segmentKey(segment),
+            segmentIndex: segment.segmentIndex,
+            transitionRank: segment.source?.rank,
+            t,
+            x: quantizedCandidate(x),
+            y: quantizedCandidate(y),
+          };
+          const fixedBlocker = fixedGeometryBlockerForCandidate(box);
+          if (fixedBlocker) {
+            diagnostic.rejected.fixedGeometry += 1;
+            rememberRejected({
+              ...baseRejected,
+              clearanceMargin: COLLISION_MARGIN,
+              blocker: {
+                kind: fixedBlocker.kind,
+                id: fixedBlocker.id,
+                branchId: null,
+                segmentId: null,
+                transitionRank: null,
+                zone: null,
+              },
+            });
+            continue;
+          }
+          if (
+            x - BRANCH_HANDLE_RADIUS < exitX ||
+            x + BRANCH_HANDLE_RADIUS > entryX
+          ) {
+            diagnostic.rejected.outsideTransitionCorridor += 1;
+            rememberRejected({
+              ...baseRejected,
+              clearanceMargin: COLLISION_MARGIN,
+              blocker: {
+                kind: "corridor-bounds",
+                id: `${segment.source?.rank}->${segment.target?.rank}`,
+                branchId: null,
+                segmentId: null,
+                transitionRank: segment.source?.rank,
+                zone: "transition-corridor",
+              },
+            });
+            continue;
+          }
+          const clearance = renderedBranchClearance(
+            branch,
+            segment.source?.rank,
             x,
             y,
-            radius: BRANCH_HANDLE_RADIUS,
-            box,
-            clearanceMargin,
-          });
-        } else {
-          diagnostic.rejected.nonincidentRouteClearance += 1;
-          rememberRejected({
-            ...baseRejected,
-            clearanceMargin: quantizedCandidate(clearanceMargin),
-            blocker: clearance.blocker,
-          });
+          );
+          const clearanceMargin = clearance.margin;
+          if (clearanceMargin > 0) {
+            diagnostic.accepted += 1;
+            candidates.push({
+              branchId: branch.id,
+              x,
+              y,
+              radius: BRANCH_HANDLE_RADIUS,
+              box,
+              clearanceMargin,
+            });
+          } else {
+            diagnostic.rejected.nonincidentRouteClearance += 1;
+            rememberRejected({
+              ...baseRejected,
+              clearanceMargin: quantizedCandidate(clearanceMargin),
+              blocker: clearance.blocker,
+            });
+          }
         }
       }
+    };
+    sweepCorridor(HANDLE_CANDIDATE_T_VALUES, RANK_CORRIDOR_HALF_WIDTH);
+    if (!candidates.length) {
+      sweepCorridor(
+        HANDLE_FALLBACK_CANDIDATE_T_VALUES,
+        RANK_CORRIDOR_HALF_WIDTH,
+      );
+    }
+    if (!candidates.length) {
+      sweepCorridor(
+        HANDLE_FALLBACK_CANDIDATE_T_VALUES,
+        HANDLE_FALLBACK_CORRIDOR_HALF_WIDTH,
+      );
     }
     candidateSets.set(
       branch.id,
