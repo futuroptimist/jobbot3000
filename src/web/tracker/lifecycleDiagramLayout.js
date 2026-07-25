@@ -26,6 +26,10 @@ export const MINIMUM_SVG_WIDTH =
   6 * MINIMUM_RANK_CENTER_SPACING;
 export const BRANCH_STROKE_OPACITY = 0.82;
 export const BRANCH_HANDLE_RADIUS = 22;
+// A 44px handle must clear the selected-route envelope on both sides.  The
+// extra pixel absorbs quantization and keeps the contract strict in audits.
+export const MINIMUM_PORT_SPACING = 60;
+const CONSTRUCTIVE_PORT_PITCH = 96;
 export const renderedBranchStrokeWidth = () => 3;
 export const selectedEnvelopeRadius = (segment) =>
   (renderedBranchStrokeWidth(segment?.width) + 12) / 2;
@@ -730,6 +734,48 @@ function layoutLifecycleRoutingGraphPass(
   }
   layout.update(graph);
 
+  // Sankey sizes nodes from link values.  That is appropriate for flow
+  // weight, but not for interaction ports: a dense semantic node can
+  // otherwise receive dozens of almost-coincident docks.  Reserve the port
+  // geometry constructively, before any lane domains, cache signatures, or
+  // seed values are produced.  Only real nodes which need the room grow.
+  // Keep their established rank-local order and centre the enlarged stack in
+  // the existing (density-sized) canvas.
+  const incidentPortCount = (node) =>
+    Math.max(node.sourceLinks?.length ?? 0, node.targetLinks?.length ?? 0, 1);
+  const realNodesByRank = new Map();
+  for (const node of graph.nodes.filter((candidate) => !candidate.routing)) {
+    if (!realNodesByRank.has(node.rank)) realNodesByRank.set(node.rank, []);
+    realNodesByRank.get(node.rank).push(node);
+  }
+  for (const nodes of realNodesByRank.values()) {
+    nodes.sort((a, b) => a.y0 - b.y0 || compareLifecycleIds(a.id, b.id));
+    const heights = nodes.map((node) =>
+      Math.max(
+        node.y1 - node.y0,
+        (incidentPortCount(node) - 1) * CONSTRUCTIVE_PORT_PITCH + 1,
+      ),
+    );
+    const stackHeight =
+      heights.reduce((sum, height) => sum + height, 0) +
+      Math.max(0, nodes.length - 1) * ROUTED_NODE_PADDING;
+    let cursor =
+      LAYOUT_TOP_MARGIN +
+      Math.max(
+        0,
+        (dimensions.height -
+          LAYOUT_TOP_MARGIN -
+          LAYOUT_BOTTOM_MARGIN -
+          stackHeight) /
+          2,
+      );
+    nodes.forEach((node, index) => {
+      node.y0 = cursor;
+      node.y1 = cursor + heights[index];
+      cursor = node.y1 + ROUTED_NODE_PADDING;
+    });
+  }
+
   const orderedBranches = [...graph.branches].sort(compareBranches);
   const branchById = new Map(
     orderedBranches.map((branch) => [branch.id, branch]),
@@ -784,8 +830,10 @@ function layoutLifecycleRoutingGraphPass(
   const laneBottom = dimensions.height - BRANCH_HANDLE_RADIUS - 4;
   const routeEnvelopeRadius = selectedEnvelopeRadius({ width: 1 });
   const clearancePad = routeEnvelopeRadius + 0.25 + LANE_Y_EPSILON;
-  const minLaneSpacing =
-    BRANCH_HANDLE_RADIUS * 2 + routeEnvelopeRadius * 2 + 0.25 + LANE_Y_EPSILON;
+  // Match the constructive dock pitch so the middle of every ordered
+  // transition also forms a handle-clearance bay instead of merely hoping
+  // that sampled curves separate far enough.
+  const minLaneSpacing = CONSTRUCTIVE_PORT_PITCH;
   const quantizeY = (value) => Math.round(value * 1000) / 1000;
   const clampLaneY = (value) =>
     quantizeY(Math.min(laneBottom, Math.max(laneTop, value)));
@@ -2446,17 +2494,12 @@ function layoutLifecycleRoutingGraphPass(
         (a, b) =>
           a.transitionLaneY - b.transitionLaneY || compareBranchLinks(a, b),
       );
-      const height = Math.max(0, node.y1 - node.y0);
       ordered.forEach((link, index) => {
         const evenY =
           ordered.length > 1
-            ? node.y0 + (height * (index + 1)) / (ordered.length + 1)
+            ? node.y0 + 0.5 + index * CONSTRUCTIVE_PORT_PITCH
             : (node.y0 + node.y1) / 2;
-        const laneY = Math.min(
-          node.y1 - 0.5,
-          Math.max(node.y0 + 0.5, link.transitionLaneY),
-        );
-        link.y0 = quantizeY((evenY + laneY * 3) / 4);
+        link.y0 = quantizeY(evenY);
       });
     }
     for (const [node, links] of incomingByNode) {
@@ -2465,17 +2508,12 @@ function layoutLifecycleRoutingGraphPass(
         (a, b) =>
           a.transitionLaneY - b.transitionLaneY || compareBranchLinks(a, b),
       );
-      const height = Math.max(0, node.y1 - node.y0);
       ordered.forEach((link, index) => {
         const evenY =
           ordered.length > 1
-            ? node.y0 + (height * (index + 1)) / (ordered.length + 1)
+            ? node.y0 + 0.5 + index * CONSTRUCTIVE_PORT_PITCH
             : (node.y0 + node.y1) / 2;
-        const laneY = Math.min(
-          node.y1 - 0.5,
-          Math.max(node.y0 + 0.5, link.transitionLaneY),
-        );
-        link.y1 = quantizeY((evenY + laneY * 3) / 4);
+        link.y1 = quantizeY(evenY);
       });
     }
     const routingNodesByRank = new Map();
@@ -4176,6 +4214,7 @@ const tryAssignBranchHandles = (
           compareLifecycleIds(a.kind, b.kind) ||
           compareLifecycleIds(a.id ?? "", b.id ?? ""),
       )[0] ?? null;
+  const branchById = new Map(branches.map((branch) => [branch.id, branch]));
   const renderedBranchClearance = (branch, transitionRank, x, y) => {
     let best = { margin: Number.POSITIVE_INFINITY, blocker: null };
     const inspectGroup = (group) => {
@@ -4183,6 +4222,19 @@ const tryAssignBranchHandles = (
       if (xDistance - group.maxRequired > best.margin + LANE_Y_EPSILON) return;
       for (const edge of group.edges) {
         if (edge.branchId === branch.id) continue;
+        // Routes incident to the same semantic node are deliberately allowed
+        // to converge at that node.  The ordered 60px docks above provide the
+        // usable interaction bay; treating the remainder of the incident
+        // fan as a nonincident obstacle made those bays impossible to use.
+        const other = branchById.get(edge.branchId);
+        if (
+          other &&
+          (other.source === branch.source ||
+            other.source === branch.target ||
+            other.target === branch.source ||
+            other.target === branch.target)
+        )
+          continue;
         const required =
           BRANCH_HANDLE_RADIUS + edge.envelopeRadius + 0.25 + LANE_Y_EPSILON;
         const distance = pointToSegmentDistance({ x, y }, edge);

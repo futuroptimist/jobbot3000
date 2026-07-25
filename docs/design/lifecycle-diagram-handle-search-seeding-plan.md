@@ -1,5 +1,13 @@
 # Implemented: seeding the final pass's lane search with discovery's proven assignment
 
+## Dense-layout completion
+
+The four deferred Vitest contracts are active. Discovery applies constructive
+port/lane geometry before capturing docks, lanes, and handles. The pristine
+final pass remains validation-only replay and never redistributes ports after
+seed validation or starts another search. The four Playwright deferrals remain
+assigned to P4.
+
 ## Status
 
 Implemented. This document originally recorded root-cause findings and a proposed plan
