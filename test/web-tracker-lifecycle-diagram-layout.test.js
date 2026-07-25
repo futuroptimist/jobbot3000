@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 // eslint-disable-next-line max-len
 import routingFixture from "./fixtures/tracker-lifecycle-diagram-routing-v2.json" with { type: "json" };
 import denseFixture from "./fixtures/tracker-lifecycle-diagram-v2.json" with { type: "json" };
@@ -340,6 +340,28 @@ const paginationProjection = () => {
 };
 
 describe("transition lane solver", () => {
+  it("honors and preserves a supplied routing graph across both passes", () => {
+    const p = projection();
+    const routingGraph = buildLifecycleRoutingGraph(p);
+    routingGraph.links[0].target = routingGraph.links[0].source;
+    const before = structuredClone(routingGraph);
+
+    expect(() =>
+      layoutLifecycleRoutingGraph(p, 1850, { routingGraph }),
+    ).toThrow(/non-adjacent or reversed ranks/u);
+    expect(routingGraph).toEqual(before);
+  });
+
+  it("prints debug order only for the final pass", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      layoutLifecycleRoutingGraph(projection(), 1850, { debugOrder: true });
+      expect(error).toHaveBeenCalledTimes(1);
+      expect(error.mock.calls[0][0]).toBe("ORDER");
+    } finally {
+      error.mockRestore();
+    }
+  });
   it("builds explicit precedence for more than 16 reversed-id strands", () => {
     const continuers = Array.from({ length: 18 }, (_, index) => ({
       id: `link:${String(99 - index).padStart(2, "0")}`,

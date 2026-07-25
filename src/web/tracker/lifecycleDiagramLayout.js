@@ -46,6 +46,10 @@ export const rendererHitBoxForNode = (node) => {
 };
 const LANE_Y_EPSILON = 0.001;
 const COLLISION_MARGIN = -1;
+// Charge dense route generation/auditing slightly conservatively so the
+// deterministic state cap also retains margin beneath the 30-second render
+// latency contract when test workers or the browser contend for a CPU.
+const HANDLE_ROUTE_EDGE_COST_DIVISOR = 6000;
 
 export const buildTransitionPrecedence = ({
   rank,
@@ -2566,6 +2570,14 @@ function layoutLifecycleRoutingGraphPass(
           ]),
         ),
       );
+    if (options.discoveryPhase) {
+      options.discoverySink?.(rankRefinementInfo);
+      // Discovery only needs the solver's deterministic order. Avoid
+      // materializing geometry that will immediately be discarded; besides
+      // eliminating misleading intermediate diagnostics, this keeps the
+      // additional pass inside the production layout's latency bound.
+      return true;
+    }
     const geometrySignature = [...globalAssignments.entries()]
       .sort(([a], [b]) => compareLifecycleIds(a, b))
       .map(([id, y]) => `${id}=${y}`)
@@ -2621,12 +2633,6 @@ function layoutLifecycleRoutingGraphPass(
     // Materialization succeeded: this candidate is no longer implicated by
     // an earlier routing-anchor failure.
     lastRoutingAnchorFailure = null;
-    if (options.discoveryPhase) {
-      options.discoverySink?.(rankRefinementInfo);
-      // Discovery is a production solver phase, but its incomplete geometry is
-      // deliberately discarded by the bounded outer pipeline.
-      return true;
-    }
     if (options.transitionLanePhaseOnly && enableTestDiagnostics) {
       testOnlyDiagnosticSink?.({
         phase: "accepted",
@@ -2669,7 +2675,10 @@ function layoutLifecycleRoutingGraphPass(
       const auditRouteEdgeCount = handleCheck.routeEdgeCount ?? 1;
       handleBudget.statesVisited += Math.max(
         1,
-        Math.round((auditRouteEdgeCount * auditRouteEdgeCount) / 8450),
+        Math.round(
+          (auditRouteEdgeCount * auditRouteEdgeCount) /
+            HANDLE_ROUTE_EDGE_COST_DIVISOR,
+        ),
       );
       if (handleBudget.statesVisited >= handleBudget.stateLimit)
         throwHandleStateLimitExceeded();
@@ -2829,7 +2838,13 @@ const deriveAuthoritativeLayoutOrders = (graph, rankOrderByRank) => {
       if (!node) continue;
       if (!incidentBranchRanks.has(node.id))
         incidentBranchRanks.set(node.id, new Map());
-      incidentBranchRanks.get(node.id).set(link.branchId, rank);
+      const branchRanks = incidentBranchRanks.get(node.id);
+      if (!branchRanks.has(link.branchId))
+        branchRanks.set(link.branchId, new Set());
+      // A continuing node is incident to this branch at both the incoming
+      // and outgoing transition ranks. Retain both positions rather than
+      // allowing link iteration order to overwrite one of them.
+      branchRanks.get(link.branchId).add(rank);
     }
   }
   const nodeOrderByRank = new Map();
@@ -2843,8 +2858,12 @@ const deriveAuthoritativeLayoutOrders = (graph, rankOrderByRank) => {
       if (rank === 0 || rank === 6) return nodeSort(left, right);
       const key = (node) =>
         [...(incidentBranchRanks.get(node.id) ?? [])]
-          .map(([id, transitionRank]) =>
-            branchOrderByRank.get(transitionRank)?.get(id),
+          .flatMap(([id, transitionRanks]) =>
+            [...transitionRanks]
+              .sort((a, b) => a - b)
+              .map((transitionRank) =>
+                branchOrderByRank.get(transitionRank)?.get(id),
+              ),
           )
           .filter(Number.isInteger)
           .sort((a, b) => a - b);
@@ -2879,12 +2898,18 @@ export function layoutLifecycleRoutingGraph(
     return layoutLifecycleRoutingGraphPass(projection, availableWidth, options);
 
   let discoveredRankOrder = null;
+  // D3 mutates both endpoint references and geometry. Clone a supplied graph
+  // for each pass so the option is honored without allowing discovery output
+  // to contaminate the final attempt or the caller's graph.
+  const freshRoutingGraph = () =>
+    options.routingGraph ? structuredClone(options.routingGraph) : undefined;
   const discovery = layoutLifecycleRoutingGraphPass(
     projection,
     availableWidth,
     {
       ...options,
-      routingGraph: undefined,
+      routingGraph: freshRoutingGraph(),
+      debugOrder: false,
       discoveryPhase: true,
       discoverySink(info) {
         discoveredRankOrder = new Map(
@@ -2904,7 +2929,7 @@ export function layoutLifecycleRoutingGraph(
   );
   const result = layoutLifecycleRoutingGraphPass(projection, availableWidth, {
     ...options,
-    routingGraph: undefined,
+    routingGraph: freshRoutingGraph(),
     authoritativeBranchOrderByRank: orders.branchOrderByRank,
     authoritativeNodeOrderByRank: orders.nodeOrderByRank,
   });
@@ -3900,7 +3925,9 @@ const tryAssignBranchHandles = (
   const routeEdgeCount = routeEdges.length;
   const generationCost = Math.max(
     1,
-    Math.round((routeEdgeCount * routeEdgeCount) / 8450),
+    Math.round(
+      (routeEdgeCount * routeEdgeCount) / HANDLE_ROUTE_EDGE_COST_DIVISOR,
+    ),
   );
   if (sharedBudget) {
     if (sharedBudget.statesVisited >= sharedBudget.stateLimit) {
