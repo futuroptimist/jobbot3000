@@ -30,17 +30,6 @@ export const renderedBranchStrokeWidth = () => 3;
 export const selectedEnvelopeRadius = (segment) =>
   (renderedBranchStrokeWidth(segment?.width) + 12) / 2;
 
-// Minimum vertical separation to reserve between adjacent link docks at the
-// same real node. D3-sankey sizes a node's incident link docks purely
-// proportional to each link's value, with no minimum gap -- for a node
-// where several low-value branches converge, that can place docks only a
-// few pixels apart, far short of what a BRANCH_HANDLE_RADIUS handle needs
-// to clear its neighbor's rendered route envelope. Matches the lane-spacing
-// margin already used elsewhere (BRANCH_HANDLE_RADIUS*2 plus the rendered
-// route envelope) for the same clearance reason.
-export const MINIMUM_PORT_SPACING =
-  BRANCH_HANDLE_RADIUS * 2 + selectedEnvelopeRadius({ width: 1 }) * 2 + 1;
-
 export const rendererHitBoxForNode = (node) => {
   const size = BRANCH_HANDLE_RADIUS * 2;
   const nodeWidth = node.x1 - node.x0;
@@ -542,12 +531,9 @@ export function calculateLifecycleDiagramLayout(
       : MINIMUM_SVG_WIDTH;
   const graph = routingGraph ?? buildLifecycleRoutingGraph(projection);
   const rankCounts = new Map();
-  const nodesByRank = new Map();
   for (const node of graph.nodes ?? []) {
     if (node.routing || Number(node.total) > 0 || Number(node.value) > 0) {
       rankCounts.set(node.rank, (rankCounts.get(node.rank) ?? 0) + 1);
-      if (!nodesByRank.has(node.rank)) nodesByRank.set(node.rank, []);
-      nodesByRank.get(node.rank).push(node);
     }
   }
   const rankByNodeId = new Map(
@@ -573,18 +559,6 @@ export function calculateLifecycleDiagramLayout(
     return rank;
   };
   const transitionCounts = new Map();
-  // Real (non-routing) nodes with more than one incident link on a side
-  // need at least MINIMUM_PORT_SPACING between each adjacent dock -- D3's
-  // own value-proportional sizing doesn't guarantee that (see
-  // MINIMUM_PORT_SPACING). Tally per-node incident counts alongside the
-  // existing transition-count pass so the reserved height below can fit
-  // them once enforceMinimumPortSpacing grows those nodes after layout.
-  const incidentLinkCounts = new Map();
-  const bumpIncident = (nodeId, side) => {
-    if (!incidentLinkCounts.has(nodeId))
-      incidentLinkCounts.set(nodeId, { incoming: 0, outgoing: 0 });
-    incidentLinkCounts.get(nodeId)[side] += 1;
-  };
   for (const link of graph.links ?? []) {
     const sourceRank = resolveLinkEndpointRank(link, "source");
     const targetRank = resolveLinkEndpointRank(link, "target");
@@ -608,41 +582,17 @@ export function calculateLifecycleDiagramLayout(
     }
     for (let rank = sourceRank; rank < targetRank; rank += 1)
       transitionCounts.set(rank, (transitionCounts.get(rank) ?? 0) + 1);
-    bumpIncident(linkEndpointId(link, "source"), "outgoing");
-    bumpIncident(linkEndpointId(link, "target"), "incoming");
   }
   const densestRoutedRank = Math.max(
     1,
     ...rankCounts.values(),
     ...transitionCounts.values(),
   );
-  const nodeMinHeight = (node) => {
-    if (node.routing) return PER_LANE_VERTICAL_BUDGET;
-    const counts = incidentLinkCounts.get(node.id) ?? {
-      incoming: 0,
-      outgoing: 0,
-    };
-    const maxSide = Math.max(counts.incoming, counts.outgoing, 1);
-    return Math.max(
-      PER_LANE_VERTICAL_BUDGET,
-      (maxSide - 1) * MINIMUM_PORT_SPACING,
-    );
-  };
-  let portSpacingHeight = 0;
-  for (const nodes of nodesByRank.values()) {
-    const total =
-      nodes.reduce((sum, node) => sum + nodeMinHeight(node), 0) +
-      Math.max(0, nodes.length - 1) * ROUTED_NODE_PADDING;
-    portSpacingHeight = Math.max(portSpacingHeight, total);
-  }
   const densityHeight =
     LAYOUT_TOP_MARGIN +
     LAYOUT_BOTTOM_MARGIN +
-    Math.max(
-      densestRoutedRank * PER_LANE_VERTICAL_BUDGET +
-        Math.max(0, densestRoutedRank - 1) * ROUTED_NODE_PADDING,
-      portSpacingHeight,
-    );
+    densestRoutedRank * PER_LANE_VERTICAL_BUDGET +
+    Math.max(0, densestRoutedRank - 1) * ROUTED_NODE_PADDING;
   return {
     width: Math.max(MINIMUM_SVG_WIDTH, sanitizedWidth),
     height: Math.max(MINIMUM_SVG_HEIGHT, Math.ceil(densityHeight)),
@@ -691,88 +641,6 @@ export function createLaneGeometryFailureCache() {
   };
 }
 
-// D3-sankey docks a node's incident links purely proportional to link value,
-// with no minimum gap between adjacent docks. For a real node where several
-// low-value branches converge (e.g. several origins funnelling into one
-// milestone), that can place adjacent docks only a few pixels apart --
-// nowhere near enough for a BRANCH_HANDLE_RADIUS handle to clear its
-// neighbor's rendered route envelope, regardless of how much headroom the
-// overall canvas has (confirmed directly: even a much taller canvas doesn't
-// fix this, since D3's value-proportional scale is shared globally across
-// every rank, not adjustable per node).
-//
-// This runs once, right after D3's own layout, as a bounded, deterministic
-// post-process: for every real (non-routing) node, redistribute its
-// incident docks on each side (incoming/outgoing) so adjacent ones are at
-// least MINIMUM_PORT_SPACING apart, growing the node's own box downward
-// first if its natural D3 height is too small to fit them. Routing nodes
-// are skipped -- by construction they always have exactly one link per
-// side, so there is no adjacent-dock gap to enforce. A single compaction
-// pass per rank then pushes any node (real or routing) down just enough to
-// clear a grown predecessor, translating that node's own incident dock
-// positions by the same shift so link geometry stays consistent with its
-// endpoints. calculateLifecycleDiagramLayout already reserves enough total
-// height for the worst-case rank to make growth here rare; the returned
-// overflow (usually 0) covers the remaining edge case where a rank's value
-// distribution is skewed enough that D3 gave most of that reserved height
-// to one large-value node, leaving too little slack for the others --
-// growing the canvas by exactly that amount only adds trailing whitespace,
-// it never rescales or invalidates any node/link position already placed.
-const requiredPortSpan = (incidentCount) =>
-  Math.max(0, incidentCount - 1) * MINIMUM_PORT_SPACING;
-
-// Node boxes are set once by D3 and never touched again outside this
-// function. Grow each real node's box just enough to let its most crowded
-// side fit minimum-spaced docks, then compact same-rank neighbors (real or
-// routing) downward to clear any growth, shifting each moved node's own
-// incident dock positions along with it so link geometry stays consistent
-// with its endpoints.
-const enforceMinimumPortSpacing = (graph, dimensions) => {
-  const nodesByRank = new Map();
-  for (const node of graph.nodes) {
-    if (!(node.routing || Number(node.total) > 0)) continue;
-    if (!nodesByRank.has(node.rank)) nodesByRank.set(node.rank, []);
-    nodesByRank.get(node.rank).push(node);
-  }
-  let maxOverflow = 0;
-  for (const nodes of nodesByRank.values()) {
-    nodes.sort((left, right) => left.y0 - right.y0);
-    for (const node of nodes) {
-      if (node.routing) continue;
-      const incomingCount = graph.links.filter(
-        (link) => link.target === node,
-      ).length;
-      const outgoingCount = graph.links.filter(
-        (link) => link.source === node,
-      ).length;
-      const span = Math.max(
-        requiredPortSpan(incomingCount),
-        requiredPortSpan(outgoingCount),
-      );
-      if (node.y1 - node.y0 < span) node.y1 = node.y0 + span;
-    }
-    for (let index = 1; index < nodes.length; index += 1) {
-      const previous = nodes[index - 1];
-      const node = nodes[index];
-      const minY0 = previous.y1 + ROUTED_NODE_PADDING;
-      if (node.y0 >= minY0) continue;
-      const shift = minY0 - node.y0;
-      node.y0 += shift;
-      node.y1 += shift;
-      for (const link of graph.links) {
-        if (link.source === node) link.y0 += shift;
-        if (link.target === node) link.y1 += shift;
-      }
-    }
-    const last = nodes.at(-1);
-    if (last) {
-      const overflow = last.y1 - (dimensions.height - LAYOUT_BOTTOM_MARGIN);
-      if (overflow > maxOverflow) maxOverflow = overflow;
-    }
-  }
-  return maxOverflow > 0 ? Math.ceil(maxOverflow) : 0;
-};
-
 function layoutLifecycleRoutingGraphPass(
   projection,
   availableWidth,
@@ -796,7 +664,7 @@ function layoutLifecycleRoutingGraphPass(
       },
     ]),
   );
-  let dimensions = calculateLifecycleDiagramLayout(
+  const dimensions = calculateLifecycleDiagramLayout(
     projection,
     availableWidth,
     graph,
@@ -861,26 +729,6 @@ function layoutLifecycleRoutingGraphPass(
     }
   }
   layout.update(graph);
-
-  // Discovery now requires the same full handle-placement and route-audit
-  // validation as the final pass before it may publish a seed (see the
-  // discoveryPhase branch of candidateCallback below), so its own geometry
-  // must actually be handle-feasible too -- port spacing has to run here.
-  // transitionLanePhaseOnly stays excluded: it's a test-only diagnostic
-  // mode (never used in production) that exercises the lane solver's own
-  // ordering search in isolation without ever reaching handle placement, so
-  // shifting dock positions before that search runs would only change how
-  // many states it needs to reach a lane-legal order, unrelated to the
-  // handle-clearance problem this fix targets.
-  if (!options.transitionLanePhaseOnly) {
-    const portSpacingOverflow = enforceMinimumPortSpacing(graph, dimensions);
-    if (portSpacingOverflow > 0) {
-      dimensions = {
-        ...dimensions,
-        height: dimensions.height + portSpacingOverflow,
-      };
-    }
-  }
 
   const orderedBranches = [...graph.branches].sort(compareBranches);
   const branchById = new Map(

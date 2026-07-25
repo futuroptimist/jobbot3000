@@ -6,10 +6,13 @@ Implemented. This document originally recorded root-cause findings and a propose
 from a debugging session on PR #1164 (`codex/implement-rankorder-aware-base-layout`). A
 later session implemented that plan (with two additions the original plan didn't
 anticipate — see "Surprises found during implementation" below), landed active
-regression tests for it, and re-verified the production-fixture claim in the original
+regression tests for it, and found the production-fixture claim in the original
 "Status" section below turned out to be wrong in an important way: see "Correction:
 `tracker-lifecycle-diagram-v2.json` is not a close miss" before relying on anything in
-this document's original motivating framing.
+this document's original motivating framing. A follow-up review then found that
+removing `enforceLinkDockSpacing` (see "Surprises" below) had left `MINIMUM_PORT_SPACING`
+as an unenforced, partial feature; it and `enforceMinimumPortSpacing` were removed
+entirely — see "Correction: the port-spacing feature was incomplete, not just deferred".
 
 ## What was actually landed
 
@@ -136,8 +139,8 @@ _after_ the solver's chosen `globalAssignments` — which meant `geometryFailure
 signature-based memoization (keyed on pre-redistribution `globalAssignments`) missed
 whenever different raw solver decisions collapsed to the same post-redistribution
 geometry, wasting large amounts of search budget. Removed entirely (function and call
-site); `enforceMinimumPortSpacing` (the one-time post-D3-layout node growth/compaction
-from the same earlier session) is unaffected and still runs.
+site). See "Correction: the port-spacing feature was incomplete, not just deferred"
+below for a fifth issue this removal exposed.
 
 ## Correction: `tracker-lifecycle-diagram-v2.json` is not a close miss
 
@@ -176,6 +179,33 @@ underlying handle-clearance-feasibility gap for this fixture predates it, is
 independently confirmed by three separate investigations now, and is out of scope for a
 search/plumbing fix. It remains exactly what the existing skip comments already say it
 is: a tracked follow-up requiring new placement geometry logic, not touched by this work.
+
+## Correction: the port-spacing feature was incomplete, not just deferred
+
+Removing `enforceLinkDockSpacing` (see "Surprises" above) left `MINIMUM_PORT_SPACING`/
+`enforceMinimumPortSpacing` (the one-time post-D3-layout node growth from the same
+earlier session) as a partial, internally contradictory feature: it still grew a real
+node's box and reserved canvas height on the assumption that its incident docks would
+end up at least `MINIMUM_PORT_SPACING` apart, but with `enforceLinkDockSpacing` gone,
+nothing actually redistributed those docks within the grown box — D3's original
+value-proportional positions were left untouched. A follow-up review caught this
+(adjacent same-side dock gaps as low as ~9px measured on the routing fixture despite the
+advertised 60px minimum) before merge.
+
+Confirmed the routing fixture's seeded-replay regressions do not depend on port spacing
+at all — disabling it locally left every test passing, and the seeded search actually
+converges noticeably faster without the extra box growth to route around (the four
+`describe("seeded-replay production layout (routing fixture)")` tests dropped from
+~15s to ~140ms with it disabled; the whole file's runtime roughly halved). So
+`MINIMUM_PORT_SPACING`, `enforceMinimumPortSpacing`, and the height reservation that
+existed to accommodate it (`nodeMinHeight`/`portSpacingHeight` inside
+`calculateLifecycleDiagramLayout`) were removed entirely rather than completed, per the
+smaller, safer cut for this reduced-scope PR. Re-adding real minimum port spacing (as a
+complete, correctly-enforced invariant covering discovery, seeded replay, and
+cache-signature correctness) is deferred alongside the dense-fixture
+constructive-placement work — see the parent reviewer thread for the two options
+considered (complete removal vs. a fully-enforced invariant) and why removal was judged
+the safer cut here.
 
 ---
 
@@ -265,15 +295,14 @@ required beyond what was originally planned.
   landed").
 - **Running `enforceMinimumPortSpacing` during the `transitionLanePhaseOnly` diagnostic
   mode** — confirmed to blow up that mode's own 200,000-state lane-search budget on a
-  paginated dense fixture. `enforceMinimumPortSpacing` now runs whenever
-  `!options.transitionLanePhaseOnly` (including during discovery, which needs it to
-  successfully materialize and check handles now that discovery does full validation) —
-  `enforceLinkDockSpacing` was removed entirely (see "Surprises" above), so its own gating
-  is moot.
+  paginated dense fixture. Moot now: `enforceMinimumPortSpacing` and
+  `MINIMUM_PORT_SPACING` were removed entirely in the same pass that removed
+  `enforceLinkDockSpacing` (see "Correction" above) — the leftover, unenforced box-growth
+  they left behind was itself the bug a later review caught.
 
 ## What's already fixed on this branch (context, not part of this document's own work)
 
-Two independent, verified, low-risk fixes landed before the seeded-replay work above:
+One independent, verified, low-risk fix landed before the seeded-replay work above:
 
 1. **Sparse handle-candidate sampling** — `tryAssignBranchHandles` only ever sampled 3
    fixed `t` values per route segment. Added a denser fallback grid that only engages
@@ -281,9 +310,12 @@ Two independent, verified, low-risk fixes landed before the seeded-replay work a
    it can't change behavior for fixtures that already worked. See
    `HANDLE_CANDIDATE_T_VALUES`/`HANDLE_FALLBACK_CANDIDATE_T_VALUES` in
    `lifecycleDiagramLayout.js`.
-2. **Zero minimum port spacing** — D3-sankey docks a node's incident links purely
-   proportional to link value, with no minimum gap; for a node where several
-   low-value branches converge, adjacent docks can land only a few pixels apart, far
-   short of the clearance a `BRANCH_HANDLE_RADIUS` handle needs. Added
-   `MINIMUM_PORT_SPACING` and `enforceMinimumPortSpacing` (grows/compacts node boxes
-   once after D3's layout).
+
+A second fix from the same earlier session — `MINIMUM_PORT_SPACING` and
+`enforceMinimumPortSpacing`, growing a real node's box once after D3's layout so its
+incident docks would have room to be spread apart — did not survive to this document's
+final state. It depended on `enforceLinkDockSpacing` (a different, per-candidate
+mechanism) to actually redistribute docks within the grown box; once that was removed
+(see "Correction" above), the box growth alone no longer enforced any real spacing
+invariant, so both were removed together rather than left as a partial, misleading
+feature. See "Correction" for the full removal rationale.
