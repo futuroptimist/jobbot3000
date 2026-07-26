@@ -867,7 +867,8 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
   // Historical baseline (pre-fix): this test originally used a 60-app,
   // 89-branch fixture that funneled many origins through a small number of
   // milestones/endpoints -- infeasible then, and still infeasible now (see
-  // transitionDensityProjection()'s skip comment in
+  // transitionDensityProjection()'s negative-characterization test -- no
+  // longer skipped, but still documenting the same infeasibility -- in
   // test/web-tracker-lifecycle-diagram-layout.test.js: 48 branches rejected
   // by the fixed-width rank corridor itself, not route clearance, so
   // neither shipped tolerance can help). Rewritten to exercise the same

@@ -3046,7 +3046,9 @@ function layoutLifecycleRoutingGraphPass(
           // Discovery may only publish a seed for the final pass to replay
           // once this exact candidate has cleared the same full bar
           // (materialized lane assignment, successful handle placement,
-          // zero fatal route-audit findings) the final pass itself
+          // zero always-fatal route-audit findings with any tolerable
+          // proper-crossing/route-handle-collision findings still within
+          // toleratedRouteCrossingCount's bound) the final pass itself
           // requires — accepting the first merely lane-legal candidate let
           // discovery hand the final pass an order a real dense fixture
           // could never satisfy, since handle placement is exactly where

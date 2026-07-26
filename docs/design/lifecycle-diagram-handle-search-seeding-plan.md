@@ -24,8 +24,12 @@ each independently solving the same problem:
    `candidateCallback` no longer returns `true` on the first lane-legal candidate — it
    runs the same materialization, `tryAssignBranchHandles`, and
    `auditLifecycleRouteGeometry` checks the final pass runs, and only calls
-   `options.discoverySink` once a candidate clears all three with zero fatal audit
-   findings. The sink now receives three things (previously one): `rankRefinementInfo`,
+   `options.discoverySink` once a candidate clears all three with zero always-fatal audit
+   findings and no more tolerable (`proper-crossing`/`route-handle-collision`) findings
+   than `toleratedRouteCrossingCount` currently allows (see
+   `docs/design/lifecycle-diagram-layout-algorithm.md`'s "Follow-up (shipped)" section —
+   this bounded-tolerance behavior postdates the original implementation of this
+   mechanism). The sink now receives three things (previously one): `rankRefinementInfo`,
    `globalAssignments`, and the accepted `handleCheck.handles`.
 2. **The wrapper (`layoutLifecycleRoutingGraph`) captures four things from discovery as
    an immutable seed**, all keyed by stable branch/link IDs (never array position, so
@@ -173,16 +177,22 @@ identical across hundreds of distinct coordinate assignments" (both have since b
 addressed -- `denseBranchProjection()` by `buildMilestoneFreeJointOrder`, and this
 fixture by `HANDLE_CLEARANCE_TOLERANCE`/`toleratedRouteCrossingCount`; see
 `docs/design/lifecycle-diagram-layout-algorithm.md`'s "Follow-up (shipped)" sections)
-— and it matches
-`docs/design/lifecycle-diagram-layout-algorithm.md`'s own "Outstanding follow-up work"
-item 1, which already named the real fix as making the base D3-Sankey layout
-`rankOrder`-aware (or a constructive/greedy handle-placement strategy), not a search or
-plumbing change. This session's seeded-replay work eliminates the wasted, redundant
-_second_ search final used to run — a real and verified improvement, landed — but the
-underlying handle-clearance-feasibility gap for this fixture predates it, is
-independently confirmed by three separate investigations now, and is out of scope for a
-search/plumbing fix. It remains exactly what the existing skip comments already say it
-is: a tracked follow-up requiring new placement geometry logic, not touched by this work.
+— and it matches what
+`docs/design/lifecycle-diagram-layout-algorithm.md`'s "Outstanding follow-up work" item 1
+said at the time: that a `rankOrder`-aware base layout (or a constructive/greedy
+handle-placement strategy) was the fix for this class of gap for both fixtures. That
+turned out to be only half right in hindsight — `denseBranchProjection()` was indeed
+later fixed via the `rankOrder` direction (`buildMilestoneFreeJointOrder`), but
+`tracker-lifecycle-diagram-v2.json` was instead fixed by the separate, already-shipped
+bounded tolerances (`HANDLE_CLEARANCE_TOLERANCE`/`toleratedRouteCrossingCount`), not by
+`rankOrder`-awareness; see that doc's item 1 for the current, corrected scoping. This
+session's seeded-replay work eliminates the wasted, redundant _second_ search final used
+to run — a real and verified improvement, landed — but at the time this correction was
+written, the underlying handle-clearance-feasibility gap for this fixture predated it,
+was independently confirmed by three separate investigations, and was out of scope for a
+search/plumbing fix. That gap has since been closed for this fixture (see above); it was
+not touched by the seed-replay mechanism this document describes, which only removes a
+redundant search and never alters placement geometry.
 
 ## Correction: the port-spacing feature was incomplete, not just deferred
 
