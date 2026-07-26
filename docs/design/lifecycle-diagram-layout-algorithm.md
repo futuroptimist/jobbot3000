@@ -461,3 +461,71 @@ item 1 below for that gap and why `tracker-lifecycle-diagram-v2.json` specifical
 still infeasible even under this pipeline. It only removes the wasted, unguided
 second search final used to run against a problem discovery had already spent its own
 budget solving (or, for that fixture, failing to solve — see below).
+
+## Checked-in reproduction: dense routing-only handle infeasibility is structural, not a budget gap
+
+`test/web-tracker-lifecycle-diagram-layout.test.js`'s `"characterizes dense routing-only handle
+infeasibility deterministically"` (in the `"test-only lifecycle layout diagnostics"` describe
+block) is a durable, fast (~1s) regression for the structural finding below, so future work on
+item 1 can distinguish real progress from another ineffective spacing-constant, clearance-exemption,
+or budget change. It calls `testOnlyDiagnoseLifecycleLayoutAttempt` directly against
+`denseBranchProjection()` (5 origins × 11 endpoints = 55 direct origin→endpoint branches, each
+routed through the taxonomy's 5 fixed milestone ranks) and stops at the diagnostic's first candidate
+snapshot — it never runs the fixture through full budget exhaustion, unlike the
+`"resolves un-phased dense fan-in fast, without exponential blowup"` regression a few tests above,
+which exercises the real production path (`layoutLifecycleRoutingGraph` without the diagnostic
+seam) and does deterministically exhaust the 32768-state handle budget.
+
+**What the checked-in test proves, with real numbers:**
+
+- The fixture's _very first_ candidate layout already fails at the handle-placement phase
+  (`firstRejectedPhase: "handle"`, `reason: "no-candidates"`) with `states.handle` several orders of
+  magnitude below the 32768-state budget — this is not a case of narrowly running out of search
+  room.
+- 14 specific branches get zero legal handle candidates anywhere along their curve on that first
+  candidate: later-ordered origins (`referral`, `recruiter_company_outreach`, `other_unknown`)
+  paired with later-ordered endpoints (`offer_declined`, `offer_expired_rescinded`,
+  `offer_accepted`, `closed_archived`, `unknown`, `candidate_withdrew`) — the "long diagonal"
+  branches that have to travel furthest across the canvas and so contend with the most other
+  branches' curves along the way.
+- Every rank's lane domains and centered assignment remain feasible at the fixture's own
+  `minLaneSpacing` (≈59.251px, comfortably above the ~44–46px a handle needs) — ruling out a
+  spacing-constant problem. This directly confirms the same conclusion PR #1166's own attempt
+  reached and reverted: forcing a fixed, larger port pitch (`CONSTRUCTIVE_PORT_PITCH = 96`) doesn't
+  address this gap and instead makes previously-supported sparser fixtures infeasible (32 focused
+  test failures observed when tried).
+- The 55 branches' routing nodes occupy exactly 5 routing-only ranks (one per fixed taxonomy
+  milestone), 55 routing nodes each — 275 total — versus 5 real (origin) nodes at rank 0 and no
+  real nodes at all in ranks 1–5. This is the scoping-relevant finding: the geometric contention is
+  almost entirely in routing-node lane geometry spread across all 5 fixed-taxonomy ranks jointly,
+  not in real-node dock spacing or placement. A "direct" origin→endpoint link with no milestone
+  still gets routed through all 5 ranks of 55 routing nodes each, because ranks are fixed
+  taxonomy-wide columns (one per milestone, always present) rather than derived from what a given
+  branch actually visits.
+- Reversed and shuffled (rotated) input orderings of the same fixture reproduce byte-identical
+  structured diagnostics — the infeasibility is a property of the geometry, not of array iteration
+  order, array-position-keyed state, or a stale-closure bug.
+
+**Why the levers already tried don't close this gap** (all three previously attempted and reverted
+in PR #1166, plus a fourth confirmation by a subsequent Codex attempt at the same scope-locked
+task): a fixed/larger port pitch and a global sibling-branch route-clearance exemption both changed
+_where_ real-node docks and routing-node anchors sit, but the blocked branches above are rejected at
+the handle-_placement_ phase against fixed geometry and other branches' rendered routes — not
+because two docks were too close together. Separately, raising both the handle-state budget (up to
+150×, 5,000,000 states) and the transition-lane budget (up to 15×, 3,000,000 states) simultaneously
+on the closely related `denseBranchProjection()`-scale fixture still did not reach a working layout
+after 55+ seconds and over 3,000,000 lane states — the search got stuck repeatedly on the same
+rank/segment regardless of budget, the same "stuck at a ceiling, not just short of one" signature the
+barycenter-`nodeSort`/`linkSort` attempt (see above) independently produced. Budget size was never
+the binding constraint; the binding constraint is that no legal handle placement exists for these 14
+branches under the current per-rank lane/routing-node geometry, on the _first_ candidate, before any
+search even begins.
+
+**What actually closes this gap:** the same conclusion [Outstanding follow-up work item
+1](#outstanding-follow-up-work-as-of-this-writing) already reaches — a constructive/greedy strategy
+that derives routing-node lane order _jointly_ across all ranks a branch's geometry touches
+(effectively [Option 2](#deferred-making-the-base-d3-sankey-layout-rankorder-aware), the deferred
+`rankOrder`-aware base-layout rework), not a scoped patch to port spacing, a clearance exemption
+scoped more narrowly, or a larger budget. This checked-in test's fixed evidence (14 blocked branch
+IDs, 5×55=275 routing-only nodes, ~59.251px feasible lane spacing) is the baseline that
+rearchitecture work should aim to eliminate.

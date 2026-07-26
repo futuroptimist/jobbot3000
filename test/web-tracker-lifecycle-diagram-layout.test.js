@@ -1455,6 +1455,135 @@ describe("test-only lifecycle layout diagnostics", () => {
       reversed.ranks[0].domains.every((domain) => domain.domainSize > 0),
     ).toBe(true);
   });
+
+  // Characterizes (without exhausting the shared handle-search budget) the
+  // structural cause documented in
+  // docs/design/lifecycle-diagram-layout-algorithm.md: denseBranchProjection()
+  // (5 origins x 11 endpoints = 55 direct origin->endpoint branches, each
+  // routed through the taxonomy's 5 fixed milestone ranks) already fails at
+  // the *first* candidate's handle-placement phase, not from narrowly
+  // exhausting the lane or handle search. Confirmed by direct instrumentation
+  // (testOnlyDiagnoseLifecycleLayoutAttempt stops at the first candidate
+  // snapshot, so this never runs the fixture through full budget
+  // exhaustion): 14 "long diagonal" branches -- later-ordered origins
+  // (referral, recruiter_company_outreach, other_unknown) paired with
+  // later-ordered endpoints (offer_declined, offer_expired_rescinded,
+  // offer_accepted, closed_archived, unknown, candidate_withdrew) -- get zero
+  // legal handle candidates anywhere along their curve, even though every
+  // rank's lane domains and centered assignment remain feasible at the
+  // fixture's own ~59.251px minimum lane spacing. The five routing-only
+  // ranks (one per fixed milestone) each host all 55 branches' routing
+  // nodes (275 total), which is the actual source of the geometric
+  // contention -- not real-node dock spacing, port pitch, or a clearance
+  // exemption, all of which prior attempts already tried and reverted (see
+  // the design doc's "Outstanding follow-up work" section).
+  it("characterizes dense routing-only handle infeasibility deterministically", () => {
+    const EXPECTED_BLOCKED_BRANCH_IDS = [
+      "branch:link:origin:other_unknown->endpoint:closed_archived:endpoint:closed_archived",
+      "branch:link:origin:other_unknown->endpoint:offer_accepted:endpoint:offer_accepted",
+      "branch:link:origin:other_unknown->endpoint:offer_declined:endpoint:offer_declined",
+      // eslint-disable-next-line max-len
+      "branch:link:origin:other_unknown->endpoint:offer_expired_rescinded:endpoint:offer_expired_rescinded",
+      "branch:link:origin:other_unknown->endpoint:unknown:endpoint:unknown",
+      // eslint-disable-next-line max-len
+      "branch:link:origin:recruiter_company_outreach->endpoint:closed_archived:endpoint:closed_archived",
+      // eslint-disable-next-line max-len
+      "branch:link:origin:recruiter_company_outreach->endpoint:offer_accepted:endpoint:offer_accepted",
+      // eslint-disable-next-line max-len
+      "branch:link:origin:recruiter_company_outreach->endpoint:offer_declined:endpoint:offer_declined",
+      // eslint-disable-next-line max-len
+      "branch:link:origin:recruiter_company_outreach->endpoint:offer_expired_rescinded:endpoint:offer_expired_rescinded",
+      "branch:link:origin:recruiter_company_outreach->endpoint:unknown:endpoint:unknown",
+      "branch:link:origin:referral->endpoint:candidate_withdrew:endpoint:candidate_withdrew",
+      "branch:link:origin:referral->endpoint:closed_archived:endpoint:closed_archived",
+      "branch:link:origin:referral->endpoint:offer_accepted:endpoint:offer_accepted",
+      // eslint-disable-next-line max-len
+      "branch:link:origin:referral->endpoint:offer_expired_rescinded:endpoint:offer_expired_rescinded",
+    ].sort(compareLifecycleIds);
+
+    const reversedDenseBranchProjection = () => {
+      const p = denseBranchProjection();
+      return {
+        ...p,
+        nodes: [...p.nodes].reverse(),
+        links: [...p.links].reverse(),
+        paths: [...p.paths].reverse(),
+      };
+    };
+    // A permutation distinct from a plain reversal (rotate by one-third),
+    // so agreement with baseline isn't just reversal-symmetry.
+    const rotate = (array) => {
+      const offset = Math.floor(array.length / 3);
+      return [...array.slice(offset), ...array.slice(0, offset)];
+    };
+    const shuffledDenseBranchProjection = () => {
+      const p = denseBranchProjection();
+      return {
+        ...p,
+        nodes: rotate(p.nodes),
+        links: rotate(p.links),
+        paths: rotate(p.paths),
+      };
+    };
+
+    const baseline = testOnlyDiagnoseLifecycleLayoutAttempt(
+      denseBranchProjection(),
+      1850,
+    );
+    const reversed = testOnlyDiagnoseLifecycleLayoutAttempt(
+      reversedDenseBranchProjection(),
+      1850,
+    );
+    const shuffled = testOnlyDiagnoseLifecycleLayoutAttempt(
+      shuffledDenseBranchProjection(),
+      1850,
+    );
+    expect(reversed).toEqual(baseline);
+    expect(shuffled).toEqual(baseline);
+
+    // First candidate already fails at handle placement, not lane search or
+    // budget exhaustion -- states stay far below the 32768 handle-state
+    // budget the production path eventually exhausts.
+    expect(baseline.firstRejectedPhase).toBe("handle");
+    expect(baseline.states.handle).toBeGreaterThan(0);
+    expect(baseline.states.handle).toBeLessThan(32768);
+    expect(baseline.firstRejectedReason).toMatchObject({
+      reason: "no-candidates",
+      evidence: { branchDiagnosticCount: 14 },
+    });
+    expect(
+      [...baseline.firstRejectedReason.evidence.blockedBranchIds].sort(
+        compareLifecycleIds,
+      ),
+    ).toEqual(EXPECTED_BLOCKED_BRANCH_IDS);
+
+    // Lane domains and the centered assignment remain feasible at every
+    // rank's own minimum spacing -- this is not a spacing-constant problem.
+    for (const rank of baseline.ranks) {
+      expect(rank.minLaneSpacing).toBeCloseTo(59.251, 3);
+      expect(rank.centeredAssignmentFeasible).toBe(true);
+      expect(rank.domains.every((domain) => domain.domainSize > 0)).toBe(true);
+    }
+
+    // Five routing-only ranks (one per fixed taxonomy milestone), each
+    // hosting all 55 branches' routing nodes -- 275 routing nodes total,
+    // none of which are real-node docks.
+    const routingOnlyRanks = baseline.ranks.filter(
+      (rank) =>
+        rank.nodePositions.length > 0 &&
+        rank.nodePositions.every((node) => node.kind === "routing"),
+    );
+    expect(routingOnlyRanks).toHaveLength(5);
+    for (const rank of routingOnlyRanks) {
+      expect(rank.nodePositions).toHaveLength(55);
+    }
+    expect(
+      routingOnlyRanks.reduce(
+        (sum, rank) => sum + rank.nodePositions.length,
+        0,
+      ),
+    ).toBe(275);
+  });
 });
 
 describe("createLaneGeometryFailureCache", () => {
