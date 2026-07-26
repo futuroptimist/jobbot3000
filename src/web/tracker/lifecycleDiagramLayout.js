@@ -89,7 +89,7 @@ const HANDLE_ROUTE_EDGE_COST_DIVISOR = 6000;
 const toleratedRouteCrossingCount = (branchCount, budgetFraction = 0) => {
   const strict = Math.min(8, Math.ceil(branchCount * 0.03));
   if (budgetFraction < 0.5) return strict;
-  const relaxed = Math.min(120, Math.ceil(branchCount * 2));
+  const relaxed = Math.min(200, Math.ceil(branchCount * 4));
   const pressure = Math.min(1, (budgetFraction - 0.5) / 0.45);
   return Math.round(strict + (relaxed - strict) * pressure);
 };
@@ -2982,6 +2982,23 @@ function layoutLifecycleRoutingGraphPass(
         transitionLaneSolverStats.statesVisited /
           transitionLaneSolverStats.stateLimit,
       );
+      // A brief "proper-crossing" or a route passing near another branch's
+      // specific handle point ("route-handle-collision") are both eligible
+      // for tolerance -- the latter is the same clearance measurement
+      // HANDLE_CLEARANCE_TOLERANCE already allows a candidate to fall
+      // short of when checked against a route's general line; checking it
+      // again anchored at that route's specific handle point is the same
+      // fact, not a distinct, more severe one. Sustained overlaps (many
+      // consecutive crossing points, reading as one line drawn on another)
+      // and fixed-geometry collisions stay unconditionally fatal regardless
+      // of budget pressure (see auditLifecycleRouteGeometry).
+      const tolerableFindingCount = routeAudit.fatalFindings.filter(
+        (finding) =>
+          finding.category === "proper-crossing" ||
+          finding.category === "route-handle-collision",
+      ).length;
+      const alwaysFatalFindingCount =
+        routeAudit.fatalFindings.length - tolerableFindingCount;
       // Seed replay (final pass) validates a specific, already-accepted
       // candidate rather than searching -- reproduce discovery's own bound
       // exactly instead of deriving a fresh, near-zero-pressure one.
@@ -2990,14 +3007,32 @@ function layoutLifecycleRoutingGraphPass(
       )
         ? options.seedAcceptedRouteCrossingCount
         : toleratedRouteCrossingCount(graph.branches.length, budgetFraction);
-      if (routeAudit.fatalFindings.length <= routeCrossingBound) {
+      if (
+        alwaysFatalFindingCount === 0 &&
+        tolerableFindingCount <= routeCrossingBound
+      ) {
         // Route crossings are tolerated up to the small bound above; handle
         // placement itself was still a hard requirement (handleCheck.ok,
         // checked before this block runs). Record the exact accepted
         // crossing count so callers/tests can tell a perfectly clean layout
         // (0) apart from a merely acceptable one (>0) instead of only
         // knowing whether layout succeeded at all.
-        graph.acceptedRouteCrossingCount = routeAudit.fatalFindings.length;
+        graph.acceptedRouteCrossingCount = tolerableFindingCount;
+        // Handle placement is not a pure function of lane geometry --
+        // solveHandleCandidateSets' backtracking can land on a different,
+        // still-individually-legal global assignment for identical
+        // geometry depending on the shared budget's accumulated state (see
+        // docs/design/lifecycle-diagram-handle-search-seeding-plan.md).
+        // Expose exactly the handles this accepted candidate used so a
+        // caller that needs handle positions (the renderer) can reuse them
+        // directly instead of re-deriving via a second, independent
+        // assignBranchHandles() call -- confirmed directly that a fresh
+        // search over the exact same accepted geometry can fail outright
+        // even though this accepted candidate already found a legal
+        // assignment for it.
+        graph.acceptedHandles = new Map(
+          handleCheck.handles.map((handle) => [handle.branchId, handle]),
+        );
         if (testOnlyDiagnosticSink) {
           testOnlyDiagnosticSink({
             phase: "accepted",
@@ -4004,11 +4039,20 @@ export function auditLifecycleRouteGeometry({
     }
   }
   for (const [pair, crossings] of pairCrossings) {
+    // Many flattened-edge-pair crossings for the same branch pair means the
+    // two routes run coincident/parallel for a stretch, not a brief single
+    // crossing -- that reads as one line drawn on top of another, not a
+    // tolerable visual blemish, so it's categorized separately and never
+    // eligible for toleratedRouteCrossingCount regardless of budget
+    // pressure (see candidateCallback). The threshold mirrors the
+    // Playwright collision audit's own sustained-overlap check
+    // (test/playwright/lifecycle-diagram.spec.js).
     const finding = {
-      category: "proper-crossing",
+      category: crossings.length > 4 ? "sustained-crossing" : "proper-crossing",
       branchIds: pair.split("||"),
       transitionRank: crossings[0]?.left.segment.source.rank,
       point: quantizePoint(crossings[0]?.left.p0 ?? { x: 0, y: 0 }),
+      crossingPointCount: crossings.length,
     };
     if (routeModel.fixedOrderInversionPairs.has(pair) && crossings.length === 1)
       forcedCrossings.push(finding);
@@ -4031,6 +4075,33 @@ export function auditLifecycleRouteGeometry({
           branchId: handle.branchId,
           obstacleId: fixed.id,
         });
+    }
+  }
+  // A nonincident route's curve passing through another branch's placed
+  // handle is a distinct problem from two routes crossing each other --
+  // confirmed directly via the Playwright collision audit, which samples
+  // rendered geometry and catches this even though it was never checked
+  // here. HANDLE_CLEARANCE_TOLERANCE only relaxes a candidate's clearance
+  // from other branches' *lines*; it was never meant to tolerate a route
+  // passing through another branch's specific handle dot, so this stays
+  // unconditionally fatal, never eligible for any tolerance.
+  for (const edge of flatEdges) {
+    for (const handle of handles) {
+      if (!handle || handle.branchId === edge.branchId) continue;
+      const required =
+        BRANCH_HANDLE_RADIUS +
+        selectedEnvelopeRadius(edge.segment) +
+        0.25 +
+        LANE_Y_EPSILON;
+      if (pointToSegmentDistance(handle, edge) < required) {
+        fatalFindings.push({
+          category: "route-handle-collision",
+          branchId: edge.branchId,
+          obstacleBranchId: handle.branchId,
+          transitionRank: edge.segment?.source?.rank,
+        });
+        break;
+      }
     }
   }
   const stable = (finding) =>

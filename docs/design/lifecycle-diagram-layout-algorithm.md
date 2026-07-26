@@ -406,8 +406,10 @@ insufficient (see the dead-end note below):
    non-zero-crossing candidate on the reference fixture, which was already finding a perfectly clean
    one, regressing it from 0 to 2 accepted crossings. Staying strict while budget is plentiful
    preserves that a fixture the search can solve cleanly still does; only once budget pressure
-   crosses 50% does the bound loosen (linearly, toward `Math.min(120, branchCount * 2)`) toward a
-   much larger one.
+   crosses 50% does the bound loosen (linearly, toward `Math.min(200, branchCount * 4)`) toward a
+   much larger one. Only `auditLifecycleRouteGeometry`'s `"proper-crossing"` and
+   `"route-handle-collision"` finding categories are ever eligible for this tolerance (see below);
+   `"sustained-crossing"` and fixed-geometry/handle collisions stay unconditionally fatal.
 2. **Handle-clearance tolerance** (`HANDLE_CLEARANCE_TOLERANCE = 20`, exported near
    `BRANCH_HANDLE_RADIUS`). A handle candidate whose clearance from a _nonincident_ route (not the
    fixed geometry or another handle) is negative but within this bound is now collected as a
@@ -420,6 +422,37 @@ insufficient (see the dead-end note below):
 Both tolerances record what they accepted (`graph.acceptedRouteCrossingCount` /
 `transitionLaneSolverStats.acceptedRouteCrossingCount`; each handle's own `clearanceMargin`) so
 callers/tests can tell a perfectly clean layout apart from a merely acceptable one.
+
+**Not every fatal finding is eligible for tolerance — severity matters, confirmed by direct
+Playwright-level reproduction, not assumed.** `auditLifecycleRouteGeometry`'s `pairCrossings` loop
+(the source of `"proper-crossing"` findings) originally counted one finding per branch pair
+regardless of how many flattened-edge-pair crossings that pair had — meaning a pair whose lines run
+coincident/parallel for a stretch (many crossings) counted identically to a pair that briefly
+crosses once. Reproducing this fixture end-to-end through a real browser
+(`test/playwright/lifecycle-diagram.spec.js`'s `assertBrowserCollisionAudit`, which independently
+samples rendered SVG geometry) surfaced this directly: it flagged several branch pairs as
+`"coincides"` (its own, stricter, always-fatal category for sustained overlap) that production's
+crossing-count-only tolerance had accepted. The finding is now split into `"proper-crossing"` (≤4
+flattened-edge-pair crossings, tolerable) and `"sustained-crossing"` (>4, always fatal regardless of
+budget pressure — the threshold mirrors the Playwright audit's own). A second, previously
+unchecked case was added the same way: a nonincident route's curve passing through _another
+branch's specific handle_ (not just its general line) is now audited as `"route-handle-collision"`,
+tolerable under the same bound as `"proper-crossing"` since it is the identical clearance
+measurement `HANDLE_CLEARANCE_TOLERANCE` already allows falling short of, just anchored at a
+specific point on that line rather than the nearest point generally.
+
+**A separate, unrelated bug was found and fixed while investigating this:** the renderer
+(`lifecycleDiagram.js`) computed handle positions via a _second, independent_ `assignBranchHandles()`
+call on the already-accepted geometry, rather than reusing the handles
+`layoutLifecycleRoutingGraph`'s own internal search had already accepted. Confirmed directly: this
+second, fresh search (its own budget starting near zero, with no accumulated state) could fail
+outright on geometry the internal search had already proven handle-feasible — the exact
+"handle placement is not a pure function of lane geometry" issue
+`docs/design/lifecycle-diagram-handle-search-seeding-plan.md` already documents for the two-pass
+seed-replay contract, just previously unaddressed for this third, external consumer. Fixed by
+exposing the accepted candidate's own handles as `graph.acceptedHandles` (a `Map<branchId, handle>`)
+and having the renderer reuse them directly whenever they cover every branch it needs to draw,
+falling back to a fresh `assignBranchHandles()` call only when they don't.
 
 **Threading through the two-pass seed-replay contract required two additional fixes**, both
 confirmed necessary by directly reproducing the failure before fixing it:
@@ -448,10 +481,29 @@ crossing-freedom), not folded into the crossing tolerance's framing.
 
 **Result:** `tracker-lifecycle-diagram-v2.json` (the real dense production fixture named throughout
 this document — 16 applications, 21 nodes, previously infeasible even at 150x the handle budget) now
-lays out successfully end-to-end through the full two-pass pipeline, accepting 37 tolerated route
-crossings within normal budget usage (502/32768 handle states). The reference fixture is unaffected
-(still exactly 0 accepted crossings). `denseBranchProjection()` (Milestone 1's `buildMilestoneFreeJointOrder`
-target) also still succeeds cleanly, unaffected by either tolerance.
+lays out successfully end-to-end through the full two-pass pipeline, accepting 50 tolerated route
+crossings within normal budget usage (500/32768 handle states, on the raw fixture as loaded directly
+by `projectLifecycleAt` — the browser-imported/reconciled version of the same fixture is denser
+still, 76 first-candidate findings, and needs the full relaxed bound to succeed at 66 accepted
+crossings; see the Playwright status below). The reference fixture is unaffected (still exactly 0
+accepted crossings). `denseBranchProjection()` (Milestone 1's `buildMilestoneFreeJointOrder` target)
+also still succeeds cleanly, unaffected by either tolerance.
+
+**Playwright status:** 3 of the 4 previously-`test.skip`'d specs now pass unmodified once layout
+itself succeeds (`static-smoke.spec.js`'s deterministic-render smoke test, and
+`lifecycle-diagram.spec.js`'s seeded-tables and touch-mobile-overflow specs — neither exercises the
+strict collision audit below). The fourth
+(`"audits routed branch collisions for tracker-lifecycle-diagram-v2.json on desktop and touch"`)
+remains `test.skip`'d: its `assertBrowserCollisionAudit` samples actual rendered SVG geometry at
+regular pixel intervals, a different methodology than production's cubic-flattening-based
+`auditLifecycleRouteGeometry`, and the two do not agree on where the sustained-overlap/brief-crossing
+line falls for every branch pair in the browser-reconciled (denser) version of this fixture —
+confirmed directly, not assumed, by dumping the actual reconciled IndexedDB data via Playwright and
+feeding it back through the same diagnostics used above. Unifying the two audits' sampling
+methodology, or building a placement strategy that avoids this class of near-handle route passage
+constructively rather than tolerating it after the fact, is real follow-up work, not attempted here.
+The `tracker-lifecycle-diagram-routing-v2.json` iteration of the same parametrized test is
+unaffected and passes.
 
 **Still not fixed — two fixtures with a different, more extreme fan-in shape remain infeasible even
 under both tolerances**, confirmed directly, not assumed:

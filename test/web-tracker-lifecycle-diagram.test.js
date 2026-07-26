@@ -1064,6 +1064,21 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
   });
 
   it("renders the layout fallback when branch handle placement fails", () => {
+    // The renderer prefers graph.acceptedHandles (the exact handles
+    // layoutLifecycleRoutingGraph's own search already accepted) and only
+    // falls back to a fresh assignBranchHandles() call when that's absent
+    // -- see lifecycleDiagram.js and
+    // docs/design/lifecycle-diagram-handle-search-seeding-plan.md. Strip
+    // acceptedHandles from the real layout result so the mocked
+    // assignBranchHandles() below is actually reached.
+    const originalLayout = lifecycleLayout.layoutLifecycleRoutingGraph;
+    const layoutSpy = vi
+      .spyOn(lifecycleLayout, "layoutLifecycleRoutingGraph")
+      .mockImplementation((...args) => {
+        const result = originalLayout(...args);
+        result.graph.acceptedHandles = undefined;
+        return result;
+      });
     const spy = vi
       .spyOn(lifecycleLayout, "assignBranchHandles")
       .mockImplementation(() => {
@@ -1084,6 +1099,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
       expect(root.querySelector("svg")).toBeNull();
     } finally {
       spy.mockRestore();
+      layoutSpy.mockRestore();
     }
   });
 
