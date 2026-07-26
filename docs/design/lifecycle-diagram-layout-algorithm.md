@@ -134,11 +134,14 @@ The real-browser Playwright collision-audit test for `tracker-lifecycle-diagram-
 tracker-lifecycle-diagram-routing-v2.json") now passes end-to-end.
 
 One test (`"uses density-aware SVG height and spacing on rerender"` in
-`test/web-tracker-lifecycle-diagram.test.js`) needed its timeout bumped to 60s: it exercises
-`tracker-lifecycle-diagram-v2.json`, a dense fixture whose crossing-free search now deterministically
-exhausts the budget in ~15s, and the test invokes the layout twice (once via the component's own
-render, once again in its fallback-verification branch) — ~30s total, right at vitest's 30s default
-with no margin.
+`test/web-tracker-lifecycle-diagram.test.js`) needed its timeout bumped to 60s: at the time of this
+fix, it exercised `tracker-lifecycle-diagram-v2.json`, a dense fixture whose crossing-free search
+deterministically exhausted the budget in ~15s, and the test invokes the layout twice (once via the
+component's own render, once again in its fallback-verification branch) — ~30s total, right at
+vitest's 30s default with no margin. `tracker-lifecycle-diagram-v2.json` no longer exhausts the
+handle-state budget today (see "Follow-up (shipped)" below — it now succeeds in 500/32768 states),
+so this specific timing rationale is historical; see that test file directly for its current timing
+behavior and comment, which this document does not track.
 
 ## What didn't work alone
 
@@ -726,11 +729,16 @@ still rejected with the typed `lifecycle-authoritative-rank-order` / `order-disa
 failure; there is no convergence retry or wall-clock deadline.
 
 This mechanism does not change whether a fixture's geometry is handle-feasible in the
-first place — see [Outstanding follow-up work](#outstanding-follow-up-work-as-of-this-writing)
-item 1 below for that gap and why `tracker-lifecycle-diagram-v2.json` specifically is
-still infeasible even under this pipeline. It only removes the wasted, unguided
-second search final used to run against a problem discovery had already spent its own
-budget solving (or, for that fixture, failing to solve — see below).
+first place — it only removes the wasted, unguided second search final used to run
+against a problem discovery had already spent its own budget solving. At the time this
+pipeline was built, seeded replay alone did not make `tracker-lifecycle-diagram-v2.json`
+feasible: discovery still exhausted its own handle-state budget failing to solve it (see
+below), so there was no seed for final to replay. That gap was closed afterward by the
+separate, later-shipped bounded tolerances (`HANDLE_CLEARANCE_TOLERANCE` /
+`toleratedRouteCrossingCount`; see "Follow-up (shipped)" below) — not by this seeding
+mechanism itself. `tracker-lifecycle-diagram-v2.json` succeeds end-to-end today; see
+[Outstanding follow-up work](#outstanding-follow-up-work-as-of-this-writing) item 1 below
+for the two fixtures still genuinely infeasible under the full pipeline.
 
 ## Checked-in reproduction: dense routing-only handle infeasibility is structural, not a budget gap (historical -- fixed for this fixture)
 
@@ -742,9 +750,13 @@ it is in-scope for that fix. The test this section describes has been renamed
 This section is retained as the historical record of the pre-fix baseline (the exact numbers below
 are what the fix eliminated), not as a description of current behavior. The general
 milestone-convergence case (real milestone nodes, e.g. `tracker-lifecycle-diagram-v2.json`) is
-**not** fixed by this — see the investigation section above for why the same approach does not
-extend there, and [Outstanding follow-up work item 1](#outstanding-follow-up-work-as-of-this-writing)
-for the remaining scope.
+**not** fixed by this `rankOrder`-based mechanism — see the investigation section above for why the
+same approach does not extend there. `tracker-lifecycle-diagram-v2.json` was instead fixed by a
+separate, later-shipped mechanism (the bounded tolerances in "Follow-up (shipped)" below), so it has
+no remaining scope here; see
+[Outstanding follow-up work item 1](#outstanding-follow-up-work-as-of-this-writing) for the two
+different, genuinely still-infeasible extreme fixed-corridor fixtures this section's approach would
+need to target instead.
 
 `test/web-tracker-lifecycle-diagram-layout.test.js`'s `"characterizes dense routing-only handle
 infeasibility deterministically"` (in the `"test-only lifecycle layout diagnostics"` describe

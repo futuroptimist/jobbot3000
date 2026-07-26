@@ -2762,13 +2762,18 @@ describe("lifecycle diagram render-only routing layout", () => {
   });
 });
 
-// The routing fixture (unlike the dense v2 fixture and denseBranchProjection,
-// both of which have a pre-existing, already-documented handle-clearance
-// infeasibility -- see the two it.skip blocks above) has a handle-feasible
-// geometry, so it is the real production regression coverage for the
-// seeded-replay two-pass architecture: discovery fully validates a candidate
-// (lane assignment + handle placement + zero fatal audit findings) and final
-// replays that exact candidate instead of re-searching from scratch.
+// The routing fixture finds a handle-feasible, zero-crossing geometry entirely on its
+// own, with no route-crossing/handle-clearance tolerance ever engaged, so it is the
+// cleanest production regression coverage for the seeded-replay two-pass architecture:
+// discovery fully validates a candidate (lane assignment + handle placement + zero
+// always-fatal audit findings, with zero tolerable findings needed either) and final
+// replays that exact candidate instead of re-searching from scratch -- an exact-zero
+// contract that's easy to assert without also having to replay tolerance state.
+// The dense v2 fixture and denseBranchProjection() now succeed too (both are exercised
+// by other tests above), but only via mechanisms this section doesn't need: the bounded
+// tolerances for v2, buildMilestoneFreeJointOrder for denseBranchProjection() -- see
+// docs/design/lifecycle-diagram-layout-algorithm.md's "Follow-up (shipped)" and
+// "Investigation (2026-07-26)" sections.
 describe("seeded-replay production layout (routing fixture)", () => {
   const reversedProjection = () => {
     const p = projectLifecycleAt(routingFixture);

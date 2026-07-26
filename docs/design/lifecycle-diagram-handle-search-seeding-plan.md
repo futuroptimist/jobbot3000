@@ -154,13 +154,17 @@ budget — roughly 1% over — that the problem looked like wasted search effort
 genuine infeasibility, and framed this seeding work as the fix that should "give the
 production fixture comfortable headroom."
 
-That turned out not to be the right diagnosis for this specific fixture. With this
-seeding mechanism fully implemented and the routing fixture's regression passing
-reliably, `tracker-lifecycle-diagram-v2.json` **still** throws `Lifecycle handle search
-exceeded 32768 states` — now failing during discovery's own one-time combined
-lane+handle search, before there is ever a seed to replay. Raising the handle-state
-budget to 2,000,000 in a local, uncommitted diagnostic run (not shipped; the 32,768
-constant was restored immediately after) still failed after 100+ seconds of search.
+That turned out not to be the right diagnosis for this specific fixture. At the time of
+this correction — with this seeding mechanism fully implemented and the routing
+fixture's regression passing reliably, but before the bounded route-crossing/
+handle-clearance tolerances existed — `tracker-lifecycle-diagram-v2.json` **still**
+threw `Lifecycle handle search exceeded 32768 states`: failing during discovery's own
+one-time combined lane+handle search, before there was ever a seed to replay. Raising the
+handle-state budget to 2,000,000 in a local, uncommitted diagnostic run (not shipped; the
+32,768 constant was restored immediately after) still failed after 100+ seconds of
+search. (`tracker-lifecycle-diagram-v2.json` no longer throws this today — the bounded
+tolerances shipped afterward closed this gap; see "This is not new" below and
+`docs/design/lifecycle-diagram-layout-algorithm.md`'s "Follow-up (shipped)" section.)
 Direct instrumentation of `tryAssignBranchHandles`'s per-branch candidate generation
 showed the same ~3 branches (`branch:link:origin:other_unknown->milestone:recruiter_screen:endpoint:interviewing`,
 `branch:link:origin:candidate_outreach->milestone:assessment_take_home:endpoint:assessment_in_progress`,
@@ -291,8 +295,10 @@ required beyond what was originally planned.
   `HANDLE_FALLBACK_CORRIDOR_HALF_WIDTH` alone.** Swept roughly a dozen combinations;
   states-visited hovered in the 32,780-33,250 range regardless, never reliably crossing
   under 32,768. The bottleneck was architectural, not sampling density — and even the
-  architectural fix (seeded replay) doesn't close it for
-  `tracker-lifecycle-diagram-v2.json`; see "Correction" above.
+  architectural fix (seeded replay) did not close it for
+  `tracker-lifecycle-diagram-v2.json` at the time this was explored; see "Correction"
+  above (that gap was later closed by a separate, subsequently-shipped mechanism — the
+  bounded route-crossing/handle-clearance tolerances — not by anything explored here).
 - **Tripling `PER_LANE_VERTICAL_BUDGET`** (giving the whole canvas much more height) as
   a blunt test — does not fix the dense fixture; it just moves which branches are
   blocked, because D3-sankey's `ky` (value-to-pixel) scale is computed as the _minimum_
