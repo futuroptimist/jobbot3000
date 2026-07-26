@@ -300,6 +300,81 @@ real/routing-node positions, interval/domain sizes, centered-assignment feasibil
 phase/reason, and deterministic state counts. It is intentionally not a production debugging API and
 does not log to the console.
 
+## P4 investigation (2026-07-26): a real-node-position-preserving joint order still destabilizes production fixtures
+
+A follow-up investigation (task "P4 — Implement rankOrder-aware cross-rank lifecycle routing")
+attempted the deferred fix above ([Option 2](#deferred-making-the-base-d3-sankey-layout-rankorder-aware))
+a second time, this time deliberately different from the reverted barycenter attempt: instead of an
+iterative, sweep-based repositioning heuristic, it used a single deterministic, purely topological
+sort — `compareBranches` (line 341) with the existing rank-0-only origin/taxonomy tie-break (normally
+only inside `compareBranchesForGlobalOrder`, line 2136) folded in — computed once from stable IDs,
+`endpointIndex`, `taxonomyOrder`, and rank, with **zero** dependency on any prior pass's geometry.
+Per-rank branch order was derived by _filtering_ this one global order (never re-sorting
+independently per rank), and per-rank node order for ranks mixing real and routing nodes reused
+(via a local, unmodified copy) `deriveAuthoritativeLayoutOrders`'s existing incoming/outgoing
+topological-merge algorithm (line 3013), adapted to run pre-layout against plain string
+source/target ids instead of post-layout node-object references.
+
+**This fully solved the exact structural gap the checked-in characterization test below documents.**
+Wired into `testOnlyDiagnoseLifecycleLayoutAttempt`'s `baseNodeOrderByRank`/
+`authoritativeBranchOrderByRank` hooks against `denseBranchProjection()` (55 branches, 5 pure-routing
+ranks, no real milestone nodes at all): the first candidate went from `firstRejectedPhase: "handle"`
+/ `reason: "no-candidates"` / 14 blocked branches (the historical baseline the characterization test
+below asserts) to **fully accepted** (`firstRejectedPhase: null`) — every rank stayed
+centered-assignment-feasible at the same ~59.251px spacing, and a full, unbypassed search succeeded
+in ~1.1s using only 5,637 of the 32,768 handle-state budget and 993 of the 200,000 transition-state
+budget. Reversed and rotated input reproduced byte-identical diagnostics, confirming the joint order
+is itself array-position-independent.
+
+**The same joint order reliably breaks both real fixtures**, even under a refinement specifically
+designed to avoid the barycenter attempt's leading suspect (changing real nodes' `y0`/`y1` via
+`nodeSort`): restricting the joint order's _node_-ordering override to ranks containing **zero** real
+nodes (i.e., only ever reordering routing-only ranks, never touching a real milestone/origin/endpoint
+node's position or relative order) eliminated the topological-merge's own `order-disagreement` failure
+(which the _unrestricted_ version hit deterministically at rank 3, always at the same node,
+`milestone:technical_interview`, on both `test/fixtures/tracker-lifecycle-diagram-routing-v2.json`
+and `test/fixtures/tracker-lifecycle-diagram-v2.json` — the incoming-side and outgoing-side branch
+position contexts the merge tries to reconcile there are genuinely inconsistent under a purely static
+order, unlike under a search-derived order where continuous-valued geometry avoids the conflict by
+construction). But even with real-node positions provably untouched:
+
+- The reference routing fixture (`tracker-lifecycle-diagram-routing-v2.json`, currently 0 fatal audit
+  findings under normal two-pass production layout) exhausted the handle-state budget at 32,806 of
+  32,768 states when run as a single full search under the routing-only-restricted joint order —
+  essentially _at_ the ceiling, the same "exhausted the entire budget, not just short of it" signature
+  the barycenter attempt and the raised-budget diagnostic (see
+  ["Outstanding follow-up work" item 1](#outstanding-follow-up-work-as-of-this-writing)) both produced.
+- `tracker-lifecycle-diagram-v2.json` (the real dense production fixture) went from 3 blocked branches
+  at the handle phase under the current baseline to **12** blocked branches under the joint order (a
+  regression, not an improvement), and a full search exhausted the handle-state budget at 32,965 of
+  32,768 states — again essentially at the ceiling.
+
+**Why this matters beyond reproducing the known failure mode:** it rules out the design doc's leading
+hypothesis for the barycenter mystery — "changing real nodes' actual `y0`/`y1` positions... changes
+every geometry-derived input" (see
+["Attempted and reverted: barycenter"](#attempted-and-reverted-barycenter-based-nodesortlinksort)) —
+as the _sole_ mechanism, since this variant never changes a single real node's position or relative
+order. Reordering **only** the routing nodes within their own already-routing-only ranks, via a
+well-behaved, deterministic, stable-ID-based order that fully solves the routing-only characterization
+fixture, is _independently_ sufficient to destabilize the deadline-based DFS on fixtures with real
+milestone convergence points. The fix this task needs and the fix the routing-only characterization
+fixture needs are, at least under this construction, in direct tension: applying the joint order helps
+exactly the fixture with no real-node convergence and hurts exactly the fixtures that have it.
+
+**Conclusion and status:** per the task's own staged plan, this is a **no-go** for proceeding to a
+full implementation as scoped — the joint-order approach is not safe to wire into production
+`nodeSort`/`linkSort` in this form. It is, however, the most precisely localized negative result this
+line of investigation has produced to date (previous attempts changed real-node geometry and could
+not distinguish "real-node coupling" from "routing-node-order coupling" as the destabilizing factor;
+this one isolates the latter). A future attempt should treat "why does reordering _only_ routing nodes
+within an already-fixed rank structure destabilize the DFS on fixtures with real-node convergence, even
+with zero real-node geometry change" as the concrete open question — likely requiring instrumentation
+inside `solveFromComponent`'s deadline/`capacityOkForRemainder` logic itself (not just the diagnostic
+seam's before/after snapshots) to see which specific deadline or capacity check first flips as routing
+nodes are reordered, rather than another external ordering-heuristic attempt. No production code was
+changed for this investigation; the throwaway diagnostic script used to produce these numbers was
+deleted per the investigation's own scope constraints.
+
 ## Separately: the deterministic-budget fix
 
 Unrelated to the ordering-systems problem above (shipped first, in an earlier commit on this same
@@ -337,21 +412,25 @@ This is the authoritative, current list — cross-check against the code before 
 skip states and test names can drift. `grep -rn "it\.skip(\|test\.skip(" test/` finds all of them.
 
 1. **Deferred: make the base D3-Sankey layout `rankOrder`-aware** (a.k.a. "Option 2" above) — the
-   real fix for every remaining item below. Two attempts already tried and reverted (see
-   [what didn't work alone](#what-didnt-work-alone) and
-   [attempted and reverted: barycenter](#attempted-and-reverted-barycenter-based-nodesortlinksort));
-   read both before starting a third. The barycenter attempt's unsolved mystery (node-position
-   changes destabilizing the deadline-based DFS in an unexplained way) is the most likely blocker
-   and should be root-caused first — see that section's closing paragraph for where to start
-   looking. Re-confirmed independently by a later session that built the seeded-replay pipeline
-   above: even with final's redundant search eliminated, discovery's own one-time combined
-   lane+handle search for `tracker-lifecycle-diagram-v2.json` never finds a working assignment —
-   raising the handle-search budget from 32,768 to 2,000,000 states (diagnostic only, not shipped)
-   still failed after 100+ seconds, and the same ~3 branches were blocked (`reason: "no-candidates"`)
-   across every one of the 98 distinct lane-order candidates tried before hitting the normal
-   budget. This rules out "the search just needs to be more efficient" and confirms the gap really
-   is what this section already says: a constructive/greedy placement strategy, not a search
-   or plumbing fix.
+   real fix for every remaining item below. Three attempts already tried and reverted or halted (see
+   [what didn't work alone](#what-didnt-work-alone),
+   [attempted and reverted: barycenter](#attempted-and-reverted-barycenter-based-nodesortlinksort),
+   and the
+   [P4 investigation (2026-07-26)](#p4-investigation-2026-07-26-a-real-node-position-preserving-joint-order-still-destabilizes-production-fixtures));
+   read all three before starting a fourth. The P4 investigation is the most informative to date: it
+   isolates that reordering _only_ routing nodes (never touching real-node geometry at all) is
+   independently sufficient to destabilize the deadline-based DFS on fixtures with real milestone
+   convergence, which the barycenter attempt's real-node-position hypothesis alone doesn't explain —
+   see that section for the concrete open question a future attempt should root-cause first
+   (specifically inside `solveFromComponent`'s deadline/`capacityOkForRemainder` logic). Re-confirmed
+   independently by a later session that built the seeded-replay pipeline above: even with final's
+   redundant search eliminated, discovery's own one-time combined lane+handle search for
+   `tracker-lifecycle-diagram-v2.json` never finds a working assignment — raising the handle-search
+   budget from 32,768 to 2,000,000 states (diagnostic only, not shipped) still failed after 100+
+   seconds, and the same ~3 branches were blocked (`reason: "no-candidates"`) across every one of the
+   98 distinct lane-order candidates tried before hitting the normal budget. This rules out "the
+   search just needs to be more efficient" and confirms the gap really is what this section already
+   says: a constructive/greedy placement strategy, not a search or plumbing fix.
 2. **4 unit tests remain `it.skip`ed**, all for the same reason (a genuinely infeasible
    crossing-free arrangement in the current domain, not a bug this document's fixes address):
    - `test/web-tracker-lifecycle-diagram-layout.test.js`: `"shares a single handle budget across
