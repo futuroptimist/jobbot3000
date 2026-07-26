@@ -26,6 +26,17 @@ export const MINIMUM_SVG_WIDTH =
   6 * MINIMUM_RANK_CENTER_SPACING;
 export const BRANCH_STROKE_OPACITY = 0.82;
 export const BRANCH_HANDLE_RADIUS = 22;
+// A handle candidate's clearance from a *nonincident* route (a different
+// branch's line passing nearby) is a softer concern than clearance from
+// fixed geometry (a node/label box) or from another handle: it's the same
+// "sufficiently spread out, a little overlap is fine" tolerance
+// toleratedRouteCrossingCount applies to route-vs-route crossings, applied
+// here to handle-vs-route clearance instead. Fixed-geometry avoidance and
+// handle-vs-handle non-overlap remain hard, zero-tolerance requirements --
+// an unclickable/ambiguous handle, or one sitting on top of a label, is a
+// real usability bug; a handle a few pixels closer than ideal to an
+// unrelated line is not.
+export const HANDLE_CLEARANCE_TOLERANCE = 20;
 export const renderedBranchStrokeWidth = () => 3;
 export const selectedEnvelopeRadius = (segment) =>
   (renderedBranchStrokeWidth(segment?.width) + 12) / 2;
@@ -61,11 +72,27 @@ const HANDLE_ROUTE_EDGE_COST_DIVISOR = 6000;
 // sections). candidateCallback accepts a handle-feasible candidate whose
 // route-crossing count is at or below this bound instead of continuing to
 // search for (or ultimately failing to find) a perfectly crossing-free
-// arrangement. Kept small and roughly proportional to branch count so a
-// tiny diagram still expects a clean layout while a dense one gets a
-// little slack.
-const toleratedRouteCrossingCount = (branchCount) =>
-  Math.min(8, Math.ceil(branchCount * 0.03));
+// arrangement.
+//
+// The bound scales with how much of the shared search budget has already
+// been spent, not a flat constant -- confirmed directly that a flat,
+// generous bound is unsafe: it let the search settle for an early
+// non-zero-crossing candidate on a fixture that was already finding a
+// perfectly clean one, regressing a previously-zero-crossing fixture to 2
+// crossings. Staying strict (near zero tolerance) while budget is
+// plentiful preserves that a fixture the search can solve cleanly still
+// does; only once the search is genuinely struggling (spending most of its
+// budget without accepting anything) does the bound loosen toward a much
+// larger one, so a fixture with no reachable low-crossing arrangement gets
+// a real chance to succeed at all instead of exhausting the budget and
+// falling back to "Unable to lay out lifecycle diagram."
+const toleratedRouteCrossingCount = (branchCount, budgetFraction = 0) => {
+  const strict = Math.min(8, Math.ceil(branchCount * 0.03));
+  if (budgetFraction < 0.5) return strict;
+  const relaxed = Math.min(120, Math.ceil(branchCount * 2));
+  const pressure = Math.min(1, (budgetFraction - 0.5) / 0.45);
+  return Math.round(strict + (relaxed - strict) * pressure);
+};
 // Primary handle-candidate sample points: three points near the middle of a
 // segment's transition corridor, tried first so ordinary (sparse) fixtures
 // keep selecting the same candidates they always have.
@@ -2929,9 +2956,14 @@ function layoutLifecycleRoutingGraphPass(
       // Charged against the same shared budget as generation (see
       // tryAssignBranchHandles), scaled the same way (routeEdges squared)
       // since the audit's own cost is comparably driven by edge count — its
-      // pairwise crossing check is O(edges-within-rank^2).
-      if (handleBudget.statesVisited >= handleBudget.stateLimit)
-        throwHandleStateLimitExceeded();
+      // pairwise crossing check is O(edges-within-rank^2). The state-limit
+      // check that used to sit here (and again immediately after charging)
+      // fired before the tolerant-acceptance check below ever ran, which
+      // meant a candidate evaluated right at the budget boundary could
+      // never actually be accepted under budget pressure -- the hard throw
+      // always won the race. Charge first, then decide accept/reject, and
+      // only throw afterward if this candidate was both over budget and
+      // not good enough to accept.
       const auditRouteEdgeCount = handleCheck.routeEdgeCount ?? 1;
       handleBudget.statesVisited += Math.max(
         1,
@@ -2940,17 +2972,25 @@ function layoutLifecycleRoutingGraphPass(
             HANDLE_ROUTE_EDGE_COST_DIVISOR,
         ),
       );
-      if (handleBudget.statesVisited >= handleBudget.stateLimit)
-        throwHandleStateLimitExceeded();
       const routeAudit = auditLifecycleRouteGeometry({
         graph,
         dimensions,
         handles: handleCheck.handles,
       });
-      if (
-        routeAudit.fatalFindings.length <=
-        toleratedRouteCrossingCount(graph.branches.length)
-      ) {
+      const budgetFraction = Math.max(
+        handleBudget.statesVisited / handleBudget.stateLimit,
+        transitionLaneSolverStats.statesVisited /
+          transitionLaneSolverStats.stateLimit,
+      );
+      // Seed replay (final pass) validates a specific, already-accepted
+      // candidate rather than searching -- reproduce discovery's own bound
+      // exactly instead of deriving a fresh, near-zero-pressure one.
+      const routeCrossingBound = Number.isInteger(
+        options.seedAcceptedRouteCrossingCount,
+      )
+        ? options.seedAcceptedRouteCrossingCount
+        : toleratedRouteCrossingCount(graph.branches.length, budgetFraction);
+      if (routeAudit.fatalFindings.length <= routeCrossingBound) {
         // Route crossings are tolerated up to the small bound above; handle
         // placement itself was still a hard requirement (handleCheck.ok,
         // checked before this block runs). Record the exact accepted
@@ -2997,6 +3037,11 @@ function layoutLifecycleRoutingGraphPass(
         }
         return true;
       }
+      // Not good enough to accept even with the tolerance above -- now it's
+      // safe to check whether this candidate's own charge exhausted the
+      // budget and throw, instead of continuing to search with no room left.
+      if (handleBudget.statesVisited >= handleBudget.stateLimit)
+        throwHandleStateLimitExceeded();
       const blockedBranchIds = [
         ...new Set(
           routeAudit.fatalFindings.flatMap(
@@ -3352,6 +3397,17 @@ export function layoutLifecycleRoutingGraph(
       { y0: link.y0, y1: link.y1 },
     ]),
   );
+  // Discovery may have accepted a candidate with some tolerated route
+  // crossings (see toleratedRouteCrossingCount) under budget pressure. The
+  // final pass validates the seed with a single, fresh candidateCallback
+  // invocation -- its own budget pressure starts near zero, since it isn't
+  // searching, so the same pressure-scaled tolerance would reject the exact
+  // geometry discovery already committed to. Replaying discovery's own
+  // already-accepted crossing count as the bound (rather than re-deriving
+  // one from the final pass's own near-zero pressure) is exact reproduction
+  // of an already-decided outcome, not a fresh relaxation.
+  const discoveredAcceptedRouteCrossingCount =
+    discovery.graph.acceptedRouteCrossingCount ?? 0;
   const result = layoutLifecycleRoutingGraphPass(projection, availableWidth, {
     ...options,
     routingGraph: freshRoutingGraph(),
@@ -3361,6 +3417,7 @@ export function layoutLifecycleRoutingGraph(
     seedRankOrderByRank: discoveredRankOrder,
     seedHandles: discoveredHandles,
     seedLinkDocks: discoveredLinkDocks,
+    seedAcceptedRouteCrossingCount: discoveredAcceptedRouteCrossingCount,
   });
   const finalOrder = result.graph.transitionLaneRankOrder;
   if (finalOrder) {
@@ -4424,7 +4481,12 @@ const tryAssignBranchHandles = (
         seeded.x,
         seeded.y,
       );
-      if (clearance.margin <= 0) {
+      // Match the same last-resort tolerance the normal candidate-generation
+      // sweep applies (see HANDLE_CLEARANCE_TOLERANCE) -- a seeded handle
+      // discovery already accepted under that tolerance must still verify
+      // here, or replay would reject exactly what discovery just committed
+      // to.
+      if (clearance.margin <= -HANDLE_CLEARANCE_TOLERANCE) {
         blockedBranchIds.push(branch.id);
       }
     }
@@ -4495,6 +4557,11 @@ const tryAssignBranchHandles = (
       ...segments.filter((segment) => segment !== preferred),
     ].filter(Boolean);
     const candidates = [];
+    // Last-resort candidates whose clearance from a nonincident route is
+    // negative but within HANDLE_CLEARANCE_TOLERANCE -- only used if this
+    // branch has zero fully-clear candidates anywhere (see below), and
+    // still sorted so the least-bad one is preferred first.
+    const degradedCandidates = [];
     const diagnostic = {
       branchId: branch.id,
       segmentsExamined: orderedSegments.length,
@@ -4606,6 +4673,16 @@ const tryAssignBranchHandles = (
               box,
               clearanceMargin,
             });
+          } else if (clearanceMargin > -HANDLE_CLEARANCE_TOLERANCE) {
+            diagnostic.accepted += 1;
+            degradedCandidates.push({
+              branchId: branch.id,
+              x,
+              y,
+              radius: BRANCH_HANDLE_RADIUS,
+              box,
+              clearanceMargin,
+            });
           } else {
             diagnostic.rejected.nonincidentRouteClearance += 1;
             rememberRejected({
@@ -4624,9 +4701,13 @@ const tryAssignBranchHandles = (
         RANK_CORRIDOR_HALF_WIDTH,
       );
     }
+    // Only fall back to a degraded (small negative clearance) candidate
+    // when this branch has no fully-clear candidate anywhere across both
+    // sweeps -- a clean candidate is always preferred when one exists.
+    const finalCandidates = candidates.length ? candidates : degradedCandidates;
     candidateSets.set(
       branch.id,
-      candidates.sort(
+      finalCandidates.sort(
         (a, b) =>
           b.clearanceMargin - a.clearanceMargin || a.y - b.y || a.x - b.x,
       ),

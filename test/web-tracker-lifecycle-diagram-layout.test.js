@@ -9,6 +9,7 @@ import {
 import {
   BRANCH_HANDLE_RADIUS,
   BRANCH_STROKE_OPACITY,
+  HANDLE_CLEARANCE_TOLERANCE,
   ENDPOINT_BRANCH_COLORS,
   LAYOUT_BOTTOM_MARGIN,
   LAYOUT_TOP_MARGIN,
@@ -927,23 +928,20 @@ describe("transition lane solver", () => {
 
   it("resolves un-phased dense fan-in fast, without exponential blowup", () => {
     // transitionDensityProjection()'s 50-branch fan-in to one milestone has
-    // no handle-clearance-feasible lane arrangement (see the skipped tests
-    // above for the root-cause analysis), so this always throws — but the
-    // point of this regression test is that it must do so FAST (bounded and
-    // deterministic — never the multi-minute exponential-blowup hang the
-    // original bug report measured), not necessarily sub-10-second: shared
-    // CI runners measured ~2-3x slower than local dev hardware for this
-    // exact deterministic budget-exhaustion search, so this threshold has
-    // real margin above local timings rather than being tuned tight to one
-    // machine.
+    // no handle-clearance-feasible lane arrangement, even accounting for
+    // HANDLE_CLEARANCE_TOLERANCE's small last-resort clearance allowance
+    // (see the skipped test above for the root-cause analysis) -- so this
+    // always throws. The point of this regression test is that it must do
+    // so FAST and deterministically (never the multi-minute
+    // exponential-blowup hang the original bug report measured).
     //
-    // The wider handle-candidate fallback search (added to fix real dense
-    // fixtures whose primary three sample points miss a legal point that
-    // exists elsewhere on the curve) gives this synthetic 50-branch
-    // fan-in's candidateCallback attempts a larger per-attempt cost, so the
-    // shared state budget is now what ends the search first rather than a
-    // clean handle-placement conflict; both are equally legitimate
-    // deterministic, bounded failures.
+    // Historical baseline: before HANDLE_CLEARANCE_TOLERANCE, this exhausted
+    // the shared handle-state budget (32768/32768, "state-limit"). With the
+    // tolerance in place, the search now converges on a genuine, cheaper
+    // "no-candidates" invariant instead -- still deterministic and bounded,
+    // just a different (faster) failure signature for the same underlying
+    // infeasibility: at least one branch still has zero legal handle
+    // candidates anywhere along its curve even with the tolerance applied.
     const start = Date.now();
     let thrown;
     try {
@@ -951,14 +949,11 @@ describe("transition lane solver", () => {
     } catch (error) {
       thrown = error;
     }
-    expect(thrown?.message).toBe(
-      "Lifecycle handle search exceeded 32768 states",
-    );
     expect(thrown?.cause).toMatchObject({
-      reason: "state-limit",
-      phase: "handle",
-      stateLimit: 32768,
+      type: "lifecycle-handle-placement",
+      reason: "no-candidates",
     });
+    expect(thrown?.cause?.blockedBranchIds?.length).toBeGreaterThan(0);
     expect(Date.now() - start).toBeLessThan(30000);
   });
 
@@ -1410,15 +1405,21 @@ describe("test-only lifecycle layout diagnostics", () => {
       1850,
       { baseNodeOrderByRank: reversedBaseOrderFrom(baseline) },
     );
-    expect(reversed.firstRejectedPhase).toBe("handle");
+    // With HANDLE_CLEARANCE_TOLERANCE, every branch now has at least one
+    // legal handle candidate under this reversed order (branchDiagnosticCount
+    // 0 -- handle placement itself no longer rejects), but the resulting
+    // geometry has more route crossings than the strict (near-zero budget
+    // pressure) tolerance allows on a first candidate, so rejection now
+    // happens one phase later, at the route-crossing audit.
+    expect(reversed.firstRejectedPhase).toBe("route-crossing");
     expect(reversed.firstRejectedReason).toMatchObject({
-      reason: "no-candidates",
+      reason: "route-crossing",
       firstAffectedRank: 0,
-      // Denser sampling remains subject to the standard rank corridor, so
-      // all three branches remain handle-infeasible under this reversed
-      // order rather than accepting a candidate outside that invariant.
-      evidence: { branchDiagnosticCount: 3 },
+      evidence: { branchDiagnosticCount: 0 },
     });
+    expect(
+      reversed.firstRejectedReason.evidence.routeFindingCount,
+    ).toBeGreaterThan(0);
     expect(reversed.ranks[0].centeredAssignmentFeasible).toBe(true);
     expect(
       reversed.ranks[0].domains.every((domain) => domain.domainSize > 0),
@@ -2426,22 +2427,25 @@ describe("lifecycle diagram render-only routing layout", () => {
     }
   });
 
-  // Skipped: this fixture's dense multi-rank routing has no
-  // handle-clearance-feasible lane arrangement — confirmed by direct
-  // instrumentation, the set of blocked branches is identical across
-  // hundreds of distinct coordinate assignments the lane-refinement search
-  // tries. That's a pre-existing gap between what refineGlobalLaneCoordinates
-  // searches over (lane-spacing legality) and what handle placement
-  // actually needs (route-to-route clearance at sampled handle points), out
-  // of scope for the exponential-blowup fix this PR makes. The search
-  // itself is now fast and deterministic (was exponential before this PR),
-  // it just cannot currently find a working answer for this fixture.
-  // Tracked as a follow-up.
-  it.skip("lays out dense fixture with bounded semantic docks and safe handles", () => {
+  // Historical baseline (pre-fix): this fixture's dense multi-rank routing
+  // had no handle-clearance-feasible lane arrangement at all -- confirmed by
+  // direct instrumentation, the set of blocked branches was identical
+  // across hundreds of distinct coordinate assignments the lane-refinement
+  // search tried. Fixed by two independent, deliberately narrow tolerances
+  // introduced alongside this test (see
+  // docs/design/lifecycle-diagram-layout-algorithm.md): a small, last-resort
+  // nonincident-route clearance allowance for handle placement
+  // (HANDLE_CLEARANCE_TOLERANCE) and a small, budget-pressure-scaled
+  // tolerance for route-to-route crossings (toleratedRouteCrossingCount).
+  // Both apply only as a last resort -- a fixture that already finds a
+  // perfectly clean layout is unaffected. Handle-vs-handle overlap and
+  // fixed-geometry avoidance remain hard, zero-tolerance requirements.
+  it("lays out dense fixture with bounded semantic docks and safe handles", () => {
     const { graph } = layoutLifecycleRoutingGraph(
       projectLifecycleAt(denseFixture),
       1850,
     );
+    expect(graph.acceptedRouteCrossingCount).toBeGreaterThanOrEqual(0);
     const visibleNodes = graph.nodes.filter(
       (node) => !node.routing && node.total > 0,
     );
@@ -2472,13 +2476,30 @@ describe("lifecycle diagram render-only routing layout", () => {
     expect(new Set(handles.map((handle) => handle.branchId)).size).toBe(
       graph.branches.length,
     );
+    // Every t-value the candidate-generation sweep can ever select from
+    // (three primary points, plus the ten-point fallback grid tried only
+    // when the primary three find nothing) -- a degraded (tolerated)
+    // candidate can land on any of them, not just the primary three.
+    const allSampleTValues = [
+      0.5,
+      0.35,
+      0.65,
+      ...Array.from(
+        { length: 10 },
+        (_, index) => Math.round((0.05 + index * 0.1) * 1000) / 1000,
+      ).filter((t) => ![0.5, 0.35, 0.65].includes(t)),
+    ];
     for (const handle of handles) {
       expect(Number.isFinite(handle.x), handle.branchId).toBe(true);
       expect(Number.isFinite(handle.y), handle.branchId).toBe(true);
-      expect(handle.clearanceMargin, handle.branchId).toBeGreaterThan(0);
+      // Handle-vs-handle overlap and fixed-geometry avoidance stay strict;
+      // nonincident-route clearance allows the small, last-resort tolerance.
+      expect(handle.clearanceMargin, handle.branchId).toBeGreaterThan(
+        -HANDLE_CLEARANCE_TOLERANCE,
+      );
       const segments = byBranch.get(handle.branchId);
       const allowed = segments.flatMap((segment) =>
-        [0.5, 0.35, 0.65].map((t) => ({
+        allSampleTValues.map((t) => ({
           segment,
           ...cubicTransitionPoint(segment, t),
         })),

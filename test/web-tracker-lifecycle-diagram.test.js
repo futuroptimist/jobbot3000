@@ -865,19 +865,18 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
   });
 
   // Skipped: this 60-application, 89-branch fixture funnels many origins
-  // through a small number of milestones/endpoints, which has no
-  // handle-clearance-feasible lane arrangement — confirmed by direct
-  // instrumentation on equivalent fixtures, the set of blocked branches is
-  // identical across hundreds of distinct coordinate assignments the
-  // lane-refinement search tries. That's a pre-existing gap between what
-  // refineGlobalLaneCoordinates searches over (lane-spacing legality) and
-  // what handle placement actually needs (route-to-route clearance at
-  // sampled handle points), out of scope for the exponential-blowup fix
-  // this PR makes. The search itself is now fast and deterministic (was
-  // exponential before this PR), it just cannot currently find a working
-  // answer for this fixture, so layoutLifecycleRoutingGraph throws and the
-  // pagination UI this test wants to exercise never renders. Tracked as a
-  // follow-up.
+  // through a small number of milestones/endpoints. HANDLE_CLEARANCE_TOLERANCE
+  // and toleratedRouteCrossingCount (see
+  // docs/design/lifecycle-diagram-layout-algorithm.md's "Investigation
+  // (2026-07-26)" section and its follow-ups) fixed the real
+  // tracker-lifecycle-diagram-v2.json dense fixture and denseBranchProjection(),
+  // but this fixture's specific fan-in shape still exhausts the shared
+  // handle-state budget (confirmed directly, same signature as
+  // transitionDensityProjection() below) -- so layoutLifecycleRoutingGraph
+  // still throws and the pagination UI this test wants to exercise still
+  // never renders. Tracked as further follow-up: either a larger tolerance
+  // or a structurally different placement strategy for this class of dense
+  // fan-in is needed, out of scope for the tolerances shipped so far.
   // eslint-disable-next-line max-len
   it.skip("paginates more than 50 endpoint-conditioned flow rows without losing reachability", () => {
     const origins = LIFECYCLE_DIAGRAM_TAXONOMY.origins.map(({ id }) => id);

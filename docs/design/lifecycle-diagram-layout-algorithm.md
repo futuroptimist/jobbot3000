@@ -388,36 +388,88 @@ suite. It does **not** extend to any fixture with real milestone convergence —
 as infeasible as described above, and are the reason this fix is conditioned on
 `hasIntermediateRealNodes` rather than applied unconditionally.
 
-## Follow-up (shipped): a small, bounded route-crossing tolerance
+## Follow-up (shipped): bounded tolerances for route crossings and handle clearance
 
-Historically, `candidateCallback` required a candidate to have exactly zero fatal route-crossing
-findings (`routeAudit.fatalFindings.length === 0`) to be accepted — the same all-or-nothing bar as
-handle placement. For some fixtures no zero-crossing arrangement is reachable within the
-deterministic budget (or exists at all), so the search burned its whole budget and then threw,
-rendering the "Unable to lay out lifecycle diagram." fallback for what may just be a visually busy
-diagram, not a broken one.
+Historically, `candidateCallback` required exactly zero fatal route-crossing findings
+(`routeAudit.fatalFindings.length === 0`) _and_ every handle to have strictly positive clearance
+from every nonincident route, with no tolerance for either. For fixtures with real milestone
+convergence, no arrangement meeting both bars is reachable within the deterministic budget (or
+exists at all), so the search burned its whole budget and threw, rendering the "Unable to lay out
+lifecycle diagram." fallback for diagrams that may just be visually busy, not broken.
 
-`candidateCallback` now accepts a **handle-feasible** candidate (handle placement itself is
-unchanged and stays a hard, zero-tolerance requirement — an unclickable or ambiguous handle is a
-real usability bug) whose fatal route-crossing count is at or below `toleratedRouteCrossingCount`
-(`Math.min(8, Math.ceil(branchCount * 0.03))`, near `HANDLE_ROUTE_EDGE_COST_DIVISOR`). The accepted
-count is recorded as `graph.acceptedRouteCrossingCount` and
-`transitionLaneSolverStats.acceptedRouteCrossingCount` so callers/tests can tell a perfectly clean
-layout (`0`) apart from a merely acceptable one. Because the seed-replay validation path
-(`solveGlobal`'s seed-replay branch) invokes this exact same `candidateCallback` closure for its
-one-time acceptance check, this relaxation applies uniformly to discovery, single-pass/diagnostic
-calls, and the final pass's seed replay with no separate plumbing.
+Two separate, narrowly-scoped tolerances were shipped together, since the first alone proved
+insufficient (see the dead-end note below):
 
-**This does not, by itself, fix every currently-`it.skip`'d fixture.** Confirmed directly:
-`tracker-lifecycle-diagram-v2.json` still exhausts the handle-state budget (32,920/32,768) under
-this change — it never reaches the route-crossing check at all, because its bottleneck (per the
-"Checked-in reproduction" section) is that specific branches have **zero legal handle positions
-anywhere on their curve**, not merely a route crossing. The reference routing fixture is unaffected
-(still 0 accepted crossings, unchanged geometry). Making more fixtures succeed further requires
-either improving handle-candidate availability itself or a comparable, deliberately-scoped tolerance
-on handle placement — a materially different (and more consequential, since it touches click-target
-usability rather than a purely visual concern) relaxation than this one, tracked as further
-follow-up work rather than assumed to already be covered here.
+1. **Route-crossing tolerance** (`toleratedRouteCrossingCount`, near `HANDLE_ROUTE_EDGE_COST_DIVISOR`).
+   Scales with how much of the shared search budget has already been spent, not a flat constant —
+   confirmed directly that a flat, generous bound is unsafe: it let the search settle for an early
+   non-zero-crossing candidate on the reference fixture, which was already finding a perfectly clean
+   one, regressing it from 0 to 2 accepted crossings. Staying strict while budget is plentiful
+   preserves that a fixture the search can solve cleanly still does; only once budget pressure
+   crosses 50% does the bound loosen (linearly, toward `Math.min(120, branchCount * 2)`) toward a
+   much larger one.
+2. **Handle-clearance tolerance** (`HANDLE_CLEARANCE_TOLERANCE = 20`, exported near
+   `BRANCH_HANDLE_RADIUS`). A handle candidate whose clearance from a _nonincident_ route (not the
+   fixed geometry or another handle) is negative but within this bound is now collected as a
+   last-resort candidate, used only when a branch has zero fully-clear candidates anywhere across
+   both the primary and fallback t-value sweeps. Fixed-geometry avoidance and handle-vs-handle
+   non-overlap remain hard, zero-tolerance requirements throughout — an unclickable/ambiguous handle,
+   or one on top of a label, is a real usability bug; a handle a few pixels closer than ideal to an
+   unrelated line is not.
+
+Both tolerances record what they accepted (`graph.acceptedRouteCrossingCount` /
+`transitionLaneSolverStats.acceptedRouteCrossingCount`; each handle's own `clearanceMargin`) so
+callers/tests can tell a perfectly clean layout apart from a merely acceptable one.
+
+**Threading through the two-pass seed-replay contract required two additional fixes**, both
+confirmed necessary by directly reproducing the failure before fixing it:
+
+- The seed-replay validation path (`solveGlobal`'s seed-replay branch, and the direct
+  `seedHandles`-verification branch inside `tryAssignBranchHandles`) invokes `candidateCallback`
+  fresh, with its own budget pressure starting near zero. Discovery's own accepted crossing count is
+  threaded through as `seedAcceptedRouteCrossingCount` and used as the replay's bound directly,
+  instead of re-deriving one from the final pass's own near-zero pressure — replaying an
+  already-decided outcome exactly, not applying a fresh relaxation. The `seedHandles` verification
+  branch's own clearance check was widened by the same `HANDLE_CLEARANCE_TOLERANCE` for the same
+  reason.
+- `candidateCallback`'s two state-limit checks used to fire _before_ the tolerant-acceptance check
+  ever ran, so a candidate evaluated right at the budget boundary could never actually be accepted
+  under budget pressure — the hard throw always won the race. The charge, audit, and tolerant-accept
+  check now run first; the state-limit throw only fires afterward, if the candidate was both over
+  budget and not good enough to accept.
+
+**Dead end confirmed directly, not assumed:** the route-crossing tolerance alone, even generously
+sized, does not fix a fixture whose bottleneck is handle placement itself — confirmed directly
+against `tracker-lifecycle-diagram-v2.json`, which kept exhausting the handle-state budget without
+ever reaching the crossing check at all until the handle-clearance tolerance was added too. Handle
+placement had to be relaxed as its own, separately-justified change (still far more conservative
+than the crossing tolerance, since click-target usability is a harder requirement than visual
+crossing-freedom), not folded into the crossing tolerance's framing.
+
+**Result:** `tracker-lifecycle-diagram-v2.json` (the real dense production fixture named throughout
+this document — 16 applications, 21 nodes, previously infeasible even at 150x the handle budget) now
+lays out successfully end-to-end through the full two-pass pipeline, accepting 37 tolerated route
+crossings within normal budget usage (502/32768 handle states). The reference fixture is unaffected
+(still exactly 0 accepted crossings). `denseBranchProjection()` (Milestone 1's `buildMilestoneFreeJointOrder`
+target) also still succeeds cleanly, unaffected by either tolerance.
+
+**Still not fixed — two fixtures with a different, more extreme fan-in shape remain infeasible even
+under both tolerances**, confirmed directly, not assumed:
+
+- `transitionDensityProjection()` (50 branches funnelled through a single shared milestone) now
+  fails fast and deterministically with a genuine `no-candidates` invariant (not a budget
+  exhaustion) — a specific branch still has zero legal handle candidates anywhere on its curve even
+  with `HANDLE_CLEARANCE_TOLERANCE` applied. This is a materially harder convergence shape (50-into-1)
+  than the real dense fixture's (24-branch, multi-milestone) shape.
+- The 60-application/89-branch fixture in `test/web-tracker-lifecycle-diagram.test.js`'s
+  `"paginates more than 50 endpoint-conditioned flow rows without losing reachability"` still
+  exhausts the handle-state budget outright (same signature as
+  `transitionDensityProjection()` above).
+
+Both remain `it.skip`'d with comments describing this exact status. Making them succeed needs either
+a larger tolerance (with the same regression-safety verification this section's tolerances required)
+or a structurally different placement strategy for this specific convergence shape — tracked as
+further follow-up, not attempted here.
 
 ## Separately: the deterministic-budget fix
 
