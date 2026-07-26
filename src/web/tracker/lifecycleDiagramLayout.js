@@ -1,5 +1,15 @@
 import { sankey } from "d3-sankey";
 import { LIFECYCLE_DIAGRAM_TAXONOMY } from "./lifecycleProjection.js";
+import {
+  edgeCrossing,
+  classifyRouteCrossingCategory,
+} from "./lifecycleRouteGeometry.js";
+
+export {
+  edgeCrossing,
+  classifyRouteCrossingCategory,
+  ROUTE_CROSSING_SUSTAINED_THRESHOLD,
+} from "./lifecycleRouteGeometry.js";
 
 const isLifecycleLayoutTestEnvironment = () =>
   typeof process !== "undefined" &&
@@ -3935,17 +3945,6 @@ export const segmentIntersectsRect = (edge, rect) => {
   );
 };
 
-const orientation = (a, b, c) =>
-  Math.sign((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
-
-const edgeCrossing = (left, right) => {
-  const o1 = orientation(left.p0, left.p1, right.p0);
-  const o2 = orientation(left.p0, left.p1, right.p1);
-  const o3 = orientation(right.p0, right.p1, left.p0);
-  const o4 = orientation(right.p0, right.p1, left.p1);
-  return o1 * o2 < 0 && o3 * o4 < 0;
-};
-
 export function auditLifecycleRouteGeometry({
   graph,
   dimensions,
@@ -4046,11 +4045,12 @@ export function auditLifecycleRouteGeometry({
     // crossing -- that reads as one line drawn on top of another, not a
     // tolerable visual blemish, so it's categorized separately and never
     // eligible for toleratedRouteCrossingCount regardless of budget
-    // pressure (see candidateCallback). The threshold mirrors the
-    // Playwright collision audit's own sustained-overlap check
+    // pressure (see candidateCallback). classifyRouteCrossingCategory (see
+    // lifecycleRouteGeometry.js) is the same shared classifier the
+    // Playwright collision audit uses against rendered SVG geometry
     // (test/playwright/lifecycle-diagram.spec.js).
     const finding = {
-      category: crossings.length > 4 ? "sustained-crossing" : "proper-crossing",
+      category: classifyRouteCrossingCategory(crossings.length),
       branchIds: pair.split("||"),
       transitionRank: crossings[0]?.left.segment.source.rank,
       point: quantizePoint(crossings[0]?.left.p0 ?? { x: 0, y: 0 }),

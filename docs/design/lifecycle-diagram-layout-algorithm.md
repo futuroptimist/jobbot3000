@@ -501,16 +501,23 @@ itself succeeds (`static-smoke.spec.js`'s deterministic-render smoke test, and
 `lifecycle-diagram.spec.js`'s seeded-tables and touch-mobile-overflow specs — neither exercises the
 strict collision audit below). The fourth
 (`"audits routed branch collisions for tracker-lifecycle-diagram-v2.json on desktop and touch"`)
-remains `test.skip`'d: its `assertBrowserCollisionAudit` samples actual rendered SVG geometry at
-regular pixel intervals, a different methodology than production's cubic-flattening-based
-`auditLifecycleRouteGeometry`, and the two do not agree on where the sustained-overlap/brief-crossing
-line falls for every branch pair in the browser-reconciled (denser) version of this fixture —
-confirmed directly, not assumed, by dumping the actual reconciled IndexedDB data via Playwright and
-feeding it back through the same diagnostics used above. Unifying the two audits' sampling
-methodology, or building a placement strategy that avoids this class of near-handle route passage
-constructively rather than tolerating it after the fact, is real follow-up work, not attempted here.
-The `tracker-lifecycle-diagram-routing-v2.json` iteration of the same parametrized test is
-unaffected and passes.
+originally remained `test.skip`'d for this reason: its `assertBrowserCollisionAudit` sampled actual
+rendered SVG geometry at regular pixel intervals and classified route-vs-route crossings by
+**point-to-point proximity** (any two samples from different branches within 0.5px of each other),
+a fundamentally different methodology than production's cubic-flattening-based
+`auditLifecycleRouteGeometry`, which counts genuine **transversal segment-crossings** between
+flattened edges via `edgeCrossing`. Point-proximity is far more trigger-happy than true
+edge-crossing: two curves that run close-but-parallel for a stretch (never truly crossing more than
+once or twice) generate many "nearby" sample pairs, pushing the count past the shared `>4`
+sustained-overlap threshold and misclassifying a tolerable pair as `"coincides"` (fatal) — confirmed
+directly, not assumed, by dumping the actual reconciled IndexedDB data via Playwright and feeding it
+back through the same diagnostics used above: production's edge-crossing count stayed ≤4 for pairs
+this audit's proximity sampling flagged as coincident.
+
+**Status update: this is now fixed — see "Follow-up (shipped): unified route-crossing classifier"
+below.** The spec is no longer `test.skip`'d; both fixture iterations of this parametrized test now
+pass on desktop, previous-event, and touch/mobile. `tracker-lifecycle-diagram-routing-v2.json`'s
+exact-zero-collision expectation (`maxCrossings = 0`) is unaffected.
 
 **Still infeasible for a root cause neither tolerance can reach — two fixtures with a different,
 more extreme fan-in shape**, confirmed directly (not assumed) by inspecting the exact rejection
@@ -549,6 +556,80 @@ rank corridor itself for ranks with enough incident branches to need it, or a pl
 that doesn't depend on every branch finding a legal point within a fixed-width corridor at all —
 tracked as further follow-up, not attempted here. Retrying with a larger
 `HANDLE_CLEARANCE_TOLERANCE` value alone will not help; the evidence above rules that out directly.
+
+## Follow-up (shipped): unified route-crossing classifier
+
+The last remaining Playwright skip (see "Playwright status" above) was an audit-methodology
+mismatch, not a layout bug: production's `auditLifecycleRouteGeometry` and the Playwright
+`assertBrowserCollisionAudit` (`test/playwright/lifecycle-diagram.spec.js`) independently
+implemented their own crossing/coincidence classifiers, and disagreed on the same rendered geometry.
+
+**The fix:** the shared, pure primitives both classifiers need — `edgeCrossing` (an
+orientation/cross-product transversal-segment-intersection test) and the sustained-vs-proper
+crossing-count threshold (`>4`) — were extracted into a new module,
+`src/web/tracker/lifecycleRouteGeometry.js`, with no DOM/graph/layout-object dependencies (only
+plain `{x,y}` points and `{p0,p1}` edges). `auditLifecycleRouteGeometry` now imports
+`classifyRouteCrossingCategory`/`edgeCrossing` from it instead of an inlined ternary and a
+module-private const — a pure rename/relocation, not a behavior change (confirmed: the full existing
+test suite, including `"exposes a deterministic route model and pure geometry audit"`, passed
+unmodified against the extracted functions).
+
+The Playwright audit was then changed to call the **actual same functions** production uses, rather
+than maintaining an independently-tuned reimplementation. This works because the tracker frontend is
+bundled by esbuild at server startup (`src/web/server.js`, entry `tracker.js` → `lifecycleDiagram.js`
+→ `lifecycleDiagramLayout.js` → the new module) — a module-level side effect in an already-imported
+production file executes in the browser bundle regardless of which of its exports are actually
+referenced elsewhere, so `lifecycleRouteGeometry.js` sets a guarded
+`window.__lifecycleRouteGeometry = { edgeCrossing, classifyRouteCrossingCategory,
+ROUTE_CROSSING_SUSTAINED_THRESHOLD }` at module scope (guarded by `typeof window !== "undefined"`,
+since this module is also imported directly under Vitest's default Node environment). Playwright's
+`assertBrowserCollisionAudit` calls this hook from inside its `page.evaluate()` callback instead of
+its old point-to-point proximity sampling (`Math.hypot(...) <= 0.5px` between two paths' dense
+`getPointAtLength` samples — the actual root cause of the mismatch: proximity is far more
+trigger-happy than true crossing-counting for curves that run close-but-parallel without truly
+crossing).
+
+To mirror production's same-transition-rank restriction on which edge pairs are even compared
+(`auditLifecycleRouteGeometry` only tests edges whose segments share a source rank), the browser
+audit now buckets each rendered path's consecutive-sample edges by rank using the existing
+`data-segment-ranks` attribute (`lifecycleDiagram.js`) combined with a structural fact about the
+renderer's own path generation: `adjacentRankSegmentPath` (`lifecycleDiagramLayout.js`) emits one
+leading `M` command per segment, in the same order as `data-segment-ranks`, so splitting a rendered
+path's `d` string on that boundary and measuring each piece's own `getTotalLength()` recovers each
+segment's exact rendered arc-length window — with **no new `data-*` attributes** needed, and no
+changes to `lifecycleDiagram.js` at all. This also makes the browser audit's worst-case cost strictly
+cheaper than before: summing edge-pair work only across ranks present in both branches is provably
+never worse than the old whole-path-vs-whole-path approach (dropping cross-rank terms from a product
+only removes non-negative terms).
+
+Investigating the newly-unified classifier against the real, browser-reconciled
+`tracker-lifecycle-diagram-v2.json` fixture surfaced one more genuine mismatch, not just the crossing
+classification: the browser's route-vs-handle proximity check ("intersects other handle") was
+unconditionally fatal, while production's `route-handle-collision` category is tolerable — bucketed
+into the same budget as `proper-crossing` (`candidateCallback`, see "Follow-up (shipped): bounded
+tolerances" above). Confirmed directly: once the crossing/coincidence mismatch was fixed, the only
+remaining fatal findings for this fixture were exactly six `"intersects other handle"` errors, zero
+`"coincides"` errors — i.e. the crossing-classifier fix alone fully resolved the originally-diagnosed
+mismatch, and the handle-tolerance gap was a second, independent, previously-undiagnosed
+discrepancy. Fixed narrowly by moving that check's finding into the same tolerated-crossings bucket
+(`maxCrossings`) instead of `fatalErrors`, matching production's own combined tolerance semantics,
+without touching `candidateCallback`/`toleratedRouteCrossingCount` themselves (that logic remains
+entirely inside the test and the production layout module, respectively — this change only affects
+which array a browser-side finding lands in).
+
+**Result:** confirmed directly, not assumed, by running the unskipped test repeatedly against the
+real fixture: `tracker-lifecycle-diagram-v2.json` produces a stable 62 tolerated (proper-crossing- and
+route-handle-collision-equivalent) findings on desktop and touch (57 on the previous-event state),
+comfortably checked in as the test's `maxCrossings` bound (replacing the old, unverified `66`
+placeholder left over from the pre-fix, disproven methodology). `tracker-lifecycle-diagram-routing-v2.json`
+is unaffected, still exactly 0. **0 lifecycle Playwright specs remain skipped** (was 1); **0 lifecycle
+Vitest tests remain skipped** (unchanged from the prior fix — see "Outstanding follow-up work" below).
+Focused unit tests for the shared classifier (`edgeCrossing`, `classifyRouteCrossingCategory`, and
+the route-handle-proximity boundary) were added to
+`test/web-tracker-lifecycle-diagram-layout.test.js`'s `"shared route-crossing classifier"` describe
+block, including a direct test that two edges diverging from a shared/near-identical endpoint (the
+shared-dock case) are never classified as crossing — the reason production's own crossing loop needs
+no explicit shared-dock exclusion.
 
 ## Separately: the deterministic-budget fix
 
@@ -630,19 +711,18 @@ skip states and test names can drift. `grep -rn "it\.skip(\|test\.skip(" test/` 
    (the real `tracker-lifecycle-diagram-v2.json` dense fixture and a direct 5×11 milestone-free
    grid, respectively). `transitionDensityProjection()`'s own infeasibility stays actively characterized,
    not deleted, in `"resolves un-phased dense fan-in fast, without exponential blowup"`.
-3. **1 Playwright spec remains `test.skip`ed** (was 4):
+3. **0 Playwright specs remain `test.skip`ed** (was 4, then 1). The last remaining skip —
    `test/playwright/lifecycle-diagram.spec.js`'s `"audits routed branch collisions for
-tracker-lifecycle-diagram-v2.json on desktop and touch"` (the
-   `tracker-lifecycle-diagram-routing-v2.json` iteration of the same parametrized test is unaffected
-   and passes). Confirmed directly, not assumed: layout itself now succeeds for this fixture (the
-   original root cause — the component rendering the "Unable to lay out lifecycle diagram."
-   fallback — is fixed), but this audit's pixel-sampling-based severity classification disagrees
-   with production's own cubic-flattening-based one on a few branch pairs in the browser-reconciled
-   (denser than raw) version of this fixture. The other 3 previously-`test.skip`'d Playwright specs
+tracker-lifecycle-diagram-v2.json on desktop and touch"` — is now fixed and unskipped; see
+   "Follow-up (shipped): unified route-crossing classifier" above for the mechanism (a shared
+   `src/web/tracker/lifecycleRouteGeometry.js` classifier reused by both production and the browser
+   audit via `window.__lifecycleRouteGeometry`) and the confirmed numbers. The
+   `tracker-lifecycle-diagram-routing-v2.json` iteration of the same parametrized test remains
+   unaffected (exactly 0 tolerated crossings). The other 3 previously-`test.skip`'d Playwright specs
    (`"renders seeded current/historical states with semantic tables and selection"`,
    `"uses a real touch mobile context without page overflow"`, and
    `test/playwright/static-smoke.spec.js`'s `"renders lifecycle Diagram from deterministic data
-without external requests"`) now pass unmodified, since none of them exercise the strict
+without external requests"`) already passed unmodified since none of them exercise the strict
    collision audit.
 4. **Real-node-vs-routing-node coordination** (its own section above) — a narrower, more scoped
    piece of item 1 that's already covered by fix 3's audit-and-reject safety net (so current

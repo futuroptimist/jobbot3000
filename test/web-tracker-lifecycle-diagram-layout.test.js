@@ -30,18 +30,22 @@ import {
   buildLifecycleRouteModel,
   buildLifecycleRoutingGraph,
   calculateLifecycleDiagramLayout,
+  classifyRouteCrossingCategory,
   combinationsOfSize,
   compareBranches,
   compareLifecycleIds,
   createLaneGeometryFailureCache,
   cubicTransitionPoint,
+  edgeCrossing,
   endpointColor,
   layoutLifecycleRoutingGraph,
   labelBoxForNode,
   nodeSort,
+  pointToSegmentDistance,
   rankCenterX,
   renderedBranchStrokeWidth,
   rendererHitBoxForNode,
+  ROUTE_CROSSING_SUSTAINED_THRESHOLD,
   segmentRoutePrimitives,
   selectedEnvelopeRadius,
   solveHandleCandidateSets,
@@ -2877,5 +2881,72 @@ describe("seeded-replay production layout (routing fixture)", () => {
     const normal = signatureFor(projectLifecycleAt(routingFixture));
     const reversed = signatureFor(reversedProjection());
     expect(reversed).toEqual(normal);
+  });
+});
+
+describe("shared route-crossing classifier", () => {
+  // src/web/tracker/lifecycleRouteGeometry.js -- the pure classifier both
+  // auditLifecycleRouteGeometry (here) and the Playwright collision audit
+  // (test/playwright/lifecycle-diagram.spec.js, via
+  // window.__lifecycleRouteGeometry) share, so a rendered-geometry mismatch
+  // can't silently reappear in either place independently.
+  it("detects a genuine transversal crossing", () => {
+    const left = { p0: { x: 0, y: 0 }, p1: { x: 10, y: 10 } };
+    const right = { p0: { x: 0, y: 10 }, p1: { x: 10, y: 0 } };
+    expect(edgeCrossing(left, right)).toBe(true);
+  });
+
+  it("does not flag parallel non-intersecting segments", () => {
+    const left = { p0: { x: 0, y: 0 }, p1: { x: 10, y: 0 } };
+    const right = { p0: { x: 0, y: 5 }, p1: { x: 10, y: 5 } };
+    expect(edgeCrossing(left, right)).toBe(false);
+  });
+
+  it("does not flag two segments diverging from a shared dock point", () => {
+    // This is why auditLifecycleRouteGeometry needs no explicit shared-dock
+    // exclusion in its own crossing loop (see
+    // docs/design/lifecycle-diagram-layout-algorithm.md): two branches
+    // fanning out from the same source node have edges that share (or
+    // nearly share) an endpoint and diverge, which the strict
+    // sign-straddling orientation test never classifies as a crossing.
+    const shared = { x: 5, y: 5 };
+    const left = { p0: shared, p1: { x: 10, y: 0 } };
+    const right = { p0: shared, p1: { x: 10, y: 10 } };
+    expect(edgeCrossing(left, right)).toBe(false);
+  });
+
+  it("does not flag collinear overlapping segments", () => {
+    const left = { p0: { x: 0, y: 0 }, p1: { x: 10, y: 0 } };
+    const right = { p0: { x: 5, y: 0 }, p1: { x: 15, y: 0 } };
+    expect(edgeCrossing(left, right)).toBe(false);
+  });
+
+  it("classifies crossing counts at and around the sustained threshold", () => {
+    expect(ROUTE_CROSSING_SUSTAINED_THRESHOLD).toBe(4);
+    expect(classifyRouteCrossingCategory(0)).toBe("proper-crossing");
+    expect(classifyRouteCrossingCategory(1)).toBe("proper-crossing");
+    expect(classifyRouteCrossingCategory(4)).toBe("proper-crossing");
+    expect(classifyRouteCrossingCategory(5)).toBe("sustained-crossing");
+    expect(classifyRouteCrossingCategory(50)).toBe("sustained-crossing");
+  });
+
+  it("classifies route-handle proximity at the same boundary production uses", () => {
+    // Mirrors auditLifecycleRouteGeometry's route-handle-collision check
+    // (lifecycleDiagramLayout.js): pointToSegmentDistance(handle, edge) <
+    // BRANCH_HANDLE_RADIUS + selectedEnvelopeRadius(segment) + 0.25 +
+    // LANE_Y_EPSILON. selectedEnvelopeRadius ignores its argument today
+    // (renderedBranchStrokeWidth always returns 3), so it's safe to call
+    // with an empty segment placeholder in this pure-geometry test.
+    const edge = { p0: { x: 0, y: 0 }, p1: { x: 100, y: 0 } };
+    const required = BRANCH_HANDLE_RADIUS + selectedEnvelopeRadius({}) + 0.25;
+    const closeHandle = { x: 50, y: required - 5 };
+    const farHandle = { x: 50, y: required + 5 };
+    const boundaryHandle = { x: 50, y: required };
+    expect(pointToSegmentDistance(closeHandle, edge)).toBeLessThan(required);
+    expect(pointToSegmentDistance(farHandle, edge)).toBeGreaterThan(required);
+    expect(pointToSegmentDistance(boundaryHandle, edge)).toBeCloseTo(
+      required,
+      5,
+    );
   });
 });
