@@ -1456,51 +1456,27 @@ describe("test-only lifecycle layout diagnostics", () => {
     ).toBe(true);
   });
 
-  // Characterizes (without exhausting the shared handle-search budget) the
-  // structural cause documented in
-  // docs/design/lifecycle-diagram-layout-algorithm.md: denseBranchProjection()
-  // (5 origins x 11 endpoints = 55 direct origin->endpoint branches, each
-  // routed through the taxonomy's 5 fixed milestone ranks) already fails at
-  // the *first* candidate's handle-placement phase, not from narrowly
-  // exhausting the lane or handle search. Confirmed by direct instrumentation
-  // (testOnlyDiagnoseLifecycleLayoutAttempt stops at the first candidate
-  // snapshot, so this never runs the fixture through full budget
-  // exhaustion): 14 "long diagonal" branches -- later-ordered origins
-  // (referral, recruiter_company_outreach, other_unknown) paired with
-  // later-ordered endpoints (offer_declined, offer_expired_rescinded,
-  // offer_accepted, closed_archived, unknown, candidate_withdrew) -- get zero
-  // legal handle candidates anywhere along their curve, even though every
-  // rank's lane domains and centered assignment remain feasible at the
-  // fixture's own ~59.251px minimum lane spacing. The five routing-only
-  // ranks (one per fixed milestone) each host all 55 branches' routing
-  // nodes (275 total), which is the actual source of the geometric
-  // contention -- not real-node dock spacing, port pitch, or a clearance
-  // exemption, all of which prior attempts already tried and reverted (see
-  // the design doc's "Outstanding follow-up work" section).
-  it("characterizes dense routing-only handle infeasibility deterministically", () => {
-    const EXPECTED_BLOCKED_BRANCH_IDS = [
-      "branch:link:origin:other_unknown->endpoint:closed_archived:endpoint:closed_archived",
-      "branch:link:origin:other_unknown->endpoint:offer_accepted:endpoint:offer_accepted",
-      "branch:link:origin:other_unknown->endpoint:offer_declined:endpoint:offer_declined",
-      // eslint-disable-next-line max-len
-      "branch:link:origin:other_unknown->endpoint:offer_expired_rescinded:endpoint:offer_expired_rescinded",
-      "branch:link:origin:other_unknown->endpoint:unknown:endpoint:unknown",
-      // eslint-disable-next-line max-len
-      "branch:link:origin:recruiter_company_outreach->endpoint:closed_archived:endpoint:closed_archived",
-      // eslint-disable-next-line max-len
-      "branch:link:origin:recruiter_company_outreach->endpoint:offer_accepted:endpoint:offer_accepted",
-      // eslint-disable-next-line max-len
-      "branch:link:origin:recruiter_company_outreach->endpoint:offer_declined:endpoint:offer_declined",
-      // eslint-disable-next-line max-len
-      "branch:link:origin:recruiter_company_outreach->endpoint:offer_expired_rescinded:endpoint:offer_expired_rescinded",
-      "branch:link:origin:recruiter_company_outreach->endpoint:unknown:endpoint:unknown",
-      "branch:link:origin:referral->endpoint:candidate_withdrew:endpoint:candidate_withdrew",
-      "branch:link:origin:referral->endpoint:closed_archived:endpoint:closed_archived",
-      "branch:link:origin:referral->endpoint:offer_accepted:endpoint:offer_accepted",
-      // eslint-disable-next-line max-len
-      "branch:link:origin:referral->endpoint:offer_expired_rescinded:endpoint:offer_expired_rescinded",
-    ].sort(compareLifecycleIds);
-
+  // Historical baseline (pre-fix, see
+  // docs/design/lifecycle-diagram-layout-algorithm.md's "Checked-in
+  // reproduction" section): denseBranchProjection() (5 origins x 11
+  // endpoints = 55 direct origin->endpoint branches, each routed through
+  // the taxonomy's 5 fixed milestone ranks) used to fail at the *first*
+  // candidate's handle-placement phase (firstRejectedPhase: "handle",
+  // reason: "no-candidates"), with 14 "long diagonal" branches -- later-
+  // ordered origins (referral, recruiter_company_outreach, other_unknown)
+  // paired with later-ordered endpoints (offer_declined,
+  // offer_expired_rescinded, offer_accepted, closed_archived, unknown,
+  // candidate_withdrew) -- getting zero legal handle candidates anywhere
+  // along their curve, with states.handle in the low thousands (far below
+  // the 32768 budget -- not a narrow budget miss). Fixed by
+  // buildMilestoneFreeJointOrder giving discovery's own first D3 pass a
+  // topology-derived order instead of the plain, rankOrder-blind
+  // nodeSort/linkSort it fell back to before (this fixture has no real
+  // milestone nodes, so it's in-scope for that fix) -- see the design
+  // doc's "Investigation (2026-07-26)" section. This test now characterizes the
+  // fixed behavior: the same fixture, still deterministic and
+  // order-independent, now succeeds outright.
+  it("characterizes dense routing-only handle feasibility deterministically", () => {
     const reversedDenseBranchProjection = () => {
       const p = denseBranchProjection();
       return {
@@ -1541,21 +1517,23 @@ describe("test-only lifecycle layout diagnostics", () => {
     expect(reversed).toEqual(baseline);
     expect(shuffled).toEqual(baseline);
 
-    // First candidate already fails at handle placement, not lane search or
-    // budget exhaustion -- states stay far below the 32768 handle-state
-    // budget the production path eventually exhausts.
-    expect(baseline.firstRejectedPhase).toBe("handle");
+    // First candidate is now fully accepted (firstRejectedPhase: null),
+    // using only a small fraction of the 32768 handle-state budget.
+    // Historical baseline before the fix (see the comment above this
+    // test): firstRejectedPhase was "handle", reason "no-candidates", with
+    // exactly these 14 blocked branch IDs and states.handle far below
+    // 32768 but nonzero:
+    //   other_unknown -> closed_archived, offer_accepted, offer_declined,
+    //     offer_expired_rescinded, unknown
+    //   recruiter_company_outreach -> closed_archived, offer_accepted,
+    //     offer_declined, offer_expired_rescinded, unknown
+    //   referral -> candidate_withdrew, closed_archived, offer_accepted,
+    //     offer_expired_rescinded
+    //   (full branch IDs: "branch:link:origin:<origin>->endpoint:<endpoint>:endpoint:<endpoint>")
+    expect(baseline.firstRejectedPhase).toBeNull();
+    expect(baseline.firstRejectedReason).toBeNull();
     expect(baseline.states.handle).toBeGreaterThan(0);
     expect(baseline.states.handle).toBeLessThan(32768);
-    expect(baseline.firstRejectedReason).toMatchObject({
-      reason: "no-candidates",
-      evidence: { branchDiagnosticCount: 14 },
-    });
-    expect(
-      [...baseline.firstRejectedReason.evidence.blockedBranchIds].sort(
-        compareLifecycleIds,
-      ),
-    ).toEqual(EXPECTED_BLOCKED_BRANCH_IDS);
 
     // Lane domains and the centered assignment remain feasible at every
     // rank's own minimum spacing -- this is not a spacing-constant problem.
@@ -2517,19 +2495,15 @@ describe("lifecycle diagram render-only routing layout", () => {
     }
   });
 
-  // Skipped: denseBranchProjection()'s multi-rank routing (each branch
-  // spans several ranks via routing nodes) has no handle-clearance-feasible
-  // lane arrangement — confirmed by direct instrumentation, the set of
-  // blocked branches is identical across hundreds of distinct coordinate
-  // assignments the lane-refinement search tries. That's a pre-existing gap
-  // between what refineGlobalLaneCoordinates searches over (lane-spacing
-  // legality) and what handle placement actually needs (route-to-route
-  // clearance at sampled handle points), out of scope for the
-  // exponential-blowup fix this PR makes. The search itself is now fast and
-  // deterministic (was exponential before this PR), it just cannot
-  // currently find a working answer for this fixture. Tracked as a
-  // follow-up.
-  it.skip("keeps handle invariants with more than 32 display branches", () => {
+  // denseBranchProjection() has no real milestone nodes (every branch is a
+  // direct origin->endpoint link), so buildMilestoneFreeJointOrder now
+  // gives discovery's own first D3 pass a topology-derived, cross-rank-
+  // consistent node/link order instead of the plain, rankOrder-blind
+  // nodeSort/linkSort it used to fall back to -- see
+  // docs/design/lifecycle-diagram-layout-algorithm.md's "Investigation (2026-07-26)"
+  // section. Before that fix, this fixture had no handle-clearance-feasible
+  // lane arrangement the search could find.
+  it("keeps handle invariants with more than 32 display branches", () => {
     const { graph } = layoutLifecycleRoutingGraph(
       denseBranchProjection(),
       1850,
@@ -2608,28 +2582,27 @@ describe("lifecycle diagram render-only routing layout", () => {
   });
 
   it("resolves un-phased dense multi-rank fan-in fast, without exponential blowup", () => {
-    // denseBranchProjection()'s multi-rank routing has no
-    // handle-clearance-feasible lane arrangement (see the skipped test
-    // above for the root-cause analysis), so this direct production-path
-    // regression must fail with deterministic handle-phase evidence while
-    // staying bounded.
+    // Historical baseline (pre-fix): this direct production-path call used
+    // to fail deterministically with "Lifecycle handle search exceeded
+    // 32768 states" (reason: "state-limit", phase: "handle"), since
+    // denseBranchProjection()'s multi-rank routing had no
+    // handle-clearance-feasible lane arrangement discovery's plain,
+    // rankOrder-blind nodeSort/linkSort could find. Fixed by
+    // buildMilestoneFreeJointOrder (see
+    // docs/design/lifecycle-diagram-layout-algorithm.md's
+    // "Investigation (2026-07-26)" section) -- this fixture has no real
+    // milestone nodes, so it's in-scope for that fix. The search itself is
+    // now fast and deterministic (was exponential before PR #1147;
+    // state-limited before this fix), and now finds a legal arrangement
+    // well within budget.
     const start = Date.now();
-    let thrown;
-    try {
-      layoutLifecycleRoutingGraph(denseBranchProjection(), 1850);
-    } catch (error) {
-      thrown = error;
-    }
-    expect(thrown?.message).toBe(
-      "Lifecycle handle search exceeded 32768 states",
+    const { graph } = layoutLifecycleRoutingGraph(
+      denseBranchProjection(),
+      1850,
     );
-    expect(thrown?.cause).toMatchObject({
-      reason: "state-limit",
-      phase: "handle",
-      stateLimit: 32768,
-    });
-    expect(thrown?.cause?.statesVisited).toBeGreaterThanOrEqual(32768);
-    expect(thrown?.cause?.routeEdgeCount).toBeGreaterThan(0);
+    const stats = graph.transitionLaneSolverStats;
+    expect(stats.handleStatesVisited).toBeGreaterThan(0);
+    expect(stats.handleStatesVisited).toBeLessThan(32768);
     expect(Date.now() - start).toBeLessThan(30000);
   });
 });

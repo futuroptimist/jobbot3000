@@ -641,19 +641,109 @@ export function createLaneGeometryFailureCache() {
   };
 }
 
+// compareBranches, plus the rank-0-only origin/taxonomy tie-break normally
+// only applied inside compareBranchesForGlobalOrder (see that function,
+// below), folded into a single comparator. Used only to derive a joint
+// base-layout order for graphs with no real milestone nodes -- see
+// hasIntermediateRealNodes/buildMilestoneFreeJointOrder below and
+// docs/design/lifecycle-diagram-layout-algorithm.md's "Investigation (2026-07-26)"
+// section for why this is scoped that narrowly rather than applied
+// everywhere: the same order destabilizes the deadline-based DFS on graphs
+// with real milestone convergence, even when it never touches a real
+// node's position.
+const compareBranchesJoint = (a, b) => {
+  if (a.sourceRank === 0 && b.sourceRank === 0) {
+    const taxonomyDiff = taxonomyOrder(a.source) - taxonomyOrder(b.source);
+    if (taxonomyDiff !== 0) return taxonomyDiff;
+  }
+  return compareBranches(a, b);
+};
+
+// True when any rank between the fixed origin/endpoint ranks (0 and 6) has
+// a real (non-routing) node -- i.e. this graph actually routes through a
+// milestone somewhere. buildMilestoneFreeJointOrder is only safe to use
+// when this is false.
+const hasIntermediateRealNodes = (graph) =>
+  graph.nodes.some((node) => !node.routing && node.rank >= 1 && node.rank <= 5);
+
+// Derives a single, stable-ID/topology-only order for both node rank and
+// per-transition-rank branch order, for graphs where every rank 1-5 node is
+// a routing node (no real milestone convergence anywhere in the graph).
+// Because there are no real nodes at those ranks, no real-node-vs-
+// routing-node reconciliation is needed here; ranks 0 and 6 keep nodeSort's
+// own existing taxonomy-order anchoring, which compareBranchesJoint's
+// rank-0 tie-break already agrees with by construction.
+const buildMilestoneFreeJointOrder = (graph) => {
+  const jointBranches = [...graph.branches].sort(compareBranchesJoint);
+  const branchOrderByRank = new Map();
+  const ranksInUse = new Set();
+  for (const branch of jointBranches)
+    for (let rank = branch.sourceRank; rank < branch.targetRank; rank += 1)
+      ranksInUse.add(rank);
+  for (const rank of ranksInUse) {
+    const active = jointBranches.filter(
+      (branch) => branch.sourceRank <= rank && rank < branch.targetRank,
+    );
+    branchOrderByRank.set(
+      rank,
+      new Map(active.map((branch, index) => [branch.id, index])),
+    );
+  }
+  const nodeOrderByRank = new Map();
+  for (const rank of [...new Set(graph.nodes.map((node) => node.rank))]) {
+    const nodes = graph.nodes.filter((node) => node.rank === rank);
+    if (rank === 0 || rank === 6) {
+      nodes.sort(nodeSort);
+    } else {
+      const branchIndex = branchOrderByRank.get(rank);
+      nodes.sort(
+        (left, right) =>
+          (branchIndex?.get(left.branchId) ?? 0) -
+            (branchIndex?.get(right.branchId) ?? 0) ||
+          compareLifecycleIds(left.id, right.id),
+      );
+    }
+    nodeOrderByRank.set(
+      rank,
+      new Map(nodes.map((node, index) => [node.id, index])),
+    );
+  }
+  return { nodeOrderByRank, branchOrderByRank };
+};
+
 function layoutLifecycleRoutingGraphPass(
   projection,
   availableWidth,
   options = {},
 ) {
   const enableTestDiagnostics = isLifecycleLayoutTestEnvironment();
-  const baseNodeOrderByRank =
+  const explicitNodeOrderByRank =
     options.authoritativeNodeOrderByRank ??
     (enableTestDiagnostics ? options.testOnlyBaseNodeOrderByRank : null);
   const testOnlyDiagnosticSink = enableTestDiagnostics
     ? options.testOnlyDiagnosticSink
     : null;
   const graph = options.routingGraph ?? buildLifecycleRoutingGraph(projection);
+  // When nothing else supplies a base order and this graph never routes
+  // through a real milestone node, discovery's own first D3 pass would
+  // otherwise use plain, rankOrder-blind nodeSort/linkSort -- the gap
+  // documented in docs/design/lifecycle-diagram-layout-algorithm.md's
+  // "Deferred: making the base D3-Sankey layout rankOrder-aware" section.
+  // buildMilestoneFreeJointOrder closes that gap for exactly this scoped
+  // case (proven safe; see that doc's "Investigation (2026-07-26)" section for why
+  // it is not applied more broadly).
+  const milestoneFreeJointOrder =
+    !explicitNodeOrderByRank &&
+    !options.authoritativeBranchOrderByRank &&
+    !hasIntermediateRealNodes(graph)
+      ? buildMilestoneFreeJointOrder(graph)
+      : null;
+  const baseNodeOrderByRank =
+    explicitNodeOrderByRank ?? milestoneFreeJointOrder?.nodeOrderByRank ?? null;
+  const authoritativeBranchOrderByRank =
+    options.authoritativeBranchOrderByRank ??
+    milestoneFreeJointOrder?.branchOrderByRank ??
+    null;
   const baselineLinks = new Map(
     graph.links.map((link) => [
       link.id,
@@ -703,7 +793,7 @@ function layoutLifecycleRoutingGraphPass(
         left.source.id === right.source.id
           ? left.source.rank
           : left.target.rank - 1;
-      const order = options.authoritativeBranchOrderByRank?.get(transitionRank);
+      const order = authoritativeBranchOrderByRank?.get(transitionRank);
       const leftIndex = order?.get(left.branchId);
       const rightIndex = order?.get(right.branchId);
       return (

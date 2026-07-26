@@ -300,9 +300,9 @@ real/routing-node positions, interval/domain sizes, centered-assignment feasibil
 phase/reason, and deterministic state counts. It is intentionally not a production debugging API and
 does not log to the console.
 
-## P4 investigation (2026-07-26): a real-node-position-preserving joint order still destabilizes production fixtures
+## Investigation (2026-07-26): a real-node-position-preserving joint order still destabilizes production fixtures
 
-A follow-up investigation (task "P4 — Implement rankOrder-aware cross-rank lifecycle routing")
+A follow-up investigation into making the base D3-Sankey layout rankOrder-aware
 attempted the deferred fix above ([Option 2](#deferred-making-the-base-d3-sankey-layout-rankorder-aware))
 a second time, this time deliberately different from the reverted barycenter attempt: instead of an
 iterative, sweep-based repositioning heuristic, it used a single deterministic, purely topological
@@ -362,18 +362,31 @@ fixture needs are, at least under this construction, in direct tension: applying
 exactly the fixture with no real-node convergence and hurts exactly the fixtures that have it.
 
 **Conclusion and status:** per the task's own staged plan, this is a **no-go** for proceeding to a
-full implementation as scoped — the joint-order approach is not safe to wire into production
-`nodeSort`/`linkSort` in this form. It is, however, the most precisely localized negative result this
-line of investigation has produced to date (previous attempts changed real-node geometry and could
-not distinguish "real-node coupling" from "routing-node-order coupling" as the destabilizing factor;
-this one isolates the latter). A future attempt should treat "why does reordering _only_ routing nodes
-within an already-fixed rank structure destabilize the DFS on fixtures with real-node convergence, even
-with zero real-node geometry change" as the concrete open question — likely requiring instrumentation
-inside `solveFromComponent`'s deadline/`capacityOkForRemainder` logic itself (not just the diagnostic
-seam's before/after snapshots) to see which specific deadline or capacity check first flips as routing
-nodes are reordered, rather than another external ordering-heuristic attempt. No production code was
-changed for this investigation; the throwaway diagnostic script used to produce these numbers was
-deleted per the investigation's own scope constraints.
+full implementation covering every currently-`it.skip`'d fixture — the joint-order approach is not
+safe to wire into production `nodeSort`/`linkSort` unconditionally. It is, however, the most
+precisely localized negative result this line of investigation has produced to date (previous
+attempts changed real-node geometry and could not distinguish "real-node coupling" from
+"routing-node-order coupling" as the destabilizing factor; this one isolates the latter). A future
+attempt should treat "why does reordering _only_ routing nodes within an already-fixed rank
+structure destabilize the DFS on fixtures with real-node convergence, even with zero real-node
+geometry change" as the concrete open question — likely requiring instrumentation inside
+`solveFromComponent`'s deadline/`capacityOkForRemainder` logic itself (not just the diagnostic
+seam's before/after snapshots) to see which specific deadline or capacity check first flips as
+routing nodes are reordered, rather than another external ordering-heuristic attempt. No production
+code was changed for this investigation itself; the throwaway diagnostic script used to produce
+these numbers was deleted per the investigation's own scope constraints.
+
+**Follow-up (shipped):** the investigation above also isolated a strictly narrower
+case where the joint order is safe: graphs with **zero** real (non-routing) nodes at ranks 1–5 at
+all — i.e., no branch in the graph touches a milestone anywhere, not just "this rank happens to have
+no real node this time." `buildMilestoneFreeJointOrder` (near `layoutLifecycleRoutingGraphPass` in
+`src/web/tracker/lifecycleDiagramLayout.js`) implements exactly that narrower case: it is used as
+`nodeSort`/`linkSort`'s fallback only when `hasIntermediateRealNodes(graph)` is false and no other
+order was already supplied. This fully resolves `denseBranchProjection()` (see the "Checked-in
+reproduction" section below, now historical) with zero regressions across the rest of the test
+suite. It does **not** extend to any fixture with real milestone convergence — those remain exactly
+as infeasible as described above, and are the reason this fix is conditioned on
+`hasIntermediateRealNodes` rather than applied unconditionally.
 
 ## Separately: the deterministic-budget fix
 
@@ -416,8 +429,8 @@ skip states and test names can drift. `grep -rn "it\.skip(\|test\.skip(" test/` 
    [what didn't work alone](#what-didnt-work-alone),
    [attempted and reverted: barycenter](#attempted-and-reverted-barycenter-based-nodesortlinksort),
    and the
-   [P4 investigation (2026-07-26)](#p4-investigation-2026-07-26-a-real-node-position-preserving-joint-order-still-destabilizes-production-fixtures));
-   read all three before starting a fourth. The P4 investigation is the most informative to date: it
+   [Investigation (2026-07-26)](#investigation-2026-07-26-a-real-node-position-preserving-joint-order-still-destabilizes-production-fixtures));
+   read all three before starting a fourth. This investigation is the most informative to date: it
    isolates that reordering _only_ routing nodes (never touching real-node geometry at all) is
    independently sufficient to destabilize the deadline-based DFS on fixtures with real milestone
    convergence, which the barycenter attempt's real-node-position hypothesis alone doesn't explain —
@@ -541,13 +554,25 @@ still infeasible even under this pipeline. It only removes the wasted, unguided
 second search final used to run against a problem discovery had already spent its own
 budget solving (or, for that fixture, failing to solve — see below).
 
-## Checked-in reproduction: dense routing-only handle infeasibility is structural, not a budget gap
+## Checked-in reproduction: dense routing-only handle infeasibility is structural, not a budget gap (historical -- fixed for this fixture)
+
+**Status update:** the investigation above led to a shipped fix
+(`buildMilestoneFreeJointOrder`) for exactly the fixture this section
+originally characterized as infeasible — `denseBranchProjection()` has no real milestone nodes, so
+it is in-scope for that fix. The test this section describes has been renamed
+`"characterizes dense routing-only handle feasibility deterministically"` and now asserts success.
+This section is retained as the historical record of the pre-fix baseline (the exact numbers below
+are what the fix eliminated), not as a description of current behavior. The general
+milestone-convergence case (real milestone nodes, e.g. `tracker-lifecycle-diagram-v2.json`) is
+**not** fixed by this — see the investigation section above for why the same approach does not
+extend there, and [Outstanding follow-up work item 1](#outstanding-follow-up-work-as-of-this-writing)
+for the remaining scope.
 
 `test/web-tracker-lifecycle-diagram-layout.test.js`'s `"characterizes dense routing-only handle
 infeasibility deterministically"` (in the `"test-only lifecycle layout diagnostics"` describe
-block) is a durable, fast (~1s) regression for the structural finding below, so future work on
-item 1 can distinguish real progress from another ineffective spacing-constant, clearance-exemption,
-or budget change. It calls `testOnlyDiagnoseLifecycleLayoutAttempt` directly against
+block) was a durable, fast (~1s) regression for the structural finding below, so future work on
+item 1 could distinguish real progress from another ineffective spacing-constant, clearance-exemption,
+or budget change. It called `testOnlyDiagnoseLifecycleLayoutAttempt` directly against
 `denseBranchProjection()` (5 origins × 11 endpoints = 55 direct origin→endpoint branches, each
 routed through the taxonomy's 5 fixed milestone ranks) and stops at the diagnostic's first candidate
 snapshot — it never runs the fixture through full budget exhaustion, unlike the
