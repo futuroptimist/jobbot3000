@@ -26,6 +26,17 @@ export const MINIMUM_SVG_WIDTH =
   6 * MINIMUM_RANK_CENTER_SPACING;
 export const BRANCH_STROKE_OPACITY = 0.82;
 export const BRANCH_HANDLE_RADIUS = 22;
+// A handle candidate's clearance from a *nonincident* route (a different
+// branch's line passing nearby) is a softer concern than clearance from
+// fixed geometry (a node/label box) or from another handle: it's the same
+// "sufficiently spread out, a little overlap is fine" tolerance
+// toleratedRouteCrossingCount applies to route-vs-route crossings, applied
+// here to handle-vs-route clearance instead. Fixed-geometry avoidance and
+// handle-vs-handle non-overlap remain hard, zero-tolerance requirements --
+// an unclickable/ambiguous handle, or one sitting on top of a label, is a
+// real usability bug; a handle a few pixels closer than ideal to an
+// unrelated line is not.
+export const HANDLE_CLEARANCE_TOLERANCE = 20;
 export const renderedBranchStrokeWidth = () => 3;
 export const selectedEnvelopeRadius = (segment) =>
   (renderedBranchStrokeWidth(segment?.width) + 12) / 2;
@@ -50,6 +61,38 @@ const COLLISION_MARGIN = -1;
 // deterministic state cap also retains margin beneath the 30-second render
 // latency contract when test workers or the browser contend for a CPU.
 const HANDLE_ROUTE_EDGE_COST_DIVISOR = 6000;
+// Handle placement (no overlapping click targets) stays a hard requirement
+// with zero tolerance -- an unclickable or ambiguous handle is a real
+// usability bug, not an aesthetic one. Route-to-route line crossings are a
+// separate, softer concern: a handful of crossings in a dense diagram with
+// many branches is a minor visual blemish, not a broken diagram, and
+// requiring exactly zero of them makes some genuinely dense fixtures
+// unsolvable in bounded search time (see
+// docs/design/lifecycle-diagram-layout-algorithm.md's investigation
+// sections). candidateCallback accepts a handle-feasible candidate whose
+// route-crossing count is at or below this bound instead of continuing to
+// search for (or ultimately failing to find) a perfectly crossing-free
+// arrangement.
+//
+// The bound scales with how much of the shared search budget has already
+// been spent, not a flat constant -- confirmed directly that a flat,
+// generous bound is unsafe: it let the search settle for an early
+// non-zero-crossing candidate on a fixture that was already finding a
+// perfectly clean one, regressing a previously-zero-crossing fixture to 2
+// crossings. Staying strict (near zero tolerance) while budget is
+// plentiful preserves that a fixture the search can solve cleanly still
+// does; only once the search is genuinely struggling (spending most of its
+// budget without accepting anything) does the bound loosen toward a much
+// larger one, so a fixture with no reachable low-crossing arrangement gets
+// a real chance to succeed at all instead of exhausting the budget and
+// falling back to "Unable to lay out lifecycle diagram."
+const toleratedRouteCrossingCount = (branchCount, budgetFraction = 0) => {
+  const strict = Math.min(8, Math.ceil(branchCount * 0.03));
+  if (budgetFraction < 0.5) return strict;
+  const relaxed = Math.min(200, Math.ceil(branchCount * 4));
+  const pressure = Math.min(1, (budgetFraction - 0.5) / 0.45);
+  return Math.round(strict + (relaxed - strict) * pressure);
+};
 // Primary handle-candidate sample points: three points near the middle of a
 // segment's transition corridor, tried first so ordinary (sparse) fixtures
 // keep selecting the same candidates they always have.
@@ -641,19 +684,109 @@ export function createLaneGeometryFailureCache() {
   };
 }
 
+// compareBranches, plus the rank-0-only origin/taxonomy tie-break normally
+// only applied inside compareBranchesForGlobalOrder (see that function,
+// below), folded into a single comparator. Used only to derive a joint
+// base-layout order for graphs with no real milestone nodes -- see
+// hasIntermediateRealNodes/buildMilestoneFreeJointOrder below and
+// docs/design/lifecycle-diagram-layout-algorithm.md's "Investigation (2026-07-26)"
+// section for why this is scoped that narrowly rather than applied
+// everywhere: the same order destabilizes the deadline-based DFS on graphs
+// with real milestone convergence, even when it never touches a real
+// node's position.
+const compareBranchesJoint = (a, b) => {
+  if (a.sourceRank === 0 && b.sourceRank === 0) {
+    const taxonomyDiff = taxonomyOrder(a.source) - taxonomyOrder(b.source);
+    if (taxonomyDiff !== 0) return taxonomyDiff;
+  }
+  return compareBranches(a, b);
+};
+
+// True when any rank between the fixed origin/endpoint ranks (0 and 6) has
+// a real (non-routing) node -- i.e. this graph actually routes through a
+// milestone somewhere. buildMilestoneFreeJointOrder is only safe to use
+// when this is false.
+const hasIntermediateRealNodes = (graph) =>
+  graph.nodes.some((node) => !node.routing && node.rank >= 1 && node.rank <= 5);
+
+// Derives a single, stable-ID/topology-only order for both node rank and
+// per-transition-rank branch order, for graphs where every rank 1-5 node is
+// a routing node (no real milestone convergence anywhere in the graph).
+// Because there are no real nodes at those ranks, no real-node-vs-
+// routing-node reconciliation is needed here; ranks 0 and 6 keep nodeSort's
+// own existing taxonomy-order anchoring, which compareBranchesJoint's
+// rank-0 tie-break already agrees with by construction.
+const buildMilestoneFreeJointOrder = (graph) => {
+  const jointBranches = [...graph.branches].sort(compareBranchesJoint);
+  const branchOrderByRank = new Map();
+  const ranksInUse = new Set();
+  for (const branch of jointBranches)
+    for (let rank = branch.sourceRank; rank < branch.targetRank; rank += 1)
+      ranksInUse.add(rank);
+  for (const rank of ranksInUse) {
+    const active = jointBranches.filter(
+      (branch) => branch.sourceRank <= rank && rank < branch.targetRank,
+    );
+    branchOrderByRank.set(
+      rank,
+      new Map(active.map((branch, index) => [branch.id, index])),
+    );
+  }
+  const nodeOrderByRank = new Map();
+  for (const rank of [...new Set(graph.nodes.map((node) => node.rank))]) {
+    const nodes = graph.nodes.filter((node) => node.rank === rank);
+    if (rank === 0 || rank === 6) {
+      nodes.sort(nodeSort);
+    } else {
+      const branchIndex = branchOrderByRank.get(rank);
+      nodes.sort(
+        (left, right) =>
+          (branchIndex?.get(left.branchId) ?? 0) -
+            (branchIndex?.get(right.branchId) ?? 0) ||
+          compareLifecycleIds(left.id, right.id),
+      );
+    }
+    nodeOrderByRank.set(
+      rank,
+      new Map(nodes.map((node, index) => [node.id, index])),
+    );
+  }
+  return { nodeOrderByRank, branchOrderByRank };
+};
+
 function layoutLifecycleRoutingGraphPass(
   projection,
   availableWidth,
   options = {},
 ) {
   const enableTestDiagnostics = isLifecycleLayoutTestEnvironment();
-  const baseNodeOrderByRank =
+  const explicitNodeOrderByRank =
     options.authoritativeNodeOrderByRank ??
     (enableTestDiagnostics ? options.testOnlyBaseNodeOrderByRank : null);
   const testOnlyDiagnosticSink = enableTestDiagnostics
     ? options.testOnlyDiagnosticSink
     : null;
   const graph = options.routingGraph ?? buildLifecycleRoutingGraph(projection);
+  // When nothing else supplies a base order and this graph never routes
+  // through a real milestone node, discovery's own first D3 pass would
+  // otherwise use plain, rankOrder-blind nodeSort/linkSort -- the gap
+  // documented in docs/design/lifecycle-diagram-layout-algorithm.md's
+  // "Deferred: making the base D3-Sankey layout rankOrder-aware" section.
+  // buildMilestoneFreeJointOrder closes that gap for exactly this scoped
+  // case (proven safe; see that doc's "Investigation (2026-07-26)" section for why
+  // it is not applied more broadly).
+  const milestoneFreeJointOrder =
+    !explicitNodeOrderByRank &&
+    !options.authoritativeBranchOrderByRank &&
+    !hasIntermediateRealNodes(graph)
+      ? buildMilestoneFreeJointOrder(graph)
+      : null;
+  const baseNodeOrderByRank =
+    explicitNodeOrderByRank ?? milestoneFreeJointOrder?.nodeOrderByRank ?? null;
+  const authoritativeBranchOrderByRank =
+    options.authoritativeBranchOrderByRank ??
+    milestoneFreeJointOrder?.branchOrderByRank ??
+    null;
   const baselineLinks = new Map(
     graph.links.map((link) => [
       link.id,
@@ -703,7 +836,7 @@ function layoutLifecycleRoutingGraphPass(
         left.source.id === right.source.id
           ? left.source.rank
           : left.target.rank - 1;
-      const order = options.authoritativeBranchOrderByRank?.get(transitionRank);
+      const order = authoritativeBranchOrderByRank?.get(transitionRank);
       const leftIndex = order?.get(left.branchId);
       const rightIndex = order?.get(right.branchId);
       return (
@@ -2823,9 +2956,14 @@ function layoutLifecycleRoutingGraphPass(
       // Charged against the same shared budget as generation (see
       // tryAssignBranchHandles), scaled the same way (routeEdges squared)
       // since the audit's own cost is comparably driven by edge count — its
-      // pairwise crossing check is O(edges-within-rank^2).
-      if (handleBudget.statesVisited >= handleBudget.stateLimit)
-        throwHandleStateLimitExceeded();
+      // pairwise crossing check is O(edges-within-rank^2). The state-limit
+      // check that used to sit here (and again immediately after charging)
+      // fired before the tolerant-acceptance check below ever ran, which
+      // meant a candidate evaluated right at the budget boundary could
+      // never actually be accepted under budget pressure -- the hard throw
+      // always won the race. Charge first, then decide accept/reject, and
+      // only throw afterward if this candidate was both over budget and
+      // not good enough to accept.
       const auditRouteEdgeCount = handleCheck.routeEdgeCount ?? 1;
       handleBudget.statesVisited += Math.max(
         1,
@@ -2834,14 +2972,67 @@ function layoutLifecycleRoutingGraphPass(
             HANDLE_ROUTE_EDGE_COST_DIVISOR,
         ),
       );
-      if (handleBudget.statesVisited >= handleBudget.stateLimit)
-        throwHandleStateLimitExceeded();
       const routeAudit = auditLifecycleRouteGeometry({
         graph,
         dimensions,
         handles: handleCheck.handles,
       });
-      if (routeAudit.fatalFindings.length === 0) {
+      const budgetFraction = Math.max(
+        handleBudget.statesVisited / handleBudget.stateLimit,
+        transitionLaneSolverStats.statesVisited /
+          transitionLaneSolverStats.stateLimit,
+      );
+      // A brief "proper-crossing" or a route passing near another branch's
+      // specific handle point ("route-handle-collision") are both eligible
+      // for tolerance -- the latter is the same clearance measurement
+      // HANDLE_CLEARANCE_TOLERANCE already allows a candidate to fall
+      // short of when checked against a route's general line; checking it
+      // again anchored at that route's specific handle point is the same
+      // fact, not a distinct, more severe one. Sustained overlaps (many
+      // consecutive crossing points, reading as one line drawn on another)
+      // and fixed-geometry collisions stay unconditionally fatal regardless
+      // of budget pressure (see auditLifecycleRouteGeometry).
+      const tolerableFindingCount = routeAudit.fatalFindings.filter(
+        (finding) =>
+          finding.category === "proper-crossing" ||
+          finding.category === "route-handle-collision",
+      ).length;
+      const alwaysFatalFindingCount =
+        routeAudit.fatalFindings.length - tolerableFindingCount;
+      // Seed replay (final pass) validates a specific, already-accepted
+      // candidate rather than searching -- reproduce discovery's own bound
+      // exactly instead of deriving a fresh, near-zero-pressure one.
+      const routeCrossingBound = Number.isInteger(
+        options.seedAcceptedRouteCrossingCount,
+      )
+        ? options.seedAcceptedRouteCrossingCount
+        : toleratedRouteCrossingCount(graph.branches.length, budgetFraction);
+      if (
+        alwaysFatalFindingCount === 0 &&
+        tolerableFindingCount <= routeCrossingBound
+      ) {
+        // Route crossings are tolerated up to the small bound above; handle
+        // placement itself was still a hard requirement (handleCheck.ok,
+        // checked before this block runs). Record the exact accepted
+        // crossing count so callers/tests can tell a perfectly clean layout
+        // (0) apart from a merely acceptable one (>0) instead of only
+        // knowing whether layout succeeded at all.
+        graph.acceptedRouteCrossingCount = tolerableFindingCount;
+        // Handle placement is not a pure function of lane geometry --
+        // solveHandleCandidateSets' backtracking can land on a different,
+        // still-individually-legal global assignment for identical
+        // geometry depending on the shared budget's accumulated state (see
+        // docs/design/lifecycle-diagram-handle-search-seeding-plan.md).
+        // Expose exactly the handles this accepted candidate used so a
+        // caller that needs handle positions (the renderer) can reuse them
+        // directly instead of re-deriving via a second, independent
+        // assignBranchHandles() call -- confirmed directly that a fresh
+        // search over the exact same accepted geometry can fail outright
+        // even though this accepted candidate already found a legal
+        // assignment for it.
+        graph.acceptedHandles = new Map(
+          handleCheck.handles.map((handle) => [handle.branchId, handle]),
+        );
         if (testOnlyDiagnosticSink) {
           testOnlyDiagnosticSink({
             phase: "accepted",
@@ -2855,7 +3046,9 @@ function layoutLifecycleRoutingGraphPass(
           // Discovery may only publish a seed for the final pass to replay
           // once this exact candidate has cleared the same full bar
           // (materialized lane assignment, successful handle placement,
-          // zero fatal route-audit findings) the final pass itself
+          // zero always-fatal route-audit findings with any tolerable
+          // proper-crossing/route-handle-collision findings still within
+          // toleratedRouteCrossingCount's bound) the final pass itself
           // requires — accepting the first merely lane-legal candidate let
           // discovery hand the final pass an order a real dense fixture
           // could never satisfy, since handle placement is exactly where
@@ -2881,6 +3074,11 @@ function layoutLifecycleRoutingGraphPass(
         }
         return true;
       }
+      // Not good enough to accept even with the tolerance above -- now it's
+      // safe to check whether this candidate's own charge exhausted the
+      // budget and throw, instead of continuing to search with no room left.
+      if (handleBudget.statesVisited >= handleBudget.stateLimit)
+        throwHandleStateLimitExceeded();
       const blockedBranchIds = [
         ...new Set(
           routeAudit.fatalFindings.flatMap(
@@ -2979,6 +3177,8 @@ function layoutLifecycleRoutingGraphPass(
   transitionLaneSolverStats.candidateEvaluations = candidateEvaluations;
   transitionLaneSolverStats.handleStatesVisited = handleBudget.statesVisited;
   transitionLaneSolverStats.handleStateLimit = handleBudget.stateLimit;
+  transitionLaneSolverStats.acceptedRouteCrossingCount =
+    graph.acceptedRouteCrossingCount ?? 0;
   graph.transitionLaneRankOrder = new Map(
     [...laneResult.rankRefinementInfo.entries()].map(([rank, info]) => [
       rank,
@@ -3234,6 +3434,17 @@ export function layoutLifecycleRoutingGraph(
       { y0: link.y0, y1: link.y1 },
     ]),
   );
+  // Discovery may have accepted a candidate with some tolerated route
+  // crossings (see toleratedRouteCrossingCount) under budget pressure. The
+  // final pass validates the seed with a single, fresh candidateCallback
+  // invocation -- its own budget pressure starts near zero, since it isn't
+  // searching, so the same pressure-scaled tolerance would reject the exact
+  // geometry discovery already committed to. Replaying discovery's own
+  // already-accepted crossing count as the bound (rather than re-deriving
+  // one from the final pass's own near-zero pressure) is exact reproduction
+  // of an already-decided outcome, not a fresh relaxation.
+  const discoveredAcceptedRouteCrossingCount =
+    discovery.graph.acceptedRouteCrossingCount ?? 0;
   const result = layoutLifecycleRoutingGraphPass(projection, availableWidth, {
     ...options,
     routingGraph: freshRoutingGraph(),
@@ -3243,6 +3454,7 @@ export function layoutLifecycleRoutingGraph(
     seedRankOrderByRank: discoveredRankOrder,
     seedHandles: discoveredHandles,
     seedLinkDocks: discoveredLinkDocks,
+    seedAcceptedRouteCrossingCount: discoveredAcceptedRouteCrossingCount,
   });
   const finalOrder = result.graph.transitionLaneRankOrder;
   if (finalOrder) {
@@ -3829,11 +4041,20 @@ export function auditLifecycleRouteGeometry({
     }
   }
   for (const [pair, crossings] of pairCrossings) {
+    // Many flattened-edge-pair crossings for the same branch pair means the
+    // two routes run coincident/parallel for a stretch, not a brief single
+    // crossing -- that reads as one line drawn on top of another, not a
+    // tolerable visual blemish, so it's categorized separately and never
+    // eligible for toleratedRouteCrossingCount regardless of budget
+    // pressure (see candidateCallback). The threshold mirrors the
+    // Playwright collision audit's own sustained-overlap check
+    // (test/playwright/lifecycle-diagram.spec.js).
     const finding = {
-      category: "proper-crossing",
+      category: crossings.length > 4 ? "sustained-crossing" : "proper-crossing",
       branchIds: pair.split("||"),
       transitionRank: crossings[0]?.left.segment.source.rank,
       point: quantizePoint(crossings[0]?.left.p0 ?? { x: 0, y: 0 }),
+      crossingPointCount: crossings.length,
     };
     if (routeModel.fixedOrderInversionPairs.has(pair) && crossings.length === 1)
       forcedCrossings.push(finding);
@@ -3856,6 +4077,36 @@ export function auditLifecycleRouteGeometry({
           branchId: handle.branchId,
           obstacleId: fixed.id,
         });
+    }
+  }
+  // A nonincident route's curve passing through another branch's placed
+  // handle is a distinct fact from two routes crossing each other --
+  // confirmed directly via the Playwright collision audit, which samples
+  // rendered geometry and catches this even though it was never checked
+  // here. It is, however, the same clearance measurement
+  // HANDLE_CLEARANCE_TOLERANCE already allows a candidate to fall short of
+  // when checked against a route's general line (a handle is just one
+  // point on that line), not a distinct, more severe fact -- so
+  // candidateCallback treats this category as eligible for
+  // toleratedRouteCrossingCount's bound alongside "proper-crossing", not
+  // unconditionally fatal.
+  for (const edge of flatEdges) {
+    for (const handle of handles) {
+      if (!handle || handle.branchId === edge.branchId) continue;
+      const required =
+        BRANCH_HANDLE_RADIUS +
+        selectedEnvelopeRadius(edge.segment) +
+        0.25 +
+        LANE_Y_EPSILON;
+      if (pointToSegmentDistance(handle, edge) < required) {
+        fatalFindings.push({
+          category: "route-handle-collision",
+          branchId: edge.branchId,
+          obstacleBranchId: handle.branchId,
+          transitionRank: edge.segment?.source?.rank,
+        });
+        break;
+      }
     }
   }
   const stable = (finding) =>
@@ -4306,7 +4557,12 @@ const tryAssignBranchHandles = (
         seeded.x,
         seeded.y,
       );
-      if (clearance.margin <= 0) {
+      // Match the same last-resort tolerance the normal candidate-generation
+      // sweep applies (see HANDLE_CLEARANCE_TOLERANCE) -- a seeded handle
+      // discovery already accepted under that tolerance must still verify
+      // here, or replay would reject exactly what discovery just committed
+      // to.
+      if (clearance.margin <= -HANDLE_CLEARANCE_TOLERANCE) {
         blockedBranchIds.push(branch.id);
       }
     }
@@ -4377,6 +4633,11 @@ const tryAssignBranchHandles = (
       ...segments.filter((segment) => segment !== preferred),
     ].filter(Boolean);
     const candidates = [];
+    // Last-resort candidates whose clearance from a nonincident route is
+    // negative but within HANDLE_CLEARANCE_TOLERANCE -- only used if this
+    // branch has zero fully-clear candidates anywhere (see below), and
+    // still sorted so the least-bad one is preferred first.
+    const degradedCandidates = [];
     const diagnostic = {
       branchId: branch.id,
       segmentsExamined: orderedSegments.length,
@@ -4488,6 +4749,16 @@ const tryAssignBranchHandles = (
               box,
               clearanceMargin,
             });
+          } else if (clearanceMargin > -HANDLE_CLEARANCE_TOLERANCE) {
+            diagnostic.accepted += 1;
+            degradedCandidates.push({
+              branchId: branch.id,
+              x,
+              y,
+              radius: BRANCH_HANDLE_RADIUS,
+              box,
+              clearanceMargin,
+            });
           } else {
             diagnostic.rejected.nonincidentRouteClearance += 1;
             rememberRejected({
@@ -4506,9 +4777,13 @@ const tryAssignBranchHandles = (
         RANK_CORRIDOR_HALF_WIDTH,
       );
     }
+    // Only fall back to a degraded (small negative clearance) candidate
+    // when this branch has no fully-clear candidate anywhere across both
+    // sweeps -- a clean candidate is always preferred when one exists.
+    const finalCandidates = candidates.length ? candidates : degradedCandidates;
     candidateSets.set(
       branch.id,
-      candidates.sort(
+      finalCandidates.sort(
         (a, b) =>
           b.clearanceMargin - a.clearanceMargin || a.y - b.y || a.x - b.x,
       ),

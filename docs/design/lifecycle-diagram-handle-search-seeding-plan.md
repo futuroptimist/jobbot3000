@@ -24,8 +24,12 @@ each independently solving the same problem:
    `candidateCallback` no longer returns `true` on the first lane-legal candidate — it
    runs the same materialization, `tryAssignBranchHandles`, and
    `auditLifecycleRouteGeometry` checks the final pass runs, and only calls
-   `options.discoverySink` once a candidate clears all three with zero fatal audit
-   findings. The sink now receives three things (previously one): `rankRefinementInfo`,
+   `options.discoverySink` once a candidate clears all three with zero always-fatal audit
+   findings and no more tolerable (`proper-crossing`/`route-handle-collision`) findings
+   than `toleratedRouteCrossingCount` currently allows (see
+   `docs/design/lifecycle-diagram-layout-algorithm.md`'s "Follow-up (shipped)" section —
+   this bounded-tolerance behavior postdates the original implementation of this
+   mechanism). The sink now receives three things (previously one): `rankRefinementInfo`,
    `globalAssignments`, and the accepted `handleCheck.handles`.
 2. **The wrapper (`layoutLifecycleRoutingGraph`) captures four things from discovery as
    an immutable seed**, all keyed by stable branch/link IDs (never array position, so
@@ -150,13 +154,17 @@ budget — roughly 1% over — that the problem looked like wasted search effort
 genuine infeasibility, and framed this seeding work as the fix that should "give the
 production fixture comfortable headroom."
 
-That turned out not to be the right diagnosis for this specific fixture. With this
-seeding mechanism fully implemented and the routing fixture's regression passing
-reliably, `tracker-lifecycle-diagram-v2.json` **still** throws `Lifecycle handle search
-exceeded 32768 states` — now failing during discovery's own one-time combined
-lane+handle search, before there is ever a seed to replay. Raising the handle-state
-budget to 2,000,000 in a local, uncommitted diagnostic run (not shipped; the 32,768
-constant was restored immediately after) still failed after 100+ seconds of search.
+That turned out not to be the right diagnosis for this specific fixture. At the time of
+this correction — with this seeding mechanism fully implemented and the routing
+fixture's regression passing reliably, but before the bounded route-crossing/
+handle-clearance tolerances existed — `tracker-lifecycle-diagram-v2.json` **still**
+threw `Lifecycle handle search exceeded 32768 states`: failing during discovery's own
+one-time combined lane+handle search, before there was ever a seed to replay. Raising the
+handle-state budget to 2,000,000 in a local, uncommitted diagnostic run (not shipped; the
+32,768 constant was restored immediately after) still failed after 100+ seconds of
+search. (`tracker-lifecycle-diagram-v2.json` no longer throws this today — the bounded
+tolerances shipped afterward closed this gap; see "This is not new" below and
+`docs/design/lifecycle-diagram-layout-algorithm.md`'s "Follow-up (shipped)" section.)
 Direct instrumentation of `tryAssignBranchHandles`'s per-branch candidate generation
 showed the same ~3 branches (`branch:link:origin:other_unknown->milestone:recruiter_screen:endpoint:interviewing`,
 `branch:link:origin:candidate_outreach->milestone:assessment_take_home:endpoint:assessment_in_progress`,
@@ -165,20 +173,30 @@ a fourth that varies) rejected with `reason: "no-candidates"` — zero legal han
 positions at all, independent of lane assignment — across every one of the 98 distinct
 lane-order candidates evaluated before hitting the ordinary 32,768 budget.
 
-This is not new: it is the same class of gap two existing `it.skip` tests in
-`test/web-tracker-lifecycle-diagram-layout.test.js` already document for this exact
-fixture and for `denseBranchProjection()` — "no handle-clearance-feasible lane
+This is not new: it is the same class of gap two `it.skip` tests in
+`test/web-tracker-lifecycle-diagram-layout.test.js` documented at the time for this
+exact fixture and for `denseBranchProjection()` — "no handle-clearance-feasible lane
 arrangement... confirmed by direct instrumentation, the set of blocked branches is
-identical across hundreds of distinct coordinate assignments" — and it matches
-`docs/design/lifecycle-diagram-layout-algorithm.md`'s own "Outstanding follow-up work"
-item 1, which already named the real fix as making the base D3-Sankey layout
-`rankOrder`-aware (or a constructive/greedy handle-placement strategy), not a search or
-plumbing change. This session's seeded-replay work eliminates the wasted, redundant
-_second_ search final used to run — a real and verified improvement, landed — but the
-underlying handle-clearance-feasibility gap for this fixture predates it, is
-independently confirmed by three separate investigations now, and is out of scope for a
-search/plumbing fix. It remains exactly what the existing skip comments already say it
-is: a tracked follow-up requiring new placement geometry logic, not touched by this work.
+identical across hundreds of distinct coordinate assignments" (both have since been
+addressed -- `denseBranchProjection()` by `buildMilestoneFreeJointOrder`, and this
+fixture by `HANDLE_CLEARANCE_TOLERANCE`/`toleratedRouteCrossingCount`; see
+`docs/design/lifecycle-diagram-layout-algorithm.md`'s "Follow-up (shipped)" sections)
+— and it matches what
+`docs/design/lifecycle-diagram-layout-algorithm.md`'s "Outstanding follow-up work" item 1
+said at the time: that a `rankOrder`-aware base layout (or a constructive/greedy
+handle-placement strategy) was the fix for this class of gap for both fixtures. That
+turned out to be only half right in hindsight — `denseBranchProjection()` was indeed
+later fixed via the `rankOrder` direction (`buildMilestoneFreeJointOrder`), but
+`tracker-lifecycle-diagram-v2.json` was instead fixed by the separate, already-shipped
+bounded tolerances (`HANDLE_CLEARANCE_TOLERANCE`/`toleratedRouteCrossingCount`), not by
+`rankOrder`-awareness; see that doc's item 1 for the current, corrected scoping. This
+session's seeded-replay work eliminates the wasted, redundant _second_ search final used
+to run — a real and verified improvement, landed — but at the time this correction was
+written, the underlying handle-clearance-feasibility gap for this fixture predated it,
+was independently confirmed by three separate investigations, and was out of scope for a
+search/plumbing fix. That gap has since been closed for this fixture (see above); it was
+not touched by the seed-replay mechanism this document describes, which only removes a
+redundant search and never alters placement geometry.
 
 ## Correction: the port-spacing feature was incomplete, not just deferred
 
@@ -277,8 +295,10 @@ required beyond what was originally planned.
   `HANDLE_FALLBACK_CORRIDOR_HALF_WIDTH` alone.** Swept roughly a dozen combinations;
   states-visited hovered in the 32,780-33,250 range regardless, never reliably crossing
   under 32,768. The bottleneck was architectural, not sampling density — and even the
-  architectural fix (seeded replay) doesn't close it for
-  `tracker-lifecycle-diagram-v2.json`; see "Correction" above.
+  architectural fix (seeded replay) did not close it for
+  `tracker-lifecycle-diagram-v2.json` at the time this was explored; see "Correction"
+  above (that gap was later closed by a separate, subsequently-shipped mechanism — the
+  bounded route-crossing/handle-clearance tolerances — not by anything explored here).
 - **Tripling `PER_LANE_VERTICAL_BUDGET`** (giving the whole canvas much more height) as
   a blunt test — does not fix the dense fixture; it just moves which branches are
   blocked, because D3-sankey's `ky` (value-to-pixel) scale is computed as the _minimum_

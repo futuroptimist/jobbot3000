@@ -514,11 +514,27 @@ export function createLifecycleDiagramView(root, options = {}) {
       .sort(compareBranches);
     let handles;
     try {
-      handles = new Map(
-        assignBranchHandles(branches, segmentsByBranch, visibleNodes).map(
-          (h) => [h.branchId, h],
-        ),
-      );
+      // Handle placement is not a pure function of lane geometry -- a
+      // fresh, independent search over the exact same accepted geometry
+      // can land on a different assignment, or fail outright, even though
+      // layoutLifecycleRoutingGraph's own internal search already found a
+      // legal one (see
+      // docs/design/lifecycle-diagram-handle-search-seeding-plan.md).
+      // Reuse graph.acceptedHandles directly when it covers every branch
+      // this render needs, instead of re-deriving via a second,
+      // independent assignBranchHandles() call.
+      if (
+        graph.acceptedHandles &&
+        branches.every((branch) => graph.acceptedHandles.has(branch.id))
+      ) {
+        handles = graph.acceptedHandles;
+      } else {
+        handles = new Map(
+          assignBranchHandles(branches, segmentsByBranch, visibleNodes).map(
+            (h) => [h.branchId, h],
+          ),
+        );
+      }
     } catch {
       scroll.append(
         el("p", {

@@ -118,23 +118,30 @@ that silent, wrong success into a deterministic, structured failure instead (`re
 "route-crossing"`, or budget exhaustion if the search can't find a valid arrangement in time) — never
 a silently-broken render.
 
-**Result:** the reference routing fixture is 0 fatal findings. `denseBranchProjection()` — a
-synthetic, adversarially dense fixture with a genuinely infeasible crossing-free arrangement in the
-current domain (confirmed: it now deterministically exhausts the handle-state budget in ~17s rather
-than either hanging or silently rendering broken geometry) — correctly fails rather than silently
-succeeding. Full regression: 146/146 test files, 1189/1189 non-skipped tests pass (same 4
-pre-existing skips, unrelated adversarial-density fixtures — see their own skip comments in
-`test/web-tracker-lifecycle-diagram-layout.test.js` and `test/web-tracker-lifecycle-diagram.test.js`).
+**Result (at the time of this fix — see "Follow-up (shipped)" and "Outstanding follow-up work" below
+for what has since changed):** the reference routing fixture is 0 fatal findings — still accurate
+today. `denseBranchProjection()` — a synthetic, adversarially dense fixture with a genuinely
+infeasible crossing-free arrangement in the domain this fix alone covered (confirmed: it
+deterministically exhausted the handle-state budget in ~17s rather than either hanging or silently
+rendering broken geometry) — correctly failed rather than silently succeeding, at this point in the
+investigation; it has since been made to succeed in production by `buildMilestoneFreeJointOrder`
+(see "Follow-up (shipped)" below), a mechanism this fix did not include. Full regression at the time:
+146/146 test files, 1189/1189 non-skipped tests pass (4 pre-existing skips in unrelated
+adversarial-density fixtures — those 4 have since been resolved to 0 remaining Vitest skips and 1
+remaining Playwright skip; see "Outstanding follow-up work" below for current, authoritative status).
 The real-browser Playwright collision-audit test for `tracker-lifecycle-diagram-routing-v2.json`
 (`test/playwright/lifecycle-diagram.spec.js`, "audits routed branch collisions for
 tracker-lifecycle-diagram-routing-v2.json") now passes end-to-end.
 
 One test (`"uses density-aware SVG height and spacing on rerender"` in
-`test/web-tracker-lifecycle-diagram.test.js`) needed its timeout bumped to 60s: it exercises
-`tracker-lifecycle-diagram-v2.json`, a dense fixture whose crossing-free search now deterministically
-exhausts the budget in ~15s, and the test invokes the layout twice (once via the component's own
-render, once again in its fallback-verification branch) — ~30s total, right at vitest's 30s default
-with no margin.
+`test/web-tracker-lifecycle-diagram.test.js`) needed its timeout bumped to 60s: at the time of this
+fix, it exercised `tracker-lifecycle-diagram-v2.json`, a dense fixture whose crossing-free search
+deterministically exhausted the budget in ~15s, and the test invokes the layout twice (once via the
+component's own render, once again in its fallback-verification branch) — ~30s total, right at
+vitest's 30s default with no margin. `tracker-lifecycle-diagram-v2.json` no longer exhausts the
+handle-state budget today (see "Follow-up (shipped)" below — it now succeeds in 500/32768 states),
+so this specific timing rationale is historical; see that test file directly for its current timing
+behavior and comment, which this document does not track.
 
 ## What didn't work alone
 
@@ -300,6 +307,249 @@ real/routing-node positions, interval/domain sizes, centered-assignment feasibil
 phase/reason, and deterministic state counts. It is intentionally not a production debugging API and
 does not log to the console.
 
+## Investigation (2026-07-26): a real-node-position-preserving joint order still destabilizes production fixtures
+
+A follow-up investigation into making the base D3-Sankey layout rankOrder-aware
+attempted the deferred fix above ([Option 2](#deferred-making-the-base-d3-sankey-layout-rankorder-aware))
+a second time, this time deliberately different from the reverted barycenter attempt: instead of an
+iterative, sweep-based repositioning heuristic, it used a single deterministic, purely topological
+sort — `compareBranches` (line 341) with the existing rank-0-only origin/taxonomy tie-break (normally
+only inside `compareBranchesForGlobalOrder`, line 2136) folded in — computed once from stable IDs,
+`endpointIndex`, `taxonomyOrder`, and rank, with **zero** dependency on any prior pass's geometry.
+Per-rank branch order was derived by _filtering_ this one global order (never re-sorting
+independently per rank), and per-rank node order for ranks mixing real and routing nodes reused
+(via a local, unmodified copy) `deriveAuthoritativeLayoutOrders`'s existing incoming/outgoing
+topological-merge algorithm (line 3013), adapted to run pre-layout against plain string
+source/target ids instead of post-layout node-object references.
+
+**This fully solved the exact structural gap the checked-in characterization test below documents.**
+Wired into `testOnlyDiagnoseLifecycleLayoutAttempt`'s `baseNodeOrderByRank`/
+`authoritativeBranchOrderByRank` hooks against `denseBranchProjection()` (55 branches, 5 pure-routing
+ranks, no real milestone nodes at all): the first candidate went from `firstRejectedPhase: "handle"`
+/ `reason: "no-candidates"` / 14 blocked branches (the historical baseline the characterization test
+below asserts) to **fully accepted** (`firstRejectedPhase: null`) — every rank stayed
+centered-assignment-feasible at the same ~59.251px spacing, and a full, unbypassed search succeeded
+in ~1.1s using only 5,637 of the 32,768 handle-state budget and 993 of the 200,000 transition-state
+budget. Reversed and rotated input reproduced byte-identical diagnostics, confirming the joint order
+is itself array-position-independent.
+
+**The same joint order reliably breaks both real fixtures**, even under a refinement specifically
+designed to avoid the barycenter attempt's leading suspect (changing real nodes' `y0`/`y1` via
+`nodeSort`): restricting the joint order's _node_-ordering override to ranks containing **zero** real
+nodes (i.e., only ever reordering routing-only ranks, never touching a real milestone/origin/endpoint
+node's position or relative order) eliminated the topological-merge's own `order-disagreement` failure
+(which the _unrestricted_ version hit deterministically at rank 3, always at the same node,
+`milestone:technical_interview`, on both `test/fixtures/tracker-lifecycle-diagram-routing-v2.json`
+and `test/fixtures/tracker-lifecycle-diagram-v2.json` — the incoming-side and outgoing-side branch
+position contexts the merge tries to reconcile there are genuinely inconsistent under a purely static
+order, unlike under a search-derived order where continuous-valued geometry avoids the conflict by
+construction). But even with real-node positions provably untouched:
+
+- The reference routing fixture (`tracker-lifecycle-diagram-routing-v2.json`, currently 0 fatal audit
+  findings under normal two-pass production layout) exhausted the handle-state budget at 32,806 of
+  32,768 states when run as a single full search under the routing-only-restricted joint order —
+  essentially _at_ the ceiling, the same "exhausted the entire budget, not just short of it" signature
+  the barycenter attempt and the raised-budget diagnostic (see
+  ["Outstanding follow-up work" item 1](#outstanding-follow-up-work-as-of-this-writing)) both produced.
+- `tracker-lifecycle-diagram-v2.json` (the real dense production fixture) went from 3 blocked branches
+  at the handle phase under the current baseline to **12** blocked branches under the joint order (a
+  regression, not an improvement), and a full search exhausted the handle-state budget at 32,965 of
+  32,768 states — again essentially at the ceiling.
+
+**Why this matters beyond reproducing the known failure mode:** it rules out the design doc's leading
+hypothesis for the barycenter mystery — "changing real nodes' actual `y0`/`y1` positions... changes
+every geometry-derived input" (see
+["Attempted and reverted: barycenter"](#attempted-and-reverted-barycenter-based-nodesortlinksort)) —
+as the _sole_ mechanism, since this variant never changes a single real node's position or relative
+order. Reordering **only** the routing nodes within their own already-routing-only ranks, via a
+well-behaved, deterministic, stable-ID-based order that fully solves the routing-only characterization
+fixture, is _independently_ sufficient to destabilize the deadline-based DFS on fixtures with real
+milestone convergence points. The fix this task needs and the fix the routing-only characterization
+fixture needs are, at least under this construction, in direct tension: applying the joint order helps
+exactly the fixture with no real-node convergence and hurts exactly the fixtures that have it.
+
+**Conclusion and status:** per the task's own staged plan, this is a **no-go** for proceeding to a
+full implementation covering every currently-`it.skip`'d fixture — the joint-order approach is not
+safe to wire into production `nodeSort`/`linkSort` unconditionally. It is, however, the most
+precisely localized negative result this line of investigation has produced to date (previous
+attempts changed real-node geometry and could not distinguish "real-node coupling" from
+"routing-node-order coupling" as the destabilizing factor; this one isolates the latter). A future
+attempt should treat "why does reordering _only_ routing nodes within an already-fixed rank
+structure destabilize the DFS on fixtures with real-node convergence, even with zero real-node
+geometry change" as the concrete open question — likely requiring instrumentation inside
+`solveFromComponent`'s deadline/`capacityOkForRemainder` logic itself (not just the diagnostic
+seam's before/after snapshots) to see which specific deadline or capacity check first flips as
+routing nodes are reordered, rather than another external ordering-heuristic attempt. No production
+code was changed for this investigation itself; the throwaway diagnostic script used to produce
+these numbers was deleted per the investigation's own scope constraints.
+
+**Follow-up (shipped):** the investigation above also isolated a strictly narrower
+case where the joint order is safe: graphs with **zero** real (non-routing) nodes at ranks 1–5 at
+all — i.e., no branch in the graph touches a milestone anywhere, not just "this rank happens to have
+no real node this time." `buildMilestoneFreeJointOrder` (near `layoutLifecycleRoutingGraphPass` in
+`src/web/tracker/lifecycleDiagramLayout.js`) implements exactly that narrower case: it is used as
+`nodeSort`/`linkSort`'s fallback only when `hasIntermediateRealNodes(graph)` is false and no other
+order was already supplied. This fully resolves `denseBranchProjection()` (see the "Checked-in
+reproduction" section below, now historical) with zero regressions across the rest of the test
+suite. It does **not** extend to any fixture with real milestone convergence — those remain exactly
+as infeasible as described above, and are the reason this fix is conditioned on
+`hasIntermediateRealNodes` rather than applied unconditionally.
+
+## Follow-up (shipped): bounded tolerances for route crossings and handle clearance
+
+Historically, `candidateCallback` required exactly zero fatal route-crossing findings
+(`routeAudit.fatalFindings.length === 0`) _and_ every handle to have strictly positive clearance
+from every nonincident route, with no tolerance for either. For fixtures with real milestone
+convergence, no arrangement meeting both bars is reachable within the deterministic budget (or
+exists at all), so the search burned its whole budget and threw, rendering the "Unable to lay out
+lifecycle diagram." fallback for diagrams that may just be visually busy, not broken.
+
+Two separate, narrowly-scoped tolerances were shipped together, since the first alone proved
+insufficient (see the dead-end note below):
+
+1. **Route-crossing tolerance** (`toleratedRouteCrossingCount`, near `HANDLE_ROUTE_EDGE_COST_DIVISOR`).
+   Scales with how much of the shared search budget has already been spent, not a flat constant —
+   confirmed directly that a flat, generous bound is unsafe: it let the search settle for an early
+   non-zero-crossing candidate on the reference fixture, which was already finding a perfectly clean
+   one, regressing it from 0 to 2 accepted crossings. Staying strict while budget is plentiful
+   preserves that a fixture the search can solve cleanly still does; only once budget pressure
+   crosses 50% does the bound loosen (linearly, toward `Math.min(200, branchCount * 4)`) toward a
+   much larger one. Only `auditLifecycleRouteGeometry`'s `"proper-crossing"` and
+   `"route-handle-collision"` finding categories are ever eligible for this tolerance (see below);
+   `"sustained-crossing"` and fixed-geometry/handle collisions stay unconditionally fatal.
+2. **Handle-clearance tolerance** (`HANDLE_CLEARANCE_TOLERANCE = 20`, exported near
+   `BRANCH_HANDLE_RADIUS`). A handle candidate whose clearance from a _nonincident_ route (not the
+   fixed geometry or another handle) is negative but within this bound is now collected as a
+   last-resort candidate, used only when a branch has zero fully-clear candidates anywhere across
+   both the primary and fallback t-value sweeps. Fixed-geometry avoidance and handle-vs-handle
+   non-overlap remain hard, zero-tolerance requirements throughout — an unclickable/ambiguous handle,
+   or one on top of a label, is a real usability bug; a handle a few pixels closer than ideal to an
+   unrelated line is not.
+
+Both tolerances record what they accepted (`graph.acceptedRouteCrossingCount` /
+`transitionLaneSolverStats.acceptedRouteCrossingCount`; each handle's own `clearanceMargin`) so
+callers/tests can tell a perfectly clean layout apart from a merely acceptable one.
+
+**Not every fatal finding is eligible for tolerance — severity matters, confirmed by direct
+Playwright-level reproduction, not assumed.** `auditLifecycleRouteGeometry`'s `pairCrossings` loop
+(the source of `"proper-crossing"` findings) originally counted one finding per branch pair
+regardless of how many flattened-edge-pair crossings that pair had — meaning a pair whose lines run
+coincident/parallel for a stretch (many crossings) counted identically to a pair that briefly
+crosses once. Reproducing this fixture end-to-end through a real browser
+(`test/playwright/lifecycle-diagram.spec.js`'s `assertBrowserCollisionAudit`, which independently
+samples rendered SVG geometry) surfaced this directly: it flagged several branch pairs as
+`"coincides"` (its own, stricter, always-fatal category for sustained overlap) that production's
+crossing-count-only tolerance had accepted. The finding is now split into `"proper-crossing"` (≤4
+flattened-edge-pair crossings, tolerable) and `"sustained-crossing"` (>4, always fatal regardless of
+budget pressure — the threshold mirrors the Playwright audit's own). A second, previously
+unchecked case was added the same way: a nonincident route's curve passing through _another
+branch's specific handle_ (not just its general line) is now audited as `"route-handle-collision"`,
+tolerable under the same bound as `"proper-crossing"` since it is the identical clearance
+measurement `HANDLE_CLEARANCE_TOLERANCE` already allows falling short of, just anchored at a
+specific point on that line rather than the nearest point generally.
+
+**A separate, unrelated bug was found and fixed while investigating this:** the renderer
+(`lifecycleDiagram.js`) computed handle positions via a _second, independent_ `assignBranchHandles()`
+call on the already-accepted geometry, rather than reusing the handles
+`layoutLifecycleRoutingGraph`'s own internal search had already accepted. Confirmed directly: this
+second, fresh search (its own budget starting near zero, with no accumulated state) could fail
+outright on geometry the internal search had already proven handle-feasible — the exact
+"handle placement is not a pure function of lane geometry" issue
+`docs/design/lifecycle-diagram-handle-search-seeding-plan.md` already documents for the two-pass
+seed-replay contract, just previously unaddressed for this third, external consumer. Fixed by
+exposing the accepted candidate's own handles as `graph.acceptedHandles` (a `Map<branchId, handle>`)
+and having the renderer reuse them directly whenever they cover every branch it needs to draw,
+falling back to a fresh `assignBranchHandles()` call only when they don't.
+
+**Threading through the two-pass seed-replay contract required two additional fixes**, both
+confirmed necessary by directly reproducing the failure before fixing it:
+
+- The seed-replay validation path (`solveGlobal`'s seed-replay branch, and the direct
+  `seedHandles`-verification branch inside `tryAssignBranchHandles`) invokes `candidateCallback`
+  fresh, with its own budget pressure starting near zero. Discovery's own accepted crossing count is
+  threaded through as `seedAcceptedRouteCrossingCount` and used as the replay's bound directly,
+  instead of re-deriving one from the final pass's own near-zero pressure — replaying an
+  already-decided outcome exactly, not applying a fresh relaxation. The `seedHandles` verification
+  branch's own clearance check was widened by the same `HANDLE_CLEARANCE_TOLERANCE` for the same
+  reason.
+- `candidateCallback`'s two state-limit checks used to fire _before_ the tolerant-acceptance check
+  ever ran, so a candidate evaluated right at the budget boundary could never actually be accepted
+  under budget pressure — the hard throw always won the race. The charge, audit, and tolerant-accept
+  check now run first; the state-limit throw only fires afterward, if the candidate was both over
+  budget and not good enough to accept.
+
+**Dead end confirmed directly, not assumed:** the route-crossing tolerance alone, even generously
+sized, does not fix a fixture whose bottleneck is handle placement itself — confirmed directly
+against `tracker-lifecycle-diagram-v2.json`, which kept exhausting the handle-state budget without
+ever reaching the crossing check at all until the handle-clearance tolerance was added too. Handle
+placement had to be relaxed as its own, separately-justified change (still far more conservative
+than the crossing tolerance, since click-target usability is a harder requirement than visual
+crossing-freedom), not folded into the crossing tolerance's framing.
+
+**Result:** `tracker-lifecycle-diagram-v2.json` (the real dense production fixture named throughout
+this document — 16 applications, 21 nodes, previously infeasible even at 150x the handle budget) now
+lays out successfully end-to-end through the full two-pass pipeline, accepting 50 tolerated route
+crossings within normal budget usage (500/32768 handle states, on the raw fixture as loaded directly
+by `projectLifecycleAt` — the browser-imported/reconciled version of the same fixture is denser
+still, 76 first-candidate findings, and needs the full relaxed bound to succeed at 66 accepted
+crossings; see the Playwright status below). The reference fixture is unaffected (still exactly 0
+accepted crossings). `denseBranchProjection()` (Milestone 1's `buildMilestoneFreeJointOrder` target)
+also still succeeds cleanly, unaffected by either tolerance.
+
+**Playwright status:** 3 of the 4 previously-`test.skip`'d specs now pass unmodified once layout
+itself succeeds (`static-smoke.spec.js`'s deterministic-render smoke test, and
+`lifecycle-diagram.spec.js`'s seeded-tables and touch-mobile-overflow specs — neither exercises the
+strict collision audit below). The fourth
+(`"audits routed branch collisions for tracker-lifecycle-diagram-v2.json on desktop and touch"`)
+remains `test.skip`'d: its `assertBrowserCollisionAudit` samples actual rendered SVG geometry at
+regular pixel intervals, a different methodology than production's cubic-flattening-based
+`auditLifecycleRouteGeometry`, and the two do not agree on where the sustained-overlap/brief-crossing
+line falls for every branch pair in the browser-reconciled (denser) version of this fixture —
+confirmed directly, not assumed, by dumping the actual reconciled IndexedDB data via Playwright and
+feeding it back through the same diagnostics used above. Unifying the two audits' sampling
+methodology, or building a placement strategy that avoids this class of near-handle route passage
+constructively rather than tolerating it after the fact, is real follow-up work, not attempted here.
+The `tracker-lifecycle-diagram-routing-v2.json` iteration of the same parametrized test is
+unaffected and passes.
+
+**Still infeasible for a root cause neither tolerance can reach — two fixtures with a different,
+more extreme fan-in shape**, confirmed directly (not assumed) by inspecting the exact rejection
+evidence rather than just observing the failure:
+
+- `transitionDensityProjection()` (50 branches funnelled through a single shared milestone) fails
+  fast and deterministically with a genuine `no-candidates` invariant (not a budget exhaustion) — 41
+  branches have zero legal handle candidates anywhere on their curve, and critically, **every one of
+  their nearest-rejected-candidate clearance margins is exactly `-1`** (`COLLISION_MARGIN`, the
+  sentinel for a `fixedGeometry`/`outsideTransitionCorridor` rejection, not a
+  `nonincidentRouteClearance` one). `HANDLE_CLEARANCE_TOLERANCE` only widens the
+  `nonincidentRouteClearance` acceptance window — it cannot help a branch that never reaches that
+  check because every sampled point (both primary and fallback t-values) already falls outside the
+  standard rank corridor or intersects fixed node/label geometry. With 50 branches genuinely
+  converging on one milestone, the corridor width itself is the binding constraint, not route
+  clearance.
+- The 60-application/89-branch fixture originally used by
+  `test/web-tracker-lifecycle-diagram.test.js`'s
+  `"paginates more than 50 endpoint-conditioned flow rows without losing reachability"` has the same
+  structural signature: 48 branches rejected with `no-candidates` on the first candidate (confirmed
+  via `testOnlyDiagnoseLifecycleLayoutAttempt`), the identical fan-through-few-milestones shape.
+
+Neither fixture's underlying infeasibility is fixed — the corridor-width limitation above is real
+and unaddressed. What changed is how the test suite handles it: both tests' actual _contracts_
+(shared/cumulative/bounded/shuffle-stable handle budget across multiple candidate callbacks; and
+pagination across >50 unique flows) are now exercised against layout-feasible fixtures instead —
+the real `tracker-lifecycle-diagram-v2.json` dense fixture (discovery alone needs 45 candidate
+evaluations to solve it, exercising the shared-budget contract thoroughly) and a direct 5-origin ×
+11-endpoint milestone-free grid (mirroring `denseBranchProjection()`), respectively. Neither test is
+`it.skip`'d any longer. `transitionDensityProjection()`'s own infeasibility remains actively
+characterized (not deleted) in
+`"resolves un-phased dense fan-in fast, without exponential blowup"`, which asserts the exact
+`no-candidates`/`clearanceMargin === -1` signature above. Making the underlying fixtures themselves
+succeed needs a genuinely different lever than either tolerance shipped here — e.g. widening the
+rank corridor itself for ranks with enough incident branches to need it, or a placement strategy
+that doesn't depend on every branch finding a legal point within a fixed-width corridor at all —
+tracked as further follow-up, not attempted here. Retrying with a larger
+`HANDLE_CLEARANCE_TOLERANCE` value alone will not help; the evidence above rules that out directly.
+
 ## Separately: the deterministic-budget fix
 
 Unrelated to the ordering-systems problem above (shipped first, in an earlier commit on this same
@@ -328,8 +578,10 @@ edge count (its pairwise crossing check is `O(edges-within-rank^2)`).
   crossings — prefer it over the synthetic dense fixtures for fast iteration.
 - `test/fixtures/tracker-lifecycle-diagram-v2.json` is the smallest fixture that reproduces the
   _origin-ordering_ gap specifically (21 nodes, 16 applications) — smaller and faster to iterate on
-  than the synthetic dense fixtures for that specific class of bug, even though it's currently
-  infeasible end-to-end for the different (milestone-convergence) reason described above.
+  than the synthetic dense fixtures for that specific class of bug. It was end-to-end infeasible for
+  a separate (milestone-convergence) reason described above at the time this section was written; it
+  now succeeds end-to-end via the bounded route-crossing/handle-clearance tolerances (see "Follow-up
+  (shipped)" below), so treat it as a live, passing fixture, not an infeasible one.
 
 ## Outstanding follow-up work (as of this writing)
 
@@ -337,42 +589,61 @@ This is the authoritative, current list — cross-check against the code before 
 skip states and test names can drift. `grep -rn "it\.skip(\|test\.skip(" test/` finds all of them.
 
 1. **Deferred: make the base D3-Sankey layout `rankOrder`-aware** (a.k.a. "Option 2" above) — the
-   real fix for every remaining item below. Two attempts already tried and reverted (see
-   [what didn't work alone](#what-didnt-work-alone) and
-   [attempted and reverted: barycenter](#attempted-and-reverted-barycenter-based-nodesortlinksort));
-   read both before starting a third. The barycenter attempt's unsolved mystery (node-position
-   changes destabilizing the deadline-based DFS in an unexplained way) is the most likely blocker
-   and should be root-caused first — see that section's closing paragraph for where to start
-   looking. Re-confirmed independently by a later session that built the seeded-replay pipeline
-   above: even with final's redundant search eliminated, discovery's own one-time combined
-   lane+handle search for `tracker-lifecycle-diagram-v2.json` never finds a working assignment —
+   fix for the corridor-width/constructive-placement gap that items 2 and 3 below still can't reach:
+   the two genuinely-infeasible extreme fan-in fixtures (`transitionDensityProjection()` and the
+   60-application/89-branch pagination fixture — see "Still infeasible for a root cause neither
+   tolerance can reach" above). It is not accurately described as the fix for every item below: item
+   2's remaining tests were resolved instead by the bounded tolerances (not by this), and item 3's
+   remaining Playwright skip is a separate audit-methodology disagreement this work would not touch
+   either. Three attempts already tried and reverted or halted (see
+   [what didn't work alone](#what-didnt-work-alone),
+   [attempted and reverted: barycenter](#attempted-and-reverted-barycenter-based-nodesortlinksort),
+   and the
+   [Investigation (2026-07-26)](#investigation-2026-07-26-a-real-node-position-preserving-joint-order-still-destabilizes-production-fixtures));
+   read all three before starting a fourth. This investigation is the most informative to date: it
+   isolates that reordering _only_ routing nodes (never touching real-node geometry at all) is
+   independently sufficient to destabilize the deadline-based DFS on fixtures with real milestone
+   convergence, which the barycenter attempt's real-node-position hypothesis alone doesn't explain —
+   see that section for the concrete open question a future attempt should root-cause first
+   (specifically inside `solveFromComponent`'s deadline/`capacityOkForRemainder` logic). Re-confirmed
+   independently by a later session that built the seeded-replay pipeline above, before the
+   route-crossing/handle-clearance tolerances below existed: even with final's redundant search
+   eliminated, discovery's own one-time combined lane+handle search for
+   `tracker-lifecycle-diagram-v2.json`, run without any tolerance, never found a working assignment —
    raising the handle-search budget from 32,768 to 2,000,000 states (diagnostic only, not shipped)
    still failed after 100+ seconds, and the same ~3 branches were blocked (`reason: "no-candidates"`)
-   across every one of the 98 distinct lane-order candidates tried before hitting the normal
-   budget. This rules out "the search just needs to be more efficient" and confirms the gap really
-   is what this section already says: a constructive/greedy placement strategy, not a search
-   or plumbing fix.
-2. **4 unit tests remain `it.skip`ed**, all for the same reason (a genuinely infeasible
-   crossing-free arrangement in the current domain, not a bug this document's fixes address):
-   - `test/web-tracker-lifecycle-diagram-layout.test.js`: `"shares a single handle budget across
-all candidate callbacks without resetting"`, `"lays out dense fixture with bounded semantic
-docks and safe handles"`, `"keeps handle invariants with more than 32 display branches"`
-   - `test/web-tracker-lifecycle-diagram.test.js`: `"paginates more than 50 endpoint-conditioned
-flow rows without losing reachability"`
-   - Each has its own skip comment with the specific fixture and root-cause analysis. Un-skipping
-     these requires item 1 above (or a constructive, non-retry-based placement strategy).
-3. **4 Playwright specs remain `test.skip`ed**, same root cause as item 2 (confirmed directly: the
-   component renders the "Unable to lay out lifecycle diagram." fallback for
-   `tracker-lifecycle-diagram-v2.json`, not a slow-but-eventually-successful render — this was
-   originally misdiagnosed as a timeout mismatch before being properly root-caused):
-   - `test/playwright/lifecycle-diagram.spec.js`: `"renders seeded current/historical states with
-semantic tables and selection"`, `"uses a real touch mobile context without page overflow"`,
-     and the `tracker-lifecycle-diagram-v2.json` iteration only of the parametrized `"audits routed
-branch collisions for ${fixture} on desktop and touch"` (the `tracker-lifecycle-diagram-routing-v2.json`
-     iteration is unaffected and still runs, passing in ~2s)
-   - `test/playwright/static-smoke.spec.js`: `"renders lifecycle Diagram from deterministic data
-without external requests"`
-   - Un-skipping these also requires item 1, since they exercise the same fixture and failure mode.
+   across every one of the 98 distinct lane-order candidates tried before hitting the normal budget.
+   This rules out "the search just needs to be more efficient" for a no-tolerance, budget-only
+   approach, and confirms the gap this `rankOrder` item targets is really a constructive/greedy
+   placement strategy, not a search or plumbing fix. (`tracker-lifecycle-diagram-v2.json`'s own
+   layout problem was separately resolved afterward by the bounded tolerances in "Follow-up
+   (shipped)" below — a different, already-shipped mechanism, not this deferred item.)
+2. **0 unit tests remain `it.skip`ed** (were 4). `HANDLE_CLEARANCE_TOLERANCE` and
+   `toleratedRouteCrossingCount` (see "Follow-up (shipped): bounded tolerances..." above) fixed
+   `"lays out dense fixture with bounded semantic docks and safe handles"` and
+   `"keeps handle invariants with more than 32 display branches"` outright. The other two
+   (`"shares a single handle budget across all candidate callbacks without resetting"` and
+   `"paginates more than 50 endpoint-conditioned flow rows without losing reachability"`) still can't
+   run against their original fixtures — those remain genuinely infeasible (see "Still infeasible
+   for a root cause neither tolerance can reach" above) — so both were rewritten to test the same
+   _contract_ against layout-feasible fixtures instead
+   (the real `tracker-lifecycle-diagram-v2.json` dense fixture and a direct 5×11 milestone-free
+   grid, respectively). `transitionDensityProjection()`'s own infeasibility stays actively characterized,
+   not deleted, in `"resolves un-phased dense fan-in fast, without exponential blowup"`.
+3. **1 Playwright spec remains `test.skip`ed** (was 4):
+   `test/playwright/lifecycle-diagram.spec.js`'s `"audits routed branch collisions for
+tracker-lifecycle-diagram-v2.json on desktop and touch"` (the
+   `tracker-lifecycle-diagram-routing-v2.json` iteration of the same parametrized test is unaffected
+   and passes). Confirmed directly, not assumed: layout itself now succeeds for this fixture (the
+   original root cause — the component rendering the "Unable to lay out lifecycle diagram."
+   fallback — is fixed), but this audit's pixel-sampling-based severity classification disagrees
+   with production's own cubic-flattening-based one on a few branch pairs in the browser-reconciled
+   (denser than raw) version of this fixture. The other 3 previously-`test.skip`'d Playwright specs
+   (`"renders seeded current/historical states with semantic tables and selection"`,
+   `"uses a real touch mobile context without page overflow"`, and
+   `test/playwright/static-smoke.spec.js`'s `"renders lifecycle Diagram from deterministic data
+without external requests"`) now pass unmodified, since none of them exercise the strict
+   collision audit.
 4. **Real-node-vs-routing-node coordination** (its own section above) — a narrower, more scoped
    piece of item 1 that's already covered by fix 3's audit-and-reject safety net (so current
    behavior is _correct_, just not cheap for fixtures that hit it). Worth doing on its own if item 1
@@ -393,7 +664,9 @@ discovery phase: it runs the deterministic transition-lane solver on a pristine 
 clone with no order constraints, but — unlike an earlier version of this mechanism — it
 does not stop at the first lane-legal candidate. It runs the same materialization,
 handle-placement, and route-crossing-audit checks the final pass runs, and only
-publishes a result once a candidate clears all three with zero fatal audit findings.
+publishes a result once a candidate clears all three with zero always-fatal audit findings and no
+more tolerable (`proper-crossing`/`route-handle-collision`) findings than `toleratedRouteCrossingCount`
+currently allows (see "Follow-up (shipped)" above).
 That candidate's authoritative per-rank branch order, lane assignments, node order (by
 real Y position within each rank), branch handle positions, and per-link dock (`y0`/`y1`)
 positions are all captured as an immutable seed, keyed by stable branch/link IDs — never
@@ -456,19 +729,40 @@ still rejected with the typed `lifecycle-authoritative-rank-order` / `order-disa
 failure; there is no convergence retry or wall-clock deadline.
 
 This mechanism does not change whether a fixture's geometry is handle-feasible in the
-first place — see [Outstanding follow-up work](#outstanding-follow-up-work-as-of-this-writing)
-item 1 below for that gap and why `tracker-lifecycle-diagram-v2.json` specifically is
-still infeasible even under this pipeline. It only removes the wasted, unguided
-second search final used to run against a problem discovery had already spent its own
-budget solving (or, for that fixture, failing to solve — see below).
+first place — it only removes the wasted, unguided second search final used to run
+against a problem discovery had already spent its own budget solving. At the time this
+pipeline was built, seeded replay alone did not make `tracker-lifecycle-diagram-v2.json`
+feasible: discovery still exhausted its own handle-state budget failing to solve it (see
+below), so there was no seed for final to replay. That gap was closed afterward by the
+separate, later-shipped bounded tolerances (`HANDLE_CLEARANCE_TOLERANCE` /
+`toleratedRouteCrossingCount`; see "Follow-up (shipped)" below) — not by this seeding
+mechanism itself. `tracker-lifecycle-diagram-v2.json` succeeds end-to-end today; see
+[Outstanding follow-up work](#outstanding-follow-up-work-as-of-this-writing) item 1 below
+for the two fixtures still genuinely infeasible under the full pipeline.
 
-## Checked-in reproduction: dense routing-only handle infeasibility is structural, not a budget gap
+## Checked-in reproduction: dense routing-only handle infeasibility is structural, not a budget gap (historical -- fixed for this fixture)
+
+**Status update:** the investigation above led to a shipped fix
+(`buildMilestoneFreeJointOrder`) for exactly the fixture this section
+originally characterized as infeasible — `denseBranchProjection()` has no real milestone nodes, so
+it is in-scope for that fix. The test this section describes has been renamed
+`"characterizes dense routing-only handle feasibility deterministically"` and now asserts success.
+This section is retained as the historical record of the pre-fix baseline (the exact numbers below
+are what the fix eliminated), not as a description of current behavior. The general
+milestone-convergence case (real milestone nodes, e.g. `tracker-lifecycle-diagram-v2.json`) is
+**not** fixed by this `rankOrder`-based mechanism — see the investigation section above for why the
+same approach does not extend there. `tracker-lifecycle-diagram-v2.json` was instead fixed by a
+separate, later-shipped mechanism (the bounded tolerances in "Follow-up (shipped)" below), so it has
+no remaining scope here; see
+[Outstanding follow-up work item 1](#outstanding-follow-up-work-as-of-this-writing) for the two
+different, genuinely still-infeasible extreme fixed-corridor fixtures this section's approach would
+need to target instead.
 
 `test/web-tracker-lifecycle-diagram-layout.test.js`'s `"characterizes dense routing-only handle
 infeasibility deterministically"` (in the `"test-only lifecycle layout diagnostics"` describe
-block) is a durable, fast (~1s) regression for the structural finding below, so future work on
-item 1 can distinguish real progress from another ineffective spacing-constant, clearance-exemption,
-or budget change. It calls `testOnlyDiagnoseLifecycleLayoutAttempt` directly against
+block) was a durable, fast (~1s) regression for the structural finding below, so future work on
+item 1 could distinguish real progress from another ineffective spacing-constant, clearance-exemption,
+or budget change. It called `testOnlyDiagnoseLifecycleLayoutAttempt` directly against
 `denseBranchProjection()` (5 origins × 11 endpoints = 55 direct origin→endpoint branches, each
 routed through the taxonomy's 5 fixed milestone ranks) and stops at the diagnostic's first candidate
 snapshot — it never runs the fixture through full budget exhaustion, unlike the

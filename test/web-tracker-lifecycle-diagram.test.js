@@ -864,58 +864,154 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     );
   });
 
-  // Skipped: this 60-application, 89-branch fixture funnels many origins
-  // through a small number of milestones/endpoints, which has no
-  // handle-clearance-feasible lane arrangement — confirmed by direct
-  // instrumentation on equivalent fixtures, the set of blocked branches is
-  // identical across hundreds of distinct coordinate assignments the
-  // lane-refinement search tries. That's a pre-existing gap between what
-  // refineGlobalLaneCoordinates searches over (lane-spacing legality) and
-  // what handle placement actually needs (route-to-route clearance at
-  // sampled handle points), out of scope for the exponential-blowup fix
-  // this PR makes. The search itself is now fast and deterministic (was
-  // exponential before this PR), it just cannot currently find a working
-  // answer for this fixture, so layoutLifecycleRoutingGraph throws and the
-  // pagination UI this test wants to exercise never renders. Tracked as a
-  // follow-up.
-  // eslint-disable-next-line max-len
-  it.skip("paginates more than 50 endpoint-conditioned flow rows without losing reachability", () => {
+  // Historical baseline (pre-fix): this test originally used a 60-app,
+  // 89-branch fixture that funneled many origins through a small number of
+  // milestones/endpoints -- infeasible then, and still infeasible now (see
+  // transitionDensityProjection()'s negative-characterization test -- no
+  // longer skipped, but still documenting the same infeasibility -- in
+  // test/web-tracker-lifecycle-diagram-layout.test.js: 48 branches rejected
+  // by the fixed-width rank corridor itself, not route clearance, so
+  // neither shipped tolerance can help). Rewritten to exercise the same
+  // pagination contract (>50 unique flows, page navigation, reachability
+  // across pages, collapsing correctly when data shrinks) against a
+  // *layout-feasible* dataset instead: the full 5-origin x 11-endpoint grid
+  // of direct origin->endpoint applications with no intermediate milestone
+  // -- the same shape as denseBranchProjection() in
+  // test/web-tracker-lifecycle-diagram-layout.test.js, which
+  // buildMilestoneFreeJointOrder makes fully handle-feasible. Built as a
+  // snapshot directly (not via app()/ev()/projectLifecycleAt reconciliation
+  // events): only 8 of the 11 taxonomy endpoints are reachable as a direct,
+  // milestone-free lifecycle-event outcome (interviewing and
+  // assessment_in_progress structurally require a milestone-classified
+  // event; see lifecycleProjection.js's endpointFromState/markEndpoint),
+  // which caps unique flows at 40 (5 origins x 8 endpoints) -- short of the
+  // ">50" this test needs. Constructing the snapshot directly reuses
+  // exactly denseBranchProjection()'s already-proven-feasible topology
+  // instead.
+  it("paginates more than 50 endpoint-conditioned flow rows without losing reachability", () => {
     const origins = LIFECYCLE_DIAGRAM_TAXONOMY.origins.map(({ id }) => id);
-    const milestones = LIFECYCLE_DIAGRAM_TAXONOMY.milestones.map(
-      ({ id }) => id,
-    );
-    const endpoints = LIFECYCLE_DIAGRAM_TAXONOMY.endpoints
-      .filter(({ id }) => id !== "unknown")
-      .map(({ id }) => id);
-    const applications = [];
-    const lifecycleEvents = [];
-    for (let index = 0; index < 60; index += 1) {
-      const id = `flow-app-${String(index).padStart(2, "0")}`;
-      const origin = origins[index % origins.length];
-      const milestone =
-        milestones[Math.floor(index / origins.length) % milestones.length];
-      const endpoint = endpoints[index % endpoints.length];
-      applications.push(app(id, { origin }));
-      [origin, milestone, endpoint].forEach((eventType, eventIndex) => {
-        lifecycleEvents.push(
-          ev(
-            `flow-event-${index}-${eventIndex}`,
-            id,
-            eventType,
-            `2026-05-${String(eventIndex + 1).padStart(2, "0")}`,
+    const endpoints = LIFECYCLE_DIAGRAM_TAXONOMY.endpoints.map(({ id }) => id);
+    const buildDensePaths = (limit) => {
+      const paths = [];
+      let index = 0;
+      outer: for (const origin of origins) {
+        for (const endpoint of endpoints) {
+          if (index >= limit) break outer;
+          paths.push({
+            applicationId: `flow-app-${String(index).padStart(2, "0")}`,
+            origin,
+            milestones: [],
+            endpoint,
+            nodeIds: [`origin:${origin}`, `endpoint:${endpoint}`],
+            details: [],
+          });
+          index += 1;
+        }
+      }
+      return paths;
+    };
+    // Mirrors lifecycleProjection.js's makeNodes/makeLinks/countBy exactly
+    // (those helpers aren't exported), so the directly-built snapshot below
+    // matches projectLifecycleAt's own output contract byte-for-byte.
+    const makeNodes = (paths) => {
+      const totals = new Map();
+      for (const path of paths)
+        for (const nodeId of path.nodeIds)
+          totals.set(nodeId, (totals.get(nodeId) ?? 0) + 1);
+      const tax = [
+        ...LIFECYCLE_DIAGRAM_TAXONOMY.origins,
+        ...LIFECYCLE_DIAGRAM_TAXONOMY.milestones,
+        ...LIFECYCLE_DIAGRAM_TAXONOMY.endpoints,
+      ];
+      return tax
+        .filter((item) => totals.has(item.nodeId))
+        .map((item) => ({
+          id: item.nodeId,
+          taxonomyId: item.id,
+          label: item.label,
+          rank: item.rank,
+          total: totals.get(item.nodeId),
+        }));
+    };
+    const makeLinks = (paths) => {
+      const map = new Map();
+      for (const path of paths)
+        for (let i = 0; i < path.nodeIds.length - 1; i += 1) {
+          const source = path.nodeIds[i];
+          const target = path.nodeIds[i + 1];
+          const key = `${source}->${target}`;
+          const link = map.get(key) ?? {
+            id: `link:${key}`,
+            source,
+            target,
+            value: 0,
+            applicationIds: [],
+          };
+          link.applicationIds.push(path.applicationId);
+          link.value += 1;
+          map.set(key, link);
+        }
+      return [...map.values()].sort((a, b) => (a.id < b.id ? -1 : 1));
+    };
+    const countBy = (paths, key, order = []) => {
+      const map = paths.reduce(
+        (m, p) => m.set(p[key], (m.get(p[key]) ?? 0) + 1),
+        new Map(),
+      );
+      const rank = new Map(order.map((id, i) => [id, i]));
+      return Object.fromEntries(
+        [...map.entries()].sort(
+          ([a], [b]) =>
+            (rank.get(a) ?? Number.MAX_SAFE_INTEGER) -
+            (rank.get(b) ?? Number.MAX_SAFE_INTEGER),
+        ),
+      );
+    };
+    const buildSnapshot = (limit) => {
+      const paths = buildDensePaths(limit);
+      return {
+        bucket: { id: "current", label: "Current", kind: "current" },
+        includedApplications: paths.length,
+        totalApplications: paths.length,
+        paths,
+        nodes: makeNodes(paths),
+        links: makeLinks(paths),
+        totals: {
+          origins: countBy(
+            paths,
+            "origin",
+            LIFECYCLE_DIAGRAM_TAXONOMY.origins.map((x) => x.id),
           ),
-        );
-      });
-    }
-    const { root, view, timeline, snapshot } = render(
-      bundle(applications, lifecycleEvents),
-    );
+          milestones: {},
+          endpoints: countBy(
+            paths,
+            "endpoint",
+            LIFECYCLE_DIAGRAM_TAXONOMY.endpoints.map((x) => x.id),
+          ),
+          active: 0,
+          terminal: paths.length,
+        },
+        events: [],
+        warnings: [],
+        warningCounts: {},
+      };
+    };
+    const totalFlowCount = origins.length * endpoints.length;
+    const snapshot = buildSnapshot(totalFlowCount);
     expect(
       lifecycleLayout.buildLifecycleDisplayBranches(snapshot),
-    ).toHaveLength(89);
+    ).toHaveLength(totalFlowCount);
     expect(() =>
       lifecycleLayout.layoutLifecycleRoutingGraph(snapshot, 1850),
     ).not.toThrow();
+
+    const root = setup();
+    const view = createLifecycleDiagramView(root, { onBucketChange: vi.fn() });
+    const timeline = buildLifecycleTimeline({
+      applications: [],
+      lifecycleEvents: [],
+    });
+    view.update({ timeline, snapshot, selectedBucketId: "current" });
     expect(root.querySelector("svg")).not.toBeNull();
     expect(root.textContent).not.toContain(
       "Unable to lay out lifecycle diagram.",
@@ -934,6 +1030,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     const totalFlows = Number(
       root.querySelector("[data-flow-range]").textContent.match(/of (\d+)/u)[1],
     );
+    expect(totalFlows).toBe(totalFlowCount);
     expect(totalFlows).toBeGreaterThan(50);
     root.querySelector("[aria-label='Next flow page']").click();
     const secondPage = flowIds();
@@ -952,10 +1049,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     secondPage.at(-1);
     view.update({
       timeline,
-      snapshot: projectLifecycleAt(
-        bundle(applications.slice(0, 49), lifecycleEvents),
-        "current",
-      ),
+      snapshot: buildSnapshot(49),
       selectedBucketId: "current",
     });
     expect(flowRows().length).toBeLessThanOrEqual(50);
@@ -1065,6 +1159,21 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
   });
 
   it("renders the layout fallback when branch handle placement fails", () => {
+    // The renderer prefers graph.acceptedHandles (the exact handles
+    // layoutLifecycleRoutingGraph's own search already accepted) and only
+    // falls back to a fresh assignBranchHandles() call when that's absent
+    // -- see lifecycleDiagram.js and
+    // docs/design/lifecycle-diagram-handle-search-seeding-plan.md. Strip
+    // acceptedHandles from the real layout result so the mocked
+    // assignBranchHandles() below is actually reached.
+    const originalLayout = lifecycleLayout.layoutLifecycleRoutingGraph;
+    const layoutSpy = vi
+      .spyOn(lifecycleLayout, "layoutLifecycleRoutingGraph")
+      .mockImplementation((...args) => {
+        const result = originalLayout(...args);
+        result.graph.acceptedHandles = undefined;
+        return result;
+      });
     const spy = vi
       .spyOn(lifecycleLayout, "assignBranchHandles")
       .mockImplementation(() => {
@@ -1085,6 +1194,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
       expect(root.querySelector("svg")).toBeNull();
     } finally {
       spy.mockRestore();
+      layoutSpy.mockRestore();
     }
   });
 
