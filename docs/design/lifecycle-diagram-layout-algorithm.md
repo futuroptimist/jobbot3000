@@ -388,6 +388,37 @@ suite. It does **not** extend to any fixture with real milestone convergence —
 as infeasible as described above, and are the reason this fix is conditioned on
 `hasIntermediateRealNodes` rather than applied unconditionally.
 
+## Follow-up (shipped): a small, bounded route-crossing tolerance
+
+Historically, `candidateCallback` required a candidate to have exactly zero fatal route-crossing
+findings (`routeAudit.fatalFindings.length === 0`) to be accepted — the same all-or-nothing bar as
+handle placement. For some fixtures no zero-crossing arrangement is reachable within the
+deterministic budget (or exists at all), so the search burned its whole budget and then threw,
+rendering the "Unable to lay out lifecycle diagram." fallback for what may just be a visually busy
+diagram, not a broken one.
+
+`candidateCallback` now accepts a **handle-feasible** candidate (handle placement itself is
+unchanged and stays a hard, zero-tolerance requirement — an unclickable or ambiguous handle is a
+real usability bug) whose fatal route-crossing count is at or below `toleratedRouteCrossingCount`
+(`Math.min(8, Math.ceil(branchCount * 0.03))`, near `HANDLE_ROUTE_EDGE_COST_DIVISOR`). The accepted
+count is recorded as `graph.acceptedRouteCrossingCount` and
+`transitionLaneSolverStats.acceptedRouteCrossingCount` so callers/tests can tell a perfectly clean
+layout (`0`) apart from a merely acceptable one. Because the seed-replay validation path
+(`solveGlobal`'s seed-replay branch) invokes this exact same `candidateCallback` closure for its
+one-time acceptance check, this relaxation applies uniformly to discovery, single-pass/diagnostic
+calls, and the final pass's seed replay with no separate plumbing.
+
+**This does not, by itself, fix every currently-`it.skip`'d fixture.** Confirmed directly:
+`tracker-lifecycle-diagram-v2.json` still exhausts the handle-state budget (32,920/32,768) under
+this change — it never reaches the route-crossing check at all, because its bottleneck (per the
+"Checked-in reproduction" section) is that specific branches have **zero legal handle positions
+anywhere on their curve**, not merely a route crossing. The reference routing fixture is unaffected
+(still 0 accepted crossings, unchanged geometry). Making more fixtures succeed further requires
+either improving handle-candidate availability itself or a comparable, deliberately-scoped tolerance
+on handle placement — a materially different (and more consequential, since it touches click-target
+usability rather than a purely visual concern) relaxation than this one, tracked as further
+follow-up work rather than assumed to already be covered here.
+
 ## Separately: the deterministic-budget fix
 
 Unrelated to the ordering-systems problem above (shipped first, in an earlier commit on this same

@@ -2659,6 +2659,12 @@ describe("seeded-replay production layout (routing fixture)", () => {
       expect(stats.handleStatesVisited).toBeLessThanOrEqual(
         stats.handleStateLimit,
       );
+      // The route-crossing tolerance introduced alongside this test only
+      // relaxes acceptance for candidates that would otherwise exhaust the
+      // budget; this fixture already finds a perfectly clean layout, so its
+      // accepted crossing count must stay exactly 0, not merely "small".
+      expect(graph.acceptedRouteCrossingCount).toBe(0);
+      expect(stats.acceptedRouteCrossingCount).toBe(0);
 
       const handles = handlesFor(graph);
       expect(handles).toHaveLength(graph.branches.length);
