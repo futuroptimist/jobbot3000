@@ -1157,19 +1157,19 @@ describe("transition lane solver", () => {
   });
 
   // Skipped: transitionDensityProjection()'s 50-branch fan-in to a single
-  // milestone has no handle-clearance-feasible lane arrangement at all —
-  // confirmed by direct instrumentation, the set of blocked branches is
-  // identical across hundreds of distinct coordinate assignments the
-  // lane-refinement search tries, including ones spanning the full lane
-  // height. That's a pre-existing gap between what refineGlobalLaneCoordinates
-  // searches over (lane-spacing legality) and what handle placement actually
-  // needs (route-to-route clearance at sampled handle points) — the search
-  // has no way to know which coordinate changes would help. Fixing that
-  // needs a different (likely constructive/greedy) placement strategy for
-  // convergent fan-in, out of scope for the exponential-blowup fix this PR
-  // makes. The search itself is now fast and deterministic either way (was
-  // exponential before this PR), it just cannot currently find a working
-  // answer for this specific fixture. Tracked as a follow-up.
+  // milestone has no handle-clearance-feasible lane arrangement at all.
+  // Unlike tracker-lifecycle-diagram-v2.json (fixed by
+  // HANDLE_CLEARANCE_TOLERANCE / toleratedRouteCrossingCount -- see
+  // docs/design/lifecycle-diagram-layout-algorithm.md), the 41 blocked
+  // branches here are rejected with nearestRejectedCandidate.clearanceMargin
+  // exactly -1 (COLLISION_MARGIN, the fixedGeometry/corridor-bounds
+  // sentinel) on every one -- confirmed directly, not the
+  // nonincidentRouteClearance category either tolerance widens. With 50
+  // branches genuinely converging on one milestone, the fixed-width rank
+  // corridor itself is the binding constraint, so neither shipped tolerance
+  // can help. Fixing this needs either a corridor width that scales with
+  // incident-branch count, or a different (likely constructive/greedy)
+  // placement strategy for convergent fan-in. Tracked as a follow-up.
   it.skip("shares a single handle budget across all candidate callbacks without resetting", () => {
     // The dense 89-branch projection exercises multiple candidate callbacks.
     // With a shared budget, handleStatesVisited must equal the total across

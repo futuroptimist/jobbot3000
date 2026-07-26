@@ -870,13 +870,16 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
   // docs/design/lifecycle-diagram-layout-algorithm.md's "Investigation
   // (2026-07-26)" section and its follow-ups) fixed the real
   // tracker-lifecycle-diagram-v2.json dense fixture and denseBranchProjection(),
-  // but this fixture's specific fan-in shape still exhausts the shared
-  // handle-state budget (confirmed directly, same signature as
-  // transitionDensityProjection() below) -- so layoutLifecycleRoutingGraph
-  // still throws and the pagination UI this test wants to exercise still
-  // never renders. Tracked as further follow-up: either a larger tolerance
-  // or a structurally different placement strategy for this class of dense
-  // fan-in is needed, out of scope for the tolerances shipped so far.
+  // but this fixture has the same structural blocker as
+  // transitionDensityProjection() (see that test's skip comment in
+  // test/web-tracker-lifecycle-diagram-layout.test.js): confirmed directly,
+  // 48 branches are rejected with a genuine no-candidates invariant on the
+  // first candidate, the fixed-width rank corridor itself binding rather
+  // than nonincident-route clearance -- so neither shipped tolerance can
+  // help, and layoutLifecycleRoutingGraph still throws. Tracked as further
+  // follow-up: either a corridor width that scales with incident-branch
+  // count, or a structurally different placement strategy for this class of
+  // convergent fan-in, is needed.
   // eslint-disable-next-line max-len
   it.skip("paginates more than 50 endpoint-conditioned flow rows without losing reachability", () => {
     const origins = LIFECYCLE_DIAGRAM_TAXONOMY.origins.map(({ id }) => id);

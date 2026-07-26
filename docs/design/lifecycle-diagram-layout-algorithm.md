@@ -506,22 +506,31 @@ The `tracker-lifecycle-diagram-routing-v2.json` iteration of the same parametriz
 unaffected and passes.
 
 **Still not fixed — two fixtures with a different, more extreme fan-in shape remain infeasible even
-under both tolerances**, confirmed directly, not assumed:
+under both tolerances, for a root cause neither tolerance can reach**, confirmed directly (not
+assumed) by inspecting the exact rejection evidence rather than just observing the failure:
 
-- `transitionDensityProjection()` (50 branches funnelled through a single shared milestone) now
-  fails fast and deterministically with a genuine `no-candidates` invariant (not a budget
-  exhaustion) — a specific branch still has zero legal handle candidates anywhere on its curve even
-  with `HANDLE_CLEARANCE_TOLERANCE` applied. This is a materially harder convergence shape (50-into-1)
-  than the real dense fixture's (24-branch, multi-milestone) shape.
+- `transitionDensityProjection()` (50 branches funnelled through a single shared milestone) fails
+  fast and deterministically with a genuine `no-candidates` invariant (not a budget exhaustion) — 41
+  branches have zero legal handle candidates anywhere on their curve, and critically, **every one of
+  their nearest-rejected-candidate clearance margins is exactly `-1`** (`COLLISION_MARGIN`, the
+  sentinel for a `fixedGeometry`/`outsideTransitionCorridor` rejection, not a
+  `nonincidentRouteClearance` one). `HANDLE_CLEARANCE_TOLERANCE` only widens the
+  `nonincidentRouteClearance` acceptance window — it cannot help a branch that never reaches that
+  check because every sampled point (both primary and fallback t-values) already falls outside the
+  standard rank corridor or intersects fixed node/label geometry. With 50 branches genuinely
+  converging on one milestone, the corridor width itself is the binding constraint, not route
+  clearance.
 - The 60-application/89-branch fixture in `test/web-tracker-lifecycle-diagram.test.js`'s
-  `"paginates more than 50 endpoint-conditioned flow rows without losing reachability"` still
-  exhausts the handle-state budget outright (same signature as
-  `transitionDensityProjection()` above).
+  `"paginates more than 50 endpoint-conditioned flow rows without losing reachability"` has the same
+  structural signature: 48 branches rejected with `no-candidates` on the first candidate (confirmed
+  via `testOnlyDiagnoseLifecycleLayoutAttempt`), the identical fan-through-few-milestones shape.
 
-Both remain `it.skip`'d with comments describing this exact status. Making them succeed needs either
-a larger tolerance (with the same regression-safety verification this section's tolerances required)
-or a structurally different placement strategy for this specific convergence shape — tracked as
-further follow-up, not attempted here.
+Both remain `it.skip`'d with comments describing this exact status. Making them succeed needs a
+genuinely different lever than either tolerance shipped here — e.g. widening the rank corridor
+itself for ranks with enough incident branches to need it, or a placement strategy that doesn't
+depend on every branch finding a legal point within a fixed-width corridor at all — tracked as
+further follow-up, not attempted here. Retrying with a larger `HANDLE_CLEARANCE_TOLERANCE` value
+alone will not help; the evidence above rules that out directly.
 
 ## Separately: the deterministic-budget fix
 
