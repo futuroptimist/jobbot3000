@@ -165,11 +165,15 @@ a fourth that varies) rejected with `reason: "no-candidates"` — zero legal han
 positions at all, independent of lane assignment — across every one of the 98 distinct
 lane-order candidates evaluated before hitting the ordinary 32,768 budget.
 
-This is not new: it is the same class of gap two existing `it.skip` tests in
-`test/web-tracker-lifecycle-diagram-layout.test.js` already document for this exact
-fixture and for `denseBranchProjection()` — "no handle-clearance-feasible lane
+This is not new: it is the same class of gap two `it.skip` tests in
+`test/web-tracker-lifecycle-diagram-layout.test.js` documented at the time for this
+exact fixture and for `denseBranchProjection()` — "no handle-clearance-feasible lane
 arrangement... confirmed by direct instrumentation, the set of blocked branches is
-identical across hundreds of distinct coordinate assignments" — and it matches
+identical across hundreds of distinct coordinate assignments" (both have since been
+addressed -- `denseBranchProjection()` by `buildMilestoneFreeJointOrder`, and this
+fixture by `HANDLE_CLEARANCE_TOLERANCE`/`toleratedRouteCrossingCount`; see
+`docs/design/lifecycle-diagram-layout-algorithm.md`'s "Follow-up (shipped)" sections)
+— and it matches
 `docs/design/lifecycle-diagram-layout-algorithm.md`'s own "Outstanding follow-up work"
 item 1, which already named the real fix as making the base D3-Sankey layout
 `rankOrder`-aware (or a constructive/greedy handle-placement strategy), not a search or

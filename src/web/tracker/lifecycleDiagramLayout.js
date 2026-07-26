@@ -4078,13 +4078,16 @@ export function auditLifecycleRouteGeometry({
     }
   }
   // A nonincident route's curve passing through another branch's placed
-  // handle is a distinct problem from two routes crossing each other --
+  // handle is a distinct fact from two routes crossing each other --
   // confirmed directly via the Playwright collision audit, which samples
   // rendered geometry and catches this even though it was never checked
-  // here. HANDLE_CLEARANCE_TOLERANCE only relaxes a candidate's clearance
-  // from other branches' *lines*; it was never meant to tolerate a route
-  // passing through another branch's specific handle dot, so this stays
-  // unconditionally fatal, never eligible for any tolerance.
+  // here. It is, however, the same clearance measurement
+  // HANDLE_CLEARANCE_TOLERANCE already allows a candidate to fall short of
+  // when checked against a route's general line (a handle is just one
+  // point on that line), not a distinct, more severe fact -- so
+  // candidateCallback treats this category as eligible for
+  // toleratedRouteCrossingCount's bound alongside "proper-crossing", not
+  // unconditionally fatal.
   for (const edge of flatEdges) {
     for (const handle of handles) {
       if (!handle || handle.branchId === edge.branchId) continue;

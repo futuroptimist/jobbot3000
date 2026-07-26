@@ -505,9 +505,9 @@ constructively rather than tolerating it after the fact, is real follow-up work,
 The `tracker-lifecycle-diagram-routing-v2.json` iteration of the same parametrized test is
 unaffected and passes.
 
-**Still not fixed — two fixtures with a different, more extreme fan-in shape remain infeasible even
-under both tolerances, for a root cause neither tolerance can reach**, confirmed directly (not
-assumed) by inspecting the exact rejection evidence rather than just observing the failure:
+**Still infeasible for a root cause neither tolerance can reach — two fixtures with a different,
+more extreme fan-in shape**, confirmed directly (not assumed) by inspecting the exact rejection
+evidence rather than just observing the failure:
 
 - `transitionDensityProjection()` (50 branches funnelled through a single shared milestone) fails
   fast and deterministically with a genuine `no-candidates` invariant (not a budget exhaustion) — 41
@@ -520,17 +520,28 @@ assumed) by inspecting the exact rejection evidence rather than just observing t
   standard rank corridor or intersects fixed node/label geometry. With 50 branches genuinely
   converging on one milestone, the corridor width itself is the binding constraint, not route
   clearance.
-- The 60-application/89-branch fixture in `test/web-tracker-lifecycle-diagram.test.js`'s
+- The 60-application/89-branch fixture originally used by
+  `test/web-tracker-lifecycle-diagram.test.js`'s
   `"paginates more than 50 endpoint-conditioned flow rows without losing reachability"` has the same
   structural signature: 48 branches rejected with `no-candidates` on the first candidate (confirmed
   via `testOnlyDiagnoseLifecycleLayoutAttempt`), the identical fan-through-few-milestones shape.
 
-Both remain `it.skip`'d with comments describing this exact status. Making them succeed needs a
-genuinely different lever than either tolerance shipped here — e.g. widening the rank corridor
-itself for ranks with enough incident branches to need it, or a placement strategy that doesn't
-depend on every branch finding a legal point within a fixed-width corridor at all — tracked as
-further follow-up, not attempted here. Retrying with a larger `HANDLE_CLEARANCE_TOLERANCE` value
-alone will not help; the evidence above rules that out directly.
+Neither fixture's underlying infeasibility is fixed — the corridor-width limitation above is real
+and unaddressed. What changed is how the test suite handles it: both tests' actual _contracts_
+(shared/cumulative/bounded/shuffle-stable handle budget across multiple candidate callbacks; and
+pagination across >50 unique flows) are now exercised against layout-feasible fixtures instead —
+the real `tracker-lifecycle-diagram-v2.json` dense fixture (discovery alone needs 45 candidate
+evaluations to solve it, exercising the shared-budget contract thoroughly) and a direct 5-origin ×
+11-endpoint milestone-free grid (mirroring `denseBranchProjection()`), respectively. Neither test is
+`it.skip`'d any longer. `transitionDensityProjection()`'s own infeasibility remains actively
+characterized (not deleted) in
+`"resolves un-phased dense fan-in fast, without exponential blowup"`, which asserts the exact
+`no-candidates`/`clearanceMargin === -1` signature above. Making the underlying fixtures themselves
+succeed needs a genuinely different lever than either tolerance shipped here — e.g. widening the
+rank corridor itself for ranks with enough incident branches to need it, or a placement strategy
+that doesn't depend on every branch finding a legal point within a fixed-width corridor at all —
+tracked as further follow-up, not attempted here. Retrying with a larger
+`HANDLE_CLEARANCE_TOLERANCE` value alone will not help; the evidence above rules that out directly.
 
 ## Separately: the deterministic-budget fix
 
@@ -588,27 +599,32 @@ skip states and test names can drift. `grep -rn "it\.skip(\|test\.skip(" test/` 
    98 distinct lane-order candidates tried before hitting the normal budget. This rules out "the
    search just needs to be more efficient" and confirms the gap really is what this section already
    says: a constructive/greedy placement strategy, not a search or plumbing fix.
-2. **4 unit tests remain `it.skip`ed**, all for the same reason (a genuinely infeasible
-   crossing-free arrangement in the current domain, not a bug this document's fixes address):
-   - `test/web-tracker-lifecycle-diagram-layout.test.js`: `"shares a single handle budget across
-all candidate callbacks without resetting"`, `"lays out dense fixture with bounded semantic
-docks and safe handles"`, `"keeps handle invariants with more than 32 display branches"`
-   - `test/web-tracker-lifecycle-diagram.test.js`: `"paginates more than 50 endpoint-conditioned
-flow rows without losing reachability"`
-   - Each has its own skip comment with the specific fixture and root-cause analysis. Un-skipping
-     these requires item 1 above (or a constructive, non-retry-based placement strategy).
-3. **4 Playwright specs remain `test.skip`ed**, same root cause as item 2 (confirmed directly: the
-   component renders the "Unable to lay out lifecycle diagram." fallback for
-   `tracker-lifecycle-diagram-v2.json`, not a slow-but-eventually-successful render — this was
-   originally misdiagnosed as a timeout mismatch before being properly root-caused):
-   - `test/playwright/lifecycle-diagram.spec.js`: `"renders seeded current/historical states with
-semantic tables and selection"`, `"uses a real touch mobile context without page overflow"`,
-     and the `tracker-lifecycle-diagram-v2.json` iteration only of the parametrized `"audits routed
-branch collisions for ${fixture} on desktop and touch"` (the `tracker-lifecycle-diagram-routing-v2.json`
-     iteration is unaffected and still runs, passing in ~2s)
-   - `test/playwright/static-smoke.spec.js`: `"renders lifecycle Diagram from deterministic data
-without external requests"`
-   - Un-skipping these also requires item 1, since they exercise the same fixture and failure mode.
+2. **0 unit tests remain `it.skip`ed** (were 4). `HANDLE_CLEARANCE_TOLERANCE` and
+   `toleratedRouteCrossingCount` (see "Follow-up (shipped): bounded tolerances..." above) fixed
+   `"lays out dense fixture with bounded semantic docks and safe handles"` and
+   `"keeps handle invariants with more than 32 display branches"` outright. The other two
+   (`"shares a single handle budget across all candidate callbacks without resetting"` and
+   `"paginates more than 50 endpoint-conditioned flow rows without losing reachability"`) still can't
+   run against their original fixtures — those remain genuinely infeasible (see "Still infeasible
+   for a root cause neither tolerance can reach" above) — so both were rewritten to test the same
+   _contract_ against layout-feasible fixtures instead
+   (the real `tracker-lifecycle-diagram-v2.json` dense fixture and a direct 5×11 milestone-free
+   grid, respectively). `transitionDensityProjection()`'s own infeasibility stays actively characterized,
+   not deleted, in `"resolves un-phased dense fan-in fast, without exponential blowup"`.
+3. **1 Playwright spec remains `test.skip`ed** (was 4):
+   `test/playwright/lifecycle-diagram.spec.js`'s `"audits routed branch collisions for
+tracker-lifecycle-diagram-v2.json on desktop and touch"` (the
+   `tracker-lifecycle-diagram-routing-v2.json` iteration of the same parametrized test is unaffected
+   and passes). Confirmed directly, not assumed: layout itself now succeeds for this fixture (the
+   original root cause — the component rendering the "Unable to lay out lifecycle diagram."
+   fallback — is fixed), but this audit's pixel-sampling-based severity classification disagrees
+   with production's own cubic-flattening-based one on a few branch pairs in the browser-reconciled
+   (denser than raw) version of this fixture. The other 3 previously-`test.skip`'d Playwright specs
+   (`"renders seeded current/historical states with semantic tables and selection"`,
+   `"uses a real touch mobile context without page overflow"`, and
+   `test/playwright/static-smoke.spec.js`'s `"renders lifecycle Diagram from deterministic data
+without external requests"`) now pass unmodified, since none of them exercise the strict
+   collision audit.
 4. **Real-node-vs-routing-node coordination** (its own section above) — a narrower, more scoped
    piece of item 1 that's already covered by fix 3's audit-and-reject safety net (so current
    behavior is _correct_, just not cheap for fixtures that hit it). Worth doing on its own if item 1

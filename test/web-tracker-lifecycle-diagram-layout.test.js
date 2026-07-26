@@ -45,6 +45,7 @@ import {
   segmentRoutePrimitives,
   selectedEnvelopeRadius,
   solveHandleCandidateSets,
+  taxonomyOrder,
   testOnlyDiagnoseLifecycleLayoutAttempt,
   wrapLifecycleLabel,
 } from "../src/web/tracker/lifecycleDiagramLayout.js";
@@ -929,19 +930,26 @@ describe("transition lane solver", () => {
   it("resolves un-phased dense fan-in fast, without exponential blowup", () => {
     // transitionDensityProjection()'s 50-branch fan-in to one milestone has
     // no handle-clearance-feasible lane arrangement, even accounting for
-    // HANDLE_CLEARANCE_TOLERANCE's small last-resort clearance allowance
-    // (see the skipped test above for the root-cause analysis) -- so this
-    // always throws. The point of this regression test is that it must do
-    // so FAST and deterministically (never the multi-minute
-    // exponential-blowup hang the original bug report measured).
+    // HANDLE_CLEARANCE_TOLERANCE's small last-resort clearance allowance --
+    // so this always throws. The point of this regression test is that it
+    // must do so FAST and deterministically (never the multi-minute
+    // exponential-blowup hang the original bug report measured), and that
+    // the failure is precisely characterized as a fixed-width rank-corridor
+    // limitation, not a route-clearance one neither shipped tolerance could
+    // ever reach: every blocked branch's nearestRejectedCandidate.clearanceMargin
+    // is exactly -1 (COLLISION_MARGIN, the fixedGeometry/corridor-bounds
+    // sentinel), confirmed directly. See
+    // docs/design/lifecycle-diagram-layout-algorithm.md's "Still not fixed"
+    // section for the full analysis and what would actually be needed
+    // (a corridor width that scales with incident-branch count, or a
+    // different placement strategy) -- not attempted here.
     //
     // Historical baseline: before HANDLE_CLEARANCE_TOLERANCE, this exhausted
     // the shared handle-state budget (32768/32768, "state-limit"). With the
     // tolerance in place, the search now converges on a genuine, cheaper
     // "no-candidates" invariant instead -- still deterministic and bounded,
     // just a different (faster) failure signature for the same underlying
-    // infeasibility: at least one branch still has zero legal handle
-    // candidates anywhere along its curve even with the tolerance applied.
+    // infeasibility.
     const start = Date.now();
     let thrown;
     try {
@@ -954,6 +962,11 @@ describe("transition lane solver", () => {
       reason: "no-candidates",
     });
     expect(thrown?.cause?.blockedBranchIds?.length).toBeGreaterThan(0);
+    expect(
+      thrown?.cause?.branches?.every(
+        (branch) => branch.nearestRejectedCandidate?.clearanceMargin === -1,
+      ),
+    ).toBe(true);
     expect(Date.now() - start).toBeLessThan(30000);
   });
 
@@ -1156,50 +1169,57 @@ describe("transition lane solver", () => {
     );
   });
 
-  // Skipped: transitionDensityProjection()'s 50-branch fan-in to a single
-  // milestone has no handle-clearance-feasible lane arrangement at all.
-  // Unlike tracker-lifecycle-diagram-v2.json (fixed by
-  // HANDLE_CLEARANCE_TOLERANCE / toleratedRouteCrossingCount -- see
-  // docs/design/lifecycle-diagram-layout-algorithm.md), the 41 blocked
-  // branches here are rejected with nearestRejectedCandidate.clearanceMargin
-  // exactly -1 (COLLISION_MARGIN, the fixedGeometry/corridor-bounds
-  // sentinel) on every one -- confirmed directly, not the
-  // nonincidentRouteClearance category either tolerance widens. With 50
-  // branches genuinely converging on one milestone, the fixed-width rank
-  // corridor itself is the binding constraint, so neither shipped tolerance
-  // can help. Fixing this needs either a corridor width that scales with
-  // incident-branch count, or a different (likely constructive/greedy)
-  // placement strategy for convergent fan-in. Tracked as a follow-up.
-  it.skip("shares a single handle budget across all candidate callbacks without resetting", () => {
-    // The dense 89-branch projection exercises multiple candidate callbacks.
-    // With a shared budget, handleStatesVisited must equal the total across
-    // all callbacks and must never exceed the per-invocation limit.
-    const { graph } = layoutLifecycleRoutingGraph(
-      transitionDensityProjection(),
-      1850,
-    );
-    const stats = graph.transitionLaneSolverStats;
-    expect(stats.candidateEvaluations).toBeGreaterThanOrEqual(1);
-    expect(stats.handleStatesVisited).toBeLessThanOrEqual(32768);
-    expect(stats.handleStateLimit).toBe(32768);
-    // Verify shuffle-stability of the handle stats.
-    const p = transitionDensityProjection();
-    const shuffled = {
-      ...p,
-      nodes: [...p.nodes].reverse(),
-      links: [...p.links].reverse(),
-      paths: [...p.paths].reverse(),
+  // transitionDensityProjection()'s 50-branch fan-in to a single milestone
+  // is still infeasible -- its 41 blocked branches are all rejected with
+  // nearestRejectedCandidate.clearanceMargin exactly -1 (COLLISION_MARGIN,
+  // the fixedGeometry/corridor-bounds sentinel), not the
+  // nonincidentRouteClearance category either shipped tolerance widens (see
+  // that fixture's own characterization above). This test's actual
+  // contract -- a shared handle budget that accumulates across multiple
+  // candidate callbacks without resetting, stays bounded, and is
+  // shuffle-stable -- is tested here against a *feasible* fixture instead:
+  // the real tracker-lifecycle-diagram-v2.json dense fixture, which
+  // discovery's own search already needs 45 distinct candidate evaluations
+  // to solve (confirmed directly), exercising the shared-budget contract
+  // far more thoroughly than a single-candidate fixture would.
+  it("shares a single handle budget across all candidate callbacks without resetting", () => {
+    const recordHandleStatesUntilAccepted = (projection) => {
+      const seen = [];
+      let accepted = false;
+      layoutLifecycleRoutingGraph(projection, 1850, {
+        testOnlyDiagnosticSink: (snapshot) => {
+          if (accepted) return;
+          seen.push(snapshot.handleBudget.statesVisited);
+          if (snapshot.phase === "accepted") accepted = true;
+        },
+      });
+      return seen;
     };
-    const { graph: shuffledGraph } = layoutLifecycleRoutingGraph(
-      shuffled,
-      1850,
+    const seen = recordHandleStatesUntilAccepted(
+      projectLifecycleAt(denseFixture),
     );
-    expect(shuffledGraph.transitionLaneSolverStats.candidateEvaluations).toBe(
-      stats.candidateEvaluations,
-    );
-    expect(shuffledGraph.transitionLaneSolverStats.handleStatesVisited).toBe(
-      stats.handleStatesVisited,
-    );
+    // Discovery's own search needs multiple candidate callbacks to solve
+    // this fixture -- exercising "shared across callbacks", not just one.
+    expect(seen.length).toBeGreaterThanOrEqual(2);
+    // Cumulative, never reset: each recorded value is the running total
+    // across every candidate tried so far, so it can never decrease.
+    for (let index = 1; index < seen.length; index += 1) {
+      expect(seen[index]).toBeGreaterThanOrEqual(seen[index - 1]);
+    }
+    expect(seen.at(-1)).toBeLessThanOrEqual(32768);
+
+    // Verify shuffle-stability of the same recorded sequence.
+    const reversedProjection = () => {
+      const p = projectLifecycleAt(denseFixture);
+      return {
+        ...p,
+        nodes: [...p.nodes].reverse(),
+        links: [...p.links].reverse(),
+        paths: [...p.paths].reverse(),
+      };
+    };
+    const seenReversed = recordHandleStatesUntilAccepted(reversedProjection());
+    expect(seenReversed).toEqual(seen);
   });
 });
 
@@ -1562,6 +1582,115 @@ describe("test-only lifecycle layout diagnostics", () => {
         0,
       ),
     ).toBe(275);
+  });
+
+  // Preserves the joint-order investigation behind
+  // buildMilestoneFreeJointOrder (see docs/design/lifecycle-diagram-layout-algorithm.md's
+  // "Investigation (2026-07-26)" section) as a permanent, deterministic
+  // regression, rather than a deleted scratch script. This is intentionally
+  // NOT wired into production eligibility: buildMilestoneFreeJointOrder
+  // stays gated on hasIntermediateRealNodes exactly as shipped. This test
+  // reconstructs the same joint-order/rank-restriction logic independently
+  // (using only exported symbols and the testOnlyBaseNodeOrderByRank /
+  // authoritativeBranchOrderByRank test hooks) and applies it WITHOUT that
+  // gate, to both prove the routing-only success case one more time and
+  // lock in the regression that justifies keeping the gate.
+  describe("joint-order investigation regression", () => {
+    const compareBranchesJoint = (a, b) => {
+      if (a.sourceRank === 0 && b.sourceRank === 0) {
+        const taxonomyDiff = taxonomyOrder(a.source) - taxonomyOrder(b.source);
+        if (taxonomyDiff !== 0) return taxonomyDiff;
+      }
+      return compareBranches(a, b);
+    };
+    const buildUngatedJointOrders = (graph) => {
+      const jointBranches = [...graph.branches].sort(compareBranchesJoint);
+      const branchOrderByRank = new Map();
+      const ranksInUse = new Set();
+      for (const branch of jointBranches)
+        for (let rank = branch.sourceRank; rank < branch.targetRank; rank += 1)
+          ranksInUse.add(rank);
+      for (const rank of ranksInUse) {
+        const active = jointBranches.filter(
+          (branch) => branch.sourceRank <= rank && rank < branch.targetRank,
+        );
+        branchOrderByRank.set(
+          rank,
+          new Map(active.map((branch, index) => [branch.id, index])),
+        );
+      }
+      const nodeOrderByRank = new Map();
+      for (const rank of [...new Set(graph.nodes.map((node) => node.rank))]) {
+        const nodes = graph.nodes.filter((node) => node.rank === rank);
+        // Deliberately UNGATED: unlike buildMilestoneFreeJointOrder, this
+        // reorders any rank with zero real nodes regardless of whether the
+        // graph as a whole has milestones elsewhere -- exactly the
+        // construction the investigation found regresses real fixtures.
+        if (nodes.some((node) => !node.routing)) {
+          nodes.sort(nodeSort);
+        } else {
+          const branchIndex = branchOrderByRank.get(rank);
+          nodes.sort(
+            (left, right) =>
+              (branchIndex?.get(left.branchId) ?? 0) -
+                (branchIndex?.get(right.branchId) ?? 0) ||
+              compareLifecycleIds(left.id, right.id),
+          );
+        }
+        nodeOrderByRank.set(
+          rank,
+          new Map(nodes.map((node, index) => [node.id, index])),
+        );
+      }
+      return { nodeOrderByRank, branchOrderByRank };
+    };
+    const layoutWithUngatedJointOrder = (projection, width = 1850) => {
+      const graph = buildLifecycleRoutingGraph(projection);
+      const { nodeOrderByRank, branchOrderByRank } =
+        buildUngatedJointOrders(graph);
+      return layoutLifecycleRoutingGraph(projection, width, {
+        testOnlyBaseNodeOrderByRank: nodeOrderByRank,
+        authoritativeBranchOrderByRank: branchOrderByRank,
+      });
+    };
+
+    it("succeeds cleanly and deterministically on the milestone-free dense fixture", () => {
+      const result = layoutWithUngatedJointOrder(denseBranchProjection());
+      const stats = result.graph.transitionLaneSolverStats;
+      expect(stats.statesVisited).toBe(993);
+      expect(stats.handleStatesVisited).toBe(5637);
+      expect(result.graph.acceptedRouteCrossingCount).toBe(0);
+    });
+
+    it("regresses the reference fixture from zero crossings to a tolerated one", () => {
+      // Production's own gated approach (buildMilestoneFreeJointOrder,
+      // never engaging here since this fixture has milestones) keeps this
+      // fixture at exactly 0 accepted crossings -- see the seeded-replay
+      // suite above. Applying the same joint order ungated introduces a
+      // crossing production's default ordering never needed to tolerate.
+      const result = layoutWithUngatedJointOrder(
+        projectLifecycleAt(routingFixture),
+      );
+      expect(result.graph.acceptedRouteCrossingCount).toBeGreaterThan(0);
+    });
+
+    it("regresses the real dense fixture from success to outright handle-budget exhaustion", () => {
+      // Production's own gated approach succeeds on this fixture (see
+      // "lays out dense fixture with bounded semantic docks and safe
+      // handles" above). Applying the same joint order ungated instead
+      // exhausts the handle-state budget outright.
+      let thrown;
+      try {
+        layoutWithUngatedJointOrder(projectLifecycleAt(denseFixture));
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown?.cause).toMatchObject({
+        reason: "state-limit",
+        phase: "handle",
+        stateLimit: 32768,
+      });
+    });
   });
 });
 
@@ -2445,7 +2574,12 @@ describe("lifecycle diagram render-only routing layout", () => {
       projectLifecycleAt(denseFixture),
       1850,
     );
-    expect(graph.acceptedRouteCrossingCount).toBeGreaterThanOrEqual(0);
+    // Deterministic: confirmed directly (not assumed) against this exact
+    // fixture. See docs/design/lifecycle-diagram-layout-algorithm.md's
+    // "Follow-up (shipped)" section for the browser-reconciled (denser)
+    // variant's different count (66, exercised by the Playwright audit spec).
+    expect(graph.acceptedRouteCrossingCount).toBe(50);
+    expect(graph.transitionLaneSolverStats.handleStatesVisited).toBe(500);
     const visibleNodes = graph.nodes.filter(
       (node) => !node.routing && node.total > 0,
     );
