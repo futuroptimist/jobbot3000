@@ -840,6 +840,29 @@ function layoutLifecycleRoutingGraphPass(
     options.authoritativeBranchOrderByRank ??
     transitionScopedJointOrder?.branchOrderByRank ??
     null;
+  // Test-only observability seam: buildTransitionScopedJointOrder's own
+  // branchOrderByRank map already omits any hop adjacent to an intermediate
+  // (rank 1-5) real milestone node (see that function), so a rank's mere
+  // presence as a key here is itself proof that hop was eligible AND
+  // received a topology-derived linkSort override -- not just that the
+  // mechanism ran, but that it actually produced an entry for that specific
+  // hop. Exposed only under isLifecycleLayoutTestEnvironment() so a test can
+  // positively confirm engagement on an eligible hop (and absence on an
+  // excluded one) without relying on the resulting geometry happening to
+  // differ from plain nodeSort/linkSort, which isn't guaranteed for every
+  // fixture. See docs/design/lifecycle-diagram-layout-algorithm.md's
+  // "Root-causing the routing-node joint-order destabilization" section.
+  if (enableTestDiagnostics) {
+    graph.testOnlyTransitionScopedJointOrder = transitionScopedJointOrder
+      ? Object.freeze({
+          branchOrderByRank: new Map(
+            [...transitionScopedJointOrder.branchOrderByRank].map(
+              ([rank, order]) => [rank, new Map(order)],
+            ),
+          ),
+        })
+      : null;
+  }
   const baselineLinks = new Map(
     graph.links.map((link) => [
       link.id,

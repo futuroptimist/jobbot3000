@@ -236,8 +236,9 @@ shipped. What remained open was making _discovery's own first pass_ rankOrder-aw
 falling back to plain `nodeSort`/`linkSort`; see
 [Root-causing the routing-node joint-order destabilization](#root-causing-the-routing-node-joint-order-destabilization-shipped)
 below for how that was resolved (a purely topological, pre-search order — not a second D3 re-run —
-scoped to never touch a real node's dock), and its scope note for why this still doesn't reach the
-two corridor-width-bound extreme fan-in fixtures.
+scoped to never touch the dock of an intermediate, rank 1–5 real milestone node; origin (rank 0) and
+endpoint (rank 6) docks remain intentionally eligible for reordering), and its scope note for why
+this still doesn't reach the two corridor-width-bound extreme fan-in fixtures.
 
 ## Attempted and reverted: barycenter-based `nodeSort`/`linkSort`
 
@@ -870,14 +871,17 @@ skip states and test names can drift. `grep -rn "it\.skip(\|test\.skip(" test/` 
    The fourth found and fixed the specific channel the third's investigation left as an open
    question: a blind, pre-search, purely topological joint order is unsafe not because it reorders
    real-node docks per se (two other shipped mechanisms already do that safely) but because doing so
-   via `linkSort` at _every_ rank a branch spans — rather than only at ranks/hops that never touch a
-   real node — silently changes `branchPrecedenceEdges`' hard precedence constraints at a real node's
-   dock, even when the node's own `y0`/`y1` box never moves. `buildTransitionScopedJointOrder` (which
-   replaced `buildMilestoneFreeJointOrder`/`hasIntermediateRealNodes`) restricts the override to
+   via `linkSort` at _every_ rank a branch spans — rather than excluding only the ranks/hops adjacent
+   to an intermediate (rank 1-5) real milestone node — silently changes `branchPrecedenceEdges`' hard
+   precedence constraints at such a milestone's dock, even when the node's own `y0`/`y1` box never
+   moves. `buildTransitionScopedJointOrder` (which replaced
+   `buildMilestoneFreeJointOrder`/`hasIntermediateRealNodes`) excludes the override only from
    ranks/hops adjacent to an intermediate (rank 1-5) real milestone node — origin (rank 0) and
-   endpoint (rank 6) docks stay unconditionally reordered, exactly as the predecessor mechanism
-   already proved safe there — and now runs unconditionally, safely extending the mechanism to
-   milestone-bearing graphs. Confirmed with zero regressions across the full suite and byte-identical
+   endpoint (rank 6) docks remain intentionally eligible and stay unconditionally reordered, exactly
+   as the predecessor mechanism already proved safe there — and now runs unconditionally, safely
+   extending the mechanism to milestone-bearing graphs. Confirmed with zero regressions across the
+   full suite, a direct positive-engagement regression proving the topology-derived order actually
+   applies at an eligible routing-only hop, and byte-identical
    real-node dock precedence to the unconstrained default (see that section for the full evidence).
 
    **This does not close the corridor-width/constructive-placement gap** the two genuinely-infeasible
