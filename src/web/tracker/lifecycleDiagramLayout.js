@@ -65,7 +65,7 @@ export const rendererHitBoxForNode = (node) => {
     height,
   };
 };
-const LANE_Y_EPSILON = 0.001;
+export const LANE_Y_EPSILON = 0.001;
 const COLLISION_MARGIN = -1;
 // Charge dense route generation/auditing slightly conservatively so the
 // deterministic state cap also retains margin beneath the 30-second render

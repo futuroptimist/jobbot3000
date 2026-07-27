@@ -391,7 +391,18 @@ async function assertBrowserCollisionAudit(page, { maxCrossings = 0 } = {}) {
             .querySelector(`[data-diagram-branch-halo="${selectorId}"]`)
             ?.getAttribute("stroke-width") || 0,
         );
-        const inflate = Math.max(ribbon, separator, halo) / 2;
+        // Production's collision checks (node/label/hit, route-handle) use a
+        // fixed, selection-independent envelope (selectedEnvelopeRadius,
+        // effectively (widthPx + 12) / 2 -- see
+        // src/web/tracker/lifecycleDiagramLayout.js) regardless of which
+        // branch happens to be selected, since collision safety shouldn't
+        // depend on transient UI state. The halo <path> is only rendered for
+        // the currently-selected branch (lifecycleDiagram.js), so for every
+        // other branch `halo` above is 0 -- derive the same conservative
+        // width analytically from the unconditionally-rendered separator
+        // (separator = widthPx + 6, halo = widthPx + 12 = separator + 6)
+        // instead of relying on a halo element that may not exist.
+        const inflate = Math.max(ribbon, separator, halo, separator + 6) / 2;
         const step = Math.max(0.25, Math.min(1, length || 1));
         const samples = [];
         for (let distance = 0; distance <= length; distance += step) {
@@ -545,6 +556,27 @@ async function assertBrowserCollisionAudit(page, { maxCrossings = 0 } = {}) {
     // window.__lifecycleRouteGeometry) against the rank-bucketed,
     // consecutive-sample edges built above, instead of an independently
     // tuned point-proximity heuristic.
+    //
+    // Known, shared limitation (inherited from production, not introduced
+    // here): edgeCrossing only detects genuine transversal crossings, so two
+    // routes that were exactly (or near-exactly) collinear over a stretch
+    // would report zero crossings rather than a sustained-overlap finding.
+    // This is the same classifier auditLifecycleRouteGeometry itself uses
+    // (this file imports the identical function via
+    // window.__lifecycleRouteGeometry), so this audit's coverage is exactly
+    // as strong here as production's own -- unifying the two was this PR's
+    // goal, not extending either beyond what the other already does. A
+    // dedicated collinear-overlap detector was prototyped and rejected: at
+    // the point-proximity resolution this file samples at, it could not
+    // distinguish a genuine full-length overlap from the ordinary,
+    // harmless correlation two branches leaving the same dock exhibit for a
+    // significant fraction of their shared corridor before diverging toward
+    // different downstream targets, and reintroducing point-proximity as a
+    // fallback risked resurrecting the exact false-positive this PR fixes.
+    // Closing this gap for real would need a placement-level signal (e.g.
+    // comparing transitionLaneY assignments directly) rather than sampled
+    // rendered geometry, which is a layout-solver change and out of this
+    // PR's scope.
     if (routeGeometry) {
       const {
         edgeCrossing,
@@ -974,11 +1006,11 @@ test.describe("Application Lifecycle Diagram", () => {
       // the shared edgeCrossing/classifyRouteCrossingCategory classifier
       // (src/web/tracker/lifecycleRouteGeometry.js) is applied to the
       // rendered SVG -- confirmed directly, not assumed, by running this
-      // audit repeatedly against the real fixture: a stable 62 across
-      // desktop/previous-event/touch (57 on the previous-event state).
-      // routing-v2.json stays exactly crossing-free.
+      // audit repeatedly against the real fixture: a stable 64 on desktop
+      // (57 on the previous-event state). routing-v2.json stays exactly
+      // crossing-free.
       const maxCrossings =
-        fixture === "tracker-lifecycle-diagram-v2.json" ? 62 : 0;
+        fixture === "tracker-lifecycle-diagram-v2.json" ? 64 : 0;
       await importFixture(page, fixture);
       await page.getByRole("button", { name: "Diagram" }).click();
       await expect(page.locator("[data-diagram-link]").first()).toBeVisible({

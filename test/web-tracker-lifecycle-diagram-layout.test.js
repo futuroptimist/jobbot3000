@@ -40,6 +40,7 @@ import {
   endpointColor,
   layoutLifecycleRoutingGraph,
   labelBoxForNode,
+  LANE_Y_EPSILON,
   nodeSort,
   pointToSegmentDistance,
   rankCenterX,
@@ -2938,7 +2939,8 @@ describe("shared route-crossing classifier", () => {
     // (renderedBranchStrokeWidth always returns 3), so it's safe to call
     // with an empty segment placeholder in this pure-geometry test.
     const edge = { p0: { x: 0, y: 0 }, p1: { x: 100, y: 0 } };
-    const required = BRANCH_HANDLE_RADIUS + selectedEnvelopeRadius({}) + 0.25;
+    const required =
+      BRANCH_HANDLE_RADIUS + selectedEnvelopeRadius({}) + 0.25 + LANE_Y_EPSILON;
     const closeHandle = { x: 50, y: required - 5 };
     const farHandle = { x: 50, y: required + 5 };
     const boundaryHandle = { x: 50, y: required };

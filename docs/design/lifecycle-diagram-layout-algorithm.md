@@ -617,15 +617,43 @@ without touching `candidateCallback`/`toleratedRouteCrossingCount` themselves (t
 entirely inside the test and the production layout module, respectively — this change only affects
 which array a browser-side finding lands in).
 
+**Route-handle envelope, fixed to match production regardless of selection state:** the browser
+audit derives its per-path stroke "inflate" (used for both node/label/hit collision padding and the
+route-handle-collision distance check) from the rendered halo/separator/ribbon stroke widths — but
+`lifecycleDiagram.js` only renders a branch's halo `<path>` while that branch is selected. Before this
+fix, an unselected branch's `inflate` silently fell back to the separator-only width, understating
+production's fixed, selection-independent envelope (`selectedEnvelopeRadius`, which conservatively
+assumes the halo-inclusive width for every branch regardless of which one happens to be selected,
+since collision safety shouldn't depend on transient UI state). Fixed by deriving the halo width
+analytically from the unconditionally-rendered separator (`separator + 6`, matching
+`widthPx + 12 = selectedEnvelopeRadius`'s own formula) instead of depending on the halo element
+actually being present.
+
+**Known, shared limitation, not attempted here:** `edgeCrossing`'s strict transversal-crossing test
+(shared verbatim with production) cannot, by itself, detect two routes that are exactly or
+near-exactly collinear over a stretch — such routes never "cross" in the sign-straddling sense the
+test requires. A dedicated point-proximity fallback was prototyped to close this gap but rejected: at
+this file's sampling resolution it could not reliably distinguish a genuine full-length overlap from
+the ordinary correlation two branches leaving the same dock exhibit over a significant fraction of
+their shared corridor before diverging toward different downstream targets (confirmed directly against
+a real shared-source pair in the reconciled `tracker-lifecycle-diagram-v2.json` fixture, whose
+"near" run extended for ~90px of arc length purely from ordinary post-dock correlation) — reintroducing
+point-proximity risked resurrecting the exact false-positive this PR fixes. This is not a regression:
+it is the same classifier `auditLifecycleRouteGeometry` itself uses, so this audit's coverage now
+matches production's own exactly, which was this PR's goal. Closing this gap for real would need a
+placement-level signal (e.g. comparing `transitionLaneY` assignments directly) rather than sampled
+rendered geometry — a layout-solver-adjacent change, out of scope here.
+
 **Result:** confirmed directly, not assumed, by running the unskipped test repeatedly against the
-real fixture: `tracker-lifecycle-diagram-v2.json` produces a stable 62 tolerated (proper-crossing- and
-route-handle-collision-equivalent) findings on desktop and touch (57 on the previous-event state),
+real fixture: `tracker-lifecycle-diagram-v2.json` produces a stable 64 tolerated (proper-crossing- and
+route-handle-collision-equivalent) findings on desktop (57 on the previous-event state),
 comfortably checked in as the test's `maxCrossings` bound (replacing the old, unverified `66`
 placeholder left over from the pre-fix, disproven methodology). `tracker-lifecycle-diagram-routing-v2.json`
 is unaffected, still exactly 0. **0 lifecycle Playwright specs remain skipped** (was 1); **0 lifecycle
 Vitest tests remain skipped** (unchanged from the prior fix — see "Outstanding follow-up work" below).
 Focused unit tests for the shared classifier (`edgeCrossing`, `classifyRouteCrossingCategory`, and
-the route-handle-proximity boundary) were added to
+the route-handle-proximity boundary, mirroring production's exact
+`BRANCH_HANDLE_RADIUS + selectedEnvelopeRadius(...) + 0.25 + LANE_Y_EPSILON` formula) were added to
 `test/web-tracker-lifecycle-diagram-layout.test.js`'s `"shared route-crossing classifier"` describe
 block, including a direct test that two edges diverging from a shared/near-identical endpoint (the
 shared-dock case) are never classified as crossing — the reason production's own crossing loop needs
