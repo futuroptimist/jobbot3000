@@ -3,12 +3,25 @@ import { LIFECYCLE_DIAGRAM_TAXONOMY } from "./lifecycleProjection.js";
 import {
   edgeCrossing,
   classifyRouteCrossingCategory,
+  collinearOverlapLength,
+  SUSTAINED_OVERLAP_LENGTH_THRESHOLD,
+  pointToSegmentDistance,
+  routeHandleRequiredClearance,
+  LANE_Y_EPSILON,
 } from "./lifecycleRouteGeometry.js";
 
 export {
   edgeCrossing,
   classifyRouteCrossingCategory,
   ROUTE_CROSSING_SUSTAINED_THRESHOLD,
+  collinearOverlapLength,
+  COLLINEAR_OVERLAP_TOLERANCE,
+  SUSTAINED_OVERLAP_LENGTH_THRESHOLD,
+  pointToSegmentDistance,
+  routeHandleRequiredClearance,
+  isRouteHandleCollision,
+  ROUTE_HANDLE_CLEARANCE_MARGIN,
+  LANE_Y_EPSILON,
 } from "./lifecycleRouteGeometry.js";
 
 const isLifecycleLayoutTestEnvironment = () =>
@@ -65,7 +78,6 @@ export const rendererHitBoxForNode = (node) => {
     height,
   };
 };
-export const LANE_Y_EPSILON = 0.001;
 const COLLISION_MARGIN = -1;
 // Charge dense route generation/auditing slightly conservatively so the
 // deterministic state cap also retains margin beneath the 30-second render
@@ -3888,24 +3900,6 @@ export const flattenRouteSegment = (segment) =>
         })),
   );
 
-export const pointToSegmentDistance = (point, edge) => {
-  const dx = edge.p1.x - edge.p0.x;
-  const dy = edge.p1.y - edge.p0.y;
-  const lengthSquared = dx * dx + dy * dy;
-  if (!lengthSquared)
-    return Math.hypot(point.x - edge.p0.x, point.y - edge.p0.y);
-  const t = Math.max(
-    0,
-    Math.min(
-      1,
-      ((point.x - edge.p0.x) * dx + (point.y - edge.p0.y) * dy) / lengthSquared,
-    ),
-  );
-  const x = edge.p0.x + t * dx;
-  const y = edge.p0.y + t * dy;
-  return Math.hypot(point.x - x, point.y - y);
-};
-
 export const routeEdgesByBranch = (graphOrModel) => {
   const model = graphOrModel?.segmentsByBranch
     ? graphOrModel
@@ -4017,31 +4011,76 @@ export function auditLifecycleRouteGeometry({
         add(`${box.kind}-collision`, edge.segment, { obstacleId: box.id });
     }
   }
+  const branchById = new Map(
+    routeModel.branches.map((branch) => [branch.id, branch]),
+  );
+  const pairOf = (left, right) => {
+    const branchLeft = branchById.get(left.branchId);
+    const branchRight = branchById.get(right.branchId);
+    return branchLeft && branchRight
+      ? routeModel.pairId(branchLeft, branchRight)
+      : `${left.branchId}||${right.branchId}`;
+  };
+  // Two branches only genuinely "diverge from a shared dock" if they span
+  // more than the one rank they share it at -- a branch pair whose *entire*
+  // overlap is a single shared-source-and-target segment (e.g. two direct,
+  // no-milestone branches between the exact same two nodes) never diverges
+  // at all, which is a duplicated-route defect, not ordinary correlation.
+  const sharedRankSpan = (branchLeft, branchRight) => {
+    if (!branchLeft || !branchRight) return null;
+    const lo = Math.max(branchLeft.sourceRank, branchRight.sourceRank);
+    const hi = Math.min(branchLeft.targetRank, branchRight.targetRank) - 1;
+    return hi >= lo ? hi - lo : null;
+  };
   const pairCrossings = new Map();
+  // edgeCrossing only detects genuine transversal crossings: two edges that
+  // are exactly (or near-exactly) collinear over a stretch never satisfy its
+  // strict sign-straddling test, so a pair of routes rendered directly on top
+  // of one another would report zero crossings here and escape the
+  // sustained-overlap contract entirely. pairOverlap tracks
+  // collinearOverlapLength (lifecycleRouteGeometry.js) alongside crossings,
+  // per branch pair, to close that gap -- see the classification loop below.
+  // Overlap contributions at a rank where the two segments share a source or
+  // target node are excluded (for branch pairs spanning more than one shared
+  // rank): two branches leaving (or converging on) the same dock naturally
+  // render correlated, near-identical geometry for a stretch before
+  // diverging, which is ordinary and nonfatal, not a duplicated-route defect.
+  const pairOverlap = new Map();
   for (let a = 0; a < flatEdges.length; a += 1) {
     for (let b = a + 1; b < flatEdges.length; b += 1) {
       const left = flatEdges[a];
       const right = flatEdges[b];
       if (left.branchId === right.branchId) continue;
       if (left.segment.source.rank !== right.segment.source.rank) continue;
-      if (!edgeCrossing(left, right)) continue;
-      const branchLeft = routeModel.branches.find(
-        ({ id }) => id === left.branchId,
+      const pair = pairOf(left, right);
+      if (edgeCrossing(left, right)) {
+        if (!pairCrossings.has(pair)) pairCrossings.set(pair, []);
+        pairCrossings.get(pair).push({ left, right });
+      }
+      const span = sharedRankSpan(
+        branchById.get(left.branchId),
+        branchById.get(right.branchId),
       );
-      const branchRight = routeModel.branches.find(
-        ({ id }) => id === right.branchId,
-      );
-      const pair =
-        branchLeft && branchRight
-          ? routeModel.pairId(branchLeft, branchRight)
-          : `${left.branchId}||${right.branchId}`;
-      if (!pairCrossings.has(pair)) pairCrossings.set(pair, []);
-      pairCrossings.get(pair).push({ left, right });
+      const sharesDock =
+        span > 0 &&
+        (left.segment.source.id === right.segment.source.id ||
+          left.segment.target.id === right.segment.target.id);
+      if (sharesDock) continue;
+      const overlap = collinearOverlapLength(left, right);
+      if (overlap > 0)
+        pairOverlap.set(pair, (pairOverlap.get(pair) ?? 0) + overlap);
     }
   }
-  for (const [pair, crossings] of pairCrossings) {
-    // Many flattened-edge-pair crossings for the same branch pair means the
-    // two routes run coincident/parallel for a stretch, not a brief single
+  const allPairs = new Set([...pairCrossings.keys(), ...pairOverlap.keys()]);
+  for (const pair of allPairs) {
+    const crossings = pairCrossings.get(pair) ?? [];
+    const overlapLength = pairOverlap.get(pair) ?? 0;
+    const sustainedByOverlap =
+      overlapLength >= SUSTAINED_OVERLAP_LENGTH_THRESHOLD;
+    if (!crossings.length && !sustainedByOverlap) continue;
+    // Many flattened-edge-pair crossings for the same branch pair (or a
+    // sustained collinear overlap away from a shared dock) means the two
+    // routes run coincident/parallel for a stretch, not a brief single
     // crossing -- that reads as one line drawn on top of another, not a
     // tolerable visual blemish, so it's categorized separately and never
     // eligible for toleratedRouteCrossingCount regardless of budget
@@ -4049,14 +4088,22 @@ export function auditLifecycleRouteGeometry({
     // lifecycleRouteGeometry.js) is the same shared classifier the
     // Playwright collision audit uses against rendered SVG geometry
     // (test/playwright/lifecycle-diagram.spec.js).
+    const category = sustainedByOverlap
+      ? "sustained-crossing"
+      : classifyRouteCrossingCategory(crossings.length);
     const finding = {
-      category: classifyRouteCrossingCategory(crossings.length),
+      category,
       branchIds: pair.split("||"),
       transitionRank: crossings[0]?.left.segment.source.rank,
       point: quantizePoint(crossings[0]?.left.p0 ?? { x: 0, y: 0 }),
       crossingPointCount: crossings.length,
+      ...(sustainedByOverlap ? { overlapLength } : {}),
     };
-    if (routeModel.fixedOrderInversionPairs.has(pair) && crossings.length === 1)
+    if (
+      !sustainedByOverlap &&
+      routeModel.fixedOrderInversionPairs.has(pair) &&
+      crossings.length === 1
+    )
       forcedCrossings.push(finding);
     else {
       allFindings.push(finding);
@@ -4093,11 +4140,11 @@ export function auditLifecycleRouteGeometry({
   for (const edge of flatEdges) {
     for (const handle of handles) {
       if (!handle || handle.branchId === edge.branchId) continue;
-      const required =
-        BRANCH_HANDLE_RADIUS +
-        selectedEnvelopeRadius(edge.segment) +
-        0.25 +
-        LANE_Y_EPSILON;
+      const required = routeHandleRequiredClearance(
+        BRANCH_HANDLE_RADIUS,
+        selectedEnvelopeRadius(edge.segment),
+        LANE_Y_EPSILON,
+      );
       if (pointToSegmentDistance(handle, edge) < required) {
         fatalFindings.push({
           category: "route-handle-collision",

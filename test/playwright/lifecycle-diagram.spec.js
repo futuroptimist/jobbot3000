@@ -456,13 +456,25 @@ async function assertBrowserCollisionAudit(page, { maxCrossings = 0 } = {}) {
         for (const sample of samples)
           sample.rank = rankForDistance(sample.distance);
         const edgesByRank = new Map();
+        const edges = [];
         for (let i = 1; i < samples.length; i += 1) {
           const p0 = samples[i - 1];
           const p1 = samples[i];
+          const edge = { p0, p1 };
           if (!edgesByRank.has(p1.rank)) edgesByRank.set(p1.rank, []);
-          edgesByRank.get(p1.rank).push({ p0, p1 });
+          edgesByRank.get(p1.rank).push(edge);
+          edges.push(edge);
         }
-        return { id, source, target, length, inflate, samples, edgesByRank };
+        return {
+          id,
+          source,
+          target,
+          length,
+          inflate,
+          samples,
+          edgesByRank,
+          edges,
+        };
       },
     );
     const dockContact = (path, node, sample) => {
@@ -495,6 +507,15 @@ async function assertBrowserCollisionAudit(page, { maxCrossings = 0 } = {}) {
     // fatal -- a handle a few pixels closer than ideal to an unrelated line
     // is not the same class of usability bug as an unclickable/ambiguous
     // handle (which fixed-geometry/handle-vs-handle collisions above remain).
+    //
+    // Collision severity uses the exact same point-to-segment predicate and
+    // required-clearance formula production's own route-handle-collision
+    // check does (pointToSegmentDistance/routeHandleRequiredClearance,
+    // src/web/tracker/lifecycleRouteGeometry.js, exposed here via
+    // window.__lifecycleRouteGeometry), applied against the rendered path's
+    // sampled edges rather than its discrete sample points, so the closest
+    // point *between* two samples is measured, not just the samples
+    // themselves.
     const crossings = [];
     for (const path of paths) {
       for (const node of nodes) {
@@ -529,13 +550,20 @@ async function assertBrowserCollisionAudit(page, { maxCrossings = 0 } = {}) {
           }
         }
       }
+      if (!routeGeometry) continue;
       for (const handle of handles) {
         if (handle.id === path.id) continue;
+        const handlePoint = { x: handle.cx, y: handle.cy };
+        const required = routeGeometry.routeHandleRequiredClearance(
+          branchHandleRadius,
+          path.inflate,
+          routeGeometry.LANE_Y_EPSILON,
+        );
         if (
-          path.samples.some(
-            (sample) =>
-              Math.hypot(sample.x - handle.cx, sample.y - handle.cy) <=
-              branchHandleRadius + path.inflate,
+          path.edges.some(
+            (edge) =>
+              routeGeometry.pointToSegmentDistance(handlePoint, edge) <
+              required,
           )
         ) {
           crossings.push(`${path.id} passes near handle ${handle.id}`);
@@ -557,31 +585,25 @@ async function assertBrowserCollisionAudit(page, { maxCrossings = 0 } = {}) {
     // consecutive-sample edges built above, instead of an independently
     // tuned point-proximity heuristic.
     //
-    // Known, shared limitation (inherited from production, not introduced
-    // here): edgeCrossing only detects genuine transversal crossings, so two
-    // routes that were exactly (or near-exactly) collinear over a stretch
-    // would report zero crossings rather than a sustained-overlap finding.
-    // This is the same classifier auditLifecycleRouteGeometry itself uses
-    // (this file imports the identical function via
-    // window.__lifecycleRouteGeometry), so this audit's coverage is exactly
-    // as strong here as production's own -- unifying the two was this PR's
-    // goal, not extending either beyond what the other already does. A
-    // dedicated collinear-overlap detector was prototyped and rejected: at
-    // the point-proximity resolution this file samples at, it could not
-    // distinguish a genuine full-length overlap from the ordinary,
-    // harmless correlation two branches leaving the same dock exhibit for a
-    // significant fraction of their shared corridor before diverging toward
-    // different downstream targets, and reintroducing point-proximity as a
-    // fallback risked resurrecting the exact false-positive this PR fixes.
-    // Closing this gap for real would need a placement-level signal (e.g.
-    // comparing transitionLaneY assignments directly) rather than sampled
-    // rendered geometry, which is a layout-solver change and out of this
-    // PR's scope.
+    // edgeCrossing only detects genuine transversal crossings, so two routes
+    // that are exactly (or near-exactly) collinear over a stretch never
+    // satisfy its strict sign-straddling test and would otherwise report
+    // zero crossings, escaping the sustained-overlap contract entirely.
+    // collinearOverlapLength (the same shared, pure geometric measurement
+    // production's own auditLifecycleRouteGeometry now uses for the same
+    // purpose) closes that gap: sumCollinearOverlap below aggregates it per
+    // branch pair and shared transition rank, away from ranks where the two
+    // paths share a source or target node -- two branches leaving (or
+    // converging on) the same dock naturally render correlated, near-
+    // identical geometry for a stretch before diverging, which is ordinary
+    // and nonfatal, not a duplicated-route defect.
     if (routeGeometry) {
       const {
         edgeCrossing,
         classifyRouteCrossingCategory,
         ROUTE_CROSSING_SUSTAINED_THRESHOLD,
+        collinearOverlapLength,
+        SUSTAINED_OVERLAP_LENGTH_THRESHOLD,
       } = routeGeometry;
       const countAwayFromDockCrossings = (left, right) => {
         let count = 0;
@@ -599,13 +621,58 @@ async function assertBrowserCollisionAudit(page, { maxCrossings = 0 } = {}) {
         }
         return count;
       };
+      const sharedRanksOf = (left, right) => {
+        const ranks = [];
+        for (const rank of left.edgesByRank.keys()) {
+          if (right.edgesByRank.has(rank)) ranks.push(rank);
+        }
+        return ranks;
+      };
+      const sumCollinearOverlap = (left, right) => {
+        const sharedRanks = sharedRanksOf(left, right);
+        if (!sharedRanks.length) return 0;
+        const firstRank = sharedRanks[0];
+        const lastRank = sharedRanks.at(-1);
+        // Two branches only genuinely "diverge from a shared dock" if they
+        // span more than the one rank they share it at -- a pair whose
+        // *entire* overlap is a single shared-source-and-target rank (e.g.
+        // two direct, no-milestone branches between the exact same two
+        // nodes) never diverges at all, which is a duplicated-route defect,
+        // not ordinary correlation.
+        const multiRank = sharedRanks.length > 1;
+        let total = 0;
+        for (const rank of sharedRanks) {
+          const anchoredAtSharedSource =
+            multiRank && rank === firstRank && left.source === right.source;
+          const anchoredAtSharedTarget =
+            multiRank && rank === lastRank && left.target === right.target;
+          if (anchoredAtSharedSource || anchoredAtSharedTarget) continue;
+          const leftEdges = left.edgesByRank.get(rank);
+          const rightEdges = right.edgesByRank.get(rank);
+          for (const leftEdge of leftEdges) {
+            for (const rightEdge of rightEdges) {
+              const overlap = collinearOverlapLength(leftEdge, rightEdge);
+              if (!overlap) continue;
+              total += overlap;
+              if (total >= SUSTAINED_OVERLAP_LENGTH_THRESHOLD) return total;
+            }
+          }
+        }
+        return total;
+      };
       for (let a = 0; a < paths.length; a += 1) {
         for (let b = a + 1; b < paths.length; b += 1) {
           const left = paths[a];
           const right = paths[b];
           const count = countAwayFromDockCrossings(left, right);
-          if (!count) continue;
-          if (classifyRouteCrossingCategory(count) === "sustained-crossing") {
+          const overlapLength = sumCollinearOverlap(left, right);
+          const sustainedByOverlap =
+            overlapLength >= SUSTAINED_OVERLAP_LENGTH_THRESHOLD;
+          if (!count && !sustainedByOverlap) continue;
+          if (
+            sustainedByOverlap ||
+            classifyRouteCrossingCategory(count) === "sustained-crossing"
+          ) {
             fatalErrors.push(`${left.id} coincides with ${right.id}`);
             continue;
           }
@@ -1006,9 +1073,11 @@ test.describe("Application Lifecycle Diagram", () => {
       // the shared edgeCrossing/classifyRouteCrossingCategory classifier
       // (src/web/tracker/lifecycleRouteGeometry.js) is applied to the
       // rendered SVG -- confirmed directly, not assumed, by running this
-      // audit repeatedly against the real fixture: a stable 64 on desktop
-      // (57 on the previous-event state). routing-v2.json stays exactly
-      // crossing-free.
+      // audit (including the collinear-overlap and route-handle-parity
+      // checks) repeatedly against the real fixture: a stable 64 on desktop
+      // (57 on the previous-event state), unchanged by either check since
+      // neither trips on this fixture's own geometry. routing-v2.json stays
+      // exactly crossing-free.
       const maxCrossings =
         fixture === "tracker-lifecycle-diagram-v2.json" ? 64 : 0;
       await importFixture(page, fixture);
@@ -1061,6 +1130,59 @@ test.describe("Application Lifecycle Diagram", () => {
       }
     });
   }
+
+  test("audits routed branch collisions detects an injected exact route duplicate", async ({
+    page,
+  }) => {
+    // Regression for the collinear-overlap detector added to
+    // assertBrowserCollisionAudit/auditLifecycleRouteGeometry (see
+    // docs/design/lifecycle-diagram-layout-algorithm.md): edgeCrossing alone
+    // cannot see two routes that are exactly collinear over a stretch, since
+    // they never satisfy its transversal-crossing test. Two entirely
+    // synthetic routes are injected directly into the rendered SVG here
+    // (identical geometry, disjoint fake source/target node ids so no
+    // shared-dock exclusion can apply, positioned far outside the real
+    // diagram's canvas so no other collision category can fire) to prove
+    // the audit still fails on a genuine full-length duplicate, independent
+    // of any real fixture happening to reproduce one.
+    await importFixture(page, "tracker-lifecycle-diagram-routing-v2.json");
+    await page.getByRole("button", { name: "Diagram" }).click();
+    await expect(page.locator("[data-diagram-link]").first()).toBeVisible({
+      timeout: 150000,
+    });
+    await page.locator(".diagram-scroll").evaluate((scroll) => {
+      const svg = scroll.querySelector("svg");
+      const makeDuplicate = (id, source, target) => {
+        const path = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "path",
+        );
+        path.setAttribute("d", "M-5000,-5000L-4500,-5000");
+        path.setAttribute("data-diagram-link", id);
+        path.setAttribute("data-diagram-branch", id);
+        path.setAttribute("data-source-node-id", source);
+        path.setAttribute("data-target-node-id", target);
+        path.setAttribute("data-segment-ranks", "0-1");
+        path.setAttribute("stroke-width", "3");
+        return path;
+      };
+      svg.append(
+        makeDuplicate(
+          "test-only-duplicate-a",
+          "test-only-source-a",
+          "test-only-target-a",
+        ),
+        makeDuplicate(
+          "test-only-duplicate-b",
+          "test-only-source-b",
+          "test-only-target-b",
+        ),
+      );
+    });
+    await expect(
+      assertBrowserCollisionAudit(page, { maxCrossings: 0 }),
+    ).rejects.toThrow(/coincides/);
+  });
 
   test("uses a real touch mobile context without page overflow", async ({
     browser,

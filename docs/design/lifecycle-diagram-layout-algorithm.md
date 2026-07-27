@@ -617,47 +617,86 @@ without touching `candidateCallback`/`toleratedRouteCrossingCount` themselves (t
 entirely inside the test and the production layout module, respectively — this change only affects
 which array a browser-side finding lands in).
 
-**Route-handle envelope, fixed to match production regardless of selection state:** the browser
-audit derives its per-path stroke "inflate" (used for both node/label/hit collision padding and the
-route-handle-collision distance check) from the rendered halo/separator/ribbon stroke widths — but
-`lifecycleDiagram.js` only renders a branch's halo `<path>` while that branch is selected. Before this
-fix, an unselected branch's `inflate` silently fell back to the separator-only width, understating
-production's fixed, selection-independent envelope (`selectedEnvelopeRadius`, which conservatively
-assumes the halo-inclusive width for every branch regardless of which one happens to be selected,
-since collision safety shouldn't depend on transient UI state). Fixed by deriving the halo width
-analytically from the unconditionally-rendered separator (`separator + 6`, matching
+**Route-handle envelope and clearance formula, fully shared with production:** the browser audit
+derives its per-path stroke "inflate" (used for node/label/hit collision padding and, until this fix,
+its own approximated route-handle distance check) from the rendered halo/separator/ribbon stroke
+widths — but `lifecycleDiagram.js` only renders a branch's halo `<path>` while that branch is
+selected. An unselected branch's `inflate` previously fell back to the separator-only width,
+understating production's fixed, selection-independent envelope (`selectedEnvelopeRadius`, which
+conservatively assumes the halo-inclusive width for every branch regardless of which one happens to
+be selected, since collision safety shouldn't depend on transient UI state). Fixed by deriving the
+halo width analytically from the unconditionally-rendered separator (`separator + 6`, matching
 `widthPx + 12 = selectedEnvelopeRadius`'s own formula) instead of depending on the halo element
-actually being present.
+actually being present. Separately, the browser's route-handle-collision check itself used to compare
+`Math.hypot` point-to-point distance from a handle to each _discrete sample_ against
+`branchHandleRadius + path.inflate` — a coarser measurement (missing the closest point _between_ two
+samples) using an approximated threshold, rather than production's exact
+`pointToSegmentDistance(handle, edge) < BRANCH_HANDLE_RADIUS + selectedEnvelopeRadius(segment) + 0.25 +
+LANE_Y_EPSILON`. Both `pointToSegmentDistance` and a new shared `routeHandleRequiredClearance`/
+`isRouteHandleCollision` (`lifecycleRouteGeometry.js`) now back both audits, and the browser check runs
+against the rendered path's sampled _edges_ (`path.edges`, consecutive-sample segments) rather than its
+raw sample points, closing both gaps at once.
 
-**Known, shared limitation, not attempted here:** `edgeCrossing`'s strict transversal-crossing test
-(shared verbatim with production) cannot, by itself, detect two routes that are exactly or
-near-exactly collinear over a stretch — such routes never "cross" in the sign-straddling sense the
-test requires. A dedicated point-proximity fallback was prototyped to close this gap but rejected: at
-this file's sampling resolution it could not reliably distinguish a genuine full-length overlap from
-the ordinary correlation two branches leaving the same dock exhibit over a significant fraction of
-their shared corridor before diverging toward different downstream targets (confirmed directly against
-a real shared-source pair in the reconciled `tracker-lifecycle-diagram-v2.json` fixture, whose
-"near" run extended for ~90px of arc length purely from ordinary post-dock correlation) — reintroducing
-point-proximity risked resurrecting the exact false-positive this PR fixes. This is not a regression:
-it is the same classifier `auditLifecycleRouteGeometry` itself uses, so this audit's coverage now
-matches production's own exactly, which was this PR's goal. Closing this gap for real would need a
-placement-level signal (e.g. comparing `transitionLaneY` assignments directly) rather than sampled
-rendered geometry — a layout-solver-adjacent change, out of scope here.
+**Collinear/coincident sustained-overlap detection, now implemented (shared, not a fallback
+heuristic):** `edgeCrossing`'s strict transversal-crossing test (shared verbatim with production)
+cannot, by itself, detect two routes that are exactly or near-exactly collinear over a stretch — such
+routes never "cross" in the sign-straddling sense the test requires, so a pair of routes rendered
+directly on top of one another would report zero crossings and silently escape the always-fatal
+sustained-overlap contract. A first attempt at closing this gap reused point-proximity (the exact
+heuristic this PR's crossing-classifier fix replaced) and was rejected: at rendered-sample resolution
+it could not distinguish a genuine full-length duplicate from the ordinary correlation two branches
+leaving the same dock exhibit before diverging (confirmed directly against a real shared-source pair
+in the reconciled `tracker-lifecycle-diagram-v2.json` fixture, whose "near" run extended for ~90px of
+arc length from ordinary post-dock correlation alone) — reintroducing it risked resurrecting the exact
+false positive this PR fixes.
+
+The shipped fix instead adds a small, purely geometric primitive, `collinearOverlapLength`
+(`lifecycleRouteGeometry.js`): given two edges, it returns 0 unless they are parallel within a tight
+direction tolerance and collinear within the same perpendicular-distance tolerance
+`cubicFlatEnough`'s own bezier-flattening step already uses (0.25px), and otherwise returns the actual
+length of their shared overlap (not just a boolean). Both `auditLifecycleRouteGeometry` and
+`assertBrowserCollisionAudit` aggregate this per branch pair and transition rank (the same same-rank
+restriction `edgeCrossing`'s own crossing loop already uses), excluding contributions at a rank where
+the two segments share a source or target node — two branches leaving (or converging on) the same
+dock naturally render correlated geometry for a stretch before diverging, which is ordinary and
+nonfatal. That exclusion is itself guarded: it only applies when the branch pair spans **more than
+one** shared rank. A pair whose entire overlap is a single shared-source-and-target rank (e.g. two
+direct, no-milestone branches between the exact same two nodes) never actually diverges anywhere, so
+excluding it would hide a genuine duplicated-route defect rather than tolerate ordinary divergence —
+confirmed directly by constructing exactly this case (see the new unit tests below) before shipping
+the guard. Once the accumulated, non-excluded overlap length reaches `SUSTAINED_OVERLAP_LENGTH_THRESHOLD`
+(30px — confirmed directly against a real false-positive candidate in
+`tracker-lifecycle-diagram-v2.json`'s previous-event state, where two branches converging toward
+_different_ endpoint docks at the same rank boundary accumulated ~6px of incidental overlap while
+merely converging; 30px is an order of magnitude above that observed artifact and well below what a
+genuine full-length duplicate — spanning most of a multi-hundred-pixel route segment — would produce),
+the pair is classified `"sustained-crossing"` regardless of its (possibly zero) transversal-crossing
+count.
 
 **Result:** confirmed directly, not assumed, by running the unskipped test repeatedly against the
 real fixture: `tracker-lifecycle-diagram-v2.json` produces a stable 64 tolerated (proper-crossing- and
-route-handle-collision-equivalent) findings on desktop (57 on the previous-event state),
-comfortably checked in as the test's `maxCrossings` bound (replacing the old, unverified `66`
-placeholder left over from the pre-fix, disproven methodology). `tracker-lifecycle-diagram-routing-v2.json`
-is unaffected, still exactly 0. **0 lifecycle Playwright specs remain skipped** (was 1); **0 lifecycle
-Vitest tests remain skipped** (unchanged from the prior fix — see "Outstanding follow-up work" below).
-Focused unit tests for the shared classifier (`edgeCrossing`, `classifyRouteCrossingCategory`, and
-the route-handle-proximity boundary, mirroring production's exact
-`BRANCH_HANDLE_RADIUS + selectedEnvelopeRadius(...) + 0.25 + LANE_Y_EPSILON` formula) were added to
-`test/web-tracker-lifecycle-diagram-layout.test.js`'s `"shared route-crossing classifier"` describe
-block, including a direct test that two edges diverging from a shared/near-identical endpoint (the
-shared-dock case) are never classified as crossing — the reason production's own crossing loop needs
-no explicit shared-dock exclusion.
+route-handle-collision-equivalent) findings on desktop (57 on the previous-event state), unchanged by
+either the collinear-overlap detector or the route-handle parity fix since neither trips on this
+fixture's own geometry — comfortably checked in as the test's `maxCrossings` bound (replacing the old,
+unverified `66` placeholder left over from the pre-fix, disproven methodology).
+`tracker-lifecycle-diagram-routing-v2.json` is unaffected, still exactly 0. **0 lifecycle Playwright
+specs remain skipped** (was 1); **0 lifecycle Vitest tests remain skipped** (unchanged from the prior
+fix — see "Outstanding follow-up work" below). Focused unit tests for the shared classifier
+(`edgeCrossing`, `classifyRouteCrossingCategory`, `collinearOverlapLength` — genuine overlap, separated
+parallel edges, endpoint-touch-only, offset-beyond-tolerance, and non-parallel/crossing edges — and
+`isRouteHandleCollision`/`routeHandleRequiredClearance` at the just-inside/exact-boundary/just-outside
+clearance) were added to `test/web-tracker-lifecycle-diagram-layout.test.js`'s `"shared
+route-crossing classifier"` describe block, plus a dedicated
+`"auditLifecycleRouteGeometry collinear-overlap aggregation"` describe block exercising
+`auditLifecycleRouteGeometry` directly against hand-built minimal route models: one proving a
+genuine multi-rank shared-dock-divergence pair stays nonfatal, one proving a single-shared-rank,
+same-source-and-target duplicate is flagged fatal (the guard described above). A new Playwright
+regression, `"audits routed branch collisions detects an injected exact route duplicate"`, injects two
+synthetic, fully-coincident `<path>` elements (disjoint fake source/target ids so no shared-dock
+exclusion can apply, positioned off-canvas so no other collision category can fire) into a real
+rendered diagram and confirms `assertBrowserCollisionAudit` fails on them — verified to actually depend
+on the new detector by temporarily disabling it and confirming the regression test fails as expected
+before re-enabling it.
 
 ## Separately: the deterministic-budget fix
 
