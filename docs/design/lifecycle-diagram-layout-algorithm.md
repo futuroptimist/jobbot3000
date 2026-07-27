@@ -892,10 +892,21 @@ other routes, handle overlap, and the route audit together. A safe formula needs
 proof (or an exhaustive bounded test over the supported density domain) connecting density to all
 three rejection classes. The currently established boundary is therefore: ordinary fixtures and
 the existing milestone-free dense grid remain supported, while a 50-way convergence on one real
-milestone is rejected deterministically. The next architectural lever remains one shared
-horizontal-geometry object consumed by layout, lane solving, route primitives, handle generation,
-and audit. That shared per-hop demand/immutable-horizontal-geometry design remains deferred
-follow-up work; its expansion rule must be validated before replacing the baseline constants.
+milestone is rejected deterministically.
+
+P8 ships the architectural seam, but no expansion: one deeply immutable horizontal-geometry value
+owns keyed rank centers and keyed adjacent-hop geometry, including exit and entry positions, control
+and protected-corridor extents, transition and usable handle-center spans, margins, and SVG width.
+The same instance is threaded through base layout, lane solving, routing-anchor materialization,
+route/path generation, handle placement, rendering, auditing, and diagnostics. Compatibility helper
+defaults still select the single baseline instance. Consequently, production geometry and the
+supported-density boundary described above are unchanged: the two extreme fan-in fixtures retain
+their exact deterministic failures and diagnostics.
+
+P9 remains responsible for defining and validating adaptive per-hop demand and expansion. P8 does
+not calculate density demand, alter rank spacing, change candidate samples or budgets, or make
+either extreme fixture feasible. Any P9 expansion rule still needs the constructive proof (or
+exhaustive bounded test) described above before it can replace the baseline constructor inputs.
 
 This is the authoritative, current list — cross-check against the code before trusting it, since
 skip states and test names can drift. `grep -rn "it\.skip(\|test\.skip(" test/` finds all of them.

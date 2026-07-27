@@ -7,6 +7,7 @@ import {
   projectLifecycleAt,
 } from "../src/web/tracker/lifecycleProjection.js";
 import {
+  BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
   BRANCH_HANDLE_RADIUS,
   BRANCH_STROKE_OPACITY,
   HANDLE_CLEARANCE_TOLERANCE,
@@ -37,6 +38,7 @@ import {
   compareBranches,
   compareLifecycleIds,
   createLaneGeometryFailureCache,
+  createLifecycleHorizontalGeometry,
   cubicTransitionPoint,
   edgeCrossing,
   endpointColor,
@@ -63,6 +65,85 @@ import {
 } from "../src/web/tracker/lifecycleDiagramLayout.js";
 
 const projection = () => projectLifecycleAt(routingFixture);
+
+describe("lifecycle horizontal geometry", () => {
+  it("constructs deterministic deeply immutable baseline rank and hop geometry", () => {
+    const first = createLifecycleHorizontalGeometry();
+    const second = createLifecycleHorizontalGeometry();
+
+    expect(first).toEqual(second);
+    expect(first).toEqual(BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY);
+    expect(Object.isFrozen(first)).toBe(true);
+    expect(Object.isFrozen(first.rankCenters)).toBe(true);
+    expect(Object.isFrozen(first.hops)).toBe(true);
+    expect(Object.isFrozen(first.hops["0->1"])).toBe(true);
+    expect(first.rankCenters[0]).toBe(109);
+    expect(first.rankCenters[6]).toBe(1741);
+    expect(first.hops["0->1"]).toMatchObject({
+      sourceRank: 0,
+      targetRank: 1,
+      rankCenterSpacing: 272,
+      protectedCorridorWidth: 200,
+      transitionSpan: 72,
+      controlSpan: 24,
+      usableHandleCenterSpan: 28,
+    });
+    expect(first.handleRadius * 2).toBe(44);
+    expect(first.svgWidth).toBe(MINIMUM_SVG_WIDTH);
+  });
+
+  it("validates finite, complete, monotonic rank centers and hop spans", () => {
+    const centers = { ...BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY.rankCenters };
+    expect(() =>
+      createLifecycleHorizontalGeometry({
+        rankCenters: { ...centers, 3: Number.NaN },
+      }),
+    ).toThrow(/finite rank 3 center/u);
+    expect(() =>
+      createLifecycleHorizontalGeometry({
+        rankCenters: { ...centers, 3: 653 },
+      }),
+    ).toThrow(/increase monotonically/u);
+    expect(() =>
+      createLifecycleHorizontalGeometry({
+        rankCenters: { ...centers, 1: 300 },
+      }),
+    ).toThrow(/minimum span invariant/u);
+    expect(() =>
+      createLifecycleHorizontalGeometry({ controlOffset: Infinity }),
+    ).toThrow(/must be finite and nonnegative/u);
+  });
+
+  it("uses rank and hop keys rather than array-position identity", () => {
+    const centers = Object.fromEntries(
+      Object.entries(
+        BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY.rankCenters,
+      ).reverse(),
+    );
+    const geometry = createLifecycleHorizontalGeometry({
+      rankCenters: centers,
+    });
+    expect(geometry.rankCenters[4]).toBe(rankCenterX(4));
+    expect(geometry.hops["4->5"].exitX).toBe(1297);
+    expect(geometry.hops["4->5"].entryX).toBe(1369);
+  });
+
+  it("threads one geometry identity through layout and the route model", () => {
+    const horizontalGeometry = createLifecycleHorizontalGeometry();
+    const { graph, dimensions } = layoutLifecycleRoutingGraph(
+      projection(),
+      1850,
+      {
+        horizontalGeometry,
+      },
+    );
+    const model = buildLifecycleRouteModel(graph, dimensions);
+
+    expect(graph.horizontalGeometry).toBe(horizontalGeometry);
+    expect(dimensions.horizontalGeometry).toBe(horizontalGeometry);
+    expect(model.horizontalGeometry).toBe(horizontalGeometry);
+  });
+});
 const deepFreeze = (value) => {
   if (!value || typeof value !== "object" || Object.isFrozen(value))
     return value;

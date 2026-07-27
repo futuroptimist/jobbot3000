@@ -530,9 +530,12 @@ export function createLifecycleDiagramView(root, options = {}) {
         handles = graph.acceptedHandles;
       } else {
         handles = new Map(
-          assignBranchHandles(branches, segmentsByBranch, visibleNodes).map(
-            (h) => [h.branchId, h],
-          ),
+          assignBranchHandles(
+            branches,
+            segmentsByBranch,
+            visibleNodes,
+            dimensions.horizontalGeometry,
+          ).map((h) => [h.branchId, h]),
         );
       }
     } catch {
@@ -548,7 +551,10 @@ export function createLifecycleDiagramView(root, options = {}) {
       const segments = segmentsByBranch
         .get(branch.id)
         .sort((a, b) => a.segmentIndex - b.segmentIndex);
-      const pathData = compoundBranchPath(segments);
+      const pathData = compoundBranchPath(
+        segments,
+        dimensions.horizontalGeometry,
+      );
       if (!pathData || /NaN|Infinity/u.test(pathData)) continue;
       const from = TAXONOMY.get(branch.source)?.label ?? branch.source;
       const to = TAXONOMY.get(branch.target)?.label ?? branch.target;
@@ -716,7 +722,7 @@ export function createLifecycleDiagramView(root, options = {}) {
           event.stopPropagation();
           selectNode();
         });
-        const labelBox = labelBoxForNode(node);
+        const labelBox = labelBoxForNode(node, dimensions.horizontalGeometry);
         const label = svgEl("text", {
           x: labelBox.x + labelBox.width / 2,
           y: labelBox.y + 12,
