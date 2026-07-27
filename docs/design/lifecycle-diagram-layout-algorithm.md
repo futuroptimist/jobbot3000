@@ -444,15 +444,17 @@ constraints there, even though the node's `y0`/`y1` box never moved.
 
 **Fix:** `buildTransitionScopedJointOrder` (replacing `buildMilestoneFreeJointOrder`/
 `hasIntermediateRealNodes` — same location, near `layoutLifecycleRoutingGraphPass`) restricts _both_
-the node-order and the branch/link-order override, per rank/hop, to ones that never touch a real
-node on either side. Concretely: the node-order override still only applies to a rank when that rank
-itself has no real node (ranks 0 and 6 always keep `nodeSort`'s own taxonomy anchoring, exactly as
-before); the branch/link-order override additionally now only applies to a hop when _neither_ its
-source rank nor its target rank is an intermediate (1–5) rank with a real node — origin (rank 0) and
-endpoint (rank 6) reordering stays unconditional, since that's exactly what
-`buildMilestoneFreeJointOrder` already proved safe and `denseBranchProjection()` (5 real origins)
-depends on. This is no longer gated on a whole-graph `hasIntermediateRealNodes` boolean — it runs
-unconditionally whenever no explicit order is supplied, for every graph, milestone-bearing or not.
+the node-order and the branch/link-order override, per rank/hop, to ones that never touch an
+**intermediate** (rank 1–5) real milestone node on either side — origin (rank 0) and endpoint
+(rank 6) docks are deliberately excluded from that restriction and stay unconditionally reordered.
+Concretely: the node-order override still only applies to a rank when that rank itself has no real
+node (ranks 0 and 6 always keep `nodeSort`'s own taxonomy anchoring, exactly as before); the
+branch/link-order override additionally now only applies to a hop when _neither_ its source rank nor
+its target rank is an intermediate (1–5) rank with a real node — origin (rank 0) and endpoint
+(rank 6) reordering stays unconditional, since that's exactly what `buildMilestoneFreeJointOrder`
+already proved safe and `denseBranchProjection()` (5 real origins) depends on. This is no longer
+gated on a whole-graph `hasIntermediateRealNodes` boolean — it runs unconditionally whenever no
+explicit order is supplied, for every graph, milestone-bearing or not.
 
 **Confirmed directly, not assumed**, by comparing `graph.testOnlyBranchPrecedenceEdges` (a new
 test-only diagnostic field, populated once per pass right after `branchPrecedenceEdges` is built,
@@ -872,10 +874,11 @@ skip states and test names can drift. `grep -rn "it\.skip(\|test\.skip(" test/` 
    real node — silently changes `branchPrecedenceEdges`' hard precedence constraints at a real node's
    dock, even when the node's own `y0`/`y1` box never moves. `buildTransitionScopedJointOrder` (which
    replaced `buildMilestoneFreeJointOrder`/`hasIntermediateRealNodes`) restricts the override to
-   ranks/hops that never touch a real node on either side and now runs unconditionally, safely
-   extending the mechanism to milestone-bearing graphs. Confirmed with zero regressions across the
-   full suite and byte-identical real-node dock precedence to the unconstrained default (see that
-   section for the full evidence).
+   ranks/hops adjacent to an intermediate (rank 1-5) real milestone node — origin (rank 0) and
+   endpoint (rank 6) docks stay unconditionally reordered, exactly as the predecessor mechanism
+   already proved safe there — and now runs unconditionally, safely extending the mechanism to
+   milestone-bearing graphs. Confirmed with zero regressions across the full suite and byte-identical
+   real-node dock precedence to the unconstrained default (see that section for the full evidence).
 
    **This does not close the corridor-width/constructive-placement gap** the two genuinely-infeasible
    extreme fan-in fixtures hit (`transitionDensityProjection()` and the 60-application/89-branch

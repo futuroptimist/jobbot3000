@@ -1720,11 +1720,11 @@ describe("test-only lifecycle layout diagnostics", () => {
     // layoutLifecycleRoutingGraphPass whenever no explicit order is
     // supplied -- see docs/design/lifecycle-diagram-layout-algorithm.md's
     // "Root-causing the routing-node joint-order destabilization" section).
-    // graph.testOnlyBranchPrecedenceEdges is a test-only diagnostic field
-    // production now stamps on every returned graph: the hard branch
-    // precedence constraints (branchIndegree/compIndegree in
-    // solveFromComponent) derived from each branch's dock-Y at its real
-    // semantic source/target node.
+    // graph.testOnlyBranchPrecedenceEdges is a test-only diagnostic field,
+    // populated only under isLifecycleLayoutTestEnvironment() (this test
+    // run), never in production: the hard branch precedence constraints
+    // (branchIndegree/compIndegree in solveFromComponent) derived from each
+    // branch's dock-Y at its real semantic source/target node.
     describe("real-node dock precedence diagnostics", () => {
       const realEdgeKeys = (graph) =>
         (graph.testOnlyBranchPrecedenceEdges ?? [])

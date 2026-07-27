@@ -724,22 +724,25 @@ const compareBranchesJoint = (a, b) => {
 // Derives a single, stable-ID/topology-only order for both node rank and
 // per-transition-rank branch order. Unlike an earlier, whole-graph-gated
 // version of this mechanism, this is safe to apply to any graph, including
-// one with real milestone convergence, because it never overrides ordering
-// for a rank or a transition hop that touches a real (non-routing) node on
-// either side: those ranks/hops keep exactly the same nodeSort/linkSort
-// (mechanisms 1/2) behavior they always had. This scoping is what makes the
-// difference -- see docs/design/lifecycle-diagram-layout-algorithm.md's
-// "Root-causing the routing-node joint-order destabilization" section: a
-// prior, unscoped version of this same joint order (still checked in as a
-// regression under "joint-order investigation regression") reorders links at
-// a real node's own dock via linkSort even when it never moves that node's
-// y0/y1 box, which silently changes branchPrecedenceEdges' hard precedence
-// constraints there and destabilizes the deadline-based DFS on fixtures with
-// real milestone convergence. Restricting both the node-order and the
-// branch/link-order override to hops/ranks that are entirely routing (never
-// touching a real origin, milestone, or endpoint node) eliminates that
-// channel while still closing the rankOrder-blind gap for every hop where
-// it's safe to.
+// one with real milestone convergence, because it never overrides node or
+// link ordering for a rank or a transition hop adjacent to an intermediate
+// (rank 1-5) real (non-routing) milestone node: those ranks/hops keep
+// exactly the same nodeSort/linkSort (mechanisms 1/2) behavior they always
+// had. Origin (rank 0) and endpoint (rank 6) docks are NOT included in that
+// restriction -- both the node-order and link-order overrides still apply
+// there, exactly as this mechanism's whole-graph-gated predecessor already
+// proved safe (see below). This scoping is what makes the difference -- see
+// docs/design/lifecycle-diagram-layout-algorithm.md's "Root-causing the
+// routing-node joint-order destabilization" section: a prior, unscoped
+// version of this same joint order (still checked in as a regression under
+// "joint-order investigation regression") reorders links at an intermediate
+// real milestone node's own dock via linkSort even when it never moves that
+// node's y0/y1 box, which silently changes branchPrecedenceEdges' hard
+// precedence constraints there and destabilizes the deadline-based DFS on
+// fixtures with real milestone convergence. Restricting both overrides to
+// hops/ranks that never touch an intermediate real milestone node eliminates
+// that channel while still closing the rankOrder-blind gap for every hop
+// where it's safe to.
 const buildTransitionScopedJointOrder = (graph) => {
   const realNodeRanks = new Set(
     graph.nodes.filter((node) => !node.routing).map((node) => node.rank),
