@@ -4519,10 +4519,40 @@ const handlePlacementError = (result) => {
       compareLifecycleIds,
     ),
     branches: [...(result.branchDiagnostics ?? [])],
+    horizontalConstraints: summarizeHandleCandidateConstraints(
+      result.branchDiagnostics ?? [],
+    ),
     component: result.component ?? null,
   });
   return error;
 };
+
+export function summarizeHandleCandidateConstraints(branchDiagnostics) {
+  const rejected = {
+    fixedGeometry: 0,
+    outsideTransitionCorridor: 0,
+    nonincidentRouteClearance: 0,
+  };
+  let attempts = 0;
+  for (const diagnostic of [...branchDiagnostics].sort((left, right) =>
+    compareLifecycleIds(left.branchId, right.branchId),
+  )) {
+    attempts += diagnostic.attempts ?? 0;
+    for (const constraint of Object.keys(rejected))
+      rejected[constraint] += diagnostic.rejected?.[constraint] ?? 0;
+  }
+  const transitionSpan =
+    MINIMUM_RANK_CENTER_SPACING - 2 * RANK_CORRIDOR_HALF_WIDTH;
+  return {
+    attempts,
+    rejected,
+    rankCenterSpacing: MINIMUM_RANK_CENTER_SPACING,
+    protectedCorridorWidth: 2 * RANK_CORRIDOR_HALF_WIDTH,
+    transitionSpan,
+    handleDiameter: 2 * BRANCH_HANDLE_RADIUS,
+    usableHandleCenterSpan: transitionSpan - 2 * BRANCH_HANDLE_RADIUS,
+  };
+}
 
 const tryAssignBranchHandles = (
   branches,

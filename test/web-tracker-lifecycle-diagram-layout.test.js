@@ -54,6 +54,7 @@ import {
   routeHandleRequiredClearance,
   segmentRoutePrimitives,
   selectedEnvelopeRadius,
+  summarizeHandleCandidateConstraints,
   solveHandleCandidateSets,
   SUSTAINED_OVERLAP_LENGTH_THRESHOLD,
   taxonomyOrder,
@@ -978,6 +979,26 @@ describe("transition lane solver", () => {
         (branch) => branch.nearestRejectedCandidate?.clearanceMargin === -1,
       ),
     ).toBe(true);
+    expect(thrown?.cause?.horizontalConstraints).toEqual(
+      summarizeHandleCandidateConstraints(thrown.cause.branches),
+    );
+    expect(thrown.cause.horizontalConstraints).toMatchObject({
+      attempts: thrown.cause.branches.length * 11,
+      rankCenterSpacing: 272,
+      protectedCorridorWidth: 200,
+      transitionSpan: 72,
+      handleDiameter: 44,
+      usableHandleCenterSpan: 28,
+    });
+    expect(
+      thrown.cause.horizontalConstraints.rejected.fixedGeometry,
+    ).toBeGreaterThan(0);
+    expect(
+      thrown.cause.horizontalConstraints.rejected.outsideTransitionCorridor,
+    ).toBeGreaterThan(0);
+    expect(
+      thrown.cause.horizontalConstraints.rejected.nonincidentRouteClearance,
+    ).toBeGreaterThan(0);
     expect(Date.now() - start).toBeLessThan(30000);
   });
 

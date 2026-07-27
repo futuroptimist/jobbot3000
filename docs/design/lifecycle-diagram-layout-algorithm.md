@@ -857,6 +857,38 @@ edge count (its pairwise crossing check is `O(edges-within-rank^2)`).
 
 ## Outstanding follow-up work (as of this writing)
 
+### Fixed-corridor diagnostic refinement (2026-07-27)
+
+The `clearanceMargin === -1` sentinel was too coarse to justify a production geometry change by
+itself. It is the value retained for both fixed-node/label collisions and transition-corridor-bound
+rejections, and the nearest-rejected tie-break can retain one of those even when other sampled
+candidates reached the nonincident-route-clearance check. Handle-placement failures now include a
+deterministic `horizontalConstraints` summary that aggregates all rejected candidates and records
+the exact geometry that bounded the sweep: 272 px between rank centers, 200 px of protected
+corridors, a 72 px transition span, a 44 px handle diameter, and therefore only 28 px in which a
+handle center can satisfy the corridor bound.
+
+For `transitionDensityProjection()` the first rejected layout has 41 blocked branches and 451
+sampled candidates (11 per branch). The aggregate identifies all three active constraints:
+fixed-node/label geometry, corridor bounds, and nonincident-route clearance. This is more precise
+than the historical statement that all candidates were rejected by one fixed-width check: every
+blocked branch's _nearest retained_ candidate still has the `-1` sentinel, but that fact does not
+describe every rejection. The historical milestone-bearing pagination fixture likewise reports 48
+blocked branches on its first candidate, while its full bounded layout search ultimately reaches
+the unchanged 32,768 handle-state limit; lane-only pagination coverage is not evidence of full
+handle feasibility.
+
+No density-aware production expansion is shipped from this evidence. Increasing
+`RANK_CORRIDOR_HALF_WIDTH` reduces the 72 px between-rank transition span, while increasing rank
+spacing moves the sampled cubic points but does not by itself establish a bound that clears labels,
+other routes, handle overlap, and the route audit together. A safe formula needs a constructive
+proof (or an exhaustive bounded test over the supported density domain) connecting density to all
+three rejection classes. The currently established boundary is therefore: ordinary fixtures and
+the existing milestone-free dense grid remain supported, while a 50-way convergence on one real
+milestone is rejected deterministically. The next architectural lever remains one shared
+horizontal-geometry object consumed by layout, lane solving, route primitives, handle generation,
+and audit; its expansion rule must be validated before replacing the baseline constants.
+
 This is the authoritative, current list — cross-check against the code before trusting it, since
 skip states and test names can drift. `grep -rn "it\.skip(\|test\.skip(" test/` finds all of them.
 
