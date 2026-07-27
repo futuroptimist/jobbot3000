@@ -1501,13 +1501,14 @@ describe("test-only lifecycle layout diagnostics", () => {
   // candidate_withdrew) -- getting zero legal handle candidates anywhere
   // along their curve, with states.handle in the low thousands (far below
   // the 32768 budget -- not a narrow budget miss). Fixed by
-  // buildMilestoneFreeJointOrder giving discovery's own first D3 pass a
+  // buildTransitionScopedJointOrder giving discovery's own first D3 pass a
   // topology-derived order instead of the plain, rankOrder-blind
   // nodeSort/linkSort it fell back to before (this fixture has no real
-  // milestone nodes, so it's in-scope for that fix) -- see the design
-  // doc's "Investigation (2026-07-26)" section. This test now characterizes the
-  // fixed behavior: the same fixture, still deterministic and
-  // order-independent, now succeeds outright.
+  // milestone nodes, so every rank/hop is in scope for that fix) -- see the
+  // design doc's "Investigation (2026-07-26)" and "Root-causing the
+  // routing-node joint-order destabilization" sections. This test now
+  // characterizes the fixed behavior: the same fixture, still deterministic
+  // and order-independent, now succeeds outright.
   it("characterizes dense routing-only handle feasibility deterministically", () => {
     const reversedDenseBranchProjection = () => {
       const p = denseBranchProjection();
@@ -1595,17 +1596,23 @@ describe("test-only lifecycle layout diagnostics", () => {
     ).toBe(275);
   });
 
-  // Preserves the joint-order investigation behind
-  // buildMilestoneFreeJointOrder (see docs/design/lifecycle-diagram-layout-algorithm.md's
-  // "Investigation (2026-07-26)" section) as a permanent, deterministic
-  // regression, rather than a deleted scratch script. This is intentionally
-  // NOT wired into production eligibility: buildMilestoneFreeJointOrder
-  // stays gated on hasIntermediateRealNodes exactly as shipped. This test
-  // reconstructs the same joint-order/rank-restriction logic independently
-  // (using only exported symbols and the testOnlyBaseNodeOrderByRank /
-  // authoritativeBranchOrderByRank test hooks) and applies it WITHOUT that
-  // gate, to both prove the routing-only success case one more time and
-  // lock in the regression that justifies keeping the gate.
+  // Preserves the joint-order investigation (see
+  // docs/design/lifecycle-diagram-layout-algorithm.md's "Investigation
+  // (2026-07-26)" section) as a permanent, deterministic regression, rather
+  // than a deleted scratch script. This test reconstructs an UNGATED
+  // joint-order/rank-restriction (no exclusion at all for hops/ranks that
+  // touch a real node) independently of production, using only exported
+  // symbols and the testOnlyBaseNodeOrderByRank/authoritativeBranchOrderByRank
+  // test hooks, and applies it directly. Production itself no longer uses
+  // this unrestricted construction or a whole-graph gate -- it now ships
+  // buildTransitionScopedJointOrder unconditionally (see "root-causing the
+  // routing-node joint-order destabilization" below and the design doc's
+  // "Root-causing the routing-node joint-order destabilization" section),
+  // which instead restricts the override per hop/rank to ones that never
+  // touch a real node. This block's job is to keep proving that the
+  // UNGATED construction still regresses real fixtures, i.e. that
+  // production's actual per-hop restriction remains load-bearing, not
+  // optional.
   describe("joint-order investigation regression", () => {
     const compareBranchesJoint = (a, b) => {
       if (a.sourceRank === 0 && b.sourceRank === 0) {
@@ -1633,9 +1640,10 @@ describe("test-only lifecycle layout diagnostics", () => {
       const nodeOrderByRank = new Map();
       for (const rank of [...new Set(graph.nodes.map((node) => node.rank))]) {
         const nodes = graph.nodes.filter((node) => node.rank === rank);
-        // Deliberately UNGATED: unlike buildMilestoneFreeJointOrder, this
-        // reorders any rank with zero real nodes regardless of whether the
-        // graph as a whole has milestones elsewhere -- exactly the
+        // Deliberately UNGATED: unlike production's buildTransitionScopedJointOrder,
+        // this reorders every rank/hop uniformly with no real-node-adjacency
+        // restriction at all (its branchOrderByRank below overrides linkSort
+        // even at ranks/hops touching a real node) -- exactly the
         // construction the investigation found regresses real fixtures.
         if (nodes.some((node) => !node.routing)) {
           nodes.sort(nodeSort);
@@ -1674,11 +1682,14 @@ describe("test-only lifecycle layout diagnostics", () => {
     });
 
     it("regresses the reference fixture from zero crossings to a tolerated one", () => {
-      // Production's own gated approach (buildMilestoneFreeJointOrder,
-      // never engaging here since this fixture has milestones) keeps this
-      // fixture at exactly 0 accepted crossings -- see the seeded-replay
-      // suite above. Applying the same joint order ungated introduces a
-      // crossing production's default ordering never needed to tolerate.
+      // Production's own per-hop-scoped approach (buildTransitionScopedJointOrder,
+      // which leaves this fixture's real-node-adjacent hops untouched even
+      // though it does engage for this fixture's routing-only hops) keeps
+      // this fixture at exactly 0 accepted crossings -- see the
+      // seeded-replay suite above. Applying the same joint order fully
+      // ungated (no real-node-adjacency restriction at all) introduces a
+      // crossing production's actual default ordering never needed to
+      // tolerate.
       const result = layoutWithUngatedJointOrder(
         projectLifecycleAt(routingFixture),
       );
@@ -1700,6 +1711,81 @@ describe("test-only lifecycle layout diagnostics", () => {
         reason: "state-limit",
         phase: "handle",
         stateLimit: 32768,
+      });
+    });
+
+    // Root-causes exactly why the ungated joint order above destabilizes
+    // real milestone-bearing fixtures, and confirms the fix production now
+    // ships (buildTransitionScopedJointOrder, unconditionally applied inside
+    // layoutLifecycleRoutingGraphPass whenever no explicit order is
+    // supplied -- see docs/design/lifecycle-diagram-layout-algorithm.md's
+    // "Root-causing the routing-node joint-order destabilization" section).
+    // graph.testOnlyBranchPrecedenceEdges is a test-only diagnostic field
+    // production now stamps on every returned graph: the hard branch
+    // precedence constraints (branchIndegree/compIndegree in
+    // solveFromComponent) derived from each branch's dock-Y at its real
+    // semantic source/target node.
+    describe("real-node dock precedence diagnostics", () => {
+      const realEdgeKeys = (graph) =>
+        (graph.testOnlyBranchPrecedenceEdges ?? [])
+          .filter((edge) => edge.sharedNodeKind === "real")
+          .map(
+            (edge) => `${edge.fromBranchId}\0${edge.toBranchId}\0${edge.kind}`,
+          )
+          .sort();
+      // Bypasses buildTransitionScopedJointOrder entirely (it only applies
+      // when neither override option is supplied) to reconstruct plain,
+      // rankOrder-blind nodeSort/linkSort -- the historical default for any
+      // milestone-bearing graph before this investigation's fix.
+      const pureDefaultOrder = (projection, width = 1850) =>
+        layoutLifecycleRoutingGraph(projection, width, {
+          transitionLanePhaseOnly: true,
+          authoritativeNodeOrderByRank: new Map(),
+          authoritativeBranchOrderByRank: new Map(),
+        });
+
+      it("shipped order leaves real-node precedence identical to the unconstrained default", () => {
+        const shipped = layoutLifecycleRoutingGraph(
+          projectLifecycleAt(routingFixture),
+          1850,
+          { transitionLanePhaseOnly: true },
+        );
+        const pure = pureDefaultOrder(projectLifecycleAt(routingFixture));
+        const shippedKeys = realEdgeKeys(shipped.graph);
+        expect(shippedKeys.length).toBeGreaterThan(0);
+        expect(shippedKeys).toEqual(realEdgeKeys(pure.graph));
+      });
+
+      it("the reverted ungated joint order changes real-node precedence, unlike the fix", () => {
+        const pure = pureDefaultOrder(projectLifecycleAt(routingFixture));
+        const ungated = layoutWithUngatedJointOrder(
+          projectLifecycleAt(routingFixture),
+        );
+        const pureKeys = realEdgeKeys(pure.graph);
+        const ungatedKeys = realEdgeKeys(ungated.graph);
+        // Same count (every branch pair sharing a real dock still gets
+        // exactly one precedence edge either way) but not the same relative
+        // order -- the ungated joint order's unrestricted linkSort override
+        // reorders links along a real node's own box even though it never
+        // moves that node's y0/y1.
+        expect(ungatedKeys.length).toBe(pureKeys.length);
+        expect(ungatedKeys).not.toEqual(pureKeys);
+      });
+
+      it("shipped order solves the real dense fixture the ungated joint order cannot", () => {
+        // The ungated variant above already asserts this fixture throws a
+        // state-limit failure. Production's own default call (no options at
+        // all) applies buildTransitionScopedJointOrder internally and
+        // succeeds -- the same real-node-dock-precedence preservation this
+        // describe block otherwise proves is what makes the difference.
+        const result = layoutLifecycleRoutingGraph(
+          projectLifecycleAt(denseFixture),
+          1850,
+        );
+        expect(result.graph.acceptedRouteCrossingCount).toBe(50);
+        expect(result.graph.transitionLaneSolverStats.handleStatesVisited).toBe(
+          500,
+        );
       });
     });
   });
@@ -2662,7 +2748,7 @@ describe("lifecycle diagram render-only routing layout", () => {
   });
 
   // denseBranchProjection() has no real milestone nodes (every branch is a
-  // direct origin->endpoint link), so buildMilestoneFreeJointOrder now
+  // direct origin->endpoint link), so buildTransitionScopedJointOrder now
   // gives discovery's own first D3 pass a topology-derived, cross-rank-
   // consistent node/link order instead of the plain, rankOrder-blind
   // nodeSort/linkSort it used to fall back to -- see
@@ -2754,7 +2840,7 @@ describe("lifecycle diagram render-only routing layout", () => {
     // denseBranchProjection()'s multi-rank routing had no
     // handle-clearance-feasible lane arrangement discovery's plain,
     // rankOrder-blind nodeSort/linkSort could find. Fixed by
-    // buildMilestoneFreeJointOrder (see
+    // buildTransitionScopedJointOrder (see
     // docs/design/lifecycle-diagram-layout-algorithm.md's
     // "Investigation (2026-07-26)" section) -- this fixture has no real
     // milestone nodes, so it's in-scope for that fix. The search itself is
@@ -2782,7 +2868,7 @@ describe("lifecycle diagram render-only routing layout", () => {
 // contract that's easy to assert without also having to replay tolerance state.
 // The dense v2 fixture and denseBranchProjection() now succeed too (both are exercised
 // by other tests above), but only via mechanisms this section doesn't need: the bounded
-// tolerances for v2, buildMilestoneFreeJointOrder for denseBranchProjection() -- see
+// tolerances for v2, buildTransitionScopedJointOrder for denseBranchProjection() -- see
 // docs/design/lifecycle-diagram-layout-algorithm.md's "Follow-up (shipped)" and
 // "Investigation (2026-07-26)" sections.
 describe("seeded-replay production layout (routing fixture)", () => {

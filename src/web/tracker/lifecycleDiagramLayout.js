@@ -708,14 +708,11 @@ export function createLaneGeometryFailureCache() {
 
 // compareBranches, plus the rank-0-only origin/taxonomy tie-break normally
 // only applied inside compareBranchesForGlobalOrder (see that function,
-// below), folded into a single comparator. Used only to derive a joint
-// base-layout order for graphs with no real milestone nodes -- see
-// hasIntermediateRealNodes/buildMilestoneFreeJointOrder below and
-// docs/design/lifecycle-diagram-layout-algorithm.md's "Investigation (2026-07-26)"
-// section for why this is scoped that narrowly rather than applied
-// everywhere: the same order destabilizes the deadline-based DFS on graphs
-// with real milestone convergence, even when it never touches a real
-// node's position.
+// below), folded into a single comparator. Feeds buildTransitionScopedJointOrder
+// below. See docs/design/lifecycle-diagram-layout-algorithm.md's "Investigation
+// (2026-07-26)" and "Root-causing the routing-node joint-order destabilization"
+// sections for why a blind, pre-search topological order isn't safe to apply
+// at every rank unconditionally, and what scoping makes it safe.
 const compareBranchesJoint = (a, b) => {
   if (a.sourceRank === 0 && b.sourceRank === 0) {
     const taxonomyDiff = taxonomyOrder(a.source) - taxonomyOrder(b.source);
@@ -724,23 +721,46 @@ const compareBranchesJoint = (a, b) => {
   return compareBranches(a, b);
 };
 
-// True when any rank between the fixed origin/endpoint ranks (0 and 6) has
-// a real (non-routing) node -- i.e. this graph actually routes through a
-// milestone somewhere. buildMilestoneFreeJointOrder is only safe to use
-// when this is false.
-const hasIntermediateRealNodes = (graph) =>
-  graph.nodes.some((node) => !node.routing && node.rank >= 1 && node.rank <= 5);
-
 // Derives a single, stable-ID/topology-only order for both node rank and
-// per-transition-rank branch order, for graphs where every rank 1-5 node is
-// a routing node (no real milestone convergence anywhere in the graph).
-// Because there are no real nodes at those ranks, no real-node-vs-
-// routing-node reconciliation is needed here; ranks 0 and 6 keep nodeSort's
-// own existing taxonomy-order anchoring, which compareBranchesJoint's
-// rank-0 tie-break already agrees with by construction.
-const buildMilestoneFreeJointOrder = (graph) => {
+// per-transition-rank branch order. Unlike an earlier, whole-graph-gated
+// version of this mechanism, this is safe to apply to any graph, including
+// one with real milestone convergence, because it never overrides ordering
+// for a rank or a transition hop that touches a real (non-routing) node on
+// either side: those ranks/hops keep exactly the same nodeSort/linkSort
+// (mechanisms 1/2) behavior they always had. This scoping is what makes the
+// difference -- see docs/design/lifecycle-diagram-layout-algorithm.md's
+// "Root-causing the routing-node joint-order destabilization" section: a
+// prior, unscoped version of this same joint order (still checked in as a
+// regression under "joint-order investigation regression") reorders links at
+// a real node's own dock via linkSort even when it never moves that node's
+// y0/y1 box, which silently changes branchPrecedenceEdges' hard precedence
+// constraints there and destabilizes the deadline-based DFS on fixtures with
+// real milestone convergence. Restricting both the node-order and the
+// branch/link-order override to hops/ranks that are entirely routing (never
+// touching a real origin, milestone, or endpoint node) eliminates that
+// channel while still closing the rankOrder-blind gap for every hop where
+// it's safe to.
+const buildTransitionScopedJointOrder = (graph) => {
+  const realNodeRanks = new Set(
+    graph.nodes.filter((node) => !node.routing).map((node) => node.rank),
+  );
+  // Only ranks 1-5 (intermediate milestones) restrict the linkSort override
+  // below -- ranks 0/6 (origins/endpoints) keep the same joint-order
+  // reordering buildTransitionScopedJointOrder's predecessor already proved
+  // safe there (denseBranchProjection()'s 5 real origins rely on it).
+  // Confirmed directly: restricting rank 0/6 too (the more literal "never
+  // touch a real node at all" reading) breaks that already-solved
+  // milestone-free case instead of generalizing it -- see
+  // docs/design/lifecycle-diagram-layout-algorithm.md.
+  const isIntermediateRealRank = (rank) =>
+    rank >= 1 && rank <= 5 && realNodeRanks.has(rank);
   const jointBranches = [...graph.branches].sort(compareBranchesJoint);
-  const branchOrderByRank = new Map();
+  // Always compute a full per-hop branch order -- used below for node
+  // positioning at any rank that has no real node, independent of whether an
+  // adjacent rank does. Only the linkSort override further below is
+  // restricted by hop adjacency, since that's what actually reorders docks
+  // at a real node's own box.
+  const fullBranchOrderByRank = new Map();
   const ranksInUse = new Set();
   for (const branch of jointBranches)
     for (let rank = branch.sourceRank; rank < branch.targetRank; rank += 1)
@@ -749,18 +769,24 @@ const buildMilestoneFreeJointOrder = (graph) => {
     const active = jointBranches.filter(
       (branch) => branch.sourceRank <= rank && rank < branch.targetRank,
     );
-    branchOrderByRank.set(
+    fullBranchOrderByRank.set(
       rank,
       new Map(active.map((branch, index) => [branch.id, index])),
     );
   }
+  const branchOrderByRank = new Map(
+    [...fullBranchOrderByRank].filter(
+      ([rank]) =>
+        !isIntermediateRealRank(rank) && !isIntermediateRealRank(rank + 1),
+    ),
+  );
   const nodeOrderByRank = new Map();
   for (const rank of [...new Set(graph.nodes.map((node) => node.rank))]) {
     const nodes = graph.nodes.filter((node) => node.rank === rank);
-    if (rank === 0 || rank === 6) {
+    if (rank === 0 || rank === 6 || realNodeRanks.has(rank)) {
       nodes.sort(nodeSort);
     } else {
-      const branchIndex = branchOrderByRank.get(rank);
+      const branchIndex = fullBranchOrderByRank.get(rank);
       nodes.sort(
         (left, right) =>
           (branchIndex?.get(left.branchId) ?? 0) -
@@ -789,25 +815,27 @@ function layoutLifecycleRoutingGraphPass(
     ? options.testOnlyDiagnosticSink
     : null;
   const graph = options.routingGraph ?? buildLifecycleRoutingGraph(projection);
-  // When nothing else supplies a base order and this graph never routes
-  // through a real milestone node, discovery's own first D3 pass would
-  // otherwise use plain, rankOrder-blind nodeSort/linkSort -- the gap
-  // documented in docs/design/lifecycle-diagram-layout-algorithm.md's
-  // "Deferred: making the base D3-Sankey layout rankOrder-aware" section.
-  // buildMilestoneFreeJointOrder closes that gap for exactly this scoped
-  // case (proven safe; see that doc's "Investigation (2026-07-26)" section for why
-  // it is not applied more broadly).
-  const milestoneFreeJointOrder =
-    !explicitNodeOrderByRank &&
-    !options.authoritativeBranchOrderByRank &&
-    !hasIntermediateRealNodes(graph)
-      ? buildMilestoneFreeJointOrder(graph)
+  // When nothing else supplies a base order, discovery's own first D3 pass
+  // would otherwise use plain, rankOrder-blind nodeSort/linkSort at every
+  // rank -- the gap documented in
+  // docs/design/lifecycle-diagram-layout-algorithm.md's "Deferred: making the
+  // base D3-Sankey layout rankOrder-aware" section.
+  // buildTransitionScopedJointOrder closes that gap for every rank/hop where
+  // it's safe to (see that function's own comment for why it's scoped the
+  // way it is, and why that scoping -- not the whole-graph gate an earlier
+  // version of this used -- is what makes it safe for graphs with real
+  // milestone convergence too).
+  const transitionScopedJointOrder =
+    !explicitNodeOrderByRank && !options.authoritativeBranchOrderByRank
+      ? buildTransitionScopedJointOrder(graph)
       : null;
   const baseNodeOrderByRank =
-    explicitNodeOrderByRank ?? milestoneFreeJointOrder?.nodeOrderByRank ?? null;
+    explicitNodeOrderByRank ??
+    transitionScopedJointOrder?.nodeOrderByRank ??
+    null;
   const authoritativeBranchOrderByRank =
     options.authoritativeBranchOrderByRank ??
-    milestoneFreeJointOrder?.branchOrderByRank ??
+    transitionScopedJointOrder?.branchOrderByRank ??
     null;
   const baselineLinks = new Map(
     graph.links.map((link) => [
@@ -1224,6 +1252,7 @@ function layoutLifecycleRoutingGraphPass(
     candidateEvaluations: 0,
     handleStatesVisited: 0,
     handleStateLimit: 0,
+    ...(enableTestDiagnostics ? { testOnlyIndegreeBlockedDeadEnds: 0 } : {}),
   };
   const sortedUnique = (values) =>
     [...new Set(values.filter(Boolean))].sort(compareLifecycleIds);
@@ -1397,6 +1426,55 @@ function layoutLifecycleRoutingGraphPass(
     // continuation choices cannot postpone an unavoidable dock conflict.
     addBranchEdges(sourceGroups, "sourceDockY", "source-dock");
     addBranchEdges(targetGroups, "targetDockY", "target-dock");
+    // Test-only diagnostic snapshot of the precedence edges these dock-Y
+    // orderings impose, before any candidate backtracking begins -- lets a
+    // test compare, between two base-layout orderings of the same fixture,
+    // exactly which precedence constraints differ and whether they touch a
+    // real (non-routing) node's dock, without re-deriving this DAG itself.
+    // See docs/design/lifecycle-diagram-layout-algorithm.md's "Investigation
+    // (2026-07-26)" section for why this distinction matters.
+    if (enableTestDiagnostics) {
+      graph.testOnlyBranchPrecedenceEdges = Object.freeze(
+        branchPrecedenceEdges.map((edge) => {
+          const fromSpan = branchSpans.get(edge.fromBranchId);
+          const toSpan = branchSpans.get(edge.toBranchId);
+          const sharedNodeId =
+            edge.kind === "source-dock"
+              ? fromSpan.semanticSourceId
+              : fromSpan.semanticTargetId;
+          const sharedNode = graph.nodes.find(
+            (node) => node.id === sharedNodeId,
+          );
+          return Object.freeze({
+            fromBranchId: edge.fromBranchId,
+            toBranchId: edge.toBranchId,
+            kind: edge.kind,
+            sharedNodeId,
+            sharedNodeKind: sharedNode
+              ? sharedNode.routing
+                ? "routing"
+                : "real"
+              : null,
+            fromDockY:
+              edge.kind === "source-dock"
+                ? fromSpan.sourceDockY
+                : fromSpan.targetDockY,
+            toDockY:
+              edge.kind === "source-dock"
+                ? toSpan.sourceDockY
+                : toSpan.targetDockY,
+          });
+        }),
+      );
+      graph.testOnlyBranchSpans = Object.freeze(
+        new Map(
+          [...branchSpans].map(([id, span]) => [
+            id,
+            Object.freeze({ ...span }),
+          ]),
+        ),
+      );
+    }
     // variant: "forward" returns minimum-Y assignment; "backward" returns maximum-Y
     // assignment (null when infeasible from that direction); "centered" (default)
     // returns the DP-centered assignment, falling back to "forward" when needed.
@@ -2321,7 +2399,25 @@ function layoutLifecycleRoutingGraphPass(
                 compareLifecycleIds(a.id, b.id),
             );
 
-          if (!ready.length) return false;
+          if (!ready.length) {
+            // Distinguish "search dead-ended because geometry is infeasible"
+            // from "search dead-ended because a precedence edge (dock-Y
+            // order at a shared node, see branchPrecedenceEdges above) blocked
+            // an otherwise geometrically-ready branch" -- capacityOkForRemainder
+            // above is blind to compIndegree, so this is the first point such
+            // a precedence-caused dead end becomes observable. See
+            // docs/design/lifecycle-diagram-layout-algorithm.md's
+            // "Investigation (2026-07-26)" section.
+            if (enableTestDiagnostics) {
+              const indegreeBlocked = componentBranchIds.some(
+                (id) => !globalOrderSet.has(id) && compIndegree.get(id) > 0,
+              );
+              if (indegreeBlocked) {
+                transitionLaneSolverStats.testOnlyIndegreeBlockedDeadEnds += 1;
+              }
+            }
+            return false;
+          }
 
           for (const { id: branchId } of ready) {
             const updates = tryPlaceBranch(branchId);

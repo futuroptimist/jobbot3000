@@ -229,6 +229,16 @@ for one diagnosed pair) before trusting a candidate fix — then run the _entire
 files, 1189+ tests as of this writing), since a change to base layout ordering can shift geometry for
 every fixture, not just the one under investigation.
 
+**Status:** the specific formulation above (a second D3-Sankey re-run driven by a search-discovered
+`rankOrder`) is exactly what the production two-pass pipeline's final pass already does via
+`deriveAuthoritativeLayoutOrders` (see "Bounded authoritative-order pipeline" below) — that part has
+shipped. What remained open was making _discovery's own first pass_ rankOrder-aware too, instead of
+falling back to plain `nodeSort`/`linkSort`; see
+[Root-causing the routing-node joint-order destabilization](#root-causing-the-routing-node-joint-order-destabilization-shipped)
+below for how that was resolved (a purely topological, pre-search order — not a second D3 re-run —
+scoped to never touch a real node's dock), and its scope note for why this still doesn't reach the
+two corridor-width-bound extreme fan-in fixtures.
+
 ## Attempted and reverted: barycenter-based `nodeSort`/`linkSort`
 
 A follow-up session attempted the deferred fix above directly: a `computeBarycenterOrder(nodes,
@@ -383,17 +393,114 @@ routing nodes are reordered, rather than another external ordering-heuristic att
 code was changed for this investigation itself; the throwaway diagnostic script used to produce
 these numbers was deleted per the investigation's own scope constraints.
 
-**Follow-up (shipped):** the investigation above also isolated a strictly narrower
-case where the joint order is safe: graphs with **zero** real (non-routing) nodes at ranks 1–5 at
-all — i.e., no branch in the graph touches a milestone anywhere, not just "this rank happens to have
-no real node this time." `buildMilestoneFreeJointOrder` (near `layoutLifecycleRoutingGraphPass` in
-`src/web/tracker/lifecycleDiagramLayout.js`) implements exactly that narrower case: it is used as
-`nodeSort`/`linkSort`'s fallback only when `hasIntermediateRealNodes(graph)` is false and no other
-order was already supplied. This fully resolves `denseBranchProjection()` (see the "Checked-in
+**Follow-up (shipped, superseded — see "Root-causing the routing-node joint-order destabilization"
+below):** the investigation above also isolated a strictly narrower case where the joint order is
+safe: graphs with **zero** real (non-routing) nodes at ranks 1–5 at all — i.e., no branch in the
+graph touches a milestone anywhere, not just "this rank happens to have no real node this time."
+`buildMilestoneFreeJointOrder` (near `layoutLifecycleRoutingGraphPass` in
+`src/web/tracker/lifecycleDiagramLayout.js`) implemented exactly that narrower case: it was used as
+`nodeSort`/`linkSort`'s fallback only when `hasIntermediateRealNodes(graph)` was false and no other
+order was already supplied. This fully resolved `denseBranchProjection()` (see the "Checked-in
 reproduction" section below, now historical) with zero regressions across the rest of the test
-suite. It does **not** extend to any fixture with real milestone convergence — those remain exactly
-as infeasible as described above, and are the reason this fix is conditioned on
-`hasIntermediateRealNodes` rather than applied unconditionally.
+suite. At the time, it did **not** extend to any fixture with real milestone convergence — those
+remained exactly as infeasible as described above, and that was the reason this fix was conditioned
+on `hasIntermediateRealNodes` rather than applied unconditionally. **This whole-graph gate has since
+been replaced** by a per-hop-scoped version, `buildTransitionScopedJointOrder`, that safely extends
+the same mechanism to graphs with real milestone convergence too — see "Root-causing the
+routing-node joint-order destabilization" below for the root cause that made this possible and the
+evidence that it doesn't regress anything.
+
+## Root-causing the routing-node joint-order destabilization (shipped)
+
+This picks up exactly where "Investigation (2026-07-26)" above left off: that investigation ruled
+out real-node **position** changes as the sole destabilizing mechanism (a routing-only-restricted
+node order still broke both real fixtures) but did not identify the actual channel, and recommended
+instrumenting `solveFromComponent`'s deadline/`capacityOkForRemainder` logic as the next step.
+
+**Diagnosed mechanism, confirmed directly against the running solver, not assumed:**
+`solveTransitionLanes` (`src/web/tracker/lifecycleDiagramLayout.js`) computes each link's
+`sourceDockY`/`targetDockY` directly from D3-Sankey's own assigned `link.y0`/`y1`. When several
+links leave or arrive at the same node, D3 spreads each link's individual dock sub-position along
+that node's box according to `linkSort` — so a link's dock Y can change even when the node's own
+`y0`/`y1` box position never moves. `branchSpans` collapses each branch to its first/last hop's dock
+Y, keyed by the branch's real semantic source/target node id (an origin, milestone, or endpoint —
+never a routing node). `branchPrecedenceEdges` groups branches by shared semantic source/target and
+turns their relative dock-Y order into a **hard** precedence edge between siblings; those edges
+become `branchIndegree`/`compIndegree`, which hard-filters `solveFromComponent`'s `ready` list
+(`compIndegree.get(id) === 0`) — a real topological constraint on solve order, not a soft tie-break.
+
+Reordering docks at a real node is not _inherently_ unsafe — two mechanisms already shipped safely
+do exactly that: `buildMilestoneFreeJointOrder` reordered origin (rank 0) docks unconditionally, and
+the production two-pass pipeline's `deriveAuthoritativeLayoutOrders` reorders milestone docks at
+ranks 1–5 for the final pass. What made the 2026-07-26 investigation's joint order unsafe was a
+different, more specific property: checking the exact construction used there
+(`test/web-tracker-lifecycle-diagram-layout.test.js`'s `"joint-order investigation regression"`
+block, preserved as a permanent regression) shows its **node**-order override was restricted to
+zero-real-node ranks, but its **branch/link**-order override (the `linkSort` input,
+`authoritativeBranchOrderByRank`) was not restricted at all — it was applied at every rank a branch
+spans, including ranks 0 and 1–5 wherever they carry a real node. That asymmetry silently reordered
+links at a real node's own dock via `linkSort`, changing `branchPrecedenceEdges`' hard precedence
+constraints there, even though the node's `y0`/`y1` box never moved.
+
+**Fix:** `buildTransitionScopedJointOrder` (replacing `buildMilestoneFreeJointOrder`/
+`hasIntermediateRealNodes` — same location, near `layoutLifecycleRoutingGraphPass`) restricts _both_
+the node-order and the branch/link-order override, per rank/hop, to ones that never touch a real
+node on either side. Concretely: the node-order override still only applies to a rank when that rank
+itself has no real node (ranks 0 and 6 always keep `nodeSort`'s own taxonomy anchoring, exactly as
+before); the branch/link-order override additionally now only applies to a hop when _neither_ its
+source rank nor its target rank is an intermediate (1–5) rank with a real node — origin (rank 0) and
+endpoint (rank 6) reordering stays unconditional, since that's exactly what
+`buildMilestoneFreeJointOrder` already proved safe and `denseBranchProjection()` (5 real origins)
+depends on. This is no longer gated on a whole-graph `hasIntermediateRealNodes` boolean — it runs
+unconditionally whenever no explicit order is supplied, for every graph, milestone-bearing or not.
+
+**Confirmed directly, not assumed**, by comparing `graph.testOnlyBranchPrecedenceEdges` (a new
+test-only diagnostic field, populated once per pass right after `branchPrecedenceEdges` is built,
+recording each edge's kind, the shared node's id and real/routing status, and both branches' dock-Y
+values) between three constructions on `test/fixtures/tracker-lifecycle-diagram-routing-v2.json`:
+
+- **Pure default** (no joint order at all, reconstructed by passing empty `Map`s for both override
+  options to bypass `buildTransitionScopedJointOrder` entirely) and **production's shipped default**
+  (no options at all) produce **byte-identical** real-node precedence edges — the fix changes
+  nothing about real-node dock ordering, exactly as intended.
+- The **reverted, fully-ungated joint order** (the checked-in `"joint-order investigation
+regression"` construction) produces the same _count_ of real-node precedence edges but a
+  **different relative order** for at least one pair — direct proof the ungated construction reorders
+  real-node docks the shipped fix does not.
+
+And by running the actual solver end to end: the ungated joint order still deterministically exhausts
+the handle-state budget on `tracker-lifecycle-diagram-v2.json` (32,768/32,768, `reason: "state-limit"`,
+`phase: "handle"` — unchanged, still checked in as a regression), while production's own default call
+(no options, exercising the real two-pass discovery/final pipeline) succeeds — unchanged from before
+this fix at exactly 50 accepted route crossings and 500 handle states, i.e. **this fix doesn't need
+to, and doesn't, change the observable outcome for either already-passing real fixture; it only
+replaces an unsafe, reverted construction with a safe, shipped one that generalizes the same
+mechanism to milestone-bearing graphs wherever it's safe to.**
+
+A second, test-only diagnostic — `transitionLaneSolverStats.testOnlyIndegreeBlockedDeadEnds`,
+incremented at the exact point `solveFromComponent`'s `search()` returns due to an empty `ready` list
+while at least one not-yet-placed branch in the component still has nonzero `compIndegree` — was
+added per the doc's own recommendation to instrument `capacityOkForRemainder`'s blind spot (it
+reasons only about geometric deadlines, never precedence, so a precedence-caused deadlock isn't
+detected until the `ready` list is empty). Across every fixture tested here, including the ungated
+joint order's own failing runs, this counter stayed at 0: the destabilization does not manifest as a
+literal precedence-DAG deadlock inside a single candidate's lane-assignment DFS. Instead, it
+manifests one phase downstream — the ungated joint order still finds _some_ lane-consistent
+ordering, but produces geometry that is measurably harder (or, for the dense fixture, impossible
+within budget) for the separate handle-placement search to satisfy. Recorded here as an honest
+correction to the doc's own prior instrumentation recommendation: the precedence-edge identity check
+above, not the indegree-dead-end counter, is what actually discriminates the safe fix from the
+unsafe construction for these fixtures.
+
+**Scope note:** this does not change, and is not expected to change, the two genuinely infeasible
+extreme fan-in fixtures (`transitionDensityProjection()` and the historical 60-app/89-branch
+pagination fixture — see "Still infeasible for a root cause neither tolerance can reach" below).
+Their rejection evidence (`clearanceMargin === -1`, the `COLLISION_MARGIN` sentinel for a
+fixed-geometry/outside-corridor rejection) is bound by `RANK_CORRIDOR_HALF_WIDTH`, a fixed constant
+driving a static X-extent corridor check that does not depend on branch order, `nodeSort`/`linkSort`,
+or `rankOrder` in any way. No ordering fix — including this one — can relax a fixed-width geometric
+ceiling; both fixtures remain infeasible, as confirmed by re-running the full suite after this fix
+(their tests still characterize the identical infeasibility signature).
 
 ## Follow-up (shipped): bounded tolerances for route crossings and handle clearance
 
@@ -750,36 +857,50 @@ edge count (its pairwise crossing check is `O(edges-within-rank^2)`).
 This is the authoritative, current list — cross-check against the code before trusting it, since
 skip states and test names can drift. `grep -rn "it\.skip(\|test\.skip(" test/` finds all of them.
 
-1. **Deferred: make the base D3-Sankey layout `rankOrder`-aware** (a.k.a. "Option 2" above) — the
-   fix for the corridor-width/constructive-placement gap that items 2 and 3 below still can't reach:
-   the two genuinely-infeasible extreme fan-in fixtures (`transitionDensityProjection()` and the
-   60-application/89-branch pagination fixture — see "Still infeasible for a root cause neither
-   tolerance can reach" above). It is not accurately described as the fix for every item below: item
-   2's remaining tests were resolved instead by the bounded tolerances (not by this), and item 3's
-   remaining Playwright skip is a separate audit-methodology disagreement this work would not touch
-   either. Three attempts already tried and reverted or halted (see
-   [what didn't work alone](#what-didnt-work-alone),
+1. **Make the base D3-Sankey layout `rankOrder`-aware** (a.k.a. "Option 2" above) — **partially
+   resolved; see "Root-causing the routing-node joint-order destabilization" above.** Four attempts
+   were made in total (see [what didn't work alone](#what-didnt-work-alone),
    [attempted and reverted: barycenter](#attempted-and-reverted-barycenter-based-nodesortlinksort),
-   and the
-   [Investigation (2026-07-26)](#investigation-2026-07-26-a-real-node-position-preserving-joint-order-still-destabilizes-production-fixtures));
-   read all three before starting a fourth. This investigation is the most informative to date: it
-   isolates that reordering _only_ routing nodes (never touching real-node geometry at all) is
-   independently sufficient to destabilize the deadline-based DFS on fixtures with real milestone
-   convergence, which the barycenter attempt's real-node-position hypothesis alone doesn't explain —
-   see that section for the concrete open question a future attempt should root-cause first
-   (specifically inside `solveFromComponent`'s deadline/`capacityOkForRemainder` logic). Re-confirmed
-   independently by a later session that built the seeded-replay pipeline above, before the
-   route-crossing/handle-clearance tolerances below existed: even with final's redundant search
-   eliminated, discovery's own one-time combined lane+handle search for
-   `tracker-lifecycle-diagram-v2.json`, run without any tolerance, never found a working assignment —
-   raising the handle-search budget from 32,768 to 2,000,000 states (diagnostic only, not shipped)
-   still failed after 100+ seconds, and the same ~3 branches were blocked (`reason: "no-candidates"`)
-   across every one of the 98 distinct lane-order candidates tried before hitting the normal budget.
-   This rules out "the search just needs to be more efficient" for a no-tolerance, budget-only
-   approach, and confirms the gap this `rankOrder` item targets is really a constructive/greedy
-   placement strategy, not a search or plumbing fix. (`tracker-lifecycle-diagram-v2.json`'s own
+   the
+   [Investigation (2026-07-26)](#investigation-2026-07-26-a-real-node-position-preserving-joint-order-still-destabilizes-production-fixtures),
+   and
+   [Root-causing the routing-node joint-order destabilization](#root-causing-the-routing-node-joint-order-destabilization-shipped)).
+   The fourth found and fixed the specific channel the third's investigation left as an open
+   question: a blind, pre-search, purely topological joint order is unsafe not because it reorders
+   real-node docks per se (two other shipped mechanisms already do that safely) but because doing so
+   via `linkSort` at _every_ rank a branch spans — rather than only at ranks/hops that never touch a
+   real node — silently changes `branchPrecedenceEdges`' hard precedence constraints at a real node's
+   dock, even when the node's own `y0`/`y1` box never moves. `buildTransitionScopedJointOrder` (which
+   replaced `buildMilestoneFreeJointOrder`/`hasIntermediateRealNodes`) restricts the override to
+   ranks/hops that never touch a real node on either side and now runs unconditionally, safely
+   extending the mechanism to milestone-bearing graphs. Confirmed with zero regressions across the
+   full suite and byte-identical real-node dock precedence to the unconstrained default (see that
+   section for the full evidence).
+
+   **This does not close the corridor-width/constructive-placement gap** the two genuinely-infeasible
+   extreme fan-in fixtures hit (`transitionDensityProjection()` and the 60-application/89-branch
+   pagination fixture — see "Still infeasible for a root cause neither tolerance can reach" above),
+   and was not expected to: their rejection evidence (`clearanceMargin === -1`, the fixed-geometry
+   corridor sentinel) is bound by `RANK_CORRIDOR_HALF_WIDTH`, a static X-extent constant independent
+   of branch order entirely. Confirmed directly: both fixtures' tests still characterize the
+   identical infeasibility signature after this fix. It is also not accurately described as the fix
+   for every item below: item 2's remaining tests were resolved instead by the bounded tolerances
+   (not by this), and item 3's remaining Playwright skip was a separate audit-methodology
+   disagreement this work does not touch either. Re-confirmed independently by a still-earlier
+   session that built the seeded-replay pipeline above, before the route-crossing/handle-clearance
+   tolerances below existed: even with final's redundant search eliminated, discovery's own one-time
+   combined lane+handle search for `tracker-lifecycle-diagram-v2.json`, run without any tolerance,
+   never found a working assignment — raising the handle-search budget from 32,768 to 2,000,000
+   states (diagnostic only, not shipped) still failed after 100+ seconds, and the same ~3 branches
+   were blocked (`reason: "no-candidates"`) across every one of the 98 distinct lane-order candidates
+   tried before hitting the normal budget. This rules out "the search just needs to be more
+   efficient" for a no-tolerance, budget-only approach. (`tracker-lifecycle-diagram-v2.json`'s own
    layout problem was separately resolved afterward by the bounded tolerances in "Follow-up
-   (shipped)" below — a different, already-shipped mechanism, not this deferred item.)
+   (shipped)" below — a different, already-shipped mechanism, not this item.) The remaining,
+   still-open piece of this item is a genuinely different lever for the two corridor-bound
+   fixtures specifically — e.g. widening the rank corridor itself for ranks with enough incident
+   branches to need it — not another ordering change.
+
 2. **0 unit tests remain `it.skip`ed** (were 4). `HANDLE_CLEARANCE_TOLERANCE` and
    `toleratedRouteCrossingCount` (see "Follow-up (shipped): bounded tolerances..." above) fixed
    `"lays out dense fixture with bounded semantic docks and safe handles"` and
