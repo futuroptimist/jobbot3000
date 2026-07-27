@@ -3690,6 +3690,9 @@ export function testOnlyDiagnoseLifecycleLayoutAttempt(
         blockedBranchIds: reason.blockedBranchIds ?? [],
         routeFindingCount: reason.routeFindings?.length ?? 0,
         branchDiagnosticCount: reason.branchDiagnostics?.length ?? 0,
+        horizontalConstraints: summarizeHandleCandidateConstraints(
+          reason.branchDiagnostics ?? [],
+        ),
       },
     };
   };
@@ -4519,10 +4522,64 @@ const handlePlacementError = (result) => {
       compareLifecycleIds,
     ),
     branches: [...(result.branchDiagnostics ?? [])],
+    horizontalConstraints: summarizeHandleCandidateConstraints(
+      result.branchDiagnostics ?? [],
+    ),
     component: result.component ?? null,
   });
   return error;
 };
+
+export function summarizeHandleCandidateConstraints(branchDiagnostics) {
+  const emptySweep = () => ({
+    attempts: 0,
+    rejected: {
+      fixedGeometry: 0,
+      outsideTransitionCorridor: 0,
+      nonincidentRouteClearance: 0,
+    },
+  });
+  const sweeps = { primary: emptySweep(), fallback: emptySweep() };
+  const rejected = emptySweep().rejected;
+  const nearestBlockerKinds = {};
+  let attempts = 0;
+  for (const diagnostic of [...branchDiagnostics].sort((left, right) =>
+    compareLifecycleIds(left.branchId, right.branchId),
+  )) {
+    attempts += diagnostic.attempts ?? 0;
+    for (const constraint of Object.keys(rejected))
+      rejected[constraint] += diagnostic.rejected?.[constraint] ?? 0;
+    for (const sweepName of Object.keys(sweeps)) {
+      const diagnosticSweep = diagnostic.sweeps?.[sweepName];
+      sweeps[sweepName].attempts += diagnosticSweep?.attempts ?? 0;
+      for (const constraint of Object.keys(rejected))
+        sweeps[sweepName].rejected[constraint] +=
+          diagnosticSweep?.rejected?.[constraint] ?? 0;
+    }
+    const blockerKind = diagnostic.nearestRejectedCandidate?.blocker?.kind;
+    if (blockerKind) {
+      nearestBlockerKinds[blockerKind] =
+        (nearestBlockerKinds[blockerKind] ?? 0) + 1;
+    }
+  }
+  const transitionSpan =
+    MINIMUM_RANK_CENTER_SPACING - 2 * RANK_CORRIDOR_HALF_WIDTH;
+  return {
+    attempts,
+    rejected,
+    sweeps,
+    nearestBlockerKinds: Object.fromEntries(
+      Object.entries(nearestBlockerKinds).sort(([left], [right]) =>
+        compareLifecycleIds(left, right),
+      ),
+    ),
+    rankCenterSpacing: MINIMUM_RANK_CENTER_SPACING,
+    protectedCorridorWidth: 2 * RANK_CORRIDOR_HALF_WIDTH,
+    transitionSpan,
+    handleDiameter: 2 * BRANCH_HANDLE_RADIUS,
+    usableHandleCenterSpan: transitionSpan - 2 * BRANCH_HANDLE_RADIUS,
+  };
+}
 
 const tryAssignBranchHandles = (
   branches,
@@ -4821,6 +4878,24 @@ const tryAssignBranchHandles = (
         outsideTransitionCorridor: 0,
         nonincidentRouteClearance: 0,
       },
+      sweeps: {
+        primary: {
+          attempts: 0,
+          rejected: {
+            fixedGeometry: 0,
+            outsideTransitionCorridor: 0,
+            nonincidentRouteClearance: 0,
+          },
+        },
+        fallback: {
+          attempts: 0,
+          rejected: {
+            fixedGeometry: 0,
+            outsideTransitionCorridor: 0,
+            nonincidentRouteClearance: 0,
+          },
+        },
+      },
       nearestRejectedCandidate: null,
     };
     const rememberRejected = (candidate) => {
@@ -4846,7 +4921,7 @@ const tryAssignBranchHandles = (
         diagnostic.nearestRejectedCandidate = candidate;
       }
     };
-    const sweepCorridor = (tValues, corridorHalfWidth) => {
+    const sweepCorridor = (sweepName, tValues, corridorHalfWidth) => {
       for (const segment of orderedSegments) {
         const sourceCenter = rankCenterX(segment.source.rank);
         const targetCenter = rankCenterX(segment.target.rank);
@@ -4861,6 +4936,7 @@ const tryAssignBranchHandles = (
             height: BRANCH_HANDLE_RADIUS * 2,
           };
           diagnostic.attempts += 1;
+          diagnostic.sweeps[sweepName].attempts += 1;
           const baseRejected = {
             segmentId: segmentKey(segment),
             segmentIndex: segment.segmentIndex,
@@ -4872,6 +4948,7 @@ const tryAssignBranchHandles = (
           const fixedBlocker = fixedGeometryBlockerForCandidate(box);
           if (fixedBlocker) {
             diagnostic.rejected.fixedGeometry += 1;
+            diagnostic.sweeps[sweepName].rejected.fixedGeometry += 1;
             rememberRejected({
               ...baseRejected,
               clearanceMargin: COLLISION_MARGIN,
@@ -4891,6 +4968,8 @@ const tryAssignBranchHandles = (
             x + BRANCH_HANDLE_RADIUS > entryX
           ) {
             diagnostic.rejected.outsideTransitionCorridor += 1;
+            diagnostic.sweeps[sweepName].rejected.outsideTransitionCorridor +=
+              1;
             rememberRejected({
               ...baseRejected,
               clearanceMargin: COLLISION_MARGIN,
@@ -4934,6 +5013,8 @@ const tryAssignBranchHandles = (
             });
           } else {
             diagnostic.rejected.nonincidentRouteClearance += 1;
+            diagnostic.sweeps[sweepName].rejected.nonincidentRouteClearance +=
+              1;
             rememberRejected({
               ...baseRejected,
               clearanceMargin: quantizedCandidate(clearanceMargin),
@@ -4943,9 +5024,14 @@ const tryAssignBranchHandles = (
         }
       }
     };
-    sweepCorridor(HANDLE_CANDIDATE_T_VALUES, RANK_CORRIDOR_HALF_WIDTH);
+    sweepCorridor(
+      "primary",
+      HANDLE_CANDIDATE_T_VALUES,
+      RANK_CORRIDOR_HALF_WIDTH,
+    );
     if (!candidates.length) {
       sweepCorridor(
+        "fallback",
         HANDLE_FALLBACK_CANDIDATE_T_VALUES,
         RANK_CORRIDOR_HALF_WIDTH,
       );
