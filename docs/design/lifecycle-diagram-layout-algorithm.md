@@ -659,14 +659,26 @@ length of their shared overlap (not just a boolean). Both `auditLifecycleRouteGe
 restriction `edgeCrossing`'s own crossing loop already uses), excluding contributions at a rank where
 the two segments share a source or target node — two branches leaving (or converging on) the same
 dock naturally render correlated geometry for a stretch before diverging, which is ordinary and
-nonfatal. That exclusion is itself guarded: it only applies when the branch pair spans **more than
-one** shared rank. A pair whose entire overlap is a single shared-source-and-target rank (e.g. two
-direct, no-milestone branches between the exact same two nodes) never actually diverges anywhere, so
-excluding it would hide a genuine duplicated-route defect rather than tolerate ordinary divergence —
-confirmed directly by constructing exactly this case (see the new unit tests below) before shipping
-the guard. Once the accumulated, non-excluded overlap length reaches `SUSTAINED_OVERLAP_LENGTH_THRESHOLD`
-(30px — confirmed directly against a real false-positive candidate in
-`tracker-lifecycle-diagram-v2.json`'s previous-event state, where two branches converging toward
+nonfatal.
+
+That exclusion is itself guarded by a `branchesDiverge` check: it only applies to a branch pair whose
+overall source or target actually differ. **Status update:** the first version of this guard
+(`multiRank`/`sharedRankSpan`, gating the exclusion on whether the pair spans more than one shared
+rank) was insufficient and has been replaced. It correctly caught a _single_-shared-rank duplicate
+(two direct, no-milestone branches between the exact same two nodes), but not a duplicate spanning
+**two or more** ranks that also shares both endpoints: such a pair shares its source at the first rank
+and its target at the last, so a purely rank-position-based exclusion suppressed _both_ ends,
+hiding the entire overlap even though the branches never diverge anywhere in between — confirmed
+directly by constructing exactly this case (a two-rank duplicate sharing both endpoints; see the unit
+and Playwright regressions below), which the `multiRank` guard let through undetected. The fix checks
+divergence at the branch level instead of rank position: `branchesDiverge` is true only if the pair's
+overall source or target node ids actually differ, in which case per-rank exclusion may still apply
+wherever a specific segment pair happens to share a node (including an intermediate shared milestone,
+for production, which has per-segment node identity available); if source AND target both match,
+there is nowhere left for the pair to diverge to, so no rank is ever excluded, regardless of how many
+ranks the pair spans. Once the accumulated, non-excluded overlap length reaches
+`SUSTAINED_OVERLAP_LENGTH_THRESHOLD` (30px — confirmed directly against a real false-positive candidate
+in `tracker-lifecycle-diagram-v2.json`'s previous-event state, where two branches converging toward
 _different_ endpoint docks at the same rank boundary accumulated ~6px of incidental overlap while
 merely converging; 30px is an order of magnitude above that observed artifact and well below what a
 genuine full-length duplicate — spanning most of a multi-hundred-pixel route segment — would produce),
@@ -689,14 +701,16 @@ clearance) were added to `test/web-tracker-lifecycle-diagram-layout.test.js`'s `
 route-crossing classifier"` describe block, plus a dedicated
 `"auditLifecycleRouteGeometry collinear-overlap aggregation"` describe block exercising
 `auditLifecycleRouteGeometry` directly against hand-built minimal route models: one proving a
-genuine multi-rank shared-dock-divergence pair stays nonfatal, one proving a single-shared-rank,
-same-source-and-target duplicate is flagged fatal (the guard described above). A new Playwright
-regression, `"audits routed branch collisions detects an injected exact route duplicate"`, injects two
-synthetic, fully-coincident `<path>` elements (disjoint fake source/target ids so no shared-dock
-exclusion can apply, positioned off-canvas so no other collision category can fire) into a real
-rendered diagram and confirms `assertBrowserCollisionAudit` fails on them — verified to actually depend
-on the new detector by temporarily disabling it and confirming the regression test fails as expected
-before re-enabling it.
+genuine multi-rank shared-dock-divergence pair stays nonfatal, one proving a single-shared-rank
+same-source-and-target duplicate is flagged fatal, and one proving a **two-rank** duplicate sharing
+both endpoints is flagged fatal (the exact gap `branchesDiverge` fixes). Two Playwright regressions
+inject synthetic, fully-coincident `<path>` elements directly into a real rendered diagram and confirm
+`assertBrowserCollisionAudit` fails on them: `"audits routed branch collisions detects an injected
+exact route duplicate"` (disjoint fake source/target ids, single segment, positioned off-canvas so no
+other collision category can fire) and `"audits routed branch collisions detects a two-rank duplicate
+sharing docks"` (two segments, deliberately _sharing_ both source and target ids). Every new test —
+including both fixes' regressions — was confirmed to actually depend on its corresponding logic by
+temporarily reverting that logic and observing the test fail before re-enabling it.
 
 ## Separately: the deterministic-budget fix
 

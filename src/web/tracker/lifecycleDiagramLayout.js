@@ -4021,17 +4021,22 @@ export function auditLifecycleRouteGeometry({
       ? routeModel.pairId(branchLeft, branchRight)
       : `${left.branchId}||${right.branchId}`;
   };
-  // Two branches only genuinely "diverge from a shared dock" if they span
-  // more than the one rank they share it at -- a branch pair whose *entire*
-  // overlap is a single shared-source-and-target segment (e.g. two direct,
-  // no-milestone branches between the exact same two nodes) never diverges
-  // at all, which is a duplicated-route defect, not ordinary correlation.
-  const sharedRankSpan = (branchLeft, branchRight) => {
-    if (!branchLeft || !branchRight) return null;
-    const lo = Math.max(branchLeft.sourceRank, branchRight.sourceRank);
-    const hi = Math.min(branchLeft.targetRank, branchRight.targetRank) - 1;
-    return hi >= lo ? hi - lo : null;
-  };
+  // Two branches only genuinely "diverge from a shared dock" if they
+  // actually end up at different places overall -- if both their ultimate
+  // source AND target nodes match, there is nowhere left for them to
+  // diverge to, so any per-rank "shared node" match is never eligible for
+  // exclusion: a route pair that remains coincident across its full shared
+  // span is a duplicated-route defect, not ordinary local dock correlation,
+  // regardless of how many ranks it spans. This is deliberately a
+  // branch-level (not per-rank) check: a pair that differs at either end is
+  // guaranteed to diverge somewhere, so per-rank exclusion can still apply
+  // wherever a specific segment pair happens to share a node (including an
+  // intermediate shared milestone), exactly as before.
+  const branchesDiverge = (branchLeft, branchRight) =>
+    !branchLeft ||
+    !branchRight ||
+    branchLeft.source !== branchRight.source ||
+    branchLeft.target !== branchRight.target;
   const pairCrossings = new Map();
   // edgeCrossing only detects genuine transversal crossings: two edges that
   // are exactly (or near-exactly) collinear over a stretch never satisfy its
@@ -4041,10 +4046,10 @@ export function auditLifecycleRouteGeometry({
   // collinearOverlapLength (lifecycleRouteGeometry.js) alongside crossings,
   // per branch pair, to close that gap -- see the classification loop below.
   // Overlap contributions at a rank where the two segments share a source or
-  // target node are excluded (for branch pairs spanning more than one shared
-  // rank): two branches leaving (or converging on) the same dock naturally
-  // render correlated, near-identical geometry for a stretch before
-  // diverging, which is ordinary and nonfatal, not a duplicated-route defect.
+  // target node are excluded, but only for branch pairs that demonstrably
+  // diverge elsewhere (see branchesDiverge above): two branches leaving (or
+  // converging on) the same dock naturally render correlated, near-identical
+  // geometry for a stretch before diverging, which is ordinary and nonfatal.
   const pairOverlap = new Map();
   for (let a = 0; a < flatEdges.length; a += 1) {
     for (let b = a + 1; b < flatEdges.length; b += 1) {
@@ -4057,12 +4062,11 @@ export function auditLifecycleRouteGeometry({
         if (!pairCrossings.has(pair)) pairCrossings.set(pair, []);
         pairCrossings.get(pair).push({ left, right });
       }
-      const span = sharedRankSpan(
-        branchById.get(left.branchId),
-        branchById.get(right.branchId),
-      );
       const sharesDock =
-        span > 0 &&
+        branchesDiverge(
+          branchById.get(left.branchId),
+          branchById.get(right.branchId),
+        ) &&
         (left.segment.source.id === right.segment.source.id ||
           left.segment.target.id === right.segment.target.id);
       if (sharesDock) continue;

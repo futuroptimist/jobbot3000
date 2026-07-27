@@ -634,18 +634,27 @@ async function assertBrowserCollisionAudit(page, { maxCrossings = 0 } = {}) {
         const firstRank = sharedRanks[0];
         const lastRank = sharedRanks.at(-1);
         // Two branches only genuinely "diverge from a shared dock" if they
-        // span more than the one rank they share it at -- a pair whose
-        // *entire* overlap is a single shared-source-and-target rank (e.g.
-        // two direct, no-milestone branches between the exact same two
-        // nodes) never diverges at all, which is a duplicated-route defect,
-        // not ordinary correlation.
-        const multiRank = sharedRanks.length > 1;
+        // actually end up at different places overall -- if both their
+        // overall source AND target node ids match, there is nowhere left
+        // for them to diverge to, so neither anchor exclusion below is
+        // eligible: a route pair that remains coincident across its full
+        // shared span is a duplicated-route defect, not ordinary local dock
+        // correlation, regardless of how many ranks it spans. (Unlike
+        // production, this file only has branch-level source/target
+        // identity available -- no per-segment intermediate node ids -- so
+        // this is the finest-grained divergence signal it can compute.)
+        const branchesDiverge =
+          left.source !== right.source || left.target !== right.target;
         let total = 0;
         for (const rank of sharedRanks) {
           const anchoredAtSharedSource =
-            multiRank && rank === firstRank && left.source === right.source;
+            branchesDiverge &&
+            rank === firstRank &&
+            left.source === right.source;
           const anchoredAtSharedTarget =
-            multiRank && rank === lastRank && left.target === right.target;
+            branchesDiverge &&
+            rank === lastRank &&
+            left.target === right.target;
           if (anchoredAtSharedSource || anchoredAtSharedTarget) continue;
           const leftEdges = left.edgesByRank.get(rank);
           const rightEdges = right.edgesByRank.get(rank);
@@ -1177,6 +1186,54 @@ test.describe("Application Lifecycle Diagram", () => {
           "test-only-source-b",
           "test-only-target-b",
         ),
+      );
+    });
+    await expect(
+      assertBrowserCollisionAudit(page, { maxCrossings: 0 }),
+    ).rejects.toThrow(/coincides/);
+  });
+
+  test("audits routed branch collisions detects a two-rank duplicate sharing docks", async ({
+    page,
+  }) => {
+    // Regression for discussion_r3653747390: a full duplicate spanning more
+    // than one rank shares its source at the first rank and its target at
+    // the last rank, so a shared-dock exclusion keyed only on rank position
+    // ("first"/"last") would suppress *both* ranks' overlap, hiding the
+    // entire duplicate even though edgeCrossing (degenerate for identical
+    // edges) never reports a crossing either. Unlike the single-segment
+    // regression above, these two synthetic routes deliberately *share*
+    // both their source and target node ids -- proving branchesDiverge
+    // correctly recognizes that two branches with the same overall source
+    // AND target never actually diverge anywhere, so neither rank is
+    // excluded from the sustained-overlap tally.
+    await importFixture(page, "tracker-lifecycle-diagram-routing-v2.json");
+    await page.getByRole("button", { name: "Diagram" }).click();
+    await expect(page.locator("[data-diagram-link]").first()).toBeVisible({
+      timeout: 150000,
+    });
+    await page.locator(".diagram-scroll").evaluate((scroll) => {
+      const svg = scroll.querySelector("svg");
+      const makeTwoRankDuplicate = (id) => {
+        const path = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "path",
+        );
+        path.setAttribute(
+          "d",
+          "M-5000,-5000L-4800,-5000M-4800,-5000L-4600,-5000",
+        );
+        path.setAttribute("data-diagram-link", id);
+        path.setAttribute("data-diagram-branch", id);
+        path.setAttribute("data-source-node-id", "test-only-shared-source");
+        path.setAttribute("data-target-node-id", "test-only-shared-target");
+        path.setAttribute("data-segment-ranks", "0-1,1-2");
+        path.setAttribute("stroke-width", "3");
+        return path;
+      };
+      svg.append(
+        makeTwoRankDuplicate("test-only-two-rank-duplicate-a"),
+        makeTwoRankDuplicate("test-only-two-rank-duplicate-b"),
       );
     });
     await expect(

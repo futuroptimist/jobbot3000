@@ -3085,8 +3085,20 @@ describe("auditLifecycleRouteGeometry collinear-overlap aggregation", () => {
     const milestone = node("milestone:shared", 1);
     const endpointA = node("endpoint:a", 2);
     const endpointB = node("endpoint:b", 2);
-    const branchA = { id: "branch-a", sourceRank: 0, targetRank: 2 };
-    const branchB = { id: "branch-b", sourceRank: 0, targetRank: 2 };
+    const branchA = {
+      id: "branch-a",
+      source: origin.id,
+      target: endpointA.id,
+      sourceRank: 0,
+      targetRank: 2,
+    };
+    const branchB = {
+      id: "branch-b",
+      source: origin.id,
+      target: endpointB.id,
+      sourceRank: 0,
+      targetRank: 2,
+    };
     const model = {
       branches: [branchA, branchB],
       segmentsByBranch: new Map([
@@ -3156,7 +3168,7 @@ describe("auditLifecycleRouteGeometry collinear-overlap aggregation", () => {
     // Two branches sharing both their source AND target across the one and
     // only rank they span never actually diverge anywhere -- this is a
     // duplicated-route defect, not ordinary shared-dock correlation, so the
-    // multi-rank guard must not exclude it.
+    // branchesDiverge guard must not exclude it.
     const origin = node("origin:shared", 0);
     const endpoint = node("endpoint:shared", 1);
     const identicalSegment = () => [
@@ -3169,13 +3181,90 @@ describe("auditLifecycleRouteGeometry collinear-overlap aggregation", () => {
         segmentIndex: 0,
       },
     ];
-    const branchA = { id: "branch-a", sourceRank: 0, targetRank: 1 };
-    const branchB = { id: "branch-b", sourceRank: 0, targetRank: 1 };
+    const branchA = {
+      id: "branch-a",
+      source: origin.id,
+      target: endpoint.id,
+      sourceRank: 0,
+      targetRank: 1,
+    };
+    const branchB = {
+      id: "branch-b",
+      source: origin.id,
+      target: endpoint.id,
+      sourceRank: 0,
+      targetRank: 1,
+    };
     const model = {
       branches: [branchA, branchB],
       segmentsByBranch: new Map([
         [branchA.id, identicalSegment()],
         [branchB.id, identicalSegment()],
+      ]),
+      visibleNodes: [],
+      fixedOrderInversionPairs: new Set(),
+      pairId,
+    };
+    const audit = auditLifecycleRouteGeometry({ model, handles: [] });
+    const finding = audit.fatalFindings.find(
+      (candidate) => candidate.category === "sustained-crossing",
+    );
+    expect(finding).toBeDefined();
+    expect(finding.overlapLength).toBeGreaterThanOrEqual(
+      SUSTAINED_OVERLAP_LENGTH_THRESHOLD,
+    );
+  });
+
+  it("flags a genuine two-rank full-duplicate route sharing both endpoints", () => {
+    // The specific gap discussion_r3653747390 identified: a full duplicate
+    // spanning *more than one* rank shares its source at the first rank and
+    // its target at the last rank, so a purely rank-position-based
+    // ("first"/"last") exclusion would suppress *both* ranks, hiding the
+    // entire overlap even though edgeCrossing (degenerate for identical
+    // edges) never reports a single crossing either. branchesDiverge must
+    // recognize that these two branches share both their overall source and
+    // target and therefore never actually diverge, so neither rank is
+    // excluded.
+    const origin = node("origin:shared", 0);
+    const milestone = node("milestone:shared", 1);
+    const endpoint = node("endpoint:shared", 2);
+    const identicalSegments = () => [
+      {
+        source: origin,
+        target: milestone,
+        y0: 100,
+        y1: 100,
+        transitionLaneY: 100,
+        segmentIndex: 0,
+      },
+      {
+        source: milestone,
+        target: endpoint,
+        y0: 100,
+        y1: 100,
+        transitionLaneY: 100,
+        segmentIndex: 1,
+      },
+    ];
+    const branchA = {
+      id: "branch-a",
+      source: origin.id,
+      target: endpoint.id,
+      sourceRank: 0,
+      targetRank: 2,
+    };
+    const branchB = {
+      id: "branch-b",
+      source: origin.id,
+      target: endpoint.id,
+      sourceRank: 0,
+      targetRank: 2,
+    };
+    const model = {
+      branches: [branchA, branchB],
+      segmentsByBranch: new Map([
+        [branchA.id, identicalSegments()],
+        [branchB.id, identicalSegments()],
       ]),
       visibleNodes: [],
       fixedOrderInversionPairs: new Set(),
