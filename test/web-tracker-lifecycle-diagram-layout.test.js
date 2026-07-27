@@ -7,6 +7,7 @@ import {
   projectLifecycleAt,
 } from "../src/web/tracker/lifecycleProjection.js";
 import {
+  BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
   BRANCH_HANDLE_RADIUS,
   BRANCH_STROKE_OPACITY,
   HANDLE_CLEARANCE_TOLERANCE,
@@ -37,11 +38,13 @@ import {
   compareBranches,
   compareLifecycleIds,
   createLaneGeometryFailureCache,
+  createLifecycleHorizontalGeometry,
   cubicTransitionPoint,
   edgeCrossing,
   endpointColor,
   isRouteHandleCollision,
   layoutLifecycleRoutingGraph,
+  lifecycleHorizontalHop,
   labelBoxForNode,
   LANE_Y_EPSILON,
   nodeSort,
@@ -2694,6 +2697,67 @@ describe("lifecycle diagram render-only routing layout", () => {
     expect(
       buildLifecycleRoutingGraph(projection()).links.map((l) => l.id),
     ).toEqual(buildLifecycleRoutingGraph(projection()).links.map((l) => l.id));
+  });
+
+  it("constructs deterministic, deeply immutable horizontal geometry by rank and hop", () => {
+    const first = createLifecycleHorizontalGeometry();
+    const second = createLifecycleHorizontalGeometry();
+    expect(first).toEqual(second);
+    expect(first).toEqual(BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY);
+    expect(Object.isFrozen(first)).toBe(true);
+    expect(Object.isFrozen(first.rankCenters)).toBe(true);
+    expect(Object.isFrozen(first.hops)).toBe(true);
+    expect(Object.isFrozen(first.hops["0->1"])).toBe(true);
+
+    expect(first.rankCenters[0]).toBe(109);
+    expect(lifecycleHorizontalHop(first, 0, 1)).toBe(first.hops["0->1"]);
+    expect(first.rankCenters[1]).toBe(381);
+    expect(first.hops["0->1"]).toMatchObject({
+      sourceRank: 0,
+      targetRank: 1,
+      rankCenterSpacing: 272,
+      exitX: 209,
+      entryX: 281,
+      controlMinX: 233,
+      controlMaxX: 257,
+      controlSpan: 24,
+      transitionSpan: 72,
+      usableHandleCenterSpan: 28,
+    });
+    expect(first.protectedCorridorWidth).toBe(200);
+    expect(first.handleDiameter).toBe(44);
+    expect(first.svgWidth).toBe(1850);
+    expect(
+      calculateLifecycleDiagramLayout({}, 0, { nodes: [], links: [] }, first)
+        .horizontalGeometry,
+    ).toBe(first);
+  });
+
+  it("rejects invalid horizontal rank coverage, centers, and hop spans", () => {
+    const baselineCenters = BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY.rankCenters;
+    expect(() =>
+      createLifecycleHorizontalGeometry({
+        rankCenters: { ...baselineCenters, 3: Number.NaN },
+      }),
+    ).toThrow(/rank 3 center must be finite/u);
+    expect(() =>
+      createLifecycleHorizontalGeometry({
+        rankCenters: Object.fromEntries(
+          Object.entries(baselineCenters).filter(([rank]) => rank !== "6"),
+        ),
+      }),
+    ).toThrow(/missing rank 6/u);
+    expect(() =>
+      createLifecycleHorizontalGeometry({
+        rankCenters: { ...baselineCenters, 2: baselineCenters[1] },
+      }),
+    ).toThrow(/rank centers must increase/u);
+    expect(() =>
+      createLifecycleHorizontalGeometry({
+        rankCenters: { ...baselineCenters, 1: baselineCenters[0] + 271 },
+      }),
+    ).toThrow(/hop 0->1 is too narrow/u);
+    expect(() => rankCenterX(7)).toThrow(/has no rank 7/u);
   });
 
   it("sorts origins and endpoints canonically while ranking milestones by endpoint median", () => {

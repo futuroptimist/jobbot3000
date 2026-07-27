@@ -892,10 +892,21 @@ other routes, handle overlap, and the route audit together. A safe formula needs
 proof (or an exhaustive bounded test over the supported density domain) connecting density to all
 three rejection classes. The currently established boundary is therefore: ordinary fixtures and
 the existing milestone-free dense grid remain supported, while a 50-way convergence on one real
-milestone is rejected deterministically. The next architectural lever remains one shared
-horizontal-geometry object consumed by layout, lane solving, route primitives, handle generation,
-and audit. That shared per-hop demand/immutable-horizontal-geometry design remains deferred
-follow-up work; its expansion rule must be validated before replacing the baseline constants.
+milestone is rejected deterministically.
+
+The architectural seam for the next lever is now shipped: one deeply immutable horizontal-geometry
+value, keyed by rank and adjacent hop, is created once and shared by layout, lane solving,
+routing-anchor materialization, route primitives and flattening, handle generation, rendering,
+auditing, and diagnostics. It owns rank centers, exit/entry and control positions, protected and
+transition spans, usable handle-center spans, margins, and SVG width. The legacy constants remain
+only as baseline constructor inputs and compatibility exports.
+
+This seam is deliberately behavior-preserving. Production geometry and the supported-density
+boundary are unchanged: rank centers remain 272 px apart, protected corridors remain 200 px wide,
+the transition span remains 72 px, and the 44 px handle still has a 28 px usable center span. The
+two extreme fixtures therefore intentionally retain the exact failures and diagnostics recorded in
+the table above. P9, not this change, owns any adaptive per-hop demand calculation or expansion
+rule; it must validate that rule before supplying non-baseline geometry.
 
 This is the authoritative, current list — cross-check against the code before trusting it, since
 skip states and test names can drift. `grep -rn "it\.skip(\|test\.skip(" test/` finds all of them.
