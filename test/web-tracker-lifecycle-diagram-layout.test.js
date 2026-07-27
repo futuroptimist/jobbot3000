@@ -1488,6 +1488,40 @@ describe("test-only lifecycle layout diagnostics", () => {
     ).toBe(true);
   });
 
+  it.each([
+    ["50-branch shared-milestone fan-in", transitionDensityProjection],
+    ["60-application paginated fan-in", paginationProjection],
+  ])("identifies the horizontal rejection boundary for %s", (_, fixture) => {
+    const projectionValue = fixture();
+    const reversed = {
+      ...projectionValue,
+      nodes: [...projectionValue.nodes].reverse(),
+      links: [...projectionValue.links].reverse(),
+      paths: [...projectionValue.paths].reverse(),
+    };
+    const baseline = testOnlyDiagnoseLifecycleLayoutAttempt(
+      projectionValue,
+      1850,
+    );
+    expect(testOnlyDiagnoseLifecycleLayoutAttempt(reversed, 1850)).toEqual(
+      baseline,
+    );
+    expect(baseline.firstRejectedPhase).toBe("handle");
+    expect(baseline.firstRejectedReason).toMatchObject({
+      reason: "no-candidates",
+      evidence: {
+        horizontalRejections: {
+          nearestBlockerKinds: expect.arrayContaining(["corridor-bounds"]),
+        },
+      },
+    });
+    const horizontal =
+      baseline.firstRejectedReason.evidence.horizontalRejections;
+    expect(
+      horizontal.fixedGeometry + horizontal.outsideTransitionCorridor,
+    ).toBeGreaterThan(0);
+  });
+
   // Historical baseline (pre-fix, see
   // docs/design/lifecycle-diagram-layout-algorithm.md's "Checked-in
   // reproduction" section): denseBranchProjection() (5 origins x 11

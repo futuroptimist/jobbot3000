@@ -667,6 +667,44 @@ that doesn't depend on every branch finding a legal point within a fixed-width c
 tracked as further follow-up, not attempted here. Retrying with a larger
 `HANDLE_CLEARANCE_TOLERANCE` value alone will not help; the evidence above rules that out directly.
 
+### Follow-up investigation (2026-07-27): the boundary is not a scalar density threshold
+
+The test-only first-candidate diagnostic now aggregates the two horizontal rejection counters that
+were previously available only inside each blocked branch: `fixedGeometry` and
+`outsideTransitionCorridor`, plus the stable set of nearest-blocker kinds. The checked-in regression
+runs both extreme fixtures in normal and reversed input order and requires byte-identical evidence.
+Both reject during handle placement with `reason: "no-candidates"`; both record positive horizontal
+rejection counts and include `corridor-bounds` among their nearest blockers. This makes the binding
+constraint explicit without inferring it indirectly from the shared `clearanceMargin === -1`
+sentinel.
+
+A bounded density-only rank-spacing experiment was also evaluated and deliberately not shipped. It
+kept the protected half-corridor at 100px and increased every rank-center gap in 48px steps above 32
+links per transition, capped at 384px of expansion. For the 50-link transition fixture this selected
+144px of expansion (272px to 416px rank spacing, and therefore 72px to 216px of usable transition
+span). That removed the original narrow-span shape but did **not** make the production pipeline
+complete: the fixture still rejected after about five seconds, while established dense-fixture
+solver statistics changed (5,637 to 12,613 states) and two focused diagnostics exceeded the
+30-second test contract. It also demonstrated why every consumer must share one geometry object:
+tests or consumers retaining the baseline `rankCenterX` no longer audited the same X span as the
+solver.
+
+The evidence therefore does not support an authoritative production formula based on maximum link
+count alone. A milestone-free 55-branch graph is already supported at the baseline 272px spacing,
+while the 50-branch shared-milestone shape is not; topology and the distribution of incident docks,
+not just the maximum transition count, determine whether added horizontal span produces legal,
+non-overlapping handles. There is consequently no honest scalar “supported through N branches”
+limit. The currently established boundary is shape-specific: ordinary and existing real fixtures,
+including the milestone-free 55-branch graph, remain supported; the checked-in 50-branch
+shared-milestone and 60-application paginated fan-in shapes remain rejected deterministically.
+
+The next architectural lever must first derive a per-hop demand measure from candidate-bearing route
+geometry (including incident dock distribution), then thread a single immutable horizontal-geometry
+value through layout, lane domains, route primitives, renderer, handle placement, and audit. That is
+larger than safely inferring a spacing formula from these two fixtures. Until that demand model is
+proved against ordinary-fixture invariants and the bounded two-pass search, retaining typed failure
+is safer than a speculative width expansion that merely moves the rejection downstream.
+
 ## Follow-up (shipped): unified route-crossing classifier
 
 The last remaining Playwright skip (see "Playwright status" above) was an audit-methodology

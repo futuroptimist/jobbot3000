@@ -3667,6 +3667,22 @@ export function testOnlyDiagnoseLifecycleLayoutAttempt(
     );
   const structuredReason = (phase, reason, ranks = []) => {
     if (!reason) return null;
+    const branchDiagnostics = reason.branchDiagnostics ?? [];
+    const horizontalRejections = branchDiagnostics.reduce(
+      (totals, diagnostic) => {
+        totals.fixedGeometry += diagnostic.rejected?.fixedGeometry ?? 0;
+        totals.outsideTransitionCorridor +=
+          diagnostic.rejected?.outsideTransitionCorridor ?? 0;
+        const blocker = diagnostic.nearestRejectedCandidate?.blocker;
+        if (blocker?.kind) totals.nearestBlockerKinds.add(blocker.kind);
+        return totals;
+      },
+      {
+        fixedGeometry: 0,
+        outsideTransitionCorridor: 0,
+        nearestBlockerKinds: new Set(),
+      },
+    );
     const affectedRanks = [
       reason.rank,
       ...(reason.routeFindings ?? []).map((finding) => finding.rank),
@@ -3690,6 +3706,14 @@ export function testOnlyDiagnoseLifecycleLayoutAttempt(
         blockedBranchIds: reason.blockedBranchIds ?? [],
         routeFindingCount: reason.routeFindings?.length ?? 0,
         branchDiagnosticCount: reason.branchDiagnostics?.length ?? 0,
+        horizontalRejections: {
+          fixedGeometry: horizontalRejections.fixedGeometry,
+          outsideTransitionCorridor:
+            horizontalRejections.outsideTransitionCorridor,
+          nearestBlockerKinds: [
+            ...horizontalRejections.nearestBlockerKinds,
+          ].sort(compareLifecycleIds),
+        },
       },
     };
   };
