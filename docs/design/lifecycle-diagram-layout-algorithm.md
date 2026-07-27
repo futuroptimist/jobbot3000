@@ -892,10 +892,16 @@ other routes, handle overlap, and the route audit together. A safe formula needs
 proof (or an exhaustive bounded test over the supported density domain) connecting density to all
 three rejection classes. The currently established boundary is therefore: ordinary fixtures and
 the existing milestone-free dense grid remain supported, while a 50-way convergence on one real
-milestone is rejected deterministically. The next architectural lever remains one shared
-horizontal-geometry object consumed by layout, lane solving, route primitives, handle generation,
-and audit. That shared per-hop demand/immutable-horizontal-geometry design remains deferred
-follow-up work; its expansion rule must be validated before replacing the baseline constants.
+milestone is rejected deterministically. P8 introduces one deeply immutable horizontal-geometry
+value shared by layout, lane solving, routing-anchor materialization, route primitives, handle
+generation, rendering, auditing, and diagnostics. Rank centers and adjacent-hop records have
+stable keyed identities, and each hop owns its exit/entry positions, control and protected spans,
+transition span, and usable handle-center span. The baseline constructor still produces exactly
+the fixed geometry described above, so this architectural seam does not change production
+geometry, UI behavior, or the supported-density boundary: both extreme fan-in fixtures
+intentionally retain their existing typed failures and byte-identical diagnostics. Adaptive
+per-hop demand and expansion remain deferred to P9; that PR must validate its rule before
+supplying any non-baseline geometry.
 
 This is the authoritative, current list — cross-check against the code before trusting it, since
 skip states and test names can drift. `grep -rn "it\.skip(\|test\.skip(" test/` finds all of them.

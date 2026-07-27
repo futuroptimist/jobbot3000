@@ -49,6 +49,149 @@ export const MINIMUM_SVG_WIDTH =
   6 * MINIMUM_RANK_CENTER_SPACING;
 export const BRANCH_STROKE_OPACITY = 0.82;
 export const BRANCH_HANDLE_RADIUS = 22;
+
+const freezeHorizontalGeometry = (value) => {
+  for (const child of Object.values(value)) {
+    if (child && typeof child === "object" && !Object.isFrozen(child))
+      freezeHorizontalGeometry(child);
+  }
+  return Object.freeze(value);
+};
+
+const horizontalGeometryInvariant = (condition, message) => {
+  if (!condition)
+    throw new Error(
+      `Lifecycle horizontal geometry invariant violated: ${message}`,
+    );
+};
+
+export function createLifecycleHorizontalGeometry({
+  rankCenters = Object.fromEntries(
+    Array.from({ length: 7 }, (_, rank) => [
+      String(rank),
+      LAYOUT_LEFT_MARGIN +
+        SANKEY_NODE_WIDTH / 2 +
+        rank * MINIMUM_RANK_CENTER_SPACING,
+    ]),
+  ),
+  rankCorridorHalfWidth = RANK_CORRIDOR_HALF_WIDTH,
+  transitionControlOffset = TRANSITION_CONTROL_OFFSET,
+  leftMargin = LAYOUT_LEFT_MARGIN,
+  rightMargin = LAYOUT_RIGHT_MARGIN,
+  nodeWidth = SANKEY_NODE_WIDTH,
+  handleRadius = BRANCH_HANDLE_RADIUS,
+} = {}) {
+  const ranks = Object.keys(rankCenters);
+  horizontalGeometryInvariant(
+    ranks.length === 7 && ranks.every((rank) => /^(?:0|[1-6])$/u.test(rank)),
+    "rank centers must cover integer ranks 0 through 6",
+  );
+  for (const value of [
+    rankCorridorHalfWidth,
+    transitionControlOffset,
+    leftMargin,
+    rightMargin,
+    nodeWidth,
+    handleRadius,
+    ...Object.values(rankCenters),
+  ])
+    horizontalGeometryInvariant(
+      Number.isFinite(value),
+      "all values must be finite",
+    );
+  for (const [name, value] of Object.entries({
+    rankCorridorHalfWidth,
+    transitionControlOffset,
+    leftMargin,
+    rightMargin,
+    nodeWidth,
+    handleRadius,
+  }))
+    horizontalGeometryInvariant(value >= 0, `${name} must not be negative`);
+  const centers = {};
+  const hops = {};
+  for (let rank = 0; rank <= 6; rank += 1) {
+    const centerX = rankCenters[String(rank)];
+    horizontalGeometryInvariant(
+      rank === 0 || centerX > centers[String(rank - 1)].centerX,
+      "rank centers must increase monotonically",
+    );
+    centers[String(rank)] = { rank, centerX };
+    if (rank === 0) continue;
+    const sourceRank = rank - 1;
+    const sourceCenterX = centers[String(sourceRank)].centerX;
+    const exitX = sourceCenterX + rankCorridorHalfWidth;
+    const entryX = centerX - rankCorridorHalfWidth;
+    const transitionSpan = entryX - exitX;
+    const controlMinX = exitX + transitionControlOffset;
+    const controlMaxX = entryX - transitionControlOffset;
+    horizontalGeometryInvariant(
+      transitionSpan >= MINIMUM_TRANSITION_WIDTH,
+      `hop ${sourceRank}->${rank} must preserve the minimum transition span`,
+    );
+    horizontalGeometryInvariant(
+      controlMinX <= controlMaxX,
+      `hop ${sourceRank}->${rank} must preserve the control span`,
+    );
+    horizontalGeometryInvariant(
+      transitionSpan >= 2 * handleRadius,
+      `hop ${sourceRank}->${rank} must preserve the usable handle-center span`,
+    );
+    hops[`${sourceRank}->${rank}`] = {
+      id: `${sourceRank}->${rank}`,
+      sourceRank,
+      targetRank: rank,
+      sourceCenterX,
+      targetCenterX: centerX,
+      rankCenterSpacing: centerX - sourceCenterX,
+      exitX,
+      entryX,
+      controlMinX,
+      controlMaxX,
+      controlSpan: controlMaxX - controlMinX,
+      protectedMinX: sourceCenterX - rankCorridorHalfWidth,
+      protectedMaxX: centerX + rankCorridorHalfWidth,
+      protectedCorridorWidth: 2 * rankCorridorHalfWidth,
+      transitionSpan,
+      usableHandleCenterSpan: transitionSpan - 2 * handleRadius,
+    };
+  }
+  const minimumSvgWidth =
+    leftMargin +
+    rightMargin +
+    nodeWidth +
+    centers["6"].centerX -
+    centers["0"].centerX;
+  const geometry = {
+    ranks: centers,
+    hops,
+    rankCorridorHalfWidth,
+    transitionControlOffset,
+    leftMargin,
+    rightMargin,
+    nodeWidth,
+    handleRadius,
+    handleDiameter: 2 * handleRadius,
+    minimumSvgWidth,
+    rank(rank) {
+      const value = centers[String(rank)];
+      horizontalGeometryInvariant(value, `missing rank ${String(rank)}`);
+      return value;
+    },
+    hop(sourceRank, targetRank = sourceRank + 1) {
+      const value = hops[`${sourceRank}->${targetRank}`];
+      horizontalGeometryInvariant(
+        value,
+        `missing adjacent hop ${String(sourceRank)}->${String(targetRank)}`,
+      );
+      return value;
+    },
+  };
+  return freezeHorizontalGeometry(geometry);
+}
+
+export const BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY =
+  createLifecycleHorizontalGeometry();
 // A handle candidate's clearance from a *nonincident* route (a different
 // branch's line passing nearby) is a softer concern than clearance from
 // fixed geometry (a node/label box) or from another handle: it's the same
@@ -588,12 +731,13 @@ export function calculateLifecycleDiagramLayout(
   projection,
   availableWidth,
   routingGraph,
+  horizontalGeometry = BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
 ) {
   const integerWidth = Math.floor(Number(availableWidth));
   const sanitizedWidth =
     Number.isFinite(integerWidth) && integerWidth > 0
       ? integerWidth
-      : MINIMUM_SVG_WIDTH;
+      : horizontalGeometry.minimumSvgWidth;
   const graph = routingGraph ?? buildLifecycleRoutingGraph(projection);
   const rankCounts = new Map();
   for (const node of graph.nodes ?? []) {
@@ -659,7 +803,7 @@ export function calculateLifecycleDiagramLayout(
     densestRoutedRank * PER_LANE_VERTICAL_BUDGET +
     Math.max(0, densestRoutedRank - 1) * ROUTED_NODE_PADDING;
   return {
-    width: Math.max(MINIMUM_SVG_WIDTH, sanitizedWidth),
+    width: Math.max(horizontalGeometry.minimumSvgWidth, sanitizedWidth),
     height: Math.max(MINIMUM_SVG_HEIGHT, Math.ceil(densityHeight)),
     nodePadding: ROUTED_NODE_PADDING,
     topMargin: LAYOUT_TOP_MARGIN,
@@ -668,10 +812,10 @@ export function calculateLifecycleDiagramLayout(
   };
 }
 
-export const rankCenterX = (rank) =>
-  LAYOUT_LEFT_MARGIN +
-  SANKEY_NODE_WIDTH / 2 +
-  rank * MINIMUM_RANK_CENTER_SPACING;
+export const rankCenterX = (
+  rank,
+  horizontalGeometry = BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
+) => horizontalGeometry.rank(rank).centerX;
 
 // Layout-wide cache of full-geometry signatures already proven infeasible by
 // layoutLifecycleRoutingGraph's candidateCallback, keyed to the specific
@@ -810,6 +954,8 @@ function layoutLifecycleRoutingGraphPass(
   availableWidth,
   options = {},
 ) {
+  const horizontalGeometry =
+    options.horizontalGeometry ?? BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY;
   const enableTestDiagnostics = isLifecycleLayoutTestEnvironment();
   const explicitNodeOrderByRank =
     options.authoritativeNodeOrderByRank ??
@@ -877,7 +1023,9 @@ function layoutLifecycleRoutingGraphPass(
     projection,
     availableWidth,
     graph,
+    horizontalGeometry,
   );
+  dimensions.horizontalGeometry = horizontalGeometry;
   const rankLayers = [...new Set(graph.nodes.map((node) => node.rank))].sort(
     (left, right) => left - right,
   );
@@ -885,7 +1033,7 @@ function layoutLifecycleRoutingGraphPass(
   const layout = sankey()
     .nodeId((d) => d.id)
     .nodeAlign((node) => layerByRank.get(node.rank) ?? 0)
-    .nodeWidth(SANKEY_NODE_WIDTH)
+    .nodeWidth(horizontalGeometry.nodeWidth)
     .nodePadding(ROUTED_NODE_PADDING)
     .nodeSort((left, right) => {
       if (baseNodeOrderByRank && left.rank === right.rank) {
@@ -922,19 +1070,19 @@ function layoutLifecycleRoutingGraphPass(
       );
     })
     .extent([
-      [LAYOUT_LEFT_MARGIN, LAYOUT_TOP_MARGIN],
+      [horizontalGeometry.leftMargin, LAYOUT_TOP_MARGIN],
       [
-        dimensions.width - LAYOUT_RIGHT_MARGIN,
+        dimensions.width - horizontalGeometry.rightMargin,
         dimensions.height - LAYOUT_BOTTOM_MARGIN,
       ],
     ]);
   layout(graph);
   for (const node of graph.nodes) {
-    const center = rankCenterX(node.rank);
+    const center = rankCenterX(node.rank, horizontalGeometry);
     if (node.routing) node.x0 = node.x1 = center;
     else {
-      node.x0 = center - SANKEY_NODE_WIDTH / 2;
-      node.x1 = center + SANKEY_NODE_WIDTH / 2;
+      node.x0 = center - horizontalGeometry.nodeWidth / 2;
+      node.x1 = center + horizontalGeometry.nodeWidth / 2;
     }
   }
   layout.update(graph);
@@ -982,7 +1130,7 @@ function layoutLifecycleRoutingGraphPass(
   const labelBoxes = visibleNodes.map((node) => ({
     kind: "label",
     id: node.id,
-    ...labelBoxForNode(node),
+    ...labelBoxForNode(node, horizontalGeometry),
   }));
   const hitBoxes = visibleNodes.map((node) => ({
     kind: "hit",
@@ -1326,10 +1474,8 @@ function layoutLifecycleRoutingGraphPass(
     const variables = links
       .map((link) => {
         const rank = link.source.rank;
-        const exitX = rankCenterX(rank) + RANK_CORRIDOR_HALF_WIDTH;
-        const entryX = rankCenterX(link.target.rank) - RANK_CORRIDOR_HALF_WIDTH;
-        const controlMinX = exitX + TRANSITION_CONTROL_OFFSET;
-        const controlMaxX = entryX - TRANSITION_CONTROL_OFFSET;
+        const hop = horizontalGeometry.hop(rank, link.target.rank);
+        const { controlMinX, controlMaxX } = hop;
         if (controlMinX > controlMaxX + LANE_Y_EPSILON) {
           throw new Error(
             `Lifecycle transition lane control span invariant violated for ${link.id}`,
@@ -1338,9 +1484,8 @@ function layoutLifecycleRoutingGraphPass(
         // The constant transition lane Y controls the cubic plateau, while
         // clearance is guaranteed across the full source-to-target corridor
         // exercised by the renderer-level obstacle contract.
-        const clearanceMinX = rankCenterX(rank) - RANK_CORRIDOR_HALF_WIDTH;
-        const clearanceMaxX =
-          rankCenterX(link.target.rank) + RANK_CORRIDOR_HALF_WIDTH;
+        const clearanceMinX = hop.protectedMinX;
+        const clearanceMaxX = hop.protectedMaxX;
         const incidentIds = new Set([link.source.id, link.target.id]);
         const sourceDockY = Number.isFinite(link.y0)
           ? link.y0
@@ -2864,7 +3009,7 @@ function layoutLifecycleRoutingGraphPass(
           compareLifecycleIds(a.node.id, b.node.id)
         );
       });
-      const centerX = rankCenterX(rank);
+      const centerX = rankCenterX(rank, horizontalGeometry);
       const assignment = assignMonotone(
         entries,
         (entry, idealY) =>
@@ -3079,7 +3224,11 @@ function layoutLifecycleRoutingGraphPass(
       graph.branches,
       linksByBranch,
       visibleNodes,
-      { sharedBudget: handleBudget, seedHandles: options.seedHandles },
+      {
+        sharedBudget: handleBudget,
+        seedHandles: options.seedHandles,
+        horizontalGeometry,
+      },
     );
     lastHandleRouteEdgeCount = handleCheck.routeEdgeCount ?? null;
     if (handleCheck.ok) {
@@ -3291,7 +3440,7 @@ function layoutLifecycleRoutingGraphPass(
       error.cause?.reason === "no-feasible-topological-order" &&
       lastHandleFailure
     ) {
-      throw handlePlacementError(lastHandleFailure);
+      throw handlePlacementError(lastHandleFailure, horizontalGeometry);
     }
     // Exhaustive search proved every viable candidate failed routing-anchor
     // materialization (no candidate ever reached handle placement): surface
@@ -3645,6 +3794,8 @@ export function testOnlyDiagnoseLifecycleLayoutAttempt(
     throw new Error("Lifecycle layout diagnostics are available only in tests");
   }
   const snapshots = [];
+  const horizontalGeometry =
+    options.horizontalGeometry ?? BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY;
   const diagnosticComplete = Symbol("lifecycle-layout-diagnostic-complete");
   const orderByRank = options.baseNodeOrderByRank
     ? new Map(
@@ -3692,6 +3843,7 @@ export function testOnlyDiagnoseLifecycleLayoutAttempt(
         branchDiagnosticCount: reason.branchDiagnostics?.length ?? 0,
         horizontalConstraints: summarizeHandleCandidateConstraints(
           reason.branchDiagnostics ?? [],
+          horizontalGeometry,
         ),
       },
     };
@@ -3815,21 +3967,28 @@ export function testOnlyDiagnoseLifecycleLayoutAttempt(
 }
 
 const point = (x, y) => `${Number(x).toFixed(3)},${Number(y).toFixed(3)}`;
-export function segmentRoutePrimitives(segment) {
-  const sourceCenter = rankCenterX(segment.source.rank);
-  const targetCenter = rankCenterX(segment.target.rank);
+export function segmentRoutePrimitives(
+  segment,
+  horizontalGeometry = BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
+  adjacentHop,
+) {
+  const hop =
+    adjacentHop ??
+    horizontalGeometry.hops[`${segment.source.rank}->${segment.target.rank}`] ??
+    horizontalGeometry.hop(segment.source.rank, segment.target.rank);
+  const sourceCenter = hop.sourceCenterX;
+  const targetCenter = hop.targetCenterX;
   const sourceY = segment.y0;
   const targetY = segment.y1;
   const sourceDockX = segment.source.routing ? sourceCenter : segment.source.x1;
   const targetDockX = segment.target.routing ? targetCenter : segment.target.x0;
-  const exitX = sourceCenter + RANK_CORRIDOR_HALF_WIDTH;
-  const entryX = targetCenter - RANK_CORRIDOR_HALF_WIDTH;
+  const { exitX, entryX } = hop;
   const laneY = Number.isFinite(segment.transitionLaneY)
     ? segment.transitionLaneY
     : targetY;
   const p0 = { x: exitX, y: sourceY };
-  const p1 = { x: exitX + TRANSITION_CONTROL_OFFSET, y: laneY };
-  const p2 = { x: entryX - TRANSITION_CONTROL_OFFSET, y: laneY };
+  const p1 = { x: hop.controlMinX, y: laneY };
+  const p2 = { x: hop.controlMaxX, y: laneY };
   const p3 = { x: entryX, y: targetY };
   return [
     {
@@ -3850,8 +4009,14 @@ export function segmentRoutePrimitives(segment) {
   ];
 }
 
-export function adjacentRankSegmentPath(segment) {
-  const [source, cubic, target] = segmentRoutePrimitives(segment);
+export function adjacentRankSegmentPath(
+  segment,
+  horizontalGeometry = BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
+) {
+  const [source, cubic, target] = segmentRoutePrimitives(
+    segment,
+    horizontalGeometry,
+  );
   return [
     `M${point(source.p0.x, source.p0.y)}`,
     `L${point(source.p1.x, source.p1.y)}`,
@@ -3864,8 +4029,13 @@ export function adjacentRankSegmentPath(segment) {
   ].join("");
 }
 
-export function compoundBranchPath(segments) {
-  return segments.map(adjacentRankSegmentPath).join("");
+export function compoundBranchPath(
+  segments,
+  horizontalGeometry = BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
+) {
+  return segments
+    .map((segment) => adjacentRankSegmentPath(segment, horizontalGeometry))
+    .join("");
 }
 
 export function wrapLifecycleLabel(
@@ -3890,17 +4060,36 @@ export function wrapLifecycleLabel(
   );
 }
 
-export function labelBoxForNode(node) {
+export function labelBoxForNode(
+  node,
+  horizontalGeometry = BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
+) {
+  const geometry =
+    typeof horizontalGeometry?.rank === "function"
+      ? horizontalGeometry
+      : BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY;
   const lines = wrapLifecycleLabel(node.label);
   const width = NODE_LABEL_MAX_WIDTH;
   const height = lines.length * 16;
-  const x = Math.max(0, rankCenterX(node.rank) - width / 2);
+  const centerX = Number.isInteger(node.rank)
+    ? rankCenterX(node.rank, geometry)
+    : Number.NaN;
+  const x = Math.max(0, centerX - width / 2);
   const y = Math.max(0, node.y0 - height - 12);
   return { x, y, width, height, lines };
 }
 
-export const cubicTransitionPoint = (segment, t) => {
-  const cubic = segmentRoutePrimitives(segment)[1];
+export const cubicTransitionPoint = (
+  segment,
+  t,
+  horizontalGeometry = BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
+  adjacentHop,
+) => {
+  const cubic = segmentRoutePrimitives(
+    segment,
+    horizontalGeometry,
+    adjacentHop,
+  )[1];
   const oneMinus = 1 - t;
   return {
     x:
@@ -3925,6 +4114,8 @@ const segmentKey = (segment) =>
   `${segment.branchId ?? ""}:${segment.segmentIndex ?? ""}:${segment.id ?? ""}`;
 
 export function buildLifecycleRouteModel(graph, dimensions) {
+  const horizontalGeometry =
+    dimensions?.horizontalGeometry ?? BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY;
   const branches = [...(graph.branches ?? [])].sort(compareBranches);
   const segmentsByBranch = new Map();
   const segmentsByTransitionRank = Array.from({ length: 6 }, () => []);
@@ -3972,6 +4163,7 @@ export function buildLifecycleRouteModel(graph, dimensions) {
   return {
     graph,
     dimensions,
+    horizontalGeometry,
     branches,
     segmentsByBranch,
     segmentsByTransitionRank,
@@ -4015,8 +4207,11 @@ export function flattenLifecycleCubic(cubic, depth = 0) {
   );
 }
 
-export const flattenRouteSegment = (segment) =>
-  segmentRoutePrimitives(segment).flatMap((primitive) =>
+export const flattenRouteSegment = (
+  segment,
+  horizontalGeometry = BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
+) =>
+  segmentRoutePrimitives(segment, horizontalGeometry).flatMap((primitive) =>
     primitive.type === "line"
       ? [{ p0: primitive.p0, p1: primitive.p1, primitive }]
       : flattenLifecycleCubic(primitive).map((edge) => ({
@@ -4034,16 +4229,18 @@ export const routeEdgesByBranch = (graphOrModel) => {
     const edges = [];
     for (const segment of segments) {
       edges.push(
-        ...flattenRouteSegment(segment).map((edge) => ({
-          ...edge,
-          branchId,
-          segmentId: segmentKey(segment),
-          segmentIndex: segment.segmentIndex,
-          transitionRank: segment.source?.rank,
-          zone: edge.primitive?.zone,
-          envelopeRadius: selectedEnvelopeRadius(segment),
-          segment,
-        })),
+        ...flattenRouteSegment(segment, model.horizontalGeometry).map(
+          (edge) => ({
+            ...edge,
+            branchId,
+            segmentId: segmentKey(segment),
+            segmentIndex: segment.segmentIndex,
+            transitionRank: segment.source?.rank,
+            zone: edge.primitive?.zone,
+            envelopeRadius: selectedEnvelopeRadius(segment),
+            segment,
+          }),
+        ),
       );
     }
     edgesByBranch.set(branchId, edges);
@@ -4097,11 +4294,13 @@ export function auditLifecycleRouteGeometry({
       }
       try {
         flatEdges.push(
-          ...flattenRouteSegment(segment).map((edge) => ({
-            ...edge,
-            branchId,
-            segment,
-          })),
+          ...flattenRouteSegment(segment, routeModel.horizontalGeometry).map(
+            (edge) => ({
+              ...edge,
+              branchId,
+              segment,
+            }),
+          ),
         );
       } catch (error) {
         add("cubic-flattening-depth", segment, { message: error.message });
@@ -4117,7 +4316,11 @@ export function auditLifecycleRouteGeometry({
       width: node.x1 - node.x0,
       height: node.y1 - node.y0,
     },
-    { kind: "label", id: node.id, ...labelBoxForNode(node) },
+    {
+      kind: "label",
+      id: node.id,
+      ...labelBoxForNode(node, routeModel.horizontalGeometry),
+    },
     { kind: "hit", ...rendererHitBoxForNode(node) },
   ]);
   for (const edge of flatEdges) {
@@ -4510,7 +4713,10 @@ export const solveHandleCandidateSets = (
   return { ok: true, selected };
 };
 
-const handlePlacementError = (result) => {
+const handlePlacementError = (
+  result,
+  horizontalGeometry = BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
+) => {
   const branchId = result.blockedBranchIds?.[0] ?? "unknown branch";
   const error = new Error(
     `Lifecycle diagram handle placement invariant violated for ${branchId}`,
@@ -4524,13 +4730,17 @@ const handlePlacementError = (result) => {
     branches: [...(result.branchDiagnostics ?? [])],
     horizontalConstraints: summarizeHandleCandidateConstraints(
       result.branchDiagnostics ?? [],
+      horizontalGeometry,
     ),
     component: result.component ?? null,
   });
   return error;
 };
 
-export function summarizeHandleCandidateConstraints(branchDiagnostics) {
+export function summarizeHandleCandidateConstraints(
+  branchDiagnostics,
+  horizontalGeometry = BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
+) {
   const emptySweep = () => ({
     attempts: 0,
     rejected: {
@@ -4562,8 +4772,7 @@ export function summarizeHandleCandidateConstraints(branchDiagnostics) {
         (nearestBlockerKinds[blockerKind] ?? 0) + 1;
     }
   }
-  const transitionSpan =
-    MINIMUM_RANK_CENTER_SPACING - 2 * RANK_CORRIDOR_HALF_WIDTH;
+  const baselineHop = horizontalGeometry.hop(0, 1);
   return {
     attempts,
     rejected,
@@ -4573,11 +4782,11 @@ export function summarizeHandleCandidateConstraints(branchDiagnostics) {
         compareLifecycleIds(left, right),
       ),
     ),
-    rankCenterSpacing: MINIMUM_RANK_CENTER_SPACING,
-    protectedCorridorWidth: 2 * RANK_CORRIDOR_HALF_WIDTH,
-    transitionSpan,
-    handleDiameter: 2 * BRANCH_HANDLE_RADIUS,
-    usableHandleCenterSpan: transitionSpan - 2 * BRANCH_HANDLE_RADIUS,
+    rankCenterSpacing: baselineHop.rankCenterSpacing,
+    protectedCorridorWidth: baselineHop.protectedCorridorWidth,
+    transitionSpan: baselineHop.transitionSpan,
+    handleDiameter: horizontalGeometry.handleDiameter,
+    usableHandleCenterSpan: baselineHop.usableHandleCenterSpan,
   };
 }
 
@@ -4585,7 +4794,11 @@ const tryAssignBranchHandles = (
   branches,
   segmentsByBranch,
   visibleNodes = [],
-  { sharedBudget = null, seedHandles = null } = {},
+  {
+    sharedBudget = null,
+    seedHandles = null,
+    horizontalGeometry = BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
+  } = {},
 ) => {
   const nodeBoxes = visibleNodes.map((node) => ({
     x: node.x0,
@@ -4593,12 +4806,14 @@ const tryAssignBranchHandles = (
     width: node.x1 - node.x0,
     height: node.y1 - node.y0,
   }));
-  const labelBoxes = visibleNodes.map(labelBoxForNode);
+  const labelBoxes = visibleNodes.map((node) =>
+    labelBoxForNode(node, horizontalGeometry),
+  );
   const routeEdges = [];
   for (const [branchId, segments] of segmentsByBranch) {
     for (const segment of segments) {
       routeEdges.push(
-        ...flattenRouteSegment(segment).map((edge) => ({
+        ...flattenRouteSegment(segment, horizontalGeometry).map((edge) => ({
           ...edge,
           branchId,
           segmentId: segmentKey(segment),
@@ -4923,12 +5138,19 @@ const tryAssignBranchHandles = (
     };
     const sweepCorridor = (sweepName, tValues, corridorHalfWidth) => {
       for (const segment of orderedSegments) {
-        const sourceCenter = rankCenterX(segment.source.rank);
-        const targetCenter = rankCenterX(segment.target.rank);
-        const exitX = sourceCenter + corridorHalfWidth;
-        const entryX = targetCenter - corridorHalfWidth;
+        const hop = horizontalGeometry.hop(
+          segment.source.rank,
+          segment.target.rank,
+        );
+        const exitX = hop.sourceCenterX + corridorHalfWidth;
+        const entryX = hop.targetCenterX - corridorHalfWidth;
         for (const t of tValues) {
-          const { x, y } = cubicTransitionPoint(segment, t);
+          const { x, y } = cubicTransitionPoint(
+            segment,
+            t,
+            horizontalGeometry,
+            hop,
+          );
           const box = {
             x: x - BRANCH_HANDLE_RADIUS,
             y: y - BRANCH_HANDLE_RADIUS,
@@ -5027,13 +5249,13 @@ const tryAssignBranchHandles = (
     sweepCorridor(
       "primary",
       HANDLE_CANDIDATE_T_VALUES,
-      RANK_CORRIDOR_HALF_WIDTH,
+      horizontalGeometry.rankCorridorHalfWidth,
     );
     if (!candidates.length) {
       sweepCorridor(
         "fallback",
         HANDLE_FALLBACK_CANDIDATE_T_VALUES,
-        RANK_CORRIDOR_HALF_WIDTH,
+        horizontalGeometry.rankCorridorHalfWidth,
       );
     }
     // Only fall back to a degraded (small negative clearance) candidate
@@ -5096,12 +5318,14 @@ export function assignBranchHandles(
   branches,
   segmentsByBranch,
   visibleNodes = [],
+  horizontalGeometry = BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
 ) {
   const result = tryAssignBranchHandles(
     branches,
     segmentsByBranch,
     visibleNodes,
+    { horizontalGeometry },
   );
   if (result.ok) return result.handles;
-  throw handlePlacementError(result);
+  throw handlePlacementError(result, horizontalGeometry);
 }
