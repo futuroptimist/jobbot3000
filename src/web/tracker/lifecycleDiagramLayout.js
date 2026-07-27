@@ -4954,6 +4954,16 @@ const tryAssignBranchHandles = (
     // when this branch has no fully-clear candidate anywhere across both
     // sweeps -- a clean candidate is always preferred when one exists.
     const finalCandidates = candidates.length ? candidates : degradedCandidates;
+    const nearestBlockerKind =
+      diagnostic.nearestRejectedCandidate?.blocker?.kind;
+    diagnostic.bindingConstraint =
+      nearestBlockerKind === "corridor-bounds"
+        ? "transition-corridor-bounds"
+        : nearestBlockerKind === "node" || nearestBlockerKind === "label"
+          ? "fixed-node-or-label-geometry"
+          : nearestBlockerKind
+            ? "nonincident-route-clearance"
+            : null;
     candidateSets.set(
       branch.id,
       finalCandidates.sort(

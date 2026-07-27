@@ -667,6 +667,39 @@ that doesn't depend on every branch finding a legal point within a fixed-width c
 tracked as further follow-up, not attempted here. Retrying with a larger
 `HANDLE_CLEARANCE_TOLERANCE` value alone will not help; the evidence above rules that out directly.
 
+### Bounded horizontal-geometry investigation (2026-07-27)
+
+A follow-up traced the X coordinates end to end: `rankCenterX` fixes rank centers 272 px apart;
+`solveTransitionLanes` reserves 100 px on each side and requires the remaining 72 px control span;
+`segmentRoutePrimitives`, handle sampling, the route model, and the audit then consume those same
+coordinates. The usable handle-center interval is only 28 px after subtracting the 22 px handle
+radius at both ends. Increasing `RANK_CORRIDOR_HALF_WIDTH` is therefore the wrong isolated lever: it
+reduces that interval unless rank spacing grows by the same amount.
+
+A throwaway implementation instead kept the protected 100 px corridors fixed and expanded rank
+spacing in deterministic 44 px (one handle diameter) columns derived from intermediate-dock
+density. It was deliberately removed: although it changed the 50-branch fixture's terminal failure
+from the fixed-geometry `no-candidates` proof, the unchanged 200,000-state lane budget was then
+exhausted. In other words, width made additional handle points reachable but did not construct an
+ordering/lane assignment that the bounded solver could validate. Shipping that rule would merely
+exchange a precise infeasibility result for a more expensive one, without satisfying either stress
+fixture or the acceptance contract.
+
+The retained diagnostic refinement reports `bindingConstraint` for every blocked branch, derived
+from the already-deterministic nearest rejected candidate: `transition-corridor-bounds`,
+`fixed-node-or-label-geometry`, or `nonincident-route-clearance`. The 50-branch regression requires
+every blocked branch to identify one of the first two categories with the existing `-1` sentinel.
+This is stronger than treating every `-1` alike and protects the conclusion that clearance
+tolerance and ordering changes cannot address the closest rejected sample.
+
+The supported boundary therefore remains the largest density accepted by the production two-pass
+search under the existing budgets; there is intentionally no new numeric promise inferred from the
+two fixtures alone. The next architectural lever must jointly derive per-hop rank spacing and a
+constructive handle-placement domain (including how candidate columns participate in bounded
+search), compute it once, and pass it to the solver, route primitives, renderer, handle placement,
+and audit. A future patch must prove both stress fixtures before making that geometry authoritative;
+changing a global width constant or adding fixture-derived density thresholds is insufficient.
+
 ## Follow-up (shipped): unified route-crossing classifier
 
 The last remaining Playwright skip (see "Playwright status" above) was an audit-methodology

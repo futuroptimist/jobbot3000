@@ -981,6 +981,36 @@ describe("transition lane solver", () => {
     expect(Date.now() - start).toBeLessThan(30000);
   });
 
+  it("attributes dense fan-in's binding rejection to horizontal geometry", () => {
+    let thrown;
+    try {
+      layoutLifecycleRoutingGraph(transitionDensityProjection(), 1850);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown?.cause).toMatchObject({
+      type: "lifecycle-handle-placement",
+      reason: "no-candidates",
+    });
+    expect(thrown.cause.branches.length).toBeGreaterThan(0);
+    for (const branch of thrown.cause.branches) {
+      expect(branch.accepted).toBe(0);
+      expect(branch.nearestRejectedCandidate).toMatchObject({
+        clearanceMargin: -1,
+      });
+      expect([
+        "transition-corridor-bounds",
+        "fixed-node-or-label-geometry",
+      ]).toContain(branch.bindingConstraint);
+      expect(
+        branch.rejected.fixedGeometry +
+          branch.rejected.outsideTransitionCorridor,
+      ).toBeGreaterThan(0);
+      expect(branch.bindingConstraint).not.toBe("nonincident-route-clearance");
+    }
+  });
+
   it("selects lanes that clear non-incident obstacles in the branch X span", () => {
     const p = projection();
     const { graph } = layoutLifecycleRoutingGraph(p, 1850, {
