@@ -42,13 +42,129 @@ export const MINIMUM_TRANSITION_WIDTH = 72;
 export const LAYOUT_LEFT_MARGIN = 100;
 export const LAYOUT_RIGHT_MARGIN = 100;
 export const MINIMUM_RANK_CENTER_SPACING = 272;
-export const MINIMUM_SVG_WIDTH =
-  LAYOUT_LEFT_MARGIN +
-  LAYOUT_RIGHT_MARGIN +
-  SANKEY_NODE_WIDTH +
-  6 * MINIMUM_RANK_CENTER_SPACING;
 export const BRANCH_STROKE_OPACITY = 0.82;
 export const BRANCH_HANDLE_RADIUS = 22;
+
+const deepFreezePlain = (value) => {
+  if (!value || typeof value !== "object" || Object.isFrozen(value))
+    return value;
+  for (const child of Object.values(value)) deepFreezePlain(child);
+  return Object.freeze(value);
+};
+
+export function createLifecycleHorizontalGeometry({
+  rankCenters = Object.fromEntries(
+    Array.from({ length: 7 }, (_, rank) => [
+      rank,
+      LAYOUT_LEFT_MARGIN +
+        SANKEY_NODE_WIDTH / 2 +
+        rank * MINIMUM_RANK_CENTER_SPACING,
+    ]),
+  ),
+  corridorHalfWidth = RANK_CORRIDOR_HALF_WIDTH,
+  controlOffset = TRANSITION_CONTROL_OFFSET,
+  leftMargin = LAYOUT_LEFT_MARGIN,
+  rightMargin = LAYOUT_RIGHT_MARGIN,
+  nodeWidth = SANKEY_NODE_WIDTH,
+  handleRadius = BRANCH_HANDLE_RADIUS,
+} = {}) {
+  const finite = (name, value) => {
+    if (!Number.isFinite(value))
+      throw new TypeError(
+        `Lifecycle horizontal geometry ${name} must be finite`,
+      );
+    return value;
+  };
+  for (const [name, value] of Object.entries({
+    corridorHalfWidth,
+    controlOffset,
+    leftMargin,
+    rightMargin,
+    nodeWidth,
+    handleRadius,
+  }))
+    finite(name, value);
+  if (
+    [
+      corridorHalfWidth,
+      controlOffset,
+      leftMargin,
+      rightMargin,
+      nodeWidth,
+      handleRadius,
+    ].some((value) => value < 0)
+  )
+    throw new RangeError(
+      "Lifecycle horizontal geometry dimensions must be nonnegative",
+    );
+  const centerByRank = {};
+  for (let rank = 0; rank <= 6; rank += 1) {
+    if (!Object.hasOwn(rankCenters, rank))
+      throw new RangeError(
+        `Lifecycle horizontal geometry is missing rank ${rank}`,
+      );
+    centerByRank[rank] = finite(`rank ${rank} center`, rankCenters[rank]);
+    if (rank > 0 && centerByRank[rank] <= centerByRank[rank - 1])
+      throw new RangeError(
+        "Lifecycle horizontal geometry rank centers must increase",
+      );
+  }
+  if (Object.keys(rankCenters).some((rank) => !/^[0-6]$/u.test(rank)))
+    throw new RangeError(
+      "Lifecycle horizontal geometry has unsupported rank coverage",
+    );
+  const adjacentHopById = {};
+  for (let sourceRank = 0; sourceRank < 6; sourceRank += 1) {
+    const targetRank = sourceRank + 1;
+    const sourceCenter = centerByRank[sourceRank];
+    const targetCenter = centerByRank[targetRank];
+    const exitX = sourceCenter + corridorHalfWidth;
+    const entryX = targetCenter - corridorHalfWidth;
+    const transitionSpan = entryX - exitX;
+    const controlMinX = exitX + controlOffset;
+    const controlMaxX = entryX - controlOffset;
+    if (transitionSpan < MINIMUM_TRANSITION_WIDTH || controlMinX > controlMaxX)
+      throw new RangeError(
+        `Lifecycle horizontal geometry hop ${sourceRank}->${targetRank} is too narrow`,
+      );
+    adjacentHopById[`${sourceRank}->${targetRank}`] = {
+      id: `${sourceRank}->${targetRank}`,
+      sourceRank,
+      targetRank,
+      sourceCenter,
+      targetCenter,
+      rankCenterSpacing: targetCenter - sourceCenter,
+      exitX,
+      entryX,
+      controlMinX,
+      controlMaxX,
+      controlSpan: controlMaxX - controlMinX,
+      protectedMinX: sourceCenter - corridorHalfWidth,
+      protectedMaxX: targetCenter + corridorHalfWidth,
+      protectedCorridorWidth: 2 * corridorHalfWidth,
+      transitionSpan,
+      usableHandleCenterSpan: transitionSpan - 2 * handleRadius,
+    };
+  }
+  const svgWidth =
+    leftMargin + rightMargin + nodeWidth + centerByRank[6] - centerByRank[0];
+  return deepFreezePlain({
+    centerByRank,
+    adjacentHopById,
+    corridorHalfWidth,
+    controlOffset,
+    leftMargin,
+    rightMargin,
+    nodeWidth,
+    handleRadius,
+    handleDiameter: 2 * handleRadius,
+    svgWidth,
+  });
+}
+
+export const LIFECYCLE_HORIZONTAL_GEOMETRY =
+  createLifecycleHorizontalGeometry();
+export const MINIMUM_SVG_WIDTH = LIFECYCLE_HORIZONTAL_GEOMETRY.svgWidth;
 // A handle candidate's clearance from a *nonincident* route (a different
 // branch's line passing nearby) is a softer concern than clearance from
 // fixed geometry (a node/label box) or from another handle: it's the same
@@ -588,12 +704,13 @@ export function calculateLifecycleDiagramLayout(
   projection,
   availableWidth,
   routingGraph,
+  horizontalGeometry = LIFECYCLE_HORIZONTAL_GEOMETRY,
 ) {
   const integerWidth = Math.floor(Number(availableWidth));
   const sanitizedWidth =
     Number.isFinite(integerWidth) && integerWidth > 0
       ? integerWidth
-      : MINIMUM_SVG_WIDTH;
+      : horizontalGeometry.svgWidth;
   const graph = routingGraph ?? buildLifecycleRoutingGraph(projection);
   const rankCounts = new Map();
   for (const node of graph.nodes ?? []) {
@@ -659,7 +776,7 @@ export function calculateLifecycleDiagramLayout(
     densestRoutedRank * PER_LANE_VERTICAL_BUDGET +
     Math.max(0, densestRoutedRank - 1) * ROUTED_NODE_PADDING;
   return {
-    width: Math.max(MINIMUM_SVG_WIDTH, sanitizedWidth),
+    width: Math.max(horizontalGeometry.svgWidth, sanitizedWidth),
     height: Math.max(MINIMUM_SVG_HEIGHT, Math.ceil(densityHeight)),
     nodePadding: ROUTED_NODE_PADDING,
     topMargin: LAYOUT_TOP_MARGIN,
@@ -668,10 +785,25 @@ export function calculateLifecycleDiagramLayout(
   };
 }
 
-export const rankCenterX = (rank) =>
-  LAYOUT_LEFT_MARGIN +
-  SANKEY_NODE_WIDTH / 2 +
-  rank * MINIMUM_RANK_CENTER_SPACING;
+export const rankCenterX = (
+  rank,
+  horizontalGeometry = LIFECYCLE_HORIZONTAL_GEOMETRY,
+) => {
+  const center = horizontalGeometry.centerByRank[rank];
+  if (!Number.isFinite(center))
+    throw new RangeError(`Lifecycle horizontal geometry has no rank ${rank}`);
+  return center;
+};
+
+const adjacentHopGeometry = (sourceRank, targetRank, horizontalGeometry) => {
+  const hop =
+    horizontalGeometry.adjacentHopById[`${sourceRank}->${targetRank}`];
+  if (!hop)
+    throw new RangeError(
+      `Lifecycle horizontal geometry has no hop ${sourceRank}->${targetRank}`,
+    );
+  return hop;
+};
 
 // Layout-wide cache of full-geometry signatures already proven infeasible by
 // layoutLifecycleRoutingGraph's candidateCallback, keyed to the specific
@@ -810,6 +942,8 @@ function layoutLifecycleRoutingGraphPass(
   availableWidth,
   options = {},
 ) {
+  const horizontalGeometry =
+    options.horizontalGeometry ?? LIFECYCLE_HORIZONTAL_GEOMETRY;
   const enableTestDiagnostics = isLifecycleLayoutTestEnvironment();
   const explicitNodeOrderByRank =
     options.authoritativeNodeOrderByRank ??
@@ -877,6 +1011,7 @@ function layoutLifecycleRoutingGraphPass(
     projection,
     availableWidth,
     graph,
+    horizontalGeometry,
   );
   const rankLayers = [...new Set(graph.nodes.map((node) => node.rank))].sort(
     (left, right) => left - right,
@@ -885,7 +1020,7 @@ function layoutLifecycleRoutingGraphPass(
   const layout = sankey()
     .nodeId((d) => d.id)
     .nodeAlign((node) => layerByRank.get(node.rank) ?? 0)
-    .nodeWidth(SANKEY_NODE_WIDTH)
+    .nodeWidth(horizontalGeometry.nodeWidth)
     .nodePadding(ROUTED_NODE_PADDING)
     .nodeSort((left, right) => {
       if (baseNodeOrderByRank && left.rank === right.rank) {
@@ -922,19 +1057,19 @@ function layoutLifecycleRoutingGraphPass(
       );
     })
     .extent([
-      [LAYOUT_LEFT_MARGIN, LAYOUT_TOP_MARGIN],
+      [horizontalGeometry.leftMargin, LAYOUT_TOP_MARGIN],
       [
-        dimensions.width - LAYOUT_RIGHT_MARGIN,
+        dimensions.width - horizontalGeometry.rightMargin,
         dimensions.height - LAYOUT_BOTTOM_MARGIN,
       ],
     ]);
   layout(graph);
   for (const node of graph.nodes) {
-    const center = rankCenterX(node.rank);
+    const center = rankCenterX(node.rank, horizontalGeometry);
     if (node.routing) node.x0 = node.x1 = center;
     else {
-      node.x0 = center - SANKEY_NODE_WIDTH / 2;
-      node.x1 = center + SANKEY_NODE_WIDTH / 2;
+      node.x0 = center - horizontalGeometry.nodeWidth / 2;
+      node.x1 = center + horizontalGeometry.nodeWidth / 2;
     }
   }
   layout.update(graph);
@@ -982,7 +1117,7 @@ function layoutLifecycleRoutingGraphPass(
   const labelBoxes = visibleNodes.map((node) => ({
     kind: "label",
     id: node.id,
-    ...labelBoxForNode(node),
+    ...labelBoxForNode(node, horizontalGeometry),
   }));
   const hitBoxes = visibleNodes.map((node) => ({
     kind: "hit",
@@ -1326,10 +1461,12 @@ function layoutLifecycleRoutingGraphPass(
     const variables = links
       .map((link) => {
         const rank = link.source.rank;
-        const exitX = rankCenterX(rank) + RANK_CORRIDOR_HALF_WIDTH;
-        const entryX = rankCenterX(link.target.rank) - RANK_CORRIDOR_HALF_WIDTH;
-        const controlMinX = exitX + TRANSITION_CONTROL_OFFSET;
-        const controlMaxX = entryX - TRANSITION_CONTROL_OFFSET;
+        const hop = adjacentHopGeometry(
+          rank,
+          link.target.rank,
+          horizontalGeometry,
+        );
+        const { controlMinX, controlMaxX } = hop;
         if (controlMinX > controlMaxX + LANE_Y_EPSILON) {
           throw new Error(
             `Lifecycle transition lane control span invariant violated for ${link.id}`,
@@ -1338,9 +1475,8 @@ function layoutLifecycleRoutingGraphPass(
         // The constant transition lane Y controls the cubic plateau, while
         // clearance is guaranteed across the full source-to-target corridor
         // exercised by the renderer-level obstacle contract.
-        const clearanceMinX = rankCenterX(rank) - RANK_CORRIDOR_HALF_WIDTH;
-        const clearanceMaxX =
-          rankCenterX(link.target.rank) + RANK_CORRIDOR_HALF_WIDTH;
+        const clearanceMinX = hop.protectedMinX;
+        const clearanceMaxX = hop.protectedMaxX;
         const incidentIds = new Set([link.source.id, link.target.id]);
         const sourceDockY = Number.isFinite(link.y0)
           ? link.y0
@@ -2864,7 +3000,7 @@ function layoutLifecycleRoutingGraphPass(
           compareLifecycleIds(a.node.id, b.node.id)
         );
       });
-      const centerX = rankCenterX(rank);
+      const centerX = rankCenterX(rank, horizontalGeometry);
       const assignment = assignMonotone(
         entries,
         (entry, idealY) =>
@@ -3079,7 +3215,11 @@ function layoutLifecycleRoutingGraphPass(
       graph.branches,
       linksByBranch,
       visibleNodes,
-      { sharedBudget: handleBudget, seedHandles: options.seedHandles },
+      {
+        sharedBudget: handleBudget,
+        seedHandles: options.seedHandles,
+        horizontalGeometry,
+      },
     );
     lastHandleRouteEdgeCount = handleCheck.routeEdgeCount ?? null;
     if (handleCheck.ok) {
@@ -3120,6 +3260,7 @@ function layoutLifecycleRoutingGraphPass(
         graph,
         dimensions,
         handles: handleCheck.handles,
+        horizontalGeometry,
       });
       const budgetFraction = Math.max(
         handleBudget.statesVisited / handleBudget.stateLimit,
@@ -3291,7 +3432,7 @@ function layoutLifecycleRoutingGraphPass(
       error.cause?.reason === "no-feasible-topological-order" &&
       lastHandleFailure
     ) {
-      throw handlePlacementError(lastHandleFailure);
+      throw handlePlacementError(lastHandleFailure, horizontalGeometry);
     }
     // Exhaustive search proved every viable candidate failed routing-anchor
     // materialization (no candidate ever reached handle placement): surface
@@ -3332,7 +3473,7 @@ function layoutLifecycleRoutingGraphPass(
   graph.transitionLaneSolverStats = Object.freeze({
     ...transitionLaneSolverStats,
   });
-  return { graph, dimensions };
+  return { graph, dimensions, horizontalGeometry };
 }
 
 const compareOrderKeys = (left, right) => {
@@ -3692,6 +3833,7 @@ export function testOnlyDiagnoseLifecycleLayoutAttempt(
         branchDiagnosticCount: reason.branchDiagnostics?.length ?? 0,
         horizontalConstraints: summarizeHandleCandidateConstraints(
           reason.branchDiagnostics ?? [],
+          options.horizontalGeometry ?? LIFECYCLE_HORIZONTAL_GEOMETRY,
         ),
       },
     };
@@ -3815,21 +3957,26 @@ export function testOnlyDiagnoseLifecycleLayoutAttempt(
 }
 
 const point = (x, y) => `${Number(x).toFixed(3)},${Number(y).toFixed(3)}`;
-export function segmentRoutePrimitives(segment) {
-  const sourceCenter = rankCenterX(segment.source.rank);
-  const targetCenter = rankCenterX(segment.target.rank);
+export function segmentRoutePrimitives(
+  segment,
+  horizontalGeometry = LIFECYCLE_HORIZONTAL_GEOMETRY,
+) {
+  const hop = adjacentHopGeometry(
+    segment.source.rank,
+    segment.target.rank,
+    horizontalGeometry,
+  );
+  const { sourceCenter, targetCenter, exitX, entryX } = hop;
   const sourceY = segment.y0;
   const targetY = segment.y1;
   const sourceDockX = segment.source.routing ? sourceCenter : segment.source.x1;
   const targetDockX = segment.target.routing ? targetCenter : segment.target.x0;
-  const exitX = sourceCenter + RANK_CORRIDOR_HALF_WIDTH;
-  const entryX = targetCenter - RANK_CORRIDOR_HALF_WIDTH;
   const laneY = Number.isFinite(segment.transitionLaneY)
     ? segment.transitionLaneY
     : targetY;
   const p0 = { x: exitX, y: sourceY };
-  const p1 = { x: exitX + TRANSITION_CONTROL_OFFSET, y: laneY };
-  const p2 = { x: entryX - TRANSITION_CONTROL_OFFSET, y: laneY };
+  const p1 = { x: hop.controlMinX, y: laneY };
+  const p2 = { x: hop.controlMaxX, y: laneY };
   const p3 = { x: entryX, y: targetY };
   return [
     {
@@ -3850,8 +3997,14 @@ export function segmentRoutePrimitives(segment) {
   ];
 }
 
-export function adjacentRankSegmentPath(segment) {
-  const [source, cubic, target] = segmentRoutePrimitives(segment);
+export function adjacentRankSegmentPath(
+  segment,
+  horizontalGeometry = LIFECYCLE_HORIZONTAL_GEOMETRY,
+) {
+  const [source, cubic, target] = segmentRoutePrimitives(
+    segment,
+    horizontalGeometry,
+  );
   return [
     `M${point(source.p0.x, source.p0.y)}`,
     `L${point(source.p1.x, source.p1.y)}`,
@@ -3864,8 +4017,13 @@ export function adjacentRankSegmentPath(segment) {
   ].join("");
 }
 
-export function compoundBranchPath(segments) {
-  return segments.map(adjacentRankSegmentPath).join("");
+export function compoundBranchPath(
+  segments,
+  horizontalGeometry = LIFECYCLE_HORIZONTAL_GEOMETRY,
+) {
+  return segments
+    .map((segment) => adjacentRankSegmentPath(segment, horizontalGeometry))
+    .join("");
 }
 
 export function wrapLifecycleLabel(
@@ -3890,17 +4048,30 @@ export function wrapLifecycleLabel(
   );
 }
 
-export function labelBoxForNode(node) {
+export function labelBoxForNode(
+  node,
+  horizontalGeometry = LIFECYCLE_HORIZONTAL_GEOMETRY,
+) {
+  const geometry = horizontalGeometry?.centerByRank
+    ? horizontalGeometry
+    : LIFECYCLE_HORIZONTAL_GEOMETRY;
   const lines = wrapLifecycleLabel(node.label);
   const width = NODE_LABEL_MAX_WIDTH;
   const height = lines.length * 16;
-  const x = Math.max(0, rankCenterX(node.rank) - width / 2);
+  const center = Number.isInteger(node.rank)
+    ? rankCenterX(node.rank, geometry)
+    : (node.x0 + node.x1) / 2;
+  const x = Math.max(0, center - width / 2);
   const y = Math.max(0, node.y0 - height - 12);
   return { x, y, width, height, lines };
 }
 
-export const cubicTransitionPoint = (segment, t) => {
-  const cubic = segmentRoutePrimitives(segment)[1];
+export const cubicTransitionPoint = (
+  segment,
+  t,
+  horizontalGeometry = LIFECYCLE_HORIZONTAL_GEOMETRY,
+) => {
+  const cubic = segmentRoutePrimitives(segment, horizontalGeometry)[1];
   const oneMinus = 1 - t;
   return {
     x:
@@ -3924,7 +4095,11 @@ const quantizePoint = ({ x, y }) => ({
 const segmentKey = (segment) =>
   `${segment.branchId ?? ""}:${segment.segmentIndex ?? ""}:${segment.id ?? ""}`;
 
-export function buildLifecycleRouteModel(graph, dimensions) {
+export function buildLifecycleRouteModel(
+  graph,
+  dimensions,
+  horizontalGeometry = LIFECYCLE_HORIZONTAL_GEOMETRY,
+) {
   const branches = [...(graph.branches ?? [])].sort(compareBranches);
   const segmentsByBranch = new Map();
   const segmentsByTransitionRank = Array.from({ length: 6 }, () => []);
@@ -3972,6 +4147,7 @@ export function buildLifecycleRouteModel(graph, dimensions) {
   return {
     graph,
     dimensions,
+    horizontalGeometry,
     branches,
     segmentsByBranch,
     segmentsByTransitionRank,
@@ -4015,8 +4191,11 @@ export function flattenLifecycleCubic(cubic, depth = 0) {
   );
 }
 
-export const flattenRouteSegment = (segment) =>
-  segmentRoutePrimitives(segment).flatMap((primitive) =>
+export const flattenRouteSegment = (
+  segment,
+  horizontalGeometry = LIFECYCLE_HORIZONTAL_GEOMETRY,
+) =>
+  segmentRoutePrimitives(segment, horizontalGeometry).flatMap((primitive) =>
     primitive.type === "line"
       ? [{ p0: primitive.p0, p1: primitive.p1, primitive }]
       : flattenLifecycleCubic(primitive).map((edge) => ({
@@ -4025,16 +4204,24 @@ export const flattenRouteSegment = (segment) =>
         })),
   );
 
-export const routeEdgesByBranch = (graphOrModel) => {
+export const routeEdgesByBranch = (
+  graphOrModel,
+  horizontalGeometry = graphOrModel?.horizontalGeometry ??
+    LIFECYCLE_HORIZONTAL_GEOMETRY,
+) => {
   const model = graphOrModel?.segmentsByBranch
     ? graphOrModel
-    : buildLifecycleRouteModel(graphOrModel, { width: 0, height: 0 });
+    : buildLifecycleRouteModel(
+        graphOrModel,
+        { width: 0, height: 0 },
+        horizontalGeometry,
+      );
   const edgesByBranch = new Map();
   for (const [branchId, segments] of model.segmentsByBranch) {
     const edges = [];
     for (const segment of segments) {
       edges.push(
-        ...flattenRouteSegment(segment).map((edge) => ({
+        ...flattenRouteSegment(segment, horizontalGeometry).map((edge) => ({
           ...edge,
           branchId,
           segmentId: segmentKey(segment),
@@ -4069,8 +4256,11 @@ export function auditLifecycleRouteGeometry({
   dimensions,
   model,
   handles = [],
+  horizontalGeometry = model?.horizontalGeometry ??
+    LIFECYCLE_HORIZONTAL_GEOMETRY,
 }) {
-  const routeModel = model ?? buildLifecycleRouteModel(graph, dimensions);
+  const routeModel =
+    model ?? buildLifecycleRouteModel(graph, dimensions, horizontalGeometry);
   const fatalFindings = [];
   const forcedCrossings = [];
   const allFindings = [];
@@ -4097,7 +4287,7 @@ export function auditLifecycleRouteGeometry({
       }
       try {
         flatEdges.push(
-          ...flattenRouteSegment(segment).map((edge) => ({
+          ...flattenRouteSegment(segment, horizontalGeometry).map((edge) => ({
             ...edge,
             branchId,
             segment,
@@ -4117,7 +4307,11 @@ export function auditLifecycleRouteGeometry({
       width: node.x1 - node.x0,
       height: node.y1 - node.y0,
     },
-    { kind: "label", id: node.id, ...labelBoxForNode(node) },
+    {
+      kind: "label",
+      id: node.id,
+      ...labelBoxForNode(node, horizontalGeometry),
+    },
     { kind: "hit", ...rendererHitBoxForNode(node) },
   ]);
   for (const edge of flatEdges) {
@@ -4301,6 +4495,8 @@ export function auditLifecycleRouteGeometry({
 }
 
 export function solveLifecycleRouteGeometry(graph, dimensions, options = {}) {
+  const horizontalGeometry =
+    options.horizontalGeometry ?? LIFECYCLE_HORIZONTAL_GEOMETRY;
   const baseline = new Map(
     graph.links.map((link) => [
       link.id,
@@ -4320,7 +4516,7 @@ export function solveLifecycleRouteGeometry(graph, dimensions, options = {}) {
     restore();
     throw new Error("Unable to construct valid lifecycle routes");
   }
-  const model = buildLifecycleRouteModel(graph, dimensions);
+  const model = buildLifecycleRouteModel(graph, dimensions, horizontalGeometry);
   const audit = auditLifecycleRouteGeometry({ model, handles: [] });
   if (audit.fatalFindings.length) {
     restore();
@@ -4334,13 +4530,6 @@ const boxesOverlap = (a, b) =>
   a.x + a.width > b.x &&
   a.y < b.y + b.height &&
   a.y + a.height > b.y;
-
-const deepFreezePlain = (value) => {
-  if (!value || typeof value !== "object" || Object.isFrozen(value))
-    return value;
-  for (const child of Object.values(value)) deepFreezePlain(child);
-  return Object.freeze(value);
-};
 
 export const solveHandleCandidateSets = (
   branches,
@@ -4510,7 +4699,10 @@ export const solveHandleCandidateSets = (
   return { ok: true, selected };
 };
 
-const handlePlacementError = (result) => {
+const handlePlacementError = (
+  result,
+  horizontalGeometry = LIFECYCLE_HORIZONTAL_GEOMETRY,
+) => {
   const branchId = result.blockedBranchIds?.[0] ?? "unknown branch";
   const error = new Error(
     `Lifecycle diagram handle placement invariant violated for ${branchId}`,
@@ -4524,13 +4716,17 @@ const handlePlacementError = (result) => {
     branches: [...(result.branchDiagnostics ?? [])],
     horizontalConstraints: summarizeHandleCandidateConstraints(
       result.branchDiagnostics ?? [],
+      horizontalGeometry,
     ),
     component: result.component ?? null,
   });
   return error;
 };
 
-export function summarizeHandleCandidateConstraints(branchDiagnostics) {
+export function summarizeHandleCandidateConstraints(
+  branchDiagnostics,
+  horizontalGeometry = LIFECYCLE_HORIZONTAL_GEOMETRY,
+) {
   const emptySweep = () => ({
     attempts: 0,
     rejected: {
@@ -4562,8 +4758,7 @@ export function summarizeHandleCandidateConstraints(branchDiagnostics) {
         (nearestBlockerKinds[blockerKind] ?? 0) + 1;
     }
   }
-  const transitionSpan =
-    MINIMUM_RANK_CENTER_SPACING - 2 * RANK_CORRIDOR_HALF_WIDTH;
+  const baselineHop = horizontalGeometry.adjacentHopById["0->1"];
   return {
     attempts,
     rejected,
@@ -4573,11 +4768,11 @@ export function summarizeHandleCandidateConstraints(branchDiagnostics) {
         compareLifecycleIds(left, right),
       ),
     ),
-    rankCenterSpacing: MINIMUM_RANK_CENTER_SPACING,
-    protectedCorridorWidth: 2 * RANK_CORRIDOR_HALF_WIDTH,
-    transitionSpan,
-    handleDiameter: 2 * BRANCH_HANDLE_RADIUS,
-    usableHandleCenterSpan: transitionSpan - 2 * BRANCH_HANDLE_RADIUS,
+    rankCenterSpacing: baselineHop.rankCenterSpacing,
+    protectedCorridorWidth: baselineHop.protectedCorridorWidth,
+    transitionSpan: baselineHop.transitionSpan,
+    handleDiameter: horizontalGeometry.handleDiameter,
+    usableHandleCenterSpan: baselineHop.usableHandleCenterSpan,
   };
 }
 
@@ -4585,7 +4780,11 @@ const tryAssignBranchHandles = (
   branches,
   segmentsByBranch,
   visibleNodes = [],
-  { sharedBudget = null, seedHandles = null } = {},
+  {
+    sharedBudget = null,
+    seedHandles = null,
+    horizontalGeometry = LIFECYCLE_HORIZONTAL_GEOMETRY,
+  } = {},
 ) => {
   const nodeBoxes = visibleNodes.map((node) => ({
     x: node.x0,
@@ -4593,12 +4792,14 @@ const tryAssignBranchHandles = (
     width: node.x1 - node.x0,
     height: node.y1 - node.y0,
   }));
-  const labelBoxes = visibleNodes.map(labelBoxForNode);
+  const labelBoxes = visibleNodes.map((node) =>
+    labelBoxForNode(node, horizontalGeometry),
+  );
   const routeEdges = [];
   for (const [branchId, segments] of segmentsByBranch) {
     for (const segment of segments) {
       routeEdges.push(
-        ...flattenRouteSegment(segment).map((edge) => ({
+        ...flattenRouteSegment(segment, horizontalGeometry).map((edge) => ({
           ...edge,
           branchId,
           segmentId: segmentKey(segment),
@@ -4921,14 +5122,15 @@ const tryAssignBranchHandles = (
         diagnostic.nearestRejectedCandidate = candidate;
       }
     };
-    const sweepCorridor = (sweepName, tValues, corridorHalfWidth) => {
+    const sweepCorridor = (sweepName, tValues) => {
       for (const segment of orderedSegments) {
-        const sourceCenter = rankCenterX(segment.source.rank);
-        const targetCenter = rankCenterX(segment.target.rank);
-        const exitX = sourceCenter + corridorHalfWidth;
-        const entryX = targetCenter - corridorHalfWidth;
+        const { exitX, entryX } = adjacentHopGeometry(
+          segment.source.rank,
+          segment.target.rank,
+          horizontalGeometry,
+        );
         for (const t of tValues) {
-          const { x, y } = cubicTransitionPoint(segment, t);
+          const { x, y } = cubicTransitionPoint(segment, t, horizontalGeometry);
           const box = {
             x: x - BRANCH_HANDLE_RADIUS,
             y: y - BRANCH_HANDLE_RADIUS,
@@ -5024,17 +5226,9 @@ const tryAssignBranchHandles = (
         }
       }
     };
-    sweepCorridor(
-      "primary",
-      HANDLE_CANDIDATE_T_VALUES,
-      RANK_CORRIDOR_HALF_WIDTH,
-    );
+    sweepCorridor("primary", HANDLE_CANDIDATE_T_VALUES);
     if (!candidates.length) {
-      sweepCorridor(
-        "fallback",
-        HANDLE_FALLBACK_CANDIDATE_T_VALUES,
-        RANK_CORRIDOR_HALF_WIDTH,
-      );
+      sweepCorridor("fallback", HANDLE_FALLBACK_CANDIDATE_T_VALUES);
     }
     // Only fall back to a degraded (small negative clearance) candidate
     // when this branch has no fully-clear candidate anywhere across both
@@ -5096,12 +5290,14 @@ export function assignBranchHandles(
   branches,
   segmentsByBranch,
   visibleNodes = [],
+  horizontalGeometry = LIFECYCLE_HORIZONTAL_GEOMETRY,
 ) {
   const result = tryAssignBranchHandles(
     branches,
     segmentsByBranch,
     visibleNodes,
+    { horizontalGeometry },
   );
   if (result.ok) return result.handles;
-  throw handlePlacementError(result);
+  throw handlePlacementError(result, horizontalGeometry);
 }

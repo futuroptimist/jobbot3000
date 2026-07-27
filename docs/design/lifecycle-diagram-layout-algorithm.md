@@ -19,6 +19,21 @@ of the pipeline each impose their own ordering on branches, and those orderings 
 document maps out those systems, what was fixed, and what's intentionally still deferred, so a
 future investigation doesn't have to re-discover any of this by trial and error.
 
+## Shared horizontal-geometry boundary (P8)
+
+All production consumers of lifecycle X coordinates now receive the same deeply immutable
+`LIFECYCLE_HORIZONTAL_GEOMETRY` value. Its rank-keyed centers and hop-keyed adjacent-transition
+records are the authority for node placement, protected and control spans, route primitives,
+handle corridors, diagnostics, SVG width, rendering, and route auditing. Exported legacy constants
+and helper defaults remain compatibility inputs at the constructor boundary; consumers do not
+reconstruct equivalent geometry from them.
+
+P8 is an architectural seam only. The shipped centers, 272 px spacing, 200 px protected corridor,
+72 px transition span, 44 px handle diameter, 28 px usable handle-center span, supported-density
+boundary, solver behavior, and rendered output remain unchanged. In particular, the two extreme
+fan-in fixtures intentionally retain their existing typed failures and diagnostics. Computing
+per-hop demand and expanding individual hops to accommodate it is deferred to P9.
+
 ## The five ordering systems
 
 The rendered position of every route segment is the product of up to five independent mechanisms.
@@ -499,8 +514,8 @@ unsafe construction for these fixtures.
 extreme fan-in fixtures (`transitionDensityProjection()` and the historical 60-app/89-branch
 pagination fixture — see "Still infeasible for a root cause neither tolerance can reach" below).
 Their rejection evidence (`clearanceMargin === -1`, the `COLLISION_MARGIN` sentinel for a
-fixed-geometry/outside-corridor rejection) is bound by `RANK_CORRIDOR_HALF_WIDTH`, a fixed constant
-driving a static X-extent corridor check that does not depend on branch order, `nodeSort`/`linkSort`,
+fixed-geometry/outside-corridor rejection) is bound by the shared geometry's fixed corridor
+half-width, driving a static X-extent check that does not depend on branch order, `nodeSort`/`linkSort`,
 or `rankOrder` in any way. No ordering fix — including this one — can relax a fixed-width geometric
 ceiling; both fixtures remain infeasible, as confirmed by re-running the full suite after this fix
 (their tests still characterize the identical infeasibility signature).
@@ -886,7 +901,7 @@ descriptive evidence but is not, by itself, causal evidence for every rejected s
 No density-aware production expansion is shipped from this evidence. The experiment rules out the
 tested scalar density-only spacing rule; it does not prove that every bounded geometry-only rule is
 impossible. Increasing
-`RANK_CORRIDOR_HALF_WIDTH` reduces the 72 px between-rank transition span, while increasing rank
+the shared geometry's corridor half-width reduces the 72 px between-rank transition span, while increasing rank
 spacing moves the sampled cubic points but does not by itself establish a bound that clears labels,
 other routes, handle overlap, and the route audit together. A safe formula needs a constructive
 proof (or an exhaustive bounded test over the supported density domain) connecting density to all
@@ -928,7 +943,7 @@ skip states and test names can drift. `grep -rn "it\.skip(\|test\.skip(" test/` 
    extreme fan-in fixtures hit (`transitionDensityProjection()` and the 60-application/89-branch
    pagination fixture — see "Still infeasible for a root cause neither tolerance can reach" above),
    and was not expected to: their rejection evidence (`clearanceMargin === -1`, the fixed-geometry
-   corridor sentinel) is bound by `RANK_CORRIDOR_HALF_WIDTH`, a static X-extent constant independent
+   corridor sentinel) is bound by the shared geometry's static X extent, independent
    of branch order entirely. Confirmed directly: both fixtures' tests still characterize the
    identical infeasibility signature after this fix. It is also not accurately described as the fix
    for every item below: item 2's remaining tests were resolved instead by the bounded tolerances
