@@ -30,21 +30,32 @@ import {
   buildLifecycleRouteModel,
   buildLifecycleRoutingGraph,
   calculateLifecycleDiagramLayout,
+  classifyRouteCrossingCategory,
+  collinearOverlapLength,
+  COLLINEAR_OVERLAP_TOLERANCE,
   combinationsOfSize,
   compareBranches,
   compareLifecycleIds,
   createLaneGeometryFailureCache,
   cubicTransitionPoint,
+  edgeCrossing,
   endpointColor,
+  isRouteHandleCollision,
   layoutLifecycleRoutingGraph,
   labelBoxForNode,
+  LANE_Y_EPSILON,
   nodeSort,
+  pointToSegmentDistance,
   rankCenterX,
   renderedBranchStrokeWidth,
   rendererHitBoxForNode,
+  ROUTE_CROSSING_SUSTAINED_THRESHOLD,
+  ROUTE_HANDLE_CLEARANCE_MARGIN,
+  routeHandleRequiredClearance,
   segmentRoutePrimitives,
   selectedEnvelopeRadius,
   solveHandleCandidateSets,
+  SUSTAINED_OVERLAP_LENGTH_THRESHOLD,
   taxonomyOrder,
   testOnlyDiagnoseLifecycleLayoutAttempt,
   wrapLifecycleLabel,
@@ -2877,5 +2888,395 @@ describe("seeded-replay production layout (routing fixture)", () => {
     const normal = signatureFor(projectLifecycleAt(routingFixture));
     const reversed = signatureFor(reversedProjection());
     expect(reversed).toEqual(normal);
+  });
+});
+
+describe("shared route-crossing classifier", () => {
+  // src/web/tracker/lifecycleRouteGeometry.js -- the pure classifier both
+  // auditLifecycleRouteGeometry (here) and the Playwright collision audit
+  // (test/playwright/lifecycle-diagram.spec.js, via
+  // window.__lifecycleRouteGeometry) share, so a rendered-geometry mismatch
+  // can't silently reappear in either place independently.
+  it("detects a genuine transversal crossing", () => {
+    const left = { p0: { x: 0, y: 0 }, p1: { x: 10, y: 10 } };
+    const right = { p0: { x: 0, y: 10 }, p1: { x: 10, y: 0 } };
+    expect(edgeCrossing(left, right)).toBe(true);
+  });
+
+  it("does not flag parallel non-intersecting segments", () => {
+    const left = { p0: { x: 0, y: 0 }, p1: { x: 10, y: 0 } };
+    const right = { p0: { x: 0, y: 5 }, p1: { x: 10, y: 5 } };
+    expect(edgeCrossing(left, right)).toBe(false);
+  });
+
+  it("does not flag two segments diverging from a shared dock point", () => {
+    // This is why auditLifecycleRouteGeometry needs no explicit shared-dock
+    // exclusion in its own crossing loop (see
+    // docs/design/lifecycle-diagram-layout-algorithm.md): two branches
+    // fanning out from the same source node have edges that share (or
+    // nearly share) an endpoint and diverge, which the strict
+    // sign-straddling orientation test never classifies as a crossing.
+    const shared = { x: 5, y: 5 };
+    const left = { p0: shared, p1: { x: 10, y: 0 } };
+    const right = { p0: shared, p1: { x: 10, y: 10 } };
+    expect(edgeCrossing(left, right)).toBe(false);
+  });
+
+  it("does not flag collinear overlapping segments", () => {
+    const left = { p0: { x: 0, y: 0 }, p1: { x: 10, y: 0 } };
+    const right = { p0: { x: 5, y: 0 }, p1: { x: 15, y: 0 } };
+    expect(edgeCrossing(left, right)).toBe(false);
+  });
+
+  it("classifies crossing counts at and around the sustained threshold", () => {
+    expect(ROUTE_CROSSING_SUSTAINED_THRESHOLD).toBe(4);
+    expect(classifyRouteCrossingCategory(0)).toBe("proper-crossing");
+    expect(classifyRouteCrossingCategory(1)).toBe("proper-crossing");
+    expect(classifyRouteCrossingCategory(4)).toBe("proper-crossing");
+    expect(classifyRouteCrossingCategory(5)).toBe("sustained-crossing");
+    expect(classifyRouteCrossingCategory(50)).toBe("sustained-crossing");
+  });
+
+  it("computes the same required route-handle clearance production uses", () => {
+    // Mirrors auditLifecycleRouteGeometry's route-handle-collision check
+    // (lifecycleDiagramLayout.js): pointToSegmentDistance(handle, edge) <
+    // BRANCH_HANDLE_RADIUS + selectedEnvelopeRadius(segment) + 0.25 +
+    // LANE_Y_EPSILON. selectedEnvelopeRadius ignores its argument today
+    // (renderedBranchStrokeWidth always returns 3), so it's safe to call
+    // with an empty segment placeholder in this pure-geometry test.
+    expect(ROUTE_HANDLE_CLEARANCE_MARGIN).toBe(0.25);
+    const expected =
+      BRANCH_HANDLE_RADIUS + selectedEnvelopeRadius({}) + 0.25 + LANE_Y_EPSILON;
+    expect(
+      routeHandleRequiredClearance(
+        BRANCH_HANDLE_RADIUS,
+        selectedEnvelopeRadius({}),
+        LANE_Y_EPSILON,
+      ),
+    ).toBeCloseTo(expected, 10);
+  });
+
+  // eslint-disable-next-line max-len
+  it("classifies route-handle proximity just-inside, at, and just-outside the shared boundary", () => {
+    // Uses the shared isRouteHandleCollision/routeHandleRequiredClearance
+    // predicate directly (the same functions the Playwright audit calls via
+    // window.__lifecycleRouteGeometry) rather than reimplementing the
+    // comparison here.
+    const edge = { p0: { x: 0, y: 0 }, p1: { x: 100, y: 0 } };
+    const radius = BRANCH_HANDLE_RADIUS;
+    const envelope = selectedEnvelopeRadius({});
+    const required = routeHandleRequiredClearance(
+      radius,
+      envelope,
+      LANE_Y_EPSILON,
+    );
+    const closeHandle = { x: 50, y: required - 5 };
+    const farHandle = { x: 50, y: required + 5 };
+    const boundaryHandle = { x: 50, y: required };
+    expect(pointToSegmentDistance(closeHandle, edge)).toBeLessThan(required);
+    expect(pointToSegmentDistance(farHandle, edge)).toBeGreaterThan(required);
+    expect(pointToSegmentDistance(boundaryHandle, edge)).toBeCloseTo(
+      required,
+      5,
+    );
+    expect(
+      isRouteHandleCollision(
+        closeHandle,
+        edge,
+        radius,
+        envelope,
+        LANE_Y_EPSILON,
+      ),
+    ).toBe(true);
+    expect(
+      isRouteHandleCollision(farHandle, edge, radius, envelope, LANE_Y_EPSILON),
+    ).toBe(false);
+    // The comparison is strict (<), so a handle sitting exactly on the
+    // boundary is not a collision -- matches production's own
+    // `pointToSegmentDistance(...) < required` check.
+    expect(
+      isRouteHandleCollision(
+        boundaryHandle,
+        edge,
+        radius,
+        envelope,
+        LANE_Y_EPSILON,
+      ),
+    ).toBe(false);
+  });
+
+  describe("collinearOverlapLength", () => {
+    // edgeCrossing only detects genuine transversal crossings; two routes
+    // rendered directly on top of one another are exactly (or near-exactly)
+    // collinear and never satisfy its strict sign-straddling test. This is
+    // the shared, pure detector both auditLifecycleRouteGeometry and the
+    // Playwright collision audit use to close that gap (see
+    // docs/design/lifecycle-diagram-layout-algorithm.md's "unified
+    // route-crossing classifier" follow-up).
+    it("measures the overlap length of two meaningfully overlapping collinear edges", () => {
+      const left = { p0: { x: 0, y: 0 }, p1: { x: 100, y: 0 } };
+      const right = { p0: { x: 20, y: 0 }, p1: { x: 120, y: 0 } };
+      // right overlaps left from x=20 to x=100 -> 80 units.
+      expect(collinearOverlapLength(left, right)).toBeCloseTo(80, 5);
+      expect(collinearOverlapLength(left, right)).toBeGreaterThanOrEqual(
+        SUSTAINED_OVERLAP_LENGTH_THRESHOLD,
+      );
+    });
+
+    it("returns 0 for separated parallel edges (different lanes)", () => {
+      const left = { p0: { x: 0, y: 0 }, p1: { x: 100, y: 0 } };
+      const right = { p0: { x: 0, y: 50 }, p1: { x: 100, y: 50 } };
+      expect(collinearOverlapLength(left, right)).toBe(0);
+    });
+
+    it("returns 0 for parallel collinear edges that only touch endpoint-to-endpoint", () => {
+      // Short endpoint contact (two routes briefly touching tip-to-tip, as
+      // branches merely diverging from a shared dock do) has zero overlap
+      // length, not just a below-threshold one.
+      const left = { p0: { x: 0, y: 0 }, p1: { x: 50, y: 0 } };
+      const right = { p0: { x: 50, y: 0 }, p1: { x: 100, y: 0 } };
+      expect(collinearOverlapLength(left, right)).toBe(0);
+    });
+
+    it("returns 0 for edges that are parallel but offset beyond the collinearity tolerance", () => {
+      const left = { p0: { x: 0, y: 0 }, p1: { x: 100, y: 0 } };
+      const right = {
+        p0: { x: 20, y: COLLINEAR_OVERLAP_TOLERANCE + 1 },
+        p1: { x: 120, y: COLLINEAR_OVERLAP_TOLERANCE + 1 },
+      };
+      expect(collinearOverlapLength(left, right)).toBe(0);
+    });
+
+    it("returns 0 for genuinely crossing (non-parallel) edges", () => {
+      const left = { p0: { x: 0, y: 0 }, p1: { x: 10, y: 10 } };
+      const right = { p0: { x: 0, y: 10 }, p1: { x: 10, y: 0 } };
+      expect(edgeCrossing(left, right)).toBe(true);
+      expect(collinearOverlapLength(left, right)).toBe(0);
+    });
+
+    it("proves an exact sustained overlap is fatal by the shared threshold", () => {
+      // Two edges occupying the identical line segment -- the extreme case
+      // of "one route drawn directly on top of another" -- must clear the
+      // shared sustained-overlap threshold so callers (auditLifecycleRouteGeometry,
+      // assertBrowserCollisionAudit) classify the pair as fatal regardless of
+      // their (zero) transversal crossing count.
+      const left = { p0: { x: 0, y: 0 }, p1: { x: 50, y: 0 } };
+      const right = { p0: { x: 0, y: 0 }, p1: { x: 50, y: 0 } };
+      expect(edgeCrossing(left, right)).toBe(false);
+      const overlap = collinearOverlapLength(left, right);
+      expect(overlap).toBeCloseTo(50, 5);
+      expect(overlap).toBeGreaterThanOrEqual(
+        SUSTAINED_OVERLAP_LENGTH_THRESHOLD,
+      );
+    });
+  });
+});
+
+describe("auditLifecycleRouteGeometry collinear-overlap aggregation", () => {
+  // Hand-built minimal route models (bypassing buildLifecycleRouteModel and
+  // the layout solver entirely) so these tests can assert on exact,
+  // deterministic geometry rather than depending on a real fixture happening
+  // to reproduce either scenario.
+  const node = (id, rank) => ({ id, rank, routing: false, x0: 0, x1: 0 });
+  const pairId = (a, b) => [a.id, b.id].sort(compareLifecycleIds).join("||");
+
+  it("excludes overlap correlated by two branches diverging from a shared multi-rank dock", () => {
+    const origin = node("origin:shared", 0);
+    const milestone = node("milestone:shared", 1);
+    const endpointA = node("endpoint:a", 2);
+    const endpointB = node("endpoint:b", 2);
+    const branchA = {
+      id: "branch-a",
+      source: origin.id,
+      target: endpointA.id,
+      sourceRank: 0,
+      targetRank: 2,
+    };
+    const branchB = {
+      id: "branch-b",
+      source: origin.id,
+      target: endpointB.id,
+      sourceRank: 0,
+      targetRank: 2,
+    };
+    const model = {
+      branches: [branchA, branchB],
+      segmentsByBranch: new Map([
+        [
+          branchA.id,
+          [
+            {
+              source: origin,
+              target: milestone,
+              y0: 100,
+              y1: 100,
+              transitionLaneY: 100,
+              segmentIndex: 0,
+            },
+            {
+              source: milestone,
+              target: endpointA,
+              y0: 100,
+              y1: 100,
+              transitionLaneY: 100,
+              segmentIndex: 1,
+            },
+          ],
+        ],
+        [
+          branchB.id,
+          [
+            // Identical first segment: both branches leave the exact same
+            // shared origin and converge on the exact same shared
+            // milestone, so this segment's geometry is (correctly)
+            // identical for both -- the "diverging from a shared dock"
+            // scenario this exclusion exists for.
+            {
+              source: origin,
+              target: milestone,
+              y0: 100,
+              y1: 100,
+              transitionLaneY: 100,
+              segmentIndex: 0,
+            },
+            // Second segment diverges to a different endpoint at a
+            // different Y -- the two branches genuinely separate here.
+            {
+              source: milestone,
+              target: endpointB,
+              y0: 100,
+              y1: 200,
+              transitionLaneY: 150,
+              segmentIndex: 1,
+            },
+          ],
+        ],
+      ]),
+      visibleNodes: [],
+      fixedOrderInversionPairs: new Set(),
+      pairId,
+    };
+    const audit = auditLifecycleRouteGeometry({ model, handles: [] });
+    expect(
+      audit.fatalFindings.some(
+        (finding) => finding.category === "sustained-crossing",
+      ),
+    ).toBe(false);
+  });
+
+  it("flags a genuine single-segment full-length duplicate route as a sustained overlap", () => {
+    // Two branches sharing both their source AND target across the one and
+    // only rank they span never actually diverge anywhere -- this is a
+    // duplicated-route defect, not ordinary shared-dock correlation, so the
+    // branchesDiverge guard must not exclude it.
+    const origin = node("origin:shared", 0);
+    const endpoint = node("endpoint:shared", 1);
+    const identicalSegment = () => [
+      {
+        source: origin,
+        target: endpoint,
+        y0: 100,
+        y1: 100,
+        transitionLaneY: 100,
+        segmentIndex: 0,
+      },
+    ];
+    const branchA = {
+      id: "branch-a",
+      source: origin.id,
+      target: endpoint.id,
+      sourceRank: 0,
+      targetRank: 1,
+    };
+    const branchB = {
+      id: "branch-b",
+      source: origin.id,
+      target: endpoint.id,
+      sourceRank: 0,
+      targetRank: 1,
+    };
+    const model = {
+      branches: [branchA, branchB],
+      segmentsByBranch: new Map([
+        [branchA.id, identicalSegment()],
+        [branchB.id, identicalSegment()],
+      ]),
+      visibleNodes: [],
+      fixedOrderInversionPairs: new Set(),
+      pairId,
+    };
+    const audit = auditLifecycleRouteGeometry({ model, handles: [] });
+    const finding = audit.fatalFindings.find(
+      (candidate) => candidate.category === "sustained-crossing",
+    );
+    expect(finding).toBeDefined();
+    expect(finding.overlapLength).toBeGreaterThanOrEqual(
+      SUSTAINED_OVERLAP_LENGTH_THRESHOLD,
+    );
+  });
+
+  it("flags a genuine two-rank full-duplicate route sharing both endpoints", () => {
+    // The specific gap discussion_r3653747390 identified: a full duplicate
+    // spanning *more than one* rank shares its source at the first rank and
+    // its target at the last rank, so a purely rank-position-based
+    // ("first"/"last") exclusion would suppress *both* ranks, hiding the
+    // entire overlap even though edgeCrossing (degenerate for identical
+    // edges) never reports a single crossing either. branchesDiverge must
+    // recognize that these two branches share both their overall source and
+    // target and therefore never actually diverge, so neither rank is
+    // excluded.
+    const origin = node("origin:shared", 0);
+    const milestone = node("milestone:shared", 1);
+    const endpoint = node("endpoint:shared", 2);
+    const identicalSegments = () => [
+      {
+        source: origin,
+        target: milestone,
+        y0: 100,
+        y1: 100,
+        transitionLaneY: 100,
+        segmentIndex: 0,
+      },
+      {
+        source: milestone,
+        target: endpoint,
+        y0: 100,
+        y1: 100,
+        transitionLaneY: 100,
+        segmentIndex: 1,
+      },
+    ];
+    const branchA = {
+      id: "branch-a",
+      source: origin.id,
+      target: endpoint.id,
+      sourceRank: 0,
+      targetRank: 2,
+    };
+    const branchB = {
+      id: "branch-b",
+      source: origin.id,
+      target: endpoint.id,
+      sourceRank: 0,
+      targetRank: 2,
+    };
+    const model = {
+      branches: [branchA, branchB],
+      segmentsByBranch: new Map([
+        [branchA.id, identicalSegments()],
+        [branchB.id, identicalSegments()],
+      ]),
+      visibleNodes: [],
+      fixedOrderInversionPairs: new Set(),
+      pairId,
+    };
+    const audit = auditLifecycleRouteGeometry({ model, handles: [] });
+    const finding = audit.fatalFindings.find(
+      (candidate) => candidate.category === "sustained-crossing",
+    );
+    expect(finding).toBeDefined();
+    expect(finding.overlapLength).toBeGreaterThanOrEqual(
+      SUSTAINED_OVERLAP_LENGTH_THRESHOLD,
+    );
   });
 });
