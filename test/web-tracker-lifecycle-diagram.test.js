@@ -878,7 +878,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
   // of direct origin->endpoint applications with no intermediate milestone
   // -- the same shape as denseBranchProjection() in
   // test/web-tracker-lifecycle-diagram-layout.test.js, which
-  // buildMilestoneFreeJointOrder makes fully handle-feasible. Built as a
+  // buildTransitionScopedJointOrder makes fully handle-feasible. Built as a
   // snapshot directly (not via app()/ev()/projectLifecycleAt reconciliation
   // events): only 8 of the 11 taxonomy endpoints are reachable as a direct,
   // milestone-free lifecycle-event outcome (interviewing and
