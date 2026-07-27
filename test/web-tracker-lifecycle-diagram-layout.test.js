@@ -946,11 +946,10 @@ describe("transition lane solver", () => {
     // so this always throws. The point of this regression test is that it
     // must do so FAST and deterministically (never the multi-minute
     // exponential-blowup hang the original bug report measured), and that
-    // the failure is precisely characterized as a fixed-width rank-corridor
-    // limitation, not a route-clearance one neither shipped tolerance could
-    // ever reach: every blocked branch's nearestRejectedCandidate.clearanceMargin
-    // is exactly -1 (COLLISION_MARGIN, the fixedGeometry/corridor-bounds
-    // sentinel), confirmed directly. See
+    // the failure carries the authoritative per-sweep constraint summary.
+    // Every blocked branch's retained nearest candidate still has the -1
+    // sentinel, but that tie-broken sample does not establish the cause of
+    // all rejections. See
     // docs/design/lifecycle-diagram-layout-algorithm.md's "Still not fixed"
     // section for the full analysis and what would actually be needed
     // (a corridor width that scales with incident-branch count, or a
@@ -1306,6 +1305,21 @@ describe("combinationsOfSize", () => {
 });
 
 describe("test-only lifecycle layout diagnostics", () => {
+  const permuteProjection = (projectionFactory, permutation) => {
+    const p = projectionFactory();
+    return {
+      ...p,
+      nodes: permutation(p.nodes),
+      links: permutation(p.links),
+      paths: permutation(p.paths),
+    };
+  };
+
+  const rotate = (array) => {
+    const offset = Math.floor(array.length / 3);
+    return [...array.slice(offset), ...array.slice(0, offset)];
+  };
+
   const shuffledProjection = (fixture) => {
     const p = projectLifecycleAt(fixture);
     return {
@@ -1507,6 +1521,108 @@ describe("test-only lifecycle layout diagnostics", () => {
     expect(
       reversed.ranks[0].domains.every((domain) => domain.domainSize > 0),
     ).toBe(true);
+  });
+
+  it("separates primary and fallback evidence for fan-in fixtures", () => {
+    const expected = new Map([
+      [
+        transitionDensityProjection,
+        {
+          blockedBranchCount: 41,
+          attempts: 451,
+          primary: {
+            attempts: 123,
+            rejected: {
+              fixedGeometry: 0,
+              outsideTransitionCorridor: 0,
+              nonincidentRouteClearance: 123,
+            },
+          },
+          fallback: {
+            attempts: 328,
+            rejected: {
+              fixedGeometry: 9,
+              outsideTransitionCorridor: 237,
+              nonincidentRouteClearance: 82,
+            },
+          },
+          nearestBlockerKinds: { "corridor-bounds": 32, label: 9 },
+        },
+      ],
+      [
+        paginationProjection,
+        {
+          blockedBranchCount: 48,
+          attempts: 1276,
+          primary: {
+            attempts: 348,
+            rejected: {
+              fixedGeometry: 0,
+              outsideTransitionCorridor: 0,
+              nonincidentRouteClearance: 348,
+            },
+          },
+          fallback: {
+            attempts: 928,
+            rejected: {
+              fixedGeometry: 15,
+              outsideTransitionCorridor: 681,
+              nonincidentRouteClearance: 232,
+            },
+          },
+          nearestBlockerKinds: { "corridor-bounds": 45, label: 3 },
+        },
+      ],
+    ]);
+    for (const projectionFactory of expected.keys()) {
+      const diagnostics = [
+        projectionFactory(),
+        permuteProjection(projectionFactory, (values) => [...values].reverse()),
+        permuteProjection(projectionFactory, rotate),
+      ].map((p) => testOnlyDiagnoseLifecycleLayoutAttempt(p, 1850));
+      expect(JSON.stringify(diagnostics[1])).toBe(
+        JSON.stringify(diagnostics[0]),
+      );
+      expect(JSON.stringify(diagnostics[2])).toBe(
+        JSON.stringify(diagnostics[0]),
+      );
+      const reason = diagnostics[0].firstRejectedReason;
+      const signature = expected.get(projectionFactory);
+      expect(reason.reason).toBe("no-candidates");
+      expect(reason.evidence.blockedBranchIds).toHaveLength(
+        signature.blockedBranchCount,
+      );
+      expect(reason.evidence.horizontalConstraints).toMatchObject({
+        attempts: signature.attempts,
+        sweeps: {
+          primary: signature.primary,
+          fallback: signature.fallback,
+        },
+        nearestBlockerKinds: signature.nearestBlockerKinds,
+      });
+      // Corridor-bound samples at t=0.05/0.95 belong only to the fallback
+      // sweep and therefore cannot establish a primary-sweep constraint.
+      expect(
+        reason.evidence.horizontalConstraints.sweeps.primary.rejected
+          .outsideTransitionCorridor,
+      ).toBe(0);
+    }
+
+    let terminalError;
+    try {
+      layoutLifecycleRoutingGraph(paginationProjection(), 1850);
+    } catch (error) {
+      terminalError = error;
+    }
+    // This is separate from the first candidate's no-candidates evidence:
+    // production continues its bounded search until the handle-state limit.
+    expect(terminalError?.cause).toMatchObject({
+      type: "lifecycle-transition-lane-order",
+      phase: "handle",
+      reason: "state-limit",
+      stateLimit: 32768,
+    });
+    expect(terminalError.cause.statesVisited).toBeGreaterThanOrEqual(32768);
   });
 
   // Historical baseline (pre-fix, see

@@ -868,17 +868,24 @@ the exact geometry that bounded the sweep: 272 px between rank centers, 200 px o
 corridors, a 72 px transition span, a 44 px handle diameter, and therefore only 28 px in which a
 handle center can satisfy the corridor bound.
 
-For `transitionDensityProjection()` the first rejected layout has 41 blocked branches and 451
-sampled candidates (11 per branch). The aggregate identifies all three active constraints:
-fixed-node/label geometry, corridor bounds, and nonincident-route clearance. This is more precise
-than the historical statement that all candidates were rejected by one fixed-width check: every
-blocked branch's _nearest retained_ candidate still has the `-1` sentinel, but that fact does not
-describe every rejection. The historical milestone-bearing pagination fixture likewise reports 48
-blocked branches on its first candidate, while its full bounded layout search ultimately reaches
-the unchanged 32,768 handle-state limit; lane-only pagination coverage is not evidence of full
-handle feasibility.
+The authoritative diagnostic now separates the three-point primary sweep from the eight-point
+fallback sweep. Counts below are deterministic for normal, reversed, and a non-reversal rotation;
+each rejection tuple is `(fixed geometry, corridor bounds, nonincident route clearance)`.
 
-No density-aware production expansion is shipped from this evidence. Increasing
+| Fixture                         | Blocked | Primary attempts / rejections | Fallback attempts / rejections | Nearest blocker kinds       | Terminal production path                                       |
+| ------------------------------- | ------: | ----------------------------- | ------------------------------ | --------------------------- | -------------------------------------------------------------- |
+| `transitionDensityProjection()` |      41 | 123 / `(0, 0, 123)`           | 328 / `(9, 237, 82)`           | corridor bounds 32; label 9 | typed `no-candidates` failure (the existing 50-way regression) |
+| `paginationProjection()`        |      48 | 348 / `(0, 0, 348)`           | 928 / `(15, 681, 232)`         | corridor bounds 45; label 3 | handle `state-limit`, bounded at 32,768 states                 |
+
+The pagination `no-candidates` result describes only its first rejected candidate; it is not the
+terminal production result. Production keeps searching until the unchanged handle-state bound.
+Likewise, fallback-only corridor-bound evidence (including the structurally unusable `t = 0.05`
+and `t = 0.95` samples) says nothing about the primary sweep. A nearest retained blocker is useful
+descriptive evidence but is not, by itself, causal evidence for every rejected sample.
+
+No density-aware production expansion is shipped from this evidence. The experiment rules out the
+tested scalar density-only spacing rule; it does not prove that every bounded geometry-only rule is
+impossible. Increasing
 `RANK_CORRIDOR_HALF_WIDTH` reduces the 72 px between-rank transition span, while increasing rank
 spacing moves the sampled cubic points but does not by itself establish a bound that clears labels,
 other routes, handle overlap, and the route audit together. A safe formula needs a constructive
@@ -887,7 +894,8 @@ three rejection classes. The currently established boundary is therefore: ordina
 the existing milestone-free dense grid remain supported, while a 50-way convergence on one real
 milestone is rejected deterministically. The next architectural lever remains one shared
 horizontal-geometry object consumed by layout, lane solving, route primitives, handle generation,
-and audit; its expansion rule must be validated before replacing the baseline constants.
+and audit. That shared per-hop demand/immutable-horizontal-geometry design remains deferred
+follow-up work; its expansion rule must be validated before replacing the baseline constants.
 
 This is the authoritative, current list — cross-check against the code before trusting it, since
 skip states and test names can drift. `grep -rn "it\.skip(\|test\.skip(" test/` finds all of them.
