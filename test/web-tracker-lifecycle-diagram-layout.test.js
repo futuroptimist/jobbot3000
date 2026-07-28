@@ -253,26 +253,16 @@ describe("lifecycle horizontal geometry", () => {
         1850,
         { horizontalGeometry },
       );
-      const visibleNodes = graph.nodes.filter(
-        (node) => !node.routing && node.total > 0,
-      );
-      const linksByBranch = new Map();
-      for (const link of graph.links) {
-        if (!linksByBranch.has(link.branchId))
-          linksByBranch.set(link.branchId, []);
-        linksByBranch.get(link.branchId).push(link);
-      }
-      const handles = assignBranchHandles(
-        graph.branches,
-        linksByBranch,
-        visibleNodes,
-        horizontalGeometry,
-      );
+      const handles = graph.acceptedHandles;
       const model = buildLifecycleRouteModel(graph, dimensions);
       const audit = auditLifecycleRouteGeometry({ model, handles });
       expect(graph.horizontalGeometry).toBe(horizontalGeometry);
       expect(dimensions.horizontalGeometry).toBe(horizontalGeometry);
       expect(model.horizontalGeometry).toBe(horizontalGeometry);
+      expect(handles).toBeInstanceOf(Map);
+      expect(graph.branches.every((branch) => handles.has(branch.id))).toBe(
+        true,
+      );
       expect(audit.fatalFindings).toEqual([]);
       return {
         dimensions: { width: dimensions.width, height: dimensions.height },
@@ -287,7 +277,7 @@ describe("lifecycle horizontal geometry", () => {
             transitionLaneY,
           ])
           .sort(([left], [right]) => compareLifecycleIds(left, right)),
-        handles: handles
+        handles: [...handles.values()]
           .map(({ branchId, x, y }) => [branchId, x, y])
           .sort(([left], [right]) => compareLifecycleIds(left, right)),
         solver: graph.transitionLaneSolverStats,
