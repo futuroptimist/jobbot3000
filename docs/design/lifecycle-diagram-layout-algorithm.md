@@ -238,7 +238,8 @@ falling back to plain `nodeSort`/`linkSort`; see
 below for how that was resolved (a purely topological, pre-search order — not a second D3 re-run —
 scoped to never touch the dock of an intermediate, rank 1–5 real milestone node; origin (rank 0) and
 endpoint (rank 6) docks remain intentionally eligible for reordering), and its scope note for why
-this still doesn't reach the two corridor-width-bound extreme fan-in fixtures.
+this still doesn't make the two extreme fan-in fixtures feasible. The later PR #1173 diagnostics
+show why the earlier corridor-width attribution was not established.
 
 ## Attempted and reverted: barycenter-based `nodeSort`/`linkSort`
 
@@ -495,15 +496,16 @@ correction to the doc's own prior instrumentation recommendation: the precedence
 above, not the indegree-dead-end counter, is what actually discriminates the safe fix from the
 unsafe construction for these fixtures.
 
-**Scope note:** this does not change, and is not expected to change, the two genuinely infeasible
+**Historical scope note (pre-PR #1173 diagnostic refinement):** this did not change the two
+genuinely infeasible
 extreme fan-in fixtures (`transitionDensityProjection()` and the historical 60-app/89-branch
 pagination fixture — see "Still infeasible for a root cause neither tolerance can reach" below).
-Their rejection evidence (`clearanceMargin === -1`, the `COLLISION_MARGIN` sentinel for a
-fixed-geometry/outside-corridor rejection) is bound by `RANK_CORRIDOR_HALF_WIDTH`, a fixed constant
-driving a static X-extent corridor check that does not depend on branch order, `nodeSort`/`linkSort`,
-or `rankOrder` in any way. No ordering fix — including this one — can relax a fixed-width geometric
-ceiling; both fixtures remain infeasible, as confirmed by re-running the full suite after this fix
-(their tests still characterize the identical infeasibility signature).
+At the time, `clearanceMargin === -1` was treated as a single fixed-geometry/outside-corridor
+signal. [PR #1173](https://github.com/futuroptimist/jobbot3000/pull/1173) later established that the
+sentinel conflates fixed-node/label and corridor-bound rejections, and that fallback-only corridor
+samples do not establish what binds the primary sweep. The durable conclusion here is narrower: an
+ordering fix did not make either fixture feasible, and both fixtures retained their deterministic
+typed failures.
 
 ## Follow-up (shipped): bounded tolerances for route crossings and handle clearance
 
@@ -629,29 +631,27 @@ below.** The spec is no longer `test.skip`'d; both fixture iterations of this pa
 pass on desktop, previous-event, and touch/mobile. `tracker-lifecycle-diagram-routing-v2.json`'s
 exact-zero-collision expectation (`maxCrossings = 0`) is unaffected.
 
-**Still infeasible for a root cause neither tolerance can reach — two fixtures with a different,
-more extreme fan-in shape**, confirmed directly (not assumed) by inspecting the exact rejection
-evidence rather than just observing the failure:
+**Historical pre-PR #1173 interpretation of two infeasible extreme fan-in fixtures.** The following
+was the conclusion drawn from the nearest-rejected-candidate evidence at the time; the current
+per-sweep diagnosis in "Outstanding follow-up work" supersedes its corridor-width attribution:
 
 - `transitionDensityProjection()` (50 branches funnelled through a single shared milestone) fails
   fast and deterministically with a genuine `no-candidates` invariant (not a budget exhaustion) — 41
   branches have zero legal handle candidates anywhere on their curve, and critically, **every one of
-  their nearest-rejected-candidate clearance margins is exactly `-1`** (`COLLISION_MARGIN`, the
-  sentinel for a `fixedGeometry`/`outsideTransitionCorridor` rejection, not a
-  `nonincidentRouteClearance` one). `HANDLE_CLEARANCE_TOLERANCE` only widens the
-  `nonincidentRouteClearance` acceptance window — it cannot help a branch that never reaches that
-  check because every sampled point (both primary and fallback t-values) already falls outside the
-  standard rank corridor or intersects fixed node/label geometry. With 50 branches genuinely
-  converging on one milestone, the corridor width itself is the binding constraint, not route
-  clearance.
+  their retained nearest-rejected-candidate clearance margins is exactly `-1`**. This was read as a
+  `fixedGeometry`/`outsideTransitionCorridor` result that `HANDLE_CLEARANCE_TOLERANCE` could not
+  reach. PR #1173 later showed that the sentinel overload and nearest-candidate tie-break do not
+  support the stronger claim that every sample failed there: the primary tuple is
+  `(0, 0, 123)`, entirely nonincident-route clearance, while corridor-bound rejections appear only
+  in the fallback tuple `(9, 237, 82)` alongside fixed-geometry and route-clearance rejections.
 - The 60-application/89-branch fixture originally used by
   `test/web-tracker-lifecycle-diagram.test.js`'s
   `"paginates more than 50 endpoint-conditioned flow rows without losing reachability"` has the same
   structural signature: 48 branches rejected with `no-candidates` on the first candidate (confirmed
   via `testOnlyDiagnoseLifecycleLayoutAttempt`), the identical fan-through-few-milestones shape.
 
-Neither fixture's underlying infeasibility is fixed — the corridor-width limitation above is real
-and unaddressed. What changed is how the test suite handles it: both tests' actual _contracts_
+Neither fixture's underlying infeasibility is fixed. What changed is how the test suite handles it:
+both tests' actual _contracts_
 (shared/cumulative/bounded/shuffle-stable handle budget across multiple candidate callbacks; and
 pagination across >50 unique flows) are now exercised against layout-feasible fixtures instead —
 the real `tracker-lifecycle-diagram-v2.json` dense fixture (discovery alone needs 45 candidate
@@ -660,11 +660,10 @@ evaluations to solve it, exercising the shared-budget contract thoroughly) and a
 `it.skip`'d any longer. `transitionDensityProjection()`'s own infeasibility remains actively
 characterized (not deleted) in
 `"resolves un-phased dense fan-in fast, without exponential blowup"`, which asserts the exact
-`no-candidates`/`clearanceMargin === -1` signature above. Making the underlying fixtures themselves
-succeed needs a genuinely different lever than either tolerance shipped here — e.g. widening the
-rank corridor itself for ranks with enough incident branches to need it, or a placement strategy
-that doesn't depend on every branch finding a legal point within a fixed-width corridor at all —
-tracked as further follow-up, not attempted here. Retrying with a larger
+`no-candidates`/`clearanceMargin === -1` signature above. As later refined in PR #1173, that sentinel
+does not identify which horizontal rejection class binds the primary sweep. Making the underlying
+fixtures themselves succeed would require a constructive joint route-and-handle placement design,
+not an assumed corridor widening. Retrying with a larger
 `HANDLE_CLEARANCE_TOLERANCE` value alone will not help; the evidence above rules that out directly.
 
 ## Follow-up (shipped): unified route-crossing classifier
@@ -857,6 +856,21 @@ edge count (its pairwise crossing check is `O(edges-within-rank^2)`).
 
 ## Outstanding follow-up work (as of this writing)
 
+**Authoritative current status:** the lifecycle test-recovery project is complete. PR
+[#1173](https://github.com/futuroptimist/jobbot3000/pull/1173) separated the overloaded rejection
+evidence, PR [#1176](https://github.com/futuroptimist/jobbot3000/pull/1176) shipped P8's immutable
+per-hop horizontal-geometry seam without changing behavior, and PR
+[#1183](https://github.com/futuroptimist/jobbot3000/pull/1183) completed P9 with a gated negative
+result. Zero Vitest tests and zero Playwright tests remain skipped. The extreme
+fixtures retain their bounded typed failures, while ordinary supported fixtures remain green.
+
+Adaptive geometry is **not** an active implementation recommendation. Future work should be reopened
+only if real data demonstrates a need, or if a constructive joint route-and-handle placement design
+can account for fixed geometry, corridor bounds, nonincident-route clearance, global handle overlap,
+and final audit acceptance. That would be a new design project—not P10, another spacing experiment,
+or unfinished test debt. The dated investigations and completed checklist below are retained as
+historical evidence; they do not supersede this status.
+
 ### Fixed-corridor diagnostic refinement (2026-07-27)
 
 The `clearanceMargin === -1` sentinel was too coarse to justify a production geometry change by
@@ -894,7 +908,7 @@ three rejection classes. The currently established boundary is therefore: ordina
 the existing milestone-free dense grid remain supported, while a 50-way convergence on one real
 milestone is rejected deterministically.
 
-P8 ships the architectural seam, but no expansion: one deeply immutable horizontal-geometry value
+P8 shipped the architectural seam, but no expansion: one deeply immutable horizontal-geometry value
 owns keyed rank centers and keyed adjacent-hop geometry, including exit and entry positions, control
 and protected-corridor extents, transition and usable handle-center spans, margins, and SVG width.
 The same instance is threaded through base layout, lane solving, routing-anchor materialization,
@@ -903,10 +917,11 @@ defaults still select the single baseline instance. Consequently, production geo
 supported-density boundary described above are unchanged: the two extreme fan-in fixtures retain
 their exact deterministic failures and diagnostics.
 
-P9 remains responsible for defining and validating adaptive per-hop demand and expansion. P8 does
-not calculate density demand, alter rank spacing, change candidate samples or budgets, or make
-either extreme fixture feasible. Any P9 expansion rule still needs the constructive proof (or
-exhaustive bounded test) described above before it can replace the baseline constructor inputs.
+**Status at the P8 merge, retained for chronology:** P9 was assigned to define and validate whether
+adaptive per-hop demand and expansion could pass the activation gate. P8 did not calculate density
+demand, alter rank spacing, change candidate samples or budgets, or make either extreme fixture
+feasible. P9 has since completed with the gated negative result below; there is no pending P9
+expansion rule.
 
 ### P9 adaptive-geometry activation gate (gated negative, 2026-07-28)
 
@@ -936,18 +951,23 @@ typed paths rather than starting a geometry retry/search. The preserved evidence
 | `transitionDensityProjection()` | not established                          |    272 / 272 px on all hops | 72 px transition; 28 px usable handle-center span | terminal `no-candidates`; 41 blocked branches  | not reached |
 | `paginationProjection()`        | not established                          |    272 / 272 px on all hops | 72 px transition; 28 px usable handle-center span | terminal `state-limit` at 32,768 handle states | not reached |
 
-The exact per-sweep rejection tuples in the preceding table remain the authoritative per-hop
+The exact per-sweep rejection tuples in the diagnostic table above remain the authoritative per-hop
 horizontal evidence and are now explicitly evaluated with
 `BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY`. No fixture name, ID, wall clock, retry, new tolerance,
-candidate sample, solver budget, or audit exemption is used. A future activation still needs a
-finite topology-demand domain, a deterministic maximum SVG width, complete success for both stress
-fixtures, and parity for baseline fixtures before changing the production default.
+candidate sample, solver budget, or audit exemption is used. No bounded monotone topology-to-spacing
+rule was established, so production remains on baseline geometry. Any future design project would
+need a finite topology-demand domain, a deterministic maximum SVG width, complete success for both
+stress fixtures, and parity for baseline fixtures before changing the production default.
 
-This is the authoritative, current list — cross-check against the code before trusting it, since
-skip states and test names can drift. `grep -rn "it\.skip(\|test\.skip(" test/` finds all of them.
+### Historical completed-work checklist
 
-1. **Make the base D3-Sankey layout `rankOrder`-aware** (a.k.a. "Option 2" above) — **partially
-   resolved; see "Root-causing the routing-node joint-order destabilization" above.** Four attempts
+The numbered list below records how earlier follow-ups were resolved. It is not a current backlog;
+the authoritative status is at the start of this section. Cross-check against the code before using
+historical test names, since they can drift.
+
+1. **Historical investigation: make the base D3-Sankey layout `rankOrder`-aware** (a.k.a. "Option 2"
+   above) — **resolved within its safe scope; see "Root-causing the routing-node joint-order
+   destabilization" above.** Four attempts
    were made in total (see [what didn't work alone](#what-didnt-work-alone),
    [attempted and reverted: barycenter](#attempted-and-reverted-barycenter-based-nodesortlinksort),
    the
@@ -970,13 +990,14 @@ skip states and test names can drift. `grep -rn "it\.skip(\|test\.skip(" test/` 
    applies at an eligible routing-only hop, and byte-identical
    real-node dock precedence to the unconstrained default (see that section for the full evidence).
 
-   **This does not close the corridor-width/constructive-placement gap** the two genuinely-infeasible
-   extreme fan-in fixtures hit (`transitionDensityProjection()` and the 60-application/89-branch
-   pagination fixture — see "Still infeasible for a root cause neither tolerance can reach" above),
-   and was not expected to: their rejection evidence (`clearanceMargin === -1`, the fixed-geometry
-   corridor sentinel) is bound by `RANK_CORRIDOR_HALF_WIDTH`, a static X-extent constant independent
-   of branch order entirely. Confirmed directly: both fixtures' tests still characterize the
-   identical infeasibility signature after this fix. It is also not accurately described as the fix
+   **This did not make the two extreme fan-in fixtures feasible**
+   (`transitionDensityProjection()` and the 60-application/89-branch pagination fixture — see
+   "Still infeasible for a root cause neither tolerance can reach" above), and was not expected to.
+   The historical `clearanceMargin === -1` evidence cannot prove that
+   `RANK_CORRIDOR_HALF_WIDTH` binds the primary sweep: PR #1173 showed that the sentinel conflates
+   fixed-geometry and corridor-bound classes, while the primary sweep rejects on nonincident-route
+   clearance. Confirmed directly: both fixtures' tests still characterize their deterministic
+   infeasibility after this fix. It is also not accurately described as the fix
    for every item below: item 2's remaining tests were resolved instead by the bounded tolerances
    (not by this), and item 3's remaining Playwright skip was a separate audit-methodology
    disagreement this work does not touch either. Re-confirmed independently by a still-earlier
@@ -989,10 +1010,9 @@ skip states and test names can drift. `grep -rn "it\.skip(\|test\.skip(" test/` 
    tried before hitting the normal budget. This rules out "the search just needs to be more
    efficient" for a no-tolerance, budget-only approach. (`tracker-lifecycle-diagram-v2.json`'s own
    layout problem was separately resolved afterward by the bounded tolerances in "Follow-up
-   (shipped)" below — a different, already-shipped mechanism, not this item.) The remaining,
-   still-open piece of this item is a genuinely different lever for the two corridor-bound
-   fixtures specifically — e.g. widening the rank corridor itself for ranks with enough incident
-   branches to need it — not another ordering change.
+   (shipped)" below — a different, already-shipped mechanism, not this item.) This historical item
+   has no remaining implementation phase. The extreme fixtures are bounded negative regressions;
+   revisiting them is conditional on the new-design criteria at the start of this section.
 
 2. **0 unit tests remain `it.skip`ed** (were 4). `HANDLE_CLEARANCE_TOLERANCE` and
    `toleratedRouteCrossingCount` (see "Follow-up (shipped): bounded tolerances..." above) fixed
@@ -1111,9 +1131,9 @@ feasible: discovery still exhausted its own handle-state budget failing to solve
 below), so there was no seed for final to replay. That gap was closed afterward by the
 separate, later-shipped bounded tolerances (`HANDLE_CLEARANCE_TOLERANCE` /
 `toleratedRouteCrossingCount`; see "Follow-up (shipped)" below) — not by this seeding
-mechanism itself. `tracker-lifecycle-diagram-v2.json` succeeds end-to-end today; see
-[Outstanding follow-up work](#outstanding-follow-up-work-as-of-this-writing) item 1 below
-for the two fixtures still genuinely infeasible under the full pipeline.
+mechanism itself. `tracker-lifecycle-diagram-v2.json` succeeds end-to-end today. The two extreme
+fixtures remain bounded negative regressions under the full pipeline; they are not unfinished test
+recovery work.
 
 ## Checked-in reproduction: dense routing-only handle infeasibility is structural, not a budget gap (historical -- fixed for this fixture)
 
@@ -1128,16 +1148,14 @@ milestone-convergence case (real milestone nodes, e.g. `tracker-lifecycle-diagra
 **not** fixed by this `rankOrder`-based mechanism — see the investigation section above for why the
 same approach does not extend there. `tracker-lifecycle-diagram-v2.json` was instead fixed by a
 separate, later-shipped mechanism (the bounded tolerances in "Follow-up (shipped)" below), so it has
-no remaining scope here; see
-[Outstanding follow-up work item 1](#outstanding-follow-up-work-as-of-this-writing) for the two
-different, genuinely still-infeasible extreme fixed-corridor fixtures this section's approach would
-need to target instead.
+no remaining scope here. The two different extreme fixtures remain bounded negative regressions,
+not targets that this historical approach still needs to fix.
 
 `test/web-tracker-lifecycle-diagram-layout.test.js`'s `"characterizes dense routing-only handle
 infeasibility deterministically"` (in the `"test-only lifecycle layout diagnostics"` describe
-block) was a durable, fast (~1s) regression for the structural finding below, so future work on
-item 1 could distinguish real progress from another ineffective spacing-constant, clearance-exemption,
-or budget change. It called `testOnlyDiagnoseLifecycleLayoutAttempt` directly against
+block) was a durable, fast (~1s) regression for the structural finding below. It distinguished the
+eventual scoped fix from ineffective spacing-constant, clearance-exemption, or budget changes. It
+called `testOnlyDiagnoseLifecycleLayoutAttempt` directly against
 `denseBranchProjection()` (5 origins × 11 endpoints = 55 direct origin→endpoint branches, each
 routed through the taxonomy's 5 fixed milestone ranks) and stops at the diagnostic's first candidate
 snapshot — it never runs the fixture through full budget exhaustion, unlike the
@@ -1190,11 +1208,9 @@ the binding constraint; the binding constraint is that no legal handle placement
 branches under the current per-rank lane/routing-node geometry, on the _first_ candidate, before any
 search even begins.
 
-**What actually closes this gap:** the same conclusion [Outstanding follow-up work item
-1](#outstanding-follow-up-work-as-of-this-writing) already reaches — a constructive/greedy strategy
-that derives routing-node lane order _jointly_ across all ranks a branch's geometry touches
-(effectively [Option 2](#deferred-making-the-base-d3-sankey-layout-rankorder-aware), the deferred
-`rankOrder`-aware base-layout rework), not a scoped patch to port spacing, a clearance exemption
-scoped more narrowly, or a larger budget. This checked-in test's fixed evidence (14 blocked branch
-IDs, 5×55=275 routing-only nodes, ~59.251px feasible lane spacing) is the baseline that
-rearchitecture work should aim to eliminate.
+**Historical resolution:** the scoped joint-order mechanism described at the start of this section
+made `denseBranchProjection()` succeed. This evidence ruled out port spacing, a clearance exemption,
+and a larger budget for that fixture; it does not establish a current implementation prescription
+for the two extreme fixtures. The fixed evidence (14 blocked branch IDs, 5×55=275 routing-only
+nodes, ~59.251px feasible lane spacing) remains useful if a new constructive joint
+route-and-handle-placement design is ever justified under the current-status criteria above.
