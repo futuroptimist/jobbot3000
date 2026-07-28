@@ -7,6 +7,7 @@ import {
   projectLifecycleAt,
 } from "../src/web/tracker/lifecycleProjection.js";
 import {
+  BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
   BRANCH_HANDLE_RADIUS,
   BRANCH_STROKE_OPACITY,
   HANDLE_CLEARANCE_TOLERANCE,
@@ -37,6 +38,7 @@ import {
   compareBranches,
   compareLifecycleIds,
   createLaneGeometryFailureCache,
+  createLifecycleHorizontalGeometry,
   cubicTransitionPoint,
   edgeCrossing,
   endpointColor,
@@ -63,6 +65,164 @@ import {
 } from "../src/web/tracker/lifecycleDiagramLayout.js";
 
 const projection = () => projectLifecycleAt(routingFixture);
+
+describe("lifecycle horizontal geometry", () => {
+  it("constructs deterministic deeply immutable baseline rank and hop geometry", () => {
+    const first = createLifecycleHorizontalGeometry();
+    const second = createLifecycleHorizontalGeometry();
+
+    expect(first).toEqual(second);
+    expect(first).toEqual(BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY);
+    expect(Object.isFrozen(first)).toBe(true);
+    expect(Object.isFrozen(first.rankCenters)).toBe(true);
+    expect(Object.isFrozen(first.hops)).toBe(true);
+    expect(Object.isFrozen(first.hops["0->1"])).toBe(true);
+    expect(first.rankCenters[0]).toBe(109);
+    expect(first.rankCenters[6]).toBe(1741);
+    expect(first.hops["0->1"]).toMatchObject({
+      sourceRank: 0,
+      targetRank: 1,
+      rankCenterSpacing: 272,
+      protectedCorridorWidth: 200,
+      transitionSpan: 72,
+      controlSpan: 24,
+      usableHandleCenterSpan: 28,
+    });
+    expect(first.handleRadius * 2).toBe(44);
+    expect(first.svgWidth).toBe(MINIMUM_SVG_WIDTH);
+  });
+
+  it("validates finite, complete, monotonic rank centers and hop spans", () => {
+    const centers = { ...BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY.rankCenters };
+    expect(() =>
+      createLifecycleHorizontalGeometry({
+        rankCenters: { ...centers, 3: Number.NaN },
+      }),
+    ).toThrow(/finite rank 3 center/u);
+    expect(() =>
+      createLifecycleHorizontalGeometry({
+        rankCenters: { ...centers, 3: 653 },
+      }),
+    ).toThrow(/increase monotonically/u);
+    expect(() =>
+      createLifecycleHorizontalGeometry({
+        rankCenters: { ...centers, 1: 300 },
+      }),
+    ).toThrow(/minimum span invariant/u);
+    expect(() =>
+      createLifecycleHorizontalGeometry({ controlOffset: Infinity }),
+    ).toThrow(/must be finite and nonnegative/u);
+    expect(() =>
+      createLifecycleHorizontalGeometry({
+        rankCenters: { ...centers, 7: 2000 },
+      }),
+    ).toThrow(/cover exactly ranks 0\.\.6/u);
+    expect(() =>
+      createLifecycleHorizontalGeometry({
+        rankCenters: { ...centers, 0: 90 },
+      }),
+    ).toThrow(/left outer extent/u);
+  });
+
+  it("derives default rank centers and width from overridden frame dimensions", () => {
+    const geometry = createLifecycleHorizontalGeometry({
+      leftMargin: 140,
+      rightMargin: 120,
+      nodeWidth: 30,
+    });
+
+    expect(geometry.rankCenters[0]).toBe(155);
+    expect(geometry.rankCenters[6]).toBe(1787);
+    expect(geometry.svgWidth).toBe(1922);
+
+    const translatedCenters = Object.fromEntries(
+      Object.entries(geometry.rankCenters).map(([rank, center]) => [
+        rank,
+        center + 300,
+      ]),
+    );
+    const translated = createLifecycleHorizontalGeometry({
+      leftMargin: 140,
+      rightMargin: 120,
+      nodeWidth: 30,
+      rankCenters: translatedCenters,
+    });
+    expect(translated.svgWidth).toBe(2222);
+    expect(translated.svgWidth - translated.rankCenters[6] - 15).toBe(120);
+  });
+
+  it("summarizes the nonuniform hops that constrained handle candidates", () => {
+    const rankCenters = {
+      ...BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY.rankCenters,
+    };
+    for (let rank = 3; rank <= 6; rank += 1) rankCenters[rank] += 100;
+    const geometry = createLifecycleHorizontalGeometry({
+      rankCenters,
+      minimumSvgWidth: 2000,
+    });
+    const diagnostics = [
+      {
+        branchId: "branch:a",
+        transitionRanks: [0, 2],
+        attempts: 0,
+        rejected: {},
+        sweeps: {},
+      },
+    ];
+
+    const constraints = summarizeHandleCandidateConstraints(
+      diagnostics,
+      geometry,
+    );
+    expect(constraints.hops).toEqual({
+      "0->1": {
+        rankCenterSpacing: 272,
+        protectedCorridorWidth: 200,
+        transitionSpan: 72,
+        usableHandleCenterSpan: 28,
+      },
+      "2->3": {
+        rankCenterSpacing: 372,
+        protectedCorridorWidth: 200,
+        transitionSpan: 172,
+        usableHandleCenterSpan: 128,
+      },
+    });
+    expect(constraints).not.toHaveProperty("rankCenterSpacing");
+  });
+
+  it("uses rank and hop keys rather than array-position identity", () => {
+    const centers = Object.fromEntries(
+      Object.entries(
+        BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY.rankCenters,
+      ).reverse(),
+    );
+    const geometry = createLifecycleHorizontalGeometry({
+      rankCenters: centers,
+    });
+    expect(geometry.rankCenters[4]).toBe(rankCenterX(4));
+    expect(geometry.hops["4->5"].exitX).toBe(1297);
+    expect(geometry.hops["4->5"].entryX).toBe(1369);
+  });
+
+  it("threads one geometry identity through layout and the route model", () => {
+    const horizontalGeometry = createLifecycleHorizontalGeometry();
+    const { graph, dimensions } = layoutLifecycleRoutingGraph(
+      projection(),
+      1850,
+      {
+        horizontalGeometry,
+      },
+    );
+    const model = buildLifecycleRouteModel(graph, dimensions);
+
+    expect(graph.horizontalGeometry).toBe(horizontalGeometry);
+    expect(dimensions.horizontalGeometry).toBe(horizontalGeometry);
+    expect(model.horizontalGeometry).toBe(horizontalGeometry);
+    expect(Object.keys(graph)).not.toContain("horizontalGeometry");
+    expect(Object.keys(dimensions)).not.toContain("horizontalGeometry");
+  });
+});
 const deepFreeze = (value) => {
   if (!value || typeof value !== "object" || Object.isFrozen(value))
     return value;
@@ -939,7 +1099,46 @@ describe("transition lane solver", () => {
     ).toBe(true);
   });
 
-  it("resolves un-phased dense fan-in fast, without exponential blowup", () => {
+  it("preserves baseline diagnostic serialization", () => {
+    const serialized = JSON.stringify(
+      summarizeHandleCandidateConstraints([
+        { branchId: "branch:a", attempts: 1, rejected: {}, sweeps: {} },
+      ]),
+    );
+    expect(serialized).toBe(
+      JSON.stringify({
+        attempts: 1,
+        rejected: {
+          fixedGeometry: 0,
+          outsideTransitionCorridor: 0,
+          nonincidentRouteClearance: 0,
+        },
+        sweeps: {
+          primary: {
+            attempts: 0,
+            rejected: {
+              fixedGeometry: 0,
+              outsideTransitionCorridor: 0,
+              nonincidentRouteClearance: 0,
+            },
+          },
+          fallback: {
+            attempts: 0,
+            rejected: {
+              fixedGeometry: 0,
+              outsideTransitionCorridor: 0,
+              nonincidentRouteClearance: 0,
+            },
+          },
+        },
+        nearestBlockerKinds: {},
+        rankCenterSpacing: 272,
+        protectedCorridorWidth: 200,
+        transitionSpan: 72,
+        handleDiameter: 44,
+        usableHandleCenterSpan: 28,
+      }),
+    );
     // transitionDensityProjection()'s 50-branch fan-in to one milestone has
     // no handle-clearance-feasible lane arrangement, even accounting for
     // HANDLE_CLEARANCE_TOLERANCE's small last-resort clearance allowance --
@@ -973,6 +1172,14 @@ describe("transition lane solver", () => {
       reason: "no-candidates",
     });
     expect(thrown?.cause?.blockedBranchIds?.length).toBeGreaterThan(0);
+    expect(
+      thrown?.cause?.branches?.every(
+        (branch) => !Object.keys(branch).includes("transitionRanks"),
+      ),
+    ).toBe(true);
+    expect(JSON.stringify(thrown?.cause?.branches)).not.toContain(
+      "transitionRanks",
+    );
     expect(
       thrown?.cause?.branches?.every(
         (branch) => branch.nearestRejectedCandidate?.clearanceMargin === -1,
@@ -2677,6 +2884,12 @@ describe("lifecycle diagram render-only routing layout", () => {
       (visible.y0 + visible.y1) / 2,
       6,
     );
+    const smallerTarget = rendererHitBoxForNode(
+      visible,
+      createLifecycleHorizontalGeometry({ handleRadius: 16 }),
+    );
+    expect(smallerTarget.width).toBe(Math.max(32, visible.x1 - visible.x0));
+    expect(smallerTarget.height).toBe(Math.max(32, visible.y1 - visible.y0));
   });
 
   it("uses exact protected-corridor width calculations and deterministic sorting", () => {
