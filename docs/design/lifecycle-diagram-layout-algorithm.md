@@ -664,7 +664,8 @@ characterized (not deleted) in
 does not identify which horizontal rejection class binds the primary sweep. Making the underlying
 fixtures themselves succeed would require a constructive joint route-and-handle placement design,
 not an assumed corridor widening. Retrying with a larger
-`HANDLE_CLEARANCE_TOLERANCE` value alone will not help; the evidence above rules that out directly.
+`HANDLE_CLEARANCE_TOLERANCE` value alone is not an established fix or active recommendation. No
+tolerance sweep through final audit proved that change sufficient or impossible.
 
 ## Follow-up (shipped): unified route-crossing classifier
 
@@ -1011,7 +1012,7 @@ historical test names, since they can drift.
    efficient" for a no-tolerance, budget-only approach. (`tracker-lifecycle-diagram-v2.json`'s own
    layout problem was separately resolved afterward by the bounded tolerances in "Follow-up
    (shipped)" below — a different, already-shipped mechanism, not this item.) This historical item
-   has no remaining implementation phase. The extreme fixtures are bounded negative regressions;
+   has no remaining implementation phase. The extreme fixtures are bounded typed failures;
    revisiting them is conditional on the new-design criteria at the start of this section.
 
 2. **0 unit tests remain `it.skip`ed** (were 4). `HANDLE_CLEARANCE_TOLERANCE` and
@@ -1042,8 +1043,9 @@ without external requests"`) already passed unmodified since none of them exerci
 4. **Historical proposal: real-node-vs-routing-node coordination** (its own section above) — this
    was a narrower, more scoped alternative to item 1. The shipped transition-scoped joint order and
    audit-and-reject safety net now provide the required coordination, so there is no remaining
-   standalone implementation task. A future performance redesign would need new evidence that the
-   current bounded behavior is too expensive; it is not unfinished work from this checklist.
+   standalone implementation task. Reopening it requires the real-data evidence or constructive
+   joint route-and-handle-placement design gate stated at the start of this section; it is not
+   unfinished work from this checklist.
 5. **Historical verification note: visual/manual verification was done for this PR**, not
    automated: a real browser session
    (Chrome, imported `tracker-lifecycle-diagram-routing-v2.json` — 25 applications) confirmed the
@@ -1051,9 +1053,9 @@ without external requests"`) already passed unmodified since none of them exerci
    the union of both fixtures (41 applications, including the known-infeasible data) degrades
    gracefully to the "Unable to lay out lifecycle diagram." fallback rather than a broken or
    overlapping render. There is no automated end-to-end test asserting "the diagram is visually
-   readable" beyond `auditLifecycleRouteGeometry`'s structural checks. No such test is currently
-   planned; recurring visual regressions could justify a new test project rather than reopen this
-   completed checklist.
+   readable" beyond `auditLifecycleRouteGeometry`'s structural checks. Automated visual work may be
+   reconsidered only if recurring real-world visual regressions demonstrate a need; that would be a
+   new test project rather than a reopening of this completed checklist.
 
 ## Bounded authoritative-order pipeline
 
@@ -1135,7 +1137,7 @@ below), so there was no seed for final to replay. That gap was closed afterward 
 separate, later-shipped bounded tolerances (`HANDLE_CLEARANCE_TOLERANCE` /
 `toleratedRouteCrossingCount`; see "Follow-up (shipped)" below) — not by this seeding
 mechanism itself. `tracker-lifecycle-diagram-v2.json` succeeds end-to-end today. The two extreme
-fixtures remain bounded negative regressions under the full pipeline; they are not unfinished test
+fixtures remain bounded typed failures under the full pipeline; they are not unfinished test
 recovery work.
 
 ## Checked-in reproduction: dense routing-only handle infeasibility is structural, not a budget gap (historical -- fixed for this fixture)
@@ -1151,7 +1153,7 @@ milestone-convergence case (real milestone nodes, e.g. `tracker-lifecycle-diagra
 **not** fixed by this `rankOrder`-based mechanism — see the investigation section above for why the
 same approach does not extend there. `tracker-lifecycle-diagram-v2.json` was instead fixed by a
 separate, later-shipped mechanism (the bounded tolerances in "Follow-up (shipped)" below), so it has
-no remaining scope here. The two different extreme fixtures remain bounded negative regressions,
+no remaining scope here. The two different extreme fixtures remain bounded typed failures,
 not targets that this historical approach still needs to fix.
 
 `test/web-tracker-lifecycle-diagram-layout.test.js`'s `"characterizes dense routing-only handle
