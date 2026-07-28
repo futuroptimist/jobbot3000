@@ -51,6 +51,9 @@ export const BRANCH_STROKE_OPACITY = 0.82;
 export const BRANCH_HANDLE_RADIUS = 22;
 
 const LIFECYCLE_RANKS = Object.freeze([0, 1, 2, 3, 4, 5, 6]);
+const HANDLE_DIAGNOSTIC_TRANSITION_RANKS = Symbol(
+  "handleDiagnosticTransitionRanks",
+);
 
 export function createLifecycleHorizontalGeometry({
   leftMargin = LAYOUT_LEFT_MARGIN,
@@ -4766,9 +4769,11 @@ export function summarizeHandleCandidateConstraints(
   const transitionRanks = [
     ...new Set(
       branchDiagnostics.flatMap((diagnostic) =>
-        diagnostic.transitionRanks?.length
-          ? diagnostic.transitionRanks
-          : [diagnostic.nearestRejectedCandidate?.transitionRank],
+        diagnostic[HANDLE_DIAGNOSTIC_TRANSITION_RANKS]?.length
+          ? diagnostic[HANDLE_DIAGNOSTIC_TRANSITION_RANKS]
+          : diagnostic.transitionRanks?.length
+            ? diagnostic.transitionRanks
+            : [diagnostic.nearestRejectedCandidate?.transitionRank],
       ),
     ),
   ]
@@ -4800,15 +4805,22 @@ export function summarizeHandleCandidateConstraints(
         compareLifecycleIds(left, right),
       ),
     ),
-    handleDiameter: 2 * horizontalGeometry.handleRadius,
   };
   const distinctConstraints = [
     ...new Set(Object.values(constrainedHops).map(JSON.stringify)),
   ];
   if (distinctConstraints.length <= 1) {
     const [constraints] = Object.values(constrainedHops);
-    if (constraints) Object.assign(result, constraints);
+    if (constraints) {
+      result.rankCenterSpacing = constraints.rankCenterSpacing;
+      result.protectedCorridorWidth = constraints.protectedCorridorWidth;
+      result.transitionSpan = constraints.transitionSpan;
+    }
+    result.handleDiameter = 2 * horizontalGeometry.handleRadius;
+    if (constraints)
+      result.usableHandleCenterSpan = constraints.usableHandleCenterSpan;
   } else {
+    result.handleDiameter = 2 * horizontalGeometry.handleRadius;
     result.hops = constrainedHops;
   }
   return result;
@@ -5117,11 +5129,6 @@ const tryAssignBranchHandles = (
     const degradedCandidates = [];
     const diagnostic = {
       branchId: branch.id,
-      transitionRanks: [
-        ...new Set(orderedSegments.map((segment) => segment.source?.rank)),
-      ]
-        .filter(Number.isInteger)
-        .sort((left, right) => left - right),
       segmentsExamined: orderedSegments.length,
       attempts: 0,
       accepted: 0,
@@ -5150,6 +5157,16 @@ const tryAssignBranchHandles = (
       },
       nearestRejectedCandidate: null,
     };
+    Object.defineProperty(diagnostic, HANDLE_DIAGNOSTIC_TRANSITION_RANKS, {
+      value: Object.freeze(
+        [...new Set(orderedSegments.map((segment) => segment.source?.rank))]
+          .filter(Number.isInteger)
+          .sort((left, right) => left - right),
+      ),
+      enumerable: false,
+      writable: false,
+      configurable: false,
+    });
     const rememberRejected = (candidate) => {
       if (
         !diagnostic.nearestRejectedCandidate ||

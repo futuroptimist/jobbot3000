@@ -1099,7 +1099,46 @@ describe("transition lane solver", () => {
     ).toBe(true);
   });
 
-  it("resolves un-phased dense fan-in fast, without exponential blowup", () => {
+  it("preserves baseline diagnostic serialization", () => {
+    const serialized = JSON.stringify(
+      summarizeHandleCandidateConstraints([
+        { branchId: "branch:a", attempts: 1, rejected: {}, sweeps: {} },
+      ]),
+    );
+    expect(serialized).toBe(
+      JSON.stringify({
+        attempts: 1,
+        rejected: {
+          fixedGeometry: 0,
+          outsideTransitionCorridor: 0,
+          nonincidentRouteClearance: 0,
+        },
+        sweeps: {
+          primary: {
+            attempts: 0,
+            rejected: {
+              fixedGeometry: 0,
+              outsideTransitionCorridor: 0,
+              nonincidentRouteClearance: 0,
+            },
+          },
+          fallback: {
+            attempts: 0,
+            rejected: {
+              fixedGeometry: 0,
+              outsideTransitionCorridor: 0,
+              nonincidentRouteClearance: 0,
+            },
+          },
+        },
+        nearestBlockerKinds: {},
+        rankCenterSpacing: 272,
+        protectedCorridorWidth: 200,
+        transitionSpan: 72,
+        handleDiameter: 44,
+        usableHandleCenterSpan: 28,
+      }),
+    );
     // transitionDensityProjection()'s 50-branch fan-in to one milestone has
     // no handle-clearance-feasible lane arrangement, even accounting for
     // HANDLE_CLEARANCE_TOLERANCE's small last-resort clearance allowance --
@@ -1133,6 +1172,14 @@ describe("transition lane solver", () => {
       reason: "no-candidates",
     });
     expect(thrown?.cause?.blockedBranchIds?.length).toBeGreaterThan(0);
+    expect(
+      thrown?.cause?.branches?.every(
+        (branch) => !Object.keys(branch).includes("transitionRanks"),
+      ),
+    ).toBe(true);
+    expect(JSON.stringify(thrown?.cause?.branches)).not.toContain(
+      "transitionRanks",
+    );
     expect(
       thrown?.cause?.branches?.every(
         (branch) => branch.nearestRejectedCandidate?.clearanceMargin === -1,
