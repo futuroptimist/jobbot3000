@@ -253,16 +253,28 @@ describe("lifecycle horizontal geometry", () => {
         1850,
         { horizontalGeometry },
       );
-      const handles = graph.acceptedHandles;
+      const linksByBranch = new Map();
+      for (const link of graph.links) {
+        if (!linksByBranch.has(link.branchId))
+          linksByBranch.set(link.branchId, []);
+        linksByBranch.get(link.branchId).push(link);
+      }
+      const renderedBranches = graph.branches.filter((branch) =>
+        linksByBranch.has(branch.id),
+      );
+      const acceptedHandles = graph.acceptedHandles;
+      expect(acceptedHandles).toBeInstanceOf(Map);
+      expect(
+        renderedBranches.every((branch) => acceptedHandles.has(branch.id)),
+      ).toBe(true);
+      const handles = renderedBranches.map((branch) =>
+        acceptedHandles.get(branch.id),
+      );
       const model = buildLifecycleRouteModel(graph, dimensions);
       const audit = auditLifecycleRouteGeometry({ model, handles });
       expect(graph.horizontalGeometry).toBe(horizontalGeometry);
       expect(dimensions.horizontalGeometry).toBe(horizontalGeometry);
       expect(model.horizontalGeometry).toBe(horizontalGeometry);
-      expect(handles).toBeInstanceOf(Map);
-      expect(graph.branches.every((branch) => handles.has(branch.id))).toBe(
-        true,
-      );
       expect(audit.fatalFindings).toEqual([]);
       return {
         dimensions: { width: dimensions.width, height: dimensions.height },
@@ -277,7 +289,7 @@ describe("lifecycle horizontal geometry", () => {
             transitionLaneY,
           ])
           .sort(([left], [right]) => compareLifecycleIds(left, right)),
-        handles: [...handles.values()]
+        handles: handles
           .map(({ branchId, x, y }) => [branchId, x, y])
           .sort(([left], [right]) => compareLifecycleIds(left, right)),
         solver: graph.transitionLaneSolverStats,
@@ -1231,7 +1243,9 @@ describe("transition lane solver", () => {
     const start = Date.now();
     let thrown;
     try {
-      layoutLifecycleRoutingGraph(transitionDensityProjection(), 1850);
+      layoutLifecycleRoutingGraph(transitionDensityProjection(), 1850, {
+        horizontalGeometry: BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
+      });
     } catch (error) {
       thrown = error;
     }
