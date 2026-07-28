@@ -908,6 +908,28 @@ not calculate density demand, alter rank spacing, change candidate samples or bu
 either extreme fixture feasible. Any P9 expansion rule still needs the constructive proof (or
 exhaustive bounded test) described above before it can replace the baseline constructor inputs.
 
+#### P9 activation gate result (2026-07-28)
+
+P9 remains gated off. The current production code and characterization evidence do not demonstrate
+a finite, topology-derived demand-to-spacing rule that makes both extreme fixtures pass the complete
+two-pass materialization, handle-placement, and route-audit pipeline while preserving every existing
+budget and ordinary-fixture byte signature. In particular, the per-sweep counts above distinguish
+primary, fallback, fixed-geometry, corridor-bound, and nonincident-route-clearance evidence, but they
+do not establish a smallest feasible spacing for either fixture. Selecting an expansion from those
+counts would therefore infer causality from rejection samples rather than demonstrate a safe bound.
+
+Production consequently continues to construct exactly the baseline P8 geometry: every adjacent
+rank remains 272 px apart and the SVG remains 1,850 px wide. There is no adaptive supported-demand
+domain or expansion-width bound to document because no adaptive rule is activated; input immediately
+beyond the currently supported practical boundary retains the existing deterministic bounded failure
+behavior (`no-candidates` for the 50-way milestone convergence and the 32,768-state handle limit for
+the pagination fixture). The focused characterization test now supplies
+`BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY` explicitly for normal, reversed, and rotated input, guarding
+these signatures against a future change to the production default. A future activation must first
+add explicit nonuniform-geometry successes through the full pipeline, derive a finite monotone demand
+domain from pre-search topology, and prove the maximum width and immediately-out-of-domain failure;
+until then, partial or speculative expansion is intentionally prohibited.
+
 This is the authoritative, current list — cross-check against the code before trusting it, since
 skip states and test names can drift. `grep -rn "it\.skip(\|test\.skip(" test/` finds all of them.
 

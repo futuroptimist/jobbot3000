@@ -1786,7 +1786,11 @@ describe("test-only lifecycle layout diagnostics", () => {
         projectionFactory(),
         permuteProjection(projectionFactory, (values) => [...values].reverse()),
         permuteProjection(projectionFactory, rotate),
-      ].map((p) => testOnlyDiagnoseLifecycleLayoutAttempt(p, 1850));
+      ].map((p) =>
+        testOnlyDiagnoseLifecycleLayoutAttempt(p, 1850, {
+          horizontalGeometry: BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
+        }),
+      );
       expect(JSON.stringify(diagnostics[1])).toBe(
         JSON.stringify(diagnostics[0]),
       );
@@ -1817,7 +1821,9 @@ describe("test-only lifecycle layout diagnostics", () => {
 
     let terminalError;
     try {
-      layoutLifecycleRoutingGraph(paginationProjection(), 1850);
+      layoutLifecycleRoutingGraph(paginationProjection(), 1850, {
+        horizontalGeometry: BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
+      });
     } catch (error) {
       terminalError = error;
     }
