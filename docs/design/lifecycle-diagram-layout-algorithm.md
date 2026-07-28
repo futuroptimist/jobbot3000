@@ -1163,3 +1163,30 @@ that derives routing-node lane order _jointly_ across all ranks a branch's geome
 scoped more narrowly, or a larger budget. This checked-in test's fixed evidence (14 blocked branch
 IDs, 5×55=275 routing-only nodes, ~59.251px feasible lane spacing) is the baseline that
 rearchitecture work should aim to eliminate.
+
+### P9 activation-gate result (2026-07-28)
+
+P9 does **not** activate adaptive horizontal geometry. The P8 test-only diagnostic seam can already
+inject an explicit nonuniform `horizontalGeometry` into the same discovery materialization,
+handle-placement, and route-audit path used by production. However, the checked-in evidence does not
+demonstrate a pure topology-demand threshold that constructively bounds all three independent
+rejection classes (fixed geometry, corridor bounds, and nonincident-route clearance), followed by
+handle feasibility and the unchanged route audit, for both extreme fixtures. Candidate samples that
+reach only the fallback corridor bound and `nearestRejectedCandidate` remain descriptive rather than
+causal evidence.
+
+Accordingly, production continues to select
+`BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY`: every hop is 272 px, rank centers are 109 through 1741,
+and the SVG width is 1850 px. There is no adaptive supported-demand domain or expansion limit to
+claim in this gated result; demand immediately beyond the currently demonstrated baseline-supported
+fixture set continues through the existing bounded solver and fails with its existing typed
+`no-candidates` or 32,768-state `state-limit` result. In particular, the explicit-baseline
+characterization retains the signatures in the table above for `transitionDensityProjection()` and
+`paginationProjection()`.
+
+This negative gate is deliberately narrower than a proof that adaptive geometry cannot work. A
+future activation still needs an order-independent pre-search demand function, a finite supported
+input domain and width limit, successful full-pipeline results for both extreme fixtures, and
+byte-identical parity for every graph that remains at baseline geometry. Until those facts are
+checked in, widening selected hops would be a partially justified production behavior change and is
+therefore unsafe.
