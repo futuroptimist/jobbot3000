@@ -1039,18 +1039,21 @@ tracker-lifecycle-diagram-v2.json on desktop and touch"` — is now fixed and un
    `test/playwright/static-smoke.spec.js`'s `"renders lifecycle Diagram from deterministic data
 without external requests"`) already passed unmodified since none of them exercise the strict
    collision audit.
-4. **Real-node-vs-routing-node coordination** (its own section above) — a narrower, more scoped
-   piece of item 1 that's already covered by fix 3's audit-and-reject safety net (so current
-   behavior is _correct_, just not cheap for fixtures that hit it). Worth doing on its own if item 1
-   in full turns out to be too large a single change.
-5. **Visual/manual verification was done for this PR**, not automated: a real browser session
+4. **Historical proposal: real-node-vs-routing-node coordination** (its own section above) — this
+   was a narrower, more scoped alternative to item 1. The shipped transition-scoped joint order and
+   audit-and-reject safety net now provide the required coordination, so there is no remaining
+   standalone implementation task. A future performance redesign would need new evidence that the
+   current bounded behavior is too expensive; it is not unfinished work from this checklist.
+5. **Historical verification note: visual/manual verification was done for this PR**, not
+   automated: a real browser session
    (Chrome, imported `tracker-lifecycle-diagram-routing-v2.json` — 25 applications) confirmed the
    diagram renders with distinct per-outcome colors and no overlapping branches, and that importing
    the union of both fixtures (41 applications, including the known-infeasible data) degrades
    gracefully to the "Unable to lay out lifecycle diagram." fallback rather than a broken or
    overlapping render. There is no automated end-to-end test asserting "the diagram is visually
-   readable" beyond `auditLifecycleRouteGeometry`'s structural checks — worth considering as a
-   follow-up if visual regressions become a recurring concern.
+   readable" beyond `auditLifecycleRouteGeometry`'s structural checks. No such test is currently
+   planned; recurring visual regressions could justify a new test project rather than reopen this
+   completed checklist.
 
 ## Bounded authoritative-order pipeline
 
