@@ -53,20 +53,21 @@ export const BRANCH_HANDLE_RADIUS = 22;
 const LIFECYCLE_RANKS = Object.freeze([0, 1, 2, 3, 4, 5, 6]);
 
 export function createLifecycleHorizontalGeometry({
+  leftMargin = LAYOUT_LEFT_MARGIN,
+  rightMargin = LAYOUT_RIGHT_MARGIN,
+  nodeWidth = SANKEY_NODE_WIDTH,
   rankCenters = Object.fromEntries(
     LIFECYCLE_RANKS.map((rank) => [
       rank,
-      LAYOUT_LEFT_MARGIN +
-        SANKEY_NODE_WIDTH / 2 +
-        rank * MINIMUM_RANK_CENTER_SPACING,
+      leftMargin + nodeWidth / 2 + rank * MINIMUM_RANK_CENTER_SPACING,
     ]),
   ),
   corridorHalfWidth = RANK_CORRIDOR_HALF_WIDTH,
   controlOffset = TRANSITION_CONTROL_OFFSET,
-  leftMargin = LAYOUT_LEFT_MARGIN,
-  rightMargin = LAYOUT_RIGHT_MARGIN,
-  nodeWidth = SANKEY_NODE_WIDTH,
-  minimumSvgWidth = MINIMUM_SVG_WIDTH,
+  minimumSvgWidth = leftMargin +
+    rightMargin +
+    nodeWidth +
+    6 * MINIMUM_RANK_CENTER_SPACING,
   handleRadius = BRANCH_HANDLE_RADIUS,
 } = {}) {
   const centers = {};
@@ -4747,8 +4748,32 @@ export function summarizeHandleCandidateConstraints(
         (nearestBlockerKinds[blockerKind] ?? 0) + 1;
     }
   }
-  const hop = hopGeometry(horizontalGeometry, 0);
-  return {
+  const transitionRanks = [
+    ...new Set(
+      branchDiagnostics.flatMap((diagnostic) =>
+        diagnostic.transitionRanks?.length
+          ? diagnostic.transitionRanks
+          : [diagnostic.nearestRejectedCandidate?.transitionRank],
+      ),
+    ),
+  ]
+    .filter(Number.isInteger)
+    .sort((left, right) => left - right);
+  const constrainedHops = Object.fromEntries(
+    transitionRanks.map((sourceRank) => {
+      const hop = hopGeometry(horizontalGeometry, sourceRank);
+      return [
+        `${sourceRank}->${sourceRank + 1}`,
+        {
+          rankCenterSpacing: hop.rankCenterSpacing,
+          protectedCorridorWidth: hop.protectedCorridorWidth,
+          transitionSpan: hop.transitionSpan,
+          usableHandleCenterSpan: hop.usableHandleCenterSpan,
+        },
+      ];
+    }),
+  );
+  const result = {
     attempts,
     rejected,
     sweeps,
@@ -4757,12 +4782,15 @@ export function summarizeHandleCandidateConstraints(
         compareLifecycleIds(left, right),
       ),
     ),
-    rankCenterSpacing: hop.rankCenterSpacing,
-    protectedCorridorWidth: hop.protectedCorridorWidth,
-    transitionSpan: hop.transitionSpan,
+    hops: constrainedHops,
     handleDiameter: 2 * horizontalGeometry.handleRadius,
-    usableHandleCenterSpan: hop.usableHandleCenterSpan,
   };
+  const distinctConstraints = [
+    ...new Set(Object.values(constrainedHops).map(JSON.stringify)),
+  ];
+  if (distinctConstraints.length === 1)
+    Object.assign(result, JSON.parse(distinctConstraints[0]));
+  return result;
 }
 
 const tryAssignBranchHandles = (
@@ -5068,6 +5096,11 @@ const tryAssignBranchHandles = (
     const degradedCandidates = [];
     const diagnostic = {
       branchId: branch.id,
+      transitionRanks: [
+        ...new Set(orderedSegments.map((segment) => segment.source?.rank)),
+      ]
+        .filter(Number.isInteger)
+        .sort((left, right) => left - right),
       segmentsExamined: orderedSegments.length,
       attempts: 0,
       accepted: 0,

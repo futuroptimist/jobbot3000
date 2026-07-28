@@ -12,6 +12,7 @@ import {
   layoutLifecycleRoutingGraph,
   labelBoxForNode,
   renderedBranchStrokeWidth,
+  rendererHitBoxForNode,
   wrapLifecycleLabel,
 } from "./lifecycleDiagramLayout.js";
 export { calculateLifecycleDiagramLayout };
@@ -686,11 +687,15 @@ export function createLifecycleDiagramView(root, options = {}) {
             label: nodeLabel,
             applicationIds: node.applicationIds,
           });
+        const hitBox = rendererHitBoxForNode(
+          node,
+          dimensions.horizontalGeometry,
+        );
         const hitRect = svgEl("rect", {
-          x: node.x0 - Math.max(0, 44 - (node.x1 - node.x0)) / 2,
-          y: node.y0 - Math.max(0, 44 - (node.y1 - node.y0)) / 2,
-          width: Math.max(44, node.x1 - node.x0),
-          height: Math.max(44, node.y1 - node.y0),
+          x: hitBox.x,
+          y: hitBox.y,
+          width: hitBox.width,
+          height: hitBox.height,
           fill: "transparent",
           "pointer-events": "all",
           "aria-hidden": "true",

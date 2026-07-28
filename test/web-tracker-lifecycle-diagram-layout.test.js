@@ -114,6 +114,58 @@ describe("lifecycle horizontal geometry", () => {
     ).toThrow(/must be finite and nonnegative/u);
   });
 
+  it("derives default rank centers and width from overridden frame dimensions", () => {
+    const geometry = createLifecycleHorizontalGeometry({
+      leftMargin: 140,
+      rightMargin: 120,
+      nodeWidth: 30,
+    });
+
+    expect(geometry.rankCenters[0]).toBe(155);
+    expect(geometry.rankCenters[6]).toBe(1787);
+    expect(geometry.svgWidth).toBe(1922);
+  });
+
+  it("summarizes the nonuniform hops that constrained handle candidates", () => {
+    const rankCenters = {
+      ...BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY.rankCenters,
+    };
+    for (let rank = 3; rank <= 6; rank += 1) rankCenters[rank] += 100;
+    const geometry = createLifecycleHorizontalGeometry({
+      rankCenters,
+      minimumSvgWidth: 2000,
+    });
+    const diagnostics = [
+      {
+        branchId: "branch:a",
+        transitionRanks: [0, 2],
+        attempts: 0,
+        rejected: {},
+        sweeps: {},
+      },
+    ];
+
+    const constraints = summarizeHandleCandidateConstraints(
+      diagnostics,
+      geometry,
+    );
+    expect(constraints.hops).toEqual({
+      "0->1": {
+        rankCenterSpacing: 272,
+        protectedCorridorWidth: 200,
+        transitionSpan: 72,
+        usableHandleCenterSpan: 28,
+      },
+      "2->3": {
+        rankCenterSpacing: 372,
+        protectedCorridorWidth: 200,
+        transitionSpan: 172,
+        usableHandleCenterSpan: 128,
+      },
+    });
+    expect(constraints).not.toHaveProperty("rankCenterSpacing");
+  });
+
   it("uses rank and hop keys rather than array-position identity", () => {
     const centers = Object.fromEntries(
       Object.entries(
@@ -2758,6 +2810,12 @@ describe("lifecycle diagram render-only routing layout", () => {
       (visible.y0 + visible.y1) / 2,
       6,
     );
+    const smallerTarget = rendererHitBoxForNode(
+      visible,
+      createLifecycleHorizontalGeometry({ handleRadius: 16 }),
+    );
+    expect(smallerTarget.width).toBe(Math.max(32, visible.x1 - visible.x0));
+    expect(smallerTarget.height).toBe(Math.max(32, visible.y1 - visible.y0));
   });
 
   it("uses exact protected-corridor width calculations and deterministic sorting", () => {
