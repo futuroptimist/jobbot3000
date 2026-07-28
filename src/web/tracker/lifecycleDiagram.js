@@ -465,6 +465,9 @@ export function createLifecycleDiagramView(root, options = {}) {
       ({ graph, dimensions } = layoutLifecycleRoutingGraph(
         projection,
         root.clientWidth,
+        options.horizontalGeometry
+          ? { horizontalGeometry: options.horizontalGeometry }
+          : undefined,
       ));
     } catch {
       scroll.append(

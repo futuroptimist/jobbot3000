@@ -112,6 +112,16 @@ describe("lifecycle horizontal geometry", () => {
     expect(() =>
       createLifecycleHorizontalGeometry({ controlOffset: Infinity }),
     ).toThrow(/must be finite and nonnegative/u);
+    expect(() =>
+      createLifecycleHorizontalGeometry({
+        rankCenters: { ...centers, 7: 2000 },
+      }),
+    ).toThrow(/cover exactly ranks 0\.\.6/u);
+    expect(() =>
+      createLifecycleHorizontalGeometry({
+        rankCenters: { ...centers, 0: 90 },
+      }),
+    ).toThrow(/left outer extent/u);
   });
 
   it("derives default rank centers and width from overridden frame dimensions", () => {
@@ -124,6 +134,21 @@ describe("lifecycle horizontal geometry", () => {
     expect(geometry.rankCenters[0]).toBe(155);
     expect(geometry.rankCenters[6]).toBe(1787);
     expect(geometry.svgWidth).toBe(1922);
+
+    const translatedCenters = Object.fromEntries(
+      Object.entries(geometry.rankCenters).map(([rank, center]) => [
+        rank,
+        center + 300,
+      ]),
+    );
+    const translated = createLifecycleHorizontalGeometry({
+      leftMargin: 140,
+      rightMargin: 120,
+      nodeWidth: 30,
+      rankCenters: translatedCenters,
+    });
+    expect(translated.svgWidth).toBe(2222);
+    expect(translated.svgWidth - translated.rankCenters[6] - 15).toBe(120);
   });
 
   it("summarizes the nonuniform hops that constrained handle candidates", () => {
@@ -194,6 +219,8 @@ describe("lifecycle horizontal geometry", () => {
     expect(graph.horizontalGeometry).toBe(horizontalGeometry);
     expect(dimensions.horizontalGeometry).toBe(horizontalGeometry);
     expect(model.horizontalGeometry).toBe(horizontalGeometry);
+    expect(Object.keys(graph)).not.toContain("horizontalGeometry");
+    expect(Object.keys(dimensions)).not.toContain("horizontalGeometry");
   });
 });
 const deepFreeze = (value) => {

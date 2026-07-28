@@ -64,12 +64,17 @@ export function createLifecycleHorizontalGeometry({
   ),
   corridorHalfWidth = RANK_CORRIDOR_HALF_WIDTH,
   controlOffset = TRANSITION_CONTROL_OFFSET,
-  minimumSvgWidth = leftMargin +
-    rightMargin +
-    nodeWidth +
-    6 * MINIMUM_RANK_CENTER_SPACING,
+  minimumSvgWidth,
   handleRadius = BRANCH_HANDLE_RADIUS,
 } = {}) {
+  const rankKeys = Object.keys(rankCenters).sort();
+  if (
+    rankKeys.length !== LIFECYCLE_RANKS.length ||
+    rankKeys.some((rank, index) => rank !== String(LIFECYCLE_RANKS[index]))
+  )
+    throw new Error(
+      "Lifecycle horizontal geometry rank centers must cover exactly ranks 0..6",
+    );
   const centers = {};
   for (const rank of LIFECYCLE_RANKS) {
     const value = rankCenters[rank];
@@ -83,13 +88,19 @@ export function createLifecycleHorizontalGeometry({
       );
     centers[rank] = value;
   }
+  const baselineWidth =
+    leftMargin + rightMargin + nodeWidth + 6 * MINIMUM_RANK_CENTER_SPACING;
+  const leftOuterExtent = centers[0] - nodeWidth / 2;
+  const rightOuterExtent = centers[6] + nodeWidth / 2;
+  const svgWidth =
+    minimumSvgWidth ?? Math.max(baselineWidth, rightOuterExtent + rightMargin);
   const scalars = {
     corridorHalfWidth,
     controlOffset,
     leftMargin,
     rightMargin,
     nodeWidth,
-    minimumSvgWidth,
+    minimumSvgWidth: svgWidth,
     handleRadius,
   };
   for (const [name, value] of Object.entries(scalars)) {
@@ -98,7 +109,11 @@ export function createLifecycleHorizontalGeometry({
         `Lifecycle horizontal geometry ${name} must be finite and nonnegative`,
       );
   }
-  if (minimumSvgWidth < centers[6] + nodeWidth / 2 + rightMargin)
+  if (leftOuterExtent < leftMargin)
+    throw new Error(
+      "Lifecycle horizontal geometry left outer extent does not preserve its margin",
+    );
+  if (svgWidth < rightOuterExtent + rightMargin)
     throw new Error(
       "Lifecycle horizontal geometry SVG width does not cover every rank",
     );
@@ -146,7 +161,7 @@ export function createLifecycleHorizontalGeometry({
     rankCenters: Object.freeze(centers),
     hops: Object.freeze(hops),
     ...scalars,
-    svgWidth: minimumSvgWidth,
+    svgWidth,
   });
 }
 
@@ -4759,8 +4774,11 @@ export function summarizeHandleCandidateConstraints(
   ]
     .filter(Number.isInteger)
     .sort((left, right) => left - right);
+  const representedTransitionRanks = transitionRanks.length
+    ? transitionRanks
+    : [0];
   const constrainedHops = Object.fromEntries(
-    transitionRanks.map((sourceRank) => {
+    representedTransitionRanks.map((sourceRank) => {
       const hop = hopGeometry(horizontalGeometry, sourceRank);
       return [
         `${sourceRank}->${sourceRank + 1}`,
@@ -4782,14 +4800,17 @@ export function summarizeHandleCandidateConstraints(
         compareLifecycleIds(left, right),
       ),
     ),
-    hops: constrainedHops,
     handleDiameter: 2 * horizontalGeometry.handleRadius,
   };
   const distinctConstraints = [
     ...new Set(Object.values(constrainedHops).map(JSON.stringify)),
   ];
-  if (distinctConstraints.length === 1)
-    Object.assign(result, JSON.parse(distinctConstraints[0]));
+  if (distinctConstraints.length <= 1) {
+    const [constraints] = Object.values(constrainedHops);
+    if (constraints) Object.assign(result, constraints);
+  } else {
+    result.hops = constrainedHops;
+  }
   return result;
 }
 
@@ -5152,15 +5173,14 @@ const tryAssignBranchHandles = (
         diagnostic.nearestRejectedCandidate = candidate;
       }
     };
-    const sweepCorridor = (sweepName, tValues, corridorHalfWidth) => {
+    const sweepCorridor = (sweepName, tValues) => {
       for (const segment of orderedSegments) {
         const hop = hopGeometry(
           horizontalGeometry,
           segment.source.rank,
           segment.target.rank,
         );
-        const exitX = hop.sourceCenter + corridorHalfWidth;
-        const entryX = hop.targetCenter - corridorHalfWidth;
+        const { exitX, entryX } = hop;
         for (const t of tValues) {
           const { x, y } = cubicTransitionPoint(segment, t, horizontalGeometry);
           const box = {
@@ -5258,17 +5278,9 @@ const tryAssignBranchHandles = (
         }
       }
     };
-    sweepCorridor(
-      "primary",
-      HANDLE_CANDIDATE_T_VALUES,
-      horizontalGeometry.corridorHalfWidth,
-    );
+    sweepCorridor("primary", HANDLE_CANDIDATE_T_VALUES);
     if (!candidates.length) {
-      sweepCorridor(
-        "fallback",
-        HANDLE_FALLBACK_CANDIDATE_T_VALUES,
-        horizontalGeometry.corridorHalfWidth,
-      );
+      sweepCorridor("fallback", HANDLE_FALLBACK_CANDIDATE_T_VALUES);
     }
     // Only fall back to a degraded (small negative clearance) candidate
     // when this branch has no fully-clear candidate anywhere across both
