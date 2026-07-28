@@ -908,6 +908,41 @@ not calculate density demand, alter rank spacing, change candidate samples or bu
 either extreme fixture feasible. Any P9 expansion rule still needs the constructive proof (or
 exhaustive bounded test) described above before it can replace the baseline constructor inputs.
 
+### P9 adaptive-geometry activation gate (gated negative, 2026-07-28)
+
+P9 exercised explicit nonuniform rank centers through the same two-pass production entry point,
+materialization, handle placement, route-model construction, and audit used by normal layouts. The
+checked-in harness expands only hop `2->3` (368 px rather than 272 px) on the ordinary routing
+fixture and proves byte-for-byte-equivalent normalized nodes, links, handles, dimensions, and solver
+diagnostics under normal, reversed, and deterministic rotated input order. It also proves that the
+same deeply frozen geometry identity reaches the graph, dimensions, and route model. This closes a
+test-harness gap in P8; it does not establish an adaptive rule.
+
+Production activation remains gated off. In particular, the available topology counts do not yet
+provide a bounded, monotone mapping to spacing that constructively accounts for all three distinct
+rejection classes (fixed geometry, transition-corridor bounds, and nonincident-route clearance),
+followed by globally nonoverlapping handles and an acceptable route audit. A diagnostic trial with
+uniform 320 px spacing on `transitionDensityProjection()` did not finish even the unchanged bounded
+production search within two minutes on the investigation host. That is evidence against treating
+"slightly wider" as a safe rule, but is neither a portable timeout contract nor proof that 320 px
+is infeasible. It is deliberately not part of production behavior or a test assertion.
+
+Consequently every hop still selects the baseline 272 px spacing, the exact supported-demand bound
+is unchanged, and input immediately beyond that existing boundary fails through the same bounded
+typed paths rather than starting a geometry retry/search. The preserved evidence is:
+
+| Fixture                         | Hop demand usable as a safe spacing rule | Baseline / selected spacing | Geometry bound                                    | Solver states                                  | Final audit |
+| ------------------------------- | ---------------------------------------- | --------------------------: | ------------------------------------------------- | ---------------------------------------------- | ----------- |
+| `transitionDensityProjection()` | not established                          |    272 / 272 px on all hops | 72 px transition; 28 px usable handle-center span | terminal `no-candidates`; 41 blocked branches  | not reached |
+| `paginationProjection()`        | not established                          |    272 / 272 px on all hops | 72 px transition; 28 px usable handle-center span | terminal `state-limit` at 32,768 handle states | not reached |
+
+The exact per-sweep rejection tuples in the preceding table remain the authoritative per-hop
+horizontal evidence and are now explicitly evaluated with
+`BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY`. No fixture name, ID, wall clock, retry, new tolerance,
+candidate sample, solver budget, or audit exemption is used. A future activation still needs a
+finite topology-demand domain, a deterministic maximum SVG width, complete success for both stress
+fixtures, and parity for baseline fixtures before changing the production default.
+
 This is the authoritative, current list — cross-check against the code before trusting it, since
 skip states and test names can drift. `grep -rn "it\.skip(\|test\.skip(" test/` finds all of them.
 
