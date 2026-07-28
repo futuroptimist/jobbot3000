@@ -222,6 +222,86 @@ describe("lifecycle horizontal geometry", () => {
     expect(Object.keys(graph)).not.toContain("horizontalGeometry");
     expect(Object.keys(dimensions)).not.toContain("horizontalGeometry");
   });
+
+  it("exercises explicit nonuniform geometry through the complete production pipeline", () => {
+    const rankCenters = {
+      ...BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY.rankCenters,
+    };
+    for (let rank = 3; rank <= 6; rank += 1) rankCenters[rank] += 96;
+    const horizontalGeometry = createLifecycleHorizontalGeometry({
+      rankCenters,
+    });
+    const rotate = (values) => {
+      const offset = Math.floor(values.length / 3);
+      return [...values.slice(offset), ...values.slice(0, offset)];
+    };
+    const permutations = [
+      (values) => values,
+      (values) => [...values].reverse(),
+      rotate,
+    ];
+    const signatureFor = (permutation) => {
+      const original = projection();
+      const permuted = {
+        ...original,
+        nodes: permutation(original.nodes),
+        links: permutation(original.links),
+        paths: permutation(original.paths),
+      };
+      const { graph, dimensions } = layoutLifecycleRoutingGraph(
+        permuted,
+        1850,
+        { horizontalGeometry },
+      );
+      const linksByBranch = new Map();
+      for (const link of graph.links) {
+        if (!linksByBranch.has(link.branchId))
+          linksByBranch.set(link.branchId, []);
+        linksByBranch.get(link.branchId).push(link);
+      }
+      const renderedBranches = graph.branches.filter((branch) =>
+        linksByBranch.has(branch.id),
+      );
+      const acceptedHandles = graph.acceptedHandles;
+      expect(acceptedHandles).toBeInstanceOf(Map);
+      expect(
+        renderedBranches.every((branch) => acceptedHandles.has(branch.id)),
+      ).toBe(true);
+      const handles = renderedBranches.map((branch) =>
+        acceptedHandles.get(branch.id),
+      );
+      const model = buildLifecycleRouteModel(graph, dimensions);
+      const audit = auditLifecycleRouteGeometry({ model, handles });
+      expect(graph.horizontalGeometry).toBe(horizontalGeometry);
+      expect(dimensions.horizontalGeometry).toBe(horizontalGeometry);
+      expect(model.horizontalGeometry).toBe(horizontalGeometry);
+      expect(audit.fatalFindings).toEqual([]);
+      return {
+        dimensions: { width: dimensions.width, height: dimensions.height },
+        nodes: graph.nodes
+          .map(({ id, x0, x1, y0, y1 }) => [id, x0, x1, y0, y1])
+          .sort(([left], [right]) => compareLifecycleIds(left, right)),
+        links: graph.links
+          .map(({ id, y0, y1, transitionLaneY }) => [
+            id,
+            y0,
+            y1,
+            transitionLaneY,
+          ])
+          .sort(([left], [right]) => compareLifecycleIds(left, right)),
+        handles: handles
+          .map(({ branchId, x, y }) => [branchId, x, y])
+          .sort(([left], [right]) => compareLifecycleIds(left, right)),
+        solver: graph.transitionLaneSolverStats,
+      };
+    };
+
+    expect(horizontalGeometry.hops["2->3"].rankCenterSpacing).toBe(368);
+    expect(horizontalGeometry.hops["3->4"].rankCenterSpacing).toBe(272);
+    const signatures = permutations.map(signatureFor);
+    expect(signatures[1]).toEqual(signatures[0]);
+    expect(signatures[2]).toEqual(signatures[0]);
+  });
 });
 const deepFreeze = (value) => {
   if (!value || typeof value !== "object" || Object.isFrozen(value))
@@ -1163,7 +1243,9 @@ describe("transition lane solver", () => {
     const start = Date.now();
     let thrown;
     try {
-      layoutLifecycleRoutingGraph(transitionDensityProjection(), 1850);
+      layoutLifecycleRoutingGraph(transitionDensityProjection(), 1850, {
+        horizontalGeometry: BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
+      });
     } catch (error) {
       thrown = error;
     }
@@ -1786,7 +1868,11 @@ describe("test-only lifecycle layout diagnostics", () => {
         projectionFactory(),
         permuteProjection(projectionFactory, (values) => [...values].reverse()),
         permuteProjection(projectionFactory, rotate),
-      ].map((p) => testOnlyDiagnoseLifecycleLayoutAttempt(p, 1850));
+      ].map((p) =>
+        testOnlyDiagnoseLifecycleLayoutAttempt(p, 1850, {
+          horizontalGeometry: BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
+        }),
+      );
       expect(JSON.stringify(diagnostics[1])).toBe(
         JSON.stringify(diagnostics[0]),
       );
@@ -1817,7 +1903,9 @@ describe("test-only lifecycle layout diagnostics", () => {
 
     let terminalError;
     try {
-      layoutLifecycleRoutingGraph(paginationProjection(), 1850);
+      layoutLifecycleRoutingGraph(paginationProjection(), 1850, {
+        horizontalGeometry: BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
+      });
     } catch (error) {
       terminalError = error;
     }
