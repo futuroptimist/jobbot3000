@@ -1163,3 +1163,45 @@ that derives routing-node lane order _jointly_ across all ranks a branch's geome
 scoped more narrowly, or a larger budget. This checked-in test's fixed evidence (14 blocked branch
 IDs, 5×55=275 routing-only nodes, ~59.251px feasible lane spacing) is the baseline that
 rearchitecture work should aim to eliminate.
+
+## P9 adaptive horizontal geometry activation gate (not activated)
+
+P9 keeps production on `BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY`. The P8 seam accepts an explicit,
+deeply immutable nonuniform geometry and threads that single identity through materialization,
+handle placement, route construction, renderer hit boxes, dimensions, and audit. That seam is an
+adequate test harness, but the checked-in evidence does not establish a pure bounded
+projection-demand function that maps either remaining fan-in topology to a proven feasible spacing
+without changing another protected solver or audit input.
+
+The durable characterization now supplies the baseline geometry explicitly. It preserves the two
+order-independent signatures rather than allowing a future production default to silently rewrite
+the control group:
+
+| fixture                         | blocked | primary attempts `(fixed, corridor, route)` | fallback attempts `(fixed, corridor, route)` | terminal production result            |
+| ------------------------------- | ------: | ------------------------------------------- | -------------------------------------------- | ------------------------------------- |
+| `transitionDensityProjection()` |      41 | 123 `(0, 0, 123)`                           | 328 `(9, 237, 82)`                           | first candidate `no-candidates`       |
+| `paginationProjection()`        |      48 | 348 `(0, 0, 348)`                           | 928 `(15, 681, 232)`                         | `state-limit` at 32,768 handle states |
+
+The per-hop control is therefore deliberately uniform; “not established” means no topology-only
+demand metric has been shown to predict complete-pipeline feasibility, so selecting an expansion
+would be unjustified rather than adaptive:
+
+| fixture                         | hops                | demonstrated demand | baseline / selected spacing | geometry bound | solver / audit outcome                                   |
+| ------------------------------- | ------------------- | ------------------- | --------------------------- | -------------- | -------------------------------------------------------- |
+| `transitionDensityProjection()` | `0→1` through `5→6` | not established     | `272 / 272px`               | `1850px`       | first candidate `no-candidates`; final audit not reached |
+| `paginationProjection()`        | `0→1` through `5→6` | not established     | `272 / 272px`               | `1850px`       | handle `state-limit` at 32,768; final audit not reached  |
+
+Normal, reversed, and deterministically rotated input arrays produce byte-identical diagnostic
+serialization for both controls. Primary and fallback rejection counters remain separate, so
+fallback-only corridor samples are not treated as causal evidence for primary failure.
+
+No supported adaptive-demand domain or expansion/width ceiling is declared: the only supported
+production demand domain remains the existing baseline domain, with all six hops fixed at 272px and
+the existing 1850px minimum SVG width. Inputs beyond what that geometry and the unchanged bounded
+solver can accept fail through the existing deterministic `no-candidates` or `state-limit` path;
+there is no retry, random search, wall-clock branch, fixture recognition, partial activation, or
+new exemption. A future activation must first demonstrate both stress fixtures through the complete
+two-pass production pipeline and audit, then define a finite topology-derived threshold and width
+bound while retaining byte-identical output for every non-expanded fixture. The current evidence
+therefore supports the gated negative result only; it does not prove that horizontal expansion can
+never be safe.
