@@ -85,7 +85,12 @@ describe('web server integration with CLI', () => {
     try {
       const server = await startServer({
         commandAdapterOptions: {
-          env: { ...process.env, JOBBOT_DATA_DIR: sandboxDataDir },
+          env: {
+            ...process.env,
+            JOBBOT_DATA_DIR: sandboxDataDir,
+            NODE_OPTIONS: '--no-warnings',
+          },
+          allowedEnvVars: ['NODE_OPTIONS'],
         },
       });
 
