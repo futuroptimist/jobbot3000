@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 
-import Database from 'better-sqlite3';
+import { loadBetterSqlite3 } from '../src/services/loadSqlite.js';
 import { z } from 'zod';
 
 import { auditEntrySchema, AuditLog } from '../src/services/audit.js';
@@ -55,6 +55,7 @@ const dataDir = process.env.JOBBOT_DATA_DIR || path.resolve('data');
 await fs.mkdir(dataDir, { recursive: true });
 const dbPath = path.join(dataDir, 'opportunities.db');
 
+const Database = loadBetterSqlite3({ required: true });
 const repo = new OpportunitiesRepo({ dataDir });
 const audit = new AuditLog({ dataDir });
 const db = new Database(dbPath);

@@ -5,6 +5,8 @@ import { createRequire } from 'node:module';
 
 import { z } from 'zod';
 
+import { isNativeSqliteFailure } from './loadSqlite.js';
+
 const require = createRequire(import.meta.url);
 
 let BetterSqlite3;
@@ -98,19 +100,34 @@ export class AuditLog {
     this.filename = options.filename ?? path.join(this.dataDir, 'opportunities.db');
     this.migrationsDir = options.migrationsDir ?? path.resolve('db/migrations');
     if (BetterSqlite3) {
-      this.#initSqlite();
-    } else {
-      this.#initMemory();
+      try {
+        this.#initSqlite();
+        return;
+      } catch (error) {
+        // A native module may load and still fail when opened after a
+        // Node.js upgrade. Only binding failures may use the memory fallback;
+        // persistence and migration errors must be visible.
+        if (!isNativeSqliteFailure(error)) throw error;
+        betterSqlite3Error = error;
+        this.sqlite = null;
+        this.db = null;
+      }
     }
+    this.#initMemory();
   }
 
   #initSqlite() {
     fs.mkdirSync(this.dataDir, { recursive: true });
     const sqlite = new BetterSqlite3(this.filename);
-    sqlite.pragma('foreign_keys = ON');
-    applyMigrations(sqlite, this.migrationsDir);
-    this.sqlite = sqlite;
-    this.db = drizzleBetterSqlite3(sqlite);
+    try {
+      sqlite.pragma('foreign_keys = ON');
+      applyMigrations(sqlite, this.migrationsDir);
+      this.sqlite = sqlite;
+      this.db = drizzleBetterSqlite3(sqlite);
+    } catch (error) {
+      sqlite.close();
+      throw error;
+    }
   }
 
   #initMemory() {
