@@ -8,6 +8,10 @@ import { beforeEach, afterEach, describe, expect, it } from 'vitest';
 
 import { OpportunitiesRepo } from '../src/services/opportunitiesRepo.js';
 import { AuditLog } from '../src/services/audit.js';
+import {
+  hasUsableBetterSqlite3,
+  loadBetterSqlite3,
+} from '../src/services/loadSqlite.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -31,7 +35,9 @@ describe('opportunities backup and restore scripts', () => {
     }
   });
 
-  it('exports and imports SQLite opportunities data', async () => {
+  it.skipIf(!hasUsableBetterSqlite3())(
+    'exports and imports SQLite opportunities data',
+    async () => {
     const repo = new OpportunitiesRepo({ dataDir: sourceDir });
     const audit = new AuditLog({ dataDir: sourceDir });
 
@@ -59,8 +65,8 @@ describe('opportunities backup and restore scripts', () => {
       payload: { source: 'email' },
     });
 
-    const { default: BetterSqlite3 } = await import('better-sqlite3');
-    const db = new BetterSqlite3(path.join(sourceDir, 'opportunities.db'));
+    const Database = loadBetterSqlite3({ required: true });
+    const db = new Database(path.join(sourceDir, 'opportunities.db'));
     db.prepare(
       [
         'INSERT OR IGNORE INTO contacts',
@@ -128,7 +134,7 @@ describe('opportunities backup and restore scripts', () => {
       payload: { source: 'email' },
     });
 
-    const dbRestored = new BetterSqlite3(path.join(targetDir, 'opportunities.db'));
+    const dbRestored = new Database(path.join(targetDir, 'opportunities.db'));
     const contacts = dbRestored
       .prepare('SELECT name, email, phone FROM contacts ORDER BY name')
       .all();

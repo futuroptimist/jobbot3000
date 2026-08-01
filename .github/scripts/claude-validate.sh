@@ -53,7 +53,7 @@ run_in_network_sandbox() {
       node_mount_args=(--ro-bind-try "$node_prefix" "$node_prefix")
       ;;
   esac
-  script_path="$(realpath -e -- "$0")"
+  script_path="$(realpath "$0")"
   sandbox_workspace="/workspace"
   sandbox_wrapper="/usr/local/bin/jobbot-claude-validate"
   # Invariant: PR-controlled validation must never receive the host root or
@@ -186,7 +186,7 @@ case "$op" in
       *) echo "node-check accepts only JavaScript source files." >&2; exit 64 ;;
     esac
     [ -f "$candidate" ] || { echo "Path is not a regular file." >&2; exit 66; }
-    resolved="$(realpath -e -- "$candidate")"
+    resolved="$(realpath "$candidate")"
     case "$resolved" in
       "$workspace"/*) ;;
       *) echo "Path escapes GITHUB_WORKSPACE." >&2; exit 66 ;;

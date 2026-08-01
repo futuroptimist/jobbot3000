@@ -8,6 +8,7 @@ import {
 } from "../src/web/tracker/lifecycleDiagram.js";
 import * as lifecycleLayout from "../src/web/tracker/lifecycleDiagramLayout.js";
 import { buildLifecycleDisplayBranches } from "../src/web/tracker/lifecycleDiagramLayout.js";
+import { createLifecycleHorizontalGeometry } from "../src/web/tracker/lifecycleDiagramLayout.js";
 import {
   buildLifecycleTimeline,
   LIFECYCLE_DIAGRAM_TAXONOMY,
@@ -123,9 +124,14 @@ function setup() {
   });
   return document.querySelector("[data-lifecycle-diagram]");
 }
-function render(b, selectedBucketId = "current", onBucketChange = vi.fn()) {
+function render(
+  b,
+  selectedBucketId = "current",
+  onBucketChange = vi.fn(),
+  options = {},
+) {
   const root = setup();
-  const view = createLifecycleDiagramView(root, { onBucketChange });
+  const view = createLifecycleDiagramView(root, { onBucketChange, ...options });
   const timeline = buildLifecycleTimeline(b);
   const snapshot = projectLifecycleAt(b, selectedBucketId);
   view.update({
@@ -210,6 +216,32 @@ describe("calculateLifecycleDiagramLayout", () => {
 });
 
 describe("lifecycle diagram view", () => {
+  it("renders node hit boxes from the shared non-baseline geometry", () => {
+    const horizontalGeometry = createLifecycleHorizontalGeometry({
+      handleRadius: 30,
+    });
+    const { root } = render(
+      bundle([app("a")], [ev("o", "a", "application_submitted", "2026-01-01")]),
+      "current",
+      vi.fn(),
+      { horizontalGeometry },
+    );
+    const visible = root.querySelector(
+      "[data-diagram-node='origin:application_submitted'] rect:not([data-diagram-node-hit])",
+    );
+    const hit = root.querySelector(
+      "[data-diagram-node-hit='origin:application_submitted']",
+    );
+    const visibleBox = rectBox(visible);
+    const hitBox = rectBox(hit);
+
+    expect(hitBox.width).toBe(Math.max(60, visibleBox.width));
+    expect(hitBox.height).toBe(Math.max(60, visibleBox.height));
+    expect(hitBox.x + hitBox.width / 2).toBe(
+      visibleBox.x + visibleBox.width / 2,
+    );
+  });
+
   beforeEach(() => vi.useRealTimers());
   it("parses and validates PNG dimensions for visual artifacts", async () => {
     const { readPngDimensions } = await import(

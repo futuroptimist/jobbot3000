@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -303,7 +304,7 @@ exit 0
     );
     expect(bindTuples).toContainEqual({
       op: "--bind",
-      source: dir,
+      source: realpathSync(dir),
       target: "/workspace",
     });
     expect(joined).toContain("--tmpfs\n/run");
@@ -324,7 +325,7 @@ exit 0
         tuple.target === wrapperBind.target;
       const isExpectedWorkspaceBind =
         tuple.op === "--bind" &&
-        tuple.source === dir &&
+        tuple.source === realpathSync(dir) &&
         tuple.target === "/workspace";
       const paths = [tuple.source, tuple.target];
       expect(paths).not.toContain("/run");
