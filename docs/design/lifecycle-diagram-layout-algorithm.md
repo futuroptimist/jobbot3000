@@ -472,14 +472,14 @@ regression"` construction) produces the same _count_ of real-node precedence edg
   **different relative order** for at least one pair — direct proof the ungated construction reorders
   real-node docks the shipped fix does not.
 
-And by running the actual solver end to end: the ungated joint order still deterministically exhausts
-the handle-state budget on `tracker-lifecycle-diagram-v2.json` (32,768/32,768, `reason: "state-limit"`,
-`phase: "handle"` — unchanged, still checked in as a regression), while production's own default call
-(no options, exercising the real two-pass discovery/final pipeline) succeeds — unchanged from before
-this fix at exactly 50 accepted route crossings and 500 handle states, i.e. **this fix doesn't need
-to, and doesn't, change the observable outcome for either already-passing real fixture; it only
-replaces an unsafe, reverted construction with a safe, shipped one that generalizes the same
-mechanism to milestone-bearing graphs wherever it's safe to.**
+And by running the actual solver end to end: the ungated investigation order has an outcome-neutral
+bound on `tracker-lifecycle-diagram-v2.json`: it may either produce a well-formed result within the
+pinned 32,768-state handle budget or terminate with the structured handle state-limit error at that
+boundary. It is not required to keep succeeding or exhausting the budget forever. Production's own
+default call (no options, exercising the real two-pass discovery/final pipeline) succeeds —
+unchanged from before this fix at exactly 50 accepted route crossings and 500 handle states. **The
+production contract remains unchanged: this fix generalizes the same safe ordering mechanism to
+milestone-bearing graphs wherever it is safe to use.**
 
 A second, test-only diagnostic — `transitionLaneSolverStats.testOnlyIndegreeBlockedDeadEnds`,
 incremented at the exact point `solveFromComponent`'s `search()` returns due to an empty `ready` list
@@ -487,12 +487,12 @@ while at least one not-yet-placed branch in the component still has nonzero `com
 added per the doc's own recommendation to instrument `capacityOkForRemainder`'s blind spot (it
 reasons only about geometric deadlines, never precedence, so a precedence-caused deadlock isn't
 detected until the `ready` list is empty). Across every fixture tested here, including the ungated
-joint order's own failing runs, this counter stayed at 0: the destabilization does not manifest as a
+joint-order investigation, this counter stayed at 0: the destabilization does not manifest as a
 literal precedence-DAG deadlock inside a single candidate's lane-assignment DFS. Instead, it
-manifests one phase downstream — the ungated joint order still finds _some_ lane-consistent
-ordering, but produces geometry that is measurably harder (or, for the dense fixture, impossible
-within budget) for the separate handle-placement search to satisfy. Recorded here as an honest
-correction to the doc's own prior instrumentation recommendation: the precedence-edge identity check
+manifests one phase downstream — the ungated joint order finds a lane-consistent ordering, but
+produces geometry that remains measurably harder for the separate handle-placement search to
+satisfy. Recorded here as an honest correction to the doc's own prior instrumentation recommendation:
+the precedence-edge identity check
 above, not the indegree-dead-end counter, is what actually discriminates the safe fix from the
 unsafe construction for these fixtures.
 
