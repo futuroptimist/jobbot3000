@@ -88,9 +88,7 @@ describe('web server integration with CLI', () => {
           env: {
             ...process.env,
             JOBBOT_DATA_DIR: sandboxDataDir,
-            NODE_OPTIONS: [process.env.NODE_OPTIONS, '--no-warnings']
-              .filter(Boolean)
-              .join(' '),
+            NODE_OPTIONS: '--no-warnings',
           },
           allowedEnvVars: ['NODE_OPTIONS'],
         },
