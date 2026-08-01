@@ -3,11 +3,12 @@
 import path from 'node:path';
 import process from 'node:process';
 
-import Database from 'better-sqlite3';
+import { loadBetterSqlite3 } from '../src/services/loadSqlite.js';
 
 const dataDir = process.env.JOBBOT_DATA_DIR || path.resolve('data');
 const dbPath = path.join(dataDir, 'opportunities.db');
 
+const Database = loadBetterSqlite3({ required: true });
 const db = new Database(dbPath, { readonly: true });
 try {
   const tables = [
