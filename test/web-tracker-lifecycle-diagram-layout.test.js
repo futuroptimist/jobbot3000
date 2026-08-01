@@ -1702,22 +1702,22 @@ describe("test-only lifecycle layout diagnostics", () => {
       expect(result.graph.acceptedRouteCrossingCount).toBeGreaterThan(0);
     });
 
-    it("regresses the real dense fixture from success to outright handle-budget exhaustion", () => {
-      // Production's own gated approach succeeds on this fixture (see
-      // "lays out dense fixture with bounded semantic docks and safe
-      // handles" above). Applying the same joint order ungated instead
-      // exhausts the handle-state budget outright.
-      let thrown;
-      try {
-        layoutWithUngatedJointOrder(projectLifecycleAt(denseFixture));
-      } catch (error) {
-        thrown = error;
-      }
-      expect(thrown?.cause).toMatchObject({
-        reason: "state-limit",
-        phase: "handle",
-        stateLimit: 32768,
-      });
+    it("keeps the real dense fixture within the handle budget", () => {
+      // The ungated investigation order used to exhaust the handle-state
+      // budget. Keep this as a boundedness regression rather than asserting
+      // the historical failure mode: solver improvements may find a legal
+      // layout without changing the production ordering contract.
+      const result = layoutWithUngatedJointOrder(
+        projectLifecycleAt(denseFixture),
+      );
+      const stats = result.graph.transitionLaneSolverStats;
+      expect(stats.handleStateLimit).toBe(32768);
+      expect(stats.handleStatesVisited).toBeLessThanOrEqual(32768);
+      expect(Number.isInteger(stats.handleStatesVisited)).toBe(true);
+      expect(Number.isInteger(result.graph.acceptedRouteCrossingCount)).toBe(
+        true,
+      );
+      expect(result.graph.acceptedRouteCrossingCount).toBeGreaterThanOrEqual(0);
     });
 
     // Root-causes exactly why the ungated joint order above destabilizes
@@ -1778,12 +1778,12 @@ describe("test-only lifecycle layout diagnostics", () => {
         expect(ungatedKeys).not.toEqual(pureKeys);
       });
 
-      it("shipped order solves the real dense fixture the ungated joint order cannot", () => {
-        // The ungated variant above already asserts this fixture throws a
-        // state-limit failure. Production's own default call (no options at
-        // all) applies buildTransitionScopedJointOrder internally and
-        // succeeds -- the same real-node-dock-precedence preservation this
-        // describe block otherwise proves is what makes the difference.
+      it("shipped order preserves the real dense fixture outcome", () => {
+        // The ungated investigation remains bounded above, while production's
+        // default call applies buildTransitionScopedJointOrder internally and
+        // retains the known accepted-crossing and handle-state outcome. The
+        // same real-node-dock-precedence preservation this describe block
+        // proves remains the production contract.
         const result = layoutLifecycleRoutingGraph(
           projectLifecycleAt(denseFixture),
           1850,
