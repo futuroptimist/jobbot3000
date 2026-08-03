@@ -153,6 +153,33 @@ export function createLifecycleDiagramView(root, options = {}) {
   let applicationPage = 0;
   let displayBranches = [];
   let lastLayoutWidth = null;
+  // Keyed-diff state for renderSvg(): svg/branchG/handleG are created once
+  // and reused across renders instead of being torn down every call. Node
+  // ids (`origin:x`, `milestone:x`, `endpoint:x`) and branch ids
+  // (`branch:${semanticLinkId}:endpoint:${endpointId}`) are pure functions
+  // of taxonomy vocabulary (see docs/design/application-lifecycle-diagram.md),
+  // so they're stable/safe diff keys both within one projection's
+  // re-renders and across different bucket projections of the same bundle.
+  let diagramSvg = null;
+  let branchGroupEl = null;
+  let handleGroupEl = null;
+  const nodeElementsByKey = new Map();
+  const nodeSignatureByKey = new Map();
+  const currentNodeByKey = new Map();
+  const branchElementsByKey = new Map();
+  const branchSignatureByKey = new Map();
+  const currentBranchByKey = new Map();
+  const resetSvgDiffState = () => {
+    diagramSvg = null;
+    branchGroupEl = null;
+    handleGroupEl = null;
+    nodeElementsByKey.clear();
+    nodeSignatureByKey.clear();
+    currentNodeByKey.clear();
+    branchElementsByKey.clear();
+    branchSignatureByKey.clear();
+    currentBranchByKey.clear();
+  };
   const ids = {
     title: "lifecycle-diagram-title",
     desc: "lifecycle-diagram-desc",
@@ -338,6 +365,42 @@ export function createLifecycleDiagramView(root, options = {}) {
         .find((button) => button.dataset.diagramSelectId === feature.id)
         ?.focus();
   };
+  const branchLabelFor = (branch) => {
+    const from = TAXONOMY.get(branch.source)?.label ?? branch.source;
+    const to = TAXONOMY.get(branch.target)?.label ?? branch.target;
+    const outcome =
+      LIFECYCLE_DIAGRAM_TAXONOMY.endpoints.find(
+        (endpoint) => endpoint.id === branch.endpointId,
+      )?.label ?? branch.endpointId;
+    return `${from} to ${to}, outcome ${outcome}: ${branch.value}`;
+  };
+  const nodeLabelFor = (node) => `${node.label}: ${node.total}`;
+  // Click/touch/pointer listeners on a reused SVG element are attached
+  // exactly once, at element creation — never re-attached on reuse. To
+  // avoid them going stale (layoutLifecycleRoutingGraph() isn't memoized by
+  // projection identity, so a node/branch can have identical rendered
+  // geometry across two different buckets while its `applicationIds`
+  // membership differs), listeners look up the *current* node/branch by key
+  // at click time via these maps rather than closing over the object
+  // captured when the element was built.
+  const selectBranchByKey = (branchId) => {
+    const branch = currentBranchByKey.get(branchId);
+    if (branch)
+      selectFeature({
+        id: branch.id,
+        label: branchLabelFor(branch),
+        applicationIds: branch.applicationIds,
+      });
+  };
+  const selectNodeByKey = (nodeId) => {
+    const node = currentNodeByKey.get(nodeId);
+    if (node)
+      selectFeature({
+        id: node.id,
+        label: nodeLabelFor(node),
+        applicationIds: node.applicationIds,
+      });
+  };
   const renderDetails = () => {
     const total = projection.includedApplications || 0;
     const warningCounts = projection.warningCounts ?? {};
@@ -441,22 +504,63 @@ export function createLifecycleDiagramView(root, options = {}) {
       );
     }
   };
-  const renderSvg = () => {
+  const branchSignature = (branch, pathData, widthPx, handle) => ({
+    pathData,
+    widthPx,
+    color: branch.color,
+    value: branch.value,
+    handleX: handle?.x ?? null,
+    handleY: handle?.y ?? null,
+    handleR: handle?.radius ?? null,
+  });
+  const nodeSignature = (node) => ({
+    x0: node.x0,
+    y0: node.y0,
+    x1: node.x1,
+    y1: node.y1,
+    label: node.label,
+    total: node.total,
+  });
+  const sameSignature = (a, b) => {
+    if (!a || !b) return false;
+    for (const key of Object.keys(a))
+      if (!Object.is(a[key], b[key])) return false;
+    return true;
+  };
+  // `container.append(existingChild)` unconditionally removes and
+  // reinserts the child even when it's already in the correct position --
+  // that's a real DOM mutation, not a no-op, so doing it for every keyed
+  // element on every render would silently defeat the "reuse untouched"
+  // half of the diff contract above. This walks the container's current
+  // children alongside the desired order and only calls insertBefore for
+  // an element that's actually out of place; elements already positioned
+  // correctly are left completely untouched (zero DOM writes, zero
+  // mutation records). `startAfter` lets a reconciled range start partway
+  // through a container that also holds other, non-reconciled children
+  // (diagramSvg's title/desc/branchGroupEl/handleGroupEl before its node
+  // groups).
+  const reconcileChildOrder = (container, desiredElements, startAfter) => {
+    let referenceNode = startAfter
+      ? startAfter.nextSibling
+      : container.firstChild;
+    for (const element of desiredElements) {
+      if (referenceNode === element) referenceNode = referenceNode.nextSibling;
+      else container.insertBefore(element, referenceNode);
+    }
+  };
+  const showDiagramFallback = (message) => {
     scroll.textContent = "";
+    resetSvgDiffState();
+    scroll.append(el("p", { className: "muted", textContent: message }));
+  };
+  const renderSvg = () => {
     renderLegend();
     if (!projection.totalApplications) {
-      scroll.append(
-        el("p", { className: "muted", textContent: "No lifecycle data yet." }),
-      );
+      showDiagramFallback("No lifecycle data yet.");
       return;
     }
     if (!projection.nodes.length) {
-      scroll.append(
-        el("p", {
-          className: "muted",
-          textContent: "No diagram nodes are available for this point.",
-        }),
-      );
+      showDiagramFallback("No diagram nodes are available for this point.");
       return;
     }
     let graph;
@@ -470,12 +574,7 @@ export function createLifecycleDiagramView(root, options = {}) {
           : undefined,
       ));
     } catch {
-      scroll.append(
-        el("p", {
-          className: "muted",
-          textContent: "Unable to lay out lifecycle diagram.",
-        }),
-      );
+      showDiagramFallback("Unable to lay out lifecycle diagram.");
       return;
     }
     const { width, height } = dimensions;
@@ -486,22 +585,6 @@ export function createLifecycleDiagramView(root, options = {}) {
       finiteNode(link.target) &&
       Number.isFinite(link.width ?? 0) &&
       link.target.rank === link.source.rank + 1;
-    const svg = svgEl("svg", {
-      role: "img",
-      "aria-labelledby": `${ids.title} ${ids.desc}`,
-      viewBox: `0 0 ${width} ${height}`,
-      width,
-      height,
-      "data-reduced-motion": reduceMotion?.matches ? "true" : "false",
-    });
-    svg.append(svgEl("title", { id: ids.title }));
-    svg.querySelector("title").textContent = "Lifecycle Sankey diagram";
-    svg.append(svgEl("desc", { id: ids.desc }));
-    svg.querySelector("desc").textContent =
-      "Application counts flowing through protected adjacent-rank lifecycle branches. " +
-      "Equivalent tables follow.";
-    const handleG = svgEl("g", { fill: "none" });
-    const branchG = svgEl("g", { fill: "none" });
     const visibleNodes = graph.nodes.filter(
       (n) => !n.routing && n.total > 0 && finiteNode(n),
     );
@@ -543,14 +626,44 @@ export function createLifecycleDiagramView(root, options = {}) {
         );
       }
     } catch {
-      scroll.append(
-        el("p", {
-          className: "muted",
-          textContent: "Unable to lay out lifecycle diagram.",
-        }),
-      );
+      showDiagramFallback("Unable to lay out lifecycle diagram.");
       return;
     }
+
+    // svg/branchGroupEl/handleGroupEl are created once and reused across
+    // renders (a scrub tick, click, or resize no longer tears down and
+    // rebuilds the whole SVG). branchGroupEl must stay appended before
+    // handleGroupEl -- an existing test asserts the visible-link group's
+    // DOM index is less than the link-hit group's.
+    if (!diagramSvg) {
+      scroll.textContent = "";
+      diagramSvg = svgEl("svg", {
+        role: "img",
+        "aria-labelledby": `${ids.title} ${ids.desc}`,
+      });
+      diagramSvg.append(svgEl("title", { id: ids.title }));
+      diagramSvg.querySelector("title").textContent =
+        "Lifecycle Sankey diagram";
+      diagramSvg.append(svgEl("desc", { id: ids.desc }));
+      diagramSvg.querySelector("desc").textContent =
+        "Application counts flowing through protected adjacent-rank lifecycle branches. " +
+        "Equivalent tables follow.";
+      branchGroupEl = svgEl("g", { fill: "none" });
+      handleGroupEl = svgEl("g", { fill: "none" });
+      diagramSvg.append(branchGroupEl, handleGroupEl);
+      scroll.append(diagramSvg);
+    }
+    diagramSvg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    diagramSvg.setAttribute("width", width);
+    diagramSvg.setAttribute("height", height);
+    diagramSvg.setAttribute(
+      "data-reduced-motion",
+      reduceMotion?.matches ? "true" : "false",
+    );
+
+    const processedBranchKeys = new Set();
+    const orderedBranchGroups = [];
+    const orderedHandleCircles = [];
     for (const branch of branches) {
       const segments = segmentsByBranch
         .get(branch.id)
@@ -560,209 +673,296 @@ export function createLifecycleDiagramView(root, options = {}) {
         dimensions.horizontalGeometry,
       );
       if (!pathData || /NaN|Infinity/u.test(pathData)) continue;
-      const from = TAXONOMY.get(branch.source)?.label ?? branch.source;
-      const to = TAXONOMY.get(branch.target)?.label ?? branch.target;
-      const outcome =
-        LIFECYCLE_DIAGRAM_TAXONOMY.endpoints.find(
-          (endpoint) => endpoint.id === branch.endpointId,
-        )?.label ?? branch.endpointId;
-      const branchLabel = `${from} to ${to}, outcome ${outcome}: ${branch.value}`;
+      processedBranchKeys.add(branch.id);
+      currentBranchByKey.set(branch.id, branch);
       const selected = selectedFeature?.id === branch.id;
       const widthPx = Math.max(
         3,
         ...segments.map((segment) => renderedBranchStrokeWidth(segment.width)),
       );
-      const selectBranch = () =>
-        selectFeature({
-          id: branch.id,
-          label: branchLabel,
-          applicationIds: branch.applicationIds,
+      const handle = handles.get(branch.id);
+      const signature = branchSignature(branch, pathData, widthPx, handle);
+      const stored = branchElementsByKey.get(branch.id);
+      const previousSignature = branchSignatureByKey.get(branch.id);
+      let group;
+      let handleCircle;
+
+      if (stored && sameSignature(previousSignature, signature)) {
+        group = stored.group;
+        handleCircle = stored.handleCircle;
+        if (stored.selected !== selected) {
+          group.setAttribute("data-selected", selected ? "true" : "false");
+          stored.path.setAttribute(
+            "data-selected",
+            selected ? "true" : "false",
+          );
+          stored.path.setAttribute(
+            "stroke-opacity",
+            selected ? "1" : String(BRANCH_STROKE_OPACITY),
+          );
+          if (selected && !stored.hasHalo) {
+            const halo = svgEl("path", {
+              d: pathData,
+              stroke: "#F8FAFC",
+              "stroke-width": widthPx + 12,
+              "pointer-events": "none",
+              "aria-hidden": "true",
+              "data-diagram-branch-halo": branch.id,
+            });
+            group.insertBefore(halo, group.firstChild);
+            stored.hasHalo = true;
+          } else if (!selected && stored.hasHalo) {
+            group.querySelector("[data-diagram-branch-halo]")?.remove();
+            stored.hasHalo = false;
+          }
+          stored.selected = selected;
+        }
+      } else {
+        if (stored) {
+          stored.group.remove();
+          stored.handleCircle?.remove();
+        }
+        const branchLabel = branchLabelFor(branch);
+        group = svgEl("g", {
+          "data-diagram-branch-group": branch.id,
+          "data-selected": selected ? "true" : "false",
         });
-      const group = svgEl("g", {
-        "data-diagram-branch-group": branch.id,
-        "data-selected": selected ? "true" : "false",
-      });
-      if (selected)
+        let hasHalo = false;
+        if (selected) {
+          group.append(
+            svgEl("path", {
+              d: pathData,
+              stroke: "#F8FAFC",
+              "stroke-width": widthPx + 12,
+              "pointer-events": "none",
+              "aria-hidden": "true",
+              "data-diagram-branch-halo": branch.id,
+            }),
+          );
+          hasHalo = true;
+        }
         group.append(
           svgEl("path", {
             d: pathData,
-            stroke: "#F8FAFC",
-            "stroke-width": widthPx + 12,
+            stroke: "#020617",
+            "stroke-width": widthPx + 6,
             "pointer-events": "none",
             "aria-hidden": "true",
-            "data-diagram-branch-halo": branch.id,
+            "data-diagram-branch-separator": branch.id,
           }),
         );
-      group.append(
-        svgEl("path", {
+        const path = svgEl("path", {
           d: pathData,
-          stroke: "#020617",
-          "stroke-width": widthPx + 6,
-          "pointer-events": "none",
-          "aria-hidden": "true",
-          "data-diagram-branch-separator": branch.id,
-        }),
-      );
-      const path = svgEl("path", {
-        d: pathData,
-        stroke: branch.color,
-        "stroke-width": widthPx,
-        "stroke-opacity": selected ? "1" : String(BRANCH_STROKE_OPACITY),
-        "data-diagram-link": branch.id,
-        "data-diagram-branch": branch.id,
-        "data-semantic-link-id": branch.semanticLinkId,
-        "data-endpoint-id": branch.endpointId,
-        "data-source-node-id": branch.source,
-        "data-target-node-id": branch.target,
-        "data-selected": selected ? "true" : "false",
-        "data-segment-ranks": segments
-          .map((segment) => `${segment.source.rank}-${segment.target.rank}`)
-          .join(","),
-      });
-      path.append(svgEl("title"));
-      path.querySelector("title").textContent = branchLabel;
-      path.addEventListener("click", (event) => {
-        event.stopPropagation();
-        selectBranch();
-      });
-      path.addEventListener("touchend", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        selectBranch();
-      });
-      group.append(path);
-      const handle = handles.get(branch.id);
-      if (handle) {
-        const circle = svgEl("circle", {
-          cx: handle.x,
-          cy: handle.y,
-          r: handle.radius,
-          fill: "transparent",
-          "pointer-events": "all",
-          "data-diagram-link-hit": branch.id,
-          "data-diagram-branch-handle": branch.id,
-          "aria-hidden": "true",
-        });
-        circle.addEventListener("click", (event) => {
-          event.stopPropagation();
-          selectBranch();
-        });
-        circle.addEventListener("touchend", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          selectBranch();
-        });
-        circle.addEventListener("pointerup", (event) => {
-          event.stopPropagation();
-          selectBranch();
-        });
-        handleG.append(circle);
-      }
-      branchG.append(group);
-    }
-    svg.append(branchG);
-    svg.append(handleG);
-    try {
-      for (const node of visibleNodes) {
-        const nodeLabel = `${node.label}: ${node.total}`;
-        const selected = selectedFeature?.id === node.id;
-        const g = svgEl("g", {
-          "data-diagram-node": node.id,
+          stroke: branch.color,
+          "stroke-width": widthPx,
+          "stroke-opacity": selected ? "1" : String(BRANCH_STROKE_OPACITY),
+          "data-diagram-link": branch.id,
+          "data-diagram-branch": branch.id,
+          "data-semantic-link-id": branch.semanticLinkId,
+          "data-endpoint-id": branch.endpointId,
+          "data-source-node-id": branch.source,
+          "data-target-node-id": branch.target,
           "data-selected": selected ? "true" : "false",
+          "data-segment-ranks": segments
+            .map((segment) => `${segment.source.rank}-${segment.target.rank}`)
+            .join(","),
         });
-        const rect = svgEl("rect", {
-          x: node.x0,
-          y: node.y0,
-          width: Math.max(8, node.x1 - node.x0),
-          height: Math.max(8, node.y1 - node.y0),
-          rx: 4,
-          fill: node.id.startsWith("endpoint:")
-            ? endpointColor(node.id.split(":").at(-1))
-            : "#64748b",
-          stroke: selected ? "#F8FAFC" : "#e2e8f0",
-          "stroke-width": selected ? "4" : "1",
-        });
-        g.append(svgEl("title"));
-        g.querySelector("title").textContent = nodeLabel;
-        const selectNode = () =>
-          selectFeature({
-            id: node.id,
-            label: nodeLabel,
-            applicationIds: node.applicationIds,
-          });
-        const hitBox = rendererHitBoxForNode(
-          node,
-          dimensions.horizontalGeometry,
-        );
-        const hitRect = svgEl("rect", {
-          x: hitBox.x,
-          y: hitBox.y,
-          width: hitBox.width,
-          height: hitBox.height,
-          fill: "transparent",
-          "pointer-events": "all",
-          "aria-hidden": "true",
-          "data-diagram-node-hit": node.id,
-        });
-        hitRect.addEventListener("click", (event) => {
+        path.append(svgEl("title"));
+        path.querySelector("title").textContent = branchLabel;
+        path.addEventListener("click", (event) => {
           event.stopPropagation();
-          selectNode();
+          selectBranchByKey(branch.id);
         });
-        hitRect.addEventListener("touchend", (event) => {
+        path.addEventListener("touchend", (event) => {
           event.preventDefault();
           event.stopPropagation();
-          selectNode();
+          selectBranchByKey(branch.id);
         });
-        hitRect.addEventListener("pointerup", (event) => {
-          event.stopPropagation();
-          selectNode();
-        });
-        rect.addEventListener("click", (event) => {
-          event.stopPropagation();
-          selectNode();
-        });
-        rect.addEventListener("touchend", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          selectNode();
-        });
-        rect.addEventListener("pointerup", (event) => {
-          event.stopPropagation();
-          selectNode();
-        });
-        const labelBox = labelBoxForNode(node, dimensions.horizontalGeometry);
-        const label = svgEl("text", {
-          x: labelBox.x + labelBox.width / 2,
-          y: labelBox.y + 12,
-          "text-anchor": "middle",
-          fill: "currentColor",
-          "data-diagram-node-label": node.id,
-        });
-        wrapLifecycleLabel(node.label).forEach((line, index) => {
-          const tspan = svgEl("tspan", {
-            x: labelBox.x + labelBox.width / 2,
-            dy: index ? "1.1em" : "0",
+        group.append(path);
+        handleCircle = null;
+        if (handle) {
+          handleCircle = svgEl("circle", {
+            cx: handle.x,
+            cy: handle.y,
+            r: handle.radius,
+            fill: "transparent",
+            "pointer-events": "all",
+            "data-diagram-link-hit": branch.id,
+            "data-diagram-branch-handle": branch.id,
+            "aria-hidden": "true",
           });
-          tspan.textContent = line;
-          label.append(tspan);
+          handleCircle.addEventListener("click", (event) => {
+            event.stopPropagation();
+            selectBranchByKey(branch.id);
+          });
+          handleCircle.addEventListener("touchend", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            selectBranchByKey(branch.id);
+          });
+          handleCircle.addEventListener("pointerup", (event) => {
+            event.stopPropagation();
+            selectBranchByKey(branch.id);
+          });
+        }
+        branchElementsByKey.set(branch.id, {
+          group,
+          path,
+          handleCircle,
+          hasHalo,
+          selected,
         });
-        label.addEventListener("click", (event) => {
-          event.stopPropagation();
-          selectNode();
-        });
-        g.append(hitRect, rect, label);
-        svg.append(g);
+        branchSignatureByKey.set(branch.id, signature);
       }
+      orderedBranchGroups.push(group);
+      if (handleCircle) orderedHandleCircles.push(handleCircle);
+    }
+    for (const [key, stored] of [...branchElementsByKey]) {
+      if (processedBranchKeys.has(key)) continue;
+      stored.group.remove();
+      stored.handleCircle?.remove();
+      branchElementsByKey.delete(key);
+      branchSignatureByKey.delete(key);
+      currentBranchByKey.delete(key);
+    }
+    // Reconcile order only after stale keys are removed, so a removed
+    // element that's still momentarily in the DOM can't cause an
+    // unnecessary extra move while walking the desired sequence.
+    reconcileChildOrder(branchGroupEl, orderedBranchGroups);
+    reconcileChildOrder(handleGroupEl, orderedHandleCircles);
+
+    try {
+      const processedNodeKeys = new Set();
+      const orderedNodeGroups = [];
+      for (const node of visibleNodes) {
+        const rawWidth = node.x1 - node.x0;
+        const rawHeight = node.y1 - node.y0;
+        // Symmetric to the branch loop's pathData NaN/Infinity skip above:
+        // degenerate (non-positive) geometry is a layout-bug symptom, not
+        // something to paper over with the minimum-size floor below.
+        if (!(rawWidth > 0) || !(rawHeight > 0)) continue;
+        processedNodeKeys.add(node.id);
+        currentNodeByKey.set(node.id, node);
+        const selected = selectedFeature?.id === node.id;
+        const signature = nodeSignature(node);
+        const stored = nodeElementsByKey.get(node.id);
+        const previousSignature = nodeSignatureByKey.get(node.id);
+        let g;
+
+        if (stored && sameSignature(previousSignature, signature)) {
+          g = stored.group;
+          if (stored.selected !== selected) {
+            stored.rect.setAttribute(
+              "stroke",
+              selected ? "#F8FAFC" : "#e2e8f0",
+            );
+            stored.rect.setAttribute("stroke-width", selected ? "4" : "1");
+            g.setAttribute("data-selected", selected ? "true" : "false");
+            stored.selected = selected;
+          }
+        } else {
+          if (stored) stored.group.remove();
+          const nodeLabel = nodeLabelFor(node);
+          g = svgEl("g", {
+            "data-diagram-node": node.id,
+            "data-selected": selected ? "true" : "false",
+          });
+          const rect = svgEl("rect", {
+            x: node.x0,
+            y: node.y0,
+            width: Math.max(8, rawWidth),
+            height: Math.max(8, rawHeight),
+            rx: 4,
+            fill: node.id.startsWith("endpoint:")
+              ? endpointColor(node.id.split(":").at(-1))
+              : "#64748b",
+            stroke: selected ? "#F8FAFC" : "#e2e8f0",
+            "stroke-width": selected ? "4" : "1",
+          });
+          g.append(svgEl("title"));
+          g.querySelector("title").textContent = nodeLabel;
+          const hitBox = rendererHitBoxForNode(
+            node,
+            dimensions.horizontalGeometry,
+          );
+          const hitRect = svgEl("rect", {
+            x: hitBox.x,
+            y: hitBox.y,
+            width: hitBox.width,
+            height: hitBox.height,
+            fill: "transparent",
+            "pointer-events": "all",
+            "aria-hidden": "true",
+            "data-diagram-node-hit": node.id,
+          });
+          hitRect.addEventListener("click", (event) => {
+            event.stopPropagation();
+            selectNodeByKey(node.id);
+          });
+          hitRect.addEventListener("touchend", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            selectNodeByKey(node.id);
+          });
+          hitRect.addEventListener("pointerup", (event) => {
+            event.stopPropagation();
+            selectNodeByKey(node.id);
+          });
+          rect.addEventListener("click", (event) => {
+            event.stopPropagation();
+            selectNodeByKey(node.id);
+          });
+          rect.addEventListener("touchend", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            selectNodeByKey(node.id);
+          });
+          rect.addEventListener("pointerup", (event) => {
+            event.stopPropagation();
+            selectNodeByKey(node.id);
+          });
+          const labelBox = labelBoxForNode(node, dimensions.horizontalGeometry);
+          const label = svgEl("text", {
+            x: labelBox.x + labelBox.width / 2,
+            y: labelBox.y + 12,
+            "text-anchor": "middle",
+            fill: "currentColor",
+            "data-diagram-node-label": node.id,
+          });
+          wrapLifecycleLabel(node.label).forEach((line, index) => {
+            const tspan = svgEl("tspan", {
+              x: labelBox.x + labelBox.width / 2,
+              dy: index ? "1.1em" : "0",
+            });
+            tspan.textContent = line;
+            label.append(tspan);
+          });
+          label.addEventListener("click", (event) => {
+            event.stopPropagation();
+            selectNodeByKey(node.id);
+          });
+          g.append(hitRect, rect, label);
+          nodeElementsByKey.set(node.id, { group: g, rect, selected });
+          nodeSignatureByKey.set(node.id, signature);
+        }
+        orderedNodeGroups.push(g);
+      }
+      for (const [key, stored] of [...nodeElementsByKey]) {
+        if (processedNodeKeys.has(key)) continue;
+        stored.group.remove();
+        nodeElementsByKey.delete(key);
+        nodeSignatureByKey.delete(key);
+        currentNodeByKey.delete(key);
+      }
+      // Node groups are diagramSvg's direct children too, appended after
+      // title/desc/branchGroupEl/handleGroupEl -- reconcile only the range
+      // starting right after handleGroupEl so those earlier, static
+      // children are never touched.
+      reconcileChildOrder(diagramSvg, orderedNodeGroups, handleGroupEl);
     } catch {
-      scroll.append(
-        el("p", {
-          className: "muted",
-          textContent: "Unable to lay out lifecycle diagram.",
-        }),
-      );
+      showDiagramFallback("Unable to lay out lifecycle diagram.");
       return;
     }
-    scroll.append(svg);
   };
   const renderTables = () => {
     const activeLabel =

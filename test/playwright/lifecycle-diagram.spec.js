@@ -843,6 +843,11 @@ test.describe("Application Lifecycle Diagram", () => {
   test("renders seeded current/historical states with semantic tables and selection", async ({
     page,
   }) => {
+    // This single test deliberately combines desktop + mobile rendering,
+    // two axe-core audits, timeline transitions, selection, hostile-input,
+    // and persistence checks -- its observed CI runtime approaches the
+    // default 60s limit even though it passes comfortably standalone.
+    test.slow();
     const requests = [];
     page.on("request", (request) => requests.push(request));
     await importFixture(page);
