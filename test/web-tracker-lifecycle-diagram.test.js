@@ -916,6 +916,12 @@ describe("lifecycle diagram view", () => {
       expect(firstTickCall[2].seedRankOrderByRank).toBeInstanceOf(Map);
       expect(firstTickCall[2].seedHandles).toBeInstanceOf(Map);
       expect(firstTickCall[2].seedLinkDocks).toBeInstanceOf(Map);
+      // seedAcceptedRouteCrossingCount is deliberately never captured for
+      // cross-bucket reuse -- see the capture-site comment in
+      // lifecycleDiagram.js.
+      expect(firstTickCall[2]).not.toHaveProperty(
+        "seedAcceptedRouteCrossingCount",
+      );
       expect(firstTickCall[2].authoritativeBranchOrderByRank).toBeInstanceOf(
         Map,
       );

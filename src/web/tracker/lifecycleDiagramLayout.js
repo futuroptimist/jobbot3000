@@ -3091,8 +3091,17 @@ function layoutLifecycleRoutingGraphPass(
       for (const link of graph.links) {
         const dock = options.seedLinkDocks.get(link.id);
         if (!dock) continue;
-        link.y0 = dock.y0;
-        link.y1 = dock.y1;
+        // Only the routing (intermediate, invisible) half of a dock is a
+        // second independent DP solve that can drift a fraction of a pixel
+        // from an otherwise-identical geometry -- reproducing it exactly is
+        // what this option exists for. A real node's own dock half was
+        // just correctly computed above from *this* pass's own node
+        // geometry (loops starting at :2871/:2890); overwriting it here
+        // would silently replace a correct value with whatever the caller's
+        // seed happened to carry, which is only guaranteed consistent with
+        // this pass's geometry when the seed came from an identical graph.
+        if (link.source.routing) link.y0 = dock.y0;
+        if (link.target.routing) link.y1 = dock.y1;
       }
     }
   };

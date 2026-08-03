@@ -717,6 +717,19 @@ export function createLifecycleDiagramView(root, options = {}) {
           new Map(sorted.map((node, index) => [node.id, index])),
         );
       }
+      // seedAcceptedRouteCrossingCount is deliberately NOT captured here,
+      // unlike the same-bucket discovery->final replay this mechanism was
+      // originally built for. It's used as the audit's tolerance bound
+      // verbatim rather than derived from *this* attempt's own budget
+      // pressure, which would let a generously-tolerant previous bucket's
+      // bound validate a worse layout than this bucket's own search would
+      // ever accept. Omitting it simply lets candidateCallback fall through
+      // to its normal, already-correct-for-this-bucket budget-pressure
+      // derivation. seedLinkDocks IS still captured -- materializeLaneAssignments
+      // only reproduces the seeded dock for a link's *routing* (invisible,
+      // intermediate) endpoint, never a real node's, so it can't leave a
+      // route ending outside a real node's current boundary; the real
+      // half is always freshly computed from this pass's own geometry.
       lastLayoutSeed = {
         seedAssignments: new Map(
           graph.links.map((link) => [link.id, link.transitionLaneY]),
@@ -726,7 +739,6 @@ export function createLifecycleDiagramView(root, options = {}) {
         seedLinkDocks: new Map(
           graph.links.map((link) => [link.id, { y0: link.y0, y1: link.y1 }]),
         ),
-        seedAcceptedRouteCrossingCount: graph.acceptedRouteCrossingCount,
         authoritativeBranchOrderByRank,
         authoritativeNodeOrderByRank,
       };

@@ -3632,6 +3632,12 @@ describe("cross-call seed replay (Phase 4b cross-bucket seeding)", () => {
         new Map(sorted.map((node, index) => [node.id, index])),
       );
     }
+    // seedAcceptedRouteCrossingCount is deliberately NOT captured -- see the
+    // matching comment in lifecycleDiagram.js. It's used as the audit's
+    // tolerance bound verbatim rather than derived from this attempt's own
+    // budget pressure. seedLinkDocks IS captured: materializeLaneAssignments
+    // only reproduces the seeded dock for a link's *routing* endpoint, never
+    // a real node's (see the matching fix in lifecycleDiagramLayout.js).
     return {
       seedAssignments: new Map(
         graph.links.map((link) => [link.id, link.transitionLaneY]),
@@ -3641,7 +3647,6 @@ describe("cross-call seed replay (Phase 4b cross-bucket seeding)", () => {
       seedLinkDocks: new Map(
         graph.links.map((link) => [link.id, { y0: link.y0, y1: link.y1 }]),
       ),
-      seedAcceptedRouteCrossingCount: graph.acceptedRouteCrossingCount,
       authoritativeBranchOrderByRank,
       authoritativeNodeOrderByRank,
     };
