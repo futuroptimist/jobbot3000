@@ -191,4 +191,34 @@ describe("lifecycle diagram large-data rendering", () => {
           /NaN|Infinity/u,
         );
   });
+
+  it("caches repeated scrub-bucket visits far cheaper than first-visit cost", () => {
+    // This is the regression guard for the scrubber-jank fix: it doesn't
+    // just check that a single call is fast (the test above), it checks
+    // that *revisiting* a bucket while scrubbing back and forth is a cache
+    // hit rather than a full recompute.
+    const bundleData = largeBundle();
+    const timeline = buildLifecycleTimeline(bundleData);
+    const bucketIds = timeline.buckets
+      .map((entry) => entry.id)
+      .filter((id) => id !== "unknown-date" && id !== "current");
+    expect(bucketIds.length).toBeGreaterThan(0);
+
+    const firstVisitStart = performance.now();
+    for (const bucketId of bucketIds) projectLifecycleAt(bundleData, bucketId);
+    const firstVisitDuration = performance.now() - firstVisitStart;
+
+    const revisitStart = performance.now();
+    for (const bucketId of [...bucketIds].reverse())
+      projectLifecycleAt(bundleData, bucketId);
+    const revisitDuration = performance.now() - revisitStart;
+
+    expect(revisitDuration).toBeLessThan(
+      Math.max(firstVisitDuration / 4, 5),
+    );
+
+    const repeatedTimelineStart = performance.now();
+    for (let i = 0; i < 50; i += 1) buildLifecycleTimeline(bundleData);
+    expect(performance.now() - repeatedTimelineStart).toBeLessThan(50);
+  });
 });

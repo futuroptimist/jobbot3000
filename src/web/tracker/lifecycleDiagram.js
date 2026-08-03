@@ -1005,7 +1005,10 @@ export function createLifecycleDiagramView(root, options = {}) {
   prev.addEventListener("click", () => changeToIndex(Number(range.value) - 1));
   next.addEventListener("click", () => changeToIndex(Number(range.value) + 1));
   current.addEventListener("click", () => onBucketChange("current"));
-  range.addEventListener("input", () => changeToIndex(Number(range.value)));
+  const debouncedRangeChange = makeDebounce(() =>
+    changeToIndex(Number(range.value)),
+  );
+  range.addEventListener("input", debouncedRangeChange);
   const sanitizedRootWidth = () => {
     const width = Math.floor(Number(root.clientWidth));
     return Number.isFinite(width) && width > 0 ? width : 0;
@@ -1068,6 +1071,7 @@ export function createLifecycleDiagramView(root, options = {}) {
       if (windowResizeHandler)
         window.removeEventListener("resize", windowResizeHandler);
       debouncedResize.clear();
+      debouncedRangeChange.clear();
       announce.clear();
       root.textContent = "";
     },

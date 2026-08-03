@@ -421,6 +421,7 @@ describe("lifecycle diagram view", () => {
   });
 
   it("synchronizes range controls and keeps user text inert", () => {
+    vi.useFakeTimers();
     const b = bundle(
       [app("bad")],
       [ev("x", "bad", "application_submitted", "2026-01-01")],
@@ -430,11 +431,49 @@ describe("lifecycle diagram view", () => {
     const range = root.querySelector("input[type='range']");
     range.value = "0";
     range.dispatchEvent(new window.Event("input", { bubbles: true }));
+    vi.advanceTimersByTime(80);
     expect(onBucketChange).toHaveBeenCalledWith(timeline.buckets[0].id);
     expect(root.querySelector("img")).toBeNull();
     expect([
       ...root.querySelectorAll("svg a, foreignObject, script"),
     ]).toHaveLength(0);
+  });
+
+  it("debounces the range scrubber so dragging fires one update with the final value", () => {
+    vi.useFakeTimers();
+    const b = bundle(
+      [app("bad")],
+      [ev("x", "bad", "application_submitted", "2026-01-01")],
+    );
+    const onBucketChange = vi.fn();
+    const { root, timeline } = render(b, "current", onBucketChange);
+    const range = root.querySelector("input[type='range']");
+    for (let i = 0; i < timeline.buckets.length; i += 1) {
+      range.value = String(i);
+      range.dispatchEvent(new window.Event("input", { bubbles: true }));
+    }
+    expect(onBucketChange).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(80);
+    expect(onBucketChange).toHaveBeenCalledTimes(1);
+    expect(onBucketChange).toHaveBeenCalledWith(
+      timeline.buckets[timeline.buckets.length - 1].id,
+    );
+  });
+
+  it("stops a pending debounced scrub update once the view is destroyed", () => {
+    vi.useFakeTimers();
+    const b = bundle(
+      [app("bad")],
+      [ev("x", "bad", "application_submitted", "2026-01-01")],
+    );
+    const onBucketChange = vi.fn();
+    const { root, view } = render(b, "current", onBucketChange);
+    const range = root.querySelector("input[type='range']");
+    range.value = "0";
+    range.dispatchEvent(new window.Event("input", { bubbles: true }));
+    view.destroy();
+    vi.advanceTimersByTime(80);
+    expect(onBucketChange).not.toHaveBeenCalled();
   });
 
   it("does not mutate P4 projection and has equivalent selectable rows", () => {
@@ -893,6 +932,48 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     });
     expect(root.querySelector("[data-event-range]").textContent).toMatch(
       /^Events (0–0|1–)/u,
+    );
+  });
+
+  it("preserves table pagination across a no-op re-render of the same bundle/bucket", () => {
+    const applications = [app("many")];
+    const lifecycleEvents = Array.from({ length: 125 }, (_, index) =>
+      ev(
+        `many-${String(index).padStart(3, "0")}`,
+        "many",
+        index ? "employer_response_received" : "application_submitted",
+        `2026-03-${String((index % 28) + 1).padStart(2, "0")}T00:00:00.000Z`,
+      ),
+    );
+    const b = bundle(applications, lifecycleEvents);
+    const { root, view, timeline } = render(b);
+    root.querySelector("[aria-label='Next event page']").click();
+    expect(root.querySelector("[data-event-range]").textContent).toBe(
+      "Events 51–100 of 125",
+    );
+
+    // Same bundle object + same bucket id: projectLifecycleAt is memoized and
+    // returns the identical cached reference, so this is a no-op re-render
+    // (e.g. re-navigating to the Diagram tab) rather than a real data change.
+    view.update({
+      timeline,
+      snapshot: projectLifecycleAt(b, "current"),
+      selectedBucketId: "current",
+    });
+    expect(root.querySelector("[data-event-range]").textContent).toBe(
+      "Events 51–100 of 125",
+    );
+
+    // A genuinely new bundle object for the same bucket id is a real data
+    // change (cache miss) and still resets pagination as before.
+    const changed = bundle(applications, lifecycleEvents.slice(0, 124));
+    view.update({
+      timeline,
+      snapshot: projectLifecycleAt(changed, "current"),
+      selectedBucketId: "current",
+    });
+    expect(root.querySelector("[data-event-range]").textContent).toBe(
+      "Events 1–50 of 124",
     );
   });
 

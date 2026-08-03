@@ -312,7 +312,7 @@ async function reconcileLifecycle() {
 async function refresh() {
   await reconcileLifecycle();
   state.bundle = await repo.exportAll();
-  state.apps = state.bundle.applications.sort((a, b) =>
+  state.apps = [...state.bundle.applications].sort((a, b) =>
     String(b.appliedAt || "").localeCompare(a.appliedAt || ""),
   );
   renderAll();

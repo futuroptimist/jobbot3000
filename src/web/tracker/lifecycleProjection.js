@@ -10,6 +10,22 @@ const deepFreeze = (value) => {
   return Object.freeze(value);
 };
 
+// `bundle` objects are always replaced wholesale (never mutated in place) by
+// callers — see src/web/tracker/tracker.js's refresh(), which reassigns
+// state.bundle from a fresh IndexedDB export. That invariant is what makes a
+// WeakMap keyed on bundle identity a safe cache: mutating a bundle's arrays
+// in place instead of assigning a new bundle object will silently serve
+// stale cached results.
+const bundleCache = new WeakMap();
+const cacheFor = (bundle) => {
+  let entry = bundleCache.get(bundle);
+  if (!entry) {
+    entry = { prepared: null, timeline: null, projections: new Map() };
+    bundleCache.set(bundle, entry);
+  }
+  return entry;
+};
+
 const ORIGINS = [
   ["application_submitted", "Application submitted"],
   ["recruiter_company_outreach", "Recruiter/company reached out"],
@@ -190,6 +206,14 @@ const makeWarning = (code, applicationId, extra = {}) => ({
 });
 
 const prepare = (bundle) => {
+  const entry = cacheFor(bundle);
+  if (entry.prepared) return entry.prepared;
+  const prepared = prepareUncached(bundle);
+  entry.prepared = prepared;
+  return prepared;
+};
+
+const prepareUncached = (bundle) => {
   const warnings = [];
   const apps = (bundle.applications ?? [])
     .map((app, index) => ({ ...app, id: appId(app, index) }))
@@ -230,8 +254,10 @@ const prepare = (bundle) => {
       );
   }
   return {
-    apps,
-    events: events.filter((event) => knownApps.has(event.applicationId)),
+    apps: Object.freeze(apps),
+    events: Object.freeze(
+      events.filter((event) => knownApps.has(event.applicationId)),
+    ),
     warnings,
   };
 };
@@ -544,6 +570,15 @@ const warningCounts = (warnings) =>
   );
 
 export function projectLifecycleAt(bundle = {}, bucketId = "current") {
+  const entry = cacheFor(bundle);
+  const cached = entry.projections.get(bucketId);
+  if (cached) return cached;
+  const projection = projectLifecycleAtUncached(bundle, bucketId);
+  entry.projections.set(bucketId, projection);
+  return projection;
+}
+
+function projectLifecycleAtUncached(bundle, bucketId) {
   const { apps, events, warnings: globalWarnings } = prepare(bundle);
   const selectedEvents = bucketEvents(events, bucketId);
   const eventAppIds = new Set(
@@ -629,6 +664,14 @@ function buildBucketMetadata(bucketId, events) {
 }
 
 export function buildLifecycleTimeline(bundle = {}) {
+  const entry = cacheFor(bundle);
+  if (entry.timeline) return entry.timeline;
+  const timeline = buildLifecycleTimelineUncached(bundle);
+  entry.timeline = timeline;
+  return timeline;
+}
+
+function buildLifecycleTimelineUncached(bundle) {
   const { apps, events, warnings } = prepare(bundle);
   const datedKeys = [
     ...new Set(
