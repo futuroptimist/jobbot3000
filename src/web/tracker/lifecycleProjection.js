@@ -20,7 +20,12 @@ const bundleCache = new WeakMap();
 const cacheFor = (bundle) => {
   let entry = bundleCache.get(bundle);
   if (!entry) {
-    entry = { prepared: null, timeline: null, projections: new Map() };
+    entry = {
+      prepared: null,
+      timeline: null,
+      projections: new Map(),
+      appPaths: new Map(),
+    };
     bundleCache.set(bundle, entry);
   }
   return entry;
@@ -45,6 +50,43 @@ const cacheProjection = (entry, bucketId, projection) => {
   if (entry.projections.size > MAX_CACHED_PROJECTIONS_PER_BUNDLE) {
     const oldestKey = entry.projections.keys().next().value;
     entry.projections.delete(oldestKey);
+  }
+};
+
+// Per-application memoization for projectApp (defined below): for a fixed
+// bundle, the ordered list of included event ids for (appId, isCurrent) is
+// a fully safe, collision-free identity for projectApp's result — events
+// have stable identity per bundle (via `prepared` above), projectApp
+// re-sorts its input independently of call order, and supersession is
+// always same-application (enforced at both the writer and schema-
+// validation layers), so one application's included events can never be
+// affected by another's. This lets most adjacent-bucket transitions reuse
+// a prior result instead of replaying the state machine, since typically
+// only one (or a few) applications actually change between buckets.
+const appPathSignature = (app, appEvents, isCurrent) =>
+  `${app.id} ${isCurrent} ${JSON.stringify(appEvents.map((event) => event.id))}`;
+// Defense-in-depth only: a single application's own signature count is
+// naturally bounded by ~2x its own event count (growing-prefix inclusion,
+// occasionally perturbed by same-application supersession), not by the
+// bundle's total bucket count — unlike MAX_CACHED_PROJECTIONS_PER_BUNDLE
+// above. This cap exists only to bound pathological single-application
+// histories (e.g. thousands of reopen/supersede events on one record),
+// sized off apps.length so a normal full-bundle bucket visit doesn't evict
+// its own entries mid-visit.
+const appPathsCap = (entry) => Math.max(500, entry.prepared.apps.length * 6);
+const getCachedAppPath = (entry, signature) => {
+  const cached = entry.appPaths.get(signature);
+  if (cached === undefined) return undefined;
+  entry.appPaths.delete(signature);
+  entry.appPaths.set(signature, cached);
+  return cached;
+};
+const cacheAppPath = (entry, signature, path) => {
+  entry.appPaths.set(signature, path);
+  const cap = appPathsCap(entry);
+  if (entry.appPaths.size > cap) {
+    const oldestKey = entry.appPaths.keys().next().value;
+    entry.appPaths.delete(oldestKey);
   }
 };
 
@@ -508,6 +550,15 @@ const projectApp = (app, appEvents, isCurrent) => {
   };
 };
 
+const projectAppCached = (entry, app, appEvents, isCurrent) => {
+  const signature = appPathSignature(app, appEvents, isCurrent);
+  const cached = getCachedAppPath(entry, signature);
+  if (cached) return cached;
+  const path = projectApp(app, appEvents, isCurrent);
+  cacheAppPath(entry, signature, path);
+  return path;
+};
+
 const makeNodes = (paths) => {
   const totals = new Map();
   for (const path of paths)
@@ -601,6 +652,7 @@ export function projectLifecycleAt(bundle = {}, bucketId = "current") {
 }
 
 function projectLifecycleAtUncached(bundle, bucketId) {
+  const entry = cacheFor(bundle);
   const { apps, events, warnings: globalWarnings } = prepare(bundle);
   const selectedEvents = bucketEvents(events, bucketId);
   const eventAppIds = new Set(
@@ -613,7 +665,8 @@ function projectLifecycleAtUncached(bundle, bucketId) {
   const boundarySelectedEvents = boundaryEvents(selectedEvents, bucketId);
   const selectedEventsByApp = eventsByApplicationId(selectedEvents);
   const paths = includedApps.map((app) =>
-    projectApp(
+    projectAppCached(
+      entry,
       app,
       selectedEventsByApp.get(app.id) ?? [],
       bucketId === "current",

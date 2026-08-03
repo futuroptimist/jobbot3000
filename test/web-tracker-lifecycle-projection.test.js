@@ -135,6 +135,166 @@ describe("lifecycle projection", () => {
     );
   });
 
+  it("reuses an unchanged application's path across a bucket transition", () => {
+    const b = bundle(
+      [app("a"), app("b")],
+      [
+        ev("a1", "a", "application_submitted", "2026-01-01"),
+        ev("b1", "b", "application_submitted", "2026-01-01"),
+        ev("b2", "b", "recruiter_screen", "2026-01-05"),
+      ],
+    );
+    const timeline = buildLifecycleTimeline(b);
+    const bucketA = timeline.buckets[1].id;
+    const bucketB = timeline.buckets[2].id;
+    expect(bucketA).not.toBe(bucketB);
+
+    const pathAt = (bucketId, applicationId) =>
+      projectLifecycleAt(b, bucketId).paths.find(
+        (path) => path.applicationId === applicationId,
+      );
+
+    // Application "a" gets no new events between bucketA and bucketB, so
+    // its included-event-id-set is identical — the cached path object must
+    // be reused verbatim rather than recomputed.
+    expect(pathAt(bucketB, "a")).toBe(pathAt(bucketA, "a"));
+    // Application "b" gains an event at bucketB, so its path must differ.
+    expect(pathAt(bucketB, "b")).not.toBe(pathAt(bucketA, "b"));
+    expect(pathAt(bucketB, "b").milestones).toContain("recruiter_screen");
+  });
+
+  it("keeps isCurrent out of the app-path cache key from colliding with historical buckets", () => {
+    // An application whose event-id-set at "current" is identical to its
+    // set at the last historical bucket must not have its result wrongly
+    // shared across the isCurrent boundary, since isCurrent affects the
+    // status_mismatch warning check.
+    const b = bundle(
+      [app("a", { status: "rejected" })],
+      [ev("a1", "a", "application_submitted", "2026-01-01")],
+    );
+    const timeline = buildLifecycleTimeline(b);
+    const lastHistoricalBucket = timeline.buckets.at(-2).id;
+    expect(lastHistoricalBucket).not.toBe("current");
+
+    const historical = projectLifecycleAt(b, lastHistoricalBucket).paths[0];
+    const current = projectLifecycleAt(b, "current").paths[0];
+    expect(historical).not.toBe(current);
+    // Only the "current" projection checks status_mismatch against
+    // app.status ("rejected" vs. the replayed "awaiting_response").
+    expect(historical.details.some((d) => d.code === "status_mismatch")).toBe(
+      false,
+    );
+    expect(current.details.some((d) => d.code === "status_mismatch")).toBe(
+      true,
+    );
+  });
+
+  it("evicts the least-recently-used cached application path past the per-bundle cap", () => {
+    // Guards the bounded per-application-path cache: without an eviction
+    // policy, an application with a pathological number of distinct
+    // event-id-set signatures (e.g. many reopen/supersede cycles) would
+    // retain one cached path per signature indefinitely.
+    const events = [ev("a0", "a", "application_submitted", "2026-01-01")];
+    for (let i = 0; i < 520; i += 1) {
+      const date = new Date(Date.UTC(2026, 1, 1));
+      date.setUTCHours(date.getUTCHours() + i);
+      events.push(
+        ev("reopen-" + i, "a", "application_reopened", date.toISOString()),
+      );
+    }
+    const b = bundle([app("a")], events);
+    const timeline = buildLifecycleTimeline(b);
+    const datedBucketIds = timeline.buckets
+      .map((entry) => entry.id)
+      .filter((id) => id !== "unknown-date" && id !== "current");
+    expect(datedBucketIds.length).toBeGreaterThan(500);
+
+    const firstBucketId = datedBucketIds[0];
+    const firstPath = projectLifecycleAt(b, firstBucketId).paths[0];
+
+    for (const bucketId of datedBucketIds.slice(1))
+      projectLifecycleAt(b, bucketId);
+
+    const revisitedPath = projectLifecycleAt(b, firstBucketId).paths[0];
+    expect(revisitedPath).not.toBe(firstPath);
+    expect(revisitedPath).toEqual(firstPath);
+  });
+
+  it("matches a cold (uncached) computation for a large randomized fixture", () => {
+    // Cheap insurance against a bug in signature construction (id-ordering
+    // assumptions, isCurrent handling, cap/eviction interactions) rather
+    // than the state machine itself — projectApp's correctness is already
+    // covered by the tests above; this only exercises the cache wrapper.
+    let seed = 42;
+    const rand = () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed / 0x7fffffff;
+    };
+    const pick = (arr) => arr[Math.floor(rand() * arr.length)];
+
+    const eventTypes = [
+      "application_submitted",
+      "recruiter_screen",
+      "assessment_take_home",
+      "technical_interview",
+      "onsite_final_loop",
+      "offer_received",
+      "employer_rejected",
+      "candidate_withdrew",
+      "application_reopened",
+    ];
+    const applications = Array.from({ length: 40 }, (_, i) => app(`a${i}`));
+    const lifecycleEvents = [];
+    for (let i = 0; i < 40; i += 1) {
+      const eventCount = 3 + Math.floor(rand() * 10);
+      for (let j = 0; j < eventCount; j += 1) {
+        const day = 1 + Math.floor(rand() * 27);
+        const hour = Math.floor(rand() * 24);
+        lifecycleEvents.push(
+          ev(
+            `a${i}-e${j}`,
+            `a${i}`,
+            j === 0 ? "application_submitted" : pick(eventTypes),
+            `2026-03-${String(day).padStart(2, "0")}T${String(hour).padStart(2, "0")}:00:00.000Z`,
+          ),
+        );
+      }
+    }
+    const liveBundle = bundle(applications, lifecycleEvents);
+    const timeline = buildLifecycleTimeline(liveBundle);
+    const bucketIds = timeline.buckets.map((entry) => entry.id);
+
+    // Long random-order walk against one long-lived bundle to maximize
+    // cache pressure and any key-construction bug surface area.
+    const shuffledBucketIds = [...bucketIds];
+    for (let i = shuffledBucketIds.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(rand() * (i + 1));
+      [shuffledBucketIds[i], shuffledBucketIds[j]] = [
+        shuffledBucketIds[j],
+        shuffledBucketIds[i],
+      ];
+    }
+    for (const bucketId of shuffledBucketIds) projectLifecycleAt(liveBundle, bucketId);
+
+    // Sample buckets and compare the cache-exercised result against a
+    // guaranteed-cold computation on a fresh, content-identical bundle
+    // (its own empty cache entry — see the "value-equal but
+    // reference-distinct bundle" test above for why this is cold).
+    const sample = bucketIds.filter((_, index) => index % 5 === 0);
+    for (const bucketId of sample) {
+      const warm = projectLifecycleAt(liveBundle, bucketId);
+      const cold = projectLifecycleAt(
+        bundle(structuredClone(applications), structuredClone(lifecycleEvents)),
+        bucketId,
+      );
+      expect(warm.paths).toEqual(cold.paths);
+      expect(warm.nodes).toEqual(cold.nodes);
+      expect(warm.links).toEqual(cold.links);
+      expect(warm.totals).toEqual(cold.totals);
+      expect(warm.warnings).toEqual(cold.warnings);
+    }
+  });
+
   it("evicts the least-recently-used cached projection past the per-bundle cap", () => {
     // Guards the bounded-cache fix: without an eviction policy, scrubbing
     // across many distinct buckets in one long-lived tab would retain a
