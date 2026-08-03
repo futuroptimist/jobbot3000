@@ -135,6 +135,48 @@ describe("lifecycle projection", () => {
     );
   });
 
+  it("evicts the least-recently-used cached projection past the per-bundle cap", () => {
+    // Guards the bounded-cache fix: without an eviction policy, scrubbing
+    // across many distinct buckets in one long-lived tab would retain a
+    // fully-materialized projection per bucket forever.
+    const dayEvents = Array.from({ length: 60 }, (_, i) => {
+      const date = new Date(Date.UTC(2026, 0, 1));
+      date.setUTCDate(date.getUTCDate() + i + 1);
+      return ev(
+        `e${i}`,
+        "a",
+        "employer_response_received",
+        date.toISOString().slice(0, 10),
+      );
+    });
+    const b = bundle(
+      [app("a")],
+      [ev("o", "a", "application_submitted", "2026-01-01"), ...dayEvents],
+    );
+    const timeline = buildLifecycleTimeline(b);
+    const datedBucketIds = timeline.buckets
+      .map((entry) => entry.id)
+      .filter((id) => id !== "unknown-date" && id !== "current");
+    expect(datedBucketIds.length).toBeGreaterThan(50);
+
+    const firstBucketId = datedBucketIds[0];
+    const firstProjection = projectLifecycleAt(b, firstBucketId);
+
+    // Visiting enough other distinct buckets pushes the first one out of the
+    // bounded LRU cache.
+    for (const bucketId of datedBucketIds.slice(1))
+      projectLifecycleAt(b, bucketId);
+
+    const revisited = projectLifecycleAt(b, firstBucketId);
+    expect(revisited).not.toBe(firstProjection);
+    expect(revisited).toEqual(firstProjection);
+
+    // A recently visited bucket is still a cache hit.
+    const lastBucketId = datedBucketIds.at(-1);
+    const lastProjection = projectLifecycleAt(b, lastBucketId);
+    expect(projectLifecycleAt(b, lastBucketId)).toBe(lastProjection);
+  });
+
   it("keeps serving the cached projection if a bundle is mutated in place", () => {
     // Bundles must be treated as immutable once passed in: callers are
     // expected to always pass a *new* bundle object after any data change

@@ -26,6 +26,28 @@ const cacheFor = (bundle) => {
   return entry;
 };
 
+// Bounds memory for long-lived tracker tabs that scrub across many distinct
+// buckets: each cached projection holds paths/nodes/links for every included
+// application, so retaining one per visited bucket without a cap would grow
+// roughly with visited buckets × applications. `entry.projections` is kept
+// as a Map in least-recently-used order (see getCachedProjection/
+// cacheProjection below) so the coldest bucket is evicted first.
+const MAX_CACHED_PROJECTIONS_PER_BUNDLE = 50;
+const getCachedProjection = (entry, bucketId) => {
+  const cached = entry.projections.get(bucketId);
+  if (cached === undefined) return undefined;
+  entry.projections.delete(bucketId);
+  entry.projections.set(bucketId, cached);
+  return cached;
+};
+const cacheProjection = (entry, bucketId, projection) => {
+  entry.projections.set(bucketId, projection);
+  if (entry.projections.size > MAX_CACHED_PROJECTIONS_PER_BUNDLE) {
+    const oldestKey = entry.projections.keys().next().value;
+    entry.projections.delete(oldestKey);
+  }
+};
+
 const ORIGINS = [
   ["application_submitted", "Application submitted"],
   ["recruiter_company_outreach", "Recruiter/company reached out"],
@@ -258,7 +280,7 @@ const prepareUncached = (bundle) => {
     events: Object.freeze(
       events.filter((event) => knownApps.has(event.applicationId)),
     ),
-    warnings,
+    warnings: Object.freeze(warnings),
   };
 };
 
@@ -571,10 +593,10 @@ const warningCounts = (warnings) =>
 
 export function projectLifecycleAt(bundle = {}, bucketId = "current") {
   const entry = cacheFor(bundle);
-  const cached = entry.projections.get(bucketId);
+  const cached = getCachedProjection(entry, bucketId);
   if (cached) return cached;
   const projection = projectLifecycleAtUncached(bundle, bucketId);
-  entry.projections.set(bucketId, projection);
+  cacheProjection(entry, bucketId, projection);
   return projection;
 }
 

@@ -476,6 +476,42 @@ describe("lifecycle diagram view", () => {
     expect(onBucketChange).not.toHaveBeenCalled();
   });
 
+  it("keeps the dragged-to bucket if a render lands mid-debounce (e.g. resize/refresh)", () => {
+    vi.useFakeTimers();
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t1", "a", "recruiter_screen", "2026-01-02"),
+        ev("t2", "a", "technical_interview", "2026-01-03"),
+      ],
+    );
+    const onBucketChange = vi.fn();
+    const { root, view, timeline, snapshot } = render(
+      b,
+      "current",
+      onBucketChange,
+    );
+    const range = root.querySelector("input[type='range']");
+    const targetIndex = timeline.buckets.length - 2;
+    range.value = String(targetIndex);
+    range.dispatchEvent(new window.Event("input", { bubbles: true }));
+
+    // An unrelated render lands mid-debounce-window (e.g. a ResizeObserver
+    // tick or a background refresh that didn't change the selected bucket).
+    // render() resets range.value to the currently *selected* bucket
+    // ("current" here, since onBucketChange hasn't fired yet) — the pending
+    // debounced change must not be lost to that reset.
+    view.update({ timeline, snapshot, selectedBucketId: "current" });
+    expect(range.value).not.toBe(String(targetIndex));
+
+    vi.advanceTimersByTime(80);
+    expect(onBucketChange).toHaveBeenCalledTimes(1);
+    expect(onBucketChange).toHaveBeenCalledWith(
+      timeline.buckets[targetIndex].id,
+    );
+  });
+
   it("does not mutate P4 projection and has equivalent selectable rows", () => {
     const b = bundle(
       [app("a")],

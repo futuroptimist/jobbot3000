@@ -1005,10 +1005,16 @@ export function createLifecycleDiagramView(root, options = {}) {
   prev.addEventListener("click", () => changeToIndex(Number(range.value) - 1));
   next.addEventListener("click", () => changeToIndex(Number(range.value) + 1));
   current.addEventListener("click", () => onBucketChange("current"));
-  const debouncedRangeChange = makeDebounce(() =>
-    changeToIndex(Number(range.value)),
+  // Capture range.value at input-event time and pass it through the
+  // debounce closure rather than re-reading range.value when the debounced
+  // callback fires: render() (e.g. from a ResizeObserver tick or a
+  // background refresh landing mid-drag) resets range.value to the
+  // currently *selected* bucket, which would otherwise make a pending
+  // debounced change silently revert to the pre-drag position.
+  const debouncedRangeChange = makeDebounce((value) =>
+    changeToIndex(Number(value)),
   );
-  range.addEventListener("input", debouncedRangeChange);
+  range.addEventListener("input", () => debouncedRangeChange(range.value));
   const sanitizedRootWidth = () => {
     const width = Math.floor(Number(root.clientWidth));
     return Number.isFinite(width) && width > 0 ? width : 0;
