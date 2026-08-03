@@ -583,6 +583,216 @@ describe("lifecycle diagram view", () => {
     expect(onBucketChange).toHaveBeenCalledTimes(1);
   });
 
+  it("uses the draft quality tier for renders triggered while dragging the scrubber", () => {
+    vi.useFakeTimers();
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    // Mirrors tracker.js's production wiring: onBucketChange re-projects and
+    // calls view.update(), which is what actually triggers renderSvg().
+    let view;
+    const onBucketChange = vi.fn((bucketId) => {
+      view.update({
+        timeline: buildLifecycleTimeline(b),
+        snapshot: projectLifecycleAt(b, bucketId),
+        selectedBucketId: bucketId,
+      });
+    });
+    const rendered = render(b, "current", onBucketChange);
+    view = rendered.view;
+    const { root, timeline } = rendered;
+    const layoutSpy = vi.spyOn(lifecycleLayout, "layoutLifecycleRoutingGraph");
+    try {
+      const range = root.querySelector("input[type='range']");
+      // The last bucket is the one guaranteed to still include the
+      // application (an earlier bucket can predate its origin event
+      // entirely, hitting the unrelated "No lifecycle data yet" empty-state
+      // return before layoutLifecycleRoutingGraph is ever called).
+      const targetIndex = timeline.buckets.length - 1;
+      range.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+      range.value = String(targetIndex);
+      range.dispatchEvent(new window.Event("input", { bubbles: true }));
+      vi.advanceTimersByTime(80);
+      expect(onBucketChange).toHaveBeenCalledWith(
+        timeline.buckets[targetIndex].id,
+      );
+      const dragTickCall = layoutSpy.mock.calls.at(-1);
+      expect(dragTickCall[2]).toMatchObject({ qualityTier: "draft" });
+    } finally {
+      layoutSpy.mockRestore();
+    }
+  });
+
+  it("releasing the drag forces one full-quality render and cancels any pending debounce", () => {
+    vi.useFakeTimers();
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    let view;
+    const onBucketChange = vi.fn((bucketId) => {
+      view.update({
+        timeline: buildLifecycleTimeline(b),
+        snapshot: projectLifecycleAt(b, bucketId),
+        selectedBucketId: bucketId,
+      });
+    });
+    const rendered = render(b, "current", onBucketChange);
+    view = rendered.view;
+    const { root, timeline } = rendered;
+    const layoutSpy = vi.spyOn(lifecycleLayout, "layoutLifecycleRoutingGraph");
+    try {
+      const range = root.querySelector("input[type='range']");
+      const targetIndex = timeline.buckets.length - 1;
+      range.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+      range.value = String(targetIndex);
+      range.dispatchEvent(new window.Event("input", { bubbles: true }));
+      // Released before the 80ms debounce ever fires.
+      range.dispatchEvent(new window.Event("pointerup", { bubbles: true }));
+      expect(onBucketChange).toHaveBeenCalledTimes(1);
+      expect(onBucketChange).toHaveBeenCalledWith(
+        timeline.buckets[targetIndex].id,
+      );
+      const settleCall = layoutSpy.mock.calls.at(-1);
+      expect(settleCall[2]?.qualityTier).not.toBe("draft");
+      // The pending debounce must have been cancelled by release, not fire
+      // 80ms later and cause a second, redundant onBucketChange.
+      vi.advanceTimersByTime(80);
+      expect(onBucketChange).toHaveBeenCalledTimes(1);
+    } finally {
+      layoutSpy.mockRestore();
+    }
+  });
+
+  it("keeps the previously rendered frame when a draft-tier layout throws mid-drag", () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root, view, timeline } = render(b, "current");
+    const svgBefore = root.querySelector("svg");
+    expect(svgBefore).not.toBeNull();
+    const range = root.querySelector("input[type='range']");
+    range.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+    const layoutSpy = vi
+      .spyOn(lifecycleLayout, "layoutLifecycleRoutingGraph")
+      .mockImplementation(() => {
+        throw new Error("forced draft-tier failure");
+      });
+    try {
+      // The last bucket still includes the application (an earlier bucket
+      // can predate its origin event entirely, hitting the unrelated empty-
+      // state return before layoutLifecycleRoutingGraph is ever called).
+      const targetId = timeline.buckets.at(-1).id;
+      view.update({
+        timeline,
+        snapshot: projectLifecycleAt(b, targetId),
+        selectedBucketId: targetId,
+      });
+      // No fallback message, no DOM teardown -- the exact same <svg> element
+      // is still on screen, untouched, since a draft-tier failure means
+      // "too slow right now", not "genuinely unlayoutable".
+      expect(root.querySelector("svg")).toBe(svgBefore);
+      expect(root.textContent).not.toContain(
+        "Unable to lay out lifecycle diagram.",
+      );
+    } finally {
+      layoutSpy.mockRestore();
+    }
+  });
+
+  // eslint-disable-next-line max-len
+  it("still shows the fallback message when the full-quality settle render fails on release", () => {
+    vi.useFakeTimers();
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    let view;
+    const onBucketChange = vi.fn((bucketId) => {
+      view.update({
+        timeline: buildLifecycleTimeline(b),
+        snapshot: projectLifecycleAt(b, bucketId),
+        selectedBucketId: bucketId,
+      });
+    });
+    const rendered = render(b, "current", onBucketChange);
+    view = rendered.view;
+    const { root, timeline } = rendered;
+    const range = root.querySelector("input[type='range']");
+    range.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+    range.value = String(timeline.buckets.length - 1);
+    range.dispatchEvent(new window.Event("input", { bubbles: true }));
+    const layoutSpy = vi
+      .spyOn(lifecycleLayout, "layoutLifecycleRoutingGraph")
+      .mockImplementation(() => {
+        throw new Error("forced full-quality failure on release");
+      });
+    try {
+      // dragActive is cleared before this settle render runs, so a failure
+      // here must fall through to the real fallback, not be silently
+      // swallowed the way a draft-tier failure is.
+      range.dispatchEvent(new window.Event("pointerup", { bubbles: true }));
+      expect(root.textContent).toContain(
+        "Unable to lay out lifecycle diagram.",
+      );
+    } finally {
+      layoutSpy.mockRestore();
+    }
+  });
+
+  it("never uses draft tier for keyboard-driven range input (no preceding pointerdown)", () => {
+    vi.useFakeTimers();
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    let view;
+    const onBucketChange = vi.fn((bucketId) => {
+      view.update({
+        timeline: buildLifecycleTimeline(b),
+        snapshot: projectLifecycleAt(b, bucketId),
+        selectedBucketId: bucketId,
+      });
+    });
+    const rendered = render(b, "current", onBucketChange);
+    view = rendered.view;
+    const { root, timeline } = rendered;
+    const layoutSpy = vi.spyOn(lifecycleLayout, "layoutLifecycleRoutingGraph");
+    try {
+      const range = root.querySelector("input[type='range']");
+      const targetIndex = timeline.buckets.length - 1;
+      // Simulates a focused range input's native arrow-key stepping: an
+      // "input" event fires with no preceding pointerdown.
+      range.value = String(targetIndex);
+      range.dispatchEvent(new window.Event("input", { bubbles: true }));
+      vi.advanceTimersByTime(80);
+      expect(onBucketChange).toHaveBeenCalledWith(
+        timeline.buckets[targetIndex].id,
+      );
+      const call = layoutSpy.mock.calls.at(-1);
+      expect(call[2]?.qualityTier).not.toBe("draft");
+    } finally {
+      layoutSpy.mockRestore();
+    }
+  });
+
   it("does not mutate P4 projection and has equivalent selectable rows", () => {
     const b = bundle(
       [app("a")],
