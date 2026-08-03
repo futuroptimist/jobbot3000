@@ -879,6 +879,242 @@ describe("lifecycle diagram view", () => {
     }
   });
 
+  it("reuses a captured layout seed for the next drag tick, from any tier", () => {
+    vi.useFakeTimers();
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    let view;
+    const onBucketChange = vi.fn((bucketId) => {
+      view.update({
+        timeline: buildLifecycleTimeline(b),
+        snapshot: projectLifecycleAt(b, bucketId),
+        selectedBucketId: bucketId,
+      });
+    });
+    const rendered = render(b, "current", onBucketChange);
+    view = rendered.view;
+    const { root, timeline } = rendered;
+    const layoutSpy = vi.spyOn(lifecycleLayout, "layoutLifecycleRoutingGraph");
+    try {
+      const range = root.querySelector("input[type='range']");
+      const targetIndex = timeline.buckets.length - 1;
+      range.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+      range.value = String(targetIndex);
+      range.dispatchEvent(new window.Event("input", { bubbles: true }));
+      vi.advanceTimersByTime(80);
+      // The mount's own initial render is full quality (dragActive was
+      // false) and still captures a seed -- the very first drag tick
+      // already has one to reuse.
+      const firstTickCall = layoutSpy.mock.calls.at(-1);
+      expect(firstTickCall[2]).toMatchObject({ qualityTier: "draft" });
+      expect(firstTickCall[2].seedAssignments).toBeInstanceOf(Map);
+      expect(firstTickCall[2].seedRankOrderByRank).toBeInstanceOf(Map);
+      expect(firstTickCall[2].seedHandles).toBeInstanceOf(Map);
+      expect(firstTickCall[2].seedLinkDocks).toBeInstanceOf(Map);
+      // seedAcceptedRouteCrossingCount is deliberately never captured for
+      // cross-bucket reuse -- see the capture-site comment in
+      // lifecycleDiagram.js.
+      expect(firstTickCall[2]).not.toHaveProperty(
+        "seedAcceptedRouteCrossingCount",
+      );
+      expect(firstTickCall[2].authoritativeBranchOrderByRank).toBeInstanceOf(
+        Map,
+      );
+      expect(firstTickCall[2].authoritativeNodeOrderByRank).toBeInstanceOf(Map);
+    } finally {
+      layoutSpy.mockRestore();
+    }
+  });
+
+  it("retries once unseeded when a seed-replay rejection occurs, and still renders", () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root, view, timeline } = render(b, "current");
+    const range = root.querySelector("input[type='range']");
+    range.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+    const originalLayout = lifecycleLayout.layoutLifecycleRoutingGraph;
+    const layoutSpy = vi
+      .spyOn(lifecycleLayout, "layoutLifecycleRoutingGraph")
+      .mockImplementation((proj, width, opts) => {
+        if (opts?.seedAssignments) {
+          const error = new Error("forced seed-replay rejection");
+          error.cause = Object.freeze({
+            type: "lifecycle-authoritative-rank-order",
+            reason: "seed-replay-failed",
+            detail: "link-id-coverage-mismatch",
+          });
+          throw error;
+        }
+        return originalLayout(proj, width, opts);
+      });
+    try {
+      const targetId = timeline.buckets.at(-1).id;
+      view.update({
+        timeline,
+        snapshot: projectLifecycleAt(b, targetId),
+        selectedBucketId: targetId,
+      });
+      expect(layoutSpy).toHaveBeenCalledTimes(2);
+      const [, retryCall] = layoutSpy.mock.calls;
+      for (const key of [
+        "seedAssignments",
+        "seedRankOrderByRank",
+        "seedHandles",
+        "seedLinkDocks",
+        "seedAcceptedRouteCrossingCount",
+        "authoritativeBranchOrderByRank",
+        "authoritativeNodeOrderByRank",
+      ]) {
+        expect(retryCall[2]).not.toHaveProperty(key);
+      }
+      // The unseeded retry succeeded -- the bucket actually rendered, not
+      // the "keep previous frame" fallback.
+      expect(root.querySelector("svg")).toBeTruthy();
+      expect(root.textContent).not.toContain(
+        "Unable to lay out lifecycle diagram.",
+      );
+    } finally {
+      layoutSpy.mockRestore();
+    }
+  });
+
+  it("keeps the previous frame when both the seeded attempt and the unseeded retry fail", () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root, view, timeline } = render(b, "current");
+    const svgBefore = root.querySelector("svg");
+    const range = root.querySelector("input[type='range']");
+    range.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+    const layoutSpy = vi
+      .spyOn(lifecycleLayout, "layoutLifecycleRoutingGraph")
+      .mockImplementation(() => {
+        const error = new Error("forced seed-replay rejection, every call");
+        error.cause = Object.freeze({
+          type: "lifecycle-authoritative-rank-order",
+          reason: "seed-replay-failed",
+          detail: "link-id-coverage-mismatch",
+        });
+        throw error;
+      });
+    try {
+      const targetId = timeline.buckets.at(-1).id;
+      view.update({
+        timeline,
+        snapshot: projectLifecycleAt(b, targetId),
+        selectedBucketId: targetId,
+      });
+      expect(layoutSpy).toHaveBeenCalledTimes(2);
+      // lifecycle-authoritative-rank-order is itself a known layout-failure
+      // cause type, so the retry's own failure still falls into "keep the
+      // previous frame" during a drag, same as any other known failure.
+      expect(root.querySelector("svg")).toBe(svgBefore);
+      expect(root.textContent).not.toContain(
+        "Unable to lay out lifecycle diagram.",
+      );
+    } finally {
+      layoutSpy.mockRestore();
+    }
+  });
+
+  it("never retries an unexpected (uncaused) error even when a seed was attempted", () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root, view, timeline } = render(b, "current");
+    const range = root.querySelector("input[type='range']");
+    range.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+    const layoutSpy = vi
+      .spyOn(lifecycleLayout, "layoutLifecycleRoutingGraph")
+      .mockImplementation(() => {
+        throw new Error("forced unexpected failure");
+      });
+    try {
+      const targetId = timeline.buckets.at(-1).id;
+      view.update({
+        timeline,
+        snapshot: projectLifecycleAt(b, targetId),
+        selectedBucketId: targetId,
+      });
+      expect(layoutSpy).toHaveBeenCalledTimes(1);
+      expect(root.textContent).toContain(
+        "Unable to lay out lifecycle diagram.",
+      );
+    } finally {
+      layoutSpy.mockRestore();
+    }
+  });
+
+  it("never threads seed options into the full-quality settle-on-release call", () => {
+    vi.useFakeTimers();
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    let view;
+    const onBucketChange = vi.fn((bucketId) => {
+      view.update({
+        timeline: buildLifecycleTimeline(b),
+        snapshot: projectLifecycleAt(b, bucketId),
+        selectedBucketId: bucketId,
+      });
+    });
+    const rendered = render(b, "current", onBucketChange);
+    view = rendered.view;
+    const { root, timeline } = rendered;
+    const layoutSpy = vi.spyOn(lifecycleLayout, "layoutLifecycleRoutingGraph");
+    try {
+      const range = root.querySelector("input[type='range']");
+      const targetIndex = timeline.buckets.length - 1;
+      range.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+      range.value = String(targetIndex);
+      range.dispatchEvent(new window.Event("input", { bubbles: true }));
+      vi.advanceTimersByTime(80);
+      // Confirm a seed really was available and used for the drag tick,
+      // so the release assertion below is meaningful, not vacuous.
+      expect(layoutSpy.mock.calls.at(-1)[2].seedAssignments).toBeInstanceOf(
+        Map,
+      );
+      range.dispatchEvent(new window.Event("pointerup", { bubbles: true }));
+      const settleCall = layoutSpy.mock.calls.at(-1);
+      expect(settleCall[2]?.qualityTier).not.toBe("draft");
+      for (const key of [
+        "seedAssignments",
+        "seedRankOrderByRank",
+        "seedHandles",
+        "seedLinkDocks",
+        "seedAcceptedRouteCrossingCount",
+        "authoritativeBranchOrderByRank",
+        "authoritativeNodeOrderByRank",
+      ]) {
+        expect(settleCall[2]).not.toHaveProperty(key);
+      }
+    } finally {
+      layoutSpy.mockRestore();
+    }
+  });
+
   it("does not mutate P4 projection and has equivalent selectable rows", () => {
     const b = bundle(
       [app("a")],

@@ -3605,6 +3605,208 @@ describe("draft quality tier (Phase 4a drag-quality rendering)", () => {
   });
 });
 
+describe("cross-call seed replay (Phase 4b cross-bucket seeding)", () => {
+  // Mirrors exactly what lifecycleDiagram.js's lastLayoutSeed capture does --
+  // kept independent (not imported from the UI file) so this test would
+  // catch a divergence between what the renderer captures and what this
+  // suite verifies actually works.
+  const seedFromGraph = (graph) => {
+    const authoritativeBranchOrderByRank = new Map(
+      [...graph.transitionLaneRankOrder].map(([rank, ids]) => [
+        rank,
+        new Map(ids.map((id, index) => [id, index])),
+      ]),
+    );
+    const nodesByRank = new Map();
+    for (const node of graph.nodes) {
+      if (!nodesByRank.has(node.rank)) nodesByRank.set(node.rank, []);
+      nodesByRank.get(node.rank).push(node);
+    }
+    const authoritativeNodeOrderByRank = new Map();
+    for (const [rank, nodes] of nodesByRank) {
+      const sorted = [...nodes].sort(
+        (a, b) => a.y0 - b.y0 || compareLifecycleIds(a.id, b.id),
+      );
+      authoritativeNodeOrderByRank.set(
+        rank,
+        new Map(sorted.map((node, index) => [node.id, index])),
+      );
+    }
+    // seedAcceptedRouteCrossingCount is deliberately NOT captured -- see the
+    // matching comment in lifecycleDiagram.js. It's used as the audit's
+    // tolerance bound verbatim rather than derived from this attempt's own
+    // budget pressure. seedLinkDocks IS captured: materializeLaneAssignments
+    // only reproduces the seeded dock for a link's *routing* endpoint, never
+    // a real node's (see the matching fix in lifecycleDiagramLayout.js).
+    return {
+      seedAssignments: new Map(
+        graph.links.map((link) => [link.id, link.transitionLaneY]),
+      ),
+      seedRankOrderByRank: graph.transitionLaneRankOrder,
+      seedHandles: graph.acceptedHandles,
+      seedLinkDocks: new Map(
+        graph.links.map((link) => [link.id, { y0: link.y0, y1: link.y1 }]),
+      ),
+      authoritativeBranchOrderByRank,
+      authoritativeNodeOrderByRank,
+    };
+  };
+
+  it("replays a self-captured seed cheaply and deterministically under qualityTier: draft", () => {
+    const first = layoutLifecycleRoutingGraph(projection(), 1850, {
+      qualityTier: "draft",
+    });
+    const seed = seedFromGraph(first.graph);
+    const second = layoutLifecycleRoutingGraph(projection(), 1850, {
+      qualityTier: "draft",
+      ...seed,
+    });
+    // Seed replay validates and reuses the seed directly instead of
+    // searching -- exactly one candidateCallback invocation, not a
+    // multi-candidate backtracking search.
+    expect(second.graph.transitionLaneSolverStats.candidateEvaluations).toBe(1);
+    expect([...second.graph.transitionLaneRankOrder]).toEqual([
+      ...first.graph.transitionLaneRankOrder,
+    ]);
+    expect(
+      second.graph.links.map((link) => [link.id, link.transitionLaneY]),
+    ).toEqual(first.graph.links.map((link) => [link.id, link.transitionLaneY]));
+  });
+
+  it("cleanly rejects a seed replayed against a different-topology projection", () => {
+    const seed = seedFromGraph(
+      layoutLifecycleRoutingGraph(projection(), 1850, {
+        qualityTier: "draft",
+      }).graph,
+    );
+    const unrelatedProjection = () => ({
+      nodes: [
+        {
+          id: "origin:candidate_outreach",
+          label: "Outreach",
+          total: 1,
+          applicationIds: ["z"],
+        },
+        {
+          id: "endpoint:offer_accepted",
+          label: "Accepted",
+          total: 1,
+          applicationIds: ["z"],
+        },
+      ],
+      links: [
+        {
+          id: "link:origin:candidate_outreach->endpoint:offer_accepted",
+          source: "origin:candidate_outreach",
+          target: "endpoint:offer_accepted",
+          value: 1,
+          applicationIds: ["z"],
+        },
+      ],
+      paths: [
+        {
+          applicationId: "z",
+          endpoint: "offer_accepted",
+          nodeIds: ["origin:candidate_outreach", "endpoint:offer_accepted"],
+        },
+      ],
+    });
+    let thrown;
+    try {
+      layoutLifecycleRoutingGraph(unrelatedProjection(), 1850, {
+        qualityTier: "draft",
+        ...seed,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown?.cause).toMatchObject({
+      type: "lifecycle-authoritative-rank-order",
+      reason: "seed-replay-failed",
+      detail: "link-id-coverage-mismatch",
+    });
+  });
+
+  it("rejects a seed whose authoritativeBranchOrderByRank contradicts its own rank order", () => {
+    // Composition/values are otherwise identical (same projection replayed
+    // against itself) -- deliberately reversing one rank's authoritative
+    // order isolates exactly the "authoritative-order-mismatch" check from
+    // every other seed-validation reason (coverage, spacing, legality).
+    const graph = layoutLifecycleRoutingGraph(projection(), 1850, {
+      qualityTier: "draft",
+    }).graph;
+    const seed = seedFromGraph(graph);
+    const rank3 = seed.authoritativeBranchOrderByRank.get(3);
+    expect(rank3.size).toBeGreaterThan(1);
+    seed.authoritativeBranchOrderByRank.set(
+      3,
+      new Map(
+        [...rank3.entries()].map(([id], index, entries) => [
+          id,
+          entries.length - 1 - index,
+        ]),
+      ),
+    );
+    let thrown;
+    try {
+      layoutLifecycleRoutingGraph(projection(), 1850, {
+        qualityTier: "draft",
+        ...seed,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown?.cause).toMatchObject({
+      type: "lifecycle-authoritative-rank-order",
+      reason: "seed-replay-failed",
+      detail: "authoritative-order-mismatch",
+      rank: 3,
+    });
+  });
+
+  // eslint-disable-next-line max-len
+  it("omitting authoritativeBranchOrderByRank/authoritativeNodeOrderByRank does not break a matching self-replay", () => {
+    // Regression guard for the capture code itself: the two authoritative
+    // fields must be additive safety, never required for the common case
+    // where they'd agree anyway.
+    const graph = layoutLifecycleRoutingGraph(projection(), 1850, {
+      qualityTier: "draft",
+    }).graph;
+    const seed = seedFromGraph(graph);
+    delete seed.authoritativeBranchOrderByRank;
+    delete seed.authoritativeNodeOrderByRank;
+    let thrown;
+    let result;
+    try {
+      result = layoutLifecycleRoutingGraph(projection(), 1850, {
+        qualityTier: "draft",
+        ...seed,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeUndefined();
+    expect(result.graph.transitionLaneSolverStats.candidateEvaluations).toBe(1);
+  });
+
+  it("qualityTier unset/full is unaffected by seed options being present", () => {
+    // Full-quality's own two-pass wrapper always derives its own seed from
+    // its own discovery pass -- a caller-supplied cross-bucket seed option
+    // must never leak into or perturb that path.
+    const seed = seedFromGraph(
+      layoutLifecycleRoutingGraph(projection(), 1850, {
+        qualityTier: "draft",
+      }).graph,
+    );
+    const withSeed = layoutLifecycleRoutingGraph(projection(), 1850, seed);
+    const withoutSeed = layoutLifecycleRoutingGraph(projection(), 1850);
+    expect(withSeed.graph.transitionLaneSolverStats.layoutAttemptCount).toBe(2);
+    expect([...withSeed.graph.transitionLaneRankOrder]).toEqual([
+      ...withoutSeed.graph.transitionLaneRankOrder,
+    ]);
+  });
+});
+
 describe("shared route-crossing classifier", () => {
   // src/web/tracker/lifecycleRouteGeometry.js -- the pure classifier both
   // auditLifecycleRouteGeometry (here) and the Playwright collision audit
