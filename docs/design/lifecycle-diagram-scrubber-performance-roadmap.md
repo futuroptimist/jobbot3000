@@ -2,8 +2,8 @@
 
 ## Status
 
-Phase 1 implemented (this PR). Phases 2–5 are planned but not yet built — see the
-`diagram-performance`-labeled issues on `futuroptimist/jobbot3000` for tracking, and the
+Phases 1 and 2 implemented (PRs #1199 and #1200). Phases 3–5 are planned but not yet built — see
+the `diagram-performance`-labeled issues on `futuroptimist/jobbot3000` for tracking, and the
 umbrella issue for the full roadmap. This doc is a second source of context for that roadmap in
 case the issues/PR discussion threads are ever lost.
 
@@ -64,13 +64,28 @@ sequenced by risk, rather than one large change.
      instead of resetting it. This is more correct than the prior always-reset behavior and is
      pinned by a test.
 
-2. **Phase 2 — Incremental per-app event replay + expanded scrub-tick perf coverage + busy
-   indicator.** Restructures `projectApp`'s replay in `lifecycleProjection.js` to update state
-   incrementally instead of replaying all events per bucket from scratch. Highest
-   data-_correctness_ risk in the roadmap: `projectApp` is a dense state machine
-   (terminal/reopen handling, milestone regression detection, assessment in-progress tracking,
-   ~15 warning codes) covered by ~30 edge-case tests — any incremental formulation must produce
-   byte-identical output to full replay for every bucket, every time.
+2. **Phase 2 — Per-application replay memoization + expanded scrub-tick perf coverage (done).**
+   Issue #1194 originally scoped this as "restructure `projectApp` to update state
+   incrementally" — rewriting its internals into a stateful, resumable reducer. Investigation
+   found a lower-risk alternative that ships the same performance property without touching
+   `projectApp`'s internals at all: `projectApp(app, appEvents, isCurrent)` is already a _pure_
+   function (it internally re-sorts its input, proven order-independent by an existing test),
+   event objects have stable identity per bundle (via Phase 1's `prepare()` cache), and
+   `supersedesEventId` is enforced same-application-only at both the writer and
+   schema-validation layers — so one application's included events can never be affected by
+   another's. That makes the ordered list of included event ids for `(appId, isCurrent)` a fully
+   safe, collision-free memoization key. Phase 2 wraps `projectApp` in exactly that memoization
+   (`projectAppCached` in `lifecycleProjection.js`, bounded per-bundle cache sized off
+   `apps.length`), which is correct by construction — a cache can only return a value the real
+   function already produced for that input, so it can't introduce a new, independently-fallible
+   computation path the way a hand-rolled incremental reducer could. All ~30 pre-existing
+   edge-case tests in `test/web-tracker-lifecycle-projection.test.js` needed zero changes, which
+   is the clearest evidence the wrapper is transparent. Also added: reference-identity/LRU/
+   `isCurrent`-boundary tests, a randomized fuzz-equivalence test against a cold bundle clone, and
+   a perf test proving a persistent scrubbing session is far cheaper than one with no cross-call
+   cache reuse. The busy/loading-indicator item originally scoped here was deferred to Phase 4/5
+   (see below) rather than implemented — decided with the user before starting, not dropped
+   silently.
 
 3. **Phase 3 — Diff-based SVG updates + skip negligible elements.** Rewrites `renderSvg()`'s
    teardown/rebuild into a keyed diff against the previous render, and skips constructing
@@ -86,11 +101,15 @@ sequenced by risk, rather than one large change.
    tests and the 30s render-latency contract; may need to split further.
 
 5. **Phase 5 — Web Worker offload + persisted IndexedDB snapshot store + eager background
-   precompute.** Largest architectural departure: introduces the first derived/cached IndexedDB
-   store in a codebase whose data contract
+   precompute + busy indicator.** Largest architectural departure: introduces the first
+   derived/cached IndexedDB store in a codebase whose data contract
    ([`../browser-first-architecture.md`](../browser-first-architecture.md)) currently describes
    only raw stores, plus Worker-lifecycle and structured-clone handling for the layout search.
-   Ordered last because it depends on stable incremental replay (Phase 2) and layout reuse
+   Also where the busy/loading indicator deferred from Phase 2 belongs: the render pipeline is
+   fully synchronous end-to-end today, so a real indicator (one that actually paints before
+   blocking work starts) needs a `requestAnimationFrame`-style deferral point — better solved
+   once, here, alongside the async/Worker offload, than as a separate one-off mechanism earlier.
+   Ordered last because it depends on stable per-application caching (Phase 2) and layout reuse
    (Phase 4).
 
 ## Tracking
