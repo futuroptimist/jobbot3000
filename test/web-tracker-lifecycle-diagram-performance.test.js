@@ -73,6 +73,55 @@ function largeBundle(count = 1000) {
   return { applications, lifecycleEvents };
 }
 
+function staggeredBundle(count) {
+  // Unlike largeBundle() above, occurredAt here is unique per (app,
+  // eventIndex) pair: every application's 8-event chain lands on
+  // completely distinct instants from every other application's, so each
+  // bucket transition advances exactly one application instead of all of
+  // them simultaneously. This is the case per-app memoization is designed
+  // to speed up; largeBundle()'s shared-timestamp fixture is adversarial
+  // to it (every dated bucket changes every app's event set at once).
+  const baseMs = Date.parse("2026-01-01T00:00:00.000Z");
+  const applications = [];
+  const lifecycleEvents = [];
+  const endpoint = endpoints[0];
+  for (let i = 0; i < count; i += 1) {
+    const id = `stag-app-${String(i).padStart(4, "0")}`;
+    applications.push({
+      id,
+      company: `Synthetic ${i}`,
+      role: "Role",
+      status: endpoint.status,
+      origin: origins[0],
+    });
+    [
+      origins[0],
+      "employer_response_received",
+      "recruiter_screen",
+      "assessment_take_home",
+      "technical_interview",
+      "onsite_final_loop",
+      "offer_received",
+      endpoint.event ?? endpoint.id,
+    ].forEach((eventType, index) => {
+      lifecycleEvents.push({
+        id: `stag-event-${String(i).padStart(4, "0")}-${index}`,
+        applicationId: id,
+        eventType,
+        occurredAt: new Date(
+          baseMs + i * 1000 + index * 10_000_000,
+        ).toISOString(),
+        occurredAtPrecision: "instant",
+        inferred: false,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        actionStatus:
+          eventType === "assessment_take_home" ? "submitted" : undefined,
+      });
+    });
+  }
+  return { applications, lifecycleEvents };
+}
+
 function setup() {
   const dom = new JSDOM(
     "<!doctype html><main><div data-lifecycle-diagram></div></main>",
@@ -213,12 +262,89 @@ describe("lifecycle diagram large-data rendering", () => {
       projectLifecycleAt(bundleData, bucketId);
     const revisitDuration = performance.now() - revisitStart;
 
-    expect(revisitDuration).toBeLessThan(
-      Math.max(firstVisitDuration / 4, 5),
-    );
+    expect(revisitDuration).toBeLessThan(Math.max(firstVisitDuration / 4, 5));
 
     const repeatedTimelineStart = performance.now();
     for (let i = 0; i < 50; i += 1) buildLifecycleTimeline(bundleData);
     expect(performance.now() - repeatedTimelineStart).toBeLessThan(50);
+  });
+
+  it("reuses cached application paths across adjacent scrub buckets", () => {
+    // Complements the revisit test above, which largeBundle() can't probe:
+    // every application there shares identical timestamps, so every dated
+    // bucket changes all applications' event sets simultaneously and never
+    // exercises per-app cache hits. staggeredBundle() stages timestamps so
+    // each bucket transition advances exactly one application — the case
+    // per-app memoization is designed to speed up.
+    //
+    // Sample a *contiguous* window starting right after every application
+    // has entered (bucket index `appCount`), not an evenly spaced sample
+    // across the whole timeline: within this window, moving from one
+    // bucket to the next always changes exactly one application's included
+    // event set, so every other application's `projectApp` result must be
+    // byte-identical to the previous bucket's — memoization should return
+    // the *same object reference* for it rather than recomputing.
+    //
+    // This asserts that structural fact directly, by reference identity,
+    // instead of via wall-clock timing: a wall-clock ratio (even a
+    // multi-trial median) is inherently host-dependent and was observed to
+    // fail intermittently on some machines despite passing reliably on
+    // others. Reference-identity counting is deterministic — it either
+    // reused the cached object or it didn't — and needs no calibrated
+    // threshold, timing margin, or retries.
+    const appCount = 100;
+    const windowSize = 50;
+    const bundleTemplate = staggeredBundle(appCount);
+    const timeline = buildLifecycleTimeline(bundleTemplate);
+    const allBucketIds = timeline.buckets
+      .map((entry) => entry.id)
+      .filter((id) => id !== "unknown-date" && id !== "current");
+    const windowIds = allBucketIds.slice(appCount, appCount + windowSize);
+    expect(windowIds.length).toBe(windowSize);
+
+    // Persistent (warm) walk: one long-lived bundle, so the per-application
+    // path cache accumulates across the whole window.
+    const persistentBundle = staggeredBundle(appCount);
+    const pathsByApplicationPerBucket = windowIds.map((id) => {
+      const projection = projectLifecycleAt(persistentBundle, id);
+      return new Map(
+        projection.paths.map((path) => [path.applicationId, path]),
+      );
+    });
+    expect(pathsByApplicationPerBucket[0].size).toBe(appCount);
+    expect(pathsByApplicationPerBucket.at(-1).size).toBe(appCount);
+
+    let reused = 0;
+    let changed = 0;
+    for (let i = 1; i < pathsByApplicationPerBucket.length; i += 1) {
+      const previous = pathsByApplicationPerBucket[i - 1];
+      for (const [applicationId, path] of pathsByApplicationPerBucket[i]) {
+        if (path === previous.get(applicationId)) reused += 1;
+        else changed += 1;
+      }
+    }
+    const uniquePersistentPaths = new Set(
+      pathsByApplicationPerBucket.flatMap((byApplication) => [
+        ...byApplication.values(),
+      ]),
+    );
+    // (windowSize - 1) adjacent-bucket transitions, one changed application
+    // each; every other application across every transition is reused.
+    const transitions = windowSize - 1;
+    expect(changed).toBe(transitions);
+    expect(reused).toBe(transitions * appCount - transitions);
+    // One real computation per application at the first bucket, plus one
+    // more per transition for the single application that changed.
+    expect(uniquePersistentPaths.size).toBe(appCount + transitions);
+
+    // Cold walk: a fresh, content-identical bundle clone for every single
+    // bucket call, so no cross-call cache reuse of any kind is possible —
+    // every path in every bucket must be a distinct object.
+    const uniqueColdPaths = new Set();
+    for (const id of windowIds) {
+      const projection = projectLifecycleAt(staggeredBundle(appCount), id);
+      for (const path of projection.paths) uniqueColdPaths.add(path);
+    }
+    expect(uniqueColdPaths.size).toBe(windowSize * appCount);
   });
 });
