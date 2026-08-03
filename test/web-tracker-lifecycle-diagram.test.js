@@ -822,6 +822,240 @@ describe("lifecycle diagram view", () => {
     view.destroy();
   });
 
+  it("reuses unchanged SVG node/branch elements across a no-op re-render", () => {
+    const b = bundle(
+      [app("a"), app("b")],
+      [
+        ev("o1", "a", "application_submitted", "2026-01-01"),
+        ev("t1", "a", "technical_interview", "2026-01-02"),
+        ev("o2", "b", "application_submitted", "2026-01-01"),
+        ev("t2", "b", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root, view, timeline, snapshot } = render(b);
+    const nodeGroup = root.querySelector(
+      "[data-diagram-node='origin:application_submitted']",
+    );
+    const nodeRect = nodeGroup.querySelector(
+      "rect:not([data-diagram-node-hit])",
+    );
+    const branchGroup = root.querySelector("[data-diagram-branch-group]");
+    const branchPath = branchGroup.querySelector("[data-diagram-link]");
+
+    view.update({ timeline, snapshot, selectedBucketId: "current" });
+
+    expect(
+      root.querySelector("[data-diagram-node='origin:application_submitted']"),
+    ).toBe(nodeGroup);
+    expect(
+      root
+        .querySelector("[data-diagram-node='origin:application_submitted']")
+        .querySelector("rect:not([data-diagram-node-hit])"),
+    ).toBe(nodeRect);
+    expect(root.querySelector("[data-diagram-branch-group]")).toBe(branchGroup);
+    expect(
+      root.querySelector("[data-diagram-branch-group] [data-diagram-link]"),
+    ).toBe(branchPath);
+  });
+
+  it("reuses the SVG node group on selection, patching only selection attributes", () => {
+    const b = bundle(
+      [app("a")],
+      [ev("o1", "a", "application_submitted", "2026-01-01")],
+    );
+    const { root } = render(b);
+    const nodeGroup = root.querySelector(
+      "[data-diagram-node='origin:application_submitted']",
+    );
+    const nodeRect = nodeGroup.querySelector(
+      "rect:not([data-diagram-node-hit])",
+    );
+    const hitRect = nodeGroup.querySelector("[data-diagram-node-hit]");
+    expect(nodeGroup.getAttribute("data-selected")).toBe("false");
+    expect(nodeRect.getAttribute("stroke")).toBe("#e2e8f0");
+
+    nodeRect.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+
+    const sameGroup = root.querySelector(
+      "[data-diagram-node='origin:application_submitted']",
+    );
+    expect(sameGroup).toBe(nodeGroup);
+    expect(sameGroup.querySelector("rect:not([data-diagram-node-hit])")).toBe(
+      nodeRect,
+    );
+    expect(sameGroup.querySelector("[data-diagram-node-hit]")).toBe(hitRect);
+    expect(sameGroup.getAttribute("data-selected")).toBe("true");
+    expect(nodeRect.getAttribute("stroke")).toBe("#F8FAFC");
+  });
+
+  it("reuses the SVG branch group on selection, adding/removing only the halo", () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o1", "a", "application_submitted", "2026-01-01"),
+        ev("t1", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root } = render(b);
+    const branchGroup = root.querySelector("[data-diagram-branch-group]");
+    const branchPath = branchGroup.querySelector("[data-diagram-link]");
+    expect(branchGroup.querySelector("[data-diagram-branch-halo]")).toBeNull();
+
+    branchPath.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+
+    const sameGroup = root.querySelector("[data-diagram-branch-group]");
+    expect(sameGroup).toBe(branchGroup);
+    expect(sameGroup.querySelector("[data-diagram-link]")).toBe(branchPath);
+    expect(sameGroup.getAttribute("data-selected")).toBe("true");
+    expect(
+      sameGroup.querySelector("[data-diagram-branch-halo]"),
+    ).not.toBeNull();
+
+    // Selecting something else (there's no click-to-toggle-off) deselects
+    // the branch, which should remove the halo from the same reused group.
+    root
+      .querySelector(
+        "[data-diagram-node='origin:application_submitted'] rect:not([data-diagram-node-hit])",
+      )
+      .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(root.querySelector("[data-diagram-branch-group]")).toBe(branchGroup);
+    expect(root.querySelector("[data-diagram-link]")).toBe(branchPath);
+    expect(branchGroup.getAttribute("data-selected")).toBe("false");
+    expect(root.querySelector("[data-diagram-branch-halo]")).toBeNull();
+  });
+
+  it("disconnects SVG elements for nodes that drop out of a later bucket", () => {
+    const b = bundle(
+      [app("a")],
+      [ev("o1", "a", "application_submitted", "2026-01-01")],
+    );
+    const { root, view, timeline } = render(b, "unknown-date");
+    // "unknown-date" has no dated events for this bundle, so the diagram
+    // shows the empty-nodes fallback rather than an origin node.
+    expect(
+      root.querySelector("[data-diagram-node='origin:application_submitted']"),
+    ).toBeNull();
+
+    view.update({
+      timeline,
+      snapshot: projectLifecycleAt(b, "current"),
+      selectedBucketId: "current",
+    });
+    const nodeGroup = root.querySelector(
+      "[data-diagram-node='origin:application_submitted']",
+    );
+    expect(nodeGroup).not.toBeNull();
+    expect(nodeGroup.isConnected).toBe(true);
+
+    view.update({
+      timeline,
+      snapshot: projectLifecycleAt(b, "unknown-date"),
+      selectedBucketId: "unknown-date",
+    });
+    expect(
+      root.querySelector("[data-diagram-node='origin:application_submitted']"),
+    ).toBeNull();
+    expect(nodeGroup.isConnected).toBe(false);
+  });
+
+  it("keeps a reused SVG node's click listener reading current, not stale, data", () => {
+    // The projection layer replays event histories fresh every render (only
+    // Phase 1/2's *bucket-level* results are cached), so a node's rendered
+    // signature (position/size/label/total) can be identical across two
+    // different bundles while the underlying application membership behind
+    // it differs -- e.g. two applications swap origins, leaving the
+    // "referral" node's total unchanged but backed by a different
+    // application. A reused element's listener must reflect the *current*
+    // render's data, not whatever was captured when the element was built.
+    const endEvents = (id) => [
+      ev(`${id}-recruiter`, id, "recruiter_screen", "2026-01-02"),
+      ev(`${id}-rejected`, id, "employer_rejected", "2026-01-03"),
+    ];
+    const before = bundle(
+      [app("a"), app("b")],
+      [
+        ev("a-origin", "a", "referral", "2026-01-01"),
+        ...endEvents("a"),
+        ev("b-origin", "b", "candidate_outreach", "2026-01-01"),
+        ...endEvents("b"),
+      ],
+    );
+    const after = bundle(
+      [app("a"), app("b")],
+      [
+        ev("a-origin", "a", "candidate_outreach", "2026-01-01"),
+        ...endEvents("a"),
+        ev("b-origin", "b", "referral", "2026-01-01"),
+        ...endEvents("b"),
+      ],
+    );
+    const { root, view } = render(before);
+    const referralGroup = root.querySelector(
+      "[data-diagram-node='origin:referral']",
+    );
+    expect(referralGroup).not.toBeNull();
+
+    const afterSnapshot = projectLifecycleAt(after, "current");
+    view.update({
+      timeline: buildLifecycleTimeline(after),
+      snapshot: afterSnapshot,
+      selectedBucketId: "current",
+    });
+    // Same element reused -- proves the signature (position/size/total) was
+    // judged unchanged even though the backing application swapped.
+    expect(root.querySelector("[data-diagram-node='origin:referral']")).toBe(
+      referralGroup,
+    );
+
+    referralGroup
+      .querySelector("rect:not([data-diagram-node-hit])")
+      .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(
+      [...root.querySelectorAll("[data-affected-applications] li")].map(
+        (item) => item.textContent,
+      ),
+    ).toEqual(["b"]);
+  });
+
+  it("constructs zero new SVG elements when a node selection changes", () => {
+    // Node/branch counts are bounded by the fixed taxonomy (a couple dozen
+    // categories at most), not by application count, so a data-driven
+    // "far fewer elements than a full rebuild" scenario is sensitive to
+    // Sankey re-layout cascades that are hard to predict precisely. A
+    // selection change is a cleaner, fully deterministic proxy: it never
+    // touches geometry, so the diff should construct nothing at all for a
+    // node selection (only attribute patches).
+    const b = bundle(
+      [app("a")],
+      [ev("o1", "a", "application_submitted", "2026-01-01")],
+    );
+    const { root } = render(b);
+    const createSpy = vi.spyOn(document, "createElementNS");
+    const nodeRect = root.querySelector(
+      "[data-diagram-node='origin:application_submitted'] rect:not([data-diagram-node-hit])",
+    );
+    nodeRect.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(createSpy).not.toHaveBeenCalled();
+    createSpy.mockRestore();
+  });
+
+  it("constructs exactly one new SVG element (the halo) when a branch is selected", () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o1", "a", "application_submitted", "2026-01-01"),
+        ev("t1", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root } = render(b);
+    const createSpy = vi.spyOn(document, "createElementNS");
+    const branchPath = root.querySelector("[data-diagram-link]");
+    branchPath.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(createSpy).toHaveBeenCalledWith(expect.any(String), "path");
+    createSpy.mockRestore();
+  });
+
   it("renders warning summary from supplied P4 warning codes", () => {
     const root = setup();
     const view = createLifecycleDiagramView(root);
