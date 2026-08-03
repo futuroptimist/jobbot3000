@@ -262,9 +262,7 @@ describe("lifecycle diagram large-data rendering", () => {
       projectLifecycleAt(bundleData, bucketId);
     const revisitDuration = performance.now() - revisitStart;
 
-    expect(revisitDuration).toBeLessThan(
-      Math.max(firstVisitDuration / 4, 5),
-    );
+    expect(revisitDuration).toBeLessThan(Math.max(firstVisitDuration / 4, 5));
 
     const repeatedTimelineStart = performance.now();
     for (let i = 0; i < 50; i += 1) buildLifecycleTimeline(bundleData);
@@ -279,45 +277,68 @@ describe("lifecycle diagram large-data rendering", () => {
     // each bucket transition advances exactly one application — the case
     // per-app memoization is designed to speed up.
     //
-    // This compares a first-visit, never-repeated walk through a sample of
+    // This compares a first-visit, never-repeated walk through a window of
     // dated buckets on one long-lived bundle (benefits from the per-bundle
     // prepare cache *and* per-application path cache accumulating across
-    // the walk) against the same sample performed with a fresh,
+    // the walk) against the same window performed with a fresh,
     // content-identical bundle clone for every single bucket call (forces
     // every call to be fully cold — no cross-call cache reuse of any kind
     // is possible). The gap between them is what persistent caching across
     // a scrubbing session actually buys the user.
     //
-    // Sampled (not every bucket) and kept to a moderate app count: walking
-    // and cold-cloning every one of a large bundle's buckets is the
-    // dominant cost here (each cold call rebuilds and re-projects the
-    // whole bundle), and running that ~800 times made this test take
-    // upwards of 10s on a full checkout — comfortably discriminating but
-    // needlessly slow relative to Vitest's 30s single-threaded budget. A
-    // sampled walk preserves the same ratio with a fraction of the cost.
+    // Sample a *contiguous* window starting right after every application
+    // has entered (bucket index `appCount`), not an evenly spaced sample
+    // across the whole timeline: an even sample mixes in the early
+    // ramp-up region (where few applications are included yet, so both
+    // warm and cold costs are small and dominated by noise), which
+    // produced an inconsistent, occasionally-overlapping ratio between the
+    // memoized and unmemoized implementations. A contiguous post-ramp-up
+    // window consistently exercises the "one application changes per
+    // adjacent bucket" case throughout.
+    //
+    // Take several independent trials with fresh bundles and compare
+    // medians (robust to a single slow tick from GC/JIT/OS scheduling),
+    // after one disposable warm-up pass so first-call JIT/allocator
+    // effects don't skew trial 1. Empirically (see PR discussion) this
+    // window design gives a stable ~13-14x ratio with per-app memoization
+    // vs. ~6.5-7x without it — a fixed threshold well clear of both.
     const appCount = 100;
-    const sampleSize = 50;
+    const windowSize = 50;
+    const trialCount = 7;
     const bundleTemplate = staggeredBundle(appCount);
     const timeline = buildLifecycleTimeline(bundleTemplate);
     const allBucketIds = timeline.buckets
       .map((entry) => entry.id)
       .filter((id) => id !== "unknown-date" && id !== "current");
-    expect(allBucketIds.length).toBeGreaterThan(appCount * 4);
-    const step = Math.max(1, Math.floor(allBucketIds.length / sampleSize));
-    const bucketIds = allBucketIds.filter((_, index) => index % step === 0);
+    const windowIds = allBucketIds.slice(appCount, appCount + windowSize);
+    expect(windowIds.length).toBe(windowSize);
 
-    const persistentBundle = staggeredBundle(appCount);
-    const warmStart = performance.now();
-    for (const id of bucketIds) projectLifecycleAt(persistentBundle, id);
-    const warmDuration = performance.now() - warmStart;
+    const median = (values) => {
+      const sorted = [...values].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      return sorted.length % 2
+        ? sorted[mid]
+        : (sorted[mid - 1] + sorted[mid]) / 2;
+    };
+    const timeWarm = () => {
+      const bundleData = staggeredBundle(appCount);
+      const start = performance.now();
+      for (const id of windowIds) projectLifecycleAt(bundleData, id);
+      return performance.now() - start;
+    };
+    const timeCold = () => {
+      const start = performance.now();
+      for (const id of windowIds)
+        projectLifecycleAt(staggeredBundle(appCount), id);
+      return performance.now() - start;
+    };
 
-    const coldStart = performance.now();
-    for (const id of bucketIds) {
-      const freshClone = staggeredBundle(appCount);
-      projectLifecycleAt(freshClone, id);
-    }
-    const coldDuration = performance.now() - coldStart;
+    timeWarm();
+    timeCold();
 
-    expect(coldDuration).toBeGreaterThan(warmDuration * 5);
+    const warmDurations = Array.from({ length: trialCount }, timeWarm);
+    const coldDurations = Array.from({ length: trialCount }, timeCold);
+
+    expect(median(coldDurations)).toBeGreaterThan(median(warmDurations) * 9);
   });
 });
