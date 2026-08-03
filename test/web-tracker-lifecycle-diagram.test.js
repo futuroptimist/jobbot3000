@@ -553,6 +553,48 @@ describe("lifecycle diagram view", () => {
     expect(onBucketChange).toHaveBeenCalledWith(targetBucketId);
   });
 
+  it("releases the drag to the bucket id captured at the last tick, not a shifted index", () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t1", "a", "recruiter_screen", "2026-01-02"),
+        ev("t2", "a", "technical_interview", "2026-01-03"),
+      ],
+    );
+    const onBucketChange = vi.fn();
+    const { root, view, timeline } = render(b, "current", onBucketChange);
+    const range = root.querySelector("input[type='range']");
+    const targetIndex = 2;
+    const targetBucketId = timeline.buckets[targetIndex].id;
+    range.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+    range.value = String(targetIndex);
+    range.dispatchEvent(new window.Event("input", { bubbles: true }));
+
+    // A timeline replacement lands between the last drag tick and release
+    // (e.g. a background refresh discovering an earlier event), inserting a
+    // bucket before the target and shifting what index `targetIndex` now
+    // points to.
+    const withEarlierEvent = bundle(
+      [app("a")],
+      [
+        ev("earlier", "a", "application_submitted", "2025-12-31"),
+        ...b.lifecycleEvents,
+      ],
+    );
+    const nextTimeline = buildLifecycleTimeline(withEarlierEvent);
+    expect(nextTimeline.buckets[targetIndex].id).not.toBe(targetBucketId);
+    view.update({
+      timeline: nextTimeline,
+      snapshot: projectLifecycleAt(withEarlierEvent, "current"),
+      selectedBucketId: "current",
+    });
+
+    range.dispatchEvent(new window.Event("pointerup", { bubbles: true }));
+    expect(onBucketChange).toHaveBeenCalledTimes(1);
+    expect(onBucketChange).toHaveBeenCalledWith(targetBucketId);
+  });
+
   it("lets a newer discrete prev/next/current action win over an older pending scrub", () => {
     vi.useFakeTimers();
     const b = bundle(
@@ -671,7 +713,8 @@ describe("lifecycle diagram view", () => {
     }
   });
 
-  it("keeps the previously rendered frame when a draft-tier layout throws mid-drag", () => {
+  // eslint-disable-next-line max-len
+  it("keeps the previously rendered frame when a known layout-search failure throws mid-drag", () => {
     const b = bundle(
       [app("a")],
       [
@@ -687,7 +730,16 @@ describe("lifecycle diagram view", () => {
     const layoutSpy = vi
       .spyOn(lifecycleLayout, "layoutLifecycleRoutingGraph")
       .mockImplementation(() => {
-        throw new Error("forced draft-tier failure");
+        // A real budget-exceeded failure always carries a structured
+        // cause.type (see lifecycleDiagramLayout.js's
+        // throwHandleStateLimitExceeded) -- only these known types are
+        // swallowed mid-drag, never a plain/unexpected error.
+        const error = new Error("forced draft-tier failure");
+        error.cause = Object.freeze({
+          type: "lifecycle-transition-lane-order",
+          reason: "state-limit",
+        });
+        throw error;
       });
     try {
       // The last bucket still includes the application (an earlier bucket
@@ -704,6 +756,40 @@ describe("lifecycle diagram view", () => {
       // "too slow right now", not "genuinely unlayoutable".
       expect(root.querySelector("svg")).toBe(svgBefore);
       expect(root.textContent).not.toContain(
+        "Unable to lay out lifecycle diagram.",
+      );
+    } finally {
+      layoutSpy.mockRestore();
+    }
+  });
+
+  it("still shows the fallback for an unexpected (uncaused) error during a drag tick", () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root, view, timeline } = render(b, "current");
+    const range = root.querySelector("input[type='range']");
+    range.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+    const layoutSpy = vi
+      .spyOn(lifecycleLayout, "layoutLifecycleRoutingGraph")
+      .mockImplementation(() => {
+        // No error.cause at all -- a genuine bug (e.g. a TypeError), not a
+        // structured layout-search rejection. Must never be silently
+        // swallowed just because a drag happens to be in progress.
+        throw new Error("forced unexpected failure");
+      });
+    try {
+      const targetId = timeline.buckets.at(-1).id;
+      view.update({
+        timeline,
+        snapshot: projectLifecycleAt(b, targetId),
+        selectedBucketId: targetId,
+      });
+      expect(root.textContent).toContain(
         "Unable to lay out lifecycle diagram.",
       );
     } finally {

@@ -83,6 +83,20 @@ const PAGE_SIZE = 50;
 // without changing any ordering/search logic itself.
 const DRAG_QUALITY_TRANSITION_LANE_STATE_LIMIT = 50000;
 const DRAG_QUALITY_HANDLE_STATE_LIMIT = 8192;
+// Structured lifecycle-layout-search failure causes (see
+// lifecycleDiagramLayout.js) -- a deterministic budget/state-limit or
+// infeasible-ordering rejection, always carried as error.cause.type. An
+// unexpected/programming error (a genuine bug, not a search limit) never
+// sets a cause matching this set -- see the "hard or unexpected
+// materialization invariant" comment in lifecycleDiagramLayout.js, which
+// propagates with no cause at all specifically so it isn't misclassified
+// as ordinary infeasibility.
+const LIFECYCLE_LAYOUT_FAILURE_CAUSE_TYPES = new Set([
+  "lifecycle-transition-lane-order",
+  "lifecycle-handle-placement",
+  "lifecycle-routing-anchor-allocation",
+  "lifecycle-authoritative-rank-order",
+]);
 const unique = (items) => [...new Set(items.filter(Boolean))].sort(compare);
 const pageSlice = (items, page) => {
   const maxPage = Math.max(0, Math.ceil(items.length / PAGE_SIZE) - 1);
@@ -167,6 +181,14 @@ export function createLifecycleDiagramView(root, options = {}) {
   // (bucket navigation, resize, selection, keyboard stepping), which always
   // use the full-quality layout. See renderSvg()'s qualityTier option below.
   let dragActive = false;
+  // The bucket id resolved at the most recent drag-tick "input" event,
+  // reset on each new pointerdown. Release must resolve against this
+  // captured id, never a raw index against range.value -- update() can
+  // replace `timeline` between the last tick and release (e.g. a
+  // background refresh inserting a bucket), which would shift what that
+  // index now points to. See the debouncedRangeChange comment below for
+  // the identical hazard/fix already applied to the debounced path itself.
+  let lastDragTickBucketId = null;
   // Keyed-diff state for renderSvg(): svg/branchG/handleG are created once
   // and reused across renders instead of being torn down every call. Node
   // ids (`origin:x`, `milestone:x`, `endpoint:x`) and branch ids
@@ -603,14 +625,22 @@ export function createLifecycleDiagramView(root, options = {}) {
         root.clientWidth,
         layoutOptions,
       ));
-    } catch {
-      // A draft-tier failure (budget exceeded) doesn't mean the bucket is
+    } catch (error) {
+      // A known layout-search failure (budget exceeded, infeasible
+      // ordering, etc.) during a draft-tier tick doesn't mean the bucket is
       // actually unlayoutable -- full quality would likely have succeeded
       // given more budget. Skip this tick's render and keep whatever was
       // already on screen rather than flashing the fallback message; a
       // full-quality render is guaranteed on drag release (see releaseDrag
       // below), which will show the real fallback if it also fails there.
-      if (dragActive) return;
+      // An *unexpected* error (no structured cause -- a genuine bug, not a
+      // search limit) must never be silently swallowed just because a drag
+      // happens to be in progress.
+      if (
+        dragActive &&
+        LIFECYCLE_LAYOUT_FAILURE_CAUSE_TYPES.has(error?.cause?.type)
+      )
+        return;
       showDiagramFallback("Unable to lay out lifecycle diagram.");
       return;
     }
@@ -1265,7 +1295,9 @@ export function createLifecycleDiagramView(root, options = {}) {
     onBucketChange("current");
   });
   range.addEventListener("input", () => {
-    debouncedRangeChange(timeline.buckets[Number(range.value)]?.id);
+    const bucketId = timeline.buckets[Number(range.value)]?.id;
+    lastDragTickBucketId = bucketId ?? null;
+    debouncedRangeChange(bucketId);
   });
   // Draft-quality rendering (see renderSvg()'s qualityTier option) is only
   // used between a pointerdown and its matching release on the scrubber
@@ -1274,6 +1306,7 @@ export function createLifecycleDiagramView(root, options = {}) {
   // always renders full quality, same as today.
   range.addEventListener("pointerdown", () => {
     dragActive = true;
+    lastDragTickBucketId = null;
   });
   const releaseDrag = () => {
     if (!dragActive) return;
@@ -1282,8 +1315,15 @@ export function createLifecycleDiagramView(root, options = {}) {
     // synchronously" pattern prev/next/current already use -- guarantees
     // the frame left on screen after release is always full quality, never
     // whatever draft-tier layout the last drag tick happened to produce.
+    // Resolves the bucket *id* captured at the last input tick rather than
+    // changeToIndex(range.value)'s raw index, for the same reason the
+    // "input" listener above resolves an id up front instead of debouncing
+    // a raw index. No captured id (pointerdown/pointerup with no drag
+    // movement in between) means nothing changed -- no bucket change to
+    // apply.
     debouncedRangeChange.clear();
-    changeToIndex(Number(range.value));
+    if (lastDragTickBucketId) onBucketChange(lastDragTickBucketId);
+    lastDragTickBucketId = null;
   };
   // Range inputs get implicit pointer capture while dragging in evergreen
   // browsers, so pointerup fires on `range` itself even if the pointer moved
