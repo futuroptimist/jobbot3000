@@ -269,7 +269,7 @@ describe("lifecycle diagram large-data rendering", () => {
     expect(performance.now() - repeatedTimelineStart).toBeLessThan(50);
   });
 
-  it("makes a persistent scrubbing session far cheaper than one with no cache reuse", () => {
+  it("reuses cached application paths across adjacent scrub buckets", () => {
     // Complements the revisit test above, which largeBundle() can't probe:
     // every application there shares identical timestamps, so every dated
     // bucket changes all applications' event sets simultaneously and never
@@ -277,34 +277,23 @@ describe("lifecycle diagram large-data rendering", () => {
     // each bucket transition advances exactly one application — the case
     // per-app memoization is designed to speed up.
     //
-    // This compares a first-visit, never-repeated walk through a window of
-    // dated buckets on one long-lived bundle (benefits from the per-bundle
-    // prepare cache *and* per-application path cache accumulating across
-    // the walk) against the same window performed with a fresh,
-    // content-identical bundle clone for every single bucket call (forces
-    // every call to be fully cold — no cross-call cache reuse of any kind
-    // is possible). The gap between them is what persistent caching across
-    // a scrubbing session actually buys the user.
-    //
     // Sample a *contiguous* window starting right after every application
     // has entered (bucket index `appCount`), not an evenly spaced sample
-    // across the whole timeline: an even sample mixes in the early
-    // ramp-up region (where few applications are included yet, so both
-    // warm and cold costs are small and dominated by noise), which
-    // produced an inconsistent, occasionally-overlapping ratio between the
-    // memoized and unmemoized implementations. A contiguous post-ramp-up
-    // window consistently exercises the "one application changes per
-    // adjacent bucket" case throughout.
+    // across the whole timeline: within this window, moving from one
+    // bucket to the next always changes exactly one application's included
+    // event set, so every other application's `projectApp` result must be
+    // byte-identical to the previous bucket's — memoization should return
+    // the *same object reference* for it rather than recomputing.
     //
-    // Take several independent trials with fresh bundles and compare
-    // medians (robust to a single slow tick from GC/JIT/OS scheduling),
-    // after one disposable warm-up pass so first-call JIT/allocator
-    // effects don't skew trial 1. Empirically (see PR discussion) this
-    // window design gives a stable ~13-14x ratio with per-app memoization
-    // vs. ~6.5-7x without it — a fixed threshold well clear of both.
+    // This asserts that structural fact directly, by reference identity,
+    // instead of via wall-clock timing: a wall-clock ratio (even a
+    // multi-trial median) is inherently host-dependent and was observed to
+    // fail intermittently on some machines despite passing reliably on
+    // others. Reference-identity counting is deterministic — it either
+    // reused the cached object or it didn't — and needs no calibrated
+    // threshold, timing margin, or retries.
     const appCount = 100;
     const windowSize = 50;
-    const trialCount = 7;
     const bundleTemplate = staggeredBundle(appCount);
     const timeline = buildLifecycleTimeline(bundleTemplate);
     const allBucketIds = timeline.buckets
@@ -313,32 +302,49 @@ describe("lifecycle diagram large-data rendering", () => {
     const windowIds = allBucketIds.slice(appCount, appCount + windowSize);
     expect(windowIds.length).toBe(windowSize);
 
-    const median = (values) => {
-      const sorted = [...values].sort((a, b) => a - b);
-      const mid = Math.floor(sorted.length / 2);
-      return sorted.length % 2
-        ? sorted[mid]
-        : (sorted[mid - 1] + sorted[mid]) / 2;
-    };
-    const timeWarm = () => {
-      const bundleData = staggeredBundle(appCount);
-      const start = performance.now();
-      for (const id of windowIds) projectLifecycleAt(bundleData, id);
-      return performance.now() - start;
-    };
-    const timeCold = () => {
-      const start = performance.now();
-      for (const id of windowIds)
-        projectLifecycleAt(staggeredBundle(appCount), id);
-      return performance.now() - start;
-    };
+    // Persistent (warm) walk: one long-lived bundle, so the per-application
+    // path cache accumulates across the whole window.
+    const persistentBundle = staggeredBundle(appCount);
+    const pathsByApplicationPerBucket = windowIds.map((id) => {
+      const projection = projectLifecycleAt(persistentBundle, id);
+      return new Map(
+        projection.paths.map((path) => [path.applicationId, path]),
+      );
+    });
+    expect(pathsByApplicationPerBucket[0].size).toBe(appCount);
+    expect(pathsByApplicationPerBucket.at(-1).size).toBe(appCount);
 
-    timeWarm();
-    timeCold();
+    let reused = 0;
+    let changed = 0;
+    for (let i = 1; i < pathsByApplicationPerBucket.length; i += 1) {
+      const previous = pathsByApplicationPerBucket[i - 1];
+      for (const [applicationId, path] of pathsByApplicationPerBucket[i]) {
+        if (path === previous.get(applicationId)) reused += 1;
+        else changed += 1;
+      }
+    }
+    const uniquePersistentPaths = new Set(
+      pathsByApplicationPerBucket.flatMap((byApplication) => [
+        ...byApplication.values(),
+      ]),
+    );
+    // (windowSize - 1) adjacent-bucket transitions, one changed application
+    // each; every other application across every transition is reused.
+    const transitions = windowSize - 1;
+    expect(changed).toBe(transitions);
+    expect(reused).toBe(transitions * appCount - transitions);
+    // One real computation per application at the first bucket, plus one
+    // more per transition for the single application that changed.
+    expect(uniquePersistentPaths.size).toBe(appCount + transitions);
 
-    const warmDurations = Array.from({ length: trialCount }, timeWarm);
-    const coldDurations = Array.from({ length: trialCount }, timeCold);
-
-    expect(median(coldDurations)).toBeGreaterThan(median(warmDurations) * 9);
+    // Cold walk: a fresh, content-identical bundle clone for every single
+    // bucket call, so no cross-call cache reuse of any kind is possible —
+    // every path in every bucket must be a distinct object.
+    const uniqueColdPaths = new Set();
+    for (const id of windowIds) {
+      const projection = projectLifecycleAt(staggeredBundle(appCount), id);
+      for (const path of projection.paths) uniqueColdPaths.add(path);
+    }
+    expect(uniqueColdPaths.size).toBe(windowSize * appCount);
   });
 });
