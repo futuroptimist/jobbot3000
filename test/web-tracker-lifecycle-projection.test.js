@@ -163,7 +163,7 @@ describe("lifecycle projection", () => {
     expect(pathAt(bucketB, "b").milestones).toContain("recruiter_screen");
   });
 
-  it("keeps isCurrent out of the app-path cache key from colliding with historical buckets", () => {
+  it("includes isCurrent in the app-path cache key to avoid historical-bucket collisions", () => {
     // An application whose event-id-set at "current" is identical to its
     // set at the last historical bucket must not have its result wrongly
     // shared across the isCurrent boundary, since isCurrent affects the
