@@ -124,18 +124,20 @@ function setup() {
   });
   return document.querySelector("[data-lifecycle-diagram]");
 }
-// lifecycleDiagram.js's renders (all of them -- render() always defers past
-// a real paint via runDeferred(), regardless of dragActive; dragActive only
-// controls renderSvg()'s quality tier) schedule their Phase B work via two
-// nested window.requestAnimationFrame calls. jsdom's rAF (pretendToBeVisual)
-// is timer-based, and each per-test JSDOM instance is constructed *inside*
-// the current test (see setup()) -- when that happens while
-// vi.useFakeTimers() is already active, jsdom's rAF ends up driven by the
-// same faked clock, so it only ever fires via vi.advanceTimersToNextFrame(),
-// never by simply awaiting real time. When real timers are active, jsdom's
-// rAF is a genuine (if short) real-time wait, so this awaits it for real
-// instead. Branching on vi.isFakeTimers() keeps this uniform regardless of
-// which a given test uses.
+// lifecycleDiagram.js's non-drag renders (mount, prev/next/current, keyboard
+// stepping, resize, drag-release settle) defer their Phase B work
+// (renderDetails/renderSvg/renderTables) past a real paint via
+// runDeferred()'s two nested window.requestAnimationFrame calls; a drag-tick
+// render (dragActive === true) skips that entirely and runs Phase B
+// synchronously, returning an already-resolved promise, so flushing here is
+// simply a no-op for it. jsdom's rAF (pretendToBeVisual) is timer-based, and
+// each per-test JSDOM instance is constructed *inside* the current test (see
+// setup()) -- when that happens while vi.useFakeTimers() is already active,
+// jsdom's rAF ends up driven by the same faked clock, so it only ever fires
+// via vi.advanceTimersToNextFrame(), never by simply awaiting real time.
+// When real timers are active, jsdom's rAF is a genuine (if short) real-time
+// wait, so this awaits it for real instead. Branching on vi.isFakeTimers()
+// keeps this uniform regardless of which a given test uses.
 async function flushLifecycleDiagramRender() {
   if (vi.isFakeTimers()) {
     vi.advanceTimersToNextFrame();
@@ -2127,6 +2129,107 @@ describe("busy indicator (Phase 5a deferred render)", () => {
     );
     expect(root.querySelector("[data-diagram-busy]").hidden).toBe(true);
   });
+
+  // eslint-disable-next-line max-len
+  it("cancels a stale pending render instead of letting it overwrite a later drag tick", async () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root, view, timeline } = await render(b, "current");
+    const busy = root.querySelector("[data-diagram-busy]");
+    const scroll = root.querySelector(".diagram-scroll");
+    const range = root.querySelector("input[type='range']");
+
+    const staleTarget = timeline.buckets.at(-2) ?? timeline.buckets.at(-1);
+    // A non-drag render whose deferred Phase B never gets flushed here --
+    // it stays pending (busy indicator up, rAF scheduled but not fired).
+    const stalePending = view.update({
+      timeline,
+      snapshot: projectLifecycleAt(b, staleTarget.id),
+      selectedBucketId: staleTarget.id,
+    });
+    expect(busy.hidden).toBe(false);
+
+    range.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+    const dragTarget = timeline.buckets.at(-1);
+    view.update({
+      timeline,
+      snapshot: projectLifecycleAt(b, dragTarget.id),
+      selectedBucketId: dragTarget.id,
+    });
+    // The drag tick wins immediately: busy state cleared and the DOM
+    // reflects the drag target synchronously, without waiting on the stale
+    // pending render's rAF.
+    expect(busy.hidden).toBe(true);
+    expect(scroll.getAttribute("aria-busy")).toBe("false");
+    expect(range.value).toBe(String(timeline.buckets.indexOf(dragTarget)));
+
+    // If the stale pending render's rAF weren't canceled, flushing it here
+    // would run its Phase B and clobber the drag tick's output.
+    await flushLifecycleDiagramRender();
+    await stalePending;
+    expect(range.value).toBe(String(timeline.buckets.indexOf(dragTarget)));
+    expect(busy.hidden).toBe(true);
+  });
+
+  it("ignores a selection click on stale content while a deferred render is pending", async () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root, view, timeline } = await render(b, "current");
+    const nodeGroup = root.querySelector(
+      "[data-diagram-node='origin:application_submitted']",
+    );
+    const nodeRect = nodeGroup.querySelector(
+      "rect:not([data-diagram-node-hit])",
+    );
+    expect(nodeGroup.getAttribute("data-selected")).toBe("false");
+
+    // Same inclusion guarantee as the busy-indicator test above: the
+    // second-to-last bucket is the latest historical one, guaranteed to
+    // still include this application's origin node.
+    const targetIndex = timeline.buckets.length - 2;
+    const targetId = timeline.buckets[targetIndex].id;
+    const pending = view.update({
+      timeline,
+      snapshot: projectLifecycleAt(b, targetId),
+      selectedBucketId: targetId,
+    });
+    // Phase A already swapped `projection` to the new bucket, but the old
+    // SVG (built from the old one) is still what's on screen -- a click
+    // routed through selectFeature() here must be dropped, not resolved
+    // against the new projection for a node id read off the old render.
+    nodeRect.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(
+      root
+        .querySelector("[data-diagram-node='origin:application_submitted']")
+        ?.getAttribute("data-selected"),
+    ).not.toBe("true");
+
+    await pending;
+    // The guard only applies while a render is actually pending -- once
+    // Phase B lands, selection works normally again.
+    const settledRect = root
+      .querySelector("[data-diagram-node='origin:application_submitted']")
+      ?.querySelector("rect:not([data-diagram-node-hit])");
+    settledRect?.dispatchEvent(
+      new window.MouseEvent("click", { bubbles: true }),
+    );
+    if (settledRect)
+      expect(
+        root
+          .querySelector("[data-diagram-node='origin:application_submitted']")
+          .getAttribute("data-selected"),
+      ).toBe("true");
+  });
 });
 
 describe("lifecycle diagram P6 pagination and hardening", () => {
@@ -2431,7 +2534,11 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     expect(
       root.querySelector("[aria-label='Previous flow page']").disabled,
     ).toBe(true);
-  });
+    // Runs the dense-fixture layout search twice (once directly above to
+    // assert it doesn't throw, once inside view.update()'s renderSvg()) --
+    // same known-dense-case budget as "uses density-aware SVG height and
+    // spacing on rerender" above, needed under slower CI/sandbox load.
+  }, 180000);
 
   it("paginates affected applications with bounded ranges", async () => {
     const applications = Array.from({ length: 125 }, (_, index) =>

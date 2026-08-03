@@ -462,6 +462,16 @@ export function createLifecycleDiagramView(root, options = {}) {
     return null;
   };
   const selectFeature = (feature) => {
+    // The old SVG/table DOM stays visible and clickable during the busy
+    // window between Phase A (which already reassigned `projection` to the
+    // new snapshot) and Phase B (which rebuilds currentNodeByKey/
+    // currentBranchByKey/displayBranches from it) -- a click routed through
+    // here in that window would resolve applicationIds against the *new*
+    // projection for a feature id read off the *old* render, and since ids
+    // are stable taxonomy-derived values (Phase 4b), that can silently
+    // resurrect a selection the bucket change was supposed to clear. Drop
+    // it instead; Phase B lands within a couple of frames regardless.
+    if (pendingRenderFrame !== null) return;
     const active = document.activeElement;
     const shouldRestoreFocus = active?.matches?.(".diagram-select-button");
     if (selectedFeature?.id !== feature.id) applicationPage = 0;
@@ -1435,8 +1445,15 @@ export function createLifecycleDiagramView(root, options = {}) {
     };
     // Drag ticks (Phase 4a/4b) are already fast and stay fully synchronous,
     // unchanged by this deferral -- flickering the busy indicator every
-    // ~100ms during a drag would be distracting, not helpful.
+    // ~100ms during a drag would be distracting, not helpful. A drag tick
+    // can start while an earlier non-drag render is still deferred (e.g. a
+    // pointerdown right after a prev/next click) -- cancel that pending
+    // Phase B and clear the busy state first, or its rAF would still fire
+    // later and overwrite this tick's synchronous output with stale data.
     if (dragActive) {
+      cancelPendingRender();
+      busyIndicator.hidden = true;
+      scroll.setAttribute("aria-busy", "false");
       runPhaseB();
       return Promise.resolve();
     }
