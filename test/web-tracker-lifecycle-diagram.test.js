@@ -421,6 +421,7 @@ describe("lifecycle diagram view", () => {
   });
 
   it("synchronizes range controls and keeps user text inert", () => {
+    vi.useFakeTimers();
     const b = bundle(
       [app("bad")],
       [ev("x", "bad", "application_submitted", "2026-01-01")],
@@ -430,11 +431,156 @@ describe("lifecycle diagram view", () => {
     const range = root.querySelector("input[type='range']");
     range.value = "0";
     range.dispatchEvent(new window.Event("input", { bubbles: true }));
+    vi.advanceTimersByTime(80);
     expect(onBucketChange).toHaveBeenCalledWith(timeline.buckets[0].id);
     expect(root.querySelector("img")).toBeNull();
     expect([
       ...root.querySelectorAll("svg a, foreignObject, script"),
     ]).toHaveLength(0);
+  });
+
+  it("debounces the range scrubber so dragging fires one update with the final value", () => {
+    vi.useFakeTimers();
+    const b = bundle(
+      [app("bad")],
+      [ev("x", "bad", "application_submitted", "2026-01-01")],
+    );
+    const onBucketChange = vi.fn();
+    const { root, timeline } = render(b, "current", onBucketChange);
+    const range = root.querySelector("input[type='range']");
+    for (let i = 0; i < timeline.buckets.length; i += 1) {
+      range.value = String(i);
+      range.dispatchEvent(new window.Event("input", { bubbles: true }));
+    }
+    expect(onBucketChange).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(80);
+    expect(onBucketChange).toHaveBeenCalledTimes(1);
+    expect(onBucketChange).toHaveBeenCalledWith(
+      timeline.buckets[timeline.buckets.length - 1].id,
+    );
+  });
+
+  it("stops a pending debounced scrub update once the view is destroyed", () => {
+    vi.useFakeTimers();
+    const b = bundle(
+      [app("bad")],
+      [ev("x", "bad", "application_submitted", "2026-01-01")],
+    );
+    const onBucketChange = vi.fn();
+    const { root, view } = render(b, "current", onBucketChange);
+    const range = root.querySelector("input[type='range']");
+    range.value = "0";
+    range.dispatchEvent(new window.Event("input", { bubbles: true }));
+    view.destroy();
+    vi.advanceTimersByTime(80);
+    expect(onBucketChange).not.toHaveBeenCalled();
+  });
+
+  it("keeps the dragged-to bucket if a render lands mid-debounce (e.g. resize/refresh)", () => {
+    vi.useFakeTimers();
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t1", "a", "recruiter_screen", "2026-01-02"),
+        ev("t2", "a", "technical_interview", "2026-01-03"),
+      ],
+    );
+    const onBucketChange = vi.fn();
+    const { root, view, timeline, snapshot } = render(
+      b,
+      "current",
+      onBucketChange,
+    );
+    const range = root.querySelector("input[type='range']");
+    const targetIndex = timeline.buckets.length - 2;
+    range.value = String(targetIndex);
+    range.dispatchEvent(new window.Event("input", { bubbles: true }));
+
+    // An unrelated render lands mid-debounce-window (e.g. a ResizeObserver
+    // tick or a background refresh that didn't change the selected bucket).
+    // render() resets range.value to the currently *selected* bucket
+    // ("current" here, since onBucketChange hasn't fired yet) — the pending
+    // debounced change must not be lost to that reset.
+    view.update({ timeline, snapshot, selectedBucketId: "current" });
+    expect(range.value).not.toBe(String(targetIndex));
+
+    vi.advanceTimersByTime(80);
+    expect(onBucketChange).toHaveBeenCalledTimes(1);
+    expect(onBucketChange).toHaveBeenCalledWith(
+      timeline.buckets[targetIndex].id,
+    );
+  });
+
+  it("selects the bucket dragged to even if a timeline replacement shifts its index", () => {
+    vi.useFakeTimers();
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t1", "a", "recruiter_screen", "2026-01-02"),
+        ev("t2", "a", "technical_interview", "2026-01-03"),
+      ],
+    );
+    const onBucketChange = vi.fn();
+    const { root, view, timeline } = render(b, "current", onBucketChange);
+    const range = root.querySelector("input[type='range']");
+    const targetIndex = 2;
+    const targetBucketId = timeline.buckets[targetIndex].id;
+    range.value = String(targetIndex);
+    range.dispatchEvent(new window.Event("input", { bubbles: true }));
+
+    // A timeline replacement (e.g. a background refresh discovering an
+    // earlier event) inserts a bucket before the target, shifting what
+    // index `targetIndex` now points to.
+    const withEarlierEvent = bundle(
+      [app("a")],
+      [
+        ev("earlier", "a", "application_submitted", "2025-12-31"),
+        ...b.lifecycleEvents,
+      ],
+    );
+    const nextTimeline = buildLifecycleTimeline(withEarlierEvent);
+    expect(nextTimeline.buckets[targetIndex].id).not.toBe(targetBucketId);
+    view.update({
+      timeline: nextTimeline,
+      snapshot: projectLifecycleAt(withEarlierEvent, "current"),
+      selectedBucketId: "current",
+    });
+
+    vi.advanceTimersByTime(80);
+    expect(onBucketChange).toHaveBeenCalledTimes(1);
+    expect(onBucketChange).toHaveBeenCalledWith(targetBucketId);
+  });
+
+  it("lets a newer discrete prev/next/current action win over an older pending scrub", () => {
+    vi.useFakeTimers();
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t1", "a", "recruiter_screen", "2026-01-02"),
+        ev("t2", "a", "technical_interview", "2026-01-03"),
+      ],
+    );
+    const onBucketChange = vi.fn();
+    const firstBucketId = buildLifecycleTimeline(b).buckets[0].id;
+    const { root, timeline } = render(b, firstBucketId, onBucketChange);
+    const range = root.querySelector("input[type='range']");
+    range.value = "1";
+    range.dispatchEvent(new window.Event("input", { bubbles: true }));
+
+    const nextButton = [...root.querySelectorAll("button")].find(
+      (button) => button.textContent === "Next event",
+    );
+    nextButton.click();
+    expect(onBucketChange).toHaveBeenCalledTimes(1);
+    expect(onBucketChange).toHaveBeenCalledWith(timeline.buckets[2].id);
+
+    // The pending drag-to-bucket-1 debounce must have been cancelled by the
+    // newer click, not fire 80ms later and silently overwrite it.
+    vi.advanceTimersByTime(80);
+    expect(onBucketChange).toHaveBeenCalledTimes(1);
   });
 
   it("does not mutate P4 projection and has equivalent selectable rows", () => {
@@ -893,6 +1039,48 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     });
     expect(root.querySelector("[data-event-range]").textContent).toMatch(
       /^Events (0–0|1–)/u,
+    );
+  });
+
+  it("preserves table pagination across a no-op re-render of the same bundle/bucket", () => {
+    const applications = [app("many")];
+    const lifecycleEvents = Array.from({ length: 125 }, (_, index) =>
+      ev(
+        `many-${String(index).padStart(3, "0")}`,
+        "many",
+        index ? "employer_response_received" : "application_submitted",
+        `2026-03-${String((index % 28) + 1).padStart(2, "0")}T00:00:00.000Z`,
+      ),
+    );
+    const b = bundle(applications, lifecycleEvents);
+    const { root, view, timeline } = render(b);
+    root.querySelector("[aria-label='Next event page']").click();
+    expect(root.querySelector("[data-event-range]").textContent).toBe(
+      "Events 51–100 of 125",
+    );
+
+    // Same bundle object + same bucket id: projectLifecycleAt is memoized and
+    // returns the identical cached reference, so this is a no-op re-render
+    // (e.g. re-navigating to the Diagram tab) rather than a real data change.
+    view.update({
+      timeline,
+      snapshot: projectLifecycleAt(b, "current"),
+      selectedBucketId: "current",
+    });
+    expect(root.querySelector("[data-event-range]").textContent).toBe(
+      "Events 51–100 of 125",
+    );
+
+    // A genuinely new bundle object for the same bucket id is a real data
+    // change (cache miss) and still resets pagination as before.
+    const changed = bundle(applications, lifecycleEvents.slice(0, 124));
+    view.update({
+      timeline,
+      snapshot: projectLifecycleAt(changed, "current"),
+      selectedBucketId: "current",
+    });
+    expect(root.querySelector("[data-event-range]").textContent).toBe(
+      "Events 1–50 of 124",
     );
   });
 

@@ -312,7 +312,7 @@ async function reconcileLifecycle() {
 async function refresh() {
   await reconcileLifecycle();
   state.bundle = await repo.exportAll();
-  state.apps = state.bundle.applications.sort((a, b) =>
+  state.apps = [...state.bundle.applications].sort((a, b) =>
     String(b.appliedAt || "").localeCompare(a.appliedAt || ""),
   );
   renderAll();
@@ -586,10 +586,16 @@ function renderFollowups() {
   $$("[data-done]").forEach(
     (b) =>
       (b.onclick = async () => {
+        // Build a fresh copy rather than mutating the application object
+        // found in state.apps in place: it's the same reference held by
+        // state.bundle.applications, and lifecycleProjection.js's cache
+        // keys on state.bundle's identity — mutating a shared record in
+        // place without reassigning state.bundle would serve stale cached
+        // diagram data until the refresh() below reassigns it.
         const a = state.apps.find((x) => x.id === b.dataset.done);
-        delete a.followUpDate;
-        a.updatedAt = now();
-        await repo.put("applications", a);
+        const updated = { ...a, updatedAt: now() };
+        delete updated.followUpDate;
+        await repo.put("applications", updated);
         refresh();
       }),
   );
@@ -597,9 +603,12 @@ function renderFollowups() {
     (b) =>
       (b.onclick = async () => {
         const a = state.apps.find((x) => x.id === b.dataset.snooze);
-        a.followUpDate = new Date(Date.now() + 7 * 864e5).toISOString();
-        a.updatedAt = now();
-        await repo.put("applications", a);
+        const updated = {
+          ...a,
+          followUpDate: new Date(Date.now() + 7 * 864e5).toISOString(),
+          updatedAt: now(),
+        };
+        await repo.put("applications", updated);
         refresh();
       }),
   );

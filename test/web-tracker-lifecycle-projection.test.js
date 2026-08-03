@@ -98,6 +98,109 @@ describe("lifecycle projection", () => {
     expectInvariants(projection);
   });
 
+  it("memoizes buildLifecycleTimeline and projectLifecycleAt per bundle reference", () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+
+    expect(buildLifecycleTimeline(b)).toBe(buildLifecycleTimeline(b));
+
+    const timeline = buildLifecycleTimeline(b);
+    const bucketA = timeline.buckets[1].id;
+    const bucketB = timeline.buckets[2].id;
+    expect(bucketA).not.toBe(bucketB);
+    expect(projectLifecycleAt(b, bucketA)).toBe(projectLifecycleAt(b, bucketA));
+    expect(projectLifecycleAt(b, bucketA)).not.toBe(
+      projectLifecycleAt(b, bucketB),
+    );
+
+    // A value-equal but reference-distinct bundle must not share the cache —
+    // caching is by object identity, not by deep equality.
+    const bEqual = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    expect(projectLifecycleAt(bEqual, bucketA)).not.toBe(
+      projectLifecycleAt(b, bucketA),
+    );
+    expect(projectLifecycleAt(bEqual, bucketA)).toEqual(
+      projectLifecycleAt(b, bucketA),
+    );
+  });
+
+  it("evicts the least-recently-used cached projection past the per-bundle cap", () => {
+    // Guards the bounded-cache fix: without an eviction policy, scrubbing
+    // across many distinct buckets in one long-lived tab would retain a
+    // fully-materialized projection per bucket forever.
+    const dayEvents = Array.from({ length: 60 }, (_, i) => {
+      const date = new Date(Date.UTC(2026, 0, 1));
+      date.setUTCDate(date.getUTCDate() + i + 1);
+      return ev(
+        `e${i}`,
+        "a",
+        "employer_response_received",
+        date.toISOString().slice(0, 10),
+      );
+    });
+    const b = bundle(
+      [app("a")],
+      [ev("o", "a", "application_submitted", "2026-01-01"), ...dayEvents],
+    );
+    const timeline = buildLifecycleTimeline(b);
+    const datedBucketIds = timeline.buckets
+      .map((entry) => entry.id)
+      .filter((id) => id !== "unknown-date" && id !== "current");
+    expect(datedBucketIds.length).toBeGreaterThan(50);
+
+    const firstBucketId = datedBucketIds[0];
+    const firstProjection = projectLifecycleAt(b, firstBucketId);
+
+    // Visiting enough other distinct buckets pushes the first one out of the
+    // bounded LRU cache.
+    for (const bucketId of datedBucketIds.slice(1))
+      projectLifecycleAt(b, bucketId);
+
+    const revisited = projectLifecycleAt(b, firstBucketId);
+    expect(revisited).not.toBe(firstProjection);
+    expect(revisited).toEqual(firstProjection);
+
+    // A recently visited bucket is still a cache hit.
+    const lastBucketId = datedBucketIds.at(-1);
+    const lastProjection = projectLifecycleAt(b, lastBucketId);
+    expect(projectLifecycleAt(b, lastBucketId)).toBe(lastProjection);
+  });
+
+  it("keeps serving the cached projection if a bundle is mutated in place", () => {
+    // Bundles must be treated as immutable once passed in: callers are
+    // expected to always pass a *new* bundle object after any data change
+    // (see src/web/tracker/tracker.js's refresh(), which always reassigns
+    // state.bundle). This test pins that contract rather than leaving it
+    // implicit — mutating a bundle in place and reusing the same reference
+    // intentionally continues to serve the stale cached result.
+    const b = bundle(
+      [app("a")],
+      [ev("o", "a", "application_submitted", "2026-01-01")],
+    );
+    const before = projectLifecycleAt(b, "current");
+    expect(before.includedApplications).toBe(1);
+
+    b.lifecycleEvents.push(
+      ev("o2", "z", "application_submitted", "2026-01-02"),
+    );
+    b.applications.push(app("z"));
+
+    const after = projectLifecycleAt(b, "current");
+    expect(after).toBe(before);
+    expect(after.includedApplications).toBe(1);
+  });
+
   it("projects every origin and endpoint exactly once", () => {
     const origins = LIFECYCLE_DIAGRAM_TAXONOMY.origins.map((x) => x.id);
     const terminalEvents = [

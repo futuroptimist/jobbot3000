@@ -1002,10 +1002,34 @@ export function createLifecycleDiagramView(root, options = {}) {
     const bucket = timeline.buckets[index];
     if (bucket) onBucketChange(bucket.id);
   };
-  prev.addEventListener("click", () => changeToIndex(Number(range.value) - 1));
-  next.addEventListener("click", () => changeToIndex(Number(range.value) + 1));
-  current.addEventListener("click", () => onBucketChange("current"));
-  range.addEventListener("input", () => changeToIndex(Number(range.value)));
+  // Resolve the bucket *id* from the timeline at input-event time and
+  // debounce that id, rather than debouncing a raw index and resolving it
+  // against `timeline` later: `update()` can reassign `timeline` (e.g. a
+  // background refresh inserting a bucket) before the 80ms timer fires,
+  // which would otherwise shift what an unresolved index points to and
+  // silently select a different bucket than the one the user dragged to.
+  const debouncedRangeChange = makeDebounce((bucketId) => {
+    if (bucketId) onBucketChange(bucketId);
+  });
+  // A newer explicit prev/next/current action always wins over an older
+  // pending drag — without this, clicking a discrete control while a scrub
+  // debounce is still pending would let the stale drag overwrite the newer
+  // selection once its timer caught up.
+  prev.addEventListener("click", () => {
+    debouncedRangeChange.clear();
+    changeToIndex(Number(range.value) - 1);
+  });
+  next.addEventListener("click", () => {
+    debouncedRangeChange.clear();
+    changeToIndex(Number(range.value) + 1);
+  });
+  current.addEventListener("click", () => {
+    debouncedRangeChange.clear();
+    onBucketChange("current");
+  });
+  range.addEventListener("input", () => {
+    debouncedRangeChange(timeline.buckets[Number(range.value)]?.id);
+  });
   const sanitizedRootWidth = () => {
     const width = Math.floor(Number(root.clientWidth));
     return Number.isFinite(width) && width > 0 ? width : 0;
@@ -1068,6 +1092,7 @@ export function createLifecycleDiagramView(root, options = {}) {
       if (windowResizeHandler)
         window.removeEventListener("resize", windowResizeHandler);
       debouncedResize.clear();
+      debouncedRangeChange.clear();
       announce.clear();
       root.textContent = "";
     },
