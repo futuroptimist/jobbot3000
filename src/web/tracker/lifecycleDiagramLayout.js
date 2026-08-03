@@ -3120,7 +3120,10 @@ function layoutLifecycleRoutingGraphPass(
   // shared 32768-state budget after a bounded number of full generation
   // passes — independent of machine speed — instead of retrying expensive
   // work indefinitely.
-  const handleBudget = { statesVisited: 0, stateLimit: 32768 };
+  const handleBudget = {
+    statesVisited: 0,
+    stateLimit: options.handleStateLimit ?? 32768,
+  };
   // See createLaneGeometryFailureCache() above for why a typed cache (rather
   // than a plain membership Set) is required: on a cache hit the callback
   // must still restore lastRoutingAnchorFailure/lastHandleFailure to
@@ -3234,6 +3237,7 @@ function layoutLifecycleRoutingGraphPass(
         sharedBudget: handleBudget,
         seedHandles: options.seedHandles,
         horizontalGeometry,
+        skipHandleFallbackSweep: options.skipHandleFallbackSweep ?? false,
       },
     );
     lastHandleRouteEdgeCount = handleCheck.routeEdgeCount ?? null;
@@ -3648,6 +3652,17 @@ export function layoutLifecycleRoutingGraph(
     options.transitionLanePhaseOnly ||
     (isLifecycleLayoutTestEnvironment() && options.testOnlyBaseNodeOrderByRank)
   )
+    return layoutLifecycleRoutingGraphPass(projection, availableWidth, options);
+
+  // Draft quality tier (see options.qualityTier below): a single fresh pass,
+  // no seed-replay, smaller state budgets. Used while the scrubber is being
+  // actively dragged, where a cheaper-but-still-fully-validated layout is
+  // preferable to the full two-pass search's latency, and the result is
+  // discarded on the very next tick or on drag release anyway -- unlike
+  // transitionLanePhaseOnly above, this still runs full handle placement and
+  // route-crossing auditing (candidateCallback's normal path), it just skips
+  // discovery's replay-seeding half of the pipeline.
+  if (options.qualityTier === "draft")
     return layoutLifecycleRoutingGraphPass(projection, availableWidth, options);
 
   let discoveredRankOrder = null;
@@ -4834,6 +4849,7 @@ const tryAssignBranchHandles = (
     sharedBudget = null,
     seedHandles = null,
     horizontalGeometry = BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
+    skipHandleFallbackSweep = false,
   } = {},
 ) => {
   const nodeBoxes = visibleNodes.map((node) => ({
@@ -5296,7 +5312,7 @@ const tryAssignBranchHandles = (
       }
     };
     sweepCorridor("primary", HANDLE_CANDIDATE_T_VALUES);
-    if (!candidates.length) {
+    if (!candidates.length && !skipHandleFallbackSweep) {
       sweepCorridor("fallback", HANDLE_FALLBACK_CANDIDATE_T_VALUES);
     }
     // Only fall back to a degraded (small negative clearance) candidate

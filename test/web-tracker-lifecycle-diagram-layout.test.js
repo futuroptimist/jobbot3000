@@ -3513,6 +3513,98 @@ describe("seeded-replay production layout (routing fixture)", () => {
   });
 });
 
+describe("draft quality tier (Phase 4a drag-quality rendering)", () => {
+  it("skips the two-pass discovery+final wrapper for qualityTier: draft", () => {
+    const { graph: full } = layoutLifecycleRoutingGraph(projection(), 1850);
+    expect(full.transitionLaneSolverStats.layoutAttemptCount).toBe(2);
+
+    const { graph: draft } = layoutLifecycleRoutingGraph(projection(), 1850, {
+      qualityTier: "draft",
+    });
+    // layoutAttemptCount/layoutAttempts are only ever attached by the
+    // two-pass wrapper (see layoutLifecycleRoutingGraph's discovery+final
+    // path); a single fresh layoutLifecycleRoutingGraphPass() call -- the
+    // same shortcut transitionLanePhaseOnly already takes for test
+    // diagnostics -- never sets them.
+    expect(draft.transitionLaneSolverStats.layoutAttemptCount).toBeUndefined();
+    expect(draft.transitionLaneSolverStats.layoutAttempts).toBeUndefined();
+    // Draft tier still runs full handle placement and route-crossing
+    // auditing, unlike transitionLanePhaseOnly -- it must still produce a
+    // real, valid handle for every branch.
+    expect(draft.acceptedHandles?.size).toBe(draft.branches.length);
+  });
+
+  it("qualityTier unset and qualityTier: full both take the two-pass path", () => {
+    const { graph: unset } = layoutLifecycleRoutingGraph(projection(), 1850);
+    const { graph: full } = layoutLifecycleRoutingGraph(projection(), 1850, {
+      qualityTier: "full",
+    });
+    expect(full.transitionLaneSolverStats.layoutAttemptCount).toBe(2);
+    expect([...full.transitionLaneRankOrder.entries()]).toEqual([
+      ...unset.transitionLaneRankOrder.entries(),
+    ]);
+  });
+
+  it("honors a caller-supplied handleStateLimit", () => {
+    // The routing fixture succeeds comfortably under the default 32768
+    // handle-state budget (see the "seeded-replay production layout"
+    // describe block above). A budget of 1 state must fail deterministically
+    // on the very first candidate instead of silently using the default.
+    let thrown;
+    try {
+      layoutLifecycleRoutingGraph(projection(), 1850, {
+        qualityTier: "draft",
+        handleStateLimit: 1,
+      });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown?.cause).toMatchObject({
+      type: "lifecycle-transition-lane-order",
+      phase: "handle",
+      reason: "state-limit",
+      stateLimit: 1,
+    });
+  });
+
+  it("honors skipHandleFallbackSweep by never engaging the fallback sweep", () => {
+    // transitionDensityProjection()'s 50-branch fan-in has no fully-clear
+    // primary-sweep candidate for any branch, so every branch's fallback
+    // sweep engages by default (see "uses deterministic state bounds
+    // without unchecked candidate fallback" above) -- the ideal fixture to
+    // prove the fallback sweep can be declined entirely.
+    let thrownWithFallback;
+    try {
+      layoutLifecycleRoutingGraph(transitionDensityProjection(), 1850, {
+        horizontalGeometry: BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
+      });
+    } catch (error) {
+      thrownWithFallback = error;
+    }
+    expect(
+      thrownWithFallback?.cause?.horizontalConstraints?.sweeps?.fallback
+        ?.attempts,
+    ).toBeGreaterThan(0);
+
+    let thrownSkipped;
+    try {
+      layoutLifecycleRoutingGraph(transitionDensityProjection(), 1850, {
+        horizontalGeometry: BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
+        qualityTier: "draft",
+        skipHandleFallbackSweep: true,
+      });
+    } catch (error) {
+      thrownSkipped = error;
+    }
+    expect(
+      thrownSkipped?.cause?.horizontalConstraints?.sweeps?.fallback?.attempts,
+    ).toBe(0);
+    expect(
+      thrownSkipped?.cause?.horizontalConstraints?.sweeps?.primary?.attempts,
+    ).toBeGreaterThan(0);
+  });
+});
+
 describe("shared route-crossing classifier", () => {
   // src/web/tracker/lifecycleRouteGeometry.js -- the pure classifier both
   // auditLifecycleRouteGeometry (here) and the Playwright collision audit
