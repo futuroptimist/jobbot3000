@@ -1064,6 +1064,165 @@ describe("lifecycle diagram view", () => {
     }
   });
 
+  it("performs zero SVG childList mutations on a no-op re-render", async () => {
+    // container.append(existingChild) unconditionally removes and
+    // reinserts the child even when it's already in the correct position
+    // -- a real mutation, not a no-op -- so this specifically guards
+    // against the diff silently reparenting every keyed element on every
+    // render regardless of whether anything actually changed.
+    const b = bundle(
+      [app("a"), app("b")],
+      [
+        ev("o1", "a", "application_submitted", "2026-01-01"),
+        ev("t1", "a", "technical_interview", "2026-01-02"),
+        ev("o2", "b", "application_submitted", "2026-01-01"),
+        ev("t2", "b", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root, view, timeline, snapshot } = render(b);
+    const svg = root.querySelector("svg");
+    const callback = vi.fn();
+    const observer = new window.MutationObserver(callback);
+    observer.observe(svg, { childList: true, subtree: true });
+    try {
+      view.update({ timeline, snapshot, selectedBucketId: "current" });
+      await Promise.resolve();
+      expect(callback).not.toHaveBeenCalled();
+    } finally {
+      observer.disconnect();
+    }
+  });
+
+  it("performs zero SVG childList mutations when only a node selection changes", async () => {
+    const b = bundle(
+      [app("a")],
+      [ev("o1", "a", "application_submitted", "2026-01-01")],
+    );
+    const { root } = render(b);
+    const svg = root.querySelector("svg");
+    const callback = vi.fn();
+    const observer = new window.MutationObserver(callback);
+    observer.observe(svg, { childList: true, subtree: true });
+    try {
+      const nodeRect = root.querySelector(
+        "[data-diagram-node='origin:application_submitted'] rect:not([data-diagram-node-hit])",
+      );
+      nodeRect.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+      expect(callback).not.toHaveBeenCalled();
+    } finally {
+      observer.disconnect();
+    }
+  });
+
+  it("mutates only the halo on branch selection, without reparenting groups", async () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o1", "a", "application_submitted", "2026-01-01"),
+        ev("t1", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root } = render(b);
+    const branchGroup = root.querySelector("[data-diagram-branch-group]");
+    const handleGroupEl = root.querySelector(
+      "[data-diagram-branch-handle]",
+    )?.parentElement;
+    const diagramSvg = root.querySelector("svg");
+
+    // Direct-children-only observers on the three containers whose child
+    // *lists* must stay untouched by a selection-only render (only the
+    // branch's own group may gain/lose its halo child).
+    const svgCallback = vi.fn();
+    const svgObserver = new window.MutationObserver(svgCallback);
+    svgObserver.observe(diagramSvg, { childList: true });
+    const branchGroupElCallback = vi.fn();
+    const branchGroupElObserver = new window.MutationObserver(
+      branchGroupElCallback,
+    );
+    branchGroupElObserver.observe(diagramSvg.querySelector("g"), {
+      childList: true,
+    });
+    const handleGroupCallback = vi.fn();
+    const handleGroupObserver = handleGroupEl
+      ? new window.MutationObserver(handleGroupCallback)
+      : null;
+    handleGroupObserver?.observe(handleGroupEl, { childList: true });
+    const haloParentCallback = vi.fn();
+    const haloParentObserver = new window.MutationObserver(haloParentCallback);
+    haloParentObserver.observe(branchGroup, { childList: true });
+
+    try {
+      const branchPath = root.querySelector("[data-diagram-link]");
+      branchPath.dispatchEvent(
+        new window.MouseEvent("click", { bubbles: true }),
+      );
+      await Promise.resolve();
+      expect(svgCallback).not.toHaveBeenCalled();
+      expect(branchGroupElCallback).not.toHaveBeenCalled();
+      expect(handleGroupCallback).not.toHaveBeenCalled();
+      // Exactly one mutation on the branch's own group: the halo insertion.
+      expect(haloParentCallback).toHaveBeenCalledTimes(1);
+      expect(
+        branchGroup.querySelector("[data-diagram-branch-halo]"),
+      ).not.toBeNull();
+    } finally {
+      svgObserver.disconnect();
+      branchGroupElObserver.disconnect();
+      handleGroupObserver?.disconnect();
+      haloParentObserver.disconnect();
+    }
+  });
+
+  it("reorders SVG node groups to match rank order when a new node is inserted", () => {
+    // "offer_accepted" (endpoint rank 8) exists first; a later render adds
+    // "awaiting_response" (rank 0), which must be inserted *before* it in
+    // DOM order, not appended after -- proving the reconciler performs a
+    // genuine reorder/insert, not just a same-position no-op or an
+    // append-to-end.
+    const before = bundle(
+      [app("a")],
+      [
+        ev("a-o", "a", "application_submitted", "2026-01-01"),
+        ev("a-r", "a", "recruiter_screen", "2026-01-02"),
+        ev("a-off", "a", "offer_accepted", "2026-01-03"),
+      ],
+    );
+    const after = bundle(
+      [app("a"), app("b")],
+      [
+        ev("a-o", "a", "application_submitted", "2026-01-01"),
+        ev("a-r", "a", "recruiter_screen", "2026-01-02"),
+        ev("a-off", "a", "offer_accepted", "2026-01-03"),
+        ev("b-o", "b", "application_submitted", "2026-01-01"),
+      ],
+    );
+    const { root, view } = render(before);
+    const acceptedGroup = root.querySelector(
+      "[data-diagram-node='endpoint:offer_accepted']",
+    );
+    expect(acceptedGroup).not.toBeNull();
+
+    view.update({
+      timeline: buildLifecycleTimeline(after),
+      snapshot: projectLifecycleAt(after, "current"),
+      selectedBucketId: "current",
+    });
+
+    const svg = root.querySelector("svg");
+    const nodeGroups = [...svg.children].filter((child) =>
+      child.hasAttribute("data-diagram-node"),
+    );
+    const acceptedIndex = nodeGroups.indexOf(
+      root.querySelector("[data-diagram-node='endpoint:offer_accepted']"),
+    );
+    const awaitingIndex = nodeGroups.indexOf(
+      root.querySelector("[data-diagram-node='endpoint:awaiting_response']"),
+    );
+    expect(awaitingIndex).toBeGreaterThanOrEqual(0);
+    expect(awaitingIndex).toBeLessThan(acceptedIndex);
+  });
+
   it("renders warning summary from supplied P4 warning codes", () => {
     const root = setup();
     const view = createLifecycleDiagramView(root);

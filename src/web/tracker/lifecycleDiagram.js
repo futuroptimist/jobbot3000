@@ -527,6 +527,27 @@ export function createLifecycleDiagramView(root, options = {}) {
       if (!Object.is(a[key], b[key])) return false;
     return true;
   };
+  // `container.append(existingChild)` unconditionally removes and
+  // reinserts the child even when it's already in the correct position --
+  // that's a real DOM mutation, not a no-op, so doing it for every keyed
+  // element on every render would silently defeat the "reuse untouched"
+  // half of the diff contract above. This walks the container's current
+  // children alongside the desired order and only calls insertBefore for
+  // an element that's actually out of place; elements already positioned
+  // correctly are left completely untouched (zero DOM writes, zero
+  // mutation records). `startAfter` lets a reconciled range start partway
+  // through a container that also holds other, non-reconciled children
+  // (diagramSvg's title/desc/branchGroupEl/handleGroupEl before its node
+  // groups).
+  const reconcileChildOrder = (container, desiredElements, startAfter) => {
+    let referenceNode = startAfter
+      ? startAfter.nextSibling
+      : container.firstChild;
+    for (const element of desiredElements) {
+      if (referenceNode === element) referenceNode = referenceNode.nextSibling;
+      else container.insertBefore(element, referenceNode);
+    }
+  };
   const showDiagramFallback = (message) => {
     scroll.textContent = "";
     resetSvgDiffState();
@@ -641,6 +662,8 @@ export function createLifecycleDiagramView(root, options = {}) {
     );
 
     const processedBranchKeys = new Set();
+    const orderedBranchGroups = [];
+    const orderedHandleCircles = [];
     for (const branch of branches) {
       const segments = segmentsByBranch
         .get(branch.id)
@@ -791,8 +814,8 @@ export function createLifecycleDiagramView(root, options = {}) {
         });
         branchSignatureByKey.set(branch.id, signature);
       }
-      branchGroupEl.append(group);
-      if (handleCircle) handleGroupEl.append(handleCircle);
+      orderedBranchGroups.push(group);
+      if (handleCircle) orderedHandleCircles.push(handleCircle);
     }
     for (const [key, stored] of [...branchElementsByKey]) {
       if (processedBranchKeys.has(key)) continue;
@@ -802,9 +825,15 @@ export function createLifecycleDiagramView(root, options = {}) {
       branchSignatureByKey.delete(key);
       currentBranchByKey.delete(key);
     }
+    // Reconcile order only after stale keys are removed, so a removed
+    // element that's still momentarily in the DOM can't cause an
+    // unnecessary extra move while walking the desired sequence.
+    reconcileChildOrder(branchGroupEl, orderedBranchGroups);
+    reconcileChildOrder(handleGroupEl, orderedHandleCircles);
 
     try {
       const processedNodeKeys = new Set();
+      const orderedNodeGroups = [];
       for (const node of visibleNodes) {
         const rawWidth = node.x1 - node.x0;
         const rawHeight = node.y1 - node.y0;
@@ -916,7 +945,7 @@ export function createLifecycleDiagramView(root, options = {}) {
           nodeElementsByKey.set(node.id, { group: g, rect, selected });
           nodeSignatureByKey.set(node.id, signature);
         }
-        diagramSvg.append(g);
+        orderedNodeGroups.push(g);
       }
       for (const [key, stored] of [...nodeElementsByKey]) {
         if (processedNodeKeys.has(key)) continue;
@@ -925,6 +954,11 @@ export function createLifecycleDiagramView(root, options = {}) {
         nodeSignatureByKey.delete(key);
         currentNodeByKey.delete(key);
       }
+      // Node groups are diagramSvg's direct children too, appended after
+      // title/desc/branchGroupEl/handleGroupEl -- reconcile only the range
+      // starting right after handleGroupEl so those earlier, static
+      // children are never touched.
+      reconcileChildOrder(diagramSvg, orderedNodeGroups, handleGroupEl);
     } catch {
       showDiagramFallback("Unable to lay out lifecycle diagram.");
       return;
