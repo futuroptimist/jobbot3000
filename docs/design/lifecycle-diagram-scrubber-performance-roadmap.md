@@ -2,10 +2,10 @@
 
 ## Status
 
-Phases 1–3 implemented (PRs #1199, #1200, and #1201). Phases 4–5 are planned but not yet built —
-see the `diagram-performance`-labeled issues on `futuroptimist/jobbot3000` for tracking, and the
-umbrella issue for the full roadmap. This doc is a second source of context for that roadmap in
-case the issues/PR discussion threads are ever lost.
+Phases 1–4 implemented (PRs #1199, #1200, #1201, #1202, and #1203). Phase 5 is planned but not yet
+built — see the `diagram-performance`-labeled issues on `futuroptimist/jobbot3000` for tracking,
+and the umbrella issue for the full roadmap. This doc is a second source of context for that
+roadmap in case the issues/PR discussion threads are ever lost.
 
 ## Problem
 
@@ -101,13 +101,35 @@ sequenced by risk, rather than one large change.
    symmetric negligible-geometry skip for nodes (non-positive pre-floor width/height) that
    branches already had for degenerate paths.
 
-4. **Phase 4 — Seeded layout reuse across scrub ticks + two-tier drag-quality rendering.**
-   Extends the existing "seeded replay" two-pass technique (see
-   [`lifecycle-diagram-handle-search-seeding-plan.md`](lifecycle-diagram-handle-search-seeding-plan.md),
-   currently used only within a single layout call) across scrub ticks, and adds a
-   cheaper/approximate layout while actively dragging with a full-quality layout once the drag
-   settles. Highest layout-_correctness_ risk phase — must validate against the dense-fixture
-   tests and the 30s render-latency contract; may need to split further.
+4. **Phase 4 — Seeded layout reuse across scrub ticks + two-tier drag-quality rendering (done,
+   split into two PRs by risk).**
+   - **4a (#1202) — two-tier drag-quality rendering.** Added a `dragActive` flag and a
+     `qualityTier: "draft"` option on `layoutLifecycleRoutingGraph()`: a single fresh,
+     smaller-budget `layoutLifecycleRoutingGraphPass()` call (the same shortcut
+     `transitionLanePhaseOnly` already took for test diagnostics) instead of the full two-pass
+     discovery+final search while the scrubber is actively being dragged. Releasing the drag
+     cancels any pending debounce and forces one synchronous full-quality render, so the frame
+     left on screen after release is always full quality. A known layout-search failure during a
+     drag tick skips that tick's render and keeps the previous frame instead of showing the
+     fallback message; an unexpected/uncaused error is never swallowed this way. Never touches
+     ordering/tie-break logic — only search-budget size.
+   - **4b (#1203) — cross-bucket layout seeding.** Reuses the existing single-call
+     discovery→final seed-replay mechanism in `lifecycleDiagramLayout.js` (see
+     [`lifecycle-diagram-handle-search-seeding-plan.md`](lifecycle-diagram-handle-search-seeding-plan.md))
+     essentially unchanged for cross-bucket reuse: capture a seed from every successful layout
+     (draft or full quality) and opportunistically offer it as a candidate for the next
+     draft-tier drag tick, gracefully retrying unseeded on a `seed-replay-failed` rejection
+     rather than propagating it. Node/branch/link ids are pure functions of taxonomy vocabulary,
+     so a seed captured from one bucket's layout can be looked up by id against a later,
+     unrelated bucket's freshly-built graph. Two seed fields are intentionally _not_ reused
+     verbatim across buckets, unlike the same-bucket case: `seedAcceptedRouteCrossingCount` (used
+     as the audit's tolerance bound as-is rather than derived from the current attempt's own
+     budget pressure) is never captured, and `seedLinkDocks`' override in
+     `materializeLaneAssignments` was narrowed to only ever reproduce the _routing_-node half of
+     a link's dock, never a real node's — the real half is always freshly computed from the
+     current bucket's own geometry. Both gaps were found and fixed after initial review; the
+     `seedLinkDocks` narrowing was verified behavior-preserving for the existing same-bucket
+     replay by confirming all pre-existing seeded-replay tests still pass unmodified.
 
 5. **Phase 5 — Web Worker offload + persisted IndexedDB snapshot store + eager background
    precompute + busy indicator.** Largest architectural departure: introduces the first
