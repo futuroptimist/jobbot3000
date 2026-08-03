@@ -82,10 +82,11 @@ sequenced by risk, rather than one large change.
    edge-case tests in `test/web-tracker-lifecycle-projection.test.js` needed zero changes, which
    is the clearest evidence the wrapper is transparent. Also added: reference-identity/LRU/
    `isCurrent`-boundary tests, a randomized fuzz-equivalence test against a cold bundle clone, and
-   a perf test proving a persistent scrubbing session is far cheaper than one with no cross-call
-   cache reuse. The busy/loading-indicator item originally scoped here was deferred to Phase 4/5
-   (see below) rather than implemented — decided with the user before starting, not dropped
-   silently.
+   a deterministic cache-reuse regression guard — counting reused-vs-recomputed path references
+   across a contiguous scrub window directly, rather than a wall-clock timing ratio, which was
+   found to be host-dependent and replaced after review. The busy/loading-indicator item
+   originally scoped here was deferred to Phase 5 (see below) rather than implemented — decided
+   with the user before starting, not dropped silently.
 
 3. **Phase 3 — Diff-based SVG updates + skip negligible elements.** Rewrites `renderSvg()`'s
    teardown/rebuild into a keyed diff against the previous render, and skips constructing
