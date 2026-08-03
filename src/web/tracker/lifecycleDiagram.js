@@ -7,6 +7,7 @@ import {
   buildLifecycleDisplayBranches,
   calculateLifecycleDiagramLayout,
   compareBranches,
+  compareLifecycleIds,
   compoundBranchPath,
   endpointColor,
   layoutLifecycleRoutingGraph,
@@ -97,6 +98,14 @@ const LIFECYCLE_LAYOUT_FAILURE_CAUSE_TYPES = new Set([
   "lifecycle-routing-anchor-allocation",
   "lifecycle-authoritative-rank-order",
 ]);
+// A seed-replay rejection (see lastLayoutSeed below) is an EXPECTED, routine
+// outcome for a cross-bucket seed candidate -- unlike the same-call
+// discovery->final replay this mechanism was originally built for, two
+// different buckets are not guaranteed to agree. Distinguished from every
+// other typed layout failure so only this one triggers an unseeded retry.
+const isSeedReplayFailure = (error) =>
+  error?.cause?.type === "lifecycle-authoritative-rank-order" &&
+  error?.cause?.reason === "seed-replay-failed";
 const unique = (items) => [...new Set(items.filter(Boolean))].sort(compare);
 const pageSlice = (items, page) => {
   const maxPage = Math.max(0, Math.ceil(items.length / PAGE_SIZE) - 1);
@@ -181,6 +190,14 @@ export function createLifecycleDiagramView(root, options = {}) {
   // (bucket navigation, resize, selection, keyboard stepping), which always
   // use the full-quality layout. See renderSvg()'s qualityTier option below.
   let dragActive = false;
+  // Captured from the most recent successful layoutLifecycleRoutingGraph()
+  // call (draft or full quality, whichever produced it) -- an opportunistic
+  // candidate for the next drag tick's seed-replay attempt. Node/branch/link
+  // ids are pure functions of taxonomy vocabulary (stable across different
+  // buckets of the same bundle, not just across two passes of one bucket),
+  // so a seed captured here can be looked up by id against a later bucket's
+  // freshly-built graph even though the two buckets are otherwise unrelated.
+  let lastLayoutSeed = null;
   // The bucket id resolved at the most recent drag-tick "input" event,
   // reset on each new pointerdown. Release must resolve against this
   // captured id, never a raw index against range.value -- update() can
@@ -601,7 +618,7 @@ export function createLifecycleDiagramView(root, options = {}) {
     }
     let graph;
     let dimensions;
-    const layoutOptions = {
+    const baseLayoutOptions = {
       ...(options.horizontalGeometry
         ? { horizontalGeometry: options.horizontalGeometry }
         : {}),
@@ -619,30 +636,100 @@ export function createLifecycleDiagramView(root, options = {}) {
           }
         : {}),
     };
+    // Cross-bucket seed reuse only applies to draft-tier drag ticks -- the
+    // full-quality settle-on-release call always runs unseeded (dragActive
+    // is false by the time it fires), and it already derives its own seed
+    // internally via its two-pass discovery+final wrapper.
+    const seededLayoutOptions =
+      dragActive && lastLayoutSeed
+        ? { ...baseLayoutOptions, ...lastLayoutSeed }
+        : null;
     try {
       ({ graph, dimensions } = layoutLifecycleRoutingGraph(
         projection,
         root.clientWidth,
-        layoutOptions,
+        seededLayoutOptions ?? baseLayoutOptions,
       ));
     } catch (error) {
-      // A known layout-search failure (budget exceeded, infeasible
-      // ordering, etc.) during a draft-tier tick doesn't mean the bucket is
-      // actually unlayoutable -- full quality would likely have succeeded
-      // given more budget. Skip this tick's render and keep whatever was
-      // already on screen rather than flashing the fallback message; a
-      // full-quality render is guaranteed on drag release (see releaseDrag
-      // below), which will show the real fallback if it also fails there.
-      // An *unexpected* error (no structured cause -- a genuine bug, not a
-      // search limit) must never be silently swallowed just because a drag
-      // happens to be in progress.
-      if (
+      if (seededLayoutOptions && isSeedReplayFailure(error)) {
+        // A seed that doesn't apply to this bucket (different composition,
+        // or geometry that's no longer legal under this bucket's own
+        // values) is expected, routine, and cheap to detect -- retry once,
+        // unseeded, before falling into the ordinary layout-failure
+        // handling below.
+        try {
+          ({ graph, dimensions } = layoutLifecycleRoutingGraph(
+            projection,
+            root.clientWidth,
+            baseLayoutOptions,
+          ));
+        } catch (retryError) {
+          if (
+            dragActive &&
+            LIFECYCLE_LAYOUT_FAILURE_CAUSE_TYPES.has(retryError?.cause?.type)
+          )
+            return;
+          showDiagramFallback("Unable to lay out lifecycle diagram.");
+          return;
+        }
+      } else if (
         dragActive &&
         LIFECYCLE_LAYOUT_FAILURE_CAUSE_TYPES.has(error?.cause?.type)
-      )
+      ) {
+        // A known layout-search failure (budget exceeded, infeasible
+        // ordering, etc.) during a draft-tier tick doesn't mean the bucket
+        // is actually unlayoutable -- full quality would likely have
+        // succeeded given more budget. Skip this tick's render and keep
+        // whatever was already on screen rather than flashing the fallback
+        // message; a full-quality render is guaranteed on drag release (see
+        // releaseDrag below), which will show the real fallback if it also
+        // fails there. An *unexpected* error (no structured cause -- a
+        // genuine bug, not a search limit) must never be silently swallowed
+        // just because a drag happens to be in progress.
         return;
-      showDiagramFallback("Unable to lay out lifecycle diagram.");
-      return;
+      } else {
+        showDiagramFallback("Unable to lay out lifecycle diagram.");
+        return;
+      }
+    }
+    // Capture a fresh cross-bucket seed candidate from this successful
+    // layout (draft or full quality -- either populates the same fields on
+    // its own graph) for the next drag tick to opportunistically reuse.
+    {
+      const authoritativeBranchOrderByRank = new Map(
+        [...graph.transitionLaneRankOrder].map(([rank, ids]) => [
+          rank,
+          new Map(ids.map((id, index) => [id, index])),
+        ]),
+      );
+      const nodesByRank = new Map();
+      for (const node of graph.nodes) {
+        if (!nodesByRank.has(node.rank)) nodesByRank.set(node.rank, []);
+        nodesByRank.get(node.rank).push(node);
+      }
+      const authoritativeNodeOrderByRank = new Map();
+      for (const [rank, nodes] of nodesByRank) {
+        const sorted = [...nodes].sort(
+          (a, b) => a.y0 - b.y0 || compareLifecycleIds(a.id, b.id),
+        );
+        authoritativeNodeOrderByRank.set(
+          rank,
+          new Map(sorted.map((node, index) => [node.id, index])),
+        );
+      }
+      lastLayoutSeed = {
+        seedAssignments: new Map(
+          graph.links.map((link) => [link.id, link.transitionLaneY]),
+        ),
+        seedRankOrderByRank: graph.transitionLaneRankOrder,
+        seedHandles: graph.acceptedHandles,
+        seedLinkDocks: new Map(
+          graph.links.map((link) => [link.id, { y0: link.y0, y1: link.y1 }]),
+        ),
+        seedAcceptedRouteCrossingCount: graph.acceptedRouteCrossingCount,
+        authoritativeBranchOrderByRank,
+        authoritativeNodeOrderByRank,
+      };
     }
     const { width, height } = dimensions;
     const finiteNode = (node) =>
