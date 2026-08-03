@@ -2,8 +2,8 @@
 
 ## Status
 
-Phases 1 and 2 implemented (PRs #1199 and #1200). Phases 3–5 are planned but not yet built — see
-the `diagram-performance`-labeled issues on `futuroptimist/jobbot3000` for tracking, and the
+Phases 1–3 implemented (PRs #1199, #1200, and #1201). Phases 4–5 are planned but not yet built —
+see the `diagram-performance`-labeled issues on `futuroptimist/jobbot3000` for tracking, and the
 umbrella issue for the full roadmap. This doc is a second source of context for that roadmap in
 case the issues/PR discussion threads are ever lost.
 
@@ -88,10 +88,18 @@ sequenced by risk, rather than one large change.
    originally scoped here was deferred to Phase 5 (see below) rather than implemented — decided
    with the user before starting, not dropped silently.
 
-3. **Phase 3 — Diff-based SVG updates + skip negligible elements.** Rewrites `renderSvg()`'s
-   teardown/rebuild into a keyed diff against the previous render, and skips constructing
-   negligible/zero-width nodes, paths, and hit-handles. Risk is DOM-shape/accessibility
-   regression (stale listeners, lost focus during a diff), not layout math.
+3. **Phase 3 — Diff-based SVG updates + skip negligible elements (done).** Rewrote `renderSvg()`'s
+   teardown/rebuild into a keyed diff against the previous render (stable taxonomy-derived node
+   and branch ids as keys), reusing untouched subtrees, patching selection-only changes in place,
+   and replacing only elements whose geometry/content actually changed. `reconcileChildOrder()`
+   preserves paint order using minimal `insertBefore` moves instead of `append`, which
+   unconditionally reparents even already-correctly-positioned children. Click/touch/pointer
+   listeners on reused elements resolve the current node/branch via `currentNodeByKey`/
+   `currentBranchByKey` at click time rather than closing over data captured at construction, since
+   `layoutLifecycleRoutingGraph()` isn't memoized by projection identity and can produce
+   identical-geometry-but-different-membership nodes/branches across renders. Also added the
+   symmetric negligible-geometry skip for nodes (non-positive pre-floor width/height) that
+   branches already had for degenerate paths.
 
 4. **Phase 4 — Seeded layout reuse across scrub ticks + two-tier drag-quality rendering.**
    Extends the existing "seeded replay" two-pass technique (see
