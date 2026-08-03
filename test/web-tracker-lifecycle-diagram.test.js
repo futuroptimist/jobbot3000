@@ -1031,12 +1031,15 @@ describe("lifecycle diagram view", () => {
     );
     const { root } = render(b);
     const createSpy = vi.spyOn(document, "createElementNS");
-    const nodeRect = root.querySelector(
-      "[data-diagram-node='origin:application_submitted'] rect:not([data-diagram-node-hit])",
-    );
-    nodeRect.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-    expect(createSpy).not.toHaveBeenCalled();
-    createSpy.mockRestore();
+    try {
+      const nodeRect = root.querySelector(
+        "[data-diagram-node='origin:application_submitted'] rect:not([data-diagram-node-hit])",
+      );
+      nodeRect.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      expect(createSpy).not.toHaveBeenCalled();
+    } finally {
+      createSpy.mockRestore();
+    }
   });
 
   it("constructs exactly one new SVG element (the halo) when a branch is selected", () => {
@@ -1049,11 +1052,16 @@ describe("lifecycle diagram view", () => {
     );
     const { root } = render(b);
     const createSpy = vi.spyOn(document, "createElementNS");
-    const branchPath = root.querySelector("[data-diagram-link]");
-    branchPath.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-    expect(createSpy).toHaveBeenCalledTimes(1);
-    expect(createSpy).toHaveBeenCalledWith(expect.any(String), "path");
-    createSpy.mockRestore();
+    try {
+      const branchPath = root.querySelector("[data-diagram-link]");
+      branchPath.dispatchEvent(
+        new window.MouseEvent("click", { bubbles: true }),
+      );
+      expect(createSpy).toHaveBeenCalledTimes(1);
+      expect(createSpy).toHaveBeenCalledWith(expect.any(String), "path");
+    } finally {
+      createSpy.mockRestore();
+    }
   });
 
   it("renders warning summary from supplied P4 warning codes", () => {
