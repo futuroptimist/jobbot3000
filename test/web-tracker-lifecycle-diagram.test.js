@@ -512,6 +512,77 @@ describe("lifecycle diagram view", () => {
     );
   });
 
+  it("selects the bucket dragged to even if a timeline replacement shifts its index", () => {
+    vi.useFakeTimers();
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t1", "a", "recruiter_screen", "2026-01-02"),
+        ev("t2", "a", "technical_interview", "2026-01-03"),
+      ],
+    );
+    const onBucketChange = vi.fn();
+    const { root, view, timeline } = render(b, "current", onBucketChange);
+    const range = root.querySelector("input[type='range']");
+    const targetIndex = 2;
+    const targetBucketId = timeline.buckets[targetIndex].id;
+    range.value = String(targetIndex);
+    range.dispatchEvent(new window.Event("input", { bubbles: true }));
+
+    // A timeline replacement (e.g. a background refresh discovering an
+    // earlier event) inserts a bucket before the target, shifting what
+    // index `targetIndex` now points to.
+    const withEarlierEvent = bundle(
+      [app("a")],
+      [
+        ev("earlier", "a", "application_submitted", "2025-12-31"),
+        ...b.lifecycleEvents,
+      ],
+    );
+    const nextTimeline = buildLifecycleTimeline(withEarlierEvent);
+    expect(nextTimeline.buckets[targetIndex].id).not.toBe(targetBucketId);
+    view.update({
+      timeline: nextTimeline,
+      snapshot: projectLifecycleAt(withEarlierEvent, "current"),
+      selectedBucketId: "current",
+    });
+
+    vi.advanceTimersByTime(80);
+    expect(onBucketChange).toHaveBeenCalledTimes(1);
+    expect(onBucketChange).toHaveBeenCalledWith(targetBucketId);
+  });
+
+  it("lets a newer discrete prev/next/current action win over an older pending scrub", () => {
+    vi.useFakeTimers();
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t1", "a", "recruiter_screen", "2026-01-02"),
+        ev("t2", "a", "technical_interview", "2026-01-03"),
+      ],
+    );
+    const onBucketChange = vi.fn();
+    const firstBucketId = buildLifecycleTimeline(b).buckets[0].id;
+    const { root, timeline } = render(b, firstBucketId, onBucketChange);
+    const range = root.querySelector("input[type='range']");
+    range.value = "1";
+    range.dispatchEvent(new window.Event("input", { bubbles: true }));
+
+    const nextButton = [...root.querySelectorAll("button")].find(
+      (button) => button.textContent === "Next event",
+    );
+    nextButton.click();
+    expect(onBucketChange).toHaveBeenCalledTimes(1);
+    expect(onBucketChange).toHaveBeenCalledWith(timeline.buckets[2].id);
+
+    // The pending drag-to-bucket-1 debounce must have been cancelled by the
+    // newer click, not fire 80ms later and silently overwrite it.
+    vi.advanceTimersByTime(80);
+    expect(onBucketChange).toHaveBeenCalledTimes(1);
+  });
+
   it("does not mutate P4 projection and has equivalent selectable rows", () => {
     const b = bundle(
       [app("a")],
