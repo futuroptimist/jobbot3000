@@ -256,6 +256,43 @@
   height: 0.85rem;
   width: 0.85rem;
 }
+/* One modifier per ENDPOINT_BRANCH_COLORS key (lifecycleDiagramLayout.js) --
+   colors must stay in sync with that map. A static class per fixed taxonomy
+   id (not an inline style) so this satisfies a strict style-src 'self' CSP
+   with no 'unsafe-inline'. */
+.diagram-legend-swatch--awaiting_response {
+  background: #60a5fa;
+}
+.diagram-legend-swatch--interviewing {
+  background: #c084fc;
+}
+.diagram-legend-swatch--assessment_in_progress {
+  background: #facc15;
+}
+.diagram-legend-swatch--offer_negotiating {
+  background: #2dd4bf;
+}
+.diagram-legend-swatch--employer_rejected {
+  background: #fb7185;
+}
+.diagram-legend-swatch--candidate_withdrew {
+  background: #fb923c;
+}
+.diagram-legend-swatch--offer_declined {
+  background: #f472b6;
+}
+.diagram-legend-swatch--offer_expired_rescinded {
+  background: #a3e635;
+}
+.diagram-legend-swatch--offer_accepted {
+  background: #4ade80;
+}
+.diagram-legend-swatch--closed_archived {
+  background: #94a3b8;
+}
+.diagram-legend-swatch--unknown {
+  background: #e2e8f0;
+}
 .diagram-scroll svg {
   display: block;
   min-width: 1850px;

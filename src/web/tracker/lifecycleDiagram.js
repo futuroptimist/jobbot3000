@@ -729,9 +729,14 @@ export function createLifecycleDiagramView(root, options = {}) {
       legend.append(
         el("span", { className: "diagram-legend-item" }, [
           el("span", {
-            className: "diagram-legend-swatch",
+            // A static per-endpoint-id class, not an inline style -- the
+            // strict production CSP (script-src/style-src 'self', no
+            // 'unsafe-inline') blocks the style attribute entirely. Colors
+            // live in tracker.css's .diagram-legend-swatch--* rules, kept in
+            // sync with ENDPOINT_BRANCH_COLORS by hand. item.id is always a
+            // fixed taxonomy id, never arbitrary data.
+            className: `diagram-legend-swatch diagram-legend-swatch--${item.id}`,
             "aria-hidden": "true",
-            style: `background:${endpointColor(item.id)}`,
           }),
           document.createTextNode(`${item.label} ${item.count}`),
         ]),
@@ -852,7 +857,7 @@ export function createLifecycleDiagramView(root, options = {}) {
             LIFECYCLE_LAYOUT_FAILURE_CAUSE_TYPES.has(retryError?.cause?.type)
           )
             return { status: "skip" };
-          return { status: "error" };
+          return { status: "error", error: retryError };
         }
       }
       if (
@@ -871,7 +876,7 @@ export function createLifecycleDiagramView(root, options = {}) {
         // just because a drag happens to be in progress.
         return { status: "skip" };
       }
-      return { status: "error" };
+      return { status: "error", error };
     }
   };
   const renderSvg = () => {
@@ -887,6 +892,7 @@ export function createLifecycleDiagramView(root, options = {}) {
     const result = acquireLayoutSync(buildBaseLayoutOptions());
     if (result.status === "skip") return;
     if (result.status === "error") {
+      console.error("Lifecycle diagram layout failed", result.error);
       showDiagramFallback("Unable to lay out lifecycle diagram.");
       return;
     }
@@ -918,6 +924,7 @@ export function createLifecycleDiagramView(root, options = {}) {
     if (result.status === "stale") return false;
     if (result.status === "skip") return true;
     if (result.status === "error") {
+      console.error("Lifecycle diagram layout failed", result.error);
       showDiagramFallback("Unable to lay out lifecycle diagram.");
       return true;
     }
@@ -940,15 +947,15 @@ export function createLifecycleDiagramView(root, options = {}) {
         baseLayoutOptions,
       );
       if (myGeneration !== renderGeneration) return { status: "stale" };
-      if (!response.ok) return { status: "error" };
+      if (!response.ok) return { status: "error", error: response.error };
       return {
         status: "ok",
         graph: response.graph,
         dimensions: response.dimensions,
       };
-    } catch {
+    } catch (error) {
       if (myGeneration !== renderGeneration) return { status: "stale" };
-      return { status: "error" };
+      return { status: "error", error };
     } finally {
       outstandingAsyncLayoutCalls -= 1;
     }
@@ -1059,7 +1066,8 @@ export function createLifecycleDiagramView(root, options = {}) {
           ).map((h) => [h.branchId, h]),
         );
       }
-    } catch {
+    } catch (error) {
+      console.error("Lifecycle diagram layout failed", error);
       showDiagramFallback("Unable to lay out lifecycle diagram.");
       return;
     }
@@ -1393,7 +1401,8 @@ export function createLifecycleDiagramView(root, options = {}) {
       // starting right after handleGroupEl so those earlier, static
       // children are never touched.
       reconcileChildOrder(diagramSvg, orderedNodeGroups, handleGroupEl);
-    } catch {
+    } catch (error) {
+      console.error("Lifecycle diagram layout failed", error);
       showDiagramFallback("Unable to lay out lifecycle diagram.");
       return;
     }
