@@ -3815,6 +3815,24 @@ export function layoutLifecycleRoutingGraph(
   return result;
 }
 
+// graph.horizontalGeometry/dimensions.horizontalGeometry (see the
+// Object.defineProperty calls above) are non-enumerable, so structured
+// clone -- what postMessage uses -- would silently drop them crossing a
+// Worker boundary; this lets a caller on the other side of that boundary
+// re-attach the field as a normal enumerable one before sending a result
+// back. Used by lifecycleDiagramLayout.worker.js (Phase 5b); exported here
+// rather than defined in the worker script so it stays importable from a
+// plain Node context (the worker script references the `self` global at
+// module scope, which doesn't exist outside a real worker) for tests.
+export function withEnumerableHorizontalGeometry(value) {
+  Object.defineProperty(value, "horizontalGeometry", {
+    value: value.horizontalGeometry,
+    enumerable: true,
+    configurable: true,
+  });
+  return value;
+}
+
 export function testOnlyDiagnoseLifecycleLayoutAttempt(
   projection,
   availableWidth,

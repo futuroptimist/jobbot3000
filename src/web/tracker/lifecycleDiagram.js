@@ -219,7 +219,15 @@ export function createLifecycleDiagramView(root, options = {}) {
     pendingRenderResolve?.();
     pendingRenderResolve = null;
   };
-  const runDeferred = (phaseB) => {
+  // runDeferred's caller passes the generation it captured at render()'s own
+  // top -- phaseB (Phase 5b) can now itself await a Worker round-trip, so a
+  // *newer* render can be triggered while this one's rAF-scheduled phaseB is
+  // already running. cancelPendingRender only guards the window *before*
+  // phaseB starts (see below); once it's running, only this generation
+  // check can tell a superseded completion apart from the current one, so
+  // its busy-indicator hide doesn't clobber a still-genuinely-busy newer
+  // render.
+  const runDeferred = (phaseB, myGeneration) => {
     cancelPendingRender();
     busyIndicator.hidden = false;
     scroll.setAttribute("aria-busy", "true");
@@ -229,11 +237,103 @@ export function createLifecycleDiagramView(root, options = {}) {
         pendingRenderFrame = scheduleFrame(() => {
           pendingRenderFrame = null;
           pendingRenderResolve = null;
-          phaseB();
-          busyIndicator.hidden = true;
-          scroll.setAttribute("aria-busy", "false");
-          resolve();
+          Promise.resolve(phaseB())
+            .catch((error) => {
+              // phaseB (Phase 5b) can now reject -- e.g. an unexpected
+              // throw from renderDetails()/renderTables(), not one of the
+              // structured layout-failure statuses acquireLayoutAsync
+              // already handles. Never let that leave update()'s caller
+              // hanging or the busy indicator stuck; still surface it
+              // instead of swallowing a genuine bug silently.
+              console.error("Lifecycle diagram render failed", error);
+            })
+            .finally(() => {
+              if (myGeneration === renderGeneration) {
+                busyIndicator.hidden = true;
+                scroll.setAttribute("aria-busy", "false");
+              }
+              resolve();
+            });
         });
+      });
+    });
+  };
+  // Bumped unconditionally at the top of every render() call (drag and
+  // non-drag alike). cancelPendingRender only protects the pre-rAF window;
+  // this closes the gap it structurally can't reach -- a Worker call
+  // already in flight when a newer render starts. Each async layout
+  // acquisition captures its own generation and discards its result if this
+  // has moved on by the time its await resolves.
+  let renderGeneration = 0;
+  // Lazily created on first non-drag render that needs it -- a mounted but
+  // never-viewed diagram tab shouldn't pay for a worker thread. One worker
+  // is reused for the view's whole lifetime; requests are matched to
+  // responses by id since a stale request's response can still arrive after
+  // a newer one's (the worker processes messages one at a time, so a
+  // superseded request already being computed isn't interrupted, just
+  // ignored on arrival -- see acquireLayoutAsync).
+  let layoutWorker = null;
+  let layoutWorkerRequestId = 0;
+  const layoutWorkerPending = new Map();
+  // Guards selectFeature() the same way pendingRenderFrame already does --
+  // see its own comment. A count, not a boolean: two overlapping non-drag
+  // renders can each have a worker call in flight at once, and a boolean
+  // would be incorrectly cleared by the first one's completion while the
+  // second is still outstanding.
+  let outstandingAsyncLayoutCalls = 0;
+  const rejectAllPendingLayoutRequests = (error) => {
+    for (const pending of layoutWorkerPending.values()) pending.reject(error);
+    layoutWorkerPending.clear();
+  };
+  const getLayoutWorker = () => {
+    if (!window.Worker) return null;
+    if (layoutWorker) return layoutWorker;
+    try {
+      layoutWorker = new window.Worker(
+        "/assets/lifecycle-diagram-layout.worker.js",
+        { type: "module" },
+      );
+    } catch {
+      // Construction can throw synchronously (sandboxed or policy-restricted
+      // browser, blocked module worker, etc.) -- treat it exactly like
+      // window.Worker being unavailable so the caller falls back to
+      // acquireLayoutSync instead of an uncaught rejection.
+      return null;
+    }
+    layoutWorker.onmessage = (event) => {
+      const { requestId, ok, graph, dimensions, error } = event.data ?? {};
+      const pending = layoutWorkerPending.get(requestId);
+      if (!pending) return;
+      layoutWorkerPending.delete(requestId);
+      pending.resolve(
+        ok ? { ok: true, graph, dimensions } : { ok: false, error },
+      );
+    };
+    // A worker-thread crash must not leave any caller hanging forever, and
+    // the broken instance must not be reused -- a future render would post
+    // to a worker that can never respond. Discard it so the next
+    // getLayoutWorker() call creates a fresh one (or, if construction now
+    // also fails, falls back to acquireLayoutSync).
+    layoutWorker.onerror = () => {
+      rejectAllPendingLayoutRequests(
+        new Error("Lifecycle diagram layout worker failed."),
+      );
+      layoutWorker?.terminate();
+      layoutWorker = null;
+    };
+    return layoutWorker;
+  };
+  const requestLayoutFromWorker = (worker, availableWidth, options) => {
+    layoutWorkerRequestId += 1;
+    const requestId = layoutWorkerRequestId;
+    return new Promise((resolve, reject) => {
+      layoutWorkerPending.set(requestId, { resolve, reject });
+      worker.postMessage({
+        type: "layout",
+        requestId,
+        projection,
+        availableWidth,
+        options,
       });
     });
   };
@@ -470,8 +570,11 @@ export function createLifecycleDiagramView(root, options = {}) {
     // projection for a feature id read off the *old* render, and since ids
     // are stable taxonomy-derived values (Phase 4b), that can silently
     // resurrect a selection the bucket change was supposed to clear. Drop
-    // it instead; Phase B lands within a couple of frames regardless.
-    if (pendingRenderFrame !== null) return;
+    // it instead; Phase B lands within a couple of frames regardless. Phase
+    // 5b's Worker-based layout acquisition opens the identical window for
+    // longer (an await, not just a pending rAF) -- outstandingAsyncLayoutCalls
+    // covers that too.
+    if (pendingRenderFrame !== null || outstandingAsyncLayoutCalls > 0) return;
     const active = document.activeElement;
     const shouldRestoreFocus = active?.matches?.(".diagram-select-button");
     if (selectedFeature?.id !== feature.id) applicationPage = 0;
@@ -684,36 +787,32 @@ export function createLifecycleDiagramView(root, options = {}) {
     resetSvgDiffState();
     scroll.append(el("p", { className: "muted", textContent: message }));
   };
-  const renderSvg = () => {
-    renderLegend();
-    if (!projection.totalApplications) {
-      showDiagramFallback("No lifecycle data yet.");
-      return;
-    }
-    if (!projection.nodes.length) {
-      showDiagramFallback("No diagram nodes are available for this point.");
-      return;
-    }
-    let graph;
-    let dimensions;
-    const baseLayoutOptions = {
-      ...(options.horizontalGeometry
-        ? { horizontalGeometry: options.horizontalGeometry }
-        : {}),
-      // Draft tier still runs full handle placement and route-crossing
-      // auditing (unlike the test-only transitionLanePhaseOnly shortcut) --
-      // it only skips discovery's seed-replay half of the pipeline and uses
-      // smaller state budgets, so its output is always independently
-      // validated by the same acceptance logic full quality uses.
-      ...(dragActive
-        ? {
-            qualityTier: "draft",
-            transitionLaneStateLimit: DRAG_QUALITY_TRANSITION_LANE_STATE_LIMIT,
-            handleStateLimit: DRAG_QUALITY_HANDLE_STATE_LIMIT,
-            skipHandleFallbackSweep: true,
-          }
-        : {}),
-    };
+  const buildBaseLayoutOptions = () => ({
+    ...(options.horizontalGeometry
+      ? { horizontalGeometry: options.horizontalGeometry }
+      : {}),
+    // Draft tier still runs full handle placement and route-crossing
+    // auditing (unlike the test-only transitionLanePhaseOnly shortcut) --
+    // it only skips discovery's seed-replay half of the pipeline and uses
+    // smaller state budgets, so its output is always independently
+    // validated by the same acceptance logic full quality uses.
+    ...(dragActive
+      ? {
+          qualityTier: "draft",
+          transitionLaneStateLimit: DRAG_QUALITY_TRANSITION_LANE_STATE_LIMIT,
+          handleStateLimit: DRAG_QUALITY_HANDLE_STATE_LIMIT,
+          skipHandleFallbackSweep: true,
+        }
+      : {}),
+  });
+  // Used by drag ticks and selectFeature() (both stay fully synchronous --
+  // see their own comments): the exact layout-acquisition logic that
+  // predates the Worker offload, relocated into its own function so the new
+  // async path below can share renderSvgFromLayout with it. Returns a
+  // discriminated result rather than calling showDiagramFallback itself, so
+  // the async caller can gate showing it behind its own staleness check;
+  // the sync caller (renderSvg) shows it unconditionally.
+  const acquireLayoutSync = (baseLayoutOptions) => {
     // Cross-bucket seed reuse only applies to draft-tier drag ticks -- the
     // full-quality settle-on-release call always runs unseeded (dragActive
     // is false by the time it fires), and it already derives its own seed
@@ -723,11 +822,14 @@ export function createLifecycleDiagramView(root, options = {}) {
         ? { ...baseLayoutOptions, ...lastLayoutSeed }
         : null;
     try {
-      ({ graph, dimensions } = layoutLifecycleRoutingGraph(
-        projection,
-        root.clientWidth,
-        seededLayoutOptions ?? baseLayoutOptions,
-      ));
+      return {
+        status: "ok",
+        ...layoutLifecycleRoutingGraph(
+          projection,
+          root.clientWidth,
+          seededLayoutOptions ?? baseLayoutOptions,
+        ),
+      };
     } catch (error) {
       if (seededLayoutOptions && isSeedReplayFailure(error)) {
         // A seed that doesn't apply to this bucket (different composition,
@@ -736,21 +838,24 @@ export function createLifecycleDiagramView(root, options = {}) {
         // unseeded, before falling into the ordinary layout-failure
         // handling below.
         try {
-          ({ graph, dimensions } = layoutLifecycleRoutingGraph(
-            projection,
-            root.clientWidth,
-            baseLayoutOptions,
-          ));
+          return {
+            status: "ok",
+            ...layoutLifecycleRoutingGraph(
+              projection,
+              root.clientWidth,
+              baseLayoutOptions,
+            ),
+          };
         } catch (retryError) {
           if (
             dragActive &&
             LIFECYCLE_LAYOUT_FAILURE_CAUSE_TYPES.has(retryError?.cause?.type)
           )
-            return;
-          showDiagramFallback("Unable to lay out lifecycle diagram.");
-          return;
+            return { status: "skip" };
+          return { status: "error" };
         }
-      } else if (
+      }
+      if (
         dragActive &&
         LIFECYCLE_LAYOUT_FAILURE_CAUSE_TYPES.has(error?.cause?.type)
       ) {
@@ -764,12 +869,97 @@ export function createLifecycleDiagramView(root, options = {}) {
         // fails there. An *unexpected* error (no structured cause -- a
         // genuine bug, not a search limit) must never be silently swallowed
         // just because a drag happens to be in progress.
-        return;
-      } else {
-        showDiagramFallback("Unable to lay out lifecycle diagram.");
-        return;
+        return { status: "skip" };
       }
+      return { status: "error" };
     }
+  };
+  const renderSvg = () => {
+    renderLegend();
+    if (!projection.totalApplications) {
+      showDiagramFallback("No lifecycle data yet.");
+      return;
+    }
+    if (!projection.nodes.length) {
+      showDiagramFallback("No diagram nodes are available for this point.");
+      return;
+    }
+    const result = acquireLayoutSync(buildBaseLayoutOptions());
+    if (result.status === "skip") return;
+    if (result.status === "error") {
+      showDiagramFallback("Unable to lay out lifecycle diagram.");
+      return;
+    }
+    renderSvgFromLayout(result.graph, result.dimensions);
+  };
+  // Only reached for a non-drag render (see render()'s dragActive branch).
+  // acquireLayoutAsync's Worker call is what actually moves the layout
+  // search off the main thread; it falls back to acquireLayoutSync
+  // synchronously if window.Worker is unavailable, matching this file's
+  // established `X ?? fallback` style for optional browser APIs.
+  const renderSvgAsync = async (myGeneration) => {
+    renderLegend();
+    if (!projection.totalApplications) {
+      showDiagramFallback("No lifecycle data yet.");
+      return true;
+    }
+    if (!projection.nodes.length) {
+      showDiagramFallback("No diagram nodes are available for this point.");
+      return true;
+    }
+    const result = await acquireLayoutAsync(
+      buildBaseLayoutOptions(),
+      myGeneration,
+    );
+    // acquireLayoutAsync checks staleness immediately after its own await
+    // (the only yield point between there and here) -- nothing else can
+    // have advanced renderGeneration in between, so this single check is
+    // both necessary and sufficient; a second check here would be dead code.
+    if (result.status === "stale") return false;
+    if (result.status === "skip") return true;
+    if (result.status === "error") {
+      showDiagramFallback("Unable to lay out lifecycle diagram.");
+      return true;
+    }
+    renderSvgFromLayout(result.graph, result.dimensions);
+    return true;
+  };
+  // A single request/response, unlike acquireLayoutSync -- seededLayoutOptions
+  // is only ever non-null when dragActive is true (see acquireLayoutSync),
+  // and this is only ever reached when it's false, so the seed-replay-retry
+  // branch can never apply here; there's nothing to replicate across the
+  // worker boundary.
+  const acquireLayoutAsync = async (baseLayoutOptions, myGeneration) => {
+    const worker = getLayoutWorker();
+    if (!worker) return acquireLayoutSync(baseLayoutOptions);
+    outstandingAsyncLayoutCalls += 1;
+    try {
+      const response = await requestLayoutFromWorker(
+        worker,
+        root.clientWidth,
+        baseLayoutOptions,
+      );
+      if (myGeneration !== renderGeneration) return { status: "stale" };
+      if (!response.ok) return { status: "error" };
+      return {
+        status: "ok",
+        graph: response.graph,
+        dimensions: response.dimensions,
+      };
+    } catch {
+      if (myGeneration !== renderGeneration) return { status: "stale" };
+      return { status: "error" };
+    } finally {
+      outstandingAsyncLayoutCalls -= 1;
+    }
+  };
+  // Shared by both the sync (drag tick, selectFeature) and async (Worker)
+  // acquisition paths -- everything from here on is pure DOM
+  // construction/diffing plus the cross-bucket seed capture, with no
+  // dependency on *how* { graph, dimensions } was obtained. Only ever
+  // called with an already-known-fresh result; a superseded async result
+  // never reaches this function (see renderSvgAsync).
+  const renderSvgFromLayout = (graph, dimensions) => {
     // Capture a fresh cross-bucket seed candidate from this successful
     // layout (draft or full quality -- either populates the same fields on
     // its own graph) for the next drag tick to opportunistically reuse.
@@ -1388,6 +1578,10 @@ export function createLifecycleDiagramView(root, options = {}) {
       });
   };
   const render = (newerAvailable = lastNewerAvailable) => {
+    // Bumped unconditionally, before either branch below -- see
+    // renderGeneration's own comment for why both need it, not just the
+    // deferred (non-drag) path.
+    const myGeneration = ++renderGeneration;
     lastNewerAvailable = newerAvailable;
     const buckets = timeline.buckets?.length
       ? timeline.buckets
@@ -1438,9 +1632,20 @@ export function createLifecycleDiagramView(root, options = {}) {
     simultaneous.querySelector("[data-boundary-events]").textContent =
       projection.events.map((e) => `${e.id}: ${e.eventType}`).join("; ") ||
       "No boundary events.";
-    const runPhaseB = () => {
+    // dragActive is read here, synchronously, before any await -- stable
+    // for this whole invocation regardless of what happens later (a
+    // pointerdown mid-await can't retroactively change which path this
+    // particular call already committed to).
+    const runPhaseB = async () => {
       renderDetails();
-      renderSvg();
+      if (dragActive) {
+        renderSvg();
+      } else if (!(await renderSvgAsync(myGeneration))) {
+        // Superseded mid-await -- skip the now-redundant renderTables() too
+        // (harmless either way since it doesn't depend on the layout
+        // result, but this keeps "stale means untouched" easy to verify).
+        return;
+      }
       renderTables();
     };
     // Drag ticks (Phase 4a/4b) are already fast and stay fully synchronous,
@@ -1454,10 +1659,9 @@ export function createLifecycleDiagramView(root, options = {}) {
       cancelPendingRender();
       busyIndicator.hidden = true;
       scroll.setAttribute("aria-busy", "false");
-      runPhaseB();
-      return Promise.resolve();
+      return runPhaseB();
     }
-    return runDeferred(runPhaseB);
+    return runDeferred(runPhaseB, myGeneration);
   };
   const changeToIndex = (index) => {
     const bucket = timeline.buckets[index];
@@ -1590,6 +1794,13 @@ export function createLifecycleDiagramView(root, options = {}) {
       debouncedRangeChange.clear();
       announce.clear();
       cancelPendingRender();
+      // A caller awaiting an in-flight Worker call must not hang forever
+      // just because the view was torn down mid-request.
+      rejectAllPendingLayoutRequests(
+        new Error("Lifecycle diagram view destroyed."),
+      );
+      layoutWorker?.terminate();
+      layoutWorker = null;
       root.textContent = "";
     },
   };

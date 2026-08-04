@@ -140,6 +140,18 @@ async function selectedDetails(page) {
   return await page.locator("[data-diagram-details]").innerText();
 }
 
+// Phase 5b's layout search runs in a Worker: a non-drag render's busy
+// window now spans a real, sequentially-processed round-trip rather than a
+// near-instant synchronous call, so it can legitimately take longer than
+// the default 5s timeout under a slower/more contended CI runner --
+// generous margin here for the same reason assertDensityAwareSvgGeometry
+// below uses one, rather than tuning tight to one machine.
+async function waitForDiagramIdle(page) {
+  await expect(page.locator("[data-diagram-busy]")).toBeHidden({
+    timeout: 150000,
+  });
+}
+
 async function assertNoPageOverflow(page) {
   expect(
     await page.evaluate(
@@ -952,15 +964,26 @@ test.describe("Application Lifecycle Diagram", () => {
     await expect(page.locator("[data-lifecycle-diagram]")).not.toContainText(
       "Newer activity available",
     );
+    // Phase 5b's layout search runs in a Worker: each of the three
+    // non-drag renders below (a button click, range.fill's keyboard-style
+    // input with no preceding pointerdown, and another button click) queues
+    // its own real, sequentially-processed request. Waiting for the busy
+    // indicator to clear after each one -- exactly as a real user
+    // naturally would -- keeps them from stacking up behind each other
+    // rather than stress-testing an unrelated queueing edge case; the busy
+    // indicator itself is covered by the dedicated Phase 5a/5b test suites.
     await page.getByRole("button", { name: "Next event", exact: true }).click();
+    await waitForDiagramIdle(page);
     await range.fill("0");
     await expect(page.locator("[data-lifecycle-diagram]")).toContainText(
       /Unknown date|off chronological scale|applications included/u,
     );
+    await waitForDiagramIdle(page);
     await page.getByRole("button", { name: "Return to current" }).click();
     await expect(page.locator("[data-lifecycle-diagram]")).toContainText(
       EXPECTED_CURRENT.included,
     );
+    await waitForDiagramIdle(page);
 
     const nodeGroup = page
       .locator("[data-diagram-node='origin:application_submitted']")
@@ -985,6 +1008,16 @@ test.describe("Application Lifecycle Diagram", () => {
     await page.keyboard.press("Tab");
 
     await page.setViewportSize({ width: 375, height: 812 });
+    // The viewport change triggers the ResizeObserver-driven non-drag
+    // render described above, but that path goes through
+    // debouncedResize's own 80ms debounce (lifecycleDiagram.js's
+    // makeDebounce default) before the render even starts -- unlike the
+    // button clicks above, there's no earlier assertion here that
+    // implicitly waits out that delay, so checking busy-hidden immediately
+    // could trivially pass before the debounced render has even begun.
+    // Wait past the debounce window first, then wait for it to settle.
+    await page.waitForTimeout(200);
+    await waitForDiagramIdle(page);
     const scroll = page.locator(".diagram-scroll");
     await expect(scroll).toHaveAttribute("aria-label", /Scrollable/u);
     expect(
