@@ -140,6 +140,18 @@ async function selectedDetails(page) {
   return await page.locator("[data-diagram-details]").innerText();
 }
 
+// Phase 5b's layout search runs in a Worker: a non-drag render's busy
+// window now spans a real, sequentially-processed round-trip rather than a
+// near-instant synchronous call, so it can legitimately take longer than
+// the default 5s timeout under a slower/more contended CI runner --
+// generous margin here for the same reason assertDensityAwareSvgGeometry
+// below uses one, rather than tuning tight to one machine.
+async function waitForDiagramIdle(page) {
+  await expect(page.locator("[data-diagram-busy]")).toBeHidden({
+    timeout: 150000,
+  });
+}
+
 async function assertNoPageOverflow(page) {
   expect(
     await page.evaluate(
@@ -961,17 +973,17 @@ test.describe("Application Lifecycle Diagram", () => {
     // rather than stress-testing an unrelated queueing edge case; the busy
     // indicator itself is covered by the dedicated Phase 5a/5b test suites.
     await page.getByRole("button", { name: "Next event", exact: true }).click();
-    await expect(page.locator("[data-diagram-busy]")).toBeHidden();
+    await waitForDiagramIdle(page);
     await range.fill("0");
     await expect(page.locator("[data-lifecycle-diagram]")).toContainText(
       /Unknown date|off chronological scale|applications included/u,
     );
-    await expect(page.locator("[data-diagram-busy]")).toBeHidden();
+    await waitForDiagramIdle(page);
     await page.getByRole("button", { name: "Return to current" }).click();
     await expect(page.locator("[data-lifecycle-diagram]")).toContainText(
       EXPECTED_CURRENT.included,
     );
-    await expect(page.locator("[data-diagram-busy]")).toBeHidden();
+    await waitForDiagramIdle(page);
 
     const nodeGroup = page
       .locator("[data-diagram-node='origin:application_submitted']")
@@ -1005,7 +1017,7 @@ test.describe("Application Lifecycle Diagram", () => {
     // could trivially pass before the debounced render has even begun.
     // Wait past the debounce window first, then wait for it to settle.
     await page.waitForTimeout(200);
-    await expect(page.locator("[data-diagram-busy]")).toBeHidden();
+    await waitForDiagramIdle(page);
     const scroll = page.locator(".diagram-scroll");
     await expect(scroll).toHaveAttribute("aria-label", /Scrollable/u);
     expect(
