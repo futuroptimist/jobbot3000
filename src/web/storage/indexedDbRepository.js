@@ -17,7 +17,7 @@ import {
 } from "./browserDataMigration.js";
 
 export const DATABASE_NAME = "jobbot3000";
-export const INDEXEDDB_DATABASE_VERSION = 2;
+export const INDEXEDDB_DATABASE_VERSION = 3;
 export const DATABASE_VERSION = INDEXEDDB_DATABASE_VERSION;
 
 export const STORE_NAMES = [
@@ -31,6 +31,14 @@ export const STORE_NAMES = [
   "reminders",
   "settings",
 ];
+
+// Deliberately NOT in STORE_NAMES -- that constant is the allowlist driving
+// backup export/import and clearAllData's main sweep. This store holds only
+// derived, regenerable lifecycle-diagram projection data (Phase 5c), never
+// user-facing domain data, so it must stay unreachable from export/import by
+// construction (a db.transaction() can only touch stores named in it).
+// clearAllData() does still wipe it directly, as user-hygiene -- see there.
+const PROJECTION_CACHE_STORE_NAME = "lifecycleProjectionCache";
 
 const STORE_SCHEMAS = {
   applications: browserApplicationSchema,
@@ -293,6 +301,12 @@ export const migrations = {
           fail(error);
         }
       };
+    }
+  },
+  3(db) {
+    const projectionCache = createStore(db, PROJECTION_CACHE_STORE_NAME);
+    if (projectionCache) {
+      ensureIndex(projectionCache, "by_hash", "hash");
     }
   },
 };
@@ -834,14 +848,108 @@ export const createIndexedDbRepository = async (options = {}) => {
     },
     async clearAllData() {
       return safe(async () => {
-        const tx = db.transaction(STORE_NAMES, "readwrite");
+        // lifecycleProjectionCache is deliberately outside STORE_NAMES (see
+        // its own comment) so it's never reachable from export/import, but
+        // "clear all data" wiping everything is the reasonable user
+        // expectation -- leaving orphaned cache rows behind after a full
+        // wipe would just be permanently unreachable garbage.
+        const tx = db.transaction(
+          [...STORE_NAMES, PROJECTION_CACHE_STORE_NAME],
+          "readwrite",
+        );
         const done = transactionDone(tx);
         for (const storeName of STORE_NAMES) tx.objectStore(storeName).clear();
+        tx.objectStore(PROJECTION_CACHE_STORE_NAME).clear();
         await done;
       });
     },
     listRecords(storeName) {
       return safe(() => getAll(db, storeName));
+    },
+    // The four methods below bypass parseRecord/STORE_SCHEMAS entirely --
+    // lifecycleProjectionCache records are internal cache artifacts (never
+    // imported/exported/user-facing), not domain data, so Zod validation
+    // doesn't apply the way it does to every other store's writes.
+    async getCachedLifecycleTimeline(hash) {
+      return safe(async () => {
+        const tx = db.transaction(PROJECTION_CACHE_STORE_NAME, "readonly");
+        const done = transactionDone(tx);
+        const record = await requestToPromise(
+          tx.objectStore(PROJECTION_CACHE_STORE_NAME).get(`${hash}:timeline`),
+        );
+        await done;
+        return record?.value ?? null;
+      });
+    },
+    async putCachedLifecycleTimeline(hash, value) {
+      return safe(async () => {
+        const tx = db.transaction(PROJECTION_CACHE_STORE_NAME, "readwrite");
+        const done = transactionDone(tx);
+        tx.objectStore(PROJECTION_CACHE_STORE_NAME).put({
+          id: `${hash}:timeline`,
+          hash,
+          kind: "timeline",
+          bucketId: null,
+          value,
+          cachedAt: new Date().toISOString(),
+        });
+        await done;
+      });
+    },
+    async getCachedLifecycleProjection(hash, bucketId) {
+      return safe(async () => {
+        const tx = db.transaction(PROJECTION_CACHE_STORE_NAME, "readonly");
+        const done = transactionDone(tx);
+        const record = await requestToPromise(
+          tx
+            .objectStore(PROJECTION_CACHE_STORE_NAME)
+            .get(`${hash}:${bucketId}`),
+        );
+        await done;
+        return record?.value ?? null;
+      });
+    },
+    async putCachedLifecycleProjection(hash, bucketId, value) {
+      return safe(async () => {
+        const tx = db.transaction(PROJECTION_CACHE_STORE_NAME, "readwrite");
+        const done = transactionDone(tx);
+        tx.objectStore(PROJECTION_CACHE_STORE_NAME).put({
+          id: `${hash}:${bucketId}`,
+          hash,
+          kind: "projection",
+          bucketId,
+          value,
+          cachedAt: new Date().toISOString(),
+        });
+        await done;
+      });
+    },
+    // Deletes every cached record whose hash doesn't match currentHash. A
+    // full cursor scan (not a by_hash index range query) is intentional and
+    // cheap -- this runs immediately whenever a new hash is established, so
+    // the store's steady-state size is bounded to ~1-4 records regardless
+    // of how long the tracker has been in use.
+    async evictStaleLifecycleProjectionCache(currentHash) {
+      return safe(async () => {
+        const tx = db.transaction(PROJECTION_CACHE_STORE_NAME, "readwrite");
+        const done = transactionDone(tx);
+        await new Promise((resolve, reject) => {
+          const request = tx
+            .objectStore(PROJECTION_CACHE_STORE_NAME)
+            .openCursor();
+          request.onsuccess = () => {
+            const cursor = request.result;
+            if (!cursor) {
+              resolve();
+              return;
+            }
+            if (cursor.value.hash !== currentHash) cursor.delete();
+            cursor.continue();
+          };
+          request.onerror = () => reject(request.error);
+        });
+        await done;
+      });
     },
     upsertApplication(record) {
       return safe(() => putRecord(db, "applications", record));
