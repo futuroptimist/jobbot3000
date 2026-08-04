@@ -2,10 +2,13 @@
 
 ## Status
 
-Phases 1–4 implemented (PRs #1199, #1200, #1201, #1202, and #1203). Phase 5 is planned but not yet
-built — see the `diagram-performance`-labeled issues on `futuroptimist/jobbot3000` for tracking,
-and the umbrella issue for the full roadmap. This doc is a second source of context for that
-roadmap in case the issues/PR discussion threads are ever lost.
+Phases 1–4 implemented (PRs #1199, #1200, #1201, #1202, and #1203). Phase 5 is split into three
+PRs by risk: **5a (#1204, done)** — busy indicator. **5b** — Web Worker offload for the layout
+search, and **5c** — persisted IndexedDB snapshot store + eager background precompute, are still
+planned but not yet built — see the `diagram-performance`-labeled issues on
+`futuroptimist/jobbot3000` for tracking, and the umbrella issue for the full roadmap. This doc is
+a second source of context for that roadmap in case the issues/PR discussion threads are ever
+lost.
 
 ## Problem
 
@@ -136,12 +139,27 @@ sequenced by risk, rather than one large change.
    derived/cached IndexedDB store in a codebase whose data contract
    ([`../browser-first-architecture.md`](../browser-first-architecture.md)) currently describes
    only raw stores, plus Worker-lifecycle and structured-clone handling for the layout search.
-   Also where the busy/loading indicator deferred from Phase 2 belongs: the render pipeline is
-   fully synchronous end-to-end today, so a real indicator (one that actually paints before
-   blocking work starts) needs a `requestAnimationFrame`-style deferral point — better solved
-   once, here, alongside the async/Worker offload, than as a separate one-off mechanism earlier.
    Ordered last because it depends on stable per-application caching (Phase 2) and layout reuse
-   (Phase 4).
+   (Phase 4). Split into three PRs by risk:
+   - **5a (#1204, done) — a real busy indicator.** This is where the busy/loading indicator
+     deferred from Phase 2 landed: the render pipeline was fully synchronous end-to-end, so a real
+     indicator (one that actually paints before blocking work starts) needed a
+     `requestAnimationFrame`-style deferral point. Restructured `render()` into a synchronous
+     Phase A (cheap scrubber/badge/count/timestamp fields) and a Phase B
+     (`renderDetails`/`renderSvg`/`renderTables`) deferred past a double `requestAnimationFrame` —
+     the standard "wait for a real paint" pattern — with a dedicated `aria-live` busy region and
+     `aria-busy` toggled on the scroll container. Drag ticks (Phase 4a/4b) stay fully synchronous,
+     unchanged, since they're already fast and flickering the indicator every ~100ms during a drag
+     would be distracting. `selectFeature()` also stays synchronous (selection never triggers new
+     data-layer work) but is now guarded against resolving a stale click against the _new_
+     projection while an unrelated deferred render is still pending. `update()` returns a
+     `Promise`; overlapping renders cancel-and-reschedule rather than letting a superseded Phase B
+     run — including a drag tick preempting a still-pending non-drag render, which needed an
+     explicit cancel too (found in review, not the initial implementation).
+   - **5b — Web Worker offload for the layout search.** Not yet started.
+   - **5c — persisted IndexedDB snapshot store + eager background precompute.** Caches the
+     _projection_ layer, not the layout/DFS layer (explicit choice, made with the user before
+     starting). Not yet started.
 
 ## Tracking
 
