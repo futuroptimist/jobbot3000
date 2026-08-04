@@ -16,6 +16,10 @@ import {
 const FNV_PRIME = 16777619;
 const FNV_SEED_A = 2166136261;
 const FNV_SEED_B = 84696351;
+// Bump whenever timeline/projection semantics or their persisted shape changes.
+// This prevents a deployment from reading entries produced by incompatible
+// projection code while the user's source data remains unchanged.
+const PROJECTION_CACHE_VERSION = 1;
 
 function fnv1a(input, seed) {
   let hash = seed >>> 0;
@@ -62,7 +66,11 @@ export function contentHashForBundle(bundle) {
   const serialized = JSON.stringify(
     canonicalize({ applications, lifecycleEvents }),
   );
-  return `${fnv1a(serialized, FNV_SEED_A)}${fnv1a(serialized, FNV_SEED_B)}`;
+  return [
+    `v${PROJECTION_CACHE_VERSION}`,
+    fnv1a(serialized, FNV_SEED_A),
+    fnv1a(serialized, FNV_SEED_B),
+  ].join(":");
 }
 
 // Cache reads/writes are best-effort -- a failure here must never break
@@ -80,6 +88,7 @@ export async function getOrComputeTimeline(
   store,
   bundle,
   computeTimeline = buildLifecycleTimeline,
+  shouldPersist = () => true,
 ) {
   const hash = contentHashForBundle(bundle);
   let cached = null;
@@ -93,10 +102,14 @@ export async function getOrComputeTimeline(
   // Fire-and-forget from the caller's perspective -- render must never wait
   // on the *write*, only the *read* above. Returned so tests can await it
   // deterministically instead of polling on a timing-dependent write.
-  const persisted = Promise.all([
-    store.putCachedLifecycleTimeline(hash, timeline).catch(reportCacheError),
-    store.evictStaleLifecycleProjectionCache(hash).catch(reportCacheError),
-  ]);
+  const persisted = shouldPersist()
+    ? Promise.all([
+        store
+          .putCachedLifecycleTimeline(hash, timeline)
+          .catch(reportCacheError),
+        store.evictStaleLifecycleProjectionCache(hash).catch(reportCacheError),
+      ])
+    : Promise.resolve();
   return { timeline, hash, persisted };
 }
 
@@ -106,6 +119,7 @@ export async function getOrComputeProjection(
   hash,
   bucketId,
   computeProjection = projectLifecycleAt,
+  shouldPersist = () => true,
 ) {
   let cached = null;
   try {
@@ -115,9 +129,11 @@ export async function getOrComputeProjection(
   }
   if (cached) return { projection: cached, persisted: Promise.resolve() };
   const projection = computeProjection(bundle, bucketId);
-  const persisted = store
-    .putCachedLifecycleProjection(hash, bucketId, projection)
-    .catch(reportCacheError);
+  const persisted = shouldPersist()
+    ? store
+        .putCachedLifecycleProjection(hash, bucketId, projection)
+        .catch(reportCacheError)
+    : Promise.resolve();
   return { projection, persisted };
 }
 
@@ -143,6 +159,7 @@ export function scheduleAdjacentBucketPrecompute(
     cancelIdle = window.cancelIdleCallback ?? window.clearTimeout,
   } = {},
 ) {
+  let active = true;
   const index = timeline.buckets.findIndex((bucket) => bucket.id === bucketId);
   const neighborIds = [
     timeline.buckets[index - 1]?.id,
@@ -153,16 +170,22 @@ export function scheduleAdjacentBucketPrecompute(
   const handle = requestIdle(async () => {
     // A real edit can land between scheduling and this callback firing --
     // abandon rather than precompute against data that's already stale.
-    if (contentHashForBundle(getBundle()) !== hash) return;
+    if (!active || contentHashForBundle(getBundle()) !== hash) return;
     for (const neighborId of neighborIds) {
       const projection = projectLifecycleAt(getBundle(), neighborId);
       // Re-check before EACH write, not just once for the whole batch -- an
       // edit can land between computing one neighbor and the next.
-      if (contentHashForBundle(getBundle()) !== hash) return;
-      store
+      if (!active || contentHashForBundle(getBundle()) !== hash) return;
+      // Await each write so cancellation can stop the next one. If a clear is
+      // initiated while this transaction is in flight, IndexedDB orders the
+      // later clear after it and `active` prevents any post-clear write.
+      await store
         .putCachedLifecycleProjection(hash, neighborId, projection)
         .catch(reportCacheError);
     }
   });
-  return () => cancelIdle(handle);
+  return () => {
+    active = false;
+    cancelIdle(handle);
+  };
 }

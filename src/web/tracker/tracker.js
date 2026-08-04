@@ -688,7 +688,13 @@ async function renderDiagram() {
     });
   }
 
-  const { timeline, hash } = await getOrComputeTimeline(repo, bundle);
+  const isCurrentRender = () => myGeneration === state.diagramRenderGeneration;
+  const { timeline, hash } = await getOrComputeTimeline(
+    repo,
+    bundle,
+    buildLifecycleTimeline,
+    isCurrentRender,
+  );
   if (myGeneration !== state.diagramRenderGeneration) return;
 
   const valid = new Set(timeline.buckets.map((bucket) => bucket.id));
@@ -706,6 +712,8 @@ async function renderDiagram() {
     bundle,
     hash,
     selectedBucketId,
+    undefined,
+    isCurrentRender,
   );
   if (myGeneration !== state.diagramRenderGeneration) return;
 
@@ -1595,6 +1603,12 @@ function init() {
       "Clear all local tracker data from this browser? This cannot be undone unless you have a backup.",
     );
     if (ok) {
+      // Invalidate async cache readers before clearing and cancel idle cache
+      // writers. An already-started IndexedDB write precedes the clear
+      // transaction; cancellation prevents another write from following it.
+      state.diagramRenderGeneration += 1;
+      state.diagramPrecomputeCancel?.();
+      state.diagramPrecomputeCancel = null;
       await repo.clear();
       const result = $("[data-settings-result]");
       if (result) result.textContent = "Local IndexedDB tracker data cleared.";

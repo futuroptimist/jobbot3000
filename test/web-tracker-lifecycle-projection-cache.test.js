@@ -71,6 +71,12 @@ describe("lifecycleProjectionCache", () => {
     store.close();
   });
 
+  it("uses a versioned, unambiguous content-hash encoding", () => {
+    expect(contentHashForBundle(threeEventBundle())).toMatch(
+      /^v\d+:[0-9a-z]+:[0-9a-z]+$/,
+    );
+  });
+
   it("a miss computes and persists", async () => {
     const store = await createIndexedDbRepository({ indexedDb: indexedDB });
     const b = threeEventBundle();
@@ -231,5 +237,45 @@ describe("lifecycleProjectionCache", () => {
       ).toBeNull();
     }
     store.close();
+  });
+
+  it("cancels an in-flight precompute before it can queue another write", async () => {
+    const b = threeEventBundle();
+    const timeline = buildLifecycleTimeline(b);
+    const hash = contentHashForBundle(b);
+    const bucketId = timeline.buckets[1].id;
+    let capturedCallback;
+    let releaseFirstWrite;
+    const firstWrite = new Promise((resolve) => {
+      releaseFirstWrite = resolve;
+    });
+    const store = {
+      putCachedLifecycleProjection: vi
+        .fn()
+        .mockImplementationOnce(() => firstWrite)
+        .mockResolvedValue(undefined),
+    };
+    const cancel = scheduleAdjacentBucketPrecompute(
+      store,
+      () => b,
+      timeline,
+      hash,
+      bucketId,
+      {
+        requestIdle: (callback) => {
+          capturedCallback = callback;
+          return "handle";
+        },
+        cancelIdle: () => {},
+      },
+    );
+
+    const running = capturedCallback();
+    expect(store.putCachedLifecycleProjection).toHaveBeenCalledTimes(1);
+    cancel();
+    releaseFirstWrite();
+    await running;
+
+    expect(store.putCachedLifecycleProjection).toHaveBeenCalledTimes(1);
   });
 });
