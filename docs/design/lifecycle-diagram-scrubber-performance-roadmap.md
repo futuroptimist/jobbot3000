@@ -3,9 +3,9 @@
 ## Status
 
 Phases 1–4 implemented (PRs #1199, #1200, #1201, #1202, and #1203). Phase 5 is split into three
-PRs by risk: **5a (#1204, done)** — busy indicator. **5b** — Web Worker offload for the layout
-search, and **5c** — persisted IndexedDB snapshot store + eager background precompute, are still
-planned but not yet built — see the `diagram-performance`-labeled issues on
+PRs by risk: **5a (#1204, done)** — busy indicator. **5b (#1205, done)** — Web Worker offload for
+the layout search. **5c** — persisted IndexedDB snapshot store + eager background precompute is
+still planned but not yet built — see the `diagram-performance`-labeled issues on
 `futuroptimist/jobbot3000` for tracking, and the umbrella issue for the full roadmap. This doc is
 a second source of context for that roadmap in case the issues/PR discussion threads are ever
 lost.
@@ -156,7 +156,40 @@ sequenced by risk, rather than one large change.
      `Promise`; overlapping renders cancel-and-reschedule rather than letting a superseded Phase B
      run — including a drag tick preempting a still-pending non-drag render, which needed an
      explicit cancel too (found in review, not the initial implementation).
-   - **5b — Web Worker offload for the layout search.** Not yet started.
+   - **5b (#1205, done) — Web Worker offload for the layout search.** Moves the expensive
+     full-quality (non-drag) layout search off the main thread; drag ticks are completely
+     unchanged (already fast, Phase 4a's whole point) and stay fully synchronous, matching how 5a
+     scoped itself. `lifecycleDiagramLayout.js`'s algorithm itself is untouched — this phase only
+     changes how the existing function gets called. New
+     `src/web/tracker/lifecycleDiagramLayout.worker.js` wraps it in a request/response
+     `postMessage` protocol; `lifecycleDiagram.js`'s `renderSvg()` splits into a sync
+     layout-acquisition path (used by drag ticks and the still-synchronous `selectFeature()`) and
+     a new Worker-backed async one (falls back to sync if `window.Worker` is unavailable or
+     construction throws), sharing one DOM-building continuation. Two structured-clone gotchas
+     found and fixed: `graph`/`dimensions` carry a non-enumerable `horizontalGeometry` property
+     that a bare clone silently drops (re-attached as enumerable before posting back — a plain
+     reassignment throws under strict mode, since the source property is also non-writable), and
+     thrown errors are serialized as plain `{message, cause}` objects rather than relying on
+     cross-engine Error-cloning support. A `renderGeneration` counter, bumped at the top of every
+     `render()` call, closes a race 5a's `cancelPendingRender` structurally can't reach: once
+     Phase B has started awaiting a Worker response, a newer render can supersede it mid-flight; a
+     superseded result is discarded without touching the DOM, and its `update()` promise still
+     resolves so callers never hang. Review (Copilot + Codex) caught three related hang risks
+     before merge, all fixed with regression tests verified via revert-and-confirm-fail: `phaseB`
+     rejecting (not just resolving) left `update()`'s caller hanging and the busy indicator stuck;
+     `new window.Worker(...)` throwing synchronously (sandboxed/policy-restricted browser) wasn't
+     caught; and a worker that fired `onerror` stayed cached, so the next render would post to a
+     worker that could never respond. Found via Playwright (not the fast synchronous fake-worker
+     unit tests): a burst of several non-drag renders in quick succession — from a mix of real
+     user actions and the pre-existing resize-observer-driven render cascade — queues multiple
+     real, sequentially-processed Worker round-trips instead of the near-free synchronous calls
+     that cascade used to produce, so the busy indicator can visibly linger longer than it used
+     to, especially under a slower/more contended CI runner. Confirmed this converges correctly
+     given enough time (not a hang) and left the single-worker design as-is (a worker pool or
+     request-coalescing would reduce the queueing pressure but wasn't in scope for this PR) —
+     fixed by pacing the affected Playwright test's actions realistically and giving its
+     busy-indicator waits the same generous CI-runner timeout margin already used elsewhere in
+     that file, rather than changing production code.
    - **5c — persisted IndexedDB snapshot store + eager background precompute.** Caches the
      _projection_ layer, not the layout/DFS layer (explicit choice, made with the user before
      starting). Not yet started.
