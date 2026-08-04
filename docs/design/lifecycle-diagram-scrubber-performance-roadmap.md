@@ -4,11 +4,11 @@
 
 Phases 1–4 implemented (PRs #1199, #1200, #1201, #1202, and #1203). Phase 5 is split into three
 PRs by risk: **5a (#1204, done)** — busy indicator. **5b (#1205, done)** — Web Worker offload for
-the layout search. **5c** — persisted IndexedDB snapshot store + eager background precompute is
-still planned but not yet built — see the `diagram-performance`-labeled issues on
-`futuroptimist/jobbot3000` for tracking, and the umbrella issue for the full roadmap. This doc is
-a second source of context for that roadmap in case the issues/PR discussion threads are ever
-lost.
+the layout search. **5c (#1206, done)** — persisted IndexedDB projection cache + eager background
+precompute. All of Phase 5, and the umbrella roadmap issue (#1197), are now closed — see the
+`diagram-performance`-labeled issues on `futuroptimist/jobbot3000` for the historical tracking
+record. This doc is a second source of context for that roadmap in case the issues/PR discussion
+threads are ever lost.
 
 ## Problem
 
@@ -190,9 +190,46 @@ sequenced by risk, rather than one large change.
      fixed by pacing the affected Playwright test's actions realistically and giving its
      busy-indicator waits the same generous CI-runner timeout margin already used elsewhere in
      that file, rather than changing production code.
-   - **5c — persisted IndexedDB snapshot store + eager background precompute.** Caches the
-     _projection_ layer, not the layout/DFS layer (explicit choice, made with the user before
-     starting). Not yet started.
+   - **5c (#1206, done) — persisted IndexedDB projection cache + eager background precompute.**
+     Caches the _projection_ layer (`buildLifecycleTimeline`/`projectLifecycleAt` in
+     `lifecycleProjection.js`), not the layout/DFS layer (explicit choice, made with the user
+     before starting). The pre-existing in-memory cache from Phase 1/2 is a `WeakMap` keyed on
+     `state.bundle`'s _object identity_; since `refresh()` reassigns `state.bundle` on every write
+     (13+ call sites, including writes to stores the diagram never reads — contacts, outreach
+     messages, reminders, artifacts), identity-keying invalidates far more often than the data
+     the diagram actually depends on has changed, and provides zero benefit across a page reload.
+     A new `lifecycleProjectionCache` IndexedDB store (`INDEXEDDB_DATABASE_VERSION` 2 → 3), keyed
+     by a content hash of `applications` + `lifecycleEvents` only, survives both. The hash is two
+     independent FNV-1a passes (reusing `lifecycleReconciliation.js`'s constants) over a
+     canonically-sorted serialization, versioned (`v${PROJECTION_CACHE_VERSION}:hashA:hashB`) so a
+     future change to the projection algorithm's output shape can't be served stale from before
+     the deploy. The store is deliberately kept out of `STORE_NAMES` — structurally unreachable
+     from `exportAllData()`/`importAllData()`, since a `db.transaction()` can only touch stores
+     named in it, and a backup shouldn't ship a regenerable cache alongside the source data it's
+     derived from — but `clearAllData()` still wipes it directly, since "clear all data" wiping
+     everything is the reasonable user expectation. `renderDiagram()`/`renderAll()`/`route()`
+     become `async`; a new `state.diagramRenderGeneration` counter gates every `state.*` write and
+     the final `view.update()` call against a superseded call resuming after a newer one already
+     ran — closing a race 5b's own `renderGeneration` (inside `lifecycleDiagram.js`) can't reach,
+     since this phase's async gap (awaiting the IndexedDB cache) is one layer higher, in
+     `tracker.js` itself. Eager precompute (`scheduleAdjacentBucketPrecompute`) warms only the
+     buckets immediately adjacent to the selected one on `requestIdleCallback`, not the whole
+     timeline, with a re-check before each individual write so a real edit landing mid-batch
+     correctly abandons the rest. Review (Copilot + Codex) caught three more issues before merge,
+     all fixed with regression tests: the two-hash concatenation had no delimiter between the
+     base-36 parts, so different `(hashA, hashB)` pairs could collide at the boundary (fixed by
+     joining with `:`, which is also what the version prefix above rides on); nothing versioned
+     the cache format itself (fixed by the `PROJECTION_CACHE_VERSION` prefix); and — the sharpest
+     one — clearing all local data raced a still-scheduled or in-flight precompute write: the
+     precompute's own staleness check compares against `state.bundle`'s _content_, which hasn't
+     changed yet while `clearAllData()`'s promise is still pending, so it can pass and let a write
+     land in the store right after the clear transaction commits, orphaned and unreachable by any
+     future eviction sweep if the diagram tab isn't the one currently visible. Fixed with an
+     `active` closure flag inside `scheduleAdjacentBucketPrecompute` (checked before each write,
+     with per-neighbor writes now awaited so cancellation reliably stops the next one before it
+     starts) plus the clear-data handler synchronously bumping `diagramRenderGeneration` and
+     cancelling any pending precompute _before_ awaiting `repo.clear()`, so nothing already stale
+     at the moment the user confirms the clear can queue a write afterward.
 
 ## Tracking
 
