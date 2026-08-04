@@ -2532,6 +2532,125 @@ describe("Worker offload for the layout search (Phase 5b)", () => {
         ?.getAttribute("data-selected"),
     ).not.toBe("true");
   });
+
+  // eslint-disable-next-line max-len
+  it("still resolves update() and clears the busy indicator when phaseB rejects unexpectedly", async () => {
+    const b = bundle(
+      [app("a")],
+      [ev("o", "a", "application_submitted", "2026-01-01")],
+    );
+    const root = setupWithWorker();
+    const view = createLifecycleDiagramView(root, { onBucketChange: vi.fn() });
+    const timeline = buildLifecycleTimeline(b);
+    const snapshot = projectLifecycleAt(b, "current");
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    const updated = view.update({
+      timeline,
+      snapshot,
+      selectedBucketId: "current",
+    });
+    await flushLifecycleDiagramRender();
+    const worker = FakeLayoutWorker.instances.at(0);
+    const request = worker.messages[0];
+    // A malformed-but-"ok" response -- missing the fields renderSvgFromLayout
+    // unconditionally reads off graph/dimensions -- makes phaseB reject with
+    // a genuine, unexpected error (not one of acquireLayoutAsync's own
+    // structured status codes). This must not be indistinguishable from a
+    // hang: update() still has to resolve and the busy indicator still has
+    // to clear.
+    worker.respond({
+      type: "layout-result",
+      requestId: request.requestId,
+      ok: true,
+      graph: {},
+      dimensions: {},
+    });
+
+    await expect(updated).resolves.toBeUndefined();
+    expect(root.querySelector("[data-diagram-busy]").hidden).toBe(true);
+    expect(
+      root.querySelector(".diagram-scroll").getAttribute("aria-busy"),
+    ).toBe("false");
+    expect(consoleError).toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it("falls back to synchronous layout when Worker construction throws synchronously", async () => {
+    const b = bundle(
+      [app("a")],
+      [ev("o", "a", "application_submitted", "2026-01-01")],
+    );
+    const root = setup();
+    class ThrowingWorker {
+      constructor() {
+        throw new Error("blocked by policy");
+      }
+    }
+    window.Worker = ThrowingWorker;
+    const view = createLifecycleDiagramView(root, { onBucketChange: vi.fn() });
+    const timeline = buildLifecycleTimeline(b);
+    const snapshot = projectLifecycleAt(b, "current");
+    const updated = view.update({
+      timeline,
+      snapshot,
+      selectedBucketId: "current",
+    });
+    await flushLifecycleDiagramRender();
+    await updated;
+    expect(root.querySelector("svg")).not.toBeNull();
+    expect(root.querySelector("[data-diagram-busy]").hidden).toBe(true);
+  });
+
+  // eslint-disable-next-line max-len
+  it("discards a failed worker so the next render creates a fresh one instead of reusing a broken one", async () => {
+    const b = bundle(
+      [app("a")],
+      [ev("o", "a", "application_submitted", "2026-01-01")],
+    );
+    const root = setupWithWorker();
+    const view = createLifecycleDiagramView(root, { onBucketChange: vi.fn() });
+    const timeline = buildLifecycleTimeline(b);
+    const snapshot = projectLifecycleAt(b, "current");
+
+    const firstUpdate = view.update({
+      timeline,
+      snapshot,
+      selectedBucketId: "current",
+    });
+    await flushLifecycleDiagramRender();
+    const firstWorker = FakeLayoutWorker.instances.at(0);
+    firstWorker.fail(new window.Event("error"));
+    await firstUpdate;
+    expect(firstWorker.terminated).toBe(true);
+
+    const secondUpdate = view.update({
+      timeline,
+      snapshot,
+      selectedBucketId: "current",
+    });
+    await flushLifecycleDiagramRender();
+    expect(FakeLayoutWorker.instances).toHaveLength(2);
+    const secondWorker = FakeLayoutWorker.instances.at(1);
+    expect(secondWorker).not.toBe(firstWorker);
+    const request = secondWorker.messages[0];
+    const { graph, dimensions } = lifecycleLayout.layoutLifecycleRoutingGraph(
+      snapshot,
+      request.availableWidth,
+      request.options,
+    );
+    secondWorker.respond({
+      type: "layout-result",
+      requestId: request.requestId,
+      ok: true,
+      graph: withEnumerableHorizontalGeometry(graph),
+      dimensions: withEnumerableHorizontalGeometry(dimensions),
+    });
+    await secondUpdate;
+    expect(root.querySelector("[data-diagram-busy]").hidden).toBe(true);
+  });
 });
 
 describe("lifecycle diagram P6 pagination and hardening", () => {

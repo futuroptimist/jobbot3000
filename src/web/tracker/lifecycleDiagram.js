@@ -237,13 +237,23 @@ export function createLifecycleDiagramView(root, options = {}) {
         pendingRenderFrame = scheduleFrame(() => {
           pendingRenderFrame = null;
           pendingRenderResolve = null;
-          Promise.resolve(phaseB()).then(() => {
-            if (myGeneration === renderGeneration) {
-              busyIndicator.hidden = true;
-              scroll.setAttribute("aria-busy", "false");
-            }
-            resolve();
-          });
+          Promise.resolve(phaseB())
+            .catch((error) => {
+              // phaseB (Phase 5b) can now reject -- e.g. an unexpected
+              // throw from renderDetails()/renderTables(), not one of the
+              // structured layout-failure statuses acquireLayoutAsync
+              // already handles. Never let that leave update()'s caller
+              // hanging or the busy indicator stuck; still surface it
+              // instead of swallowing a genuine bug silently.
+              console.error("Lifecycle diagram render failed", error);
+            })
+            .finally(() => {
+              if (myGeneration === renderGeneration) {
+                busyIndicator.hidden = true;
+                scroll.setAttribute("aria-busy", "false");
+              }
+              resolve();
+            });
         });
       });
     });
@@ -278,10 +288,18 @@ export function createLifecycleDiagramView(root, options = {}) {
   const getLayoutWorker = () => {
     if (!window.Worker) return null;
     if (layoutWorker) return layoutWorker;
-    layoutWorker = new window.Worker(
-      "/assets/lifecycle-diagram-layout.worker.js",
-      { type: "module" },
-    );
+    try {
+      layoutWorker = new window.Worker(
+        "/assets/lifecycle-diagram-layout.worker.js",
+        { type: "module" },
+      );
+    } catch {
+      // Construction can throw synchronously (sandboxed or policy-restricted
+      // browser, blocked module worker, etc.) -- treat it exactly like
+      // window.Worker being unavailable so the caller falls back to
+      // acquireLayoutSync instead of an uncaught rejection.
+      return null;
+    }
     layoutWorker.onmessage = (event) => {
       const { requestId, ok, graph, dimensions, error } = event.data ?? {};
       const pending = layoutWorkerPending.get(requestId);
@@ -291,11 +309,17 @@ export function createLifecycleDiagramView(root, options = {}) {
         ok ? { ok: true, graph, dimensions } : { ok: false, error },
       );
     };
-    // A worker-thread crash must not leave any caller hanging forever.
+    // A worker-thread crash must not leave any caller hanging forever, and
+    // the broken instance must not be reused -- a future render would post
+    // to a worker that can never respond. Discard it so the next
+    // getLayoutWorker() call creates a fresh one (or, if construction now
+    // also fails, falls back to acquireLayoutSync).
     layoutWorker.onerror = () => {
       rejectAllPendingLayoutRequests(
         new Error("Lifecycle diagram layout worker failed."),
       );
+      layoutWorker?.terminate();
+      layoutWorker = null;
     };
     return layoutWorker;
   };
