@@ -279,6 +279,9 @@
 .diagram-timestamp {
   margin: 0.5rem 0;
 }
+.diagram-busy {
+  margin: 0.5rem 0;
+}
 @media (max-width: 760px) {
   .diagram-controls {
     display: grid;

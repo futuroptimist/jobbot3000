@@ -124,7 +124,32 @@ function setup() {
   });
   return document.querySelector("[data-lifecycle-diagram]");
 }
-function render(
+// lifecycleDiagram.js's non-drag renders (mount, prev/next/current, keyboard
+// stepping, resize, drag-release settle) defer their Phase B work
+// (renderDetails/renderSvg/renderTables) past a real paint via
+// runDeferred()'s two nested window.requestAnimationFrame calls; a drag-tick
+// render (dragActive === true) skips that entirely and runs Phase B
+// synchronously, returning an already-resolved promise, so flushing here is
+// simply a no-op for it. jsdom's rAF (pretendToBeVisual) is timer-based, and
+// each per-test JSDOM instance is constructed *inside* the current test (see
+// setup()) -- when that happens while vi.useFakeTimers() is already active,
+// jsdom's rAF ends up driven by the same faked clock, so it only ever fires
+// via vi.advanceTimersToNextFrame(), never by simply awaiting real time.
+// When real timers are active, jsdom's rAF is a genuine (if short) real-time
+// wait, so this awaits it for real instead. Branching on vi.isFakeTimers()
+// keeps this uniform regardless of which a given test uses.
+async function flushLifecycleDiagramRender() {
+  if (vi.isFakeTimers()) {
+    vi.advanceTimersToNextFrame();
+    vi.advanceTimersToNextFrame();
+  } else {
+    await new Promise((resolve) =>
+      window.requestAnimationFrame(() => window.requestAnimationFrame(resolve)),
+    );
+  }
+  await Promise.resolve();
+}
+async function render(
   b,
   selectedBucketId = "current",
   onBucketChange = vi.fn(),
@@ -134,12 +159,14 @@ function render(
   const view = createLifecycleDiagramView(root, { onBucketChange, ...options });
   const timeline = buildLifecycleTimeline(b);
   const snapshot = projectLifecycleAt(b, selectedBucketId);
-  view.update({
+  const updated = view.update({
     timeline,
     snapshot,
     selectedBucketId,
     newerAvailable: selectedBucketId !== "current",
   });
+  await flushLifecycleDiagramRender();
+  await updated;
   return { root, view, timeline, snapshot, onBucketChange };
 }
 
@@ -216,11 +243,11 @@ describe("calculateLifecycleDiagramLayout", () => {
 });
 
 describe("lifecycle diagram view", () => {
-  it("renders node hit boxes from the shared non-baseline geometry", () => {
+  it("renders node hit boxes from the shared non-baseline geometry", async () => {
     const horizontalGeometry = createLifecycleHorizontalGeometry({
       handleRadius: 30,
     });
-    const { root } = render(
+    const { root } = await render(
       bundle([app("a")], [ev("o", "a", "application_submitted", "2026-01-01")]),
       "current",
       vi.fn(),
@@ -266,7 +293,7 @@ describe("lifecycle diagram view", () => {
     delete global.ResizeObserver;
   });
 
-  it("renders current default controls, accessible svg, and semantic totals", () => {
+  it("renders current default controls, accessible svg, and semantic totals", async () => {
     const b = bundle(
       [app("a1"), app("a2", { origin: "referral", status: "offer" })],
       [
@@ -276,7 +303,7 @@ describe("lifecycle diagram view", () => {
         ev("offer", "a2", "offer_received", "2026-01-03"),
       ],
     );
-    const { root, snapshot } = render(b);
+    const { root, snapshot } = await render(b);
 
     expect(
       root.querySelector("input[type='range']").getAttribute("aria-valuetext"),
@@ -313,7 +340,7 @@ describe("lifecycle diagram view", () => {
     expect(outreachRow.textContent).toContain("0");
   });
 
-  it("keeps semantic tables aggregate-first and preserves semantic button focus", () => {
+  it("keeps semantic tables aggregate-first and preserves semantic button focus", async () => {
     const b = bundle(
       [app("a")],
       [
@@ -321,7 +348,7 @@ describe("lifecycle diagram view", () => {
         ev("t", "a", "technical_interview", "2026-01-02"),
       ],
     );
-    const { root, view, timeline } = render(b);
+    const { root, view, timeline } = await render(b);
     const disclosure = root.querySelector("details.diagram-tables");
     expect(disclosure.querySelector("summary").textContent).toBe(
       "Lifecycle data tables",
@@ -341,14 +368,14 @@ describe("lifecycle diagram view", () => {
     expect(document.activeElement.getAttribute("aria-label")).toBe(
       "Select Application submitted",
     );
-    view.update({
+    await view.update({
       timeline,
       snapshot: projectLifecycleAt(b, timeline.buckets[0].id),
       selectedBucketId: timeline.buckets[0].id,
     });
   });
 
-  it("keeps semantic table disclosure open across immediate node and flow selection", () => {
+  it("keeps semantic table disclosure open across immediate node and flow selection", async () => {
     const b = bundle(
       [app("a")],
       [
@@ -356,7 +383,7 @@ describe("lifecycle diagram view", () => {
         ev("t", "a", "technical_interview", "2026-01-02"),
       ],
     );
-    const { root } = render(b);
+    const { root } = await render(b);
     const disclosure = root.querySelector("details.diagram-tables");
     disclosure.open = true;
 
@@ -389,15 +416,15 @@ describe("lifecycle diagram view", () => {
     ).toHaveLength(1);
   });
 
-  it("handles empty, unknown-only, date, and simultaneous boundary timestamps", () => {
-    expect(render(bundle()).root.textContent).toContain(
+  it("handles empty, unknown-only, date, and simultaneous boundary timestamps", async () => {
+    expect((await render(bundle())).root.textContent).toContain(
       "No lifecycle data yet",
     );
     const b = bundle(
       [app("u")],
       [ev("u1", "u", "application_submitted", "unknown")],
     );
-    const unknown = render(b, "unknown-date");
+    const unknown = await render(b, "unknown-date");
     expect(unknown.root.textContent).toContain(
       "Unknown date — off chronological scale",
     );
@@ -413,21 +440,21 @@ describe("lifecycle diagram view", () => {
     const bucket = buildLifecycleTimeline(dated).buckets.find(
       (item) => item.kind === "date",
     );
-    const rendered = render(dated, bucket.id);
+    const rendered = await render(dated, bucket.id);
     expect(rendered.root.textContent).toContain("time not recorded");
     expect(rendered.root.textContent).toContain(
       "d1: application_submitted; d2: technical_interview",
     );
   });
 
-  it("synchronizes range controls and keeps user text inert", () => {
+  it("synchronizes range controls and keeps user text inert", async () => {
     vi.useFakeTimers();
     const b = bundle(
       [app("bad")],
       [ev("x", "bad", "application_submitted", "2026-01-01")],
     );
     const onBucketChange = vi.fn();
-    const { root, timeline } = render(b, "current", onBucketChange);
+    const { root, timeline } = await render(b, "current", onBucketChange);
     const range = root.querySelector("input[type='range']");
     range.value = "0";
     range.dispatchEvent(new window.Event("input", { bubbles: true }));
@@ -439,14 +466,14 @@ describe("lifecycle diagram view", () => {
     ]).toHaveLength(0);
   });
 
-  it("debounces the range scrubber so dragging fires one update with the final value", () => {
+  it("debounces the range scrubber so dragging fires one update with the final value", async () => {
     vi.useFakeTimers();
     const b = bundle(
       [app("bad")],
       [ev("x", "bad", "application_submitted", "2026-01-01")],
     );
     const onBucketChange = vi.fn();
-    const { root, timeline } = render(b, "current", onBucketChange);
+    const { root, timeline } = await render(b, "current", onBucketChange);
     const range = root.querySelector("input[type='range']");
     for (let i = 0; i < timeline.buckets.length; i += 1) {
       range.value = String(i);
@@ -460,14 +487,14 @@ describe("lifecycle diagram view", () => {
     );
   });
 
-  it("stops a pending debounced scrub update once the view is destroyed", () => {
+  it("stops a pending debounced scrub update once the view is destroyed", async () => {
     vi.useFakeTimers();
     const b = bundle(
       [app("bad")],
       [ev("x", "bad", "application_submitted", "2026-01-01")],
     );
     const onBucketChange = vi.fn();
-    const { root, view } = render(b, "current", onBucketChange);
+    const { root, view } = await render(b, "current", onBucketChange);
     const range = root.querySelector("input[type='range']");
     range.value = "0";
     range.dispatchEvent(new window.Event("input", { bubbles: true }));
@@ -476,7 +503,8 @@ describe("lifecycle diagram view", () => {
     expect(onBucketChange).not.toHaveBeenCalled();
   });
 
-  it("keeps the dragged-to bucket if a render lands mid-debounce (e.g. resize/refresh)", () => {
+  // eslint-disable-next-line max-len
+  it("keeps the dragged-to bucket if a render lands mid-debounce (e.g. resize/refresh)", async () => {
     vi.useFakeTimers();
     const b = bundle(
       [app("a")],
@@ -487,7 +515,7 @@ describe("lifecycle diagram view", () => {
       ],
     );
     const onBucketChange = vi.fn();
-    const { root, view, timeline, snapshot } = render(
+    const { root, view, timeline, snapshot } = await render(
       b,
       "current",
       onBucketChange,
@@ -501,8 +529,17 @@ describe("lifecycle diagram view", () => {
     // tick or a background refresh that didn't change the selected bucket).
     // render() resets range.value to the currently *selected* bucket
     // ("current" here, since onBucketChange hasn't fired yet) — the pending
-    // debounced change must not be lost to that reset.
-    view.update({ timeline, snapshot, selectedBucketId: "current" });
+    // debounced change must not be lost to that reset. This render is
+    // deferred; with fake timers active, a plain await would deadlock (only
+    // vi.advanceTimersToNextFrame() -- inside flushLifecycleDiagramRender()
+    // -- ever advances the fake rAF queue), so flush before awaiting it.
+    const updated = view.update({
+      timeline,
+      snapshot,
+      selectedBucketId: "current",
+    });
+    await flushLifecycleDiagramRender();
+    await updated;
     expect(range.value).not.toBe(String(targetIndex));
 
     vi.advanceTimersByTime(80);
@@ -512,7 +549,7 @@ describe("lifecycle diagram view", () => {
     );
   });
 
-  it("selects the bucket dragged to even if a timeline replacement shifts its index", () => {
+  it("selects the bucket dragged to even if a timeline replacement shifts its index", async () => {
     vi.useFakeTimers();
     const b = bundle(
       [app("a")],
@@ -523,7 +560,7 @@ describe("lifecycle diagram view", () => {
       ],
     );
     const onBucketChange = vi.fn();
-    const { root, view, timeline } = render(b, "current", onBucketChange);
+    const { root, view, timeline } = await render(b, "current", onBucketChange);
     const range = root.querySelector("input[type='range']");
     const targetIndex = 2;
     const targetBucketId = timeline.buckets[targetIndex].id;
@@ -542,18 +579,24 @@ describe("lifecycle diagram view", () => {
     );
     const nextTimeline = buildLifecycleTimeline(withEarlierEvent);
     expect(nextTimeline.buckets[targetIndex].id).not.toBe(targetBucketId);
-    view.update({
+    // This render is deferred; with fake timers active, a plain await would
+    // deadlock (only vi.advanceTimersToNextFrame() -- inside
+    // flushLifecycleDiagramRender() -- ever advances the fake rAF queue).
+    const updated = view.update({
       timeline: nextTimeline,
       snapshot: projectLifecycleAt(withEarlierEvent, "current"),
       selectedBucketId: "current",
     });
+    await flushLifecycleDiagramRender();
+    await updated;
 
     vi.advanceTimersByTime(80);
     expect(onBucketChange).toHaveBeenCalledTimes(1);
     expect(onBucketChange).toHaveBeenCalledWith(targetBucketId);
   });
 
-  it("releases the drag to the bucket id captured at the last tick, not a shifted index", () => {
+  // eslint-disable-next-line max-len
+  it("releases the drag to the bucket id captured at the last tick, not a shifted index", async () => {
     const b = bundle(
       [app("a")],
       [
@@ -563,7 +606,7 @@ describe("lifecycle diagram view", () => {
       ],
     );
     const onBucketChange = vi.fn();
-    const { root, view, timeline } = render(b, "current", onBucketChange);
+    const { root, view, timeline } = await render(b, "current", onBucketChange);
     const range = root.querySelector("input[type='range']");
     const targetIndex = 2;
     const targetBucketId = timeline.buckets[targetIndex].id;
@@ -584,7 +627,10 @@ describe("lifecycle diagram view", () => {
     );
     const nextTimeline = buildLifecycleTimeline(withEarlierEvent);
     expect(nextTimeline.buckets[targetIndex].id).not.toBe(targetBucketId);
-    view.update({
+    // render() always defers Phase B past a double rAF regardless of
+    // dragActive -- await the real promise so Phase B has actually run
+    // before the assertions below inspect its output.
+    await view.update({
       timeline: nextTimeline,
       snapshot: projectLifecycleAt(withEarlierEvent, "current"),
       selectedBucketId: "current",
@@ -595,7 +641,7 @@ describe("lifecycle diagram view", () => {
     expect(onBucketChange).toHaveBeenCalledWith(targetBucketId);
   });
 
-  it("lets a newer discrete prev/next/current action win over an older pending scrub", () => {
+  it("lets a newer discrete prev/next/current action win over an older pending scrub", async () => {
     vi.useFakeTimers();
     const b = bundle(
       [app("a")],
@@ -607,7 +653,7 @@ describe("lifecycle diagram view", () => {
     );
     const onBucketChange = vi.fn();
     const firstBucketId = buildLifecycleTimeline(b).buckets[0].id;
-    const { root, timeline } = render(b, firstBucketId, onBucketChange);
+    const { root, timeline } = await render(b, firstBucketId, onBucketChange);
     const range = root.querySelector("input[type='range']");
     range.value = "1";
     range.dispatchEvent(new window.Event("input", { bubbles: true }));
@@ -625,7 +671,7 @@ describe("lifecycle diagram view", () => {
     expect(onBucketChange).toHaveBeenCalledTimes(1);
   });
 
-  it("uses the draft quality tier for renders triggered while dragging the scrubber", () => {
+  it("uses the draft quality tier for renders triggered while dragging the scrubber", async () => {
     vi.useFakeTimers();
     const b = bundle(
       [app("a")],
@@ -644,7 +690,7 @@ describe("lifecycle diagram view", () => {
         selectedBucketId: bucketId,
       });
     });
-    const rendered = render(b, "current", onBucketChange);
+    const rendered = await render(b, "current", onBucketChange);
     view = rendered.view;
     const { root, timeline } = rendered;
     const layoutSpy = vi.spyOn(lifecycleLayout, "layoutLifecycleRoutingGraph");
@@ -662,6 +708,11 @@ describe("lifecycle diagram view", () => {
       expect(onBucketChange).toHaveBeenCalledWith(
         timeline.buckets[targetIndex].id,
       );
+      // onBucketChange's own view.update() call above is deferred (a double
+      // rAF, regardless of dragActive) and triggered indirectly, so there's
+      // no promise to await directly here -- flush before inspecting
+      // layoutSpy's call args.
+      await flushLifecycleDiagramRender();
       const dragTickCall = layoutSpy.mock.calls.at(-1);
       expect(dragTickCall[2]).toMatchObject({ qualityTier: "draft" });
     } finally {
@@ -669,7 +720,8 @@ describe("lifecycle diagram view", () => {
     }
   });
 
-  it("releasing the drag forces one full-quality render and cancels any pending debounce", () => {
+  // eslint-disable-next-line max-len
+  it("releasing the drag forces one full-quality render and cancels any pending debounce", async () => {
     vi.useFakeTimers();
     const b = bundle(
       [app("a")],
@@ -686,7 +738,7 @@ describe("lifecycle diagram view", () => {
         selectedBucketId: bucketId,
       });
     });
-    const rendered = render(b, "current", onBucketChange);
+    const rendered = await render(b, "current", onBucketChange);
     view = rendered.view;
     const { root, timeline } = rendered;
     const layoutSpy = vi.spyOn(lifecycleLayout, "layoutLifecycleRoutingGraph");
@@ -696,8 +748,11 @@ describe("lifecycle diagram view", () => {
       range.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
       range.value = String(targetIndex);
       range.dispatchEvent(new window.Event("input", { bubbles: true }));
-      // Released before the 80ms debounce ever fires.
+      // Released before the 80ms debounce ever fires. dragActive is now
+      // false, so this settle render is deferred -- flush it before
+      // inspecting layoutSpy's call args.
       range.dispatchEvent(new window.Event("pointerup", { bubbles: true }));
+      await flushLifecycleDiagramRender();
       expect(onBucketChange).toHaveBeenCalledTimes(1);
       expect(onBucketChange).toHaveBeenCalledWith(
         timeline.buckets[targetIndex].id,
@@ -714,7 +769,7 @@ describe("lifecycle diagram view", () => {
   });
 
   // eslint-disable-next-line max-len
-  it("keeps the previously rendered frame when a known layout-search failure throws mid-drag", () => {
+  it("keeps the previously rendered frame when a known layout-search failure throws mid-drag", async () => {
     const b = bundle(
       [app("a")],
       [
@@ -722,7 +777,7 @@ describe("lifecycle diagram view", () => {
         ev("t", "a", "technical_interview", "2026-01-02"),
       ],
     );
-    const { root, view, timeline } = render(b, "current");
+    const { root, view, timeline } = await render(b, "current");
     const svgBefore = root.querySelector("svg");
     expect(svgBefore).not.toBeNull();
     const range = root.querySelector("input[type='range']");
@@ -746,7 +801,10 @@ describe("lifecycle diagram view", () => {
       // can predate its origin event entirely, hitting the unrelated empty-
       // state return before layoutLifecycleRoutingGraph is ever called).
       const targetId = timeline.buckets.at(-1).id;
-      view.update({
+      // render() always defers Phase B past a double rAF regardless of
+      // dragActive -- await the real promise so Phase B has actually run
+      // before the assertions below inspect its output.
+      await view.update({
         timeline,
         snapshot: projectLifecycleAt(b, targetId),
         selectedBucketId: targetId,
@@ -763,7 +821,7 @@ describe("lifecycle diagram view", () => {
     }
   });
 
-  it("still shows the fallback for an unexpected (uncaused) error during a drag tick", () => {
+  it("still shows the fallback for an unexpected (uncaused) error during a drag tick", async () => {
     const b = bundle(
       [app("a")],
       [
@@ -771,7 +829,7 @@ describe("lifecycle diagram view", () => {
         ev("t", "a", "technical_interview", "2026-01-02"),
       ],
     );
-    const { root, view, timeline } = render(b, "current");
+    const { root, view, timeline } = await render(b, "current");
     const range = root.querySelector("input[type='range']");
     range.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
     const layoutSpy = vi
@@ -784,7 +842,10 @@ describe("lifecycle diagram view", () => {
       });
     try {
       const targetId = timeline.buckets.at(-1).id;
-      view.update({
+      // render() always defers Phase B past a double rAF regardless of
+      // dragActive -- await the real promise so Phase B has actually run
+      // before the assertions below inspect its output.
+      await view.update({
         timeline,
         snapshot: projectLifecycleAt(b, targetId),
         selectedBucketId: targetId,
@@ -798,7 +859,7 @@ describe("lifecycle diagram view", () => {
   });
 
   // eslint-disable-next-line max-len
-  it("still shows the fallback message when the full-quality settle render fails on release", () => {
+  it("still shows the fallback message when the full-quality settle render fails on release", async () => {
     vi.useFakeTimers();
     const b = bundle(
       [app("a")],
@@ -815,7 +876,7 @@ describe("lifecycle diagram view", () => {
         selectedBucketId: bucketId,
       });
     });
-    const rendered = render(b, "current", onBucketChange);
+    const rendered = await render(b, "current", onBucketChange);
     view = rendered.view;
     const { root, timeline } = rendered;
     const range = root.querySelector("input[type='range']");
@@ -830,8 +891,10 @@ describe("lifecycle diagram view", () => {
     try {
       // dragActive is cleared before this settle render runs, so a failure
       // here must fall through to the real fallback, not be silently
-      // swallowed the way a draft-tier failure is.
+      // swallowed the way a draft-tier failure is. That settle render is
+      // deferred (dragActive is now false), so flush before asserting.
       range.dispatchEvent(new window.Event("pointerup", { bubbles: true }));
+      await flushLifecycleDiagramRender();
       expect(root.textContent).toContain(
         "Unable to lay out lifecycle diagram.",
       );
@@ -840,7 +903,8 @@ describe("lifecycle diagram view", () => {
     }
   });
 
-  it("never uses draft tier for keyboard-driven range input (no preceding pointerdown)", () => {
+  // eslint-disable-next-line max-len
+  it("never uses draft tier for keyboard-driven range input (no preceding pointerdown)", async () => {
     vi.useFakeTimers();
     const b = bundle(
       [app("a")],
@@ -857,7 +921,7 @@ describe("lifecycle diagram view", () => {
         selectedBucketId: bucketId,
       });
     });
-    const rendered = render(b, "current", onBucketChange);
+    const rendered = await render(b, "current", onBucketChange);
     view = rendered.view;
     const { root, timeline } = rendered;
     const layoutSpy = vi.spyOn(lifecycleLayout, "layoutLifecycleRoutingGraph");
@@ -865,10 +929,13 @@ describe("lifecycle diagram view", () => {
       const range = root.querySelector("input[type='range']");
       const targetIndex = timeline.buckets.length - 1;
       // Simulates a focused range input's native arrow-key stepping: an
-      // "input" event fires with no preceding pointerdown.
+      // "input" event fires with no preceding pointerdown -- dragActive
+      // never becomes true, so this render is deferred like any other
+      // non-drag render; flush before inspecting layoutSpy's call args.
       range.value = String(targetIndex);
       range.dispatchEvent(new window.Event("input", { bubbles: true }));
       vi.advanceTimersByTime(80);
+      await flushLifecycleDiagramRender();
       expect(onBucketChange).toHaveBeenCalledWith(
         timeline.buckets[targetIndex].id,
       );
@@ -879,7 +946,7 @@ describe("lifecycle diagram view", () => {
     }
   });
 
-  it("reuses a captured layout seed for the next drag tick, from any tier", () => {
+  it("reuses a captured layout seed for the next drag tick, from any tier", async () => {
     vi.useFakeTimers();
     const b = bundle(
       [app("a")],
@@ -896,7 +963,7 @@ describe("lifecycle diagram view", () => {
         selectedBucketId: bucketId,
       });
     });
-    const rendered = render(b, "current", onBucketChange);
+    const rendered = await render(b, "current", onBucketChange);
     view = rendered.view;
     const { root, timeline } = rendered;
     const layoutSpy = vi.spyOn(lifecycleLayout, "layoutLifecycleRoutingGraph");
@@ -907,6 +974,11 @@ describe("lifecycle diagram view", () => {
       range.value = String(targetIndex);
       range.dispatchEvent(new window.Event("input", { bubbles: true }));
       vi.advanceTimersByTime(80);
+      // The debounce-fired render is deferred (a double rAF, regardless of
+      // dragActive), and this render is triggered indirectly via the
+      // onBucketChange mock rather than a directly-awaitable promise --
+      // flush before inspecting layoutSpy's call args.
+      await flushLifecycleDiagramRender();
       // The mount's own initial render is full quality (dragActive was
       // false) and still captures a seed -- the very first drag tick
       // already has one to reuse.
@@ -931,7 +1003,7 @@ describe("lifecycle diagram view", () => {
     }
   });
 
-  it("retries once unseeded when a seed-replay rejection occurs, and still renders", () => {
+  it("retries once unseeded when a seed-replay rejection occurs, and still renders", async () => {
     const b = bundle(
       [app("a")],
       [
@@ -939,7 +1011,7 @@ describe("lifecycle diagram view", () => {
         ev("t", "a", "technical_interview", "2026-01-02"),
       ],
     );
-    const { root, view, timeline } = render(b, "current");
+    const { root, view, timeline } = await render(b, "current");
     const range = root.querySelector("input[type='range']");
     range.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
     const originalLayout = lifecycleLayout.layoutLifecycleRoutingGraph;
@@ -959,7 +1031,10 @@ describe("lifecycle diagram view", () => {
       });
     try {
       const targetId = timeline.buckets.at(-1).id;
-      view.update({
+      // render() always defers Phase B past a double rAF regardless of
+      // dragActive -- await the real promise so Phase B has actually run
+      // before the assertions below inspect its output.
+      await view.update({
         timeline,
         snapshot: projectLifecycleAt(b, targetId),
         selectedBucketId: targetId,
@@ -988,7 +1063,8 @@ describe("lifecycle diagram view", () => {
     }
   });
 
-  it("keeps the previous frame when both the seeded attempt and the unseeded retry fail", () => {
+  // eslint-disable-next-line max-len
+  it("keeps the previous frame when both the seeded attempt and the unseeded retry fail", async () => {
     const b = bundle(
       [app("a")],
       [
@@ -996,7 +1072,7 @@ describe("lifecycle diagram view", () => {
         ev("t", "a", "technical_interview", "2026-01-02"),
       ],
     );
-    const { root, view, timeline } = render(b, "current");
+    const { root, view, timeline } = await render(b, "current");
     const svgBefore = root.querySelector("svg");
     const range = root.querySelector("input[type='range']");
     range.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
@@ -1013,7 +1089,10 @@ describe("lifecycle diagram view", () => {
       });
     try {
       const targetId = timeline.buckets.at(-1).id;
-      view.update({
+      // render() always defers Phase B past a double rAF regardless of
+      // dragActive -- await the real promise so Phase B has actually run
+      // before the assertions below inspect its output.
+      await view.update({
         timeline,
         snapshot: projectLifecycleAt(b, targetId),
         selectedBucketId: targetId,
@@ -1031,7 +1110,7 @@ describe("lifecycle diagram view", () => {
     }
   });
 
-  it("never retries an unexpected (uncaused) error even when a seed was attempted", () => {
+  it("never retries an unexpected (uncaused) error even when a seed was attempted", async () => {
     const b = bundle(
       [app("a")],
       [
@@ -1039,7 +1118,7 @@ describe("lifecycle diagram view", () => {
         ev("t", "a", "technical_interview", "2026-01-02"),
       ],
     );
-    const { root, view, timeline } = render(b, "current");
+    const { root, view, timeline } = await render(b, "current");
     const range = root.querySelector("input[type='range']");
     range.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
     const layoutSpy = vi
@@ -1049,7 +1128,10 @@ describe("lifecycle diagram view", () => {
       });
     try {
       const targetId = timeline.buckets.at(-1).id;
-      view.update({
+      // render() always defers Phase B past a double rAF regardless of
+      // dragActive -- await the real promise so Phase B has actually run
+      // before the assertions below inspect its output.
+      await view.update({
         timeline,
         snapshot: projectLifecycleAt(b, targetId),
         selectedBucketId: targetId,
@@ -1063,7 +1145,7 @@ describe("lifecycle diagram view", () => {
     }
   });
 
-  it("never threads seed options into the full-quality settle-on-release call", () => {
+  it("never threads seed options into the full-quality settle-on-release call", async () => {
     vi.useFakeTimers();
     const b = bundle(
       [app("a")],
@@ -1080,7 +1162,7 @@ describe("lifecycle diagram view", () => {
         selectedBucketId: bucketId,
       });
     });
-    const rendered = render(b, "current", onBucketChange);
+    const rendered = await render(b, "current", onBucketChange);
     view = rendered.view;
     const { root, timeline } = rendered;
     const layoutSpy = vi.spyOn(lifecycleLayout, "layoutLifecycleRoutingGraph");
@@ -1091,12 +1173,19 @@ describe("lifecycle diagram view", () => {
       range.value = String(targetIndex);
       range.dispatchEvent(new window.Event("input", { bubbles: true }));
       vi.advanceTimersByTime(80);
+      // The debounce-fired drag-tick render is deferred (a double rAF) and
+      // triggered indirectly via the onBucketChange mock -- flush before
+      // inspecting layoutSpy's call args.
+      await flushLifecycleDiagramRender();
       // Confirm a seed really was available and used for the drag tick,
       // so the release assertion below is meaningful, not vacuous.
       expect(layoutSpy.mock.calls.at(-1)[2].seedAssignments).toBeInstanceOf(
         Map,
       );
+      // The settle-on-release render is also deferred -- flush again before
+      // inspecting layoutSpy for the release call.
       range.dispatchEvent(new window.Event("pointerup", { bubbles: true }));
+      await flushLifecycleDiagramRender();
       const settleCall = layoutSpy.mock.calls.at(-1);
       expect(settleCall[2]?.qualityTier).not.toBe("draft");
       for (const key of [
@@ -1115,7 +1204,7 @@ describe("lifecycle diagram view", () => {
     }
   });
 
-  it("does not mutate P4 projection and has equivalent selectable rows", () => {
+  it("does not mutate P4 projection and has equivalent selectable rows", async () => {
     const b = bundle(
       [app("a")],
       [
@@ -1128,7 +1217,7 @@ describe("lifecycle diagram view", () => {
     const timeline = buildLifecycleTimeline(b);
     const snapshot = projectLifecycleAt(b);
     const before = JSON.stringify(snapshot);
-    view.update({ timeline, snapshot, selectedBucketId: "current" });
+    await view.update({ timeline, snapshot, selectedBucketId: "current" });
     expect(JSON.stringify(snapshot)).toBe(before);
     const row = [...root.querySelectorAll("tbody tr")].find(
       (tr) =>
@@ -1143,7 +1232,7 @@ describe("lifecycle diagram view", () => {
     );
   });
 
-  it("provides semantic button controls for flows and nodes", () => {
+  it("provides semantic button controls for flows and nodes", async () => {
     const b = bundle(
       [app("a")],
       [
@@ -1151,7 +1240,7 @@ describe("lifecycle diagram view", () => {
         ev("t", "a", "technical_interview", "2026-01-02"),
       ],
     );
-    const { root } = render(b);
+    const { root } = await render(b);
     expect(root.querySelector("[data-diagram-link]")).toBeTruthy();
     expect(root.querySelector("[data-diagram-node]")).toBeTruthy();
     const flowButton = root.querySelector("button[aria-label^='Select flow']");
@@ -1173,7 +1262,7 @@ describe("lifecycle diagram view", () => {
     );
   });
 
-  it("summarizes warnings from P4 codes and treats absent keys as zero", () => {
+  it("summarizes warnings from P4 codes and treats absent keys as zero", async () => {
     const root = setup();
     const view = createLifecycleDiagramView(root);
     const empty = projectLifecycleAt(bundle(), "current");
@@ -1212,12 +1301,12 @@ describe("lifecycle diagram view", () => {
       ],
     };
 
-    view.update({ timeline, snapshot, selectedBucketId: "current" });
+    await view.update({ timeline, snapshot, selectedBucketId: "current" });
     expect(root.querySelector("[data-diagram-details]").textContent).toContain(
       "Warnings: inferred history 2; unknown origin/time 11; status mismatch 7; regression 11.",
     );
 
-    view.update({
+    await view.update({
       timeline,
       snapshot: { ...empty, warningCounts: {}, events: [] },
       selectedBucketId: "current",
@@ -1227,7 +1316,7 @@ describe("lifecycle diagram view", () => {
     );
   });
 
-  it("clears selected flow details when the snapshot changes", () => {
+  it("clears selected flow details when the snapshot changes", async () => {
     const b = bundle(
       [app("a")],
       [
@@ -1235,14 +1324,14 @@ describe("lifecycle diagram view", () => {
         ev("t", "a", "technical_interview", "2026-01-02"),
       ],
     );
-    const { root, view, timeline } = render(b);
+    const { root, view, timeline } = await render(b);
     root
       .querySelector("[data-diagram-link]")
       .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
     expect(root.querySelector("[data-diagram-details]").textContent).toContain(
       "1 application",
     );
-    view.update({
+    await view.update({
       timeline,
       snapshot: projectLifecycleAt(bundle(), "current"),
       selectedBucketId: "current",
@@ -1252,7 +1341,7 @@ describe("lifecycle diagram view", () => {
     );
   });
 
-  it("preserves valid selections across unchanged snapshot instances", () => {
+  it("preserves valid selections across unchanged snapshot instances", async () => {
     const b = bundle(
       [app("a"), app("b")],
       [
@@ -1262,7 +1351,7 @@ describe("lifecycle diagram view", () => {
         ev("t2", "b", "technical_interview", "2026-01-02"),
       ],
     );
-    const { root, view, timeline } = render(b);
+    const { root, view, timeline } = await render(b);
     const link = root.querySelector("[data-diagram-link]");
     const linkId = link.getAttribute("data-diagram-link");
     link.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
@@ -1275,7 +1364,7 @@ describe("lifecycle diagram view", () => {
         .getAttribute("data-selected"),
     ).toBe("true");
 
-    view.update({
+    await view.update({
       timeline,
       snapshot: projectLifecycleAt(b, "current"),
       selectedBucketId: "current",
@@ -1291,7 +1380,7 @@ describe("lifecycle diagram view", () => {
     ).toBe("true");
   });
 
-  it("keeps SVG and semantic selections equivalent and debounces live announcements", () => {
+  it("keeps SVG and semantic selections equivalent and debounces live announcements", async () => {
     vi.useFakeTimers();
     const b = bundle(
       [app("a"), app("b")],
@@ -1302,7 +1391,7 @@ describe("lifecycle diagram view", () => {
         ev("t2", "b", "technical_interview", "2026-01-02"),
       ],
     );
-    const { root, view, timeline, snapshot } = render(b);
+    const { root, view, timeline, snapshot } = await render(b);
     const detailsText = () =>
       root.querySelector("[data-diagram-details]").textContent;
     const svgNode = root.querySelector(
@@ -1344,9 +1433,22 @@ describe("lifecycle diagram view", () => {
       `${link.applicationIds.length} applications`,
     );
 
-    view.update({ timeline, snapshot, selectedBucketId: "current" });
+    // This render is deferred; with fake timers active, a plain await would
+    // deadlock (only vi.advanceTimersToNextFrame() -- inside
+    // flushLifecycleDiagramRender() -- ever advances the fake rAF queue).
+    const updated = view.update({
+      timeline,
+      snapshot,
+      selectedBucketId: "current",
+    });
+    await flushLifecycleDiagramRender();
+    await updated;
     view.announce("Missing historical point; returned to Current.");
+    // The resize-triggered render is also deferred; flush it before the
+    // announce debounce is asserted, for cross-test cleanliness even though
+    // the live text itself is Phase A output.
     root.dispatchEvent(new window.Event("resize"));
+    await flushLifecycleDiagramRender();
     vi.advanceTimersByTime(80);
     expect(root.querySelector("#lifecycle-diagram-live").textContent).toBe(
       "Missing historical point; returned to Current.",
@@ -1354,7 +1456,7 @@ describe("lifecycle diagram view", () => {
     view.destroy();
   });
 
-  it("reuses unchanged SVG node/branch elements across a no-op re-render", () => {
+  it("reuses unchanged SVG node/branch elements across a no-op re-render", async () => {
     const b = bundle(
       [app("a"), app("b")],
       [
@@ -1364,7 +1466,7 @@ describe("lifecycle diagram view", () => {
         ev("t2", "b", "technical_interview", "2026-01-02"),
       ],
     );
-    const { root, view, timeline, snapshot } = render(b);
+    const { root, view, timeline, snapshot } = await render(b);
     const nodeGroup = root.querySelector(
       "[data-diagram-node='origin:application_submitted']",
     );
@@ -1374,7 +1476,7 @@ describe("lifecycle diagram view", () => {
     const branchGroup = root.querySelector("[data-diagram-branch-group]");
     const branchPath = branchGroup.querySelector("[data-diagram-link]");
 
-    view.update({ timeline, snapshot, selectedBucketId: "current" });
+    await view.update({ timeline, snapshot, selectedBucketId: "current" });
 
     expect(
       root.querySelector("[data-diagram-node='origin:application_submitted']"),
@@ -1390,12 +1492,12 @@ describe("lifecycle diagram view", () => {
     ).toBe(branchPath);
   });
 
-  it("reuses the SVG node group on selection, patching only selection attributes", () => {
+  it("reuses the SVG node group on selection, patching only selection attributes", async () => {
     const b = bundle(
       [app("a")],
       [ev("o1", "a", "application_submitted", "2026-01-01")],
     );
-    const { root } = render(b);
+    const { root } = await render(b);
     const nodeGroup = root.querySelector(
       "[data-diagram-node='origin:application_submitted']",
     );
@@ -1420,7 +1522,7 @@ describe("lifecycle diagram view", () => {
     expect(nodeRect.getAttribute("stroke")).toBe("#F8FAFC");
   });
 
-  it("reuses the SVG branch group on selection, adding/removing only the halo", () => {
+  it("reuses the SVG branch group on selection, adding/removing only the halo", async () => {
     const b = bundle(
       [app("a")],
       [
@@ -1428,7 +1530,7 @@ describe("lifecycle diagram view", () => {
         ev("t1", "a", "technical_interview", "2026-01-02"),
       ],
     );
-    const { root } = render(b);
+    const { root } = await render(b);
     const branchGroup = root.querySelector("[data-diagram-branch-group]");
     const branchPath = branchGroup.querySelector("[data-diagram-link]");
     expect(branchGroup.querySelector("[data-diagram-branch-halo]")).toBeNull();
@@ -1456,19 +1558,19 @@ describe("lifecycle diagram view", () => {
     expect(root.querySelector("[data-diagram-branch-halo]")).toBeNull();
   });
 
-  it("disconnects SVG elements for nodes that drop out of a later bucket", () => {
+  it("disconnects SVG elements for nodes that drop out of a later bucket", async () => {
     const b = bundle(
       [app("a")],
       [ev("o1", "a", "application_submitted", "2026-01-01")],
     );
-    const { root, view, timeline } = render(b, "unknown-date");
+    const { root, view, timeline } = await render(b, "unknown-date");
     // "unknown-date" has no dated events for this bundle, so the diagram
     // shows the empty-nodes fallback rather than an origin node.
     expect(
       root.querySelector("[data-diagram-node='origin:application_submitted']"),
     ).toBeNull();
 
-    view.update({
+    await view.update({
       timeline,
       snapshot: projectLifecycleAt(b, "current"),
       selectedBucketId: "current",
@@ -1479,7 +1581,7 @@ describe("lifecycle diagram view", () => {
     expect(nodeGroup).not.toBeNull();
     expect(nodeGroup.isConnected).toBe(true);
 
-    view.update({
+    await view.update({
       timeline,
       snapshot: projectLifecycleAt(b, "unknown-date"),
       selectedBucketId: "unknown-date",
@@ -1490,7 +1592,7 @@ describe("lifecycle diagram view", () => {
     expect(nodeGroup.isConnected).toBe(false);
   });
 
-  it("keeps a reused SVG node's click listener reading current, not stale, data", () => {
+  it("keeps a reused SVG node's click listener reading current, not stale, data", async () => {
     // The projection layer replays event histories fresh every render (only
     // Phase 1/2's *bucket-level* results are cached), so a node's rendered
     // signature (position/size/label/total) can be identical across two
@@ -1521,14 +1623,14 @@ describe("lifecycle diagram view", () => {
         ...endEvents("b"),
       ],
     );
-    const { root, view } = render(before);
+    const { root, view } = await render(before);
     const referralGroup = root.querySelector(
       "[data-diagram-node='origin:referral']",
     );
     expect(referralGroup).not.toBeNull();
 
     const afterSnapshot = projectLifecycleAt(after, "current");
-    view.update({
+    await view.update({
       timeline: buildLifecycleTimeline(after),
       snapshot: afterSnapshot,
       selectedBucketId: "current",
@@ -1549,7 +1651,7 @@ describe("lifecycle diagram view", () => {
     ).toEqual(["b"]);
   });
 
-  it("constructs zero new SVG elements when a node selection changes", () => {
+  it("constructs zero new SVG elements when a node selection changes", async () => {
     // Node/branch counts are bounded by the fixed taxonomy (a couple dozen
     // categories at most), not by application count, so a data-driven
     // "far fewer elements than a full rebuild" scenario is sensitive to
@@ -1561,7 +1663,7 @@ describe("lifecycle diagram view", () => {
       [app("a")],
       [ev("o1", "a", "application_submitted", "2026-01-01")],
     );
-    const { root } = render(b);
+    const { root } = await render(b);
     const createSpy = vi.spyOn(document, "createElementNS");
     try {
       const nodeRect = root.querySelector(
@@ -1574,7 +1676,7 @@ describe("lifecycle diagram view", () => {
     }
   });
 
-  it("constructs exactly one new SVG element (the halo) when a branch is selected", () => {
+  it("constructs exactly one new SVG element (the halo) when a branch is selected", async () => {
     const b = bundle(
       [app("a")],
       [
@@ -1582,7 +1684,7 @@ describe("lifecycle diagram view", () => {
         ev("t1", "a", "technical_interview", "2026-01-02"),
       ],
     );
-    const { root } = render(b);
+    const { root } = await render(b);
     const createSpy = vi.spyOn(document, "createElementNS");
     try {
       const branchPath = root.querySelector("[data-diagram-link]");
@@ -1611,13 +1713,15 @@ describe("lifecycle diagram view", () => {
         ev("t2", "b", "technical_interview", "2026-01-02"),
       ],
     );
-    const { root, view, timeline, snapshot } = render(b);
+    const { root, view, timeline, snapshot } = await render(b);
     const svg = root.querySelector("svg");
     const callback = vi.fn();
     const observer = new window.MutationObserver(callback);
     observer.observe(svg, { childList: true, subtree: true });
     try {
-      view.update({ timeline, snapshot, selectedBucketId: "current" });
+      // This render is deferred (dragActive is false); await its own
+      // promise so Phase B has actually run before checking the observer.
+      await view.update({ timeline, snapshot, selectedBucketId: "current" });
       await Promise.resolve();
       expect(callback).not.toHaveBeenCalled();
     } finally {
@@ -1630,7 +1734,7 @@ describe("lifecycle diagram view", () => {
       [app("a")],
       [ev("o1", "a", "application_submitted", "2026-01-01")],
     );
-    const { root } = render(b);
+    const { root } = await render(b);
     const svg = root.querySelector("svg");
     const callback = vi.fn();
     const observer = new window.MutationObserver(callback);
@@ -1655,7 +1759,7 @@ describe("lifecycle diagram view", () => {
         ev("t1", "a", "technical_interview", "2026-01-02"),
       ],
     );
-    const { root } = render(b);
+    const { root } = await render(b);
     const branchGroup = root.querySelector("[data-diagram-branch-group]");
     const handleGroupEl = root.querySelector(
       "[data-diagram-branch-handle]",
@@ -1706,7 +1810,7 @@ describe("lifecycle diagram view", () => {
     }
   });
 
-  it("reorders SVG node groups to match rank order when a new node is inserted", () => {
+  it("reorders SVG node groups to match rank order when a new node is inserted", async () => {
     // "offer_accepted" (endpoint rank 8) exists first; a later render adds
     // "awaiting_response" (rank 0), which must be inserted *before* it in
     // DOM order, not appended after -- proving the reconciler performs a
@@ -1729,13 +1833,13 @@ describe("lifecycle diagram view", () => {
         ev("b-o", "b", "application_submitted", "2026-01-01"),
       ],
     );
-    const { root, view } = render(before);
+    const { root, view } = await render(before);
     const acceptedGroup = root.querySelector(
       "[data-diagram-node='endpoint:offer_accepted']",
     );
     expect(acceptedGroup).not.toBeNull();
 
-    view.update({
+    await view.update({
       timeline: buildLifecycleTimeline(after),
       snapshot: projectLifecycleAt(after, "current"),
       selectedBucketId: "current",
@@ -1755,7 +1859,7 @@ describe("lifecycle diagram view", () => {
     expect(awaitingIndex).toBeLessThan(acceptedIndex);
   });
 
-  it("renders warning summary from supplied P4 warning codes", () => {
+  it("renders warning summary from supplied P4 warning codes", async () => {
     const root = setup();
     const view = createLifecycleDiagramView(root);
     const baseSnapshot = {
@@ -1771,7 +1875,7 @@ describe("lifecycle diagram view", () => {
       warningCounts: {},
     };
 
-    view.update({
+    await view.update({
       timeline: {
         buckets: [{ id: "current", kind: "current", label: "Current" }],
       },
@@ -1801,7 +1905,7 @@ describe("lifecycle diagram view", () => {
       "Warnings: inferred history 2; unknown origin/time 11; status mismatch 7; regression 11.",
     );
 
-    view.update({
+    await view.update({
       timeline: {
         buckets: [{ id: "current", kind: "current", label: "Current" }],
       },
@@ -1824,7 +1928,7 @@ describe("lifecycle diagram view", () => {
     // thresholds in test/web-tracker-lifecycle-diagram-layout.test.js), so
     // this timeout has generous margin rather than being tuned tight to one
     // machine.
-    const sparse = render(
+    const sparse = await render(
       bundle(
         [app("s")],
         [ev("so", "s", "application_submitted", "2026-01-01")],
@@ -1839,7 +1943,7 @@ describe("lifecycle diagram view", () => {
       }
     );
     const expectedHeight = 1660;
-    const dense = render(fixture.default);
+    const dense = await render(fixture.default);
     const svg = dense.root.querySelector("svg");
     const denseLayout = calculateLifecycleDiagramLayout(dense.snapshot);
     expect(denseLayout.height).toBe(expectedHeight);
@@ -1915,6 +2019,219 @@ describe("lifecycle diagram view", () => {
   }, 180000);
 });
 
+describe("busy indicator (Phase 5a deferred render)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    delete global.document;
+    delete global.window;
+    delete global.ResizeObserver;
+  });
+
+  // eslint-disable-next-line max-len
+  it("shows the busy indicator while the old DOM is still visible, then hides it once the deferred render completes", async () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root, view, timeline } = await render(b, "current");
+    const busy = root.querySelector("[data-diagram-busy]");
+    const scroll = root.querySelector(".diagram-scroll");
+    const svgBefore = root.querySelector("svg");
+    expect(busy.hidden).toBe(true);
+
+    // "current" is always the last bucket; the second-to-last is the latest
+    // historical bucket, guaranteed to still include the application (an
+    // earlier bucket can predate its origin event entirely, rendering the
+    // unrelated "No lifecycle data yet" empty state instead of an svg).
+    const targetIndex = timeline.buckets.length - 2;
+    const targetId = timeline.buckets[targetIndex].id;
+    expect(targetId).not.toBe("current");
+    const updated = view.update({
+      timeline,
+      snapshot: projectLifecycleAt(b, targetId),
+      selectedBucketId: targetId,
+    });
+    // Synchronous assertions, same tick as the update() call: the busy
+    // state must already be visible, and the OLD svg (Phase B's own output)
+    // must still be on screen -- proving the indicator really shows before
+    // the new content replaces it, not after. Phase A's cheap, immediate
+    // fields (like the scrubber's own value) update right away regardless.
+    expect(busy.hidden).toBe(false);
+    expect(scroll.getAttribute("aria-busy")).toBe("true");
+    expect(root.querySelector("svg")).toBe(svgBefore);
+    expect(root.querySelector("input[type='range']").value).toBe(
+      String(targetIndex),
+    );
+
+    await updated;
+    expect(busy.hidden).toBe(true);
+    expect(scroll.getAttribute("aria-busy")).toBe("false");
+    expect(root.querySelector("svg")).not.toBeNull();
+  });
+
+  it("never shows the busy indicator for a drag-tick render", async () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root, view, timeline } = await render(b, "current");
+    const busy = root.querySelector("[data-diagram-busy]");
+    const range = root.querySelector("input[type='range']");
+    range.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+    const targetId = timeline.buckets.at(-1).id;
+    // Drag-tick renders complete synchronously (see render()'s dragActive
+    // gate) -- no await/flush needed, and the busy indicator must never
+    // have appeared even momentarily.
+    view.update({
+      timeline,
+      snapshot: projectLifecycleAt(b, targetId),
+      selectedBucketId: targetId,
+    });
+    expect(busy.hidden).toBe(true);
+    expect(
+      root.querySelector(".diagram-scroll").getAttribute("aria-busy"),
+    ).toBe("false");
+  });
+
+  it("cancels a superseded pending render rather than letting both complete", async () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root, view, timeline } = await render(b, "current");
+    const firstTarget = timeline.buckets.at(-2) ?? timeline.buckets.at(-1);
+    const secondTarget = timeline.buckets.at(-1);
+    const firstUpdate = view.update({
+      timeline,
+      snapshot: projectLifecycleAt(b, firstTarget.id),
+      selectedBucketId: firstTarget.id,
+    });
+    // Supersede before the first's deferred Phase B ever runs.
+    const secondUpdate = view.update({
+      timeline,
+      snapshot: projectLifecycleAt(b, secondTarget.id),
+      selectedBucketId: secondTarget.id,
+    });
+    // The superseded first promise must still resolve (not hang forever),
+    // and only the second's content ever actually renders.
+    await Promise.all([firstUpdate, secondUpdate]);
+    expect(root.querySelector("input[type='range']").value).toBe(
+      String(timeline.buckets.indexOf(secondTarget)),
+    );
+    expect(root.querySelector("[data-diagram-busy]").hidden).toBe(true);
+  });
+
+  // eslint-disable-next-line max-len
+  it("cancels a stale pending render instead of letting it overwrite a later drag tick", async () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root, view, timeline } = await render(b, "current");
+    const busy = root.querySelector("[data-diagram-busy]");
+    const scroll = root.querySelector(".diagram-scroll");
+    const range = root.querySelector("input[type='range']");
+
+    const staleTarget = timeline.buckets.at(-2) ?? timeline.buckets.at(-1);
+    // A non-drag render whose deferred Phase B never gets flushed here --
+    // it stays pending (busy indicator up, rAF scheduled but not fired).
+    const stalePending = view.update({
+      timeline,
+      snapshot: projectLifecycleAt(b, staleTarget.id),
+      selectedBucketId: staleTarget.id,
+    });
+    expect(busy.hidden).toBe(false);
+
+    range.dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+    const dragTarget = timeline.buckets.at(-1);
+    view.update({
+      timeline,
+      snapshot: projectLifecycleAt(b, dragTarget.id),
+      selectedBucketId: dragTarget.id,
+    });
+    // The drag tick wins immediately: busy state cleared and the DOM
+    // reflects the drag target synchronously, without waiting on the stale
+    // pending render's rAF.
+    expect(busy.hidden).toBe(true);
+    expect(scroll.getAttribute("aria-busy")).toBe("false");
+    expect(range.value).toBe(String(timeline.buckets.indexOf(dragTarget)));
+
+    // If the stale pending render's rAF weren't canceled, flushing it here
+    // would run its Phase B and clobber the drag tick's output.
+    await flushLifecycleDiagramRender();
+    await stalePending;
+    expect(range.value).toBe(String(timeline.buckets.indexOf(dragTarget)));
+    expect(busy.hidden).toBe(true);
+  });
+
+  it("ignores a selection click on stale content while a deferred render is pending", async () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const { root, view, timeline } = await render(b, "current");
+    const nodeGroup = root.querySelector(
+      "[data-diagram-node='origin:application_submitted']",
+    );
+    const nodeRect = nodeGroup.querySelector(
+      "rect:not([data-diagram-node-hit])",
+    );
+    expect(nodeGroup.getAttribute("data-selected")).toBe("false");
+
+    // Same inclusion guarantee as the busy-indicator test above: the
+    // second-to-last bucket is the latest historical one, guaranteed to
+    // still include this application's origin node.
+    const targetIndex = timeline.buckets.length - 2;
+    const targetId = timeline.buckets[targetIndex].id;
+    const pending = view.update({
+      timeline,
+      snapshot: projectLifecycleAt(b, targetId),
+      selectedBucketId: targetId,
+    });
+    // Phase A already swapped `projection` to the new bucket, but the old
+    // SVG (built from the old one) is still what's on screen -- a click
+    // routed through selectFeature() here must be dropped, not resolved
+    // against the new projection for a node id read off the old render.
+    nodeRect.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(
+      root
+        .querySelector("[data-diagram-node='origin:application_submitted']")
+        ?.getAttribute("data-selected"),
+    ).not.toBe("true");
+
+    await pending;
+    // The guard only applies while a render is actually pending -- once
+    // Phase B lands, selection works normally again.
+    const settledRect = root
+      .querySelector("[data-diagram-node='origin:application_submitted']")
+      ?.querySelector("rect:not([data-diagram-node-hit])");
+    settledRect?.dispatchEvent(
+      new window.MouseEvent("click", { bubbles: true }),
+    );
+    if (settledRect)
+      expect(
+        root
+          .querySelector("[data-diagram-node='origin:application_submitted']")
+          .getAttribute("data-selected"),
+      ).toBe("true");
+  });
+});
+
 describe("lifecycle diagram P6 pagination and hardening", () => {
   afterEach(() => {
     delete global.document;
@@ -1922,7 +2239,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     delete global.ResizeObserver;
   });
 
-  it("paginates event rows and resets event pages when snapshots or buckets change", () => {
+  it("paginates event rows and resets event pages when snapshots or buckets change", async () => {
     const applications = [app("many")];
     const lifecycleEvents = Array.from({ length: 125 }, (_, index) =>
       ev(
@@ -1933,7 +2250,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
       ),
     );
     const b = bundle(applications, lifecycleEvents);
-    const { root, view, timeline } = render(b);
+    const { root, view, timeline } = await render(b);
     const eventRows = () =>
       [...root.querySelectorAll("caption")]
         .find((caption) => caption.textContent === "Selected-boundary events")
@@ -1953,7 +2270,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
       true,
     );
     const updated = bundle(applications, lifecycleEvents.slice(0, 124));
-    view.update({
+    await view.update({
       timeline,
       snapshot: projectLifecycleAt(updated, "current"),
       selectedBucketId: "current",
@@ -1965,7 +2282,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     expect(root.querySelector("[data-event-range]").textContent).toBe(
       "Events 51–100 of 124",
     );
-    view.update({
+    await view.update({
       timeline,
       snapshot: projectLifecycleAt(b, timeline.buckets[0].id),
       selectedBucketId: timeline.buckets[0].id,
@@ -1975,7 +2292,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     );
   });
 
-  it("preserves table pagination across a no-op re-render of the same bundle/bucket", () => {
+  it("preserves table pagination across a no-op re-render of the same bundle/bucket", async () => {
     const applications = [app("many")];
     const lifecycleEvents = Array.from({ length: 125 }, (_, index) =>
       ev(
@@ -1986,7 +2303,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
       ),
     );
     const b = bundle(applications, lifecycleEvents);
-    const { root, view, timeline } = render(b);
+    const { root, view, timeline } = await render(b);
     root.querySelector("[aria-label='Next event page']").click();
     expect(root.querySelector("[data-event-range]").textContent).toBe(
       "Events 51–100 of 125",
@@ -1995,7 +2312,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     // Same bundle object + same bucket id: projectLifecycleAt is memoized and
     // returns the identical cached reference, so this is a no-op re-render
     // (e.g. re-navigating to the Diagram tab) rather than a real data change.
-    view.update({
+    await view.update({
       timeline,
       snapshot: projectLifecycleAt(b, "current"),
       selectedBucketId: "current",
@@ -2007,7 +2324,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     // A genuinely new bundle object for the same bucket id is a real data
     // change (cache miss) and still resets pagination as before.
     const changed = bundle(applications, lifecycleEvents.slice(0, 124));
-    view.update({
+    await view.update({
       timeline,
       snapshot: projectLifecycleAt(changed, "current"),
       selectedBucketId: "current",
@@ -2041,7 +2358,8 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
   // ">50" this test needs. Constructing the snapshot directly reuses
   // exactly denseBranchProjection()'s already-proven-feasible topology
   // instead.
-  it("paginates more than 50 endpoint-conditioned flow rows without losing reachability", () => {
+  // eslint-disable-next-line max-len
+  it("paginates more than 50 endpoint-conditioned flow rows without losing reachability", async () => {
     const origins = LIFECYCLE_DIAGRAM_TAXONOMY.origins.map(({ id }) => id);
     const endpoints = LIFECYCLE_DIAGRAM_TAXONOMY.endpoints.map(({ id }) => id);
     const buildDensePaths = (limit) => {
@@ -2164,7 +2482,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
       applications: [],
       lifecycleEvents: [],
     });
-    view.update({ timeline, snapshot, selectedBucketId: "current" });
+    await view.update({ timeline, snapshot, selectedBucketId: "current" });
     expect(root.querySelector("svg")).not.toBeNull();
     expect(root.textContent).not.toContain(
       "Unable to lay out lifecycle diagram.",
@@ -2200,7 +2518,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     if (!root.querySelector("details.diagram-tables").open)
       root.querySelector("details.diagram-tables summary").click();
     secondPage.at(-1);
-    view.update({
+    await view.update({
       timeline,
       snapshot: buildSnapshot(49),
       selectedBucketId: "current",
@@ -2216,9 +2534,13 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     expect(
       root.querySelector("[aria-label='Previous flow page']").disabled,
     ).toBe(true);
-  });
+    // Runs the dense-fixture layout search twice (once directly above to
+    // assert it doesn't throw, once inside view.update()'s renderSvg()) --
+    // same known-dense-case budget as "uses density-aware SVG height and
+    // spacing on rerender" above, needed under slower CI/sandbox load.
+  }, 180000);
 
-  it("paginates affected applications with bounded ranges", () => {
+  it("paginates affected applications with bounded ranges", async () => {
     const applications = Array.from({ length: 125 }, (_, index) =>
       app(`app-${String(index).padStart(3, "0")}`),
     );
@@ -2230,7 +2552,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
         "2026-01-01",
       ),
     );
-    const { root } = render(bundle(applications, lifecycleEvents));
+    const { root } = await render(bundle(applications, lifecycleEvents));
     root
       .querySelector("[data-diagram-node='origin:application_submitted'] rect")
       .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
@@ -2275,7 +2597,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     );
   });
 
-  it("exposes aria-pressed selection and transparent hit targets", () => {
+  it("exposes aria-pressed selection and transparent hit targets", async () => {
     const b = bundle(
       [app("a")],
       [
@@ -2283,7 +2605,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
         ev("t", "a", "technical_interview", "2026-01-02"),
       ],
     );
-    const { root } = render(b);
+    const { root } = await render(b);
     const nodeButton = root.querySelector(
       "button[aria-label='Select Application submitted']",
     );
@@ -2311,7 +2633,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     );
   });
 
-  it("renders the layout fallback when branch handle placement fails", () => {
+  it("renders the layout fallback when branch handle placement fails", async () => {
     // The renderer prefers graph.acceptedHandles (the exact handles
     // layoutLifecycleRoutingGraph's own search already accepted) and only
     // falls back to a fresh assignBranchHandles() call when that's absent
@@ -2340,7 +2662,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
           ev("t", "a", "technical_interview", "2026-01-02"),
         ],
       );
-      const { root } = render(b);
+      const { root } = await render(b);
       expect(root.textContent).toContain(
         "Unable to lay out lifecycle diagram.",
       );
@@ -2351,7 +2673,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     }
   });
 
-  it("renders the layout fallback when node label wrapping fails", () => {
+  it("renders the layout fallback when node label wrapping fails", async () => {
     const spy = vi
       .spyOn(lifecycleLayout, "wrapLifecycleLabel")
       .mockImplementation(() => {
@@ -2365,7 +2687,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
           ev("t", "a", "technical_interview", "2026-01-02"),
         ],
       );
-      const { root } = render(b);
+      const { root } = await render(b);
       expect(root.textContent).toContain(
         "Unable to lay out lifecycle diagram.",
       );
@@ -2385,7 +2707,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
         ev("t2", "b", "technical_interview", "2026-01-02"),
       ],
     );
-    const { root } = render(b);
+    const { root } = await render(b);
     const svg = root.querySelector("svg");
     const childGroups = [...svg.children].filter(
       (child) => child.tagName === "g",
@@ -2416,7 +2738,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
       [app("a")],
       [ev("o", "a", "application_submitted", "2026-01-01")],
     );
-    const { root } = render(b);
+    const { root } = await render(b);
     const details = root.querySelector("[data-diagram-details]");
     const callback = vi.fn();
     const observer = new window.MutationObserver(callback);
@@ -2448,7 +2770,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     );
   });
 
-  it("uses time elements for exact and date-only event timestamps", () => {
+  it("uses time elements for exact and date-only event timestamps", async () => {
     const b = bundle(
       [app("a")],
       [
@@ -2457,7 +2779,7 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
         ev("unknown", "a", "employer_response_received", "unknown"),
       ],
     );
-    const { root } = render(b);
+    const { root } = await render(b);
     expect(root.querySelector("time[datetime='2026-01-01']")).toBeTruthy();
     expect(
       root.querySelector("time[datetime='2026-01-02T10:00:00.000Z']"),

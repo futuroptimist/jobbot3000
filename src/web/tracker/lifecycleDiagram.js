@@ -190,6 +190,53 @@ export function createLifecycleDiagramView(root, options = {}) {
   // (bucket navigation, resize, selection, keyboard stepping), which always
   // use the full-quality layout. See renderSvg()'s qualityTier option below.
   let dragActive = false;
+  // Two-phase render deferral, used by render() (bucket navigation: mount,
+  // prev/next/current, keyboard stepping, resize, drag-release settle) --
+  // NOT by selectFeature() (selection clicks stay synchronous, see its own
+  // comment). Browsers only paint after the current synchronous task yields
+  // back to the event loop, so a busy indicator can only actually be
+  // visible before the (still-synchronous) layout/DOM work runs if that
+  // work is deferred past a real paint. A single requestAnimationFrame
+  // callback fires *before* the next paint -- too early to guarantee the
+  // busy state has rendered -- so this waits for a second, nested rAF,
+  // which runs only after that frame has actually painted. Falls back to
+  // setTimeout(fn, 0) if rAF/cancelAnimationFrame aren't available
+  // (defensive, matches the optional-chaining style already used for
+  // window.matchMedia?.(...) below). Drag ticks (Phase 4a/4b) skip this
+  // entirely -- they're already fast, and flickering the indicator every
+  // ~100ms during a drag would be distracting, not helpful.
+  const scheduleFrame = (fn) =>
+    (window.requestAnimationFrame ?? ((cb) => setTimeout(cb, 0)))(fn);
+  const cancelFrame = window.cancelAnimationFrame ?? clearTimeout;
+  let pendingRenderFrame = null;
+  let pendingRenderResolve = null;
+  const cancelPendingRender = () => {
+    if (pendingRenderFrame === null) return;
+    cancelFrame(pendingRenderFrame);
+    pendingRenderFrame = null;
+    // A superseded render's caller must not hang forever waiting on a
+    // Phase B that will now never run -- resolve it as a no-op instead.
+    pendingRenderResolve?.();
+    pendingRenderResolve = null;
+  };
+  const runDeferred = (phaseB) => {
+    cancelPendingRender();
+    busyIndicator.hidden = false;
+    scroll.setAttribute("aria-busy", "true");
+    return new Promise((resolve) => {
+      pendingRenderResolve = resolve;
+      pendingRenderFrame = scheduleFrame(() => {
+        pendingRenderFrame = scheduleFrame(() => {
+          pendingRenderFrame = null;
+          pendingRenderResolve = null;
+          phaseB();
+          busyIndicator.hidden = true;
+          scroll.setAttribute("aria-busy", "false");
+          resolve();
+        });
+      });
+    });
+  };
   // Captured from the most recent successful layoutLifecycleRoutingGraph()
   // call (draft or full quality, whichever produced it) -- an opportunistic
   // candidate for the next drag tick's seed-replay attempt. Node/branch/link
@@ -269,6 +316,17 @@ export function createLifecycleDiagramView(root, options = {}) {
   const badge = el("span", { className: "chip", textContent: "Current" });
   const count = el("span", { className: "muted" });
   const stamp = el("p", { className: "muted diagram-timestamp" });
+  // Dedicated aria-live region for the busy state, kept separate from `live`
+  // below (driven by the debounced announce() helper for scrub-position
+  // text) so a busy announcement can never be coalesced away by that
+  // debounce. See render()'s Phase A/B split for when this toggles.
+  const busyIndicator = el("p", {
+    className: "muted diagram-busy",
+    "data-diagram-busy": "",
+    "aria-live": "polite",
+    textContent: "Updating diagram…",
+    hidden: "",
+  });
   const simultaneous = el("details", {}, [
     el("summary", { textContent: "Selected-boundary events" }),
     el("div", { "data-boundary-events": "" }),
@@ -304,6 +362,7 @@ export function createLifecycleDiagramView(root, options = {}) {
   root.append(
     controls,
     stamp,
+    busyIndicator,
     live,
     legend,
     scroll,
@@ -403,6 +462,16 @@ export function createLifecycleDiagramView(root, options = {}) {
     return null;
   };
   const selectFeature = (feature) => {
+    // The old SVG/table DOM stays visible and clickable during the busy
+    // window between Phase A (which already reassigned `projection` to the
+    // new snapshot) and Phase B (which rebuilds currentNodeByKey/
+    // currentBranchByKey/displayBranches from it) -- a click routed through
+    // here in that window would resolve applicationIds against the *new*
+    // projection for a feature id read off the *old* render, and since ids
+    // are stable taxonomy-derived values (Phase 4b), that can silently
+    // resurrect a selection the bucket change was supposed to clear. Drop
+    // it instead; Phase B lands within a couple of frames regardless.
+    if (pendingRenderFrame !== null) return;
     const active = document.activeElement;
     const shouldRestoreFocus = active?.matches?.(".diagram-select-button");
     if (selectedFeature?.id !== feature.id) applicationPage = 0;
@@ -410,6 +479,15 @@ export function createLifecycleDiagramView(root, options = {}) {
       ...feature,
       applicationIds: featureApplicationIds(feature),
     };
+    // Selection clicks stay fully synchronous, unlike render() -- they never
+    // trigger new data-layer work (the projection is already cached), and
+    // Phase 3's keyed diff already makes the DOM-reconciliation half cheap.
+    // Only the layout search re-runs unconditionally, and that's already
+    // fast enough in practice (~100-150ms even on a dense fixture, per
+    // Phase 4's manual verification) that deferring it here would mostly
+    // just add a busy-indicator flicker to normally-instant clicks. If a
+    // genuinely slow selection case turns up in practice, revisit as its
+    // own small follow-up rather than folding it into this phase.
     renderDetails();
     renderSvg();
     renderTables();
@@ -1360,9 +1438,26 @@ export function createLifecycleDiagramView(root, options = {}) {
     simultaneous.querySelector("[data-boundary-events]").textContent =
       projection.events.map((e) => `${e.id}: ${e.eventType}`).join("; ") ||
       "No boundary events.";
-    renderDetails();
-    renderSvg();
-    renderTables();
+    const runPhaseB = () => {
+      renderDetails();
+      renderSvg();
+      renderTables();
+    };
+    // Drag ticks (Phase 4a/4b) are already fast and stay fully synchronous,
+    // unchanged by this deferral -- flickering the busy indicator every
+    // ~100ms during a drag would be distracting, not helpful. A drag tick
+    // can start while an earlier non-drag render is still deferred (e.g. a
+    // pointerdown right after a prev/next click) -- cancel that pending
+    // Phase B and clear the busy state first, or its rAF would still fire
+    // later and overwrite this tick's synchronous output with stale data.
+    if (dragActive) {
+      cancelPendingRender();
+      busyIndicator.hidden = true;
+      scroll.setAttribute("aria-busy", "false");
+      runPhaseB();
+      return Promise.resolve();
+    }
+    return runDeferred(runPhaseB);
   };
   const changeToIndex = (index) => {
     const bucket = timeline.buckets[index];
@@ -1482,7 +1577,7 @@ export function createLifecycleDiagramView(root, options = {}) {
           selectedFeature = featureById(previousSelectionId);
       } else if (previousSelectionId)
         selectedFeature = featureById(previousSelectionId);
-      render(newerAvailable);
+      return render(newerAvailable);
     },
     announce(message) {
       announce(message);
@@ -1494,6 +1589,7 @@ export function createLifecycleDiagramView(root, options = {}) {
       debouncedResize.clear();
       debouncedRangeChange.clear();
       announce.clear();
+      cancelPendingRender();
       root.textContent = "";
     },
   };

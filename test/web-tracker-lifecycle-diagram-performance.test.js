@@ -158,7 +158,7 @@ describe("lifecycle diagram large-data rendering", () => {
     delete global.ResizeObserver;
   });
 
-  it("bounds SVG/table DOM, preserves reachability, and avoids projection mutation", () => {
+  it("bounds SVG/table DOM, preserves reachability, and avoids projection mutation", async () => {
     const bundle = largeBundle();
     const timeline = buildLifecycleTimeline(bundle);
     const snapshot = projectLifecycleAt(bundle, "current");
@@ -173,13 +173,19 @@ describe("lifecycle diagram large-data rendering", () => {
 
     let root = setup();
     let view = createLifecycleDiagramView(root);
-    view.update({ timeline, snapshot, selectedBucketId: "current" });
+    await view.update({ timeline, snapshot, selectedBucketId: "current" });
     view.destroy();
 
     root = setup();
     view = createLifecycleDiagramView(root);
     const start = performance.now();
-    view.update({ timeline, snapshot, selectedBucketId: "current" });
+    // update() defers its actual render past two real requestAnimationFrame
+    // callbacks (see lifecycleDiagram.js's runDeferred()) so a busy
+    // indicator can genuinely paint first -- await its returned promise to
+    // measure the full render, not just the synchronous Phase A that starts
+    // it. Real timers are active in this file (no vi.useFakeTimers()), so
+    // the real rAF callbacks fire on their own without any manual flush.
+    await view.update({ timeline, snapshot, selectedBucketId: "current" });
     expect(performance.now() - start).toBeLessThan(5000);
 
     expect(
