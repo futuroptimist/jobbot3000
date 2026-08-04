@@ -40,6 +40,7 @@ import {
   createLaneGeometryFailureCache,
   createLifecycleHorizontalGeometry,
   cubicTransitionPoint,
+  deriveAuthoritativeLayoutOrders,
   edgeCrossing,
   endpointColor,
   isRouteHandleCollision,
@@ -3510,6 +3511,123 @@ describe("seeded-replay production layout (routing fixture)", () => {
     const normal = signatureFor(projectLifecycleAt(routingFixture));
     const reversed = signatureFor(reversedProjection());
     expect(reversed).toEqual(normal);
+  });
+});
+
+// Reproduced on staging with real data (2026-08-04): a rank whose incoming-
+// transition lane order and outgoing-transition lane order flip the relative
+// position of two nodes with disjoint incident branches used to abort the
+// whole layout attempt. See docs/design/lifecycle-diagram-layout-algorithm.md
+// ("New failure signature observed in real production data") for the full
+// investigation. deriveAuthoritativeLayoutOrders is exercised directly here
+// (hand-constructed graph/rankOrderByRank, bypassing the transition-lane
+// solver entirely) because no topology fed through the real solver was found
+// -- within a bounded search -- that reliably reproduces the cycle without
+// also exhausting the handle-state-limit budget first (a separate, already-
+// documented failure mode).
+describe("authoritative node order (rank-local topological merge)", () => {
+  // eslint-disable-next-line max-len
+  it("falls back to a deterministic order instead of throwing on a genuine incoming/outgoing cycle", () => {
+    // Two rank-1 nodes, A and B, with disjoint incident branches. Transition
+    // 0 (rank 0 -> 1) places A's branch before B's; transition 1 (rank 1 ->
+    // 2) places B's branch before A's -- a direct contradiction, since each
+    // transition's lane order is solved independently with nothing tying
+    // the two together.
+    const graph = {
+      nodes: [
+        { id: "milestone:A", rank: 1, routing: false },
+        { id: "milestone:B", rank: 1, routing: false },
+      ],
+      links: [
+        {
+          branchId: "a1",
+          source: { id: "origin:x", rank: 0 },
+          target: { id: "milestone:A", rank: 1 },
+        },
+        {
+          branchId: "b1",
+          source: { id: "origin:y", rank: 0 },
+          target: { id: "milestone:B", rank: 1 },
+        },
+        {
+          branchId: "a2",
+          source: { id: "milestone:A", rank: 1 },
+          target: { id: "endpoint:p", rank: 2 },
+        },
+        {
+          branchId: "b2",
+          source: { id: "milestone:B", rank: 1 },
+          target: { id: "endpoint:q", rank: 2 },
+        },
+      ],
+    };
+    const rankOrderByRank = new Map([
+      [0, ["a1", "b1"]],
+      [1, ["b2", "a2"]],
+    ]);
+
+    let orders;
+    expect(() => {
+      orders = deriveAuthoritativeLayoutOrders(graph, rankOrderByRank);
+    }).not.toThrow();
+
+    // Neither id is in the real taxonomy, so stableNodeOrder's routing/
+    // taxonomyOrder tie-breaks both resolve to a tie and it falls through to
+    // compareLifecycleIds -- "milestone:A" sorts before "milestone:B".
+    // Asserting the actual produced indices (not just that both ids are
+    // present) is what makes this a real check of the fallback's tie-break
+    // behavior, not just that it didn't throw.
+    expect(orders.nodeOrderByRank.get(1).get("milestone:A")).toBe(0);
+    expect(orders.nodeOrderByRank.get(1).get("milestone:B")).toBe(1);
+    // branchOrderByRank is computed independently, before the per-rank node-
+    // order loop, and is unaffected by a node-order cycle at any rank.
+    expect(orders.branchOrderByRank.get(0).get("a1")).toBe(0);
+    expect(orders.branchOrderByRank.get(0).get("b1")).toBe(1);
+    expect(orders.branchOrderByRank.get(1).get("b2")).toBe(0);
+    expect(orders.branchOrderByRank.get(1).get("a2")).toBe(1);
+  });
+
+  it("still produces a consistent order when incoming/outgoing contexts agree", () => {
+    // Same shape as above, but transition 1 keeps A before B too -- no
+    // contradiction, so the topological merge should succeed normally
+    // (regression guard: the fallback path must only engage on a genuine
+    // cycle, not on every multi-node rank).
+    const graph = {
+      nodes: [
+        { id: "milestone:A", rank: 1, routing: false },
+        { id: "milestone:B", rank: 1, routing: false },
+      ],
+      links: [
+        {
+          branchId: "a1",
+          source: { id: "origin:x", rank: 0 },
+          target: { id: "milestone:A", rank: 1 },
+        },
+        {
+          branchId: "b1",
+          source: { id: "origin:y", rank: 0 },
+          target: { id: "milestone:B", rank: 1 },
+        },
+        {
+          branchId: "a2",
+          source: { id: "milestone:A", rank: 1 },
+          target: { id: "endpoint:p", rank: 2 },
+        },
+        {
+          branchId: "b2",
+          source: { id: "milestone:B", rank: 1 },
+          target: { id: "endpoint:q", rank: 2 },
+        },
+      ],
+    };
+    const rankOrderByRank = new Map([
+      [0, ["a1", "b1"]],
+      [1, ["a2", "b2"]],
+    ]);
+
+    const orders = deriveAuthoritativeLayoutOrders(graph, rankOrderByRank);
+    expect(orders.nodeOrderByRank.get(1).get("milestone:A")).toBe(0);
+    expect(orders.nodeOrderByRank.get(1).get("milestone:B")).toBe(1);
   });
 });
 

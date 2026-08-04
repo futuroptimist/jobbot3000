@@ -3522,7 +3522,7 @@ const compareOrderKeys = (left, right) => {
   return 0;
 };
 
-const deriveAuthoritativeLayoutOrders = (graph, rankOrderByRank) => {
+export const deriveAuthoritativeLayoutOrders = (graph, rankOrderByRank) => {
   const branchOrderByRank = new Map(
     [...rankOrderByRank].map(([rank, ids]) => [
       rank,
@@ -3623,24 +3623,31 @@ const deriveAuthoritativeLayoutOrders = (graph, rankOrderByRank) => {
           }
         }
       }
-      if (combined.length !== nodes.length) {
-        const error = new Error(
-          `Lifecycle authoritative node order disagrees at rank ${rank}`,
-        );
-        error.cause = Object.freeze({
-          type: "lifecycle-authoritative-rank-order",
-          reason: "order-disagreement",
-          rank,
-          nodeIds: Object.freeze(
-            nodes
-              .filter((node) => indegree.get(node.id) > 0)
-              .map((node) => node.id)
-              .sort(compareLifecycleIds),
-          ),
-        });
-        throw error;
+      if (combined.length === nodes.length) {
+        nodes.splice(0, nodes.length, ...combined);
+      } else {
+        // A genuine cycle: the incoming-context order and outgoing-context
+        // order for this rank's nodes contradict each other (two different
+        // nodes' relative order flips between the rank-1->rank transition's
+        // independently-solved lane order and the rank->rank+1 transition's
+        // -- nothing constrains those two solves to agree, since each
+        // transition's lane order is chosen independently). This was
+        // previously fatal (aborted the whole layout attempt), but this
+        // value is never consumed: the only caller discards
+        // nodeOrderByRank in favor of a y0-position-derived order (see
+        // "discoveredNodeOrderByRank" in layoutLifecycleRoutingGraph, whose
+        // own comment explains the topological merge and D3's node
+        // placement "can legitimately disagree"), and only
+        // branchOrderByRank (computed independently above, before this
+        // loop, and unaffected by this cycle) is used downstream. The
+        // geometry itself has already cleared lane materialization, handle
+        // placement, and the route-crossing audit by this point -- a
+        // node-order cycle here doesn't indicate broken geometry, just
+        // that this specific, otherwise-unused computation couldn't
+        // resolve one. Fall back to the same deterministic tie-break
+        // already used to seed Kahn's algorithm above.
+        nodes.sort(stableNodeOrder);
       }
-      nodes.splice(0, nodes.length, ...combined);
     }
     nodeOrderByRank.set(
       rank,

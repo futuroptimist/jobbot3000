@@ -980,13 +980,38 @@ This specific signature does not appear anywhere else in this document and is di
 `clearanceMargin === -1` handle-placement/corridor-bound signature the "extreme fixtures" above are
 characterized by — it's a new, previously-uncharacterized way this algorithm's known "not globally
 rank-order-aware" limitation can manifest, this time as an order-consistency cycle rather than a
-handle/lane budget or corridor-clearance exhaustion. Per user decision, recorded here as a
-characterized, accepted limitation (the diagram's fallback UI degrades gracefully -- a message is
-shown, nothing else on the page breaks) rather than pursued as an immediate fix. The exact
-`nodeIds`/full application data that triggered it were not captured (the browser console truncated
-the nested `cause` object and no repro fixture was exported), so there isn't yet enough here to
-build a minimal checked-in regression fixture -- a future investigation would need to start by
-capturing that.
+handle/lane budget or corridor-clearance exhaustion.
+
+**Resolved (2026-08-04), narrowly, without touching the deeper architectural gap.**
+`deriveAuthoritativeLayoutOrders` returns `{ branchOrderByRank, nodeOrderByRank }`. Tracing every
+consumer of its return value found that `nodeOrderByRank` is **never used**: the function's only
+caller (inside the two-pass discovery→final wrapper) forwards only `branchOrderByRank` to the final
+pass; the final pass's actual node order comes from an entirely separate, y0-position-derived map
+(`discoveredNodeOrderByRank`), whose own comment already documents that the topological merge and
+D3's node placement "can legitimately disagree." `branchOrderByRank` — the only consumed output — is
+computed unconditionally, before the per-rank node-order loop even starts, and is structurally
+unaffected by any cycle in that loop. And by the time this check runs, the candidate's geometry has
+already cleared lane materialization, handle placement, and the route-crossing audit
+(`candidateCallback`) — a node-order cycle here doesn't indicate broken geometry, only that this one,
+otherwise-unused computation couldn't resolve a consistent order for diagnostic purposes.
+
+Given that, the fix makes the cycle non-fatal: instead of throwing, the affected rank falls back to
+the same deterministic tie-break (`stableNodeOrder`) already used to seed Kahn's algorithm, and the
+loop continues to the next rank. This is a strict widening of what layout attempts succeed — no
+currently-passing fixture's per-rank loop ever reaches the new fallback branch, so none are affected.
+
+No topology fed through the real transition-lane solver was found, within a bounded search (~40
+hand-constructed variants across three strategies), that reproduces the cycle without also exhausting
+the unrelated handle-state-limit budget first — the two failure modes appear correlated in a way that
+makes this one hard to isolate synthetically via the full pipeline. The regression test instead
+exercises `deriveAuthoritativeLayoutOrders` directly with a hand-constructed minimal
+`graph`/`rankOrderByRank` pair (two rank-1 nodes with disjoint incident branches, where the
+incoming-transition order places one first and the outgoing-transition order places the other first)
+that bypasses the solver entirely — confirmed via revert-and-confirm-fail to throw the identical
+`"Lifecycle authoritative node order disagrees at rank 1"` message the real staging deployment hit,
+before the fix, and to pass afterward. See
+`test/web-tracker-lifecycle-diagram-layout.test.js`'s `"authoritative node order (rank-local
+topological merge)"` describe block.
 
 ### Historical completed-work checklist
 
