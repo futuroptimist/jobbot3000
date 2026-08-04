@@ -894,7 +894,7 @@ export function createLifecycleDiagramView(root, options = {}) {
     if (result.status === "error") {
       console.error(
         "Lifecycle diagram layout failed",
-        result.error?.message,
+        result.error,
         JSON.stringify(result.error?.cause),
       );
       showDiagramFallback("Unable to lay out lifecycle diagram.");
@@ -930,7 +930,7 @@ export function createLifecycleDiagramView(root, options = {}) {
     if (result.status === "error") {
       console.error(
         "Lifecycle diagram layout failed",
-        result.error?.message,
+        result.error,
         JSON.stringify(result.error?.cause),
       );
       showDiagramFallback("Unable to lay out lifecycle diagram.");
@@ -1077,7 +1077,7 @@ export function createLifecycleDiagramView(root, options = {}) {
     } catch (error) {
       console.error(
         "Lifecycle diagram layout failed",
-        error?.message,
+        error,
         JSON.stringify(error?.cause),
       );
       showDiagramFallback("Unable to lay out lifecycle diagram.");
@@ -1416,7 +1416,7 @@ export function createLifecycleDiagramView(root, options = {}) {
     } catch (error) {
       console.error(
         "Lifecycle diagram layout failed",
-        error?.message,
+        error,
         JSON.stringify(error?.cause),
       );
       showDiagramFallback("Unable to lay out lifecycle diagram.");

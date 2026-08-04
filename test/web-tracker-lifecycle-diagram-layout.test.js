@@ -3571,10 +3571,14 @@ describe("authoritative node order (rank-local topological merge)", () => {
       orders = deriveAuthoritativeLayoutOrders(graph, rankOrderByRank);
     }).not.toThrow();
 
-    expect([...orders.nodeOrderByRank.get(1).keys()].sort()).toEqual([
-      "milestone:A",
-      "milestone:B",
-    ]);
+    // Neither id is in the real taxonomy, so stableNodeOrder's routing/
+    // taxonomyOrder tie-breaks both resolve to a tie and it falls through to
+    // compareLifecycleIds -- "milestone:A" sorts before "milestone:B".
+    // Asserting the actual produced indices (not just that both ids are
+    // present) is what makes this a real check of the fallback's tie-break
+    // behavior, not just that it didn't throw.
+    expect(orders.nodeOrderByRank.get(1).get("milestone:A")).toBe(0);
+    expect(orders.nodeOrderByRank.get(1).get("milestone:B")).toBe(1);
     // branchOrderByRank is computed independently, before the per-rank node-
     // order loop, and is unaffected by a node-order cycle at any rank.
     expect(orders.branchOrderByRank.get(0).get("a1")).toBe(0);
