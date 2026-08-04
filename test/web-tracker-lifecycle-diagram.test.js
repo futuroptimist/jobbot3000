@@ -341,6 +341,30 @@ describe("lifecycle diagram view", () => {
     expect(outreachRow.textContent).toContain("0");
   });
 
+  it("colors legend swatches via a class, not an inline style", async () => {
+    // The production static-server CSP has no 'unsafe-inline' for
+    // style-src, so an inline style="..." attribute is silently blocked --
+    // legend swatch color must come from a static per-endpoint-id class
+    // (tracker.css's .diagram-legend-swatch--*) instead.
+    const b = bundle(
+      [app("a2", { origin: "referral", status: "offer" })],
+      [
+        ev("o2", "a2", "referral", "2026-01-01"),
+        ev("t2", "a2", "technical_interview", "2026-01-02T10:00:00.000Z"),
+        ev("offer", "a2", "offer_received", "2026-01-03"),
+      ],
+    );
+    const { root } = await render(b);
+    const swatches = [
+      ...root.querySelectorAll("[data-diagram-legend] .diagram-legend-swatch"),
+    ];
+    expect(swatches.length).toBeGreaterThan(0);
+    for (const swatch of swatches) {
+      expect(swatch.hasAttribute("style")).toBe(false);
+      expect(swatch.className).toMatch(/diagram-legend-swatch--\w+/u);
+    }
+  });
+
   it("keeps semantic tables aggregate-first and preserves semantic button focus", async () => {
     const b = bundle(
       [app("a")],
