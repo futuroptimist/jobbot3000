@@ -892,7 +892,11 @@ export function createLifecycleDiagramView(root, options = {}) {
     const result = acquireLayoutSync(buildBaseLayoutOptions());
     if (result.status === "skip") return;
     if (result.status === "error") {
-      console.error("Lifecycle diagram layout failed", result.error);
+      console.error(
+        "Lifecycle diagram layout failed",
+        result.error?.message,
+        JSON.stringify(result.error?.cause),
+      );
       showDiagramFallback("Unable to lay out lifecycle diagram.");
       return;
     }
@@ -924,7 +928,11 @@ export function createLifecycleDiagramView(root, options = {}) {
     if (result.status === "stale") return false;
     if (result.status === "skip") return true;
     if (result.status === "error") {
-      console.error("Lifecycle diagram layout failed", result.error);
+      console.error(
+        "Lifecycle diagram layout failed",
+        result.error?.message,
+        JSON.stringify(result.error?.cause),
+      );
       showDiagramFallback("Unable to lay out lifecycle diagram.");
       return true;
     }
@@ -1067,7 +1075,11 @@ export function createLifecycleDiagramView(root, options = {}) {
         );
       }
     } catch (error) {
-      console.error("Lifecycle diagram layout failed", error);
+      console.error(
+        "Lifecycle diagram layout failed",
+        error?.message,
+        JSON.stringify(error?.cause),
+      );
       showDiagramFallback("Unable to lay out lifecycle diagram.");
       return;
     }
@@ -1402,7 +1414,11 @@ export function createLifecycleDiagramView(root, options = {}) {
       // children are never touched.
       reconcileChildOrder(diagramSvg, orderedNodeGroups, handleGroupEl);
     } catch (error) {
-      console.error("Lifecycle diagram layout failed", error);
+      console.error(
+        "Lifecycle diagram layout failed",
+        error?.message,
+        JSON.stringify(error?.cause),
+      );
       showDiagramFallback("Unable to lay out lifecycle diagram.");
       return;
     }
