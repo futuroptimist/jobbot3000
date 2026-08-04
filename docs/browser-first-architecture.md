@@ -33,6 +33,10 @@ Browser
   ├─ Web Worker: off-main-thread compute for expensive, purely derived work (e.g. the lifecycle
   │  diagram's layout search) -- holds no data of its own and persists nothing; every message is
   │  request/response over data already owned by the main thread
+  ├─ IndexedDB (derived/cached): content-hash-keyed projection cache for the lifecycle diagram --
+  │  unlike the Worker above, this component does persist data, but only ever a pure function of
+  │  data already in IndexedDB (applications + lifecycle events), so the "clearing storage deletes
+  │  your data" warning below doesn't apply to it
   └─ Downloads/uploads: explicit user backup and restore files
 
 Container / static host
@@ -52,9 +56,17 @@ for compatibility while the browser repository is built behind a clearly named a
 | App data                        | Application rows, contacts, outreach messages, lifecycle events, interviews, offers, notes, reminders | Private IndexedDB object stores                                           |
 | Optional public assets          | Logo, help text, sample empty-state content, generated documentation                                  | Static assets served by the container                                     |
 | Private user-imported artifacts | Spreadsheet imports, resumes, cover letters, take-home files, screenshots, PDFs                       | IndexedDB Blob records or user-managed files referenced by local metadata |
+| Derived/cached data             | Lifecycle diagram projection cache (timeline + per-bucket projections)                                | IndexedDB, content-hash keyed, regenerable from app data                  |
 
 Private imported artifacts must not be copied into the repo, bundled into production images, or
 uploaded to server endpoints unless a future feature makes that transfer explicit and opt-in.
+
+Derived/cached data is a pure, regenerable function of app data (specifically applications +
+lifecycle events for the lifecycle diagram cache) and carries no independent user intent -- it is
+deliberately excluded from `exportAllData()`/`importAllData()` (backups shouldn't ship a stale
+cache alongside the source data that regenerates it), though `clearAllData()` does wipe it, since
+"clear all data" wiping everything is the reasonable user expectation. Losing it is never data
+loss: the next render recomputes and repopulates it from IndexedDB app data.
 
 ## Minimal normalized browser model
 

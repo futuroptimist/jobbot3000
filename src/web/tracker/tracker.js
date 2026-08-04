@@ -27,10 +27,12 @@ import {
 import { createIndexedDbRepository } from "../storage/indexedDbRepository.js";
 import { planLifecycleReconciliation } from "./lifecycleReconciliation.js";
 import { createLifecycleDiagramView } from "./lifecycleDiagram.js";
+import { buildLifecycleTimeline } from "./lifecycleProjection.js";
 import {
-  buildLifecycleTimeline,
-  projectLifecycleAt,
-} from "./lifecycleProjection.js";
+  getOrComputeTimeline,
+  getOrComputeProjection,
+  scheduleAdjacentBucketPrecompute,
+} from "./lifecycleProjectionCache.js";
 
 /* canonical CSV/backup helpers are shared with spreadsheet import/export tests. */
 const ARRAY_STORES = [
@@ -119,6 +121,16 @@ const repo = {
   exportAll: async () => (await getRepository()).exportAllData(),
   commitLifecycleMutation: async (mutation) =>
     (await getRepository()).commitLifecycleMutation(mutation),
+  getCachedLifecycleTimeline: async (hash) =>
+    (await getRepository()).getCachedLifecycleTimeline(hash),
+  putCachedLifecycleTimeline: async (hash, value) =>
+    (await getRepository()).putCachedLifecycleTimeline(hash, value),
+  getCachedLifecycleProjection: async (hash, bucketId) =>
+    (await getRepository()).getCachedLifecycleProjection(hash, bucketId),
+  putCachedLifecycleProjection: async (hash, bucketId, value) =>
+    (await getRepository()).putCachedLifecycleProjection(hash, bucketId, value),
+  evictStaleLifecycleProjectionCache: async (currentHash) =>
+    (await getRepository()).evictStaleLifecycleProjectionCache(currentHash),
 };
 async function batchImport(recordsByStore) {
   return (await getRepository()).importPartialData(recordsByStore);
@@ -136,6 +148,17 @@ const state = {
   diagramBucketId: "current",
   diagramView: null,
   diagramHistoricalBaseline: null,
+  // Bumped at the top of every renderDiagram() call. Closes a race the
+  // Worker-offload deferral inside lifecycleDiagram.js's own renderGeneration
+  // can't reach: renderDiagram() itself is now async (awaits the persisted
+  // projection cache), so a newer call can be triggered before an earlier
+  // one's cache lookup resolves. Every state.* write and the final
+  // view.update() call are gated on this still matching.
+  diagramRenderGeneration: 0,
+  // Cancels any still-pending adjacent-bucket precompute so rapid scrubbing
+  // doesn't pile up stacked idle callbacks -- mirrors the cancelPendingRender
+  // discipline lifecycleDiagram.js already uses for its own deferred work.
+  diagramPrecomputeCancel: null,
 };
 function weekBucket(value) {
   const d = day(value);
@@ -315,7 +338,11 @@ async function refresh() {
   state.apps = [...state.bundle.applications].sort((a, b) =>
     String(b.appliedAt || "").localeCompare(a.appliedAt || ""),
   );
-  renderAll();
+  // Awaited so refresh()'s own callers (13+ mutation sites) keep the
+  // pre-existing implicit contract: once refresh() resolves, the visible
+  // diagram, if any, already reflects the fresh bundle. renderDiagram() is
+  // now async (it awaits the persisted projection cache).
+  await renderAll();
 }
 function showInitializationError(error) {
   const target = $("[data-import-result]") || $("main") || document.body;
@@ -367,13 +394,13 @@ async function refreshWithRetry() {
     scheduleRetry();
   }
 }
-function route(v) {
+async function route(v) {
   $$(".tracker-view").forEach((x) => (x.hidden = x.dataset.view !== v));
   $$(".tracker-nav button").forEach((b) =>
     b.setAttribute("aria-current", b.dataset.route === v ? "page" : "false"),
   );
   if (v === "applications") $('[data-filter="query"]').focus();
-  if (v === "diagram") renderDiagram();
+  if (v === "diagram") await renderDiagram();
 }
 function renderNav() {
   const names = [
@@ -631,26 +658,21 @@ function lifecycleTimelineFingerprint(timeline) {
     )
     .join("|");
 }
-function renderDiagram() {
+async function renderDiagram() {
   const root = $("[data-lifecycle-diagram]");
   if (!root || !state.bundle) return;
-  const timeline = buildLifecycleTimeline(state.bundle);
-  const valid = new Set(timeline.buckets.map((bucket) => bucket.id));
-  let selectedBucketId = state.diagramBucketId || "current";
-  let fallbackAnnounced = false;
-  if (!valid.has(selectedBucketId)) {
-    selectedBucketId = "current";
-    state.diagramBucketId = "current";
-    state.diagramHistoricalBaseline = null;
-    fallbackAnnounced = true;
-  }
-  const snapshot = projectLifecycleAt(state.bundle, selectedBucketId);
-  const timelineFingerprint = lifecycleTimelineFingerprint(timeline);
-  if (selectedBucketId === "current") state.diagramHistoricalBaseline = null;
-  const newerAvailable =
-    selectedBucketId !== "current" &&
-    Boolean(state.diagramHistoricalBaseline) &&
-    state.diagramHistoricalBaseline !== timelineFingerprint;
+  const bundle = state.bundle;
+  // Bumped before any await below -- renderDiagram() is no longer
+  // synchronous end-to-end (it awaits the persisted projection cache), so a
+  // newer call can now be triggered before an earlier one's cache lookup
+  // resolves. Every state.* write and the final view.update() call below
+  // are gated on this still matching by the time each await resolves, so a
+  // superseded call can't clobber a newer one's already-correct state.
+  const myGeneration = ++state.diagramRenderGeneration;
+
+  // Constructed synchronously, before any await, so two overlapping first
+  // calls can't both see !state.diagramView and construct two views (the
+  // second would leave the first's DOM orphaned inside root).
   if (!state.diagramView) {
     state.diagramView = createLifecycleDiagramView(root, {
       onBucketChange(bucketId) {
@@ -665,7 +687,36 @@ function renderDiagram() {
       },
     });
   }
-  state.diagramView.update({
+
+  const { timeline, hash } = await getOrComputeTimeline(repo, bundle);
+  if (myGeneration !== state.diagramRenderGeneration) return;
+
+  const valid = new Set(timeline.buckets.map((bucket) => bucket.id));
+  let selectedBucketId = state.diagramBucketId || "current";
+  let fallbackAnnounced = false;
+  if (!valid.has(selectedBucketId)) {
+    selectedBucketId = "current";
+    state.diagramBucketId = "current";
+    state.diagramHistoricalBaseline = null;
+    fallbackAnnounced = true;
+  }
+
+  const { projection: snapshot } = await getOrComputeProjection(
+    repo,
+    bundle,
+    hash,
+    selectedBucketId,
+  );
+  if (myGeneration !== state.diagramRenderGeneration) return;
+
+  const timelineFingerprint = lifecycleTimelineFingerprint(timeline);
+  if (selectedBucketId === "current") state.diagramHistoricalBaseline = null;
+  const newerAvailable =
+    selectedBucketId !== "current" &&
+    Boolean(state.diagramHistoricalBaseline) &&
+    state.diagramHistoricalBaseline !== timelineFingerprint;
+
+  await state.diagramView.update({
     timeline,
     snapshot,
     selectedBucketId,
@@ -676,10 +727,22 @@ function renderDiagram() {
       "Missing historical point; returned to Current.",
     );
   }
+
+  // Fire-and-forget and unconditional -- a superseded *render* doesn't mean
+  // the cache warm-up is invalid work. Cancel any prior pending precompute
+  // first so rapid scrubbing doesn't pile up stacked idle callbacks.
+  state.diagramPrecomputeCancel?.();
+  state.diagramPrecomputeCancel = scheduleAdjacentBucketPrecompute(
+    repo,
+    () => state.bundle,
+    timeline,
+    hash,
+    selectedBucketId,
+  );
 }
-function renderAll() {
+async function renderAll() {
   renderDashboard();
-  if (!$('[data-view="diagram"]')?.hidden) renderDiagram();
+  if (!$('[data-view="diagram"]')?.hidden) await renderDiagram();
   renderList();
   renderFollowups();
   renderOutreach();

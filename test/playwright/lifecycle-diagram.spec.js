@@ -780,6 +780,7 @@ test.describe("Application Lifecycle Diagram", () => {
     await page
       .getByRole("button", { name: "Previous event", exact: true })
       .click();
+    await waitForDiagramIdle(page);
     const historicalAriaValue = await range.getAttribute("aria-valuetext");
     expect(historicalAriaValue).toBeTruthy();
     await expect(diagram).toContainText("Historical");

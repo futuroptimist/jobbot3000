@@ -9,6 +9,7 @@ import {
   openJobbotDatabase,
   migrations,
 } from "../src/web/storage/indexedDbRepository.js";
+import { BROWSER_BACKUP_SCHEMA_VERSION } from "../src/web/storage/browserDataMigration.js";
 
 const now = "2026-01-02T03:04:05.000Z";
 const later = "2026-01-03T03:04:05.000Z";
@@ -114,6 +115,7 @@ describe("IndexedDB repository", () => {
       "contacts",
       "interviews",
       "lifecycleEvents",
+      "lifecycleProjectionCache",
       "offers",
       "outreachMessages",
       "reminders",
@@ -121,6 +123,13 @@ describe("IndexedDB repository", () => {
     ]) {
       expect(db.objectStoreNames.contains(storeName)).toBe(true);
     }
+    expect(
+      Array.from(
+        db
+          .transaction("lifecycleProjectionCache")
+          .objectStore("lifecycleProjectionCache").indexNames,
+      ),
+    ).toContain("by_hash");
 
     const tx = db.transaction([
       "applications",
@@ -193,6 +202,37 @@ describe("IndexedDB repository", () => {
     expect(v2Spy).toHaveBeenCalledTimes(1);
   });
 
+  it("adds the lifecycleProjectionCache store and by_hash index at v3", async () => {
+    const originalV3 = migrations[3];
+    const v3Spy = vi.fn(originalV3);
+
+    const db = await openJobbotDatabase({ indexedDb: indexedDB, version: 2 });
+    db.close();
+
+    migrations[3] = v3Spy;
+    try {
+      const upgraded = await openJobbotDatabase({
+        indexedDb: indexedDB,
+        version: 3,
+      });
+      expect(
+        upgraded.objectStoreNames.contains("lifecycleProjectionCache"),
+      ).toBe(true);
+      expect(
+        Array.from(
+          upgraded
+            .transaction("lifecycleProjectionCache")
+            .objectStore("lifecycleProjectionCache").indexNames,
+        ),
+      ).toContain("by_hash");
+      upgraded.close();
+    } finally {
+      migrations[3] = originalV3;
+    }
+
+    expect(v3Spy).toHaveBeenCalledTimes(1);
+  });
+
   it("writes, reads, exports, clears, and restores application tracker data", async () => {
     const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
 
@@ -230,6 +270,34 @@ describe("IndexedDB repository", () => {
     expect(await repo.getApplication(application.id)).toMatchObject({
       role: "Staff Software Engineer",
     });
+
+    repo.close();
+  });
+
+  // eslint-disable-next-line max-len
+  it("keeps lifecycleProjectionCache out of export/import but wipes it on clearAllData", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    await repo.createApplication(application);
+    await repo.putCachedLifecycleTimeline("hash1", { buckets: [] });
+    await repo.putCachedLifecycleProjection("hash1", "current", {
+      includedApplications: 1,
+    });
+
+    const exported = await repo.exportAllData();
+    expect(Object.keys(exported)).not.toContain("lifecycleProjectionCache");
+
+    // A round-trip through import must not require/touch the new store.
+    await repo.importAllData(exported, { dryRun: true });
+    expect(await repo.getCachedLifecycleTimeline("hash1")).toEqual({
+      buckets: [],
+    });
+
+    await repo.clearAllData();
+    expect(await repo.getApplication(application.id)).toBeNull();
+    expect(await repo.getCachedLifecycleTimeline("hash1")).toBeNull();
+    expect(
+      await repo.getCachedLifecycleProjection("hash1", "current"),
+    ).toBeNull();
 
     repo.close();
   });
@@ -506,7 +574,11 @@ describe("IndexedDB repository", () => {
 
     const dryRun = await repo.importAllData(
       {
-        schemaVersion: DATABASE_VERSION,
+        // The JSON backup format's own schema version, not the IndexedDB
+        // database's -- these were both 2 before Phase 5c's version bump to
+        // 3, which is what exposed this as an accidental coupling rather
+        // than an intentional dependency between the two.
+        schemaVersion: BROWSER_BACKUP_SCHEMA_VERSION,
         exportedAt: now,
         applications: [importedApplication],
         contacts: [
