@@ -960,6 +960,34 @@ rule was established, so production remains on baseline geometry. Any future des
 need a finite topology-demand domain, a deterministic maximum SVG width, complete success for both
 stress fixtures, and parity for baseline fixtures before changing the production default.
 
+### New failure signature observed in real production data (2026-08-04)
+
+A staging deployment (real user data, not one of the checked-in synthetic stress fixtures above)
+reproduced a layout failure with message `Lifecycle authoritative node order disagrees at rank 1`
+and `error.cause = { type: "lifecycle-authoritative-rank-order", reason: "order-disagreement",
+rank: 1, nodeIds: [...] }`. This is thrown from the per-rank authoritative NODE order builder
+(`lifecycleDiagramLayout.js`, the `combined.length !== nodes.length` check inside the Kahn's-
+algorithm topological sort over incoming/outgoing incident-branch-position constraints — see
+"Incoming and outgoing transition orders are separate authoritative contexts" above), **not** the
+discovery-vs-final seed-replay comparison (`"Lifecycle authoritative rank order changed at rank"`,
+same `type`/`reason` pair but a different message and throw site, described in "Bounded
+authoritative-order pipeline" above). `combined.length !== nodes.length` means the incoming-context
+and outgoing-context ordering constraints for that rank's nodes contain a genuine cycle (node A
+must precede B per one context, B must precede A per the other), so no single consistent order
+exists for the renderer to use.
+
+This specific signature does not appear anywhere else in this document and is distinct from the
+`clearanceMargin === -1` handle-placement/corridor-bound signature the "extreme fixtures" above are
+characterized by — it's a new, previously-uncharacterized way this algorithm's known "not globally
+rank-order-aware" limitation can manifest, this time as an order-consistency cycle rather than a
+handle/lane budget or corridor-clearance exhaustion. Per user decision, recorded here as a
+characterized, accepted limitation (the diagram's fallback UI degrades gracefully -- a message is
+shown, nothing else on the page breaks) rather than pursued as an immediate fix. The exact
+`nodeIds`/full application data that triggered it were not captured (the browser console truncated
+the nested `cause` object and no repro fixture was exported), so there isn't yet enough here to
+build a minimal checked-in regression fixture -- a future investigation would need to start by
+capturing that.
+
 ### Historical completed-work checklist
 
 The numbered list below records how earlier follow-ups were resolved. It is not a current backlog;
