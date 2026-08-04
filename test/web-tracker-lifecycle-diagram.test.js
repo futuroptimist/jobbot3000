@@ -9,6 +9,7 @@ import {
 import * as lifecycleLayout from "../src/web/tracker/lifecycleDiagramLayout.js";
 import { buildLifecycleDisplayBranches } from "../src/web/tracker/lifecycleDiagramLayout.js";
 import { createLifecycleHorizontalGeometry } from "../src/web/tracker/lifecycleDiagramLayout.js";
+import { withEnumerableHorizontalGeometry } from "../src/web/tracker/lifecycleDiagramLayout.js";
 import {
   buildLifecycleTimeline,
   LIFECYCLE_DIAGRAM_TAXONOMY,
@@ -2229,6 +2230,307 @@ describe("busy indicator (Phase 5a deferred render)", () => {
           .querySelector("[data-diagram-node='origin:application_submitted']")
           .getAttribute("data-selected"),
       ).toBe("true");
+  });
+});
+
+// jsdom doesn't implement Worker, so window.Worker is undefined unless a
+// test explicitly sets it (see setupWithWorker below) -- every test above
+// this point naturally exercises acquireLayoutSync's window.Worker ??
+// fallback exactly as production code does when the API is unavailable,
+// with zero changes needed for Phase 5b. These tests specifically fake
+// window.Worker to exercise the Worker-backed acquireLayoutAsync path.
+class FakeLayoutWorker {
+  constructor(url, options) {
+    this.url = url;
+    this.options = options;
+    this.messages = [];
+    this.onmessage = null;
+    this.onerror = null;
+    this.terminated = false;
+    FakeLayoutWorker.instances.push(this);
+  }
+  postMessage(data) {
+    this.messages.push(data);
+  }
+  // Routed through structuredClone -- what real postMessage uses -- so
+  // these tests genuinely exercise clone/enumerability semantics rather
+  // than trivially passing via object-identity passthrough.
+  respond(data) {
+    this.onmessage?.({ data: structuredClone(data) });
+  }
+  fail(error) {
+    this.onerror?.(error);
+  }
+  terminate() {
+    this.terminated = true;
+  }
+}
+FakeLayoutWorker.instances = [];
+
+function setupWithWorker() {
+  const root = setup();
+  FakeLayoutWorker.instances = [];
+  window.Worker = FakeLayoutWorker;
+  return root;
+}
+
+describe("Worker offload for the layout search (Phase 5b)", () => {
+  afterEach(() => {
+    delete global.document;
+    delete global.window;
+    delete global.ResizeObserver;
+  });
+
+  it("posts a correctly shaped layout request to the worker for a non-drag render", async () => {
+    const b = bundle(
+      [app("a")],
+      [ev("o", "a", "application_submitted", "2026-01-01")],
+    );
+    const root = setupWithWorker();
+    const view = createLifecycleDiagramView(root, { onBucketChange: vi.fn() });
+    const timeline = buildLifecycleTimeline(b);
+    const snapshot = projectLifecycleAt(b, "current");
+    view.update({ timeline, snapshot, selectedBucketId: "current" });
+    await flushLifecycleDiagramRender();
+    const worker = FakeLayoutWorker.instances.at(0);
+    expect(worker.messages).toHaveLength(1);
+    const request = worker.messages[0];
+    expect(request.type).toBe("layout");
+    expect(typeof request.requestId).toBe("number");
+    expect(request.projection).toBe(snapshot);
+    expect(typeof request.availableWidth).toBe("number");
+    expect(request.options).toEqual({});
+  });
+
+  // eslint-disable-next-line max-len
+  it("keeps horizontalGeometry from being dropped by structuredClone via withEnumerableHorizontalGeometry", () => {
+    const b = bundle(
+      [app("a")],
+      [ev("o", "a", "application_submitted", "2026-01-01")],
+    );
+    const snapshot = projectLifecycleAt(b, "current");
+    const { graph, dimensions } = lifecycleLayout.layoutLifecycleRoutingGraph(
+      snapshot,
+      800,
+      {},
+    );
+    // Non-enumerable at the source -- a bare structuredClone would drop it,
+    // and this is what postMessage uses under the hood.
+    expect(Object.keys(dimensions)).not.toContain("horizontalGeometry");
+    expect(dimensions.horizontalGeometry).toBeDefined();
+    expect(structuredClone(dimensions).horizontalGeometry).toBeUndefined();
+
+    expect(
+      structuredClone(withEnumerableHorizontalGeometry(dimensions))
+        .horizontalGeometry,
+    ).toEqual(dimensions.horizontalGeometry);
+    expect(
+      structuredClone(withEnumerableHorizontalGeometry(graph))
+        .horizontalGeometry,
+    ).toEqual(graph.horizontalGeometry);
+  });
+
+  // eslint-disable-next-line max-len
+  it("a plain reassignment throws under strict mode -- why defineProperty re-attaches the field instead", () => {
+    const b = bundle(
+      [app("a")],
+      [ev("o", "a", "application_submitted", "2026-01-01")],
+    );
+    const snapshot = projectLifecycleAt(b, "current");
+    const { dimensions } = lifecycleLayout.layoutLifecycleRoutingGraph(
+      snapshot,
+      800,
+      {},
+    );
+    // A different value, not dimensions.horizontalGeometry itself --
+    // self-assignment would trip eslint's no-self-assign statically, even
+    // though this is really about the property's non-writable descriptor,
+    // not its value.
+    expect(() => {
+      dimensions.horizontalGeometry = { fake: true };
+    }).toThrow(TypeError);
+  });
+
+  // eslint-disable-next-line max-len
+  it("discards a stale worker response when superseded, still resolves its promise, and applies only the fresh one", async () => {
+    const b = bundle(
+      [app("a")],
+      [ev("o", "a", "application_submitted", "2026-01-01")],
+    );
+    const root = setupWithWorker();
+    const view = createLifecycleDiagramView(root, { onBucketChange: vi.fn() });
+    const timeline = buildLifecycleTimeline(b);
+    const snapshot = projectLifecycleAt(b, "current");
+
+    const updateA = view.update({
+      timeline,
+      snapshot,
+      selectedBucketId: "current",
+    });
+    await flushLifecycleDiagramRender();
+    const worker = FakeLayoutWorker.instances.at(0);
+    expect(worker.messages).toHaveLength(1);
+    const requestA = worker.messages[0];
+
+    const updateB = view.update({
+      timeline,
+      snapshot,
+      selectedBucketId: "current",
+    });
+    await flushLifecycleDiagramRender();
+    expect(worker.messages).toHaveLength(2);
+    const requestB = worker.messages[1];
+
+    const { graph, dimensions } = lifecycleLayout.layoutLifecycleRoutingGraph(
+      snapshot,
+      requestA.availableWidth,
+      requestA.options,
+    );
+    withEnumerableHorizontalGeometry(graph);
+    withEnumerableHorizontalGeometry(dimensions);
+
+    // Respond to the *fresh* request first and the stale one last -- an
+    // implementation that just applies whatever arrives, in arrival order,
+    // rather than actually checking staleness would let the late-arriving
+    // stale response win here (width 111), even though it's respond()'s
+    // caller (not the production code) controlling this ordering. Correct
+    // generation-checking must produce 222 regardless of arrival order.
+    worker.respond({
+      type: "layout-result",
+      requestId: requestB.requestId,
+      ok: true,
+      dimensions: { ...dimensions, width: 222 },
+      graph,
+    });
+    worker.respond({
+      type: "layout-result",
+      requestId: requestA.requestId,
+      ok: true,
+      graph,
+      dimensions: { ...dimensions, width: 111 },
+    });
+
+    await Promise.all([updateA, updateB]);
+    expect(root.querySelector("svg").getAttribute("width")).toBe("222");
+    expect(root.querySelector("[data-diagram-busy]").hidden).toBe(true);
+  });
+
+  // eslint-disable-next-line max-len
+  it("shows the same fallback UI for a worker error response as the synchronous layout-failure path", async () => {
+    const b = bundle(
+      [app("a")],
+      [ev("o", "a", "application_submitted", "2026-01-01")],
+    );
+    const root = setupWithWorker();
+    const view = createLifecycleDiagramView(root, { onBucketChange: vi.fn() });
+    const timeline = buildLifecycleTimeline(b);
+    const snapshot = projectLifecycleAt(b, "current");
+    const updated = view.update({
+      timeline,
+      snapshot,
+      selectedBucketId: "current",
+    });
+    await flushLifecycleDiagramRender();
+    const worker = FakeLayoutWorker.instances.at(0);
+    const request = worker.messages[0];
+    worker.respond({
+      type: "layout-result",
+      requestId: request.requestId,
+      ok: false,
+      error: {
+        message: "boom",
+        cause: { type: "lifecycle-handle-placement" },
+      },
+    });
+    await updated;
+    expect(root.textContent).toContain("Unable to lay out lifecycle diagram.");
+    expect(root.querySelector("[data-diagram-busy]").hidden).toBe(true);
+  });
+
+  // eslint-disable-next-line max-len
+  it("destroy() terminates the worker and lets an in-flight update() promise settle instead of hanging", async () => {
+    const b = bundle(
+      [app("a")],
+      [ev("o", "a", "application_submitted", "2026-01-01")],
+    );
+    const root = setupWithWorker();
+    const view = createLifecycleDiagramView(root, { onBucketChange: vi.fn() });
+    const timeline = buildLifecycleTimeline(b);
+    const snapshot = projectLifecycleAt(b, "current");
+    const updated = view.update({
+      timeline,
+      snapshot,
+      selectedBucketId: "current",
+    });
+    await flushLifecycleDiagramRender();
+    const worker = FakeLayoutWorker.instances.at(0);
+    expect(worker.terminated).toBe(false);
+
+    view.destroy();
+    expect(worker.terminated).toBe(true);
+    await expect(updated).resolves.toBeUndefined();
+  });
+
+  it("drops a selection click while a non-drag worker layout call is in flight", async () => {
+    const b = bundle(
+      [app("a")],
+      [
+        ev("o", "a", "application_submitted", "2026-01-01"),
+        ev("t", "a", "technical_interview", "2026-01-02"),
+      ],
+    );
+    const root = setupWithWorker();
+    const view = createLifecycleDiagramView(root, { onBucketChange: vi.fn() });
+    const timeline = buildLifecycleTimeline(b);
+    const snapshot = projectLifecycleAt(b, "current");
+    const mountUpdate = view.update({
+      timeline,
+      snapshot,
+      selectedBucketId: "current",
+    });
+    await flushLifecycleDiagramRender();
+    const worker = FakeLayoutWorker.instances.at(0);
+    const mountRequest = worker.messages[0];
+    const { graph, dimensions } = lifecycleLayout.layoutLifecycleRoutingGraph(
+      snapshot,
+      mountRequest.availableWidth,
+      mountRequest.options,
+    );
+    worker.respond({
+      type: "layout-result",
+      requestId: mountRequest.requestId,
+      ok: true,
+      graph: withEnumerableHorizontalGeometry(graph),
+      dimensions: withEnumerableHorizontalGeometry(dimensions),
+    });
+    await mountUpdate;
+
+    const nodeGroup = root.querySelector(
+      "[data-diagram-node='origin:application_submitted']",
+    );
+    const nodeRect = nodeGroup.querySelector(
+      "rect:not([data-diagram-node-hit])",
+    );
+    expect(nodeGroup.getAttribute("data-selected")).toBe("false");
+
+    // A second non-drag render whose worker call never resolves in this
+    // test -- outstandingAsyncLayoutCalls stays > 0 for the click below.
+    const targetIndex = timeline.buckets.length - 2;
+    const targetId = timeline.buckets[targetIndex].id;
+    view.update({
+      timeline,
+      snapshot: projectLifecycleAt(b, targetId),
+      selectedBucketId: targetId,
+    });
+    await flushLifecycleDiagramRender();
+    expect(worker.messages).toHaveLength(2);
+
+    nodeRect.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(
+      root
+        .querySelector("[data-diagram-node='origin:application_submitted']")
+        ?.getAttribute("data-selected"),
+    ).not.toBe("true");
   });
 });
 

@@ -952,15 +952,26 @@ test.describe("Application Lifecycle Diagram", () => {
     await expect(page.locator("[data-lifecycle-diagram]")).not.toContainText(
       "Newer activity available",
     );
+    // Phase 5b's layout search runs in a Worker: each of the three
+    // non-drag renders below (a button click, range.fill's keyboard-style
+    // input with no preceding pointerdown, and another button click) queues
+    // its own real, sequentially-processed request. Waiting for the busy
+    // indicator to clear after each one -- exactly as a real user
+    // naturally would -- keeps them from stacking up behind each other
+    // rather than stress-testing an unrelated queueing edge case; the busy
+    // indicator itself is covered by the dedicated Phase 5a/5b test suites.
     await page.getByRole("button", { name: "Next event", exact: true }).click();
+    await expect(page.locator("[data-diagram-busy]")).toBeHidden();
     await range.fill("0");
     await expect(page.locator("[data-lifecycle-diagram]")).toContainText(
       /Unknown date|off chronological scale|applications included/u,
     );
+    await expect(page.locator("[data-diagram-busy]")).toBeHidden();
     await page.getByRole("button", { name: "Return to current" }).click();
     await expect(page.locator("[data-lifecycle-diagram]")).toContainText(
       EXPECTED_CURRENT.included,
     );
+    await expect(page.locator("[data-diagram-busy]")).toBeHidden();
 
     const nodeGroup = page
       .locator("[data-diagram-node='origin:application_submitted']")
@@ -985,6 +996,16 @@ test.describe("Application Lifecycle Diagram", () => {
     await page.keyboard.press("Tab");
 
     await page.setViewportSize({ width: 375, height: 812 });
+    // The viewport change triggers the ResizeObserver-driven non-drag
+    // render described above, but that path goes through
+    // debouncedResize's own 80ms debounce (lifecycleDiagram.js's
+    // makeDebounce default) before the render even starts -- unlike the
+    // button clicks above, there's no earlier assertion here that
+    // implicitly waits out that delay, so checking busy-hidden immediately
+    // could trivially pass before the debounced render has even begun.
+    // Wait past the debounce window first, then wait for it to settle.
+    await page.waitForTimeout(200);
+    await expect(page.locator("[data-diagram-busy]")).toBeHidden();
     const scroll = page.locator(".diagram-scroll");
     await expect(scroll).toHaveAttribute("aria-label", /Scrollable/u);
     expect(

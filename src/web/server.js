@@ -6932,6 +6932,20 @@ export function createWebApp({
       write: false,
     }).outputFiles[0].contents,
   );
+  const lifecycleLayoutWorkerScriptBuffer = Buffer.from(
+    esbuild.buildSync({
+      entryPoints: [
+        new URL(
+          "./tracker/lifecycleDiagramLayout.worker.js",
+          import.meta.url,
+        ).pathname,
+      ],
+      bundle: true,
+      format: "esm",
+      platform: "browser",
+      write: false,
+    }).outputFiles[0].contents,
+  );
   const trackerStylesBuffer = readFileSync(
     new URL("./tracker/tracker.css", import.meta.url),
   );
@@ -6949,6 +6963,9 @@ export function createWebApp({
   const statusHubScriptGzip = gzipSync(statusHubScriptBuffer);
   const trackerHtmlGzip = gzipSync(trackerHtmlBuffer);
   const trackerScriptGzip = gzipSync(trackerScriptBuffer);
+  const lifecycleLayoutWorkerScriptGzip = gzipSync(
+    lifecycleLayoutWorkerScriptBuffer,
+  );
   const trackerStylesGzip = gzipSync(trackerStylesBuffer);
   const trackerManifestGzip = gzipSync(trackerManifestBuffer);
   const statusHubStylesBuffer = Buffer.from(STATUS_PAGE_STYLES, "utf8");
@@ -7059,6 +7076,14 @@ export function createWebApp({
       contentType: "application/javascript",
       rawBuffer: trackerScriptBuffer,
       gzipBuffer: trackerScriptGzip,
+    });
+  });
+
+  app.get("/assets/lifecycle-diagram-layout.worker.js", (req, res) => {
+    sendCompressedAsset(req, res, {
+      contentType: "application/javascript",
+      rawBuffer: lifecycleLayoutWorkerScriptBuffer,
+      gzipBuffer: lifecycleLayoutWorkerScriptGzip,
     });
   });
 

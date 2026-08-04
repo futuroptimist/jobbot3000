@@ -30,6 +30,9 @@ The production container should be safe to run as a static web app:
 Browser
   ├─ IndexedDB: private applications, contacts, events, interviews, offers, notes, reminders
   ├─ Cache Storage / service worker: versioned app shell and static assets
+  ├─ Web Worker: off-main-thread compute for expensive, purely derived work (e.g. the lifecycle
+  │  diagram's layout search) -- holds no data of its own and persists nothing; every message is
+  │  request/response over data already owned by the main thread
   └─ Downloads/uploads: explicit user backup and restore files
 
 Container / static host

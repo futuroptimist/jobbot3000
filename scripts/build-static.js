@@ -52,6 +52,15 @@ await esbuild.build({
   platform: "browser",
   outfile: path.join(assetsDir, "tracker.js"),
 });
+await esbuild.build({
+  entryPoints: [
+    path.join(repoRoot, "src/web/tracker/lifecycleDiagramLayout.worker.js"),
+  ],
+  bundle: true,
+  format: "esm",
+  platform: "browser",
+  outfile: path.join(assetsDir, "lifecycle-diagram-layout.worker.js"),
+});
 await fs.copyFile(
   path.join(repoRoot, "src/web/tracker/tracker.css"),
   path.join(assetsDir, "tracker.css"),
