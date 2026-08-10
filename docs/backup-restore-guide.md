@@ -7,7 +7,7 @@ private tracker data on the server.
 ## Formats
 
 - **Compact application CSV**: human-editable, spreadsheet-shaped, one-row-per-application compatibility format. Use it for Google Sheets interchange and manual review; it preserves documented compact metadata but is not the complete backup format.
-- **Supplemental lifecycle CSV**: event-rich CSV keyed by `application_id`. Use it with compact CSV when a spreadsheet workflow needs lifecycle events, action metadata, source artifacts, due dates, and multiline details.
+- **Supplemental lifecycle CSV**: explicit event CSV keyed by stable `event_id` and `application_id`. Use it with compact CSV as the supported two-sheet spreadsheet workflow. Runtime compact-derived and inferred events are excluded; JSON/NDJSON retain them.
 - **JSON**: canonical full-fidelity backup bundle for complete browser restores. It includes applications, contacts, outreach messages, lifecycle events, interviews, offers, artifacts, reminders, and settings. Use it for routine backups, before clearing data, or when moving browsers.
 - **NDJSON**: line-oriented full-fidelity stream with stable record types and version metadata. Use it when you want per-record diffs, streaming-friendly storage, or easier manual inspection; restore it from the browser UI import panel.
 
@@ -15,6 +15,7 @@ private tracker data on the server.
 
 - Use compact CSV when the goal is spreadsheet compatibility.
 - Use supplemental lifecycle CSV alongside compact CSV when the spreadsheet workflow needs event metadata; `application_id` is the relationship source of truth.
+- Keep an existing lifecycle row's `event_id` unchanged; give every new event a new unique ID. Legacy blank IDs are generated on canonical export. Date-only values remain dates rather than midnight instants.
 - Use JSON for routine complete backups and full-fidelity browser restores.
 - Use NDJSON for complete backups that should be easy to diff or process one
   record per line, and for full-fidelity browser restores.

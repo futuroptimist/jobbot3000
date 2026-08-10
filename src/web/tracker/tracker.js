@@ -998,6 +998,7 @@ function bindDetail(app) {
             v.origin === "application_submitted" ? "date" : "instant",
           inferred: false,
           source: "manual",
+          provenance: "explicit",
           createdAt: operationTime,
         });
       } else if (v.origin !== current.origin) {
@@ -1013,6 +1014,7 @@ function bindDetail(app) {
             v.origin === "application_submitted" ? "date" : "instant",
           inferred: false,
           source: "manual",
+          provenance: "explicit",
           supersedesEventId: priorOrigin?.id,
           createdAt: operationTime,
         });
@@ -1027,6 +1029,7 @@ function bindDetail(app) {
           occurredAtPrecision: "instant",
           inferred: false,
           source: "manual",
+          provenance: "explicit",
           createdAt: operationTime,
         });
       }
@@ -1097,6 +1100,7 @@ function bindDetail(app) {
               occurredAtPrecision: "instant",
               inferred: false,
               source: "manual",
+              provenance: "explicit",
               channel: v.channel,
               sourceArtifact: message.id,
               actionStatus: v.direction,
@@ -1126,6 +1130,7 @@ function bindDetail(app) {
               occurredAtPrecision: "instant",
               inferred: false,
               source: "manual",
+              provenance: "explicit",
               actionStatus: v.actionStatus,
               dueAt: isoDate(v.dueAt),
               details: optionalBlankToUndefined(v.details),
@@ -1186,6 +1191,7 @@ function bindDetail(app) {
               occurredAtPrecision: "instant",
               inferred: false,
               source: "manual",
+              provenance: "explicit",
               stageLabel: v.stage,
               actionStatus: v.outcome,
               dueAt: interview.startsAt,
@@ -1239,6 +1245,7 @@ function bindDetail(app) {
               occurredAtPrecision: "instant",
               inferred: false,
               source: "manual",
+              provenance: "explicit",
               sourceArtifact: offer.id,
               actionStatus: v.status,
               createdAt: operationTime,

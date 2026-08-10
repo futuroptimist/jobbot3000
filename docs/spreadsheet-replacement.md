@@ -7,8 +7,33 @@ jobbot3000 can import the compact CSV tracker into the browser-first IndexedDB d
 The importer expects this deterministic header order when exporting back to CSV:
 
 ```text
-application_id,company,role_title,status,applied_at,posting_url,application_url,posting_id,application_channel,work_model,location_display,compensation_min_usd,compensation_max_usd,resume_artifact,resume_url,cover_letter_submitted,cover_letter_artifact,cover_letter_url,job_description_snapshot_url,linkedin_snapshot_screenshot_url,linkedin_snapshot_pdf_url,fit_score_100,outreach_status,outreach_target_name,outreach_channel,outreach_sent_at,outreach_message_text,follow_up_date,interview_stage,outcome,notes,schema_version
+application_id,company,role_title,status,applied_at,posting_url,application_url,posting_id,application_channel,origin,work_model,location_display,compensation_min_usd,compensation_max_usd,resume_artifact,resume_url,cover_letter_submitted,cover_letter_artifact,cover_letter_url,job_description_snapshot_url,linkedin_snapshot_screenshot_url,linkedin_snapshot_pdf_url,fit_score_100,outreach_status,outreach_target_name,outreach_channel,outreach_sent_at,outreach_message_text,follow_up_date,interview_stage,outcome,notes,schema_version
 ```
+
+Legacy compact files without `origin` remain importable. A blank legacy origin means
+`other_unknown` internally (or `referral` for an existing referral channel alias), not an inferred
+application submission. Arbitrary spreadsheet labels and exact date/date-time spelling are kept in
+a versioned, single-line metadata envelope. Unedited cells therefore round-trip exactly; a tracker
+edit replaces only the changed cell with its current canonical value.
+
+## Supported lifecycle CSV columns
+
+Canonical lifecycle export uses this exact header:
+
+```text
+event_id,application_id,company,role_title,event_type,raw_event_type,previous_status,occurred_at,occurred_at_precision,inferred,supersedes_event_id,stage,channel,actor,source_artifact,requires_user_action,action_status,due_at,due_at_precision,no_ai_required,details
+```
+
+Compact CSV plus lifecycle CSV is the supported two-sheet Google Sheets workflow. Lifecycle export
+contains only explicit user-authored or imported events; compact-derived projections, reconciliation
+events, and migration snapshots remain available at runtime but are intentionally excluded. Legacy
+19-column and per-application 14-column files remain importable and can be consolidated.
+
+`event_id` is stable row identity. Keep it unchanged while editing an event and assign a new unique
+ID to each new event. Blank legacy IDs are generated deterministically and appear in the first
+canonical export. Date-only values remain `YYYY-MM-DD`; instants retain their ISO datetime and
+offset. A date-only deadline schedules a reminder at end-of-day UTC without changing the event's
+stored date, and it does not create an interview.
 
 ## Export from Google Sheets
 
@@ -51,9 +76,9 @@ The importer preserves compact fields that do not have a first-class normalized 
 Use the export flow after every meaningful update:
 
 - **Compact CSV** for spreadsheet compatibility and manual review.
-- **Lifecycle CSV** when you need event rows, source artifacts, action status, due dates, and multiline details tied back to applications by `application_id`.
-- **JSON** for complete browser backup/restore; this is the preferred everyday backup.
-- **NDJSON** for equivalent full-fidelity backup/restore with one typed record per line.
+- **Lifecycle CSV** for explicit event rows, source artifacts, action status, due dates, and multiline details tied back to applications by `application_id`.
+- **JSON** for a complete browser backup, including internal derived records; this is the preferred everyday backup.
+- **NDJSON** for the equivalent full-fidelity backup, including internal derived records, with one typed record per line.
 
 Store backups somewhere private and encrypted. The files may include application history, contacts, outreach messages, links to private artifacts, private URLs, company names, and notes. Do not commit real backups, bake them into Docker images, or paste them into public issues.
 
