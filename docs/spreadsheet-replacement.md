@@ -64,3 +64,40 @@ Store backups somewhere private and encrypted. The files may include application
 3. Run the dry-run preview and confirm record counts.
 4. Use **Replace** semantics to restore the complete backup.
 5. Verify the restored application list and export a fresh CSV to confirm the compact spreadsheet view is available.
+
+## Lossless two-CSV workflow
+
+The supported Google Sheets workflow uses exactly two sheets: a compact applications CSV and one
+consolidated explicit lifecycle-events CSV. The canonical compact header is:
+
+```text
+application_id,company,role_title,status,applied_at,posting_url,application_url,posting_id,application_channel,origin,work_model,location_display,compensation_min_usd,compensation_max_usd,resume_artifact,resume_url,cover_letter_submitted,cover_letter_artifact,cover_letter_url,job_description_snapshot_url,linkedin_snapshot_screenshot_url,linkedin_snapshot_pdf_url,fit_score_100,outreach_status,outreach_target_name,outreach_channel,outreach_sent_at,outreach_message_text,follow_up_date,interview_stage,outcome,notes,schema_version
+```
+
+The canonical lifecycle header is:
+
+```text
+event_id,application_id,company,role_title,event_type,raw_event_type,previous_status,occurred_at,occurred_at_precision,inferred,supersedes_event_id,stage,channel,actor,source_artifact,requires_user_action,action_status,due_at,due_at_precision,no_ai_required,details
+```
+
+Legacy compact sheets without `origin`, the prior lifecycle format, and legacy 14-column
+per-application lifecycle files remain importable. They can be consolidated by importing and then
+exporting the canonical lifecycle sheet. A blank legacy origin means `other_unknown` internally
+(or `referral` for an existing referral channel alias), not application submitted; the blank cell is
+preserved until origin is edited.
+
+Compact imports retain every parsed cell in a versioned, JSON-escaped `Spreadsheet metadata:`
+notes record. Arbitrary labels can therefore remain exact even when runtime state uses canonical
+enums. On export, an untouched canonical value restores its raw cell; an edited normalized value
+wins. Date-only cells remain date-only, while ISO datetimes retain their time, fraction, and offset.
+The metadata record itself is never emitted in the notes cell.
+
+Lifecycle CSV exports contain only explicit user-authored or imported events. Compact-derived and
+runtime-inferred events remain available to timelines, metrics, and diagrams but are intentionally
+excluded. `event_id` is stable identity: keep it unchanged when editing an event and assign a new,
+unique ID to a new event. Blank legacy IDs receive deterministic IDs on the first canonical export.
+Occurrence and deadline precision explicitly distinguish `date`, `instant`, and `unknown`; a
+calendar date is not rewritten as midnight.
+
+JSON and NDJSON are full browser backups and include explicit, compact-derived, and inferred
+records. Real CSV and backup exports contain private job-search data and must not be committed.

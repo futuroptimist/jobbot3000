@@ -1281,12 +1281,12 @@ describe("tracker dashboard metrics", () => {
     );
     expect(lifecycle.interviews).toEqual([
       expect.objectContaining({
-        id: "interview_app_reg_epsilon_005_recruiter_screen_2026_02_15t18_00_00_000z",
+        id: "interview_event_app_reg_epsilon_005_45c81fdf4f672beb",
         stage: "recruiter_screen",
         startsAt: "2026-02-15T18:00:00.000Z",
       }),
       expect.objectContaining({
-        id: "interview_app_reg_epsilon_005_technical_screen_2026_02_18t20_00_00_000z",
+        id: "interview_event_app_reg_epsilon_005_92bd001966fa1335",
         stage: "technical_screen",
         startsAt: "2026-02-18T20:00:00.000Z",
       }),

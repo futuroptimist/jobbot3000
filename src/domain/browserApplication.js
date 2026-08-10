@@ -50,6 +50,11 @@ export const browserApplicationOccurredAtPrecisionSchema = z.enum([
   "date",
   "unknown",
 ]);
+export const browserApplicationLifecycleProvenanceSchema = z.enum([
+  "explicit",
+  "compact_derived",
+  "inferred",
+]);
 
 const isoDateTimeSchema = z.string().datetime({ offset: true });
 const isoDateSchema = z
@@ -117,6 +122,7 @@ export const browserApplicationLifecycleEventSchema = z
     rawEventType: optionalTrimmedStringSchema,
     previousStatus: browserApplicationLifecycleStatusSchema.optional(),
     occurredAtPrecision: browserApplicationOccurredAtPrecisionSchema,
+    provenance: browserApplicationLifecycleProvenanceSchema.optional(),
     inferred: z.boolean(),
     supersedesEventId: optionalTrimmedStringSchema,
     stageLabel: optionalTrimmedStringSchema,
@@ -125,7 +131,8 @@ export const browserApplicationLifecycleEventSchema = z
     sourceArtifact: optionalTrimmedStringSchema,
     requiresUserAction: z.boolean().optional(),
     actionStatus: optionalTrimmedStringSchema,
-    dueAt: isoDateTimeSchema.optional(),
+    dueAt: stableDateOrDateTimeSchema.optional(),
+    dueAtPrecision: browserApplicationOccurredAtPrecisionSchema.optional(),
     noAiRequired: z.boolean().optional(),
     details: optionalTrimmedStringSchema,
     createdAt: isoDateTimeSchema,
@@ -151,6 +158,24 @@ export const browserApplicationLifecycleEventSchema = z
         path: ["occurredAt"],
       });
     }
+    if (
+      event.dueAtPrecision === "instant" &&
+      !isoDateTimeSchema.safeParse(event.dueAt).success
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "instant dueAt must be an ISO datetime with offset",
+        path: ["dueAt"],
+      });
+    if (
+      event.dueAtPrecision === "date" &&
+      !isoDateSchema.safeParse(event.dueAt).success
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "date dueAt must be YYYY-MM-DD",
+        path: ["dueAt"],
+      });
   });
 
 export const browserApplicationInterviewSchema = z.object({
@@ -351,7 +376,7 @@ export const browserApplicationV1LifecycleEventSchema = z
     sourceArtifact: optionalTrimmedStringSchema,
     requiresUserAction: z.boolean().optional(),
     actionStatus: optionalTrimmedStringSchema,
-    dueAt: isoDateTimeSchema.optional(),
+    dueAt: stableDateOrDateTimeSchema.optional(),
     noAiRequired: z.boolean().optional(),
     details: optionalTrimmedStringSchema,
     createdAt: isoDateTimeSchema,

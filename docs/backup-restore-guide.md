@@ -90,3 +90,14 @@ jobbot analytics health --json
 node scripts/export-data.js > /tmp/restore-check.ndjson
 tail "$JOBBOT_AUDIT_LOG"
 ```
+
+## CSV versus full backups
+
+For spreadsheet use, export the compact applications CSV together with the consolidated explicit
+lifecycle-events CSV. Lifecycle CSV deliberately omits compact-derived and inferred runtime events;
+JSON and NDJSON remain the full-fidelity browser backups and include those internal records.
+Lifecycle `event_id` values are stable identities: retain an ID while editing a row and use a new
+unique ID for a new event. Legacy blank IDs are generated on canonical export. CSV date-only values
+remain dates, while offset ISO datetimes remain instants. Arbitrary compact labels are preserved by
+private spreadsheet metadata even when internal state uses normalized enums. Never commit real
+exports because they contain private job-search data.
