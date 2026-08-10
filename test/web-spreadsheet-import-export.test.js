@@ -612,7 +612,7 @@ describe("spreadsheet import/export", () => {
           application_id: "app_applied_stage_rejected",
           status: "Applied",
           interview_stage: "Application rejected",
-          outcome: "rejected",
+          outcome: "",
         }),
       ]),
     );
@@ -720,11 +720,7 @@ describe("spreadsheet import/export", () => {
       expect(exportedRowsById.get(row.application_id)).toMatchObject({
         status: row.status,
         interview_stage:
-          row.status === "Interviewing"
-            ? "Not started"
-            : row.status === "recruiter_screen"
-              ? "recruiter_screen"
-              : row.interview_stage,
+          row.status === "Interviewing" ? "Not started" : row.interview_stage,
         outcome: row.outcome,
       });
     }
@@ -1198,9 +1194,9 @@ describe("spreadsheet import/export", () => {
         ({ applicationId, eventType }) =>
           applicationId === "app_roundtrip_alpha" && eventType,
       ),
-    ).toHaveLength(5);
+    ).toHaveLength(4);
     expect(restored.interviews).toHaveLength(1);
-    expect(restored.reminders).toHaveLength(0);
+    expect(restored.reminders).toHaveLength(1);
     expect(restored.artifacts).toHaveLength(0);
     repo.close();
   });
@@ -1276,12 +1272,8 @@ describe("spreadsheet import/export", () => {
       '"Reply included comma, quote ""here"", and newline\nSecond line."',
     );
     const rows = parseCsv(csv);
-    expect(rows.map((row) => row.application_id)).toEqual([
-      "app_a",
-      "app_b",
-      "app_b",
-    ]);
-    expect(rows[2]).toMatchObject({
+    expect(rows.map((row) => row.application_id)).toEqual(["app_a", "app_b"]);
+    expect(rows[1]).toMatchObject({
       source_artifact: "https://example.test/artifact/reply?x=1&y=2",
       requires_user_action: "false",
       no_ai_required: "true",
@@ -1426,9 +1418,9 @@ describe("spreadsheet import/export", () => {
     );
     expect(
       restored.lifecycleEvents.filter(
-        ({ eventType, id, occurredAt }) =>
+        ({ eventType, applicationId, occurredAt }) =>
           eventType !== "migration_status_snapshot" &&
-          id.startsWith("event_app_status_only_") &&
+          applicationId.startsWith("app_status_only_") &&
           occurredAt === "2026-03-02T00:00:00.000Z",
       ),
     ).toHaveLength(statuses.length);
@@ -1647,10 +1639,9 @@ describe("spreadsheet import/export", () => {
     await Promise.all(
       fixtureNames.map(async (fixtureName) => {
         await expect(
-          readFile(
-            `test/fixtures/tracker-import/${fixtureName}`,
-            "utf8",
-          ).then(detectSpreadsheetImportFormat),
+          readFile(`test/fixtures/tracker-import/${fixtureName}`, "utf8").then(
+            detectSpreadsheetImportFormat,
+          ),
         ).resolves.toBe("lifecycle_csv");
       }),
     );
@@ -2015,7 +2006,7 @@ describe("spreadsheet import/export", () => {
     repo.close();
   });
 
-  it("deduplicates identical supplemental lifecycle rows before applying", async () => {
+  it("rejects duplicate legacy supplemental lifecycle rows", async () => {
     const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
     await importCompactCsv(
       serializeCsv([
@@ -2044,12 +2035,15 @@ describe("spreadsheet import/export", () => {
       lifecycleCsv,
       repo,
     );
-    expect(preview.errors).toEqual([]);
-    expect(preview.conflicts).toEqual([]);
-    expect(preview.bundle.lifecycleEvents).toHaveLength(1);
+    expect(preview.errors).toEqual([
+      expect.objectContaining({
+        rowNumber: 3,
+        code: "duplicate_event_without_event_id",
+      }),
+    ]);
     const result = await importSupplementalLifecycleCsv(lifecycleCsv, repo);
-    expect(result.imported).toBe(true);
-    expect((await repo.exportAllData()).lifecycleEvents).toHaveLength(2);
+    expect(result.imported).toBe(false);
+    expect((await repo.exportAllData()).lifecycleEvents).toHaveLength(1);
     repo.close();
   });
 
@@ -2110,9 +2104,10 @@ describe("spreadsheet import/export", () => {
     expect(dateOnlyPreview.errors).toEqual([]);
     expect(dateOnlyPreview.bundle.lifecycleEvents).toEqual([
       expect.objectContaining({
-        occurredAt: "2026-01-08",
-        occurredAtPrecision: "date",
-        dueAt: "2026-01-08T00:00:00.000Z",
+        occurredAt: "1970-01-01",
+        occurredAtPrecision: "unknown",
+        dueAt: "2026-01-08",
+        dueAtPrecision: "date",
       }),
     ]);
     expect(dateOnlyPreview.bundle.interviews).toEqual([]);
@@ -2449,7 +2444,10 @@ describe("spreadsheet import/export", () => {
       Object.fromEntries(
         childStores.map((store) => [store, exportedAgain[store].length]),
       ),
-    ).toEqual({ ...childCounts, lifecycleEvents: childCounts.lifecycleEvents + 1 });
+    ).toEqual({
+      ...childCounts,
+      lifecycleEvents: childCounts.lifecycleEvents + 1,
+    });
 
     repo.close();
   });

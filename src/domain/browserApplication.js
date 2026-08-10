@@ -118,6 +118,7 @@ export const browserApplicationLifecycleEventSchema = z
     previousStatus: browserApplicationLifecycleStatusSchema.optional(),
     occurredAtPrecision: browserApplicationOccurredAtPrecisionSchema,
     inferred: z.boolean(),
+    provenance: z.enum(["explicit", "compact_derived", "inferred"]).optional(),
     supersedesEventId: optionalTrimmedStringSchema,
     stageLabel: optionalTrimmedStringSchema,
     channel: optionalTrimmedStringSchema,
@@ -125,7 +126,8 @@ export const browserApplicationLifecycleEventSchema = z
     sourceArtifact: optionalTrimmedStringSchema,
     requiresUserAction: z.boolean().optional(),
     actionStatus: optionalTrimmedStringSchema,
-    dueAt: isoDateTimeSchema.optional(),
+    dueAt: stableDateOrDateTimeSchema.optional(),
+    dueAtPrecision: browserApplicationOccurredAtPrecisionSchema.optional(),
     noAiRequired: z.boolean().optional(),
     details: optionalTrimmedStringSchema,
     createdAt: isoDateTimeSchema,
@@ -151,6 +153,24 @@ export const browserApplicationLifecycleEventSchema = z
         path: ["occurredAt"],
       });
     }
+    if (
+      event.dueAtPrecision === "instant" &&
+      !isoDateTimeSchema.safeParse(event.dueAt).success
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "instant dueAt must be an ISO datetime with offset",
+        path: ["dueAt"],
+      });
+    if (
+      event.dueAtPrecision === "date" &&
+      !isoDateSchema.safeParse(event.dueAt).success
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "date dueAt must be YYYY-MM-DD",
+        path: ["dueAt"],
+      });
   });
 
 export const browserApplicationInterviewSchema = z.object({
@@ -351,7 +371,7 @@ export const browserApplicationV1LifecycleEventSchema = z
     sourceArtifact: optionalTrimmedStringSchema,
     requiresUserAction: z.boolean().optional(),
     actionStatus: optionalTrimmedStringSchema,
-    dueAt: isoDateTimeSchema.optional(),
+    dueAt: stableDateOrDateTimeSchema.optional(),
     noAiRequired: z.boolean().optional(),
     details: optionalTrimmedStringSchema,
     createdAt: isoDateTimeSchema,

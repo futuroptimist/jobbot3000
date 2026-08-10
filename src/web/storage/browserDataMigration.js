@@ -73,6 +73,21 @@ const slug = (v) =>
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "") || "record";
 const stableId = (...parts) => parts.map(slug).join("_");
+const isCompactDerivedEventId = (event) =>
+  [
+    "applied",
+    "outreach_sent",
+    "recruiter_screen",
+    "technical_screen",
+    "onsite_loop",
+    "offer",
+    "accepted",
+    "rejected",
+    "withdrawn",
+    "closed_archived",
+  ].some(
+    (suffix) => event.id === stableId("event", event.applicationId, suffix),
+  );
 const norm = (v) =>
   String(v ?? "")
     .trim()
@@ -122,7 +137,18 @@ const normalizeEvent = (event, warnings) => {
     occurredAt: occurredAtFor(event, precision),
     occurredAtPrecision: precision,
     inferred: Boolean(event.inferred),
+    provenance:
+      event.provenance ??
+      (event.inferred ||
+      event.source === "reconciliation" ||
+      event.source === "browser_migration"
+        ? "inferred"
+        : event.source === "csv_import" && isCompactDerivedEventId(event)
+          ? "compact_derived"
+          : "explicit"),
   };
+  if (out.dueAt && !out.dueAtPrecision)
+    out.dueAtPrecision = isoDate.test(out.dueAt) ? "date" : "instant";
   if (!out.eventType)
     out.eventType = STATUS_EVENT.get(out.status) ?? "status_changed";
   if (!out.rawEventType) delete out.rawEventType;
@@ -205,6 +231,9 @@ export const upgradeBrowserExportToV2 = (input, options = {}) => {
   const source = clone(input);
   const version = source?.schemaVersion;
   if (source?.schemaVersion === 2) {
+    source.lifecycleEvents = (source.lifecycleEvents ?? []).map((event) =>
+      normalizeEvent(event, warnings),
+    );
     const data = browserApplicationExportSchema.parse(source);
     return { data, warnings };
   }
@@ -239,6 +268,7 @@ export const upgradeBrowserExportToV2 = (input, options = {}) => {
         occurredAt: isoDate.test(evidence.at) ? evidence.at : evidence.at,
         occurredAtPrecision: isoDate.test(evidence.at) ? "date" : "instant",
         inferred: true,
+        provenance: "inferred",
         source: "browser_migration",
         createdAt: migrationCreatedAt,
       });
@@ -272,6 +302,7 @@ export const upgradeBrowserExportToV2 = (input, options = {}) => {
           occurredAt: anchor,
           occurredAtPrecision: "unknown",
           inferred: true,
+          provenance: "inferred",
           source: "browser_migration",
           createdAt: migrationCreatedAt,
         });

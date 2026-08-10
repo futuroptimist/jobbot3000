@@ -7,7 +7,7 @@ private tracker data on the server.
 ## Formats
 
 - **Compact application CSV**: human-editable, spreadsheet-shaped, one-row-per-application compatibility format. Use it for Google Sheets interchange and manual review; it preserves documented compact metadata but is not the complete backup format.
-- **Supplemental lifecycle CSV**: event-rich CSV keyed by `application_id`. Use it with compact CSV when a spreadsheet workflow needs lifecycle events, action metadata, source artifacts, due dates, and multiline details.
+- **Explicit lifecycle CSV**: the second sheet in the supported two-CSV workflow. It exports only explicit user-authored/imported events; compact-derived and inferred runtime records are excluded. Legacy per-application lifecycle CSVs remain importable and may be consolidated.
 - **JSON**: canonical full-fidelity backup bundle for complete browser restores. It includes applications, contacts, outreach messages, lifecycle events, interviews, offers, artifacts, reminders, and settings. Use it for routine backups, before clearing data, or when moving browsers.
 - **NDJSON**: line-oriented full-fidelity stream with stable record types and version metadata. Use it when you want per-record diffs, streaming-friendly storage, or easier manual inspection; restore it from the browser UI import panel.
 
@@ -18,6 +18,14 @@ private tracker data on the server.
 - Use JSON for routine complete backups and full-fidelity browser restores.
 - Use NDJSON for complete backups that should be easy to diff or process one
   record per line, and for full-fidelity browser restores.
+
+Keep lifecycle `event_id` unchanged when editing an existing row and use a new
+unique ID for a new event. Legacy blank IDs are deterministically generated on
+the first canonical export. Date-only occurrences and deadlines remain
+`YYYY-MM-DD`; ISO datetimes with offsets remain instants. Compact arbitrary
+labels retain their exact cells even when the browser uses a normalized enum,
+and a blank legacy origin means unknown. JSON/NDJSON remain the full-fidelity
+formats and include internal compact-derived and inferred lifecycle records.
 
 ## Verify before clearing data
 
