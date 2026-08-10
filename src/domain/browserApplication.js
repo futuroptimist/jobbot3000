@@ -50,6 +50,11 @@ export const browserApplicationOccurredAtPrecisionSchema = z.enum([
   "date",
   "unknown",
 ]);
+export const browserApplicationLifecycleProvenanceSchema = z.enum([
+  "explicit",
+  "compact_derived",
+  "inferred",
+]);
 
 const isoDateTimeSchema = z.string().datetime({ offset: true });
 const isoDateSchema = z
@@ -118,6 +123,7 @@ export const browserApplicationLifecycleEventSchema = z
     previousStatus: browserApplicationLifecycleStatusSchema.optional(),
     occurredAtPrecision: browserApplicationOccurredAtPrecisionSchema,
     inferred: z.boolean(),
+    provenance: browserApplicationLifecycleProvenanceSchema.optional(),
     supersedesEventId: optionalTrimmedStringSchema,
     stageLabel: optionalTrimmedStringSchema,
     channel: optionalTrimmedStringSchema,
@@ -125,7 +131,8 @@ export const browserApplicationLifecycleEventSchema = z
     sourceArtifact: optionalTrimmedStringSchema,
     requiresUserAction: z.boolean().optional(),
     actionStatus: optionalTrimmedStringSchema,
-    dueAt: isoDateTimeSchema.optional(),
+    dueAt: stableDateOrDateTimeSchema.optional(),
+    dueAtPrecision: browserApplicationOccurredAtPrecisionSchema.optional(),
     noAiRequired: z.boolean().optional(),
     details: optionalTrimmedStringSchema,
     createdAt: isoDateTimeSchema,
@@ -141,6 +148,26 @@ export const browserApplicationLifecycleEventSchema = z
         path: ["occurredAt"],
       });
     }
+    if (
+      event.dueAtPrecision === "instant" &&
+      event.dueAt !== undefined &&
+      !isoDateTimeSchema.safeParse(event.dueAt).success
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "instant dueAt must be an ISO datetime with offset",
+        path: ["dueAt"],
+      });
+    if (
+      event.dueAtPrecision === "date" &&
+      event.dueAt !== undefined &&
+      !isoDateSchema.safeParse(event.dueAt).success
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "date dueAt must be YYYY-MM-DD",
+        path: ["dueAt"],
+      });
     if (
       event.occurredAtPrecision === "date" &&
       !isoDateSchema.safeParse(event.occurredAt).success
@@ -351,7 +378,7 @@ export const browserApplicationV1LifecycleEventSchema = z
     sourceArtifact: optionalTrimmedStringSchema,
     requiresUserAction: z.boolean().optional(),
     actionStatus: optionalTrimmedStringSchema,
-    dueAt: isoDateTimeSchema.optional(),
+    dueAt: stableDateOrDateTimeSchema.optional(),
     noAiRequired: z.boolean().optional(),
     details: optionalTrimmedStringSchema,
     createdAt: isoDateTimeSchema,

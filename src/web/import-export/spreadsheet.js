@@ -3,6 +3,7 @@ import { upgradeBrowserExportToV2 } from "../storage/browserDataMigration.js";
 import { classifyLifecycleEventType } from "../tracker/lifecycleClassification.js";
 
 export const LIFECYCLE_CSV_COLUMNS = [
+  "event_id",
   "application_id",
   "company",
   "role_title",
@@ -20,6 +21,7 @@ export const LIFECYCLE_CSV_COLUMNS = [
   "requires_user_action",
   "action_status",
   "due_at",
+  "due_at_precision",
   "no_ai_required",
   "details",
 ];
@@ -370,8 +372,64 @@ const parseDate = (
   }
   return date.toISOString();
 };
-const hasTimeComponent = (value) =>
-  /(?:T|\s)\d{1,2}:\d{2}/.test(compact(value));
+const precisionValue = (value) => {
+  const text = compact(value);
+  if (!text) return "unknown";
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? "date" : "instant";
+};
+const parseLifecycleDate = (value, precision, field, rowNumber, errors) => {
+  const text = compact(value);
+  const derived = precisionValue(text);
+  const supplied = compact(precision);
+  if (supplied && !["instant", "date", "unknown"].includes(supplied))
+    errors.push({
+      rowNumber,
+      field: `${field}_precision`,
+      code: "invalid_precision",
+    });
+  if (supplied && supplied !== derived)
+    errors.push({
+      rowNumber,
+      field: `${field}_precision`,
+      code: "precision_mismatch",
+      message: `${field}_precision does not match ${field}.`,
+    });
+  if (!text) return { value: undefined, precision: "unknown" };
+  if (derived === "date") {
+    const date = new Date(`${text}T00:00:00.000Z`);
+    if (
+      Number.isNaN(date.getTime()) ||
+      date.toISOString().slice(0, 10) !== text
+    ) {
+      pushMalformedDateError(errors, field, rowNumber);
+      return { value: undefined, precision: "unknown" };
+    }
+  } else if (!isValidIsoOffsetDateTime(text)) {
+    pushMalformedDateError(errors, field, rowNumber);
+    return { value: undefined, precision: "unknown" };
+  }
+  return { value: text, precision: derived };
+};
+const fnv1a = (text, seed) => {
+  let hash = seed >>> 0;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+};
+const generatedLifecycleId = (row) => {
+  const fingerprint = JSON.stringify(
+    LIFECYCLE_CSV_COLUMNS.filter(
+      (column) => !["event_id", "company", "role_title"].includes(column),
+    ).map((column) => String(row[column] ?? "")),
+  );
+  const hashes = [
+    fnv1a(fingerprint, 0x811c9dc5),
+    fnv1a(fingerprint, 0x9e3779b9),
+  ].join("");
+  return `event_${slug(row.application_id)}_${hashes}`;
+};
 
 const parseBoolean = (value, field, rowNumber, errors) => {
   const text = normalizeKey(value);
@@ -445,6 +503,19 @@ const metadataFromRow = (row) =>
       )
       .filter(([, value]) => value),
   );
+export const createSpreadsheetMetadataEnvelope = (rawRow, canonicalRow) => ({
+  ...metadataFromRow(rawRow),
+  spreadsheet_metadata_version: 2,
+  raw_row: Object.fromEntries(
+    COMPACT_CSV_COLUMNS.map((column) => [column, String(rawRow[column] ?? "")]),
+  ),
+  canonical_row: Object.fromEntries(
+    COMPACT_CSV_COLUMNS.map((column) => [
+      column,
+      String(canonicalRow[column] ?? ""),
+    ]),
+  ),
+});
 const appendMetadataToNotes = (notes, metadata) => {
   const entries = Object.keys(metadata).sort();
   if (entries.length === 0) return compact(notes) || undefined;
@@ -534,7 +605,8 @@ const preservedOutcome = (metadata, currentOutcome) => {
 export const detectSpreadsheetImportFormat = (text) => {
   const headers = csvHeaders(text);
   const headerSet = new Set(headers);
-  const hasAll = (...columns) => columns.every((column) => headerSet.has(column));
+  const hasAll = (...columns) =>
+    columns.every((column) => headerSet.has(column));
 
   if (hasAll("application_id", "event_type", "occurred_at"))
     return "lifecycle_csv";
@@ -574,6 +646,8 @@ export const lifecycleRowsToBrowserApplicationExport = (
   const interviews = [];
   const reminders = [];
   const warnings = [];
+  const seenIds = new Map();
+  const seenLegacyRows = new Map();
   rows.forEach((sourceRow, index) => {
     const rowNumber = index + 2;
     const row = { ...blankLifecycleRow(), ...sourceRow };
@@ -591,19 +665,25 @@ export const lifecycleRowsToBrowserApplicationExport = (
       });
       return;
     }
-    const rawEventType = compact(row.event_type);
+    const rawEventType = compact(row.raw_event_type) || compact(row.event_type);
     const eventType = normalizeLabelKey(rawEventType) || "lifecycle_event";
-    const occurredAt = parseDate(
+    const occurred = parseLifecycleDate(
       row.occurred_at,
+      row.occurred_at_precision,
       "occurred_at",
       rowNumber,
       errors,
     );
-    const dueAt = parseDate(row.due_at, "due_at", rowNumber, errors);
-    const eventOccurredAt = occurredAt ?? dueAt ?? "1970-01-01T00:00:00.000Z";
-    const occurredAtHasTime = hasTimeComponent(row.occurred_at);
-    const dueAtHasTime = hasTimeComponent(row.due_at);
-    const suppliedPrecision = compact(row.occurred_at_precision) || undefined;
+    const due = parseLifecycleDate(
+      row.due_at,
+      row.due_at_precision,
+      "due_at",
+      rowNumber,
+      errors,
+    );
+    const occurredAt = occurred.value;
+    const dueAt = due.value;
+    const eventOccurredAt = occurredAt ?? "1970-01-01T00:00:00.000Z";
     const stageLabel = compact(row.stage) || undefined;
     const knownLifecycleStatus = lifecycleStatusForEvent(eventType);
     if (
@@ -623,15 +703,29 @@ export const lifecycleRowsToBrowserApplicationExport = (
       mapStatus({ status: "", interview_stage: stageLabel ?? "", outcome: "" });
     const sourceArtifact = compact(row.source_artifact) || undefined;
     const details = compact(row.details) || undefined;
-    const id = stableId(
-      "event",
-      applicationId,
-      eventType,
-      eventOccurredAt,
-      dueAt ?? "",
-      sourceArtifact ?? "",
-      details ?? "",
-    );
+    const suppliedId = compact(row.event_id);
+    const id = suppliedId || generatedLifecycleId(row);
+    if (seenIds.has(id))
+      errors.push({
+        rowNumber,
+        field: "event_id",
+        code: suppliedId ? "duplicate_event_id" : "event_id_collision",
+        value: id,
+      });
+    seenIds.set(id, rowNumber);
+    if (!suppliedId) {
+      const fingerprint = JSON.stringify(row);
+      if (seenLegacyRows.has(fingerprint))
+        errors.push({
+          rowNumber,
+          field: "event_id",
+          code: "duplicate_event_without_event_id",
+          value: id,
+        });
+      seenLegacyRows.set(fingerprint, rowNumber);
+    }
+    const inferred =
+      parseBoolean(row.inferred, "inferred", rowNumber, errors) ?? false;
     lifecycleEvents.push({
       id,
       applicationId,
@@ -654,11 +748,10 @@ export const lifecycleRowsToBrowserApplicationExport = (
       ),
       actionStatus: compact(row.action_status) || undefined,
       dueAt,
-      occurredAtPrecision: suppliedPrecision,
-      occurredAtHasTime,
-      dueAtHasTime,
-      inferred:
-        parseBoolean(row.inferred, "inferred", rowNumber, errors) ?? false,
+      occurredAtPrecision: occurred.precision,
+      dueAtPrecision: due.precision,
+      inferred,
+      provenance: inferred ? "inferred" : "explicit",
       supersedesEventId: compact(row.supersedes_event_id) || undefined,
       noAiRequired: parseBoolean(
         row.no_ai_required,
@@ -671,15 +764,9 @@ export const lifecycleRowsToBrowserApplicationExport = (
     });
     if (eventType === "next_tracking_step" && dueAt)
       reminders.push({
-        id: stableId(
-          "reminder",
-          applicationId,
-          eventType,
-          dueAt,
-          details ?? "",
-        ),
+        id: stableId("reminder", id),
         applicationId,
-        dueAt,
+        dueAt: due.precision === "date" ? `${dueAt}T23:59:59.999Z` : dueAt,
         summary: details || stageLabel || "Next tracking step",
         notes: details,
         createdAt: exportedAt,
@@ -688,22 +775,17 @@ export const lifecycleRowsToBrowserApplicationExport = (
     const classification = classifyLifecycleEventType(eventType);
     const interviewStartsAt =
       classification.interviewOutcome === "completed"
-        ? occurredAtHasTime
+        ? occurred.precision === "instant"
           ? occurredAt
-          : dueAtHasTime
+          : due.precision === "instant"
             ? dueAt
             : undefined
-        : dueAtHasTime
+        : due.precision === "instant"
           ? dueAt
           : undefined;
     if (classification.interviewStage && interviewStartsAt)
       interviews.push({
-        id: stableId(
-          "interview",
-          applicationId,
-          classification.interviewStage,
-          interviewStartsAt,
-        ),
+        id: stableId("interview", id),
         applicationId,
         contactIds: [],
         stage: classification.interviewStage,
@@ -725,14 +807,7 @@ export const lifecycleRowsToBrowserApplicationExport = (
     artifacts: [],
     reminders,
   };
-  for (const store of ["lifecycleEvents", "interviews", "reminders"]) {
-    const seen = new Set();
-    bundle[store] = bundle[store].filter(({ id }) => {
-      if (seen.has(id)) return false;
-      seen.add(id);
-      return true;
-    });
-  }
+  if (errors.length > 0) return { bundle, errors, warnings };
   const incomingIds = {
     lifecycleEvents: new Set(bundle.lifecycleEvents.map(({ id }) => id)),
     interviews: new Set(bundle.interviews.map(({ id }) => id)),
@@ -866,13 +941,38 @@ export const rowsToBrowserApplicationExport = (
       ...row,
       fit_score_100: fitScore ?? row.fit_score_100,
     });
+    const explicitOrigin = compact(row.origin);
+    if (
+      explicitOrigin &&
+      ![
+        "application_submitted",
+        "recruiter_company_outreach",
+        "candidate_outreach",
+        "referral",
+        "other_unknown",
+      ].includes(explicitOrigin)
+    )
+      errors.push({
+        rowNumber,
+        field: "origin",
+        code: "unsupported_origin",
+        value: row.origin,
+        message: "origin is not a supported value.",
+      });
+    const origin = explicitOrigin
+      ? explicitOrigin
+      : ["referral", "employee_referral"].includes(
+            normalizeKey(row.application_channel),
+          )
+        ? "referral"
+        : "other_unknown";
     applications.push({
       id,
       company: compact(row.company) || "Unknown company",
       role: compact(row.role_title) || "Unknown role",
       status: mapStatus(row),
       source: compact(row.application_channel) || undefined,
-      origin: compact(row.origin) || undefined,
+      origin,
       postingUrl,
       location: compact(row.location_display) || undefined,
       remote: normalizeKey(row.work_model).includes("remote")
@@ -915,7 +1015,8 @@ export const rowsToBrowserApplicationExport = (
         updatedAt: exportedAt,
       });
     if (
-      OUTREACH_SENT_STATUSES.has(normalizeKey(row.outreach_status)) &&
+      OUTREACH_SENT_STATUSES.has(normalizeKey(row.outreach_status)) ||
+      outreachSentAt ||
       compact(row.outreach_message_text)
     ) {
       outreachMessages.push({
@@ -932,7 +1033,7 @@ export const rowsToBrowserApplicationExport = (
         )
           ? normalizeKey(row.outreach_channel)
           : "other",
-        body: compact(row.outreach_message_text),
+        body: compact(row.outreach_message_text) || undefined,
         sentAt: outreachSentAt,
         createdAt: outreachSentAt ?? timestamp,
         updatedAt: exportedAt,
@@ -948,6 +1049,7 @@ export const rowsToBrowserApplicationExport = (
         eventType: "application_submitted",
         occurredAtPrecision: "instant",
         inferred: false,
+        provenance: "compact_derived",
         createdAt: exportedAt,
       });
     if (outreachSentAt)
@@ -960,6 +1062,7 @@ export const rowsToBrowserApplicationExport = (
         eventType: "candidate_outreach",
         occurredAtPrecision: "instant",
         inferred: false,
+        provenance: "compact_derived",
         createdAt: exportedAt,
       });
     const stageLabel = normalizeLabelKey(row.interview_stage);
@@ -981,6 +1084,7 @@ export const rowsToBrowserApplicationExport = (
               : stage,
         occurredAtPrecision: "instant",
         inferred: false,
+        provenance: "compact_derived",
         createdAt: exportedAt,
       });
       interviews.push({
@@ -1015,6 +1119,7 @@ export const rowsToBrowserApplicationExport = (
           eventType: "employer_rejected",
           occurredAtPrecision: "instant",
           inferred: false,
+          provenance: "compact_derived",
           createdAt: exportedAt,
         });
     }
@@ -1044,6 +1149,7 @@ export const rowsToBrowserApplicationExport = (
                   : "status_changed",
         occurredAtPrecision: "instant",
         inferred: false,
+        provenance: "compact_derived",
         createdAt: exportedAt,
       });
     if (outcome === "offer")
@@ -1092,13 +1198,32 @@ export const rowsToBrowserApplicationExport = (
       code: "schema_validation_failed",
       message: parsed.error.message,
     });
+  if (parsed.success) {
+    const canonicalById = new Map(
+      browserApplicationExportToCanonicalRows(bundle).map((row) => [
+        row.application_id,
+        row,
+      ]),
+    );
+    bundle.applications = bundle.applications.map((application) => {
+      const rawRow = {
+        ...blankRow(),
+        ...rows.find((row) => compact(row.application_id) === application.id),
+      };
+      const { notes } = readMetadataFromNotes(application.notes);
+      const envelope = createSpreadsheetMetadataEnvelope(
+        rawRow,
+        canonicalById.get(application.id) ?? blankRow(),
+      );
+      return { ...application, notes: appendMetadataToNotes(notes, envelope) };
+    });
+  }
   return { bundle, errors, warnings };
 };
 
 export const csvToBrowserApplicationExport = (csvText, options) =>
   rowsToBrowserApplicationExport(parseCsv(csvText), options);
 
-const dateOnly = (value) => (value ? String(value).slice(0, 10) : "");
 const dateTime = (value) => (value ? String(value) : "");
 const compareCodePoints = (left, right) => {
   const leftText = String(left);
@@ -1117,8 +1242,15 @@ const compareIsoDateTimes = (left, right) => {
   if (leftValid !== rightValid) return leftValid ? 1 : -1;
   return compareCodePoints(leftText, rightText);
 };
-const firstBy = (records, predicate) => records.find(predicate) ?? {};
-export const browserApplicationExportToRows = (bundle) => {
+const latestBy = (records, predicate, fields = ["createdAt", "id"]) =>
+  records.filter(predicate).sort((a, b) => {
+    for (const field of fields) {
+      const compared = compareIsoDateTimes(a[field], b[field]);
+      if (compared) return -compared;
+    }
+    return 0;
+  })[0] ?? {};
+export const browserApplicationExportToCanonicalRows = (bundle) => {
   const parsed = upgradeBrowserExportToV2(bundle).data;
   return [...parsed.applications]
     .sort((a, b) => a.id.localeCompare(b.id))
@@ -1128,33 +1260,34 @@ export const browserApplicationExportToRows = (bundle) => {
       const artifacts = parsed.artifacts.filter(
         (artifact) => artifact.applicationId === application.id,
       );
-      const outreach = firstBy(
+      const outreach = latestBy(
         parsed.outreachMessages,
         (message) => message.applicationId === application.id,
+        ["sentAt", "createdAt", "id"],
       );
       const interview =
-        firstBy(
+        latestBy(
           parsed.interviews,
           (record) => record.applicationId === application.id,
         ) ?? {};
-      const interviewStageEvent = firstBy(
+      const interviewStageEvent = latestBy(
         parsed.lifecycleEvents,
         (event) =>
           event.applicationId === application.id &&
           INTERVIEW_STAGES.has(event.status),
       );
-      const outcomeEvent = firstBy(
+      const outcomeEvent = latestBy(
         parsed.lifecycleEvents,
         (event) =>
           event.applicationId === application.id && OUTCOMES.has(event.status),
       );
-      const offer = firstBy(
+      const offer = latestBy(
         parsed.offers,
         (record) => record.applicationId === application.id,
       );
       const contact = outreach.contactId
-        ? firstBy(parsed.contacts, ({ id }) => id === outreach.contactId)
-        : firstBy(
+        ? latestBy(parsed.contacts, ({ id }) => id === outreach.contactId)
+        : latestBy(
             parsed.contacts,
             ({ applicationId }) => applicationId === application.id,
           );
@@ -1163,27 +1296,27 @@ export const browserApplicationExportToRows = (bundle) => {
         company: application.company,
         role_title: application.role,
         status: application.status,
-        applied_at: dateOnly(application.appliedAt),
+        applied_at: dateTime(application.appliedAt),
         posting_url: application.postingUrl ?? "",
         application_channel: application.source ?? "",
         origin: application.origin ?? "",
         work_model: application.remote ? "remote" : (metadata.work_model ?? ""),
         location_display: application.location ?? "",
-        follow_up_date: dateOnly(application.followUpDate),
+        follow_up_date: dateTime(application.followUpDate),
         notes,
         schema_version: metadata.schema_version ?? "1",
       });
-      const resume = firstBy(artifacts, ({ kind }) => kind === "resume");
-      const cover = firstBy(artifacts, ({ kind }) => kind === "cover_letter");
-      const job = firstBy(
+      const resume = latestBy(artifacts, ({ kind }) => kind === "resume");
+      const cover = latestBy(artifacts, ({ kind }) => kind === "cover_letter");
+      const job = latestBy(
         artifacts,
         ({ name }) => name === "Job description snapshot",
       );
-      const screenshot = firstBy(
+      const screenshot = latestBy(
         artifacts,
         ({ name }) => name === "LinkedIn snapshot screenshot",
       );
-      const pdf = firstBy(
+      const pdf = latestBy(
         artifacts,
         ({ name }) => name === "LinkedIn snapshot PDF",
       );
@@ -1216,6 +1349,34 @@ export const browserApplicationExportToRows = (bundle) => {
       return row;
     });
 };
+export const applyPreservedCompactCells = (row, metadata) => {
+  if (
+    metadata.spreadsheet_metadata_version !== 2 ||
+    !metadata.raw_row ||
+    !metadata.canonical_row
+  )
+    return row;
+  return Object.fromEntries(
+    COMPACT_CSV_COLUMNS.map((column) => [
+      column,
+      String(row[column] ?? "") === String(metadata.canonical_row[column] ?? "")
+        ? String(metadata.raw_row[column] ?? "")
+        : String(row[column] ?? ""),
+    ]),
+  );
+};
+export const browserApplicationExportToRows = (bundle) => {
+  const parsed = upgradeBrowserExportToV2(bundle).data;
+  const metadataById = new Map(
+    parsed.applications.map((application) => [
+      application.id,
+      readMetadataFromNotes(application.notes).metadata,
+    ]),
+  );
+  return browserApplicationExportToCanonicalRows(parsed).map((row) =>
+    applyPreservedCompactCells(row, metadataById.get(row.application_id) ?? {}),
+  );
+};
 export const exportCompactCsv = (bundle) =>
   serializeCsv(browserApplicationExportToRows(bundle));
 export const browserApplicationExportToLifecycleRows = (bundle) => {
@@ -1224,6 +1385,7 @@ export const browserApplicationExportToLifecycleRows = (bundle) => {
     parsed.applications.map((application) => [application.id, application]),
   );
   return [...parsed.lifecycleEvents]
+    .filter((event) => event.provenance === "explicit")
     .sort((a, b) => {
       for (const compared of [
         compareCodePoints(a.applicationId, b.applicationId),
@@ -1240,6 +1402,7 @@ export const browserApplicationExportToLifecycleRows = (bundle) => {
       const application = applicationsById.get(event.applicationId) ?? {};
       return {
         ...blankLifecycleRow(),
+        event_id: event.id,
         application_id: event.applicationId,
         company: application.company ?? "",
         role_title: application.role ?? "",
@@ -1248,7 +1411,7 @@ export const browserApplicationExportToLifecycleRows = (bundle) => {
         previous_status: event.previousStatus ?? "",
         occurred_at: event.occurredAt ?? "",
         occurred_at_precision: event.occurredAtPrecision ?? "",
-        inferred: event.inferred === undefined ? "" : String(event.inferred),
+        inferred: "false",
         supersedes_event_id: event.supersedesEventId ?? "",
         stage: event.stageLabel ?? event.status ?? "",
         channel: event.channel ?? "",
@@ -1260,6 +1423,8 @@ export const browserApplicationExportToLifecycleRows = (bundle) => {
             : String(event.requiresUserAction),
         action_status: event.actionStatus ?? "",
         due_at: event.dueAt ?? "",
+        due_at_precision:
+          event.dueAtPrecision ?? (event.dueAt ? "instant" : "unknown"),
         no_ai_required:
           event.noAiRequired === undefined ? "" : String(event.noAiRequired),
         details: event.details ?? event.note ?? "",
@@ -1303,7 +1468,10 @@ const restoreLifecyclePrecisionFlags = (bundle, sourceEvents) => {
 };
 const upgradeBackupBundlePreservingLifecyclePrecision = (bundle) => {
   const upgraded = upgradeBrowserExportToV2(bundle).data;
-  return restoreLifecyclePrecisionFlags(upgraded, bundle?.lifecycleEvents ?? []);
+  return restoreLifecyclePrecisionFlags(
+    upgraded,
+    bundle?.lifecycleEvents ?? [],
+  );
 };
 const canonicalizeBackupBundle = (bundle) => {
   const parsed = upgradeBackupBundlePreservingLifecyclePrecision(bundle);
@@ -1603,6 +1771,13 @@ export const previewSupplementalLifecycleCsvImport = async (
     existing,
   );
   const incomingStores = ["lifecycleEvents", "interviews", "reminders"];
+  const rowNumberByEventId = new Map(
+    rows.map((row, index) => [
+      compact(row.event_id) ||
+        generatedLifecycleId({ ...blankLifecycleRow(), ...row }),
+      index + 2,
+    ]),
+  );
   const conflicts = [];
   for (const store of incomingStores) {
     const seen = new Map();
@@ -1612,7 +1787,7 @@ export const previewSupplementalLifecycleCsvImport = async (
       if (previous) {
         if (!lifecycleRecordsEqual(previous, record))
           conflicts.push({
-            rowNumber: null,
+            rowNumber: rowNumberByEventId.get(record.id) ?? null,
             field: "id",
             code: "duplicate_in_file",
             value: record.id,
@@ -1627,7 +1802,10 @@ export const previewSupplementalLifecycleCsvImport = async (
       );
       if (existingRecord && !lifecycleRecordsEqual(existingRecord, record))
         conflicts.push({
-          rowNumber: null,
+          rowNumber:
+            store === "lifecycleEvents"
+              ? (rowNumberByEventId.get(record.id) ?? null)
+              : null,
           field: "id",
           code: "duplicate_existing",
           value: record.id,

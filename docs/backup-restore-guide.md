@@ -6,15 +6,15 @@ private tracker data on the server.
 
 ## Formats
 
-- **Compact application CSV**: human-editable, spreadsheet-shaped, one-row-per-application compatibility format. Use it for Google Sheets interchange and manual review; it preserves documented compact metadata but is not the complete backup format.
-- **Supplemental lifecycle CSV**: event-rich CSV keyed by `application_id`. Use it with compact CSV when a spreadsheet workflow needs lifecycle events, action metadata, source artifacts, due dates, and multiline details.
+- **Compact application CSV**: human-editable, spreadsheet-shaped, one-row-per-application compatibility format. It preserves unchanged raw labels and timestamp text through a private metadata envelope, but is not the complete backup format.
+- **Consolidated lifecycle CSV**: explicit user-authored/imported events keyed by stable `event_id` and `application_id`. Runtime compact-derived and inferred events are intentionally excluded. Legacy lifecycle CSVs remain importable.
 - **JSON**: canonical full-fidelity backup bundle for complete browser restores. It includes applications, contacts, outreach messages, lifecycle events, interviews, offers, artifacts, reminders, and settings. Use it for routine backups, before clearing data, or when moving browsers.
 - **NDJSON**: line-oriented full-fidelity stream with stable record types and version metadata. Use it when you want per-record diffs, streaming-friendly storage, or easier manual inspection; restore it from the browser UI import panel.
 
 ## When to use each format
 
 - Use compact CSV when the goal is spreadsheet compatibility.
-- Use supplemental lifecycle CSV alongside compact CSV when the spreadsheet workflow needs event metadata; `application_id` is the relationship source of truth.
+- Use lifecycle CSV alongside compact CSV as the supported two-sheet workflow. Preserve an existing row's `event_id`; give every new event a new unique ID. Blank legacy IDs are generated on canonical export. Date-only deadlines remain dates and offset datetimes remain instants.
 - Use JSON for routine complete backups and full-fidelity browser restores.
 - Use NDJSON for complete backups that should be easy to diff or process one
   record per line, and for full-fidelity browser restores.

@@ -994,6 +994,7 @@ function bindDetail(app) {
           status: v.status,
           occurredAt:
             v.origin === "application_submitted" ? v.appliedAt : operationTime,
+          provenance: "explicit",
           occurredAtPrecision:
             v.origin === "application_submitted" ? "date" : "instant",
           inferred: false,
@@ -1009,6 +1010,7 @@ function bindDetail(app) {
           status: current.status,
           occurredAt:
             v.origin === "application_submitted" ? v.appliedAt : operationTime,
+          provenance: "explicit",
           occurredAtPrecision:
             v.origin === "application_submitted" ? "date" : "instant",
           inferred: false,
@@ -1024,6 +1026,7 @@ function bindDetail(app) {
           eventType: statusEventType(current.status, v.status),
           status: v.status,
           occurredAt: operationTime,
+          provenance: "explicit",
           occurredAtPrecision: "instant",
           inferred: false,
           source: "manual",
@@ -1094,6 +1097,7 @@ function bindDetail(app) {
                   : "candidate_outreach",
               status: nextStatus,
               occurredAt: operationTime,
+              provenance: "explicit",
               occurredAtPrecision: "instant",
               inferred: false,
               source: "manual",
@@ -1123,6 +1127,7 @@ function bindDetail(app) {
               eventType: "assessment_take_home",
               status: latestApp().status,
               occurredAt: operationTime,
+              provenance: "explicit",
               occurredAtPrecision: "instant",
               inferred: false,
               source: "manual",
@@ -1183,6 +1188,7 @@ function bindDetail(app) {
                   : "status_changed",
               status: nextStatus,
               occurredAt: operationTime,
+              provenance: "explicit",
               occurredAtPrecision: "instant",
               inferred: false,
               source: "manual",
@@ -1236,6 +1242,7 @@ function bindDetail(app) {
               eventType,
               status: v.status === "accepted" ? "accepted" : "offer",
               occurredAt: operationTime,
+              provenance: "explicit",
               occurredAtPrecision: "instant",
               inferred: false,
               source: "manual",

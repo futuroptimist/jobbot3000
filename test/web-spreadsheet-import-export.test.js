@@ -612,7 +612,7 @@ describe("spreadsheet import/export", () => {
           application_id: "app_applied_stage_rejected",
           status: "Applied",
           interview_stage: "Application rejected",
-          outcome: "rejected",
+          outcome: "",
         }),
       ]),
     );
@@ -719,12 +719,7 @@ describe("spreadsheet import/export", () => {
     )) {
       expect(exportedRowsById.get(row.application_id)).toMatchObject({
         status: row.status,
-        interview_stage:
-          row.status === "Interviewing"
-            ? "Not started"
-            : row.status === "recruiter_screen"
-              ? "recruiter_screen"
-              : row.interview_stage,
+        interview_stage: row.interview_stage,
         outcome: row.outcome,
       });
     }
@@ -1198,9 +1193,9 @@ describe("spreadsheet import/export", () => {
         ({ applicationId, eventType }) =>
           applicationId === "app_roundtrip_alpha" && eventType,
       ),
-    ).toHaveLength(5);
+    ).toHaveLength(4);
     expect(restored.interviews).toHaveLength(1);
-    expect(restored.reminders).toHaveLength(0);
+    expect(restored.reminders).toHaveLength(1);
     expect(restored.artifacts).toHaveLength(0);
     repo.close();
   });
@@ -1276,12 +1271,8 @@ describe("spreadsheet import/export", () => {
       '"Reply included comma, quote ""here"", and newline\nSecond line."',
     );
     const rows = parseCsv(csv);
-    expect(rows.map((row) => row.application_id)).toEqual([
-      "app_a",
-      "app_b",
-      "app_b",
-    ]);
-    expect(rows[2]).toMatchObject({
+    expect(rows.map((row) => row.application_id)).toEqual(["app_a", "app_b"]);
+    expect(rows[1]).toMatchObject({
       source_artifact: "https://example.test/artifact/reply?x=1&y=2",
       requires_user_action: "false",
       no_ai_required: "true",
@@ -1428,7 +1419,7 @@ describe("spreadsheet import/export", () => {
       restored.lifecycleEvents.filter(
         ({ eventType, id, occurredAt }) =>
           eventType !== "migration_status_snapshot" &&
-          id.startsWith("event_app_status_only_") &&
+          id.startsWith("event_status_only_") &&
           occurredAt === "2026-03-02T00:00:00.000Z",
       ),
     ).toHaveLength(statuses.length);
@@ -1515,11 +1506,10 @@ describe("spreadsheet import/export", () => {
         code: "malformed_date",
       }),
     ]);
-    expect(bundle.lifecycleEvents).toEqual([
-      expect.objectContaining({
-        occurredAt: "1970-01-01T00:00:00.000Z",
-      }),
-    ]);
+    expect(bundle.lifecycleEvents[0]).toMatchObject({
+      occurredAt: "1970-01-01T00:00:00.000Z",
+      occurredAtPrecision: "unknown",
+    });
   });
 
   it("restores older JSON and NDJSON backups that omit lifecycle metadata stores", () => {
@@ -1647,10 +1637,9 @@ describe("spreadsheet import/export", () => {
     await Promise.all(
       fixtureNames.map(async (fixtureName) => {
         await expect(
-          readFile(
-            `test/fixtures/tracker-import/${fixtureName}`,
-            "utf8",
-          ).then(detectSpreadsheetImportFormat),
+          readFile(`test/fixtures/tracker-import/${fixtureName}`, "utf8").then(
+            detectSpreadsheetImportFormat,
+          ),
         ).resolves.toBe("lifecycle_csv");
       }),
     );
@@ -2015,7 +2004,7 @@ describe("spreadsheet import/export", () => {
     repo.close();
   });
 
-  it("deduplicates identical supplemental lifecycle rows before applying", async () => {
+  it("rejects identical supplemental lifecycle rows without event ids", async () => {
     const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
     await importCompactCsv(
       serializeCsv([
@@ -2044,12 +2033,11 @@ describe("spreadsheet import/export", () => {
       lifecycleCsv,
       repo,
     );
-    expect(preview.errors).toEqual([]);
-    expect(preview.conflicts).toEqual([]);
-    expect(preview.bundle.lifecycleEvents).toHaveLength(1);
+    expect(preview.errors.map(({ code }) => code)).toContain(
+      "duplicate_event_without_event_id",
+    );
     const result = await importSupplementalLifecycleCsv(lifecycleCsv, repo);
-    expect(result.imported).toBe(true);
-    expect((await repo.exportAllData()).lifecycleEvents).toHaveLength(2);
+    expect(result.imported).toBe(false);
     repo.close();
   });
 
@@ -2110,9 +2098,10 @@ describe("spreadsheet import/export", () => {
     expect(dateOnlyPreview.errors).toEqual([]);
     expect(dateOnlyPreview.bundle.lifecycleEvents).toEqual([
       expect.objectContaining({
-        occurredAt: "2026-01-08",
-        occurredAtPrecision: "date",
-        dueAt: "2026-01-08T00:00:00.000Z",
+        occurredAt: "1970-01-01",
+        occurredAtPrecision: "unknown",
+        dueAt: "2026-01-08",
+        dueAtPrecision: "date",
       }),
     ]);
     expect(dateOnlyPreview.bundle.interviews).toEqual([]);
@@ -2449,8 +2438,119 @@ describe("spreadsheet import/export", () => {
       Object.fromEntries(
         childStores.map((store) => [store, exportedAgain[store].length]),
       ),
-    ).toEqual({ ...childCounts, lifecycleEvents: childCounts.lifecycleEvents + 1 });
+    ).toEqual({
+      ...childCounts,
+      lifecycleEvents: childCounts.lifecycleEvents + 1,
+    });
 
     repo.close();
+  });
+
+  it("preserves arbitrary compact cells through the versioned metadata envelope", () => {
+    const csv = serializeCsv([
+      {
+        application_id: "app_lossless_example",
+        company: "Example Systems",
+        role_title: "Platform Engineer",
+        status: "Interviewing",
+        applied_at: "2026-07-31T13:14:15-07:00",
+        application_channel: "Direct",
+        origin: "recruiter_company_outreach",
+        work_model: "Remote/Hybrid",
+        outreach_target_name: "Example Recruiter",
+        outreach_channel: "LinkedIn InMail",
+        outreach_sent_at: "2026-08-01T09:08:07.654-07:00",
+        outreach_message_text: 'Hello, "team".\nSecond line.',
+        interview_stage: "DevOps interview",
+        schema_version: "9-custom",
+      },
+    ]);
+    const { bundle, errors } = csvToBrowserApplicationExport(csv, {
+      exportedAt: "2026-08-02T00:00:00.000Z",
+    });
+    expect(errors).toEqual([]);
+    expect(bundle.applications[0]).toMatchObject({
+      origin: "recruiter_company_outreach",
+      remote: true,
+    });
+    expect(bundle.outreachMessages[0]).toMatchObject({
+      channel: "other",
+      body: 'Hello, "team".\nSecond line.',
+    });
+    const metadataLine = bundle.applications[0].notes
+      .split("\n")
+      .find((line) => line.startsWith("Spreadsheet metadata:"));
+    expect(metadataLine).toContain('"spreadsheet_metadata_version":2');
+    const exported = parseCsv(exportCompactCsv(bundle))[0];
+    expect(exported).toMatchObject({
+      applied_at: "2026-07-31T13:14:15-07:00",
+      origin: "recruiter_company_outreach",
+      work_model: "Remote/Hybrid",
+      outreach_channel: "LinkedIn InMail",
+      outreach_sent_at: "2026-08-01T09:08:07.654-07:00",
+      outreach_message_text: 'Hello, "team".\nSecond line.',
+      interview_stage: "DevOps interview",
+    });
+    expect(exported.notes).toBe("");
+  });
+
+  it("preserves explicit lifecycle identity and precision while filtering provenance", () => {
+    const exportedAt = "2026-08-02T00:00:00.000Z";
+    const base = {
+      applicationId: "app_events_example",
+      status: "recruiter_screen",
+      occurredAt: "2026-08-03",
+      occurredAtPrecision: "date",
+      source: "csv_import",
+      eventType: "recruiter_screen",
+      inferred: false,
+      createdAt: exportedAt,
+    };
+    const csv = exportLifecycleCsv({
+      schemaVersion: 2,
+      exportedAt,
+      applications: [
+        {
+          id: "app_events_example",
+          company: "Example Events",
+          role: "Engineer",
+          status: "recruiter_screen",
+          origin: "other_unknown",
+          createdAt: exportedAt,
+          updatedAt: exportedAt,
+        },
+      ],
+      contacts: [],
+      outreachMessages: [],
+      interviews: [],
+      offers: [],
+      artifacts: [],
+      reminders: [],
+      lifecycleEvents: [
+        {
+          ...base,
+          id: "explicit_one",
+          provenance: "explicit",
+          dueAt: "2026-08-04",
+          dueAtPrecision: "date",
+        },
+        { ...base, id: "explicit_two", provenance: "explicit" },
+        { ...base, id: "derived_one", provenance: "compact_derived" },
+        { ...base, id: "inferred_one", provenance: "inferred", inferred: true },
+      ],
+    });
+    const rows = parseCsv(csv);
+    expect(new Set(rows.map(({ event_id }) => event_id))).toEqual(
+      new Set(["explicit_one", "explicit_two"]),
+    );
+    expect(
+      rows.find(({ event_id }) => event_id === "explicit_one"),
+    ).toMatchObject({
+      occurred_at: "2026-08-03",
+      occurred_at_precision: "date",
+      due_at: "2026-08-04",
+      due_at_precision: "date",
+      inferred: "false",
+    });
   });
 });
