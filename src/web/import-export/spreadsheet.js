@@ -724,6 +724,20 @@ export const lifecycleRowsToBrowserApplicationExport = (
     const normalizedBehaviorType =
       normalizeLabelKey(behaviorType) || "lifecycle_event";
     const canonicalType = canonicalLifecycleEventType(row.event_type);
+    if (
+      !lifecycleStatusForEvent(normalizedBehaviorType) &&
+      !lifecycleStatusForEvent(canonicalType) &&
+      !["lifecycle_event", "next_tracking_step"].includes(
+        normalizedBehaviorType,
+      )
+    )
+      warnings.push({
+        rowNumber,
+        field: "event_type",
+        code: "unsupported_event_type",
+        value: behaviorType || normalizedBehaviorType,
+        message: "Imported as a generic lifecycle event.",
+      });
     const occurredAt = compact(row.occurred_at) || "1970-01-01T00:00:00.000Z";
     const dueAt = compact(row.due_at) || undefined;
     const explicitId = compact(row.event_id);
@@ -1767,7 +1781,8 @@ export const importCompactCsv = async (
   };
 };
 
-// Precision flags are intentionally ignored only for conflict comparison.
+// Import provenance and precision flags are intentionally ignored only for
+// conflict comparison.
 // Supplemental imports still replace the existing same-id lifecycle record with
 // the incoming record, so re-importing upgrades legacy flagless records.
 const lifecycleComparableRecord = (record) =>
@@ -1777,6 +1792,7 @@ const lifecycleComparableRecord = (record) =>
         ![
           "createdAt",
           "updatedAt",
+          "source",
           "occurredAtHasTime",
           "dueAtHasTime",
         ].includes(key),
@@ -1827,7 +1843,11 @@ export const previewSupplementalLifecycleCsvImport = async (
       const existingRecord = (existing[store] ?? []).find(
         ({ id }) => id === record.id,
       );
-      if (existingRecord && !lifecycleRecordsEqual(existingRecord, record))
+      if (
+        store !== "lifecycleEvents" &&
+        existingRecord &&
+        !lifecycleRecordsEqual(existingRecord, record)
+      )
         conflicts.push({
           rowNumber:
             store === "lifecycleEvents"

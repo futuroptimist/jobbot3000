@@ -1426,6 +1426,91 @@ describe("spreadsheet import/export", () => {
     repo.close();
   });
 
+  it("reimports and edits a manual lifecycle event by stable id", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    await importCompactCsv(
+      serializeCsv([
+        {
+          application_id: "app_stable_manual_event",
+          company: "Stable Systems",
+          role_title: "Engineer",
+          applied_at: "2026-03-01",
+          schema_version: "1",
+        },
+      ]),
+      repo,
+      { mode: "replace" },
+    );
+    const existing = await repo.exportAllData();
+    existing.lifecycleEvents.push({
+      id: "event_stable_manual",
+      applicationId: "app_stable_manual_event",
+      status: "applied",
+      occurredAt: "2026-03-02T10:00:00.000Z",
+      source: "manual",
+      provenance: "explicit",
+      eventType: "lifecycle_event",
+      note: "Original details",
+      createdAt: "2026-03-02T10:00:00.000Z",
+    });
+    await repo.importAllData(existing, { allowOverwrite: true });
+
+    const lifecycleCsv = exportLifecycleCsv(await repo.exportAllData());
+    const unchanged = await importSupplementalLifecycleCsv(lifecycleCsv, repo);
+    expect(unchanged.imported).toBe(true);
+    expect(unchanged.preview.conflicts).toEqual([]);
+
+    const rows = parseCsv(lifecycleCsv);
+    rows[0].details = "Edited details";
+    const edited = await importSupplementalLifecycleCsv(
+      serializeCsv(rows, LIFECYCLE_CSV_COLUMNS),
+      repo,
+    );
+    expect(edited.imported).toBe(true);
+    expect(edited.preview.conflicts).toEqual([]);
+    expect(
+      (await repo.exportAllData()).lifecycleEvents.find(
+        ({ id }) => id === "event_stable_manual",
+      ),
+    ).toMatchObject({ note: "Edited details", source: "csv_import" });
+    repo.close();
+  });
+
+  it("warns when importing an unsupported lifecycle event type", () => {
+    const { errors, warnings, bundle } =
+      lifecycleRowsToBrowserApplicationExport(
+        [
+          {
+            application_id: "app_unsupported_event",
+            event_type: "bespoke_vendor_ping",
+            occurred_at: "2026-03-02T10:00:00.000Z",
+          },
+        ],
+        {
+          applications: [
+            {
+              id: "app_unsupported_event",
+              company: "Vendor Systems",
+              role: "Engineer",
+              status: "applied",
+              createdAt: "2026-03-01T00:00:00.000Z",
+              updatedAt: "2026-03-01T00:00:00.000Z",
+            },
+          ],
+        },
+      );
+
+    expect(errors).toEqual([]);
+    expect(warnings).toEqual([
+      expect.objectContaining({
+        rowNumber: 2,
+        code: "unsupported_event_type",
+        value: "bespoke_vendor_ping",
+      }),
+    ]);
+    expect(bundle.lifecycleEvents).toHaveLength(1);
+  });
+
   it("preserves valid ISO offset datetimes without milliseconds", () => {
     const { bundle, errors } = csvToBrowserApplicationExport(
       serializeCsv([
