@@ -515,6 +515,10 @@ export const applyPreservedCompactCells = (canonicalRow, metadata) => {
     ]),
   );
 };
+const hasVersion2SpreadsheetEnvelope = (metadata) =>
+  metadata?.spreadsheet_metadata_version === 2 &&
+  metadata.raw_row &&
+  metadata.canonical_row;
 const mapStatus = (row) => {
   const status = normalizeLabelKey(row.status);
   if (KNOWN_STATUSES.has(status) && status !== "applied") return status;
@@ -1213,7 +1217,9 @@ export const rowsToBrowserApplicationExport = (
     });
     Object.assign(bundle, upgraded.data);
     warnings.push(...upgraded.warnings);
-    const canonicalRows = browserApplicationExportToCanonicalRows(bundle);
+    const canonicalRows = browserApplicationExportToCanonicalRows(bundle, {
+      ignoreLegacyPreservation: true,
+    });
     bundle.applications = bundle.applications.map((application, index) => {
       const rawRow = { ...blankRow(), ...(rows[index] ?? {}) };
       const canonicalRow = canonicalRows.find(
@@ -1271,7 +1277,50 @@ const compareIsoDateTimes = (left, right) => {
 const firstBy = (records, predicate) =>
   [...records].sort((a, b) => compareCodePoints(a.id, b.id)).find(predicate) ??
   {};
-export const browserApplicationExportToCanonicalRows = (bundle) => {
+const latestStageRecord = (interviews, lifecycleEvents, applicationId) => {
+  const candidates = [
+    ...interviews
+      .filter(
+        (record) => record.applicationId === applicationId && record.stage,
+      )
+      .map((record) => ({
+        id: record.id,
+        stage: record.stage,
+        timestamp: record.startsAt || record.createdAt,
+      })),
+    ...lifecycleEvents
+      .filter(
+        (event) =>
+          event.applicationId === applicationId &&
+          INTERVIEW_STAGES.has(event.status),
+      )
+      .map((event) => {
+        const classification = classifyLifecycleEventType(
+          event.rawEventType || event.eventType,
+        );
+        return {
+          id: event.id,
+          stage: event.status,
+          timestamp:
+            (classification.interviewOutcome === "completed"
+              ? event.occurredAt
+              : classification.interviewOutcome === "scheduled"
+                ? event.dueAt || event.startsAt
+                : event.occurredAt || event.dueAt || event.startsAt) ||
+            event.createdAt,
+        };
+      }),
+  ];
+  return candidates.sort(
+    (a, b) =>
+      compareIsoDateTimes(b.timestamp, a.timestamp) ||
+      compareCodePoints(b.id, a.id),
+  )[0];
+};
+export const browserApplicationExportToCanonicalRows = (
+  bundle,
+  { ignoreLegacyPreservation = false } = {},
+) => {
   const parsed = upgradeBrowserExportToV2(bundle).data;
   return [...parsed.applications]
     .sort((a, b) => a.id.localeCompare(b.id))
@@ -1294,16 +1343,10 @@ export const browserApplicationExportToCanonicalRows = (bundle) => {
               compareIsoDateTimes(b.createdAt, a.createdAt) ||
               compareCodePoints(b.id, a.id),
           )[0] ?? {};
-      const interview =
-        firstBy(
-          parsed.interviews,
-          (record) => record.applicationId === application.id,
-        ) ?? {};
-      const interviewStageEvent = firstBy(
+      const latestStage = latestStageRecord(
+        parsed.interviews,
         parsed.lifecycleEvents,
-        (event) =>
-          event.applicationId === application.id &&
-          INTERVIEW_STAGES.has(event.status),
+        application.id,
       );
       const outcomeEvent = firstBy(
         parsed.lifecycleEvents,
@@ -1349,7 +1392,7 @@ export const browserApplicationExportToCanonicalRows = (bundle) => {
         artifacts,
         ({ name }) => name === "LinkedIn snapshot PDF",
       );
-      const currentStage = interview.stage ?? interviewStageEvent.status ?? "";
+      const currentStage = latestStage?.stage ?? "";
       const currentOutcome =
         outcomeEvent.status ??
         (offer.status === "received" ? "offer" : offer.status) ??
@@ -1370,10 +1413,18 @@ export const browserApplicationExportToCanonicalRows = (bundle) => {
         outreach_sent_at: dateTime(outreach.sentAt),
         outreach_message_text: outreach.body ?? "",
         status:
-          preservedStatus(metadata, application.status) ?? application.status,
+          hasVersion2SpreadsheetEnvelope(metadata) || ignoreLegacyPreservation
+            ? application.status
+            : (preservedStatus(metadata, application.status) ??
+              application.status),
         interview_stage:
-          preservedInterviewStage(metadata, currentStage) ?? currentStage,
-        outcome: preservedOutcome(metadata, currentOutcome) ?? currentOutcome,
+          hasVersion2SpreadsheetEnvelope(metadata) || ignoreLegacyPreservation
+            ? currentStage
+            : (preservedInterviewStage(metadata, currentStage) ?? currentStage),
+        outcome:
+          hasVersion2SpreadsheetEnvelope(metadata) || ignoreLegacyPreservation
+            ? currentOutcome
+            : (preservedOutcome(metadata, currentOutcome) ?? currentOutcome),
       });
       return row;
     });
@@ -1895,6 +1946,40 @@ export const importSupplementalLifecycleCsv = async (csvText, repository) => {
       ...incoming,
     ];
   }
+  const beforeRows = new Map(
+    browserApplicationExportToCanonicalRows(existing).map((row) => [
+      row.application_id,
+      row,
+    ]),
+  );
+  const afterRows = new Map(
+    browserApplicationExportToCanonicalRows(merged).map((row) => [
+      row.application_id,
+      row,
+    ]),
+  );
+  merged.applications = merged.applications.map((application) => {
+    const { notes, metadata } = readMetadataFromNotes(application.notes);
+    if (!hasVersion2SpreadsheetEnvelope(metadata)) return application;
+    const before = beforeRows.get(application.id);
+    const after = afterRows.get(application.id);
+    const canonicalRow = { ...metadata.canonical_row };
+    for (const column of COMPACT_CSV_COLUMNS) {
+      if (
+        String(before?.[column] ?? "") ===
+          String(metadata.canonical_row[column] ?? "") &&
+        String(after?.[column] ?? "") !== String(before?.[column] ?? "")
+      )
+        canonicalRow[column] = String(after?.[column] ?? "");
+    }
+    return {
+      ...application,
+      notes: appendMetadataToNotes(notes, {
+        ...metadata,
+        canonical_row: canonicalRow,
+      }),
+    };
+  });
   return {
     imported: true,
     preview,

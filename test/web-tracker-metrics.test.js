@@ -71,6 +71,90 @@ describe("tracker dashboard metrics", () => {
     expect(classifyLifecycleEventType("generic_follow_up").category).toBe(
       LIFECYCLE_EVENT_CATEGORIES.UNKNOWN_METADATA,
     );
+    expect(
+      classifyLifecycleEventType("recruiter_screen_invitation"),
+    ).toMatchObject({
+      category: LIFECYCLE_EVENT_CATEGORIES.EMPLOYER_RESPONSE,
+      status: "recruiter_screen",
+      countsAsResponse: true,
+    });
+  });
+
+  it("does not count recruiter-screen invitations as screen instances", () => {
+    const at = "2026-05-10T14:00:00.000Z";
+    const applications = ["a", "b", "c", "d"].map((id) => ({
+      id,
+      company: `${id.toUpperCase()} Example`,
+      role: "Engineer",
+      status: "applied",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z",
+    }));
+    const lifecycleEvents = [
+      ...["a", "b", "c"].map((applicationId) => ({
+        id: `invite_${applicationId}`,
+        applicationId,
+        eventType: "recruiter_screen",
+        rawEventType: "recruiter_screen_invitation_received",
+        status: "recruiter_screen",
+        occurredAt: "2026-05-02T00:00:00.000Z",
+      })),
+      ...["b", "c"].flatMap((applicationId) => [
+        {
+          id: `scheduled_${applicationId}`,
+          applicationId,
+          eventType: "recruiter_screen",
+          rawEventType: "recruiter_screen_scheduled",
+          status: "recruiter_screen",
+          dueAt: at,
+        },
+        {
+          id: `completed_${applicationId}`,
+          applicationId,
+          eventType: "recruiter_screen",
+          rawEventType: "recruiter_screen_completed",
+          status: "recruiter_screen",
+          occurredAt: at,
+          occurredAtHasTime: true,
+        },
+      ]),
+      {
+        id: "completed_d",
+        applicationId: "d",
+        eventType: "recruiter_screen_completed",
+        status: "recruiter_screen",
+        occurredAt: at,
+      },
+    ];
+    const interviews = ["b", "c"].map((applicationId) => ({
+      id: `interview_${applicationId}`,
+      applicationId,
+      stage: "recruiter_screen",
+      startsAt: at,
+      outcome: "scheduled",
+    }));
+    const bundle = { applications, lifecycleEvents, interviews };
+
+    expect(selectDashboardMetrics(bundle)).toMatchObject({
+      recruiterScreens: 3,
+      applicationsWithResponse: 4,
+    });
+    expect(
+      uniqueRecruiterScreens({
+        interviews: [],
+        lifecycle: [lifecycleEvents[0]],
+      }),
+    ).toHaveLength(0);
+    expect(
+      uniqueRecruiterScreens({ interviews, lifecycle: lifecycleEvents }),
+    ).toHaveLength(3);
+    expect(
+      selectDashboardMetrics({
+        ...bundle,
+        lifecycleEvents: [...lifecycleEvents].reverse(),
+        interviews: [...interviews].reverse(),
+      }).recruiterScreens,
+    ).toBe(3);
   });
   it("returns safe zero metrics for empty bundles", () => {
     expect(selectDashboardMetrics({})).toMatchObject({

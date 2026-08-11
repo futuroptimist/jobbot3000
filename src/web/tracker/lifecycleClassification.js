@@ -221,9 +221,29 @@ const EVENT_REGISTRY = Object.freeze({
 
 export const classifyLifecycleEventType = (eventType) => ({
   category: LIFECYCLE_EVENT_CATEGORIES.UNKNOWN_METADATA,
+  ...(normalize(eventType).match(
+    /^recruiter_screen_(?:invited|invite|invitation|invitation_received)$/,
+  )
+    ? {
+        category: LIFECYCLE_EVENT_CATEGORIES.EMPLOYER_RESPONSE,
+        status: "recruiter_screen",
+        interviewStage: "recruiter_screen",
+        countsAsResponse: true,
+      }
+    : {}),
   ...EVENT_REGISTRY[normalize(eventType)],
   eventType: normalize(eventType),
 });
+
+export const isActualRecruiterScreen = (record = {}) => {
+  const typedEvent =
+    normalize(record.rawEventType) || normalize(record.eventType);
+  if (typedEvent) return isLifecycleRecruiterScreen(typedEvent);
+  return (
+    normalize(record.stage) === "recruiter_screen" ||
+    normalize(record.status) === "recruiter_screen"
+  );
+};
 
 export const isLifecycleRecruiterScreen = (eventType) =>
   classifyLifecycleEventType(eventType).category ===

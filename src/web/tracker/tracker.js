@@ -14,9 +14,9 @@ import {
 } from "../import-export/spreadsheet.js";
 import {
   classifyLifecycleEventType,
+  isActualRecruiterScreen,
   isLifecycleAssessment,
   isLifecycleNonRecruiterInterview,
-  isLifecycleRecruiterScreen,
 } from "./lifecycleClassification.js";
 import {
   readSpreadsheetMetadata,
@@ -218,10 +218,7 @@ const isAssessmentEvent = (record = {}) =>
     .some(
       (value) => value.includes("assessment") || value.includes("take_home"),
     );
-const isRecruiterScreen = (record = {}) =>
-  normalize(record.stage) === "recruiter_screen" ||
-  normalize(record.status) === "recruiter_screen" ||
-  isLifecycleRecruiterScreen(record.eventType);
+const isRecruiterScreen = isActualRecruiterScreen;
 const isNonRecruiterInterview = (record = {}) =>
   (record.stage && normalize(record.stage) !== "recruiter_screen") ||
   isLifecycleNonRecruiterInterview(record.eventType);
@@ -230,11 +227,11 @@ export const uniqueRecruiterScreens = (meta, events = meta.lifecycle) => {
   const seen = new Set();
   const explicitRecruiterScreenKeys = new Set(
     meta.interviews
-      .filter(isRecruiterScreen)
+      .filter(isActualRecruiterScreen)
       .map((interview) => recruiterScreenKey(interview)),
   );
   for (const item of [
-    ...events.filter(isRecruiterScreen).map((event) => ({
+    ...events.filter(isActualRecruiterScreen).map((event) => ({
       key: recruiterScreenKey(event, explicitRecruiterScreenKeys),
       date: day(recruiterScreenTimestamp(event, explicitRecruiterScreenKeys)),
       label:
@@ -243,7 +240,7 @@ export const uniqueRecruiterScreens = (meta, events = meta.lifecycle) => {
         event.details ||
         "recruiter screen",
     })),
-    ...meta.interviews.filter(isRecruiterScreen).map((interview) => ({
+    ...meta.interviews.filter(isActualRecruiterScreen).map((interview) => ({
       key: recruiterScreenKey(interview),
       date: day(interview.startsAt),
       label: interview.outcome || interview.stage || "recruiter screen",
