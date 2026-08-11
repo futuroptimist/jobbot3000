@@ -1118,6 +1118,7 @@ function bindDetail(app) {
     const form = e.target;
     await submitWithRecovery(form, async (v) => {
       const operationTime = now();
+      const dueAt = optionalBlankToUndefined(v.dueAt);
       await repo.commitLifecycleMutation({
         records: {
           lifecycleEvents: [
@@ -1132,7 +1133,8 @@ function bindDetail(app) {
               source: "manual",
               provenance: "explicit",
               actionStatus: v.actionStatus,
-              dueAt: isoDate(v.dueAt),
+              dueAt,
+              dueAtPrecision: dueAt ? "date" : undefined,
               details: optionalBlankToUndefined(v.details),
               createdAt: operationTime,
             },
