@@ -219,15 +219,58 @@ const EVENT_REGISTRY = Object.freeze({
   },
 });
 
-export const classifyLifecycleEventType = (eventType) => ({
-  category: LIFECYCLE_EVENT_CATEGORIES.UNKNOWN_METADATA,
-  ...EVENT_REGISTRY[normalize(eventType)],
-  eventType: normalize(eventType),
-});
+export const classifyLifecycleEventType = (eventType) => {
+  const normalized = normalize(eventType);
+  const invitation =
+    normalized.startsWith("recruiter_screen_") &&
+    /(?:^|_)(?:invite|invited|invitation)(?:_|$)/.test(normalized);
+  return {
+    category: LIFECYCLE_EVENT_CATEGORIES.UNKNOWN_METADATA,
+    ...(invitation
+      ? {
+          category: LIFECYCLE_EVENT_CATEGORIES.RECRUITER_SCREEN,
+          status: "recruiter_screen",
+          interviewStage: "recruiter_screen",
+          countsAsResponse: true,
+        }
+      : {}),
+    ...EVENT_REGISTRY[normalized],
+    eventType: normalized,
+  };
+};
 
 export const isLifecycleRecruiterScreen = (eventType) =>
   classifyLifecycleEventType(eventType).category ===
   LIFECYCLE_EVENT_CATEGORIES.RECRUITER_SCREEN;
+
+const isRecruiterScreenInvitation = (eventType) => {
+  const value = normalize(eventType);
+  return (
+    value.startsWith("recruiter_screen_") &&
+    /(?:^|_)(?:invite|invited|invitation)(?:_|$)/.test(value)
+  );
+};
+
+// Raw lifecycle types retain the behavioral meaning that may be lost when an
+// importer projects them onto the canonical recruiter_screen event type.
+export const isActualRecruiterScreen = (record = {}) => {
+  const rawEventType = normalize(record.rawEventType);
+  if (rawEventType)
+    return (
+      isLifecycleRecruiterScreen(rawEventType) &&
+      !isRecruiterScreenInvitation(rawEventType)
+    );
+  const eventType = normalize(record.eventType);
+  if (eventType)
+    return (
+      isLifecycleRecruiterScreen(eventType) &&
+      !isRecruiterScreenInvitation(eventType)
+    );
+  return (
+    normalize(record.stage) === "recruiter_screen" ||
+    normalize(record.status) === "recruiter_screen"
+  );
+};
 
 export const isLifecycleNonRecruiterInterview = (eventType) =>
   classifyLifecycleEventType(eventType).category ===

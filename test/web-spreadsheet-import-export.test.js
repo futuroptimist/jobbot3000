@@ -25,6 +25,8 @@ import {
   serializeCsv,
   previewCompactCsvImport,
   previewSupplementalLifecycleCsvImport,
+  applyPreservedCompactCells,
+  browserApplicationExportToCanonicalRows,
 } from "../src/web/import-export/spreadsheet.js";
 import {
   recruiterScreenKey,
@@ -70,6 +72,85 @@ afterEach(async () => {
 const fixture = () => readFile("test/fixtures/fake-applications.csv", "utf8");
 
 describe("spreadsheet import/export", () => {
+  it("preserves raw compact stages across projections until a manual edit", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    const compactCsv = serializeCsv([
+      {
+        application_id: "app_fake_alpha",
+        company: "Example Alpha",
+        role_title: "Engineer",
+        status: "applied",
+        interview_stage: "Technical screen",
+        posting_url: "https://example.test/jobs/alpha",
+      },
+      {
+        application_id: "app_fake_beta",
+        company: "Example Beta",
+        role_title: "Engineer",
+        status: "applied",
+        interview_stage: "DevOps interview",
+        posting_url: "https://example.test/jobs/beta",
+      },
+    ]);
+    await importCompactCsv(compactCsv, repo, { mode: "replace" });
+    await importSupplementalLifecycleCsv(
+      serializeCsv(
+        [
+          {
+            event_id: "zz_older",
+            application_id: "app_fake_alpha",
+            event_type: "recruiter_screen_scheduled",
+            occurred_at: "2027-04-01T10:00:00.000Z",
+            due_at: "2027-04-02T10:00:00.000Z",
+          },
+          {
+            event_id: "aa_later",
+            application_id: "app_fake_beta",
+            event_type: "technical_interview_scheduled",
+            occurred_at: "2027-04-03T10:00:00.000Z",
+            due_at: "2027-04-04T10:00:00.000Z",
+          },
+        ],
+        LIFECYCLE_CSV_COLUMNS,
+      ),
+      repo,
+    );
+    let bundle = await repo.exportAllData();
+    bundle.interviews.reverse();
+    bundle.lifecycleEvents.reverse();
+    const canonical = browserApplicationExportToCanonicalRows(bundle);
+    expect(canonical.map((row) => row.interview_stage)).toEqual([
+      "recruiter_screen",
+      "technical_screen",
+    ]);
+    const rows = parseCsv(exportCompactCsv(bundle));
+    expect(rows.map((row) => row.interview_stage)).toEqual([
+      "Technical screen",
+      "DevOps interview",
+    ]);
+
+    bundle.interviews.push({
+      id: "00_manual_later",
+      applicationId: "app_fake_alpha",
+      contactIds: [],
+      stage: "onsite_loop",
+      startsAt: "2028-05-01T10:00:00.000Z",
+      outcome: "scheduled",
+      createdAt: "2026-05-01T09:00:00.000Z",
+      updatedAt: "2026-05-01T09:00:00.000Z",
+    });
+    const edited = browserApplicationExportToCanonicalRows(bundle)[0];
+    const metadata = JSON.parse(
+      bundle.applications[0].notes.split("Spreadsheet metadata: ")[1],
+    );
+    expect(applyPreservedCompactCells(edited, metadata).interview_stage).toBe(
+      "onsite_loop",
+    );
+    expect(applyPreservedCompactCells(edited, metadata).company).toBe(
+      "Example Alpha",
+    );
+    repo.close();
+  });
   it("runs a fake full-fidelity backup/restore smoke flow", async () => {
     const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
     const csv = await fixture();
