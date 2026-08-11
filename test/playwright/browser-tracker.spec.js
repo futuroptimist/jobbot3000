@@ -6,6 +6,7 @@ import path from "node:path";
 import { expect, test } from "@playwright/test";
 
 import { startWebServer } from "../../src/web/server.js";
+import { parseCsv } from "../../src/web/import-export/spreadsheet.js";
 
 const csvFixture = [
   "application_id,company,role_title,status,applied_at,posting_url," +
@@ -984,6 +985,68 @@ test.describe("browser application tracker", () => {
     await expect((await download).suggestedFilename()).toBe(
       "jobbot3000-backup.json",
     );
+  });
+
+  test("preserves assessment due-date precision in lifecycle CSV export", async ({
+    page,
+  }) => {
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await importFixture(page, "fake-applications.csv", csvFixture);
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Example Labs" }).click();
+
+    const assessmentForm = page.locator("[data-assessment-form]");
+    await assessmentForm
+      .locator('[name="actionStatus"]')
+      .selectOption("started");
+    await assessmentForm.locator('[name="dueAt"]').fill("2026-08-31");
+    await assessmentForm
+      .locator('[name="details"]')
+      .fill("Distinctive fake take-home deadline");
+    await assessmentForm
+      .getByRole("button", { name: "Log assessment" })
+      .click();
+
+    const blankAssessmentForm = page.locator("[data-assessment-form]");
+    await blankAssessmentForm
+      .locator('[name="actionStatus"]')
+      .selectOption("pending");
+    await blankAssessmentForm
+      .locator('[name="details"]')
+      .fill("Distinctive fake take-home without deadline");
+    await blankAssessmentForm
+      .getByRole("button", { name: "Log assessment" })
+      .click();
+
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export lifecycle CSV" }).click();
+    const download = await downloadPromise;
+    const rows = parseCsv(await readFile(await download.path(), "utf8"));
+    const datedRow = rows.find(
+      (row) => row.details === "Distinctive fake take-home deadline",
+    );
+    const blankRow = rows.find(
+      (row) => row.details === "Distinctive fake take-home without deadline",
+    );
+
+    expect(datedRow).toMatchObject({
+      event_type: "assessment_take_home",
+      due_at: "2026-08-31",
+      due_at_precision: "date",
+      occurred_at_precision: "instant",
+      inferred: "false",
+    });
+    expect(datedRow.due_at).not.toBe("2026-08-31T00:00:00.000Z");
+    expect(blankRow).toMatchObject({
+      event_type: "assessment_take_home",
+      due_at: "",
+      due_at_precision: "",
+      occurred_at_precision: "instant",
+      inferred: "false",
+    });
   });
 
   test("retains IndexedDB data across reload, exports backup, and clears local data", async ({
