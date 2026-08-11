@@ -1,8 +1,8 @@
 import {
   classifyLifecycleEventType,
+  isActualRecruiterScreen,
   isLifecycleAssessment,
   isLifecycleNonRecruiterInterview,
-  isLifecycleRecruiterScreen,
 } from "./lifecycleClassification.js";
 const TERMINAL_EMPLOYER_STATUSES = new Set([
   "offer",
@@ -363,11 +363,7 @@ export const selectDashboardMetrics = (bundle = {}) => {
       if (event.applicationId)
         assessmentApplicationIds.add(event.applicationId);
     }
-    if (
-      isLifecycleRecruiterScreen(classificationType) ||
-      isLifecycleRecruiterScreen(eventType) ||
-      status === "recruiter_screen"
-    )
+    if (isActualRecruiterScreen(event))
       recruiterScreenKeys.add(
         recruiterScreenKey(event, explicitRecruiterScreenKeys),
       );
@@ -407,7 +403,7 @@ export const selectDashboardMetrics = (bundle = {}) => {
 
   for (const interview of interviews) {
     addResponse(responseApplicationIds, interview.applicationId);
-    if (interview.stage === "recruiter_screen")
+    if (isActualRecruiterScreen(interview))
       recruiterScreenKeys.add(recruiterScreenKey(interview));
   }
   for (const interview of interviews) {

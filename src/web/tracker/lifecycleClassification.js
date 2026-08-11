@@ -35,6 +35,7 @@ const EVENT_REGISTRY = Object.freeze({
     status: "recruiter_screen",
     interviewStage: "recruiter_screen",
     countsAsResponse: true,
+    countsAsRecruiterScreen: true,
   },
   assessment_take_home: {
     category: LIFECYCLE_EVENT_CATEGORIES.ASSESSMENT,
@@ -58,6 +59,7 @@ const EVENT_REGISTRY = Object.freeze({
     interviewStage: "recruiter_screen",
     interviewOutcome: "scheduled",
     countsAsResponse: true,
+    countsAsRecruiterScreen: true,
   },
   recruiter_screen_completed: {
     category: LIFECYCLE_EVENT_CATEGORIES.RECRUITER_SCREEN,
@@ -65,6 +67,7 @@ const EVENT_REGISTRY = Object.freeze({
     interviewStage: "recruiter_screen",
     interviewOutcome: "completed",
     countsAsResponse: true,
+    countsAsRecruiterScreen: true,
   },
   devops_interview_scheduled: {
     category: LIFECYCLE_EVENT_CATEGORIES.NON_RECRUITER_INTERVIEW,
@@ -219,11 +222,38 @@ const EVENT_REGISTRY = Object.freeze({
   },
 });
 
-export const classifyLifecycleEventType = (eventType) => ({
-  category: LIFECYCLE_EVENT_CATEGORIES.UNKNOWN_METADATA,
-  ...EVENT_REGISTRY[normalize(eventType)],
-  eventType: normalize(eventType),
-});
+export const classifyLifecycleEventType = (eventType) => {
+  const normalized = normalize(eventType);
+  const invitation = /^recruiter_screen_(invite|invited|invitation)(_|$)/.test(
+    normalized,
+  );
+  return {
+    category: invitation
+      ? LIFECYCLE_EVENT_CATEGORIES.RECRUITER_SCREEN
+      : LIFECYCLE_EVENT_CATEGORIES.UNKNOWN_METADATA,
+    ...(invitation
+      ? {
+          status: "recruiter_screen",
+          interviewStage: "recruiter_screen",
+          countsAsResponse: true,
+        }
+      : EVENT_REGISTRY[normalized]),
+    eventType: normalized,
+  };
+};
+
+export const isActualRecruiterScreen = (record = {}) => {
+  const typedEvent =
+    normalize(record.rawEventType) || normalize(record.eventType);
+  if (typedEvent)
+    return Boolean(
+      classifyLifecycleEventType(typedEvent).countsAsRecruiterScreen,
+    );
+  return (
+    normalize(record.stage) === "recruiter_screen" ||
+    normalize(record.status) === "recruiter_screen"
+  );
+};
 
 export const isLifecycleRecruiterScreen = (eventType) =>
   classifyLifecycleEventType(eventType).category ===
