@@ -83,6 +83,7 @@ const event = (
     (String(occurredAt).includes("T") ? "instant" : "unknown"),
   inferred: true,
   source: "reconciliation",
+  provenance: "inferred",
   createdAt: "1970-01-01T00:00:00.000Z",
   ...extra,
 });
