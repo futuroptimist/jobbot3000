@@ -42,6 +42,131 @@ const importLifecycle = (csv, existing) =>
   }).bundle;
 
 describe("tracker dashboard metrics", () => {
+  it("excludes recruiter-screen invitations while deduplicating actual screens", () => {
+    const applications = ["a", "b", "c", "d"].map((suffix) => ({
+      id: `app_screen_${suffix}`,
+      company: `Screen ${suffix.toUpperCase()}`,
+      role: "Engineer",
+      status: "recruiter_screen",
+      createdAt: exportedAt,
+      updatedAt: exportedAt,
+    }));
+    const event = (id, applicationId, rawEventType, time) => ({
+      id,
+      applicationId,
+      eventType: "recruiter_screen",
+      rawEventType,
+      status: "recruiter_screen",
+      occurredAt: time,
+      dueAt: time,
+      occurredAtHasTime: true,
+      dueAtHasTime: true,
+      createdAt: time,
+    });
+    const lifecycleEvents = [
+      event(
+        "invite_a",
+        "app_screen_a",
+        "recruiter_screen_invitation_received",
+        "2026-04-01T10:00:00.000Z",
+      ),
+      event(
+        "invite_b",
+        "app_screen_b",
+        "recruiter_screen_invited",
+        "2026-04-02T10:00:00.000Z",
+      ),
+      event(
+        "scheduled_b",
+        "app_screen_b",
+        "recruiter_screen_scheduled",
+        "2026-04-03T10:00:00.000Z",
+      ),
+      event(
+        "completed_b",
+        "app_screen_b",
+        "recruiter_screen_completed",
+        "2026-04-03T10:00:00.000Z",
+      ),
+      event(
+        "invite_c",
+        "app_screen_c",
+        "recruiter_screen_invite",
+        "2026-04-04T10:00:00.000Z",
+      ),
+      event(
+        "scheduled_c",
+        "app_screen_c",
+        "recruiter_screen_scheduled",
+        "2026-04-05T10:00:00.000Z",
+      ),
+      event(
+        "completed_c",
+        "app_screen_c",
+        "recruiter_screen_completed",
+        "2026-04-05T10:00:00.000Z",
+      ),
+      event(
+        "completed_d",
+        "app_screen_d",
+        "recruiter_screen_completed",
+        "2026-04-06T10:00:00.000Z",
+      ),
+    ];
+    const interviews = lifecycleEvents
+      .filter(({ rawEventType }) =>
+        ["recruiter_screen_scheduled", "recruiter_screen_completed"].includes(
+          rawEventType,
+        ),
+      )
+      .map((item) => ({
+        id: `interview_${item.id}`,
+        applicationId: item.applicationId,
+        contactIds: [],
+        stage: "recruiter_screen",
+        startsAt: item.dueAt,
+        outcome: item.rawEventType.endsWith("completed")
+          ? "completed"
+          : "scheduled",
+        createdAt: item.createdAt,
+        updatedAt: item.createdAt,
+      }));
+    const bundle = { applications, lifecycleEvents, interviews };
+    expect(selectDashboardMetrics(bundle)).toMatchObject({
+      recruiterScreens: 3,
+      applicationsWithResponse: 4,
+    });
+    expect(
+      uniqueRecruiterScreens({ lifecycle: lifecycleEvents, interviews }),
+    ).toHaveLength(3);
+    expect(
+      uniqueRecruiterScreens({
+        lifecycle: [lifecycleEvents[0]],
+        interviews: [],
+      }),
+    ).toHaveLength(0);
+    expect(
+      selectDashboardMetrics({
+        ...bundle,
+        lifecycleEvents: [...lifecycleEvents].reverse(),
+        interviews: [...interviews].reverse(),
+      }).recruiterScreens,
+    ).toBe(3);
+
+    const secondTime = "2026-04-10T10:00:00.000Z";
+    const second = event(
+      "scheduled_b_second",
+      "app_screen_b",
+      "recruiter_screen_scheduled",
+      secondTime,
+    );
+    expect(
+      selectDashboardMetrics({
+        ...bundle,
+        lifecycleEvents: [...lifecycleEvents, second],
+      }).recruiterScreens,
+    ).toBe(4);
+  });
   it("classifies scheduled lifecycle interview events centrally", () => {
     expect(
       classifyLifecycleEventType("devops_interview_scheduled"),

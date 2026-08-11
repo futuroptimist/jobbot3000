@@ -221,9 +221,41 @@ const EVENT_REGISTRY = Object.freeze({
 
 export const classifyLifecycleEventType = (eventType) => ({
   category: LIFECYCLE_EVENT_CATEGORIES.UNKNOWN_METADATA,
+  ...(normalize(eventType).startsWith("recruiter_screen_invite") ||
+  normalize(eventType).startsWith("recruiter_screen_invitation")
+    ? {
+        category: LIFECYCLE_EVENT_CATEGORIES.RECRUITER_SCREEN,
+        status: "recruiter_screen",
+        interviewStage: "recruiter_screen",
+        countsAsResponse: true,
+      }
+    : {}),
   ...EVENT_REGISTRY[normalize(eventType)],
   eventType: normalize(eventType),
 });
+
+const isRecruiterScreenInvitation = (eventType) => {
+  const normalized = normalize(eventType);
+  return (
+    normalized.startsWith("recruiter_screen_invite") ||
+    normalized.startsWith("recruiter_screen_invitation")
+  );
+};
+
+/** Whether a record represents an actual scheduled/completed recruiter screen. */
+export const isActualRecruiterScreen = (record = {}) => {
+  const rawEventType = normalize(record.rawEventType);
+  const eventType = normalize(record.eventType);
+  const authoritativeType = rawEventType || eventType;
+  if (authoritativeType) {
+    if (isRecruiterScreenInvitation(authoritativeType)) return false;
+    return isLifecycleRecruiterScreen(authoritativeType);
+  }
+  return (
+    normalize(record.stage) === "recruiter_screen" ||
+    normalize(record.status) === "recruiter_screen"
+  );
+};
 
 export const isLifecycleRecruiterScreen = (eventType) =>
   classifyLifecycleEventType(eventType).category ===

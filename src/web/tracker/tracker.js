@@ -14,9 +14,9 @@ import {
 } from "../import-export/spreadsheet.js";
 import {
   classifyLifecycleEventType,
+  isActualRecruiterScreen,
   isLifecycleAssessment,
   isLifecycleNonRecruiterInterview,
-  isLifecycleRecruiterScreen,
 } from "./lifecycleClassification.js";
 import {
   readSpreadsheetMetadata,
@@ -218,10 +218,7 @@ const isAssessmentEvent = (record = {}) =>
     .some(
       (value) => value.includes("assessment") || value.includes("take_home"),
     );
-const isRecruiterScreen = (record = {}) =>
-  normalize(record.stage) === "recruiter_screen" ||
-  normalize(record.status) === "recruiter_screen" ||
-  isLifecycleRecruiterScreen(record.eventType);
+const isRecruiterScreen = (record = {}) => isActualRecruiterScreen(record);
 const isNonRecruiterInterview = (record = {}) =>
   (record.stage && normalize(record.stage) !== "recruiter_screen") ||
   isLifecycleNonRecruiterInterview(record.eventType);
