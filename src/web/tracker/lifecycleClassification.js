@@ -243,12 +243,11 @@ export const classifyLifecycleEventType = (eventType) => {
 };
 
 export const isActualRecruiterScreen = (record = {}) => {
-  const typedEvents = [record.rawEventType, record.eventType]
-    .map(normalize)
-    .filter(Boolean);
-  for (const typedEvent of typedEvents) {
-    const { countsAsRecruiterScreen } = classifyLifecycleEventType(typedEvent);
-    if (countsAsRecruiterScreen !== undefined) return countsAsRecruiterScreen;
+  for (const typedEvent of [record.rawEventType, record.eventType]) {
+    if (!normalize(typedEvent)) continue;
+    const classification = classifyLifecycleEventType(typedEvent);
+    if (classification.category !== LIFECYCLE_EVENT_CATEGORIES.UNKNOWN_METADATA)
+      return classification.countsAsRecruiterScreen === true;
   }
   return (
     normalize(record.stage) === "recruiter_screen" ||

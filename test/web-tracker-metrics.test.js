@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   csvToBrowserApplicationExport,
+  exportLifecycleCsv,
   exportJsonBackup,
   exportNdjsonBackup,
   importJsonBackup,
@@ -67,6 +68,28 @@ describe("tracker dashboard metrics", () => {
         status: "recruiter_screen",
       }),
     ).toBe(false);
+    expect(
+      isActualRecruiterScreen({
+        rawEventType: "technical_interview_scheduled",
+        eventType: "recruiter_screen",
+      }),
+    ).toBe(false);
+    expect(
+      isActualRecruiterScreen({
+        rawEventType: "onsite_interview_completed",
+        eventType: "recruiter_screen",
+      }),
+    ).toBe(false);
+    expect(
+      isActualRecruiterScreen({
+        rawEventType: "recruiter_screen_scheduled",
+      }),
+    ).toBe(true);
+    expect(
+      isActualRecruiterScreen({
+        rawEventType: "recruiter_screen_completed",
+      }),
+    ).toBe(true);
   });
 
   it("excludes recruiter-screen invitations while deduping actual screens", () => {
@@ -139,7 +162,33 @@ describe("tracker dashboard metrics", () => {
         startsAt: item.occurredAt,
         outcome: "completed",
       }));
-    const bundle = { applications, lifecycleEvents, interviews };
+    const bundle = {
+      schemaVersion: 2,
+      exportedAt,
+      applications: applications.map((application) => ({
+        ...application,
+        origin: "other_unknown",
+      })),
+      lifecycleEvents: lifecycleEvents.map((item) => ({
+        ...item,
+        source: "csv_import",
+        provenance: "explicit",
+        occurredAtPrecision: "instant",
+        dueAtPrecision: item.dueAt ? "instant" : undefined,
+        inferred: false,
+      })),
+      interviews: interviews.map((interview) => ({
+        ...interview,
+        contactIds: [],
+        createdAt: exportedAt,
+        updatedAt: exportedAt,
+      })),
+      contacts: [],
+      outreachMessages: [],
+      offers: [],
+      artifacts: [],
+      reminders: [],
+    };
     expect(selectDashboardMetrics(bundle)).toMatchObject({
       recruiterScreens: 3,
       applicationsWithResponse: 4,
@@ -162,6 +211,39 @@ describe("tracker dashboard metrics", () => {
         interviews: [...interviews].reverse(),
       }).recruiterScreens,
     ).toBe(3);
+
+    const lifecycleCsv = exportLifecycleCsv(bundle);
+    const exportedInvitation = parseCsv(lifecycleCsv).find(
+      ({ event_id }) => event_id === "invite_a",
+    );
+    expect(exportedInvitation.raw_event_type).toBe(
+      "recruiter_screen_invitation_received",
+    );
+
+    const roundTripped = importLifecycle(lifecycleCsv, { applications });
+    expect(selectDashboardMetrics(roundTripped).recruiterScreens).toBe(3);
+    expect(
+      uniqueRecruiterScreens({
+        lifecycle: roundTripped.lifecycleEvents,
+        interviews: roundTripped.interviews,
+      }),
+    ).toHaveLength(3);
+    const invitationOnly = {
+      ...roundTripped,
+      applications: roundTripped.applications.filter(
+        ({ id }) => id === "app_a",
+      ),
+      lifecycleEvents: roundTripped.lifecycleEvents.filter(
+        ({ applicationId }) => applicationId === "app_a",
+      ),
+      interviews: roundTripped.interviews.filter(
+        ({ applicationId }) => applicationId === "app_a",
+      ),
+    };
+    expect(selectDashboardMetrics(invitationOnly)).toMatchObject({
+      recruiterScreens: 0,
+      applicationsWithResponse: 1,
+    });
 
     const secondScreen = event(
       "completed_b_second",
