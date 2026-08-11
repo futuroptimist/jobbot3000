@@ -136,7 +136,50 @@ describe("spreadsheet import/export", () => {
       "DevOps interview",
     );
 
-    bundle.interviews.push({
+    const firstCompactRows = new Map(
+      parseCsv(exportCompactCsv(bundle)).map((row) => [
+        row.application_id,
+        row,
+      ]),
+    );
+    const restoredRepo = await createIndexedDbRepository({
+      indexedDb: indexedDB,
+    });
+    await importCompactCsv(exportCompactCsv(bundle), restoredRepo, {
+      mode: "replace",
+    });
+    await importSupplementalLifecycleCsv(
+      exportLifecycleCsv(bundle),
+      restoredRepo,
+    );
+    const restoredBundle = await restoredRepo.exportAllData();
+    const restoredCanonical = new Map(
+      browserApplicationExportToCanonicalRows(restoredBundle).map((row) => [
+        row.application_id,
+        row,
+      ]),
+    );
+    expect(restoredCanonical.get("app_stage_alpha").interview_stage).toBe(
+      "recruiter_screen",
+    );
+    expect(restoredCanonical.get("app_stage_beta").interview_stage).toBe(
+      "technical_screen",
+    );
+    const restoredCompactRows = new Map(
+      parseCsv(exportCompactCsv(restoredBundle)).map((row) => [
+        row.application_id,
+        row,
+      ]),
+    );
+    expect(restoredCompactRows).toEqual(firstCompactRows);
+    expect(restoredCompactRows.get("app_stage_alpha").interview_stage).toBe(
+      "Technical screen",
+    );
+    expect(restoredCompactRows.get("app_stage_beta").interview_stage).toBe(
+      "DevOps interview",
+    );
+
+    restoredBundle.interviews.push({
       id: "aa_later_manual",
       applicationId: "app_stage_alpha",
       contactIds: [],
@@ -147,7 +190,7 @@ describe("spreadsheet import/export", () => {
       updatedAt: "2027-04-10T12:00:00.000Z",
     });
     const edited = new Map(
-      browserApplicationExportToRows(bundle).map((row) => [
+      browserApplicationExportToRows(restoredBundle).map((row) => [
         row.application_id,
         row,
       ]),
@@ -160,7 +203,7 @@ describe("spreadsheet import/export", () => {
     expect(edited.get("app_stage_beta").interview_stage).toBe(
       "DevOps interview",
     );
-    repo.close();
+    expect(edited.get("app_stage_beta").notes).toBe("Untouched beta note");
   });
   it("runs a fake full-fidelity backup/restore smoke flow", async () => {
     const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
@@ -194,7 +237,7 @@ describe("spreadsheet import/export", () => {
       direction: "outbound",
       channel: "email",
       body: "Fake outreach body",
-      sentAt: "2027-04-02T12:00:00.000Z",
+      sentAt: "2026-04-02T12:00:00.000Z",
       createdAt: manual.createdAt,
       updatedAt: manual.updatedAt,
     });
@@ -708,6 +751,39 @@ describe("spreadsheet import/export", () => {
         }),
       ]),
     );
+  });
+
+  it("uses legacy flat metadata when a version-two envelope is invalid", () => {
+    const { bundle, errors } = csvToBrowserApplicationExport(
+      serializeCsv([
+        {
+          application_id: "app_invalid_v2_metadata",
+          company: "Invalid Envelope Example",
+          role_title: "Engineer",
+          status: "Interviewing",
+          interview_stage: "DevOps interview",
+          outcome: "Awaiting feedback",
+        },
+      ]),
+      { exportedAt: "2026-03-10T00:00:00.000Z" },
+    );
+    expect(errors).toEqual([]);
+    const application = bundle.applications[0];
+    const metadata = JSON.parse(
+      application.notes.slice("Spreadsheet metadata: ".length),
+    );
+    metadata.raw_row = [];
+    delete metadata.canonical_row;
+    application.notes = `Spreadsheet metadata: ${JSON.stringify(metadata)}`;
+
+    const [row] = browserApplicationExportToCanonicalRows(bundle);
+
+    expect(row).toMatchObject({
+      status: "Interviewing",
+      interview_stage: "DevOps interview",
+      outcome: "Awaiting feedback",
+    });
+    expect(browserApplicationExportToRows(bundle)[0]).toMatchObject(row);
   });
 
   it("preserves ambiguous compact status labels without inventing interviews", async () => {
@@ -2508,12 +2584,15 @@ describe("spreadsheet import/export", () => {
   it("falls back from second-precision epoch stage timestamps", () => {
     const [row] = parseCsv(
       exportCompactCsv({
+        schemaVersion: 2,
+        exportedAt: "2026-03-01T00:00:00.000Z",
         applications: [
           {
             id: "app_epoch_stage",
             company: "Epoch Example",
             role: "Engineer",
-            status: "interviewing",
+            origin: "other_unknown",
+            status: "technical_screen",
             createdAt: "2026-01-01T00:00:00.000Z",
             updatedAt: "2026-03-01T00:00:00.000Z",
           },
@@ -2522,22 +2601,192 @@ describe("spreadsheet import/export", () => {
           {
             id: "event_technical",
             applicationId: "app_epoch_stage",
+            status: "technical_screen",
             eventType: "technical_interview_completed",
             occurredAt: "2026-02-01T00:00:00.000Z",
+            occurredAtPrecision: "instant",
+            inferred: false,
+            source: "manual",
             createdAt: "2026-02-01T00:00:00.000Z",
           },
           {
             id: "event_onsite",
             applicationId: "app_epoch_stage",
+            status: "onsite_loop",
             eventType: "onsite_interview_completed",
             occurredAt: "1970-01-01T00:00:00Z",
+            occurredAtPrecision: "instant",
+            inferred: false,
+            source: "manual",
             createdAt: "2026-03-01T00:00:00.000Z",
           },
         ],
+        contacts: [],
+        outreachMessages: [],
+        interviews: [],
+        offers: [],
+        artifacts: [],
+        reminders: [],
       }),
     );
 
     expect(row.interview_stage).toBe("onsite_loop");
+  });
+
+  it("excludes superseded stages and only their generated interviews", () => {
+    const baseEvent = {
+      applicationId: "app_superseded_stage",
+      occurredAtPrecision: "instant",
+      inferred: false,
+      source: "manual",
+    };
+    const bundle = {
+      schemaVersion: 2,
+      exportedAt: "2026-05-01T00:00:00.000Z",
+      applications: [
+        {
+          id: "app_superseded_stage",
+          company: "Supersession Example",
+          role: "Engineer",
+          origin: "other_unknown",
+          status: "technical_screen",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-05-01T00:00:00.000Z",
+        },
+      ],
+      lifecycleEvents: [
+        {
+          ...baseEvent,
+          id: "event_obsolete",
+          status: "onsite_loop",
+          eventType: "onsite_interview_completed",
+          occurredAt: "2026-04-20T12:00:00.000Z",
+          createdAt: "2026-04-20T12:00:00.000Z",
+        },
+        {
+          ...baseEvent,
+          id: "event_replacement",
+          status: "recruiter_screen",
+          eventType: "recruiter_screen_completed",
+          supersedesEventId: "event_obsolete",
+          occurredAt: "2026-03-01T12:00:00.000Z",
+          createdAt: "2026-04-21T12:00:00.000Z",
+        },
+      ],
+      interviews: [
+        {
+          id: "interview_event_obsolete",
+          applicationId: "app_superseded_stage",
+          contactIds: [],
+          stage: "onsite_loop",
+          startsAt: "2026-04-20T12:00:00.000Z",
+          outcome: "completed",
+          createdAt: "2026-04-20T12:00:00.000Z",
+          updatedAt: "2026-04-20T12:00:00.000Z",
+        },
+        {
+          id: "manual_interview_kept",
+          applicationId: "app_superseded_stage",
+          contactIds: [],
+          stage: "technical_screen",
+          startsAt: "2026-02-01T12:00:00.000Z",
+          outcome: "completed",
+          createdAt: "2026-02-01T12:00:00.000Z",
+          updatedAt: "2026-02-01T12:00:00.000Z",
+        },
+      ],
+      contacts: [],
+      outreachMessages: [],
+      offers: [],
+      artifacts: [],
+      reminders: [],
+    };
+
+    expect(parseCsv(exportCompactCsv(bundle))[0].interview_stage).toBe(
+      "recruiter_screen",
+    );
+  });
+
+  it("falls back from unknown raw stage types to canonical timestamp semantics", () => {
+    const application = (id) => ({
+      id,
+      company: "Timestamp Semantics Example",
+      role: "Engineer",
+      origin: "other_unknown",
+      status: "technical_screen",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-05-01T00:00:00.000Z",
+    });
+    const event = (values) => ({
+      occurredAtPrecision: "instant",
+      inferred: false,
+      source: "manual",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      ...values,
+    });
+    const bundle = {
+      schemaVersion: 2,
+      exportedAt: "2026-05-01T00:00:00.000Z",
+      applications: [
+        application("app_unknown_completed"),
+        application("app_unknown_scheduled"),
+      ],
+      lifecycleEvents: [
+        event({
+          id: "scheduled_unknown_raw",
+          applicationId: "app_unknown_scheduled",
+          status: "onsite_loop",
+          eventType: "onsite_interview_scheduled",
+          rawEventType: "legacy_future_conversation",
+          occurredAt: "2026-04-20T00:00:00.000Z",
+          dueAt: "2026-02-01T00:00:00.000Z",
+          dueAtPrecision: "instant",
+        }),
+        event({
+          id: "scheduled_comparison",
+          applicationId: "app_unknown_scheduled",
+          status: "technical_screen",
+          eventType: "technical_interview_completed",
+          occurredAt: "2026-03-01T00:00:00.000Z",
+        }),
+        event({
+          id: "completed_unknown_raw",
+          applicationId: "app_unknown_completed",
+          status: "onsite_loop",
+          eventType: "onsite_interview_completed",
+          rawEventType: "legacy_finished_conversation",
+          occurredAt: "2026-04-01T00:00:00.000Z",
+          dueAt: "2026-02-01T00:00:00.000Z",
+          dueAtPrecision: "instant",
+        }),
+        event({
+          id: "completed_comparison",
+          applicationId: "app_unknown_completed",
+          status: "technical_screen",
+          eventType: "technical_interview_completed",
+          occurredAt: "2026-03-01T00:00:00.000Z",
+        }),
+      ],
+      contacts: [],
+      outreachMessages: [],
+      interviews: [],
+      offers: [],
+      artifacts: [],
+      reminders: [],
+    };
+    const rows = new Map(
+      parseCsv(exportCompactCsv(bundle)).map((row) => [
+        row.application_id,
+        row,
+      ]),
+    );
+
+    expect(rows.get("app_unknown_scheduled").interview_stage).toBe(
+      "technical_screen",
+    );
+    expect(rows.get("app_unknown_completed").interview_stage).toBe(
+      "onsite_loop",
+    );
   });
 
   it("reports compensation range errors without undercounting rows", async () => {

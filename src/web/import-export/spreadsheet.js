@@ -1,6 +1,9 @@
 import { browserApplicationExportSchema } from "../../domain/browserApplication.js";
 import { upgradeBrowserExportToV2 } from "../storage/browserDataMigration.js";
-import { classifyLifecycleEventType } from "../tracker/lifecycleClassification.js";
+import {
+  classifyLifecycleEventType,
+  LIFECYCLE_EVENT_CATEGORIES,
+} from "../tracker/lifecycleClassification.js";
 
 export const LIFECYCLE_CSV_COLUMNS = [
   "event_id",
@@ -469,6 +472,14 @@ export const createSpreadsheetMetadataEnvelope = (
     ]),
   ),
 });
+const isV2SpreadsheetMetadataEnvelope = (metadata) =>
+  metadata?.spreadsheet_metadata_version === 2 &&
+  metadata.raw_row !== null &&
+  typeof metadata.raw_row === "object" &&
+  !Array.isArray(metadata.raw_row) &&
+  metadata.canonical_row !== null &&
+  typeof metadata.canonical_row === "object" &&
+  !Array.isArray(metadata.canonical_row);
 const appendMetadataToNotes = (notes, metadata) => {
   const entries = Object.keys(metadata).sort();
   if (entries.length === 0) return compact(notes) || undefined;
@@ -499,12 +510,7 @@ const readMetadataFromNotes = (notes) => {
   }
 };
 export const applyPreservedCompactCells = (canonicalRow, metadata) => {
-  if (
-    metadata?.spreadsheet_metadata_version !== 2 ||
-    !metadata.raw_row ||
-    !metadata.canonical_row
-  )
-    return canonicalRow;
+  if (!isV2SpreadsheetMetadataEnvelope(metadata)) return canonicalRow;
   return Object.fromEntries(
     COMPACT_CSV_COLUMNS.map((column) => [
       column,
@@ -1279,9 +1285,12 @@ const usableStageTimestamp = (...values) =>
     return Number.isFinite(timestamp) && timestamp !== 0;
   });
 const lifecycleStageTimestamp = (event) => {
-  const classification = classifyLifecycleEventType(
-    event.rawEventType || event.eventType,
-  );
+  const rawClassification = classifyLifecycleEventType(event.rawEventType);
+  const classification =
+    event.rawEventType &&
+    rawClassification.category !== LIFECYCLE_EVENT_CATEGORIES.UNKNOWN_METADATA
+      ? rawClassification
+      : classifyLifecycleEventType(event.eventType);
   if (classification.interviewOutcome === "completed")
     return usableStageTimestamp(
       event.occurredAt,
@@ -1303,31 +1312,50 @@ const lifecycleStageTimestamp = (event) => {
     event.createdAt,
   );
 };
-const latestStageRecord = (interviews, events, applicationId) =>
-  [
-    ...interviews
-      .filter((record) => record.applicationId === applicationId)
-      .map((record) => ({
-        id: record.id,
-        stage: record.stage,
-        timestamp: usableStageTimestamp(record.startsAt, record.createdAt),
-      })),
-    ...events
-      .filter(
-        (event) =>
-          event.applicationId === applicationId &&
-          INTERVIEW_STAGES.has(event.status),
-      )
-      .map((event) => ({
-        id: event.id,
-        stage: event.status,
-        timestamp: lifecycleStageTimestamp(event),
-      })),
-  ].sort(
-    (a, b) =>
-      compareIsoDateTimes(b.timestamp, a.timestamp) ||
-      compareCodePoints(b.id, a.id),
-  )[0] ?? {};
+const latestStageRecord = (interviews, events, applicationId) => {
+  const applicationEvents = events.filter(
+    (event) => event.applicationId === applicationId,
+  );
+  const supersededEventIds = new Set(
+    applicationEvents
+      .map((event) => event.supersedesEventId)
+      .filter(Boolean)
+      .map(String),
+  );
+  const supersededInterviewIds = new Set(
+    [...supersededEventIds].map((eventId) => stableId("interview", eventId)),
+  );
+  return (
+    [
+      ...interviews
+        .filter(
+          (record) =>
+            record.applicationId === applicationId &&
+            !supersededInterviewIds.has(record.id),
+        )
+        .map((record) => ({
+          id: record.id,
+          stage: record.stage,
+          timestamp: usableStageTimestamp(record.startsAt, record.createdAt),
+        })),
+      ...applicationEvents
+        .filter(
+          (event) =>
+            !supersededEventIds.has(event.id) &&
+            INTERVIEW_STAGES.has(event.status),
+        )
+        .map((event) => ({
+          id: event.id,
+          stage: event.status,
+          timestamp: lifecycleStageTimestamp(event),
+        })),
+    ].sort(
+      (a, b) =>
+        compareIsoDateTimes(b.timestamp, a.timestamp) ||
+        compareCodePoints(b.id, a.id),
+    )[0] ?? {}
+  );
+};
 export const browserApplicationExportToCanonicalRows = (
   bundle,
   { preserveLegacyMetadata = true } = {},
@@ -1424,16 +1452,16 @@ export const browserApplicationExportToCanonicalRows = (
         outreach_sent_at: dateTime(outreach.sentAt),
         outreach_message_text: outreach.body ?? "",
         status:
-          metadata.spreadsheet_metadata_version === 2 || !preserveLegacyMetadata
+          isV2SpreadsheetMetadataEnvelope(metadata) || !preserveLegacyMetadata
             ? application.status
             : (preservedStatus(metadata, application.status) ??
               application.status),
         interview_stage:
-          metadata.spreadsheet_metadata_version === 2 || !preserveLegacyMetadata
+          isV2SpreadsheetMetadataEnvelope(metadata) || !preserveLegacyMetadata
             ? currentStage
             : (preservedInterviewStage(metadata, currentStage) ?? currentStage),
         outcome:
-          metadata.spreadsheet_metadata_version === 2 || !preserveLegacyMetadata
+          isV2SpreadsheetMetadataEnvelope(metadata) || !preserveLegacyMetadata
             ? currentOutcome
             : (preservedOutcome(metadata, currentOutcome) ?? currentOutcome),
       });
@@ -1972,12 +2000,7 @@ export const importSupplementalLifecycleCsv = async (csvText, repository) => {
   const projectedColumns = ["status", "interview_stage", "outcome"];
   merged.applications = merged.applications.map((application) => {
     const { notes, metadata } = readMetadataFromNotes(application.notes);
-    if (
-      metadata.spreadsheet_metadata_version !== 2 ||
-      !metadata.raw_row ||
-      !metadata.canonical_row
-    )
-      return application;
+    if (!isV2SpreadsheetMetadataEnvelope(metadata)) return application;
     const prior = priorRows.get(application.id);
     const projected = projectedRows.get(application.id);
     if (!prior || !projected) return application;
