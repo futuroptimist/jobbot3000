@@ -1274,12 +1274,10 @@ const firstBy = (records, predicate) =>
   [...records].sort((a, b) => compareCodePoints(a.id, b.id)).find(predicate) ??
   {};
 const usableStageTimestamp = (...values) =>
-  values.find(
-    (value) =>
-      value &&
-      !["1970-01-01", "1970-01-01T00:00:00.000Z"].includes(value) &&
-      Number.isFinite(new Date(value).getTime()),
-  );
+  values.find((value) => {
+    const timestamp = value ? new Date(value).getTime() : Number.NaN;
+    return Number.isFinite(timestamp) && timestamp !== 0;
+  });
 const lifecycleStageTimestamp = (event) => {
   const classification = classifyLifecycleEventType(
     event.rawEventType || event.eventType,

@@ -1603,6 +1603,35 @@ describe("spreadsheet import/export", () => {
     expect(bundle.lifecycleEvents).toHaveLength(1);
   });
 
+  it("does not materialize recruiter-screen invitations with due dates", () => {
+    const { errors, bundle } = lifecycleRowsToBrowserApplicationExport(
+      [
+        {
+          application_id: "app_invited_screen",
+          event_type: "recruiter_screen_invitation_received",
+          occurred_at: "2026-03-02T10:00:00.000Z",
+          due_at: "2026-03-05T10:00:00.000Z",
+        },
+      ],
+      {
+        applications: [
+          {
+            id: "app_invited_screen",
+            company: "Example Systems",
+            role: "Engineer",
+            status: "applied",
+            createdAt: "2026-03-01T00:00:00.000Z",
+            updatedAt: "2026-03-01T00:00:00.000Z",
+          },
+        ],
+      },
+    );
+
+    expect(errors).toEqual([]);
+    expect(bundle.lifecycleEvents).toHaveLength(1);
+    expect(bundle.interviews).toEqual([]);
+  });
+
   it("preserves valid ISO offset datetimes without milliseconds", () => {
     const { bundle, errors } = csvToBrowserApplicationExport(
       serializeCsv([
@@ -2474,6 +2503,41 @@ describe("spreadsheet import/export", () => {
       interview_stage: "onsite_loop",
       outcome: "offer",
     });
+  });
+
+  it("falls back from second-precision epoch stage timestamps", () => {
+    const [row] = parseCsv(
+      exportCompactCsv({
+        applications: [
+          {
+            id: "app_epoch_stage",
+            company: "Epoch Example",
+            role: "Engineer",
+            status: "interviewing",
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-03-01T00:00:00.000Z",
+          },
+        ],
+        lifecycleEvents: [
+          {
+            id: "event_technical",
+            applicationId: "app_epoch_stage",
+            eventType: "technical_interview_completed",
+            occurredAt: "2026-02-01T00:00:00.000Z",
+            createdAt: "2026-02-01T00:00:00.000Z",
+          },
+          {
+            id: "event_onsite",
+            applicationId: "app_epoch_stage",
+            eventType: "onsite_interview_completed",
+            occurredAt: "1970-01-01T00:00:00Z",
+            createdAt: "2026-03-01T00:00:00.000Z",
+          },
+        ],
+      }),
+    );
+
+    expect(row.interview_stage).toBe("onsite_loop");
   });
 
   it("reports compensation range errors without undercounting rows", async () => {

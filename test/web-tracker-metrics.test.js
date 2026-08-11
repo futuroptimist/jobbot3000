@@ -14,6 +14,7 @@ import {
 import {
   LIFECYCLE_EVENT_CATEGORIES,
   classifyLifecycleEventType,
+  isActualRecruiterScreen,
 } from "../src/web/tracker/lifecycleClassification.js";
 import {
   boundedPercentage,
@@ -42,6 +43,32 @@ const importLifecycle = (csv, existing) =>
   }).bundle;
 
 describe("tracker dashboard metrics", () => {
+  it("distinguishes invitations from canonicalized legacy recruiter screens", () => {
+    expect(
+      classifyLifecycleEventType("recruiter_screen_invitation_received"),
+    ).toMatchObject({
+      countsAsRecruiterScreen: false,
+      countsAsResponse: true,
+    });
+    expect(
+      classifyLifecycleEventType("recruiter_screen_invitation_received"),
+    ).not.toHaveProperty("interviewStage");
+    expect(
+      isActualRecruiterScreen({
+        rawEventType: "legacy_vendor_screen",
+        eventType: "recruiter_screen",
+        status: "recruiter_screen",
+      }),
+    ).toBe(true);
+    expect(
+      isActualRecruiterScreen({
+        rawEventType: "recruiter_screen_invited",
+        eventType: "recruiter_screen",
+        status: "recruiter_screen",
+      }),
+    ).toBe(false);
+  });
+
   it("excludes recruiter-screen invitations while deduping actual screens", () => {
     const applications = ["a", "b", "c", "d"].map((id) => ({
       id: `app_${id}`,

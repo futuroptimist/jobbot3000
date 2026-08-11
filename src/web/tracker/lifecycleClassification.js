@@ -234,8 +234,8 @@ export const classifyLifecycleEventType = (eventType) => {
     ...(invitation
       ? {
           status: "recruiter_screen",
-          interviewStage: "recruiter_screen",
           countsAsResponse: true,
+          countsAsRecruiterScreen: false,
         }
       : EVENT_REGISTRY[normalized]),
     eventType: normalized,
@@ -243,12 +243,13 @@ export const classifyLifecycleEventType = (eventType) => {
 };
 
 export const isActualRecruiterScreen = (record = {}) => {
-  const typedEvent =
-    normalize(record.rawEventType) || normalize(record.eventType);
-  if (typedEvent)
-    return Boolean(
-      classifyLifecycleEventType(typedEvent).countsAsRecruiterScreen,
-    );
+  const typedEvents = [record.rawEventType, record.eventType]
+    .map(normalize)
+    .filter(Boolean);
+  for (const typedEvent of typedEvents) {
+    const { countsAsRecruiterScreen } = classifyLifecycleEventType(typedEvent);
+    if (countsAsRecruiterScreen !== undefined) return countsAsRecruiterScreen;
+  }
   return (
     normalize(record.stage) === "recruiter_screen" ||
     normalize(record.status) === "recruiter_screen"
