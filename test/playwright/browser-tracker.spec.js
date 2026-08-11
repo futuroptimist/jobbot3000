@@ -5,6 +5,7 @@ import path from "node:path";
 
 import { expect, test } from "@playwright/test";
 
+import { parseCsv } from "../../src/web/import-export/spreadsheet.js";
 import { startWebServer } from "../../src/web/server.js";
 
 const csvFixture = [
@@ -175,6 +176,69 @@ test.describe("browser application tracker", () => {
       .locator("[data-applications-table] tbody tr")
       .filter({ hasText: "Company Delta" });
     await expect(deltaRow).toContainText("Assessment ×1");
+  });
+
+  test("preserves assessment due-date precision in lifecycle CSV export", async ({
+    page,
+  }) => {
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await importFixture(page, "fake-applications.csv", csvFixture);
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Example Labs" }).click();
+
+    const assessmentForm = page.locator("[data-assessment-form]");
+    await assessmentForm
+      .locator('[name="actionStatus"]')
+      .selectOption("pending");
+    await assessmentForm.locator('[name="dueAt"]').fill("2026-08-31");
+    await assessmentForm
+      .locator('[name="details"]')
+      .fill("Distinctive fake assessment deadline");
+    await assessmentForm
+      .getByRole("button", { name: "Log assessment" })
+      .click();
+
+    const blankAssessmentForm = page.locator("[data-assessment-form]");
+    await blankAssessmentForm
+      .locator('[name="actionStatus"]')
+      .selectOption("requested");
+    await blankAssessmentForm
+      .locator('[name="details"]')
+      .fill("Distinctive fake assessment without deadline");
+    await blankAssessmentForm
+      .getByRole("button", { name: "Log assessment" })
+      .click();
+
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export lifecycle CSV" }).click();
+    const download = await downloadPromise;
+    const csv = await readFile(await download.path(), "utf8");
+    const rows = parseCsv(csv);
+    const datedRow = rows.find(
+      (row) => row.details === "Distinctive fake assessment deadline",
+    );
+    const blankRow = rows.find(
+      (row) => row.details === "Distinctive fake assessment without deadline",
+    );
+
+    expect(datedRow).toMatchObject({
+      event_type: "assessment_take_home",
+      due_at: "2026-08-31",
+      due_at_precision: "date",
+      occurred_at_precision: "instant",
+      inferred: "false",
+    });
+    expect(datedRow.due_at).not.toBe("2026-08-31T00:00:00.000Z");
+    expect(blankRow).toMatchObject({
+      event_type: "assessment_take_home",
+      due_at: "",
+      due_at_precision: "",
+      occurred_at_precision: "instant",
+      inferred: "false",
+    });
   });
 
   test("does not infer recruiter chips from free-form stage labels", async ({
