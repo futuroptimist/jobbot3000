@@ -5,6 +5,7 @@ import path from "node:path";
 
 import { expect, test } from "@playwright/test";
 
+import { parseCsv } from "../../src/web/import-export/spreadsheet.js";
 import { startWebServer } from "../../src/web/server.js";
 
 const csvFixture = [
@@ -984,6 +985,69 @@ test.describe("browser application tracker", () => {
     await expect((await download).suggestedFilename()).toBe(
       "jobbot3000-backup.json",
     );
+  });
+
+  test("preserves assessment due-date precision in lifecycle CSV export", async ({
+    page,
+  }) => {
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await importFixture(page, "fake-applications.csv", csvFixture);
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Example Labs" }).click();
+
+    let assessmentForm = page.locator("[data-assessment-form]");
+    await assessmentForm
+      .locator('[name="actionStatus"]')
+      .selectOption("started");
+    await assessmentForm.locator('[name="dueAt"]').fill("2026-08-31");
+    await assessmentForm
+      .locator('[name="details"]')
+      .fill("Distinctive fake dated assessment");
+    await assessmentForm
+      .getByRole("button", { name: "Log assessment" })
+      .click();
+
+    assessmentForm = page.locator("[data-assessment-form]");
+    await assessmentForm
+      .locator('[name="actionStatus"]')
+      .selectOption("pending");
+    await assessmentForm
+      .locator('[name="details"]')
+      .fill("Distinctive fake undated assessment");
+    await assessmentForm
+      .getByRole("button", { name: "Log assessment" })
+      .click();
+
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export lifecycle CSV" }).click();
+    const download = await downloadPromise;
+    const csv = await readFile(await download.path(), "utf8");
+    const rows = parseCsv(csv);
+    const dated = rows.find(
+      (row) => row.details === "Distinctive fake dated assessment",
+    );
+    const undated = rows.find(
+      (row) => row.details === "Distinctive fake undated assessment",
+    );
+
+    expect(dated).toMatchObject({
+      event_type: "assessment_take_home",
+      due_at: "2026-08-31",
+      due_at_precision: "date",
+      occurred_at_precision: "instant",
+      inferred: "false",
+    });
+    expect(dated.due_at).not.toBe("2026-08-31T00:00:00.000Z");
+    expect(undated).toMatchObject({
+      event_type: "assessment_take_home",
+      due_at: "",
+      due_at_precision: "",
+      occurred_at_precision: "instant",
+      inferred: "false",
+    });
   });
 
   test("retains IndexedDB data across reload, exports backup, and clears local data", async ({
