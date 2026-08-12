@@ -24,6 +24,7 @@ import {
   importNdjsonBackup,
   lifecycleRowsToBrowserApplicationExport,
   parseCsv,
+  planSupplementalLifecycleCsvImport,
   serializeCsv,
   previewCompactCsvImport,
   previewSupplementalLifecycleCsvImport,
@@ -106,6 +107,35 @@ describe("spreadsheet import/export", () => {
         "2027-04-01T12:00:00.000Z,2027-04-03T12:00:00.000Z",
       ].join(","),
     ].join("\n");
+    const before = await repo.exportAllData();
+    const preview = await previewSupplementalLifecycleCsvImport(
+      lifecycleCsv,
+      repo,
+    );
+    const plan = planSupplementalLifecycleCsvImport(before, preview.bundle);
+    expect(preview.applyBundle).toEqual(plan.recordsByStore);
+    expect(preview.applyBundle.interviews).toHaveLength(2);
+    expect(preview.applyBundle.applications).toHaveLength(2);
+    const plannedMetadata = new Map(
+      preview.applyBundle.applications.map((application) => [
+        application.id,
+        JSON.parse(
+          application.notes
+            .split("\n")
+            .find((line) => line.startsWith("Spreadsheet metadata:"))
+            .slice("Spreadsheet metadata:".length),
+        ),
+      ]),
+    );
+    expect(plannedMetadata.get("app_stage_alpha").raw_row.interview_stage).toBe(
+      "Technical screen",
+    );
+    expect(
+      plannedMetadata.get("app_stage_alpha").canonical_row.interview_stage,
+    ).toBe("recruiter_screen");
+    expect(preview.applyBundle.applications[0].notes).toContain(
+      "Untouched alpha note",
+    );
     await importSupplementalLifecycleCsv(lifecycleCsv, repo);
     const bundle = await repo.exportAllData();
     bundle.interviews.reverse();
