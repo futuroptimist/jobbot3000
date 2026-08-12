@@ -1893,6 +1893,79 @@ const lifecycleRecordsEqual = (left, right) =>
   JSON.stringify(lifecycleComparableRecord(left)) ===
   JSON.stringify(lifecycleComparableRecord(right));
 
+const SUPPLEMENTAL_LIFECYCLE_STORES = [
+  "lifecycleEvents",
+  "interviews",
+  "reminders",
+];
+
+// Build the complete projected bundle and the minimal payload that the browser
+// can apply atomically. Keeping this pure makes Preview side-effect-free while
+// ensuring the direct importer and the UI use identical envelope rebasing.
+export const planSupplementalLifecycleCsvImport = (existing, incoming) => {
+  const merged = { ...existing, exportedAt: nowIso() };
+  for (const store of SUPPLEMENTAL_LIFECYCLE_STORES) {
+    const records = incoming[store] ?? [];
+    const incomingIds = new Set(records.map(({ id }) => id));
+    merged[store] = [
+      ...(existing[store] ?? []).filter(({ id }) => !incomingIds.has(id)),
+      ...records,
+    ];
+  }
+
+  const priorRows = new Map(
+    browserApplicationExportToCanonicalRows(existing).map((row) => [
+      row.application_id,
+      row,
+    ]),
+  );
+  const projectedRows = new Map(
+    browserApplicationExportToCanonicalRows(merged).map((row) => [
+      row.application_id,
+      row,
+    ]),
+  );
+  const changedApplications = [];
+  merged.applications = merged.applications.map((application) => {
+    const { notes, metadata } = readMetadataFromNotes(application.notes);
+    if (!isV2SpreadsheetMetadataEnvelope(metadata)) return application;
+    const prior = priorRows.get(application.id);
+    const projected = projectedRows.get(application.id);
+    if (!prior || !projected) return application;
+    const canonicalRow = { ...metadata.canonical_row };
+    for (const column of ["status", "interview_stage", "outcome"])
+      if (
+        String(prior[column] ?? "") ===
+        String(metadata.canonical_row[column] ?? "")
+      )
+        canonicalRow[column] = String(projected[column] ?? "");
+    if (JSON.stringify(canonicalRow) === JSON.stringify(metadata.canonical_row))
+      return application;
+    const rebased = {
+      ...application,
+      notes: appendMetadataToNotes(notes, {
+        ...metadata,
+        canonical_row: canonicalRow,
+      }),
+    };
+    changedApplications.push(rebased);
+    return rebased;
+  });
+
+  return {
+    merged,
+    recordsByStore: {
+      applications: changedApplications,
+      ...Object.fromEntries(
+        SUPPLEMENTAL_LIFECYCLE_STORES.map((store) => [
+          store,
+          incoming[store] ?? [],
+        ]),
+      ),
+    },
+  };
+};
+
 export const previewSupplementalLifecycleCsvImport = async (
   csvText,
   repository,
@@ -1951,6 +2024,7 @@ export const previewSupplementalLifecycleCsvImport = async (
     }
     bundle[store] = deduped;
   }
+  const plan = planSupplementalLifecycleCsvImport(existing, bundle);
   return {
     kind: "lifecycle_csv",
     rowCount: rows.length,
@@ -1964,6 +2038,7 @@ export const previewSupplementalLifecycleCsvImport = async (
     conflicts,
     warnings,
     bundle,
+    applyBundle: plan.recordsByStore,
   };
 };
 
@@ -1975,50 +2050,10 @@ export const importSupplementalLifecycleCsv = async (csvText, repository) => {
   if (preview.errors.length > 0 || preview.conflicts.length > 0)
     return { imported: false, preview };
   const existing = await repository.exportAllData();
-  const merged = { ...existing, exportedAt: nowIso() };
-  for (const store of ["lifecycleEvents", "interviews", "reminders"]) {
-    const incoming = preview.bundle[store] ?? [];
-    merged[store] = [
-      ...(existing[store] ?? []).filter(
-        (record) => !incoming.some(({ id }) => id === record.id),
-      ),
-      ...incoming,
-    ];
-  }
-  const priorRows = new Map(
-    browserApplicationExportToCanonicalRows(existing).map((row) => [
-      row.application_id,
-      row,
-    ]),
+  const { merged } = planSupplementalLifecycleCsvImport(
+    existing,
+    preview.bundle,
   );
-  const projectedRows = new Map(
-    browserApplicationExportToCanonicalRows(merged).map((row) => [
-      row.application_id,
-      row,
-    ]),
-  );
-  const projectedColumns = ["status", "interview_stage", "outcome"];
-  merged.applications = merged.applications.map((application) => {
-    const { notes, metadata } = readMetadataFromNotes(application.notes);
-    if (!isV2SpreadsheetMetadataEnvelope(metadata)) return application;
-    const prior = priorRows.get(application.id);
-    const projected = projectedRows.get(application.id);
-    if (!prior || !projected) return application;
-    const canonicalRow = { ...metadata.canonical_row };
-    for (const column of projectedColumns)
-      if (
-        String(prior[column] ?? "") ===
-        String(metadata.canonical_row[column] ?? "")
-      )
-        canonicalRow[column] = String(projected[column] ?? "");
-    return {
-      ...application,
-      notes: appendMetadataToNotes(notes, {
-        ...metadata,
-        canonical_row: canonicalRow,
-      }),
-    };
-  });
   return {
     imported: true,
     preview,

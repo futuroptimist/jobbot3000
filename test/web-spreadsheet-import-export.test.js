@@ -24,6 +24,7 @@ import {
   importNdjsonBackup,
   lifecycleRowsToBrowserApplicationExport,
   parseCsv,
+  planSupplementalLifecycleCsvImport,
   serializeCsv,
   previewCompactCsvImport,
   previewSupplementalLifecycleCsvImport,
@@ -106,7 +107,54 @@ describe("spreadsheet import/export", () => {
         "2027-04-01T12:00:00.000Z,2027-04-03T12:00:00.000Z",
       ].join(","),
     ].join("\n");
+    const beforePlan = await repo.exportAllData();
+    const preview = await previewSupplementalLifecycleCsvImport(
+      lifecycleCsv,
+      repo,
+    );
+    const plan = planSupplementalLifecycleCsvImport(beforePlan, preview.bundle);
+    expect(preview.applyBundle).toEqual(plan.recordsByStore);
+    expect(plan.recordsByStore).toMatchObject({
+      applications: [
+        expect.objectContaining({ id: "app_stage_alpha" }),
+        expect.objectContaining({ id: "app_stage_beta" }),
+      ],
+      lifecycleEvents: preview.bundle.lifecycleEvents,
+      interviews: preview.bundle.interviews,
+      reminders: preview.bundle.reminders,
+    });
+    const plannedMetadata = JSON.parse(
+      plan.recordsByStore.applications[0].notes
+        .split("Spreadsheet metadata: ")[1]
+        .trim(),
+    );
+    expect(plannedMetadata.raw_row.interview_stage).toBe("Technical screen");
+    expect(plannedMetadata.canonical_row.interview_stage).toBe(
+      "recruiter_screen",
+    );
+    expect(plan.recordsByStore.applications[0].notes).toContain(
+      "Untouched alpha note",
+    );
     await importSupplementalLifecycleCsv(lifecycleCsv, repo);
+    const directlyImported = await repo.exportAllData();
+    for (const store of [
+      "applications",
+      "lifecycleEvents",
+      "interviews",
+      "reminders",
+    ]) {
+      const withoutImportTimestamps = (records) =>
+        records.map((record) =>
+          Object.fromEntries(
+            Object.entries(record).filter(
+              ([key]) => !["createdAt", "updatedAt"].includes(key),
+            ),
+          ),
+        );
+      expect(withoutImportTimestamps(directlyImported[store])).toEqual(
+        withoutImportTimestamps(plan.merged[store]),
+      );
+    }
     const bundle = await repo.exportAllData();
     bundle.interviews.reverse();
     bundle.lifecycleEvents.reverse();
