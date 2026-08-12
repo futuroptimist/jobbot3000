@@ -333,6 +333,57 @@ test.describe("browser application tracker", () => {
     await expect(page.locator("[data-import-result]")).toContainText(
       "unknown_application",
     );
+    await expect(page.locator("[data-import-result]")).not.toContainText(
+      "applications:",
+    );
+    await expect(
+      page.getByRole("button", { name: "Apply import" }),
+    ).toBeDisabled();
+
+    const applyConflictLifecycle = [
+      "event_id,application_id,event_type,occurred_at,due_at",
+      "event_apply_conflict,app_reg_alpha_001,technical_interview_completed," +
+        "2026-03-01T10:00:00.000Z,",
+    ].join("\n");
+    await page.setInputFiles("[data-import-file]", {
+      name: "apply-conflict-lifecycle.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from(applyConflictLifecycle),
+    });
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await expect(page.locator("[data-import-result] p").first()).toHaveText(
+      /^Dry-run OK: 0 applications,/,
+    );
+    await page.evaluate(async () => {
+      const request = indexedDB.open("jobbot3000");
+      const database = await new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      const transaction = database.transaction("interviews", "readwrite");
+      transaction.objectStore("interviews").put({
+        id: "interview_event_apply_conflict",
+        applicationId: "app_reg_alpha_001",
+        contactIds: [],
+        stage: "onsite_loop",
+        startsAt: "2026-03-01T10:00:00.000Z",
+        outcome: "scheduled",
+        createdAt: "2026-02-28T10:00:00.000Z",
+        updatedAt: "2026-02-28T10:00:00.000Z",
+      });
+      await new Promise((resolve, reject) => {
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+      });
+      database.close();
+    });
+    await page.getByRole("button", { name: "Apply import" }).click();
+    await expect(page.locator("[data-import-result]")).toContainText(
+      "duplicate_existing",
+    );
+    await expect(page.locator("[data-import-result]")).not.toContainText(
+      "applications:",
+    );
     await expect(
       page.getByRole("button", { name: "Apply import" }),
     ).toBeDisabled();
