@@ -1428,11 +1428,7 @@ async function previewImport() {
           ? importJsonBackup(text)
           : importNdjsonBackup(text);
     state.preview = lifecyclePreview
-      ? {
-          lifecycleEvents: bundle.lifecycleEvents ?? [],
-          interviews: bundle.interviews ?? [],
-          reminders: bundle.reminders ?? [],
-        }
+      ? lifecyclePreview.plan.recordsByStore
       : bundleForIndexedDb(bundle);
     state.previewConflicts =
       lifecyclePreview?.conflicts ??
@@ -1440,7 +1436,13 @@ async function previewImport() {
       (await detectImportConflicts(state.preview));
     renderImportPreview({
       label: detectedFormatLabel(format, text, lifecyclePreview),
-      recordsByStore: state.preview,
+      recordsByStore: lifecyclePreview
+        ? {
+            lifecycleEvents: bundle.lifecycleEvents ?? [],
+            interviews: bundle.interviews ?? [],
+            reminders: bundle.reminders ?? [],
+          }
+        : state.preview,
       conflicts: state.previewConflicts,
       warnings: lifecyclePreview?.warnings ?? compactPreview?.warnings ?? [],
     });
@@ -1482,16 +1484,24 @@ async function applyImport() {
       `Import will replace ${state.previewConflicts.length} existing local records with matching IDs. Continue?`,
     )
   ) {
+    state.preview = null;
+    state.previewConflicts = [];
+    $("[data-import-apply]").disabled = true;
     $("[data-import-result]").textContent = "Import canceled.";
     return;
   }
   try {
     await batchImport(state.preview);
   } catch (err) {
+    state.preview = null;
+    state.previewConflicts = [];
+    $("[data-import-apply]").disabled = true;
     $("[data-import-result]").textContent =
       `Import failed: ${err?.message ?? err}`;
     return;
   }
+  state.preview = null;
+  state.previewConflicts = [];
   $("[data-import-result]").textContent =
     "Import applied successfully. Your tracker data remains local in this browser.";
   $("[data-import-apply]").disabled = true;

@@ -338,6 +338,142 @@ test.describe("browser application tracker", () => {
     ).toBeDisabled();
   });
 
+  test("preserves compact stages through lifecycle preview and apply", async ({
+    page,
+  }) => {
+    const compact = [
+      "application_id,company,role_title,status,applied_at,posting_url," +
+        "application_channel,interview_stage,notes",
+      "app_preserve_scheduling,Stage Scheduling,Engineer,Interviewing," +
+        "2027-01-01,https://example.test/scheduling,Community board," +
+        "Recruiter screen scheduling,Untouched scheduling note",
+      "app_preserve_completed,Stage Completed,Engineer,Interviewing," +
+        "2027-01-02,https://example.test/completed,Community board," +
+        "Recruiter screen completed,Untouched completed note",
+      "app_preserve_devops,Stage DevOps,Engineer,Interviewing,2027-01-03," +
+        "https://example.test/devops,Community board," +
+        "DevOps interview completed,Untouched DevOps note",
+      "app_preserve_control,Stage Control,Engineer,Interviewing,2027-01-04," +
+        "https://example.test/control,Community board,Technical screen," +
+        "Untouched control note",
+    ].join("\n");
+    const recruiterLifecycle = [
+      "event_id,application_id,event_type,occurred_at,due_at",
+      "event_preserve_scheduling,app_preserve_scheduling," +
+        "recruiter_screen_scheduled,2027-02-01T10:00:00.000Z," +
+        "2027-02-02T10:00:00.000Z",
+      "event_preserve_completed,app_preserve_completed," +
+        "recruiter_screen_completed,2027-02-03T10:00:00.000Z,",
+    ].join("\n");
+    const technicalLifecycle = [
+      "event_id,application_id,event_type,occurred_at,due_at",
+      "event_preserve_devops,app_preserve_devops," +
+        "technical_interview_completed,2027-02-04T10:00:00.000Z,",
+      "event_preserve_control,app_preserve_control," +
+        "technical_interview_scheduled,2027-02-05T10:00:00.000Z," +
+        "2027-02-06T10:00:00.000Z",
+    ].join("\n");
+
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await importFixture(page, "preserved-compact.csv", compact);
+    for (const [name, lifecycle] of [
+      ["preserved-recruiter.csv", recruiterLifecycle],
+      ["preserved-technical.csv", technicalLifecycle],
+    ]) {
+      await page.setInputFiles("[data-import-file]", {
+        name,
+        mimeType: "text/csv",
+        buffer: Buffer.from(lifecycle),
+      });
+      await page.getByRole("button", { name: "Preview/dry-run" }).click();
+      await expect(page.locator("[data-import-result]")).toContainText(
+        "Detected format: supplemental lifecycle CSV",
+      );
+      await expect(page.locator("[data-import-result]")).not.toContainText(
+        "applications: 4",
+      );
+      await page.getByRole("button", { name: "Apply import" }).click();
+      await expect(page.locator("[data-import-result]")).toContainText(
+        "Import applied",
+      );
+    }
+
+    const exportRows = async () => {
+      const downloadPromise = page.waitForEvent("download");
+      await page.getByRole("button", { name: "Export compact CSV" }).click();
+      const download = await downloadPromise;
+      return new Map(
+        parseCsv(await readFile(await download.path(), "utf8")).map((row) => [
+          row.application_id,
+          row,
+        ]),
+      );
+    };
+    const originalStages = new Map([
+      ["app_preserve_scheduling", "Recruiter screen scheduling"],
+      ["app_preserve_completed", "Recruiter screen completed"],
+      ["app_preserve_devops", "DevOps interview completed"],
+      ["app_preserve_control", "Technical screen"],
+    ]);
+    const rows = await exportRows();
+    for (const [id, stage] of originalStages) {
+      expect(rows.get(id)).toMatchObject({
+        interview_stage: stage,
+        application_channel: "Community board",
+      });
+      expect(rows.get(id).notes).toContain("Untouched");
+    }
+
+    const metadata = await page.evaluate(async () => {
+      const request = indexedDB.open("jobbot3000");
+      const database = await new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      const transaction = database.transaction("applications", "readonly");
+      const applications = await new Promise((resolve, reject) => {
+        const getAll = transaction.objectStore("applications").getAll();
+        getAll.onsuccess = () => resolve(getAll.result);
+        getAll.onerror = () => reject(getAll.error);
+      });
+      database.close();
+      return applications.map(({ id, notes }) => ({ id, notes }));
+    });
+    const devopsMetadataLine = metadata
+      .find(({ id }) => id === "app_preserve_devops")
+      .notes.split("\n")
+      .find((line) => line.startsWith("Spreadsheet metadata:"));
+    const devopsMetadata = JSON.parse(
+      devopsMetadataLine.replace("Spreadsheet metadata:", ""),
+    );
+    expect(devopsMetadata.raw_row.interview_stage).toBe(
+      "DevOps interview completed",
+    );
+    expect(devopsMetadata.canonical_row.interview_stage).toBe(
+      "technical_screen",
+    );
+
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Stage DevOps" }).click();
+    await page
+      .locator('[data-interview-form] [name="stage"]')
+      .selectOption("onsite_loop");
+    await page
+      .locator('[data-interview-form] [name="startsAt"]')
+      .fill("2027-03-01");
+    await page.getByRole("button", { name: "Log interview" }).click();
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    const editedRows = await exportRows();
+    expect(editedRows.get("app_preserve_devops").interview_stage).toBe(
+      "onsite_loop",
+    );
+    for (const [id, stage] of originalStages)
+      if (id !== "app_preserve_devops")
+        expect(editedRows.get(id).interview_stage).toBe(stage);
+  });
+
   test("surfaces compact CSV conflicts and non-interview stage warnings", async ({
     page,
   }) => {
