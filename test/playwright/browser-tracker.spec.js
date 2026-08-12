@@ -895,6 +895,14 @@ test.describe("browser application tracker", () => {
     );
     await expect(
       page.getByRole("button", { name: "Apply import" }),
+    ).toBeDisabled();
+
+    await page.getByRole("button", { name: "Preview/dry-run" }).click();
+    await expect(page.locator("[data-import-result]")).toContainText(
+      "Dry-run OK: 1 applications",
+    );
+    await expect(
+      page.getByRole("button", { name: "Apply import" }),
     ).toBeEnabled();
   });
 
