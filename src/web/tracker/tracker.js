@@ -140,6 +140,7 @@ const state = {
   bundle: null,
   preview: null,
   previewConflicts: [],
+  supplementalLifecycleCsv: null,
   sort: "appliedAt",
   dir: -1,
   current: null,
@@ -1430,6 +1431,7 @@ async function previewImport() {
     state.preview = lifecyclePreview
       ? lifecyclePreview.plan.recordsByStore
       : bundleForIndexedDb(bundle);
+    state.supplementalLifecycleCsv = lifecyclePreview ? text : null;
     state.previewConflicts =
       lifecyclePreview?.conflicts ??
       compactPreview?.conflicts ??
@@ -1450,6 +1452,7 @@ async function previewImport() {
   } catch (err) {
     state.preview = null;
     state.previewConflicts = [];
+    state.supplementalLifecycleCsv = null;
     $("[data-import-apply]").disabled = true;
     if (err?.errors) {
       renderImportPreview({
@@ -1469,6 +1472,7 @@ async function previewImport() {
 function resetImportPreview() {
   state.preview = null;
   state.previewConflicts = [];
+  state.supplementalLifecycleCsv = null;
   $("[data-import-apply]").disabled = true;
   $("[data-import-result]").innerHTML =
     "Select Preview/dry-run to validate the selected file before applying.";
@@ -1478,23 +1482,39 @@ async function applyImport() {
     resetImportPreview();
     return;
   }
-  if (
-    state.previewConflicts.length &&
-    !confirm(
-      `Import will replace ${state.previewConflicts.length} existing local records with matching IDs. Continue?`,
-    )
-  ) {
-    state.preview = null;
-    state.previewConflicts = [];
-    $("[data-import-apply]").disabled = true;
-    $("[data-import-result]").textContent = "Import canceled.";
-    return;
-  }
   try {
+    if (state.supplementalLifecycleCsv) {
+      const currentPlan = await previewSupplementalLifecycleCsvImport(
+        state.supplementalLifecycleCsv,
+        { exportAllData: repo.exportAll },
+      );
+      if (currentPlan.errors.length || currentPlan.conflicts.length) {
+        resetImportPreview();
+        $("[data-import-result]").textContent =
+          "Local data changed after Preview. Preview the import again before applying.";
+        return;
+      }
+      state.preview = currentPlan.plan.recordsByStore;
+      state.previewConflicts = currentPlan.conflicts;
+    }
+    if (
+      state.previewConflicts.length &&
+      !confirm(
+        `Import will replace ${state.previewConflicts.length} existing local records with matching IDs. Continue?`,
+      )
+    ) {
+      state.preview = null;
+      state.previewConflicts = [];
+      state.supplementalLifecycleCsv = null;
+      $("[data-import-apply]").disabled = true;
+      $("[data-import-result]").textContent = "Import canceled.";
+      return;
+    }
     await batchImport(state.preview);
   } catch (err) {
     state.preview = null;
     state.previewConflicts = [];
+    state.supplementalLifecycleCsv = null;
     $("[data-import-apply]").disabled = true;
     $("[data-import-result]").textContent =
       `Import failed: ${err?.message ?? err}`;
@@ -1502,6 +1522,7 @@ async function applyImport() {
   }
   state.preview = null;
   state.previewConflicts = [];
+  state.supplementalLifecycleCsv = null;
   $("[data-import-result]").textContent =
     "Import applied successfully. Your tracker data remains local in this browser.";
   $("[data-import-apply]").disabled = true;

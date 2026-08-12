@@ -392,6 +392,32 @@ test.describe("browser application tracker", () => {
       await expect(page.locator("[data-import-result]")).not.toContainText(
         "applications: 4",
       );
+      if (name === "preserved-technical.csv") {
+        await page.evaluate(async () => {
+          const request = indexedDB.open("jobbot3000");
+          const database = await new Promise((resolve, reject) => {
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+          });
+          const transaction = database.transaction("applications", "readwrite");
+          const store = transaction.objectStore("applications");
+          const application = await new Promise((resolve, reject) => {
+            const get = store.get("app_preserve_devops");
+            get.onsuccess = () => resolve(get.result);
+            get.onerror = () => reject(get.error);
+          });
+          store.put({
+            ...application,
+            company: "Stage DevOps Updated",
+            updatedAt: "2027-02-04T11:00:00.000Z",
+          });
+          await new Promise((resolve, reject) => {
+            transaction.oncomplete = resolve;
+            transaction.onerror = () => reject(transaction.error);
+          });
+          database.close();
+        });
+      }
       await page.getByRole("button", { name: "Apply import" }).click();
       await expect(page.locator("[data-import-result]")).toContainText(
         "Import applied",
@@ -423,6 +449,9 @@ test.describe("browser application tracker", () => {
       });
       expect(rows.get(id).notes).toContain("Untouched");
     }
+    expect(rows.get("app_preserve_devops").company).toBe(
+      "Stage DevOps Updated",
+    );
 
     const metadata = await page.evaluate(async () => {
       const request = indexedDB.open("jobbot3000");
