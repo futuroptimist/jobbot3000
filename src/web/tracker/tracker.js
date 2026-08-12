@@ -140,6 +140,7 @@ const state = {
   bundle: null,
   preview: null,
   previewConflicts: [],
+  supplementalLifecycleCsv: null,
   sort: "appliedAt",
   dir: -1,
   current: null,
@@ -1311,6 +1312,13 @@ function detectedFormatLabel(format, text, lifecyclePreview) {
     ? "compact application CSV"
     : "CSV";
 }
+function supplementalLifecyclePreviewStores(bundle) {
+  return {
+    lifecycleEvents: bundle.lifecycleEvents ?? [],
+    interviews: bundle.interviews ?? [],
+    reminders: bundle.reminders ?? [],
+  };
+}
 function countByStore(recordsByStore) {
   const rows = {
     applications: recordsByStore.applications?.length ?? 0,
@@ -1389,7 +1397,9 @@ async function previewImport() {
     if (lifecyclePreview?.errors.length || lifecyclePreview?.conflicts.length) {
       renderImportPreview({
         label: "supplemental lifecycle CSV",
-        recordsByStore: lifecyclePreview.bundle ?? {},
+        recordsByStore: supplementalLifecyclePreviewStores(
+          lifecyclePreview.bundle ?? {},
+        ),
         conflicts: lifecyclePreview.conflicts ?? [],
         warnings: lifecyclePreview.warnings ?? [],
         errors: lifecyclePreview.errors ?? [],
@@ -1397,6 +1407,7 @@ async function previewImport() {
       });
       state.preview = null;
       state.previewConflicts = [];
+      state.supplementalLifecycleCsv = null;
       $("[data-import-apply]").disabled = true;
       return;
     }
@@ -1417,6 +1428,7 @@ async function previewImport() {
       });
       state.preview = null;
       state.previewConflicts = [];
+      state.supplementalLifecycleCsv = null;
       $("[data-import-apply]").disabled = true;
       return;
     }
@@ -1427,20 +1439,21 @@ async function previewImport() {
         : format === "json"
           ? importJsonBackup(text)
           : importNdjsonBackup(text);
+    // Keep only the incoming lifecycle records from Preview. Application
+    // envelopes are planned again from current IndexedDB data at Apply time.
     state.preview = lifecyclePreview
-      ? {
-          lifecycleEvents: bundle.lifecycleEvents ?? [],
-          interviews: bundle.interviews ?? [],
-          reminders: bundle.reminders ?? [],
-        }
+      ? supplementalLifecyclePreviewStores(bundle)
       : bundleForIndexedDb(bundle);
+    state.supplementalLifecycleCsv = lifecyclePreview ? text : null;
     state.previewConflicts =
       lifecyclePreview?.conflicts ??
       compactPreview?.conflicts ??
       (await detectImportConflicts(state.preview));
     renderImportPreview({
       label: detectedFormatLabel(format, text, lifecyclePreview),
-      recordsByStore: state.preview,
+      recordsByStore: lifecyclePreview
+        ? supplementalLifecyclePreviewStores(bundle)
+        : state.preview,
       conflicts: state.previewConflicts,
       warnings: lifecyclePreview?.warnings ?? compactPreview?.warnings ?? [],
     });
@@ -1448,6 +1461,7 @@ async function previewImport() {
   } catch (err) {
     state.preview = null;
     state.previewConflicts = [];
+    state.supplementalLifecycleCsv = null;
     $("[data-import-apply]").disabled = true;
     if (err?.errors) {
       renderImportPreview({
@@ -1467,6 +1481,7 @@ async function previewImport() {
 function resetImportPreview() {
   state.preview = null;
   state.previewConflicts = [];
+  state.supplementalLifecycleCsv = null;
   $("[data-import-apply]").disabled = true;
   $("[data-import-result]").innerHTML =
     "Select Preview/dry-run to validate the selected file before applying.";
@@ -1476,22 +1491,58 @@ async function applyImport() {
     resetImportPreview();
     return;
   }
-  if (
-    state.previewConflicts.length &&
-    !confirm(
-      `Import will replace ${state.previewConflicts.length} existing local records with matching IDs. Continue?`,
-    )
-  ) {
-    $("[data-import-result]").textContent = "Import canceled.";
-    return;
-  }
   try {
-    await batchImport(state.preview);
+    let recordsByStore = state.preview;
+    if (state.supplementalLifecycleCsv) {
+      const currentPlan = await previewSupplementalLifecycleCsvImport(
+        state.supplementalLifecycleCsv,
+        { exportAllData: repo.exportAll },
+      );
+      if (currentPlan.errors.length || currentPlan.conflicts.length) {
+        renderImportPreview({
+          label: "supplemental lifecycle CSV",
+          recordsByStore: supplementalLifecyclePreviewStores(
+            currentPlan.bundle ?? {},
+          ),
+          conflicts: currentPlan.conflicts,
+          warnings: currentPlan.warnings,
+          errors: currentPlan.errors,
+          blocking: true,
+        });
+        state.preview = null;
+        state.previewConflicts = [];
+        state.supplementalLifecycleCsv = null;
+        $("[data-import-apply]").disabled = true;
+        return;
+      }
+      recordsByStore = currentPlan.plan.recordsByStore;
+    }
+    if (
+      state.previewConflicts.length &&
+      !confirm(
+        `Import will replace ${state.previewConflicts.length} existing local records with matching IDs. Continue?`,
+      )
+    ) {
+      state.preview = null;
+      state.previewConflicts = [];
+      state.supplementalLifecycleCsv = null;
+      $("[data-import-apply]").disabled = true;
+      $("[data-import-result]").textContent = "Import canceled.";
+      return;
+    }
+    await batchImport(recordsByStore);
   } catch (err) {
+    state.preview = null;
+    state.previewConflicts = [];
+    state.supplementalLifecycleCsv = null;
+    $("[data-import-apply]").disabled = true;
     $("[data-import-result]").textContent =
       `Import failed: ${err?.message ?? err}`;
     return;
   }
+  state.preview = null;
+  state.previewConflicts = [];
+  state.supplementalLifecycleCsv = null;
   $("[data-import-result]").textContent =
     "Import applied successfully. Your tracker data remains local in this browser.";
   $("[data-import-apply]").disabled = true;
