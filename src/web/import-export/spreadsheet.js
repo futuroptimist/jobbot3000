@@ -1,6 +1,9 @@
 import { browserApplicationExportSchema } from "../../domain/browserApplication.js";
 import { upgradeBrowserExportToV2 } from "../storage/browserDataMigration.js";
-import { classifyLifecycleEventType } from "../tracker/lifecycleClassification.js";
+import {
+  classifyLifecycleEventType,
+  LIFECYCLE_EVENT_CATEGORIES,
+} from "../tracker/lifecycleClassification.js";
 
 export const LIFECYCLE_CSV_COLUMNS = [
   "event_id",
@@ -469,6 +472,14 @@ export const createSpreadsheetMetadataEnvelope = (
     ]),
   ),
 });
+const isV2SpreadsheetMetadataEnvelope = (metadata) =>
+  metadata?.spreadsheet_metadata_version === 2 &&
+  metadata.raw_row !== null &&
+  typeof metadata.raw_row === "object" &&
+  !Array.isArray(metadata.raw_row) &&
+  metadata.canonical_row !== null &&
+  typeof metadata.canonical_row === "object" &&
+  !Array.isArray(metadata.canonical_row);
 const appendMetadataToNotes = (notes, metadata) => {
   const entries = Object.keys(metadata).sort();
   if (entries.length === 0) return compact(notes) || undefined;
@@ -499,12 +510,7 @@ const readMetadataFromNotes = (notes) => {
   }
 };
 export const applyPreservedCompactCells = (canonicalRow, metadata) => {
-  if (
-    metadata?.spreadsheet_metadata_version !== 2 ||
-    !metadata.raw_row ||
-    !metadata.canonical_row
-  )
-    return canonicalRow;
+  if (!isV2SpreadsheetMetadataEnvelope(metadata)) return canonicalRow;
   return Object.fromEntries(
     COMPACT_CSV_COLUMNS.map((column) => [
       column,
@@ -1213,7 +1219,9 @@ export const rowsToBrowserApplicationExport = (
     });
     Object.assign(bundle, upgraded.data);
     warnings.push(...upgraded.warnings);
-    const canonicalRows = browserApplicationExportToCanonicalRows(bundle);
+    const canonicalRows = browserApplicationExportToCanonicalRows(bundle, {
+      preserveLegacyMetadata: false,
+    });
     bundle.applications = bundle.applications.map((application, index) => {
       const rawRow = { ...blankRow(), ...(rows[index] ?? {}) };
       const canonicalRow = canonicalRows.find(
@@ -1271,7 +1279,87 @@ const compareIsoDateTimes = (left, right) => {
 const firstBy = (records, predicate) =>
   [...records].sort((a, b) => compareCodePoints(a.id, b.id)).find(predicate) ??
   {};
-export const browserApplicationExportToCanonicalRows = (bundle) => {
+const usableStageTimestamp = (...values) =>
+  values.find((value) => {
+    const timestamp = value ? new Date(value).getTime() : Number.NaN;
+    return Number.isFinite(timestamp) && timestamp !== 0;
+  });
+const lifecycleStageTimestamp = (event) => {
+  const rawClassification = classifyLifecycleEventType(event.rawEventType);
+  const classification =
+    event.rawEventType &&
+    rawClassification.category !== LIFECYCLE_EVENT_CATEGORIES.UNKNOWN_METADATA
+      ? rawClassification
+      : classifyLifecycleEventType(event.eventType);
+  if (classification.interviewOutcome === "completed")
+    return usableStageTimestamp(
+      event.occurredAt,
+      event.startsAt,
+      event.dueAt,
+      event.createdAt,
+    );
+  if (classification.interviewOutcome === "scheduled")
+    return usableStageTimestamp(
+      event.dueAt,
+      event.startsAt,
+      event.occurredAt,
+      event.createdAt,
+    );
+  return usableStageTimestamp(
+    event.occurredAt,
+    event.dueAt,
+    event.startsAt,
+    event.createdAt,
+  );
+};
+const latestStageRecord = (interviews, events, applicationId) => {
+  const applicationEvents = events.filter(
+    (event) => event.applicationId === applicationId,
+  );
+  const supersededEventIds = new Set(
+    applicationEvents
+      .map((event) => event.supersedesEventId)
+      .filter(Boolean)
+      .map(String),
+  );
+  const supersededInterviewIds = new Set(
+    [...supersededEventIds].map((eventId) => stableId("interview", eventId)),
+  );
+  return (
+    [
+      ...interviews
+        .filter(
+          (record) =>
+            record.applicationId === applicationId &&
+            !supersededInterviewIds.has(record.id),
+        )
+        .map((record) => ({
+          id: record.id,
+          stage: record.stage,
+          timestamp: usableStageTimestamp(record.startsAt, record.createdAt),
+        })),
+      ...applicationEvents
+        .filter(
+          (event) =>
+            !supersededEventIds.has(event.id) &&
+            INTERVIEW_STAGES.has(event.status),
+        )
+        .map((event) => ({
+          id: event.id,
+          stage: event.status,
+          timestamp: lifecycleStageTimestamp(event),
+        })),
+    ].sort(
+      (a, b) =>
+        compareIsoDateTimes(b.timestamp, a.timestamp) ||
+        compareCodePoints(b.id, a.id),
+    )[0] ?? {}
+  );
+};
+export const browserApplicationExportToCanonicalRows = (
+  bundle,
+  { preserveLegacyMetadata = true } = {},
+) => {
   const parsed = upgradeBrowserExportToV2(bundle).data;
   return [...parsed.applications]
     .sort((a, b) => a.id.localeCompare(b.id))
@@ -1294,16 +1382,10 @@ export const browserApplicationExportToCanonicalRows = (bundle) => {
               compareIsoDateTimes(b.createdAt, a.createdAt) ||
               compareCodePoints(b.id, a.id),
           )[0] ?? {};
-      const interview =
-        firstBy(
-          parsed.interviews,
-          (record) => record.applicationId === application.id,
-        ) ?? {};
-      const interviewStageEvent = firstBy(
+      const stageRecord = latestStageRecord(
+        parsed.interviews,
         parsed.lifecycleEvents,
-        (event) =>
-          event.applicationId === application.id &&
-          INTERVIEW_STAGES.has(event.status),
+        application.id,
       );
       const outcomeEvent = firstBy(
         parsed.lifecycleEvents,
@@ -1349,7 +1431,7 @@ export const browserApplicationExportToCanonicalRows = (bundle) => {
         artifacts,
         ({ name }) => name === "LinkedIn snapshot PDF",
       );
-      const currentStage = interview.stage ?? interviewStageEvent.status ?? "";
+      const currentStage = stageRecord.stage ?? "";
       const currentOutcome =
         outcomeEvent.status ??
         (offer.status === "received" ? "offer" : offer.status) ??
@@ -1370,10 +1452,18 @@ export const browserApplicationExportToCanonicalRows = (bundle) => {
         outreach_sent_at: dateTime(outreach.sentAt),
         outreach_message_text: outreach.body ?? "",
         status:
-          preservedStatus(metadata, application.status) ?? application.status,
+          isV2SpreadsheetMetadataEnvelope(metadata) || !preserveLegacyMetadata
+            ? application.status
+            : (preservedStatus(metadata, application.status) ??
+              application.status),
         interview_stage:
-          preservedInterviewStage(metadata, currentStage) ?? currentStage,
-        outcome: preservedOutcome(metadata, currentOutcome) ?? currentOutcome,
+          isV2SpreadsheetMetadataEnvelope(metadata) || !preserveLegacyMetadata
+            ? currentStage
+            : (preservedInterviewStage(metadata, currentStage) ?? currentStage),
+        outcome:
+          isV2SpreadsheetMetadataEnvelope(metadata) || !preserveLegacyMetadata
+            ? currentOutcome
+            : (preservedOutcome(metadata, currentOutcome) ?? currentOutcome),
       });
       return row;
     });
@@ -1895,6 +1985,40 @@ export const importSupplementalLifecycleCsv = async (csvText, repository) => {
       ...incoming,
     ];
   }
+  const priorRows = new Map(
+    browserApplicationExportToCanonicalRows(existing).map((row) => [
+      row.application_id,
+      row,
+    ]),
+  );
+  const projectedRows = new Map(
+    browserApplicationExportToCanonicalRows(merged).map((row) => [
+      row.application_id,
+      row,
+    ]),
+  );
+  const projectedColumns = ["status", "interview_stage", "outcome"];
+  merged.applications = merged.applications.map((application) => {
+    const { notes, metadata } = readMetadataFromNotes(application.notes);
+    if (!isV2SpreadsheetMetadataEnvelope(metadata)) return application;
+    const prior = priorRows.get(application.id);
+    const projected = projectedRows.get(application.id);
+    if (!prior || !projected) return application;
+    const canonicalRow = { ...metadata.canonical_row };
+    for (const column of projectedColumns)
+      if (
+        String(prior[column] ?? "") ===
+        String(metadata.canonical_row[column] ?? "")
+      )
+        canonicalRow[column] = String(projected[column] ?? "");
+    return {
+      ...application,
+      notes: appendMetadataToNotes(notes, {
+        ...metadata,
+        canonical_row: canonicalRow,
+      }),
+    };
+  });
   return {
     imported: true,
     preview,
