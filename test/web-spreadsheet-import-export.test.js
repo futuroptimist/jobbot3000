@@ -29,6 +29,7 @@ import {
   previewSupplementalLifecycleCsvImport,
 } from "../src/web/import-export/spreadsheet.js";
 import {
+  readSpreadsheetMetadata,
   recruiterScreenKey,
   selectDashboardMetrics,
 } from "../src/web/tracker/metrics.js";
@@ -106,6 +107,25 @@ describe("spreadsheet import/export", () => {
         "2027-04-01T12:00:00.000Z,2027-04-03T12:00:00.000Z",
       ].join(","),
     ].join("\n");
+    const preview = await previewSupplementalLifecycleCsvImport(
+      lifecycleCsv,
+      repo,
+    );
+    expect(preview.applyBundle).toMatchObject({
+      lifecycleEvents: expect.any(Array),
+      interviews: expect.any(Array),
+      reminders: expect.any(Array),
+      applications: expect.any(Array),
+    });
+    expect(preview.applyBundle.applications).toHaveLength(2);
+    const plannedAlpha = preview.applyBundle.applications.find(
+      ({ id }) => id === "app_stage_alpha",
+    );
+    expect(plannedAlpha.notes).toContain("Untouched alpha note");
+    expect(readSpreadsheetMetadata(plannedAlpha.notes)).toMatchObject({
+      raw_row: { interview_stage: "Technical screen" },
+      canonical_row: { interview_stage: "recruiter_screen" },
+    });
     await importSupplementalLifecycleCsv(lifecycleCsv, repo);
     const bundle = await repo.exportAllData();
     bundle.interviews.reverse();

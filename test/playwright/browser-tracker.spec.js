@@ -1049,6 +1049,156 @@ test.describe("browser application tracker", () => {
     });
   });
 
+  test("preserves compact stages through lifecycle preview and apply", async ({
+    page,
+  }) => {
+    const stages = [
+      ["fake_preserve_scheduling", "Recruiter screen scheduling"],
+      ["fake_preserve_completed", "Recruiter screen completed"],
+      ["fake_preserve_devops", "DevOps interview completed"],
+      ["fake_preserve_control", "Technical screen"],
+    ];
+    const compact = [
+      [
+        "application_id",
+        "company",
+        "role_title",
+        "status",
+        "posting_url",
+        "application_channel",
+        "interview_stage",
+        "notes",
+      ].join(","),
+      ...stages.map(([id, stage], index) =>
+        [
+          id,
+          `Example Preserve ${index}`,
+          "Engineer",
+          "Interviewing",
+          `https://example.test/${id}`,
+          `custom-channel-${index}`,
+          stage,
+          `Untouched note ${index}`,
+        ].join(","),
+      ),
+    ].join("\n");
+    const lifecycleOne = [
+      "event_id,application_id,event_type,occurred_at,due_at",
+      [
+        "fake_event_schedule",
+        "fake_preserve_scheduling",
+        "recruiter_screen_scheduled",
+        "2027-04-01T12:00:00.000Z",
+        "2027-04-02T12:00:00.000Z",
+      ].join(","),
+      [
+        "fake_event_complete",
+        "fake_preserve_completed",
+        "recruiter_screen_completed",
+        "2027-04-03T12:00:00.000Z",
+        "",
+      ].join(","),
+    ].join("\n");
+    const lifecycleTwo = [
+      "event_id,application_id,event_type,occurred_at,due_at",
+      [
+        "fake_event_devops",
+        "fake_preserve_devops",
+        "technical_interview_completed",
+        "2027-04-04T12:00:00.000Z",
+        "",
+      ].join(","),
+      [
+        "fake_event_control",
+        "fake_preserve_control",
+        "technical_interview_scheduled",
+        "2027-04-05T12:00:00.000Z",
+        "2027-04-06T12:00:00.000Z",
+      ].join(","),
+    ].join("\n");
+
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    await importFixture(page, "compact-stage-preservation.csv", compact);
+    for (const [name, csv] of [
+      ["lifecycle-preservation-one.csv", lifecycleOne],
+      ["lifecycle-preservation-two.csv", lifecycleTwo],
+    ]) {
+      await page.setInputFiles("[data-import-file]", {
+        name,
+        mimeType: "text/csv",
+        buffer: Buffer.from(csv),
+      });
+      await page.getByRole("button", { name: "Preview/dry-run" }).click();
+      await expect(page.locator("[data-import-result]")).toContainText(
+        "Detected format: supplemental lifecycle CSV",
+      );
+      await expect(page.locator("[data-import-result]")).toContainText(
+        "Dry-run OK: 0 applications",
+      );
+      await page.getByRole("button", { name: "Apply import" }).click();
+    }
+
+    const exportRows = async () => {
+      const downloadPromise = page.waitForEvent("download");
+      await page.getByRole("button", { name: "Export compact CSV" }).click();
+      const download = await downloadPromise;
+      return parseCsv(await readFile(await download.path(), "utf8"));
+    };
+    let rows = new Map(
+      (await exportRows()).map((row) => [row.application_id, row]),
+    );
+    for (const [index, [id, stage]] of stages.entries())
+      expect(rows.get(id)).toMatchObject({
+        interview_stage: stage,
+        application_channel: `custom-channel-${index}`,
+        notes: `Untouched note ${index}`,
+      });
+
+    const persisted = await page.evaluate(
+      () =>
+        new Promise((resolve, reject) => {
+          const request = indexedDB.open("jobbot3000");
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => {
+            const rowsRequest = request.result
+              .transaction("applications")
+              .objectStore("applications")
+              .getAll();
+            rowsRequest.onerror = () => reject(rowsRequest.error);
+            rowsRequest.onsuccess = () => resolve(rowsRequest.result);
+          };
+        }),
+    );
+    const devops = persisted.find(({ id }) => id === "fake_preserve_devops");
+    expect(devops.notes).toContain(
+      '"interview_stage":"DevOps interview completed"',
+    );
+    expect(devops.notes).toContain('"interview_stage":"technical_screen"');
+
+    await page
+      .getByRole("button", { name: "Applications", exact: true })
+      .click();
+    await page.getByRole("button", { name: "Example Preserve 2" }).click();
+    await page
+      .locator('[data-interview-form] [name="stage"]')
+      .selectOption("onsite_loop");
+    await page
+      .locator('[data-interview-form] [name="startsAt"]')
+      .fill("2028-01-01");
+    await page.getByRole("button", { name: "Log interview" }).click();
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    rows = new Map(
+      (await exportRows()).map((row) => [row.application_id, row]),
+    );
+    expect(rows.get("fake_preserve_devops").interview_stage).toBe(
+      "onsite_loop",
+    );
+    for (const [id, stage] of stages.filter(
+      ([id]) => id !== "fake_preserve_devops",
+    ))
+      expect(rows.get(id).interview_stage).toBe(stage);
+  });
+
   test("retains IndexedDB data across reload, exports backup, and clears local data", async ({
     page,
   }) => {

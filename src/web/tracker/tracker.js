@@ -1428,11 +1428,7 @@ async function previewImport() {
           ? importJsonBackup(text)
           : importNdjsonBackup(text);
     state.preview = lifecyclePreview
-      ? {
-          lifecycleEvents: bundle.lifecycleEvents ?? [],
-          interviews: bundle.interviews ?? [],
-          reminders: bundle.reminders ?? [],
-        }
+      ? lifecyclePreview.applyBundle
       : bundleForIndexedDb(bundle);
     state.previewConflicts =
       lifecyclePreview?.conflicts ??
@@ -1440,7 +1436,13 @@ async function previewImport() {
       (await detectImportConflicts(state.preview));
     renderImportPreview({
       label: detectedFormatLabel(format, text, lifecyclePreview),
-      recordsByStore: state.preview,
+      recordsByStore: lifecyclePreview
+        ? {
+            lifecycleEvents: lifecyclePreview.bundle.lifecycleEvents ?? [],
+            interviews: lifecyclePreview.bundle.interviews ?? [],
+            reminders: lifecyclePreview.bundle.reminders ?? [],
+          }
+        : state.preview,
       conflicts: state.previewConflicts,
       warnings: lifecyclePreview?.warnings ?? compactPreview?.warnings ?? [],
     });

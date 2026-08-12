@@ -1951,6 +1951,7 @@ export const previewSupplementalLifecycleCsvImport = async (
     }
     bundle[store] = deduped;
   }
+  const plan = planSupplementalLifecycleImport(existing, bundle);
   return {
     kind: "lifecycle_csv",
     rowCount: rows.length,
@@ -1964,20 +1965,14 @@ export const previewSupplementalLifecycleCsvImport = async (
     conflicts,
     warnings,
     bundle,
+    applyBundle: plan.recordsByStore,
   };
 };
 
-export const importSupplementalLifecycleCsv = async (csvText, repository) => {
-  const preview = await previewSupplementalLifecycleCsvImport(
-    csvText,
-    repository,
-  );
-  if (preview.errors.length > 0 || preview.conflicts.length > 0)
-    return { imported: false, preview };
-  const existing = await repository.exportAllData();
+export const planSupplementalLifecycleImport = (existing, incomingBundle) => {
   const merged = { ...existing, exportedAt: nowIso() };
   for (const store of ["lifecycleEvents", "interviews", "reminders"]) {
-    const incoming = preview.bundle[store] ?? [];
+    const incoming = incomingBundle[store] ?? [];
     merged[store] = [
       ...(existing[store] ?? []).filter(
         (record) => !incoming.some(({ id }) => id === record.id),
@@ -1998,6 +1993,7 @@ export const importSupplementalLifecycleCsv = async (csvText, repository) => {
     ]),
   );
   const projectedColumns = ["status", "interview_stage", "outcome"];
+  const changedApplications = [];
   merged.applications = merged.applications.map((application) => {
     const { notes, metadata } = readMetadataFromNotes(application.notes);
     if (!isV2SpreadsheetMetadataEnvelope(metadata)) return application;
@@ -2011,14 +2007,36 @@ export const importSupplementalLifecycleCsv = async (csvText, repository) => {
         String(metadata.canonical_row[column] ?? "")
       )
         canonicalRow[column] = String(projected[column] ?? "");
-    return {
+    const rebased = {
       ...application,
       notes: appendMetadataToNotes(notes, {
         ...metadata,
         canonical_row: canonicalRow,
       }),
     };
+    if (rebased.notes !== application.notes) changedApplications.push(rebased);
+    return rebased;
   });
+  return {
+    merged,
+    recordsByStore: {
+      lifecycleEvents: incomingBundle.lifecycleEvents ?? [],
+      interviews: incomingBundle.interviews ?? [],
+      reminders: incomingBundle.reminders ?? [],
+      applications: changedApplications,
+    },
+  };
+};
+
+export const importSupplementalLifecycleCsv = async (csvText, repository) => {
+  const preview = await previewSupplementalLifecycleCsvImport(
+    csvText,
+    repository,
+  );
+  if (preview.errors.length > 0 || preview.conflicts.length > 0)
+    return { imported: false, preview };
+  const existing = await repository.exportAllData();
+  const { merged } = planSupplementalLifecycleImport(existing, preview.bundle);
   return {
     imported: true,
     preview,
