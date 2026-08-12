@@ -367,6 +367,8 @@ test.describe("browser application tracker", () => {
     ].join("\n");
     const technicalLifecycle = [
       "event_id,application_id,event_type,occurred_at,due_at",
+      "event_preserve_completed_technical,app_preserve_completed," +
+        "technical_interview_completed,2027-02-04T09:00:00.000Z,",
       "event_preserve_devops,app_preserve_devops," +
         "technical_interview_completed,2027-02-04T10:00:00.000Z,",
       "event_preserve_control,app_preserve_control," +
@@ -376,6 +378,30 @@ test.describe("browser application tracker", () => {
 
     await page.getByRole("button", { name: "Import/Export" }).click();
     await importFixture(page, "preserved-compact.csv", compact);
+    const lifecycleSnapshot = () =>
+      page.evaluate(async () => {
+        const request = indexedDB.open("jobbot3000");
+        const database = await new Promise((resolve, reject) => {
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        const snapshot = {};
+        for (const storeName of [
+          "applications",
+          "lifecycleEvents",
+          "interviews",
+          "reminders",
+        ]) {
+          const transaction = database.transaction(storeName, "readonly");
+          snapshot[storeName] = await new Promise((resolve, reject) => {
+            const getAll = transaction.objectStore(storeName).getAll();
+            getAll.onsuccess = () => resolve(getAll.result);
+            getAll.onerror = () => reject(getAll.error);
+          });
+        }
+        database.close();
+        return snapshot;
+      });
     for (const [name, lifecycle] of [
       ["preserved-recruiter.csv", recruiterLifecycle],
       ["preserved-technical.csv", technicalLifecycle],
@@ -385,38 +411,23 @@ test.describe("browser application tracker", () => {
         mimeType: "text/csv",
         buffer: Buffer.from(lifecycle),
       });
+      const beforePreview = await lifecycleSnapshot();
       await page.getByRole("button", { name: "Preview/dry-run" }).click();
       await expect(page.locator("[data-import-result]")).toContainText(
         "Detected format: supplemental lifecycle CSV",
       );
-      await expect(page.locator("[data-import-result]")).not.toContainText(
-        "applications: 4",
+      await expect(page.locator("[data-import-result]")).toContainText(
+        "Dry-run OK: 0 applications",
       );
+      expect(await lifecycleSnapshot()).toEqual(beforePreview);
       if (name === "preserved-technical.csv") {
-        await page.evaluate(async () => {
-          const request = indexedDB.open("jobbot3000");
-          const database = await new Promise((resolve, reject) => {
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error);
-          });
-          const transaction = database.transaction("applications", "readwrite");
-          const store = transaction.objectStore("applications");
-          const application = await new Promise((resolve, reject) => {
-            const get = store.get("app_preserve_devops");
-            get.onsuccess = () => resolve(get.result);
-            get.onerror = () => reject(get.error);
-          });
-          store.put({
-            ...application,
-            company: "Stage DevOps Updated",
-            updatedAt: "2027-02-04T11:00:00.000Z",
-          });
-          await new Promise((resolve, reject) => {
-            transaction.oncomplete = resolve;
-            transaction.onerror = () => reject(transaction.error);
-          });
-          database.close();
-        });
+        await page
+          .getByRole("button", { name: "Applications", exact: true })
+          .click();
+        await page.getByRole("button", { name: "Stage DevOps" }).click();
+        await page.locator('[name="company"]').fill("Stage DevOps Updated");
+        await page.getByRole("button", { name: "Save application" }).click();
+        await page.getByRole("button", { name: "Import/Export" }).click();
       }
       await page.getByRole("button", { name: "Apply import" }).click();
       await expect(page.locator("[data-import-result]")).toContainText(
@@ -468,19 +479,29 @@ test.describe("browser application tracker", () => {
       database.close();
       return applications.map(({ id, notes }) => ({ id, notes }));
     });
-    const devopsMetadataLine = metadata
-      .find(({ id }) => id === "app_preserve_devops")
-      .notes.split("\n")
-      .find((line) => line.startsWith("Spreadsheet metadata:"));
-    const devopsMetadata = JSON.parse(
-      devopsMetadataLine.replace("Spreadsheet metadata:", ""),
+    const metadataById = new Map(
+      metadata.map(({ id, notes }) => {
+        const metadataLine = notes
+          .split("\n")
+          .find((line) => line.startsWith("Spreadsheet metadata:"));
+        return [
+          id,
+          JSON.parse(metadataLine.replace("Spreadsheet metadata:", "")),
+        ];
+      }),
     );
-    expect(devopsMetadata.raw_row.interview_stage).toBe(
-      "DevOps interview completed",
-    );
-    expect(devopsMetadata.canonical_row.interview_stage).toBe(
-      "technical_screen",
-    );
+    const projectedStages = new Map([
+      ["app_preserve_scheduling", "recruiter_screen"],
+      ["app_preserve_completed", "technical_screen"],
+      ["app_preserve_devops", "technical_screen"],
+      ["app_preserve_control", "technical_screen"],
+    ]);
+    for (const [id, originalStage] of originalStages) {
+      expect(metadataById.get(id).raw_row.interview_stage).toBe(originalStage);
+      expect(metadataById.get(id).canonical_row.interview_stage).toBe(
+        projectedStages.get(id),
+      );
+    }
 
     await page
       .getByRole("button", { name: "Applications", exact: true })

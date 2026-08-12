@@ -162,9 +162,27 @@ describe("spreadsheet import/export", () => {
       raw_row: { interview_stage: "DevOps interview" },
       canonical_row: { interview_stage: "technical_screen" },
     });
-    await importSupplementalLifecycleCsv(lifecycleCsv, repo);
+    const imported = await importSupplementalLifecycleCsv(lifecycleCsv, repo);
     const bundle = await repo.exportAllData();
-    expect(bundle.applications).toEqual(preview.plan.merged.applications);
+    const stableRecords = (records) =>
+      records.map((record) =>
+        Object.fromEntries(
+          Object.entries(record).filter(
+            ([key]) => !["createdAt", "updatedAt"].includes(key),
+          ),
+        ),
+      );
+    for (const store of [
+      "applications",
+      "lifecycleEvents",
+      "interviews",
+      "reminders",
+    ]) {
+      expect(stableRecords(preview.plan.recordsByStore[store] ?? [])).toEqual(
+        stableRecords(imported.preview.plan.recordsByStore[store] ?? []),
+      );
+      expect(bundle[store]).toEqual(imported.preview.plan.merged[store]);
+    }
     bundle.interviews.reverse();
     bundle.lifecycleEvents.reverse();
 
@@ -262,6 +280,83 @@ describe("spreadsheet import/export", () => {
     );
     expect(edited.get("app_stage_beta").notes).toBe("Untouched beta note");
   });
+
+  it("replans sequential lifecycle imports from the persisted application baseline", async () => {
+    const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
+    await importCompactCsv(
+      serializeCsv([
+        {
+          application_id: "app_sequential_stage",
+          company: "Sequential Example",
+          role_title: "Platform Engineer",
+          status: "Interviewing",
+          posting_url: "https://jobs.example.test/sequential",
+          interview_stage: "Custom recruiter conversation",
+          notes: "Keep this note",
+        },
+      ]),
+      repo,
+      { mode: "replace" },
+    );
+    const firstCsv = [
+      "event_id,application_id,event_type,occurred_at,due_at",
+      "event_sequential_recruiter,app_sequential_stage,recruiter_screen_completed," +
+        "2027-05-01T10:00:00.000Z,",
+    ].join("\n");
+    const firstPlan = await previewSupplementalLifecycleCsvImport(
+      firstCsv,
+      repo,
+    );
+    await repo.importPartialData(firstPlan.plan.recordsByStore);
+
+    const afterFirst = await repo.exportAllData();
+    await repo.upsertApplication({
+      ...afterFirst.applications[0],
+      company: "Sequential Example Updated",
+      role: "Principal Platform Engineer",
+      postingUrl: "https://jobs.example.test/sequential-updated",
+      updatedAt: "2027-05-02T12:00:00.000Z",
+    });
+    const secondCsv = [
+      "event_id,application_id,event_type,occurred_at,due_at",
+      "event_sequential_technical,app_sequential_stage,technical_interview_completed," +
+        "2027-05-03T10:00:00.000Z,",
+    ].join("\n");
+    const secondPlan = await previewSupplementalLifecycleCsvImport(
+      secondCsv,
+      repo,
+    );
+    const plannedApplication = secondPlan.plan.recordsByStore.applications[0];
+    expect(plannedApplication).toMatchObject({
+      company: "Sequential Example Updated",
+      role: "Principal Platform Engineer",
+      postingUrl: "https://jobs.example.test/sequential-updated",
+      updatedAt: "2027-05-02T12:00:00.000Z",
+    });
+    const metadataLine = plannedApplication.notes
+      .split("\n")
+      .find((line) => line.startsWith("Spreadsheet metadata:"));
+    const metadata = JSON.parse(
+      metadataLine.replace("Spreadsheet metadata:", ""),
+    );
+    expect(metadata.raw_row.interview_stage).toBe(
+      "Custom recruiter conversation",
+    );
+    expect(metadata.canonical_row.interview_stage).toBe("technical_screen");
+
+    await repo.importPartialData(secondPlan.plan.recordsByStore);
+    const persisted = await repo.exportAllData();
+    expect(
+      browserApplicationExportToCanonicalRows(persisted)[0].interview_stage,
+    ).toBe("technical_screen");
+    expect(persisted.applications[0]).toMatchObject({
+      company: "Sequential Example Updated",
+      role: "Principal Platform Engineer",
+      postingUrl: "https://jobs.example.test/sequential-updated",
+    });
+    repo.close();
+  });
+
   it("runs a fake full-fidelity backup/restore smoke flow", async () => {
     const repo = await createIndexedDbRepository({ indexedDb: indexedDB });
     const csv = await fixture();

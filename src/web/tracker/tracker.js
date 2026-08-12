@@ -1398,6 +1398,7 @@ async function previewImport() {
       });
       state.preview = null;
       state.previewConflicts = [];
+      state.supplementalLifecycleCsv = null;
       $("[data-import-apply]").disabled = true;
       return;
     }
@@ -1418,6 +1419,7 @@ async function previewImport() {
       });
       state.preview = null;
       state.previewConflicts = [];
+      state.supplementalLifecycleCsv = null;
       $("[data-import-apply]").disabled = true;
       return;
     }
@@ -1428,8 +1430,14 @@ async function previewImport() {
         : format === "json"
           ? importJsonBackup(text)
           : importNdjsonBackup(text);
+    // Keep only the incoming lifecycle records from Preview. Application
+    // envelopes are planned again from current IndexedDB data at Apply time.
     state.preview = lifecyclePreview
-      ? lifecyclePreview.plan.recordsByStore
+      ? {
+          lifecycleEvents: bundle.lifecycleEvents ?? [],
+          interviews: bundle.interviews ?? [],
+          reminders: bundle.reminders ?? [],
+        }
       : bundleForIndexedDb(bundle);
     state.supplementalLifecycleCsv = lifecyclePreview ? text : null;
     state.previewConflicts =
@@ -1483,19 +1491,28 @@ async function applyImport() {
     return;
   }
   try {
+    let recordsByStore = state.preview;
     if (state.supplementalLifecycleCsv) {
       const currentPlan = await previewSupplementalLifecycleCsvImport(
         state.supplementalLifecycleCsv,
         { exportAllData: repo.exportAll },
       );
       if (currentPlan.errors.length || currentPlan.conflicts.length) {
-        resetImportPreview();
-        $("[data-import-result]").textContent =
-          "Local data changed after Preview. Preview the import again before applying.";
+        renderImportPreview({
+          label: "supplemental lifecycle CSV",
+          recordsByStore: currentPlan.bundle ?? {},
+          conflicts: currentPlan.conflicts,
+          warnings: currentPlan.warnings,
+          errors: currentPlan.errors,
+          blocking: true,
+        });
+        state.preview = null;
+        state.previewConflicts = [];
+        state.supplementalLifecycleCsv = null;
+        $("[data-import-apply]").disabled = true;
         return;
       }
-      state.preview = currentPlan.plan.recordsByStore;
-      state.previewConflicts = currentPlan.conflicts;
+      recordsByStore = currentPlan.plan.recordsByStore;
     }
     if (
       state.previewConflicts.length &&
@@ -1510,7 +1527,7 @@ async function applyImport() {
       $("[data-import-result]").textContent = "Import canceled.";
       return;
     }
-    await batchImport(state.preview);
+    await batchImport(recordsByStore);
   } catch (err) {
     state.preview = null;
     state.previewConflicts = [];
