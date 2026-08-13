@@ -1598,7 +1598,7 @@ function layoutLifecycleRoutingGraphPass(
       ranks.add(variable.rank);
     }
     const sortedRanks = [...ranks].sort((a, b) => a - b);
-    const hasExtendedRankRouting = sortedRanks.some((rank) => rank >= 6);
+    const hasExtendedRankRouting = sortedRanks.some((rank) => rank > 6);
     for (const variable of variables) {
       variable.isEnding = !variables.some(
         (candidate) =>
@@ -2632,7 +2632,10 @@ function layoutLifecycleRoutingGraphPass(
                 (hasExtendedRankRouting
                   ? (b.span?.endRank ?? 0) - (a.span?.endRank ?? 0)
                   : 0) ||
-                (a.span?.targetDockY ?? 0) - (b.span?.targetDockY ?? 0) ||
+                (hasExtendedRankRouting &&
+                ((a.span?.endRank ?? 0) > 6 || (b.span?.endRank ?? 0) > 6)
+                  ? (a.span?.targetDockY ?? 0) - (b.span?.targetDockY ?? 0)
+                  : 0) ||
                 compareBranchesForGlobalOrder(
                   branchById.get(a.id),
                   branchById.get(b.id),
@@ -4588,13 +4591,14 @@ export function auditLifecycleRouteGeometry({
   // candidateCallback treats this category as eligible for
   // toleratedRouteCrossingCount's bound alongside "proper-crossing", not
   // unconditionally fatal.
-  const collidedHandleBranches = new Set();
+  const collidedRouteHandlePairs = new Set();
   for (const edge of flatEdges) {
     for (const handle of handles) {
+      const collisionPair = `${edge.branchId}\u0000${handle?.branchId}`;
       if (
         !handle ||
         handle.branchId === edge.branchId ||
-        collidedHandleBranches.has(handle.branchId)
+        collidedRouteHandlePairs.has(collisionPair)
       )
         continue;
       const required = routeHandleRequiredClearance(
@@ -4603,7 +4607,7 @@ export function auditLifecycleRouteGeometry({
         LANE_Y_EPSILON,
       );
       if (pointToSegmentDistance(handle, edge) < required) {
-        collidedHandleBranches.add(handle.branchId);
+        collidedRouteHandlePairs.add(collisionPair);
         fatalFindings.push({
           category: "route-handle-collision",
           branchId: edge.branchId,

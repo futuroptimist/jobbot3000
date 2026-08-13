@@ -4202,6 +4202,47 @@ describe("shared route-crossing classifier", () => {
     ).toBeCloseTo(expected, 10);
   });
 
+  it("deduplicates flattened edges without hiding distinct routes at one handle", () => {
+    const source = { id: "source", rank: 0, x0: 0, x1: 10 };
+    const target = { id: "target", rank: 1, x0: 100, x1: 110 };
+    const segment = (branchId, y0, y1) => ({
+      branchId,
+      source,
+      target,
+      y0,
+      y1,
+      transitionLaneY: 100,
+      segmentIndex: 0,
+    });
+    const model = {
+      branches: [
+        { id: "route-a", sourceRank: 0, targetRank: 1 },
+        { id: "route-b", sourceRank: 0, targetRank: 1 },
+      ],
+      segmentsByBranch: new Map([
+        ["route-a", [segment("route-a", 100, 100)]],
+        ["route-b", [segment("route-b", 90, 110)]],
+      ]),
+      visibleNodes: [],
+      fixedOrderInversionPairs: new Set(),
+      pairId: (left, right) => [left, right].sort().join("||"),
+      horizontalGeometry: BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
+    };
+    const handles = [{ branchId: "handle-route", x: 55, y: 100 }];
+    const collisions = auditLifecycleRouteGeometry({
+      model,
+      handles,
+    }).fatalFindings.filter(
+      (finding) => finding.category === "route-handle-collision",
+    );
+
+    expect(collisions).toHaveLength(2);
+    expect(collisions.map((finding) => finding.branchId).sort()).toEqual([
+      "route-a",
+      "route-b",
+    ]);
+  });
+
   // eslint-disable-next-line max-len
   it("classifies route-handle proximity just-inside, at, and just-outside the shared boundary", () => {
     // Uses the shared isRouteHandleCollision/routeHandleRequiredClearance
