@@ -386,6 +386,14 @@ const eventsByApplicationId = (events) => {
   return map;
 };
 
+const epochNodeId = (kind, epoch, semanticId) => {
+  if (kind === "origin") return `origin:${semanticId}`;
+  if (kind === "milestone" && epoch === 0) return `milestone:${semanticId}`;
+  if (kind === "endpoint" && epoch === 0) return `endpoint:${semanticId}`;
+  if (kind === "reopen") return `reopen:epoch:${epoch}:application_reopened`;
+  return `${kind}:epoch:${epoch}:${semanticId}`;
+};
+
 const projectApp = (app, appEvents, isCurrent) => {
   const details = [];
   const events = [...appEvents].sort(
@@ -399,9 +407,10 @@ const projectApp = (app, appEvents, isCurrent) => {
     )
     .map((event) => event.time.sort);
   const origin = originFor(app, events, details);
-  const milestoneSet = new Set();
+  const epochs = [{ number: 0, milestones: new Set() }];
+  let epoch = epochs[0];
   let highestObservedMilestoneRank = -1;
-  let terminal = undefined;
+  let terminal;
   let awaitingActive = false;
   let interviewActive = false;
   let assessmentActive = false;
@@ -423,6 +432,32 @@ const projectApp = (app, appEvents, isCurrent) => {
   const isResumedActivity = (event, statusEndpoint) =>
     isLowerStageActivity(event.canonicalType) ||
     (statusEndpoint && !TERMINAL_IDS.has(statusEndpoint));
+  const milestoneFor = (event) => {
+    const type = event.canonicalType;
+    if (MILESTONE_IDS.has(type)) return type;
+    const stage = normalize(event.stageLabel);
+    if (["technical_screen", "onsite_loop"].includes(stage))
+      return stage === "technical_screen"
+        ? "technical_interview"
+        : "onsite_final_loop";
+    const status = normalize(event.status);
+    if (
+      ![
+        "recruiter_screen",
+        "technical_screen",
+        "onsite_loop",
+        "offer",
+      ].includes(status)
+    )
+      return undefined;
+    return status === "recruiter_screen"
+      ? "recruiter_screen"
+      : status === "technical_screen"
+        ? "technical_interview"
+        : status === "onsite_loop"
+          ? "onsite_final_loop"
+          : "offer_received";
+  };
   for (const event of events) {
     const type = event.canonicalType;
     const classified = classifyLifecycleEventType(event.rawType);
@@ -431,42 +466,18 @@ const projectApp = (app, appEvents, isCurrent) => {
       details.push(
         makeWarning("inferred_event", app.id, { eventId: event.id }),
       );
-    let milestone = undefined;
-    if (MILESTONE_IDS.has(type)) milestone = type;
-    else if (
-      ["technical_screen", "onsite_loop"].includes(normalize(event.stageLabel))
-    )
-      milestone =
-        normalize(event.stageLabel) === "technical_screen"
-          ? "technical_interview"
-          : "onsite_final_loop";
-    else if (
-      ["recruiter_screen", "technical_screen", "onsite_loop", "offer"].includes(
-        normalize(event.status),
-      )
-    )
-      milestone =
-        normalize(event.status) === "recruiter_screen"
-          ? "recruiter_screen"
-          : normalize(event.status) === "technical_screen"
-            ? "technical_interview"
-            : normalize(event.status) === "onsite_loop"
-              ? "onsite_final_loop"
-              : "offer_received";
-    if (milestone) {
-      const rank = MILESTONE_RANK.get(milestone) ?? 0;
-      if (rank < highestObservedMilestoneRank)
-        details.push(
-          makeWarning("regressive_history", app.id, { eventId: event.id }),
-        );
-      highestObservedMilestoneRank = Math.max(
-        highestObservedMilestoneRank,
-        rank,
-      );
-      milestoneSet.add(milestone);
-    }
     if (type === "application_reopened") {
+      if (!terminal) {
+        details.push(
+          makeWarning("reopen_without_terminal", app.id, { eventId: event.id }),
+        );
+        continue;
+      }
+      epoch.historicalTerminal = terminal;
+      epoch = { number: epoch.number + 1, milestones: new Set() };
+      epochs.push(epoch);
       terminal = undefined;
+      highestObservedMilestoneRank = -1;
       awaitingActive = true;
       interviewActive = false;
       assessmentActive = false;
@@ -498,6 +509,19 @@ const projectApp = (app, appEvents, isCurrent) => {
       terminal = terminalEndpoint;
       continue;
     }
+    const milestone = milestoneFor(event);
+    if (milestone) {
+      const rank = MILESTONE_RANK.get(milestone) ?? 0;
+      if (rank < highestObservedMilestoneRank)
+        details.push(
+          makeWarning("regressive_history", app.id, { eventId: event.id }),
+        );
+      highestObservedMilestoneRank = Math.max(
+        highestObservedMilestoneRank,
+        rank,
+      );
+      epoch.milestones.add(milestone);
+    }
     if (type === "offer_received" || type === "offer_negotiating")
       offerActive = true;
     else if (type === "assessment_take_home") {
@@ -521,10 +545,63 @@ const projectApp = (app, appEvents, isCurrent) => {
         makeWarning("event_type_normalized", app.id, { eventId: event.id }),
       );
   }
-  const milestones = [...milestoneSet].sort(
+  const endpoint = endpointFromState();
+  const sortedMilestones = (entry) =>
+    [...entry.milestones].sort(
+      (a, b) => (MILESTONE_RANK.get(a) ?? 0) - (MILESTONE_RANK.get(b) ?? 0),
+    );
+  const pathNodes = [
+    {
+      id: epochNodeId("origin", 0, origin),
+      taxonomyId: origin,
+      label: ORIGINS.find(([id]) => id === origin)?.[1] ?? origin,
+      kind: "origin",
+      epoch: 0,
+      rank: 0,
+    },
+  ];
+  for (const entry of epochs) {
+    if (entry.number > 0)
+      pathNodes.push({
+        id: epochNodeId("reopen", entry.number, "application_reopened"),
+        taxonomyId: "application_reopened",
+        label: "Application reopened",
+        kind: "reopen",
+        epoch: entry.number,
+        rank: entry.number * 7,
+      });
+    for (const milestone of sortedMilestones(entry))
+      pathNodes.push({
+        id: epochNodeId("milestone", entry.number, milestone),
+        taxonomyId: milestone,
+        label: MILESTONES.find(([id]) => id === milestone)?.[1] ?? milestone,
+        kind: "milestone",
+        epoch: entry.number,
+        rank: entry.number * 7 + (MILESTONE_RANK.get(milestone) ?? 0) + 1,
+      });
+    if (entry.historicalTerminal)
+      pathNodes.push({
+        id: epochNodeId("terminal", entry.number, entry.historicalTerminal),
+        taxonomyId: entry.historicalTerminal,
+        label:
+          ENDPOINTS.find(([id]) => id === entry.historicalTerminal)?.[1] ??
+          entry.historicalTerminal,
+        kind: "historical_terminal",
+        epoch: entry.number,
+        rank: entry.number * 7 + 6,
+      });
+  }
+  pathNodes.push({
+    id: epochNodeId("endpoint", epoch.number, endpoint),
+    taxonomyId: endpoint,
+    label: ENDPOINTS.find(([id]) => id === endpoint)?.[1] ?? endpoint,
+    kind: "endpoint",
+    epoch: epoch.number,
+    rank: epoch.number * 7 + 6,
+  });
+  const milestones = [...new Set(epochs.flatMap(sortedMilestones))].sort(
     (a, b) => (MILESTONE_RANK.get(a) ?? 0) - (MILESTONE_RANK.get(b) ?? 0),
   );
-  const endpoint = endpointFromState();
   if (
     isCurrent &&
     STATUS_ENDPOINT[normalize(app.status)] &&
@@ -541,11 +618,16 @@ const projectApp = (app, appEvents, isCurrent) => {
     origin,
     milestones,
     endpoint,
-    nodeIds: [
-      `origin:${origin}`,
-      ...milestones.map((id) => `milestone:${id}`),
-      `endpoint:${endpoint}`,
-    ],
+    epoch: epoch.number,
+    epochs: epochs.map((entry) => ({
+      number: entry.number,
+      milestones: sortedMilestones(entry),
+      ...(entry.historicalTerminal
+        ? { historicalTerminal: entry.historicalTerminal }
+        : {}),
+    })),
+    pathNodes,
+    nodeIds: pathNodes.map((node) => node.id),
     details,
   };
 };
@@ -560,25 +642,26 @@ const projectAppCached = (entry, app, appEvents, isCurrent) => {
 };
 
 const makeNodes = (paths) => {
-  const totals = new Map();
+  const nodes = new Map();
   for (const path of paths)
-    for (const nodeId of path.nodeIds)
-      totals.set(nodeId, (totals.get(nodeId) ?? 0) + 1);
-  const tax = [
-    ...LIFECYCLE_DIAGRAM_TAXONOMY.origins,
-    ...LIFECYCLE_DIAGRAM_TAXONOMY.milestones,
-    ...LIFECYCLE_DIAGRAM_TAXONOMY.endpoints,
-  ];
-  return tax
-    .filter((item) => totals.has(item.nodeId))
-    .map((item) => ({
-      id: item.nodeId,
-      taxonomyId: item.id,
-      label: item.label,
-      rank: item.rank,
-      total: totals.get(item.nodeId),
-    }));
+    for (const pathNode of path.pathNodes) {
+      const node = nodes.get(pathNode.id) ?? {
+        ...pathNode,
+        total: 0,
+        applicationIds: [],
+      };
+      node.total += 1;
+      node.applicationIds.push(path.applicationId);
+      nodes.set(pathNode.id, node);
+    }
+  return [...nodes.values()]
+    .map((node) => ({
+      ...node,
+      applicationIds: node.applicationIds.sort(codeCompare),
+    }))
+    .sort((a, b) => a.rank - b.rank || codeCompare(a.id, b.id));
 };
+
 const makeLinks = (paths) => {
   const map = new Map();
   for (const path of paths)

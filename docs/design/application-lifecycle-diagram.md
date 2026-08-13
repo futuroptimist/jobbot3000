@@ -323,3 +323,31 @@ The only permitted contact between branch geometry and semantic nodes is the sha
 Endpoint branch colors are stable and supplemental: awaiting response `#60A5FA`, interviewing `#C084FC`, assessment in progress `#FACC15`, offer/negotiating `#2DD4BF`, employer rejected `#FB7185`, candidate withdrew `#FB923C`, offer declined `#F472B6`, offer expired/rescinded `#A3E635`, offer accepted `#4ADE80`, closed/archived `#94A3B8`, and unknown `#E2E8F0`. Normal branches render at opacity `0.82`; selected branches retain their outcome color at full opacity with a white halo. Dark separators are rendered beneath every branch, endpoint nodes reuse endpoint colors, and origin/milestone nodes remain neutral.
 
 Each display branch has one 44×44 transparent SVG circle handle placed inside a transition corridor, while the visible colored path remains directly clickable. Handles are not keyboard-focusable; the semantic Flows table remains the keyboard interface. A compact active-outcome legend appears before the scrollable diagram with `data-diagram-legend`, visible outcome labels, counts, and noninteractive color swatches.
+
+## Lifecycle epochs and explicit reopening
+
+The projection represents every effective terminal/reopen cycle in the existing Sankey as a
+forward-only **lifecycle epoch**. Epoch 0 begins at the ordinary origin. When an explicit structured
+`application_reopened` event clears an active terminal state, that terminal becomes a historical
+terminal node, the reopen becomes the next epoch's neutral anchor, and subsequent milestones belong
+to that epoch. A reopen without an active terminal remains in event details, emits
+`reopen_without_terminal`, and does not create an epoch. Activity after a terminal remains suppressed
+until an explicit reopen and emits `terminal_without_reopen`; notes, labels, and message text never
+infer either transition.
+
+Each epoch spans seven ranks: anchor at `7e`, milestones at `7e + 1` through `7e + 5`, and outcome at
+`7e + 6`. IDs are `origin:<id>` and the legacy milestone/endpoint IDs in epoch 0,
+`terminal:epoch:<e>:<id>`, `reopen:epoch:<e>:application_reopened`, and epoch-aware milestone and final
+endpoint IDs thereafter. Repeated milestones collapse within an epoch but remain visible in different
+epochs. Projection-node metadata is authoritative for labels, semantic taxonomy IDs, epoch numbers,
+kinds, and ranks.
+
+Only the last node is the application's current endpoint and contributes to endpoint totals;
+historical terminal nodes do not inflate rejection or other outcome totals. Milestone totals retain
+per-application semantic membership even when flow and node tables distinguish repeated epoch
+occurrences. The scrubber replays the same rule: before reopening a terminal is the endpoint; once the
+reopen is in the snapshot it becomes historical and the path continues through the new epoch.
+
+The resulting graph remains one conserved unit per application and one ordered DAG path. Every
+semantic edge increases rank, skipped ranks expand through private adjacent routing nodes, and every
+edge carries the same unit to the single final endpoint. Arbitrary backward links remain prohibited.

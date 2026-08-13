@@ -527,6 +527,10 @@ export function createLifecycleDiagramView(root, options = {}) {
       [table],
     );
   };
+  const activeNodeLabel = (nodeId) =>
+    projection.nodes.find((node) => node.id === nodeId)?.label ??
+    TAXONOMY.get(nodeId)?.label ??
+    nodeId;
   const featureApplicationIds = (feature) =>
     unique(
       feature.applicationIds?.length
@@ -538,8 +542,8 @@ export function createLifecycleDiagramView(root, options = {}) {
   const featureById = (id) => {
     const branch = displayBranches.find((candidate) => candidate.id === id);
     if (branch) {
-      const from = TAXONOMY.get(branch.source)?.label ?? branch.source;
-      const to = TAXONOMY.get(branch.target)?.label ?? branch.target;
+      const from = activeNodeLabel(branch.source);
+      const to = activeNodeLabel(branch.target);
       const outcome =
         LIFECYCLE_DIAGRAM_TAXONOMY.endpoints.find(
           (endpoint) => endpoint.id === branch.endpointId,
@@ -600,8 +604,8 @@ export function createLifecycleDiagramView(root, options = {}) {
         ?.focus();
   };
   const branchLabelFor = (branch) => {
-    const from = TAXONOMY.get(branch.source)?.label ?? branch.source;
-    const to = TAXONOMY.get(branch.target)?.label ?? branch.target;
+    const from = activeNodeLabel(branch.source);
+    const to = activeNodeLabel(branch.target);
     const outcome =
       LIFECYCLE_DIAGRAM_TAXONOMY.endpoints.find(
         (endpoint) => endpoint.id === branch.endpointId,
@@ -1327,9 +1331,12 @@ export function createLifecycleDiagramView(root, options = {}) {
             width: Math.max(8, rawWidth),
             height: Math.max(8, rawHeight),
             rx: 4,
-            fill: node.id.startsWith("endpoint:")
-              ? endpointColor(node.id.split(":").at(-1))
-              : "#64748b",
+            fill:
+              node.kind === "endpoint" || node.kind === "historical_terminal"
+                ? endpointColor(node.taxonomyId)
+                : node.kind === "reopen"
+                  ? "#94a3b8"
+                  : "#64748b",
             stroke: selected ? "#F8FAFC" : "#e2e8f0",
             "stroke-width": selected ? "4" : "1",
           });
@@ -1457,8 +1464,8 @@ export function createLifecycleDiagramView(root, options = {}) {
     );
     const endpointRows = makeNodeRows(projection.totals.endpoints, "endpoint");
     const linkRows = displayBranches.map((branch) => {
-      const from = TAXONOMY.get(branch.source)?.label ?? branch.source;
-      const to = TAXONOMY.get(branch.target)?.label ?? branch.target;
+      const from = activeNodeLabel(branch.source);
+      const to = activeNodeLabel(branch.target);
       const outcome =
         LIFECYCLE_DIAGRAM_TAXONOMY.endpoints.find(
           (endpoint) => endpoint.id === branch.endpointId,

@@ -138,3 +138,12 @@ The validation intentionally avoids screenshots, golden images, `getBBox()`-driv
 | Actions-only visual artifacts | `.github/workflows/diagram-visual-review.yml` captures the four PNG review artifacts from the routing fixture in runner temp storage only and uploads them as short-retention GitHub Actions artifacts.                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
 Visible-node spacing alone is not a sufficient non-overlap guarantee. P6-F3 validation treats protected rank corridors, transition-only interpolation, label placement, endpoint-conditioned branches, hidden routing lanes, and semantic-table parity as the enforceable contract.
+
+## Epoch validation
+
+Validation fixtures cover explicit terminal/reopen histories at historical and current scrubber
+buckets, including multiple cycles, latest-terminal precedence, supersession, equal-time event-ID
+ordering, and shuffled input. They assert that projection ranks strictly increase, routing expands to
+adjacent ranks, and one application is conserved on every edge. Endpoint-total assertions count only
+final endpoints; historical terminals are verified independently as visible nodes and semantic-flow
+rows. Ordinary histories remain the unchanged seven-rank compatibility baseline.

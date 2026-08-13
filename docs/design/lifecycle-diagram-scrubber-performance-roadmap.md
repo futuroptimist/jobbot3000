@@ -236,3 +236,11 @@ sequenced by risk, rather than one large change.
 All work is tracked under the `diagram-performance` label on
 `futuroptimist/jobbot3000`, with one issue per phase plus an umbrella tracking issue linking
 them. Each phase's PR references and closes its corresponding issue.
+
+## Epoch-aware snapshots
+
+Scrubber projections may now grow by seven ranks whenever an effective explicit reopen clears a
+terminal outcome. Cache signatures include the projection-version bump and dynamic horizontal
+geometry, while adjacent snapshots continue to reuse application replay and layout seeds. Historical
+snapshots before the reopen retain the terminal as their final endpoint; later snapshots expose it as
+a historical terminal followed by the neutral reopen anchor without creating a second visualization.

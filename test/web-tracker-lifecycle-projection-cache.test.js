@@ -73,7 +73,7 @@ describe("lifecycleProjectionCache", () => {
 
   it("uses a versioned, unambiguous content-hash encoding", () => {
     expect(contentHashForBundle(threeEventBundle())).toMatch(
-      /^v\d+:[0-9a-z]+:[0-9a-z]+$/,
+      /^v2:[0-9a-z]+:[0-9a-z]+$/,
     );
   });
 

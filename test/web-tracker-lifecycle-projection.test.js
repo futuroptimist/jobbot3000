@@ -274,7 +274,8 @@ describe("lifecycle projection", () => {
         shuffledBucketIds[i],
       ];
     }
-    for (const bucketId of shuffledBucketIds) projectLifecycleAt(liveBundle, bucketId);
+    for (const bucketId of shuffledBucketIds)
+      projectLifecycleAt(liveBundle, bucketId);
 
     // Sample buckets and compare the cache-exercised result against a
     // guaranteed-cold computation on a fresh, content-identical bundle
@@ -1047,5 +1048,110 @@ describe("lifecycle projection", () => {
       buildLifecycleTimeline(b),
     );
     expectInvariants(projectLifecycleAt(b));
+  });
+  it("projects explicit terminal/reopen cycles as forward lifecycle epochs", () => {
+    const input = bundle(
+      [app("epoch-app", { status: "recruiter_screen" })],
+      [
+        ev("01", "epoch-app", "application_submitted", "2026-01-01"),
+        ev("02", "epoch-app", "employer_rejected", "2026-01-02"),
+        ev("03", "epoch-app", "application_reopened", "2026-01-03"),
+        ev("04", "epoch-app", "recruiter_screen", "2026-01-04"),
+      ],
+    );
+    const projection = projectLifecycleAt(input);
+    expect(projection.paths[0].nodeIds).toEqual([
+      "origin:application_submitted",
+      "terminal:epoch:0:employer_rejected",
+      "reopen:epoch:1:application_reopened",
+      "milestone:epoch:1:recruiter_screen",
+      "endpoint:epoch:1:interviewing",
+    ]);
+    expect(
+      projection.nodes.map(({ id, rank, label }) => ({ id, rank, label })),
+    ).toEqual([
+      {
+        id: "origin:application_submitted",
+        rank: 0,
+        label: "Application submitted",
+      },
+      {
+        id: "terminal:epoch:0:employer_rejected",
+        rank: 6,
+        label: "Employer rejected",
+      },
+      {
+        id: "reopen:epoch:1:application_reopened",
+        rank: 7,
+        label: "Application reopened",
+      },
+      {
+        id: "milestone:epoch:1:recruiter_screen",
+        rank: 8,
+        label: "Recruiter screen",
+      },
+      { id: "endpoint:epoch:1:interviewing", rank: 13, label: "Interviewing" },
+    ]);
+    const ranks = new Map(projection.nodes.map((node) => [node.id, node.rank]));
+    expect(
+      projection.links.every(
+        (link) => ranks.get(link.source) < ranks.get(link.target),
+      ),
+    ).toBe(true);
+    expect(projection.links.every((link) => link.value === 1)).toBe(true);
+    expect(projection.totals.endpoints).toEqual({ interviewing: 1 });
+  });
+
+  it("requires an active terminal before creating a reopen epoch", () => {
+    const projection = projectLifecycleAt(
+      bundle(
+        [app("no-terminal")],
+        [
+          ev("01", "no-terminal", "application_submitted", "2026-01-01"),
+          ev("02", "no-terminal", "application_reopened", "2026-01-02"),
+        ],
+      ),
+    );
+    expect(projection.paths[0].epoch).toBe(0);
+    expect(
+      projection.paths[0].nodeIds.some((id) => id.startsWith("reopen:")),
+    ).toBe(false);
+    expect(projection.warningCounts.reopen_without_terminal).toBe(1);
+  });
+
+  it("keeps repeated milestones separate across multiple epochs", () => {
+    const events = [
+      ev("01", "multi", "application_submitted", "2026-01-01"),
+      ev("02", "multi", "recruiter_screen", "2026-01-02"),
+      ev("03", "multi", "recruiter_screen", "2026-01-03"),
+      ev("04", "multi", "employer_rejected", "2026-01-04"),
+      ev("05", "multi", "application_reopened", "2026-01-05"),
+      ev("06", "multi", "recruiter_screen", "2026-01-06"),
+      ev("07", "multi", "candidate_withdrew", "2026-01-07"),
+      ev("08", "multi", "application_reopened", "2026-01-08"),
+      ev("09", "multi", "recruiter_screen", "2026-01-09"),
+    ];
+    const projection = projectLifecycleAt(
+      bundle([app("multi", { status: "recruiter_screen" })], events),
+    );
+    expect(projection.paths[0].epochs.map((epoch) => epoch.number)).toEqual([
+      0, 1, 2,
+    ]);
+    expect(
+      projection.paths[0].nodeIds.filter((id) =>
+        id.includes("recruiter_screen"),
+      ),
+    ).toEqual([
+      "milestone:recruiter_screen",
+      "milestone:epoch:1:recruiter_screen",
+      "milestone:epoch:2:recruiter_screen",
+    ]);
+    expect(
+      projectLifecycleAt(
+        shuffled(
+          bundle([app("multi", { status: "recruiter_screen" })], events),
+        ),
+      ),
+    ).toEqual(projection);
   });
 });

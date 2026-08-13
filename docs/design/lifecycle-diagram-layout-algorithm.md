@@ -1272,3 +1272,13 @@ and a larger budget for that fixture; it does not establish a current implementa
 for the two extreme fixtures. The fixed evidence (14 blocked branch IDs, 5×55=275 routing-only
 nodes, ~59.251px feasible lane spacing) remains useful if a new constructive joint
 route-and-handle-placement design is ever justified under the current-status criteria above.
+
+## Dynamic rank bounds for lifecycle epochs
+
+Projection-node `rank` is authoritative; ID-derived ranks remain only a compatibility fallback for
+legacy callers and fixtures. The maximum active rank determines rank count, transition count, rank
+centers, adjacent-hop geometry, and minimum SVG width. Rank centers retain the baseline spacing
+formula, so a seven-rank projection remains byte-for-byte geometrically compatible while additional
+seven-rank lifecycle epochs extend inside the diagram-local horizontal scroller. The existing solver,
+ordering, collision, clearance, crossing, handle, and audit policies are unchanged; their bounds use
+the dynamic transition count, and every skipped semantic rank still receives a private routing node.
