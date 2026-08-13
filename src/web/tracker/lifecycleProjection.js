@@ -200,6 +200,15 @@ const ASSESSMENT_IN_PROGRESS = new Set([
   "in_progress",
 ]);
 const MILESTONE_RANK = new Map(MILESTONES.map(([id], index) => [id, index]));
+const EPOCH_SPAN = 7;
+const LABEL_BY_ID = new Map([...ORIGINS, ...MILESTONES, ...ENDPOINTS]);
+const BASE_NODE_ORDER = new Map(
+  [
+    ...LIFECYCLE_DIAGRAM_TAXONOMY.origins,
+    ...LIFECYCLE_DIAGRAM_TAXONOMY.milestones,
+    ...LIFECYCLE_DIAGRAM_TAXONOMY.endpoints,
+  ].map((item, index) => [item.nodeId, index]),
+);
 
 const ORIGIN_RANK = new Map(ORIGINS.map(([id], index) => [id, index]));
 const isLowerStageActivity = (type) =>
@@ -400,6 +409,8 @@ const projectApp = (app, appEvents, isCurrent) => {
     .map((event) => event.time.sort);
   const origin = originFor(app, events, details);
   const milestoneSet = new Set();
+  const epochs = [{ number: 0, milestones: new Set(), terminal: undefined }];
+  let epoch = epochs[0];
   let highestObservedMilestoneRank = -1;
   let terminal = undefined;
   let awaitingActive = false;
@@ -463,9 +474,21 @@ const projectApp = (app, appEvents, isCurrent) => {
         highestObservedMilestoneRank,
         rank,
       );
-      milestoneSet.add(milestone);
+      if (!terminal) {
+        milestoneSet.add(milestone);
+        epoch.milestones.add(milestone);
+      }
     }
     if (type === "application_reopened") {
+      if (!terminal) {
+        details.push(
+          makeWarning("reopen_without_terminal", app.id, { eventId: event.id }),
+        );
+        continue;
+      }
+      epoch.terminal = terminal;
+      epoch = { number: epoch.number + 1, milestones: new Set() };
+      epochs.push(epoch);
       terminal = undefined;
       awaitingActive = true;
       interviewActive = false;
@@ -536,16 +559,76 @@ const projectApp = (app, appEvents, isCurrent) => {
         statusEndpoint: STATUS_ENDPOINT[normalize(app.status)],
       }),
     );
+  const hasReopenEpoch = epochs.length > 1;
+  const pathNodes = [
+    {
+      id: `origin:${origin}`,
+      taxonomyId: origin,
+      label: LABEL_BY_ID.get(origin),
+      rank: 0,
+      epoch: 0,
+      kind: "origin",
+    },
+  ];
+  for (const item of epochs) {
+    if (item.number > 0)
+      pathNodes.push({
+        id: `reopen:epoch:${item.number}:application_reopened`,
+        taxonomyId: "application_reopened",
+        label: "Application reopened",
+        rank: item.number * EPOCH_SPAN,
+        epoch: item.number,
+        kind: "reopen",
+      });
+    for (const id of [...item.milestones].sort(
+      (a, b) => (MILESTONE_RANK.get(a) ?? 0) - (MILESTONE_RANK.get(b) ?? 0),
+    ))
+      pathNodes.push({
+        id:
+          item.number === 0
+            ? `milestone:${id}`
+            : `milestone:epoch:${item.number}:${id}`,
+        taxonomyId: id,
+        label: LABEL_BY_ID.get(id),
+        rank: item.number * EPOCH_SPAN + (MILESTONE_RANK.get(id) ?? 0) + 1,
+        epoch: item.number,
+        kind: "milestone",
+      });
+    if (item.terminal)
+      pathNodes.push({
+        id: `terminal:epoch:${item.number}:${item.terminal}`,
+        taxonomyId: item.terminal,
+        label: LABEL_BY_ID.get(item.terminal),
+        rank: item.number * EPOCH_SPAN + 6,
+        epoch: item.number,
+        kind: "historical_terminal",
+      });
+  }
+  const finalEpoch = epochs.at(-1).number;
+  pathNodes.push({
+    id: hasReopenEpoch
+      ? `endpoint:epoch:${finalEpoch}:${endpoint}`
+      : `endpoint:${endpoint}`,
+    taxonomyId: endpoint,
+    label: LABEL_BY_ID.get(endpoint),
+    rank: finalEpoch * EPOCH_SPAN + 6,
+    epoch: finalEpoch,
+    kind: "endpoint",
+  });
   return {
     applicationId: app.id,
     origin,
     milestones,
     endpoint,
-    nodeIds: [
-      `origin:${origin}`,
-      ...milestones.map((id) => `milestone:${id}`),
-      `endpoint:${endpoint}`,
-    ],
+    epochs: epochs.map((item) => ({
+      number: item.number,
+      milestones: [...item.milestones].sort(
+        (a, b) => (MILESTONE_RANK.get(a) ?? 0) - (MILESTONE_RANK.get(b) ?? 0),
+      ),
+      ...(item.terminal ? { terminal: item.terminal } : {}),
+    })),
+    pathNodes,
+    nodeIds: pathNodes.map((node) => node.id),
     details,
   };
 };
@@ -564,20 +647,18 @@ const makeNodes = (paths) => {
   for (const path of paths)
     for (const nodeId of path.nodeIds)
       totals.set(nodeId, (totals.get(nodeId) ?? 0) + 1);
-  const tax = [
-    ...LIFECYCLE_DIAGRAM_TAXONOMY.origins,
-    ...LIFECYCLE_DIAGRAM_TAXONOMY.milestones,
-    ...LIFECYCLE_DIAGRAM_TAXONOMY.endpoints,
-  ];
-  return tax
-    .filter((item) => totals.has(item.nodeId))
-    .map((item) => ({
-      id: item.nodeId,
-      taxonomyId: item.id,
-      label: item.label,
-      rank: item.rank,
-      total: totals.get(item.nodeId),
-    }));
+  const metadata = new Map(
+    paths.flatMap((path) => path.pathNodes.map((node) => [node.id, node])),
+  );
+  return [...totals]
+    .map(([id, total]) => ({ ...metadata.get(id), id, total }))
+    .sort(
+      (a, b) =>
+        (BASE_NODE_ORDER.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+          (BASE_NODE_ORDER.get(b.id) ?? Number.MAX_SAFE_INTEGER) ||
+        a.rank - b.rank ||
+        codeCompare(a.id, b.id),
+    );
 };
 const makeLinks = (paths) => {
   const map = new Map();

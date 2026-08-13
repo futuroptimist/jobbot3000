@@ -65,6 +65,111 @@ const expectInvariants = (projection) => {
 };
 
 describe("lifecycle projection", () => {
+  it("projects explicit terminal and reopen cycles as forward lifecycle epochs", () => {
+    const input = bundle(
+      [app("reopened", { status: "recruiter_screen" })],
+      [
+        ev("01", "reopened", "application_submitted", "2026-01-01"),
+        ev("02", "reopened", "employer_rejected", "2026-01-02"),
+        ev("03", "reopened", "application_reopened", "2026-01-03"),
+        ev("04", "reopened", "recruiter_screen", "2026-01-04"),
+      ],
+    );
+    const timeline = buildLifecycleTimeline(input);
+    const pathAt = (index) =>
+      projectLifecycleAt(input, timeline.buckets[index].id).paths[0];
+
+    expect(pathAt(1).nodeIds).toEqual([
+      "origin:application_submitted",
+      "endpoint:awaiting_response",
+    ]);
+    expect(pathAt(2).nodeIds).toEqual([
+      "origin:application_submitted",
+      "endpoint:employer_rejected",
+    ]);
+    expect(pathAt(3).nodeIds).toEqual([
+      "origin:application_submitted",
+      "terminal:epoch:0:employer_rejected",
+      "reopen:epoch:1:application_reopened",
+      "endpoint:epoch:1:awaiting_response",
+    ]);
+    const current = projectLifecycleAt(input);
+    expect(current.paths[0].nodeIds).toEqual([
+      "origin:application_submitted",
+      "terminal:epoch:0:employer_rejected",
+      "reopen:epoch:1:application_reopened",
+      "milestone:epoch:1:recruiter_screen",
+      "endpoint:epoch:1:interviewing",
+    ]);
+    expect(current.nodes.map(({ id, rank }) => [id, rank])).toEqual([
+      ["origin:application_submitted", 0],
+      ["terminal:epoch:0:employer_rejected", 6],
+      ["reopen:epoch:1:application_reopened", 7],
+      ["milestone:epoch:1:recruiter_screen", 8],
+      ["endpoint:epoch:1:interviewing", 13],
+    ]);
+    expect(current.nodes.map((node) => node.label)).toEqual([
+      "Application submitted",
+      "Employer rejected",
+      "Application reopened",
+      "Recruiter screen",
+      "Interviewing",
+    ]);
+    const ranks = new Map(current.nodes.map((node) => [node.id, node.rank]));
+    for (const link of current.links)
+      expect(ranks.get(link.target)).toBeGreaterThan(ranks.get(link.source));
+    expect(current.totals.endpoints).toEqual({ interviewing: 1 });
+  });
+
+  it("warns and keeps one epoch when reopening has no active terminal", () => {
+    const projection = projectLifecycleAt(
+      bundle(
+        [app("no-terminal")],
+        [
+          ev("01", "no-terminal", "application_submitted", "2026-01-01"),
+          ev("02", "no-terminal", "application_reopened", "2026-01-02"),
+        ],
+      ),
+    );
+    expect(projection.paths[0].nodeIds).toEqual([
+      "origin:application_submitted",
+      "endpoint:awaiting_response",
+    ]);
+    expect(projection.warningCounts.reopen_without_terminal).toBe(1);
+  });
+
+  it("keeps repeated milestones distinct across multiple reopen epochs", () => {
+    const projection = projectLifecycleAt(
+      bundle(
+        [app("three-epochs", { status: "recruiter_screen" })],
+        [
+          ev("01", "three-epochs", "application_submitted", "2026-01-01"),
+          ev("02", "three-epochs", "recruiter_screen", "2026-01-02"),
+          ev("03", "three-epochs", "recruiter_screen", "2026-01-03"),
+          ev("04", "three-epochs", "employer_rejected", "2026-01-04"),
+          ev("05", "three-epochs", "application_reopened", "2026-01-05"),
+          ev("06", "three-epochs", "recruiter_screen", "2026-01-06"),
+          ev("07", "three-epochs", "candidate_withdrew", "2026-01-07"),
+          ev("08", "three-epochs", "application_reopened", "2026-01-08"),
+          ev("09", "three-epochs", "recruiter_screen", "2026-01-09"),
+        ],
+      ),
+    );
+    expect(projection.paths[0].epochs.map((epoch) => epoch.number)).toEqual([
+      0, 1, 2,
+    ]);
+    expect(projection.paths[0].nodeIds).toContain("milestone:recruiter_screen");
+    expect(projection.paths[0].nodeIds).toContain(
+      "milestone:epoch:1:recruiter_screen",
+    );
+    expect(projection.paths[0].nodeIds).toContain(
+      "milestone:epoch:2:recruiter_screen",
+    );
+    expect(projection.paths[0].nodeIds.at(-1)).toBe(
+      "endpoint:epoch:2:interviewing",
+    );
+  });
+
   it("exports the deeply frozen exact taxonomy", () => {
     expect(Object.isFrozen(LIFECYCLE_DIAGRAM_TAXONOMY.origins[0])).toBe(true);
     expect(LIFECYCLE_DIAGRAM_TAXONOMY.origins.map((x) => x.id)).toEqual([
@@ -274,7 +379,8 @@ describe("lifecycle projection", () => {
         shuffledBucketIds[i],
       ];
     }
-    for (const bucketId of shuffledBucketIds) projectLifecycleAt(liveBundle, bucketId);
+    for (const bucketId of shuffledBucketIds)
+      projectLifecycleAt(liveBundle, bucketId);
 
     // Sample buckets and compare the cache-exercised result against a
     // guaranteed-cold computation on a fresh, content-identical bundle

@@ -1,5 +1,10 @@
 # Lifecycle diagram scrubber performance: investigation and roadmap
 
+Lifecycle-epoch projections use this same scrubber pipeline and adjacent-bucket precomputation. At a
+terminal bucket the outcome is the final endpoint; once an explicit reopen enters the selected
+snapshot, that outcome becomes a historical terminal followed by a reopen anchor and a new
+forward-only epoch. Projection-cache versioning prevents pre-epoch snapshots from being reused.
+
 ## Status
 
 Phases 1–4 implemented (PRs #1199, #1200, #1201, #1202, and #1203). Phase 5 is split into three

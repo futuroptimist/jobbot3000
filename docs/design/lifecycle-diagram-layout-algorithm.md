@@ -5,6 +5,20 @@ design contract (see [application-lifecycle-diagram.md](./application-lifecycle-
 that). This document exists so the next person debugging the solver — including a future instance
 of Claude — doesn't have to re-derive this from scratch.
 
+## Dynamic epoch ranks
+
+The projection supplies an authoritative non-negative integer rank for every visible node. The
+layout derives the maximum active rank, rank count, transition count, rank centers, and minimum SVG
+width from those values. The legacy ID-derived rank remains only a compatibility fallback. Rank
+centers retain the existing 272-pixel spacing, margins, and node width, so ordinary seven-rank
+projections remain geometrically unchanged while reopened histories extend the diagram-local
+horizontal scroller.
+
+Every semantic edge is still expanded into adjacent, strictly increasing routing segments. Private
+routing nodes fill every skipped rank, including gaps across epoch outcomes and reopen anchors. The
+same dynamic horizontal geometry is created inside the shared layout entry point used by both the
+main thread and layout Worker and is returned with the layout for rendering.
+
 ## Why this file exists
 
 `lifecycleDiagramLayout.js` lays out the Sankey-style application lifecycle diagram: it places

@@ -2845,7 +2845,11 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
           id: item.nodeId,
           taxonomyId: item.id,
           label: item.label,
-          rank: item.rank,
+          rank: item.nodeId.startsWith("origin:")
+            ? 0
+            : item.nodeId.startsWith("endpoint:")
+              ? 6
+              : item.rank + 1,
           total: totals.get(item.nodeId),
         }));
     };
@@ -3213,6 +3217,37 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     expect(projection.totals.endpoints).toEqual(
       EXPECTED_FIXTURE_TAXONOMY_TOTALS.endpoints,
     );
+  });
+
+  it("renders terminal and reopen nodes in the existing SVG and flow table", async () => {
+    const b = bundle(
+      [app("reopened", { status: "recruiter_screen" })],
+      [
+        ev("01", "reopened", "application_submitted", "2026-01-01"),
+        ev("02", "reopened", "employer_rejected", "2026-01-02"),
+        ev("03", "reopened", "application_reopened", "2026-01-03"),
+        ev("04", "reopened", "recruiter_screen", "2026-01-04"),
+      ],
+    );
+    const { root } = await render(b);
+    expect(root.querySelectorAll(".diagram-scroll svg")).toHaveLength(1);
+    expect(
+      root.querySelector(
+        "[data-diagram-node='terminal:epoch:0:employer_rejected']",
+      ).textContent,
+    ).toContain("Employer rejected");
+    expect(
+      root.querySelector(
+        "[data-diagram-node='reopen:epoch:1:application_reopened']",
+      ).textContent,
+    ).toContain("Application reopened");
+    const flows = [...root.querySelectorAll("table")].find(
+      (table) => table.querySelector("caption")?.textContent === "Flows",
+    );
+    expect(flows.textContent).toContain(
+      "Employer rejected to Application reopened",
+    );
+    expect(root.querySelector("svg").getAttribute("width")).toBe("3754");
   });
 
   it("uses time elements for exact and date-only event timestamps", async () => {

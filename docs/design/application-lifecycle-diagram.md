@@ -130,10 +130,28 @@ Projection rules:
 - Apply these aliases only to existing structured status and stage fields documented in `src/domain/browserApplication.js`; never infer milestones from free-form `stageLabel`, notes, company, role, or message text.
 - Unknown structured values produce no invented milestone and emit a deterministic warning.
 - Include only persisted milestones.
-- Collapse repeats so an application contributes a milestone at most once.
+- Collapse repeats within one lifecycle epoch. The same semantic milestone may appear once in each
+  epoch while milestone totals continue to count each application at most once.
 - Never invent skipped stages.
 - Sort milestones by fixed rank to keep the graph acyclic.
 - Preserve regressions in event details and warnings without drawing backward Sankey links.
+
+### Lifecycle epochs and explicit reopening
+
+An explicit terminal outcome followed by an effective `application_reopened` starts a new,
+forward-only lifecycle epoch in the same application path and the same Sankey. Epoch 0 begins at the
+ordinary origin. Each later epoch begins with a neutral **Application reopened** anchor. A terminal
+becomes a visible historical-terminal node only after a later effective reopen clears it; otherwise
+it remains the final endpoint. Reopening without an active terminal does not start an epoch and emits
+`reopen_without_terminal`. Lower-stage activity without an explicit reopen remains suppressed with
+`terminal_without_reopen`.
+
+Each epoch spans seven ranks: its anchor is `7 × epoch`, milestones occupy the next five ranks, and
+its outcome is rank `7 × epoch + 6`. IDs are `terminal:epoch:<n>:<terminal>`,
+`reopen:epoch:<n>:application_reopened`, and, after epoch 0,
+`milestone:epoch:<n>:<milestone>` and `endpoint:epoch:<n>:<endpoint>`. Epoch-0 origin and milestone
+IDs and every no-reopen final endpoint retain their original IDs. Projection nodes carry authoritative
+integer ranks plus semantic taxonomy IDs, labels, kind, and epoch metadata.
 
 ## Snapshot endpoints
 
@@ -214,12 +232,13 @@ For every selected timeline position, the projection must satisfy all invariants
 - One unit, origin, path, and endpoint per included application.
 - Origin outgoing total equals included applications.
 - Endpoint incoming total equals included applications.
+- Historical terminal nodes do not contribute to endpoint totals; only the final endpoint does.
 - Internal flow is conserved.
 - Link values are positive integers.
 - No self-links.
 - No cycles.
 - No backward links.
-- No duplicate milestones in an application path.
+- No duplicate semantic milestones within an epoch; repeats across epochs remain separate nodes.
 - No duplicate application IDs per link.
 - Deterministic output independent of input order, locale, timezone, or clock.
 - Current replay agrees with `applications.status` or emits a warning.
@@ -282,7 +301,13 @@ The renderer uses these normative layout constants:
 | Per-node vertical budget      |  `36px` |
 | D3 node width                 |  `18px` |
 
-For a selected projection, active aggregate nodes are projection nodes whose numeric `total` is greater than zero. Zero-count taxonomy entries remain available in semantic tables but do not enlarge the SVG. Active nodes are grouped by their existing fixed `nodeRank(node.id)`; taxonomy order and seven-rank horizontal placement are unchanged. With `densestColumnCount` equal to the largest active-node count in any rank, floored to `1` when there are no active nodes, canvas height is calculated as:
+For a selected projection, active aggregate nodes are projection nodes whose numeric `total` is
+greater than zero. Zero-count taxonomy entries remain available in semantic tables but do not enlarge
+the SVG. Active nodes use their projection-provided rank, with ID-derived rank as a compatibility
+fallback. The maximum active rank determines rank and transition counts, generated rank centers, and
+minimum SVG width; a no-reopen projection retains the original seven-rank geometry. With
+`densestColumnCount` equal to the largest active-node count in any rank, floored to `1` when there are
+no active nodes, canvas height is calculated as:
 
 ```text
 densityHeight =

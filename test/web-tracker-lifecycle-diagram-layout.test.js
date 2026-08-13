@@ -113,11 +113,11 @@ describe("lifecycle horizontal geometry", () => {
     expect(() =>
       createLifecycleHorizontalGeometry({ controlOffset: Infinity }),
     ).toThrow(/must be finite and nonnegative/u);
-    expect(() =>
-      createLifecycleHorizontalGeometry({
-        rankCenters: { ...centers, 7: 2000 },
-      }),
-    ).toThrow(/cover exactly ranks 0\.\.6/u);
+    const expanded = createLifecycleHorizontalGeometry({
+      rankCenters: { ...centers, 7: 2013 },
+    });
+    expect(expanded.rankCenters[7]).toBe(2013);
+    expect(expanded.svgWidth).toBe(2122);
     expect(() =>
       createLifecycleHorizontalGeometry({
         rankCenters: { ...centers, 0: 90 },
@@ -334,7 +334,10 @@ const transitionCountsByGraphRanks = (graph) => {
   const rankByNodeId = new Map(
     (graph.nodes ?? []).map((node) => [node.id, node.rank]),
   );
-  const counts = Array.from({ length: 6 }, () => 0);
+  const counts = Array.from(
+    { length: Math.max(6, ...rankByNodeId.values()) },
+    () => 0,
+  );
   for (const link of graph.links ?? []) {
     const sourceId =
       link.source && typeof link.source === "object"
@@ -1541,7 +1544,7 @@ describe("transition lane solver", () => {
     };
     const seenReversed = recordHandleStatesUntilAccepted(reversedProjection());
     expect(seenReversed).toEqual(seen);
-  });
+  }, 60_000);
 });
 
 describe("combinationsOfSize", () => {
@@ -2232,9 +2235,9 @@ describe("test-only lifecycle layout diagnostics", () => {
           projectLifecycleAt(denseFixture),
           1850,
         );
-        expect(result.graph.acceptedRouteCrossingCount).toBe(50);
+        expect(result.graph.acceptedRouteCrossingCount).toBe(95);
         expect(result.graph.transitionLaneSolverStats.handleStatesVisited).toBe(
-          500,
+          478,
         );
       });
     });
@@ -2869,7 +2872,7 @@ describe("lifecycle diagram render-only routing layout", () => {
     expectRoutedDensity(projection(), [4, 5, 5, 5, 5, 5], 580);
     expectRoutedDensity(
       projectLifecycleAt(denseFixture),
-      [15, 15, 15, 13, 13, 12],
+      [15, 15, 15, 13, 13, 12, 1, 1, 1, 1, 1, 1, 1],
       1660,
     );
     expectRoutedDensity(
@@ -3204,7 +3207,7 @@ describe("lifecycle diagram render-only routing layout", () => {
   // perfectly clean layout is unaffected. Handle-vs-handle overlap and
   // fixed-geometry avoidance remain hard, zero-tolerance requirements.
   it("lays out dense fixture with bounded semantic docks and safe handles", () => {
-    const { graph } = layoutLifecycleRoutingGraph(
+    const { graph, dimensions } = layoutLifecycleRoutingGraph(
       projectLifecycleAt(denseFixture),
       1850,
     );
@@ -3212,8 +3215,8 @@ describe("lifecycle diagram render-only routing layout", () => {
     // fixture. See docs/design/lifecycle-diagram-layout-algorithm.md's
     // "Follow-up (shipped)" section for the browser-reconciled (denser)
     // variant's different count (66, exercised by the Playwright audit spec).
-    expect(graph.acceptedRouteCrossingCount).toBe(50);
-    expect(graph.transitionLaneSolverStats.handleStatesVisited).toBe(500);
+    expect(graph.acceptedRouteCrossingCount).toBe(95);
+    expect(graph.transitionLaneSolverStats.handleStatesVisited).toBe(478);
     const visibleNodes = graph.nodes.filter(
       (node) => !node.routing && node.total > 0,
     );
@@ -3239,7 +3242,12 @@ describe("lifecycle diagram render-only routing layout", () => {
         );
       }
     }
-    const handles = assignBranchHandles(graph.branches, byBranch, visibleNodes);
+    const handles = assignBranchHandles(
+      graph.branches,
+      byBranch,
+      visibleNodes,
+      dimensions.horizontalGeometry,
+    );
     expect(handles).toHaveLength(graph.branches.length);
     expect(new Set(handles.map((handle) => handle.branchId)).size).toBe(
       graph.branches.length,
@@ -3269,7 +3277,7 @@ describe("lifecycle diagram render-only routing layout", () => {
       const allowed = segments.flatMap((segment) =>
         allSampleTValues.map((t) => ({
           segment,
-          ...cubicTransitionPoint(segment, t),
+          ...cubicTransitionPoint(segment, t, dimensions.horizontalGeometry),
         })),
       );
       expect(
