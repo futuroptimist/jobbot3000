@@ -6,6 +6,7 @@ import {
   LIFECYCLE_DIAGRAM_TAXONOMY,
   projectLifecycleAt,
 } from "../src/web/tracker/lifecycleProjection.js";
+import { planLifecycleReconciliation } from "../src/web/tracker/lifecycleReconciliation.js";
 import {
   BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
   BRANCH_HANDLE_RADIUS,
@@ -365,7 +366,63 @@ describe("lifecycle horizontal geometry", () => {
       true,
     );
     expect(handles.every(Boolean)).toBe(true);
+    expect(graph.transitionLaneSolverStats.statesVisited).toBeLessThanOrEqual(
+      graph.transitionLaneSolverStats.stateLimit,
+    );
+    expect(
+      graph.transitionLaneSolverStats.handleStatesVisited,
+    ).toBeLessThanOrEqual(graph.transitionLaneSolverStats.handleStateLimit);
     expect(audit.fatalFindings).toEqual([]);
+  });
+
+  it("routes the reconciled seeded reopen fixture within solver budgets", () => {
+    const reconciliation = planLifecycleReconciliation(denseFixture);
+    const reconciledBundle = {
+      ...denseFixture,
+      lifecycleEvents: [
+        ...(denseFixture.lifecycleEvents ?? []),
+        ...reconciliation.plans.flatMap((plan) => plan.additions),
+      ],
+    };
+    const reconciledProjection = projectLifecycleAt(reconciledBundle);
+    expect(
+      reconciledProjection.nodes.some((node) => node.kind === "reopen"),
+    ).toBe(true);
+    expect(
+      Math.max(...reconciledProjection.nodes.map((node) => node.rank)),
+    ).toBeGreaterThan(6);
+
+    const { graph, dimensions } = layoutLifecycleRoutingGraph(
+      reconciledProjection,
+      1850,
+    );
+    const handles = graph.branches.map((branch) =>
+      graph.acceptedHandles.get(branch.id),
+    );
+    const model = buildLifecycleRouteModel(graph, dimensions);
+
+    expect(
+      graph.links.every((link) => link.target.rank === link.source.rank + 1),
+    ).toBe(true);
+    expect(handles.every(Boolean)).toBe(true);
+    expect(graph.transitionLaneSolverStats.statesVisited).toBeLessThanOrEqual(
+      graph.transitionLaneSolverStats.stateLimit,
+    );
+    expect(
+      graph.transitionLaneSolverStats.handleStatesVisited,
+    ).toBeLessThanOrEqual(graph.transitionLaneSolverStats.handleStateLimit);
+    const audit = auditLifecycleRouteGeometry({ model, handles });
+    expect(
+      audit.fatalFindings.filter(
+        (finding) =>
+          finding.category !== "proper-crossing" &&
+          finding.category !== "route-handle-collision",
+      ),
+    ).toEqual([]);
+    expect(graph.acceptedRouteCrossingCount).toBeLessThanOrEqual(200);
+    for (const node of graph.nodes.filter((candidate) => !candidate.routing)) {
+      expect(() => wrapLifecycleLabel(node.label)).not.toThrow();
+    }
   });
 
   it("routes three epochs through ranks 0–20 deterministically", () => {

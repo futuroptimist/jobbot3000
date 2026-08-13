@@ -1598,6 +1598,7 @@ function layoutLifecycleRoutingGraphPass(
       ranks.add(variable.rank);
     }
     const sortedRanks = [...ranks].sort((a, b) => a - b);
+    const hasExtendedRankRouting = sortedRanks.some((rank) => rank >= 6);
     for (const variable of variables) {
       variable.isEnding = !variables.some(
         (candidate) =>
@@ -2623,6 +2624,14 @@ function layoutLifecycleRoutingGraphPass(
             .sort(
               (a, b) =>
                 (a.deadline ?? Infinity) - (b.deadline ?? Infinity) ||
+                // Commit longer-lived strands first when deadlines tie. A
+                // reopened strand constrains more future ranks than an
+                // ordinary epoch-0 strand, so placing the shorter strand
+                // first only creates equivalent prefixes that later
+                // backtrack once the longer strand reaches those ranks.
+                (hasExtendedRankRouting
+                  ? (b.span?.endRank ?? 0) - (a.span?.endRank ?? 0)
+                  : 0) ||
                 compareBranchesForGlobalOrder(
                   branchById.get(a.id),
                   branchById.get(b.id),
