@@ -4205,14 +4205,14 @@ describe("shared route-crossing classifier", () => {
   it("deduplicates flattened edges without hiding distinct routes at one handle", () => {
     const source = { id: "source", rank: 0, x0: 0, x1: 10 };
     const target = { id: "target", rank: 1, x0: 100, x1: 110 };
-    const segment = (branchId, y0, y1) => ({
+    const segment = (branchId, y0, y1, segmentIndex = 0) => ({
       branchId,
       source,
       target,
       y0,
       y1,
       transitionLaneY: 100,
-      segmentIndex: 0,
+      segmentIndex,
     });
     const model = {
       branches: [
@@ -4220,7 +4220,10 @@ describe("shared route-crossing classifier", () => {
         { id: "route-b", sourceRank: 0, targetRank: 1 },
       ],
       segmentsByBranch: new Map([
-        ["route-a", [segment("route-a", 100, 100)]],
+        [
+          "route-a",
+          [segment("route-a", 100, 100), segment("route-a", 100, 100, 1)],
+        ],
         ["route-b", [segment("route-b", 90, 110)]],
       ]),
       visibleNodes: [],
