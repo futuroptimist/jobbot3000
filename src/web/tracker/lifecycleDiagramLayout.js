@@ -50,7 +50,7 @@ export const MINIMUM_SVG_WIDTH =
 export const BRANCH_STROKE_OPACITY = 0.82;
 export const BRANCH_HANDLE_RADIUS = 22;
 
-const LIFECYCLE_RANKS = Object.freeze([0, 1, 2, 3, 4, 5, 6]);
+const BASELINE_RANK_COUNT = 7;
 const HANDLE_DIAGNOSTIC_TRANSITION_RANKS = Symbol(
   "handleDiagnosticTransitionRanks",
 );
@@ -59,8 +59,9 @@ export function createLifecycleHorizontalGeometry({
   leftMargin = LAYOUT_LEFT_MARGIN,
   rightMargin = LAYOUT_RIGHT_MARGIN,
   nodeWidth = SANKEY_NODE_WIDTH,
+  rankCount = BASELINE_RANK_COUNT,
   rankCenters = Object.fromEntries(
-    LIFECYCLE_RANKS.map((rank) => [
+    Array.from({ length: rankCount }, (_, rank) => [
       rank,
       leftMargin + nodeWidth / 2 + rank * MINIMUM_RANK_CENTER_SPACING,
     ]),
@@ -70,16 +71,21 @@ export function createLifecycleHorizontalGeometry({
   minimumSvgWidth,
   handleRadius = BRANCH_HANDLE_RADIUS,
 } = {}) {
-  const rankKeys = Object.keys(rankCenters).sort();
+  const rankKeys = Object.keys(rankCenters).sort(
+    (a, b) => Number(a) - Number(b),
+  );
+  const ranks = Array.from({ length: rankCount }, (_, rank) => rank);
   if (
-    rankKeys.length !== LIFECYCLE_RANKS.length ||
-    rankKeys.some((rank, index) => rank !== String(LIFECYCLE_RANKS[index]))
+    !Number.isInteger(rankCount) ||
+    rankCount < BASELINE_RANK_COUNT ||
+    rankKeys.length !== ranks.length ||
+    rankKeys.some((rank, index) => rank !== String(ranks[index]))
   )
     throw new Error(
-      "Lifecycle horizontal geometry rank centers must cover exactly ranks 0..6",
+      `Lifecycle horizontal geometry rank centers must cover exactly ranks 0..${rankCount - 1}`,
     );
   const centers = {};
-  for (const rank of LIFECYCLE_RANKS) {
+  for (const rank of ranks) {
     const value = rankCenters[rank];
     if (!Number.isFinite(value))
       throw new Error(
@@ -92,9 +98,12 @@ export function createLifecycleHorizontalGeometry({
     centers[rank] = value;
   }
   const baselineWidth =
-    leftMargin + rightMargin + nodeWidth + 6 * MINIMUM_RANK_CENTER_SPACING;
+    leftMargin +
+    rightMargin +
+    nodeWidth +
+    (rankCount - 1) * MINIMUM_RANK_CENTER_SPACING;
   const leftOuterExtent = centers[0] - nodeWidth / 2;
-  const rightOuterExtent = centers[6] + nodeWidth / 2;
+  const rightOuterExtent = centers[rankCount - 1] + nodeWidth / 2;
   const svgWidth =
     minimumSvgWidth ?? Math.max(baselineWidth, rightOuterExtent + rightMargin);
   const scalars = {
@@ -121,7 +130,7 @@ export function createLifecycleHorizontalGeometry({
       "Lifecycle horizontal geometry SVG width does not cover every rank",
     );
   const hops = {};
-  for (let sourceRank = 0; sourceRank < 6; sourceRank += 1) {
+  for (let sourceRank = 0; sourceRank < rankCount - 1; sourceRank += 1) {
     const targetRank = sourceRank + 1;
     const sourceCenter = centers[sourceRank];
     const targetCenter = centers[targetRank];
@@ -162,6 +171,9 @@ export function createLifecycleHorizontalGeometry({
   }
   return Object.freeze({
     rankCenters: Object.freeze(centers),
+    rankCount,
+    transitionCount: rankCount - 1,
+    maximumRank: rankCount - 1,
     hops: Object.freeze(hops),
     ...scalars,
     svgWidth,
@@ -170,6 +182,22 @@ export function createLifecycleHorizontalGeometry({
 
 export const BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY =
   createLifecycleHorizontalGeometry();
+
+export const lifecycleHorizontalGeometryForProjection = (projection = {}) => {
+  const maximumRank = Math.max(
+    6,
+    ...(projection.nodes ?? [])
+      .map((node) => node.rank)
+      .filter((rank) => Number.isInteger(rank) && rank >= 0),
+  );
+  return createLifecycleHorizontalGeometry({ rankCount: maximumRank + 1 });
+};
+const horizontalGeometryForProjection = (projection, requested) => {
+  const required = lifecycleHorizontalGeometryForProjection(projection);
+  return requested && requested.maximumRank >= required.maximumRank
+    ? requested
+    : required;
+};
 
 const horizontalGeometryFor = (value) =>
   value?.rankCenters && value?.hops
@@ -527,6 +555,12 @@ export const nodeRank = (id) => {
   if (String(id).startsWith("endpoint:")) return 6;
   return MILESTONE_RANKS.get(id) ?? 1;
 };
+const projectionNodeRanks = (projection) =>
+  new Map(
+    (projection.nodes ?? [])
+      .filter((node) => Number.isInteger(node.rank) && node.rank >= 0)
+      .map((node) => [node.id, node.rank]),
+  );
 export const taxonomyOrder = (nodeId) =>
   TAXONOMY_BY_NODE_ID.get(nodeId)?.rank ?? 999;
 const taxonomyId = (nodeId) => TAXONOMY_BY_NODE_ID.get(nodeId)?.id ?? nodeId;
@@ -551,6 +585,7 @@ export const compareBranches = (a, b) =>
   compareLifecycleIds(a.id, b.id);
 
 export function buildLifecycleDisplayBranches(projection = {}) {
+  const authoritativeRanks = projectionNodeRanks(projection);
   const pathByApp = new Map(
     (projection.paths ?? []).map((path) => [String(path.applicationId), path]),
   );
@@ -567,8 +602,10 @@ export function buildLifecycleDisplayBranches(projection = {}) {
     for (const [endpointId, applicationIds] of groups) {
       const sourceNodeId = link.source;
       const targetNodeId = link.target;
-      const sourceRank = nodeRank(sourceNodeId);
-      const targetRank = nodeRank(targetNodeId);
+      const sourceRank =
+        authoritativeRanks.get(sourceNodeId) ?? nodeRank(sourceNodeId);
+      const targetRank =
+        authoritativeRanks.get(targetNodeId) ?? nodeRank(targetNodeId);
       const semanticLinkId = link.id;
       const id = `branch:${semanticLinkId}:endpoint:${endpointId}`;
       const branch = {
@@ -596,7 +633,7 @@ export const nodeSort = (a, b) => {
   const rankA = a.rank ?? 0;
   const rankB = b.rank ?? 0;
   if (rankA !== rankB) return rankA - rankB;
-  if (rankA === 0 || rankA === 6)
+  if (rankA % 7 === 0 || rankA % 7 === 6)
     return (
       taxonomyOrder(a.id) - taxonomyOrder(b.id) ||
       ar - br ||
@@ -648,7 +685,10 @@ export function buildLifecycleRoutingGraph(projection = {}) {
     nodes.set(node.id, {
       ...node,
       applicationIds: [...(node.applicationIds ?? [])],
-      rank: nodeRank(node.id),
+      rank:
+        Number.isInteger(node.rank) && node.rank >= 0
+          ? node.rank
+          : nodeRank(node.id),
       routing: false,
       weightedEndpointMedian: weightedMedianEndpoint(node.id, branches),
     });
@@ -726,8 +766,12 @@ export function calculateLifecycleDiagramLayout(
   projection,
   availableWidth,
   routingGraph,
-  horizontalGeometry = BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
+  horizontalGeometry,
 ) {
+  horizontalGeometry = horizontalGeometryForProjection(
+    projection,
+    horizontalGeometry,
+  );
   const integerWidth = Math.floor(Number(availableWidth));
   const sanitizedWidth =
     Number.isFinite(integerWidth) && integerWidth > 0
@@ -775,7 +819,7 @@ export function calculateLifecycleDiagramLayout(
         ].join(" "),
       );
     }
-    if (sourceRank < 0 || sourceRank >= 6) {
+    if (sourceRank < 0 || sourceRank >= horizontalGeometry.transitionCount) {
       throw new Error(
         [
           "Lifecycle diagram layout invariant violated:",
@@ -895,7 +939,7 @@ const buildTransitionScopedJointOrder = (graph) => {
   // milestone-free case instead of generalizing it -- see
   // docs/design/lifecycle-diagram-layout-algorithm.md.
   const isIntermediateRealRank = (rank) =>
-    rank >= 1 && rank <= 5 && realNodeRanks.has(rank);
+    rank % 7 >= 1 && rank % 7 <= 5 && realNodeRanks.has(rank);
   const jointBranches = [...graph.branches].sort(compareBranchesJoint);
   // Always compute a full per-hop branch order -- used below for node
   // positioning at any rank that has no real node, independent of whether an
@@ -925,7 +969,7 @@ const buildTransitionScopedJointOrder = (graph) => {
   const nodeOrderByRank = new Map();
   for (const rank of [...new Set(graph.nodes.map((node) => node.rank))]) {
     const nodes = graph.nodes.filter((node) => node.rank === rank);
-    if (rank === 0 || rank === 6 || realNodeRanks.has(rank)) {
+    if (rank % 7 === 0 || rank % 7 === 6 || realNodeRanks.has(rank)) {
       nodes.sort(nodeSort);
     } else {
       const branchIndex = fullBranchOrderByRank.get(rank);
@@ -949,8 +993,10 @@ function layoutLifecycleRoutingGraphPass(
   availableWidth,
   options = {},
 ) {
-  const horizontalGeometry =
-    options.horizontalGeometry ?? BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY;
+  const horizontalGeometry = horizontalGeometryForProjection(
+    projection,
+    options.horizontalGeometry,
+  );
   const enableTestDiagnostics = isLifecycleLayoutTestEnvironment();
   const explicitNodeOrderByRank =
     options.authoritativeNodeOrderByRank ??
@@ -3567,7 +3613,7 @@ export const deriveAuthoritativeLayoutOrders = (graph, rankOrderByRank) => {
       Number(left.routing) - Number(right.routing) ||
       taxonomyOrder(left.id) - taxonomyOrder(right.id) ||
       compareLifecycleIds(left.id, right.id);
-    if (rank === 0 || rank === 6) {
+    if (rank % 7 === 0 || rank % 7 === 6) {
       nodes.sort(nodeSort);
     } else {
       const outgoing = new Map(nodes.map((node) => [node.id, new Set()]));
@@ -4158,12 +4204,18 @@ export function buildLifecycleRouteModel(graph, dimensions) {
     dimensions?.horizontalGeometry ?? horizontalGeometryFor(graph);
   const branches = [...(graph.branches ?? [])].sort(compareBranches);
   const segmentsByBranch = new Map();
-  const segmentsByTransitionRank = Array.from({ length: 6 }, () => []);
+  const segmentsByTransitionRank = Array.from(
+    { length: horizontalGeometry.transitionCount },
+    () => [],
+  );
   for (const link of graph.links ?? []) {
     if (!segmentsByBranch.has(link.branchId))
       segmentsByBranch.set(link.branchId, []);
     segmentsByBranch.get(link.branchId).push(link);
-    if (link.source?.rank >= 0 && link.source.rank < 6)
+    if (
+      link.source?.rank >= 0 &&
+      link.source.rank < horizontalGeometry.transitionCount
+    )
       segmentsByTransitionRank[link.source.rank].push(link);
   }
   for (const segments of segmentsByBranch.values())

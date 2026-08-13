@@ -130,7 +130,7 @@ Projection rules:
 - Apply these aliases only to existing structured status and stage fields documented in `src/domain/browserApplication.js`; never infer milestones from free-form `stageLabel`, notes, company, role, or message text.
 - Unknown structured values produce no invented milestone and emit a deterministic warning.
 - Include only persisted milestones.
-- Collapse repeats so an application contributes a milestone at most once.
+- Collapse repeats within an epoch. The same milestone in different lifecycle epochs remains a distinct visible node, while milestone totals retain one-per-application semantic counting.
 - Never invent skipped stages.
 - Sort milestones by fixed rank to keep the graph acyclic.
 - Preserve regressions in event details and warnings without drawing backward Sankey links.
@@ -166,6 +166,14 @@ Deterministic endpoint replay precedence:
 9. Otherwise, insufficient evidence projects to `unknown`.
 
 Assessment action `submitted`, `completed`, or `done` preserves the `assessment_take_home` milestone but is not “in progress.” Current replay must agree with `applications.status` or emit a warning.
+
+### Explicit reopen epochs
+
+An effective terminal event followed by an explicit `application_reopened` starts another forward-only epoch in the same application path. Epoch zero uses the existing origin at rank 0, milestones at ranks 1–5, and outcome at rank 6. Each later epoch uses a seven-rank span: its reopen anchor is rank `epoch * 7`, its milestones occupy the next five ranks, and its outcome occupies the sixth following rank. Multiple terminal/reopen cycles may therefore produce epochs 0, 1, 2, and beyond without backward links.
+
+The terminal immediately preceding a valid reopen becomes a historical-terminal node. Reopening without an active terminal creates no epoch and emits `reopen_without_terminal`; lower-stage activity after a terminal without reopening remains suppressed and emits `terminal_without_reopen`. Stable IDs are `terminal:epoch:<epoch>:<terminal>`, `reopen:epoch:<new-epoch>:application_reopened`, and, after epoch zero, `milestone:epoch:<epoch>:<milestone>` and `endpoint:epoch:<epoch>:<endpoint>`. Epoch-zero origins, milestones, and endpoints retain their original IDs for no-reopen compatibility.
+
+Every projected node carries its authoritative non-negative integer rank. A path remains one application and one conserved unit through every edge, and only its last node is the current endpoint. Historical terminals are visible in the SVG and flow table but never add to endpoint or current-rejection totals. Scrubbing before the reopen shows the terminal as the final endpoint; scrubbing after it reclassifies that outcome as historical and reveals the reopen boundary.
 
 Current-status agreement and `migration_status_snapshot` fallback use the exact table below. Event replay remains authoritative; this table is only for deterministic migration fallback and current-status agreement checks. Assessment progress must still require the assessment action evidence specified above.
 
@@ -282,7 +290,7 @@ The renderer uses these normative layout constants:
 | Per-node vertical budget      |  `36px` |
 | D3 node width                 |  `18px` |
 
-For a selected projection, active aggregate nodes are projection nodes whose numeric `total` is greater than zero. Zero-count taxonomy entries remain available in semantic tables but do not enlarge the SVG. Active nodes are grouped by their existing fixed `nodeRank(node.id)`; taxonomy order and seven-rank horizontal placement are unchanged. With `densestColumnCount` equal to the largest active-node count in any rank, floored to `1` when there are no active nodes, canvas height is calculated as:
+For a selected projection, active aggregate nodes are projection nodes whose numeric `total` is greater than zero. Zero-count taxonomy entries remain available in semantic tables but do not enlarge the SVG. Active nodes use their projection-provided rank; ID-derived ranks are only a compatibility fallback. No-reopen data retains the original seven ranks and geometry, while reopened data derives its maximum rank, rank count, transition count, rank centers, and minimum SVG width from the active projection. With `densestColumnCount` equal to the largest active-node count in any rank, floored to `1` when there are no active nodes, canvas height is calculated as:
 
 ```text
 densityHeight =
@@ -310,7 +318,7 @@ The renderer partitions each aggregate projection link into endpoint-conditioned
 
 Every rendered branch is expanded into adjacent-rank segments before layout. If a semantic link skips ranks, private routing nodes with IDs `route:${branchId}:rank:${rank}` are inserted at every skipped semantic rank. These nodes have `routing: true`, zero visible width, no labels, no DOM rectangles, no hit targets, and never appear in persisted data, exports, semantic tables, accessibility trees, taxonomy counts, or P4 projection output.
 
-Normative constants live in `src/web/tracker/lifecycleDiagramLayout.js`: node width `18`, minimum SVG height `360`, top margin `64`, bottom margin `48`, routed node padding `72`, per-lane vertical budget `36`, label max width `176`, label wrap width `22` characters, rank corridor half width `100`, minimum transition width `72`, left/right margins `100`, and rank-center spacing `272`. The minimum routed SVG width is intentionally `1850px`; mobile keeps the diagram-local horizontal scroller and the page remains vertically scrollable.
+Normative constants live in `src/web/tracker/lifecycleDiagramLayout.js`: node width `18`, minimum SVG height `360`, top margin `64`, bottom margin `48`, routed node padding `72`, per-lane vertical budget `36`, label max width `176`, label wrap width `22` characters, rank corridor half width `100`, minimum transition width `72`, left/right margins `100`, and rank-center spacing `272`. Seven ranks retain the `1850px` minimum routed SVG width; additional ranks extend that width by the same `272px` center spacing. Mobile keeps the diagram-local horizontal scroller and the page remains vertically scrollable.
 
 P6-F3 supersedes P6-F2's visible-node-only density calculation. Height is based on the densest rank after counting both active visible semantic nodes and active hidden routing nodes. Adding applications to an existing aggregate branch thickens that ribbon but does not add routing lanes or increase height; adding a new endpoint-conditioned branch can add lanes and increase height.
 
@@ -320,6 +328,6 @@ Labels are centered over visible semantic nodes, placed above the node rather th
 
 The only permitted contact between branch geometry and semantic nodes is the shared semantic-node docking boundary where flows join or split. Otherwise ribbons, dark separators, selection halos, and 44px branch handles must not intersect unrelated node rectangles, labels, or hit rectangles. Routing lanes must not pass behind intermediate milestones, unrelated branches must not share coincident centerline runs, and avoidable crossings are fatal geometry findings. The routing regression fixture must have zero crossings. Dense projections may contain only isolated proper crossings that are derived from reversed fixed semantic source/target order, occur inside an empty transition corridor, and are independently classified without fixture or branch allowlists.
 
-Endpoint branch colors are stable and supplemental: awaiting response `#60A5FA`, interviewing `#C084FC`, assessment in progress `#FACC15`, offer/negotiating `#2DD4BF`, employer rejected `#FB7185`, candidate withdrew `#FB923C`, offer declined `#F472B6`, offer expired/rescinded `#A3E635`, offer accepted `#4ADE80`, closed/archived `#94A3B8`, and unknown `#E2E8F0`. Normal branches render at opacity `0.82`; selected branches retain their outcome color at full opacity with a white halo. Dark separators are rendered beneath every branch, endpoint nodes reuse endpoint colors, and origin/milestone nodes remain neutral.
+Endpoint branch colors are stable and supplemental: awaiting response `#60A5FA`, interviewing `#C084FC`, assessment in progress `#FACC15`, offer/negotiating `#2DD4BF`, employer rejected `#FB7185`, candidate withdrew `#FB923C`, offer declined `#F472B6`, offer expired/rescinded `#A3E635`, offer accepted `#4ADE80`, closed/archived `#94A3B8`, and unknown `#E2E8F0`. Normal branches render at opacity `0.82`; selected branches retain their outcome color at full opacity with a white halo. Dark separators are rendered beneath every branch, endpoint and historical-terminal nodes reuse the corresponding endpoint colors, reopen anchors use a distinct neutral color, and origin/milestone nodes remain neutral.
 
 Each display branch has one 44×44 transparent SVG circle handle placed inside a transition corridor, while the visible colored path remains directly clickable. Handles are not keyboard-focusable; the semantic Flows table remains the keyboard interface. A compact active-outcome legend appears before the scrollable diagram with `data-diagram-legend`, visible outcome labels, counts, and noninteractive color swatches.

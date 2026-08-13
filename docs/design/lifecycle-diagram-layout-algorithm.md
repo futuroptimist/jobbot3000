@@ -1272,3 +1272,14 @@ and a larger budget for that fixture; it does not establish a current implementa
 for the two extreme fixtures. The fixed evidence (14 blocked branch IDs, 5×55=275 routing-only
 nodes, ~59.251px feasible lane spacing) remains useful if a new constructive joint
 route-and-handle-placement design is ever justified under the current-status criteria above.
+
+## Lifecycle-epoch rank parameterization (2026-08-12)
+
+The solver remains unchanged in kind, but its horizontal bounds are now projection-derived. A
+projection node's explicit non-negative integer `rank` is authoritative; ID-derived ranks remain a
+compatibility fallback only. The maximum active rank determines the contiguous rank centers,
+adjacent transition count, routing-node insertion bounds, route-model transition buckets, and
+minimum SVG width. The existing 272px center spacing and all corridor, collision, crossing,
+label-clearance, handle-placement, and route-audit invariants apply to every generated hop. A
+seven-rank projection therefore retains byte-compatible baseline geometry, while explicit
+terminal/reopen epochs extend the same DAG forward without introducing arbitrary backward edges.

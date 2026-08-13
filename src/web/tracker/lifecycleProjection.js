@@ -399,7 +399,9 @@ const projectApp = (app, appEvents, isCurrent) => {
     )
     .map((event) => event.time.sort);
   const origin = originFor(app, events, details);
-  const milestoneSet = new Set();
+  const epochs = [{ number: 0, milestones: new Set() }];
+  const semanticMilestones = new Set();
+  let epochNumber = 0;
   let highestObservedMilestoneRank = -1;
   let terminal = undefined;
   let awaitingActive = false;
@@ -453,20 +455,18 @@ const projectApp = (app, appEvents, isCurrent) => {
             : normalize(event.status) === "onsite_loop"
               ? "onsite_final_loop"
               : "offer_received";
-    if (milestone) {
-      const rank = MILESTONE_RANK.get(milestone) ?? 0;
-      if (rank < highestObservedMilestoneRank)
-        details.push(
-          makeWarning("regressive_history", app.id, { eventId: event.id }),
-        );
-      highestObservedMilestoneRank = Math.max(
-        highestObservedMilestoneRank,
-        rank,
-      );
-      milestoneSet.add(milestone);
-    }
     if (type === "application_reopened") {
+      if (!terminal) {
+        details.push(
+          makeWarning("reopen_without_terminal", app.id, { eventId: event.id }),
+        );
+        continue;
+      }
+      epochs[epochNumber].historicalTerminal = terminal;
+      epochNumber += 1;
+      epochs.push({ number: epochNumber, milestones: new Set() });
       terminal = undefined;
+      highestObservedMilestoneRank = -1;
       awaitingActive = true;
       interviewActive = false;
       assessmentActive = false;
@@ -498,6 +498,19 @@ const projectApp = (app, appEvents, isCurrent) => {
       terminal = terminalEndpoint;
       continue;
     }
+    if (milestone) {
+      const rank = MILESTONE_RANK.get(milestone) ?? 0;
+      if (rank < highestObservedMilestoneRank)
+        details.push(
+          makeWarning("regressive_history", app.id, { eventId: event.id }),
+        );
+      highestObservedMilestoneRank = Math.max(
+        highestObservedMilestoneRank,
+        rank,
+      );
+      epochs[epochNumber].milestones.add(milestone);
+      semanticMilestones.add(milestone);
+    }
     if (type === "offer_received" || type === "offer_negotiating")
       offerActive = true;
     else if (type === "assessment_take_home") {
@@ -521,7 +534,7 @@ const projectApp = (app, appEvents, isCurrent) => {
         makeWarning("event_type_normalized", app.id, { eventId: event.id }),
       );
   }
-  const milestones = [...milestoneSet].sort(
+  const milestones = [...semanticMilestones].sort(
     (a, b) => (MILESTONE_RANK.get(a) ?? 0) - (MILESTONE_RANK.get(b) ?? 0),
   );
   const endpoint = endpointFromState();
@@ -536,16 +549,81 @@ const projectApp = (app, appEvents, isCurrent) => {
         statusEndpoint: STATUS_ENDPOINT[normalize(app.status)],
       }),
     );
+  const pathNodes = [
+    {
+      id: `origin:${origin}`,
+      taxonomyId: origin,
+      label: ORIGINS.find(([id]) => id === origin)?.[1] ?? origin,
+      rank: 0,
+      kind: "origin",
+      epoch: 0,
+    },
+  ];
+  for (const epoch of epochs) {
+    if (epoch.number > 0)
+      pathNodes.push({
+        id: `reopen:epoch:${epoch.number}:application_reopened`,
+        taxonomyId: "application_reopened",
+        label: "Application reopened",
+        rank: epoch.number * 7,
+        kind: "reopen",
+        epoch: epoch.number,
+      });
+    for (const id of [...epoch.milestones].sort(
+      (a, b) => (MILESTONE_RANK.get(a) ?? 0) - (MILESTONE_RANK.get(b) ?? 0),
+    ))
+      pathNodes.push({
+        id:
+          epoch.number === 0
+            ? `milestone:${id}`
+            : `milestone:epoch:${epoch.number}:${id}`,
+        taxonomyId: id,
+        label: MILESTONES.find(([item]) => item === id)?.[1] ?? id,
+        rank: epoch.number * 7 + (MILESTONE_RANK.get(id) ?? 0) + 1,
+        kind: "milestone",
+        epoch: epoch.number,
+      });
+    if (epoch.historicalTerminal)
+      pathNodes.push({
+        id: `terminal:epoch:${epoch.number}:${epoch.historicalTerminal}`,
+        taxonomyId: epoch.historicalTerminal,
+        label:
+          ENDPOINTS.find(([id]) => id === epoch.historicalTerminal)?.[1] ??
+          epoch.historicalTerminal,
+        rank: epoch.number * 7 + 6,
+        kind: "historical_terminal",
+        epoch: epoch.number,
+      });
+  }
+  const endpointNodeId =
+    epochNumber === 0
+      ? `endpoint:${endpoint}`
+      : `endpoint:epoch:${epochNumber}:${endpoint}`;
+  pathNodes.push({
+    id: endpointNodeId,
+    taxonomyId: endpoint,
+    label: ENDPOINTS.find(([id]) => id === endpoint)?.[1] ?? endpoint,
+    rank: epochNumber * 7 + 6,
+    kind: "endpoint",
+    epoch: epochNumber,
+  });
   return {
     applicationId: app.id,
     origin,
     milestones,
     endpoint,
-    nodeIds: [
-      `origin:${origin}`,
-      ...milestones.map((id) => `milestone:${id}`),
-      `endpoint:${endpoint}`,
-    ],
+    epochCount: epochs.length,
+    epochs: epochs.map((epoch) => ({
+      number: epoch.number,
+      milestones: [...epoch.milestones].sort(
+        (a, b) => (MILESTONE_RANK.get(a) ?? 0) - (MILESTONE_RANK.get(b) ?? 0),
+      ),
+      ...(epoch.historicalTerminal
+        ? { historicalTerminal: epoch.historicalTerminal }
+        : {}),
+    })),
+    pathNodes,
+    nodeIds: pathNodes.map((node) => node.id),
     details,
   };
 };
@@ -561,23 +639,15 @@ const projectAppCached = (entry, app, appEvents, isCurrent) => {
 
 const makeNodes = (paths) => {
   const totals = new Map();
+  const metadata = new Map();
   for (const path of paths)
-    for (const nodeId of path.nodeIds)
-      totals.set(nodeId, (totals.get(nodeId) ?? 0) + 1);
-  const tax = [
-    ...LIFECYCLE_DIAGRAM_TAXONOMY.origins,
-    ...LIFECYCLE_DIAGRAM_TAXONOMY.milestones,
-    ...LIFECYCLE_DIAGRAM_TAXONOMY.endpoints,
-  ];
-  return tax
-    .filter((item) => totals.has(item.nodeId))
-    .map((item) => ({
-      id: item.nodeId,
-      taxonomyId: item.id,
-      label: item.label,
-      rank: item.rank,
-      total: totals.get(item.nodeId),
-    }));
+    for (const node of path.pathNodes) {
+      totals.set(node.id, (totals.get(node.id) ?? 0) + 1);
+      metadata.set(node.id, node);
+    }
+  return [...totals]
+    .map(([id, total]) => ({ ...metadata.get(id), id, total }))
+    .sort((a, b) => a.rank - b.rank || codeCompare(a.id, b.id));
 };
 const makeLinks = (paths) => {
   const map = new Map();
