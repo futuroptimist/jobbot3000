@@ -50,7 +50,7 @@ export const MINIMUM_SVG_WIDTH =
 export const BRANCH_STROKE_OPACITY = 0.82;
 export const BRANCH_HANDLE_RADIUS = 22;
 
-const LIFECYCLE_RANKS = Object.freeze([0, 1, 2, 3, 4, 5, 6]);
+const BASELINE_RANK_COUNT = 7;
 const HANDLE_DIAGNOSTIC_TRANSITION_RANKS = Symbol(
   "handleDiagnosticTransitionRanks",
 );
@@ -60,7 +60,7 @@ export function createLifecycleHorizontalGeometry({
   rightMargin = LAYOUT_RIGHT_MARGIN,
   nodeWidth = SANKEY_NODE_WIDTH,
   rankCenters = Object.fromEntries(
-    LIFECYCLE_RANKS.map((rank) => [
+    Array.from({ length: BASELINE_RANK_COUNT }, (_, rank) => [
       rank,
       leftMargin + nodeWidth / 2 + rank * MINIMUM_RANK_CENTER_SPACING,
     ]),
@@ -70,16 +70,19 @@ export function createLifecycleHorizontalGeometry({
   minimumSvgWidth,
   handleRadius = BRANCH_HANDLE_RADIUS,
 } = {}) {
-  const rankKeys = Object.keys(rankCenters).sort();
+  const rankKeys = Object.keys(rankCenters).sort(
+    (a, b) => Number(a) - Number(b),
+  );
+  const ranks = Array.from({ length: rankKeys.length }, (_, rank) => rank);
   if (
-    rankKeys.length !== LIFECYCLE_RANKS.length ||
-    rankKeys.some((rank, index) => rank !== String(LIFECYCLE_RANKS[index]))
+    rankKeys.length < BASELINE_RANK_COUNT ||
+    rankKeys.some((rank, index) => rank !== String(index))
   )
     throw new Error(
-      "Lifecycle horizontal geometry rank centers must cover exactly ranks 0..6",
+      "Lifecycle horizontal geometry rank centers must cover contiguous ranks from 0",
     );
   const centers = {};
-  for (const rank of LIFECYCLE_RANKS) {
+  for (const rank of ranks) {
     const value = rankCenters[rank];
     if (!Number.isFinite(value))
       throw new Error(
@@ -91,10 +94,14 @@ export function createLifecycleHorizontalGeometry({
       );
     centers[rank] = value;
   }
+  const maximumRank = ranks.at(-1);
   const baselineWidth =
-    leftMargin + rightMargin + nodeWidth + 6 * MINIMUM_RANK_CENTER_SPACING;
+    leftMargin +
+    rightMargin +
+    nodeWidth +
+    maximumRank * MINIMUM_RANK_CENTER_SPACING;
   const leftOuterExtent = centers[0] - nodeWidth / 2;
-  const rightOuterExtent = centers[6] + nodeWidth / 2;
+  const rightOuterExtent = centers[maximumRank] + nodeWidth / 2;
   const svgWidth =
     minimumSvgWidth ?? Math.max(baselineWidth, rightOuterExtent + rightMargin);
   const scalars = {
@@ -121,7 +128,7 @@ export function createLifecycleHorizontalGeometry({
       "Lifecycle horizontal geometry SVG width does not cover every rank",
     );
   const hops = {};
-  for (let sourceRank = 0; sourceRank < 6; sourceRank += 1) {
+  for (let sourceRank = 0; sourceRank < maximumRank; sourceRank += 1) {
     const targetRank = sourceRank + 1;
     const sourceCenter = centers[sourceRank];
     const targetCenter = centers[targetRank];
@@ -527,6 +534,12 @@ export const nodeRank = (id) => {
   if (String(id).startsWith("endpoint:")) return 6;
   return MILESTONE_RANKS.get(id) ?? 1;
 };
+const projectionRankMap = (projection) =>
+  new Map(
+    (projection.nodes ?? [])
+      .filter((node) => Number.isInteger(node.rank) && node.rank >= 0)
+      .map((node) => [node.id, node.rank]),
+  );
 export const taxonomyOrder = (nodeId) =>
   TAXONOMY_BY_NODE_ID.get(nodeId)?.rank ?? 999;
 const taxonomyId = (nodeId) => TAXONOMY_BY_NODE_ID.get(nodeId)?.id ?? nodeId;
@@ -551,6 +564,7 @@ export const compareBranches = (a, b) =>
   compareLifecycleIds(a.id, b.id);
 
 export function buildLifecycleDisplayBranches(projection = {}) {
+  const ranks = projectionRankMap(projection);
   const pathByApp = new Map(
     (projection.paths ?? []).map((path) => [String(path.applicationId), path]),
   );
@@ -567,8 +581,8 @@ export function buildLifecycleDisplayBranches(projection = {}) {
     for (const [endpointId, applicationIds] of groups) {
       const sourceNodeId = link.source;
       const targetNodeId = link.target;
-      const sourceRank = nodeRank(sourceNodeId);
-      const targetRank = nodeRank(targetNodeId);
+      const sourceRank = ranks.get(sourceNodeId) ?? nodeRank(sourceNodeId);
+      const targetRank = ranks.get(targetNodeId) ?? nodeRank(targetNodeId);
       const semanticLinkId = link.id;
       const id = `branch:${semanticLinkId}:endpoint:${endpointId}`;
       const branch = {
@@ -648,7 +662,10 @@ export function buildLifecycleRoutingGraph(projection = {}) {
     nodes.set(node.id, {
       ...node,
       applicationIds: [...(node.applicationIds ?? [])],
-      rank: nodeRank(node.id),
+      rank:
+        Number.isInteger(node.rank) && node.rank >= 0
+          ? node.rank
+          : nodeRank(node.id),
       routing: false,
       weightedEndpointMedian: weightedMedianEndpoint(node.id, branches),
     });
@@ -726,14 +743,28 @@ export function calculateLifecycleDiagramLayout(
   projection,
   availableWidth,
   routingGraph,
-  horizontalGeometry = BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
+  horizontalGeometry,
 ) {
+  const graph = routingGraph ?? buildLifecycleRoutingGraph(projection);
+  const maximumRank = Math.max(6, ...graph.nodes.map((node) => node.rank));
+  horizontalGeometry ??=
+    maximumRank === 6
+      ? BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY
+      : createLifecycleHorizontalGeometry({
+          rankCenters: Object.fromEntries(
+            Array.from({ length: maximumRank + 1 }, (_, rank) => [
+              rank,
+              LAYOUT_LEFT_MARGIN +
+                SANKEY_NODE_WIDTH / 2 +
+                rank * MINIMUM_RANK_CENTER_SPACING,
+            ]),
+          ),
+        });
   const integerWidth = Math.floor(Number(availableWidth));
   const sanitizedWidth =
     Number.isFinite(integerWidth) && integerWidth > 0
       ? integerWidth
       : horizontalGeometry.svgWidth;
-  const graph = routingGraph ?? buildLifecycleRoutingGraph(projection);
   const rankCounts = new Map();
   for (const node of graph.nodes ?? []) {
     if (node.routing || Number(node.total) > 0 || Number(node.value) > 0) {
@@ -775,7 +806,7 @@ export function calculateLifecycleDiagramLayout(
         ].join(" "),
       );
     }
-    if (sourceRank < 0 || sourceRank >= 6) {
+    if (sourceRank < 0 || sourceRank >= maximumRank) {
       throw new Error(
         [
           "Lifecycle diagram layout invariant violated:",
@@ -949,8 +980,22 @@ function layoutLifecycleRoutingGraphPass(
   availableWidth,
   options = {},
 ) {
+  const graph = options.routingGraph ?? buildLifecycleRoutingGraph(projection);
+  const maximumRank = Math.max(6, ...graph.nodes.map((node) => node.rank));
   const horizontalGeometry =
-    options.horizontalGeometry ?? BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY;
+    options.horizontalGeometry ??
+    (maximumRank === 6
+      ? BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY
+      : createLifecycleHorizontalGeometry({
+          rankCenters: Object.fromEntries(
+            Array.from({ length: maximumRank + 1 }, (_, rank) => [
+              rank,
+              LAYOUT_LEFT_MARGIN +
+                SANKEY_NODE_WIDTH / 2 +
+                rank * MINIMUM_RANK_CENTER_SPACING,
+            ]),
+          ),
+        }));
   const enableTestDiagnostics = isLifecycleLayoutTestEnvironment();
   const explicitNodeOrderByRank =
     options.authoritativeNodeOrderByRank ??
@@ -958,7 +1003,6 @@ function layoutLifecycleRoutingGraphPass(
   const testOnlyDiagnosticSink = enableTestDiagnostics
     ? options.testOnlyDiagnosticSink
     : null;
-  const graph = options.routingGraph ?? buildLifecycleRoutingGraph(projection);
   // When nothing else supplies a base order, discovery's own first D3 pass
   // would otherwise use plain, rankOrder-blind nodeSort/linkSort at every
   // rank -- the gap documented in

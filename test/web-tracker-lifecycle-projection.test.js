@@ -65,6 +65,67 @@ const expectInvariants = (projection) => {
 };
 
 describe("lifecycle projection", () => {
+  it("projects an explicit terminal and reopen as forward lifecycle epochs", () => {
+    const input = bundle(
+      [app("epoch-app", { status: "recruiter_screen" })],
+      [
+        ev("01-submit", "epoch-app", "application_submitted", "2026-01-01"),
+        ev("02-reject", "epoch-app", "employer_rejected", "2026-01-02"),
+        ev("03-reopen", "epoch-app", "application_reopened", "2026-01-03"),
+        ev("04-screen", "epoch-app", "recruiter_screen", "2026-01-04"),
+      ],
+    );
+
+    const projection = projectLifecycleAt(input);
+    const path = projection.paths[0];
+    expect(path.nodeIds).toEqual([
+      "origin:application_submitted",
+      "terminal:epoch:0:employer_rejected",
+      "reopen:epoch:1:application_reopened",
+      "milestone:epoch:1:recruiter_screen",
+      "endpoint:epoch:1:interviewing",
+    ]);
+    expect(
+      projection.nodes.map(({ id, rank, label }) => ({ id, rank, label })),
+    ).toEqual([
+      {
+        id: "origin:application_submitted",
+        rank: 0,
+        label: "Application submitted",
+      },
+      {
+        id: "terminal:epoch:0:employer_rejected",
+        rank: 6,
+        label: "Employer rejected",
+      },
+      {
+        id: "reopen:epoch:1:application_reopened",
+        rank: 7,
+        label: "Application reopened",
+      },
+      {
+        id: "milestone:epoch:1:recruiter_screen",
+        rank: 8,
+        label: "Recruiter screen",
+      },
+      { id: "endpoint:epoch:1:interviewing", rank: 13, label: "Interviewing" },
+    ]);
+    expect(projection.links.every((link) => link.value === 1)).toBe(true);
+    expect(projection.totals.endpoints).toEqual({ interviewing: 1 });
+
+    const reopenWithoutTerminal = projectLifecycleAt(
+      bundle(
+        [app("invalid-reopen")],
+        [ev("reopen", "invalid-reopen", "application_reopened", "2026-02-01")],
+      ),
+    );
+    expect(reopenWithoutTerminal.paths[0].nodeIds).toEqual([
+      "origin:application_submitted",
+      "endpoint:unknown",
+    ]);
+    expect(reopenWithoutTerminal.warningCounts.reopen_without_terminal).toBe(1);
+  });
+
   it("exports the deeply frozen exact taxonomy", () => {
     expect(Object.isFrozen(LIFECYCLE_DIAGRAM_TAXONOMY.origins[0])).toBe(true);
     expect(LIFECYCLE_DIAGRAM_TAXONOMY.origins.map((x) => x.id)).toEqual([
@@ -274,7 +335,8 @@ describe("lifecycle projection", () => {
         shuffledBucketIds[i],
       ];
     }
-    for (const bucketId of shuffledBucketIds) projectLifecycleAt(liveBundle, bucketId);
+    for (const bucketId of shuffledBucketIds)
+      projectLifecycleAt(liveBundle, bucketId);
 
     // Sample buckets and compare the cache-exercised result against a
     // guaranteed-cold computation on a fresh, content-identical bundle

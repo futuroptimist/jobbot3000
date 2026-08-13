@@ -5,6 +5,17 @@ design contract (see [application-lifecycle-diagram.md](./application-lifecycle-
 that). This document exists so the next person debugging the solver — including a future instance
 of Claude — doesn't have to re-derive this from scratch.
 
+## Dynamic lifecycle-epoch ranks
+
+Projection-provided non-negative integer ranks are authoritative; ID-derived ranks remain only a
+compatibility fallback for legacy projections. The active maximum rank determines rank count,
+transition count, rank centers, and minimum SVG width using the existing 272-pixel center spacing
+and margins. Consequently the ordinary seven-rank graph is geometrically unchanged, while each
+explicit terminal/reopen cycle extends the same horizontally scrollable canvas by seven ranks.
+Skipped ranks still expand into adjacent, strictly forward private routing segments, and all
+crossing, collision, label-clearance, handle-placement, and route-audit constraints apply across
+the complete dynamic rank range.
+
 ## Why this file exists
 
 `lifecycleDiagramLayout.js` lays out the Sankey-style application lifecycle diagram: it places

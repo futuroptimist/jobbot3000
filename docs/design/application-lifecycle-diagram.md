@@ -130,7 +130,8 @@ Projection rules:
 - Apply these aliases only to existing structured status and stage fields documented in `src/domain/browserApplication.js`; never infer milestones from free-form `stageLabel`, notes, company, role, or message text.
 - Unknown structured values produce no invented milestone and emit a deterministic warning.
 - Include only persisted milestones.
-- Collapse repeats so an application contributes a milestone at most once.
+- Collapse repeats within one lifecycle epoch. The same milestone may appear once again after an
+  explicit reopen boundary, while milestone totals retain per-application semantic counting.
 - Never invent skipped stages.
 - Sort milestones by fixed rank to keep the graph acyclic.
 - Preserve regressions in event details and warnings without drawing backward Sankey links.
@@ -166,6 +167,28 @@ Deterministic endpoint replay precedence:
 9. Otherwise, insufficient evidence projects to `unknown`.
 
 Assessment action `submitted`, `completed`, or `done` preserves the `assessment_take_home` milestone but is not “in progress.” Current replay must agree with `applications.status` or emit a warning.
+
+## Lifecycle epochs and reopen boundaries
+
+The projection remains one Sankey and one conserved unit per application. Epoch 0 begins at the
+existing origin. When an effective terminal outcome is followed by an explicit structured
+`application_reopened` event, that outcome becomes a historical-terminal node and the reopen starts
+the next epoch. A reopen without an active terminal creates no epoch and emits
+`reopen_without_terminal`; lower-stage activity without a reopen remains suppressed with
+`terminal_without_reopen`. Arbitrary backward links remain prohibited.
+
+Each epoch spans seven ranks: its anchor is `7e`, milestones are `7e + 1` through `7e + 5`, and its
+outcome is `7e + 6`. Epoch 0 retains `origin:<id>`, `milestone:<id>`, and—when there was no
+reopen—`endpoint:<id>`. Later nodes use `reopen:epoch:<e>:application_reopened`,
+`milestone:epoch:<e>:<id>`, and `endpoint:epoch:<e>:<id>`; completed epochs use
+`terminal:epoch:<e>:<id>`. Projection-node metadata supplies the semantic taxonomy ID, label, epoch,
+kind, and authoritative rank.
+
+Only the last node is the current endpoint, so endpoint totals never include historical terminal
+nodes. At a scrubber bucket before a reopen, the terminal is still the final endpoint; after the
+reopen it is reclassified as historical and the forward-only path continues. The DAG and
+conservation invariants require every path edge to increase rank and carry the application's same
+single unit through all epochs.
 
 Current-status agreement and `migration_status_snapshot` fallback use the exact table below. Event replay remains authoritative; this table is only for deterministic migration fallback and current-status agreement checks. Assessment progress must still require the assessment action evidence specified above.
 

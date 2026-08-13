@@ -399,7 +399,8 @@ const projectApp = (app, appEvents, isCurrent) => {
     )
     .map((event) => event.time.sort);
   const origin = originFor(app, events, details);
-  const milestoneSet = new Set();
+  const epochs = [{ number: 0, milestones: new Set(), terminal: undefined }];
+  let epoch = epochs[0];
   let highestObservedMilestoneRank = -1;
   let terminal = undefined;
   let awaitingActive = false;
@@ -463,10 +464,23 @@ const projectApp = (app, appEvents, isCurrent) => {
         highestObservedMilestoneRank,
         rank,
       );
-      milestoneSet.add(milestone);
     }
     if (type === "application_reopened") {
+      if (!terminal) {
+        details.push(
+          makeWarning("reopen_without_terminal", app.id, { eventId: event.id }),
+        );
+        continue;
+      }
+      epoch.terminal = terminal;
+      epoch = {
+        number: epochs.length,
+        milestones: new Set(),
+        terminal: undefined,
+      };
+      epochs.push(epoch);
       terminal = undefined;
+      highestObservedMilestoneRank = -1;
       awaitingActive = true;
       interviewActive = false;
       assessmentActive = false;
@@ -485,6 +499,7 @@ const projectApp = (app, appEvents, isCurrent) => {
         );
       continue;
     }
+    if (milestone) epoch.milestones.add(milestone);
     if (TERMINAL_IDS.has(terminalEndpoint)) {
       if (
         event.time.kind === "unknown" &&
@@ -521,9 +536,9 @@ const projectApp = (app, appEvents, isCurrent) => {
         makeWarning("event_type_normalized", app.id, { eventId: event.id }),
       );
   }
-  const milestones = [...milestoneSet].sort(
-    (a, b) => (MILESTONE_RANK.get(a) ?? 0) - (MILESTONE_RANK.get(b) ?? 0),
-  );
+  const milestones = [
+    ...new Set(epochs.flatMap((item) => [...item.milestones])),
+  ].sort((a, b) => (MILESTONE_RANK.get(a) ?? 0) - (MILESTONE_RANK.get(b) ?? 0));
   const endpoint = endpointFromState();
   if (
     isCurrent &&
@@ -536,16 +551,77 @@ const projectApp = (app, appEvents, isCurrent) => {
         statusEndpoint: STATUS_ENDPOINT[normalize(app.status)],
       }),
     );
+  const pathNodes = [
+    {
+      id: `origin:${origin}`,
+      taxonomyId: origin,
+      label: ORIGINS.find(([id]) => id === origin)?.[1] ?? origin,
+      rank: 0,
+      kind: "origin",
+      epoch: 0,
+    },
+  ];
+  for (const item of epochs) {
+    if (item.number > 0)
+      pathNodes.push({
+        id: `reopen:epoch:${item.number}:application_reopened`,
+        taxonomyId: "application_reopened",
+        label: "Application reopened",
+        rank: item.number * 7,
+        kind: "reopen",
+        epoch: item.number,
+      });
+    for (const milestone of [...item.milestones].sort(
+      (a, b) => (MILESTONE_RANK.get(a) ?? 0) - (MILESTONE_RANK.get(b) ?? 0),
+    ))
+      pathNodes.push({
+        id:
+          item.number === 0
+            ? `milestone:${milestone}`
+            : `milestone:epoch:${item.number}:${milestone}`,
+        taxonomyId: milestone,
+        label: MILESTONES.find(([id]) => id === milestone)?.[1] ?? milestone,
+        rank: item.number * 7 + (MILESTONE_RANK.get(milestone) ?? 0) + 1,
+        kind: "milestone",
+        epoch: item.number,
+      });
+    if (item.terminal)
+      pathNodes.push({
+        id: `terminal:epoch:${item.number}:${item.terminal}`,
+        taxonomyId: item.terminal,
+        label:
+          ENDPOINTS.find(([id]) => id === item.terminal)?.[1] ?? item.terminal,
+        rank: item.number * 7 + 6,
+        kind: "historical-terminal",
+        epoch: item.number,
+      });
+  }
+  const finalEpoch = epochs.at(-1).number;
+  pathNodes.push({
+    id:
+      finalEpoch === 0
+        ? `endpoint:${endpoint}`
+        : `endpoint:epoch:${finalEpoch}:${endpoint}`,
+    taxonomyId: endpoint,
+    label: ENDPOINTS.find(([id]) => id === endpoint)?.[1] ?? endpoint,
+    rank: finalEpoch * 7 + 6,
+    kind: "endpoint",
+    epoch: finalEpoch,
+  });
   return {
     applicationId: app.id,
     origin,
     milestones,
     endpoint,
-    nodeIds: [
-      `origin:${origin}`,
-      ...milestones.map((id) => `milestone:${id}`),
-      `endpoint:${endpoint}`,
-    ],
+    epochs: epochs.map((item) => ({
+      number: item.number,
+      milestones: [...item.milestones].sort(
+        (a, b) => (MILESTONE_RANK.get(a) ?? 0) - (MILESTONE_RANK.get(b) ?? 0),
+      ),
+      terminal: item.terminal,
+    })),
+    pathNodes,
+    nodeIds: pathNodes.map((node) => node.id),
     details,
   };
 };
@@ -564,20 +640,12 @@ const makeNodes = (paths) => {
   for (const path of paths)
     for (const nodeId of path.nodeIds)
       totals.set(nodeId, (totals.get(nodeId) ?? 0) + 1);
-  const tax = [
-    ...LIFECYCLE_DIAGRAM_TAXONOMY.origins,
-    ...LIFECYCLE_DIAGRAM_TAXONOMY.milestones,
-    ...LIFECYCLE_DIAGRAM_TAXONOMY.endpoints,
-  ];
-  return tax
-    .filter((item) => totals.has(item.nodeId))
-    .map((item) => ({
-      id: item.nodeId,
-      taxonomyId: item.id,
-      label: item.label,
-      rank: item.rank,
-      total: totals.get(item.nodeId),
-    }));
+  const metadata = new Map(
+    paths.flatMap((path) => path.pathNodes.map((node) => [node.id, node])),
+  );
+  return [...totals.entries()]
+    .map(([id, total]) => ({ ...metadata.get(id), id, total }))
+    .sort((a, b) => a.rank - b.rank || codeCompare(a.id, b.id));
 };
 const makeLinks = (paths) => {
   const map = new Map();

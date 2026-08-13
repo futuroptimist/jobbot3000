@@ -19,7 +19,7 @@ const FNV_SEED_B = 84696351;
 // Bump whenever timeline/projection semantics or their persisted shape changes.
 // This prevents a deployment from reading entries produced by incompatible
 // projection code while the user's source data remains unchanged.
-const PROJECTION_CACHE_VERSION = 1;
+const PROJECTION_CACHE_VERSION = 2;
 
 function fnv1a(input, seed) {
   let hash = seed >>> 0;
