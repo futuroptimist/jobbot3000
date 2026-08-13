@@ -413,13 +413,14 @@ describe("lifecycle horizontal geometry", () => {
     ).toBeLessThanOrEqual(graph.transitionLaneSolverStats.handleStateLimit);
     const audit = auditLifecycleRouteGeometry({ model, handles });
     expect(
-      audit.fatalFindings.filter(
-        (finding) =>
-          finding.category !== "proper-crossing" &&
-          finding.category !== "route-handle-collision",
+      audit.fatalFindings.every((finding) =>
+        ["proper-crossing", "route-handle-collision"].includes(
+          finding.category,
+        ),
       ),
-    ).toEqual([]);
-    expect(graph.acceptedRouteCrossingCount).toBeLessThanOrEqual(200);
+    ).toBe(true);
+    expect(audit.fatalFindings).toHaveLength(graph.acceptedRouteCrossingCount);
+    expect(graph.acceptedRouteCrossingCount).toBeLessThanOrEqual(64);
     for (const node of graph.nodes.filter((candidate) => !candidate.routing)) {
       expect(() => wrapLifecycleLabel(node.label)).not.toThrow();
     }

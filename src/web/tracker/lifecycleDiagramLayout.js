@@ -2632,6 +2632,7 @@ function layoutLifecycleRoutingGraphPass(
                 (hasExtendedRankRouting
                   ? (b.span?.endRank ?? 0) - (a.span?.endRank ?? 0)
                   : 0) ||
+                (a.span?.targetDockY ?? 0) - (b.span?.targetDockY ?? 0) ||
                 compareBranchesForGlobalOrder(
                   branchById.get(a.id),
                   branchById.get(b.id),
@@ -4587,15 +4588,22 @@ export function auditLifecycleRouteGeometry({
   // candidateCallback treats this category as eligible for
   // toleratedRouteCrossingCount's bound alongside "proper-crossing", not
   // unconditionally fatal.
+  const collidedHandleBranches = new Set();
   for (const edge of flatEdges) {
     for (const handle of handles) {
-      if (!handle || handle.branchId === edge.branchId) continue;
+      if (
+        !handle ||
+        handle.branchId === edge.branchId ||
+        collidedHandleBranches.has(handle.branchId)
+      )
+        continue;
       const required = routeHandleRequiredClearance(
         routeModel.horizontalGeometry.handleRadius,
         selectedEnvelopeRadius(edge.segment),
         LANE_Y_EPSILON,
       );
       if (pointToSegmentDistance(handle, edge) < required) {
+        collidedHandleBranches.add(handle.branchId);
         fatalFindings.push({
           category: "route-handle-collision",
           branchId: edge.branchId,
