@@ -174,6 +174,7 @@ export function createLifecycleDiagramView(root, options = {}) {
   const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
   let selectedId = "current";
   let projection = EMPTY_PROJECTION;
+  let projectionNodesById = new Map();
   let timeline = { buckets: [] };
   let selectedFeature = null;
   let resizeObserver;
@@ -536,7 +537,7 @@ export function createLifecycleDiagramView(root, options = {}) {
             .map((path) => path.applicationId),
     );
   const projectionNodeLabel = (nodeId) =>
-    projection.nodes.find((node) => node.id === nodeId)?.label ??
+    projectionNodesById.get(nodeId)?.label ??
     TAXONOMY.get(nodeId)?.label ??
     nodeId;
   const featureById = (id) => {
@@ -554,7 +555,7 @@ export function createLifecycleDiagramView(root, options = {}) {
         applicationIds: branch.applicationIds,
       };
     }
-    const node = projection.nodes.find((candidate) => candidate.id === id);
+    const node = projectionNodesById.get(id);
     if (node) {
       const label = TAXONOMY.get(node.id)?.label ?? node.label ?? node.id;
       return {
@@ -1800,6 +1801,9 @@ export function createLifecycleDiagramView(root, options = {}) {
       timeline = nextTimeline ?? { buckets: [] };
       selectedId = selectedBucketId;
       projection = nextProjection;
+      projectionNodesById = new Map(
+        projection.nodes.map((node) => [node.id, node]),
+      );
       displayBranches = buildLifecycleDisplayBranches(projection);
       lastLayoutWidth = sanitizedRootWidth();
       if (bucketChanged) {

@@ -539,6 +539,9 @@ export const TAXONOMY_BY_NODE_ID = new Map(
     ...LIFECYCLE_DIAGRAM_TAXONOMY.endpoints,
   ].map((item) => [item.nodeId, item]),
 );
+const TAXONOMY_BY_ID = new Map(
+  [...TAXONOMY_BY_NODE_ID.values()].map((item) => [item.id, item]),
+);
 export const MILESTONE_RANKS = new Map(
   LIFECYCLE_DIAGRAM_TAXONOMY.milestones.map((item, index) => [
     `milestone:${item.id}`,
@@ -562,7 +565,7 @@ const projectionNodeRanks = (projection) =>
       .map((node) => [node.id, node.rank]),
   );
 export const taxonomyOrder = (nodeId) =>
-  TAXONOMY_BY_NODE_ID.get(nodeId)?.rank ?? 999;
+  (TAXONOMY_BY_NODE_ID.get(nodeId) ?? TAXONOMY_BY_ID.get(nodeId))?.rank ?? 999;
 const taxonomyId = (nodeId) => TAXONOMY_BY_NODE_ID.get(nodeId)?.id ?? nodeId;
 
 export const branchSortKey = (branch) =>
@@ -635,7 +638,8 @@ export const nodeSort = (a, b) => {
   if (rankA !== rankB) return rankA - rankB;
   if (rankA % 7 === 0 || rankA % 7 === 6)
     return (
-      taxonomyOrder(a.id) - taxonomyOrder(b.id) ||
+      taxonomyOrder(a.taxonomyId ?? a.id) -
+        taxonomyOrder(b.taxonomyId ?? b.id) ||
       ar - br ||
       compareLifecycleIds(a.branchId ?? a.id, b.branchId ?? b.id)
     );

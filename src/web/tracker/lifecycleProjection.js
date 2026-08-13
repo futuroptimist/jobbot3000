@@ -422,6 +422,15 @@ const projectApp = (app, appEvents, isCurrent) => {
     else if (nextEndpoint === "interviewing") interviewActive = true;
     else if (nextEndpoint === "awaiting_response") awaitingActive = true;
   };
+  const recordMilestone = (milestone, eventId) => {
+    if (!milestone) return;
+    const rank = MILESTONE_RANK.get(milestone) ?? 0;
+    if (rank < highestObservedMilestoneRank)
+      details.push(makeWarning("regressive_history", app.id, { eventId }));
+    highestObservedMilestoneRank = Math.max(highestObservedMilestoneRank, rank);
+    epochs[epochNumber].milestones.add(milestone);
+    semanticMilestones.add(milestone);
+  };
   const isResumedActivity = (event, statusEndpoint) =>
     isLowerStageActivity(event.canonicalType) ||
     (statusEndpoint && !TERMINAL_IDS.has(statusEndpoint));
@@ -471,6 +480,8 @@ const projectApp = (app, appEvents, isCurrent) => {
       interviewActive = false;
       assessmentActive = false;
       offerActive = false;
+      recordMilestone(milestone, event.id);
+      markEndpoint(statusEndpoint);
       continue;
     }
     const terminalEndpoint = TERMINAL_EVENT_ENDPOINT[type] ?? statusEndpoint;
@@ -498,19 +509,7 @@ const projectApp = (app, appEvents, isCurrent) => {
       terminal = terminalEndpoint;
       continue;
     }
-    if (milestone) {
-      const rank = MILESTONE_RANK.get(milestone) ?? 0;
-      if (rank < highestObservedMilestoneRank)
-        details.push(
-          makeWarning("regressive_history", app.id, { eventId: event.id }),
-        );
-      highestObservedMilestoneRank = Math.max(
-        highestObservedMilestoneRank,
-        rank,
-      );
-      epochs[epochNumber].milestones.add(milestone);
-      semanticMilestones.add(milestone);
-    }
+    recordMilestone(milestone, event.id);
     if (type === "offer_received" || type === "offer_negotiating")
       offerActive = true;
     else if (type === "assessment_take_home") {

@@ -303,6 +303,64 @@ describe("lifecycle horizontal geometry", () => {
     expect(signatures[1]).toEqual(signatures[0]);
     expect(signatures[2]).toEqual(signatures[0]);
   });
+
+  it("routes an extended-rank reopen fixture without clipping or collisions", () => {
+    const app = (id, status) => ({
+      id,
+      company: `Synthetic ${id}`,
+      role: "Engineer",
+      status,
+      origin: "application_submitted",
+      appliedAt: "2026-01-01",
+    });
+    const event = (id, applicationId, eventType, occurredAt, status) => ({
+      id,
+      applicationId,
+      eventType,
+      occurredAt,
+      occurredAtPrecision: "date",
+      createdAt: occurredAt,
+      inferred: false,
+      ...(status ? { status } : {}),
+    });
+    const extendedProjection = projectLifecycleAt({
+      applications: [app("extended-a", "technical_screen")],
+      lifecycleEvents: [
+        event("a1", "extended-a", "application_submitted", "2026-01-01"),
+        event("a2", "extended-a", "employer_rejected", "2026-01-02"),
+        event(
+          "a3",
+          "extended-a",
+          "application_reopened",
+          "2026-01-03",
+          "technical_screen",
+        ),
+      ],
+    });
+    const { graph, dimensions } = layoutLifecycleRoutingGraph(
+      extendedProjection,
+      1850,
+    );
+    const model = buildLifecycleRouteModel(graph, dimensions);
+    const renderedBranches = graph.branches.filter((branch) =>
+      graph.links.some((link) => link.branchId === branch.id),
+    );
+    const handles = renderedBranches.map((branch) =>
+      graph.acceptedHandles.get(branch.id),
+    );
+    const audit = auditLifecycleRouteGeometry({ model, handles });
+
+    expect(dimensions.horizontalGeometry.rankCount).toBe(14);
+    expect(dimensions.width).toBeGreaterThan(MINIMUM_SVG_WIDTH);
+    expect(
+      graph.nodes.every((node) => node.x0 >= 0 && node.x1 <= dimensions.width),
+    ).toBe(true);
+    expect(graph.nodes.some((node) => node.routing && node.rank > 6)).toBe(
+      true,
+    );
+    expect(handles.every(Boolean)).toBe(true);
+    expect(audit.fatalFindings).toEqual([]);
+  });
 });
 const deepFreeze = (value) => {
   if (!value || typeof value !== "object" || Object.isFrozen(value))
@@ -3030,6 +3088,32 @@ describe("lifecycle diagram render-only routing layout", () => {
       "endpoint:awaiting_response",
       "endpoint:employer_rejected",
       "endpoint:offer_accepted",
+    ]);
+
+    const shuffledEpochEndpoints = [
+      {
+        id: "endpoint:epoch:1:offer_accepted",
+        taxonomyId: "offer_accepted",
+        rank: 13,
+        routing: false,
+      },
+      {
+        id: "endpoint:epoch:1:awaiting_response",
+        taxonomyId: "awaiting_response",
+        rank: 13,
+        routing: false,
+      },
+      {
+        id: "terminal:epoch:1:employer_rejected",
+        taxonomyId: "employer_rejected",
+        rank: 13,
+        routing: false,
+      },
+    ].sort(nodeSort);
+    expect(shuffledEpochEndpoints.map((node) => node.taxonomyId)).toEqual([
+      "awaiting_response",
+      "employer_rejected",
+      "offer_accepted",
     ]);
 
     const milestoneAndRoutes = [
