@@ -528,22 +528,14 @@ export function createLifecycleDiagramView(root, options = {}) {
       [table],
     );
   };
-  const pathContainsSemanticNode = (path, nodeId) => {
-    const node = projectionNodesById.get(nodeId);
-    if (!node) return path.nodeIds?.includes(nodeId) ?? false;
-    if (node.kind === "origin") return path.origin === node.taxonomyId;
-    if (node.kind === "milestone")
-      return path.milestones?.includes(node.taxonomyId) ?? false;
-    if (["endpoint", "historical_terminal"].includes(node.kind))
-      return path.endpoint === node.taxonomyId;
-    return path.nodeIds?.includes(nodeId) ?? false;
-  };
+  const pathContainsProjectionNode = (path, nodeId) =>
+    path.nodeIds?.includes(nodeId) ?? false;
   const featureApplicationIds = (feature) =>
     unique(
       feature.applicationIds?.length
         ? feature.applicationIds
         : projection.paths
-            .filter((path) => pathContainsSemanticNode(path, feature.id))
+            .filter((path) => pathContainsProjectionNode(path, feature.id))
             .map((path) => path.applicationId),
     );
   const projectionNodeLabel = (nodeId) =>

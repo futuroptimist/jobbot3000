@@ -387,6 +387,48 @@ describe("lifecycle diagram view", () => {
     expect(flowText).toContain("Application reopened");
   });
 
+  it("keeps epoch-specific SVG drilldowns exact while semantic rows aggregate", async () => {
+    const b = bundle(
+      [
+        app("ordinary", { status: "technical_screen" }),
+        app("reopened", { status: "technical_screen" }),
+      ],
+      [
+        ev("o1", "ordinary", "application_submitted", "2026-01-01"),
+        ev("o2", "ordinary", "technical_interview", "2026-01-02"),
+        ev("r1", "reopened", "application_submitted", "2026-01-01"),
+        ev("r2", "reopened", "employer_rejected", "2026-01-02"),
+        ev("r3", "reopened", "application_reopened", "2026-01-03", {
+          status: "technical_screen",
+        }),
+      ],
+    );
+    const { root } = await render(b);
+    const details = root.querySelector("[data-diagram-details]");
+    const selectSvgNode = (nodeId) =>
+      root
+        .querySelector(`[data-diagram-node-hit='${nodeId}']`)
+        .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+
+    selectSvgNode("terminal:epoch:0:employer_rejected");
+    expect(details.textContent).toContain("reopened");
+    expect(details.textContent).not.toContain("ordinary");
+
+    selectSvgNode("milestone:epoch:1:technical_interview");
+    expect(details.textContent).toContain("reopened");
+    expect(details.textContent).not.toContain("ordinary");
+
+    const milestoneRow = [...root.querySelectorAll("caption")]
+      .find((caption) => caption.textContent === "Milestones")
+      .closest("table")
+      .querySelector("button[aria-label='Select Technical interview']")
+      .closest("tr");
+    expect(milestoneRow.textContent).toContain("2");
+    milestoneRow.querySelector("button").click();
+    expect(details.textContent).toContain("ordinary");
+    expect(details.textContent).toContain("reopened");
+  });
+
   it("colors legend swatches via a class, not an inline style", async () => {
     // The production static-server CSP has no 'unsafe-inline' for
     // style-src, so an inline style="..." attribute is silently blocked --
