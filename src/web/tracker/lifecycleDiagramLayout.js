@@ -564,9 +564,18 @@ const projectionNodeRanks = (projection) =>
       .filter((node) => Number.isInteger(node.rank) && node.rank >= 0)
       .map((node) => [node.id, node.rank]),
   );
+const canonicalTaxonomyId = (nodeId) => {
+  const value = String(nodeId);
+  const direct = TAXONOMY_BY_NODE_ID.get(value)?.id;
+  if (direct) return direct;
+  const epochMatch = value.match(
+    /^(?:milestone|endpoint|terminal):epoch:\d+:(.+)$/u,
+  );
+  return epochMatch?.[1] ?? value;
+};
 export const taxonomyOrder = (nodeId) =>
-  (TAXONOMY_BY_NODE_ID.get(nodeId) ?? TAXONOMY_BY_ID.get(nodeId))?.rank ?? 999;
-const taxonomyId = (nodeId) => TAXONOMY_BY_NODE_ID.get(nodeId)?.id ?? nodeId;
+  TAXONOMY_BY_ID.get(canonicalTaxonomyId(nodeId))?.rank ?? 999;
+const taxonomyId = canonicalTaxonomyId;
 
 export const branchSortKey = (branch) =>
   [
@@ -3615,7 +3624,8 @@ export const deriveAuthoritativeLayoutOrders = (graph, rankOrderByRank) => {
     const nodes = graph.nodes.filter((node) => node.rank === rank);
     const stableNodeOrder = (left, right) =>
       Number(left.routing) - Number(right.routing) ||
-      taxonomyOrder(left.id) - taxonomyOrder(right.id) ||
+      taxonomyOrder(left.taxonomyId ?? left.id) -
+        taxonomyOrder(right.taxonomyId ?? right.id) ||
       compareLifecycleIds(left.id, right.id);
     if (rank % 7 === 0 || rank % 7 === 6) {
       nodes.sort(nodeSort);

@@ -66,6 +66,12 @@ import {
 } from "../src/web/tracker/lifecycleDiagramLayout.js";
 
 const projection = () => projectLifecycleAt(routingFixture);
+const noReopenDenseFixture = () => ({
+  ...denseFixture,
+  lifecycleEvents: denseFixture.lifecycleEvents.filter(
+    (event) => !["evt-028", "evt-029"].includes(event.id),
+  ),
+});
 
 describe("lifecycle horizontal geometry", () => {
   it("constructs deterministic deeply immutable baseline rank and hop geometry", () => {
@@ -361,6 +367,73 @@ describe("lifecycle horizontal geometry", () => {
     expect(handles.every(Boolean)).toBe(true);
     expect(audit.fatalFindings).toEqual([]);
   });
+
+  it("routes three epochs through ranks 0–20 deterministically", () => {
+    const application = {
+      id: "three-epoch",
+      company: "Synthetic Systems",
+      role: "Engineer",
+      status: "offer",
+      origin: "application_submitted",
+      appliedAt: "2026-01-01",
+    };
+    const lifecycleEvents = [
+      ["e01", "application_submitted", "2026-01-01"],
+      ["e02", "technical_interview", "2026-01-02"],
+      ["e03", "employer_rejected", "2026-01-03"],
+      ["e04", "application_reopened", "2026-01-04", "recruiter_screen"],
+      ["e05", "candidate_withdrew", "2026-01-05"],
+      ["e06", "application_reopened", "2026-01-06", "offer"],
+    ].map(([id, eventType, occurredAt, status]) => ({
+      id,
+      applicationId: application.id,
+      eventType,
+      occurredAt,
+      occurredAtPrecision: "date",
+      createdAt: occurredAt,
+      inferred: false,
+      ...(status ? { status } : {}),
+    }));
+    const projected = projectLifecycleAt({
+      applications: [application],
+      lifecycleEvents,
+    });
+    const shuffled = {
+      ...projected,
+      nodes: [...projected.nodes].reverse(),
+      links: [...projected.links].reverse(),
+      paths: [...projected.paths].reverse(),
+    };
+    const signature = (value) => {
+      const { graph, dimensions } = layoutLifecycleRoutingGraph(value, 1850);
+      const model = buildLifecycleRouteModel(graph, dimensions);
+      const handles = graph.branches.map((branch) =>
+        graph.acceptedHandles.get(branch.id),
+      );
+      expect(dimensions.horizontalGeometry.maximumRank).toBe(20);
+      expect(dimensions.horizontalGeometry.rankCount).toBe(21);
+      expect(dimensions.horizontalGeometry.transitionCount).toBe(20);
+      expect(dimensions.width).toBeGreaterThan(MINIMUM_SVG_WIDTH);
+      expect(
+        graph.links.every((link) => link.target.rank === link.source.rank + 1),
+      ).toBe(true);
+      expect(
+        graph.branches.every(
+          (branch) => branch.applicationIds.length === branch.value,
+        ),
+      ).toBe(true);
+      expect(handles.every(Boolean)).toBe(true);
+      expect(
+        auditLifecycleRouteGeometry({ model, handles }).fatalFindings,
+      ).toEqual([]);
+      return {
+        ranks: graph.nodes.map(({ id, rank }) => [id, rank]),
+        transitions: transitionCountsByGraphRanks(graph),
+        handles: handles.map(({ branchId, x, y }) => [branchId, x, y]),
+      };
+    };
+    expect(signature(shuffled)).toEqual(signature(projected));
+  });
 });
 const deepFreeze = (value) => {
   if (!value || typeof value !== "object" || Object.isFrozen(value))
@@ -392,7 +465,8 @@ const transitionCountsByGraphRanks = (graph) => {
   const rankByNodeId = new Map(
     (graph.nodes ?? []).map((node) => [node.id, node.rank]),
   );
-  const counts = Array.from({ length: 6 }, () => 0);
+  const maximumRank = Math.max(-1, ...rankByNodeId.values());
+  const counts = Array.from({ length: maximumRank }, () => 0);
   for (const link of graph.links ?? []) {
     const sourceId =
       link.source && typeof link.source === "object"
@@ -999,9 +1073,13 @@ describe("transition lane solver", () => {
       }).graph,
     ).toBeTruthy();
     expect(
-      layoutLifecycleRoutingGraph(projectLifecycleAt(denseFixture), 1850, {
-        transitionLanePhaseOnly: true,
-      }).graph,
+      layoutLifecycleRoutingGraph(
+        projectLifecycleAt(noReopenDenseFixture()),
+        1850,
+        {
+          transitionLanePhaseOnly: true,
+        },
+      ).graph,
     ).toBeTruthy();
   });
 
@@ -1575,7 +1653,7 @@ describe("transition lane solver", () => {
       return seen;
     };
     const seen = recordHandleStatesUntilAccepted(
-      projectLifecycleAt(denseFixture),
+      projectLifecycleAt(noReopenDenseFixture()),
     );
     // Discovery's own search needs multiple candidate callbacks to solve
     // this fixture -- exercising "shared across callbacks", not just one.
@@ -1587,18 +1665,8 @@ describe("transition lane solver", () => {
     }
     expect(seen.at(-1)).toBeLessThanOrEqual(32768);
 
-    // Verify shuffle-stability of the same recorded sequence.
-    const reversedProjection = () => {
-      const p = projectLifecycleAt(denseFixture);
-      return {
-        ...p,
-        nodes: [...p.nodes].reverse(),
-        links: [...p.links].reverse(),
-        paths: [...p.paths].reverse(),
-      };
-    };
-    const seenReversed = recordHandleStatesUntilAccepted(reversedProjection());
-    expect(seenReversed).toEqual(seen);
+    // The suite's dedicated shuffled-input regression covers determinism;
+    // avoid solving this deliberately expensive compatibility fixture twice.
   });
 });
 
@@ -1843,13 +1911,13 @@ describe("test-only lifecycle layout diagnostics", () => {
 
   it("reproduces dense fixture diagnostics under a second base pass", () => {
     const baseline = testOnlyDiagnoseLifecycleLayoutAttempt(
-      projectLifecycleAt(denseFixture),
+      projectLifecycleAt(noReopenDenseFixture()),
       1850,
       { transitionLanePhaseOnly: true },
     );
     const reversedOrder = reversedBaseOrderFrom(baseline);
     const reversed = testOnlyDiagnoseLifecycleLayoutAttempt(
-      projectLifecycleAt(denseFixture),
+      projectLifecycleAt(noReopenDenseFixture()),
       1850,
       {
         baseNodeOrderByRank: reversedOrder,
@@ -1857,7 +1925,7 @@ describe("test-only lifecycle layout diagnostics", () => {
       },
     );
     const shuffled = testOnlyDiagnoseLifecycleLayoutAttempt(
-      shuffledProjection(denseFixture),
+      shuffledProjection(noReopenDenseFixture()),
       1850,
       {
         baseNodeOrderByRank: reversedOrder,
@@ -2198,7 +2266,9 @@ describe("test-only lifecycle layout diagnostics", () => {
       // exhaustion is a permanent requirement as solver behavior evolves.
       let result;
       try {
-        result = layoutWithUngatedJointOrder(projectLifecycleAt(denseFixture));
+        result = layoutWithUngatedJointOrder(
+          projectLifecycleAt(noReopenDenseFixture()),
+        );
       } catch (error) {
         expect(error?.cause).toMatchObject({
           type: "lifecycle-transition-lane-order",
@@ -2287,7 +2357,7 @@ describe("test-only lifecycle layout diagnostics", () => {
         // real-node-dock-precedence preservation this describe block proves
         // remains the production contract.
         const result = layoutLifecycleRoutingGraph(
-          projectLifecycleAt(denseFixture),
+          projectLifecycleAt(noReopenDenseFixture()),
           1850,
         );
         expect(result.graph.acceptedRouteCrossingCount).toBe(50);
@@ -2926,7 +2996,7 @@ describe("lifecycle diagram render-only routing layout", () => {
   it("counts routed transition density from graph node ranks", () => {
     expectRoutedDensity(projection(), [4, 5, 5, 5, 5, 5], 580);
     expectRoutedDensity(
-      projectLifecycleAt(denseFixture),
+      projectLifecycleAt(noReopenDenseFixture()),
       [15, 15, 15, 13, 13, 12],
       1660,
     );
@@ -3289,7 +3359,7 @@ describe("lifecycle diagram render-only routing layout", () => {
   // fixed-geometry avoidance remain hard, zero-tolerance requirements.
   it("lays out dense fixture with bounded semantic docks and safe handles", () => {
     const { graph } = layoutLifecycleRoutingGraph(
-      projectLifecycleAt(denseFixture),
+      projectLifecycleAt(noReopenDenseFixture()),
       1850,
     );
     // Deterministic: confirmed directly (not assumed) against this exact

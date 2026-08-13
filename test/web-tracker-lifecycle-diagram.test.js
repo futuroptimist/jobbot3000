@@ -341,6 +341,52 @@ describe("lifecycle diagram view", () => {
     expect(outreachRow.textContent).toContain("0");
   });
 
+  it("keeps reopened milestones and endpoints in semantic totals and drilldowns", async () => {
+    const b = bundle(
+      [app("reopened", { status: "technical_screen" })],
+      [
+        ev("r1", "reopened", "application_submitted", "2026-01-01"),
+        ev("r2", "reopened", "employer_rejected", "2026-01-02"),
+        ev("r3", "reopened", "application_reopened", "2026-01-03", {
+          status: "technical_screen",
+        }),
+      ],
+    );
+    const { root } = await render(b);
+    expect(root.querySelectorAll("svg[role='img']")).toHaveLength(1);
+    expect(root.querySelector("svg").textContent).toContain(
+      "Employer rejected",
+    );
+    expect(root.querySelector("svg").textContent).toContain(
+      "Application reopened",
+    );
+
+    const rowFor = (caption, label) =>
+      [...root.querySelectorAll("caption")]
+        .find((item) => item.textContent === caption)
+        .closest("table")
+        .querySelector(`button[aria-label='Select ${label}']`)
+        .closest("tr");
+    const milestoneRow = rowFor("Milestones", "Technical interview");
+    const endpointRow = rowFor("Endpoints", "Interviewing");
+    expect(milestoneRow.textContent).toContain("1");
+    expect(endpointRow.textContent).toContain("1");
+
+    milestoneRow.querySelector("button").click();
+    expect(root.querySelector("[data-diagram-details]").textContent).toContain(
+      "reopened",
+    );
+    endpointRow.querySelector("button").click();
+    expect(root.querySelector("[data-diagram-details]").textContent).toContain(
+      "reopened",
+    );
+    const flowText = [...root.querySelectorAll("caption")]
+      .find((caption) => caption.textContent === "Flows")
+      .closest("table").textContent;
+    expect(flowText).toContain("Employer rejected");
+    expect(flowText).toContain("Application reopened");
+  });
+
   it("colors legend swatches via a class, not an inline style", async () => {
     // The production static-server CSP has no 'unsafe-inline' for
     // style-src, so an inline style="..." attribute is silently blocked --
@@ -2845,7 +2891,11 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
           id: item.nodeId,
           taxonomyId: item.id,
           label: item.label,
-          rank: item.rank,
+          rank: item.nodeId.startsWith("origin:")
+            ? 0
+            : item.nodeId.startsWith("endpoint:")
+              ? 6
+              : item.rank,
           total: totals.get(item.nodeId),
         }));
     };

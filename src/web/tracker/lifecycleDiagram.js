@@ -528,12 +528,22 @@ export function createLifecycleDiagramView(root, options = {}) {
       [table],
     );
   };
+  const pathContainsSemanticNode = (path, nodeId) => {
+    const node = projectionNodesById.get(nodeId);
+    if (!node) return path.nodeIds?.includes(nodeId) ?? false;
+    if (node.kind === "origin") return path.origin === node.taxonomyId;
+    if (node.kind === "milestone")
+      return path.milestones?.includes(node.taxonomyId) ?? false;
+    if (["endpoint", "historical_terminal"].includes(node.kind))
+      return path.endpoint === node.taxonomyId;
+    return path.nodeIds?.includes(nodeId) ?? false;
+  };
   const featureApplicationIds = (feature) =>
     unique(
       feature.applicationIds?.length
         ? feature.applicationIds
         : projection.paths
-            .filter((path) => path.nodeIds?.includes(feature.id))
+            .filter((path) => pathContainsSemanticNode(path, feature.id))
             .map((path) => path.applicationId),
     );
   const projectionNodeLabel = (nodeId) =>
@@ -1443,7 +1453,12 @@ export function createLifecycleDiagramView(root, options = {}) {
         const nodeId = `${namespace}:${id}`;
         const applicationIds = unique(
           projection.paths
-            .filter((path) => path.nodeIds.includes(nodeId))
+            .filter((path) => {
+              if (namespace === "origin") return path.origin === id;
+              if (namespace === "milestone")
+                return path.milestones?.includes(id) ?? false;
+              return path.endpoint === id;
+            })
             .map((path) => path.applicationId),
         );
         return {

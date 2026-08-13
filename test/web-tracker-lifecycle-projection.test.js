@@ -101,31 +101,39 @@ describe("lifecycle projection", () => {
     expectInvariants(projection);
   });
 
-  it("projects the active status carried by the reopen event", () => {
-    const projection = projectLifecycleAt(
-      bundle(
-        [app("direct-reopen", { status: "technical_screen" })],
-        [
-          ev("01", "direct-reopen", "application_submitted", "2026-01-01"),
-          ev("02", "direct-reopen", "employer_rejected", "2026-01-02"),
-          ev("03", "direct-reopen", "application_reopened", "2026-01-03", {
-            status: "technical_screen",
-          }),
-        ],
-      ),
-    );
+  it.each([
+    ["recruiter_screen", "recruiter_screen", "interviewing"],
+    ["technical_screen", "technical_interview", "interviewing"],
+    ["onsite_loop", "onsite_final_loop", "interviewing"],
+    ["offer", "offer_received", "offer_negotiating"],
+  ])(
+    "projects the %s status carried by the reopen event",
+    (status, milestone, endpoint) => {
+      const projection = projectLifecycleAt(
+        bundle(
+          [app("direct-reopen", { status })],
+          [
+            ev("01", "direct-reopen", "application_submitted", "2026-01-01"),
+            ev("02", "direct-reopen", "employer_rejected", "2026-01-02"),
+            ev("03", "direct-reopen", "application_reopened", "2026-01-03", {
+              status,
+            }),
+          ],
+        ),
+      );
 
-    expect(projection.paths[0].nodeIds).toEqual([
-      "origin:application_submitted",
-      "terminal:epoch:0:employer_rejected",
-      "reopen:epoch:1:application_reopened",
-      "milestone:epoch:1:technical_interview",
-      "endpoint:epoch:1:interviewing",
-    ]);
-    expect(projection.paths[0].endpoint).toBe("interviewing");
-    expect(projection.warningCounts.status_mismatch).toBeUndefined();
-    expectInvariants(projection);
-  });
+      expect(projection.paths[0].nodeIds).toEqual([
+        "origin:application_submitted",
+        "terminal:epoch:0:employer_rejected",
+        "reopen:epoch:1:application_reopened",
+        `milestone:epoch:1:${milestone}`,
+        `endpoint:epoch:1:${endpoint}`,
+      ]);
+      expect(projection.paths[0].endpoint).toBe(endpoint);
+      expect(projection.warningCounts.status_mismatch).toBeUndefined();
+      expectInvariants(projection);
+    },
+  );
 
   it("only starts epochs when a reopen clears an active terminal", () => {
     const projection = projectLifecycleAt(
