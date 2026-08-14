@@ -4591,6 +4591,14 @@ export function auditLifecycleRouteGeometry({
   // candidateCallback treats this category as eligible for
   // toleratedRouteCrossingCount's bound alongside "proper-crossing", not
   // unconditionally fatal.
+  const maximumRouteRank = Math.max(
+    routeModel.horizontalGeometry?.maximumRank ?? 6,
+    ...routeModel.branches.flatMap((branch) => [
+      branch.sourceRank ?? 0,
+      branch.targetRank ?? 0,
+    ]),
+  );
+  const deduplicateRouteHandlePairs = maximumRouteRank > 6;
   const collidedRouteHandlePairs = new Set();
   for (const edge of flatEdges) {
     for (const handle of handles) {
@@ -4598,7 +4606,8 @@ export function auditLifecycleRouteGeometry({
       if (
         !handle ||
         handle.branchId === edge.branchId ||
-        collidedRouteHandlePairs.has(collisionPair)
+        (deduplicateRouteHandlePairs &&
+          collidedRouteHandlePairs.has(collisionPair))
       )
         continue;
       const required = routeHandleRequiredClearance(
@@ -4607,7 +4616,8 @@ export function auditLifecycleRouteGeometry({
         LANE_Y_EPSILON,
       );
       if (pointToSegmentDistance(handle, edge) < required) {
-        collidedRouteHandlePairs.add(collisionPair);
+        if (deduplicateRouteHandlePairs)
+          collidedRouteHandlePairs.add(collisionPair);
         fatalFindings.push({
           category: "route-handle-collision",
           branchId: edge.branchId,

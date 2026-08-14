@@ -139,7 +139,7 @@ fix, it exercised `tracker-lifecycle-diagram-v2.json`, a dense fixture whose cro
 deterministically exhausted the budget in ~15s, and the test invokes the layout twice (once via the
 component's own render, once again in its fallback-verification branch) — ~30s total, right at
 vitest's 30s default with no margin. `tracker-lifecycle-diagram-v2.json` no longer exhausts the
-handle-state budget today (see "Follow-up (shipped)" below — it now succeeds in 504/32768 states),
+handle-state budget today (see "Follow-up (shipped)" below — it now succeeds in 500/32768 states),
 so this specific timing rationale is historical; see that test file directly for its current timing
 behavior and comment, which this document does not track.
 
@@ -477,8 +477,7 @@ bound on `tracker-lifecycle-diagram-v2.json`: it may either produce a well-forme
 pinned 32,768-state handle budget or terminate with the structured handle state-limit error at that
 boundary. It is not required to keep succeeding or exhausting the budget forever. Production's own
 default call (no options, exercising the real two-pass discovery/final pipeline) succeeds —
-stable at exactly 42 unique route/handle collision pairs and 504 handle states. Repeated flattened
-edges for the same route/handle contact are intentionally counted once. **The
+unchanged from before this fix at exactly 50 accepted route crossings and 500 handle states. **The
 production contract remains unchanged: this fix generalizes the same safe ordering mechanism to
 milestone-bearing graphs wherever it is safe to use.**
 
@@ -561,6 +560,12 @@ tolerable under the same bound as `"proper-crossing"` since it is the identical 
 measurement `HANDLE_CLEARANCE_TOLERANCE` already allows falling short of, just anchored at a
 specific point on that line rather than the nearest point generally.
 
+Route/handle findings use the historical flattened-edge stream for seven-rank layouts so their
+candidate evaluation and solver decisions remain byte-compatible. Layouts with an active rank
+above 6 instead count each unique `(route branch, handle branch)` contact once; this prevents a
+single extended route's flattened segments from multiplying one physical contact while still
+reporting distinct routes that strike the same handle independently.
+
 **A separate, unrelated bug was found and fixed while investigating this:** the renderer
 (`lifecycleDiagram.js`) computed handle positions via a _second, independent_ `assignBranchHandles()`
 call on the already-accepted geometry, rather than reusing the handles
@@ -601,8 +606,8 @@ crossing-freedom), not folded into the crossing tolerance's framing.
 
 **Result:** `tracker-lifecycle-diagram-v2.json` (the real dense production fixture named throughout
 this document — 16 applications, 21 nodes, previously infeasible even at 150x the handle budget) now
-lays out successfully end-to-end through the full two-pass pipeline, accepting 42 unique tolerated
-route/handle collision pairs within normal budget usage (504/32768 handle states, on the raw fixture as loaded directly
+lays out successfully end-to-end through the full two-pass pipeline, accepting 50 tolerated route
+crossings within normal budget usage (500/32768 handle states, on the raw fixture as loaded directly
 by `projectLifecycleAt` — the browser-imported/reconciled version of the same fixture is denser
 still, 76 first-candidate findings, and needs the full relaxed bound to succeed at 66 accepted
 crossings; see the Playwright status below). The reference fixture is unaffected (still exactly 0

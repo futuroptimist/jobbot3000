@@ -2418,11 +2418,9 @@ describe("test-only lifecycle layout diagnostics", () => {
           projectLifecycleAt(noReopenDenseFixture()),
           1850,
         );
-        // Route/handle collisions are counted once per unique route/handle
-        // pair, even when several flattened edges describe the same contact.
-        expect(result.graph.acceptedRouteCrossingCount).toBe(42);
+        expect(result.graph.acceptedRouteCrossingCount).toBe(50);
         expect(result.graph.transitionLaneSolverStats.handleStatesVisited).toBe(
-          504,
+          500,
         );
       });
     });
@@ -3423,12 +3421,11 @@ describe("lifecycle diagram render-only routing layout", () => {
       1850,
     );
     // Deterministic: confirmed directly (not assumed) against this exact
-    // fixture. Route/handle collisions use canonical unique-pair accounting;
-    // repeated flattened edges for one pair do not inflate this count. See
-    // docs/design/lifecycle-diagram-layout-algorithm.md's "Follow-up
-    // (shipped)" section for the browser-reconciled (denser) variant.
-    expect(graph.acceptedRouteCrossingCount).toBe(42);
-    expect(graph.transitionLaneSolverStats.handleStatesVisited).toBe(504);
+    // fixture. See docs/design/lifecycle-diagram-layout-algorithm.md's
+    // "Follow-up (shipped)" section for the browser-reconciled (denser)
+    // variant's different count (66, exercised by the Playwright audit spec).
+    expect(graph.acceptedRouteCrossingCount).toBe(50);
+    expect(graph.transitionLaneSolverStats.handleStatesVisited).toBe(500);
     const visibleNodes = graph.nodes.filter(
       (node) => !node.routing && node.total > 0,
     );
@@ -4206,8 +4203,8 @@ describe("shared route-crossing classifier", () => {
   });
 
   it("deduplicates flattened edges without hiding distinct routes at one handle", () => {
-    const source = { id: "source", rank: 0, x0: 0, x1: 10 };
-    const target = { id: "target", rank: 1, x0: 100, x1: 110 };
+    const source = { id: "source", rank: 7, x0: 0, x1: 10 };
+    const target = { id: "target", rank: 8, x0: 100, x1: 110 };
     const segment = (branchId, y0, y1, segmentIndex = 0) => ({
       branchId,
       source,
@@ -4219,8 +4216,8 @@ describe("shared route-crossing classifier", () => {
     });
     const model = {
       branches: [
-        { id: "route-a", sourceRank: 0, targetRank: 1 },
-        { id: "route-b", sourceRank: 0, targetRank: 1 },
+        { id: "route-a", sourceRank: 7, targetRank: 8 },
+        { id: "route-b", sourceRank: 7, targetRank: 8 },
       ],
       segmentsByBranch: new Map([
         [
@@ -4232,7 +4229,7 @@ describe("shared route-crossing classifier", () => {
       visibleNodes: [],
       fixedOrderInversionPairs: new Set(),
       pairId: (left, right) => [left, right].sort().join("||"),
-      horizontalGeometry: BASELINE_LIFECYCLE_HORIZONTAL_GEOMETRY,
+      horizontalGeometry: createLifecycleHorizontalGeometry({ rankCount: 9 }),
     };
     const handles = [{ branchId: "handle-route", x: 55, y: 100 }];
     const collisions = auditLifecycleRouteGeometry({
