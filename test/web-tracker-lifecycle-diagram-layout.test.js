@@ -2418,9 +2418,11 @@ describe("test-only lifecycle layout diagnostics", () => {
           projectLifecycleAt(noReopenDenseFixture()),
           1850,
         );
-        expect(result.graph.acceptedRouteCrossingCount).toBe(50);
+        // Route/handle collisions are counted once per unique route/handle
+        // pair, even when several flattened edges describe the same contact.
+        expect(result.graph.acceptedRouteCrossingCount).toBe(42);
         expect(result.graph.transitionLaneSolverStats.handleStatesVisited).toBe(
-          500,
+          504,
         );
       });
     });
@@ -3421,11 +3423,12 @@ describe("lifecycle diagram render-only routing layout", () => {
       1850,
     );
     // Deterministic: confirmed directly (not assumed) against this exact
-    // fixture. See docs/design/lifecycle-diagram-layout-algorithm.md's
-    // "Follow-up (shipped)" section for the browser-reconciled (denser)
-    // variant's different count (66, exercised by the Playwright audit spec).
-    expect(graph.acceptedRouteCrossingCount).toBe(50);
-    expect(graph.transitionLaneSolverStats.handleStatesVisited).toBe(500);
+    // fixture. Route/handle collisions use canonical unique-pair accounting;
+    // repeated flattened edges for one pair do not inflate this count. See
+    // docs/design/lifecycle-diagram-layout-algorithm.md's "Follow-up
+    // (shipped)" section for the browser-reconciled (denser) variant.
+    expect(graph.acceptedRouteCrossingCount).toBe(42);
+    expect(graph.transitionLaneSolverStats.handleStatesVisited).toBe(504);
     const visibleNodes = graph.nodes.filter(
       (node) => !node.routing && node.total > 0,
     );
