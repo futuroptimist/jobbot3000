@@ -234,9 +234,14 @@ describe("websocket event stream", () => {
       commandAdapter,
     });
 
+    const sessionResponse = await fetch(`${server.url}/`);
+    const sessionId = sessionResponse.headers.get(server.sessionHeaderName);
     const socket = await new Promise((resolve, reject) => {
       const ws = new WebSocket(server.eventsUrl, {
-        headers: { authorization: "Bearer viewer-token" },
+        headers: {
+          authorization: "Bearer viewer-token",
+          [server.sessionHeaderName]: sessionId,
+        },
       });
       activeSockets.push(ws);
       ws.once("open", () => resolve(ws));
@@ -245,6 +250,7 @@ describe("websocket event stream", () => {
 
     const headers = buildCommandHeaders(server, {
       authorization: "Bearer viewer-token",
+      [server.sessionHeaderName]: sessionId,
     });
 
     const body = JSON.stringify({
@@ -252,6 +258,7 @@ describe("websocket event stream", () => {
       format: "json",
       sentences: 1,
     });
+    const messagePromise = once(socket, "message");
     const response = await fetch(`${server.url}/commands/summarize`, {
       method: "POST",
       headers,
@@ -259,7 +266,7 @@ describe("websocket event stream", () => {
     });
     expect(response.status).toBe(200);
 
-    const [rawMessage] = await once(socket, "message");
+    const [rawMessage] = await messagePromise;
     socket.close();
 
     const event = JSON.parse(rawMessage.toString());

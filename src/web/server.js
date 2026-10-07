@@ -6,6 +6,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { performance } from "node:perf_hooks";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 
 import { createCommandAdapter } from "./command-adapter.js";
@@ -31,7 +32,8 @@ import { createAuditLogger } from "../shared/security/audit-log.js";
 import { createSessionManager } from "./session-manager.js";
 import { createSecurityAlertDispatcher } from "./security-alerts.js";
 import { readSchedulerStatus } from "../schedule.js";
-import { WebSocket, WebSocketServer } from "ws";
+import { WebSocketServer } from "ws";
+import { createSessionEventStream } from "./session-event-stream.js";
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 const CLIENT_PAYLOAD_MAX_CLIENTS = 200;
@@ -6906,6 +6908,7 @@ export function createWebApp({
   features,
   missingSecrets,
   commandEvents,
+  sessionManager: providedSessionManager,
   session,
   logTransport,
   securityAlerts,
@@ -6925,7 +6928,7 @@ export function createWebApp({
   );
   const trackerScriptBuffer = Buffer.from(
     esbuild.buildSync({
-      entryPoints: [new URL("./tracker/tracker.js", import.meta.url).pathname],
+      entryPoints: [fileURLToPath(new URL("./tracker/tracker.js", import.meta.url))],
       bundle: true,
       format: "esm",
       platform: "browser",
@@ -6935,10 +6938,9 @@ export function createWebApp({
   const lifecycleLayoutWorkerScriptBuffer = Buffer.from(
     esbuild.buildSync({
       entryPoints: [
-        new URL(
-          "./tracker/lifecycleDiagramLayout.worker.js",
-          import.meta.url,
-        ).pathname,
+        fileURLToPath(
+          new URL("./tracker/lifecycleDiagramLayout.worker.js", import.meta.url),
+        ),
       ],
       bundle: true,
       format: "esm",
@@ -6987,7 +6989,7 @@ export function createWebApp({
       },
     },
   });
-  const sessionManager = createSessionManager(session);
+  const sessionManager = providedSessionManager ?? createSessionManager(session);
   let effectiveAuditLogger = auditLogger ?? null;
   if (!effectiveAuditLogger && audit && audit.logPath) {
     try {
@@ -7032,12 +7034,12 @@ export function createWebApp({
     return headerToken === csrfOptions.token;
   };
 
-  const emitCommandEvent = (event) => {
+  const emitCommandEvent = (event, scope) => {
     if (!commandEventsEmitter) {
       return;
     }
     try {
-      commandEventsEmitter.emit("command", event);
+      commandEventsEmitter.emit("command", event, scope);
     } catch (error) {
       logger?.warn?.("Failed to emit command lifecycle event", error);
     }
@@ -8468,6 +8470,7 @@ export function createWebApp({
         tokenFingerprint,
       });
 
+      const eventScope = { sessionId, credential: authOptions ? authContext : null };
       const requestPayload = req.body ?? {};
       let payload;
       try {
@@ -8551,18 +8554,21 @@ export function createWebApp({
           payload: redactedPayload,
           payloadFields,
         });
-        emitCommandEvent({
-          type: "command",
-          command: commandParam,
-          status: "success",
-          timestamp: new Date().toISOString(),
-          durationMs,
-          payloadFields,
-          actor: authContext?.subject ?? authPrincipal ?? "guest",
-          actorDisplayName: authContext?.displayName,
-          roles: authContext?.roles ? Array.from(authContext.roles).sort() : [],
-          result: sanitizedResult,
-        });
+        emitCommandEvent(
+          {
+            type: "command",
+            command: commandParam,
+            status: "success",
+            timestamp: new Date().toISOString(),
+            durationMs,
+            payloadFields,
+            actor: authContext?.subject ?? authPrincipal ?? "guest",
+            actorDisplayName: authContext?.displayName,
+            roles: authContext?.roles ? Array.from(authContext.roles).sort() : [],
+            result: sanitizedResult,
+          },
+          eventScope,
+        );
       } catch (err) {
         const response = sanitizeCommandResult({
           error: err?.message ?? "Command execution failed",
@@ -8634,18 +8640,21 @@ export function createWebApp({
           payloadFields,
           error: response?.error,
         });
-        emitCommandEvent({
-          type: "command",
-          command: commandParam,
-          status: "error",
-          timestamp: new Date().toISOString(),
-          durationMs,
-          payloadFields,
-          actor: authContext?.subject ?? authPrincipal ?? "guest",
-          actorDisplayName: authContext?.displayName,
-          roles: authContext?.roles ? Array.from(authContext.roles).sort() : [],
-          result: responseBody,
-        });
+        emitCommandEvent(
+          {
+            type: "command",
+            command: commandParam,
+            status: "error",
+            timestamp: new Date().toISOString(),
+            durationMs,
+            payloadFields,
+            actor: authContext?.subject ?? authPrincipal ?? "guest",
+            actorDisplayName: authContext?.displayName,
+            roles: authContext?.roles ? Array.from(authContext.roles).sort() : [],
+            result: responseBody,
+          },
+          eventScope,
+        );
       }
     },
   );
@@ -8948,6 +8957,7 @@ export function startWebServer(options = {}) {
         "or JOBBOT_WEB_AUTH_TOKEN, or pass auth tokens when allowRemoteAccess is enabled.",
     );
   }
+  const sessionManager = createSessionManager(sessionOptions);
   const commandEvents = new EventEmitter();
   const normalizedLogTransport = normalizeLogTransport(providedLogTransport, {
     host,
@@ -8974,6 +8984,7 @@ export function startWebServer(options = {}) {
     logger,
     auth: normalizedAuth,
     session: sessionOptions,
+    sessionManager,
     commandEvents,
     logTransport: normalizedLogTransport,
     missingSecrets,
@@ -8981,40 +8992,19 @@ export function startWebServer(options = {}) {
   });
 
   const wss = new WebSocketServer({ noServer: true });
-  const websocketClients = new Set();
-  const broadcastCommandEvent = (event) => {
-    let payload;
-    try {
-      payload = JSON.stringify(event);
-    } catch (error) {
-      logger?.warn?.(
-        "Failed to serialize command event for websocket broadcast",
-        error,
-      );
-      return;
-    }
-    for (const client of websocketClients) {
-      if (client.readyState === WebSocket.OPEN) {
-        try {
-          client.send(payload);
-        } catch (error) {
-          logger?.warn?.(
-            "Failed to send command event to websocket client",
-            error,
-          );
-        }
-      }
-    }
-  };
-
-  commandEvents.on("command", broadcastCommandEvent);
-
-  wss.on("connection", (ws) => {
-    websocketClients.add(ws);
-    ws.once("close", () => {
-      websocketClients.delete(ws);
-    });
+  const eventStream = createSessionEventStream({
+    sessionManager,
+    isCredentialValid: (credential) =>
+      normalizedAuth
+        ? Boolean(
+            credential &&
+              normalizedAuth.tokens.get(credential.token) === credential &&
+              hasRequiredRoles(credential.roles, COMMAND_ROLE_REQUIREMENTS.default),
+          )
+        : credential === null,
+    logger,
   });
+  commandEvents.on("command", eventStream.publish);
 
   const respondUpgradeError = (
     socket,
@@ -9148,6 +9138,7 @@ export function startWebServer(options = {}) {
         sessionHeaderName: CLIENT_SESSION_HEADER,
         sessionCookieName: CLIENT_SESSION_COOKIE,
         async close() {
+          performCleanup();
           await new Promise((resolveClose, rejectClose) => {
             server.close((err) => {
               if (err) rejectClose(err);
@@ -9185,9 +9176,22 @@ export function startWebServer(options = {}) {
         return;
       }
 
+      const headerSession = normalizeSessionId(
+        request.headers[CLIENT_SESSION_HEADER.toLowerCase()],
+      );
+      const cookies = parseCookieHeader(request.headers.cookie);
+      const cookieSession = normalizeSessionId(cookies.get(CLIENT_SESSION_COOKIE));
+      const sessionId = headerSession || cookieSession;
+      if (!sessionId || sessionManager.remainingLifetime(sessionId) <= 0) {
+        respondUpgradeError(socket, 401, "Missing or expired session");
+        return;
+      }
+      const scope = {
+        sessionId,
+        credential: normalizedAuth ? authResult.context : null,
+      };
       wss.handleUpgrade(request, socket, head, (ws) => {
-        ws.jobbotAuth = authResult.context;
-        wss.emit("connection", ws, request, authResult.context);
+        eventStream.add(ws, scope);
       });
     };
 
@@ -9198,15 +9202,8 @@ export function startWebServer(options = {}) {
       }
       cleanedUp = true;
       server.off("upgrade", handleUpgrade);
-      commandEvents.off("command", broadcastCommandEvent);
-      for (const client of websocketClients) {
-        try {
-          client.terminate();
-        } catch {
-          // ignore termination failures during shutdown
-        }
-      }
-      websocketClients.clear();
+      commandEvents.off("command", eventStream.publish);
+      eventStream.close();
       wss.close();
     };
 
