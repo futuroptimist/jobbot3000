@@ -244,11 +244,33 @@ downstream tooling.
 
 ### GET /events (WebSocket)
 
-Establishes a WebSocket subscription that streams sanitized command lifecycle events to
-collaborating clients. The handshake reuses the same authentication header configured for HTTP
-requests. Viewer roles are required to subscribe. When tokens require a scheme (for example,
+In the legacy CLI/dev server, establishes a WebSocket subscription that streams sanitized command
+lifecycle events privately to the originating session. The handshake reuses the authentication header
+configured for HTTP requests. Viewer roles are required to subscribe. When tokens require a scheme
+(for example,
 `Authorization: Bearer <token>`), the same scheme must be supplied during the WebSocket upgrade
 request. Missing or invalid credentials receive 401 or 403 handshake responses.
+
+First obtain a session from `GET /`, then send its `X-Jobbot-Session-Id` header or
+`jobbot_session_id` cookie on both command requests and the WebSocket upgrade. Missing, unknown,
+expired, or rotation-due sessions receive 401 during upgrade. The header takes precedence over the
+cookie, as it does for HTTP requests. Authentication-disabled local mode still requires a live session.
+Authenticated delivery additionally matches the internal credential entry; actor names and display
+names never establish ownership. Two sessions using the same credential do not share live events.
+
+Revocation, rotation, and capacity eviction disconnect the old session's sockets. Idle and absolute
+expiry close sockets on their deadline, and validity is checked again immediately before every send.
+Neither subscribing nor receiving events refreshes idle lifetime. Refresh the HTTP session and reconnect
+after expiry or rotation. Events without live ownership, including commands completing after their
+session expires, are dropped. There is no event backlog or replay; slow sockets with pending writes are
+disconnected instead of accepting more queued events. Frames already sent while authorized cannot be
+retracted from the network or the receiving client.
+
+This live-delivery boundary does **not** change `/commands/payloads/recent`: authenticated HTTP history
+remains token-scoped, so separate sessions using the same token can retrieve that token's history.
+Session revocation does not revoke a token or delete its HTTP history. The legacy server remains a
+trusted-local-use tool, not an account/workspace isolation system. The production browser-first tracker
+continues to keep private data in IndexedDB; this change adds no accounts, workspaces, or history migration.
 
 Each message is a JSON object with the following shape:
 
@@ -277,7 +299,8 @@ authorized viewers receive sanitized command events with payload field metadata.
 
 Error events reuse the same envelope with `status: "error"` and a sanitized `result.error` message.
 Regression coverage in [`test/web-server-realtime.test.js`](../test/web-server-realtime.test.js)
-ensures authenticated subscribers receive broadcast updates while unauthorized upgrades are rejected.
+ensures success/error events stay within their session and credential, late completions are dropped,
+and token-scoped HTTP history remains separate from live delivery.
 
 ### Error responses
 

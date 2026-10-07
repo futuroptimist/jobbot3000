@@ -50,13 +50,39 @@ export function createSessionManager(options = {}) {
   const clock = options.clock;
 
   const sessions = new Map();
+  const invalidationListeners = new Set();
+
+  function removeSession(id) {
+    if (!sessions.delete(id)) return false;
+    for (const listener of invalidationListeners) listener(id);
+    return true;
+  }
+
+  // Read-only lifetime check: event delivery must never refresh an idle session.
+  function remainingLifetime(sessionId) {
+    const session = sessions.get(sessionId);
+    if (!session) return 0;
+    return Math.max(
+      0,
+      Math.min(
+        session.rotateAt,
+        session.idleExpiresAt,
+        session.absoluteExpiresAt,
+      ) - now(clock),
+    );
+  }
+
+  function onInvalidate(listener) {
+    invalidationListeners.add(listener);
+    return () => invalidationListeners.delete(listener);
+  }
 
   function evictOldestSession() {
     const oldest = sessions.keys().next();
     if (oldest.done) {
       return false;
     }
-    sessions.delete(oldest.value);
+    removeSession(oldest.value);
     return true;
   }
 
@@ -66,7 +92,7 @@ export function createSessionManager(options = {}) {
         current >= session.absoluteExpiresAt ||
         current >= session.idleExpiresAt
       ) {
-        sessions.delete(id);
+        removeSession(id);
       }
     }
   }
@@ -113,7 +139,7 @@ export function createSessionManager(options = {}) {
   }
 
   function rotateSession(session, current) {
-    sessions.delete(session.id);
+    removeSession(session.id);
     return createSession({
       current,
       absoluteDeadline: session.absoluteExpiresAt,
@@ -134,7 +160,7 @@ export function createSessionManager(options = {}) {
           current >= session.absoluteExpiresAt ||
           current >= session.idleExpiresAt
         ) {
-          sessions.delete(existingId);
+          removeSession(existingId);
           if (!createIfMissing) {
             return null;
           }
@@ -181,7 +207,7 @@ export function createSessionManager(options = {}) {
     if (!trimmed) {
       return false;
     }
-    return sessions.delete(trimmed);
+    return removeSession(trimmed);
   }
 
   function getCookieMetadata(session) {
@@ -203,5 +229,7 @@ export function createSessionManager(options = {}) {
     ensureSession,
     revokeSession,
     getCookieMetadata,
+    remainingLifetime,
+    onInvalidate,
   };
 }

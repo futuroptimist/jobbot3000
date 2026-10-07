@@ -581,12 +581,13 @@
 - Real-time collaboration via WebSocket subscriptions to CLI state changes.
   _Implemented (2025-10-19):_ `startWebServer` now exposes a `/events`
   WebSocket endpoint that streams sanitized command lifecycle payloads to
-  authenticated subscribers. The broadcast includes the command name, actor,
-  roles, duration, and sanitized CLI output so multiple operators can react to
-  changes in real time without polling. [`test/web-server-realtime.test.js`](../test/web-server-realtime.test.js)
-  covers successful broadcasts and enforces 401/403 responses for missing or
-  unauthorized tokens, keeping the collaboration channel aligned with the
-  existing role guardrails.
+  authenticated subscribers. _Privacy correction (K096):_ live events now belong
+  to the exact originating session and internal credential entry, including in
+  authenticated mode. Shared credentials do not share live events across sessions.
+  [`test/web-server-realtime.test.js`](../test/web-server-realtime.test.js) covers
+  success/error isolation and invalidated sessions. See the
+  [API reference](web-api-reference.md#get-events-websocket) for connection lifetime
+  and the separate, unchanged token-scoped HTTP history boundary.
 
 ## Safe Implementation Checklist
 
