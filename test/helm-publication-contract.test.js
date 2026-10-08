@@ -608,53 +608,76 @@ describe("workflow and archive validation contract", () => {
       expect(readFileSync(output, "utf8").trim()).toBe(`publish=${allowed}`);
     }
   });
-  it("runs lint and every existing render against the archive, stopping on failure", () => {
-    const directory = temporary();
-    const bin = path.join(directory, "bin");
-    mkdirSync(bin);
-    const log = path.join(directory, "calls.txt");
-    const fakeHelm = path.join(bin, "helm");
-    writeFileSync(
-      fakeHelm,
-      '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$HELM_CALL_LOG"\n' +
-        'if [ "${FAIL_HELM:-}" = "$1" ]; then exit 9; fi\n',
-    );
-    chmodSync(fakeHelm, 0o755);
-    if (process.platform === "win32") expect(existsSync(bash)).toBe(true);
-    // Copy with LF for Git-for-Windows; the checked-in script is unchanged otherwise.
-    const script = path.join(directory, "validate.sh");
-    writeFileSync(
-      script,
-      readFileSync(
-        path.join(root, "scripts/validate-helm.sh"),
-        "utf8",
-      ).replaceAll("\r\n", "\n"),
-    );
-    const env = {
-      ...process.env,
-      PATH: `${bin}${path.delimiter}${process.env.PATH}`,
-      HELM_CALL_LOG: log.replaceAll("\\", "/"),
-    };
-    const result = spawnSync(bash, [script, "validated.tgz", "reviewed/ci"], {
-      env,
-      encoding: "utf8",
-    });
-    expect(result.stderr).toBe("");
-    expect(result.status).toBe(0);
-    expect(readFileSync(log, "utf8").trim().split("\n")).toEqual([
-      "lint validated.tgz",
-      "template jobbot3000 validated.tgz --set image.tag=main-TESTSHA",
-      "template jobbot3000-staging validated.tgz -f reviewed/ci/staging-values.yaml " +
-        "--set image.tag=main-STAGINGTEST --set ingress.host=jobbot3000.staging.example.test",
-      "template jobbot3000-prod validated.tgz -f reviewed/ci/prod-values.yaml " +
-        "--set image.tag=main-PRODTEST --set ingress.host=jobbot3000.example.test",
-    ]);
-    writeFileSync(log, "");
-    const failed = spawnSync(bash, [script, "validated.tgz", "reviewed/ci"], {
-      env: { ...env, FAIL_HELM: "lint" },
-      encoding: "utf8",
-    });
-    expect(failed.status).toBe(9);
-    expect(readFileSync(log, "utf8").trim()).toBe("lint validated.tgz");
-  });
+  it.each(["archive", "directory", "default", "directory-override"])(
+    "runs lint and all renders for %s input, stopping on failure",
+    (mode) => {
+      const directory = temporary();
+      const source =
+        mode === "archive"
+          ? "validated.tgz"
+          : mode === "default"
+            ? "charts/jobbot3000"
+            : "custom-chart";
+      const values =
+        mode === "archive" || mode === "directory-override"
+          ? "reviewed/ci"
+          : `${source}/ci`;
+      const args =
+        mode === "default"
+          ? []
+          : mode === "directory"
+            ? [source]
+            : [source, values];
+      if (mode !== "archive")
+        mkdirSync(path.join(directory, source, "ci"), { recursive: true });
+      const bin = path.join(directory, "bin");
+      mkdirSync(bin);
+      const log = path.join(directory, "calls.txt");
+      const fakeHelm = path.join(bin, "helm");
+      writeFileSync(
+        fakeHelm,
+        '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$HELM_CALL_LOG"\n' +
+          'if [ "${FAIL_HELM:-}" = "$1" ]; then exit 9; fi\n',
+      );
+      chmodSync(fakeHelm, 0o755);
+      if (process.platform === "win32") expect(existsSync(bash)).toBe(true);
+      // Copy with LF for Git-for-Windows; the checked-in script is unchanged otherwise.
+      const script = path.join(directory, "validate.sh");
+      writeFileSync(
+        script,
+        readFileSync(
+          path.join(root, "scripts/validate-helm.sh"),
+          "utf8",
+        ).replaceAll("\r\n", "\n"),
+      );
+      const env = {
+        ...process.env,
+        PATH: `${bin}${path.delimiter}${process.env.PATH}`,
+        HELM_CALL_LOG: log.replaceAll("\\", "/"),
+      };
+      const result = spawnSync(bash, [script, ...args], {
+        cwd: directory,
+        env,
+        encoding: "utf8",
+      });
+      expect(result.stderr).toBe("");
+      expect(result.status).toBe(0);
+      expect(readFileSync(log, "utf8").trim().split("\n")).toEqual([
+        `lint ${source}`,
+        `template jobbot3000 ${source} --set image.tag=main-TESTSHA`,
+        `template jobbot3000-staging ${source} -f ${values}/staging-values.yaml ` +
+          "--set image.tag=main-STAGINGTEST --set ingress.host=jobbot3000.staging.example.test",
+        `template jobbot3000-prod ${source} -f ${values}/prod-values.yaml ` +
+          "--set image.tag=main-PRODTEST --set ingress.host=jobbot3000.example.test",
+      ]);
+      writeFileSync(log, "");
+      const failed = spawnSync(bash, [script, ...args], {
+        cwd: directory,
+        env: { ...env, FAIL_HELM: "lint" },
+        encoding: "utf8",
+      });
+      expect(failed.status).toBe(9);
+      expect(readFileSync(log, "utf8").trim()).toBe(`lint ${source}`);
+    },
+  );
 });
