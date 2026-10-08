@@ -60,7 +60,7 @@ jobs:
 
           echo "doc_only=${DOC_ONLY:-false}" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v6
         if: steps.doc_changes.outputs.doc_only != 'true'
         with:
           node-version: 20
