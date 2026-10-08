@@ -30,8 +30,6 @@ jobs:
       archive_sha256: ${{ steps.sealed.outputs.archive_sha256 }}
       artifact_id: ${{ steps.archive.outputs.artifact-id }}
       publish: ${{ steps.chart.outputs.publish }}
-    env:
-      HELM_DIST: ${{ runner.temp }}/helm-validated
     steps:
       - name: Check out repository
         uses: actions/checkout@v5
@@ -75,6 +73,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          HELM_DIST="${RUNNER_TEMP}/helm-validated"
+          echo "HELM_DIST=${HELM_DIST}" >> "${GITHUB_ENV}"
           mkdir "${HELM_DIST}"
           helm package charts/jobbot3000 --destination "${HELM_DIST}"
           node scripts/helm-publication-contract.mjs fingerprint "${HELM_DIST}"
@@ -132,7 +132,6 @@ jobs:
       contents: read
       packages: write
     env:
-      HELM_DIST: ${{ runner.temp }}/helm-publication
       CHART_NAME: ${{ needs.validate.outputs.chart_name }}
       CHART_VERSION: ${{ needs.validate.outputs.chart_version }}
       CHART_REF: ${{ needs.validate.outputs.chart_ref }}
@@ -156,7 +155,11 @@ jobs:
         with:
           artifact-ids: ${{ needs.validate.outputs.artifact_id }}
           merge-multiple: true
-          path: ${{ env.HELM_DIST }}
+          path: ${{ runner.temp }}/helm-publication
+
+      - name: Set downloaded archive directory
+        shell: bash
+        run: echo "HELM_DIST=${RUNNER_TEMP}/helm-publication" >> "${GITHUB_ENV}"
 
       - name: Verify exact validated archive before authentication
         run: node scripts/helm-publication-contract.mjs verify "${HELM_DIST}"
