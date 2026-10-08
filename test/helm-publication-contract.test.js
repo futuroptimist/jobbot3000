@@ -300,6 +300,45 @@ describe("validated chart handoff", () => {
 });
 
 describe("fail-closed registry lookup", () => {
+  it.each([
+    "application/vnd.oci.image.manifest.v1+json",
+    "application/vnd.oci.image.index.v1+json",
+    "application/vnd.docker.distribution.manifest.v2+json",
+    "application/vnd.docker.distribution.manifest.list.v2+json",
+    "application/vnd.docker.distribution.manifest.v1+json",
+    "application/vnd.docker.distribution.manifest.v1+prettyjws",
+  ])("does not mistake an existing %s tag for absence", async (mediaType) => {
+    const fixture = bundle();
+    const absent = registry();
+    const fetchImpl = async (url, options) => {
+      if (
+        url.includes("/manifests/") &&
+        options.headers.Accept.includes(mediaType)
+      ) {
+        return { url, redirected: false, status: 200 };
+      }
+      // Reproduce registries returning MANIFEST_UNKNOWN for an unaccepted existing type.
+      return absent(url, options);
+    };
+    await expect(
+      publishBundle(fixture.directory, fixture.expected, context, auth, {
+        run: fixture.run,
+        fetchImpl,
+      }),
+    ).rejects.toThrow("already exists");
+    expect(fixture.run.mock.calls.some(([, args]) => args[0] === "push")).toBe(
+      false,
+    );
+  });
+  it("refuses a version already visible in the authenticated tag listing", async () => {
+    const fetchImpl = registry({
+      1: { body: { name: repository, tags: [target.version] } },
+    });
+    await expect(assertAbsent(target, auth, fetchImpl)).rejects.toThrow(
+      "already exists",
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
   it("refuses a second serialized publisher once the first created that coordinate", async () => {
     const first = bundle();
     const second = bundle();

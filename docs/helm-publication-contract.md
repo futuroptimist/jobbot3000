@@ -44,6 +44,10 @@ Only `oci://ghcr.io/futuroptimist/charts/jobbot3000` is accepted. Before `helm p
    one `MANIFEST_UNKNOWN` error permits creation. HTTP 200 means the version already exists and
    is refused, even if its bytes might be identical.
 
+The request advertises OCI manifests/indexes and Docker manifests/lists, including legacy Docker
+schema-one representations. Otherwise content negotiation can report `MANIFEST_UNKNOWN` for an
+existing tag. A version present in the authenticated tag listing is also refused immediately.
+
 Authentication failures, 403, throttling, server errors, timeouts, redirects, malformed responses,
 unexpected response URLs/repositories, and other or mixed error codes all stop publication. There
 are no retries, pull-error fallbacks, or replace-existing mode. Each request has a ten-second

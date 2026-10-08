@@ -14,6 +14,16 @@ export const DESTINATION = "oci://ghcr.io/futuroptimist/charts/jobbot3000";
 export const MANIFEST = "publication-manifest.json";
 const REPOSITORY = "futuroptimist/charts/jobbot3000";
 const PROFILES = ["default", "staging", "production"];
+// An unaccepted index can produce MANIFEST_UNKNOWN even when the tag exists.
+const MANIFEST_ACCEPT = [
+  "application/vnd.oci.image.manifest.v1+json",
+  "application/vnd.oci.image.index.v1+json",
+  "application/vnd.docker.distribution.manifest.v2+json",
+  "application/vnd.docker.distribution.manifest.list.v2+json",
+  "application/vnd.docker.distribution.manifest.v1+json",
+  "application/vnd.docker.distribution.manifest.v1+prettyjws",
+  "application/json",
+].join(", ");
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const check = (condition, message) => {
   if (!condition) throw new Error(message);
@@ -200,8 +210,7 @@ export async function assertAbsent(expected, auth, fetchImpl = fetch) {
         signal: AbortSignal.timeout(10_000),
         headers: {
           Authorization: authorization,
-          Accept:
-            "application/vnd.oci.image.manifest.v1+json, application/json",
+          Accept: MANIFEST_ACCEPT,
         },
       });
     } catch {
@@ -286,6 +295,10 @@ export async function assertAbsent(expected, auth, fetchImpl = fetch) {
         (Array.isArray(listing.tags) &&
           listing.tags.every((tag) => typeof tag === "string"))),
     "Unexpected registry repository response",
+  );
+  check(
+    !listing.tags?.includes(target.tag),
+    "Chart version already exists; refusing replacement",
   );
   const manifest = await request(
     `https://ghcr.io/v2/${REPOSITORY}/manifests/${target.tag}`,
