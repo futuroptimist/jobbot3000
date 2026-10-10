@@ -96,23 +96,44 @@ test.describe("static tracker smoke", () => {
 
   test.beforeAll(async () => {
     staticDir = await fs.mkdtemp(path.join(os.tmpdir(), "jobbot-static-"));
-    const build = spawn("node", ["scripts/build-static.js"], {
-      cwd: process.cwd(),
-      env: { ...process.env, JOBBOT_STATIC_DIR: staticDir },
-      stdio: "inherit",
-    });
-    await waitForProcess(build, "static build", BUILD_TIMEOUT_MS);
+    const siteMode = process.env.JOBBOT_SITE_SMOKE === "1";
+    const preparedSite = siteMode ? process.env.JOBBOT_SITE_DIR : undefined;
+    const siteDir = preparedSite ?? path.join(staticDir, "site-artifact");
+    if (!preparedSite) {
+      const build = spawn("node", ["scripts/build-static.js"], {
+        cwd: process.cwd(),
+        env: { ...process.env, JOBBOT_STATIC_DIR: staticDir },
+        stdio: "inherit",
+      });
+      await waitForProcess(build, "static build", BUILD_TIMEOUT_MS);
+    }
+    if (siteMode && !preparedSite) {
+      const siteBuild = spawn(process.execPath, ["scripts/build-site.js"], {
+        env: {
+          ...process.env,
+          JOBBOT_STATIC_DIR: staticDir,
+          JOBBOT_SITE_DIR: siteDir,
+        },
+        stdio: "inherit",
+      });
+      await waitForProcess(siteBuild, "Site packaging", BUILD_TIMEOUT_MS);
+    }
 
-    serverProcess = spawn("node", ["scripts/static-server.js"], {
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        HOST: "127.0.0.1",
-        PORT: "0",
-        JOBBOT_STATIC_DIR: staticDir,
+    serverProcess = spawn(
+      "node",
+      [siteMode ? "scripts/site-preview.js" : "scripts/static-server.js"],
+      {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          HOST: "127.0.0.1",
+          PORT: "0",
+          JOBBOT_STATIC_DIR: staticDir,
+          JOBBOT_SITE_DIR: siteDir,
+        },
+        stdio: ["ignore", "pipe", "pipe"],
       },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    );
     baseUrl = await waitForStaticServer(serverProcess);
   });
 
@@ -216,6 +237,54 @@ test.describe("static tracker smoke", () => {
     expect(
       requests.filter((request) => new URL(request.url()).origin !== baseUrl),
     ).toHaveLength(0);
+  });
+
+  test("persists imports on reload and restores an NDJSON backup in a fresh profile", async ({
+    page,
+    browser,
+  }) => {
+    const fixture = await fs.readFile(
+      "test/fixtures/tracker-lifecycle-diagram-v2.json",
+    );
+    const importBackup = async (target, name, buffer) => {
+      await target.getByRole("button", { name: "Import/Export" }).click();
+      await target.setInputFiles("[data-import-file]", {
+        name,
+        mimeType: "application/json",
+        buffer,
+      });
+      await target.getByRole("button", { name: "Preview/dry-run" }).click();
+      await target.getByRole("button", { name: "Apply import" }).click();
+      await target.getByRole("button", { name: "Dashboard" }).click();
+      await expect(target.locator("[data-metrics]")).toContainText(
+        "Total applications16",
+      );
+    };
+    await page.goto(`${baseUrl}/tracker`);
+    await importBackup(page, "synthetic.json", fixture);
+    await page.reload();
+    await expect(page.locator("[data-metrics]")).toContainText(
+      "Total applications16",
+    );
+    await page.getByRole("button", { name: "Import/Export" }).click();
+    const pending = page.waitForEvent("download");
+    await page
+      .getByRole("button", { name: "Export NDJSON", exact: true })
+      .click();
+    const download = await pending;
+    const backup = await fs.readFile(await download.path());
+    expect(backup.length).toBeGreaterThan(0);
+    const profile = await browser.newContext();
+    try {
+      const restored = await profile.newPage();
+      await restored.goto(`${baseUrl}/tracker`);
+      await expect(restored.locator("[data-metrics]")).toContainText(
+        "Total applications0",
+      );
+      await importBackup(restored, "backup.ndjson", backup);
+    } finally {
+      await profile.close();
+    }
   });
 
   test("keeps container and image CI contracts static", async () => {

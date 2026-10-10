@@ -59,6 +59,12 @@ Before pushing, `npm run chore:prepush` runs lint + `test:ci` + a secret scanner
 
 ## Key directories
 
+- `npm run build:site` packages the existing static build into an asset-only Worker
+  for owner handoff; see `docs/sites.md`. Keep generated `site-artifact/` ignored
+  and Site identities/credentials out of this public repository. Its policy test
+  compares with the production static server; use `JOBBOT_SITE_SMOKE=1` with the
+  existing static Playwright smoke to verify the Worker adapter.
+
 - `src/` — CLI commands, domain modules (`src/domain/`), web server/tracker (`src/web/`), shared
   typechecked utilities (`src/shared/`).
 - `test/` — Vitest suites (flat, `*.test.js`) and `test/playwright/` for browser E2E specs.

@@ -1,0 +1,32 @@
+name: Site artifact
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with: { node-version: 20, cache: npm }
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck && npm run build:site
+        env:
+          JOBBOT_GIT_SHA: ${{ github.event.pull_request.head.sha }}
+          GITHUB_SHA: ${{ github.event.pull_request.head.sha }}
+      - run: npx vitest run test/site-worker.test.js
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test test/playwright/static-smoke.spec.js
+        env:
+          JOBBOT_SITE_SMOKE: "1"
+          JOBBOT_SITE_DIR: ${{ github.workspace }}/site-artifact
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jobbot3000-site-${{ github.event.pull_request.head.sha }}
+          path: site-artifact/
+          if-no-files-found: error
