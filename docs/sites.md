@@ -17,13 +17,17 @@ Node adapter for local testing; that adapter is not included in the artifact.
 npm ci
 npm run build:site
 npx vitest run test/site-worker.test.js
+node scripts/check-site.mjs
 JOBBOT_SITE_SMOKE=1 npx playwright test test/playwright/static-smoke.spec.js
 ```
 
-The policy test compares Worker responses with the unchanged production server.
+The policy unit test compares fixture responses with the unchanged production server.
+The packaged-build check additionally compares every generated static file's bytes,
+types and security/cache headers with that server, and verifies both license notices.
 The browser smoke reuses the production static smoke against the Worker,
 including deterministic import and lifecycle diagram rendering without external
-requests, reload persistence and NDJSON backup restoration in a fresh profile.
+requests, reload persistence and NDJSON backup restoration in a fresh profile,
+including all imported fields, notes and lifecycle events rather than only counts.
 CI explicitly checks out the PR head used in the artifact name and tests the
 same generated Worker it uploads, using `JOBBOT_SITE_DIR`.
 

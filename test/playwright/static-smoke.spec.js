@@ -243,9 +243,32 @@ test.describe("static tracker smoke", () => {
     page,
     browser,
   }) => {
-    const fixture = await fs.readFile(
-      "test/fixtures/tracker-lifecycle-diagram-v2.json",
+    const expected = JSON.parse(
+      await fs.readFile(
+        "test/fixtures/tracker-lifecycle-diagram-v2.json",
+        "utf8",
+      ),
     );
+    expected.applications[0].notes =
+      "Synthetic application note for backup fidelity";
+    expected.lifecycleEvents[0].note =
+      "Synthetic event note for backup fidelity";
+    const fixture = Buffer.from(JSON.stringify(expected));
+    const exportBackup = async (target) => {
+      await target.getByRole("button", { name: "Import/Export" }).click();
+      const pending = target.waitForEvent("download");
+      await target
+        .getByRole("button", { name: "Export NDJSON", exact: true })
+        .click();
+      return fs.readFile(await (await pending).path());
+    };
+    const records = (backup) =>
+      backup
+        .toString("utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line))
+        .filter((entry) => entry.type !== "meta");
     const importBackup = async (target, name, buffer) => {
       await target.getByRole("button", { name: "Import/Export" }).click();
       await target.setInputFiles("[data-import-file]", {
@@ -266,14 +289,31 @@ test.describe("static tracker smoke", () => {
     await expect(page.locator("[data-metrics]")).toContainText(
       "Total applications16",
     );
-    await page.getByRole("button", { name: "Import/Export" }).click();
-    const pending = page.waitForEvent("download");
-    await page
-      .getByRole("button", { name: "Export NDJSON", exact: true })
-      .click();
-    const download = await pending;
-    const backup = await fs.readFile(await download.path());
-    expect(backup.length).toBeGreaterThan(0);
+    const backup = await exportBackup(page);
+    const exported = records(backup);
+    for (const [store, values] of Object.entries(expected)) {
+      if (!Array.isArray(values)) continue;
+      const actual = exported
+        .filter((entry) => entry.type === store)
+        .map((entry) => entry.record);
+      // The existing tracker adds explicit reconciliation events on import.
+      const suppliedIds = new Set(values.map((value) => value.id));
+      const generated = actual.filter((value) => !suppliedIds.has(value.id));
+      if (store === "lifecycleEvents") {
+        for (const value of generated)
+          expect(value.source).toBe("reconciliation");
+      } else expect(generated).toHaveLength(0);
+      expect(actual.filter((value) => suppliedIds.has(value.id))).toHaveLength(
+        values.length,
+      );
+      for (const value of values)
+        expect(actual.find((entry) => entry.id === value.id)).toMatchObject(
+          value,
+        );
+    }
+    expect(
+      exported.find((entry) => entry.type === "settings").record,
+    ).toMatchObject(expected.settings);
     const profile = await browser.newContext();
     try {
       const restored = await profile.newPage();
@@ -282,6 +322,8 @@ test.describe("static tracker smoke", () => {
         "Total applications0",
       );
       await importBackup(restored, "backup.ndjson", backup);
+      // Only the top-level export timestamp changes; every stored field must survive.
+      expect(records(await exportBackup(restored))).toEqual(exported);
     } finally {
       await profile.close();
     }
