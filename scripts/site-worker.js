@@ -1,5 +1,7 @@
 // An asset-only Worker: no storage bindings, credentials or application backend.
 export function createSiteWorker(assets) {
+  // Each immutable embedded asset is decoded at most once per Worker instance.
+  const decoded = new Map();
   const securityHeaders = {
     "Content-Security-Policy": [
       "default-src 'self'",
@@ -87,9 +89,13 @@ export function createSiteWorker(assets) {
             ? "public, max-age=3600"
             : "public, max-age=0",
       );
-      const bytes = Uint8Array.from(atob(asset.body), (character) =>
-        character.charCodeAt(0),
-      );
+      let bytes = decoded.get(asset);
+      if (!bytes) {
+        bytes = Uint8Array.from(atob(asset.body), (character) =>
+          character.charCodeAt(0),
+        );
+        decoded.set(asset, bytes);
+      }
       headers.set("Content-Length", String(bytes.length));
       return new Response(request.method === "HEAD" ? null : bytes, {
         status: found ? 200 : 404,

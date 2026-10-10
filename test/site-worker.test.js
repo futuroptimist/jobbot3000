@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { spawn } from "node:child_process";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import os from "node:os";
@@ -119,4 +119,26 @@ it("exposes no write API and rejects malformed paths", async () => {
   expect(
     (await worker.fetch(new Request("https://example.test/%zz"))).status,
   ).toBe(400);
+});
+
+it("decodes an embedded asset only once across GET and HEAD requests", async () => {
+  const handler = createSiteWorker({
+    "/tracker.html": {
+      type: "text/html; charset=utf-8",
+      body: Buffer.from("tracker").toString("base64"),
+    },
+  });
+  const decoder = vi.spyOn(globalThis, "atob");
+  try {
+    for (const method of ["GET", "HEAD", "GET", "HEAD"]) {
+      const response = await handler.fetch(
+        new Request("https://example.test/tracker", { method }),
+      );
+      expect(response.headers.get("Content-Length")).toBe("7");
+      expect(await response.text()).toBe(method === "HEAD" ? "" : "tracker");
+    }
+    expect(decoder).toHaveBeenCalledTimes(1);
+  } finally {
+    decoder.mockRestore();
+  }
 });
