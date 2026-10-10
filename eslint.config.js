@@ -1,20 +1,20 @@
-import js from '@eslint/js';
-import globals from 'globals';
+import js from "@eslint/js";
+import globals from "globals";
 
 export default [
   {
-    ignores: ['node_modules', '.cache'],
+    ignores: ["node_modules", ".cache", "dist", "site-artifact"],
   },
   {
-    files: ['**/*.js'],
+    files: ["**/*.js"],
     languageOptions: {
-      ecmaVersion: 'latest',
-      sourceType: 'module',
+      ecmaVersion: "latest",
+      sourceType: "module",
       globals: globals.node,
     },
     rules: {
       ...js.configs.recommended.rules,
-      'max-len': ['error', { code: 100 }],
+      "max-len": ["error", { code: 100 }],
     },
   },
 ];

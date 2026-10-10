@@ -7,6 +7,9 @@
 
 **jobbot3000** is a self-hosted, open-source job search copilot.
 
+For an owner-managed ChatGPT Site, see [Site artifact and handoff](docs/sites.md).
+Packaging preserves the browser-only tracker and does not deploy it.
+
 The production web tracker is browser-first: private application tracking data lives in user-owned IndexedDB, while the deployed server/container serves static assets and health endpoints. See [docs/browser-first-architecture.md](docs/browser-first-architecture.md) for the data contract and [docs/privacy-and-security.md](docs/privacy-and-security.md) for operating boundaries.
 
 > [!WARNING]

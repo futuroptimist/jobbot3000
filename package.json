@@ -32,6 +32,8 @@
     "prepare": "npx simple-git-hooks",
     "postinstall": "node scripts/install-console-font.js",
     "build": "node scripts/build-static.js",
+    "build:site": "npm run build && node scripts/build-site.js",
+    "preview:site": "node scripts/site-preview.js",
     "start:static": "node scripts/static-server.js",
     "smoke:container": "bash scripts/smoke-container.sh",
     "smoke:promotion": "node scripts/promotion-smoke.js"

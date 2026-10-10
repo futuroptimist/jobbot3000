@@ -3,6 +3,7 @@ node_modules/
 .DS_Store
 coverage/
 dist/
+site-artifact/
 data/
 test-results/
 __pycache__/
