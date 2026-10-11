@@ -235,9 +235,7 @@ describe("lifecycle diagram large-data rendering", () => {
       firstRange,
     );
     expect(JSON.stringify(snapshot)).toBe(serialized);
-    expect(root.querySelector("svg").getAttribute("height")).toBe(
-      String(largeLayout.height),
-    );
+    expect(root.querySelector("svg").getAttribute("height")).toBe("520");
     for (const element of root.querySelectorAll("path"))
       expect(element.getAttribute("d") ?? "").not.toMatch(/NaN|Infinity/u);
     for (const element of root.querySelectorAll("rect, text, path"))

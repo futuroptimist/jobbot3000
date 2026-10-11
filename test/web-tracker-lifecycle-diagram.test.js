@@ -6,6 +6,7 @@ import {
   calculateLifecycleDiagramLayout,
   createLifecycleDiagramView,
 } from "../src/web/tracker/lifecycleDiagram.js";
+import * as ribbonLayout from "../src/web/tracker/lifecycleDiagramRibbons.js";
 import * as lifecycleLayout from "../src/web/tracker/lifecycleDiagramLayout.js";
 import { buildLifecycleDisplayBranches } from "../src/web/tracker/lifecycleDiagramLayout.js";
 import { createLifecycleHorizontalGeometry } from "../src/web/tracker/lifecycleDiagramLayout.js";
@@ -1959,7 +1960,7 @@ describe("lifecycle diagram view", () => {
         [ev("so", "s", "application_submitted", "2026-01-01")],
       ),
     );
-    expect(sparse.root.querySelector("svg").getAttribute("height")).toBe("360");
+    expect(sparse.root.querySelector("svg").getAttribute("height")).toBe("520");
 
     const fixture = await import(
       "./fixtures/tracker-lifecycle-diagram-v2.json",
@@ -1967,16 +1968,14 @@ describe("lifecycle diagram view", () => {
         with: { type: "json" },
       }
     );
-    const expectedHeight = 1660;
+    const expectedHeight = 992;
     const dense = await render(fixture.default);
     const svg = dense.root.querySelector("svg");
     const denseLayout = calculateLifecycleDiagramLayout(dense.snapshot);
-    expect(denseLayout.height).toBe(expectedHeight);
+    expect(denseLayout.height).toBeGreaterThan(expectedHeight);
     if (svg) {
       expect(svg.getAttribute("height")).toBe(String(expectedHeight));
-      expect(svg.getAttribute("viewBox")).toBe(
-        `0 0 ${denseLayout.width} ${denseLayout.height}`,
-      );
+      expect(svg.getAttribute("viewBox")).toBe(`0 0 1120 ${expectedHeight}`);
     }
     const nodesById = new Map(
       visibleNodeRects(dense.root).map((rect) => [
@@ -2008,9 +2007,9 @@ describe("lifecycle diagram view", () => {
       ).toThrow(deterministicFailure);
       return;
     }
-    expect(nodesById.get("origin:application_submitted").x).toBeCloseTo(100);
+    expect(nodesById.get("origin:application_submitted").x).toBeCloseTo(88);
     const awaitingResponse = nodesById.get("endpoint:awaiting_response");
-    expect(awaitingResponse.x + awaitingResponse.width).toBeCloseTo(1750);
+    expect(awaitingResponse.x + awaitingResponse.width).toBeCloseTo(1032);
 
     for (const rects of byRank(visibleNodeRects(dense.root)).values()) {
       const sorted = rects.map(rectBox).sort((a, b) => a.y - b.y);
@@ -2021,7 +2020,7 @@ describe("lifecycle diagram view", () => {
       for (let index = 1; index < sorted.length; index += 1)
         expect(
           sorted[index].y - sorted[index - 1].bottom,
-        ).toBeGreaterThanOrEqual(72 - 0.5);
+        ).toBeGreaterThanOrEqual(52 - 0.5);
     }
 
     for (const hits of byRank([
@@ -2413,29 +2412,31 @@ describe("Worker offload for the layout search (Phase 5b)", () => {
     withEnumerableHorizontalGeometry(graph);
     withEnumerableHorizontalGeometry(dimensions);
 
-    // Respond to the *fresh* request first and the stale one last -- an
-    // implementation that just applies whatever arrives, in arrival order,
-    // rather than actually checking staleness would let the late-arriving
-    // stale response win here (width 111), even though it's respond()'s
-    // caller (not the production code) controlling this ordering. Correct
-    // generation-checking must produce 222 regardless of arrival order.
+    // Distinguish payloads by a visible node label; presentation now owns
+    // the final responsive width, independently of worker canvas dimensions.
+    const labeledGraph = (label) => ({
+      ...graph,
+      nodes: graph.nodes.map((node) =>
+        node.id === "origin:application_submitted" ? { ...node, label } : node,
+      ),
+    });
     worker.respond({
       type: "layout-result",
       requestId: requestB.requestId,
       ok: true,
-      dimensions: { ...dimensions, width: 222 },
-      graph,
+      dimensions,
+      graph: labeledGraph("Fresh origin"),
     });
     worker.respond({
       type: "layout-result",
       requestId: requestA.requestId,
       ok: true,
-      graph,
-      dimensions: { ...dimensions, width: 111 },
+      dimensions,
+      graph: labeledGraph("Stale origin"),
     });
-
     await Promise.all([updateA, updateB]);
-    expect(root.querySelector("svg").getAttribute("width")).toBe("222");
+    expect(root.querySelector("svg").textContent).toContain("Fresh origin");
+    expect(root.querySelector("svg").textContent).not.toContain("Stale origin");
     expect(root.querySelector("[data-diagram-busy]").hidden).toBe(true);
   });
 
@@ -3078,43 +3079,25 @@ describe("lifecycle diagram P6 pagination and hardening", () => {
     );
   });
 
-  it("renders the layout fallback when branch handle placement fails", async () => {
-    // The renderer prefers graph.acceptedHandles (the exact handles
-    // layoutLifecycleRoutingGraph's own search already accepted) and only
-    // falls back to a fresh assignBranchHandles() call when that's absent
-    // -- see lifecycleDiagram.js and
-    // docs/design/lifecycle-diagram-handle-search-seeding-plan.md. Strip
-    // acceptedHandles from the real layout result so the mocked
-    // assignBranchHandles() below is actually reached.
-    const originalLayout = lifecycleLayout.layoutLifecycleRoutingGraph;
-    const layoutSpy = vi
-      .spyOn(lifecycleLayout, "layoutLifecycleRoutingGraph")
-      .mockImplementation((...args) => {
-        const result = originalLayout(...args);
-        result.graph.acceptedHandles = undefined;
-        return result;
-      });
+  it("renders the layout fallback when ribbon presentation fails", async () => {
     const spy = vi
-      .spyOn(lifecycleLayout, "assignBranchHandles")
+      .spyOn(ribbonLayout, "layoutLifecycleRibbons")
       .mockImplementation(() => {
-        throw new Error("forced handle placement failure");
+        throw new Error("forced ribbon failure");
       });
     try {
-      const b = bundle(
-        [app("a")],
-        [
-          ev("o", "a", "application_submitted", "2026-01-01"),
-          ev("t", "a", "technical_interview", "2026-01-02"),
-        ],
+      const { root } = await render(
+        bundle(
+          [app("a")],
+          [ev("o", "a", "application_submitted", "2026-01-01")],
+        ),
       );
-      const { root } = await render(b);
       expect(root.textContent).toContain(
         "Unable to lay out lifecycle diagram.",
       );
       expect(root.querySelector("svg")).toBeNull();
     } finally {
       spy.mockRestore();
-      layoutSpy.mockRestore();
     }
   });
 

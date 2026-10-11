@@ -686,65 +686,74 @@ async function renderDiagram() {
     });
   }
 
-  const isCurrentRender = () => myGeneration === state.diagramRenderGeneration;
-  const { timeline, hash } = await getOrComputeTimeline(
-    repo,
-    bundle,
-    buildLifecycleTimeline,
-    isCurrentRender,
-  );
-  if (myGeneration !== state.diagramRenderGeneration) return;
-
-  const valid = new Set(timeline.buckets.map((bucket) => bucket.id));
-  let selectedBucketId = state.diagramBucketId || "current";
-  let fallbackAnnounced = false;
-  if (!valid.has(selectedBucketId)) {
-    selectedBucketId = "current";
-    state.diagramBucketId = "current";
-    state.diagramHistoricalBaseline = null;
-    fallbackAnnounced = true;
-  }
-
-  const { projection: snapshot } = await getOrComputeProjection(
-    repo,
-    bundle,
-    hash,
-    selectedBucketId,
-    undefined,
-    isCurrentRender,
-  );
-  if (myGeneration !== state.diagramRenderGeneration) return;
-
-  const timelineFingerprint = lifecycleTimelineFingerprint(timeline);
-  if (selectedBucketId === "current") state.diagramHistoricalBaseline = null;
-  const newerAvailable =
-    selectedBucketId !== "current" &&
-    Boolean(state.diagramHistoricalBaseline) &&
-    state.diagramHistoricalBaseline !== timelineFingerprint;
-
-  await state.diagramView.update({
-    timeline,
-    snapshot,
-    selectedBucketId,
-    newerAvailable,
-  });
-  if (fallbackAnnounced) {
-    state.diagramView.announce(
-      "Missing historical point; returned to Current.",
+  // Cover the async cache reads as well as the view's own rendering work.
+  // An idle SVG may still belong to the request preceding this one.
+  root.setAttribute("aria-busy", "true");
+  try {
+    const isCurrentRender = () =>
+      myGeneration === state.diagramRenderGeneration;
+    const { timeline, hash } = await getOrComputeTimeline(
+      repo,
+      bundle,
+      buildLifecycleTimeline,
+      isCurrentRender,
     );
-  }
+    if (myGeneration !== state.diagramRenderGeneration) return;
 
-  // Fire-and-forget and unconditional -- a superseded *render* doesn't mean
-  // the cache warm-up is invalid work. Cancel any prior pending precompute
-  // first so rapid scrubbing doesn't pile up stacked idle callbacks.
-  state.diagramPrecomputeCancel?.();
-  state.diagramPrecomputeCancel = scheduleAdjacentBucketPrecompute(
-    repo,
-    () => state.bundle,
-    timeline,
-    hash,
-    selectedBucketId,
-  );
+    const valid = new Set(timeline.buckets.map((bucket) => bucket.id));
+    let selectedBucketId = state.diagramBucketId || "current";
+    let fallbackAnnounced = false;
+    if (!valid.has(selectedBucketId)) {
+      selectedBucketId = "current";
+      state.diagramBucketId = "current";
+      state.diagramHistoricalBaseline = null;
+      fallbackAnnounced = true;
+    }
+
+    const { projection: snapshot } = await getOrComputeProjection(
+      repo,
+      bundle,
+      hash,
+      selectedBucketId,
+      undefined,
+      isCurrentRender,
+    );
+    if (myGeneration !== state.diagramRenderGeneration) return;
+
+    const timelineFingerprint = lifecycleTimelineFingerprint(timeline);
+    if (selectedBucketId === "current") state.diagramHistoricalBaseline = null;
+    const newerAvailable =
+      selectedBucketId !== "current" &&
+      Boolean(state.diagramHistoricalBaseline) &&
+      state.diagramHistoricalBaseline !== timelineFingerprint;
+
+    await state.diagramView.update({
+      timeline,
+      snapshot,
+      selectedBucketId,
+      newerAvailable,
+    });
+    if (fallbackAnnounced) {
+      state.diagramView.announce(
+        "Missing historical point; returned to Current.",
+      );
+    }
+
+    // Fire-and-forget and unconditional -- a superseded *render* doesn't mean
+    // the cache warm-up is invalid work. Cancel any prior pending precompute
+    // first so rapid scrubbing doesn't pile up stacked idle callbacks.
+    state.diagramPrecomputeCancel?.();
+    state.diagramPrecomputeCancel = scheduleAdjacentBucketPrecompute(
+      repo,
+      () => state.bundle,
+      timeline,
+      hash,
+      selectedBucketId,
+    );
+  } finally {
+    if (myGeneration === state.diagramRenderGeneration)
+      root.setAttribute("aria-busy", "false");
+  }
 }
 async function renderAll() {
   renderDashboard();

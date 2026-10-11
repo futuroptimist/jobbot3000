@@ -1,4 +1,4 @@
-/* global document */
+/* global document, window */
 import { chromium } from "@playwright/test";
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
@@ -68,6 +68,23 @@ export async function capturePng(
     );
 }
 
+export async function waitForLifecycleCapture(page, expectedBucketIndex) {
+  if (expectedBucketIndex !== undefined) {
+    await page.waitForFunction((index) => {
+      const range = document.querySelector(
+        '[data-lifecycle-diagram] input[type="range"]',
+      );
+      return range?.value === String(index);
+    }, expectedBucketIndex);
+  }
+  await page
+    .locator(
+      '[data-lifecycle-diagram][aria-busy="false"] ' +
+        '.diagram-scroll[aria-busy="false"] svg',
+    )
+    .waitFor({ state: "visible", timeout: 150000 });
+}
+
 async function main() {
   if (
     process.env.GITHUB_ACTIONS !== "true" ||
@@ -124,6 +141,15 @@ async function main() {
       await page.getByRole("button", { name: "Preview/dry-run" }).click();
       await page.getByRole("button", { name: "Apply import" }).click();
       await page.getByRole("button", { name: "Diagram" }).click();
+      await waitForLifecycleCapture(page);
+      // Keep the diagram and its legend/caption in the fixed-size artifact;
+      // the page header otherwise pushes almost every ribbon below the crop.
+      await page.locator(".diagram-scroll").evaluate((element) => {
+        window.scrollTo(
+          0,
+          window.scrollY + element.getBoundingClientRect().top - 80,
+        );
+      });
       await assertViewportAndNoPageOverflow(
         page,
         viewport.width,
@@ -135,9 +161,24 @@ async function main() {
         viewport.width,
         viewport.height,
       );
+      const previousIndex =
+        Number(
+          await page
+            .locator('[data-lifecycle-diagram] input[type="range"]')
+            .inputValue(),
+        ) - 1;
       await page
         .getByRole("button", { name: "Previous event", exact: true })
         .click();
+      await waitForLifecycleCapture(page, previousIndex);
+      // Keep the diagram and its legend/caption in the fixed-size artifact;
+      // the page header otherwise pushes almost every ribbon below the crop.
+      await page.locator(".diagram-scroll").evaluate((element) => {
+        window.scrollTo(
+          0,
+          window.scrollY + element.getBoundingClientRect().top - 80,
+        );
+      });
       await assertViewportAndNoPageOverflow(
         page,
         viewport.width,
