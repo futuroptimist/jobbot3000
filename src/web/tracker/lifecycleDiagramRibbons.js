@@ -1,5 +1,9 @@
-// Presentation only: retain the accepted routing order and semantic branches,
-// but pack count-proportional bands instead of the route solver's thin lines.
+// Presentation only: retain semantic branches and stage ranks, but group
+// outcome bands instead of reproducing the route solver's thin-line detours.
+import {
+  endpointIndex,
+  compareLifecycleIds,
+} from "./lifecycleDiagramLayout.js";
 // Never feed this geometry back into the solver's cross-bucket seed cache.
 const NODE_WIDTH = 8;
 const TOP = 64;
@@ -16,10 +20,39 @@ export function layoutLifecycleRibbons(graph, dimensions, availableWidth) {
     source: byId.get(link.source.id),
     target: byId.get(link.target.id),
   }));
+  const branchById = new Map(
+    graph.branches.map((branch) => [branch.id, branch]),
+  );
+  const outcomeCenter = (node) => {
+    const incident = links.filter(
+      (link) => link.source === node || link.target === node,
+    );
+    const count = incident.reduce((sum, link) => sum + link.value, 0);
+    return count
+      ? incident.reduce(
+          (sum, link) => sum + endpointIndex(link.endpointId) * link.value,
+          0,
+        ) / count
+      : 0;
+  };
+  const centers = new Map(nodes.map((node) => [node.id, outcomeCenter(node)]));
   const columns = Array.from({ length: 7 }, (_, rank) =>
     nodes
       .filter((node) => node.rank === rank)
-      .sort((a, b) => a.y0 - b.y0 || a.id.localeCompare(b.id)),
+      .sort((a, b) => {
+        // Keep source/outcome taxonomy order stable. Intermediate lanes group
+        // by their count-weighted outcome; direct flows precede later detours
+        // to that same outcome, instead of diving below milestone bands.
+        if (rank === 0 || rank === 6)
+          return a.y0 - b.y0 || compareLifecycleIds(a.id, b.id);
+        return (
+          centers.get(a.id) - centers.get(b.id) ||
+          Number(b.routing) - Number(a.routing) ||
+          (branchById.get(a.branchId)?.sourceRank ?? rank) -
+            (branchById.get(b.branchId)?.sourceRank ?? rank) ||
+          compareLifecycleIds(a.id, b.id)
+        );
+      }),
   );
   const width = Math.max(
     MINIMUM_RIBBON_WIDTH,
@@ -72,9 +105,15 @@ export function layoutLifecycleRibbons(graph, dimensions, availableWidth) {
       ["source", "y0"],
       ["target", "y1"],
     ]) {
+      const opposite = side === "source" ? "target" : "source";
       const incident = links
         .filter((link) => link[side] === node)
-        .sort((a, b) => a[dock] - b[dock] || a.id.localeCompare(b.id));
+        .sort(
+          (a, b) =>
+            a[opposite].y0 - b[opposite].y0 ||
+            endpointIndex(a.endpointId) - endpointIndex(b.endpointId) ||
+            compareLifecycleIds(a.id, b.id),
+        );
       let y = node.y0;
       for (const link of incident) {
         link.width = link.value * unit;

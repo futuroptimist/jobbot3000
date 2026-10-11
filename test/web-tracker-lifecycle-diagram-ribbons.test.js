@@ -119,7 +119,7 @@ describe("count-proportional lifecycle ribbons", () => {
     expect(lifecycleRibbonPath([])).toBe("");
   });
 
-  it("retains the accepted rank order while making columns compact and evenly spaced", () => {
+  it("retains source/outcome order while making stage columns compact and evenly spaced", () => {
     const { graph, dimensions } = present(375);
     expect(dimensions.width).toBe(1120);
     expect(dimensions.height).toBeLessThan(routed.dimensions.height);
@@ -129,12 +129,30 @@ describe("count-proportional lifecycle ribbons", () => {
           .filter((n) => n.rank === rank)
           .sort((a, b) => a.y0 - b.y0)
           .map((n) => n.id);
-      expect(order(graph.nodes)).toEqual(order(routed.graph.nodes));
+      if (rank === 0 || rank === 6)
+        expect(order(graph.nodes)).toEqual(order(routed.graph.nodes));
       if (rank)
         expect(
           dimensions.horizontalGeometry.rankCenters[rank] -
             dimensions.horizontalGeometry.rankCenters[rank - 1],
         ).toBeCloseTo(156, 8);
+    }
+  });
+
+  it("keeps the largest direct band flat instead of detouring around later stages", () => {
+    const { graph } = present();
+    const direct = graph.branches.find(
+      (branch) =>
+        branch.sourceRank === 0 &&
+        branch.targetRank === 6 &&
+        branch.endpointId === "awaiting_response",
+    );
+    expect(direct.value).toBeGreaterThan(1);
+    const segments = graph.links.filter((link) => link.branchId === direct.id);
+    expect(segments).toHaveLength(6);
+    for (const link of segments) {
+      expect(link.y0).toBeCloseTo(segments[0].y0, 8);
+      expect(link.y1).toBeCloseTo(segments[0].y0, 8);
     }
   });
 

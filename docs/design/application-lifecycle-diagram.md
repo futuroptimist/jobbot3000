@@ -8,8 +8,10 @@ This document defines the implementation-ready contract for the browser tracker'
 
 The tracker renders filled, outcome-colored Sankey ribbons rather than capped
 3px centerlines. `lifecycleDiagramRibbons.js` copies the accepted routing graph,
-retains its per-rank node and dock order, and packs it into seven evenly spaced
-stage columns. A shared pixels-per-application scale controls every ribbon and
+retains semantic stage ranks, and packs it into seven evenly spaced columns.
+Intermediate lanes group by their count-weighted outcomes, and docks order by
+adjacent-node position to avoid unnecessary detours. Origins and outcomes retain
+their taxonomy order. A shared pixels-per-application scale controls every ribbon and
 bar; hidden routing nodes preserve a band's thickness through skipped stages.
 The SVG uses closed cubic paths and 8px stage bars with visible counts.
 Column spacing is categorical, not elapsed time, as stated beside the diagram.
