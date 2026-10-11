@@ -2,7 +2,7 @@
 
 exports[`count-proportional lifecycle ribbons > pins deterministic synthetic desktop/mobile visual geometry 1`] = `
 {
-  "desktop": "722768c48ad3b2648ba4b7c373901cf8e824f0819683d818324f7b52f616e155",
-  "mobile": "48588db74f1a88f379842d55d4e6e2e67ef3fcc3aeaf8328205cf9a34813ca70",
+  "desktop": "2da6afe5a6bbf700c13961eb7649c9b99925cad4c9c04db1ca042d9db24eb3e1",
+  "mobile": "c12bbcb80112ab71e9d31bb2470f7a1fb4bb4ecee728ee020d61d6fdc178b613",
 }
 `;

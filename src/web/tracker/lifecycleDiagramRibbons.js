@@ -11,6 +11,13 @@ const BOTTOM = 48;
 const LABEL_GAP = 52;
 const ROUTE_GAP = 2;
 export const MINIMUM_RIBBON_WIDTH = 1120;
+// Keep curves flat through labels as well as the 44px node hit regions.
+// Intermediate labels extend beyond those hit regions; starting a steep
+// transition at the hit edge can sweep across an unrelated stage label.
+const curveEnds = (link) => [
+  link.source.x1 + (link.source.rank === 0 ? 88 : 56),
+  link.target.x0 - (link.target.rank === 6 ? 88 : 56),
+];
 
 export function layoutLifecycleRibbons(graph, dimensions, availableWidth) {
   const nodes = graph.nodes.map((node) => ({ ...node }));
@@ -69,9 +76,15 @@ export function layoutLifecycleRibbons(graph, dimensions, availableWidth) {
       ) *
         80,
   );
-  const gap = (node) => (node.routing ? ROUTE_GAP : LABEL_GAP);
+  const gap = (node, previous) =>
+    node.routing
+      ? ROUTE_GAP + (previous && !previous.routing ? 22 : 0)
+      : LABEL_GAP;
   const columnGap = (column) =>
-    column.reduce((sum, node, index) => sum + (index ? gap(node) : 0), 0);
+    column.reduce(
+      (sum, node, index) => sum + (index ? gap(node, column[index - 1]) : 0),
+      0,
+    );
   const columnValue = (column) =>
     column.reduce((sum, node) => sum + node.value, 0);
   // A single scale for every rank, node and link. No minimum link thickness:
@@ -89,7 +102,7 @@ export function layoutLifecycleRibbons(graph, dimensions, availableWidth) {
     rankCenters[rank] = 92 + (rank * (width - 184)) / 6;
     let y = TOP;
     for (const [index, node] of column.entries()) {
-      if (index) y += gap(node);
+      if (index) y += gap(node, column[index - 1]);
       node.x0 = rankCenters[rank] - NODE_WIDTH / 2;
       node.x1 = node.x0 + NODE_WIDTH;
       node.y0 = y;
@@ -131,14 +144,17 @@ export function layoutLifecycleRibbons(graph, dimensions, availableWidth) {
       .sort((a, b) => a.segmentIndex - b.segmentIndex);
     const segment = segments[Math.floor(segments.length / 2)];
     if (!segment) continue;
-    const maxSlope =
-      (2 * Math.abs(segment.y1 - segment.y0)) /
-      (segment.target.x0 - segment.source.x1);
+    const [start, end] = curveEnds(segment);
+    const maxSlope = (2 * Math.abs(segment.y1 - segment.y0)) / (end - start);
     handles.set(branch.id, {
       branchId: branch.id,
-      x: (segment.source.x1 + segment.target.x0) / 2,
+      x: (start + end) / 2,
       y: (segment.y0 + segment.y1) / 2,
-      radius: Math.min(22, segment.width / (2 * Math.hypot(1, maxSlope))),
+      radius: Math.min(
+        22,
+        (end - start) / 2,
+        segment.width / (2 * Math.hypot(1, maxSlope)),
+      ),
     });
   }
   return {
@@ -165,8 +181,14 @@ export function lifecycleRibbonPath(segments) {
     const x1 = reverse ? link.source.x1 : link.target.x0;
     const y0 = (reverse ? link.y1 : link.y0) + (sign * link.width) / 2;
     const y1 = (reverse ? link.y0 : link.y1) + (sign * link.width) / 2;
-    const bend = (x1 - x0) * 0.5;
-    return `L ${x0} ${y0} C ${x0 + bend} ${y0} ${x1 - bend} ${y1} ${x1} ${y1}`;
+    const ends = curveEnds(link);
+    const start = ends[reverse ? 1 : 0];
+    const end = ends[reverse ? 0 : 1];
+    const bend = (end - start) * 0.5;
+    return (
+      `L ${x0} ${y0} L ${start} ${y0} ` +
+      `C ${start + bend} ${y0} ${end - bend} ${y1} ${end} ${y1} L ${x1} ${y1}`
+    );
   };
   return [
     `M ${first.source.x1} ${first.y0 - first.width / 2}`,

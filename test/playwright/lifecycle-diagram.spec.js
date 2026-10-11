@@ -1,10 +1,11 @@
-/* global document, indexedDB, window */
+/* global document, indexedDB, IDBObjectStore, window */
 import { readFile } from "node:fs/promises";
 
 import { expect, test } from "@playwright/test";
 import axe from "axe-core";
 
 import { startWebServer } from "../../src/web/server.js";
+import { waitForLifecycleCapture } from "../../scripts/capture-diagram-visual-review.js";
 
 const EXPECTED_CURRENT = {
   included: "16/16 applications included",
@@ -147,6 +148,11 @@ async function selectedDetails(page) {
 // generous margin here for the same reason assertDensityAwareSvgGeometry
 // below uses one, rather than tuning tight to one machine.
 async function waitForDiagramIdle(page) {
+  await expect(page.locator("[data-lifecycle-diagram]")).toHaveAttribute(
+    "aria-busy",
+    "false",
+    { timeout: 150000 },
+  );
   await expect(page.locator("[data-diagram-busy]")).toBeHidden({
     timeout: 150000,
   });
@@ -359,6 +365,68 @@ async function assertBrowserCollisionAudit(page) {
             `labels overlap: ${label.textContent} / ${other.textContent}`,
           );
         }
+      }
+    }
+    const obstacles = [
+      ...svg.querySelectorAll(
+        "[data-diagram-node-label], [data-diagram-node-hit]",
+      ),
+    ];
+    for (const path of paths) {
+      let boundaryPoints;
+      const bounds = path.getBBox();
+      for (const obstacle of obstacles) {
+        const nodeId =
+          obstacle.dataset.diagramNodeLabel ?? obstacle.dataset.diagramNodeHit;
+        if (
+          [path.dataset.sourceNodeId, path.dataset.targetNodeId].includes(
+            nodeId,
+          )
+        )
+          continue;
+        const box = obstacle.getBBox();
+        if (
+          box.x >= bounds.x + bounds.width ||
+          box.x + box.width <= bounds.x ||
+          box.y >= bounds.y + bounds.height ||
+          box.y + box.height <= bounds.y
+        )
+          continue;
+        let overlaps = false;
+        for (let x = box.x + 1; !overlaps && x < box.x + box.width; x += 3) {
+          for (let y = box.y + 1; y < box.y + box.height; y += 3) {
+            const point = svg.createSVGPoint();
+            point.x = x;
+            point.y = y;
+            if (path.isPointInFill(point)) {
+              overlaps = true;
+              break;
+            }
+          }
+        }
+        // Count-proportional bands can be thinner than the interior grid.
+        // Also sample their boundary at <= 1px intervals so those crossings
+        // cannot disappear between rows of points inside the obstacle.
+        if (!overlaps) {
+          if (!boundaryPoints) {
+            const length = path.getTotalLength();
+            const steps = Math.ceil(length);
+            boundaryPoints = Array.from({ length: steps + 1 }, (_, index) =>
+              path.getPointAtLength((index * length) / steps),
+            );
+          }
+          overlaps = boundaryPoints.some(
+            (point) =>
+              point.x > box.x &&
+              point.x < box.x + box.width &&
+              point.y > box.y &&
+              point.y < box.y + box.height,
+          );
+        }
+        if (overlaps)
+          errors.push(
+            `${path.dataset.diagramLink} crosses ${obstacle.tagName} ${nodeId}`,
+          );
       }
     }
     return { errors, count: paths.length };
@@ -817,6 +885,84 @@ test.describe("Application Lifecycle Diagram", () => {
     });
   }
 
+  for (const [obstacle, thickness] of [
+    ["label", null],
+    ["hit", null],
+    ["label", 0.25],
+    ["hit", 0.25],
+  ]) {
+    test(`ribbon audit detects injected ${obstacle} collision (${thickness ?? "full"})`, async ({
+      page,
+    }) => {
+      await importFixture(page, "tracker-lifecycle-diagram-routing-v2.json");
+      await page.getByRole("button", { name: "Diagram", exact: true }).click();
+      await waitForLifecycleCapture(page);
+      await assertBrowserCollisionAudit(page);
+      await page.locator(".diagram-scroll svg").evaluate(
+        (svg, { kind, bandHeight }) => {
+          const collision = svg
+            .querySelector("[data-diagram-link]")
+            .cloneNode(true);
+          const incident = [
+            collision.dataset.sourceNodeId,
+            collision.dataset.targetNodeId,
+          ];
+          const node = [...svg.querySelectorAll("[data-diagram-node]")].find(
+            (group) => !incident.includes(group.dataset.diagramNode),
+          );
+          const box = node
+            .querySelector(`[data-diagram-node-${kind}]`)
+            .getBBox();
+          collision.dataset.diagramLink = "synthetic-obstacle-collision";
+          const { x, width: w } = box;
+          // A subpixel band between grid samples must still be detected.
+          const y = box.y + (bandHeight ? 2.25 : 0);
+          const h = bandHeight ?? box.height;
+          collision.setAttribute(
+            "d",
+            `M ${x} ${y} L ${x + w} ${y} L ${x + w} ${y + h} L ${x} ${y + h} Z`,
+          );
+          svg.append(collision);
+        },
+        { kind: obstacle, bandHeight: thickness },
+      );
+      await expect(assertBrowserCollisionAudit(page)).rejects.toThrow(
+        /crosses (text|rect)/u,
+      );
+    });
+  }
+
+  test("capture waits for the requested bucket across an idle async gap", async ({
+    page,
+  }) => {
+    await importFixture(page, "tracker-lifecycle-diagram-routing-v2.json");
+    await page.getByRole("button", { name: "Diagram", exact: true }).click();
+    await waitForLifecycleCapture(page);
+    const range = page.locator('[data-lifecycle-diagram] input[type="range"]');
+    const requested = Number(await range.inputValue()) - 1;
+    const previous = page.getByRole("button", {
+      name: "Previous event",
+      exact: true,
+    });
+    await previous.evaluate((button) => {
+      button.addEventListener(
+        "click",
+        (event) => {
+          event.stopImmediatePropagation();
+          setTimeout(() => button.click(), 200);
+        },
+        { capture: true, once: true },
+      );
+    });
+    await previous.click();
+    await waitForLifecycleCapture(page, requested);
+    expect(await range.inputValue()).toBe(String(requested));
+    await expect(page.locator(".diagram-scroll")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+  });
+
   test("renders identical synthetic pixels after revisiting the diagram", async ({
     page,
   }) => {
@@ -828,12 +974,62 @@ test.describe("Application Lifecycle Diagram", () => {
     const svg = page.locator(".diagram-scroll svg");
     const before = await svg.screenshot({ animations: "disabled" });
     await page.getByRole("button", { name: "Dashboard", exact: true }).click();
+    // Let the hidden tab's ResizeObserver debounce run, as it does when a
+    // person spends time elsewhere or CI takes longer between input calls.
+    await page.waitForTimeout(200);
     await page.getByRole("button", { name: "Diagram", exact: true }).click();
     await waitForDiagramIdle(page);
     expect(await svg.screenshot({ animations: "disabled" })).toEqual(before);
     await expect(svg).toHaveAttribute("data-reduced-motion", "true");
     await expect(page.locator(".diagram-scale-note")).toContainText(
       "not elapsed time",
+    );
+  });
+
+  test("capture waits for a revisit's pending projection-cache read", async ({
+    page,
+  }) => {
+    await importFixture(page, "tracker-lifecycle-diagram-routing-v2.json");
+    await page.getByRole("button", { name: "Diagram", exact: true }).click();
+    await waitForLifecycleCapture(page);
+    await page.getByRole("button", { name: "Dashboard", exact: true }).click();
+    await page.evaluate(() => {
+      const get = IDBObjectStore.prototype.get;
+      IDBObjectStore.prototype.get = function (...args) {
+        const request = get.apply(this, args);
+        if (this.name === "lifecycleProjectionCache") {
+          IDBObjectStore.prototype.get = get;
+          request.addEventListener(
+            "success",
+            (event) => {
+              event.stopImmediatePropagation();
+              window.releaseLifecycleCacheRead = () =>
+                request.onsuccess?.call(request, event);
+            },
+            { capture: true, once: true },
+          );
+        }
+        return request;
+      };
+    });
+    await page.getByRole("button", { name: "Diagram", exact: true }).click();
+    await page.waitForFunction(() => window.releaseLifecycleCacheRead);
+    let captured = false;
+    const capture = waitForLifecycleCapture(page).then(() => {
+      captured = true;
+    });
+    try {
+      // The old SVG is idle while the held IndexedDB read prevents update().
+      // Capture must remain pending until that request is released and drawn.
+      await page.waitForTimeout(100);
+      expect(captured).toBe(false);
+    } finally {
+      await page.evaluate(() => window.releaseLifecycleCacheRead());
+      await capture;
+    }
+    await expect(page.locator("[data-lifecycle-diagram]")).toHaveAttribute(
+      "aria-busy",
+      "false",
     );
   });
 
