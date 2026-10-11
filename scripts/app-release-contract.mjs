@@ -67,6 +67,10 @@ export function verifyRecord(record, expected) {
     record.schemaVersion === 1 && record.repository === IMAGE,
     "Invalid image record",
   );
+  check(
+    record.runAttempt === "1",
+    "Rerun-generated release evidence is forbidden",
+  );
   for (const key of ["sourceSha", "version", "runId", "runAttempt"]) {
     check(record[key] === expected[key], `Image record ${key} mismatch`);
   }
@@ -219,6 +223,25 @@ export async function promote(record, expected, request) {
   };
 }
 
+export function selectImageRun(runs, sourceSha) {
+  const run = runs?.find(
+    (item) =>
+      item.head_sha === sourceSha &&
+      item.head_branch === "main" &&
+      item.event === "push" &&
+      item.conclusion === "success" &&
+      item.run_attempt === 1 &&
+      item.repository?.full_name === REPOSITORY &&
+      item.head_repository?.full_name === REPOSITORY,
+  );
+  check(
+    run,
+    "No original-attempt successful main image build for the tagged source; " +
+      "rerun-generated evidence is forbidden",
+  );
+  return run;
+}
+
 const output = (key, value) =>
   appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${value}\n`);
 const metadata = () =>
@@ -291,19 +314,7 @@ async function main() {
       "actions/workflows/ci-image.yml/runs?" +
         `head_sha=${sourceSha}&event=push&status=success&per_page=100`,
     );
-    const run = runs.workflow_runs?.find(
-      (item) =>
-        item.head_sha === sourceSha &&
-        item.head_branch === "main" &&
-        item.event === "push" &&
-        item.conclusion === "success" &&
-        item.repository?.full_name === REPOSITORY &&
-        item.head_repository?.full_name === REPOSITORY,
-    );
-    check(
-      run,
-      "No successful main image build for the tagged source; do not rebuild the release",
-    );
+    const run = selectImageRun(runs.workflow_runs, sourceSha);
     const artifacts = await api(
       `actions/runs/${run.id}/artifacts?per_page=100`,
     );

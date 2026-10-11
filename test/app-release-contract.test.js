@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
 import {
+  selectImageRun,
   applicationVersion,
   releaseVersion,
   verifyRecord,
@@ -70,6 +71,38 @@ const fixture = (
 };
 
 describe("application release contract", () => {
+  it("selects only successful original main-push evidence for the exact source", () => {
+    const run = {
+      id: 123,
+      head_sha: record.sourceSha,
+      head_branch: "main",
+      event: "push",
+      conclusion: "success",
+      run_attempt: 1,
+      repository: { full_name: "futuroptimist/jobbot3000" },
+      head_repository: { full_name: "futuroptimist/jobbot3000" },
+    };
+    expect(selectImageRun([run], record.sourceSha)).toEqual(run);
+    for (const mutation of [
+      { run_attempt: 2 },
+      { conclusion: "failure" },
+      { event: "pull_request" },
+      { event: "workflow_dispatch" },
+      { head_branch: "topic" },
+      { head_sha: "c".repeat(40) },
+      { head_repository: { full_name: "synthetic/fork" } },
+    ]) {
+      expect(() =>
+        selectImageRun([{ ...run, ...mutation }], record.sourceSha),
+      ).toThrow();
+    }
+    expect(() => selectImageRun([], record.sourceSha)).toThrow();
+  });
+  it("rejects rerun records even when the expected run identity matches", () => {
+    const rerun = { ...record, runAttempt: "2" };
+    expect(() => verifyRecord(rerun, rerun)).toThrow(/Rerun-generated/);
+  });
+
   it.each(["0.1.0", "1.2.3", "2.0.0-rc.1", "1.2.3+build.42"])(
     "accepts SemVer %s without choosing a new version",
     (version) => {

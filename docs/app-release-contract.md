@@ -21,8 +21,8 @@ an appropriate application SemVer in a reviewed metadata update.
    other actors, mismatched tags, prereleases, and build-metadata tags cannot promote.
    Package metadata may use full SemVer, but the initial release interface deliberately
    supports stable `vX.Y.Z` only; Docker tags cannot represent SemVer's `+` directly.
-4. `release-app.yml` requires the commit to belong to main and selects a successful
-   main-push `ci-image.yml` run for that full SHA. It downloads the matching current
+4. `release-app.yml` requires the commit to belong to main and selects an original-attempt successful
+   main-push `ci-image.yml` run for that full SHA. It downloads the matching original
    attempt's record by immutable artifact ID, verifies its bindings, reads the image
    by digest, and hashes/validates its exact multi-arch manifest bytes.
 5. After authenticated repository access and definitive `MANIFEST_UNKNOWN` for the
@@ -37,7 +37,11 @@ fail closed. Evidence is retained for 90 days; release within that window or sto
 an explicitly reviewed evidence-recovery procedure. Do not rerun a build to manufacture
 release evidence for an old commit: dependencies/base images could have changed. A main
 build from before this contract has no usable record and is not automatically releasable.
-A rerun of an already promoted tag is intentionally refused; consult its existing record.
+Image workflow reruns do not create release evidence, and selection rejects any run whose
+attempt is not 1, even if the rerun succeeds. A source whose run has been rerun therefore
+requires a separately reviewed original-evidence recovery procedure; it cannot silently use
+the rebuilt image. A rerun of an already promoted tag is intentionally refused; consult its
+existing record.
 
 Concurrency serializes cooperating jobs for the full release tag. Registry lookup and
 PUT are separate operations: an outside writer can still race them. This contract does

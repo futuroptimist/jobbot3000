@@ -227,14 +227,14 @@ jobs:
           done
 
       - name: Record verified main image for later release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt == 1
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
         run: node scripts/app-release-contract.mjs record
 
       - name: Upload immutable main image record
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt == 1
         uses: actions/upload-artifact@v4
         with:
           name: image-release-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
