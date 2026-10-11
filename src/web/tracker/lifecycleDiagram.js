@@ -3,19 +3,20 @@ import { LIFECYCLE_DIAGRAM_TAXONOMY } from "./lifecycleProjection.js";
 import {
   BRANCH_STROKE_OPACITY,
   TAXONOMY_BY_NODE_ID as TAXONOMY,
-  assignBranchHandles,
   buildLifecycleDisplayBranches,
   calculateLifecycleDiagramLayout,
   compareBranches,
   compareLifecycleIds,
-  compoundBranchPath,
   endpointColor,
   layoutLifecycleRoutingGraph,
   labelBoxForNode,
-  renderedBranchStrokeWidth,
   rendererHitBoxForNode,
   wrapLifecycleLabel,
 } from "./lifecycleDiagramLayout.js";
+import {
+  layoutLifecycleRibbons,
+  lifecycleRibbonPath,
+} from "./lifecycleDiagramRibbons.js";
 export { calculateLifecycleDiagramLayout };
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -465,6 +466,11 @@ export function createLifecycleDiagramView(root, options = {}) {
     busyIndicator,
     live,
     legend,
+    el("p", {
+      className: "muted diagram-scale-note",
+      textContent:
+        "Ribbon width shows application count. Columns show stages, not elapsed time.",
+    }),
     scroll,
     details,
     simultaneous,
@@ -1026,6 +1032,17 @@ export function createLifecycleDiagramView(root, options = {}) {
         authoritativeNodeOrderByRank,
       };
     }
+    try {
+      ({ graph, dimensions } = layoutLifecycleRibbons(
+        graph,
+        dimensions,
+        root.clientWidth,
+      ));
+    } catch (error) {
+      console.error("Lifecycle ribbon layout failed", error);
+      showDiagramFallback("Unable to lay out lifecycle diagram.");
+      return;
+    }
     const { width, height } = dimensions;
     const finiteNode = (node) =>
       [node.x0, node.x1, node.y0, node.y1].every(Number.isFinite);
@@ -1048,41 +1065,7 @@ export function createLifecycleDiagramView(root, options = {}) {
     const branches = graph.branches
       .filter((branch) => segmentsByBranch.has(branch.id))
       .sort(compareBranches);
-    let handles;
-    try {
-      // Handle placement is not a pure function of lane geometry -- a
-      // fresh, independent search over the exact same accepted geometry
-      // can land on a different assignment, or fail outright, even though
-      // layoutLifecycleRoutingGraph's own internal search already found a
-      // legal one (see
-      // docs/design/lifecycle-diagram-handle-search-seeding-plan.md).
-      // Reuse graph.acceptedHandles directly when it covers every branch
-      // this render needs, instead of re-deriving via a second,
-      // independent assignBranchHandles() call.
-      if (
-        graph.acceptedHandles &&
-        branches.every((branch) => graph.acceptedHandles.has(branch.id))
-      ) {
-        handles = graph.acceptedHandles;
-      } else {
-        handles = new Map(
-          assignBranchHandles(
-            branches,
-            segmentsByBranch,
-            visibleNodes,
-            dimensions.horizontalGeometry,
-          ).map((h) => [h.branchId, h]),
-        );
-      }
-    } catch (error) {
-      console.error(
-        "Lifecycle diagram layout failed",
-        error,
-        JSON.stringify(error?.cause),
-      );
-      showDiagramFallback("Unable to lay out lifecycle diagram.");
-      return;
-    }
+    const handles = graph.acceptedHandles;
 
     // svg/branchGroupEl/handleGroupEl are created once and reused across
     // renders (a scrub tick, click, or resize no longer tears down and
@@ -1100,7 +1083,8 @@ export function createLifecycleDiagramView(root, options = {}) {
         "Lifecycle Sankey diagram";
       diagramSvg.append(svgEl("desc", { id: ids.desc }));
       diagramSvg.querySelector("desc").textContent =
-        "Application counts flowing through protected adjacent-rank lifecycle branches. " +
+        "Ribbon widths are proportional to application counts. " +
+        "Columns show stages, not elapsed time. " +
         "Equivalent tables follow.";
       branchGroupEl = svgEl("g", { fill: "none" });
       handleGroupEl = svgEl("g", { fill: "none" });
@@ -1122,18 +1106,12 @@ export function createLifecycleDiagramView(root, options = {}) {
       const segments = segmentsByBranch
         .get(branch.id)
         .sort((a, b) => a.segmentIndex - b.segmentIndex);
-      const pathData = compoundBranchPath(
-        segments,
-        dimensions.horizontalGeometry,
-      );
+      const pathData = lifecycleRibbonPath(segments);
       if (!pathData || /NaN|Infinity/u.test(pathData)) continue;
       processedBranchKeys.add(branch.id);
       currentBranchByKey.set(branch.id, branch);
       const selected = selectedFeature?.id === branch.id;
-      const widthPx = Math.max(
-        3,
-        ...segments.map((segment) => renderedBranchStrokeWidth(segment.width)),
-      );
+      const widthPx = segments[0].width;
       const handle = handles.get(branch.id);
       const signature = branchSignature(branch, pathData, widthPx, handle);
       const stored = branchElementsByKey.get(branch.id);
@@ -1151,14 +1129,15 @@ export function createLifecycleDiagramView(root, options = {}) {
             selected ? "true" : "false",
           );
           stored.path.setAttribute(
-            "stroke-opacity",
+            "fill-opacity",
             selected ? "1" : String(BRANCH_STROKE_OPACITY),
           );
           if (selected && !stored.hasHalo) {
             const halo = svgEl("path", {
               d: pathData,
               stroke: "#F8FAFC",
-              "stroke-width": widthPx + 12,
+              "stroke-width": 3,
+              fill: "none",
               "pointer-events": "none",
               "aria-hidden": "true",
               "data-diagram-branch-halo": branch.id,
@@ -1187,7 +1166,8 @@ export function createLifecycleDiagramView(root, options = {}) {
             svgEl("path", {
               d: pathData,
               stroke: "#F8FAFC",
-              "stroke-width": widthPx + 12,
+              "stroke-width": 3,
+              fill: "none",
               "pointer-events": "none",
               "aria-hidden": "true",
               "data-diagram-branch-halo": branch.id,
@@ -1199,7 +1179,8 @@ export function createLifecycleDiagramView(root, options = {}) {
           svgEl("path", {
             d: pathData,
             stroke: "#020617",
-            "stroke-width": widthPx + 6,
+            "stroke-width": 1,
+            fill: "none",
             "pointer-events": "none",
             "aria-hidden": "true",
             "data-diagram-branch-separator": branch.id,
@@ -1207,9 +1188,11 @@ export function createLifecycleDiagramView(root, options = {}) {
         );
         const path = svgEl("path", {
           d: pathData,
-          stroke: branch.color,
-          "stroke-width": widthPx,
-          "stroke-opacity": selected ? "1" : String(BRANCH_STROKE_OPACITY),
+          fill: branch.color,
+          stroke: "none",
+          "data-ribbon-width": widthPx,
+          "data-ribbon-count": branch.value,
+          "fill-opacity": selected ? "1" : String(BRANCH_STROKE_OPACITY),
           "data-diagram-link": branch.id,
           "data-diagram-branch": branch.id,
           "data-semantic-link-id": branch.semanticLinkId,
@@ -1326,7 +1309,7 @@ export function createLifecycleDiagramView(root, options = {}) {
             y: node.y0,
             width: Math.max(8, rawWidth),
             height: Math.max(8, rawHeight),
-            rx: 4,
+            rx: 2,
             fill: node.id.startsWith("endpoint:")
               ? endpointColor(node.id.split(":").at(-1))
               : "#64748b",
@@ -1378,7 +1361,7 @@ export function createLifecycleDiagramView(root, options = {}) {
           const labelBox = labelBoxForNode(node, dimensions.horizontalGeometry);
           const label = svgEl("text", {
             x: labelBox.x + labelBox.width / 2,
-            y: labelBox.y + 12,
+            y: labelBox.y + 8,
             "text-anchor": "middle",
             fill: "currentColor",
             "data-diagram-node-label": node.id,
@@ -1391,6 +1374,14 @@ export function createLifecycleDiagramView(root, options = {}) {
             tspan.textContent = line;
             label.append(tspan);
           });
+          const countLine = svgEl("tspan", {
+            x: labelBox.x + labelBox.width / 2,
+            dy: "1.25em",
+            "data-diagram-node-count": node.total,
+            "font-weight": "700",
+          });
+          countLine.textContent = String(node.total);
+          label.append(countLine);
           label.addEventListener("click", (event) => {
             event.stopPropagation();
             selectNodeByKey(node.id);

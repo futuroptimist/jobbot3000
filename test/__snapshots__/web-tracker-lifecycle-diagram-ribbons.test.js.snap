@@ -1,0 +1,8 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`count-proportional lifecycle ribbons > pins deterministic synthetic desktop/mobile visual geometry 1`] = `
+{
+  "desktop": "dfdb9539133e8fc9ffdf7e7740da5ee544ebec78703adb2d86abe12d08fd848d",
+  "mobile": "bd4cd74e9a17791331c08a0382aafa10383a4cdedb158b3c862f455de3f57a54",
+}
+`;

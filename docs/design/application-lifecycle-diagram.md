@@ -4,6 +4,39 @@
 
 This document defines the implementation-ready contract for the browser tracker's **Application Lifecycle Diagram**. It is intentionally documentation-only for P1 and is the source of truth for later schema, projection, UI, test, and build work.
 
+## Filled-ribbon presentation
+
+The tracker renders filled, outcome-colored Sankey ribbons rather than capped
+3px centerlines. `lifecycleDiagramRibbons.js` copies the accepted routing graph,
+retains its per-rank node and dock order, and packs it into seven evenly spaced
+stage columns. A shared pixels-per-application scale controls every ribbon and
+bar; hidden routing nodes preserve a band's thickness through skipped stages.
+The SVG uses closed cubic paths and 8px stage bars with visible counts.
+Column spacing is categorical, not elapsed time, as stated beside the diagram.
+
+The presentation is at least 1120px wide and 520px high, growing vertically with
+visible semantic-node density. On desktop the diagram tab can use a wider main
+column; mobile scrolls only within the labeled diagram region. Node labels have
+reserved vertical space. Ribbons themselves are pointer-selectable; small
+in-ribbon hit regions do not expand invisibly over neighboring bands. The
+existing 44px HTML flow buttons provide the full-size touch and keyboard
+alternative, including for very small counts. Reduced-motion behavior, lifecycle
+controls, semantic tables, selection details, and projection counts are unchanged.
+
+The routing solver and its worker/seed cache still use their existing geometry.
+Compact presentation coordinates never enter that cache. Consequently, existing
+bounded solver failures and search costs remain; this visual change does not
+reconcile imports or change lifecycle classification. Earlier corridor and
+centerline dimensions in this document describe the solver, not the displayed
+ribbons.
+
+Regression coverage includes count conservation, non-overlapping ports, frozen
+solver inputs, deterministic synthetic vector-geometry signatures, and browser
+checks for labels, closed filled paths, duplicate geometry, mobile interaction,
+accessibility, reduced motion, and repeatable screenshots. The old centerline
+collision audit is still covered at the solver unit-test level; a closed ribbon's
+outline must not be treated as a centerline in the browser audit.
+
 ## Terminology
 
 - **Source** means the existing free-form `applications.source` text describing where the user found or recorded a role. It remains separate user data and is not constrained by this contract.

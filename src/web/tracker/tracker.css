@@ -295,7 +295,7 @@
 }
 .diagram-scroll svg {
   display: block;
-  min-width: 1850px;
+  min-width: 1120px;
   max-width: none;
   color: var(--foreground, #e5e7eb);
 }
@@ -394,4 +394,13 @@ body > footer,
 [data-view="diagram"] .diagram-select-button {
   min-height: 44px !important;
   height: 44px !important;
+}
+
+/* Give the count-proportional diagram room without widening editing forms. */
+.tracker-shell:has([data-view="diagram"]:not([hidden])) {
+  width: min(1440px, 100%);
+}
+.diagram-scale-note {
+  font-size: 0.875rem;
+  margin: 0.75rem 0;
 }

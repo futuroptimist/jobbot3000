@@ -124,6 +124,9 @@ async function main() {
       await page.getByRole("button", { name: "Preview/dry-run" }).click();
       await page.getByRole("button", { name: "Apply import" }).click();
       await page.getByRole("button", { name: "Diagram" }).click();
+      await page
+        .locator('.diagram-scroll[aria-busy="false"] svg')
+        .waitFor({ state: "visible", timeout: 150000 });
       await assertViewportAndNoPageOverflow(
         page,
         viewport.width,
@@ -138,6 +141,9 @@ async function main() {
       await page
         .getByRole("button", { name: "Previous event", exact: true })
         .click();
+      await page
+        .locator('.diagram-scroll[aria-busy="false"] svg')
+        .waitFor({ state: "visible", timeout: 150000 });
       await assertViewportAndNoPageOverflow(
         page,
         viewport.width,
