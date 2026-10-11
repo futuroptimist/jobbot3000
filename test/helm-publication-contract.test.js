@@ -539,8 +539,8 @@ describe("workflow and archive validation contract", () => {
     ).toEqual(context);
     expect(() => contextFromEnv({ GITHUB_SHA: "main" })).toThrow();
   });
-  it("retains the original main/tag publication trigger predicates", () => {
-    expect(workflow.on.push).toEqual({ branches: ["main"], tags: ["v*.*.*"] });
+  it("separates app tags and requires a new chart coordinate on main", () => {
+    expect(workflow.on.push).toEqual({ branches: ["main"] });
     expect(workflow.on.workflow_dispatch).toBeNull();
     expect(workflow.jobs.publish.if).toBe(
       "needs.validate.outputs.publish == 'true'",
@@ -550,7 +550,7 @@ describe("workflow and archive validation contract", () => {
     ).run;
     expect(eligibility).toContain('publish="false"');
     expect(eligibility).toContain('[ "${GITHUB_EVENT_NAME}" = "push" ]');
-    expect(eligibility).toContain('[[ "${GITHUB_REF}" == refs/tags/v*.*.* ]]');
+    expect(eligibility).not.toContain("refs/tags/");
     expect(eligibility).toContain('[ "${GITHUB_REF}" = "refs/heads/main" ]');
     expect(eligibility).toContain(
       "^(charts/jobbot3000/|scripts/validate-helm\\.sh$|\\.github/workflows/ci-helm\\.yml$)",
@@ -561,6 +561,7 @@ describe("workflow and archive validation contract", () => {
     writeFileSync(
       script,
       'set -euo pipefail\ngit() { printf "%s\\n" "$CHANGED_FILES"; }\n' +
+        'node() { printf "true\\n"; }\n' +
         eligibility.slice(eligibility.indexOf('publish="false"')),
     );
     const cases = [
@@ -577,7 +578,7 @@ describe("workflow and archive validation contract", () => {
         false,
       ],
       ["workflow_dispatch", "refs/tags/v1.2.3", "", false],
-      ["push", "refs/tags/v1.2.3", "", true],
+      ["push", "refs/tags/v1.2.3", "", false],
       ["push", "refs/tags/other", "", false],
       ["push", "refs/heads/main", "charts/jobbot3000/Chart.yaml", true],
       ["push", "refs/heads/main", ".github/workflows/ci-helm.yml", true],
@@ -601,6 +602,8 @@ describe("workflow and archive validation contract", () => {
           GITHUB_SHA: context.sourceSha,
           GITHUB_OUTPUT: output.replaceAll("\\", "/"),
           CHANGED_FILES: changed,
+          BEFORE_SHA: context.sourceSha,
+          RUNNER_TEMP: directory.replaceAll("\\", "/"),
         },
         encoding: "utf8",
       });

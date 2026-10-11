@@ -7,13 +7,13 @@ on:
       - "charts/jobbot3000/**"
       - "scripts/validate-helm.sh"
       - "scripts/helm-publication-contract.mjs"
+      - "scripts/helm-release-eligibility.mjs"
+      - "test/app-release-contract.test.js"
       - "test/helm-publication-contract.test.js"
       - "docs/helm-publication-contract.md"
       - ".github/workflows/ci-helm.yml"
   push:
     branches: [main]
-    tags:
-      - "v*.*.*"
   workflow_dispatch:
 
 jobs:
@@ -35,7 +35,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 2
+          fetch-depth: 0
 
       - name: Set up Node
         uses: actions/setup-node@v5
@@ -47,18 +47,19 @@ jobs:
 
       - name: Read chart metadata
         id: chart
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
         shell: bash
         run: |
           set -euo pipefail
           node scripts/helm-publication-contract.mjs metadata
           publish="false"
           if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
-            if [[ "${GITHUB_REF}" == refs/tags/v*.*.* ]]; then
-              publish="true"
-            elif [ "${GITHUB_REF}" = "refs/heads/main" ]; then
-              changed_files="$(git diff-tree --no-commit-id --name-only -r -m "${GITHUB_SHA}")"
+            if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+              changed_files="$(git diff --name-only "${BEFORE_SHA}" "${GITHUB_SHA}")"
               if grep -Eq '^(charts/jobbot3000/|scripts/validate-helm\.sh$|\.github/workflows/ci-helm\.yml$)' <<< "${changed_files}"; then
-                publish="true"
+                node scripts/helm-release-eligibility.mjs "${BEFORE_SHA}" > "${RUNNER_TEMP}/helm-publish-eligibility"
+                publish="$(cat "${RUNNER_TEMP}/helm-publish-eligibility")"
               fi
             fi
           fi
@@ -83,6 +84,14 @@ jobs:
         env:
           CHART_VERSION: ${{ steps.chart.outputs.chart_version }}
         run: scripts/validate-helm.sh "${HELM_DIST}/jobbot3000-${CHART_VERSION}.tgz" charts/jobbot3000/ci
+
+      - name: Verify tag and digest runtime override rendering
+        shell: bash
+        run: |
+          set -euo pipefail
+          pin="main-aaaaaaaaaaaa@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          helm template pinned "${HELM_DIST}/jobbot3000-${{ steps.chart.outputs.chart_version }}.tgz" --set-string "image.tag=${pin}" > "${RUNNER_TEMP}/pinned.yaml"
+          grep -F "ghcr.io/futuroptimist/jobbot3000:${pin}" "${RUNNER_TEMP}/pinned.yaml"
 
       - name: Seal validated archive
         id: sealed

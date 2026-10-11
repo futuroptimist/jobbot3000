@@ -64,7 +64,7 @@ and [registry API specification](https://distribution.github.io/distribution/spe
 ## Serialization and remaining boundary
 
 Publisher concurrency is keyed by a SHA-256 of the normalized destination and OCI version tag,
-not by the source ref. Main and tag runs targeting the same coordinate therefore share a group.
+not by the source ref. All eligible main runs targeting the same coordinate therefore share a group.
 GitHub concurrency groups are case-insensitive, so case variants conservatively share a key too.
 The running publisher is not canceled. A later publisher checks absence again after obtaining
 the group; an already created version stops it. GitHub concurrency is not a FIFO queue and may
@@ -82,9 +82,11 @@ chart version. This change does not bump either version or alter chart resources
 
 ## Eligibility and validation
 
-Publication eligibility is unchanged: matching version-tag pushes, and main pushes changing
-`charts/jobbot3000/`, `scripts/validate-helm.sh`, or `.github/workflows/ci-helm.yml`. Pull requests
-and manual workflow dispatch remain validation-only. New helper/test/documentation paths trigger
+Application version tags do not trigger this workflow. Main pushes changing
+`charts/jobbot3000/`, `scripts/validate-helm.sh`, or `.github/workflows/ci-helm.yml` are candidates
+only when the chart coordinate differs from the previous main SHA. Chart byte changes without
+a chart version bump fail closed. Workflow-only changes validate without republishing an unchanged
+coordinate. Pull requests and manual workflow dispatch remain validation-only. New helper/test/documentation paths trigger
 PR validation; they do not independently expand main publication eligibility. Image workflows,
 credentials, package scopes, and repository protection settings are unchanged.
 
@@ -97,7 +99,8 @@ npx vitest run test/helm-publication-contract.test.js test/helm-chart-contract.t
 The tests use synthetic archive bytes, injected Helm/git calls and fake registry responses. They
 cover archive/source/run/coordinate substitution, movement during lookup, failure statuses,
 ambiguous authentication, exact push arguments, shared-coordinate serialization, preserved
-eligibility, and all three archive renders. They perform no live registry access or writes.
+eligibility, and all three archive renders. The workflow additionally verifies a synthetic
+`main-SHA@sha256:digest` override against the same archive. They perform no live registry access or writes.
 
 For local Helm validation, the existing directory invocation still works:
 

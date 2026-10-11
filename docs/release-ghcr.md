@@ -75,3 +75,10 @@ listens on port `8080` and exposes:
 
 No API secrets are required for the production static tracker image, and no
 private data directory should be mounted into the web container.
+
+## Application SemVer releases
+
+The owner may promote an already verified main image digest under a matching stable
+`vX.Y.Z` tag using the [application release contract](app-release-contract.md). This does
+not rebuild the image or publish a chart. Existing main-/sha- identities are retained.
+Sugarkube can pin `main-SHORTSHA@sha256:<verified-digest>` in the existing `image.tag` field.
