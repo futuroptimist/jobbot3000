@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
+const bash =
+  process.platform === "win32" ? "C:/Program Files/Git/bin/bash.exe" : "bash";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const workflow = parse(
   readFileSync(join(root, ".github/workflows/ci-image.yml"), "utf8"),
@@ -67,7 +69,7 @@ function execute(failure = "", source = smoke.run) {
     printf 'record\\n' >> "$STATE/events"
   `;
   try {
-    const result = spawnSync("bash", ["-e", "-c", script], {
+    const result = spawnSync(bash, ["-e", "-c", script], {
       cwd: root,
       encoding: "utf8",
       env: {
