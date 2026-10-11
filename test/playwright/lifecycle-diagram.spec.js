@@ -325,6 +325,22 @@ async function assertBrowserCollisionAudit(page) {
       );
       if (!source || !target) errors.push(`${id}: missing semantic endpoint`);
     }
+    for (const hit of svg.querySelectorAll("[data-diagram-link-hit]")) {
+      const path = paths.find(
+        (p) => p.dataset.diagramLink === hit.dataset.diagramLinkHit,
+      );
+      const x = Number(hit.getAttribute("cx"));
+      const y = Number(hit.getAttribute("cy"));
+      const radius = Number(hit.getAttribute("r")) * 0.99;
+      for (let i = 0; i < 16; i++) {
+        const angle = (i * Math.PI) / 8;
+        const point = svg.createSVGPoint();
+        point.x = x + radius * Math.cos(angle);
+        point.y = y + radius * Math.sin(angle);
+        if (!path?.isPointInFill(point))
+          errors.push("hit region extends outside its ribbon");
+      }
+    }
     const labels = [...svg.querySelectorAll("[data-diagram-node-label]")];
     for (const [index, label] of labels.entries()) {
       const box = label.getBBox();

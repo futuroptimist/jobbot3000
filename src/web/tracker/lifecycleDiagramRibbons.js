@@ -87,14 +87,19 @@ export function layoutLifecycleRibbons(graph, dimensions, availableWidth) {
   // flow buttons remain full-size keyboard/touch targets for every branch.
   const handles = new Map();
   for (const branch of graph.branches) {
-    const segments = links.filter((link) => link.branchId === branch.id);
+    const segments = links
+      .filter((link) => link.branchId === branch.id)
+      .sort((a, b) => a.segmentIndex - b.segmentIndex);
     const segment = segments[Math.floor(segments.length / 2)];
     if (!segment) continue;
+    const maxSlope =
+      (2 * Math.abs(segment.y1 - segment.y0)) /
+      (segment.target.x0 - segment.source.x1);
     handles.set(branch.id, {
       branchId: branch.id,
       x: (segment.source.x1 + segment.target.x0) / 2,
       y: (segment.y0 + segment.y1) / 2,
-      radius: Math.min(22, segment.width / 2),
+      radius: Math.min(22, segment.width / (2 * Math.hypot(1, maxSlope))),
     });
   }
   return {

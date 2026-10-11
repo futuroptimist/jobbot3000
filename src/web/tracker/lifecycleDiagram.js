@@ -1308,7 +1308,7 @@ export function createLifecycleDiagramView(root, options = {}) {
             x: node.x0,
             y: node.y0,
             width: Math.max(8, rawWidth),
-            height: Math.max(8, rawHeight),
+            height: rawHeight,
             rx: 2,
             fill: node.id.startsWith("endpoint:")
               ? endpointColor(node.id.split(":").at(-1))
