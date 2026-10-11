@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
@@ -539,8 +539,8 @@ describe("workflow and archive validation contract", () => {
     ).toEqual(context);
     expect(() => contextFromEnv({ GITHUB_SHA: "main" })).toThrow();
   });
-  it("retains the original main/tag publication trigger predicates", () => {
-    expect(workflow.on.push).toEqual({ branches: ["main"], tags: ["v*.*.*"] });
+  it("separates app tags and requires a new chart coordinate on main", () => {
+    expect(workflow.on.push).toEqual({ branches: ["main"] });
     expect(workflow.on.workflow_dispatch).toBeNull();
     expect(workflow.jobs.publish.if).toBe(
       "needs.validate.outputs.publish == 'true'",
@@ -548,9 +548,13 @@ describe("workflow and archive validation contract", () => {
     const eligibility = workflow.jobs.validate.steps.find(
       (step) => step.id === "chart",
     ).run;
+    expect(
+      workflow.jobs.validate.steps.find((step) => step.id === "chart").env
+        .PR_BASE_SHA,
+    ).toBe("${{ github.event.pull_request.base.sha }}");
     expect(eligibility).toContain('publish="false"');
     expect(eligibility).toContain('[ "${GITHUB_EVENT_NAME}" = "push" ]');
-    expect(eligibility).toContain('[[ "${GITHUB_REF}" == refs/tags/v*.*.* ]]');
+    expect(eligibility).not.toContain("refs/tags/");
     expect(eligibility).toContain('[ "${GITHUB_REF}" = "refs/heads/main" ]');
     expect(eligibility).toContain(
       "^(charts/jobbot3000/|scripts/validate-helm\\.sh$|\\.github/workflows/ci-helm\\.yml$)",
@@ -561,6 +565,7 @@ describe("workflow and archive validation contract", () => {
     writeFileSync(
       script,
       'set -euo pipefail\ngit() { printf "%s\\n" "$CHANGED_FILES"; }\n' +
+        'node() { printf "true\\n"; }\n' +
         eligibility.slice(eligibility.indexOf('publish="false"')),
     );
     const cases = [
@@ -577,7 +582,7 @@ describe("workflow and archive validation contract", () => {
         false,
       ],
       ["workflow_dispatch", "refs/tags/v1.2.3", "", false],
-      ["push", "refs/tags/v1.2.3", "", true],
+      ["push", "refs/tags/v1.2.3", "", false],
       ["push", "refs/tags/other", "", false],
       ["push", "refs/heads/main", "charts/jobbot3000/Chart.yaml", true],
       ["push", "refs/heads/main", ".github/workflows/ci-helm.yml", true],
@@ -601,6 +606,9 @@ describe("workflow and archive validation contract", () => {
           GITHUB_SHA: context.sourceSha,
           GITHUB_OUTPUT: output.replaceAll("\\", "/"),
           CHANGED_FILES: changed,
+          BEFORE_SHA: context.sourceSha,
+          PR_BASE_SHA: context.sourceSha,
+          RUNNER_TEMP: directory.replaceAll("\\", "/"),
         },
         encoding: "utf8",
       });
@@ -608,6 +616,106 @@ describe("workflow and archive validation contract", () => {
       expect(readFileSync(output, "utf8").trim()).toBe(`publish=${allowed}`);
     }
   });
+  it.each(["unchanged", "bumped", "missing-bump", "invalid-base"])(
+    "validates PR chart bytes against the PR base without publishing: %s",
+    (mode) => {
+      const directory = temporary();
+      const git = (...args) =>
+        execFileSync("git", args, {
+          cwd: directory,
+          encoding: "utf8",
+        }).trim();
+      const chartDirectory = path.join(directory, "charts/jobbot3000");
+      mkdirSync(chartDirectory, { recursive: true });
+      mkdirSync(path.join(directory, "scripts"));
+      const chart = (version) =>
+        `name: jobbot3000\nversion: ${version}\nappVersion: "1.2.3"\n`;
+      writeFileSync(path.join(chartDirectory, "Chart.yaml"), chart("8.0.0"));
+      writeFileSync(
+        path.join(chartDirectory, "values.yaml"),
+        "replicaCount: 1\n",
+      );
+      git("init", "--quiet");
+      const commit = () => {
+        git("add", "charts");
+        git(
+          "-c",
+          "user.name=Synthetic Test",
+          "-c",
+          "user.email=synthetic@example.test",
+          "-c",
+          "commit.gpgsign=false",
+          "commit",
+          "--quiet",
+          "-m",
+          "Synthetic chart fixture",
+        );
+      };
+      commit();
+      const base = git("rev-parse", "HEAD");
+      if (mode === "bumped" || mode === "missing-bump") {
+        writeFileSync(
+          path.join(chartDirectory, "values.yaml"),
+          "replicaCount: 2\n",
+        );
+        if (mode === "bumped") {
+          writeFileSync(
+            path.join(chartDirectory, "Chart.yaml"),
+            chart("8.0.1"),
+          );
+        }
+        commit();
+      }
+      for (const helper of [
+        "helm-publication-contract.mjs",
+        "helm-release-eligibility.mjs",
+      ]) {
+        writeFileSync(
+          path.join(directory, "scripts", helper),
+          readFileSync(path.join(root, "scripts", helper)),
+        );
+      }
+      const eligibility = workflow.jobs.validate.steps.find(
+        (step) => step.id === "chart",
+      ).run;
+      const script = path.join(directory, "eligibility.sh");
+      const output = path.join(directory, "outputs.txt");
+      writeFileSync(output, "");
+      writeFileSync(
+        script,
+        'set -euo pipefail\nnode() { "$NODE_BINARY" "$@"; }\n' +
+          eligibility.slice(eligibility.indexOf('publish="false"')),
+      );
+      const result = spawnSync(bash, [script], {
+        cwd: directory,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          GITHUB_EVENT_NAME: "pull_request",
+          GITHUB_REF: "refs/pull/123/merge",
+          GITHUB_SHA: git("rev-parse", "HEAD"),
+          PR_BASE_SHA: mode === "invalid-base" ? "" : base,
+          // A PR must not use the push-only before field.
+          BEFORE_SHA: "b".repeat(40),
+          NODE_BINARY: process.execPath.replaceAll("\\", "/"),
+          GITHUB_OUTPUT: output.replaceAll("\\", "/"),
+          RUNNER_TEMP: directory.replaceAll("\\", "/"),
+        },
+      });
+      if (mode === "missing-bump" || mode === "invalid-base") {
+        expect(result.status).not.toBe(0);
+        expect(result.stderr).toContain(
+          mode === "missing-bump"
+            ? "Chart bytes changed"
+            : "valid comparison base SHA",
+        );
+        expect(readFileSync(output, "utf8")).toBe("");
+      } else {
+        expect(result.status, result.stderr).toBe(0);
+        expect(readFileSync(output, "utf8").trim()).toBe("publish=false");
+      }
+    },
+  );
   it.each(["archive", "directory", "default", "directory-override"])(
     "runs lint and all renders for %s input, stopping on failure",
     (mode) => {

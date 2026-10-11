@@ -14,7 +14,7 @@ Bump `charts/jobbot3000/Chart.yaml` `version` for every chart behavior change be
 
 Do not rely on rerunning CI to replace a chart package. OCI chart versions are immutable for this repo: `.github/workflows/ci-helm.yml` checks GHCR and fails real publish candidates if the same chart version already exists.
 
-`appVersion` can track the application package version, but Sugarkube should pin the image with `image.tag` rather than assuming `appVersion` is deployable.
+`appVersion` describes the default packaged application release, independently of chart `version` and runtime image overrides. The legacy `main-latest` default remains transitional until an actual application release exists; follow the two-stage [application release contract](app-release-contract.md). Sugarkube should pin the image with `image.tag` rather than assuming `appVersion` is deployable.
 
 ## Publishing
 
@@ -24,7 +24,7 @@ Pull requests run Helm validation only:
 scripts/validate-helm.sh charts/jobbot3000
 ```
 
-Pushes to `main` publish the OCI chart after validation only when chart, workflow, or Helm validation inputs changed. Semver tags such as `v1.2.3` are always publish candidates after validation. Manual workflow dispatches run validation only and do not publish. The publish job logs in to GHCR with `GITHUB_TOKEN`, refuses an existing chart version, packages new chart versions, pushes them to `oci://ghcr.io/futuroptimist/charts`, and writes the published version to the GitHub Actions summary.
+Pushes to `main` publish the OCI chart after validation only when chart, workflow, or Helm validation inputs changed and the chart coordinate differs from the previous main SHA. Chart byte changes require a version bump; workflow-only edits do not republish an unchanged coordinate. Application tags such as `v1.2.3` never publish charts. Manual workflow dispatches run validation only and do not publish. The publish job logs in to GHCR with `GITHUB_TOKEN`, refuses an existing chart version, verifies the exact already-validated archive, pushes it to `oci://ghcr.io/futuroptimist/charts`, and writes the published version to the GitHub Actions summary.
 
 ## Sugarkube chart pin after publish
 

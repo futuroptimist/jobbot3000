@@ -1,0 +1,55 @@
+name: Promote verified application release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+jobs:
+  promote:
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    concurrency:
+      group: app-release-${{ github.repository }}-${{ github.ref_name }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+      - name: Require released source to belong to main
+        run: git merge-base --is-ancestor HEAD origin/main
+      - name: Select successful main image build and immutable record artifact
+        id: evidence
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/app-release-contract.mjs select
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.evidence.outputs.run_id }}
+          artifact-ids: ${{ steps.evidence.outputs.artifact_id }}
+          merge-multiple: true
+          path: verified-image
+      - name: Bind full SemVer alias to verified digest without rebuilding
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_RUN_ID: ${{ steps.evidence.outputs.run_id }}
+          IMAGE_RUN_ATTEMPT: ${{ steps.evidence.outputs.run_attempt }}
+        run: node scripts/app-release-contract.mjs promote
+      - name: Retain release source, version, and digest record
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-${{ github.ref_name }}-${{ github.sha }}
+          path: app-release.json
+          if-no-files-found: error
+          retention-days: 90
