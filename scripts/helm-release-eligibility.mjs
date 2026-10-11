@@ -22,7 +22,7 @@ if (
   const before = process.argv[2];
   if (!/^[a-f0-9]{40}$/.test(before ?? "") || /^0+$/.test(before)) {
     throw new Error(
-      "A valid previous main SHA is required for chart publication",
+      "A valid comparison base SHA is required for chart validation",
     );
   }
   const previous = execFileSync(

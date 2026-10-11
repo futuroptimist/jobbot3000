@@ -86,7 +86,9 @@ Application version tags do not trigger this workflow. Main pushes changing
 `charts/jobbot3000/`, `scripts/validate-helm.sh`, or `.github/workflows/ci-helm.yml` are candidates
 only when the chart coordinate differs from the previous main SHA. Chart byte changes without
 a chart version bump fail closed. Workflow-only changes validate without republishing an unchanged
-coordinate. Pull requests and manual workflow dispatch remain validation-only. New helper/test/documentation paths trigger
+coordinate. PR validation compares chart bytes and version against the PR base SHA and fails
+before packaging when chart bytes change without a version bump. Even a correctly bumped PR
+keeps publication disabled. Pull requests and manual workflow dispatch remain validation-only. New helper/test/documentation paths trigger
 PR validation; they do not independently expand main publication eligibility. Image workflows,
 credentials, package scopes, and repository protection settings are unchanged.
 

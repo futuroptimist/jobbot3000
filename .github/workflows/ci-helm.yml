@@ -49,12 +49,15 @@ jobs:
         id: chart
         env:
           BEFORE_SHA: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         shell: bash
         run: |
           set -euo pipefail
           node scripts/helm-publication-contract.mjs metadata
           publish="false"
-          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            node scripts/helm-release-eligibility.mjs "${PR_BASE_SHA}" >/dev/null
+          elif [ "${GITHUB_EVENT_NAME}" = "push" ]; then
             if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
               changed_files="$(git diff --name-only "${BEFORE_SHA}" "${GITHUB_SHA}")"
               if grep -Eq '^(charts/jobbot3000/|scripts/validate-helm\.sh$|\.github/workflows/ci-helm\.yml$)' <<< "${changed_files}"; then
