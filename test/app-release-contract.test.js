@@ -195,6 +195,67 @@ describe("application release contract", () => {
     );
     expect(request).toHaveBeenCalledTimes(2);
   });
+  it("rejects malformed missing errors instead of treating them as absence", async () => {
+    const request = fixture(404, {
+      errors: { length: 1, 0: { code: "MANIFEST_UNKNOWN" } },
+    });
+    await expect(promote(record, record, request)).rejects.toThrow(/ambiguous/);
+    expect(
+      request.mock.calls.some(([, options]) => options?.method === "PUT"),
+    ).toBe(false);
+  });
+  it.each(["source", "access", "put", "confirmation"])(
+    "fails closed on %s verification failure",
+    async (failure) => {
+      const request = vi.fn(async (path, options) => {
+        if (path === "tags/list?n=1")
+          return response(
+            failure === "access" ? 403 : 200,
+            JSON.stringify({ name: "futuroptimist/jobbot3000", tags: [] }),
+          );
+        if (path === `manifests/${record.digest}`) {
+          return response(failure === "source" ? 404 : 200, bytes);
+        }
+        if (options?.method === "PUT")
+          return response(201, "", {
+            "docker-content-digest":
+              failure === "put" ? "sha256:wrong" : record.digest,
+          });
+        if (request.mock.calls.some(([, args]) => args?.method === "PUT")) {
+          return response(200, failure === "confirmation" ? "{}" : bytes);
+        }
+        return response(
+          404,
+          JSON.stringify({ errors: [{ code: "MANIFEST_UNKNOWN" }] }),
+        );
+      });
+      await expect(promote(record, record, request)).rejects.toThrow();
+      if (["source", "access"].includes(failure)) {
+        expect(
+          request.mock.calls.some(([, options]) => options?.method === "PUT"),
+        ).toBe(false);
+      }
+    },
+  );
+  it.each([
+    { token: "synthetic-token", access_token: null },
+    { token: "synthetic-token", access_token: "different" },
+    { token: "synthetic-token", expires_in: 0 },
+    { token: "synthetic-token", scope: "repository:other:pull,push" },
+  ])("rejects ambiguous registry grants %#", async (grant) => {
+    const fetchImpl = vi.fn(async (url) => ({
+      status: 200,
+      url,
+      redirected: false,
+      json: async () => grant,
+    }));
+    await expect(
+      registry(
+        { actor: "synthetic-owner", token: "synthetic-token" },
+        fetchImpl,
+      ),
+    ).rejects.toThrow(/Ambiguous/);
+  });
   it("requires authenticated pinned registry access", async () => {
     await expect(registry({})).rejects.toThrow(/credentials/);
     const fetchImpl = vi.fn().mockResolvedValue({

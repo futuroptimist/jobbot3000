@@ -144,6 +144,11 @@ export async function registry(auth, fetchImpl = fetch) {
   check(
     typeof token === "string" &&
       /^\S+$/.test(token) &&
+      ["token", "access_token"].every(
+        (key) =>
+          !(key in grant) ||
+          (typeof grant[key] === "string" && /^\S+$/.test(grant[key])),
+      ) &&
       (!grant.token ||
         !grant.access_token ||
         grant.token === grant.access_token) &&
@@ -189,7 +194,8 @@ export async function promote(record, expected, request) {
   check(existing.status === 404, "Release alias absence is not established");
   const missing = await existing.json();
   check(
-    missing.errors?.length === 1 &&
+    Array.isArray(missing.errors) &&
+      missing.errors.length === 1 &&
       missing.errors[0].code === "MANIFEST_UNKNOWN",
     "Release alias absence is ambiguous",
   );
