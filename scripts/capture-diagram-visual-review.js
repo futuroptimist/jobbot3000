@@ -1,4 +1,4 @@
-/* global document */
+/* global document, window */
 import { chromium } from "@playwright/test";
 import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
@@ -127,6 +127,14 @@ async function main() {
       await page
         .locator('.diagram-scroll[aria-busy="false"] svg')
         .waitFor({ state: "visible", timeout: 150000 });
+      // Keep the diagram and its legend/caption in the fixed-size artifact;
+      // the page header otherwise pushes almost every ribbon below the crop.
+      await page.locator(".diagram-scroll").evaluate((element) => {
+        window.scrollTo(
+          0,
+          window.scrollY + element.getBoundingClientRect().top - 80,
+        );
+      });
       await assertViewportAndNoPageOverflow(
         page,
         viewport.width,
@@ -144,6 +152,14 @@ async function main() {
       await page
         .locator('.diagram-scroll[aria-busy="false"] svg')
         .waitFor({ state: "visible", timeout: 150000 });
+      // Keep the diagram and its legend/caption in the fixed-size artifact;
+      // the page header otherwise pushes almost every ribbon below the crop.
+      await page.locator(".diagram-scroll").evaluate((element) => {
+        window.scrollTo(
+          0,
+          window.scrollY + element.getBoundingClientRect().top - 80,
+        );
+      });
       await assertViewportAndNoPageOverflow(
         page,
         viewport.width,
