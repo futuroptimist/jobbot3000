@@ -222,8 +222,12 @@ jobs:
 
       - name: Smoke test published multi-arch digest
         run: |
+          set -euo pipefail
           for platform in linux/amd64 linux/arm64; do
             DOCKER_DEFAULT_PLATFORM="$platform" bash scripts/smoke-container.sh "${{ needs.build-and-smoke.outputs.repository }}@${{ steps.image.outputs.digest }}"
+            # The classic image store cannot bind one index digest to two platform images.
+            # smoke-container.sh has removed its container; clear only this local reference.
+            docker image rm "${{ needs.build-and-smoke.outputs.repository }}@${{ steps.image.outputs.digest }}"
           done
 
       - name: Record verified main image for later release
