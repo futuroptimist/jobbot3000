@@ -1,7 +1,12 @@
-import { normalizeRateLimitInterval } from '../../../shared/http/fetch.js';
-import { createHttpClient } from '../../../shared/http/client.js';
-import { getHttpClientFeatureConfig } from '../../../shared/http/config.js';
-import { jobIdFromSource } from '../jobs.js';
+import { createHash } from "node:crypto";
+import {
+  createIngestionBudget,
+  IngestionError,
+} from "../../../shared/http/ingestion-budget.js";
+import { normalizeRateLimitInterval } from "../../../shared/http/fetch.js";
+import { createHttpClient } from "../../../shared/http/client.js";
+import { getHttpClientFeatureConfig } from "../../../shared/http/config.js";
+import { jobIdFromSource } from "../jobs.js";
 
 /**
  * Resolve the adapter's minimum interval between requests from an environment override.
@@ -28,7 +33,7 @@ export function resolveAdapterRateLimit({ envVar, fallbackMs = 0 } = {}) {
  * }} config
  */
 function parseNumber(value, fallback) {
-  if (value === undefined || value === null || value === '') return fallback;
+  if (value === undefined || value === null || value === "") return fallback;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
@@ -41,20 +46,26 @@ export function createAdapterHttpClient({
   timeoutMs,
   circuitBreaker,
 } = {}) {
-  if (!provider || typeof provider !== 'string' || !provider.trim()) {
-    throw new Error('provider is required');
+  if (!provider || typeof provider !== "string" || !provider.trim()) {
+    throw new Error("provider is required");
   }
   const normalizedRateLimit = normalizeRateLimitInterval(rateLimitMs, 0);
   const httpDefaults = getHttpClientFeatureConfig();
   const resolvedRetry = (() => {
-    const base = retry && typeof retry === 'object' ? { ...retry } : {};
+    const base = retry && typeof retry === "object" ? { ...retry } : {};
     base.retries = parseNumber(base.retries, httpDefaults.maxRetries);
     base.delayMs = parseNumber(base.delayMs, httpDefaults.backoffMs);
     return base;
   })();
   const resolvedCircuitBreaker = {
-    threshold: parseNumber(circuitBreaker?.threshold, httpDefaults.circuitBreakerThreshold),
-    resetMs: parseNumber(circuitBreaker?.resetMs, httpDefaults.circuitBreakerResetMs),
+    threshold: parseNumber(
+      circuitBreaker?.threshold,
+      httpDefaults.circuitBreakerThreshold,
+    ),
+    resetMs: parseNumber(
+      circuitBreaker?.resetMs,
+      httpDefaults.circuitBreakerResetMs,
+    ),
   };
   return createHttpClient({
     provider: provider.trim(),
@@ -88,24 +99,25 @@ export function createSnapshot({
   fetchedAt,
   sourceHeaders,
 } = {}) {
-  if (!provider || typeof provider !== 'string' || !provider.trim()) {
-    throw new Error('provider is required');
+  if (!provider || typeof provider !== "string" || !provider.trim()) {
+    throw new Error("provider is required");
   }
   const providerKey = provider.trim();
-  const sourceValue = typeof url === 'string' ? url.trim() : '';
+  const sourceValue = typeof url === "string" ? url.trim() : "";
   if (!sourceValue) {
-    throw new Error('snapshot url is required');
+    throw new Error("snapshot url is required");
   }
-  const normalizedHeaders = headers && typeof headers === 'object' ? { ...headers } : undefined;
+  const normalizedHeaders =
+    headers && typeof headers === "object" ? { ...headers } : undefined;
   const snapshot = {
     id: jobIdFromSource({ provider: providerKey, url: sourceValue }),
-    raw: raw == null ? '' : String(raw),
+    raw: raw == null ? "" : String(raw),
     parsed: parsed ?? null,
     source: { type: providerKey, value: sourceValue },
     requestHeaders: normalizedHeaders,
     fetchedAt,
   };
-  if (sourceHeaders && typeof sourceHeaders === 'object') {
+  if (sourceHeaders && typeof sourceHeaders === "object") {
     snapshot.source.headers = { ...sourceHeaders };
   }
   return snapshot;
@@ -123,20 +135,32 @@ export function createSnapshot({
  * >} fetchPage
  * @param {{ initialOffset?: number }} options
  */
-export async function collectPaginatedResults(fetchPage, { initialOffset = 0 } = {}) {
-  if (typeof fetchPage !== 'function') {
-    throw new Error('fetchPage function is required');
+export async function collectPaginatedResults(
+  fetchPage,
+  { initialOffset = 0, budget = createIngestionBudget() } = {},
+) {
+  if (typeof fetchPage !== "function") {
+    throw new Error("fetchPage function is required");
   }
   let offset = Number.isFinite(initialOffset) ? initialOffset : 0;
   const results = [];
   let pageIndex = 0;
+  const seenPages = new Set();
 
   while (true) {
+    budget.charge("pages");
     const page = await fetchPage({ offset, pageIndex });
     if (!page) break;
 
     const items = Array.isArray(page.items) ? page.items : [];
     if (items.length > 0) {
+      const state = createHash("sha256")
+        .update(JSON.stringify(items.map((item) => item?.id ?? item)))
+        .digest("hex");
+      if (seenPages.has(state))
+        throw new IngestionError("RUN_LIMIT", "Repeated pagination state");
+      seenPages.add(state);
+      budget.charge("jobs", items.length);
       results.push(...items);
     }
 
@@ -150,8 +174,8 @@ export async function collectPaginatedResults(fetchPage, { initialOffset = 0 } =
       return offset + items.length;
     })();
 
-    if (!Number.isFinite(nextOffset) || nextOffset <= offset) {
-      break;
+    if (!Number.isSafeInteger(nextOffset) || nextOffset <= offset) {
+      throw new IngestionError("RUN_LIMIT", "Pagination did not progress");
     }
 
     offset = nextOffset;

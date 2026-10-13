@@ -1,84 +1,126 @@
-import fetch from 'node-fetch';
-import { extractTextFromHtml } from '../../../shared/http/fetch.js';
-import { saveJobSnapshot } from '../jobs.js';
-import { JOB_SOURCE_ADAPTER_VERSION } from '../../../adapters/job-source.js';
-import { parseJobText } from '../../../parser.js';
+import {
+  createIngestionBudget,
+  IngestionError,
+} from "../../../shared/http/ingestion-budget.js";
+import { extractTextFromHtml } from "../../../shared/http/fetch.js";
+import { saveJobSnapshot } from "../jobs.js";
+import { JOB_SOURCE_ADAPTER_VERSION } from "../../../adapters/job-source.js";
+import { parseJobText } from "../../../parser.js";
 import {
   collectPaginatedResults,
   createAdapterHttpClient,
   createSnapshot,
   resolveAdapterRateLimit,
-} from '../adapters/common.js';
+} from "../adapters/common.js";
 
-const SMARTRECRUITERS_BASE = 'https://api.smartrecruiters.com/v1/companies';
-const SMARTRECRUITERS_HEADERS = { 'User-Agent': 'jobbot3000' };
+const SMARTRECRUITERS_BASE = "https://api.smartrecruiters.com/v1/companies";
+const SMARTRECRUITERS_HEADERS = { "User-Agent": "jobbot3000" };
 const DEFAULT_LIMIT = 100;
 const SMARTRECRUITERS_RATE_LIMIT_MS = resolveAdapterRateLimit({
-  envVar: 'JOBBOT_SMARTRECRUITERS_RATE_LIMIT_MS',
+  envVar: "JOBBOT_SMARTRECRUITERS_RATE_LIMIT_MS",
   fallbackMs: 500,
 });
 
 const httpClient = createAdapterHttpClient({
-  provider: 'smartrecruiters',
+  provider: "smartrecruiters",
   headers: SMARTRECRUITERS_HEADERS,
   rateLimitMs: SMARTRECRUITERS_RATE_LIMIT_MS,
 });
 
 function normalizeCompanySlug(company) {
-  if (!company || typeof company !== 'string' || !company.trim()) {
-    throw new Error('SmartRecruiters company slug is required');
+  if (!company || typeof company !== "string" || !company.trim()) {
+    throw new Error("SmartRecruiters company slug is required");
   }
   return company.trim();
 }
 
 function buildListUrl(slug, offset) {
-  const url = new URL(`${SMARTRECRUITERS_BASE}/${encodeURIComponent(slug)}/postings`);
-  url.searchParams.set('limit', String(DEFAULT_LIMIT));
-  url.searchParams.set('offset', String(offset));
+  const url = new URL(
+    `${SMARTRECRUITERS_BASE}/${encodeURIComponent(slug)}/postings`,
+  );
+  url.searchParams.set("limit", String(DEFAULT_LIMIT));
+  url.searchParams.set("offset", String(offset));
   return url.toString();
 }
 
 function resolveDetailUrl(slug, posting) {
-  const ref = typeof posting?.ref === 'string' && posting.ref.trim() ? posting.ref.trim() : '';
-  if (ref) return ref;
-  const id = typeof posting?.id === 'string' ? posting.id.trim() : String(posting?.id ?? '');
-  if (!id) {
-    throw new Error('SmartRecruiters posting id is required');
+  const prefix = `${SMARTRECRUITERS_BASE}/${encodeURIComponent(slug)}/postings/`;
+  let id =
+    typeof posting?.id === "string"
+      ? posting.id.trim()
+      : String(posting?.id ?? "");
+  const ref = posting?.ref;
+  if (ref !== undefined) {
+    let url;
+    try {
+      url = new URL(ref);
+    } catch {
+      throw new IngestionError("URL_POLICY", "Invalid posting reference");
+    }
+    if (
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      url.origin !== "https://api.smartrecruiters.com" ||
+      !url.href.startsWith(prefix)
+    ) {
+      throw new IngestionError(
+        "URL_POLICY",
+        "Posting reference does not match provider contract",
+      );
+    }
+    const suffix = url.href.slice(prefix.length);
+    try {
+      if (!id) id = decodeURIComponent(suffix);
+    } catch {
+      throw new IngestionError("URL_POLICY", "Invalid posting identifier");
+    }
+    if (!id || suffix !== encodeURIComponent(id)) {
+      throw new IngestionError("URL_POLICY", "Conflicting posting reference");
+    }
   }
-  return `${SMARTRECRUITERS_BASE}/${encodeURIComponent(slug)}/postings/${encodeURIComponent(id)}`;
+  if (!id)
+    throw new IngestionError(
+      "PAYLOAD_INVALID",
+      "Posting identifier is missing",
+    );
+  return `${prefix}${encodeURIComponent(id)}`;
 }
 
 function toPlainText(html) {
-  if (!html) return '';
+  if (!html) return "";
   return extractTextFromHtml(html);
 }
 
 function extractSectionsText(detail) {
   const sections = detail?.jobAd?.sections;
-  if (!sections || typeof sections !== 'object') return '';
+  if (!sections || typeof sections !== "object") return "";
   const parts = [];
   for (const section of Object.values(sections)) {
-    if (!section || typeof section !== 'object') continue;
-    const title = typeof section.title === 'string' ? section.title.trim() : '';
-    const text = typeof section.text === 'string' ? section.text : '';
-    const safeTitle = title ? toPlainText(title) : '';
-    const safeText = text ? toPlainText(text) : '';
+    if (!section || typeof section !== "object") continue;
+    const title = typeof section.title === "string" ? section.title.trim() : "";
+    const text = typeof section.text === "string" ? section.text : "";
+    const safeTitle = title ? toPlainText(title) : "";
+    const safeText = text ? toPlainText(text) : "";
     if (safeTitle) parts.push(safeTitle);
     if (safeText) parts.push(safeText);
   }
-  return parts.filter(Boolean).join('\n\n');
+  return parts.filter(Boolean).join("\n\n");
 }
 
 function mergeParsedJob(parsed, posting, detail) {
   const merged = { ...parsed };
   const name =
-    (typeof detail?.name === 'string' && detail.name.trim()) ||
-    (typeof posting?.name === 'string' && posting.name.trim()) ||
-    '';
+    (typeof detail?.name === "string" && detail.name.trim()) ||
+    (typeof posting?.name === "string" && posting.name.trim()) ||
+    "";
   const location =
-    (typeof detail?.location?.fullLocation === 'string' && detail.location.fullLocation.trim()) ||
-    (typeof posting?.location?.fullLocation === 'string' && posting.location.fullLocation.trim()) ||
-    '';
+    (typeof detail?.location?.fullLocation === "string" &&
+      detail.location.fullLocation.trim()) ||
+    (typeof posting?.location?.fullLocation === "string" &&
+      posting.location.fullLocation.trim()) ||
+    "";
   if (!merged.title && name) merged.title = name;
   if (!merged.location && location) merged.location = location;
   return merged;
@@ -86,62 +128,80 @@ function mergeParsedJob(parsed, posting, detail) {
 
 export async function fetchSmartRecruitersPostings(
   company,
-  { fetchImpl = fetch, retry } = {},
+  { budget = createIngestionBudget(), retry } = {},
 ) {
   const slug = normalizeCompanySlug(company);
   const rateLimitKey = `smartrecruiters:${slug}`;
-  const postings = await collectPaginatedResults(async ({ offset }) => {
-    const url = buildListUrl(slug, offset);
-    const payload = await httpClient.json(url, {
-      fetchImpl,
-      retry,
-      rateLimit: { key: rateLimitKey },
-      onError: ({ response }) => {
-        const statusLabel = `${response.status} ${response.statusText}`;
-        return new Error(`Failed to fetch SmartRecruiters company ${slug}: ${statusLabel}`);
-      },
-    });
-    const items = Array.isArray(payload?.content) ? payload.content : [];
-    const totalFound =
-      typeof payload?.totalFound === 'number' ? payload.totalFound : offset + items.length;
-    const nextOffset = offset + items.length;
-    const hasMore = nextOffset < totalFound && items.length >= DEFAULT_LIMIT;
-    return {
-      items,
-      nextOffset,
-      done: !hasMore,
-    };
-  });
+  const postings = await collectPaginatedResults(
+    async ({ offset }) => {
+      const url = buildListUrl(slug, offset);
+      const payload = await httpClient.json(url, {
+        budget,
+        bodyKind: "list",
+        retry,
+        rateLimit: { key: rateLimitKey },
+        onError: ({ response }) => {
+          const statusLabel = `${response.status} ${response.statusText}`;
+          return new Error(
+            `Failed to fetch SmartRecruiters company ${slug}: ${statusLabel}`,
+          );
+        },
+      });
+      const items = Array.isArray(payload?.content) ? payload.content : [];
+      const totalFound =
+        typeof payload?.totalFound === "number"
+          ? payload.totalFound
+          : offset + items.length;
+      const nextOffset = offset + items.length;
+      const hasMore = nextOffset < totalFound && items.length >= DEFAULT_LIMIT;
+      return {
+        items,
+        nextOffset,
+        done: !hasMore,
+      };
+    },
+    { budget },
+  );
 
   return { slug, postings };
 }
 
 async function toSmartRecruitersSnapshot(posting, context) {
-  const { slug, fetchImpl = fetch, retry, rateLimitKey } = context || {};
+  const {
+    slug,
+    budget = createIngestionBudget(),
+    retry,
+    rateLimitKey,
+  } = context || {};
   if (!slug) {
-    throw new Error('SmartRecruiters company slug is required for snapshot normalization');
+    throw new Error(
+      "SmartRecruiters company slug is required for snapshot normalization",
+    );
   }
   const detailUrl = resolveDetailUrl(slug, posting);
   const detail = await httpClient.json(detailUrl, {
-    fetchImpl,
+    budget,
     retry,
     rateLimit: { key: rateLimitKey },
     onError: ({ response }) => {
       const statusLabel = `${response.status} ${response.statusText}`;
-      const postingId = posting?.id ?? '';
-      return new Error(`Failed to fetch SmartRecruiters posting ${postingId}: ${statusLabel}`);
+      const postingId = posting?.id ?? "";
+      return new Error(
+        `Failed to fetch SmartRecruiters posting ${postingId}: ${statusLabel}`,
+      );
     },
   });
   const sectionsText = extractSectionsText(detail);
-  const raw = sectionsText || toPlainText(detail?.jobAd?.text) || '';
+  const raw = sectionsText || toPlainText(detail?.jobAd?.text) || "";
   const parsed = mergeParsedJob(parseJobText(raw), posting, detail);
   const postingUrl =
-    (typeof detail?.postingUrl === 'string' && detail.postingUrl.trim()) ||
-    (typeof posting?.postingUrl === 'string' && posting.postingUrl.trim()) ||
-    (typeof posting?.applyUrl === 'string' && posting.applyUrl.trim()) ||
+    (typeof detail?.postingUrl === "string" && detail.postingUrl.trim()) ||
+    (typeof posting?.postingUrl === "string" && posting.postingUrl.trim()) ||
+    (typeof posting?.applyUrl === "string" && posting.applyUrl.trim()) ||
     detailUrl;
+  budget.check();
   return createSnapshot({
-    provider: 'smartrecruiters',
+    provider: "smartrecruiters",
     url: postingUrl,
     raw,
     parsed,
@@ -151,14 +211,21 @@ async function toSmartRecruitersSnapshot(posting, context) {
 }
 
 export const smartRecruitersAdapter = {
-  provider: 'smartrecruiters',
+  provider: "smartrecruiters",
   version: JOB_SOURCE_ADAPTER_VERSION,
-  async listOpenings({ company, fetchImpl = fetch, retry } = {}) {
-    const result = await fetchSmartRecruitersPostings(company, { fetchImpl, retry });
+  async listOpenings({
+    company,
+    budget = createIngestionBudget(),
+    retry,
+  } = {}) {
+    const result = await fetchSmartRecruitersPostings(company, {
+      budget,
+      retry,
+    });
     const rateLimitKey = `smartrecruiters:${result.slug}`;
     return {
       jobs: result.postings,
-      context: { slug: result.slug, fetchImpl, retry, rateLimitKey },
+      context: { slug: result.slug, budget, retry, rateLimitKey },
     };
   },
   async normalizeJob(posting, context = {}) {
@@ -169,18 +236,33 @@ export const smartRecruitersAdapter = {
   },
 };
 
-export async function ingestSmartRecruitersBoard({ company, fetchImpl = fetch, retry } = {}) {
+export async function ingestSmartRecruitersBoard({
+  company,
+  budget = createIngestionBudget(),
+  retry,
+} = {}) {
   const { jobs, context } = await smartRecruitersAdapter.listOpenings({
     company,
-    fetchImpl,
+    budget,
     retry,
   });
   const jobIds = [];
 
-  for (const posting of jobs) {
-    const snapshot = await smartRecruitersAdapter.normalizeJob(posting, context);
-    await saveJobSnapshot(snapshot);
-    jobIds.push(snapshot.id);
+  try {
+    for (const posting of jobs) {
+      const snapshot = await smartRecruitersAdapter.normalizeJob(
+        posting,
+        context,
+      );
+      budget.check();
+      budget.progress.completed++;
+      await saveJobSnapshot(snapshot);
+      budget.progress.saved++;
+      budget.progress.jobIds.push(snapshot.id);
+      jobIds.push(snapshot.id);
+    }
+  } catch (error) {
+    throw budget.annotate(error);
   }
 
   return { company: context.slug, saved: jobIds.length, jobIds };
