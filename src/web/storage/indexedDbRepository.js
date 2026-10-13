@@ -1,4 +1,9 @@
 import {
+  assertImportCandidateBudget,
+  ImportAdmissionError,
+} from "../import-export/importAdmission.js";
+import { collectImportContactIssues } from "../../domain/browserImportValidation.js";
+import {
   browserApplicationArtifactSchema,
   browserApplicationContactSchema,
   browserApplicationExportSchema,
@@ -68,6 +73,11 @@ export class IndexedDbRepositoryError extends Error {
 
 const wrapError = (error, fallbackCode, fallbackMessage) => {
   if (error instanceof IndexedDbRepositoryError) return error;
+  if (error instanceof ImportAdmissionError) {
+    return new IndexedDbRepositoryError(error.code, error.message, {
+      details: { issues: error.issues, truncated: error.truncated },
+    });
+  }
   if (error?.name === "QuotaExceededError") {
     return new IndexedDbRepositoryError(
       "quota_exceeded",
@@ -586,8 +596,25 @@ const deleteMatchingFromStore = async (store, indexName, value) => {
   });
 };
 
+const assertImportOwnership = (candidate, locations) => {
+  const result = collectImportContactIssues(candidate, { locations });
+  if (result.issues.length || result.truncated) {
+    throw new ImportAdmissionError(
+      "import_ownership_failed",
+      result.issues,
+      result.truncated,
+    );
+  }
+};
 const validateImport = (data) => {
-  const upgraded = upgradeBrowserExportToV2(data);
+  assertImportCandidateBudget(data);
+  let upgraded;
+  try {
+    upgraded = upgradeBrowserExportToV2(data);
+  } catch {
+    throw new ImportAdmissionError();
+  }
+  assertImportCandidateBudget(upgraded.data);
   const result = browserApplicationExportSchema.safeParse(upgraded.data);
   if (!result.success) {
     throw new IndexedDbRepositoryError(
@@ -596,6 +623,7 @@ const validateImport = (data) => {
       { details: result.error.flatten() },
     );
   }
+  assertImportOwnership(result.data);
   return { parsed: result.data, warnings: upgraded.warnings };
 };
 
@@ -969,18 +997,28 @@ export const createIndexedDbRepository = async (options = {}) => {
     createOffer(record) {
       return safe(() => addChildRecord(db, "offers", record));
     },
-    async importPartialData(recordsByStore) {
+    async importPartialData(recordsByStore, { dryRun = false } = {}) {
       return safe(async () => {
-        const storeNames = Object.entries(recordsByStore)
+        assertImportCandidateBudget(recordsByStore, { kind: "partial" });
+        const entries = Object.entries(recordsByStore).filter(
+          ([, rows]) => rows !== undefined,
+        );
+        const storeNames = entries
           .filter(([, rows]) => rows.length)
           .map(([name]) => name);
         if (!storeNames.length) return;
-        const parsedRowsByStore = Object.fromEntries(
-          Object.entries(recordsByStore).map(([storeName, rows]) => [
-            storeName,
-            rows.map((row) => parseRecord(storeName, row)),
-          ]),
-        );
+        let parsedRowsByStore;
+        try {
+          parsedRowsByStore = Object.fromEntries(
+            entries.map(([storeName, rows]) => [
+              storeName,
+              rows.map((row) => parseRecord(storeName, row)),
+            ]),
+          );
+        } catch {
+          throw new ImportAdmissionError();
+        }
+        assertImportCandidateBudget(parsedRowsByStore, { kind: "partial" });
         const existing = Object.fromEntries(
           await Promise.all(
             STORE_NAMES.map(async (name) => [name, await getAll(db, name)]),
@@ -996,7 +1034,29 @@ export const createIndexedDbRepository = async (options = {}) => {
             return [name, [...byId.values()]];
           }),
         );
-        assertLifecycleSupersessionGraphIsValid(merged.lifecycleEvents);
+        assertImportCandidateBudget(merged, { kind: "partial" });
+        const locations = Object.fromEntries(
+          STORE_NAMES.map((name) => {
+            const incoming = new Map(
+              (parsedRowsByStore[name] ?? []).map((record, recordIndex) => [
+                record.id,
+                { origin: "incoming", recordIndex },
+              ]),
+            );
+            const prior = new Map(
+              existing[name].map((record, recordIndex) => [
+                record.id,
+                { origin: "existing", recordIndex },
+              ]),
+            );
+            return [
+              name,
+              merged[name].map(
+                (record) => incoming.get(record.id) ?? prior.get(record.id),
+              ),
+            ];
+          }),
+        );
         const validation = browserApplicationExportSchema.safeParse({
           schemaVersion: BROWSER_BACKUP_SCHEMA_VERSION,
           exportedAt: new Date(0).toISOString(),
@@ -1015,12 +1075,12 @@ export const createIndexedDbRepository = async (options = {}) => {
               }
             : undefined,
         });
-        if (!validation.success)
-          throw new IndexedDbRepositoryError(
-            "schema_validation_failed",
-            "Bulk records would violate browser application references.",
-            { details: validation.error.flatten() },
-          );
+        if (!validation.success) throw new ImportAdmissionError();
+        assertLifecycleSupersessionGraphIsValid(
+          validation.data.lifecycleEvents,
+        );
+        assertImportOwnership(validation.data, locations);
+        if (dryRun) return { imported: false };
         const tx = db.transaction(storeNames, "readwrite");
         const done = transactionDone(tx);
         for (const [storeName, rows] of Object.entries(parsedRowsByStore))

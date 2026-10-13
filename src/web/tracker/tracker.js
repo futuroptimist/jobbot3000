@@ -1,7 +1,13 @@
 /* global document, confirm, window */
 /* eslint-disable max-len */
 import {
+  assertImportFileSize,
+  IMPORT_LIMITS_V1,
+  IMPORT_STORES,
+} from "../import-export/importAdmission.js";
+import {
   COMPACT_CSV_COLUMNS,
+  LIFECYCLE_CSV_COLUMNS,
   detectSpreadsheetImportFormat,
   exportCompactCsv,
   exportJsonBackup,
@@ -1353,18 +1359,63 @@ function countByStore(recordsByStore) {
   };
   return Object.entries(rows).filter(([, count]) => count > 0);
 }
+const IMPORT_ISSUE_CODES = new Set([
+  "import_admission_failed",
+  "import_ownership_failed",
+  "schema_validation_failed",
+  "malformed_date",
+  "malformed_boolean",
+  "malformed_number",
+  "malformed_url",
+  "unknown_application",
+  "precision_mismatch",
+  "unsupported_event_type",
+  "required",
+  "unsupported_origin",
+  "invalid_range",
+  "ignored_non_interview_stage",
+  "duplicate_in_file",
+  "duplicate_existing",
+  "duplicate_event_without_event_id",
+  "unknown_lifecycle_event_type",
+  "origin_structured_evidence_conflict",
+]);
 function formatIssue(issue) {
-  const where = issue.rowNumber
-    ? `Row ${issue.rowNumber}`
-    : issue.storeName || issue.store || "Import";
-  const field = issue.field ? ` ${issue.field}` : "";
-  const details = [
-    issue.code,
-    issue.message || issue.reason,
-    issue.value ? `value ${issue.value}` : "",
-    issue.id ? `ID ${issue.id}` : "",
-  ].filter(Boolean);
-  return `${where}${field}: ${details.join(": ")}`;
+  const store = IMPORT_STORES.includes(issue.store) ? issue.store : "Import";
+  const where = Number.isInteger(issue.recordIndex)
+    ? `${issue.origin === "existing" ? "Existing " : ""}${store} row ${issue.recordIndex + 1}`
+    : Number.isInteger(issue.sourceLine)
+      ? `Line ${issue.sourceLine}`
+      : Number.isInteger(issue.rowNumber)
+        ? `Row ${issue.rowNumber}`
+        : store;
+  const field = [
+    ...COMPACT_CSV_COLUMNS,
+    ...LIFECYCLE_CSV_COLUMNS,
+    "contactId",
+    "contactIds",
+    "event_id",
+    "event_type",
+    "occurred_at",
+    "due_at",
+    "occurred_at_precision",
+    "due_at_precision",
+  ].includes(issue.field)
+    ? ` ${issue.field}`
+    : "";
+  const reference = Number.isInteger(issue.referenceIndex)
+    ? ` participant ${issue.referenceIndex + 1}`
+    : "";
+  const code = IMPORT_ISSUE_CODES.has(issue.code)
+    ? issue.code
+    : "validation_failed";
+  const repair =
+    code === "import_ownership_failed"
+      ? " Choose a contact owned by this application or remove the optional reference."
+      : code === "malformed_url" && field
+        ? `${field} is not a valid http(s) URL.`
+        : " Check this field in a copy of your backup.";
+  return `${where}${field}${reference}: ${code}${code === "malformed_url" ? ":" : "."}${repair} Preview the corrected file again.`;
 }
 function renderImportPreview({
   label,
@@ -1373,7 +1424,18 @@ function renderImportPreview({
   warnings = [],
   errors = [],
   blocking = false,
+  truncated: alreadyTruncated = false,
 }) {
+  const truncated =
+    alreadyTruncated ||
+    conflicts.length + warnings.length + errors.length >
+      IMPORT_LIMITS_V1.issues;
+  errors = errors.slice(0, IMPORT_LIMITS_V1.issues);
+  conflicts = conflicts.slice(0, IMPORT_LIMITS_V1.issues - errors.length);
+  warnings = warnings.slice(
+    0,
+    IMPORT_LIMITS_V1.issues - errors.length - conflicts.length,
+  );
   const counts = countByStore(recordsByStore);
   const totalRecords = [
     "applications",
@@ -1388,13 +1450,19 @@ function renderImportPreview({
   ].reduce((sum, store) => sum + (recordsByStore[store]?.length ?? 0), 0);
   const compactSummary = `Dry-run OK: ${recordsByStore.applications?.length ?? 0} applications, ${recordsByStore.outreachMessages?.length ?? 0} outreach messages, ${(recordsByStore.interviews ?? []).filter(isNonRecruiterInterview).length} interviews`;
   $("[data-import-result]").innerHTML =
-    `<h4>${blocking ? "Import preview needs attention" : "Dry-run succeeded"}</h4>${blocking ? "" : `<p>${esc(compactSummary)}</p>`}<p><strong>Detected format:</strong> ${esc(label)}.</p><p>${blocking ? "Apply import is disabled until blocking errors are fixed." : "Data remains local in this browser until you choose Apply import; no tracker details are sent to a server."}</p><h5>Record counts</h5><ul>${counts.map(([store, count]) => `<li>${esc(store)}: ${count}</li>`).join("") || "<li>No records detected.</li>"}</ul><p><strong>Total records:</strong> ${totalRecords}</p><h5>Conflicts</h5><ul>${conflicts.map((conflict) => `<li>${esc(formatIssue(conflict))}</li>`).join("") || "<li>No existing record conflicts in local browser data.</li>"}</ul>${warnings.length ? `<h5>Warnings</h5><ul>${warnings.map((warning) => `<li>${esc(formatIssue(warning))}</li>`).join("")}</ul>` : ""}${errors.length ? `<h5>Blocking errors</h5><ul>${errors.map((error) => `<li>${esc(formatIssue(error))}</li>`).join("")}</ul>` : ""}`;
+    `${truncated ? "<p>Additional issues omitted.</p>" : ""}<h4>${blocking ? "Import preview needs attention" : "Dry-run succeeded"}</h4>${blocking ? "" : `<p>${esc(compactSummary)}</p>`}<p><strong>Detected format:</strong> ${esc(label)}.</p><p>${blocking ? "Apply import is disabled until blocking errors are fixed." : "Data remains local in this browser until you choose Apply import; no tracker details are sent to a server."}</p><h5>Record counts</h5><ul>${counts.map(([store, count]) => `<li>${esc(store)}: ${count}</li>`).join("") || "<li>No records detected.</li>"}</ul><p><strong>Total records:</strong> ${totalRecords}</p><h5>Conflicts</h5><ul>${conflicts.map((conflict) => `<li>${esc(formatIssue(conflict))}</li>`).join("") || "<li>No existing record conflicts in local browser data.</li>"}</ul>${warnings.length ? `<h5>Warnings</h5><ul>${warnings.map((warning) => `<li>${esc(formatIssue(warning))}</li>`).join("")}</ul>` : ""}${errors.length ? `<h5>Blocking errors</h5><ul>${errors.map((error) => `<li>${esc(formatIssue(error))}</li>`).join("")}</ul>` : ""}`;
 }
+let previewRequestToken = 0;
 async function previewImport() {
+  resetImportPreview();
+  const requestToken = previewRequestToken;
+  const current = () => requestToken === previewRequestToken;
   const file = $("[data-import-file]").files[0];
   if (!file) return;
   try {
+    assertImportFileSize(file.size);
     const text = await file.text();
+    if (!current()) return;
     const format = importFormatForFile(file);
     const lifecyclePreview =
       format === "csv" &&
@@ -1403,9 +1471,11 @@ async function previewImport() {
             exportAllData: repo.exportAll,
           })
         : null;
+    if (!current()) return;
     if (lifecyclePreview?.errors.length || lifecyclePreview?.conflicts.length) {
       renderImportPreview({
         label: "supplemental lifecycle CSV",
+        truncated: lifecyclePreview.truncated,
         recordsByStore: supplementalLifecyclePreviewStores(
           lifecyclePreview.bundle ?? {},
         ),
@@ -1426,9 +1496,11 @@ async function previewImport() {
             exportAllData: repo.exportAll,
           })
         : null;
+    if (!current()) return;
     if (compactPreview?.errors.length) {
       renderImportPreview({
         label: "compact application CSV",
+        truncated: compactPreview.truncated,
         recordsByStore: compactPreview.bundle ?? {},
         conflicts: compactPreview.conflicts ?? [],
         warnings: compactPreview.warnings ?? [],
@@ -1450,14 +1522,21 @@ async function previewImport() {
           : importNdjsonBackup(text);
     // Keep only the incoming lifecycle records from Preview. Application
     // envelopes are planned again from current IndexedDB data at Apply time.
-    state.preview = lifecyclePreview
+    const preview = lifecyclePreview
       ? supplementalLifecyclePreviewStores(bundle)
       : bundleForIndexedDb(bundle);
-    state.supplementalLifecycleCsv = lifecyclePreview ? text : null;
-    state.previewConflicts =
+    const previewConflicts =
       lifecyclePreview?.conflicts ??
       compactPreview?.conflicts ??
-      (await detectImportConflicts(state.preview));
+      (await detectImportConflicts(preview));
+    if (!current()) return;
+    const repository = await getRepository();
+    if (!current()) return;
+    await repository.importPartialData(preview, { dryRun: true });
+    if (!current()) return;
+    state.preview = preview;
+    state.previewConflicts = previewConflicts;
+    state.supplementalLifecycleCsv = lifecyclePreview ? text : null;
     renderImportPreview({
       label: detectedFormatLabel(format, text, lifecyclePreview),
       recordsByStore: lifecyclePreview
@@ -1465,29 +1544,33 @@ async function previewImport() {
         : state.preview,
       conflicts: state.previewConflicts,
       warnings: lifecyclePreview?.warnings ?? compactPreview?.warnings ?? [],
+      truncated: lifecyclePreview?.truncated ?? compactPreview?.truncated,
     });
     $("[data-import-apply]").disabled = false;
   } catch (err) {
-    state.preview = null;
-    state.previewConflicts = [];
-    state.supplementalLifecycleCsv = null;
-    $("[data-import-apply]").disabled = true;
-    if (err?.errors) {
+    if (!current()) return;
+    resetImportPreview();
+    const issues = err?.issues ?? err?.details?.issues;
+    if (issues?.length) {
       renderImportPreview({
-        label: "supplemental lifecycle CSV",
+        label: "backup",
         recordsByStore: {},
-        conflicts: err.conflicts ?? [],
-        warnings: err.warnings ?? [],
-        errors: err.errors,
+        errors: issues,
         blocking: true,
       });
+      if (err.truncated || err.details?.truncated) {
+        $("[data-import-result]").append(" Additional issues omitted.");
+      }
     } else {
       $("[data-import-result]").textContent =
-        `Import preview failed: ${err?.message ?? err}`;
+        "Import preview failed. The file could not be read or validated within import limits. " +
+        "Keep the original backup, repair a copy, and preview again. Nothing was imported.";
     }
   }
 }
+
 function resetImportPreview() {
+  previewRequestToken++;
   state.preview = null;
   state.previewConflicts = [];
   state.supplementalLifecycleCsv = null;
@@ -1529,7 +1612,7 @@ async function applyImport() {
     if (
       state.previewConflicts.length &&
       !confirm(
-        `Import will replace ${state.previewConflicts.length} existing local records with matching IDs. Continue?`,
+        "Import will replace existing local records with matching IDs. Continue?",
       )
     ) {
       state.preview = null;
@@ -1540,13 +1623,26 @@ async function applyImport() {
       return;
     }
     await batchImport(recordsByStore);
-  } catch (err) {
+  } catch (error) {
     state.preview = null;
     state.previewConflicts = [];
     state.supplementalLifecycleCsv = null;
     $("[data-import-apply]").disabled = true;
-    $("[data-import-result]").textContent =
-      `Import failed: ${err?.message ?? err}`;
+    const issues = error?.details?.issues ?? error?.issues;
+    if (issues?.length) {
+      renderImportPreview({
+        label: "backup",
+        recordsByStore: {},
+        errors: issues,
+        blocking: true,
+        truncated: error.truncated ?? error.details?.truncated,
+      });
+    } else {
+      $("[data-import-result]").textContent =
+        error?.code === "quota_exceeded"
+          ? "Import failed: IndexedDB quota was exceeded while saving jobbot3000 data."
+          : "Import failed. Keep the original backup, repair a copy, and preview again.";
+    }
     return;
   }
   state.preview = null;
